@@ -1,0 +1,6 @@
+'use strict';
+const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
+const updater=require('../../UPDATER/updater.cjs');
+(async()=>{assert.equal(typeof updater.applyReceipt,'function');assert.equal(typeof updater.recoverInterruptedUpdate,'function');
+ const parsed=updater.parseArgs(['--target-root','./legacy target','--recover']);assert.equal(parsed.targetRoot,path.resolve('./legacy target'));assert.equal(parsed.recover,true);
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'librarian migration dispatch '));try{fs.mkdirSync(path.join(root,'UPDATER'),{recursive:true});fs.writeFileSync(path.join(root,'UPDATER/update-state.json'),JSON.stringify({schema:'librarian.update-state.v1',status:'running',policy:'unknown'}));await assert.rejects(()=>updater.recoverInterruptedUpdate({rootDir:root}),/unsupported_recovery_policy:unknown/);await assert.rejects(()=>updater.applyReceipt({rootDir:root,receipt:{updatePolicy:'manual_required'}}),/apply_policy_not_supported_phase4:manual_required/);console.log('remote_update_migration_dispatch_test: PASS');}finally{fs.rmSync(root,{recursive:true,force:true});}})().catch(e=>{console.error(e.stack||e);process.exitCode=1});

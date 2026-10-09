@@ -1,0 +1,12 @@
+'use strict';
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert/strict');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');
+const start=source.indexOf('  const buildBookJobSummary ='),end=source.indexOf('  // One list/detail',start);
+const c=vm.createContext({guiAsArray:x=>Array.isArray(x)?x:[],asArray:x=>Array.isArray(x)?x:[],guiEl:(tag,props,children)=>({tag,...props,children})});
+vm.runInContext(source.slice(start,end)+'\nglobalThis.render=buildBookJobSummary;',c);
+let result=c.render({state:'completed_with_warnings',completed:1,failed:0,total:1,stateWarnings:[{reason:'approved_source_edit_replay'}],memoryWarnings:[{startTurn:6,endTurn:10,admission:{rejectedEntities:0,rejectedFacts:0,droppedFields:[{}]}}]});
+const serialized=JSON.stringify(result);assert(serialized.includes('기억 저장 완료 · 참고 사항 있음'));assert(!serialized.includes('일부 구간 미완료'));assert(serialized.includes('기억 항목은 저장했고'));assert(!serialized.includes('approved_source_edit_replay'));
+const detail=result.children.find(n=>n?.tag==='details');assert(detail&&!detail.open);
+result=c.render({state:'completed_with_warnings',completed:1,failed:1,total:2});assert(JSON.stringify(result).includes('일부 구간 저장 미완료'));
+result=c.render({state:'running',completed:0,failed:0,total:1});assert(JSON.stringify(result).includes('기억 생성 중'));
+console.log('PASS saved-with-notices, actual failure, running status, closed human-readable detail');

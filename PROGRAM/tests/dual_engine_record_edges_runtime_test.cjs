@@ -1,0 +1,26 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {createHayakuRuntime,createValidPacket}=require('./fixtures/hayaku_runtime_harness.cjs');
+(async()=>{const h=await createHayakuRuntime({autoRepair:false});try{
+ const t=h.hayaku._test,s={...h.hayaku.settings(),hierarchicalEpisodeMemoryEnabled:false,retrievalRecentContext:{topics:[]}},p=createValidPacket();
+ for(const axis of ['entity','world','narrative','planner'])p[axis]={};
+ p.world.world_rules=Array.from({length:290},(_,i)=>({id:'edge-'+i,summary:'Archive record '+i}));
+ const descriptor={raw:JSON.stringify(p),hash:'same-host-hash',messageIndex:1},store=t.emptyStore(),start=Date.now();
+ let coverage=await t.localRecallPrepareSources([descriptor],store,s,'paging-edge',Date.now()+5000);
+ assert.equal(coverage.complete,false);assert.equal(coverage.partialSourceCount,1);
+ for(let i=0;i<4&&!coverage.complete;i++)coverage=await t.localRecallPrepareSources([descriptor],store,s,'paging-edge',Date.now()+5000);
+ assert(coverage.complete);assert.equal(store._recallSourceRows.filter(r=>r.category==='world_rule').length,290);
+ assert.equal(new Set(store._recallSourceRows.map(r=>r.recordKey)).size,store._recallSourceRows.length);
+ const coldMs=Date.now()-start,warmStart=Date.now();coverage=await t.localRecallPrepareSources([descriptor],store,s,'paging-edge',Date.now()+5000);assert.equal(coverage.processedThisRequest,0);const warmMs=Date.now()-warmStart;
+ const revision=store._recallSourceRows[0].locator.sourceRevision;p.world.world_rules=[{id:'edited',summary:'Changed payload'}];descriptor.raw=JSON.stringify(p);
+ coverage=await t.localRecallPrepareSources([descriptor],store,s,'paging-edge',Date.now()+5000);assert(coverage.complete);assert(store._recallSourceRows.some(r=>r.publicText.includes('Changed payload')));assert(!store._recallSourceRows.some(r=>r.id==='edge-1'));assert.notEqual(store._recallSourceRows[0].locator.sourceRevision,revision);
+ const expired=t.normalizePacketRecords(p,{projectionDeadline:Date.now()-1});assert.equal(expired.complete,false);assert.equal(expired.processedEntries,0);
+ p.entity.characters=[{id:'distinct-one',name:'Duplicate',current_state:'First coat',thoughts:'First private token'},{id:'distinct-two',name:'Duplicate',current_state:'Second coat',thoughts:'Second private token'}];
+ const raw=JSON.stringify(p),identityStore=t.emptyStore();t.ingestPacket(identityStore,raw,'identity-edge',{messageIndex:1});assert.equal(identityStore.entity.characters.length,2,'explicit distinct identities must survive the same display name');
+ t.rebuildIndex(identityStore,{settings:s,deadlineAt:Date.now()+5000});await t.localRecallPrepareSources([{raw,hash:'identity-edge',messageIndex:1}],identityStore,s,'identity-edge',Date.now()+5000);
+ const result=await t.searchIndexCompositeRecall(identityStore,'Duplicate First private token Second private token',s),plan=t.selectHayakuEvidencePlan(result,'Duplicate First private token Second private token',s,14000);
+ assert(!plan.text.includes('First private token')&&!plan.text.includes('Second private token'),'ambiguous display name is not a confirmed private owner');
+ const legacy={id:'old-id',publicRef:'world.world_rule.old-id',packetHash:'same-host-hash',category:'world_rule',axis:'world',publicText:'Legacy accepted record',locator:{sourceHash:'same-host-hash'}};
+ const combined=t.mergeRecallRecordSources(store._recallSourceRows,[legacy],store);assert(combined.some(r=>r.id==='old-id'&&r.representation==='legacy_record'));assert.equal(h.llmCalls.length,0);
+ console.log(JSON.stringify({pagingRecords:290,coldMs,warmMs,revisionInvalidation:true,expiredBudget:true,distinctSameName:true,ambiguousPrivateDenied:true,legacyRetained:true,modelCalls:0}));
+}finally{await h.dispose();}})().catch(e=>{console.error(e.stack||e);process.exitCode=1;});

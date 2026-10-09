@@ -1,0 +1,406 @@
+{
+  "schema": "libra.world-maker.build-manifest.v2",
+  "source": "src/parts",
+  "output": "dist/LIBRA World Manager Full.js",
+  "minifiedOutput": "dist/LIBRA World Manager.js",
+  "cleanOutputs": [
+    "dist/LIBRA World Maker Full.js",
+    "dist/LIBRA World Maker.js",
+    "dist/LIBRA World Manager.min.js"
+  ],
+  "lineEndingPolicy": "preserve fragments as UTF-8 text; chunks join without separators",
+  "parts": [
+    {
+      "file": "parts/00-plugin-shell-and-args.js",
+      "area": "Plugin shell and RisuAI arg declarations"
+    },
+    {
+      "file": "parts/01-core-runtime-compat-state-debug.js",
+      "area": "Core errors and RisuAI API compatibility adapter"
+    },
+    {
+      "file": "parts/01a-message-scope-world-normalization.js",
+      "area": "Message identity, runtime scope keys, and world rule normalization"
+    },
+    {
+      "file": "parts/01b-runtime-state-prompt-ui.js",
+      "area": "Runtime epoch, MemoryState, scoped transactions, prompt guidance, and UI guards"
+    },
+    {
+      "file": "parts/01c-active-chat-context.js",
+      "area": "Active chat resolution and permitted database reads"
+    },
+    {
+      "file": "parts/01d-debug-export-runtime-trace.js",
+      "area": "Two-turn runtime trace collection, plugin-storage persistence, and debug export"
+    },
+    {
+      "file": "parts/01e-runtime-errors-toast-language.js",
+      "area": "Suppressed error telemetry, task toasts, and internal-data language guards"
+    },
+    {
+      "file": "parts/01f-lore-consolidation.js",
+      "area": "Managed lore packing, unpacking, and consolidation"
+    },
+    {
+      "file": "parts/01g-lore-concurrent-persistence.js",
+      "area": "Concurrent lore mutation merging, commit guards, and scoped persistence"
+    },
+    {
+      "file": "parts/01h-projection-reset.js",
+      "area": "Prompt projection entries and managed LIBRA data reset"
+    },
+    {
+      "file": "parts/02-concurrency-dashboard-utilities.js",
+      "area": "Read/write lock, task queues, Flex runtime, and resource governor"
+    },
+    {
+      "file": "parts/02a-resource-pool-metrics-routing.js",
+      "area": "Resource-bound pools, runtime metrics, LLM route profiles, cloning, and budget normalization"
+    },
+    {
+      "file": "parts/02b-activity-dashboard-dom.js",
+      "area": "Activity dashboard state, styles, direct DOM, mainDom, and compact/full markup"
+    },
+    {
+      "file": "parts/02c-activity-dashboard-lifecycle.js",
+      "area": "Activity dashboard lifecycle, dismissal, auto-hide, rendering, and request stages"
+    },
+    {
+      "file": "parts/02d-activity-dashboard-queues-metrics.js",
+      "area": "Activity dashboard queue, analysis, LLM, embedding, cache, and health metrics"
+    },
+    {
+      "file": "parts/02e-host-evidence-response-contract.js",
+      "area": "Host prompt evidence capture and host response contract inspection"
+    },
+    {
+      "file": "parts/02f-speech-json-parsing.js",
+      "area": "Speech-style normalization and safe structured JSON extraction"
+    },
+    {
+      "file": "parts/02g-analysis-contracts-result-guard.js",
+      "area": "Canonical packet contracts, maintenance JSON validation, and analysis merge guard"
+    },
+    {
+      "file": "parts/02h-analysis-preflight-meta.js",
+      "area": "Analysis budget preflight, embedding diagnostics, metadata parsing, and turn derivation"
+    },
+    {
+      "file": "parts/03-global-utils-codec-cues.js",
+      "area": "LIBRA dialogs and global text, message, and narrative utilities"
+    },
+    {
+      "file": "parts/03a-compact-memory-core.js",
+      "area": "Compact memory schemas, entity references, tags, and ledger sanitization"
+    },
+    {
+      "file": "parts/03b-compact-memory-ledger-evidence.js",
+      "area": "Canonical v3 records, evidence records, scene facts, beats, and open threads"
+    },
+    {
+      "file": "parts/03c-compact-memory-payload-compat.js",
+      "area": "Turn payload construction and legacy-to-v3 memory compatibility"
+    },
+    {
+      "file": "parts/03d-compact-memory-recall-migration.js",
+      "area": "Memory search text, recall scoring text, migration, and v2 export"
+    },
+    {
+      "file": "parts/03e-rp-continuity-normalization.js",
+      "area": "RP long-term continuity schema, durable item normalization, and merge identity"
+    },
+    {
+      "file": "parts/03f-rp-continuity-extraction-state.js",
+      "area": "RP continuity extraction, retention, payload attachment, and state storage"
+    },
+    {
+      "file": "parts/03g-rp-continuity-persistence-prompt.js",
+      "area": "RP continuity backfill, rewrite, rollback pruning, and prompt formatting"
+    },
+    {
+      "file": "parts/03h-analysis-memory-hints.js",
+      "area": "Analysis memory hint selection and formatting"
+    },
+    {
+      "file": "parts/03i-character-lore-cue-index.js",
+      "area": "Character lore cue indexing, embedding cache, search, and formatting"
+    },
+    {
+      "file": "parts/03j-entity-source-hints-lore-json.js",
+      "area": "Character source hints, RP entity cues, lore keys, and loose JSON parsing"
+    },
+    {
+      "file": "parts/04-cold-start-transition.js",
+      "area": "Cold-start prompts, approval, and structured value normalization"
+    },
+    {
+      "file": "parts/04a-cold-start-source-chunking.js",
+      "area": "Historical message filtering, auxiliary cues, chunking, and compact synthesis inputs"
+    },
+    {
+      "file": "parts/04b-cold-start-baseline-memory.js",
+      "area": "Replayable turn selection and baseline memory hydration"
+    },
+    {
+      "file": "parts/04c-cold-start-structured-merge-primitives.js",
+      "area": "Imported entity, relation, world, and narrative merge primitives"
+    },
+    {
+      "file": "parts/04d-cold-start-canonical-packet.js",
+      "area": "Canonical packet conversion, hierarchical synthesis, and structured sanitization"
+    },
+    {
+      "file": "parts/04e-cold-start-world-narrative-application.js",
+      "area": "Imported world state, narrative orchestration, and runtime hydration"
+    },
+    {
+      "file": "parts/04f-cold-start-structured-merge.js",
+      "area": "Structured knowledge commit and current-state snapshot construction"
+    },
+    {
+      "file": "parts/04g-cold-start-llm-world-additional.js",
+      "area": "Historical World Additional analysis, merge verification, and LLM preflight"
+    },
+    {
+      "file": "parts/04h-cold-start-reanalysis.js",
+      "area": "Conversation synthesis, historical reanalysis, rollback repair, and knowledge import"
+    },
+    {
+      "file": "parts/04i-cold-start-entrypoints.js",
+      "area": "Cold-start execution entrypoint and public ColdStartManager facade"
+    },
+    {
+      "file": "parts/04j-session-transition.js",
+      "area": "Next-session transition, inherited lore rescoping, and greeting isolation"
+    },
+    {
+      "file": "parts/05e-canonical-turn-memory-helpers.js",
+      "area": "Canonical message identity, turn keys, compact memory, world recall, and integrity helpers"
+    },
+    {
+      "file": "parts/05f-turn-ledgers.js",
+      "area": "Lore-backed turn records and durable raw-turn WAL"
+    },
+    {
+      "file": "parts/05g-commit-guard-maintenance-records.js",
+      "area": "Canonical commit guards and turn-maintenance record lifecycle"
+    },
+    {
+      "file": "parts/05h-turn-maintenance-worker.js",
+      "area": "Committed-turn maintenance analysis and persistence worker"
+    },
+    {
+      "file": "parts/05i-turn-maintenance-scheduler-analysis.js",
+      "area": "Maintenance scheduling, locks, fast state, and committed-turn analysis"
+    },
+    {
+      "file": "parts/05j-pending-turn-manager.js",
+      "area": "Pending response stabilization and canonical turn commit manager"
+    },
+    {
+      "file": "parts/05k-narrative-turn-processing.js",
+      "area": "Current-turn entity context, narrative processing, and correction application"
+    },
+    {
+      "file": "parts/06-api-providers-llm.js",
+      "area": "LRU cache, API providers, Flex policy, LLM provider facade"
+    },
+    {
+      "file": "parts/07-token-recall-embedding-emotion.js",
+      "area": "Tokenizer/hash, sparse recall, embeddings, emotion engine"
+    },
+    {
+      "file": "parts/08-world-entity-secret-time.js",
+      "area": "World templates and integrity metadata"
+    },
+    {
+      "file": "parts/08a-world-graph.js",
+      "area": "Hierarchical world graph and prompt formatting"
+    },
+    {
+      "file": "parts/08b-entity-identity-schema.js",
+      "area": "Entity identity resolution, normalization, visual canon, and v2 schema"
+    },
+    {
+      "file": "parts/08c-relation-timeline.js",
+      "area": "Relationship axes, event timeline, projection, and retraction"
+    },
+    {
+      "file": "parts/08d-entity-merge-crud.js",
+      "area": "Entity and relation merging, rename, absorption, and update operations"
+    },
+    {
+      "file": "parts/08e-entity-prompt-cache-persistence.js",
+      "area": "Entity prompt/projection formatting, caches, and lore persistence"
+    },
+    {
+      "file": "parts/08f-entity-candidate-store.js",
+      "area": "Hidden entity candidate store"
+    },
+    {
+      "file": "parts/08g-secret-knowledge.js",
+      "area": "POV-aware secret knowledge guard"
+    },
+    {
+      "file": "parts/08h-entity-knowledge-vault.js",
+      "area": "Per-entity knowledge vault"
+    },
+    {
+      "file": "parts/08i-time-parser.js",
+      "area": "Narrative date and time parser"
+    },
+    {
+      "file": "parts/08j-time-engine.js",
+      "area": "Narrative time state engine"
+    },
+    {
+      "file": "parts/09-trackers-section-state.js",
+      "area": "Narrative tracker and narrative orchestration"
+    },
+    {
+      "file": "parts/09a-world-additional-user-dlc.js",
+      "area": "World Additional and User DLC independent extension databases"
+    },
+    {
+      "file": "parts/09b-archive-integrity.js",
+      "area": "Quarantine, cold archive, recall feedback, journal, integrity scanning"
+    },
+    {
+      "file": "parts/09c-turn-maintenance-optimizer.js",
+      "area": "Turn maintenance analysis planning and LLM orchestration"
+    },
+    {
+      "file": "parts/09d-section-character-world-state.js",
+      "area": "Section inference and character/world state trackers"
+    },
+    {
+      "file": "parts/10-memory-engine-hme.js",
+      "area": "MemoryEngine config, caches, meta parsing, similarity, and recall intent"
+    },
+    {
+      "file": "parts/10a-recall-scoring-selection.js",
+      "area": "Recall scoring, evidence gates, exact-anchor backfill, and diversity selection"
+    },
+    {
+      "file": "parts/10b-hybrid-memory-rows.js",
+      "area": "Hybrid memory row normalization and read path"
+    },
+    {
+      "file": "parts/10c-hme-associative-graph.js",
+      "area": "HME associative graph construction, persistence, and recall expansion"
+    },
+    {
+      "file": "parts/10d-hme-scope-index.js",
+      "area": "HME scope index construction, hydration, runtime cache, and persistence"
+    },
+    {
+      "file": "parts/10e-memory-write-rollback-metadata.js",
+      "area": "Hybrid write metadata and duplicate shortlist"
+    },
+    {
+      "file": "parts/10f-hybrid-shortlist-lore-embedding.js",
+      "area": "Hybrid kind planning, shortlist, lore normalization, and embedding engine"
+    },
+    {
+      "file": "parts/10g-memory-format-gc-rename.js",
+      "area": "Memory formatting, incremental and deferred GC, and entity reference rename"
+    },
+    {
+      "file": "parts/10h-memory-public-write-api.js",
+      "area": "Public facade setup, index rebuild, duplication, and prepareMemory write API"
+    },
+    {
+      "file": "parts/10i-memory-public-recall-api.js",
+      "area": "Public retrieveMemories scoring, embedding, and selection API"
+    },
+    {
+      "file": "parts/10j-memory-public-lore-schema-api.js",
+      "area": "Public lore, schema, cache, and turn facade plus MemoryEngine closure"
+    },
+    {
+      "file": "parts/10k-entity-canonical-name-migration.js",
+      "area": "Evidence-gated canonical person-name migration and cross-database reference propagation"
+    },
+    {
+      "file": "parts/10l-typed-recall-adapters.js",
+      "area": "Resident typed recall corpus, canonical identity, representation, and safety adapters"
+    },
+    {
+      "file": "parts/10m-semantic-recall-index.js",
+      "area": "Strict typed derived vector index, bounded storage and host ownership proof"
+    },
+    {
+      "file": "parts/10n-dual-recall-engine.js",
+      "area": "Canonical change jobs, bounded query queue and verified same-source vector reuse"
+    },
+    {
+      "file": "parts/10o-typed-recall-consumers.js",
+      "area": "Typed final consumers, protected baseline and atomic packing"
+    },
+    {
+      "file": "parts/11-risu-cbs-parity-generated.js",
+      "area": "Generated RisuAI CBS parity evaluator and snapshot bridge"
+    },
+    {
+      "file": "parts/11-translation-reflection-cbs.js",
+      "area": "Internal data translation, source reflection, CBS integration"
+    },
+    {
+      "file": "parts/12-processors-world-entity.js",
+      "area": "Entity extraction and world adjustment processing"
+    },
+    {
+      "file": "parts/13-risu-triggers-streaming.js",
+      "area": "Request input normalization and auxiliary request bypass"
+    },
+    {
+      "file": "parts/13a-response-transport-recovery.js",
+      "area": "Response transport classification, request origins, and missing-response recovery"
+    },
+    {
+      "file": "parts/13b-streaming-runtime-rescue.js",
+      "area": "Streaming output capture, scoped runtime reload, and Hayaku packet rescue"
+    },
+    {
+      "file": "parts/13c-before-request-injection.js",
+      "area": "RisuAI beforeRequest context assembly and injection"
+    },
+    {
+      "file": "parts/13d-after-request-worker-unload.js",
+      "area": "Detached afterRequest worker, durable replay, and unload cleanup"
+    },
+    {
+      "file": "parts/14-main-initialization.js",
+      "area": "Config loading and main initialization"
+    },
+    {
+      "file": "parts/14z-health-recovery-policy.js",
+      "area": "Pure bounded health repair policy"
+    },
+    {
+      "file": "parts/15-gui-and-exports.js",
+      "area": "GUI shell, styles, markup, and narrative inspector helpers"
+    },
+    {
+      "file": "parts/15a-gui-session-data.js",
+      "area": "GUI session bootstrap, data persistence, health review, and provider controls"
+    },
+    {
+      "file": "parts/15b-gui-content-world-dlc.js",
+      "area": "Memory, entity, narrative, world, World Additional, and User DLC views"
+    },
+    {
+      "file": "parts/15c-gui-settings-config.js",
+      "area": "Settings profiles, provider tests, migration, import, and config loading"
+    },
+    {
+      "file": "parts/15d-gui-events-finalize.js",
+      "area": "GUI event wiring, editing actions, reanalysis, and final rendering"
+    },
+    {
+      "file": "parts/15e-gui-registration-iife-close.js",
+      "area": "GUI registration, public-global cleanup, and IIFE close"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+'use strict';
+const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const {spawnSync}=require('node:child_process');
+const {fixture}=require('./helpers/updater_fixture.cjs');
+(async()=>{const f=await fixture();try{fs.cpSync(path.resolve(__dirname,'../../UPDATER'),f.p('UPDATER'),{recursive:true});await f.checkpoint();fs.renameSync(f.p('PROGRAM'),f.p(f.journal.paths.rollbackProgram));f.journal.phase='intent_program_old_rename';f.save();const result=spawnSync(process.execPath,[f.p('UPDATER/updater.cjs'),'--recover'],{encoding:'utf8',timeout:10000});assert.equal(result.status,0,result.stderr||result.stdout);assert.equal(fs.readFileSync(f.p('PROGRAM/old.txt'),'utf8'),'OLD');assert.equal(JSON.parse(fs.readFileSync(f.p('UPDATER/update-state.json'))).status,'rolled_back');console.log('remote_update_standalone_recovery_test: PASS');}finally{f.cleanup();}})().catch(e=>{console.error(e.stack);process.exitCode=1;});

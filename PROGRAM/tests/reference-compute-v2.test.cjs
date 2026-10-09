@@ -1,0 +1,14 @@
+"use strict";
+const assert=require("node:assert/strict");
+const m=require("../server/core/reference-compute-v2.cjs");
+const packets=new Map();
+packets.set("p1",{id:"p1",sourceKey:"k1",recency:10,packet:{packet_schema_rev:2,summary:"세아는 오래된 예배당에서 열쇠를 약속했다",entities:["세아"],world:"오래된 예배당",narrative:"열쇠 약속"}});
+packets.set("p2",{id:"p2",sourceKey:"k2",recency:20,packet:{hayaku_packet_v1:true,summary:"시장 광장에서 우산을 샀다",entities:["세연"],world:"시장"}});
+const docs=m._test.buildHayakuIndex(packets);
+assert.equal(docs.length,2);
+const r=m._test.hayakuSearch(docs,"세아 예배당 열쇠",4);
+assert.ok(r.length>=1);
+assert.equal(r[0].id,"p1");
+const out=new Map();m._test.collectPackets({hidden_packet_ledger_v2:[...packets.values()].map(x=>x.packet)},"ledger",out,new WeakSet());
+assert.equal(out.size,2);
+console.log(JSON.stringify({ok:true,docs:docs.length,top:r[0].id}));

@@ -1,0 +1,2751 @@
+{
+  "schema": "librarian.ultralight.preservation.rebased.v1",
+  "generatedAt": "2026-09-17T21:20:04.091Z",
+  "packageVersion": "0.3.63",
+  "rebasedFrom": {
+    "handoffInventory": "../../reference/Librarian-System_ULTRALIGHT_HANDOFF_v1.1_20260917/design/evidence/FEATURE_PRESERVATION.json",
+    "handoffBaseline": "0.3.60-WIP-CHECKPOINT-R01",
+    "handoffCounts": {
+      "libra": 20,
+      "hayaku": 18,
+      "flashback": 20
+    },
+    "handoffNotice": "58 reference entries, not a complete post-WIP final inventory. Retired/compatibility entries do not authorize feature revival. At implementation intake, add new baseline entries; never overwrite unverified statuses with assumed passes."
+  },
+  "rebaseNotes": [
+    "Authority is the CURRENT modern tree, per 00_START_HERE.md (\"compare it first and explicitly rebase the preservation inventory before implementation\").",
+    "Statuses are copied from the current feature_inventory.json / support_matrix.json; no status is upgraded on assumption.",
+    "Handoff entries absent from the current tree are listed in handoffOnlyFeatureIds and must be adjudicated before implementation.",
+    "Current entries with no handoff counterpart are listed in currentOnlyFeatureIds; they are NEWER than the design review and are preserved.",
+    "Retired/compatibility entries do not authorize feature revival."
+  ],
+  "counts": {
+    "total": 70,
+    "handoffTotal": 58,
+    "handoffOnly": 0,
+    "currentOnly": 12,
+    "statusChangedByRebase": 6,
+    "targetOwners": 3
+  },
+  "handoffOnlyFeatureIds": [],
+  "currentOnlyFeatureIds": [
+    "LIA-PERSONA-CREATE",
+    "LIA-PERSONA-BIND",
+    "LIA-LIVE-REFRESH",
+    "LIA-LIVE-CHECKPOINT",
+    "LIA-SAME-CHAT-RECOVERY",
+    "LIA-BRANCH-INHERIT",
+    "LIA-BRANCH-STORAGE-MIGRATE",
+    "LIA-SESSION-HANDOFF",
+    "LIA-SOURCE-REVALIDATE",
+    "LIA-PERSONA-RESTORE",
+    "LIA-UI-PERSONA-OPS",
+    "LIA-DIAG-INSPECT"
+  ],
+  "features": [
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CANONICAL-CAPTURE",
+      "userFeature": "5 U+A canonical memory capture",
+      "entryPoints": [
+        "captureCommittedOutputEvent",
+        "scan",
+        "scheduleScan",
+        "afterRequest",
+        "completeBatchStarts"
+      ],
+      "storageSchemas": [
+        "libra.manifest.v1",
+        "libra.canonical_memory.v1",
+        "libra.memory_work.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:manifest",
+        "libra:v1:scope:<scope>:memory:<startTurn>:r<rev>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_canonical_job_runtime_test.cjs",
+        "native_branch_libra_runtime_test.cjs",
+        "libra_canonical_capture_3mode_parity_test.cjs"
+      ],
+      "expectedSemanticResult": "one committed canonical per complete 5-pair batch range",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-ARIADNE-ITO-PIPELINE",
+      "userFeature": "Ariadne/ito unified memory pipeline (fail-soft)",
+      "entryPoints": [
+        "runLibraMemoryPipeline",
+        "librarian stage (executeUnifiedStage)"
+      ],
+      "storageSchemas": [
+        "libra.ariadne_draft.v1",
+        "libra.ito_patch.v1",
+        "libra.canonical_artifact.v4"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:memory:<startTurn>:r<rev>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_unified_fact_pipeline_v1_test.cjs",
+        "libra_ariadne_only_defaults_test.cjs",
+        "libra_ariadne_ito_pipeline_3mode_parity_test.cjs"
+      ],
+      "expectedSemanticResult": "committed unified artifact with non-fatal advisory stages",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CANONICAL-REVISION-ADOPT",
+      "userFeature": "Canonical revisions / candidate adoption / manual edit",
+      "entryPoints": [
+        "regenerateCanonicalMemory",
+        "saveCanonicalEditDraft",
+        "resolveCanonicalCandidate",
+        "selectCanonicalVariant",
+        "commitCanonicalAdoptionTransaction"
+      ],
+      "storageSchemas": [
+        "libra.canonical_variant_index.v1",
+        "libra.canonical_job.v1",
+        "libra.canonical_adoption_transaction.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:canonical-variants:v1",
+        "libra:v1:scope:<scope>:canonical-adoption-transaction:<jobId>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_canonical_job_runtime_test.cjs",
+        "libra_canonical_variant_job_gui_contract_test.cjs",
+        "libra_response_variant_missing_canonical_catchup_test.cjs"
+      ],
+      "expectedSemanticResult": "adopted revision becomes the single recall authority",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-WORLD-MANAGER-STATE",
+      "userFeature": "Current State / World Manager",
+      "entryPoints": [
+        "loadContinuityState",
+        "loadContinuityStateForResponse",
+        "unifiedStateReadProjection",
+        "getWorldManagerNarrative"
+      ],
+      "storageSchemas": [
+        "libra.continuity_state.v2",
+        "libra.entity_registry.v2",
+        "libra.narrative_current_state.v2"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:continuity-state",
+        "libra:v1:scope:<scope>:entity-registry:v2"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "libra_world_manager_narrative_v1_contract_test.cjs",
+        "libra_latest_state_tracking_contract_test.cjs",
+        "libra_world_manager_state_3mode_parity_test.cjs"
+      ],
+      "expectedSemanticResult": "one overwrite-only materialized state head, not a second authority",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-STATE-CORRECTION-JOURNAL",
+      "userFeature": "State Correction Journal / replay / rollback / reroll",
+      "entryPoints": [
+        "appendStateCorrection",
+        "rebuildStateFromCanonicalChain",
+        "rollbackStateWorldline",
+        "setStateCorrectionStatus"
+      ],
+      "storageSchemas": [
+        "libra.state_correction_store.v1",
+        "libra.state_correction_meta.v1",
+        "libra.state_correction_commit.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:state-corrections:v2",
+        "libra:v1:scope:<scope>:state-correction-commit:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "libra_state_correction_sparse_v2_runtime_test.cjs",
+        "libra_world_manager_correction_transaction_rc2_test.cjs",
+        "libra_world_manager_state_3mode_parity_test.cjs"
+      ],
+      "expectedSemanticResult": "durable correction journal with transaction-bound replay",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-DUAL-WORLDLINE",
+      "userFeature": "Host Worldline + State Worldline",
+      "entryPoints": [
+        "hostWorldlineMetaForNativeBranch",
+        "loadStateWorldlineMeta",
+        "saveStateWorldlineMeta",
+        "reconcileCanonicalBranchBeforeRecall"
+      ],
+      "storageSchemas": [
+        "libra.worldline_meta.v1",
+        "libra.branch_guard.v1",
+        "libra.state_worldline_meta.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:manifest",
+        "libra:v1:scope:<scope>:state-worldline-meta:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "native_branch_libra_worldline_meta_test.cjs",
+        "native_branch_libra_worldline_conflict_test.cjs"
+      ],
+      "expectedSemanticResult": "host and state worldlines stay separate identities",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-RECALL-ENGINE",
+      "userFeature": "Recall: lexical/BM25F/dense/hybrid/temporal/current-state rescue",
+      "entryPoints": [
+        "recall",
+        "buildQueryBundle",
+        "shortlistRecallCatalog",
+        "classicCanonicalProvenanceRescueFromHead"
+      ],
+      "storageSchemas": [
+        "libra.recall_catalog.v3",
+        "libra.recall_runtime.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:recall-catalog:v1"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "libra_recall_bm25f_compute_pilot_test.cjs",
+        "libra_classic_provenance_rescue_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "ranked recall from the active revision/worldline only",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-EMBEDDING-VECTOR-LIFECYCLE",
+      "userFeature": "Embedding creation, vector storage, quarantine, regenerate",
+      "entryPoints": [
+        "embedMemory",
+        "retryEmbeddingForMemory",
+        "startEmbeddingRebuild",
+        "cleanupQuarantinedVectors"
+      ],
+      "storageSchemas": [
+        "libra.embedding_rebuild.v1",
+        "libra.embedding_projection.v2",
+        "libra.embedding_vector_migration.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:embedding-rebuild",
+        "libra:v1:scope:<scope>:vector:<memoryId>:r<rev>:<profileId>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "libra_unified_server_vector_v1_test.cjs",
+        "remaining_embedding_migration_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "vector space/model migration never deletes canonical memory",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-PLANNER-RESPONSE-CONTEXT",
+      "userFeature": "Planner / response mode / response context",
+      "entryPoints": [
+        "runTurnPlanner",
+        "resolveResponseModeState",
+        "attachUnifiedResponseContext"
+      ],
+      "storageSchemas": [
+        "libra.reaction_planner.v1",
+        "libra.response_context.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:runtime-settings"
+      ],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": true,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_response_context_v1_test.cjs",
+        "libra_classic_planner_authority_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "planner output bound to the active worldline revision",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-GRADIA-SGA",
+      "userFeature": "GRADIA/SGA integration exposed through LIBRA",
+      "entryPoints": [
+        "runSgaPipeline",
+        "runSgaPrivateAnalysis",
+        "runSgaResponseEngine",
+        "cancelSgaRun"
+      ],
+      "storageSchemas": [
+        "libra.sga_run.v2",
+        "libra.sga_draft_checkpoint.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:sga-draft-checkpoints:local:v1"
+      ],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": true,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_gradia_runtime_hardening_behavior_test.cjs",
+        "libra_gradia_structured_pipeline_v2_behavior_test.cjs"
+      ],
+      "expectedSemanticResult": "response-pipeline artifacts stay non-canonical and cancellable",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-INPUT-WRITER",
+      "userFeature": "Input Writer",
+      "entryPoints": [
+        "generateLibraInputWriterChoices",
+        "runExplicitLibraInputWriter",
+        "dispatchLibraInputWriterDelivery"
+      ],
+      "storageSchemas": [
+        "libra.input_writer_choices.v1",
+        "libra.input_writer_delivery_snapshot.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:runtime-settings",
+        "libra:v1:prompt-overrides"
+      ],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_input_writer_phase06_no_mutation_runtime_test.cjs",
+        "libra_input_writer_delivery_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "delivery snapshot seals the active worldline revision; no owner mutation",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-RAG-LORE-CBS",
+      "userFeature": "RAG / lore / CBS / reranker",
+      "entryPoints": [
+        "buildUnifiedResponseLoreMaterial",
+        "responseLoreRrfFuse",
+        "rerankMemoryLoreForStage",
+        "renderAgentCbsText"
+      ],
+      "storageSchemas": [
+        "libra.response_lore_material.v1",
+        "libra.reference_source_snapshot.v1"
+      ],
+      "storageKeys": [],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_consumer_reference_material_v2_test.cjs"
+      ],
+      "expectedSemanticResult": "read-only response material bound to the scope",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CONFIG-PERSISTENCE",
+      "userFeature": "Provider profiles / prompt profiles / settings persistence",
+      "entryPoints": [
+        "readRuntimeSettings",
+        "writeRuntimeSettings",
+        "readPromptOverrides",
+        "saveLibraProviderConfig"
+      ],
+      "storageSchemas": [
+        "libra.runtime_settings_store.v4",
+        "libra.prompt_overrides_store.v4"
+      ],
+      "storageKeys": [
+        "libra:v1:memory-settings",
+        "libra:v1:provider-presets",
+        "libra:v1:runtime-settings",
+        "libra:v1:prompt-overrides"
+      ],
+      "storageClass": "local_configuration",
+      "localOnlyConfig": true,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "intentionally_unsupported",
+      "serverOnlyStatus": "intentionally_unsupported",
+      "tests": [
+        "libra_settings_persistence_transaction_runtime_test.cjs",
+        "libra_prompt_persistence_transaction_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "settings persist with transactional rollback; no scope-canonical claim",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "intentionally_unsupported",
+        "handoffRecordedServerOnly": "intentionally_unsupported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-MANUAL-RECOVERY",
+      "userFeature": "Manual cold start and failed batch recovery",
+      "entryPoints": [
+        "startManualColdStart",
+        "startFailedRetry",
+        "listCanonicalBatchRanges",
+        "recoverCanonicalJobAtStartup"
+      ],
+      "storageSchemas": [
+        "libra.canonical_job.v1",
+        "libra.pending_live_boundary.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:canonical-job:<id>",
+        "libra:v1:scope:<scope>:pending-live-boundaries:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_failed_batch_fresh_retry_runtime_test.cjs",
+        "libra_fresh_analysis_discard_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "manual cold start never becomes automatic when a server is connected",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-SOURCE-EDIT-CONSENT",
+      "userFeature": "Source-edit consent and reanalysis",
+      "entryPoints": [
+        "createMemorySuiteSourceEditConsent",
+        "getLibraSourceEdits",
+        "assertLibraStateSourceEditPermission",
+        "reviewLibraSourceEdits"
+      ],
+      "storageSchemas": [
+        "memory-suite.source-edit-consent.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:source-edit-consent:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "source_edit_libra_runtime_test.cjs",
+        "libra_unified_source_edit_v2_test.cjs"
+      ],
+      "expectedSemanticResult": "approved edit replaces canonical only after explicit consent",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-WORLD-ADDITIONAL-RETIRED",
+      "userFeature": "World Additional (retired migration path)",
+      "entryPoints": [
+        "purgeLegacyWorldAdditionalData"
+      ],
+      "storageSchemas": [
+        "libra.world_additional_removal.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:migration:remove-world-additional:v1"
+      ],
+      "storageClass": "diagnostic",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_world_additional_retirement_marker_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "legacy world-additional records are removed with a durable migration marker",
+      "preservationDecision": "PRESERVE_RETIRED_CONTRACT",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-STORY-NARRATIVE-COMPAT",
+      "userFeature": "Story/Narrative compatibility readers",
+      "entryPoints": [
+        "getStoryArc",
+        "rebuildStoryArc",
+        "storyArcCompatibilityProjection",
+        "migrateStoryArcToNarrativeIfNeeded"
+      ],
+      "storageSchemas": [
+        "libra.story_arc.compatibility_projection.v2",
+        "libra.narrative_completion.v2"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:story-arc",
+        "libra:v1:scope:<scope>:planner-narrative-direction:v1"
+      ],
+      "storageClass": "archive_reference",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_story_arc_public_api_runtime_test.cjs",
+        "libra_story_arc_storage_retirement_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "legacy Story Arc stays read-only; Narrative projection is derived",
+      "preservationDecision": "PRESERVE_RETIRED_CONTRACT",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-PORTABLE-HANDOFF",
+      "userFeature": "Backup / export / import / restore / handoff",
+      "entryPoints": [
+        "createEnvelope",
+        "restoreEnvelope",
+        "doExport",
+        "importPortableAsPredecessorArchive",
+        "prepareSessionHandoff",
+        "adoptSessionHandoff"
+      ],
+      "storageSchemas": [
+        "libra.shared_archive.v1",
+        "libra.session_handoff.package.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:shared-archive:<id>:manifest",
+        "libra:v1:handoff:<id>"
+      ],
+      "storageClass": "archive_reference",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "libra_portable_cross_chat_restore_runtime_test.cjs",
+        "libra_portable_multiverse_derived_rollback_p1_test.cjs"
+      ],
+      "expectedSemanticResult": "restore preserves worldline; interrupted restore rolls back",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": true
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-MAINTENANCE-DIAGNOSTICS",
+      "userFeature": "Maintenance, diagnostics, scope health, quarantine",
+      "entryPoints": [
+        "getServerScopeHealth",
+        "getUnifiedStorageStatus",
+        "inspectLibraScopeHealthSnapshot",
+        "previewUnifiedRetention"
+      ],
+      "storageSchemas": [
+        "libra.scope-health-snapshot.v1",
+        "libra.scope-health-report.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:scope:<scope>:state-replay-errors:v1"
+      ],
+      "storageClass": "diagnostic",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_scope_health_runtime_test.cjs",
+        "libra_scope_health_boundary_test.cjs"
+      ],
+      "expectedSemanticResult": "read-only diagnostics; plugin-only refuses network",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-GUI-OWNER-WRITES",
+      "userFeature": "GUI read/edit paths that write durable owner state",
+      "entryPoints": [
+        "saveLibraProviderConfig",
+        "saveLibraMemorySettings",
+        "saveCanonicalEditDraft",
+        "addWorldManagerCorrection",
+        "reviewSourceEdits"
+      ],
+      "storageSchemas": [
+        "libra.runtime_settings_store.v4",
+        "libra.canonical_variant_index.v1",
+        "libra.state_correction_store.v1"
+      ],
+      "storageKeys": [
+        "libra:v1:memory-settings",
+        "libra:v1:scope:<scope>:canonical-variants:v1"
+      ],
+      "storageClass": "local_configuration",
+      "localOnlyConfig": true,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "libra_settings_persistence_transaction_runtime_test.cjs",
+        "libra_world_manager_correction_gui_rc2_test.cjs"
+      ],
+      "expectedSemanticResult": "GUI writes route through the same scope/mode authority as request paths",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-INPUT-RECOGNITION",
+      "userFeature": "Input recognition / request classification",
+      "entryPoints": [
+        "RequestKindCore.classify",
+        "latestCurrentInputRange",
+        "resolveHayakuCurrentTurn",
+        "detectOutputContract"
+      ],
+      "storageSchemas": [],
+      "storageKeys": [],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "hayaku_packet_injection_integrity_runtime_test.cjs",
+        "hayaku_prompt_contract_v4_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "main/model vs module-only vs structured-output classification",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "verified_supported",
+        "handoffRecordedServerOnly": "verified_supported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-PACKET-CAPTURE",
+      "userFeature": "Packet capture and packet schema",
+      "entryPoints": [
+        "captureHayakuOutput",
+        "processRisuChatOutputEvent",
+        "persistCapturedPackets",
+        "validateCapturedPacketGroup"
+      ],
+      "storageSchemas": [
+        "hayaku_packet_v1",
+        "hayaku_storage_ledger_v2"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "output_listener_capture_contract_test.cjs",
+        "capture_backend_compatibility_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "one valid packet group persisted per completed turn",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-SPEAKER-TURN-BOUNDARY",
+      "userFeature": "Speaker/turn boundary handling",
+      "entryPoints": [
+        "recoveryBoundaryIndex",
+        "resolveHayakuCurrentTurn",
+        "buildPacketRecoveryDebt"
+      ],
+      "storageSchemas": [
+        "hayaku_packet_v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_schema_cross_packet_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "U+A pair boundaries and turn anchors resolved",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-CONTINUITY-PACKET-STORAGE",
+      "userFeature": "Continuity/semantic packet storage",
+      "entryPoints": [
+        "loadStorageLedger",
+        "writeStorageLedgerDirect",
+        "ingestPacket",
+        "normalizeStorageRecord"
+      ],
+      "storageSchemas": [
+        "hayaku_storage_ledger_v2"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_common_admission_runtime_test.cjs",
+        "hayaku_storage_eventual_confirmation_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "durable ledger with records/slotHeads/tombstones",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-TURN-WORLDLINE",
+      "userFeature": "Turn Worldline",
+      "entryPoints": [
+        "normalizeTurnWorldline",
+        "reconcileTurnWorldline",
+        "bindStorageLedgerToSnapshot",
+        "reconcileObservedChatTopology"
+      ],
+      "storageSchemas": [
+        "hayaku_turn_worldline_v2"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "native_branch_hayaku_runtime_test.cjs",
+        "hayaku_journal_error_coverage_test.cjs"
+      ],
+      "expectedSemanticResult": "variant-aware turn topology with supersession/quarantine",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-MISSING-PACKET-DETECTION",
+      "userFeature": "Missing-packet detection",
+      "entryPoints": [
+        "buildPacketRecoveryDebt",
+        "detectPacketRecovery",
+        "exactHayakuTurnCoverage",
+        "scanCurrentChatForNativeRecoveryDebts"
+      ],
+      "storageSchemas": [
+        "hayaku.exact_turn_coverage.v1",
+        "hayaku.recovery_coverage.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.recovery_vault.<scopeKey>"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_recovery_debt_coverage_authority_test.cjs",
+        "hayaku_exact_missing_source_v348_test.cjs"
+      ],
+      "expectedSemanticResult": "recovery debt never becomes false 'no active debt' on failure",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-MANUAL-RECOVERY",
+      "userFeature": "Manual recovery (targeted regeneration)",
+      "entryPoints": [
+        "runNativeMissingTurnBatch",
+        "runNativeTargetedRegeneration",
+        "executeNativeAnalysisAttempt",
+        "validateNativeRepairGrounding"
+      ],
+      "storageSchemas": [
+        "hayaku.native_regeneration_run.v1",
+        "hayaku.native_repair_run.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.native_regeneration_run.<scope>",
+        "hayaku.v2.native_repair_run.<scope>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_native_targeted_regeneration_runtime_test.cjs",
+        "hayaku_recovery_consent_block_test.cjs"
+      ],
+      "expectedSemanticResult": "targeted repair requires source-edit consent; scope change aborts",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-FAILED-ONLY-RECOVERY",
+      "userFeature": "Failed-only recovery artifacts",
+      "entryPoints": [
+        "saveFailedAnalysisArtifact",
+        "listFailedAnalysisArtifacts",
+        "resolveFailedAnalysisArtifact",
+        "deleteFailedAnalysisArtifact"
+      ],
+      "storageSchemas": [
+        "hayaku.failed_analysis_index.v1",
+        "hayaku.failed_analysis_manifest.v1",
+        "hayaku.failed_analysis_chunk.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.failed_analysis_index.<scope>",
+        "hayaku.v2.failed_analysis_manifest.<scope>::<failureId>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_failed_analysis_vault_runtime_test.cjs",
+        "hayaku_failed_analysis_delete_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "failed artifacts are durable, listable, and delete-safe",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-RECOVERY-VAULT-SHARDS",
+      "userFeature": "Recovery Vault and shard storage",
+      "entryPoints": [
+        "loadRecoveryVault",
+        "writeRecoveryVaultDirect",
+        "recoveryVaultKeyForScope",
+        "reconcileRecoveryVaultWorldlineLifecycleDirect"
+      ],
+      "storageSchemas": [
+        "hayaku.recovery_vault.v1",
+        "hayaku.recovery_vault.record.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.recovery_vault.<scopeKey>",
+        "hayaku.v2.recovery_vault.<scopeKey>::debt:<hash>:<payloadHash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "hayaku_recovery_vault_shards_runtime_test.cjs",
+        "hayaku_server_only_recovery_shards_test.cjs"
+      ],
+      "expectedSemanticResult": "large vault uses shard/index structure in server modes",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "verified_supported",
+        "handoffRecordedServerOnly": "verified_supported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-RECOVERY-LEASE-APPROVAL",
+      "userFeature": "Recovery lease / approval / resume",
+      "entryPoints": [
+        "acquireRecoveryDebtLeaseForNativeRepair",
+        "releaseRecoveryDebtLeaseForNativeRepair",
+        "requestRecoveryJournalBackgroundConfirmation",
+        "resolveRecoveryJournalBackgroundConfirmation"
+      ],
+      "storageSchemas": [
+        "hayaku.recovery_debt_lease.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.recovery_vault.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_recovery_confirmation_queue_test.cjs",
+        "hayaku_recovery_debt_coverage_authority_test.cjs"
+      ],
+      "expectedSemanticResult": "branch-safe lease prevents duplicate repair; approval resumes after reload",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-SOURCE-EDIT-SYNC-CONSENT",
+      "userFeature": "Source-edit synchronization and consent",
+      "entryPoints": [
+        "assertHayakuSourceEditConsent",
+        "hayakuSourceEditSnapshot",
+        "filterHayakuSourceEditTransport",
+        "reviewSourceEdits"
+      ],
+      "storageSchemas": [
+        "memory-suite.source-edit-consent.v1",
+        "memory-suite.source-evidence.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.source-edit.<scopeKey>",
+        "hayaku.v2.source-evidence.<scopeKey>::<fingerprint>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "source_edit_hayaku_runtime_test.cjs",
+        "source_edit_consent_state_machine_test.cjs"
+      ],
+      "expectedSemanticResult": "stale packets rejected; regeneration requires consent",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-PACKET-DELETE-MAINTENANCE",
+      "userFeature": "Packet delete / maintenance / orphan cleanup",
+      "entryPoints": [
+        "tombstoneStorageSlot",
+        "restoreStorageSlot",
+        "selectReplacementVariant",
+        "removeOrphanedStorageRecords",
+        "pruneStorageRecords"
+      ],
+      "storageSchemas": [
+        "hayaku_storage_ledger_v2"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_actionable_maintenance_ui_test.cjs",
+        "hayaku_gui_ux_contract_test.cjs",
+        "hayaku_packet_delete_maintenance_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "delete/cleanup only affects the selected child scope",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-ARCHIVE-HANDOFF-EXCLUSION",
+      "userFeature": "Archive / handoff / parent-member exclusion",
+      "entryPoints": [
+        "ensureHayakuSharedArchive",
+        "storageRecordsEligibleForHandoff",
+        "adoptBridgeSessionHandoff",
+        "inheritStorageLedgerForCopiedChat"
+      ],
+      "storageSchemas": [
+        "hayaku.shared_archive.v1",
+        "hayaku.shared_archive_ref.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.shared_archive.<archiveId>",
+        "hayaku.v2.shared_archive_meta.<archiveId>"
+      ],
+      "storageClass": "archive_reference",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_portable_cross_chat_import_runtime_test.cjs",
+        "native_branch_hayaku_storage_modes_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "parent archive and packet member IDs are not physically duplicated on handoff",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-BACKUP-EXPORT-IMPORT-RESTORE",
+      "userFeature": "Backup / export / import / restore",
+      "entryPoints": [
+        "exportEnvelope",
+        "validateEnvelope",
+        "importEnvelope",
+        "preparePortableImport"
+      ],
+      "storageSchemas": [
+        "memory-suite.portable-memory-backup.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scope>",
+        "hayaku.portable_import.receipt.v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "portable_memory_backup_contract_test.cjs",
+        "portable_backup_archive_roundtrip_test.cjs"
+      ],
+      "expectedSemanticResult": "format v1/v2/v3 accepted; explicit restore mode required",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-LARGE-HISTORY-PACKET-SIZE",
+      "userFeature": "Large-history and packet-size handling",
+      "entryPoints": [
+        "pruneStorageRecords",
+        "pruneRecoveryVaultRecords",
+        "buildNativeColdStartBatches",
+        "messageRevisionProjection"
+      ],
+      "storageSchemas": [
+        "hayaku_storage_ledger_v2",
+        "hayaku.recovery_vault.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scopeKey>",
+        "hayaku.v2.recovery_vault.<scopeKey>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "hayaku_long_chat_revision_cache_test.cjs",
+        "hayaku_cold_start_batch_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "bounded caches and chunking keep writes under key limits in all modes",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "verified_supported",
+        "handoffRecordedServerOnly": "verified_supported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-JSON-XML-ARTIFACT-PROTECTION",
+      "userFeature": "JSON/XML/source artifact protection",
+      "entryPoints": [
+        "isStructuredOutputOnlyPrompt",
+        "structuredOutputBanPattern",
+        "stripHayakuBlocks",
+        "stripHayakuDisplayArtifacts"
+      ],
+      "storageSchemas": [],
+      "storageKeys": [],
+      "storageClass": "transient_cache",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "hayaku_packet_injection_integrity_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "no packet injection or residue when output must be JSON/XML",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "verified_supported",
+        "handoffRecordedServerOnly": "verified_supported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-DIAGNOSTICS-AUDIT-LOGS",
+      "userFeature": "Diagnostics / audit logs",
+      "entryPoints": [
+        "pushOperationLog",
+        "buildHayakuOperationDebugExport",
+        "loadStorageReconciliationJournal",
+        "recoverStorageReconciliationJournal"
+      ],
+      "storageSchemas": [
+        "hayaku.storage_reconciliation_journal.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.storage_reconciliation_journal"
+      ],
+      "storageClass": "diagnostic",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_storage_reconciliation_journal_fault_test.cjs",
+        "hayaku_journal_error_coverage_test.cjs"
+      ],
+      "expectedSemanticResult": "bounded, credential-scrubbed logs; journal recovers after fault",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-GUI-DURABLE-MUTATIONS",
+      "userFeature": "GUI controls that mutate packet/recovery state",
+      "entryPoints": [
+        "bindLedgerViewerUi",
+        "viewerRunNativeRepair",
+        "viewerDeleteFailedRecovery",
+        "viewerSelectReplacementVariant",
+        "cleanupLedgerViewerOrphans"
+      ],
+      "storageSchemas": [
+        "hayaku_storage_ledger_v2",
+        "hayaku.recovery_vault.v1"
+      ],
+      "storageKeys": [
+        "hayaku.v2.ledger.<scope>",
+        "hayaku.v2.recovery_vault.<scope>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "hayaku_gui_workspace_v346_runtime_test.cjs",
+        "hayaku_failed_recovery_ui_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "all handlers capture expectedScope and abort on scope_changed",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-UA-CAPTURE",
+      "userFeature": "U+A turn capture",
+      "entryPoints": [
+        "beforeRequest",
+        "afterRequest",
+        "capturePendingTurnForMessages",
+        "processRisuChatOutputEvent"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2",
+        "vector_rag_memory.scope_manifest.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:records:shard:<nnnn>",
+        "vector_rag_memory:scope:<hash>:manifest:v2"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_capture_profile_regression_test.cjs",
+        "output_listener_capture_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "one durable record per completed U+A turn",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-PENDING-CAPTURE-JOURNAL",
+      "userFeature": "Pending capture journal and recovery",
+      "entryPoints": [
+        "persistPendingCaptureJournalEntry",
+        "loadPendingCaptureJournalEntries",
+        "recoverPendingCapturesFromJournal"
+      ],
+      "storageSchemas": [
+        "pending journal envelope v3"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:pending_capture_journal:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "dual_engine_profile_deferred_runtime_test.cjs",
+        "flashback_fenced_commit_v136_test.cjs"
+      ],
+      "expectedSemanticResult": "pending capture recovered after reload without dropping a turn",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-RECORD-NORMALIZATION",
+      "userFeature": "Memory record normalization/sanitization",
+      "entryPoints": [
+        "buildRecordsFromSources",
+        "sanitizeAssistantForMemory",
+        "cleanRecordForMemory",
+        "splitTextIntoChunkDescriptors"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:records:shard:<nnnn>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_isolation_safety_runtime_test.cjs",
+        "source_rules_products_test.cjs"
+      ],
+      "expectedSemanticResult": "sanitized canonical body with metadata/state facts",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EMBEDDING-GENERATION",
+      "userFeature": "Embedding/vector generation and provider fallback",
+      "entryPoints": [
+        "embedTexts",
+        "createEmbeddingProviderAdapter",
+        "embedTextsIsolated",
+        "hashEmbeddingBatch"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:settings:v2",
+        "vector_rag_memory:embedding_secret:v2"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_embedding_execution_v1_test.cjs",
+        "flashback_hash_embedding_batch_pilot_test.cjs"
+      ],
+      "expectedSemanticResult": "provider embedding with item-scoped hash fallback",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-VECTOR-SIDECARS",
+      "userFeature": "Vector sidecars",
+      "entryPoints": [
+        "buildFlashbackVectorShardPayload",
+        "persistFlashbackVectorShard",
+        "loadFlashbackVectorShardPayload",
+        "hydrateFlashbackVectorRecords"
+      ],
+      "storageSchemas": [
+        "flashback_memory.local_vector_shard.v1",
+        "flashback_memory.local_vector_ref.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:local-vector-shard:v1:<hash>:<commitId>:<nnnn>"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_portable_vector_sidecar_test.cjs",
+        "flashback_clone_vector_integrity_test.cjs"
+      ],
+      "expectedSemanticResult": "dense vectors stored as sidecars with per-record vectorRef",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-HYBRID-RECALL",
+      "userFeature": "Lexical/BM25F/dense/hybrid recall",
+      "entryPoints": [
+        "prepareFlashbackRecall",
+        "recallRecords",
+        "generateRecallCandidateArms",
+        "reciprocalRankFusion"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:records:shard:<nnnn>"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_context_recall_runtime_test.cjs",
+        "recall_selection_conformance_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "hybrid ranking equivalent for the same record/vector set",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-RECALL-GATES",
+      "userFeature": "Temporal/truth/state recall gates",
+      "entryPoints": [
+        "classifyTemporalIntent",
+        "classifyTruthIntent",
+        "applyRecallHardGates",
+        "applyCurrentStateValidityAging"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2"
+      ],
+      "storageKeys": [],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_temporal_candidate_parity_runtime_test.cjs",
+        "flashback_structured_state_gate_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "inactive/quarantined records excluded from recall",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EPISODE-INDEX",
+      "userFeature": "Episode index",
+      "entryPoints": [
+        "buildEpisodeIndexRecords",
+        "maybeRebuildEpisodeIndex",
+        "detectEpisodeBoundaries",
+        "rebuildEpisodeIndex"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.record.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:records:shard:<nnnn>"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "native_branch_flashback_runtime_test.cjs",
+        "flashback_long_chat_revision_cache_test.cjs",
+        "flashback_episode_index_rebuild_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "episode centroid records rebuilt only when source digest changes",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-FILM-ARCHIVE-BROWSER",
+      "userFeature": "Film archive browser/list inspection",
+      "entryPoints": [
+        "buildStorageTab",
+        "renderStorageRows",
+        "listScopeStorageStats",
+        "loadFlashbackArchiveManifestSummary"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.scope_manifest.v2",
+        "flashback_memory.archive_ref.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope_registry:v2"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_storage_subtabs_runtime_test.cjs",
+        "flashback_scope_panels_browser_test.cjs"
+      ],
+      "expectedSemanticResult": "read-only corpus listing across all storage layers",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SCOPE-CLASSIFICATION",
+      "userFeature": "Empty/list residue/orphan classification",
+      "entryPoints": [
+        "storageManagementKind",
+        "classifyScopeForManagement",
+        "scopeHasEmptyPayloadOnly",
+        "repairScopeRegistryMetadata"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory:scope_registry:v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope_registry:v2"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_scope_management_runtime_test.cjs",
+        "flashback_scope_registry_safety_test.cjs"
+      ],
+      "expectedSemanticResult": "orphan classification does not depend on incomplete local-only chat metadata",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SCOPE-DELETE-CLEANUP",
+      "userFeature": "Selection/deletion/safe cleanup",
+      "entryPoints": [
+        "cleanupSelectedScopeStorages",
+        "deleteSelectedScopeStorages",
+        "deleteScopeStorage",
+        "deleteManualEditorRecords"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.scope_manifest.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:manifest:v2",
+        "vector_rag_memory:scope_registry:v2"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_scope_management_runtime_test.cjs",
+        "flashback_scope_management_server_test.cjs"
+      ],
+      "expectedSemanticResult": "delete only affects the selected child scope; parent/foreign scopes untouched",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-TURN-WORLDLINE",
+      "userFeature": "Turn Worldline and source-edit retirement",
+      "entryPoints": [
+        "synchronizeFlashbackTurnWorldline",
+        "loadTurnWorldline",
+        "saveTurnWorldline",
+        "retireExternalRecordsForScope"
+      ],
+      "storageSchemas": [
+        "flashback_turn_worldline_v1",
+        "memory-suite.source-edit-consent.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:turn_worldline:v1",
+        "vector_rag_memory:scope:<hash>:source-edit-consent:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_worldline_workspace_v129_runtime_test.cjs",
+        "source_edit_flashback_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "worldline preserved through backup/restore and handoff",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-NATIVE-BRANCH-CLONE",
+      "userFeature": "Native branch clone/adoption",
+      "entryPoints": [
+        "cloneScopeStorage",
+        "verifyFlashbackNativeBranchCopy",
+        "ensureScopeStorageReady",
+        "prepareMemorySuiteNativeBranchTargetStorage"
+      ],
+      "storageSchemas": [
+        "flashback.native_branch_copy.v1",
+        "vector_rag_memory.scope_manifest.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:manifest:v2"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "native_branch_flashback_runtime_test.cjs",
+        "native_branch_flashback_storage_modes_runtime_test.cjs",
+        "native_branch_flashback_legacy_child_migration_test.cjs",
+        "native_branch_flashback_legacy_child_migration_concurrency_test.cjs"
+      ],
+      "expectedSemanticResult": "verified prefix clone with no source_empty and unchanged parent",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "verified_supported",
+        "handoffRecordedServerOnly": "verified_supported",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SESSION-HANDOFF",
+      "userFeature": "Session handoff / archive chain",
+      "entryPoints": [
+        "adoptSessionHandoff",
+        "ensureFlashbackArchiveForHandoff",
+        "createImmutableFlashbackHandoffArchive",
+        "loadFlashbackArchiveChain"
+      ],
+      "storageSchemas": [
+        "flashback_memory.handoff_ledger.v2",
+        "flashback_memory.archive_ref.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:handoff_ledger:v2",
+        "flashback_archive_v1:<archiveId>"
+      ],
+      "storageClass": "archive_reference",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "retrace_server_handoff_test.cjs",
+        "flashback_portable_cross_chat_restore_test.cjs"
+      ],
+      "expectedSemanticResult": "immutable archive referenced, not duplicated",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-PORTABLE-BACKUP",
+      "userFeature": "Backup / export / import / restore",
+      "entryPoints": [
+        "doExport",
+        "doRestoreFile",
+        "restorePortableByMode",
+        "collectPortableVectorSidecars"
+      ],
+      "storageSchemas": [
+        "memory-suite.portable-memory-backup.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:manifest:v2"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_portable_cross_chat_restore_test.cjs",
+        "flashback_portable_vector_sidecar_test.cjs"
+      ],
+      "expectedSemanticResult": "restore preserves worldline and vector sidecars",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-COLDSTART-MAINTENANCE",
+      "userFeature": "Cold-start / rebuild / maintenance",
+      "entryPoints": [
+        "ingestLiveChatColdStart",
+        "rebuildCurrentChatMemory",
+        "inspectMemoryMaintenance",
+        "runMemoryMaintenance"
+      ],
+      "storageSchemas": [
+        "flashback_memory.maintenance_journal.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:maintenance_journal:v1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_single_turn_maintenance_runtime_test.cjs",
+        "flashback_repair_then_adopt_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "explicit cold start/rebuild with recoverable maintenance journal",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EMBEDDING-MIGRATION",
+      "userFeature": "Embedding model change/quarantine/rebuild",
+      "entryPoints": [
+        "previewVerifiedEmbeddingMigration",
+        "applyVerifiedEmbeddingMigration",
+        "progressivelyReembedRecords",
+        "classifyIsolatedEmbeddingFailure"
+      ],
+      "storageSchemas": [
+        "flashback.verified_embedding_migration.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:scope:<hash>:records:shard:<nnnn>"
+      ],
+      "storageClass": "owner_derived",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "remaining_embedding_migration_runtime_test.cjs",
+        "embedding_v111_gap_regression_test.cjs"
+      ],
+      "expectedSemanticResult": "same-space verified migration never deletes canonical memory",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SERVER-COMPUTE",
+      "userFeature": "Server-side vector/search integrations",
+      "entryPoints": [
+        "MemorySuiteStorageBridge",
+        "createMemorySuiteSearchClient",
+        "generateRecallCandidateArms"
+      ],
+      "storageSchemas": [
+        "memory-suite.memory-search.v1",
+        "memory-suite.vector-search.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:*"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "search_compute_owner_paths_runtime_test.cjs",
+        "plugin_only_network_isolation_test.cjs"
+      ],
+      "expectedSemanticResult": "server routes canonical keys and memory-search; plugin_only makes zero backend calls",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-DIAGNOSTICS-LOG",
+      "userFeature": "Diagnostics / activity log",
+      "entryPoints": [
+        "pushActivityLog",
+        "operationLogResultSummary",
+        "exportDebugLogPayload",
+        "sanitizeEmbeddingSettingsForDiagnostics"
+      ],
+      "storageSchemas": [
+        "flashback_memory.operation_log.v1"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:operation_log:v1"
+      ],
+      "storageClass": "diagnostic",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_sync_failure_reporting_test.cjs"
+      ],
+      "expectedSemanticResult": "bounded activity log with redacted debug export",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-GUI-MUTATIONS",
+      "userFeature": "GUI operations that mutate records/archives/vectors/manifests",
+      "entryPoints": [
+        "buildUiHtml",
+        "openManualEditorForSourceType",
+        "bindManualEditorEvents",
+        "bindStorageDeleteEvents"
+      ],
+      "storageSchemas": [
+        "vector_rag_memory.scope_manifest.v2"
+      ],
+      "storageKeys": [
+        "vector_rag_memory:*"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "flashback_scope_panels_browser_test.cjs",
+        "flashback_portable_memory_ui_behavior_test.cjs"
+      ],
+      "expectedSemanticResult": "GUI writes route through shared storage authority per mode",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": true,
+        "handoffRecordedPluginOnly": "verified_supported",
+        "handoffRecordedMirror": "unverified",
+        "handoffRecordedServerOnly": "unverified",
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-CREATE",
+      "userFeature": "Persona creation",
+      "entryPoints": [
+        "runLLMRewrite",
+        "upsertGeneratedPersona",
+        "executePrimaryGenerationFlow",
+        "adoptPersonaFromPane"
+      ],
+      "storageSchemas": [],
+      "storageKeys": [],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "expectedSemanticResult": "generated persona adopted into the RisuAI Persona DB with readback",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-BIND",
+      "userFeature": "Persona selection/binding",
+      "entryPoints": [
+        "PersonaBindingManager.write",
+        "PersonaBindingManager.bindLive",
+        "PersonaSelectionManager.setDynamic"
+      ],
+      "storageSchemas": [
+        "lia.binding_change.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs",
+        "lia_pocket_gui_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "chat.bindedPersona set with durable readback; native default untouched",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-LIVE-REFRESH",
+      "userFeature": "Live Persona refresh",
+      "entryPoints": [
+        "checkLivePersonaSync",
+        "analyzeLivePersonaBatch",
+        "applyLivePersonaPrompt"
+      ],
+      "storageSchemas": [
+        "lia.live_sync_batch_revision.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_output_listener_revision_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "Live Persona prompt updated only for the verified prefix",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-LIVE-CHECKPOINT",
+      "userFeature": "Checkpoint/state persistence",
+      "entryPoints": [
+        "validateLivePersonaLedger",
+        "livePersonaBatchRevisionSnapshot",
+        "normalizeLivePersonaBinding"
+      ],
+      "storageSchemas": [
+        "lia.live_persona_index.v2",
+        "lia.native_branch_state.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaIndexV2"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "expectedSemanticResult": "per-batch ledger survives reload with prefix verification",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SAME-CHAT-RECOVERY",
+      "userFeature": "Same-chat Persona recovery",
+      "entryPoints": [
+        "readLivePersonaBindingByScopeKey",
+        "resumeLivePersonaBindingChange",
+        "readLivePersonaOwnerBinding",
+        "removeLiaLivePersonaIfUnreferenced"
+      ],
+      "storageSchemas": [
+        "lia.live_persona_index.v2"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaIndexV2",
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "expectedSemanticResult": "reload restores correct binding and latest validated Persona",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-BRANCH-INHERIT",
+      "userFeature": "Native Branch inheritance",
+      "entryPoints": [
+        "ensureInheritedLivePersonaForCurrentChat",
+        "projectNativeBranchPersonaState",
+        "forkLivePersonaBindingToContext"
+      ],
+      "storageSchemas": [
+        "lia.native_branch_state.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "native_branch_lia_storage_modes_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "no no_inherited_live_owner for a valid server-only native branch",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-BRANCH-STORAGE-MIGRATE",
+      "userFeature": "Existing-child storage-policy migration",
+      "entryPoints": [
+        "prepareMemorySuiteNativeBranchTargetStorage",
+        "ensureInheritedLivePersonaForCurrentChat"
+      ],
+      "storageSchemas": [
+        "memory-suite.native-branch-storage-migration.v1",
+        "librarian.native_branch_storage_binding.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "verified_supported",
+      "serverOnlyStatus": "verified_supported",
+      "tests": [
+        "native_branch_lia_storage_modes_runtime_test.cjs",
+        "native_branch_storage_binding_server_test.cjs"
+      ],
+      "expectedSemanticResult": "managed child still performs storage-policy migration without inventing a Host Branch",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SESSION-HANDOFF",
+      "userFeature": "Session handoff / rebind",
+      "entryPoints": [
+        "adoptLivePersonaHandoff",
+        "registerLiaHandoffIpc",
+        "liaSourceHandoffIntegritySnapshot"
+      ],
+      "storageSchemas": [
+        "lia.live_persona_handoff.receipt.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "retrace_server_handoff_test.cjs",
+        "retrace_peer_runtime_compatibility_test.cjs"
+      ],
+      "expectedSemanticResult": "forked Live Persona with source-immutability proof and durable readback",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SOURCE-REVALIDATE",
+      "userFeature": "Source-change invalidation/revalidation",
+      "entryPoints": [
+        "verifyLivePersonaBatchStillCurrent",
+        "validateLivePersonaLedger",
+        "revalidateNativePersonaFork"
+      ],
+      "storageSchemas": [
+        "lia.live_sync_batch_revision.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "lia_output_listener_revision_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "changed prefix/scope/revision discards or requeues the batch",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-RESTORE",
+      "userFeature": "Persona restore / backup / import / export",
+      "entryPoints": [
+        "restoreOriginalLivePersona",
+        "PersonaBindingManager.restorePrevious",
+        "exportPersonaVisualAssetBundleZip",
+        "memorySuiteLiaValidateRestore"
+      ],
+      "storageSchemas": [
+        "lia.persona_visual_asset_bundle.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaSyncV1",
+        "liaPersonaLinkerWorldBlueprintVaultV1"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_shared_server_restore_contract_test.cjs",
+        "lia_shared_server_restore_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "restore validates owner/snapshot before replacing durable state",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-UI-PERSONA-OPS",
+      "userFeature": "UI edit / select operations",
+      "entryPoints": [
+        "renderPersonaSidePanel",
+        "saveEditedResultToCurrentPersona",
+        "saveEditedResultAsNewPersona"
+      ],
+      "storageSchemas": [],
+      "storageKeys": [
+        "liaPersonaLinkerLivePersonaScopeV2::<hash>"
+      ],
+      "storageClass": "owner_authoritative",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_pocket_gui_runtime_test.cjs"
+      ],
+      "expectedSemanticResult": "explicit per-chat binding; same-chat Persona change does not invent a Host Branch",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-DIAG-INSPECT",
+      "userFeature": "Diagnostics and binding inspection",
+      "entryPoints": [
+        "buildDebugExportSnapshot",
+        "getPersonaProofSnapshot",
+        "PersonaBindingManager.inspect",
+        "getHostLineageStatus"
+      ],
+      "storageSchemas": [
+        "lia.debug_export.v1"
+      ],
+      "storageKeys": [
+        "liaPersonaRequestProofV1"
+      ],
+      "storageClass": "diagnostic",
+      "localOnlyConfig": false,
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "pluginOnlyStatus": "verified_supported",
+      "mirrorStatus": "unverified",
+      "serverOnlyStatus": "unverified",
+      "tests": [
+        "lia_pocket_gui_runtime_test.cjs",
+        "storage_scope_sync_diagnostics_contract_test.cjs"
+      ],
+      "expectedSemanticResult": "read-only binding/health inspection with redacted export",
+      "preservationDecision": "PRESERVE_USER_OBSERVABLE_BEHAVIOR",
+      "slimAcceptanceStatus": "NOT_IMPLEMENTED_NOT_TESTED",
+      "rebase": {
+        "handoffEntryPresent": false,
+        "handoffRecordedPluginOnly": null,
+        "handoffRecordedMirror": null,
+        "handoffRecordedServerOnly": null,
+        "statusChangedByRebase": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+"use strict";
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const ctx=vm.createContext({Map,Set,JSON,Date,Promise});
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceReview.source.js'),'utf8'),ctx);
+const unit={key:'1',start:1,end:1,identity:'u1+a1@main',sourceDigest:'same',originalDigest:'same'};
+const rows=[{turn:1,userMessageId:'u1',assistantMessageId:'a1',userText:'Where is Alice?',assistantText:'Alice is in the office.',userRaw:'Where is Alice?',assistantRaw:'Alice is in the office. <lb-xnai id="1">{{inlay::image}}</lb-xnai>',rawAvailable:true}];
+let passed=0;const outcomes=[];
+async function test(name,fn){await fn();passed++;outcomes.push(name);}
+const make=(extra={})=>{const values=new Map(),writes=[];const config={owner:'libra',keyPrefix:s=>'libra:'+s+':source:',read:async k=>values.get(k)??null,write:async(k,v)=>{writes.push(k);values.set(k,v);return true;},...extra};return {values,writes,api:ctx.createMemorySuiteSourceEvidence(config),config};};
+(async()=>{
+await test('captures full source and exact owner binding',async()=>{const f=make(),r=await f.api.put('A',unit,rows);const got=await f.api.get('A',unit);assert.equal(got.available,true);assert.equal(got.rows[0].assistantRaw,rows[0].assistantRaw);assert.equal(got.ref.payloadDigest,r.payloadDigest);assert.equal(got.ref.owner,'libra');});
+await test('missing previous never becomes current text',async()=>{const f=make();assert.equal((await f.api.get('A',unit)).available,false);assert.equal(f.writes.length,0);});
+await test('foreign scope cannot reuse source',async()=>{const f=make();await f.api.put('A',unit,rows);assert.equal((await f.api.get('B',unit)).available,false);});
+await test('foreign owner cannot reuse source',async()=>{const f=make();await f.api.put('A',unit,rows);const other=ctx.createMemorySuiteSourceEvidence({...f.config,owner:'hayaku'});assert.equal((await other.get('A',unit)).available,false);});
+await test('old source digest is used not latest digest',async()=>{const f=make();await f.api.put('A',unit,rows);const g=await f.api.get('A',{...unit,sourceDigest:'new',originalDigest:'same'});assert.equal(g.available,true);});
+await test('different response identity cannot reuse source',async()=>{const f=make();await f.api.put('A',unit,rows);assert.equal((await f.api.get('A',{...unit,identity:'u1+a2'})).available,false);});
+await test('reject incomplete 5 turn batch',async()=>{const f=make();await assert.rejects(()=>f.api.put('A',{...unit,end:5},rows),/RANGE_INCOMPLETE/);assert.equal(f.writes.length,0);});
+await test('reject out of order rows',async()=>{const f=make();await assert.rejects(()=>f.api.put('A',unit,[{...rows[0],turn:2}]),/PAIR_INVALID/);});
+await test('reject missing message identity',async()=>{const f=make();await assert.rejects(()=>f.api.put('A',unit,[{...rows[0],userMessageId:''}]),/PAIR_INVALID/);});
+await test('deduplicates same input concurrent writes',async()=>{const f=make();await Promise.all([f.api.put('A',unit,rows),f.api.put('A',unit,rows)]);assert.equal(f.writes.length,1);});
+await test('cosmetic carrier does not rewrite approved raw copy',async()=>{const f=make();await f.api.put('A',unit,rows);await f.api.put('A',unit,[{...rows[0],assistantRaw:'new illustration only'}]);assert.equal(f.writes.length,1);assert.equal((await f.api.get('A',unit)).rows[0].assistantRaw,rows[0].assistantRaw);});
+await test('same comparison digest with different text rejected',async()=>{const f=make();await f.api.put('A',unit,rows);await assert.rejects(()=>f.api.put('A',unit,[{...rows[0],assistantText:'Alice moved.'}]),/KEY_COLLISION/);assert.equal(f.writes.length,1);});
+await test('capacity fail does not partially write',async()=>{const f=make({maxChars:64});await assert.rejects(()=>f.api.put('A',unit,rows),/CAPACITY_EXCEEDED/);assert.equal(f.writes.length,0);});
+await test('storage rejection is not success',async()=>{const f=make({write:async()=>false});await assert.rejects(()=>f.api.put('A',unit,rows),/WRITE_REJECTED/);});
+await test('silent dropped write detected',async()=>{const f=make({write:async()=>true});await assert.rejects(()=>f.api.put('A',unit,rows),/READBACK_FAILED/);});
+await test('read exception is not missing',async()=>{const f=make({read:async()=>{throw Error('offline');}});await assert.rejects(()=>f.api.get('A',unit),/offline/);});
+await test('stored body tampering detected',async()=>{const f=make();const r=await f.api.put('A',unit,rows);const v=JSON.parse(f.values.get(r.key));v.rows[0].assistantText='changed';f.values.set(r.key,JSON.stringify(v));await assert.rejects(()=>f.api.get('A',unit),/DIGEST_MISMATCH/);});
+await test('stored binding tampering detected',async()=>{const f=make();const r=await f.api.put('A',unit,rows);const v=JSON.parse(f.values.get(r.key));v.binding.scopeKey='foreign';f.values.set(r.key,JSON.stringify(v));await assert.rejects(()=>f.api.get('A',unit),/BINDING_MISMATCH/);});
+await test('returned evidence is isolated from store',async()=>{const f=make();await f.api.put('A',unit,rows);const r=await f.api.get('A',unit);r.rows[0].assistantText='changed';assert.equal((await f.api.get('A',unit)).rows[0].assistantText,rows[0].assistantText);});
+for(const [name,a,b] of [['same','abc','abc'],['insert','','hello'],['delete','hello',''],['distant','AAA old BBB old CCC','AAA new BBB new CCC'],['emoji','A😀B','A😁B'],['different codepoints','A😀','A𝄞'],['hangul','서재에 있어요','복도에 있어요'],['tail','x😀','y😀']]) await test('lossless unicode diff '+name,async()=>{const diff=ctx.memorySuiteSourceDiff(a,b);assert.equal(diff.before.join(''),a);assert.equal(diff.after.join(''),b);for(const s of [...diff.before,...diff.after]){assert.equal(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(s),false,name);}});
+await test('large message comparison preserves entire text',async()=>{const a='x'.repeat(100000)+'old'+'y'.repeat(100000),b=a.replace('old','new');const r=ctx.memorySuiteSourceDiff(a,b);assert.equal(r.before[1],'old');assert.equal(r.after[1],'new');assert.equal(r.before.join(''),a);});
+console.log(JSON.stringify({test:'source_review_evidence_v1',passed,outcomes,environment:'actual shared SDK, isolated storage'}));
+})().catch(e=>{console.error(e);process.exitCode=1});

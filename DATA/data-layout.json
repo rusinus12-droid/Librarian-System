@@ -1,0 +1,14 @@
+{
+  "schema": "memory-suite.data-layout.v1",
+  "layoutVersion": 1,
+  "createdAt": "2026-10-09T14:36:48.783Z",
+  "lastPreparedAt": "2026-10-09T14:36:48.783Z",
+  "lastProgramVersion": "0.3.71",
+  "portableRoot": true,
+  "programFolder": "PROGRAM",
+  "dataFolder": "DATA",
+  "backupRule": "stop_server_then_copy_entire_DATA_folder",
+  "recoveryQuarantine": "backups/recovery-quarantine",
+  "restoreJournal": "migrations/restore-transaction.json",
+  "scopeCatalogPrevious": "config/scope-catalog.previous.json"
+}

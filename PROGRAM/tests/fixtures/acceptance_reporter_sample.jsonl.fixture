@@ -1,0 +1,1 @@
+{"schema":"acceptance.action_result.v1","case_id":"A01","mode":"plugin_only","action":"syntax 및 기준선 runner를 실행하고 테스트의 실제 기대값과 종료 코드를 읽는다.","assertion_result":true}

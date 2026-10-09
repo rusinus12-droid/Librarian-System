@@ -1,0 +1,85 @@
+'use strict';
+const assert=require('node:assert/strict');
+const core=require('../tools/recall_keyword_features.cjs')();
+const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
+const request='민수의 약속은 언제고 그의 약속 장소는?';
+const quoted=Array.from({length:40},(_,i)=>`> "참고인용${i}"`).join('\n')+'\n질문: '+request;
+const long=Array.from({length:350},(_,i)=>`참고기록${i} 내용${i} 배경${i}`).join('\n')+'\n질문: '+request;
+for(const input of [request,quoted,long]){
+ const plan=core.compile(input);
+ assert.deepEqual(plan.targets.map(t=>t.normalized),['민수']);
+ assert.equal(plan.context.needed,true);
+ assert.ok(Object.isFrozen(plan)&&Object.isFrozen(plan.targets));
+ const bounded=core.prepareInput(input);
+ assert.ok(bounded.length<=6000);assert.ok(bounded.includes('민수'));
+ assert.equal(core.compile(bounded).rawQuery,bounded);
+ assert.equal(core.compile(core.requestSpec(input)).rawQuery,input);
+}
+assert.deepEqual(core.compile('붉은 수정구슬은 어디에 있어?').targets.map(t=>t.normalized),[],'Morphology remains a lookup hint');
+const entries=[{entityId:'m',normalized:'민수',aliases:['별지기']}];
+const bound=core.compile('별지기의 약속 장소는?',{entries,binding:{scope:'a',revision:1}});
+assert.equal(bound.targets[0].entityId,'m');
+entries[0].aliases.push('오염');assert.ok(!bound.resolvedEntities[0].aliases.includes('오염'));
+assert.notEqual(bound.id,core.compile('별지기의 약속 장소는?',{entries,binding:{scope:'b',revision:1}}).id);
+const nfd='민수'.normalize('NFD'),raw=`원문 ${nfd}는 성문에 있다.`;
+const hits=core.matches(raw,core.compile(request).targets);
+assert.ok(hits.length);assert.equal(raw.slice(hits[0].start,hits[0].end),nfd);
+assert.notEqual(core.normalize('a\u200db'),core.normalize('ab'));
+assert.equal(core.matches('a\u200db',[{id:'joined',normalized:'a\u200db'}]).length,1);
+const rec=(id,text,index=0,vector=[],metadata={})=>({id,text,scopeKey:'test',sourceType:'response',sourceHash:id,turnIndex:index+1,pairIndex:index+1,responseTurnIndex:index+1,provider:'hash',model:'hash-64',vector,metadata});
+(async()=>{const f=await createFixture(),h=await createHayakuRuntime({autoRepair:false,arguments:{memory_suite_server_mode:'plugin_only'}});try{
+ const ft=f.api._test,sel=f.api._selectionTest,ht=h.hayaku._test;
+ const cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-64',hashDimensions:64,embeddingEnabled:true,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,currentSceneTailEnabled:false,heuristicRecall:true,mmrEnabled:false,recallShardLimit:12,recallFullScanThreshold:8};
+ const q=Array(64).fill(0);q[0]=1;const other=Array(64).fill(0);other[1]=1;
+ const target=rec('target','민수는 성문에서 만나기로 약속했다.',0,other,{statusDataParsed:{characters:[{id:'minsu',name:'민수',aliases:['별지기']}]}});
+ const rows=[target,...Array.from({length:20},(_,i)=>rec('d'+i,'아리아의 약속 장소는 항구이다. 약속 장소를 다시 확인했다.',i+1,q)),...Array.from({length:10},(_,i)=>rec('f'+i,'마을 숲에서 나무와 꽃이 자란다.',i+21,other))];
+ const before=JSON.stringify(rows),summaries=rows.map((r,i)=>ft.buildRecallShardSummary([r],i,cfg));
+ const currentVersion=Number(require('node:fs').readFileSync(require('node:path').resolve(__dirname,'../plugins/Flashback_Memory.js'),'utf8').match(/FLASHBACK_SHARD_INDEX_VERSION = (\d+)/)[1]);
+ const manifest={scopeKey:'test',commitId:'c1',shardCount:summaries.length,shardIndexVersion:currentVersion,shardSummaries:summaries,responseTurnMax:31};
+ const catalog=sel.queryCatalogForManifest(manifest);assert.equal(catalog.complete,true);assert.ok(catalog.entries.some(e=>e.entityId==='minsu'));
+ for(const query of [request,'별지기의 약속 장소는?',quoted,long]){
+  const plan=sel.RecallKeywordFeatures.compile(query,{entries:catalog.entries,binding:{scope:'test',commit:'c1',catalogComplete:true}});
+  const route=ft.selectRecallShardIndexes(manifest,query,q,'hash','fact',cfg,'hash-64',plan);
+  assert.equal(route.fullScan,false);assert.ok(route.indexes.includes(0),JSON.stringify(route));
+  assert.ok(route.indexes.length<=route.routing.adaptiveLimit);assert.equal(route.routing.queryPlanId,plan.id);
+  assert.equal(route.routing.scopeCoverage,'partial');
+  const anchors=sel.extractRecallAnchors(query,[],plan);
+  assert.equal(ft.buildDiscriminativeRecallAnchors(anchors,[target]).queryPlan,plan);
+  const result=sel.selectFlashbackEvidencePlan({scopeKey:'test',queryText:query,queryPlan:plan,records:[{record:target,score:.4,components:{exactArm:1}},{record:rows[1],score:.9,components:{exactArm:1,currentSceneTail:1}}]},cfg,2000);
+  assert.equal(result.queryPlanId,plan.id);assert.equal(result.items[0].record.id,'target');
+  assert.ok(result.targetCoverage.every(t=>t.delivered));assert.ok(result.text.includes('민수는 성문'));
+  const fragment=result.choices.find(c=>!c.unit.state).fragment;
+  assert.equal(fragment.targetMatchCoordinates,'fragment_utf16');assert.equal(fragment.sourceMatchCoordinates,'record_text_utf16');
+  assert.ok(fragment.sourceTargetMatches.length);for(const hit of fragment.sourceTargetMatches)assert.equal(target.text.slice(hit.start,hit.end),'민수');
+ }
+ const multiQuery='민수의 약속과 아리아의 약속 장소는?';
+ const multiAnchors=sel.extractRecallAnchors(multiQuery);
+ const minsuRows=Array.from({length:15},(_,i)=>({record:rec('m'+i,`민수는 성문에서 약속했다. 세부기록 ${i}`,i),rrfScore:1-i*.01,armHits:['exact']}));
+ const aria={record:rows[1],rrfScore:.001,armHits:['exact']};
+ const fused=sel.selectFusedRecallCandidates([...minsuRows,aria],multiAnchors,cfg,2,1);
+ assert.ok(fused.includes(aria));assert.ok(fused.length<=3);
+ const multi=sel.selectFlashbackEvidencePlan({scopeKey:'test',queryText:multiQuery,records:[...minsuRows.slice(0,2),aria].map(i=>({...i,score:i.rrfScore,components:{exactArm:1}}))},{...cfg,topK:2},3000);
+ assert.ok(multi.text.includes('민수'));assert.ok(multi.text.includes('아리아'));
+ assert.equal(JSON.stringify(rows),before,'Derived catalogue/routing must not mutate memories or vectors');
+ const legacy=ft.selectRecallShardIndexes({...manifest,shardIndexVersion:currentVersion-1},request,q,'hash','fact',cfg,'hash-64');assert.equal(legacy.fullScan,true);
+ const incomplete=sel.queryCatalogForManifest({...manifest,shardSummaries:[{...summaries[0],queryCatalog:null},...summaries.slice(1)]});assert.equal(incomplete.complete,false);
+ const restricted=rec('private','비밀의 위치',0,other,{statusDataParsed:{characters:[{id:'secret',name:'숨긴인물',privacy:'private'}]}});
+ const privateSummary=ft.buildRecallShardSummary([{...target,id:'restricted',privacyRestricted:true},restricted],0,cfg);
+ assert.ok(!privateSummary.queryCatalog.publicBindings.some(r=>r.entityId==='minsu'||r.entityId==='secret'));
+ const store=ht.emptyStore();store.entity.characters=[{id:'minsu',publicRef:'minsu',name:'민수'},{id:'other',publicRef:'other',name:'참고인용0'}];
+ const hs=ht.buildRetrievalQuerySignature(store,quoted,h.hayaku.settings());assert.equal(hs.rawQuery,quoted,'HAYAKU preserves the full input instead of guessing its intent');assert.deepEqual(Array.from(hs.conceptTokens),[]);assert.ok(hs.tokens.length>0);
+ f.currentChat.message=[{role:'user',chatId:'u1',data:'민수의 약속을 기록해.'},{role:'assistant',chatId:'a1',data:target.text}];f.currentChat.messages=f.currentChat.message;
+ await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
+ const scope=await f.api.resolveCurrentScope(),stored=JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records);
+ for(const input of [request,quoted,long]){
+  const messages=[{role:'system',content:'질문에 답해.'},{role:'user',content:input}];
+  const extracted=ft.extractLatestUserInput(messages),built=ft.buildRecallQuery(extracted,messages,cfg);
+  assert.ok(extracted.includes('민수'));assert.ok(built.includes('민수'));
+  const hook=await sel.beforeRequest(messages,'model');
+  assert.ok((hook.find(m=>m.flashbackDynamic)?.content||'').includes('민수는 성문'),`Hook lost target for ${input.length} chars`);
+ }
+ assert.equal(JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records),stored);
+ assert.equal(h.llmCalls.length,0);
+ console.log('recall_query_plan_runtime_test: PASS');
+}finally{await f.dispose();await h.dispose();}})().catch(e=>{console.error(e.stack||e);process.exitCode=1;});

@@ -1,0 +1,12 @@
+'use strict';
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const { expectedAssetName, parseAssetVersion }=require('../PROGRAM/tools/release_asset_contract.cjs');
+const REPOSITORY=Object.freeze({owner:'rusinus12-droid',repo:'Librarian-System',web:'https://github.com/rusinus12-droid/Librarian-System',latestApi:'https://api.github.com/repos/rusinus12-droid/Librarian-System/releases/latest'});
+const semverParts=v=>String(v||'').replace(/^v/i,'').split('.').map(x=>Number(String(x).match(/^\d+/)?.[0]||0));
+const compareVersions=(a,b)=>{const A=semverParts(a),B=semverParts(b);for(let i=0;i<Math.max(A.length,B.length,3);i++){const d=(A[i]||0)-(B[i]||0);if(d)return d>0?1:-1;}return 0};
+async function fetchJson(url,{fetchImpl=globalThis.fetch,timeoutMs=5000}={}){if(typeof fetchImpl!=='function')throw new Error('fetch_unavailable');const c=new AbortController();const t=setTimeout(()=>c.abort(),timeoutMs);try{const r=await fetchImpl(url,{headers:{Accept:'application/vnd.github+json','User-Agent':'Librarian-System-Updater'},signal:c.signal});if(!r.ok)throw new Error('http_'+r.status);return await r.json();}finally{clearTimeout(t)}}
+function normalizeAssetDigest(value){const match=String(value||'').trim().match(/^sha256:([a-f0-9]{64})$/i);return match?match[1].toLowerCase():null}
+async function checkLatest({currentVersion,fetchImpl=globalThis.fetch}={}){const release=await fetchJson(REPOSITORY.latestApi,{fetchImpl});if(release.draft||release.prerelease)return {ok:true,available:false,currentVersion,reason:'no_stable_release'};const latest=String(release.tag_name||'').replace(/^v/i,'');if(!/^\d+\.\d+\.\d+$/.test(latest))throw new Error('release_tag_invalid');const expected=expectedAssetName(latest);const assets=Array.isArray(release.assets)?release.assets.map(a=>({name:String(a.name||''),url:String(a.browser_download_url||''),digest:String(a.digest||''),sha256:normalizeAssetDigest(a.digest)})):[];const officialAsset=assets.find(a=>a.name===expected)||null;return {ok:true,available:compareVersions(latest,currentVersion)>0,currentVersion,latestVersion:latest,htmlUrl:String(release.html_url||REPOSITORY.web+'/releases'),assets,expectedAssetName:expected,officialAsset};}
+const sha256File=p=>new Promise((resolve,reject)=>{const h=crypto.createHash('sha256'),s=fs.createReadStream(p);s.on('data',d=>h.update(d));s.on('end',()=>resolve(h.digest('hex')));s.on('error',reject)});
+module.exports={REPOSITORY,compareVersions,fetchJson,checkLatest,sha256File,normalizeAssetDigest,expectedAssetName,parseAssetVersion};

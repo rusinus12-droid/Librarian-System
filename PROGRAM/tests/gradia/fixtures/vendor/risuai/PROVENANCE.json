@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/kwaroran/Risuai.git",
+  "commit": "f9728b14c733d073168d8d0c6a8f34f8febf0304",
+  "purpose": "test-only pinned static references, not runtime imports",
+  "files": {
+    "src/ts/tokenizer.ts": "ac4abc333a1497ed5260f3dfab52b3dc65c8a964b5dc38272e8d17125259b0cc",
+    "src/etc/o200k_base.json": "a2c363f80642c0f07d916716b3940ff030121f3b5cef72b2c5bd1d4f64c14fb8",
+    "LICENSE": "919fa976e07af5d75768b3b45724854c42db3636ae5ccbd0d801a49690623835"
+  }
+}

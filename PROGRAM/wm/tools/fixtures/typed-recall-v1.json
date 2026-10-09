@@ -1,0 +1,67 @@
+{
+  "schema": "libra.typed_recall.fixture.v1",
+  "scope": "anchor-memo-c/anchor-memo",
+  "oracleVersion": 1,
+  "cases": [
+    {"id":"pendant-promise","split":"tuning","query":"Who kept the pendant promise?","goldRoles":[
+      {"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]},
+      {"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state","relation"]},
+      {"family":"world","subtype":"node","id":"world_old_tower","roles":["world_rule","world_state"]},
+      {"family":"narrative","subtype":"storyline","id":"8","roles":["continuity","evidence"]}
+    ]},
+    {"id":"tower-aftermath","split":"holdout","query":"What remains unresolved after the tower?","goldRoles":[
+      {"family":"narrative","subtype":"storyline","id":"9","roles":["continuity"]}
+    ]},
+    {"id":"unrelated-no-answer","split":"holdout","query":"Where is the lunar reactor launch password?","goldRoles":[]}
+  ],
+  "negatives": [
+    {"family":"memory","id":"expired","reason":"expired"},
+    {"family":"memory","id":"hidden","reason":"inactive"},
+    {"family":"entity","id":"entity-absorbed","reason":"absorption"},
+    {"family":"entity","id":"entity-collision","reason":"identity_collision"},
+    {"family":"narrative","id":"10","reason":"identity_collision"}
+  ],
+  "safetyReview": {
+    "parentRule": "PARENT_X_CANARY",
+    "childRule": "CHILD_Y_CANARY",
+    "liveEvent": "LIVE_3_CANARY",
+    "retiredEvent": "ROLLED_BACK_4_CANARY",
+    "codexFact": {"id":"wc-oath","scope":{"type":"system","id":"world_main"},"subject":"world_limits","content":"CODEX_FACT_CANARY","visibility":"restricted","createdTurn":3,"updatedTurn":3},
+    "codexDisabled": {"id":"wc-disabled","scope":{"type":"system","id":"world_main"},"subject":"world_limits","content":"CODEX_DISABLED_CANARY","injectionDisabled":true,"createdTurn":3,"updatedTurn":3}
+  },
+  "gold": {
+    "memory": ["promise"],
+    "entity": ["promise"],
+    "world": ["world_old_tower"],
+    "narrative": ["storyline:8"]
+  },
+  "memory": [
+    {"id":"promise","meta":{"t":4,"ttl":-1,"imp":8},"text":"민지가 현우에게 은색 펜던트를 맡기고 돌아오면 돌려달라고 약속했다."},
+    {"id":"expired","meta":{"t":1,"ttl":1,"imp":8},"text":"만료된 기억"},
+    {"id":"hidden","meta":{"t":4,"ttl":-1,"hme":{"hiddenFromPrompt":true}},"text":"숨겨진 기억"}
+  ],
+  "entity": [
+    {"id":"promise","name":"민지","meta":{"created":2,"aliases":["Minji"]},"identity":{"roleInStory":"약속의 보관인"},"currentState":{"summary":"은색 펜던트를 기다림"},"privateSecrets":["ENTITY_SECRET_CANARY"],"povKnowledge":{"secret":"ENTITY_SECRET_CANARY"}},
+    {"id":"entity-absorbed","name":"옛 민지","meta":{"created":2,"absorption":{"status":"applied","targetName":"민지"}}},
+    {"id":"entity-pending","name":"합쳐질 민지","meta":{"created":2,"absorption":{"status":"pending","targetName":"민지"}}},
+    {"id":"entity-collision","name":"충돌 A","meta":{"created":2}},
+    {"id":"entity-collision","name":"충돌 B","meta":{"created":2}}
+  ],
+  "relation": {"id":"relation-1","entityA":"민지","entityB":"현우","currentStatus":{"summary":"펜던트 약속을 지킨다","publicLayer":"은색 펜던트 보관","privateLayer":"RELATION_SECRET_CANARY"},"meta":{"created":4}},
+  "worldGraph": {
+    "schema":"libra.world.graph.compact.v2",
+    "rootId":"world_main",
+    "activePath":["world_main"],
+    "nodes":[
+      ["world_main",{"id":"world_main","name":"주요 세계","isActive":true,"parent":null,"rules":{"custom":{"oath":"약속을 지켜야 한다"}}}],
+      ["world_old_tower",{"id":"world_old_tower","name":"오래된 탑","isActive":false,"parent":"world_main","meta":{"ttl":0,"worldSummary":"과거에 은색 펜던트를 보관하던 탑"},"rules":{"custom":{"entry":"탑은 밤에만 열린다"},"ruleMeta":{"promotedRules":{"탑은 밤에만 열린다":4}}}}]
+    ]
+  },
+  "worldStates": {"turnLog":[{"turn":4,"currentLocation":"오래된 탑","currentScene":"펜던트 약속","ruleHighlights":["탑은 밤에만 열린다"]}],"consolidated":[]},
+  "narrative": {"storylines":[
+    {"id":8,"arcKey":"pendant_oath","name":"펜던트 약속","turns":[4],"continuityBrief":"펜던트가 돌아올 날을 기다린다","activeThreads":["돌려줄 약속"],"evidenceTurns":["4"]},
+    {"id":9,"arcKey":"tower_aftermath","name":"탑의 후일담","turns":[5],"continuityBrief":"탑의 비밀이 남았다","meta":{"repairedFromStorylineId":8}},
+    {"id":10,"arcKey":"collision_a","name":"충돌 서사 A","turns":[6]},
+    {"id":10,"arcKey":"collision_b","name":"충돌 서사 B","turns":[7]}
+  ],"turnLog":[{"turn":4,"summary":"펜던트 약속"}],"lastSummaryTurn":4}
+}

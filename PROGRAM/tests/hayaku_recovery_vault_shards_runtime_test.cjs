@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {createHayakuRuntime,createStore}=require('./fixtures/hayaku_runtime_harness.cjs');
+(async()=>{const store=createStore(),get=store.getItem.bind(store),set=store.setItem.bind(store);const writes=[];let failWrite='',failRead='';
+store.setItem=async(k,v)=>{if(failWrite&&k.includes(failWrite))throw Object.assign(new Error('TEST_STORE_OFFLINE'),{code:'TEST_STORE_OFFLINE'});if(Buffer.byteLength(String(v))>4194304)throw Object.assign(new Error('MEMORY_SUITE_INTERACTIVE_VALUE_TOO_LARGE'),{code:'MEMORY_SUITE_INTERACTIVE_VALUE_TOO_LARGE'});writes.push(k);return set(k,v);};
+store.getItem=async k=>{if(failRead&&k.includes(failRead))throw Object.assign(new Error('TEST_READ_OFFLINE'),{code:'TEST_READ_OFFLINE'});return get(k);};
+const r=await createHayakuRuntime({pluginStorage:store,autoRepair:false});try{
+const t=r.hayaku._test,scope='large-vault',key='hayaku.v2.recovery_vault.'+scope;
+const records=Array.from({length:40},(_,n)=>({recordId:'debt-'+n,scopeKey:scope,pairIndex:n+1,status:'deterministic_fallback',createdAt:1,updatedAt:1,user:{text:'질문 '+n},assistant:{text:('한글 원문 '+n+' ').repeat(9000)}}));const vault={...t.emptyRecoveryVault(scope),records};assert.ok(Buffer.byteLength(JSON.stringify(vault))>4194304);
+const out=await t.writeRecoveryVaultDirect(scope,vault,'test-large');assert.equal(out.durable,true,JSON.stringify(out));
+const index=JSON.parse(await get(key));assert.equal(index.storageFormat,'debt_shards_v1');assert.equal(index.debtRefs.length,40);assert.ok(Buffer.byteLength(JSON.stringify(index))<131072);
+const loaded=await t.loadRecoveryVault(scope,{force:true});assert.equal(loaded.records.length,40);assert.equal(loaded.records[2].assistant.text,records[2].assistant.text.trim());
+const bound=await t.memorySuiteHayakuResolveKeyScope({key:index.debtRefs[0].key,currentScope:{scopeId:scope,scopeKey:scope}});assert.equal(bound.scopeId,scope);
+writes.length=0;loaded.records[0].backgroundDecision='approved';assert.equal((await t.writeRecoveryVaultDirect(scope,loaded)).durable,true);assert.equal(writes.filter(k=>k.includes('::debt:')).length,1);
+const part=await t.loadRecoveryVault(scope,{force:true,debtId:'debt-0'});assert.equal(part.records.length,1);failRead=index.debtRefs[5].key;part.records[0].backgroundDecision='declined';assert.equal((await t.writeRecoveryVaultDirect(scope,part,'partial',{partial:true})).durable,true);failRead='';assert.equal((await t.loadRecoveryVault(scope,{force:true})).records.length,40);
+const before=await get(key);failWrite='::debt:';loaded.records[1].backgroundDecision='approved';const failed=await t.writeRecoveryVaultDirect(scope,loaded);assert.equal(failed.durable,false);assert.equal(failed.code,'TEST_STORE_OFFLINE');assert.equal(await get(key),before);failWrite='';
+failRead='::debt:';await assert.rejects(t.loadRecoveryVault(scope,{force:true}),/TEST_READ_OFFLINE/);failRead='';
+const legacyScope='legacy-vault',legacyKey='hayaku.v2.recovery_vault.'+legacyScope;const legacy={...t.emptyRecoveryVault(legacyScope),records:[{...records[0],scopeKey:legacyScope}]};await set(legacyKey,JSON.stringify(legacy));const old=await get(legacyKey);const leg=await t.loadRecoveryVault(legacyScope,{force:true});assert.equal(await get(legacyKey),old);
+failWrite='::debt:';assert.equal((await t.writeRecoveryVaultDirect(legacyScope,leg)).durable,false);assert.equal(await get(legacyKey),old);failWrite='';assert.equal((await t.writeRecoveryVaultDirect(legacyScope,leg)).durable,true);assert.equal((await t.loadRecoveryVault(legacyScope,{force:true})).records.length,1);
+await store.removeItem(JSON.parse(await get(key)).debtRefs[0].key);await assert.rejects(t.loadRecoveryVault(scope,{force:true}),/shard_missing/);
+console.log('PASS: >4MiB vault; changed-debt writes; partial access; verified legacy migration; rejected/missing/failed reads never empty');
+}finally{await r.dispose();}})().catch(e=>{console.error(e);process.exitCode=1;});

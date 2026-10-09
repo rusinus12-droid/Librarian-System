@@ -1,0 +1,20 @@
+'use strict';
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict'),crypto=require('crypto');
+const {prepare}=require('./libra_typed_recall_rollout_test.cjs');
+(async()=>{
+ const sourceMap='G:/PocketRisu-v1.8.1-win-x64/dist/assets/database.svelte-CVkWRAON.js.map',bytes=fs.readFileSync(sourceMap),m=JSON.parse(bytes);
+ const text=tail=>m.sourcesContent[m.sources.findIndex(s=>s.endsWith(tail))];
+ const req=text('process/request/request.ts'),factory=text('apiV3/factory.ts'),api=text('apiV3/v3.svelte.ts'),assembly=text('process/index.svelte.ts');
+ const start=req.indexOf('            if(pluginV2.replacerbeforeRequest.size > 0)'),end=req.indexOf('\n            try{',start),actualLoop=req.slice(start,end);
+ assert.ok(start>=0&&end>start);assert.ok(end<req.indexOf('da = await requestChatDataMain',start));
+ assert.ok(factory.includes('response.error = (e && e.message) || String(e || "Guest callback error")'));
+ assert.ok(factory.includes('if (data.error) req.reject(new Error(data.error))'));
+ assert.ok(api.includes('DBState.db.characters[charId].chats[chatIndex] = normalizeChat(chat)'));
+ assert.ok(assembly.includes('content: risuChatParser(resolvePosition(lorebook.prompt)'));
+ const r=await prepare(),c=r.context.__QUEUE_TEST__.compat;let callback;r.host.addRisuReplacer=async(_,fn)=>{callback=fn;};
+ await c.addReplacer('beforeRequest',async()=>{throw new Error('ordinary_callback_failure');});
+ let provider=0;const host=new Function('pluginV2','arg','model','send','return (async()=>{'+actualLoop+'; return send(arg.formated);})()');
+ const incoming=[{role:'system',content:'opaque preassembled lore'}];const emitted=await host({replacerbeforeRequest:new Set([callback])},{formated:incoming},'model',value=>{provider++;return value;});assert.equal(provider,1);assert.equal(emitted,incoming);
+ const out={passed:1,failed:0,sourceMap,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),providerDispatches:provider,actualHostCodeLoop:actualLoop,evidence:'installed deployment code extracted and executed in synthetic fixture; live host unavailable',realModelCalls:0};
+ fs.writeFileSync(path.resolve(__dirname,'../test-output/typed-recall/task5-host-boundary/static-hook-chain-fail-open.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out));
+})().catch(e=>{console.error(e.stack);process.exitCode=1});

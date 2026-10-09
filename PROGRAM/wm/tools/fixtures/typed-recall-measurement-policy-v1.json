@@ -1,0 +1,10 @@
+{
+ "mode":"fixture", "version":"task6-unfrozen-measurement-v1", "productionEligible":false,
+ "laneDepth":32, "maxCorpusUnits":512, "rrf":{"k":60},
+ "storage":{"maxRowBytes":131072,"maxJobBytes":1048576,"maxExpectedBytes":8388608,"maxExpectedRows":64},
+ "background":{"maxCalls":20,"maxRows":32,"maxBytes":1048576,"maxMillis":120000},
+ "packing":{"maxItems":8,"maxRefill":8},
+ "calibration":{"memory":{"scale":1,"offset":0},"entity":{"scale":1,"offset":0},"world":{"scale":1,"offset":0},"narrative":{"scale":1,"offset":0}},
+ "admission":{"memory":{"heuristicMinScore":0.001,"semanticMinScore":0.8,"semanticMinMargin":0},"entity":{"heuristicMinScore":0.001,"semanticMinScore":0.8,"semanticMinMargin":0},"world":{"heuristicMinScore":0.001,"semanticMinScore":0.8,"semanticMinMargin":0},"narrative":{"heuristicMinScore":0.001,"semanticMinScore":0.8,"semanticMinMargin":0}},
+ "diversity":{"maxItems":8,"lambda":0.8,"crossRolePenalty":0.2,"arcPenalty":0.03,"maxPerArc":8,"typeCaps":{}}
+}

@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>LIBRA · Librarian Book UX v5.7 · Dual-Mode Interaction</title>
+<style>
+:root{
+  --desk:#17120e;--desk2:#211811;--ink:#282018;--muted:#7c6d5d;--paper:#f2eadc;--paper2:#e9deca;
+  --paper3:#ded0b9;--line:#c9b99f;--edge:#b6a286;--accent:#8c5f2d;--accent2:#b98345;--green:#64735f;
+  --red:#8a5148;--blue:#586d7c;--gold:#a87b3d;--shadow:0 30px 80px rgba(0,0,0,.42);
+  --serif:"Iowan Old Style","AppleMyungjo","Noto Serif KR","Nanum Myeongjo","Batang",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}html,body{height:100%}html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:
+  radial-gradient(circle at 50% -20%,rgba(173,128,72,.18),transparent 38%),
+  linear-gradient(135deg,rgba(255,255,255,.02),transparent 40%),var(--desk);color:var(--ink);font:13px/1.55 var(--sans)}
+button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}input,select,textarea{width:100%;border:1px solid #c4b399;background:#f8f0e4;border-radius:8px;padding:9px 10px;color:#493929}
+input[type="range"]{padding:0;border:0;background:transparent}
+.app{width:min(1560px,calc(100vw - 24px));height:min(960px,calc(100svh - 24px));margin:12px auto;border:1px solid #39291e;border-radius:22px;overflow:hidden;box-shadow:var(--shadow);display:grid;grid-template-columns:230px minmax(0,1fr);grid-template-rows:64px minmax(0,1fr);background:#100d0a}
+.header{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;padding:0 16px;background:linear-gradient(180deg,#1e1610,#140f0b);border-bottom:1px solid #3b2d22;color:#efe6d9}
+.brand{display:flex;align-items:center;gap:10px;border:0;background:none;color:inherit;padding:7px 9px;border-radius:12px}.brand:hover{background:rgba(255,255,255,.04)}
+.bookmark{width:34px;height:42px;border-radius:5px 5px 3px 3px;background:linear-gradient(180deg,#9b6b36,#6e4523);display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);color:#f4eadb;font:700 16px var(--serif)}
+.brand strong{font:700 17px/1 var(--serif);letter-spacing:.04em}.brand small{display:block;color:#aa9a88;font-size:10px;margin-top:2px}.chev{color:#b99d79;margin-left:3px}
+.header-center{display:flex;justify-content:center;color:#a99a8a;font:12px var(--serif);letter-spacing:.04em}
+.quick{border:1px solid #5a4432;background:#2a1e14;color:#f1e4d2;padding:9px 13px;border-radius:10px;font-weight:700}.quick:hover{background:#362519}
+.sidebar{grid-row:2;background:linear-gradient(180deg,#18110d,#110d0a);border-right:1px solid #39291f;color:#c7b8a6;padding:14px 12px;display:flex;flex-direction:column;gap:14px;overflow:auto}.side-title{font:10px var(--serif);letter-spacing:.16em;text-transform:uppercase;color:#806f60;padding:0 10px}.nav{display:grid;gap:5px}.nav button{width:100%;display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;border:0;background:none;color:#c8baa8;text-align:left;padding:9px 10px;border-radius:12px}.nav button.active{background:#241a13;color:#f3e7d6;box-shadow:inset 3px 0 #9b6b36}.nav .ico{width:30px;height:30px;border:1px solid #4a382b;border-radius:9px;display:grid;place-items:center;color:#b89870;font:14px var(--serif)}.nav small{display:block;color:#77685a;font-size:9px;margin-top:2px}.side-foot{margin-top:auto;border-top:1px solid #34271f;padding-top:10px}.side-foot button{width:100%;border:0;background:none;color:#ad9d8c;text-align:left;padding:8px 10px;border-radius:9px}.side-foot button:hover{background:#211812}
+.main{grid-row:2;overflow:auto;padding:14px 16px 24px;background:radial-gradient(circle at 50% 0,rgba(255,255,255,.025),transparent 32%)}
+.desk-label{color:#8b7763;font:10px var(--serif);letter-spacing:.14em;text-transform:uppercase;margin:2px 0 8px 8px}.page{display:none}.page.active{display:block}
+.book{display:grid;grid-template-columns:1fr 1fr;max-width:1180px;margin:0 auto;filter:drop-shadow(0 18px 35px rgba(0,0,0,.28))}.leaf{min-height:690px;padding:34px 34px 42px;background:linear-gradient(90deg,#eadfcd,#f4ecdf 7%,#f6efe4 94%,#e7dac5);border:1px solid #b9a78d;position:relative}.leaf.left{border-radius:16px 2px 2px 16px;border-right-color:#c5b49b}.leaf.right{border-radius:2px 16px 16px 2px;border-left-color:#d6c6ad;background:linear-gradient(90deg,#e5d8c2,#f4ecde 8%,#f2e9dc 96%,#dccdb6)}.leaf.left:after,.leaf.right:before{content:"";position:absolute;top:0;bottom:0;width:18px;pointer-events:none}.leaf.left:after{right:-1px;background:linear-gradient(90deg,transparent,rgba(91,67,43,.10))}.leaf.right:before{left:-1px;background:linear-gradient(90deg,rgba(82,61,42,.13),transparent)}
+.chapter{font:10px var(--serif);letter-spacing:.16em;text-transform:uppercase;color:#9a6a34}.page-title{font:700 28px/1.18 var(--serif);margin:7px 0 10px;color:#33271c}.lede{font:14px/1.7 var(--serif);color:#62513f;margin:0 0 18px}.rule{height:1px;background:linear-gradient(90deg,#bba98e,transparent);margin:14px 0 18px}.info-row{display:flex;gap:7px;flex-wrap:wrap}.slip{display:inline-flex;align-items:center;gap:6px;border:1px solid #c4b49c;background:#eee3d2;border-radius:999px;padding:6px 9px;color:#6b5946;font-size:10px}.stamp{width:7px;height:7px;border-radius:50%;background:#71826e}.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:15px 0}.metric{border:1px solid #c7b69d;background:#eee3d2;padding:11px 10px;border-radius:9px}.metric strong{display:block;font:700 19px var(--serif);color:#7d542a}.metric span{font-size:9px;color:#776651}.card{border-top:1px solid #c8b89f;padding:14px 0}.card-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.card h3{font:700 15px var(--serif);margin:0}.card small{color:#85715c}.more{border:0;background:none;color:#855b31;text-decoration:underline;text-underline-offset:3px;padding:0}.excerpt{font:13px/1.7 var(--serif);color:#514231;margin:10px 0 0}.fade{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;position:relative}.quote{border-left:3px solid #ae7b42;padding:9px 12px;margin:10px 0 0;background:rgba(177,132,75,.08);font:13px/1.65 var(--serif);color:#594736}
+.list{display:grid;gap:8px}.record{border:1px solid #c6b59c;background:#eee3d2;border-radius:9px;padding:10px 11px;text-align:left;color:#51402f}.record strong{display:block;font:700 12px var(--serif)}.record p{margin:3px 0 0;color:#75624e;font-size:10px}.record.conn{width:100%;cursor:pointer}.record.conn:hover{background:#e6d7c1}
+.catalog{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.catalog-card{border:1px solid #c5b59d;background:#eee4d4;border-radius:10px;padding:12px}.index{font:9px var(--serif);letter-spacing:.13em;color:#9a6b38}.catalog-card h3{font:700 14px var(--serif);margin:6px 0}.catalog-card p{margin:0;color:#75624e;font-size:10px}
+.person-index{display:flex;gap:7px;margin:12px 0;flex-wrap:wrap}.person-index button{border:1px solid #c3b297;background:#eee2d0;color:#675541;border-radius:999px;padding:7px 10px}.person-index button.active{background:#dfc7a3;border-color:#9f7548;color:#5b3a1e}.person-detail{border:1px solid #c3b198;background:#eee3d1;border-radius:11px;padding:14px}.person-detail h3{font:700 18px var(--serif);margin:0 0 4px}.facts{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin-top:10px}.facts dt{color:#8a735c}.facts dd{margin:0;color:#514231}
+.record-shell{border:1px solid #c6b59c;background:#eee3d2;border-radius:12px;padding:14px;margin-bottom:10px}.record-shell.active{background:#e9ddcb;box-shadow:inset 0 0 0 1px #d0b38a}.record-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.record-head strong{display:block;font:700 16px var(--serif)}.record-head p{margin:4px 0 0;color:#75624e;font-size:11px}.record-note{margin-top:10px;color:#574534;line-height:1.65}.record-actions,.inline-actions,.margin-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.text-action{border:0;background:none;padding:0;color:#815727;font:700 11px/1.1 var(--serif);letter-spacing:.03em}.text-action:hover{text-decoration:underline}.text-action.strong{color:#623914}.section-headline{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.section-headline h4{margin:0;font:700 16px var(--serif)}.section-headline p{margin:4px 0 0;color:#7b6a59;font-size:11px}.person-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding-bottom:10px;border-bottom:1px solid #d3c1a9}.person-summary{margin:11px 0 0;color:#574534;line-height:1.65}.relation-ledger{margin-top:14px}.relation-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.relation-card{border:1px solid #ccb99d;background:#f4eadc;border-radius:11px;padding:12px}.relation-card h5{margin:0 0 6px;font:700 15px var(--serif)}.relation-card p{margin:0 0 8px;color:#544331;line-height:1.55}.relation-meta{display:grid;grid-template-columns:84px 1fr;gap:5px 8px;font-size:11px}.relation-meta dt{color:#8c745b}.relation-meta dd{margin:0;color:#5a4733}.summary-card{margin-top:12px;border:1px solid #cfbea6;background:#f5ecde;border-radius:11px;padding:12px}.margin-note{border:1px solid #ccb79c;background:#f3e8da;border-radius:11px;padding:14px}.margin-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px}.margin-note span{display:block;color:#574534;line-height:1.65}.catalog-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.catalog-head h3{margin:0;font:700 14px var(--serif)}.catalog-card p{margin-top:7px;line-height:1.6}.page-tools{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-top:12px}.page-tools .lede{margin:0}
+.settings-page{max-width:1080px;margin:0 auto;background:var(--paper);min-height:650px;border:1px solid #bca98e;border-radius:14px;padding:28px;box-shadow:0 15px 35px rgba(0,0,0,.2)}.settings-page h1{font:700 28px var(--serif);margin:6px 0}.notice{padding:12px;border-left:3px solid #a47943;background:#eadbc4;color:#67523c;margin:14px 0}.settings-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.settings-list .record{min-height:76px}
+.drawer{position:fixed;inset:0;display:none;background:rgba(18,12,8,.46);backdrop-filter:blur(3px);z-index:60}.drawer.open{display:block}.drawer-panel{position:absolute;right:0;top:0;height:100%;width:min(570px,96vw);background:#ede1cf;border-left:1px solid #b9a487;box-shadow:-24px 0 60px rgba(0,0,0,.35);overflow:auto}.drawer-panel.wide{width:min(760px,98vw)}.drawer-head{position:sticky;top:0;z-index:3;background:#e5d6c0;border-bottom:1px solid #bca98e;padding:16px 18px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.drawer-head h2{font:700 20px var(--serif);margin:2px 0 0}.drawer-head .chapter{font-size:9px}.drawer-close{border:1px solid #b9a486;background:#f4eadb;color:#604e3b;border-radius:8px;padding:7px 9px}.drawer-body{padding:17px}.drawer-section{border:1px solid #c4b399;background:#f4eadb;border-radius:10px;padding:13px;margin-bottom:11px}.drawer-section h3{font:700 14px var(--serif);margin:0 0 6px}.drawer-section p{margin:0;color:#6f5f4c}.drawer-section .note{color:#8a755e;font-size:10px;margin-top:5px}.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}.tab{border:1px solid #c0ad91;background:#eee1cf;padding:7px 9px;border-radius:8px;color:#725f48}.tab.active{border-color:#8b5c2d;background:#e5cfae;color:#623e1d}.pane{display:none}.pane.active{display:block}.raw{white-space:pre-wrap;border:1px solid #bfa98c;background:#33281f;color:#e7dac6;border-radius:8px;padding:12px;font:11px/1.6 var(--mono)}
+.mode-menu{position:fixed;z-index:90;display:none;min-width:270px;background:#eadbc6;border:1px solid #bba487;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.35);padding:7px}.mode-menu.open{display:block}.mode-menu button{width:100%;border:0;background:none;padding:10px;border-radius:8px;text-align:left;color:#544331}.mode-menu button:hover,.mode-menu button.active{background:#dfc9aa}.mode-menu strong{display:block;font:700 13px var(--serif)}.mode-menu small{color:#7b6955}
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:5px}.field label{font-size:10px;color:#826d56}.preset-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.preset{border:1px solid #c0ae92;background:#eee1cf;border-radius:8px;padding:9px;text-align:left;color:#624f3b}.preset.active{background:#dfc5a0;border-color:#9e7142}.preset strong{display:block;font:700 12px var(--serif)}.preset small{display:block;color:#806b55;font-size:9px;margin-top:2px}
+.choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.choice-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.choice-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.choice{border:1px solid #c1af94;background:#eee2d0;border-radius:9px;padding:10px;text-align:left;color:#624f3b}.choice.active{background:#ddc3a0;border-color:#9b6b36;box-shadow:inset 0 0 0 1px rgba(140,95,45,.18)}.choice strong{display:block;font:700 12px var(--serif)}.choice small{display:block;color:#806b55;font-size:9px;margin-top:3px}.choice.disabled{opacity:.55;cursor:not-allowed}
+.connection-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.conn-card{border:1px solid #c0ad91;background:#efe3d2;border-radius:9px;padding:10px;text-align:left;color:#5d4b37}.conn-card strong{display:block;font:700 12px var(--serif)}.conn-card span{display:block;font-size:9px;color:#7d6a55;margin-top:3px}.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#6c7f68;margin-right:5px}.status-dot.warn{background:#a8793e}
+.agent-table{display:grid;gap:8px}.agent-row{display:grid;grid-template-columns:minmax(0,1fr) 88px minmax(150px,1fr);gap:8px;align-items:center;border:1px solid #c3b197;background:#eee3d1;border-radius:9px;padding:9px}.agent-row strong{font:700 12px var(--serif)}.agent-row small{display:block;color:#806d58;font-size:9px}.toggle{display:inline-flex;align-items:center;gap:6px}.toggle input{width:auto}.toggle span{font-size:10px;color:#6d5a46}
+.slider-row{display:grid;grid-template-columns:1fr 52px;gap:10px;align-items:center}.slider-value{text-align:center;border:1px solid #c0ad91;background:#eadcc8;border-radius:7px;padding:5px;font:700 11px var(--serif)}
+.connection-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:12px}.preset-list{border:1px solid #c3b198;background:#e8d9c3;border-radius:10px;padding:9px;align-self:start;position:sticky;top:84px}.preset-list-head{display:flex;gap:5px;margin-bottom:8px}.mini{border:1px solid #bca789;background:#f3e8d8;color:#654f39;border-radius:7px;padding:6px 8px;font-size:10px}.mini.primary{background:#9c6a34;color:#fff3e0;border-color:#87572a}.mini.danger{color:#82443d}.preset-search{margin-bottom:7px}.preset-item{display:block;width:100%;text-align:left;border:0;background:none;border-radius:7px;padding:8px;color:#5b4733}.preset-item.active{background:#d8b98d}.preset-item strong{display:block;font:700 11px var(--serif)}.preset-item small{display:block;color:#7f6b55;font-size:9px;margin-top:2px}.section-label{font:700 10px var(--serif);letter-spacing:.13em;text-transform:uppercase;color:#966633;margin:3px 0 8px}.action-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.callout{padding:10px;border-left:3px solid #a47943;background:#eadbc4;color:#67523c;margin-top:8px}.danger-callout{border-left-color:#8a5148;background:#ead3ce}.good-callout{border-left-color:#64735f;background:#dfe4d7}
+.subhead{font:700 15px var(--serif);margin:0 0 7px}.inline-badge{display:inline-block;border:1px solid #b8a386;background:#ead9bf;border-radius:999px;padding:3px 7px;font-size:9px;color:#765d41;margin-left:5px}.stage-number{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#b8884b;color:#fff;font:700 10px var(--serif);margin-right:6px}
+.back-quick{border:0;background:none;color:#7f562d;text-decoration:underline;text-underline-offset:3px;padding:0;margin-bottom:10px}
+.bottom{display:none}
+
+.settings-room-page{max-width:1220px}.settings-room-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;margin-top:16px}.settings-index{display:grid;align-content:start;gap:7px;padding:10px;border:1px solid #c3b096;background:#e9dcc8;border-radius:12px;position:sticky;top:10px}.settings-index-item{display:grid;grid-template-columns:30px minmax(0,1fr);grid-template-rows:auto auto;column-gap:9px;align-items:center;width:100%;border:1px solid transparent;background:transparent;color:#5e4a37;border-radius:9px;padding:10px;text-align:left}.settings-index-item:hover{background:#e3d2ba}.settings-index-item.active{background:#dac09b;border-color:#aa8255;box-shadow:inset 3px 0 #8f6030}.settings-index-item>span{grid-row:1/3;align-self:start;margin-top:2px;font:700 10px var(--serif);color:#a06e36}.settings-index-item strong{font:700 12px var(--serif)}.settings-index-item small{font-size:9px;color:#7b6853;margin-top:2px}.settings-workbench{min-width:0;border:1px solid #c2af94;background:#f5ecdf;border-radius:12px;padding:16px}.settings-workbench-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #d0bea2;margin-bottom:12px}.settings-workbench-head h2{font:700 21px var(--serif);margin:3px 0 4px}.settings-workbench-head p{margin:0;color:#74614c}.settings-status{margin-top:12px;padding:9px 11px;border:1px dashed #bda98d;background:#eee0cd;border-radius:8px;color:#7a664f;font-size:10px}.setting-section{border:1px solid #c8b69d;background:#efe3d1;border-radius:10px;padding:13px;margin-bottom:11px}.setting-section:last-child{margin-bottom:0}.setting-section h3{font:700 14px var(--serif);margin:0 0 5px}.setting-section>p{margin:0 0 10px;color:#715e49}.setting-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.setting-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.setting-field{display:grid;gap:5px}.setting-field label{font-size:9px;color:#826d56}.setting-toggle-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.setting-toggle{display:flex;align-items:flex-start;gap:8px;border:1px solid #c8b69e;background:#f5ebdd;border-radius:9px;padding:9px}.setting-toggle input{width:auto;margin-top:3px}.setting-toggle strong{display:block;font-size:11px}.setting-toggle small{display:block;color:#826e58;font-size:9px;margin-top:2px}.setting-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.setting-subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.setting-subtab{border:1px solid #c0ad91;background:#eee1cf;padding:7px 9px;border-radius:8px;color:#725f48}.setting-subtab.active{border-color:#8b5c2d;background:#e5cfae;color:#623e1d}.setting-subpane{display:none}.setting-subpane.active{display:block}.module-grid{display:grid;gap:7px}.module-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;border:1px solid #c8b79f;background:#f7eee2;border-radius:9px;padding:9px}.module-row input{width:auto;margin-top:4px}.module-row strong{font-size:11px}.module-row small{display:block;color:#7d6953;font-size:9px}.module-badge{padding:3px 7px;border:1px solid #bca98e;border-radius:999px;font-size:9px;color:#715b43;white-space:nowrap}.danger-zone{border-color:#b98579;background:#f0dcd6}.stage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.stage-card{border:1px solid #c8b69d;background:#f6ecdf;border-radius:9px;padding:10px}.stage-card-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.stage-card h4{font:700 12px var(--serif);margin:0}.stage-card p{margin:4px 0 8px;color:#75614c;font-size:9px}.readonly-card{border:1px solid #c9b89f;background:#eadcc8;border-radius:9px;padding:10px}.readonly-card strong{display:block;font:700 12px var(--serif)}.readonly-card p{margin:4px 0 0;color:#75614d;font-size:9px}.export-area{min-height:150px;font:10px/1.55 var(--mono)}.debug-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.debug-card{border:1px solid #c8b79e;background:#f5ebdd;border-radius:9px;padding:9px}.debug-card strong{display:block;font-size:10px}.debug-card span{display:block;color:#75624f;font-size:9px;margin-top:3px}
+
+@media(max-width:1050px){.book{grid-template-columns:1fr}.settings-room-shell{grid-template-columns:1fr}.settings-index{position:static;grid-template-columns:repeat(4,minmax(0,1fr))}.settings-index-item{grid-template-columns:22px minmax(0,1fr);padding:8px}.setting-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}.stage-grid{grid-template-columns:1fr}.leaf.left,.leaf.right{border-radius:14px}.leaf.right{border-top:0}.leaf.left:after,.leaf.right:before{display:none}.settings-list{grid-template-columns:1fr}.connection-layout{grid-template-columns:1fr}.preset-list{position:static}.choice-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}.agent-row{grid-template-columns:1fr 78px}.agent-row select{grid-column:1/-1}}
+@media(max-width:820px),(hover:none) and (pointer:coarse){.settings-index{grid-template-columns:repeat(2,minmax(0,1fr))}.setting-grid,.setting-grid.three,.setting-toggle-list,.debug-grid{grid-template-columns:1fr}.settings-workbench{padding:12px}.settings-workbench-head{display:grid}.app{width:100vw;height:100svh;margin:0;border-radius:0;grid-template-columns:1fr;grid-template-rows:58px minmax(0,1fr) 58px}.header{padding:0 9px}.header-center{display:none}.brand strong{font-size:14px}.brand small{display:none}.bookmark{width:30px;height:36px}.quick{padding:8px 10px;font-size:0}.quick:before{content:"⚙";font-size:15px}.sidebar{display:none}.main{padding:10px 10px 70px}.desk-label{margin-left:3px}.leaf{padding:22px 19px 34px;min-height:0}.page-title{font-size:24px}.metric-grid{grid-template-columns:repeat(3,1fr)}.metric strong{font-size:17px}.memory-reader,.reader-columns,.character-spread,.world-intro{grid-template-columns:1fr}.guide-grid,.intro-grid,.reader-footer{grid-template-columns:1fr}.toc-item{grid-template-columns:48px 1fr}.toc-meta{white-space:normal}.catalog{grid-template-columns:1fr}.relation-list{grid-template-columns:1fr}.record-head,.person-header,.section-headline,.margin-head{display:grid}.formgrid{grid-template-columns:1fr}.preset-row,.choice-grid.three,.choice-grid.four,.connection-strip{grid-template-columns:1fr 1fr}.bottom{position:fixed;display:grid;grid-template-columns:repeat(5,1fr);left:0;right:0;bottom:0;height:58px;background:#17110d;border-top:1px solid #403024;z-index:50}.bottom button{border:0;background:none;color:#9e8e7e;font-size:10px}.bottom button.active{color:#d7b17a}.bottom button span{display:block;font:15px var(--serif);margin-bottom:1px}.drawer-panel{width:100%;border-left:0}.drawer-panel.wide{width:100%}.agent-row{grid-template-columns:1fr}.agent-row .toggle,.agent-row select{grid-column:auto}.slider-row{grid-template-columns:1fr 48px}}
+
+/* v4.1 — clean read/edit separation. Decorative pen/ink effects intentionally removed. */
+.ink-pen,.ink-stroke,.ink-ghost-note,.saved-ink-mark,.edit-flash{display:none!important}
+.edit-panel{display:none!important;margin-top:14px}
+.paper-surface.editing .edit-panel{display:block!important}
+.paper-surface.editing .edit-toolbar,
+.paper-surface.editing .list,
+.paper-surface.editing .person-index,
+.paper-surface.editing .person-detail,
+.paper-surface.editing .catalog,
+.paper-surface.editing .margin-note{display:none!important}
+.paper-surface.editing .lede{display:none!important}
+.paper-surface.editing .paper-content::before{
+  content:'교정 화면';display:inline-flex;align-items:center;margin:2px 0 12px;padding:5px 9px;
+  border:1px solid #b59d7c;border-radius:999px;background:#eadcc8;color:#6e563c;
+  font:700 10px/1 var(--serif);letter-spacing:.06em
+}
+.paper-surface.editing .page-title{margin-bottom:8px}
+.paper-surface.editing .editable-zone{
+  border:1px solid #c2ad8e;background:#f7eee2;border-radius:12px;padding:16px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42)
+}
+.paper-surface.editing .editable-zone label{display:block;color:#756049;font-size:10px;margin-bottom:5px}
+.paper-surface.editing .edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.paper-surface.editing .edit-actions button{border:1px solid #bba487;background:#f2e7d8;color:#614d38;border-radius:8px;padding:8px 12px}
+.paper-surface.editing .edit-actions .save-edit{background:#9a6938;border-color:#815427;color:#fff4e5}
+
+
+/* v5.2 — refined reading surface: keep the book mood, remove mismatched button feel */
+.header{background:linear-gradient(180deg,#1d1712 0%,#17110d 100%);box-shadow:inset 0 -1px 0 rgba(255,255,255,.03)}
+.header-center{font:12px/1.2 var(--serif);color:#bcae9d;letter-spacing:.05em}
+.brand{border:1px solid transparent;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.brand:hover{background:rgba(255,255,255,.035);border-color:rgba(188,155,114,.18);transform:translateY(-1px)}
+.bookmark{box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 4px 10px rgba(0,0,0,.18)}
+.quick{border:1px solid #6a523c;background:linear-gradient(180deg,rgba(248,237,221,.08),rgba(120,86,49,.06));color:#f3e8db;padding:8px 14px;border-radius:999px;font:700 11px/1.2 var(--serif);letter-spacing:.12em;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.quick:hover{background:linear-gradient(180deg,rgba(248,237,221,.12),rgba(120,86,49,.10));border-color:#8d6a46}
+.sidebar{background:linear-gradient(180deg,#18120e,#130e0b)}
+.nav{gap:7px}
+.nav button{position:relative;padding:10px 12px;border:1px solid transparent;border-radius:14px;transition:background .16s ease,border-color .16s ease,transform .16s ease,color .16s ease}
+.nav button:hover{background:rgba(255,255,255,.025);border-color:rgba(168,123,61,.15);transform:translateX(1px)}
+.nav button.active{background:linear-gradient(180deg,#251c16,#201711);border-color:rgba(167,125,76,.22);box-shadow:inset 3px 0 #9b6b36,0 10px 20px rgba(0,0,0,.12)}
+.nav .ico{border-color:#544031;background:rgba(255,255,255,.015);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.side-foot button{border:1px solid transparent;padding:9px 10px}
+.side-foot button:hover{background:#211812;border-color:rgba(168,123,61,.12)}
+.leaf,.settings-page,.drawer-panel,.settings-workbench,.settings-index,.character-sheet,.relation-sheet,.world-sheet,.toc-sheet,.reading-sheet,.chapter-rail{box-shadow:0 10px 24px rgba(64,46,28,.05), inset 0 1px 0 rgba(255,255,255,.38)}
+
+/* v5.4 — reading-surface completion: these classes existed in the markup with no base rules, so the four reading pages never actually laid out as intended. Filling them in now. */
+.character-sheet,.relation-sheet,.world-sheet,.reading-sheet,.toc-sheet{border:1px solid #c9b89d;background:linear-gradient(180deg,#f7efe3,#f2e7d7);border-radius:16px;padding:20px 22px}
+.chapter-rail{border:1px solid #c9b89d;background:#f2e7d5;border-radius:16px;padding:14px}
+
+.memory-reader{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start;margin-top:14px}
+.reader-columns{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:22px;margin-top:14px}
+.character-spread{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;margin-top:16px}
+.world-intro{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;margin-top:16px}
+.intro-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.guide-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+.reader-footer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px;padding-top:14px;border-top:1px solid #d7c6ab}
+
+.rail-section{margin-bottom:16px}.rail-section:last-child{margin-bottom:0}
+.rail-label{font:10px var(--serif);letter-spacing:.14em;text-transform:uppercase;color:#916a3c;margin:0 0 6px}
+.rail-title{font:700 13px var(--serif);margin:0 0 8px;color:#3f2e20}
+
+.sheet-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #d7c6ab;margin-bottom:16px}
+.sheet-meta{color:#8a715a;font-size:11px;margin-top:3px}
+
+.reader-prose{font:14px/1.85 var(--serif);color:#4c3d2c}
+.reader-prose p{margin:0 0 14px}.reader-prose p:last-child{margin-bottom:0}
+.dropcap:first-letter{float:left;font:700 46px/.82 var(--serif);color:#8c5f2d;padding:5px 7px 0 0}
+
+.margin-stack{display:grid;gap:12px;align-content:start}
+.margin-card{border:1px solid #cdb99a;background:#f3e7d5;border-radius:12px;padding:12px}
+.margin-card h4{margin:0 0 6px;font:700 12px var(--serif);color:#5c3f22}
+.margin-card p{margin:0;color:#5a4733;font-size:12px;line-height:1.6}
+
+.foot-note strong{display:block;font:700 10px var(--serif);letter-spacing:.02em;color:#8a6a41;margin-bottom:4px}
+.foot-note span{color:#55432f;font-size:12px;line-height:1.55}
+
+.hero-copy{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #d7c6ab;margin-bottom:16px}
+.hero-copy h3{margin:0 0 3px;font:700 24px var(--serif);color:#33271c}
+.hero-copy .subtitle{color:#8a715a;font-size:11px;letter-spacing:.02em}
+.hero-copy .summary{margin:12px 0 0;font:14px/1.75 var(--serif);color:#4c3d2c;max-width:62ch}
+.intro-card{border:1px solid #cdb99a;background:#f3e7d5;border-radius:12px;padding:12px}
+.intro-card h4{margin:0 0 6px;font:700 12px var(--serif);color:#5c3f22}
+.intro-card p{margin:0;color:#544331;font-size:12.5px;line-height:1.6}
+.section-title{font:700 17px var(--serif);margin:0 0 8px;color:#33271c;letter-spacing:-.005em}
+
+.guide-card{border:1px solid #c5b59d;background:#eee4d4;border-radius:10px;padding:12px}
+.guide-copy{font:14px/1.8 var(--serif);color:#4c3d2c}
+.guide-copy p{margin:0 0 14px}.guide-copy p:last-child{margin-bottom:0}
+.world-note{margin-top:14px;padding:10px 12px;border-left:3px solid #a47943;background:#eee0cc;color:#6a5640;font-size:11px;line-height:1.6;border-radius:0 8px 8px 0}
+
+.toc-list{display:grid;gap:2px;margin-top:6px}
+.toc-item{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;align-items:start;border-top:1px solid #d7c6ab;padding:14px 0}
+.toc-item:first-child{border-top:0;padding-top:4px}
+.toc-no{font:700 22px var(--serif);color:#b6844a}
+.toc-copy h3{margin:0 0 5px;font:700 15px var(--serif);color:#33271c}
+.toc-copy p{margin:0;color:#5a4733;line-height:1.6;font-size:13px}
+.toc-meta{color:#8a6a41;font:700 10px var(--serif);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding-top:4px}
+.subtoc{margin-top:16px;padding-top:14px;border-top:1px solid #d7c6ab}
+.subtoc h4{margin:0 0 8px;font:700 13px var(--serif);color:#5c3f22}
+.subtoc ul{margin:0;padding-left:18px;color:#544331;font-size:13px;line-height:1.8}
+.direction-note{margin-top:16px;padding:14px;border:1px solid #cdb99a;background:#f3e7d5;border-radius:12px}
+.direction-note strong{display:block;font:700 12px var(--serif);color:#5c3f22;margin-bottom:6px}
+.direction-note span{color:#4c3d2c;line-height:1.7;font-size:13px}
+
+.crossref{border:0;background:none;padding:0;color:#7f562d;font:700 11px var(--serif);text-decoration:underline;text-underline-offset:3px;text-decoration-color:#c9a06b;cursor:pointer}
+.crossref:hover{color:#523620;text-decoration-color:#8c5f2d}
+.page-title{letter-spacing:-.01em}
+.lede{color:#6d5945}
+.person-index{gap:18px;margin:16px 0 14px;padding:0 2px 6px;border-bottom:1px solid #d8c9b1}
+.person-index button{border:0;background:none;color:#86715a;border-radius:0;padding:2px 0 8px;font:700 15px/1.2 var(--serif);letter-spacing:.02em;border-bottom:2px solid transparent;transition:color .16s ease,border-color .16s ease,transform .16s ease}
+.person-index button:hover{color:#5e4832;transform:translateY(-1px)}
+.person-index button.active{background:none;border-color:#ab7842;color:#3f2e20}
+.chapter-item{background:transparent;border:1px solid transparent;border-radius:14px;padding:10px 10px 10px 8px;transition:background .16s ease,border-color .16s ease,transform .16s ease}
+.chapter-item:hover{background:#f4eadc;border-color:#d7c5aa;transform:translateX(1px)}
+.chapter-item.active{background:#efe3d3;border-color:#cbb08b;box-shadow:none}
+.chapter-item .chapter-no{box-shadow:inset 0 1px 0 rgba(255,255,255,.55)}
+.text-action{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;color:#735237;font:700 11px/1.2 var(--serif);letter-spacing:.08em;text-decoration:none;transition:color .16s ease,opacity .16s ease}
+.text-action::before{content:'§';font:700 10px/1 var(--serif);color:#b58b59;opacity:.85}
+.text-action:hover{text-decoration:none;color:#523620}
+.text-action.strong{color:#5d381e}
+.sheet-actions,.record-actions,.inline-actions,.margin-actions,.bio-actions,.guide-actions,.toc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:0 14px}
+.sheet-actions .text-action+.text-action,.record-actions .text-action+.text-action,.inline-actions .text-action+.text-action,.margin-actions .text-action+.text-action,.bio-actions .text-action+.text-action,.guide-actions .text-action+.text-action,.toc-actions .text-action+.text-action{position:relative;padding-left:14px}
+.sheet-actions .text-action+.text-action::after,.record-actions .text-action+.text-action::after,.inline-actions .text-action+.text-action::after,.margin-actions .text-action+.text-action::after,.bio-actions .text-action+.text-action::after,.guide-actions .text-action+.text-action::after,.toc-actions .text-action+.text-action::after{content:'';position:absolute;left:0;top:2px;bottom:2px;width:1px;background:#d9c7ac}
+.tab,.setting-subtab,.mini,.drawer-close,.preset,.choice,.conn-card,.settings-index-item{transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease,color .16s ease}
+.tab,.setting-subtab{border:1px solid #d2c1a8;background:#f6ede1;border-radius:999px;padding:7px 12px;color:#75614c;font:700 11px/1.2 var(--serif);letter-spacing:.04em}
+.tab.active,.setting-subtab.active{border-color:#bb9363;background:#ecdfcd;color:#563720;box-shadow:0 6px 14px rgba(116,83,47,.08)}
+.mini,.drawer-close{border:1px solid #d0bda4;background:#f7efe3;color:#674e38;border-radius:999px;padding:7px 11px;font:700 11px/1.2 var(--serif);letter-spacing:.04em}
+.mini.primary{background:#ead9c2;color:#6a4323;border-color:#c59b6b}
+.mini:hover,.drawer-close:hover{background:#f1e6d8;border-color:#c3a27f}
+.preset,.choice{border:1px solid #d3c1a8;background:linear-gradient(180deg,#f7efe4,#f1e6d8);border-radius:14px;padding:11px 12px;color:#5d4936;box-shadow:0 1px 0 rgba(255,255,255,.45)}
+.preset:hover,.choice:hover{border-color:#c1a07a;transform:translateY(-1px)}
+.preset.active,.choice.active{background:linear-gradient(180deg,#efe2cf,#e7d4bb);border-color:#b78c5a;box-shadow:0 8px 16px rgba(113,77,40,.08), inset 0 1px 0 rgba(255,255,255,.5)}
+.conn-card{border:1px solid #d1bea4;background:linear-gradient(180deg,#f8f0e5,#f2e7d8);border-radius:14px;padding:12px}
+.conn-card:hover{border-color:#bf9c75;transform:translateY(-1px)}
+.conn-card strong{font:700 13px var(--serif)}
+.settings-index-item{border:1px solid transparent;border-radius:13px}
+.settings-index-item:hover{background:#eadcc6;border-color:#d1b491}
+.settings-index-item.active{background:linear-gradient(180deg,#ecddc8,#e6d1b4);border-color:#bf9870;box-shadow:inset 3px 0 #8f6030,0 8px 18px rgba(111,81,48,.06)}
+.choice strong,.preset strong,.settings-index-item strong,.conn-card strong{letter-spacing:.01em}
+.bottom{backdrop-filter:blur(12px)}
+.bottom button{position:relative;padding-top:6px;color:#a89987;transition:color .16s ease,transform .16s ease}
+.bottom button.active{color:#e2c299}
+.bottom button:after{content:'';position:absolute;left:18%;right:18%;bottom:3px;height:2px;border-radius:999px;background:transparent}
+.bottom button.active:after{background:#ba8a52}
+@media(max-width:820px),(hover:none) and (pointer:coarse){
+  .quick{font-size:11px;padding:8px 11px}
+  .quick:before{content:none}
+  .person-index{gap:14px}
+  .person-index button{font-size:14px}
+  .tab,.setting-subtab,.mini,.drawer-close{padding:7px 10px}
+}
+
+/* v5.3 — atelier polish: type rendering, texture, motion, accessibility */
+
+body{position:relative}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+.app{position:relative;z-index:1}
+
+::selection{background:#c99a5f;color:#241a10}
+
+.main,.sidebar,.drawer-panel{scrollbar-width:thin;scrollbar-color:#7a5c3c transparent}
+.main::-webkit-scrollbar,.sidebar::-webkit-scrollbar,.drawer-panel::-webkit-scrollbar{width:9px;height:9px}
+.main::-webkit-scrollbar-track,.sidebar::-webkit-scrollbar-track,.drawer-panel::-webkit-scrollbar-track{background:transparent}
+.main::-webkit-scrollbar-thumb{background:#b39a76;border-radius:99px;border:2px solid #f2eadc}
+.sidebar::-webkit-scrollbar-thumb{background:#4a382b;border-radius:99px;border:2px solid #130e0b}
+.drawer-panel::-webkit-scrollbar-thumb{background:#b39a76;border-radius:99px;border:2px solid #ede1cf}
+.main::-webkit-scrollbar-thumb:hover,.sidebar::-webkit-scrollbar-thumb:hover,.drawer-panel::-webkit-scrollbar-thumb:hover{background:#8f6030}
+
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid #c17f3a;outline-offset:2px;border-radius:6px
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline-offset:0}
+
+@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.page.active>.book,.page.active>.settings-page{animation:pageIn .28s cubic-bezier(.2,.7,.3,1) both}
+
+@keyframes drawerFade{from{opacity:0}to{opacity:1}}
+@keyframes drawerSlide{from{transform:translateX(28px);opacity:.5}to{transform:translateX(0);opacity:1}}
+.drawer.open{animation:drawerFade .18s ease both}
+.drawer.open .drawer-panel{animation:drawerSlide .22s cubic-bezier(.2,.7,.3,1) both}
+
+@keyframes menuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.mode-menu.open{animation:menuIn .16s ease both;transform-origin:top left}
+
+.card,.catalog-card,.relation-card,.guide-card,.stage-card,.margin-card,.metric{transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease}
+.catalog-card:hover,.relation-card:hover,.guide-card:hover{box-shadow:0 10px 22px rgba(97,68,34,.1);transform:translateY(-1px);border-color:#c1a37c}
+.record.conn{transition:background .16s ease,box-shadow .18s ease,transform .16s ease}
+.record.conn:hover{box-shadow:0 8px 18px rgba(97,68,34,.08);transform:translateY(-1px)}
+
+@media (prefers-reduced-motion:reduce){
+  .page.active>.book,.page.active>.settings-page,.drawer.open,.drawer.open .drawer-panel,.mode-menu.open{animation:none}
+  *{scroll-behavior:auto}
+}
+
+/* v5.6 — offline/self-contained interaction patch */
+/* No external CSS/font dependency: local file opening must not block script boot. */
+
+/* v5.5 — interactive chapter patch */
+.chapter-item{position:relative}
+.chapter-item.active::after{content:'';position:absolute;right:10px;top:50%;width:5px;height:5px;border-radius:50%;background:#a6733b;transform:translateY(-50%);box-shadow:0 0 0 4px rgba(166,115,59,.10)}
+.reading-sheet.chapter-changing{animation:chapterTurn .18s ease both}
+@keyframes chapterTurn{from{opacity:.72;transform:translateX(3px)}to{opacity:1;transform:translateX(0)}}
+
+
+/* v5.7 — dual-mode interaction: JS-enhanced + CSS-only fallback */
+.header{grid-template-columns:auto minmax(0,1fr) auto auto}
+.boot-status{display:inline-flex;align-items:center;gap:6px;margin-right:2px;padding:6px 9px;border:1px solid #72533a;border-radius:999px;background:rgba(255,255,255,.035);color:#d6c5b1;font:700 9px/1 var(--sans);letter-spacing:.08em;white-space:nowrap}
+.boot-status::before{content:'';width:6px;height:6px;border-radius:50%;background:#a47745;box-shadow:0 0 0 3px rgba(164,119,69,.12)}
+html[data-libra-boot="ready"] .boot-status{color:#dce9d7;border-color:#50634d}
+html[data-libra-boot="ready"] .boot-status::before{background:#6f8b69;box-shadow:0 0 0 3px rgba(111,139,105,.13)}
+.boot-status .active-copy{display:none}html[data-libra-boot="ready"] .boot-status .fallback-copy{display:none}html[data-libra-boot="ready"] .boot-status .active-copy{display:inline}
+.nav a,.bottom a{color:inherit;text-decoration:none}
+.nav a{width:100%;display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;background:none;color:#c8baa8;text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:14px;transition:background .16s ease,border-color .16s ease,transform .16s ease,color .16s ease}
+.nav a:hover{background:rgba(255,255,255,.025);border-color:rgba(168,123,61,.15);transform:translateX(1px)}
+.nav a.active{background:linear-gradient(180deg,#251c16,#201711);border-color:rgba(167,125,76,.22);box-shadow:inset 3px 0 #9b6b36,0 10px 20px rgba(0,0,0,.12);color:#f3e7d6}
+.bottom a{position:relative;display:grid;place-items:center;align-content:center;color:#a89987;font-size:10px;padding-top:6px}
+.bottom a span{display:block;font:15px var(--serif);margin-bottom:1px}.bottom a.active{color:#e2c299}.bottom a:after{content:'';position:absolute;left:18%;right:18%;bottom:3px;height:2px;border-radius:999px;background:transparent}.bottom a.active:after{background:#ba8a52}
+#quickBtn{text-decoration:none}
+#quickDrawer:target{display:block}
+.fallback-only{display:none!important}
+html:not([data-libra-boot="ready"]) .fallback-only{display:block!important}
+html:not([data-libra-boot="ready"]) .js-only{display:none!important}
+html:not([data-libra-boot="ready"]) .page:target{display:block!important}
+html:not([data-libra-boot="ready"]):has(.page:target) .page.active:not(:target){display:none!important}
+html:not([data-libra-boot="ready"]):has(.page:target) .nav [data-page],html:not([data-libra-boot="ready"]):has(.page:target) .bottom [data-page]{color:#9f8f7d}
+html:not([data-libra-boot="ready"]):has(#page-desk:target) [data-page="desk"],html:not([data-libra-boot="ready"]):has(#page-memory:target) [data-page="memory"],html:not([data-libra-boot="ready"]):has(#page-people:target) [data-page="people"],html:not([data-libra-boot="ready"]):has(#page-world:target) [data-page="world"],html:not([data-libra-boot="ready"]):has(#page-story:target) [data-page="story"],html:not([data-libra-boot="ready"]):has(#page-settings:target) [data-page="settings"]{color:#f3e7d6;background:linear-gradient(180deg,#251c16,#201711);border-color:rgba(167,125,76,.22);box-shadow:inset 3px 0 #9b6b36}
+.fallback-quick{display:grid;gap:10px}.fallback-quick .agent-row{grid-template-columns:minmax(0,1fr) auto}.fallback-quick .fallback-note{padding:9px 10px;border-left:3px solid #a47943;background:#eadbc4;color:#67523c;font-size:11px;line-height:1.55}
+.fallback-close{display:inline-flex;text-decoration:none}
+html[data-libra-boot="ready"] .fallback-close{display:none!important}
+html:not([data-libra-boot="ready"]) #quickDrawer .drawer-close.js-close{display:none!important}
+@media(max-width:820px),(hover:none) and (pointer:coarse){.boot-status{padding:5px 7px;font-size:8px}.header{grid-template-columns:auto minmax(0,1fr) auto auto;gap:7px}.quick{font-size:11px!important}.bottom a{min-width:0}}
+
+
+/* v5.8 — mobile reading refinement */
+@media (max-width: 820px), (hover:none) and (pointer:coarse){
+  html,body{overflow-x:hidden}
+  .app,.main,.page,.book,.leaf,.settings-page,.paper-content,.paper-surface{min-width:0}
+  .main{overflow-x:hidden;padding:10px 10px 78px}
+  .leaf,.settings-page{border-radius:24px 24px 10px 10px}
+  .page-title{font-size:24px;line-height:1.22}
+  .chapter{font-size:10px;letter-spacing:.12em}
+  .lede{font-size:13px;line-height:1.72}
+  .person-index{gap:18px;margin:14px 0 12px;padding-bottom:8px}
+  .person-index button{font-size:18px;line-height:1.1;padding:4px 0 10px}
+  .memory-reader,
+  .reader-columns,
+  .character-spread,
+  .world-intro,
+  .guide-grid,
+  .intro-grid,
+  .reader-footer,
+  .catalog,
+  .relation-list,
+  .setting-grid,
+  .setting-grid.three,
+  .preset-row,
+  .choice-grid,
+  .choice-grid.three,
+  .choice-grid.four,
+  .connection-strip,
+  .toc-item{display:grid;grid-template-columns:1fr !important;gap:14px !important}
+  .chapter-rail,.reading-sheet,.character-sheet,.relation-sheet,.world-sheet,.toc-sheet,.guide-card,.record-shell,.intro-card,.foot-note,.margin-card{min-width:0;width:100%}
+  .chapter-rail,.reading-sheet,.relation-sheet,.world-sheet,.toc-sheet{padding:18px 16px;border-radius:22px}
+  .chapter-item{display:flex;align-items:flex-start;gap:10px;width:100%;padding:12px 12px 12px 10px}
+  .chapter-item > span:last-child{display:block;min-width:0}
+  .chapter-item strong,.chapter-item span span{display:block;white-space:normal;word-break:keep-all}
+  .chapter-no{flex:0 0 auto}
+  .sheet-head,.hero-copy,.record-head,.person-header,.section-headline,.margin-head,.toc-actions,.card-head{display:block !important}
+  .sheet-actions,.bio-actions,.guide-actions,.toc-actions,.record-actions,.inline-actions,.margin-actions{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:10px}
+  .sheet-actions .text-action+.text-action,.record-actions .text-action+.text-action,.inline-actions .text-action+.text-action,.margin-actions .text-action+.text-action,.bio-actions .text-action+.text-action,.guide-actions .text-action+.text-action,.toc-actions .text-action+.text-action{padding-left:10px}
+  .sheet-actions .text-action+.text-action::after,.record-actions .text-action+.text-action::after,.inline-actions .text-action+.text-action::after,.margin-actions .text-action+.text-action::after,.bio-actions .text-action+.text-action::after,.guide-actions .text-action+.text-action::after,.toc-actions .text-action+.text-action::after{left:0}
+  .sheet-title{font-size:30px;line-height:1.2;word-break:keep-all}
+  .sheet-meta,.subtitle,.relation-meta,.toc-meta,.rail-label{font-size:11px;line-height:1.55}
+  .dropcap{font-size:15px;line-height:1.78}
+  .reader-prose p,.guide-copy p,.summary,.record-note,.world-note,.subtoc li,.toc-copy p{font-size:14px;line-height:1.75;word-break:keep-all}
+  .margin-stack{display:grid;gap:12px}
+  .margin-card h4,.section-title{font-size:18px}
+  .guide-card h3,.relation-card h5,.intro-card h4,.record-head strong,.toc-copy h3,.person-detail h3{font-size:20px;line-height:1.25;color:#3a2b1d}
+  .guide-card p,.relation-card p,.intro-card p,.facts dd,.facts dt,.world-note,.guide-copy p{color:#584734}
+  .guide-card .index,.toc-no,.sheet-kicker{font-size:11px}
+  .facts{grid-template-columns:1fr;gap:4px 8px}
+  .toc-no{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid #c9b394;background:#f0e3d0}
+  .toc-meta{justify-self:start;display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#efe1cc;border:1px solid #d1b999;color:#735639;margin-top:2px}
+  .quick-drawer-fallback .setting-grid,
+  #quickDrawer .setting-grid,
+  #detailDrawer .drawer-body,
+  #connectionDrawer .drawer-body{overflow-x:hidden}
+  .bottom{height:64px;padding-bottom:env(safe-area-inset-bottom,0)}
+  .bottom a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px 7px;min-width:0;text-align:center}
+  .bottom a span{font-size:14px;margin-bottom:0}
+  .bottom a small{font-size:9px;line-height:1.1;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fallback-person-note{margin-top:14px;padding:10px 12px;border:1px dashed #c8b396;border-radius:14px;background:#f2e8da;color:#7a6147;font-size:12px;line-height:1.6}
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <button type="button" class="brand" id="workspaceBtn"><div class="bookmark">L</div><div><strong id="workspaceLabel">LIBRA</strong><span class="chev">⌄</span><small>LIBRARIAN MEMORY SYSTEM</small></div></button>
+    <div class="header-center">사서의 열람대 · 현재 기록을 읽고 다음 응답을 준비합니다</div>
+    <span class="boot-status" id="bootStatus"><span class="fallback-copy">JS FALLBACK</span><span class="active-copy">JS ACTIVE</span></span>
+    <a class="quick" id="quickBtn" href="#quickDrawer">빠른 설정</a>
+  </header>
+
+  <aside class="sidebar">
+    <div><div class="side-title">열람대</div><div class="nav">
+      <a class="active" href="#page-desk" data-page="desk"><span class="ico">⌘</span><div>현재 열람대<small>이번 턴 · 리콜 · 작성 결과</small></div></a>
+      <a href="#page-memory" data-page="memory"><span class="ico">Ⅰ</span><div>기억 서가<small>Canonical Memory</small></div></a>
+      <a href="#page-people" data-page="people"><span class="ico">◌</span><div>인물 카드함<small>인물 · 관계 · 비밀</small></div></a>
+      <a href="#page-world" data-page="world"><span class="ico">✦</span><div>세계 도감<small>장소 · 세력 · 규칙</small></div></a>
+      <a href="#page-story" data-page="story"><span class="ico">Ⅳ</span><div>서사 연감<small>Narrative · 전환점</small></div></a>
+      <a href="#page-settings" data-page="settings"><span class="ico">⚙</span><div>설정실<small>고급 설정</small></div></a>
+    </div></div>
+    <div class="side-foot"><button id="sideRecall">이번 리콜 전체 열람</button><button id="sideWriter">이번 작성 기록 열람</button></div>
+  </aside>
+
+  <main class="main">
+    <section class="page active" id="page-desk" data-page="desk">
+      <div class="desk-label">Reading Desk · 현재 열람대</div>
+      <div class="book">
+        <article class="leaf left paper-surface"><div class="paper-content">
+          <div class="chapter">Current Scene</div><h1 class="page-title">현재 장면의 기록</h1><p class="lede">사용자의 입력과 최신 상태를 기준으로, 지금 장면에서 가장 중요한 기록만 펼쳐놓습니다.</p>
+          <div class="info-row"><span class="slip"><span class="stamp"></span> 정본 메모리 정상</span><span class="slip">현재 턴 T17</span><span class="slip" id="modeSlip">LIBRA · Planner</span></div>
+          <div class="metric-grid"><div class="metric"><strong>3</strong><span>호출된 기억</span></div><div class="metric"><strong>2</strong><span>관계 영향</span></div><div class="metric"><strong>1</strong><span>세계 제약</span></div></div>
+          <div class="rule"></div>
+          <div class="card"><div class="card-head"><div><h3>최근 장면</h3><small>Live Tail · 최신 U+A</small></div></div><p class="excerpt">민호가 다시 협력을 제안했다. 유진은 즉답하지 않았고, 외부 감시 인력이 가까워지면서 둘 모두 대화를 길게 끌기 어려운 상황이다.</p></div>
+          <div class="card"><div class="card-head"><div><h3>중요한 변화</h3><small>State · Relationship</small></div></div><p class="excerpt">갈등은 완화되었지만 신뢰는 회복되지 않았다. 유진은 중요한 정보를 한 번에 공개하지 않는 경향을 유지한다.</p></div>
+        </div></article>
+        <article class="leaf right paper-surface"><div class="paper-content">
+          <div class="chapter">Librarian's Notes</div><h1 class="page-title">이번 턴의 사서 주석</h1><p class="lede">선택된 기억과 작성 결과는 먼저 짧게 보여주고, 필요할 때만 전체 자료를 열람합니다.</p>
+          <div class="card"><div class="card-head"><div><h3>이번 리콜</h3><small>관련 정본 기억 3개</small></div><button class="more" data-open="recall">전체 보기 →</button></div><p class="excerpt fade">민호가 유진을 속였던 사건, 이후 유진이 핵심 정보를 먼저 내놓지 않게 된 변화, 둘 사이의 불신 관계가 다시 선택되었습니다.</p></div>
+          <div class="card"><div class="card-head"><div><h3 id="writerTitle">플래너의 주석</h3><small id="writerSub">기억을 행동으로 번역한 결과</small></div><button class="more" data-open="writer">전체 보기 →</button></div><p class="excerpt fade" id="writerPreview">유진은 민호의 협력 제안을 곧바로 받아들이지 않는다. 과거의 배신 기억이 아직 관계에 영향을 주기 때문에 먼저 의도를 확인하고, 중요한 정보는 단계적으로만 공개하는 편이 자연스럽다.</p></div>
+          <div class="card"><div class="card-head"><div><h3>최종 주입</h3><small>최종 모델에 전달되는 자료</small></div><button class="more" data-open="brief">전체 보기 →</button></div><div class="quote" id="briefPreview">유진은 민호에게 거리를 유지하되 협력 가능성을 완전히 닫지는 않는다. 먼저 이유와 조건을 묻고, 핵심 정보는 즉시 공개하지 않는다.</div></div>
+        </div></article>
+      </div>
+    </section>
+
+    <section class="page" id="page-memory" data-page="memory"><div class="desk-label">Memory Reader · 기억 서가</div><div class="settings-page paper-surface" id="memoryPaper"><div class="paper-content"><div class="chapter">Canonical Archive</div><h1 class="page-title">기억 서가</h1><p class="lede">기억은 단순 데이터가 아니라, 현재를 설명하는 이야기의 한 장처럼 읽습니다.</p><div class="memory-reader"><aside class="chapter-rail" aria-label="기억 목차"><div class="rail-section"><p class="rail-label">현재 에피소드</p><h3 class="rail-title">기억 목차</h3><button class="chapter-item active" type="button" data-memory-chapter="betrayal"><span class="chapter-no">04</span><span><strong>배신 이후의 거리감</strong><span>T6–T10 · 이번 장면에 직접 영향</span></span></button><button class="chapter-item" type="button" data-memory-chapter="cooperation"><span class="chapter-no">03</span><span><strong>공동 조사 재개</strong><span>T11–T15 · 제한적 협력 재개</span></span></button></div><div class="rail-section"><p class="rail-label">이전 기록</p><h3 class="rail-title">연결된 장면</h3><button class="chapter-item" type="button" data-memory-chapter="beginning"><span class="chapter-no">01</span><span><strong>공동 조사의 시작</strong><span>T1–T5 · 최초의 신뢰 기반</span></span></button></div></aside><article class="reading-sheet"><div class="sheet-head"><div><p class="sheet-kicker" id="memoryChapterKicker">Chapter 04</p><h2 class="sheet-title" id="memoryPrimaryTitle">배신 이후의 거리감</h2><div class="sheet-meta" id="memoryRecordText">T6–T10 · 이번 리콜에 사용됨</div></div><div class="sheet-actions"><button class="text-action" data-open="memory">기억의 근거</button><button class="text-action" data-open="lineage">기록 계보</button><button class="text-action strong" data-edit-target="memoryPaper">교정</button></div></div><div class="reader-columns"><div class="reader-prose"><p class="dropcap" id="memorySummaryText">민호가 정보를 숨긴 사실이 드러나자, 유진은 그 순간을 단순한 오해가 아니라 신뢰를 조심스럽게 다루어야 하는 전환점으로 기억했습니다. 그래서 이후의 장면들에서 유진은 중요한 정보를 곧바로 내놓지 않고, 먼저 상대의 의도와 목적을 확인하는 쪽으로 반응합니다.</p><p id="memorySummarySecondary">이 장은 단순히 “배신이 있었다”는 사실만 적어 두지 않습니다. 누가 무엇을 숨겼는지, 그 일이 이후 관계에 어떤 속도로 남았는지, 그리고 현재 장면의 말투와 거리감에 어떤 그림자를 드리우는지를 함께 남깁니다. 그래서 사용자는 기억을 목록이 아니라 서사의 문단처럼 읽을 수 있습니다.</p></div><aside class="margin-stack"><section class="margin-card"><h4>이번 장에서 남은 핵심</h4><p id="memoryCoreText">유진은 협력 가능성을 닫지 않지만, 선뜻 신뢰하지도 않습니다. 민호는 해명과 설득을 우선해야 합니다.</p></section><section class="margin-card"><h4>현재 상태로 이어진 흔적</h4><p id="memoryTrailText">이 기억은 유진 → 민호 관계의 불신, 정보 공개 방식, 그리고 장면의 긴장도에 직접 연결됩니다.</p></section></aside></div><div class="reader-footer"><div class="foot-note"><strong>등장인물</strong><span id="memoryPeopleRefs"><button class="crossref" data-crossref="people:yujin">유진</button> · <button class="crossref" data-crossref="people:minho">민호</button></span></div><div class="foot-note"><strong>관계 변화</strong><span id="memoryRelationText">신뢰 하락 · 제한적 협력 유지</span></div><div class="foot-note"><strong>세계 영향</strong><span id="memoryWorldRef"><button class="crossref" data-crossref="world">봉인 문서 규정</button>이 장면 압박 요소로 남음</span></div></div></article></div><div class="edit-panel" data-editor-for="memoryPaper"><div class="editable-zone"><label>정본 기억 제목</label><input id="memoryEditTitle" value="배신 이후의 거리감"><label style="margin-top:9px">기억 요약</label><textarea id="memoryEditBody" rows="6">민호가 정보를 숨긴 사실이 드러나면서 유진의 신뢰가 크게 떨어졌다. 이후 유진은 중요한 정보를 먼저 다 공개하지 않고 상대의 의도를 확인한 뒤 단계적으로 반응한다.</textarea></div><div class="edit-actions"><button class="cancel-edit" data-cancel-edit="memoryPaper">취소</button><button class="save-edit" data-save-edit="memoryPaper" data-save-type="memory">기록 저장</button></div></div></div></div></section>
+    <section class="page" id="page-people" data-page="people"><div class="desk-label">Character Guide · 인물 카드함</div><div class="settings-page paper-surface" id="peoplePaper"><div class="paper-content"><div class="chapter">Character Introduction</div><h1 class="page-title">인물 카드함</h1><p class="lede">인물과 관계는 도식보다 먼저, 정말 인물 소개를 읽는 것처럼 자연스럽게 이해되도록 보여줍니다.</p><div class="person-index"><button class="active" data-person="yujin">유진</button><button data-person="minho">민호</button></div><div class="person-detail" id="personDetail"><div class="character-spread"><article class="character-sheet"><div class="hero-copy"><div><h3>유진</h3><div class="subtitle">기록 조사자 · Character Entry</div><p class="summary">유진은 기록을 다룰 때 무엇보다 근거와 순서를 중시하는 인물입니다. 한 번 신뢰가 흔들린 뒤에는 상대의 의도를 먼저 확인하려 하고, 중요한 정보는 단계적으로 공개하는 쪽을 택합니다.</p></div><div class="bio-actions"><button class="text-action" data-open="person">열람</button><button class="text-action strong" data-edit-target="peoplePaper">교정</button></div></div><div class="intro-grid"><section class="intro-card"><h4>첫인상</h4><p>차분하지만 쉽게 속내를 드러내지 않는 기록 조사자.</p></section><section class="intro-card"><h4>현재 행동</h4><p>민호의 의도를 되묻고, 중요한 정보는 단계적으로 공개합니다.</p></section><section class="intro-card"><h4>알고 있는 것</h4><p>민호가 한 번 자신을 속였고, 봉인 문서 접근에는 분명한 위험이 있다는 것을 압니다.</p></section><section class="intro-card"><h4>숨기는 것</h4><p>자신도 이미 일부 단서를 확보했지만, 상대의 반응을 보기 전에는 전부 공개하지 않습니다.</p></section></div><div class="record-shell" style="margin-top:14px"><div class="record-head"><div><strong>기억과 연결된 소개</strong><p>현재 장면에 직접 영향을 주는 기억 요약</p></div><div class="inline-actions"><button class="text-action" data-crossref="memory:betrayal">관련 기억으로 이동</button></div></div><div class="record-note">배신 이후의 거리감이 남아 있기 때문에, 유진은 협력 가능성을 완전히 닫지 않으면서도 먼저 신뢰 회복의 증거를 요구하는 방식으로 반응합니다.</div></div></article><aside class="relation-sheet"><h3 class="section-title">관계 소개</h3><p style="margin:0 0 10px;color:#6f5b49;line-height:1.65">이 인물이 누구를 어떻게 보고, 그 관계가 이번 장면의 말투와 선택에 어떤 영향을 주는지 소개문처럼 읽습니다.</p><div class="relation-list"><article class="relation-card"><h5>민호</h5><p>완전히 신뢰하지는 않지만, 현재 상황에서는 협력이 필요하다고 판단합니다.</p><div class="relation-meta">신뢰 42 · 최근 변화: 경계 유지 속 협력 재개</div><div class="inline-actions" style="margin-top:8px"><button class="text-action" data-open="relations">관계 더 읽기</button></div></article></div></aside></div><div class="fallback-person-note fallback-only">이 미리보기 환경에서는 첫 인물 기록을 먼저 보여줍니다. JavaScript가 실행되는 환경에서는 유진·민호 전환과 상세 카드 렌더링이 모두 활성화됩니다.</div></div><div class="edit-panel" data-editor-for="peoplePaper"><div class="editable-zone"><label>관계 핵심 요약 교정</label><textarea id="personRelationEdit" rows="3">민호를 완전히 신뢰하지 않음</textarea><label style="margin-top:9px">현재 행동 경향 교정</label><textarea id="personActionEdit" rows="4">민호의 의도를 되묻고, 중요한 정보는 단계적으로 공개한다.</textarea></div><div class="edit-actions"><button class="cancel-edit" data-cancel-edit="peoplePaper">취소</button><button class="save-edit" data-save-edit="peoplePaper" data-save-type="person">교정 저장</button></div></div></div></div></section>
+    <section class="page" id="page-world" data-page="world"><div class="desk-label">World Guide · 세계 도감</div><div class="settings-page paper-surface" id="worldPaper"><div class="paper-content"><div class="chapter">World Reference</div><h1 class="page-title">세계 도감</h1><p class="lede">장면에 실제로 작동하는 무대, 세력, 규칙을 세계관 소개 페이지처럼 읽습니다.</p><div class="world-intro"><article class="world-sheet"><h2 class="section-title">지금 펼친 세계의 개요</h2><div class="guide-copy"><p>현재 장면의 무대는 남문 보관소입니다. 이곳은 기록을 지키기 위해 감시가 배치된 장소이며, 허가 없는 열람과 외부 공개가 금지되는 공간입니다. 그래서 인물들의 대화는 단순한 감정 교환이 아니라, 언제든 누군가 개입할 수 있는 제한 속에서 이루어집니다.</p><p>이 도감은 세계 전체를 한꺼번에 던지지 않고, 지금 장면의 판단에 필요한 정보만 앞쪽 페이지에 모아 둡니다. 사용자는 세계를 데이터 트리처럼 파고드는 대신, 현재 장면의 배경 설명을 읽듯 이해할 수 있습니다.</p></div><div class="world-note">감시대의 순찰 간격이 짧아지고 있어, 대화가 길어질수록 발견 위험도 함께 높아집니다. 이 장소에서는 무엇을 말하느냐만큼 언제 말을 끝내느냐도 중요합니다.</div></article><aside class="world-sheet"><div class="section-title">세계 소개 색인</div><div class="guide-grid"><div class="guide-card"><div class="index">LOCATION</div><h3>남문 보관소</h3><p>감시가 있는 폐쇄형 기록 공간. 정보의 이동과 열람이 엄격히 통제됩니다.</p><div class="guide-actions" style="margin-top:8px"><button class="text-action" data-open="world">열람</button></div></div><div class="guide-card"><div class="index">FACTION</div><h3>기록원 감시대</h3><p>규정 위반에 즉시 개입할 수 있는 감시 조직. 지연과 은폐를 모두 압박합니다.</p><div class="guide-actions" style="margin-top:8px"><button class="text-action" data-open="world">열람</button></div></div><div class="guide-card"><div class="index">RULE</div><h3>봉인 문서 규정</h3><p id="worldRuleText">허가 없는 열람과 외부 공개를 금지한다.</p><p style="margin:8px 0 0;color:#8a6a41;font-size:11px">관련 기억: <button class="crossref" data-crossref="memory:betrayal">배신 이후의 거리감</button></p><div class="guide-actions" style="margin-top:8px"><button class="text-action" data-open="world">열람</button><button class="text-action strong" data-edit-target="worldPaper">교정</button></div></div></div></aside></div><div class="edit-panel" data-editor-for="worldPaper"><div class="editable-zone"><label>세계 규칙 교정</label><textarea id="worldEditBody" rows="5">허가 없는 열람과 외부 공개를 금지한다. 현재 장면에서는 기록원 감시대가 규정 위반에 즉각 개입할 수 있다.</textarea></div><div class="edit-actions"><button class="cancel-edit" data-cancel-edit="worldPaper">취소</button><button class="save-edit" data-save-edit="worldPaper" data-save-type="world">기록 저장</button></div></div></div></div></section>
+    <section class="page" id="page-story" data-page="story"><div class="desk-label">Table of Contents · 서사 연감</div><div class="settings-page paper-surface" id="storyPaper"><div class="paper-content"><div class="chapter">Narrative Almanac</div><h1 class="page-title">서사 연감</h1><p class="lede">내러티브는 사건의 요약이 아니라, 책의 목차처럼 지금 어디까지 왔고 무엇이 남았는지 한눈에 보이게 합니다.</p><div class="toc-sheet"><div class="toc-actions" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2 class="section-title" style="margin-bottom:4px">현재 이야기 목차</h2><p style="margin:0;color:#786553;line-height:1.65">Arc와 Thread를 목차형 흐름으로 배치해, 현재 장면의 위치와 열린 갈래를 빠르게 훑을 수 있습니다.</p></div><button class="text-action" data-open="story">목차 펼치기</button></div><div class="toc-list"><article class="toc-item"><div class="toc-no">01</div><div class="toc-copy"><h3>다시 만난 두 사람</h3><p>협력 가능성은 생겼지만, 신뢰는 아직 회복되지 않았습니다. 현재 장면은 서로의 의도를 재확인하는 단계에 머물러 있습니다.</p><p style="margin-top:6px"><button class="crossref" data-crossref="memory:betrayal">관련 기억 보기 →</button></p></div><div class="toc-meta">현재 장</div></article><article class="toc-item"><div class="toc-no">02</div><div class="toc-copy"><h3>봉인 문서를 둘러싼 압박</h3><p>감시대의 압박과 문서 규정이 인물 선택의 폭을 좁히고 있습니다. 정보는 쉽게 드러낼 수 없습니다.</p><p style="margin-top:6px"><button class="crossref" data-crossref="world">관련 세계관 보기 →</button></p></div><div class="toc-meta">활성 Arc</div></article><article class="toc-item"><div class="toc-no">03</div><div class="toc-copy"><h3>기록원 내부의 비밀</h3><p>누가 무엇을 숨기고 있는지, 봉인 문서의 출처가 무엇인지 아직 풀리지 않은 채 남아 있습니다.</p></div><div class="toc-meta">열린 Thread</div></article></div><div class="subtoc"><h4>열린 줄기</h4><ul><li>유진이 먼저 어느 정도의 정보를 공개할 것인가</li><li>민호의 해명이 실제 신뢰 회복으로 이어질 수 있는가</li><li>감시대의 개입이 장면을 중단시킬 것인가</li></ul></div><div class="direction-note"><strong>사서의 여백</strong><span id="storyMarginText">유진과 민호의 관계는 급격히 화해시키지 않고, 작은 신뢰 회복의 행동을 몇 차례 거친 뒤 변화시키고 싶다.</span><div class="margin-actions" style="margin-top:8px"><button class="text-action strong" data-edit-target="storyPaper">여백 교정</button></div></div></div><div class="edit-panel" data-editor-for="storyPaper"><div class="editable-zone"><label>원하는 방향</label><textarea id="storyDirectionEdit" rows="4">유진과 민호의 관계는 급격히 화해시키지 않고, 작은 신뢰 회복의 행동을 몇 차례 거친 뒤 변화시키고 싶다.</textarea><label style="margin-top:9px">피하고 싶은 전개</label><textarea id="storyAvoidEdit" rows="3">갑작스러운 완전 화해, 근거 없는 로맨스 전환</textarea></div><div class="edit-actions"><button class="cancel-edit" data-cancel-edit="storyPaper">취소</button><button class="save-edit" data-save-edit="storyPaper" data-save-type="story">여백 저장</button></div></div></div></div></section>
+    <section class="page" id="page-settings" data-page="settings">
+      <div class="desk-label">Settings Room · 설정실</div>
+      <div class="settings-page settings-room-page">
+        <div class="chapter">Settings Room</div>
+        <h1 class="page-title">설정실</h1>
+        <div class="settings-room-shell">
+          <aside class="settings-index" aria-label="설정실 목차">
+            <button class="settings-index-item active" data-setting-section="input_writer"><span>01</span><strong>Input Writer</strong><small>고급 작성기 옵션</small></button>
+            <button class="settings-index-item" data-setting-section="references"><span>02</span><strong>참고 자료</strong><small>모듈·캐릭터 로어</small></button>
+            <button class="settings-index-item" data-setting-section="memory"><span>03</span><strong>기억 · 리콜</strong><small>성능·검색·Live Context</small></button>
+            <button class="settings-index-item" data-setting-section="state"><span>04</span><strong>상태 추적</strong><small>Observer · Verifier</small></button>
+            <button class="settings-index-item" data-setting-section="server"><span>05</span><strong>서버 · 저장</strong><small>Storage · Compute 고급</small></button>
+            <button class="settings-index-item" data-setting-section="recovery"><span>06</span><strong>백업 · 복구</strong><small>Portable JSON 기억 복원</small></button>
+            <button class="settings-index-item" data-setting-section="transfer"><span>07</span><strong>데이터 이동</strong><small>JSON 가져오기 · 내보내기</small></button>
+            <button class="settings-index-item" data-setting-section="general"><span>08</span><strong>일반 · 진단</strong><small>실행 상태 · Debug</small></button>
+          </aside>
+          <section class="settings-workbench">
+            <div class="settings-workbench-head">
+              <div><div class="chapter" id="settingsSectionEyebrow">01 · INPUT WRITER</div><h2 id="settingsSectionTitle">Input Writer</h2><p id="settingsSectionDesc" hidden></p></div>
+              <button class="mini" id="settingsSaveAll">설정 저장</button>
+            </div>
+            <div id="settingsRoomBody"></div>
+            <div class="settings-status" id="settingsStatus" hidden></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom"><a class="active" href="#page-desk" data-page="desk"><span>⌘</span>열람대</a><a href="#page-memory" data-page="memory"><span>Ⅰ</span>기억</a><a href="#page-people" data-page="people"><span>◌</span>인물</a><a href="#page-world" data-page="world"><span>✦</span>세계</a><a href="#page-story" data-page="story"><span>Ⅳ</span>서사</a></nav>
+</div>
+
+<div class="mode-menu" id="modeMenu"><button class="active" data-workspace="libra"><strong>LIBRA</strong><small>기억 리콜 · Planner · Canonical Memory</small></button><button data-workspace="gradia"><strong>GRADIA</strong><small>소설/RP 초안 · SHADOW · AIDE</small></button></div>
+
+<div class="drawer" id="quickDrawer"><div class="drawer-panel"><div class="drawer-head"><div><div class="chapter">Librarian's Toolkit</div><h2 id="quickTitle">LIBRA 빠른 설정</h2></div><button class="drawer-close js-close" data-close="quickDrawer">닫기</button><a class="drawer-close fallback-close" href="#page-desk">닫기</a></div><div class="drawer-body">
+  <div class="drawer-section"><h3>연결 설정</h3><p>가장 먼저 연결 상태를 확인합니다. 각 버튼은 기존 LIBRA 수준의 세부 설정 Drawer로 이동합니다.</p><div class="connection-strip" style="margin-top:10px"><button class="conn-card" data-connection="ai"><strong><span class="status-dot"></span>AI 연결</strong><span>Claude Sonnet · 정상 →</span></button><button class="conn-card" data-connection="embedding"><strong><span class="status-dot warn"></span>임베딩 연결</strong><span>Voyage · 1024 →</span></button><button class="conn-card" data-connection="server"><strong><span class="status-dot"></span>서버 연결</strong><span>Mirror · 정상 →</span></button></div></div>
+  <div class="drawer-section"><h3>운용 프리셋</h3><p>현재 모드의 빠른 설정 전체를 하나의 운용 프리셋으로 저장합니다.</p><div class="formgrid" style="margin-top:10px"><div class="field"><label>저장된 프리셋</label><select id="operationPreset"><option>권장 기본값</option><option>내 RP 기본값</option><option>빠른 테스트</option></select></div><div class="field"><label>새 프리셋 이름</label><input id="operationPresetName" value="내 RP 기본값 2"></div></div><div class="action-row"><button class="mini primary" id="saveOperationPreset">설정 저장</button><button class="mini">프리셋 덮어쓰기</button></div><div class="note" id="operationPresetNote"></div></div>
+  <div id="quickModeBody"><div class="fallback-only fallback-quick">
+  <div class="drawer-section"><h3><span class="stage-number">1</span>LIBRA 기본 운용</h3><div class="choice-grid"><label class="choice active"><input type="radio" name="fallback-pre" checked style="width:auto;margin-right:6px"><strong>플래너 모드</strong><small>기억을 불러오고 현재 장면의 반응 계획을 준비</small></label><label class="choice"><input type="radio" name="fallback-pre" style="width:auto;margin-right:6px"><strong>사서 모드</strong><small>추가 Planner 호출 없이 기억만 전달</small></label></div></div>
+  <div class="drawer-section"><h3><span class="stage-number">2</span>기억 작성 에이전트</h3><div class="agent-table"><div class="agent-row"><div><strong>Ariadne</strong><small>정본 메모리 초안</small></div><label class="toggle"><input type="checkbox" checked><span>ON</span></label></div><div class="agent-row"><div><strong>Character ito</strong><small>인물·관계 보강</small></div><label class="toggle"><input type="checkbox" checked><span>ON</span></label></div><div class="agent-row"><div><strong>World ito</strong><small>세계 정보 보강</small></div><label class="toggle"><input type="checkbox"><span>OFF</span></label></div><div class="agent-row"><div><strong>Plot ito</strong><small>서사 정보 보강</small></div><label class="toggle"><input type="checkbox"><span>OFF</span></label></div></div></div>
+  <div class="fallback-note">현재 화면이 <strong>JS FALLBACK</strong>이면 로컬 미리보기 환경에서 JavaScript가 실행되지 않은 상태입니다. 페이지 이동과 이 패널 열기는 계속 작동하지만, Drawer 전환·동적 저장·인물/기억 데이터 갱신은 실제 브라우저/WebView에서 JS ACTIVE일 때 사용됩니다.</div>
+</div></div>
+</div></div></div>
+
+<div class="drawer" id="connectionDrawer"><div class="drawer-panel wide"><div class="drawer-head"><div><button class="back-quick" id="backQuick">← 빠른 설정으로 돌아가기</button><div class="chapter">Connection Archive</div><h2 id="connectionTitle">AI 연결</h2></div><button class="drawer-close" data-close="connectionDrawer">닫기</button></div><div class="drawer-body">
+  <div class="tabs" id="connectionTabs"><button class="tab active" data-connection-tab="ai">AI 연결</button><button class="tab" data-connection-tab="embedding">임베딩 연결</button><button class="tab" data-connection-tab="server">서버 연결</button></div>
+  <div id="connectionBody"></div>
+</div></div></div>
+
+<div class="drawer" id="detailDrawer"><div class="drawer-panel"><div class="drawer-head"><div><div class="chapter">Reference Slip</div><h2 id="detailTitle">상세 열람</h2></div><button class="drawer-close" data-close="detailDrawer">닫기</button></div><div class="drawer-body" id="detailBody"></div></div></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const state={workspace:'libra',page:'desk',person:'yujin',memoryChapter:'betrayal',libraPre:'planner',inputWriterMode:'rp',gradiaMode:'rp',gradiaLength:'3k5k',gradiaDirection:'balanced',stylePreset:'balanced',styleStrength:55,gradiaLang:'ko',pipeline:'light',handoff:'draft',connection:'ai'};
+const workspaceData={
+  libra:{label:'LIBRA',mode:'LIBRA · Planner',writerTitle:'플래너의 주석',writerSub:'기억을 행동으로 번역한 결과',writer:'유진은 민호의 협력 제안을 곧바로 받아들이지 않는다. 과거의 배신 기억이 아직 관계에 영향을 주기 때문에 먼저 의도를 확인하고, 중요한 정보는 단계적으로만 공개하는 편이 자연스럽다.',brief:'유진은 민호에게 거리를 유지하되 협력 가능성을 완전히 닫지는 않는다. 먼저 이유와 조건을 묻고, 핵심 정보는 즉시 공개하지 않는다.'},
+  gradia:{label:'GRADIA',mode:'GRADIA · RP',writerTitle:'SHADOW의 초안 메모',writerSub:'리콜과 현재 장면을 바탕으로 전체 초안을 먼저 구성',writer:'민호는 잠시 침묵한 뒤 질문의 의도를 되묻는다. 유진은 옆에서 그 반응을 주시한다. 협력은 가능하지만 핵심 정보 공개는 뒤로 미루는 흐름으로 초안을 구성한다.',brief:'초안은 경계감을 유지하면서도 협상 여지를 남기는 장면 흐름으로 전달된다.'}
+};
+const memoryChapters={
+  betrayal:{
+    id:'betrayal',no:'04',title:'배신 이후의 거리감',meta:'T6–T10 · 이번 리콜에 사용됨',
+    summary:'민호가 정보를 숨긴 사실이 드러나자, 유진은 그 순간을 단순한 오해가 아니라 신뢰를 조심스럽게 다루어야 하는 전환점으로 기억했습니다. 그래서 이후의 장면들에서 유진은 중요한 정보를 곧바로 내놓지 않고, 먼저 상대의 의도와 목적을 확인하는 쪽으로 반응합니다.',
+    secondary:'이 장은 단순히 “배신이 있었다”는 사실만 적어 두지 않습니다. 누가 무엇을 숨겼는지, 그 일이 이후 관계에 어떤 속도로 남았는지, 그리고 현재 장면의 말투와 거리감에 어떤 그림자를 드리우는지를 함께 남깁니다.',
+    core:'유진은 협력 가능성을 닫지 않지만, 선뜻 신뢰하지도 않습니다. 민호는 해명과 설득을 우선해야 합니다.',
+    trail:'이 기억은 유진 → 민호 관계의 불신, 정보 공개 방식, 그리고 장면의 긴장도에 직접 연결됩니다.',
+    people:[['yujin','유진'],['minho','민호']],relation:'신뢰 하락 · 제한적 협력 유지',world:'봉인 문서 규정',worldSuffix:'이 장면 압박 요소로 남음',
+    evidence:'T8에서 민호가 정보를 숨겼고, T9에서 유진이 직접 불신을 표현했습니다.',why:'현재의 불신 관계를 설명하는 대표 기억이라 정본으로 유지되었습니다.',raw:['canonical_memory_id: cm_006_010','revision: 4','source_turns: T6-T10']
+  },
+  cooperation:{
+    id:'cooperation',no:'03',title:'공동 조사 재개',meta:'T11–T15 · 관계 회복 시도',
+    summary:'격한 충돌이 지나간 뒤에도 둘은 조사를 완전히 포기하지 않았습니다. 유진은 민호의 제안을 전부 받아들이지 않았지만, 필요한 정보만 제한적으로 맞바꾸는 방식으로 다시 협력을 시작했습니다.',
+    secondary:'중요한 것은 화해가 아니라 협력의 방식이 달라졌다는 점입니다. 두 사람은 상대를 믿어서 움직이기보다, 서로의 필요와 위험을 계산하면서 한 단계씩 행동 범위를 넓혀 갔습니다.',
+    core:'둘은 다시 함께 움직이지만, 협력은 조건부입니다. 작은 약속이 지켜지는지가 다음 관계 변화를 결정합니다.',
+    trail:'현재 관계의 “불신 속 협력” 상태와, 정보를 단계적으로 공개하는 행동 경향에 이어집니다.',
+    people:[['yujin','유진'],['minho','민호']],relation:'조건부 협력 · 신뢰 소폭 회복',world:'남문 보관소',worldSuffix:'가 공동 행동의 무대가 됨',
+    evidence:'T12에서 제한적 정보 교환이 합의되었고, T14에서 두 사람이 같은 목표를 향해 다시 움직이기 시작했습니다.',why:'관계가 완전히 끊기지 않고 다시 작동하기 시작한 전환점이라 현재 반응을 설명하는 데 유효합니다.',raw:['canonical_memory_id: cm_011_015','revision: 2','source_turns: T11-T15']
+  },
+  beginning:{
+    id:'beginning',no:'01',title:'공동 조사의 시작',meta:'T1–T5 · 최초의 신뢰 기반',
+    summary:'유진과 민호는 서로를 잘 알지 못한 상태에서 같은 사건을 추적하기 시작했습니다. 첫 협력은 친밀감보다 정보의 정확성과 서로의 능력을 확인하는 과정에 가까웠습니다.',
+    secondary:'초기의 관계는 아직 상처받기 전의 가능성을 담고 있습니다. 민호의 정보력과 유진의 분석이 서로 보완된다는 사실을 두 사람이 처음 확인한 장면들이 이 장에 묶여 있습니다.',
+    core:'처음의 신뢰는 감정보다 “쓸모와 약속을 지키는가”에서 시작되었습니다.',
+    trail:'후대의 배신과 불신이 왜 더 크게 작용했는지를 설명하는 관계의 기준점입니다.',
+    people:[['yujin','유진'],['minho','민호']],relation:'초기 신뢰 형성',world:'기록원 내부 조사',worldSuffix:'가 두 사람을 처음 묶은 공통 과제였음',
+    evidence:'T3에서 첫 정보 교환이 성립했고, T5에서 서로의 역할을 인정한 채 다음 조사 단계로 넘어갔습니다.',why:'이후 관계 변화의 기준점이 되는 최초의 협력 기억이라 이전 이야기 항목에 유지됩니다.',raw:['canonical_memory_id: cm_001_005','revision: 1','source_turns: T1-T5']
+  }
+};
+
+function memoryPeopleHtml(chapter){
+  return (chapter.people||[]).map(([id,name])=>`<button class="crossref" data-crossref="people:${id}">${name}</button>`).join(' · ');
+}
+function renderMemoryChapter(id=state.memoryChapter){
+  const chapter=memoryChapters[id]||memoryChapters.betrayal;
+  state.memoryChapter=chapter.id;
+  $$('[data-memory-chapter]').forEach(b=>b.classList.toggle('active',b.dataset.memoryChapter===chapter.id));
+  const set=(selector,value)=>{const node=$(selector);if(node)node.textContent=value};
+  set('#memoryChapterKicker',`Chapter ${chapter.no}`);
+  set('#memoryPrimaryTitle',chapter.title);
+  set('#memoryRecordText',chapter.meta);
+  set('#memorySummaryText',chapter.summary);
+  set('#memorySummarySecondary',chapter.secondary);
+  set('#memoryCoreText',chapter.core);
+  set('#memoryTrailText',chapter.trail);
+  set('#memoryRelationText',chapter.relation);
+  const peopleNode=$('#memoryPeopleRefs'); if(peopleNode)peopleNode.innerHTML=memoryPeopleHtml(chapter);
+  const worldNode=$('#memoryWorldRef'); if(worldNode)worldNode.innerHTML=`<button class="crossref" data-crossref="world">${chapter.world}</button>${chapter.worldSuffix}`;
+  const sheet=document.querySelector('#memoryPaper .reading-sheet'); if(sheet){sheet.classList.remove('chapter-changing');void sheet.offsetWidth;sheet.classList.add('chapter-changing')}
+  const titleInput=$('#memoryEditTitle'); if(titleInput)titleInput.value=chapter.title;
+  const bodyInput=$('#memoryEditBody'); if(bodyInput)bodyInput.value=chapter.summary;
+}
+
+const people={
+  yujin:{name:'유진',role:'분석가',linkedMemory:'배신 이후의 거리감',linkedMemoryId:'betrayal',subtitle:'기억을 검토하고, 진실을 쉽게 넘기지 않는 인물',summary:'유진은 민호를 경계하지만 협력의 가능성을 닫지 않는다. 그녀는 중요한 사실을 한 번에 드러내기보다, 상대의 의도와 상황의 안정성을 먼저 확인하려 한다.',firstImpression:'차분하고 신중하다. 감정이 없어서가 아니라, 감정을 곧바로 행동으로 드러내지 않는 쪽에 가깝다.',know:'민호가 과거 자신을 속였다는 사실을 안다.',secret:'핵심 기록의 사본을 따로 보관 중이다.',action:'의도를 확인하고 조건 없는 협력은 피한다.',relations:[{with:'민호',summary:'불신 속 제한적 협력',trust:'낮음',change:'조금 완화',note:'배신의 기억 때문에 먼저 의도를 확인한다.',tone:'말을 아끼며 시험하듯 반응한다.'},{with:'기록원 감시대',summary:'직접 충돌을 피함',trust:'없음',change:'변화 없음',note:'필요할 때만 규정을 언급하며 거리를 둔다.',tone:'압박을 느끼지만 드러내지는 않는다.'}]},
+  minho:{name:'민호',role:'중개자',linkedMemory:'배신 이후의 거리감',linkedMemoryId:'betrayal',subtitle:'협력을 성사시켜야 하는 쪽에 서 있는 인물',summary:'민호는 유진의 협력이 절실하기 때문에 설득과 해명을 우선한다. 급박함을 이유로 삼지만, 그 급박함이 오히려 불신을 다시 자극할 수 있다는 점도 알고 있다.',firstImpression:'부드럽게 설득하려 하지만, 급할수록 조급함이 문장 사이로 새어 나온다.',know:'유진이 자신을 경계한다는 것을 안다.',secret:'숨겼던 정보의 전체 범위를 아직 공개하지 않았다.',action:'상황의 급박함을 앞세워 협력을 설득한다.',relations:[{with:'유진',summary:'협력이 필요하지만 신뢰 회복이 급선무',trust:'중간 이하',change:'서서히 회복 시도',note:'급하게 밀어붙이면 관계가 다시 악화될 수 있다.',tone:'해명과 설득의 균형을 맞추려 한다.'},{with:'기록원 감시대',summary:'압박과 감시의 대상',trust:'없음',change:'긴장 상승',note:'시간을 끌면 감시대 개입이 강해질 것으로 본다.',tone:'안정을 가장하지만 속으로는 매우 급하다.'}]}
+};
+const presetOptions=['(전역 기본) RisuAI Auxiliary','Claude RP · Sonnet','GPT Deep · GPT-5.6 Pro','Gemini Fast · 3.x'];
+const settingsState={section:'input_writer',referenceSub:'modules',memoryPreset:'medium',inputLore:true,inputAuthorNote:true,responseLore:true,plannerAuthorNote:true,sgaAuthorNote:true,stateEnabled:true,stateVerifier:true,exportScope:'flow',includeSecrets:false};
+const stateStages=[
+  ['신규 인물 승인','정본의 새 인물 주장만 독립 검증','Claude RP · Sonnet'],
+  ['인물 상태 Observer','인물의 실제 최신 변경 후보만 검토','RisuAI Auxiliary'],
+  ['관계 상태 Observer','방향성 최신 관계만 검토','RisuAI Auxiliary'],
+  ['세계 상태 Observer','장소·물건·조직·규칙 변경 후보 검토','RisuAI Auxiliary'],
+  ['내러티브 상태 Observer','활성 arc·압력·열린 질문·lock·momentum 검토','Claude RP · Sonnet'],
+  ['인물 상태 Verifier','identity-locked·느린 변경·clear 후보 검증','Claude RP · Sonnet'],
+  ['관계 상태 Verifier','endpoint·방향성·모순 후보 검증','Claude RP · Sonnet'],
+  ['세계 상태 Verifier','세계 identity·내구 필드·clear 후보 검증','Claude RP · Sonnet'],
+  ['내러티브 상태 Verifier','arc/thread/lock 변경의 정본 근거 검증','Claude RP · Sonnet']
+];
+const settingsSectionMeta={
+  input_writer:['01 · INPUT WRITER','Input Writer',''],
+  references:['02 · REFERENCES','참고 자료',''],
+  memory:['03 · MEMORY & RECALL','기억 · 리콜',''],
+  state:['04 · STATE TRACKING','상태 추적',''],
+  server:['05 · STORAGE & COMPUTE','서버 · 저장',''],
+  recovery:['06 · RECOVERY','백업 · 복구',''],
+  transfer:['07 · DATA TRANSFER','데이터 이동',''],
+  general:['08 · GENERAL & DIAGNOSTICS','일반 · 진단','']
+};
+function boolToggle(label,checked,detail=''){return `<label class="setting-toggle"><input type="checkbox" ${checked?'checked':''}><span><strong>${label}</strong>${detail?`<small>${detail}</small>`:''}</span></label>`}
+function settingsPresetSelect(value='Claude RP · Sonnet'){return `<select>${presetOptions.map(x=>`<option${x===value?' selected':''}>${x}</option>`).join('')}</select>`}
+function renderSettingsRoom(section=settingsState.section){
+  settingsState.section=section; const meta=settingsSectionMeta[section]||settingsSectionMeta.input_writer;
+  $('#settingsSectionEyebrow').textContent=meta[0]; $('#settingsSectionTitle').textContent=meta[1]; $('#settingsSectionDesc').textContent=meta[2];
+  $$('.settings-index-item').forEach(b=>b.classList.toggle('active',b.dataset.settingSection===section));
+  const body=$('#settingsRoomBody'); if(!body)return;
+  if(section==='input_writer') body.innerHTML=`
+    <div class="setting-section"><h3>Input Writer 고급 참고 자료</h3><p>원래 LIBRA Input Writer 설정에 있던 고급 스위치입니다.</p><div class="setting-toggle-list">${boolToggle('통합 로어 검색 사용',settingsState.inputLore,'현재 입력·종결 장면·Live Tail·Story Arc·리콜 앵커로 로어 인덱스를 검색')}${boolToggle('현재 채팅 작가노트 반영',settingsState.inputAuthorNote,'방향·톤·제약에 반영하지만 사건 증거로 사용하지 않음')}</div></div>
+    <div class="setting-section"><h3>Input Writer 프롬프트</h3><p>기본 RP/작가 계약을 보존하면서 Prompt Studio의 관리 프로필을 편집합니다.</p><div class="setting-actions"><button class="mini primary settings-demo">Input Writer 프롬프트 설정</button><button class="mini settings-demo">컴파일 미리보기</button></div></div>
+`;
+  if(section==='references') body.innerHTML=`
+    <div class="setting-subtabs"><button class="setting-subtab ${settingsState.referenceSub==='modules'?'active':''}" data-reference-sub="modules">모듈 로어북</button><button class="setting-subtab ${settingsState.referenceSub==='character'?'active':''}" data-reference-sub="character">캐릭터 로어북 제외</button><button class="setting-subtab ${settingsState.referenceSub==='materials'?'active':''}" data-reference-sub="materials">통합 로어 · 작가노트</button></div>
+    <div class="setting-subpane ${settingsState.referenceSub==='modules'?'active':''}" data-reference-pane="modules"><div class="setting-section"><h3>모듈 로어북</h3><p>활성 모듈 가운데 LIBRA가 읽을 모듈과 개별 로어 항목을 선택합니다. 실제 사용 시 현재 RisuAI 모듈 목록을 불러옵니다.</p><div class="module-grid"><label class="module-row"><input type="checkbox" checked><span><strong>활성 모듈 A</strong><small>로어 14개 · 현재 선택됨</small></span><span class="module-badge">14/14</span></label><label class="module-row"><input type="checkbox" checked><span><strong>사건 자료 모듈</strong><small>로어 8개 · 일부 항목 선택 가능</small></span><span class="module-badge">6/8</span></label><label class="module-row"><input type="checkbox"><span><strong>세계 규칙 모듈</strong><small>로어 11개 · 미선택</small></span><span class="module-badge">미선택</span></label></div><div class="setting-actions"><button class="mini settings-demo">모두 선택</button><button class="mini settings-demo">모두 해제</button><button class="mini settings-demo">목록 새로고침</button></div></div></div>
+    <div class="setting-subpane ${settingsState.referenceSub==='character'?'active':''}" data-reference-pane="character"><div class="setting-section"><h3>캐릭터 로어북 제외</h3><p>체크한 캐릭터 로어북은 Ariadne와 세 ito의 5턴 메모리 로어 후보 풀에서 제거됩니다.</p><div class="module-grid"><label class="module-row"><input type="checkbox"><span><strong>공개 프로필</strong><small>읽기 가능 · 활성화 키 없음</small></span><span class="module-badge">읽기 가능</span></label><label class="module-row"><input type="checkbox" checked><span><strong>테스트용 메타 로어</strong><small>Ariadne 제외 · 현재 챗 활성</small></span><span class="module-badge">Ariadne 제외</span></label></div><div class="setting-actions"><button class="mini danger settings-demo">현재 캐릭터 전체 배제</button><button class="mini settings-demo">현재 캐릭터 배제 해제</button><button class="mini settings-demo">목록 새로고침</button></div></div></div>
+    <div class="setting-subpane ${settingsState.referenceSub==='materials'?'active':''}" data-reference-pane="materials"><div class="setting-section"><h3>통합 로어 검색 · 작가노트</h3><p>Planner·GRADIA는 요청당 한 번 만든 캐릭터/모듈 로어 전체 인덱스를 공유하고 소비 단계별로 다시 선별합니다.</p><div class="setting-toggle-list">${boolToggle('Unified Lore Retrieval 사용 (정본·Planner·GRADIA)',settingsState.responseLore,'검색 자체에는 LLM·임베딩 호출이 없음')}${boolToggle('Planner에 현재 채팅 작가노트 반영',settingsState.plannerAuthorNote,'현재 입력 다음의 창작 지시 권위')}${boolToggle('GRADIA SHADOW에 현재 채팅 작가노트 반영',settingsState.sgaAuthorNote,'AIDE에는 원문을 직접 반복하지 않음')}</div><div class="setting-grid three" style="margin-top:10px"><div class="setting-field"><label>Adaptive Frontier 시작 개수</label><input type="number" value="6"></div><div class="setting-field"><label>단계별 최대 로어 개수</label><input type="number" value="14"></div><div class="setting-field"><label>단계별 로어 최대 문자</label><input type="number" value="18000"></div></div><div class="setting-actions"><button class="mini primary settings-demo">참고 자료 설정 저장</button></div></div></div>`;
+  if(section==='memory') body.innerHTML=`
+    <div class="setting-section"><h3>성능 프리셋</h3><p>검색 후보 수·증거 문턱·정본 내부 발췌 깊이·동적 리콜 예산을 한 번에 조절합니다. Provider·모델·정본 메모리·임베딩 벡터는 바꾸지 않습니다.</p><div class="choice-grid four"><button class="choice ${settingsState.memoryPreset==='light'?'active':''}" data-memory-preset="light"><strong>가벼운</strong><small>3k · 반경2 · 영역3 · span3</small></button><button class="choice ${settingsState.memoryPreset==='medium'?'active':''}" data-memory-preset="medium"><strong>적당한</strong><small>3k→5k · 반경3 · 영역4</small></button><button class="choice ${settingsState.memoryPreset==='heavy'?'active':''}" data-memory-preset="heavy"><strong>무거운</strong><small>최대 8k · 반경4 · 영역5</small></button><button class="choice ${settingsState.memoryPreset==='max'?'active':''}" data-memory-preset="max"><strong>최대</strong><small>최대 12k · 반경5 · span8</small></button></div></div>
+    <div class="setting-section"><h3>검색 · 발췌 세부값</h3><div class="setting-grid three"><div class="setting-field"><label>최대 리콜 메모리 수</label><input type="number" value="8"></div><div class="setting-field"><label>후보 재랭킹 한도</label><input type="number" value="64"></div><div class="setting-field"><label>Dense 증거 문턱</label><input type="number" step="0.01" value="0.72"></div><div class="setting-field"><label>Sparse 증거 문턱</label><input type="number" step="0.01" value="0.18"></div><div class="setting-field"><label>동적 리콜 최대 예산</label><input type="number" value="5000"></div><div class="setting-field"><label>발췌 문장 반경</label><input type="number" value="3"></div><div class="setting-field"><label>메모리당 최대 영역</label><input type="number" value="4"></div><div class="setting-field"><label>영역당 최대 발췌 span</label><input type="number" value="4"></div><div class="setting-field"><label>추가 span 관련성 비율</label><input type="number" step="0.01" value="0.28"></div></div></div>
+    <div class="setting-section"><h3>세부 리콜 · 작동 설정</h3><div class="setting-toggle-list">${boolToggle('새 LIBRA 사용',true)}${boolToggle('AI 응답 저장 후 자동 분석',true)}${boolToggle('실패한 Ariadne/ito 자동 재개',true)}${boolToggle('BM25F·anchor 검색 사용',true)}${boolToggle('영역별 임베딩 투영',true)}${boolToggle('증거 게이트',true)}${boolToggle('MMR 중복 억제',true)}${boolToggle('연속 입력에서 최근 장면 후보 보호',true)}${boolToggle('활성 세션의 누락 5턴 자동 따라잡기',true)}</div></div>
+    <div class="setting-section"><h3>리콜 혼합 · 순위</h3><div class="setting-grid three"><div class="setting-field"><label>유사 기억 비율(%)</label><input type="number" value="72"></div><div class="setting-field"><label>최근 기억 비율(%)</label><input type="number" value="28"></div><div class="setting-field"><label>유사도 쿼리 최근 채팅 수</label><input type="number" value="6"></div><div class="setting-field"><label>RRF k</label><input type="number" value="60"></div><div class="setting-field"><label>Exact anchor 문턱</label><input type="number" step="0.01" value="0.35"></div><div class="setting-field"><label>MMR 관련성 비율</label><input type="number" step="0.01" value="0.72"></div><div class="setting-field"><label>자동 따라잡기 최대 배치</label><input type="number" value="2"></div><div class="setting-field"><label>상세 실행 기록 보관 수</label><input type="number" value="50"></div></div></div>
+    <div class="setting-section"><h3>Live Context</h3><p>현재 실제 구현의 Live Tail·초기 세션 컨텍스트 관련 세부값을 조절하는 영역입니다.</p><div class="setting-grid"><div class="setting-field"><label>Live Tail 최대 턴</label><input type="number" value="4"></div><div class="setting-field"><label>Live Tail 최대 문자</label><input type="number" value="24000"></div></div><div class="setting-actions"><button class="mini primary settings-demo">리콜 · Live Context 설정 저장</button><button class="mini danger settings-demo">현재 채팅 LIBRA 데이터 삭제</button></div></div>`;
+  if(section==='state') body.innerHTML=`
+    <div class="setting-section"><h3>기본 정책</h3><p>정본 커밋 뒤 실행되는 독립 상태 추적의 전역 한도입니다.</p><div class="setting-toggle-list">${boolToggle('정본 커밋 후 상태 추적',settingsState.stateEnabled)}${boolToggle('조건부 Verifier',settingsState.stateVerifier,'Observer가 고위험·느린 필드·clear 후보를 낸 경우에만 검증')}</div><div class="setting-grid three" style="margin-top:10px"><div class="setting-field"><label>검토 후보 상한</label><input type="number" value="64"></div><div class="setting-field"><label>출력 예산</label><input type="number" value="3200"></div><div class="setting-field"><label>따라잡기 병렬도</label><input type="number" value="4"></div></div></div>
+    <div class="setting-section"><h3>상태 추적 멀티 파이프라인</h3><p>기억 작성 agent와 독립된 상태 추적 slot입니다. 각 도메인별로 실패 경계가 분리됩니다.</p><div class="stage-grid">${stateStages.map((s,i)=>`<div class="stage-card"><div class="stage-card-head"><h4>${String(i+1).padStart(2,'0')} · ${s[0]}</h4><label class="toggle"><input type="checkbox" checked><span>ON</span></label></div><p>${s[1]}</p><div class="setting-field"><label>사용할 AI 연결</label>${settingsPresetSelect(s[2])}</div></div>`).join('')}</div></div>
+    <div class="readonly-card"><strong>고정 계약</strong><p>정본 readback 이후 실행 · 생략 필드 보존 · 명시적 clear만 삭제 · 도메인별 독립 실패 경계.</p></div>`;
+  if(section==='server') body.innerHTML=`
+    <div class="setting-section"><h3>저장 및 연산 상태</h3><p>현재 스코프의 정본 저장 위치와 Recall BM25F 연산 위치를 고급 관점에서 확인합니다.</p><div class="debug-grid"><div class="debug-card"><strong>Storage</strong><span>Mirror · 정상</span></div><div class="debug-card"><strong>Compute</strong><span>Server · Recall BM25F 사용 가능</span></div><div class="debug-card"><strong>현재 Scope</strong><span>Character + Chat</span></div><div class="debug-card"><strong>최근 readback</strong><span>정상 · 14ms</span></div></div></div>`;
+  if(section==='recovery') body.innerHTML=`
+    <div class="setting-section"><h3>기억 복원</h3><p>현재 채팅의 영구 기억과 복원에 필요한 관련 데이터를 JSON 파일로 내려받습니다.</p><div class="notice">현재 채팅을 백업 · 같은 채팅은 정확히 교체 · 다른 채팅은 검증 후 기억 이사 또는 복사 복구.</div><div class="setting-actions"><button class="mini primary settings-demo">현재 채팅 JSON 백업</button><button class="mini settings-demo">JSON 백업 불러오기</button></div></div>
+    <div class="setting-section"><h3>복원 안전 정책</h3><div class="readonly-card"><strong>원본 우선</strong><p>자동 병합이나 불확실한 교체를 하지 않고, scope와 source identity가 확인되는 경우에만 복원 경로를 제시합니다.</p></div></div>`;
+  if(section==='transfer') body.innerHTML=`
+    <div class="setting-section"><h3>JSON 프리셋 가져오기 / 내보내기</h3><p>실행 흐름만 재사용하거나, 필요할 때 프로바이더까지 포함한 전체 설정을 이동합니다.</p><div class="setting-grid"><div class="setting-field"><label>내보내기 범위</label><select id="exportScope"><option value="flow" ${settingsState.exportScope==='flow'?'selected':''}>실행 흐름 프리셋 · 에이전트/프롬프트/후속/런타임</option><option value="all" ${settingsState.exportScope==='all'?'selected':''}>전체 설정 · 실행 흐름 + 프로바이더 + 메모리/임베딩</option></select></div><div class="setting-field"><label>비밀값</label><select id="exportSecrets"><option value="no">API 키 / 토큰 제외</option><option value="yes">API 키 / 토큰 포함</option></select></div></div><textarea class="export-area" placeholder="실행 흐름 프리셋 또는 전체 설정 JSON을 붙여넣으세요."></textarea><div class="setting-actions"><button class="mini primary settings-demo">JSON 파일로 저장</button><button class="mini settings-demo">파일 열기</button><button class="mini settings-demo">JSON으로 교체 가져오기</button><button class="mini settings-demo">JSON 병합 가져오기</button></div></div>
+    <div class="setting-section danger-zone"><h3>초기화</h3><p>GUI 설정을 초기화할 때 비밀키 보존 여부를 분리합니다.</p><div class="setting-actions"><button class="mini danger settings-demo">GUI 설정 초기화(비밀 유지)</button><button class="mini danger settings-demo">모든 설정과 비밀 키 초기화</button></div></div>`;
+  if(section==='general') body.innerHTML=`
+    <div class="setting-section"><h3>디버그</h3><p>네 단계 직렬 처리 상태, 단계별 프리셋, 경고와 최종 주입 초안을 확인합니다.</p><div class="setting-actions"><button class="mini settings-demo">새로고침</button><button class="mini settings-demo">디버그 JSON 복사</button><button class="mini settings-demo">디버그 JSON 파일로 저장</button><button class="mini settings-demo">디버그 JSON 표시</button><button class="mini danger settings-demo">경고 로그 지우기</button></div></div>
+    <div class="debug-grid"><div class="debug-card"><strong>마지막 실행 상태</strong><span>complete · Planner pass</span></div><div class="debug-card"><strong>마지막 Provider 호출</strong><span>Claude Sonnet · 840ms</span></div><div class="debug-card"><strong>최근 경고</strong><span>Embedding dimension 주의 1건</span></div><div class="debug-card"><strong>정본 참조 예산</strong><span>5,184 / 8,000 chars</span></div><div class="debug-card"><strong>마지막 Ariadne RisuAI 참조</strong><span>Character + module lore · 6 items</span></div><div class="debug-card"><strong>마지막 메인 모델 주입 draft</strong><span>Reaction Brief · 1,124 chars</span></div></div>
+    <details class="setting-section"><summary><strong>디버그 JSON 내보내기</strong></summary><div class="raw" style="margin-top:10px">{\n  "lastPlanner": {"status":"complete"},\n  "lastInjectionMode": "planner",\n  "warnings": ["embedding_dimension_notice"]\n}</div></details>`;
+  bindSettingsRoom();
+}
+function bindSettingsRoom(){
+  $$('.settings-index-item').forEach(b=>b.onclick=()=>renderSettingsRoom(b.dataset.settingSection));
+  $$('[data-reference-sub]').forEach(b=>b.onclick=()=>{settingsState.referenceSub=b.dataset.referenceSub;renderSettingsRoom('references')});
+  $$('[data-memory-preset]').forEach(b=>b.onclick=()=>{settingsState.memoryPreset=b.dataset.memoryPreset;renderSettingsRoom('memory');$('#settingsStatus').hidden=false;$('#settingsStatus').textContent='성능 프리셋을 '+b.textContent.trim()+'으로 선택했습니다.'});
+  $$('.settings-demo').forEach(b=>b.onclick=()=>{$('#settingsStatus').hidden=false;$('#settingsStatus').textContent='“'+b.textContent.trim()+'” 동작을 실행했습니다.'});
+  const serverBtn=$('#openServerFromSettings'); if(serverBtn)serverBtn.onclick=()=>{renderQuickSettings();renderConnection('server');openDrawer('connectionDrawer')};
+}
+function presetSelect(value='Claude RP · Sonnet'){return `<select>${presetOptions.map(x=>`<option${x===value?' selected':''}>${x}</option>`).join('')}</select>`}
+function openDrawer(id){$('#'+id).classList.add('open')}
+function closeDrawer(id){$('#'+id).classList.remove('open')}
+function setPage(p){state.page=p;$$('.page').forEach(x=>x.classList.toggle('active',x.dataset.page===p));$$('.nav [data-page],.bottom [data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===p))}
+function crossRef(target){
+  const [page,detail]=target.split(':');
+  setPage(page);
+  if(page==='people'&&detail&&people[detail]){state.person=detail;$$('.person-index button').forEach(x=>x.classList.toggle('active',x.dataset.person===detail));renderPerson()}
+  if(page==='memory'&&detail&&memoryChapters[detail])renderMemoryChapter(detail);
+  document.querySelector('.main').scrollTo({top:0,behavior:'smooth'});
+}
+function setWorkspace(w){state.workspace=w;const d=workspaceData[w];$('#workspaceLabel').textContent=d.label;$('#modeSlip').textContent=d.mode;$('#writerTitle').textContent=d.writerTitle;$('#writerSub').textContent=d.writerSub;$('#writerPreview').textContent=d.writer;$('#briefPreview').textContent=d.brief;$$('#modeMenu button').forEach(b=>b.classList.toggle('active',b.dataset.workspace===w));$('#modeMenu').classList.remove('open');renderQuickSettings()}
+function renderPerson(){
+  const p=people[state.person]; if(!p)return;
+  const relationCards=(p.relations||[]).map(r=>`<article class="relation-card"><h5>${r.with}</h5><p>${r.summary}</p><dl class="relation-meta"><dt>신뢰</dt><dd>${r.trust}</dd><dt>최근 변화</dt><dd>${r.change}</dd><dt>행동 영향</dt><dd>${r.note}</dd><dt>표면적 인상</dt><dd>${r.tone}</dd></dl></article>`).join('');
+  const memoryLink=p.linkedMemory?`<div class="world-note" style="margin-top:14px">이 인물이 등장하는 정본 기억: <button class="crossref" data-crossref="memory:${p.linkedMemoryId||'betrayal'}">${p.linkedMemory}</button></div>`:'';
+  $('#personDetail').innerHTML=`<div class="character-spread"><article class="character-sheet"><div class="hero-copy"><div><h3>${p.name}</h3><div class="subtitle">${p.role} · Character Entry</div><p class="summary">${p.summary}</p></div><div class="bio-actions"><button class="text-action" data-open="person">열람</button><button class="text-action strong" data-edit-target="peoplePaper">교정</button></div></div><div class="intro-grid"><section class="intro-card"><h4>첫인상</h4><p>${p.firstImpression}</p></section><section class="intro-card"><h4>현재 행동</h4><p>${p.action}</p></section><section class="intro-card"><h4>알고 있는 것</h4><p>${p.know}</p></section><section class="intro-card"><h4>숨기는 것</h4><p>${p.secret}</p></section></div>${memoryLink}</article><aside class="relation-sheet"><h3 class="section-title">관계 소개</h3><p style="margin:0 0 10px;color:#6f5b49;line-height:1.65">이 인물이 누구를 어떻게 보고, 그 관계가 이번 장면의 말투와 선택에 어떤 영향을 주는지 소개문처럼 읽습니다.</p><div class="relation-list">${relationCards}</div><div class="bio-actions" style="margin-top:10px"><button class="text-action" data-open="relations">관계 더 읽기</button></div></aside></div>`;
+  const rel=(p.relations&&p.relations[0]?.summary)||p.summary||'';
+  const relInput=document.getElementById('personRelationEdit'); const actInput=document.getElementById('personActionEdit');
+  if(relInput) relInput.value=rel; if(actInput) actInput.value=p.action||'';
+}
+function choiceButton(id,active,title,desc,extra=''){return `<button class="choice ${active?'active':''}" data-choice="${id}"><strong>${title}</strong><small>${desc}</small>${extra}</button>`}
+function renderQuickSettings(){
+  $('#quickTitle').textContent=state.workspace==='libra'?'LIBRA 빠른 설정':'GRADIA 빠른 설정';
+  const body=$('#quickModeBody');
+  if(state.workspace==='libra'){
+    body.innerHTML=`
+      <div class="drawer-section"><h3><span class="stage-number">1</span>전처리 모드</h3><p>최종 응답 모델 앞에서 LIBRA가 무엇을 준비할지 선택합니다.</p><div class="choice-grid" style="margin-top:10px">
+        ${choiceButton('libraPre:librarian',state.libraPre==='librarian','사서 모드','기억만 리콜합니다. 추가 Planner LLM 호출이 없습니다.')}
+        ${choiceButton('libraPre:planner',state.libraPre==='planner','플래너 모드','기억을 가져온 뒤 현재 입력과 상황에 맞는 반응 Plan을 작성합니다.')}
+      </div><div class="field" style="margin-top:10px"><label>전처리 LLM 프리셋</label>${state.libraPre==='planner'?presetSelect():'<select disabled><option>사용 안 함 · 사서 모드는 추가 LLM 없음</option></select>'}<div class="note">${state.libraPre==='planner'?'Planner 반응 브리프 작성에만 사용합니다.':'리콜 결과를 그대로 최종 모델에 넘기므로 추가 프리셋이 필요하지 않습니다.'}</div></div></div>
+      <div class="drawer-section"><h3><span class="stage-number">2</span>인풋 작성기</h3><p>햄버거 버튼에서 여는 Input Writer의 간단 설정입니다.</p><div class="agent-row" style="margin-top:10px"><div><strong>LIBRA 인풋 작성기</strong><small>세 개의 입력 후보를 생성</small></div><label class="toggle"><input type="checkbox" checked><span>ON</span></label>${presetSelect('Claude RP · Sonnet')}</div><div class="choice-grid" style="margin-top:9px">${choiceButton('inputWriter:rp',state.inputWriterMode==='rp','RP 모드','사용자 주권을 보호하는 플레이어 입력 후보')}${choiceButton('inputWriter:author',state.inputWriterMode==='author','작가 모드','주인공/NPC/외부 세계 관점의 작성 후보')}</div></div>
+      <div class="drawer-section"><h3><span class="stage-number">3</span>기억 작성 에이전트</h3><p>Ariadne와 각 ito의 사용 여부와 LLM 프리셋을 바로 지정합니다.</p><div class="agent-table" style="margin-top:10px">
+        ${agentRow('Ariadne','정본 메모리 초안 작성',true,'Claude RP · Sonnet')}
+        ${agentRow('Character ito','인물·관계 보강',true,'(전역 기본) RisuAI Auxiliary')}
+        ${agentRow('World ito','세계 정보 보강',false,'(전역 기본) RisuAI Auxiliary')}
+        ${agentRow('Plot ito','서사 정보 보강',false,'GPT Deep · GPT-5.6 Pro')}
+      </div></div>
+      <div class="drawer-section"><h3>저장</h3><p>현재 LIBRA 빠른 설정만 저장합니다.</p><div class="action-row"><button class="mini primary">LIBRA 빠른 설정 저장</button><button class="mini">저장값으로 되돌리기</button></div></div>`;
+  } else {
+    body.innerHTML=`
+      <div class="drawer-section"><h3><span class="stage-number">1</span>전처리 모드</h3><p>GRADIA가 어떤 작성 계약으로 초안을 만들지 선택합니다.</p><div class="choice-grid" style="margin-top:10px">${choiceButton('gradiaMode:novel',state.gradiaMode==='novel','소설 모드','작가 지시형 · 전체 캐스트 집필')}${choiceButton('gradiaMode:rp',state.gradiaMode==='rp','RP 모드','유저 행동 불가침 · NPC/세계 자율 전개')}</div></div>
+      <div class="drawer-section"><h3><span class="stage-number">2</span>작성 분량</h3><div class="choice-grid four">${choiceButton('length:1k2k',state.gradiaLength==='1k2k','1,000–2,000자','짧게')}${choiceButton('length:3k5k',state.gradiaLength==='3k5k','3,000–5,000자','균형')}${choiceButton('length:5k7k',state.gradiaLength==='5k7k','5,000–7,000자','길게')}${choiceButton('length:8k',state.gradiaLength==='8k','8,000자+','장문')}</div></div>
+      <div class="drawer-section"><h3><span class="stage-number">3</span>작성 방향</h3><p>초안이 어디에 더 많은 공간과 주의를 쓰는지 정합니다.</p><div class="choice-grid four" style="margin-top:10px">${choiceButton('direction:balanced',state.gradiaDirection==='balanced','균형','인물·사건·세계 균형')}${choiceButton('direction:character',state.gradiaDirection==='character','인물·관계','감정·관계 반응 우선')}${choiceButton('direction:plot',state.gradiaDirection==='plot','사건 진행','행동과 전개 우선')}${choiceButton('direction:atmosphere',state.gradiaDirection==='atmosphere','분위기·세계','공간·감각·세계 반응 우선')}</div></div>
+      <div class="drawer-section"><h3><span class="stage-number">4</span>문체 변형 <span class="inline-badge">ROKI 계열</span></h3><p>원래 캐릭터와 장면의 고유한 말투는 보존하면서, 출력 문장의 결만 변형합니다.</p><div class="formgrid" style="margin-top:10px"><div class="field"><label>문체 프리셋</label><select id="stylePreset"><option value="balanced">균형</option><option value="literary">문학적</option><option value="cinematic">시네마틱</option><option value="dialogue">대사 중심</option><option value="restrained">건조·절제</option><option value="sensory">감각 묘사 강화</option></select></div><div class="field"><label>문장 리듬</label><select><option>자동</option><option>짧고 빠르게</option><option>중간</option><option>길고 유려하게</option></select></div><div class="field"><label>대사 밀도</label><select><option>자동</option><option>낮음</option><option>중간</option><option>높음</option></select></div><div class="field"><label>고유 문체 보호</label><select><option>강하게 보호</option><option>보통</option><option>변형 우선</option></select></div></div><div class="field" style="margin-top:10px"><label>문체 변형 강도</label><div class="slider-row"><input id="styleStrength" type="range" min="0" max="100" value="${state.styleStrength}"><div class="slider-value" id="styleStrengthValue">${state.styleStrength}</div></div><div class="note">0은 원문 스타일 유지, 100은 선택한 문체 프리셋의 특징을 강하게 적용합니다.</div></div></div>
+      <div class="drawer-section"><h3><span class="stage-number">5</span>작성 언어</h3><div class="choice-grid three">${choiceButton('lang:ko',state.gradiaLang==='ko','한국어','기본')}${choiceButton('lang:en',state.gradiaLang==='en','English','영어 초안')}${choiceButton('lang:ja',state.gradiaLang==='ja','日本語','일본어 초안')}</div></div>
+      <div class="drawer-section"><h3><span class="stage-number">6</span>파이프라인</h3><div class="choice-grid">${choiceButton('pipeline:light',state.pipeline==='light','경량','각 단계 판단과 작성/패치를 한 호출에 통합')}${choiceButton('pipeline:heavy',state.pipeline==='heavy','중량','분석과 작성/패치를 분리')}</div>${state.pipeline==='heavy'?`<div class="choice-grid" style="margin-top:9px">${choiceButton('handoff:draft',state.handoff==='draft','초안만 전달','메인 모델에는 초안만')}${choiceButton('handoff:analysis',state.handoff==='analysis','초안 + 분석','단계 분석 정보도 함께')}</div>`:''}</div>
+      <div class="drawer-section"><h3><span class="stage-number">7</span>SHADOW · AIDE</h3><p>제일 마지막에서 초안 파이프라인의 활성화와 LLM 프리셋을 바로 정합니다.</p><div class="agent-table" style="margin-top:10px">
+        ${agentRow('Shadow Act','전체 초안 작성',true,'Claude RP · Sonnet')}
+        ${agentRow('Character AIDE','인물·관계 패치',true,'Claude RP · Sonnet')}
+        ${agentRow('World AIDE','세계·공간 패치',false,'(전역 기본) RisuAI Auxiliary')}
+        ${agentRow('Plot AIDE','전개·장면 패치',false,'GPT Deep · GPT-5.6 Pro')}
+      </div></div>
+      <div class="drawer-section"><h3>저장</h3><p>현재 GRADIA 빠른 설정만 저장합니다.</p><div class="action-row"><button class="mini primary">GRADIA 빠른 설정 저장</button><button class="mini">저장값으로 되돌리기</button></div></div>`;
+  }
+  bindQuickDynamic();
+}
+function agentRow(name,desc,enabled,preset){return `<div class="agent-row"><div><strong>${name}</strong><small>${desc}</small></div><label class="toggle"><input type="checkbox" ${enabled?'checked':''}><span>${enabled?'ON':'OFF'}</span></label>${presetSelect(preset)}</div>`}
+function bindQuickDynamic(){
+  $$('[data-choice]').forEach(b=>b.onclick=()=>{const [type,val]=b.dataset.choice.split(':');if(type==='libraPre')state.libraPre=val;if(type==='inputWriter')state.inputWriterMode=val;if(type==='gradiaMode')state.gradiaMode=val;if(type==='length')state.gradiaLength=val;if(type==='direction')state.gradiaDirection=val;if(type==='lang')state.gradiaLang=val;if(type==='pipeline')state.pipeline=val;if(type==='handoff')state.handoff=val;renderQuickSettings()});
+  const ss=$('#styleStrength');if(ss)ss.oninput=e=>{state.styleStrength=Number(e.target.value);$('#styleStrengthValue').textContent=state.styleStrength};
+}
+function renderConnection(type){state.connection=type;$$('#connectionTabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.connectionTab===type));const titles={ai:'AI 연결',embedding:'임베딩 연결',server:'서버 연결'};$('#connectionTitle').textContent=titles[type];const body=$('#connectionBody');
+  if(type==='ai')body.innerHTML=`<div class="connection-layout"><aside class="preset-list"><div class="preset-list-head"><button class="mini primary">추가</button><button class="mini">복제</button></div><input class="preset-search" placeholder="프리셋 이름 · 모델 · 프로바이더 검색"><button class="preset-item active"><strong>Claude RP</strong><small>Anthropic · Claude Sonnet</small></button><button class="preset-item"><strong>GPT Deep</strong><small>OpenAI · GPT-5.6 Pro</small></button><button class="preset-item"><strong>Gemini Fast</strong><small>Google · Gemini 3.x</small></button><button class="preset-item"><strong>RisuAI Auxiliary</strong><small>내장 보조 모델</small></button></aside><div><div class="drawer-section"><div class="section-label">Preset & Connection</div><div class="formgrid"><div class="field"><label>프리셋 이름</label><input value="Claude RP"></div><div class="field"><label>프로바이더 종류</label><select><option>Anthropic</option><option>OpenAI</option><option>Google Gemini</option><option>OpenRouter</option><option>Ollama</option><option>Custom</option></select></div><div class="field"><label>API 주소 / Base URL</label><input value="https://api.anthropic.com"></div><div class="field"><label>모델 이름</label><input value="claude-sonnet-latest"></div><div class="field"><label>API Key / Token</label><input type="password" value="••••••••••"></div><div class="field"><label>전역 기본 프리셋</label><select><option>이 프리셋을 전역 기본으로 사용</option><option>기존 기본 유지</option></select></div></div><div class="action-row"><button class="mini">최신 공식 모델 빠른 선택</button><button class="mini">모델 목록 불러오기</button><button class="mini danger">저장된 키 삭제</button></div></div><div class="drawer-section"><div class="section-label">Reasoning</div><div class="formgrid"><div class="field"><label>추론 프리셋</label><select><option>Auto</option><option>Off</option><option>Low</option><option>High</option><option>Max</option></select></div><div class="field"><label>Reasoning effort</label><select><option>auto</option><option>low</option><option>medium</option><option>high</option></select></div><div class="field"><label>Thinking / Reasoning 예산 토큰</label><input type="number" value="6000"></div><div class="field"><label>Thinking type</label><select><option>사용</option><option>사용 안 함</option></select></div></div><div class="action-row"><button class="mini">추론 끔</button><button class="mini">자동</button><button class="mini">High</button></div></div><div class="drawer-section"><div class="section-label">Save & Test</div><div class="action-row"><button class="mini primary">프리셋 저장</button><button class="mini">이름 변경</button><button class="mini">복제</button><button class="mini">실제 연결 테스트</button><button class="mini danger">삭제</button></div><div class="callout good-callout">현재 프리셋: Anthropic · Claude Sonnet · 연결 정상</div></div></div></div>`;
+  if(type==='embedding')body.innerHTML=`<div class="drawer-section"><div class="section-label">Embedding Profile</div><div class="formgrid"><div class="field"><label>저장된 임베딩 프리셋</label><select><option>Voyage 1024 · 권장</option><option>OpenAI 1536</option><option>로컬 Ollama</option></select></div><div class="field"><label>임베딩 사용</label><select><option>사용</option><option>사용 안 함</option></select></div><div class="field"><label>Provider</label><select><option>Voyage</option><option>OpenAI</option><option>Google</option><option>Ollama</option><option>Custom HTTP</option></select></div><div class="field"><label>Endpoint / URL</label><input value="https://api.voyageai.com/v1/embeddings"></div><div class="field"><label>API Key</label><input type="password" value="••••••••"></div><div class="field"><label>Model</label><input value="voyage-4-large"></div><div class="field"><label>Dimensions</label><select><option>1024</option><option>512</option><option>2048</option><option>auto</option></select></div><div class="field"><label>Batch size</label><input value="auto"></div><div class="field"><label>Timeout ms</label><input type="number" value="30000"></div><div class="field"><label>벡터 정규화</label><select><option>사용</option><option>사용 안 함</option></select></div></div><div class="action-row"><button class="mini">Provider 모델 검색</button><button class="mini primary">임베딩 프리셋 저장</button><button class="mini">실제 연결 테스트</button></div></div><div class="drawer-section"><div class="section-label">Query / Document Contract</div><div class="formgrid"><div class="field"><label>Query task</label><input value="retrieval.query"></div><div class="field"><label>Document task</label><input value="retrieval.document"></div><div class="field"><label>Query prefix</label><input value=""></div><div class="field"><label>Document prefix</label><input value=""></div></div></div><details class="drawer-section"><summary><strong>Custom HTTP 및 고급 설정</strong></summary><div class="formgrid" style="margin-top:10px"><div class="field"><label>Custom method</label><select><option>POST</option><option>PUT</option></select></div><div class="field"><label>Response vector path</label><input value="data[*].embedding"></div><div class="field"><label>Error path</label><input value="error.message"></div><div class="field"><label>Custom headers JSON</label><textarea rows="4">{}</textarea></div><div class="field" style="grid-column:1/-1"><label>Custom request template</label><textarea rows="5"></textarea></div></div></details><div class="drawer-section"><div class="section-label">Vectors & Diagnostics</div><div class="callout">임베딩 공간이 실제로 달라진 경우에만 기존 벡터를 격리합니다. 새 벡터 생성은 사용자가 명시적으로 버튼을 눌렀을 때만 시작합니다.</div><div class="action-row"><button class="mini primary">임베딩 벡터 재생성</button><button class="mini">중지</button><button class="mini">실패 항목 재시도</button><button class="mini danger">격리 벡터 즉시 삭제</button></div><div class="action-row"><button class="mini">다국어 리콜 진단</button></div></div>`;
+  if(type==='server')body.innerHTML=`<div class="drawer-section"><div class="section-label">Storage / Compute Profile</div><div class="formgrid"><div class="field"><label>저장된 서버 프리셋</label><select><option>내 PC Mirror</option><option>Plugin Only</option><option>외부 Server</option></select></div><div class="field"><label>저장 모드</label><select><option>Mirror</option><option>Plugin only</option><option>Server only</option></select></div><div class="field"><label>서버 주소</label><input value="http://127.0.0.1:47630"></div><div class="field"><label>Compute 모드</label><select><option>Storage 모드에 따름</option><option>Plugin</option><option>Server</option></select></div></div><div class="action-row"><button class="mini primary">서버 프리셋 저장</button><button class="mini">연결 테스트</button></div></div><div class="drawer-section"><div class="section-label">Current Status</div><div class="list"><div class="record"><strong>Storage</strong><p>Mirror · pluginStorage + Librarian System · 정상</p></div><div class="record"><strong>Compute</strong><p>Server · Recall BM25F 연산 가능 · 정상</p></div><div class="record"><strong>현재 Scope</strong><p>Character + Chat · 안전하게 분리됨</p></div></div></div><div class="drawer-section"><div class="section-label">Safety</div><div class="callout good-callout">서버 모드 변경은 저장 위치와 Recall 연산 위치에 함께 영향을 줍니다. 현재 데이터는 이 목업에서 실제로 이동하지 않습니다.</div></div>`;
+}
+function detail(type){
+  const d = $('#detailBody');
+  if(type==='recall'){
+    $('#detailTitle').textContent='이번 리콜 전체 보기';
+    d.innerHTML=`<div class="drawer-section"><h3>선택된 기억</h3><p>① T6–T10 · 배신 이후의 거리감<br>② T1–T5 · 공동 조사의 시작<br>③ 봉인 문서 규정</p></div><div class="drawer-section"><h3>왜 선택되었나요?</h3><p>현재 사용자의 협력 관련 입력과 인물·관계·세계 제약이 직접 일치했기 때문입니다.</p></div>`;
+  } else if(type==='writer'){
+    $('#detailTitle').textContent=workspaceData[state.workspace].writerTitle;
+    d.innerHTML=`<div class="drawer-section"><h3>전체 데이터</h3><p>${workspaceData[state.workspace].writer}</p></div><div class="drawer-section"><h3>행동 예시</h3><p>잠시 침묵 → 의도를 확인 → 정보는 단계적으로 공개 → 협력 가능성은 열어둠.</p></div>`;
+  } else if(type==='brief'){
+    $('#detailTitle').textContent='최종 주입 브리프';
+    d.innerHTML=`<div class="drawer-section"><h3>최종 모델에 전달되는 내용</h3><p>${workspaceData[state.workspace].brief}</p></div>`;
+  } else if(type==='memory'){
+    const chapter=memoryChapters[state.memoryChapter]||memoryChapters.betrayal;
+    $('#detailTitle').textContent=`${chapter.title} · 기억의 근거`;
+    const rawMeta=chapter.raw.join('<br>');
+    d.innerHTML=`<div class="tabs"><button class="tab active" data-t="sum">요약</button><button class="tab" data-t="ev">근거</button><button class="tab" data-t="raw">원본 · 고급</button></div><div class="pane active" data-p="sum"><div class="drawer-section"><h3>왜 이 장을 남겼나요?</h3><p>${chapter.why}</p></div></div><div class="pane" data-p="ev"><div class="drawer-section"><h3>정본 근거</h3><p>${chapter.evidence}</p></div></div><div class="pane" data-p="raw"><div class="raw">${rawMeta}</div></div>`;
+  } else if(type==='lineage'){
+    const chapter=memoryChapters[state.memoryChapter]||memoryChapters.betrayal;
+    $('#detailTitle').textContent=`${chapter.title} · 기록 계보`;
+    d.innerHTML=`<div class="drawer-section"><h3>기록 흐름</h3><p>Evidence → Canonical Memory → State Observation → Current Head</p></div><div class="drawer-section"><h3>현재 연결</h3><p>${chapter.trail}</p></div>`;
+  } else if(type==='person'){
+    const p=people[state.person];
+    $('#detailTitle').textContent=`${p.name} 열람`;
+    d.innerHTML=`<div class="drawer-section"><h3>인물 소개 요약</h3><p>${p.summary}</p></div><div class="drawer-section"><h3>행동 근거</h3><p>${p.action}</p></div><div class="drawer-section"><h3>지식 경계</h3><p>알고 있는 것: ${p.know}<br>숨기는 것: ${p.secret}</p></div>`;
+  } else if(type==='relations'){
+    const p=people[state.person];
+    $('#detailTitle').textContent='관계 장부 상세';
+    d.innerHTML=`<div class="drawer-section"><h3>${p.name}의 관계들</h3><p>${(p.relations||[]).map(r=>`<strong>${r.with}</strong> — ${r.summary}<br><span class="note">신뢰 ${r.trust} · 최근 변화 ${r.change} · ${r.note}</span>`).join('<br><br>')}</p></div>`;
+  } else if(type==='world'){
+    $('#detailTitle').textContent='세계관 소개 기록';
+    d.innerHTML=`<div class="drawer-section"><h3>현재 무대</h3><p>남문 보관소는 감시가 있는 폐쇄형 기록 공간이며, 기록원 감시대와 봉인 문서 규정이 현재 장면의 선택지에 즉시 제약을 겁니다.</p></div><div class="drawer-section"><h3>활성 규칙</h3><p>허가 없는 열람과 외부 공개 금지. 적발 시 감시대가 즉시 개입.</p></div>`;
+  } else if(type==='story'){
+    $('#detailTitle').textContent='목차 전체 보기';
+    d.innerHTML=`<div class="drawer-section"><h3>현재 Arc</h3><p>협력 재개의 가능성, 봉인 문서를 둘러싼 압박, 기록원 내부 비밀.</p></div><div class="drawer-section"><h3>열린 Thread</h3><p>① 어느 정도의 정보를 먼저 공개할 것인가<br>② 민호의 해명이 신뢰 회복으로 이어질 수 있는가<br>③ 감시대의 개입 시점은 언제인가</p></div>`;
+  }
+  openDrawer('detailDrawer');
+  setTimeout(()=>{
+    $$('.tab').forEach(b=>b.onclick=()=>{
+      $$('.tab').forEach(x=>x.classList.toggle('active',x===b));
+      $$('.pane').forEach(p=>p.classList.toggle('active',p.dataset.p===b.dataset.t));
+    });
+  },0);
+}
+
+$('#workspaceBtn').onclick=e=>{const r=e.currentTarget.getBoundingClientRect(),m=$('#modeMenu');m.style.left=r.left+'px';m.style.top=(r.bottom+6)+'px';m.classList.toggle('open')};
+$$('#modeMenu button').forEach(b=>b.onclick=()=>setWorkspace(b.dataset.workspace));
+document.addEventListener('click',e=>{if(!e.target.closest('#workspaceBtn')&&!e.target.closest('#modeMenu'))$('#modeMenu').classList.remove('open')});
+$$('[data-close]').forEach(b=>b.onclick=e=>{e.preventDefault();closeDrawer(b.dataset.close)});$$('.drawer').forEach(d=>d.onclick=e=>{if(e.target===d)d.classList.remove('open')});document.addEventListener('click',e=>{
+  const pageBtn=e.target.closest('.nav [data-page],.bottom [data-page]');
+  if(pageBtn){e.preventDefault();setPage(pageBtn.dataset.page);return;}
+  const quickBtn=e.target.closest('#quickBtn');
+  if(quickBtn){e.preventDefault();renderQuickSettings();openDrawer('quickDrawer');return;}
+  const chapterBtn=e.target.closest('[data-memory-chapter]');
+  if(chapterBtn){e.preventDefault();renderMemoryChapter(chapterBtn.dataset.memoryChapter);return;}
+  const crBtn=e.target.closest('[data-crossref]');
+  if(crBtn){e.preventDefault();crossRef(crBtn.dataset.crossref);return;}
+  const openBtn=e.target.closest('[data-open]');
+  if(openBtn){e.preventDefault();detail(openBtn.dataset.open);return;}
+  const editBtn=e.target.closest('[data-edit-target]');
+  if(editBtn){e.preventDefault();startEditMode(editBtn.dataset.editTarget);return;}
+  const cancelBtn=e.target.closest('[data-cancel-edit]');
+  if(cancelBtn){e.preventDefault();cancelEditMode(cancelBtn.dataset.cancelEdit);return;}
+  const saveBtn=e.target.closest('[data-save-edit]');
+  if(saveBtn){e.preventDefault();saveEditMode(saveBtn.dataset.saveEdit,saveBtn.dataset.saveType);return;}
+});
+$('#sideRecall').onclick=()=>detail('recall');$('#sideWriter').onclick=()=>detail('writer');
+$$('[data-connection]').forEach(b=>b.onclick=()=>{closeDrawer('quickDrawer');renderConnection(b.dataset.connection);openDrawer('connectionDrawer')});
+$$('#connectionTabs .tab').forEach(b=>b.onclick=()=>renderConnection(b.dataset.connectionTab));
+$('#backQuick').onclick=()=>{closeDrawer('connectionDrawer');renderQuickSettings();openDrawer('quickDrawer')};
+$('#saveOperationPreset').onclick=()=>{$('#operationPresetNote').textContent='“'+$('#operationPresetName').value+'” 운용 프리셋을 저장했습니다. (목업)'};
+$('#settingsSaveAll').onclick=()=>{$('#settingsStatus').hidden=false;$('#settingsStatus').textContent='현재 설정실 값을 저장했습니다.'};
+$$('.person-index button').forEach(b=>b.onclick=()=>{state.person=b.dataset.person;$$('.person-index button').forEach(x=>x.classList.toggle('active',x===b));renderPerson()});
+
+function findEditor(id){return document.querySelector(`[data-editor-for="${id}"]`)}
+function startEditMode(id){
+  const paper=document.getElementById(id), panel=findEditor(id); if(!paper||!panel)return;
+  document.querySelectorAll('.paper-surface.editing').forEach(p=>{if(p!==paper){p.classList.remove('editing');const ep=findEditor(p.id);if(ep)ep.classList.remove('active')}});
+  paper.classList.add('editing'); panel.classList.add('active');
+  paper.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cancelEditMode(id){const paper=document.getElementById(id),panel=findEditor(id);if(paper)paper.classList.remove('editing');if(panel)panel.classList.remove('active')}
+
+function saveEditMode(id,type){
+  const paper=document.getElementById(id); if(type==='memory'){
+    const t=document.getElementById('memoryEditTitle')?.value.trim(); const b=document.getElementById('memoryEditBody')?.value.trim();
+    const chapter=memoryChapters[state.memoryChapter]||memoryChapters.betrayal;
+    if(t)chapter.title=t;
+    if(b)chapter.summary=b;
+    const railTitle=document.querySelector(`[data-memory-chapter="${chapter.id}"] strong`); if(railTitle)railTitle.textContent=chapter.title;
+    renderMemoryChapter(chapter.id);
+  }
+  if(type==='person'){
+    const rel=document.getElementById('personRelationEdit')?.value.trim(), act=document.getElementById('personActionEdit')?.value.trim();
+    if(state.person&&people[state.person]){if(rel){people[state.person].summary=rel; if(people[state.person].relations&&people[state.person].relations[0]) people[state.person].relations[0].summary=rel;} if(act)people[state.person].action=act;renderPerson()}
+  }
+  if(type==='world'){const v=document.getElementById('worldEditBody')?.value.trim();const p=document.getElementById('worldRuleText');if(p&&v)p.textContent=v}
+  if(type==='story'){const v=document.getElementById('storyDirectionEdit')?.value.trim();const p=document.getElementById('storyMarginText');if(p&&v)p.textContent=v}
+  cancelEditMode(id);
+}
+
+renderPerson();renderMemoryChapter('betrayal');setWorkspace('libra');renderQuickSettings();renderConnection('ai');renderSettingsRoom('input_writer');
+document.documentElement.dataset.libraBoot='ready';const bs=document.getElementById('bootStatus');if(bs){bs.title='JavaScript가 정상 실행 중입니다.'}
+</script>
+</body>
+</html>

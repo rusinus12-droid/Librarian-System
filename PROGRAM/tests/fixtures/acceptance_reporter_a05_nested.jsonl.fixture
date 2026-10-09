@@ -1,0 +1,2 @@
+{"schema":"acceptance.action_result.v1","case_id":"A05","mode":"mirror","action":"원래 후보를 commit하려 시도한다.","assertion_result":true}
+{"test":"synthetic_a05_nested_hash_probe","nestedTests":[{"test_file":"tests/libra_phase_d_v5_correction_race_recovery_test.cjs","test_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}],"boundary":"synthetic reporter fixture only; no A05 action executed"}

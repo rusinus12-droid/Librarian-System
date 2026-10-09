@@ -1,0 +1,24 @@
+const fs=require('fs'),path=require('path'),Module=require('module');
+const output=path.resolve(__dirname,'../../../../review_artifacts/source_rules_gui_test');fs.mkdirSync(output,{recursive:true});
+const file=path.join(__dirname,'source_tracking_modes_browser_test.cjs');let source=fs.readFileSync(file,'utf8');
+source=source.replace("selectOption('debug')","selectOption('source_edits')");
+source=source.replace("for(const mode of ['silent','off','notify'])",`const box=p.locator('[data-source-tracking-controls]:visible').first();
+ assert.equal(await box.getByRole('button',{name:'현재 응답 불러오기',exact:true}).count(),0);assert.equal(await box.getByRole('button',{name:'규칙 적용 미리보기',exact:true}).count(),0);assert.equal(await box.locator('textarea').count(),0);
+ const initial=await p.evaluate(()=>product.getSourceEditRules());assert.ok(!initial.ignoredTags.includes('dag_runtime_contract'));assert.ok(!initial.ignoredTags.includes('hayaku_packet_contract'));assert.ok(!initial.controls.includes('suite-blocks'));
+ await box.getByRole('button',{name:'모든 규칙 비우기',exact:true}).click();
+ await box.getByRole('textbox',{name:'원문이 들어 있는 태그 여는 표식',exact:true}).fill('[SOURCE START]');await box.getByRole('textbox',{name:'원문이 들어 있는 태그 닫는 표식',exact:true}).fill('[SOURCE END]');await box.locator('[data-source-rule=sourceTags]').getByRole('button',{name:'추가',exact:true}).click();
+ await box.getByRole('textbox',{name:'내용은 두고 태그만 제거 여는 표식',exact:true}).fill('<wrapper>');await box.getByRole('textbox',{name:'내용은 두고 태그만 제거 닫는 표식',exact:true}).fill('</wrapper>');await box.locator('[data-source-rule=unwrapTags]').getByRole('button',{name:'추가',exact:true}).click();
+ await box.getByRole('textbox',{name:'비교에서 빼고 싶은 내용 여는 표식',exact:true}).fill('[LBDATA START]');await box.getByRole('textbox',{name:'비교에서 빼고 싶은 내용 닫는 표식',exact:true}).fill('[LBDATA END]');await box.locator('[data-source-rule=ignoredTags]').getByRole('button',{name:'추가',exact:true}).click();
+ await box.getByRole('button',{name:'[LBDATA START] → [LBDATA END] 삭제',exact:true}).click();
+ await box.getByRole('button',{name:'규칙 저장',exact:true}).click();await p.waitForFunction(()=>product.getSourceEditRules().sourceTags.some(x=>x.open==='[SOURCE START]'));
+ assert.deepEqual(await p.evaluate(()=>JSON.parse(JSON.stringify(product.getSourceEditRules()))),{version:1,ignoredTags:[],unwrapTags:['wrapper'],sourceTags:[{open:'[SOURCE START]',close:'[SOURCE END]'}],controls:[]});
+ await box.scrollIntoViewIfNeeded();await p.screenshot({path:${JSON.stringify(path.join(output,'mobile-'))}+owner+'.png',fullPage:true});
+ assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no mobile horizontal overflow');
+ await p.setViewportSize({width:1280,height:1000});await box.scrollIntoViewIfNeeded();await p.screenshot({path:${JSON.stringify(path.join(output,'desktop-'))}+owner+'.png',fullPage:true});
+ console.log('PASS '+owner+': navigation, chip add/remove, preview removed, durable save, responsive layout');
+ for(const mode of ['silent','off','notify'])`);
+source=source.replace("const dialogSelect=p.locator('#memorySuiteSourceReview select');",`assert.equal(await p.locator('#memorySuiteSourceReview').evaluate(el=>getComputedStyle(el).zIndex),String({libra:41,hayaku:42,flashback:43}[owner]));
+
+ const dialogSelect=p.locator('#memorySuiteSourceReview select');`);
+source=source.replace('await dock.click();',"assert.equal(await dock.evaluate(el=>getComputedStyle(el).zIndex),String({libra:44,hayaku:45,flashback:46}[owner]));await dock.click();");
+const m=new Module(file,module);m.filename=file;m.paths=Module._nodeModulePaths(path.dirname(file));m._compile(source,file);

@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8').replace('_test: { maintenanceResultText,','_test: { Runtime,refreshNativeCopyObserverSources,maintenanceResultText,');
+(async()=>{const messages=[{role:'user',data:'Read the copper map.',chatId:'u1'},{role:'assistant',data:'The copper map shows the north gate.',chatId:'a1'}];const f=await createFixture({source,chat:{id:'copy',chatId:'copy',name:'Original (Copy)',message:messages,messages}});try{
+const t=f.api._test,rt=t.Runtime,o=rt.nativeCopyObserver;o.running=false;const bundle=await t.resolveCurrentScopeIdentityBundle(false);rt.currentScope=bundle.scope;o.discoveryGeneration=0;rt.scopeDiscoveryGeneration=1;o.inFlight=true;
+assert.equal((await t.refreshNativeCopyObserverSources()).reason,'probe_in_flight');assert.equal(o.discoveryGeneration,0);o.inFlight=false;
+const get=f.pluginStorage.getItem.bind(f.pluginStorage);f.pluginStorage.getItem=async key=>{if(String(key).includes(':scope:'))throw Error('SOURCE_READ_OFFLINE');return get(key);};await assert.rejects(()=>t.refreshNativeCopyObserverSources(),/SOURCE_READ_OFFLINE/);assert.equal(o.discoveryGeneration,0);f.pluginStorage.getItem=get;
+const original={...f.currentChat,id:'original',chatId:'original',name:'Original'};f.character.chats.push(original);const scope=t.resolveScopeFromSnapshot({character:f.character,chat:original,db:{personas:[]},chatInfo:{charIndex:0,chatIndex:1}});
+await t.saveAllRecords([{id:'m',hash:'m',type:'response',sourceType:'response',text:messages[1].data,dim:4,vector:[1,0,0,0]}],null,scope);rt.currentScope=bundle.scope;
+const result=await t.refreshNativeCopyObserverSources();assert.equal(result.checked,true);assert.equal(result.result.adopted,true);assert.equal((await t.loadScopeRecords(bundle.scope.scopeKey)).records.length,1);assert.equal(o.lastReason,'observer_source_changed');console.log('flashback_scope_observer_retry_test: PASS');
+}finally{await f.dispose();}})().catch(e=>{console.error(e);process.exitCode=1;});

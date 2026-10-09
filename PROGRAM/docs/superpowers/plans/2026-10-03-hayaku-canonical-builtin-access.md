@@ -1,0 +1,13 @@
+# HAYAKU canonical helper builtin access
+
+Base: `9ae0719b0b34f6fa69d2d156cfc04614199f7a86`; baseline HAY SHA256 `55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617`.
+
+For checkpoint portability, the runtime test accepts only that private baseline commit or original integration commit `a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e`. It verifies the complete blob SHA256 above before loading either source; an available but mismatching blob rejects without fallback. Git uses a per-command `safe.directory` for the resolved local repository, without modifying repository or global configuration. Missing both pinned commits rejects; no nearest-HEAD baseline or large source fixture is introduced. Bounded selector controls cover private-present, original-only, mismatching-SHA and neither-present histories; the controller verifies the actual restored original runtime separately.
+
+Two canonical helpers resolved the VM global `Object` for every own-field check. Capture the same `Object.prototype.hasOwnProperty` function once per valid object invocation. Every field check, object spread, scalar conversion, boundary normalization, null/array early return and default field list remains in place. This introduces no memoized canonical result, source cache, scope assumption or durability shortcut.
+
+The new controls fail on the base only for repeated global lookup: 96 scalar-field reads and 27 boundary-field reads. Own-versus-inherited fields, null/array/default inputs, shadowed `hasOwnProperty`, complete canonical packet output and registered cold/edit/scope behavior pass on the base. The candidate passes 5/5; those controls plus the previous hash, source-policy, provider-fence and stale-writer checks pass sequentially: 18/18. Changed raw rejects the previous fact and a foreign scope rejects main-scope facts. The actual hook still scans all ten raw sources without a trusted host revision; no model or transport is invoked.
+
+The n100 registered-hook attribution control preserves every marker and scalar/boundary invocation count, including 9,673/4,485 on the scope change. VM global `Object` reads decrease from 810,303 to 197,798 in that phase. All four phases still validate 100/100 raw sources. This is an instrumented count control with overlapping workloads; elapsed times are not release timing. Source-evidence reads, writes, exact readbacks and repeated canonical preparation remain separate costs. Cold/scope preparation is not declared solved.
+
+Evidence: `C:/Users/rusin/AppData/Local/Temp/LIB-HAYAKU-Cold-Preparation-Evidence-20261003/canonical-{red,green,regression}.log` and `canonical-attribution-check.json`. Original promotion, bundle/build and frozen release timing belong to the controller.

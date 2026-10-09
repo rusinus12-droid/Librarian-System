@@ -1,0 +1,5 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+function fixture(){let now=10000,writes=0,reads=0,timers=0;const state={_activeScopeKey:'private-active-scope',runtimeDebugRequestsByKey:new Map(),runtimeDebugRecentRequestKeys:[],runtimeDebugProviderCalls:[],runtimeDebugStorageFlushTimersByScope:new Map(),runtimeDebugStorageStatusByScope:new Map()};const ctx=vm.createContext({MemoryState:state,MemoryEngine:{CONFIG:{debug:false}},RisuCompat:{pluginStorage:{setItem:async()=>{writes++;return true;},getItem:async()=>{reads++;return null;}}},Date:class extends Date{static now(){return now}},stableHash:s=>String(s).split('').reduce((n,c)=>(n*31+c.charCodeAt(0))>>>0,0).toString(16),queueMicrotask,setTimeout:()=>{timers++;return 1;},clearTimeout(){},console,TextEncoder});const source=fs.readFileSync(path.join(__dirname,'../src/parts/01d-debug-export-runtime-trace.js'),'utf8');vm.runInContext(source+'\nglobalThis.api=DebugExportManager;',ctx);return {ctx,api:ctx.api,state,advance:n=>now+=n,io:()=>({writes,reads,timers})};}
+const plain=x=>JSON.parse(JSON.stringify(x));
+module.exports={fixture,plain};

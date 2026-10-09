@@ -1,0 +1,2015 @@
+{
+  "schema": "librarian.storage-mode-support-matrix.v1",
+  "packageVersion": "0.3.63",
+  "modeLifecycle": {
+    "operationalModes": [
+      "plugin_only",
+      "server_only"
+    ],
+    "transitionPhase": "mirror",
+    "mirrorColumn": "legacy_compatibility_evidence"
+  },
+  "generatedAt": "2026-09-30T03:03:47.401Z",
+  "totals": {
+    "features": 70,
+    "byMode": {
+      "plugin_only": {
+        "verified_supported": 70
+      },
+      "mirror": {
+        "verified_supported": 48,
+        "unverified": 21,
+        "intentionally_unsupported": 1
+      },
+      "server_only": {
+        "verified_supported": 48,
+        "unverified": 21,
+        "intentionally_unsupported": 1
+      }
+    },
+    "byStatus": {
+      "verified_supported": 166,
+      "unverified": 42,
+      "intentionally_unsupported": 2
+    }
+  },
+  "rows": [
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CANONICAL-CAPTURE",
+      "userFeature": "5 U+A canonical memory capture",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_canonical_job_runtime_test.cjs",
+        "native_branch_libra_runtime_test.cjs",
+        "libra_canonical_capture_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:46227",
+        "PROGRAM/plugins/LIBRA.js:35016"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-ARIADNE-ITO-PIPELINE",
+      "userFeature": "Ariadne/ito unified memory pipeline (fail-soft)",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_unified_fact_pipeline_v1_test.cjs",
+        "libra_ariadne_only_defaults_test.cjs",
+        "libra_ariadne_ito_pipeline_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:43982",
+        "PROGRAM/plugins/LIBRA.js:42861"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CANONICAL-REVISION-ADOPT",
+      "userFeature": "Canonical revisions / candidate adoption / manual edit",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_canonical_job_runtime_test.cjs",
+        "libra_canonical_variant_job_gui_contract_test.cjs",
+        "libra_response_variant_missing_canonical_catchup_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:56515",
+        "PROGRAM/plugins/LIBRA.js:37120"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_canonical_job_runtime_test.cjs",
+          "entryPoint": "regenerateCanonicalMemory",
+          "storageSchema": "libra.canonical_variant_index.v1",
+          "expected": "adopted revision becomes the single recall authority",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_canonical_job_runtime_test.cjs",
+          "entryPoint": "regenerateCanonicalMemory",
+          "storageSchema": "libra.canonical_variant_index.v1",
+          "expected": "adopted revision becomes the single recall authority",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-WORLD-MANAGER-STATE",
+      "userFeature": "Current State / World Manager",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_world_manager_narrative_v1_contract_test.cjs",
+        "libra_latest_state_tracking_contract_test.cjs",
+        "libra_world_manager_state_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:32973",
+        "PROGRAM/plugins/LIBRA.js:32510"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-STATE-CORRECTION-JOURNAL",
+      "userFeature": "State Correction Journal / replay / rollback / reroll",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_state_correction_sparse_v2_runtime_test.cjs",
+        "libra_world_manager_correction_transaction_rc2_test.cjs",
+        "libra_world_manager_state_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:57242",
+        "PROGRAM/plugins/LIBRA.js:59016"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-DUAL-WORLDLINE",
+      "userFeature": "Host Worldline + State Worldline",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "native_branch_libra_worldline_meta_test.cjs",
+        "native_branch_libra_worldline_conflict_test.cjs",
+        "libra_dual_worldline_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:35146",
+        "PROGRAM/plugins/LIBRA.js:32525"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-RECALL-ENGINE",
+      "userFeature": "Recall: lexical/BM25F/dense/hybrid/temporal/current-state rescue",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_recall_bm25f_compute_pilot_test.cjs",
+        "libra_classic_provenance_rescue_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:48546",
+        "PROGRAM/plugins/LIBRA.js:46681"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_recall_bm25f_compute_pilot_test.cjs",
+          "entryPoint": "recall",
+          "storageSchema": "libra.recall_catalog.v3",
+          "expected": "ranked recall from the active revision/worldline only",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_recall_bm25f_compute_pilot_test.cjs",
+          "entryPoint": "recall",
+          "storageSchema": "libra.recall_catalog.v3",
+          "expected": "ranked recall from the active revision/worldline only",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-EMBEDDING-VECTOR-LIFECYCLE",
+      "userFeature": "Embedding creation, vector storage, quarantine, regenerate",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_unified_server_vector_v1_test.cjs",
+        "remaining_embedding_migration_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:41021",
+        "PROGRAM/plugins/LIBRA.js:38489"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_unified_server_vector_v1_test.cjs",
+          "entryPoint": "embedMemory",
+          "storageSchema": "libra.embedding_rebuild.v1",
+          "expected": "vector space/model migration never deletes canonical memory",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_unified_server_vector_v1_test.cjs",
+          "entryPoint": "embedMemory",
+          "storageSchema": "libra.embedding_rebuild.v1",
+          "expected": "vector space/model migration never deletes canonical memory",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-PLANNER-RESPONSE-CONTEXT",
+      "userFeature": "Planner / response mode / response context",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_response_context_v1_test.cjs",
+        "libra_classic_planner_authority_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:50563",
+        "PROGRAM/plugins/LIBRA.js:54464"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature).",
+        "Confirm planner run artifacts are not required to survive mirror/server_only as canonical data."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_response_context_v1_test.cjs",
+          "entryPoint": "runTurnPlanner",
+          "storageSchema": "libra.reaction_planner.v1",
+          "expected": "planner output bound to the active worldline revision",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_response_context_v1_test.cjs",
+          "entryPoint": "runTurnPlanner",
+          "storageSchema": "libra.reaction_planner.v1",
+          "expected": "planner output bound to the active worldline revision",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-GRADIA-SGA",
+      "userFeature": "GRADIA/SGA integration exposed through LIBRA",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_gradia_runtime_hardening_behavior_test.cjs",
+        "libra_gradia_structured_pipeline_v2_behavior_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:53263",
+        "PROGRAM/plugins/LIBRA.js:30761"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-INPUT-WRITER",
+      "userFeature": "Input Writer",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_input_writer_phase06_no_mutation_runtime_test.cjs",
+        "libra_input_writer_delivery_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:63832",
+        "PROGRAM/plugins/LIBRA.js:49957"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-RAG-LORE-CBS",
+      "userFeature": "RAG / lore / CBS / reranker",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_consumer_reference_material_v2_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:20335",
+        "PROGRAM/plugins/LIBRA.js:20514"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-CONFIG-PERSISTENCE",
+      "userFeature": "Provider profiles / prompt profiles / settings persistence",
+      "storageClass": "local_configuration",
+      "plugin_only": "verified_supported",
+      "mirror": "intentionally_unsupported",
+      "server_only": "intentionally_unsupported",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "libra_settings_persistence_transaction_runtime_test.cjs",
+        "libra_prompt_persistence_transaction_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:13837",
+        "PROGRAM/plugins/LIBRA.js:30685"
+      ],
+      "requiredWork": [],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "intentionally_unsupported",
+          "reproduction": "libra_settings_persistence_transaction_runtime_test.cjs",
+          "entryPoint": "readRuntimeSettings",
+          "storageSchema": "libra.runtime_settings_store.v4",
+          "expected": "settings persist with transactional rollback; no scope-canonical claim",
+          "severity": "P2",
+          "requiredChange": "Add a focused mirror/server_only execution+readback test."
+        },
+        {
+          "mode": "server_only",
+          "status": "intentionally_unsupported",
+          "reproduction": "libra_settings_persistence_transaction_runtime_test.cjs",
+          "entryPoint": "readRuntimeSettings",
+          "storageSchema": "libra.runtime_settings_store.v4",
+          "expected": "settings persist with transactional rollback; no scope-canonical claim",
+          "severity": "P2",
+          "requiredChange": "Add a focused mirror/server_only execution+readback test."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-MANUAL-RECOVERY",
+      "userFeature": "Manual cold start and failed batch recovery",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_failed_batch_fresh_retry_runtime_test.cjs",
+        "libra_fresh_analysis_discard_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:56454",
+        "PROGRAM/plugins/LIBRA.js:56784"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_failed_batch_fresh_retry_runtime_test.cjs",
+          "entryPoint": "startManualColdStart",
+          "storageSchema": "libra.canonical_job.v1",
+          "expected": "manual cold start never becomes automatic when a server is connected",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_failed_batch_fresh_retry_runtime_test.cjs",
+          "entryPoint": "startManualColdStart",
+          "storageSchema": "libra.canonical_job.v1",
+          "expected": "manual cold start never becomes automatic when a server is connected",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-SOURCE-EDIT-CONSENT",
+      "userFeature": "Source-edit consent and reanalysis",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "source_edit_libra_runtime_test.cjs",
+        "libra_unified_source_edit_v2_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:42164",
+        "PROGRAM/plugins/LIBRA.js:42798"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "source_edit_libra_runtime_test.cjs",
+          "entryPoint": "createMemorySuiteSourceEditConsent",
+          "storageSchema": "memory-suite.source-edit-consent.v1",
+          "expected": "approved edit replaces canonical only after explicit consent",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "source_edit_libra_runtime_test.cjs",
+          "entryPoint": "createMemorySuiteSourceEditConsent",
+          "storageSchema": "memory-suite.source-edit-consent.v1",
+          "expected": "approved edit replaces canonical only after explicit consent",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-WORLD-ADDITIONAL-RETIRED",
+      "userFeature": "World Additional (retired migration path)",
+      "storageClass": "diagnostic",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "libra_world_additional_retirement_marker_runtime_test.cjs",
+        "libra_world_additional_retired_3mode_parity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:35248"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-STORY-NARRATIVE-COMPAT",
+      "userFeature": "Story/Narrative compatibility readers",
+      "storageClass": "archive_reference",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_story_arc_public_api_runtime_test.cjs",
+        "libra_story_arc_storage_retirement_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:41427",
+        "PROGRAM/plugins/LIBRA.js:77604"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-PORTABLE-HANDOFF",
+      "userFeature": "Backup / export / import / restore / handoff",
+      "storageClass": "archive_reference",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_portable_cross_chat_restore_runtime_test.cjs",
+        "libra_portable_multiverse_derived_rollback_p1_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:59597",
+        "PROGRAM/plugins/LIBRA.js:76989"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "libra_portable_cross_chat_restore_runtime_test.cjs",
+          "entryPoint": "createEnvelope",
+          "storageSchema": "libra.shared_archive.v1",
+          "expected": "restore preserves worldline; interrupted restore rolls back",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "libra_portable_cross_chat_restore_runtime_test.cjs",
+          "entryPoint": "createEnvelope",
+          "storageSchema": "libra.shared_archive.v1",
+          "expected": "restore preserves worldline; interrupted restore rolls back",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-MAINTENANCE-DIAGNOSTICS",
+      "userFeature": "Maintenance, diagnostics, scope health, quarantine",
+      "storageClass": "diagnostic",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "libra_scope_health_runtime_test.cjs",
+        "libra_scope_health_boundary_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:45741",
+        "PROGRAM/plugins/LIBRA.js:3935"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "libra",
+      "featureId": "LIBRA-GUI-OWNER-WRITES",
+      "userFeature": "GUI read/edit paths that write durable owner state",
+      "storageClass": "local_configuration",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "libra_settings_persistence_transaction_runtime_test.cjs",
+        "libra_world_manager_correction_gui_rc2_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIBRA.js:68222",
+        "PROGRAM/plugins/LIBRA.js:75150"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-INPUT-RECOGNITION",
+      "userFeature": "Input recognition / request classification",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_packet_injection_integrity_runtime_test.cjs",
+        "hayaku_prompt_contract_v4_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:15936",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:16593"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "hayaku_packet_injection_integrity_runtime_test.cjs",
+          "entryPoint": "RequestKindCore.classify",
+          "storageSchema": "",
+          "expected": "main/model vs module-only vs structured-output classification",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "hayaku_packet_injection_integrity_runtime_test.cjs",
+          "entryPoint": "RequestKindCore.classify",
+          "storageSchema": "",
+          "expected": "main/model vs module-only vs structured-output classification",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-PACKET-CAPTURE",
+      "userFeature": "Packet capture and packet schema",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "output_listener_capture_contract_test.cjs",
+        "capture_backend_compatibility_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:46311",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:45559"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-SPEAKER-TURN-BOUNDARY",
+      "userFeature": "Speaker/turn boundary handling",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_schema_cross_packet_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:16652",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:14884"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-CONTINUITY-PACKET-STORAGE",
+      "userFeature": "Continuity/semantic packet storage",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_common_admission_runtime_test.cjs",
+        "hayaku_storage_eventual_confirmation_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:38520",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:25986"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-TURN-WORLDLINE",
+      "userFeature": "Turn Worldline",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "native_branch_hayaku_runtime_test.cjs",
+        "hayaku_journal_error_coverage_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:18998",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:48368"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-MISSING-PACKET-DETECTION",
+      "userFeature": "Missing-packet detection",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_recovery_debt_coverage_authority_test.cjs",
+        "hayaku_exact_missing_source_v348_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:16879",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:21367"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-MANUAL-RECOVERY",
+      "userFeature": "Manual recovery (targeted regeneration)",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_native_targeted_regeneration_runtime_test.cjs",
+        "hayaku_recovery_consent_block_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:43781",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:43831"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-FAILED-ONLY-RECOVERY",
+      "userFeature": "Failed-only recovery artifacts",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_failed_analysis_vault_runtime_test.cjs",
+        "hayaku_failed_analysis_delete_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:40124",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:40335"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-RECOVERY-VAULT-SHARDS",
+      "userFeature": "Recovery Vault and shard storage",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_recovery_vault_shards_runtime_test.cjs",
+        "hayaku_server_only_recovery_shards_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:20548",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:20599"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "hayaku_recovery_vault_shards_runtime_test.cjs",
+          "entryPoint": "loadRecoveryVault",
+          "storageSchema": "hayaku.recovery_vault.v1",
+          "expected": "large vault uses shard/index structure in server modes",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "hayaku_recovery_vault_shards_runtime_test.cjs",
+          "entryPoint": "loadRecoveryVault",
+          "storageSchema": "hayaku.recovery_vault.v1",
+          "expected": "large vault uses shard/index structure in server modes",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-RECOVERY-LEASE-APPROVAL",
+      "userFeature": "Recovery lease / approval / resume",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_recovery_confirmation_queue_test.cjs",
+        "hayaku_recovery_debt_coverage_authority_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:21546",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:43545"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-SOURCE-EDIT-SYNC-CONSENT",
+      "userFeature": "Source-edit synchronization and consent",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "source_edit_hayaku_runtime_test.cjs",
+        "source_edit_consent_state_machine_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:41761",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:49856"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "source_edit_hayaku_runtime_test.cjs",
+          "entryPoint": "assertHayakuSourceEditConsent",
+          "storageSchema": "memory-suite.source-edit-consent.v1",
+          "expected": "stale packets rejected; regeneration requires consent",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "source_edit_hayaku_runtime_test.cjs",
+          "entryPoint": "assertHayakuSourceEditConsent",
+          "storageSchema": "memory-suite.source-edit-consent.v1",
+          "expected": "stale packets rejected; regeneration requires consent",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-PACKET-DELETE-MAINTENANCE",
+      "userFeature": "Packet delete / maintenance / orphan cleanup",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_actionable_maintenance_ui_test.cjs",
+        "hayaku_gui_ux_contract_test.cjs",
+        "hayaku_packet_delete_maintenance_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:39018",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:38676"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-ARCHIVE-HANDOFF-EXCLUSION",
+      "userFeature": "Archive / handoff / parent-member exclusion",
+      "storageClass": "archive_reference",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_portable_cross_chat_import_runtime_test.cjs",
+        "native_branch_hayaku_storage_modes_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:35764",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:35776"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-BACKUP-EXPORT-IMPORT-RESTORE",
+      "userFeature": "Backup / export / import / restore",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "portable_memory_backup_contract_test.cjs",
+        "portable_backup_archive_roundtrip_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:57069",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:57602"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "portable_memory_backup_contract_test.cjs",
+          "entryPoint": "exportEnvelope",
+          "storageSchema": "memory-suite.portable-memory-backup.v1",
+          "expected": "format v1/v2/v3 accepted; explicit restore mode required",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "portable_memory_backup_contract_test.cjs",
+          "entryPoint": "exportEnvelope",
+          "storageSchema": "memory-suite.portable-memory-backup.v1",
+          "expected": "format v1/v2/v3 accepted; explicit restore mode required",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-LARGE-HISTORY-PACKET-SIZE",
+      "userFeature": "Large-history and packet-size handling",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_long_chat_revision_cache_test.cjs",
+        "hayaku_cold_start_batch_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:38046",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:41970"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "hayaku_long_chat_revision_cache_test.cjs",
+          "entryPoint": "pruneStorageRecords",
+          "storageSchema": "hayaku_storage_ledger_v2",
+          "expected": "bounded caches and chunking keep writes under key limits in all modes",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "hayaku_long_chat_revision_cache_test.cjs",
+          "entryPoint": "pruneStorageRecords",
+          "storageSchema": "hayaku_storage_ledger_v2",
+          "expected": "bounded caches and chunking keep writes under key limits in all modes",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-JSON-XML-ARTIFACT-PROTECTION",
+      "userFeature": "JSON/XML/source artifact protection",
+      "storageClass": "transient_cache",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_packet_injection_integrity_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:15919",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:16482"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "hayaku_packet_injection_integrity_runtime_test.cjs",
+          "entryPoint": "isStructuredOutputOnlyPrompt",
+          "storageSchema": "",
+          "expected": "no packet injection or residue when output must be JSON/XML",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "hayaku_packet_injection_integrity_runtime_test.cjs",
+          "entryPoint": "isStructuredOutputOnlyPrompt",
+          "storageSchema": "",
+          "expected": "no packet injection or residue when output must be JSON/XML",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-DIAGNOSTICS-AUDIT-LOGS",
+      "userFeature": "Diagnostics / audit logs",
+      "storageClass": "diagnostic",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "hayaku_storage_reconciliation_journal_fault_test.cjs",
+        "hayaku_journal_error_coverage_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:38272",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:50526"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "hayaku",
+      "featureId": "HAYAKU-GUI-DURABLE-MUTATIONS",
+      "userFeature": "GUI controls that mutate packet/recovery state",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "hayaku_gui_workspace_v346_runtime_test.cjs",
+        "hayaku_failed_recovery_ui_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:53538",
+        "PROGRAM/plugins/HAYAKU_Locator_Continuity.js:52368"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-UA-CAPTURE",
+      "userFeature": "U+A turn capture",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_capture_profile_regression_test.cjs",
+        "output_listener_capture_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:34838",
+        "PROGRAM/plugins/Flashback_Memory.js:33218"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-PENDING-CAPTURE-JOURNAL",
+      "userFeature": "Pending capture journal and recovery",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "dual_engine_profile_deferred_runtime_test.cjs",
+        "flashback_fenced_commit_v136_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:11761",
+        "PROGRAM/plugins/Flashback_Memory.js:33782"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-RECORD-NORMALIZATION",
+      "userFeature": "Memory record normalization/sanitization",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_isolation_safety_runtime_test.cjs",
+        "source_rules_products_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:23193",
+        "PROGRAM/plugins/Flashback_Memory.js:37147"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EMBEDDING-GENERATION",
+      "userFeature": "Embedding/vector generation and provider fallback",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_embedding_execution_v1_test.cjs",
+        "flashback_hash_embedding_batch_pilot_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:15153",
+        "PROGRAM/plugins/Flashback_Memory.js:15227"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-VECTOR-SIDECARS",
+      "userFeature": "Vector sidecars",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_portable_vector_sidecar_test.cjs",
+        "flashback_clone_vector_integrity_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:18018",
+        "PROGRAM/plugins/Flashback_Memory.js:18248"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-HYBRID-RECALL",
+      "userFeature": "Lexical/BM25F/dense/hybrid recall",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_context_recall_runtime_test.cjs",
+        "recall_selection_conformance_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:31154",
+        "PROGRAM/plugins/Flashback_Memory.js:28248"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-RECALL-GATES",
+      "userFeature": "Temporal/truth/state recall gates",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_temporal_candidate_parity_runtime_test.cjs",
+        "flashback_structured_state_gate_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:28316",
+        "PROGRAM/plugins/Flashback_Memory.js:29199"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EPISODE-INDEX",
+      "userFeature": "Episode index",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "native_branch_flashback_runtime_test.cjs",
+        "flashback_long_chat_revision_cache_test.cjs",
+        "flashback_episode_index_rebuild_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:26909",
+        "PROGRAM/plugins/Flashback_Memory.js:27109"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-FILM-ARCHIVE-BROWSER",
+      "userFeature": "Film archive browser/list inspection",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_storage_subtabs_runtime_test.cjs",
+        "flashback_scope_panels_browser_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:41095",
+        "PROGRAM/plugins/Flashback_Memory.js:40265"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SCOPE-CLASSIFICATION",
+      "userFeature": "Empty/list residue/orphan classification",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_scope_management_runtime_test.cjs",
+        "flashback_scope_registry_safety_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:39235",
+        "PROGRAM/plugins/Flashback_Memory.js:39176"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SCOPE-DELETE-CLEANUP",
+      "userFeature": "Selection/deletion/safe cleanup",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_scope_management_runtime_test.cjs",
+        "flashback_scope_management_server_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:19451",
+        "PROGRAM/plugins/Flashback_Memory.js:42878"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-TURN-WORLDLINE",
+      "userFeature": "Turn Worldline and source-edit retirement",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_worldline_workspace_v129_runtime_test.cjs",
+        "source_edit_flashback_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:24091",
+        "PROGRAM/plugins/Flashback_Memory.js:19367"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-NATIVE-BRANCH-CLONE",
+      "userFeature": "Native branch clone/adoption",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "native_branch_flashback_runtime_test.cjs",
+        "native_branch_flashback_storage_modes_runtime_test.cjs",
+        "native_branch_flashback_legacy_child_migration_test.cjs",
+        "native_branch_flashback_legacy_child_migration_concurrency_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:19908",
+        "PROGRAM/plugins/Flashback_Memory.js:19855",
+        "PROGRAM/docs/storage-mode-audit/evidence/FLASHBACK_LEGACY_CHILD_CAS_RACE_EVIDENCE.json"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SESSION-HANDOFF",
+      "userFeature": "Session handoff / archive chain",
+      "storageClass": "archive_reference",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "retrace_server_handoff_test.cjs",
+        "flashback_portable_cross_chat_restore_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:22263",
+        "PROGRAM/plugins/Flashback_Memory.js:20848"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-PORTABLE-BACKUP",
+      "userFeature": "Backup / export / import / restore",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_portable_cross_chat_restore_test.cjs",
+        "flashback_portable_vector_sidecar_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:46791",
+        "PROGRAM/plugins/Flashback_Memory.js:46320"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "flashback_portable_cross_chat_restore_test.cjs",
+          "entryPoint": "doExport",
+          "storageSchema": "memory-suite.portable-memory-backup.v1",
+          "expected": "restore preserves worldline and vector sidecars",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "flashback_portable_cross_chat_restore_test.cjs",
+          "entryPoint": "doExport",
+          "storageSchema": "memory-suite.portable-memory-backup.v1",
+          "expected": "restore preserves worldline and vector sidecars",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-COLDSTART-MAINTENANCE",
+      "userFeature": "Cold-start / rebuild / maintenance",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_single_turn_maintenance_runtime_test.cjs",
+        "flashback_repair_then_adopt_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:26270",
+        "PROGRAM/plugins/Flashback_Memory.js:38240"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-EMBEDDING-MIGRATION",
+      "userFeature": "Embedding model change/quarantine/rebuild",
+      "storageClass": "owner_derived",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": false,
+      "sourceEditSensitive": true,
+      "tests": [
+        "remaining_embedding_migration_runtime_test.cjs",
+        "embedding_v111_gap_regression_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:38203",
+        "PROGRAM/plugins/Flashback_Memory.js:23126"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-SERVER-COMPUTE",
+      "userFeature": "Server-side vector/search integrations",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "search_compute_owner_paths_runtime_test.cjs",
+        "plugin_only_network_isolation_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:9931",
+        "PROGRAM/plugins/Flashback_Memory.js:28512"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "search_compute_owner_paths_runtime_test.cjs",
+          "entryPoint": "MemorySuiteStorageBridge",
+          "storageSchema": "memory-suite.memory-search.v1",
+          "expected": "server routes canonical keys and memory-search; plugin_only makes zero backend calls",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "search_compute_owner_paths_runtime_test.cjs",
+          "entryPoint": "MemorySuiteStorageBridge",
+          "storageSchema": "memory-suite.memory-search.v1",
+          "expected": "server routes canonical keys and memory-search; plugin_only makes zero backend calls",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-DIAGNOSTICS-LOG",
+      "userFeature": "Diagnostics / activity log",
+      "storageClass": "diagnostic",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "flashback_sync_failure_reporting_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:3010",
+        "PROGRAM/plugins/Flashback_Memory.js:42408"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "flashback",
+      "featureId": "FLASHBACK-GUI-MUTATIONS",
+      "userFeature": "GUI operations that mutate records/archives/vectors/manifests",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "flashback_scope_panels_browser_test.cjs",
+        "flashback_portable_memory_ui_behavior_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/Flashback_Memory.js:41139",
+        "PROGRAM/plugins/Flashback_Memory.js:43324"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-CREATE",
+      "userFeature": "Persona creation",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": false,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:18819",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:24303"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "runLLMRewrite",
+          "storageSchema": "",
+          "expected": "generated persona adopted into the RisuAI Persona DB with readback",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "runLLMRewrite",
+          "storageSchema": "",
+          "expected": "generated persona adopted into the RisuAI Persona DB with readback",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-BIND",
+      "userFeature": "Persona selection/binding",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs",
+        "lia_pocket_gui_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:12331",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13117"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "PersonaBindingManager.write",
+          "storageSchema": "lia.binding_change.v1",
+          "expected": "chat.bindedPersona set with durable readback; native default untouched",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "PersonaBindingManager.write",
+          "storageSchema": "lia.binding_change.v1",
+          "expected": "chat.bindedPersona set with durable readback; native default untouched",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-LIVE-REFRESH",
+      "userFeature": "Live Persona refresh",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "lia_output_listener_revision_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13541",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13509"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-LIVE-CHECKPOINT",
+      "userFeature": "Checkpoint/state persistence",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11423",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11532"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SAME-CHAT-RECOVERY",
+      "userFeature": "Same-chat Persona recovery",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_persona_commit_recovery_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:10499",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13280"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "readLivePersonaBindingByScopeKey",
+          "storageSchema": "lia.live_persona_index.v2",
+          "expected": "reload restores correct binding and latest validated Persona",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_persona_commit_recovery_test.cjs",
+          "entryPoint": "readLivePersonaBindingByScopeKey",
+          "storageSchema": "lia.live_persona_index.v2",
+          "expected": "reload restores correct binding and latest validated Persona",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-BRANCH-INHERIT",
+      "userFeature": "Native Branch inheritance",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "native_branch_lia_storage_modes_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11914",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11718"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-BRANCH-STORAGE-MIGRATE",
+      "userFeature": "Existing-child storage-policy migration",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "native_branch_lia_storage_modes_runtime_test.cjs",
+        "native_branch_storage_binding_server_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11947",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11950"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SESSION-HANDOFF",
+      "userFeature": "Session handoff / rebind",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "retrace_server_handoff_test.cjs",
+        "retrace_peer_runtime_compatibility_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11997",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:12149"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-SOURCE-REVALIDATE",
+      "userFeature": "Source-change invalidation/revalidation",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "verified_supported",
+      "server_only": "verified_supported",
+      "branchSensitive": true,
+      "sourceEditSensitive": true,
+      "tests": [
+        "native_branch_lia_runtime_test.cjs",
+        "lia_output_listener_revision_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11556",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:11770"
+      ],
+      "requiredWork": [],
+      "gaps": []
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-PERSONA-RESTORE",
+      "userFeature": "Persona restore / backup / import / export",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_shared_server_restore_contract_test.cjs",
+        "lia_shared_server_restore_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13450",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:8503"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_shared_server_restore_contract_test.cjs",
+          "entryPoint": "restoreOriginalLivePersona",
+          "storageSchema": "lia.persona_visual_asset_bundle.v1",
+          "expected": "restore validates owner/snapshot before replacing durable state",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_shared_server_restore_contract_test.cjs",
+          "entryPoint": "restoreOriginalLivePersona",
+          "storageSchema": "lia.persona_visual_asset_bundle.v1",
+          "expected": "restore validates owner/snapshot before replacing durable state",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-UI-PERSONA-OPS",
+      "userFeature": "UI edit / select operations",
+      "storageClass": "owner_authoritative",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_pocket_gui_runtime_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:13195",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:18869"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_pocket_gui_runtime_test.cjs",
+          "entryPoint": "renderPersonaSidePanel",
+          "storageSchema": "",
+          "expected": "explicit per-chat binding; same-chat Persona change does not invent a Host Branch",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_pocket_gui_runtime_test.cjs",
+          "entryPoint": "renderPersonaSidePanel",
+          "storageSchema": "",
+          "expected": "explicit per-chat binding; same-chat Persona change does not invent a Host Branch",
+          "severity": "P1",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    },
+    {
+      "owner": "lia",
+      "featureId": "LIA-DIAG-INSPECT",
+      "userFeature": "Diagnostics and binding inspection",
+      "storageClass": "diagnostic",
+      "plugin_only": "verified_supported",
+      "mirror": "unverified",
+      "server_only": "unverified",
+      "branchSensitive": true,
+      "sourceEditSensitive": false,
+      "tests": [
+        "lia_pocket_gui_runtime_test.cjs",
+        "storage_scope_sync_diagnostics_contract_test.cjs"
+      ],
+      "evidence": [
+        "PROGRAM/plugins/LIA_Persona_Linker.js:965",
+        "PROGRAM/plugins/LIA_Persona_Linker.js:12678"
+      ],
+      "requiredWork": [
+        "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+      ],
+      "gaps": [
+        {
+          "mode": "mirror",
+          "status": "unverified",
+          "reproduction": "lia_pocket_gui_runtime_test.cjs",
+          "entryPoint": "buildDebugExportSnapshot",
+          "storageSchema": "lia.debug_export.v1",
+          "expected": "read-only binding/health inspection with redacted export",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        },
+        {
+          "mode": "server_only",
+          "status": "unverified",
+          "reproduction": "lia_pocket_gui_runtime_test.cjs",
+          "entryPoint": "buildDebugExportSnapshot",
+          "storageSchema": "lia.debug_export.v1",
+          "expected": "read-only binding/health inspection with redacted export",
+          "severity": "P2",
+          "requiredChange": "Execute this feature across all three modes and record the readback (reviewer D1: the shared bridge assertions do not verify a feature)."
+        }
+      ]
+    }
+  ]
+}

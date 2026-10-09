@@ -1,0 +1,9 @@
+# Flashback read-only maintenance inspection
+
+The maintenance inspection reads verified local routing, physical manifests, records, vector sidecars and archives without storage preparation, migration, credential reconciliation, provider probing or network calls. Missing storage remains incomplete; inspection does not prepare it. Global settings use global routing authority, and each archive uses its own scope authority. Server-only or unknown authority is explicitly unavailable, never interpreted as a healthy local shadow. Server read-only inspection remains a separate follow-up; the existing maintenance execution control remains visible and explains unavailable/unverified inspection.
+
+Argument reads distinguish absence from failure. Credential results contain presence/status only. Storage/argument failures receive sanitized inspection errors. An immutable host snapshot, route/manifest/settings witnesses, and final host/generation recheck reject a changed source or scope. Existing in-memory diagnostic audit fields may be refreshed; no persistent settings or credential writes occur.
+
+The shared recovery router now exposes a private-owner `isBusy()` predicate. Legacy physical maintenance checks this synchronously before acquiring its existing `maintenanceActiveOperationId`; health and explicit reanalysis check that actual operation ID. Thus either action order blocks overlap, including the first journal-write await. Clear/navigation does not release an active shared-router latch.
+
+This does not introduce a third physical-maintenance router action or change bulk mutation, rollback, retry or pricing semantics. Existing physical maintenance can mutate raw records, indexes, vectors and archives and is not equivalent to derived-cache repair. Wider publication guards remain a separate design. Tests use synthetic host/storage/provider fixtures, not an actual Risu installation or live external provider.

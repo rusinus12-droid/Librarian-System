@@ -1,0 +1,3 @@
+'use strict';
+const assert=require('node:assert/strict');const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
+(async()=>{const r=await createHayakuRuntime();try{for(const action of ['adopt','manual','llm','verify']){const result=await r.hayaku.recovery.failedAnalysis.resolve('legacy',action,{manualBody:'{}'});assert.equal(result.ok,false);assert.equal(result.reason,'failed_recovery_retired_use_missing_turn_generation');}assert.equal(r.llmCalls.length,0);console.log('PASS obsolete failure-resolution actions cannot mutate or call AI; replacement recovery tested by simple_recovery');}finally{await r.dispose();}})().catch(e=>{console.error(e);process.exitCode=1;});

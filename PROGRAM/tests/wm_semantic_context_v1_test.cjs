@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict');const {makePlan,runEvaluation}=require('../tools/evaluate_wm_semantics.cjs');const {artifact}=require('./fixtures/libra_unified_runtime_fixture.cjs');const {sourceRows}=require('./fixtures/unified_vertical_source.json');const results=[];
+async function test(name,fn){await fn();results.push(name);console.log('PASS',name);}
+const clone=x=>JSON.parse(JSON.stringify(x));
+const c={id:'WM-01',label:'supplied baseline context contract',selectedReview:'world_ito',sourceRows,previousState:null,referenceMaterial:[],approvedBaseline:{schema:'libra.wm_approved_baseline.v1',sourceRows,artifact:artifact()},referenceContext:{characterDescription:'BASELINE_CHARACTER_R07 {{char}}는 기록회를 돕는다.',personaDescription:'BASELINE_PERSONA_R07 {{user}}는 도서관 방문자다.'},expected:['FORBIDDEN_RUBRIC_771'],forbidden:['FORBIDDEN_RUBRIC_772']};
+(async()=>{
+ await test('baseline and reference context change the reviewed plan without granting live calls',async()=>{const a=makePlan([c],['L']),b=makePlan([{...c,referenceContext:{characterDescription:'different'}}],['L']);assert.notEqual(a.sourceDigest,b.sourceDigest);assert.equal(a.plannedProviderDispatches,1);assert.equal(a.modelEvaluation,'not_run');assert.ok(a.cases[0].approvedBaselineDigest);});
+ await test('arbitrary prior Head and malformed evidence cannot replace verified production seeding',async()=>{assert.throws(()=>makePlan([{...c,previousState:{fake:true}}]),/not_supported/);assert.throws(()=>makePlan([{...c,approvedBaseline:{...c.approvedBaseline,sourceRows:sourceRows.slice(1)}}]),/baseline_invalid/);assert.throws(()=>makePlan([{...c,referenceContext:{secret:'x'}}]),/context_invalid/);});
+ await test('Librarian sees supplied prior state and Risu-bound persona/description through real production context paths',async()=>{
+  let calls=0;const r=await runEvaluation({cases:[c],maxRequests:1,acknowledgePaidCalls:true,endpoint:'https://controlled.invalid/v1/chat/completions',model:'controlled',apiKey:'not-a-key',transportBoundary:'controlled_test_transport_not_real_model',fetchImpl:async(u,i)=>{
+   calls++;const {messages}=JSON.parse(i.body),text=messages.map(m=>m.content).join('\n');assert.ok(!text.includes('FORBIDDEN_RUBRIC'));assert.ok(text.includes('t6-a'));assert.ok(text.includes('상자의 암호'));assert.ok(text.includes('BASELINE_CHARACTER_R07'),'character description in actual prompt');assert.ok(text.includes('BASELINE_PERSONA_R07'),'bound Persona in actual prompt');
+   const patch=text.match(/\[CURRENT ARTIFACT ([^\]]+)\]/);let out=artifact();if(patch)out={schema:'libra.fact_revision_patch.v1',baseArtifactDigest:patch[1],operations:[]};else for(const x of [...out.entities,...out.facts])for(const e of x.evidenceSpans)e.ref=e.ref.replace(/^t(\d+)/,(_,n)=>`t${Number(n)+5}`);
+   return {ok:true,status:200,text:async()=>JSON.stringify({choices:[{message:{content:JSON.stringify(out)},finish_reason:'stop'}]})};
+  }});
+  assert.equal(calls,1);assert.deepEqual(r.results.map(x=>x.physicalRequests),[1]);assert.ok(r.results.every(x=>x.outcome?.artifact?.schema==='libra.canonical_artifact.v4'),JSON.stringify(r.results));assert.ok(r.results.every(x=>x.baselineProvenance.externalModelCalls===0&&x.baselineProvenance.localFixtureDispatches===1));assert.equal(new Set(r.results.map(x=>x.referenceMaterialDigest)).size,1);assert.equal(new Set(r.results.map(x=>x.previousStateDigest)).size,1);assert.equal(r.eligibleForDefault,false);assert.equal(r.modelSemanticPass,false);
+ });
+ console.log(JSON.stringify({test:'wm_semantic_context_v1',passed:results.length,results,actualExternalModelCalls:0}));
+})().catch(e=>{console.error(e);process.exitCode=1;});

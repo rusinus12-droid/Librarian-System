@@ -1,0 +1,113 @@
+{
+  "writerVersion": "3.0.57",
+  "messages": [
+    {
+      "role": "user",
+      "id": "u1",
+      "chatId": "u1",
+      "data": "Enter archive."
+    },
+    {
+      "role": "assistant",
+      "id": "a1",
+      "chatId": "a1",
+      "data": "Alice entered archive.\n<!-- HAYAKU_STATE_PACKET_START {\"meta\":{\"schema\":\"hayaku_packet_v1\",\"packet_type\":\"current_snapshot\",\"packet_schema_rev\":2,\"scene_id\":\"scene-1\",\"turn_anchor\":\"Alice-1 completed the established event for turn 1.\",\"confidence\":0.82,\"summary_memory\":{\"summary\":\"Alice-1 completed the established event for turn 1.\",\"recallAnchors\":[\"Alice-1\",\"scene-1\"],\"recallAliases\":{\"en\":[\"Alice-1 completed the established event for turn 1.\"]},\"canonicalAnchors\":[\"person:Alice-1\",\"event:turn_1\",\"place:scene-1\"],\"mentionedEntityNames\":[\"Alice-1\"],\"directEvidenceSnippets\":[\"Alice-1 completed the established event for turn 1.\"],\"related_refs\":[],\"confidence\":0.82}},\"entity\":{\"characters\":[{\"name\":\"Alice-1\",\"current_state\":\"state-1\"}],\"relations\":[],\"pov_memories\":[],\"secrets\":[]},\"world\":{\"location\":\"scene-1\",\"time\":\"turn-1\",\"scene\":\"scene-1\",\"weather\":\"\",\"active_events\":[{\"summary\":\"Alice-1 completed the established event for turn 1.\"}],\"historical_events\":[],\"world_rules\":[],\"offscreen_threads\":[],\"factions\":[],\"regions\":[]},\"narrative\":{\"scene_phase\":\"active\",\"current_arc\":\"arc-1\",\"pacing\":\"steady\",\"conflict_traces\":[],\"scene_deltas\":[{\"summary\":\"Alice-1 completed the established event for turn 1.\"}],\"theme_motifs\":[],\"critical_dialogue\":[]},\"planner\":{\"continuity_locks\":[{\"summary\":\"Alice-1 remains associated with scene-1.\"}],\"do_not_resolve_yet\":[],\"consequence_ledger\":[],\"payoff_tracker\":[],\"open_invitations\":[]},\"importance\":{\"overall\":0.72,\"reason\":[\"turn 1 evidence\"]}} HAYAKU_STATE_PACKET_END -->"
+    },
+    {
+      "role": "user",
+      "id": "u2",
+      "chatId": "u2",
+      "data": "Find ribbon."
+    },
+    {
+      "role": "assistant",
+      "id": "a2",
+      "chatId": "a2",
+      "data": "Alice found a blue ribbon."
+    }
+  ],
+  "evidence": {
+    "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::user::0": {
+      "schema": "hayaku.recovery_evidence_chunk.v1",
+      "version": 1,
+      "pluginVersion": "3.0.57",
+      "scopeKey": "chat_h642c1om545yjwb0",
+      "recordId": "debt:2:h641qhaodm3qeckn",
+      "role": "user",
+      "ordinal": 0,
+      "body": "Find ribbon.",
+      "bodyChars": 12,
+      "bodyBytes": 12,
+      "bodyHash": "h641vlrot39iqckk",
+      "createdAt": 1788854096178
+    },
+    "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::assistant::0": {
+      "schema": "hayaku.recovery_evidence_chunk.v1",
+      "version": 1,
+      "pluginVersion": "3.0.57",
+      "scopeKey": "chat_h642c1om545yjwb0",
+      "recordId": "debt:2:h641qhaodm3qeckn",
+      "role": "assistant",
+      "ordinal": 0,
+      "body": "Alice found a blue ribbon.",
+      "bodyChars": 26,
+      "bodyBytes": 26,
+      "bodyHash": "h64259a39lbdj57m",
+      "createdAt": 1788854096179
+    },
+    "hayaku.v2.recovery_evidence_manifest.h642k20z2pk4ru09": {
+      "schema": "hayaku.recovery_evidence_manifest.v1",
+      "version": 1,
+      "pluginVersion": "3.0.57",
+      "scopeKey": "chat_h642c1om545yjwb0",
+      "recordId": "debt:2:h641qhaodm3qeckn",
+      "debtId": "debt:2:h641qhaodm3qeckn",
+      "pairIndex": 2,
+      "userCanonicalHash": "h641vlrot39iqckk",
+      "assistantCanonicalHash": "h64259a39lbdj57m",
+      "evidenceHash": "h647uwucte2wcxn",
+      "roles": {
+        "user": {
+          "chars": 12,
+          "bytes": 12,
+          "hash": "h641vlrot39iqckk",
+          "canonicalHash": "h641vlrot39iqckk",
+          "chunkCount": 1,
+          "chunkKeys": [
+            "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::user::0"
+          ],
+          "chunks": [
+            {
+              "key": "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::user::0",
+              "ordinal": 0,
+              "chars": 12,
+              "bytes": 12,
+              "hash": "h641vlrot39iqckk"
+            }
+          ]
+        },
+        "assistant": {
+          "chars": 26,
+          "bytes": 26,
+          "hash": "h64259a39lbdj57m",
+          "canonicalHash": "h64259a39lbdj57m",
+          "chunkCount": 1,
+          "chunkKeys": [
+            "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::assistant::0"
+          ],
+          "chunks": [
+            {
+              "key": "hayaku.v2.recovery_evidence_chunk.h642k20z2pk4ru09::assistant::0",
+              "ordinal": 0,
+              "chars": 26,
+              "bytes": 26,
+              "hash": "h64259a39lbdj57m"
+            }
+          ]
+        }
+      },
+      "createdAt": 1788854096179,
+      "manifestHash": "h64j59psjvzcl7i"
+    }
+  }
+}

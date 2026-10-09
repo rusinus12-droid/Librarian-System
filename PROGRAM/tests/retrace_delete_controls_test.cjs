@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/RETRACE.js'),'utf8');
+const a=source.indexOf('  const syncServerDeleteControls ='),b=source.indexOf('  const renderServerScopeManagement =',a);
+const cancel={},retry={},Runtime={root:{querySelector:q=>q==='#serverScopeDeleteCancel'?cancel:retry}};
+const sync=new Function('Runtime','scopeManagerArray','scopeManagerSelectionKey',source.slice(a,b)+'\nreturn syncServerDeleteControls;')(Runtime,v=>Array.isArray(v)?v:[],r=>r.namespace+'\n'+r.scopeId);
+sync();assert.equal(cancel.hidden,true);assert.equal(retry.hidden,true);
+Runtime.serverScopeDeleteJob={targets:[{namespace:'libra',scopeId:'x'}],rows:[]};sync();assert.equal(retry.hidden,false);assert.equal(retry.disabled,false);
+Runtime.busy=true;Runtime.serverScopeDeletionRunning=true;sync();assert.equal(cancel.hidden,false);assert.equal(retry.hidden,true);
+Runtime.serverScopeDeleteJob.cancelRequested=true;sync();assert.equal(cancel.disabled,true);
+Runtime.serverScopeDeletionRunning=false;Runtime.busy=false;Runtime.serverScopeDeleteJob.rows=[{key:'libra\nx',status:'삭제 완료'}];sync();assert.equal(cancel.hidden,true);assert.equal(retry.hidden,true);
+assert.ok(source.includes('저장 정보·참조 확인</button>'));
+console.log('retrace_delete_controls_test: PASS (empty, pending, running, cancellation, completed controls)');

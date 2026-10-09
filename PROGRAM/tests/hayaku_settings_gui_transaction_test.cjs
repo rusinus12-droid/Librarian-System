@@ -1,0 +1,187 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs');
+
+const pluginPath = path.resolve(__dirname, '..', 'plugins', 'HAYAKU_Locator_Continuity.js');
+const source = fs.readFileSync(pluginPath, 'utf8');
+
+const expectedArguments = [
+  'hayaku_enabled',
+  'hayaku_mode',
+  'hayaku_prompt_mode',
+  'hayaku_packet_output_slot',
+  'hayaku_packet_closing_tag',
+  'hayaku_prompt_cache',
+  'hayaku_max_items_per_axis',
+  'hayaku_recall_short_max_age',
+  'hayaku_recall_medium_max_age',
+  'hayaku_recall_short_turn_quota',
+  'hayaku_recall_medium_turn_quota',
+  'hayaku_recall_long_turn_quota',
+  'hayaku_bm25_channel',
+  'hayaku_bm25_weight',
+  'hayaku_memory_language',
+  'hayaku_debug',
+  'hayaku_packet_recovery',
+  'hayaku_after_request_auto_repair',
+  'hayaku_background_auto_repair',
+  'hayaku_recovery_extra_calls',
+  'risuai_aux_allow_plugins',
+  'hayaku_cold_start_batch_turns',
+  'hayaku_packet_coverage_audit',
+  'hayaku_packet_coverage_fallback_recall',
+  'hayaku_display_scrubber',
+  'hayaku_recall_relatedness_weight',
+  'hayaku_recall_recency_weight',
+  'hayaku_recall_context_messages',
+  'hayaku_adaptive_context_window',
+  'hayaku_multi_query_recall',
+  'hayaku_contradiction_bundle',
+  'hayaku_multi_resolution_recall',
+  'hayaku_recall_stability',
+  'hayaku_recall_stability_boost',
+  'hayaku_raw_passage_recall',
+  'hayaku_raw_recall_max_items',
+  'hayaku_raw_recall_max_chars',
+  'hayaku_raw_recall_min_score',
+  'hayaku_typed_memory_graph',
+  'hayaku_graph_closure_recall',
+  'hayaku_graph_closure_max_nodes',
+  'hayaku_hierarchical_episode_memory',
+  'hayaku_episode_router_max_hits'
+];
+
+assert.match(source, /data-hayaku-viewer-tab="settings"/, 'viewer must expose a Settings page');
+assert.match(source, /id="hayakuSettingsForm"/, 'settings page must use a draft form');
+assert.match(source, /settings_readback_mismatch/, 'settings transaction must reject readback mismatches');
+assert.match(source, /rollbackRawMismatches/, 'settings rollback must verify raw argument readback');
+assert.match(source, /HAYAKU_SETTINGS_ROLLBACK_INCOMPLETE/, 'settings transaction must surface incomplete rollback');
+assert.match(source, /settingsGuiTransactionV1:\s*true/, 'public capability must advertise the settings transaction');
+for (const argument of expectedArguments) {
+  assert.match(source, new RegExp(`name="${argument}"`), `${argument} must have a GUI control`);
+}
+
+const run = async () => {
+  {
+    const runtime = await createHayakuRuntime({
+      arguments: { hayaku_mode: 'auto', hayaku_debug: 'false', hayaku_after_request_auto_repair: 'true', hayaku_background_auto_repair: 'true' }
+    });
+    try {
+      assert.equal(runtime.hayaku.capabilities.settingsGuiTransactionV1, true);
+      assert.equal(runtime.hayaku.settingsControl.schema().length, expectedArguments.length);
+      assert.equal((await runtime.hayaku.settingsControl.current()).risuai_aux_allow_plugins, 'true', 'unset plugin-model access defaults to enabled');
+      const result = await runtime.hayaku.settingsControl.apply({
+        hayaku_mode: 'deep',
+        hayaku_debug: 'true',
+        hayaku_after_request_auto_repair: 'false',
+        risuai_aux_allow_plugins: 'false'
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.readbackVerified, true);
+      assert.deepEqual([...result.changed].sort(), ['hayaku_after_request_auto_repair', 'hayaku_debug', 'hayaku_mode', 'risuai_aux_allow_plugins']);
+      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'deep');
+      assert.equal(runtime.argumentsMap.get('hayaku_debug'), 'true');
+      assert.equal(runtime.argumentsMap.get('hayaku_after_request_auto_repair'), 'false');
+      assert.equal(runtime.argumentsMap.get('risuai_aux_allow_plugins'), 'false', 'an explicit false setting is preserved');
+      assert.equal(runtime.llmCalls.length, 0, 'settings apply must not call an LLM');
+    } finally {
+      await runtime.dispose();
+    }
+  }
+
+  {
+    const runtime = await createHayakuRuntime({ arguments: { hayaku_mode: 'auto', hayaku_debug: 'false' } });
+    try {
+      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
+      runtime.host.setArgument = async (name, value) => {
+        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure');
+        return originalSetArgument(name, value);
+      };
+      const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
+      assert.equal(result.rollbackVerified, true);
+      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'auto', 'earlier writes must roll back');
+      assert.equal(runtime.argumentsMap.get('hayaku_debug'), 'false');
+      assert.equal(runtime.llmCalls.length, 0);
+    } finally {
+      await runtime.dispose();
+    }
+  }
+
+  {
+    const runtime = await createHayakuRuntime({ arguments: { hayaku_debug: 'false' } });
+    try {
+      assert.equal(runtime.argumentsMap.has('hayaku_mode'), false, 'fixture must begin with an unset mode argument');
+      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
+      runtime.host.setArgument = async (name, value) => {
+        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure_after_unset_mode');
+        return originalSetArgument(name, value);
+      };
+      const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
+      assert.equal(result.rollbackVerified, true);
+      assert.equal(runtime.argumentsMap.get('hayaku_mode'), '', 'rollback must restore the raw blank argument instead of materializing auto');
+      assert.equal((await runtime.hayaku.settingsControl.current()).hayaku_mode, 'auto', 'raw blank must still resolve to the effective default');
+      assert.equal(runtime.llmCalls.length, 0);
+    } finally {
+      await runtime.dispose();
+    }
+  }
+
+  {
+    const runtime = await createHayakuRuntime({ arguments: { hayaku_debug: 'false' } });
+    try {
+      const originalGetArgument = runtime.host.getArgument.bind(runtime.host);
+      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
+      let exposeRawMismatch = false;
+      runtime.host.getArgument = async name => (
+        name === 'hayaku_mode' && exposeRawMismatch ? 'auto' : originalGetArgument(name)
+      );
+      runtime.host.setArgument = async (name, value) => {
+        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure_before_raw_mismatch');
+        const result = await originalSetArgument(name, value);
+        if (name === 'hayaku_mode' && value === '') exposeRawMismatch = true;
+        return result;
+      };
+      const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'HAYAKU_SETTINGS_ROLLBACK_INCOMPLETE');
+      assert.equal(result.rollbackVerified, false, 'effective auto is insufficient when raw blank readback changed');
+      assert.deepEqual([...result.rollbackRawMismatches], ['hayaku_mode']);
+      assert.equal(runtime.llmCalls.length, 0);
+    } finally {
+      await runtime.dispose();
+    }
+  }
+
+  {
+    const runtime = await createHayakuRuntime({ arguments: { hayaku_mode: 'auto' } });
+    try {
+      const originalGetArgument = runtime.host.getArgument.bind(runtime.host);
+      runtime.host.getArgument = async name => (
+        name === 'hayaku_mode' ? 'auto' : originalGetArgument(name)
+      );
+      const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep' });
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
+      assert.equal(result.causeCode, 'HAYAKU_SETTINGS_READBACK_MISMATCH');
+      assert.equal(result.rollbackVerified, true);
+      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'auto');
+      assert.equal(runtime.llmCalls.length, 0);
+    } finally {
+      await runtime.dispose();
+    }
+  }
+
+  console.log('HAYAKU settings GUI transaction test passed.');
+};
+
+run().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

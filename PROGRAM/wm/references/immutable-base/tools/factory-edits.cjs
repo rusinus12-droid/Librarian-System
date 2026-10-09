@@ -1,0 +1,2 @@
+'use strict';
+module.exports=source=>{const target='LibraDataStorage.save(freshChar, freshChat, libraLore, { reanalysisBaselineToken: opts.reanalysisBaselineToken });';if(source.split(target).length!==2)throw Error('factory_save_options_seam_changed');return source.replace(target,'LibraDataStorage.save(freshChar, freshChat, libraLore, { reanalysisBaselineToken: opts.reanalysisBaselineToken, expectedSource: opts.expectedSource });');};

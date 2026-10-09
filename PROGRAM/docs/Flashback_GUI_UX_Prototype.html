@@ -1,0 +1,2447 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Flashback Memory GUI UX Prototype</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --surface: #141923;
+      --surface-2: #1a2130;
+      --surface-3: #222b3d;
+      --surface-hover: #28344a;
+      --border: #2d384d;
+      --border-strong: #3c4b66;
+      --text: #f2f5fa;
+      --text-2: #b0bad0;
+      --text-3: #7d8aa6;
+      --accent: #7ea5f8;
+      --accent-2: #597fd5;
+      --accent-dim: #1a2b52;
+      --success: #50d394;
+      --success-dim: #123324;
+      --warning: #f2b55e;
+      --warning-dim: #352713;
+      --danger: #ff7d86;
+      --danger-dim: #391b21;
+      --purple: #b49af7;
+      --purple-dim: #2b2250;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+      --radius: 12px;
+      --radius-lg: 18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      overflow: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(89, 127, 213, 0.17), transparent 34%),
+        radial-gradient(circle at 95% 100%, rgba(180, 154, 247, 0.1), transparent 32%),
+        var(--bg);
+      font-family: Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .app {
+      width: min(1180px, 100%);
+      height: min(790px, calc(100dvh - 36px));
+      min-height: 560px;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      grid-template-rows: 58px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(20, 25, 35, 0.96);
+      backdrop-filter: blur(14px);
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 192px;
+      flex: 0 0 auto;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(126, 165, 248, 0.44);
+      border-radius: 10px;
+      color: var(--accent);
+      background: linear-gradient(145deg, rgba(126, 165, 248, 0.18), rgba(89, 127, 213, 0.05));
+      box-shadow: inset 0 0 18px rgba(126, 165, 248, 0.08);
+    }
+
+    .brand-mark svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .brand-title {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+
+    .brand-version {
+      color: var(--text-3);
+      font-size: 10px;
+      font-family: var(--mono);
+    }
+
+    .scope {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-left: 14px;
+      border-left: 1px solid var(--border);
+    }
+
+    .scope-avatar {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      color: #dce7ff;
+      background: linear-gradient(145deg, #334e80, #24344f);
+      font-weight: 800;
+      font-size: 11px;
+    }
+
+    .scope-copy {
+      min-width: 0;
+    }
+
+    .scope-character,
+    .scope-chat {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .scope-character {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .scope-chat {
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .health-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      border: 1px solid rgba(80, 211, 148, 0.26);
+      border-radius: 999px;
+      color: var(--success);
+      background: var(--success-dim);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .health-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 4px rgba(80, 211, 148, 0.1);
+    }
+
+    .top-actions {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex: 0 0 auto;
+    }
+
+    .button,
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      color: var(--text-2);
+      background: transparent;
+      cursor: pointer;
+      font-weight: 700;
+      transition: 140ms ease;
+    }
+
+    .button {
+      padding: 7px 11px;
+    }
+
+    .icon-button {
+      width: 34px;
+      padding: 0;
+    }
+
+    .button:hover,
+    .icon-button:hover {
+      border-color: #536481;
+      color: var(--text);
+      background: var(--surface-hover);
+    }
+
+    .button.primary {
+      border-color: var(--accent-2);
+      color: #fff;
+      background: var(--accent-2);
+    }
+
+    .button.primary:hover {
+      border-color: var(--accent);
+      background: #688fdf;
+    }
+
+    .button.soft {
+      border-color: rgba(126, 165, 248, 0.32);
+      color: var(--accent);
+      background: rgba(126, 165, 248, 0.08);
+    }
+
+    .button.danger {
+      border-color: rgba(255, 125, 134, 0.34);
+      color: var(--danger);
+      background: transparent;
+    }
+
+    .button:disabled {
+      opacity: 0.44;
+      cursor: not-allowed;
+    }
+
+    .button svg,
+    .icon-button svg {
+      width: 15px;
+      height: 15px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .more-menu {
+      position: absolute;
+      top: 42px;
+      right: 0;
+      width: 186px;
+      display: none;
+      padding: 6px;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: var(--surface-2);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+      z-index: 40;
+    }
+
+    .more-menu.open {
+      display: grid;
+      gap: 2px;
+    }
+
+    .menu-item {
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--text-2);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .sidebar {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+      background: #111620;
+    }
+
+    .side-health {
+      margin: 13px 12px 6px;
+      padding: 11px;
+      border: 1px solid rgba(80, 211, 148, 0.18);
+      border-radius: 12px;
+      background: linear-gradient(145deg, rgba(80, 211, 148, 0.08), rgba(80, 211, 148, 0.025));
+    }
+
+    .side-health-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-weight: 800;
+    }
+
+    .side-health-title span:last-child {
+      color: var(--success);
+      font-size: 11px;
+    }
+
+    .side-health-copy {
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .side-nav {
+      min-height: 0;
+      padding: 5px 7px 12px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+
+    .nav-group {
+      margin-top: 10px;
+    }
+
+    .nav-group-label {
+      padding: 0 10px 5px;
+      color: var(--text-3);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-tab {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 38px;
+      margin: 2px 0;
+      padding: 8px 9px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: var(--text-2);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 700;
+      transition: 140ms ease;
+    }
+
+    .nav-tab:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+
+    .nav-tab.active {
+      border-color: rgba(126, 165, 248, 0.2);
+      color: var(--accent);
+      background: var(--accent-dim);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .nav-tab svg {
+      width: 17px;
+      height: 17px;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .nav-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .nav-count {
+      min-width: 21px;
+      margin-left: auto;
+      padding: 1px 6px;
+      border-radius: 999px;
+      color: var(--text-3);
+      background: var(--surface-3);
+      font: 700 10px/18px var(--mono);
+      text-align: center;
+    }
+
+    .nav-tab.active .nav-count {
+      color: var(--accent);
+      background: rgba(126, 165, 248, 0.14);
+    }
+
+    .side-footer {
+      margin-top: auto;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .provider-state {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .provider-icon {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 7px;
+      color: var(--purple);
+      background: var(--purple-dim);
+      font-weight: 900;
+    }
+
+    .provider-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .provider-name,
+    .provider-model {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .provider-name {
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .provider-model {
+      color: var(--text-3);
+      font-size: 9px;
+      font-family: var(--mono);
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(126, 165, 248, 0.025), transparent 130px),
+        var(--bg);
+    }
+
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex: 0 0 auto;
+      min-height: 72px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 14, 20, 0.84);
+    }
+
+    .page-head-copy {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      margin-bottom: 2px;
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+
+    .page-description {
+      margin: 3px 0 0;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .page-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      color: var(--text-2);
+      background: var(--surface-2);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    .page-body {
+      min-height: 0;
+      flex: 1;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) var(--surface);
+    }
+
+    .panel {
+      display: none;
+      width: 100%;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 18px 20px 42px;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .two-col {
+      grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+    }
+
+    .form-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .card-pad {
+      padding: 15px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: -0.01em;
+    }
+
+    .card-description {
+      margin: 3px 0 0;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .stat-card {
+      position: relative;
+      min-height: 112px;
+      padding: 14px;
+      overflow: hidden;
+    }
+
+    .stat-card::after {
+      content: "";
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      right: -35px;
+      bottom: -42px;
+      border-radius: 50%;
+      background: rgba(126, 165, 248, 0.06);
+    }
+
+    .stat-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    .stat-label svg {
+      width: 17px;
+      height: 17px;
+      color: var(--accent);
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .stat-value {
+      margin-top: 12px;
+      font: 800 22px/1 var(--mono);
+      letter-spacing: -0.04em;
+    }
+
+    .stat-meta {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .stat-meta strong {
+      color: var(--success);
+    }
+
+    .health-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(80, 211, 148, 0.2);
+      border-radius: 12px;
+      background: linear-gradient(90deg, rgba(80, 211, 148, 0.09), rgba(80, 211, 148, 0.02));
+    }
+
+    .health-banner-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      color: var(--success);
+      background: var(--success-dim);
+    }
+
+    .health-banner-icon svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .health-banner-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .health-banner-title {
+      font-weight: 850;
+    }
+
+    .health-banner-text {
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .section-gap {
+      margin-top: 12px;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .quick-action {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-2);
+      background: var(--surface-2);
+      cursor: pointer;
+      text-align: left;
+      transition: 140ms ease;
+    }
+
+    .quick-action:hover {
+      border-color: rgba(126, 165, 248, 0.42);
+      color: var(--text);
+      transform: translateY(-1px);
+    }
+
+    .quick-action-icon {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .quick-action-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .quick-action-copy {
+      min-width: 0;
+    }
+
+    .quick-action-title {
+      display: block;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .quick-action-meta {
+      display: block;
+      overflow: hidden;
+      color: var(--text-3);
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .recall-summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 15px;
+    }
+
+    .recall-summary-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .recall-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .recall-query {
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--text-3);
+      font: 10px/1.4 var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--accent-dim);
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .badge.success {
+      color: var(--success);
+      background: var(--success-dim);
+    }
+
+    .badge.warning {
+      color: var(--warning);
+      background: var(--warning-dim);
+    }
+
+    .recall-toggle {
+      flex: 0 0 auto;
+    }
+
+    .recall-details {
+      display: none;
+      padding: 0 15px 15px;
+    }
+
+    .recall-details.open {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .memory-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .memory-score {
+      align-self: start;
+      min-width: 45px;
+      padding: 4px 5px;
+      border-radius: 7px;
+      color: var(--success);
+      background: var(--success-dim);
+      font: 800 10px/1.3 var(--mono);
+      text-align: center;
+    }
+
+    .memory-title {
+      overflow: hidden;
+      font-size: 11px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .memory-preview {
+      display: -webkit-box;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--text-3);
+      font-size: 10px;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .timeline-dot {
+      width: 8px;
+      height: 8px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(80, 211, 148, 0.08);
+    }
+
+    .timeline-dot.info {
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(126, 165, 248, 0.08);
+    }
+
+    .timeline-title {
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .timeline-meta,
+    .timeline-time {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .timeline-time {
+      white-space: nowrap;
+    }
+
+    .info-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 30px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .info-row:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .info-label {
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .info-value {
+      color: var(--text-2);
+      font-size: 10px;
+      font-weight: 750;
+      text-align: right;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field label {
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      background: var(--surface-2);
+      outline: none;
+      transition: 140ms ease;
+    }
+
+    .field textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .field input:hover,
+    .field select:hover,
+    .field textarea:hover {
+      border-color: var(--border-strong);
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(126, 165, 248, 0.1);
+    }
+
+    .field-note {
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      min-height: 40px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-2);
+      background: var(--surface-2);
+      cursor: pointer;
+    }
+
+    .check-row input {
+      width: 16px;
+      height: 16px;
+      margin-top: 1px;
+      accent-color: var(--accent);
+    }
+
+    .check-title {
+      display: block;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .check-meta {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .actions.right {
+      justify-content: flex-end;
+    }
+
+    .diagnostic-result {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid rgba(80, 211, 148, 0.22);
+      border-radius: 10px;
+      background: var(--success-dim);
+    }
+
+    .diagnostic-result.show {
+      display: block;
+    }
+
+    .diagnostic-title {
+      color: var(--success);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    .diagnostic-copy {
+      margin-top: 3px;
+      color: var(--text-2);
+      font-size: 10px;
+    }
+
+    .preset-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .preset {
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-2);
+      background: var(--surface-2);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .preset.active {
+      border-color: rgba(126, 165, 248, 0.42);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .connection-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .connection-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 11px;
+      color: var(--accent);
+      background: var(--accent-dim);
+      font: 850 12px/1 var(--mono);
+    }
+
+    .connection-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .connection-name {
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .connection-meta {
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .storage-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .storage-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.35fr) repeat(3, minmax(80px, 0.55fr)) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .storage-row.current {
+      border-color: rgba(126, 165, 248, 0.35);
+      background: linear-gradient(90deg, rgba(126, 165, 248, 0.08), var(--surface-2));
+    }
+
+    .storage-name {
+      min-width: 0;
+    }
+
+    .storage-name strong,
+    .storage-name span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .storage-name strong {
+      font-size: 11px;
+    }
+
+    .storage-name span,
+    .storage-metric span {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .storage-metric strong {
+      display: block;
+      font: 750 11px/1.4 var(--mono);
+    }
+
+    .log-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .log-item {
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .log-item .timeline-dot {
+      margin-top: 4px;
+    }
+
+    .log-title {
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .log-meta {
+      margin-top: 3px;
+      color: var(--text-3);
+      font: 9px/1.5 var(--mono);
+    }
+
+    details.advanced {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    details.advanced summary {
+      padding: 11px 12px;
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    details.advanced .advanced-body {
+      padding: 0 12px 12px;
+    }
+
+    .save-bar {
+      position: absolute;
+      left: 50%;
+      bottom: 16px;
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 9px 8px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: rgba(26, 33, 48, 0.96);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translate(-50%, 12px);
+      transition: 160ms ease;
+    }
+
+    .save-bar.show {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translate(-50%, 0);
+    }
+
+    .save-copy {
+      color: var(--text-2);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .toast-region {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 100;
+      display: grid;
+      gap: 8px;
+      width: min(360px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+
+    .toast {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: rgba(26, 33, 48, 0.98);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+      animation: toast-in 180ms ease-out;
+    }
+
+    .toast-icon {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--success);
+      background: var(--success-dim);
+      font-weight: 900;
+    }
+
+    .toast-title {
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    .toast-copy {
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 900px) {
+      body {
+        padding: 0;
+      }
+
+      .app {
+        width: 100%;
+        height: 100dvh;
+        min-height: 0;
+        grid-template-columns: 1fr;
+        grid-template-rows: 58px auto minmax(0, 1fr);
+        border: 0;
+        border-radius: 0;
+      }
+
+      .brand {
+        min-width: auto;
+      }
+
+      .brand-copy {
+        display: none;
+      }
+
+      .scope {
+        padding-left: 0;
+        border-left: 0;
+      }
+
+      .top-actions .desktop-action {
+        display: none;
+      }
+
+      .sidebar {
+        flex-direction: row;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-strong) transparent;
+      }
+
+      .sidebar::-webkit-scrollbar {
+        height: 4px;
+      }
+
+      .sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .sidebar::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: var(--border-strong);
+      }
+
+      .side-health,
+      .nav-group-label,
+      .side-footer {
+        display: none;
+      }
+
+      .side-nav {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        width: max-content;
+        min-width: 100%;
+        padding: 7px;
+        overflow: visible;
+      }
+
+      .nav-group {
+        display: contents;
+      }
+
+      .nav-tab {
+        width: auto;
+        min-height: 36px;
+        margin: 0;
+        padding: 7px 10px;
+        white-space: nowrap;
+      }
+
+      .nav-tab.active {
+        box-shadow: inset 0 -3px 0 var(--accent);
+      }
+
+      .nav-tab svg,
+      .nav-count {
+        display: none;
+      }
+
+      .main {
+        position: relative;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        gap: 8px;
+        padding: 0 9px;
+      }
+
+      .scope-avatar,
+      .health-chip span:last-child {
+        display: none;
+      }
+
+      .health-chip {
+        width: 28px;
+        height: 28px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .page-head {
+        min-height: 66px;
+        padding: 10px 13px;
+      }
+
+      .page-title {
+        font-size: 17px;
+      }
+
+      .page-description {
+        max-width: 72vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .page-status {
+        display: none;
+      }
+
+      .panel {
+        padding: 13px 13px 72px;
+      }
+
+      .two-col,
+      .form-grid,
+      .recall-details.open {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-action-meta {
+        white-space: normal;
+      }
+
+      .storage-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .storage-metric:nth-of-type(n + 3) {
+        display: none;
+      }
+
+      .save-bar {
+        width: calc(100% - 24px);
+        justify-content: space-between;
+      }
+
+      .toast-region {
+        right: 12px;
+        bottom: 12px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .scope-chat {
+        max-width: 170px;
+      }
+
+      .stats-grid {
+        gap: 8px;
+      }
+
+      .stat-card {
+        min-height: 106px;
+        padding: 12px;
+      }
+
+      .stat-value {
+        font-size: 19px;
+      }
+
+      .health-banner {
+        align-items: flex-start;
+      }
+
+      .health-banner .button {
+        display: none;
+      }
+
+      .recall-summary {
+        align-items: flex-start;
+      }
+
+      .recall-title-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" data-flashback-prototype>
+    <header class="topbar">
+      <div class="brand" aria-label="Flashback Memory">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M13.1 2 4.7 13.1h6.2L9.8 22l9.5-12.2h-6.1L13.1 2Z"/></svg>
+        </span>
+        <span class="brand-copy">
+          <span class="brand-title">Flashback Memory</span>
+          <span class="brand-version">v1.0.18 · UX prototype</span>
+        </span>
+      </div>
+
+      <div class="scope" aria-label="현재 기억 범위">
+        <span class="scope-avatar" aria-hidden="true">AS</span>
+        <span class="scope-copy">
+          <span class="scope-character">아스텔</span>
+          <span class="scope-chat">에피소드 42 · 밤의 정원</span>
+        </span>
+      </div>
+
+      <span class="health-chip" aria-label="Flashback 정상 작동">
+        <span class="health-dot" aria-hidden="true"></span>
+        <span>정상 작동</span>
+      </span>
+
+      <div class="top-actions">
+        <button class="icon-button desktop-action" type="button" data-action="refresh" aria-label="새로고침" title="새로고침">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+        </button>
+        <button class="icon-button" type="button" id="moreButton" aria-label="더 보기" aria-expanded="false" aria-controls="moreMenu">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </button>
+        <button class="button primary desktop-action" type="button" data-action="close">닫기</button>
+        <div class="more-menu" id="moreMenu">
+          <button class="menu-item" type="button" data-action="refresh">새로고침</button>
+          <button class="menu-item" type="button" data-action="debug">디버그 로그 내보내기</button>
+          <button class="menu-item" type="button" data-action="close">닫기</button>
+        </div>
+      </div>
+    </header>
+
+    <aside class="sidebar" aria-label="Flashback 설정 탐색">
+      <div class="side-health">
+        <div class="side-health-title">
+          <span>기억 상태</span>
+          <span>정상</span>
+        </div>
+        <div class="side-health-copy">누락 0 · 손상 0 · 마지막 캡처 3분 전</div>
+      </div>
+
+      <nav class="side-nav" role="tablist" aria-label="Flashback 설정">
+        <div class="nav-group">
+          <div class="nav-group-label">상태</div>
+          <button class="nav-tab active" id="tab-overview" type="button" role="tab" aria-selected="true" aria-controls="panel-overview" tabindex="0" data-tab="overview">
+            <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>
+            <span class="nav-label">개요</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">기억</div>
+          <button class="nav-tab" id="tab-maintenance" type="button" role="tab" aria-selected="false" aria-controls="panel-maintenance" tabindex="-1" data-tab="maintenance">
+            <svg viewBox="0 0 24 24"><path d="m14.7 6.3 3 3M4 20l3.7-.8L19 7.9a2.1 2.1 0 0 0-3-3L4.8 16.3 4 20Z"/></svg>
+            <span class="nav-label">기억 유지보수</span>
+          </button>
+          <button class="nav-tab" id="tab-storage" type="button" role="tab" aria-selected="false" aria-controls="panel-storage" tabindex="-1" data-tab="storage">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            <span class="nav-label">스토리지</span>
+            <span class="nav-count">8</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">연결</div>
+          <button class="nav-tab" id="tab-provider" type="button" role="tab" aria-selected="false" aria-controls="panel-provider" tabindex="-1" data-tab="provider">
+            <svg viewBox="0 0 24 24"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="8"/></svg>
+            <span class="nav-label">임베딩 프로바이더</span>
+          </button>
+          <button class="nav-tab" id="tab-server" type="button" role="tab" aria-selected="false" aria-controls="panel-server" tabindex="-1" data-tab="server">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01"/></svg>
+            <span class="nav-label">서버 연결</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">설정 및 진단</div>
+          <button class="nav-tab" id="tab-activity" type="button" role="tab" aria-selected="false" aria-controls="panel-activity" tabindex="-1" data-tab="activity">
+            <svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h9"/></svg>
+            <span class="nav-label">작업 로그</span>
+            <span class="nav-count">4</span>
+          </button>
+          <button class="nav-tab" id="tab-advanced" type="button" role="tab" aria-selected="false" aria-controls="panel-advanced" tabindex="-1" data-tab="advanced">
+            <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+            <span class="nav-label">고급 설정</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="side-footer">
+        <div class="provider-state">
+          <span class="provider-icon" aria-hidden="true">O</span>
+          <span class="provider-copy">
+            <span class="provider-name">Ollama · 연결됨</span>
+            <span class="provider-model">qwen3-embedding:0.6b</span>
+          </span>
+          <span class="health-dot" aria-hidden="true"></span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-head">
+        <div class="page-head-copy">
+          <div class="eyebrow" id="pageEyebrow">상태</div>
+          <h1 class="page-title" id="pageTitle">Flashback 개요</h1>
+          <p class="page-description" id="pageDescription">현재 채팅의 기억 상태와 최근 동작을 한눈에 확인합니다.</p>
+        </div>
+        <div class="page-status">
+          <span class="status-pill">자동 캡처 켜짐</span>
+          <span class="status-pill">전체 집계</span>
+        </div>
+      </header>
+
+      <div class="page-body" id="pageBody">
+        <section class="panel active" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" data-panel="overview">
+          <div class="health-banner">
+            <span class="health-banner-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg>
+            </span>
+            <span class="health-banner-copy">
+              <span class="health-banner-title">Flashback이 정상적으로 기억하고 있습니다.</span>
+              <span class="health-banner-text">현재 채팅과 저장소가 일치하며 즉시 처리해야 할 문제는 없습니다.</span>
+            </span>
+            <button class="button soft" type="button" data-action="diagnose">상태 진단</button>
+          </div>
+
+          <div class="grid stats-grid">
+            <article class="card stat-card">
+              <div class="stat-label">
+                <span>저장된 기억</span>
+                <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
+              </div>
+              <div class="stat-value">1,248</div>
+              <div class="stat-meta"><strong>+12</strong> · 마지막 대화 이후</div>
+            </article>
+
+            <article class="card stat-card">
+              <div class="stat-label">
+                <span>토큰 추정</span>
+                <svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM4 8h3M17 8h3M4 16h3M17 16h3"/></svg>
+              </div>
+              <div class="stat-value">38.6K</div>
+              <div class="stat-meta">전체 집계 · 비용 $0.004</div>
+            </article>
+
+            <article class="card stat-card">
+              <div class="stat-label">
+                <span>최근 리콜</span>
+                <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/></svg>
+              </div>
+              <div class="stat-value">6 / 4</div>
+              <div class="stat-meta">선택 6 · 실제 주입 4</div>
+            </article>
+
+            <article class="card stat-card">
+              <div class="stat-label">
+                <span>마지막 캡처</span>
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+              </div>
+              <div class="stat-value">3분 전</div>
+              <div class="stat-meta"><strong>완료</strong> · 응답 #842</div>
+            </article>
+          </div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">빠른 작업</h2>
+                <p class="card-description">자주 쓰는 안전한 작업을 바로 실행합니다.</p>
+              </div>
+            </div>
+            <div class="quick-actions">
+              <button class="quick-action" type="button" data-action="diagnose">
+                <span class="quick-action-icon">
+                  <svg viewBox="0 0 24 24"><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/><circle cx="12" cy="12" r="5"/></svg>
+                </span>
+                <span class="quick-action-copy">
+                  <span class="quick-action-title">기억 상태 진단</span>
+                  <span class="quick-action-meta">변경하지 않고 누락·손상 여부만 확인</span>
+                </span>
+              </button>
+              <button class="quick-action" type="button" data-action="backup">
+                <span class="quick-action-icon">
+                  <svg viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg>
+                </span>
+                <span class="quick-action-copy">
+                  <span class="quick-action-title">JSON 백업</span>
+                  <span class="quick-action-meta">현재 채팅의 영구 기억을 파일로 보관</span>
+                </span>
+              </button>
+              <button class="quick-action" type="button" data-action="test">
+                <span class="quick-action-icon">
+                  <svg viewBox="0 0 24 24"><path d="M8 3v5l-4 8a3 3 0 0 0 2.7 4h10.6a3 3 0 0 0 2.7-4l-4-8V3M8 8h8M8 15h8"/></svg>
+                </span>
+                <span class="quick-action-copy">
+                  <span class="quick-action-title">연결 테스트</span>
+                  <span class="quick-action-meta">임베딩 프로바이더의 응답과 차원 확인</span>
+                </span>
+              </button>
+            </div>
+          </article>
+
+          <article class="card section-gap">
+            <div class="recall-summary">
+              <div class="recall-summary-copy">
+                <div class="recall-title-row">
+                  <h2 class="card-title">이번 턴에 떠올린 기억</h2>
+                  <span class="badge success">fallback 없음</span>
+                </div>
+                <div class="recall-query">query: "정원에서 받은 은색 열쇠와 오래된 약속"</div>
+              </div>
+              <button class="button recall-toggle" id="recallToggle" type="button" aria-expanded="false" aria-controls="recallDetails">기억 4개 보기</button>
+            </div>
+            <div class="recall-details" id="recallDetails">
+              <article class="memory-item">
+                <span class="memory-score">0.918</span>
+                <span>
+                  <span class="memory-title">은색 열쇠를 건넨 날</span>
+                  <span class="memory-preview">아스텔은 오래된 온실 앞에서 열쇠를 건네며 다음 보름달에 다시 만나자고 말했다.</span>
+                </span>
+              </article>
+              <article class="memory-item">
+                <span class="memory-score">0.884</span>
+                <span>
+                  <span class="memory-title">정원사와의 약속</span>
+                  <span class="memory-preview">폐쇄된 북쪽 정원은 왕실 기록실로 통하는 비밀 통로와 연결되어 있었다.</span>
+                </span>
+              </article>
+              <article class="memory-item">
+                <span class="memory-score">0.821</span>
+                <span>
+                  <span class="memory-title">보름달 아래의 대화</span>
+                  <span class="memory-preview">두 사람은 서로의 정체를 숨긴 채 다시 만날 장소만 확인했다.</span>
+                </span>
+              </article>
+              <article class="memory-item">
+                <span class="memory-score">0.793</span>
+                <span>
+                  <span class="memory-title">기록실의 잠금장치</span>
+                  <span class="memory-preview">잠금장치에는 은색 문양이 있었고 일반 열쇠로는 열 수 없었다.</span>
+                </span>
+              </article>
+            </div>
+          </article>
+
+          <div class="grid two-col section-gap">
+            <article class="card card-pad">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">최근 동작</h2>
+                  <p class="card-description">현재 실행에서 확인된 주요 작업입니다.</p>
+                </div>
+                <button class="button" type="button" data-goto="activity">전체 로그</button>
+              </div>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <span class="timeline-dot"></span>
+                  <span>
+                    <span class="timeline-title">응답 기억을 안전하게 저장했습니다.</span>
+                    <span class="timeline-meta">청크 12개 · 벡터 12개 · readback 완료</span>
+                  </span>
+                  <span class="timeline-time">3분 전</span>
+                </div>
+                <div class="timeline-item">
+                  <span class="timeline-dot info"></span>
+                  <span>
+                    <span class="timeline-title">관련 기억 4개를 요청에 주입했습니다.</span>
+                    <span class="timeline-meta">후보 36개 · 선택 6개 · 2,184자</span>
+                  </span>
+                  <span class="timeline-time">4분 전</span>
+                </div>
+                <div class="timeline-item">
+                  <span class="timeline-dot"></span>
+                  <span>
+                    <span class="timeline-title">임베딩 연결 확인을 완료했습니다.</span>
+                    <span class="timeline-meta">Ollama · 1024 dimensions · 83ms</span>
+                  </span>
+                  <span class="timeline-time">18분 전</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="card card-pad">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">현재 구성</h2>
+                  <p class="card-description">이 채팅에 적용되는 주요 설정입니다.</p>
+                </div>
+              </div>
+              <div class="info-list">
+                <div class="info-row"><span class="info-label">저장 방식</span><span class="info-value">plugin_only</span></div>
+                <div class="info-row"><span class="info-label">임베딩</span><span class="info-value">Ollama · 1024d</span></div>
+                <div class="info-row"><span class="info-label">리콜 품질</span><span class="info-value">균형</span></div>
+                <div class="info-row"><span class="info-label">자동 캡처</span><span class="info-value">켜짐</span></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-maintenance" role="tabpanel" aria-labelledby="tab-maintenance" data-panel="maintenance" hidden>
+          <div class="grid two-col">
+            <article class="card card-pad">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">1. 먼저 상태를 진단하세요</h2>
+                  <p class="card-description">기억을 변경하지 않고 누락·변경·고아·오염·벡터 상태를 확인합니다.</p>
+                </div>
+                <span class="badge success">권장</span>
+              </div>
+              <div class="info-list">
+                <div class="info-row"><span class="info-label">검사 원본</span><span class="info-value">현재 채팅의 유저 입력 + AI 최종 응답</span></div>
+                <div class="info-row"><span class="info-label">마지막 전체 진단</span><span class="info-value">2일 전</span></div>
+              </div>
+              <div class="actions">
+                <button class="button primary" id="diagnoseButton" type="button" data-action="diagnose">상태만 진단</button>
+              </div>
+              <div class="diagnostic-result" id="diagnosticResult">
+                <div class="diagnostic-title">진단 완료 · 복구할 항목이 없습니다.</div>
+                <div class="diagnostic-copy">누락 0 · 변경 0 · 고아 0 · 오염 0 · 벡터 불일치 0. 저장소는 변경되지 않았습니다.</div>
+              </div>
+            </article>
+
+            <article class="card card-pad">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">2. 결과를 확인한 뒤 복구</h2>
+                  <p class="card-description">진단에서 문제가 발견됐을 때만 필요한 항목을 증분 처리합니다.</p>
+                </div>
+              </div>
+              <div class="info-list">
+                <div class="info-row"><span class="info-label">예상 변경</span><span class="info-value">진단 전</span></div>
+                <div class="info-row"><span class="info-label">재임베딩 비용</span><span class="info-value">계산되지 않음</span></div>
+              </div>
+              <div class="actions">
+                <button class="button" type="button" disabled>선택 항목 복구</button>
+              </div>
+            </article>
+          </div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">JSON 백업 및 복원</h2>
+                <p class="card-description">현재 채팅의 영구 기억을 보관하거나 검증된 백업으로 복원합니다.</p>
+              </div>
+              <span class="badge">Portable JSON</span>
+            </div>
+            <div class="quick-actions">
+              <button class="quick-action" type="button" data-action="backup">
+                <span class="quick-action-icon"><svg viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg></span>
+                <span class="quick-action-copy"><span class="quick-action-title">현재 기억 백업</span><span class="quick-action-meta">아카이브와 벡터 사이드카를 포함해 내보냅니다.</span></span>
+              </button>
+              <button class="quick-action" type="button" data-action="restore">
+                <span class="quick-action-icon"><svg viewBox="0 0 24 24"><path d="M12 20V9M8 13l4-4 4 4M5 4h14"/></svg></span>
+                <span class="quick-action-copy"><span class="quick-action-title">같은 채팅 복원</span><span class="quick-action-meta">백업 시점으로 교체하기 전에 검증합니다.</span></span>
+              </button>
+              <button class="quick-action" type="button" data-action="restore">
+                <span class="quick-action-icon"><svg viewBox="0 0 24 24"><path d="M8 7h11v11H8zM5 16H4V4h12v1"/></svg></span>
+                <span class="quick-action-copy"><span class="quick-action-title">새 채팅으로 이사</span><span class="quick-action-meta">과거 아카이브로 연결해 월드라인을 보존합니다.</span></span>
+              </button>
+            </div>
+          </article>
+
+          <details class="advanced section-gap">
+            <summary>고급 실행 · 전체 재구축 및 벡터 전체 갱신</summary>
+            <div class="advanced-body">
+              <div class="grid form-grid">
+                <div class="field">
+                  <label for="maintenanceMode">작업</label>
+                  <select id="maintenanceMode">
+                    <option>누락·변경 턴만 동기화</option>
+                    <option>현재 채팅에서 전체 재구축</option>
+                    <option>벡터만 전체 갱신</option>
+                  </select>
+                  <span class="field-note">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다.</span>
+                </div>
+                <div class="field">
+                  <label>실행 전 확인</label>
+                  <span class="check-row"><input type="checkbox" /><span><span class="check-title">변경 예정 항목을 다시 검증</span><span class="check-meta">소스 revision이 달라졌으면 실행하지 않습니다.</span></span></span>
+                </div>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel" id="panel-storage" role="tabpanel" aria-labelledby="tab-storage" data-panel="storage" hidden>
+          <article class="card card-pad">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">스코프 스토리지</h2>
+                <p class="card-description">캐릭터와 채팅별 기억 상태를 확인합니다. 서버 오류는 데이터 없음으로 판정하지 않습니다.</p>
+              </div>
+              <div class="actions" style="margin-top:0">
+                <button class="button" type="button" data-action="refresh">새로고침</button>
+                <button class="button" type="button" data-action="diagnose">목록 검사</button>
+              </div>
+            </div>
+            <div class="storage-list">
+              <div class="storage-row current">
+                <div class="storage-name"><strong>아스텔 · 밤의 정원</strong><span>현재 스코프 · plugin_only</span></div>
+                <div class="storage-metric"><strong>38.6K</strong><span>tokens</span></div>
+                <div class="storage-metric"><strong>1,248</strong><span>chunks</span></div>
+                <div class="storage-metric"><strong>8 / 2</strong><span>shards / archive</span></div>
+                <span class="badge success">현재</span>
+              </div>
+              <div class="storage-row">
+                <div class="storage-name"><strong>아스텔 · 서쪽 항구</strong><span>3일 전 · plugin_only</span></div>
+                <div class="storage-metric"><strong>21.2K</strong><span>tokens</span></div>
+                <div class="storage-metric"><strong>724</strong><span>chunks</span></div>
+                <div class="storage-metric"><strong>5 / 1</strong><span>shards / archive</span></div>
+                <button class="button" type="button" data-action="inspect">보기</button>
+              </div>
+              <div class="storage-row">
+                <div class="storage-name"><strong>로웬 · 설원의 성채</strong><span>8일 전 · server_only</span></div>
+                <div class="storage-metric"><strong>44.1K</strong><span>tokens</span></div>
+                <div class="storage-metric"><strong>1,502</strong><span>chunks</span></div>
+                <div class="storage-metric"><strong>10 / 3</strong><span>shards / archive</span></div>
+                <button class="button" type="button" data-action="inspect">보기</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">위험 작업</h2>
+                <p class="card-description">삭제 작업은 선택한 범위와 물리 데이터 유무를 다시 확인한 뒤 진행합니다.</p>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="button danger" type="button" data-action="delete">현재 스코프 삭제…</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel" id="panel-provider" role="tabpanel" aria-labelledby="tab-provider" data-panel="provider" hidden>
+          <article class="card card-pad">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">임베딩 연결</h2>
+                <p class="card-description">선택한 프로바이더에 필요한 기본 설정만 표시합니다.</p>
+              </div>
+              <span class="badge success">연결됨 · 83ms</span>
+            </div>
+
+            <div class="grid form-grid settings-form">
+              <label class="check-row">
+                <input id="embeddingEnabled" type="checkbox" checked />
+                <span><span class="check-title">임베딩 사용</span><span class="check-meta">끄면 기존 로컬 희소 검색만 사용합니다.</span></span>
+              </label>
+              <div class="field">
+                <label for="providerSelect">프로바이더</label>
+                <select id="providerSelect">
+                  <option selected>Ollama</option>
+                  <option>OpenAI</option>
+                  <option>Voyage</option>
+                  <option>Gemini</option>
+                  <option>Custom HTTP</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="modelInput">모델</label>
+                <input id="modelInput" value="qwen3-embedding:0.6b" />
+                <span class="field-note">설치된 embedding capability 모델입니다.</span>
+              </div>
+              <div class="field">
+                <label for="baseUrlInput">서버 주소</label>
+                <input id="baseUrlInput" value="http://127.0.0.1:11434" />
+              </div>
+              <div class="field">
+                <label for="dimensionsInput">벡터 차원</label>
+                <input id="dimensionsInput" type="number" value="1024" />
+                <span class="field-note">0으로 두면 모델 응답에서 자동으로 확인합니다.</span>
+              </div>
+              <div class="field">
+                <label for="timeoutInput">요청 제한시간</label>
+                <input id="timeoutInput" type="number" value="20000" />
+                <span class="field-note">밀리초 단위 · 기본 20초</span>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="button soft" type="button" data-action="test">연결 테스트</button>
+              <button class="button" type="button" data-action="models">설치 모델 검색</button>
+            </div>
+          </article>
+
+          <details class="advanced section-gap">
+            <summary>고급 연결 설정</summary>
+            <div class="advanced-body settings-form">
+              <div class="grid form-grid">
+                <div class="field"><label>정확한 Endpoint</label><input placeholder="선택 사항" /></div>
+                <div class="field"><label>Fallback</label><select><option>기존 로컬 해시/희소 검색</option><option>벡터 fallback 없음</option></select></div>
+                <div class="field"><label>Query prefix</label><input placeholder="선택 사항" /></div>
+                <div class="field"><label>Document prefix</label><input placeholder="선택 사항" /></div>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel" id="panel-server" role="tabpanel" aria-labelledby="tab-server" data-panel="server" hidden>
+          <div class="grid">
+            <article class="card connection-card">
+              <span class="connection-icon">DB</span>
+              <span class="connection-copy">
+                <span class="connection-name">Librarian System 저장 서버</span>
+                <span class="connection-meta">plugin_only · 현재 스코프는 플러그인 로컬 저장소를 사용합니다.</span>
+              </span>
+              <span class="badge">선택 사항</span>
+              <button class="button" type="button" data-action="configure">설정</button>
+            </article>
+            <article class="card connection-card">
+              <span class="connection-icon">CPU</span>
+              <span class="connection-copy">
+                <span class="connection-name">공용 Compute</span>
+                <span class="connection-meta">local · hash embedding batch는 플러그인 안에서 실행합니다.</span>
+              </span>
+              <span class="badge success">로컬</span>
+              <button class="button" type="button" data-action="configure">설정</button>
+            </article>
+          </div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">연결 경계</h2>
+                <p class="card-description">저장 서버와 Compute 설정은 서로 독립적입니다.</p>
+              </div>
+            </div>
+            <div class="info-list">
+              <div class="info-row"><span class="info-label">서버 주소</span><span class="info-value">http://127.0.0.1:3020</span></div>
+              <div class="info-row"><span class="info-label">Storage 연결</span><span class="info-value">사용하지 않음</span></div>
+              <div class="info-row"><span class="info-label">Compute 연결</span><span class="info-value">local · 네트워크 0회</span></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" data-panel="activity" hidden>
+          <article class="card card-pad">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">작업 로그 <span class="badge">4</span></h2>
+                <p class="card-description">현재 실행의 리콜·주입·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.</p>
+              </div>
+              <button class="button" type="button" data-action="clear">로그 비우기</button>
+            </div>
+            <div class="log-list">
+              <article class="log-item">
+                <span class="timeline-dot"></span>
+                <span><span class="log-title">응답 기억을 안전하게 저장했습니다.</span><span class="log-meta">capture_committed · chunks=12 · readback=true</span></span>
+                <span class="timeline-time">21:04:18</span>
+              </article>
+              <article class="log-item">
+                <span class="timeline-dot info"></span>
+                <span><span class="log-title">관련 기억 4개를 요청에 주입했습니다.</span><span class="log-meta">recall_injected · candidates=36 · selected=6 · injected=4</span></span>
+                <span class="timeline-time">21:03:41</span>
+              </article>
+              <article class="log-item">
+                <span class="timeline-dot"></span>
+                <span><span class="log-title">Ollama 임베딩 테스트에 성공했습니다.</span><span class="log-meta">embedding_test · dimensions=1024 · elapsed=83ms</span></span>
+                <span class="timeline-time">20:49:12</span>
+              </article>
+              <article class="log-item">
+                <span class="timeline-dot info"></span>
+                <span><span class="log-title">GUI를 열었습니다.</span><span class="log-meta">gui_open · scope=astel/night-garden · stats=full</span></span>
+                <span class="timeline-time">20:48:55</span>
+              </article>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel" id="panel-advanced" role="tabpanel" aria-labelledby="tab-advanced" data-panel="advanced" hidden>
+          <article class="card card-pad">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">리콜 품질</h2>
+                <p class="card-description">먼저 프리셋을 고르고, 필요한 경우에만 세부 값을 조정합니다.</p>
+              </div>
+              <span class="badge">현재: 균형</span>
+            </div>
+            <div class="preset-row" role="group" aria-label="리콜 품질 프리셋">
+              <button class="preset" type="button" data-preset="fast">빠름</button>
+              <button class="preset active" type="button" data-preset="balanced">균형</button>
+              <button class="preset" type="button" data-preset="precise">정밀</button>
+              <button class="preset" type="button" data-preset="custom">사용자 지정</button>
+            </div>
+            <div class="grid form-grid settings-form">
+              <div class="field"><label for="topKInput">최종 기억 수</label><input id="topKInput" type="number" value="12" /><span class="field-note">최종 선택할 기억의 최대 개수입니다.</span></div>
+              <div class="field"><label for="minScoreInput">최소 관련 점수</label><input id="minScoreInput" type="number" step="0.01" value="0.24" /><span class="field-note">낮은 점수의 기억은 제외합니다.</span></div>
+              <div class="field"><label for="candidateInput">검토할 후보 수</label><input id="candidateInput" type="number" value="120" /><span class="field-note">정밀 선별 전에 비교할 최대 개수입니다.</span></div>
+              <div class="field"><label for="maxCharsInput">최대 주입 글자</label><input id="maxCharsInput" type="number" value="4800" /><span class="field-note">요청에 넣을 기억의 최대 분량입니다.</span></div>
+            </div>
+          </article>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">기억 경로와 보조 기능</h2>
+                <p class="card-description">기본값을 유지하는 것이 권장됩니다.</p>
+              </div>
+            </div>
+            <div class="grid form-grid settings-form">
+              <label class="check-row"><input type="checkbox" checked /><span><span class="check-title">응답 자동 캡처</span><span class="check-meta">AI 최종 응답이 확정되면 기억합니다.</span></span></label>
+              <label class="check-row"><input type="checkbox" checked /><span><span class="check-title">증거 게이트</span><span class="check-meta">근거가 약한 기억은 주입하지 않습니다.</span></span></label>
+              <label class="check-row"><input type="checkbox" checked /><span><span class="check-title">현재 장면 보강</span><span class="check-meta">직전 장면 문맥을 보조 신호로 사용합니다.</span></span></label>
+              <label class="check-row"><input type="checkbox" checked /><span><span class="check-title">장면 리콜 안정화</span><span class="check-meta">유사 요청에서 선택이 급격히 바뀌지 않게 합니다.</span></span></label>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div class="save-bar" id="saveBar" role="status" aria-live="polite">
+        <span class="save-copy">저장하지 않은 변경사항이 있습니다.</span>
+        <button class="button" type="button" id="discardButton">되돌리기</button>
+        <button class="button primary" type="button" id="saveButton">설정 저장</button>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+    (function () {
+      var pageMeta = {
+        overview: {
+          eyebrow: "상태",
+          title: "Flashback 개요",
+          description: "현재 채팅의 기억 상태와 최근 동작을 한눈에 확인합니다."
+        },
+        maintenance: {
+          eyebrow: "기억",
+          title: "기억 유지보수",
+          description: "먼저 상태를 진단하고 확인된 문제만 안전하게 복구합니다."
+        },
+        storage: {
+          eyebrow: "기억",
+          title: "스토리지",
+          description: "캐릭터와 채팅별 기억 저장소를 확인하고 관리합니다."
+        },
+        provider: {
+          eyebrow: "연결",
+          title: "임베딩 프로바이더",
+          description: "벡터 검색에 사용할 모델과 연결 상태를 설정합니다."
+        },
+        server: {
+          eyebrow: "연결",
+          title: "서버 연결",
+          description: "Librarian System 저장 서버와 Compute 모드를 관리합니다."
+        },
+        activity: {
+          eyebrow: "설정 및 진단",
+          title: "작업 로그",
+          description: "현재 실행에서 수행된 리콜·캡처·유지보수 작업을 확인합니다."
+        },
+        advanced: {
+          eyebrow: "설정 및 진단",
+          title: "고급 설정",
+          description: "프리셋을 기준으로 리콜 품질과 보조 기능을 조정합니다."
+        }
+      };
+
+      var tabs = Array.prototype.slice.call(document.querySelectorAll(".nav-tab[data-tab]"));
+      var panels = Array.prototype.slice.call(document.querySelectorAll(".panel[data-panel]"));
+      var pageBody = document.getElementById("pageBody");
+      var pageTitle = document.getElementById("pageTitle");
+      var pageEyebrow = document.getElementById("pageEyebrow");
+      var pageDescription = document.getElementById("pageDescription");
+      var moreButton = document.getElementById("moreButton");
+      var moreMenu = document.getElementById("moreMenu");
+      var saveBar = document.getElementById("saveBar");
+      var dirty = false;
+
+      function activateTab(name, moveFocus) {
+        var meta = pageMeta[name] || pageMeta.overview;
+        tabs.forEach(function (tab) {
+          var active = tab.getAttribute("data-tab") === name;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+          tab.setAttribute("tabindex", active ? "0" : "-1");
+          if (active && moveFocus) tab.focus();
+        });
+        panels.forEach(function (panel) {
+          var active = panel.getAttribute("data-panel") === name;
+          panel.classList.toggle("active", active);
+          panel.hidden = !active;
+        });
+        pageEyebrow.textContent = meta.eyebrow;
+        pageTitle.textContent = meta.title;
+        pageDescription.textContent = meta.description;
+        pageBody.scrollTop = 0;
+        if (history.replaceState) history.replaceState(null, "", "#" + name);
+      }
+
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener("click", function () {
+          activateTab(tab.getAttribute("data-tab"), false);
+        });
+        tab.addEventListener("keydown", function (event) {
+          var keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"];
+          if (keys.indexOf(event.key) === -1) return;
+          var nextIndex = index;
+          if (event.key === "Home") nextIndex = 0;
+          else if (event.key === "End") nextIndex = tabs.length - 1;
+          else if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % tabs.length;
+          else nextIndex = (index - 1 + tabs.length) % tabs.length;
+          event.preventDefault();
+          activateTab(tabs[nextIndex].getAttribute("data-tab"), true);
+        });
+      });
+
+      document.querySelectorAll("[data-goto]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          activateTab(button.getAttribute("data-goto"), true);
+        });
+      });
+
+      var recallToggle = document.getElementById("recallToggle");
+      var recallDetails = document.getElementById("recallDetails");
+      recallToggle.addEventListener("click", function () {
+        var open = recallDetails.classList.toggle("open");
+        recallToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        recallToggle.textContent = open ? "기억 접기" : "기억 4개 보기";
+      });
+
+      function closeMoreMenu() {
+        moreMenu.classList.remove("open");
+        moreButton.setAttribute("aria-expanded", "false");
+      }
+
+      moreButton.addEventListener("click", function (event) {
+        event.stopPropagation();
+        var open = moreMenu.classList.toggle("open");
+        moreButton.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+
+      document.addEventListener("click", function (event) {
+        if (!moreMenu.contains(event.target) && event.target !== moreButton) closeMoreMenu();
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeMoreMenu();
+      });
+
+      function showToast(title, copy) {
+        var region = document.getElementById("toastRegion");
+        var toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = '<span class="toast-icon">✓</span><span><span class="toast-title"></span><span class="toast-copy"></span></span>';
+        toast.querySelector(".toast-title").textContent = title;
+        toast.querySelector(".toast-copy").textContent = copy || "";
+        region.appendChild(toast);
+        window.setTimeout(function () {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(8px)";
+          window.setTimeout(function () { toast.remove(); }, 180);
+        }, 3000);
+      }
+
+      function runDiagnostic(button) {
+        var result = document.getElementById("diagnosticResult");
+        var target = button || document.getElementById("diagnoseButton");
+        var original = target ? target.textContent : "";
+        if (target) {
+          target.disabled = true;
+          target.textContent = "진단 중…";
+        }
+        window.setTimeout(function () {
+          if (result) result.classList.add("show");
+          if (target) {
+            target.disabled = false;
+            target.textContent = original;
+          }
+          showToast("상태 진단을 완료했습니다.", "저장소를 변경하지 않았으며 복구할 항목이 없습니다.");
+        }, 650);
+      }
+
+      document.querySelectorAll("[data-action]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var action = button.getAttribute("data-action");
+          closeMoreMenu();
+          if (action === "diagnose") {
+            if (button.id === "diagnoseButton") runDiagnostic(button);
+            else {
+              activateTab("maintenance", false);
+              runDiagnostic(document.getElementById("diagnoseButton"));
+            }
+          } else if (action === "refresh") {
+            showToast("화면을 새로고쳤습니다.", "현재 스코프의 최신 요약을 다시 불러왔습니다.");
+          } else if (action === "backup") {
+            showToast("JSON 백업 예시", "프로토타입에서는 실제 파일이나 기억 데이터를 만들지 않습니다.");
+          } else if (action === "test") {
+            showToast("연결 테스트 성공", "Ollama · qwen3-embedding:0.6b · 1024d · 83ms");
+          } else if (action === "models") {
+            showToast("모델 검색 완료", "embedding capability 모델 3개를 찾았습니다.");
+          } else if (action === "restore") {
+            showToast("복원 흐름 예시", "실제 구현에서는 파일 검증과 변경 미리보기가 먼저 표시됩니다.");
+          } else if (action === "debug") {
+            showToast("디버그 내보내기 예시", "프로토타입에서는 실제 로그 파일을 만들지 않습니다.");
+          } else if (action === "close") {
+            showToast("닫기 버튼 예시", "이 HTML 프로토타입은 브라우저 탭을 자동으로 닫지 않습니다.");
+          } else if (action === "inspect") {
+            showToast("스코프 상세 보기", "선택한 스코프의 메타데이터와 저장 상태를 표시하는 예시입니다.");
+          } else if (action === "delete") {
+            showToast("삭제 보호 흐름", "실제 구현에서는 현재 캐릭터와 채팅명을 다시 확인해야 합니다.");
+          } else if (action === "clear") {
+            showToast("로그 비우기 예시", "이 프로토타입의 샘플 로그는 유지됩니다.");
+          } else if (action === "configure") {
+            showToast("연결 설정 예시", "실제 구현에서는 기존 Storage/Compute 패널을 이 위치에 마운트합니다.");
+          }
+        });
+      });
+
+      document.querySelectorAll(".settings-form input, .settings-form select, .settings-form textarea").forEach(function (input) {
+        input.addEventListener("input", function () {
+          dirty = true;
+          saveBar.classList.add("show");
+        });
+        input.addEventListener("change", function () {
+          dirty = true;
+          saveBar.classList.add("show");
+        });
+      });
+
+      document.querySelectorAll(".preset").forEach(function (button) {
+        button.addEventListener("click", function () {
+          document.querySelectorAll(".preset").forEach(function (item) { item.classList.remove("active"); });
+          button.classList.add("active");
+          dirty = true;
+          saveBar.classList.add("show");
+        });
+      });
+
+      document.getElementById("saveButton").addEventListener("click", function () {
+        dirty = false;
+        saveBar.classList.remove("show");
+        showToast("설정을 저장했습니다.", "변경사항을 적용하고 현재 값을 다시 확인했습니다.");
+      });
+
+      document.getElementById("discardButton").addEventListener("click", function () {
+        dirty = false;
+        saveBar.classList.remove("show");
+        showToast("변경사항을 되돌렸습니다.", "마지막으로 저장된 설정을 다시 표시합니다.");
+      });
+
+      window.addEventListener("beforeunload", function (event) {
+        if (!dirty) return;
+        event.preventDefault();
+        event.returnValue = "";
+      });
+
+      var initialTab = location.hash.replace("#", "");
+      if (pageMeta[initialTab]) activateTab(initialTab, false);
+    })();
+  </script>
+</body>
+</html>

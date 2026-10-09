@@ -1,0 +1,79 @@
+{
+  "schema": "librarian.ultralight.size.baseline.v1",
+  "generatedAt": "2026-09-17T21:20:04.091Z",
+  "packageVersion": "0.3.63",
+  "targetOwners": [
+    "hayaku",
+    "flashback",
+    "libra"
+  ],
+  "hardCap": 1000000,
+  "internalTarget": 950000,
+  "measurementRule": [
+    "Uncompressed installed JS bytes only (fs.statSync().size).",
+    "ZIP, gzip, .length and line counts are never a substitute.",
+    "Header, code, embedded prompts, embedded SDKs and GUI HTML/CSS/JS are all included."
+  ],
+  "plugins": {
+    "libra": {
+      "file": "plugins/LIBRA.js",
+      "bytes": 5558443,
+      "sha256": "4df953a115ed30692b03fde59f8f5ff5005af07cbfd267dc8234f6b6f0b3d16d",
+      "version": "2.3.130",
+      "displayName": "LIBRA v2.3.130",
+      "isTarget": true,
+      "hardCapExceededBy": 4558443,
+      "reductionNeededToHardCap": 4558443,
+      "reductionPercentToHardCap": 82.01
+    },
+    "hayaku": {
+      "file": "plugins/HAYAKU_Locator_Continuity.js",
+      "bytes": 3559264,
+      "sha256": "fb91f6f885936386c2a02bbf28815311c7cc92364241945eee91545bdbb94704",
+      "version": "3.0.133",
+      "displayName": "HAYAKU · Locator Continuity v3.0.133",
+      "isTarget": true,
+      "hardCapExceededBy": 2559264,
+      "reductionNeededToHardCap": 2559264,
+      "reductionPercentToHardCap": 71.9
+    },
+    "flashback": {
+      "file": "plugins/Flashback_Memory.js",
+      "bytes": 2810487,
+      "sha256": "0b23318ea7728814fe0bedbfa81cfba64e893ab09d45d8536222004f0f3c8e94",
+      "version": "1.0.97",
+      "displayName": "⚡ FLASHBACK Memory v1.0.97",
+      "isTarget": true,
+      "hardCapExceededBy": 1810487,
+      "reductionNeededToHardCap": 1810487,
+      "reductionPercentToHardCap": 64.42
+    },
+    "lia": {
+      "file": "plugins/LIA_Persona_Linker.js",
+      "bytes": 1681891,
+      "sha256": "7ff7f192636d99996d1a85985f81627537ec14b87833d0421e2c28b50b802f4e",
+      "version": "0.26.80",
+      "displayName": "LIA: Persona Linker",
+      "isTarget": false,
+      "hardCapExceededBy": 681891,
+      "reductionNeededToHardCap": 681891,
+      "reductionPercentToHardCap": 40.54
+    },
+    "retrace": {
+      "file": "plugins/RETRACE.js",
+      "bytes": 1074548,
+      "sha256": "9ef168fb5448863529985abd70bc5c35045bc5160ed4591f0d43f8c58157c23e",
+      "version": "1.9.82",
+      "displayName": "RE:TRACE",
+      "isTarget": false,
+      "hardCapExceededBy": 74548,
+      "reductionNeededToHardCap": 74548,
+      "reductionPercentToHardCap": 6.94
+    }
+  },
+  "totals": {
+    "targetSetBytes": 11928194,
+    "targetSetBytesOverHardCap": 8928194,
+    "allPluginsBytes": 14684633
+  }
+}

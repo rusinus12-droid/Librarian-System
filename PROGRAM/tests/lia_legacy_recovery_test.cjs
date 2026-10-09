@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
+const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+`\nglobalThis.__recoveryTest={create:typeof createLiaLegacyServerRecovery==='function'?createLiaLegacyServerRecovery:null,validate:memorySuiteLiaValidateRestore};`+source.slice(i);};
+(async()=>{const f=await createFixture('official',{transformSource:expose});try{
+ const api=f.context.__recoveryTest;assert.equal(typeof api.create,'function','explicit staged legacy recovery is required');
+ const local=new Map(),remote=new Map(),calls=[];let publishes=0;
+ const bridge={serverBinding:()=>({generation:1,dataInstanceId:'existing-data'}),serverIntegrity:async()=>({ok:true,result:'ok'}),serverKeys:async()=>({keys:[...remote.keys()],tombstones:['old-deleted-key'],records:[],page:{complete:true}}),serverGet:async(_s,k)=>{calls.push(k);return{exists:remote.has(k),value:remote.get(k),revision:1,digest:'same'};},ownerLegacyRead:async(_s,k)=>local.get(k)??null,publishLocalRecovery:async({records,validate})=>{assert.equal(await validate(records),true);for(const r of records)assert.equal(local.get(r.key)??null,r.expectedValue);publishes++;for(const r of records)local.set(r.key,r.value);return{verified:true,restored:records.length};}};
+ const recovery=api.create(bridge);
+ const vault='dynamicPersonaLorebookGeneratorResultVault';remote.set(vault,JSON.stringify({version:1,items:[],unknown:{keep:3}}));
+ let preview=await recovery.preview();assert.equal(preview.validated,true);assert.equal(publishes,0);assert.equal(local.size,0);assert.equal(preview.retainedServerTombstones,1);await recovery.publish(preview);assert.equal(local.get(vault),remote.get(vault));assert.equal(publishes,1);
+ local.set(vault,JSON.stringify({version:1,items:[],unknown:{keep:4}}));preview=await recovery.preview();assert.equal(preview.conflicts.length,1);await assert.rejects(recovery.publish(preview),/CONFLICT/);assert.match(local.get(vault),/4/);assert.equal(publishes,1);
+ remote.clear();local.clear();const prefix='liaPersonaVisualAssetBlobV1::image';remote.set(prefix+'::manifest',JSON.stringify({version:1,chunks:1,bytes:3,base64Chars:4,mime:'image/png'}));await assert.rejects(recovery.preview(),/VALIDATION/);assert.equal(publishes,1);assert.equal(local.size,0);
+ remote.set(prefix+'::chunk::0','YWJj');preview=await recovery.preview();assert.equal(preview.validated,true);assert.equal(publishes,1);await recovery.publish(preview);assert.equal(local.get(prefix+'::chunk::0'),'YWJj');
+ remote.clear();local.clear();
+ const hash=value=>{let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619);}return `${(h>>>0).toString(36)}-${value.length}`;};
+ const oldScope='char:old|chat:old',newScope='char:new|chat:new',oldKey='liaPersonaLinkerLivePersonaScopeV2::'+hash(oldScope).slice(0,24),newKey='liaPersonaLinkerLivePersonaScopeV2::'+hash(newScope).slice(0,24);
+ const oldShard=JSON.stringify({scopeKey:oldScope,livePersonaId:'old',unknown:'local-safe'}),newShard=JSON.stringify({scopeKey:newScope,livePersonaId:'new',unknown:'remote-safe'}),indexKey='liaPersonaLinkerLivePersonaIndexV2';
+ local.set(oldKey,oldShard);local.set(indexKey,JSON.stringify({schema:'lia.live_persona_index.v2',version:2,unknownLocal:'keep',entries:{[oldScope]:{storageKey:oldKey,digest:hash(oldShard)}}}));
+ remote.set(newKey,newShard);remote.set(indexKey+'::memory-suite-scope:v1:'+encodeURIComponent(newScope),JSON.stringify({schema:'lia.live_persona_index.v2',version:2,entries:{[newScope]:{storageKey:newKey,digest:hash(newShard)}}}));
+ preview=await recovery.preview();assert.equal(preview.conflicts.length,0);await recovery.publish(preview);const merged=JSON.parse(local.get(indexKey));assert.equal(merged.unknownLocal,'keep');assert.equal(merged.entries[oldScope].storageKey,oldKey);assert.equal(merged.entries[newScope].storageKey,newKey);assert.equal(local.get(oldKey),oldShard);
+ console.log('PASS staged legacy recovery: read-only preview, no conflict overwrite, complete image validation before publish, server tombstones retained');
+}finally{await f.dispose();}})().catch(e=>{console.error(e);process.exitCode=1});
