@@ -11091,7 +11091,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');
@@ -49211,7 +49211,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };

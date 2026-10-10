@@ -9,7 +9,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };

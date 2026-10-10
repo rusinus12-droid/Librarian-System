@@ -38,15 +38,14 @@ const artifactDir = process.env.ULTRALIGHT_ARTIFACT_DIR
   ? path.resolve(process.env.ULTRALIGHT_ARTIFACT_DIR)
   : path.resolve(programDir, '..', '.development', 'build', 'Min');
 
-// All five shipped plugins: the release is minified as a set, so it is verified as a set.
+// All six shipped plugins: the release is minified as a set, so it is verified as a set.
 const ARTIFACTS = Object.freeze([
   { owner: 'hayaku', file: 'HAYAKU_Locator_Continuity.js', source: 'plugins/HAYAKU_Locator_Continuity.js' },
   { owner: 'flashback', file: 'Flashback_Memory.js', source: 'plugins/Flashback_Memory.js' },
   { owner: 'libra', file: 'LIBRA.js', source: 'plugins/LIBRA.js' },
   { owner: 'lia', file: 'LIA_Persona_Linker.js', source: 'plugins/LIA_Persona_Linker.js' },
   { owner: 'retrace', file: 'RETRACE.js', source: 'plugins/RETRACE.js' },
-  { owner: 'gradia', file: 'GRADIA.js', source: 'plugins/GRADIA.js' },
-  { owner: 'wm', file: 'LIBRA_World_Manager.js', source:'plugins/LIBRA_World_Manager.js' }
+  { owner: 'gradia', file: 'GRADIA.js', source: 'plugins/GRADIA.js' }
 ]);
 
 if (!fs.existsSync(artifactDir)) {
@@ -158,8 +157,7 @@ const API_SURFACE = Object.freeze({
   flashback: { global: '__FlashbackMemory', required: ['version'] },
   lia: { global: '__lia_persona_linker_runtime_v1__', required: [] },
   retrace: { global: '__RETRACE', required: ['version'] },
-  gradia: { global: '__SerialGradationAgentsForRP', required: ['getLibReadOnlyStatus', 'getRuntime'] },
-  wm:{global:null,required:[]}
+  gradia: { global: '__SerialGradationAgentsForRP', required: ['getLibReadOnlyStatus', 'getRuntime'] }
 });
 
 const waitForApi = async (context, name, timeoutMs = 8000) => {

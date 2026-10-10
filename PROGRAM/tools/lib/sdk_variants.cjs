@@ -2,9 +2,9 @@
 // Build-time identities only. A shared version number does not authorize replacing
 // a consumer's preserved SDK with the newer active-writer runtime.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const preservedConsumerSha256='9800ef49dd58cc3d5de57565fa17bef33eff9d47b1ea99da40131aba080b650b';
+const preservedConsumerSha256='93711f7bb78faaf46d18bda64da7108710b37b0865a44a67fbbd2e831fb004bb';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
-const gradiaReadOnlyConsumerSha256='175b6841657b6f5629a8369a2e9c8666bbf44ba36f3689bfb5cd51f5256b9335';
+const gradiaReadOnlyConsumerSha256='9283ad5d929b7a49bee3455b8f75438eebac8fea2ab41a17e39ac811eead9bd6';
 const STORAGE_VARIANTS=Object.freeze({
  'Flashback_Memory.js':Object.freeze({variant:'core3-standard-flashback',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:true}),
  'HAYAKU_Locator_Continuity.js':Object.freeze({variant:'core3-standard-hayaku',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:true}),

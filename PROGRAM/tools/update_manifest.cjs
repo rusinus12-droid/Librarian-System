@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { maskSource } = require('./lib/ultralight_scan.cjs');
-const { fixtureCatalog } = require('./wm_source_catalog.cjs');
 
 const root = path.resolve(process.env.LIBRARIAN_PROGRAM_ROOT || path.resolve(__dirname, '..'));
 const manifestPath = path.join(root, 'program-manifest.json');
@@ -63,7 +62,7 @@ const hasStringLiteral = (source, value) => {
 };
 const pluginFiles = Object.freeze({
   flashback: 'plugins/Flashback_Memory.js', hayaku: 'plugins/HAYAKU_Locator_Continuity.js',
-  libra: 'plugins/LIBRA.js', lia: 'plugins/LIA_Persona_Linker.js', retrace: 'plugins/RETRACE.js', gradia: 'plugins/GRADIA.js', wm:'plugins/LIBRA_World_Manager.js'
+  libra: 'plugins/LIBRA.js', lia: 'plugins/LIA_Persona_Linker.js', retrace: 'plugins/RETRACE.js', gradia: 'plugins/GRADIA.js'
 });
 const pluginSources = Object.freeze(Object.fromEntries(Object.entries(pluginFiles).map(([owner, file]) => [owner, readSource(file)])));
 const pluginVersions = Object.freeze(Object.fromEntries(Object.entries(pluginSources).map(([owner, source]) => [
@@ -221,21 +220,19 @@ const isManifestCopyOfExistingFile = full => {
   }
 };
 
-const pinnedFixtures=fixtureCatalog(root);
-const isPinnedFixtureDirectory = full => {const rel=path.relative(root,full).split(path.sep).join('/');return Object.keys(pinnedFixtures).some(file=>('wm/'+file).startsWith(rel+'/'));};
 const listFiles = current => {
   const rows = [];
   for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
     const full = path.join(current, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`manifest_symbolic_link_is_not_allowed:${path.relative(root, full)}`);
     if (entry.isDirectory()) {
-      if (!MANIFEST_EXCLUDED_DIRECTORIES.has(entry.name)||entry.name==='dist'&&isPinnedFixtureDirectory(full)) rows.push(...listFiles(full));
+      if (!MANIFEST_EXCLUDED_DIRECTORIES.has(entry.name)) rows.push(...listFiles(full));
     } else if (entry.isFile()
       && path.resolve(full) !== path.resolve(manifestPath)
       && !isManifestEphemeralFile(entry.name)
       && !isManifestCopyOfExistingFile(full)
       && !isManifestUntrackedInRepository(path.relative(root, full))
-      && (!path.relative(root,full).split(path.sep).includes('dist')||Object.hasOwn(pinnedFixtures,path.relative(root,full).split(path.sep).join('/').replace(/^wm\//,'')))) rows.push(full);
+      && !path.relative(root,full).split(path.sep).includes('dist')) rows.push(full);
   }
   return rows;
 };
@@ -1161,32 +1158,8 @@ manifest.executionContract = {
   implementationReport: 'docs/INTEGRATED_IMPLEMENTATION_10_11.md',
   remainingPlan: 'docs/plan_10_11_remaining.md'
 };
-// Current-source feature/build metadata. These labels never open runtime gates.
-manifest.dataContract.wmCurrentProvisionalStatus = {
-  separatePluginId:'libra_world_manager',owner:'wm',sharedBuildPlugins:7,
-  fullFilename:'LIBRA_World_Manager.js',minFilename:'LIBRA_World_Manager.js',
-  actualServerActivation:false,actualHandoffActivation:false,productionQualifiedProfiles:[],
-  wmPlusLiaLivePersona:'provisional_pre_activation_preparation',
-  nativePluginOnlyBackupRestore:'provisional_adapter_only_actual_owner_unsupported',
-  crossPhysicalWmRestore:'provisional_fresh_target_import_recovery_only',
-  postRestoreAdmission:'recovery_required',interruptedMixedRestore:'fenced_pending_explicit_recovery',
-  existingWmPerformanceFailure:'not_cleared',
-  libCommonPolicyR2:'current_source_integration_provisional_historical_review_not_passed',
-  fictionalPresetSimulation:'implemented_provisional_feature_first',
-  boundedCommittedBatchAttempts:'implemented_provisional_feature_first',
-  sharedResultProjection:'implemented_provisional_feature_first',
-  existingCardNaturalLanguageEdit:'structured_preview_explicit_confirm_same_tracker_offline_verified',
-  savedServerConnection:'implemented_explicit_connect_and_compatible_saved_credentials',
-  explicitServerCheck:'authenticated_readonly_metadata_only',
-  manualStorageProfile:'wm.manual-copy-switch.v1',
-  normalServerStorageActivation:'manual_profile_explicit_verified_switch_offline_verified_actual_host_unqualified',
-  normalServerMigration:'manual_two_way_copy_verify_separate_switch_offline_verified',
-  manualRoutedReadWriteRestart:'implemented_offline_verified',
-  manualBackup:'implemented_offline_verified_restore_recovery_only',
-  manualOtherWriters:'user_keeps_idle_observed_conflicts_refused_not_fenced',
-  nativeAllWriterCas:'unsupported',strongFullCorpusGradiaMiBV2:'unsupported',gradiaG2ModelRestriction:'unchanged',
-  deepValidation:'deferred',wmFeatureTasks:'bounded deliveries implemented; broad regression and real-host qualification not inferred'
-};
+// Remove stale metadata for the separated plugin from an older generated manifest.
+delete manifest.dataContract.wmCurrentProvisionalStatus;
 manifest.dataContract.gradiaThreeOwnerRead = {
   pluginVersion:pluginVersions.gradia,principal:'serial_gradation_agents_for_rp',
   readers:['libra','hayaku','flashback'],writeNamespaces:[],newStorageOwner:false,
@@ -1202,7 +1175,7 @@ manifest.dataContract.gradiaThreeOwnerRead = {
   contract:'docs/gradia/THREE-OWNER-READ-20261009.md'
 };
 manifest.dataContract.postGuiBoundedFixes = {
-  status:'implemented_bounded_offline_emitted_verified', plugins:['libra','hayaku','flashback','lia','retrace','gradia','wm'],
+  status:'implemented_bounded_offline_emitted_verified', plugins:['libra','hayaku','flashback','lia','retrace','gradia'],
   preservation:'no_removed_views_or_controls; existing_storage_and_model_boundaries_preserved',
   verification:'explicit_emitted_GUI_reproductions_and_same_source_build',
   visualBrowserQualification:false, actualHostQualification:false, wholeRegressionBeforeCheckpoint:false,

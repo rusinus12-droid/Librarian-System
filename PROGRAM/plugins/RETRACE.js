@@ -66,55 +66,6 @@
 (async () => {
   'use strict';
 
-/* WM HANDOFF RECEIPT SDK v1.0.0
- * Separate materialized receipt contract. This never changes zero-copy owner contracts.
- * Wire identity is only a binding; authenticated host metadata establishes the sender.
- */
-const WmHandoffReceipt = (() => {
-  'use strict';
-  const OWNER='wm',PLUGIN_ID='libra_world_manager',SCHEMA='wm.handoff-materialized.v1';
-  const REQUEST_CHANNEL='wm_handoff_request_v1',RESPONSE_CHANNEL='wm_handoff_response_v1';
-  const METHODS=Object.freeze(['capabilities','prepareHandoff','adoptHandoff','verifyHandoff','abortPreparedHandoff','rollbackHandoff']);
-  const DOMAINS=Object.freeze(['canonical','cold','raw','raw_history','lineage','orphan']);
-  const plain=(value,seen=new Set())=>{
-    if(value===null||typeof value==='string'||typeof value==='boolean')return true;
-    if(typeof value==='number')return Number.isFinite(value);
-    if(!value||typeof value!=='object'||seen.has(value))return false;
-    const proto=Object.getPrototypeOf(value);if(proto!==Object.prototype&&proto!==null&&!(Array.isArray(value)&&proto===Array.prototype))return false;
-    seen.add(value);const ds=Object.getOwnPropertyDescriptors(value);
-    const result=Reflect.ownKeys(value).every(k=>typeof k==='string'&&(Array.isArray(value)&&k==='length'||ds[k].enumerable&&Object.hasOwn(ds[k],'value')&&plain(ds[k].value,seen)));
-    seen.delete(value);return result;
-  };
-  const exact=(v,keys)=>plain(v)&&v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
-  const stable=v=>Array.isArray(v)?'['+v.map(stable).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}':JSON.stringify(v);
-  const same=(a,b)=>plain(a)&&plain(b)&&stable(a)===stable(b);
-  const token=v=>typeof v==='string'&&/^[A-Za-z0-9:_-]{1,128}$/.test(v);
-  const digest=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
-  const count=v=>Number.isSafeInteger(v)&&v>=0;
-  const identity=v=>exact(v,['scope','characterId','chatId','personaId','resetGeneration'])&&['characterId','chatId','personaId'].every(k=>typeof v[k]==='string'&&v[k].length>0)&&count(v.resetGeneration)&&v.scope===`char:${v.characterId}|chat:${v.chatId}|persona:${v.personaId}`;
-  const head=v=>exact(v,['protocol','authorityId','storeId','scope','epoch','revision','schema','generationId','sha256','utf8Bytes','tombstone'])&&v.protocol==='wm.snapshot-authority.v1'&&v.schema==='wm.canonical-raw.v1'&&['authorityId','storeId','epoch','revision','generationId'].every(k=>token(v[k]))&&typeof v.scope==='string'&&v.scope.length>0&&digest(v.sha256)&&count(v.utf8Bytes)&&typeof v.tombstone==='boolean';
-  const route=v=>exact(v,['schema','mode','routeGeneration','datasetId','backendId','state'])&&v.schema==='wm.storage-route.v1'&&['plugin_only','server_only'].includes(v.mode)&&['routeGeneration','datasetId','backendId'].every(k=>token(v[k]))&&['active','fenced','recovery_required'].includes(v.state);
-  const domains=v=>exact(v,DOMAINS)&&DOMAINS.every(k=>exact(v[k],['count','bytes','digest','complete'])&&count(v[k].count)&&count(v[k].bytes)&&digest(v[k].digest)&&v[k].complete===true);
-  function preparedMatches(v,e){return exact(v,['transferId','payloadDigest','sourceIdentity','targetIdentity','sourceHead','sourceRoute','inventorySnapshotId','domains'])&&token(v.transferId)&&digest(v.payloadDigest)&&token(v.inventorySnapshotId)&&identity(v.sourceIdentity)&&identity(v.targetIdentity)&&head(v.sourceHead)&&route(v.sourceRoute)&&domains(v.domains)&&v.sourceHead.scope===v.sourceIdentity.scope&&v.sourceIdentity.chatId!==v.targetIdentity.chatId&&v.sourceRoute.state==='active'&&v.transferId===e.transferId&&same(v.sourceIdentity,e.sourceIdentity)&&same(v.targetIdentity,e.targetIdentity)&&same(v.sourceHead,e.sourceHead)&&same(v.sourceRoute,e.sourceRoute);}
-  function matches(v,e){
-    if(!exact(v,['schema','transferId','sourceIdentity','targetIdentity','sourceHead','sourceRoute','targetRoute','sourceFingerprintBefore','sourceFingerprintAfter','sourcePreserved','sourceMutated','sourceCompacted','copyMode','physicalCopies','targetHead','payloadDigest','domains','readback','usable'])||!plain(e))return false;
-    return v.schema==='wm.handoff-materialized-receipt.v1'&&token(v.transferId)&&identity(v.sourceIdentity)&&identity(v.targetIdentity)&&v.sourceIdentity.chatId!==v.targetIdentity.chatId&&head(v.sourceHead)&&head(v.targetHead)&&v.sourceHead.scope===v.sourceIdentity.scope&&v.targetHead.scope===v.targetIdentity.scope&&route(v.sourceRoute)&&route(v.targetRoute)&&v.sourceRoute.state==='active'&&same(v.sourceRoute,v.targetRoute)&&digest(v.sourceFingerprintBefore)&&v.sourceFingerprintBefore===v.sourceFingerprintAfter&&v.sourcePreserved===true&&v.sourceMutated===false&&v.sourceCompacted===false&&v.copyMode==='materialized'&&Number.isSafeInteger(v.physicalCopies)&&v.physicalCopies>=1&&digest(v.payloadDigest)&&domains(v.domains)&&exact(v.readback,['verified','generationId','allDomainsComplete'])&&v.readback.verified===true&&v.readback.allDomainsComplete===true&&v.readback.generationId===v.targetHead.generationId&&v.usable===true&&v.transferId===e.transferId&&v.payloadDigest===e.payloadDigest&&same(v.sourceIdentity,e.sourceIdentity)&&same(v.targetIdentity,e.targetIdentity)&&same(v.sourceHead,e.sourceHead)&&same(v.sourceRoute,e.sourceRoute)&&(!e.domains||same(v.domains,e.domains))&&(!e.targetHead||same(v.targetHead,e.targetHead));
-  }
-  function evaluate(peer){const p=peer?.capabilities||peer;const errors=[];
-    if(!plain(p)||p.schema!==SCHEMA||p.owner!==OWNER||p.pluginId!==PLUGIN_ID)errors.push('wm_contract_identity_mismatch');
-    if(p?.sourceImmutable!==true||p?.materialized!==true||p?.durableReadback!==true||p?.idempotent!==true)errors.push('wm_contract_guarantees_missing');
-    if(!Array.isArray(p?.modes)||!p.modes.length||p.modes.some(m=>!['plugin_only','server_only'].includes(m)))errors.push('wm_qualified_materializer_unavailable');
-    return {ok:errors.length===0,reason:errors.join(','),errors};
-  }
-  const binding=payload=>({sourceIdentity:payload?.sourceIdentity||null,targetIdentity:payload?.targetIdentity||null,transferId:payload?.transferId||null});
-  function frame(v,kind){const keys=['schema','kind','owner','pluginId','requestId','action','sourceIdentity','targetIdentity','transferId',...(kind==='request'?['payload']:['ok','result','reason'])];return exact(v,keys)&&v.schema===SCHEMA&&v.kind===kind&&v.owner===OWNER&&v.pluginId===PLUGIN_ID&&token(v.requestId)&&METHODS.includes(v.action)&&(v.sourceIdentity===null||identity(v.sourceIdentity))&&(v.targetIdentity===null||identity(v.targetIdentity))&&(v.transferId===null||token(v.transferId))&&(kind==='request'?plain(v.payload):typeof v.ok==='boolean'&&typeof v.reason==='string'&&plain(v.result));}
-  const makeRequest=(requestId,action,payload,b= binding(payload))=>({schema:SCHEMA,kind:'request',owner:OWNER,pluginId:PLUGIN_ID,requestId,action,...b,payload});
-  const responseMatches=(v,pending)=>frame(v,'response')&&v.requestId===pending.requestId&&v.action===pending.action&&same(binding(v),pending.binding);
-  return Object.freeze({OWNER,PLUGIN_ID,SCHEMA,REQUEST_CHANNEL,RESPONSE_CHANNEL,METHODS,DOMAINS,plain,exact,same,identity,head,route,domains,preparedMatches,matches,evaluate,binding,frame,makeRequest,responseMatches});
-})();
-/* END WM HANDOFF RECEIPT SDK */
-if(typeof module!=='undefined'&&module.exports)module.exports=WmHandoffReceipt;
-
 /* LIBRARIAN HOST LINEAGE SDK v1.0.0
  * Read-only RisuAI 2026.8.250 native-branch evidence, not a memory store.
  * Authority remains with each owner's source digest, worldline and commit gate.
@@ -7614,7 +7565,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');
@@ -7908,10 +7859,6 @@ const PLUGIN_VERSION = '1.9.84';
     libraIpcPending: new Map(),
     libraIpcLastSeenAt: 0,
     libraIpcLastError: '',
-    wmHandoffSelected: false,
-    wmIpcRegistered: false,
-    wmIpcPending: new Map(),
-    wmIpcLastError: '',
     liaIpcRegistered: false,
     liaIpcPending: new Map(),
     liaIpcLastError: '',
@@ -7991,7 +7938,6 @@ const PLUGIN_VERSION = '1.9.84';
       receiptSchema: LIBRA_HANDOFF_RECEIPT_SCHEMA,
       peerRole: 'canonical_long_term_memory'
     }),
-    wm: Object.freeze({key:'wm',label:'WM',pluginId:'libra_world_manager',handoffContract:'wm.handoff-materialized.v1',receiptSchema:'wm.handoff-materialized-receipt.v1',peerRole:'world_memory'}),
     lia: Object.freeze({
       key: 'lia',
       label: 'LIA',
@@ -8001,7 +7947,7 @@ const PLUGIN_VERSION = '1.9.84';
       peerRole: 'live_persona_state'
     })
   });
-  const ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'wm']);
+  const ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra', 'lia']);
 
   const peerCompatibilityPayload = value => {
     const source = value && typeof value === 'object' ? value : {};
@@ -8017,18 +7963,7 @@ const PLUGIN_VERSION = '1.9.84';
     return candidates.find(item => item && typeof item === 'object' && text(item.schema || '') === RETRACE_PEER_COMPATIBILITY_SCHEMA) || null;
   };
 
-  const evaluateWmPeerCompatibility = peer => WmHandoffReceipt.evaluate(peer);
-  const wmMaterializedHandoffReceiptMatches = (receipt, expected) => WmHandoffReceipt.matches(receipt, expected);
-
   const evaluatePeerCompatibility = (requirement, rawCompatibility, installed = true, options = {}) => {
-    if (requirement.key === 'wm') {
-      const wm = evaluateWmPeerCompatibility(rawCompatibility);
-      const required = options.required === true;
-      return {key:'wm',label:'WM',pluginId:'libra_world_manager',installed,required,
-        compatible:installed ? wm.ok : !required,blocking:required && (!installed || !wm.ok),
-        status:!installed ? 'not_installed' : wm.ok ? 'compatible' : 'incompatible_optional',
-        handoffContract:'wm.handoff-materialized.v1',reason:installed ? wm.reason || 'WM materialized 계약 확인' : 'WM 미연결',errors:wm.errors || [],compatibility:clone(rawCompatibility,null)};
-    }
     const payload = peerCompatibilityPayload(rawCompatibility);
     const required = options.required === true;
     const errors = [];
@@ -9123,37 +9058,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     Runtime.hayakuIpcRegistered = false;
     Runtime.libraIpcRegistered = false;
     Runtime.liaIpcRegistered = false;
-    Runtime.wmIpcRegistered = false;
-  };
-
-  const registerWmIpc = async () => {
-    if (Runtime.wmIpcRegistered) return true;
-    const api = liveApi(['addPluginChannelListener','postPluginChannelMessage']);
-    if (typeof api?.addPluginChannelListener !== 'function' || typeof api?.postPluginChannelMessage !== 'function') return false;
-    const handler = (message, metadata = {}) => {
-      if (metadata.sender !== WmHandoffReceipt.PLUGIN_ID || !WmHandoffReceipt.frame(message,'response')) return;
-      const pending = Runtime.wmIpcPending.get(message.requestId);
-      if (!pending || !WmHandoffReceipt.responseMatches(message,pending)) return;
-      Runtime.wmIpcPending.delete(message.requestId);clearTimeout(pending.timer);
-      if (message.ok === true) pending.resolve(message.result);
-      else {const error=new Error(message.reason || 'wm_handoff_rejected');error.code='WM_IPC_REJECTED';error.remoteReachable=true;pending.reject(error);}
-    };
-    await registerTrackedPluginChannelListener('wm_response',api,WmHandoffReceipt.RESPONSE_CHANNEL,handler);
-    Runtime.wmIpcRegistered=true;return true;
-  };
-  const requestWmIpc = async (action, payload = {}, options = {}) => {
-    if (!WmHandoffReceipt.METHODS.includes(action) || !WmHandoffReceipt.plain(payload)) throw Error('wm_ipc_action_or_payload_invalid');
-    const registered=await registerWmIpc();const api=liveApi(['postPluginChannelMessage']);
-    if (!registered || typeof api?.postPluginChannelMessage !== 'function') {const error=new Error('wm_ipc_unavailable');error.code='WM_IPC_UNAVAILABLE';throw error;}
-    const requestId=uuid(),binding=options.binding || WmHandoffReceipt.binding(payload);
-    const request=WmHandoffReceipt.makeRequest(requestId,action,clone(payload,{}),clone(binding,{}));
-    if(!WmHandoffReceipt.frame(request,'request'))throw Error('wm_ipc_binding_invalid');
-    const timeoutMs=Math.max(400,Math.min(120000,Number(options.timeoutMs || 4000)));
-    return await new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{Runtime.wmIpcPending.delete(requestId);const error=new Error('wm_ipc_timeout_same_transfer_requires_status');error.code='WM_IPC_TIMEOUT';error.uncertain=true;reject(error);},timeoutMs);
-      Runtime.wmIpcPending.set(requestId,{requestId,action,binding,resolve,reject,timer});
-      Promise.resolve(api.postPluginChannelMessage(WmHandoffReceipt.PLUGIN_ID,WmHandoffReceipt.REQUEST_CHANNEL,request)).catch(error=>{const pending=Runtime.wmIpcPending.get(requestId);if(!pending)return;Runtime.wmIpcPending.delete(requestId);clearTimeout(timer);reject(error);});
-    });
   };
 
   const registerFlashbackIpc = async () => {
@@ -11721,10 +11625,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const requirement = RETRACE_PEER_REQUIREMENTS[key];
     const timeoutMs = Math.max(700, Math.min(8000, Number(options.timeoutMs || 2400) || 2400));
     const required = options.required === true;
-    if (key === 'wm') {
-      try {return evaluatePeerCompatibility(requirement,await requestWmIpc('capabilities',{}, {timeoutMs}),true,{required});}
-      catch (_) {return evaluatePeerCompatibility(requirement,null,false,{required});}
-    }
     if (key === 'hayaku') {
       const gate = await probeLiveHayakuOwner({
         force: options.forceProbe === true,
@@ -11908,8 +11808,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     flashback: Math.max(0, Number(preview?.flashback?.loadedRecords ?? preview?.flashback?.records ?? 0) || 0) > 0,
     hayaku: preview?.includeHayaku === true,
     libra: preview?.includeLibra === true,
-    lia: isLiaLivePersonaId(preview?.identity?.personaId),
-    wm: preview?.includeWm === true
+    lia: isLiaLivePersonaId(preview?.identity?.personaId)
   });
 
   const inspectCompatibilitySuite = async (previewValue = null, options = {}) => {
@@ -11918,9 +11817,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const preview = previewValue || Runtime.lastPreview || await inspectTransition();
     const required = compatibilityRequiredForPreview(preview);
     const entries = await Promise.all(ACTIVE_RETRACE_PEER_KEYS.map(key => (
-      key === 'wm' && preview.includeWm !== true
-        ? Promise.resolve(evaluatePeerCompatibility(RETRACE_PEER_REQUIREMENTS.wm,preview.wm?.payload,preview.wm?.installed === true,{required:false}))
-        : probeUniversalPeerCompatibility(key, {
+      probeUniversalPeerCompatibility(key, {
         required: required[key] === true,
         timeoutMs: options.timeoutMs,
         forceProbe: options.forceProbe === true,
@@ -12350,11 +12247,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
           currentSnapshotRecordCount: 0, recoveryRecordCount: 0, missingRecoveryCount: 0,
           durableVerified: false, reason: 'hayaku_owner_absent'
         };
-    const includeWm = pendingHandoff?.pending === true ? pendingHandoff.bridge?.includeWm === true
-      : options.includeWm === undefined ? Runtime.wmHandoffSelected === true : options.includeWm === true;
-    const wm = await requestMemorySuiteOwnerStorageStatus('wm', {includeSource:includeWm});
     const preview = {
-      wm, includeWm,
       context,
       identity,
       flashback,
@@ -12442,7 +12335,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt;
   };
 
-  const commitFreshNextSessionChat = async ({ context, identity, newChat, targetChatId, preserveSourceSelection = false }) => {
+  const commitFreshNextSessionChat = async ({ context, identity, newChat, targetChatId }) => {
     // Owner preparation may take seconds. Rebase ONLY the new target chat onto a
     // fresh Character, preserving every sibling and all current character fields.
     const commitContext = await getCurrentContext();
@@ -12463,13 +12356,12 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       throw handoffHostConflict('대상 채팅 ID가 이미 존재합니다. 중복 승계를 중단합니다.');
     }
     freshCharacter.chats.unshift(newChat);
-    freshCharacter.chatPage = preserveSourceSelection ? freshCharacter.chats.findIndex(chat => contextIdentity({chat}).chatId === identity.chatId) : 0;
+    freshCharacter.chatPage = 0;
     return await saveCharacter(freshCharacter, commitContext.characterIndex, { expectedCharacter: commitContext.character });
   };
 
   const sealNextSessionHandoffJournal = value => {
     const journal = clone(value, {});
-    if(journal.wmHandoff && (!WmHandoffReceipt.plain(journal.wmHandoff) || Object.hasOwn(journal.wmHandoff,'pendingToken')))throw Error('wm_journal_opaque_token_forbidden');
     delete journal.journalDigest;
     journal.journalDigest = stableHash64(JSON.stringify(journal));
     return journal;
@@ -12491,21 +12383,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const legacyStoragePolicyMissing = !bridgeStorageMode && !journalStorageMode;
     const storagePolicyMatches = legacyStoragePolicyMissing
       || (HANDOFF_STORAGE_DESTINATIONS.includes(bridgeStorageMode) && journalStorageMode === bridgeStorageMode);
-    const wm=journal.wmHandoff;
-    const wmBindingValid=bridge.includeWm !== true ? wm?.selected !== true : wm?.selected === true
-      && wm.transferId === journal.transferId && WmHandoffReceipt.identity(wm.sourceIdentity)
-      && (wm.targetPersonaPending === true ? wm.targetIdentity === null && !wm.payloadDigest && !wm.prepared
-        && bridge.includeLiaLivePersona === true && isLiaLivePersonaId(wm.sourceIdentity.personaId)
-        && bridge.sourceLiaLivePersonaId === wm.sourceIdentity.personaId && !!bridge.sourceChatFingerprint
-        : WmHandoffReceipt.identity(wm.targetIdentity) && wm.targetIdentity.chatId === targetChatId)
-      && wm.sourceIdentity.chatId === bridge.sourceChatId
-      && bridge.wmHandoffSelection?.targetPersonaPending === wm.targetPersonaPending
-      && WmHandoffReceipt.same(bridge.wmHandoffSelection?.sourceIdentity,wm.sourceIdentity)
-      && WmHandoffReceipt.same(bridge.wmHandoffSelection?.targetIdentity,wm.targetIdentity)
-      && WmHandoffReceipt.same(bridge.wmHandoffSelection?.sourceHead,wm.sourceHead)
-      && WmHandoffReceipt.same(bridge.wmHandoffSelection?.sourceRoute,wm.sourceRoute)
-      && (journal.state !== 'completed' || wmMaterializedHandoffReceiptMatches(journal.ownerStatus?.wm?.receipt,{...wm,domains:wm.prepared?.domains}));
-    const identityMatches = wmBindingValid && text(bridge.targetChatId || '') === targetChatId
+    const identityMatches = text(bridge.targetChatId || '') === targetChatId
       && text(journal.targetChatId || '') === targetChatId
       && text(journal.transferId || '') === text(bridge.transferId || '')
       && text(journal.sourceChatId || '') === text(bridge.sourceChatId || '')
@@ -12531,13 +12409,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const context = options?.context || await getCurrentContext();
     const requestedTargetChatId = text(options?.targetChatId || '').trim();
     const currentChatId = contextIdentity(context).chatId;
-    let targetChatId = requestedTargetChatId || currentChatId;
+    const targetChatId = requestedTargetChatId || currentChatId;
     const chats = Array.isArray(context?.character?.chats) ? context.character.chats : [];
-    if (!requestedTargetChatId) {
-      const pendingTargets = chats.filter(item => item?.memorySessionBridge?.includeWm === true
-        && item.memorySessionBridge.sourceChatId === currentChatId && item.memorySessionBridge.handoffJournal?.state !== 'completed');
-      if (pendingTargets.length === 1 && !nextSessionHandoffJournalFromChat(context.chat).available) targetChatId = contextIdentity({chat:pendingTargets[0]}).chatId;
-    }
     const chat = chats.find(item => contextIdentity({chat:item}).chatId === targetChatId) || null;
     if (!chat) return { available: false, pending: false, reason: 'handoff_target_chat_missing', targetChatId };
     const loaded = nextSessionHandoffJournalFromChat(chat);
@@ -12560,8 +12433,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         expectedRecords: hayakuExpectedRecords
       })
       : { verified: true, durable: true, sourcePreserved: true, records: 0, expectedRecords: 0, reason: 'no_hayaku_data' };
-    const wm=await verifyPendingWmHandoff(loaded);
-    return { hayakuRequired, hayakuExpectedRecords, hayaku,wm };
+    return { hayakuRequired, hayakuExpectedRecords, hayaku };
   };
 
   const reconcilePendingHandoffJournalFromDurableReadback = async loaded => {
@@ -12584,14 +12456,13 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       };
       changed = true;
     }
-    if(loaded.bridge?.includeWm === true) {ownerStatus.wm=durable.wm;changed=true;}
     if (!changed) return { ...loaded, reconciled: false, durableStatus: durable };
-    let complete = Object.values(ownerStatus).every(status => status?.required !== true || status?.verified === true) && (loaded.bridge?.includeWm !== true || ownerStatus.wm?.verified === true);
+    let complete = Object.values(ownerStatus).every(status => status?.required !== true || status?.verified === true);
     let storageGate = null;
     let storagePolicyOk = true;
     if (complete) {
       try {
-        storageGate = await inspectMemorySuiteOwnerStorageGate({includeWm:loaded.bridge?.includeWm === true});
+        storageGate = await inspectMemorySuiteOwnerStorageGate();
         const storedPolicy = loaded.bridge?.targetStoragePolicy || loaded.journal?.storagePolicy || null;
         storagePolicyOk = storageGate.ready === true && handoffStoragePolicyMatchesGate(storedPolicy, storageGate);
         complete = storagePolicyOk;
@@ -12610,6 +12481,26 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     });
     const refreshed = await inspectPendingNextSessionHandoff({ targetChatId: loaded.targetChatId });
     return { ...refreshed, reconciled: true, durableStatus: durable, journal };
+  };
+
+  const handoffStoragePoliciesEqual = (left, right) => {
+    const plain = (value, seen = new Set()) => {
+      if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+      if (typeof value === 'number') return Number.isFinite(value);
+      if (!value || typeof value !== 'object' || seen.has(value)) return false;
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null && !(Array.isArray(value) && proto === Array.prototype)) return false;
+      seen.add(value);
+      const descriptors = Object.getOwnPropertyDescriptors(value);
+      const result = Reflect.ownKeys(value).every(key => typeof key === 'string' && (Array.isArray(value) && key === 'length'
+        || descriptors[key].enumerable && Object.hasOwn(descriptors[key], 'value') && plain(descriptors[key].value, seen)));
+      seen.delete(value);
+      return result;
+    };
+    const stable = value => Array.isArray(value) ? '[' + value.map(stable).join(',') + ']'
+      : value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stable(value[key])).join(',') + '}'
+        : JSON.stringify(value);
+    return plain(left) && plain(right) && stable(left) === stable(right);
   };
 
   const persistNextSessionHandoffJournal = async (targetChatIdValue, transferIdValue, patch = {}) => {
@@ -12634,14 +12525,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     for (const key of ['transferId','sourceChatId','targetChatId']) {
       if (Object.hasOwn(patch,key) && patch[key] !== loaded.journal[key]) throw Error('handoff_journal_identity_immutable');
     }
-    if (patch.storagePolicy && loaded.journal.storagePolicy?.participants?.length && !WmHandoffReceipt.same(patch.storagePolicy,loaded.journal.storagePolicy)) throw Error('handoff_owner_policy_immutable');
-    if (patch.wmHandoff) {
-      const old=loaded.journal.wmHandoff,next=patch.wmHandoff;
-      if (!old || ['selected','transferId','sourceIdentity','targetIdentity','targetPersonaPending','sourceHead','sourceRoute','mode'].some(key=>!WmHandoffReceipt.same(old[key],next[key]))
-        || old.payloadDigest && old.payloadDigest !== next.payloadDigest) throw Error('wm_handoff_binding_immutable');
-    }
-    if(Object.hasOwn(patch,'liaPreactivation') && !WmHandoffReceipt.same(patch.liaPreactivation,loaded.journal.liaPreactivation))throw Error('lia_preactivation_receipt_immutable');
-    if(loaded.bridge.includeWm === true && patch.ownerStatus?.wm?.required === false)throw Error('wm_required_owner_immutable');
+    if (patch.storagePolicy && loaded.journal.storagePolicy?.participants?.length && !handoffStoragePoliciesEqual(patch.storagePolicy,loaded.journal.storagePolicy)) throw Error('handoff_owner_policy_immutable');
     const nextJournal = sealNextSessionHandoffJournal({
       ...clone(loaded.journal, {}),
       ...clone(patch, {}),
@@ -12716,7 +12600,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     && (status?.hayakuRequired !== true || status?.hayakuVerified === true)
     && (status?.libraRequired !== true || status?.libraVerified === true)
     && (status?.liaRequired !== true || status?.liaVerified === true)
-    && (status?.wmRequired !== true || status?.wmVerified === true)
   );
 
   const requestOwnerHandoffStorageMode = async (owner, mode) => {
@@ -12729,115 +12612,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       scope: clone(status?.scope, null), status: clone(status, {}), transition: null,
       reason: actualMode === mode ? 'owner_mode_verified_read_only' : (status?.reason || 'owner_mode_mismatch')
     };
-  };
-
-  // Only this owner-verified, one-time transition can fill an unresolved WM
-  // persona identity. Ordinary journal patches cannot replace that identity.
-  const preparePendingWmLiaPersona = async loaded => {
-    const wm=loaded.journal.wmHandoff;
-    if (!isLiaLivePersonaId(wm.sourceIdentity?.personaId)) return loaded;
-    const bridge=loaded.bridge, options={sourceChatId:bridge.sourceChatId,targetChatId:loaded.targetChatId,
-      transferId:wm.transferId,sourceLivePersonaId:wm.sourceIdentity.personaId};
-    const checkSource=context=>{
-      const source=context.character?.chats?.find(chat=>contextIdentity({chat}).chatId===options.sourceChatId);
-      if(!source || handoffHostValueFingerprint(source)!==bridge.sourceChatFingerprint)throw Error('lia_preactivation_source_changed');
-    };
-    checkSource(await getCurrentContext());
-    if(wm.targetPersonaPending === true) {
-      if(wm.targetIdentity !== null || wm.payloadDigest || wm.prepared)throw Error('lia_preactivation_wm_already_prepared');
-      if(contextIdentity(await getCurrentContext()).chatId !== options.sourceChatId)throw Error('lia_preactivation_source_not_active');
-      const receipt=await requestLiaIpc('prepare_chat_handoff',options,{timeoutMs:15000});
-      if(!liaAdoptionReceiptMatches(receipt,options) || receipt.preActivation?.schema!=='lia.target-persona-preactivation.v1'
-        || receipt.preActivation.sourceActive!==true || receipt.preActivation.targetInactive!==true)throw Error('lia_preactivation_receipt_unverified');
-      const continuity=await verifyLiaChatHandoff({...options,targetLivePersonaId:receipt.livePersonaId,ownerStorageDigest:receipt.ownerStorageDigest});
-      if(!liaWmPersonaContinuityMatches(continuity,{...options,targetLivePersonaId:receipt.livePersonaId,characterId:wm.sourceIdentity.characterId},receipt.ownerStorageDigest))throw Error('lia_preactivation_readback_unverified');
-      const current=await getCurrentContext();checkSource(current);
-      if(contextIdentity(current).chatId!==options.sourceChatId)throw Error('lia_preactivation_source_not_active');
-      const character=clone(current.character,null),index=character?.chats?.findIndex(chat=>contextIdentity({chat}).chatId===loaded.targetChatId);
-      const actual=nextSessionHandoffJournalFromChat(character?.chats?.[index]);
-      if(!actual.available || !WmHandoffReceipt.same(actual.journal.wmHandoff,wm)
-        || contextIdentity({chat:character.chats[index]}).personaId!==receipt.livePersonaId)throw Error('lia_preactivation_binding_changed');
-      const targetIdentity={...clone(wm.sourceIdentity,{}),chatId:loaded.targetChatId,personaId:receipt.livePersonaId,
-        scope:`char:${wm.sourceIdentity.characterId}|chat:${loaded.targetChatId}|persona:${receipt.livePersonaId}`,resetGeneration:0};
-      const next={...clone(wm,{}),targetIdentity,targetPersonaPending:false};
-      const journal=sealNextSessionHandoffJournal({...actual.journal,wmHandoff:next,liaPreactivation:clone(receipt,{}),updatedAt:Date.now()});
-      character.chats[index].memorySessionBridge={...actual.bridge,wmHandoffSelection:clone(next,{}),handoffJournal:journal};
-      await saveCharacter(character,current.characterIndex,{expectedCharacter:current.character});
-      loaded=await inspectPendingNextSessionHandoff({targetChatId:loaded.targetChatId});
-      if(!loaded.available || loaded.journal.journalDigest!==journal.journalDigest)throw Error('lia_preactivation_journal_readback_failed');
-    }
-    await verifyPendingWmLiaPersona(loaded);
-    return loaded;
-  };
-  const liaWmPersonaContinuityMatches = (receipt,expected,digest) => receipt?.verified===true && receipt?.durable===true
-    && receipt.schema==='lia.live_persona_handoff.verification.v1'
-    && ['sourceChatId','targetChatId','transferId','sourceLivePersonaId','targetLivePersonaId','characterId'].every(key=>receipt[key]===expected[key])
-    && !!digest && receipt.ownerStorageDigest===digest;
-  const verifyPendingWmLiaPersona = async loaded => {
-    const wm=loaded.journal.wmHandoff;
-    if(!isLiaLivePersonaId(wm.sourceIdentity?.personaId))return;
-    const saved=loaded.journal.liaPreactivation;
-    const expected={sourceChatId:wm.sourceIdentity.chatId,targetChatId:loaded.targetChatId,transferId:wm.transferId,
-      sourceLivePersonaId:wm.sourceIdentity.personaId,targetLivePersonaId:wm.targetIdentity?.personaId,characterId:wm.sourceIdentity.characterId};
-    if(wm.targetPersonaPending || !saved || saved.livePersonaId!==expected.targetLivePersonaId)throw Error('lia_preactivation_not_verified');
-    const observed=await verifyLiaChatHandoff({...expected,ownerStorageDigest:saved.ownerStorageDigest});
-    if(!liaWmPersonaContinuityMatches(observed,expected,saved.ownerStorageDigest))throw Error('lia_preactivation_binding_changed');
-    const current=await getCurrentContext();
-    const source=current.character?.chats?.find(chat=>contextIdentity({chat}).chatId===expected.sourceChatId);
-    const target=current.character?.chats?.find(chat=>contextIdentity({chat}).chatId===expected.targetChatId);
-    if(!source || handoffHostValueFingerprint(source)!==loaded.bridge.sourceChatFingerprint
-      || contextIdentity({chat:target}).personaId!==expected.targetLivePersonaId)throw Error('lia_preactivation_host_changed');
-  };
-
-  const ensurePendingWmHandoff = async loaded => {
-    if (loaded.bridge?.includeWm !== true) return loaded;
-    loaded=await preparePendingWmLiaPersona(loaded);
-    const initial=loaded.journal?.wmHandoff;
-    if (!initial || initial.selected !== true || initial.transferId !== loaded.journal.transferId) throw Error('wm_pending_binding_missing');
-    const binding={sourceIdentity:initial.sourceIdentity,targetIdentity:initial.targetIdentity,transferId:initial.transferId};
-    if (!initial.payloadDigest) {
-      const prepared=await requestWmIpc('prepareHandoff',{transferId:initial.transferId,sourceIdentity:initial.sourceIdentity,targetIdentity:initial.targetIdentity,kind:'next_session',expectedSourceHead:initial.sourceHead,expectedSourceRoute:initial.sourceRoute},{binding,timeoutMs:120000});
-      if (!WmHandoffReceipt.preparedMatches(prepared,initial)) throw Error(prepared?.reason || 'wm_prepare_unverified');
-      const wmHandoff={...clone(initial,{}),payloadDigest:prepared.payloadDigest,prepared:clone(prepared,{})};
-      const journal=await persistNextSessionHandoffJournal(loaded.targetChatId,initial.transferId,{wmHandoff,state:'pending_storage_configuration'});
-      loaded={...loaded,journal};
-    }
-    const context=await getCurrentContext();const active=contextIdentity(context).chatId;
-    if(active !== loaded.targetChatId) {
-      if(active !== initial.sourceIdentity.chatId)throw Error('wm_pending_source_not_active');
-      const wm=loaded.journal.wmHandoff;
-      let verified=await verifyPendingWmHandoff(loaded);
-      if(!verified.verified) {
-        try {await requestWmIpc('adoptHandoff',{transferId:wm.transferId,payloadDigest:wm.payloadDigest,targetIdentity:wm.targetIdentity,expectedTargetHead:null,pendingToken:null},{binding,timeoutMs:120000});}
-        catch (_) {} // Reconcile the same durable transfer, including lost ACK.
-        verified=await verifyPendingWmHandoff(loaded);
-      }
-      const journal=await persistNextSessionHandoffJournal(loaded.targetChatId,wm.transferId,{ownerStatus:{wm:verified},state:'pending_owner_handoffs',lastError:verified.verified ? '' : 'wm_pending_activation_unverified'});
-      loaded={...loaded,journal};
-      if(!verified.verified)return {...loaded,wmBlocked:verified};
-      // The target is selected only after its materialized WM generation and
-      // pending-fence release are verified. No partial target is bootstrapped.
-
-      await verifyPendingWmLiaPersona(loaded);
-      const activationContext=await getCurrentContext();
-      if(contextIdentity(activationContext).chatId !== initial.sourceIdentity.chatId)throw Error('wm_pending_source_not_active');
-      const character=clone(activationContext.character,null);const index=character?.chats?.findIndex(chat=>contextIdentity({chat}).chatId===loaded.targetChatId);
-      if(!(index>=0))throw Error('wm_pending_target_missing');
-      character.chatPage=index;
-      await saveCharacter(character,activationContext.characterIndex,{expectedCharacter:activationContext.character});
-      if(!(await waitForActiveNextSessionChat(loaded.targetChatId,5000)).active)throw Error('wm_pending_target_activation_unconfirmed');
-    }
-    return loaded;
-  };
-  const verifyPendingWmHandoff = async loaded => {
-    const wm=loaded?.journal?.wmHandoff;
-    if(loaded?.bridge?.includeWm !== true)return {required:false,verified:true,reason:'wm_unselected'};
-    if(!wm?.payloadDigest||!wm?.prepared)return {required:true,verified:false,reason:'wm_prepare_pending'};
-    const expected={...wm,domains:wm.prepared.domains},binding={sourceIdentity:wm.sourceIdentity,targetIdentity:wm.targetIdentity,transferId:wm.transferId};
-    try {
-      const receipt=await requestWmIpc('verifyHandoff',{transferId:wm.transferId,targetIdentity:wm.targetIdentity,payloadDigest:wm.payloadDigest},{binding,timeoutMs:120000});
-      return {required:true,verified:wmMaterializedHandoffReceiptMatches(receipt,expected),durable:receipt?.readback?.verified===true,sourcePreserved:receipt?.sourcePreserved===true,reason:receipt?.reason || receipt?.receipt?.reason || receipt?.status || '',receipt};
-    } catch(error) {return {required:true,verified:false,reason:text(error?.code || 'wm_verify_unavailable')};}
   };
 
   const ensurePendingHandoffStorageConfiguration = async loaded => {
@@ -12853,10 +12627,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     if (targetPolicy?.participants?.length && HANDOFF_STORAGE_DESTINATIONS.includes(targetMode)) {
       const requesters = {flashback:requestFlashbackIpc, hayaku:requestHayakuIpc, libra:requestLibraIpc, lia:requestLiaIpc};
       for (const participant of targetPolicy.participants) {
-        if (participant.owner === 'wm') {
-          if (journal.wmHandoff?.selected !== true || participant.mode !== journal.wmHandoff.mode || !journal.wmHandoff.payloadDigest) throw Error('wm_pending_global_mode_unverified');
-          continue; // WM prepared its provider-owned target; never set a scope-specific WM route.
-        }
         const request = requesters[participant.owner];
         const participantMode = text(participant.mode || '').trim();
         if (!request || !HANDOFF_STORAGE_MODES.includes(participantMode) || (targetMode !== 'per_owner' && participantMode !== targetMode)) throw Error('HANDOFF_TARGET_STORAGE_POLICY_INVALID');
@@ -12872,7 +12642,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         if (receipt?.schema !== 'memory-suite.target-storage-preparation.v1' || receipt.verified !== true || receipt.owner !== participant.owner || receipt.targetChatId !== loaded.targetChatId || receipt.transferId !== journal.transferId || receipt.mode !== participantMode) throw Error('HANDOFF_TARGET_STORAGE_RECEIPT_INVALID');
       }
     }
-    const liveGate = await inspectMemorySuiteOwnerStorageGate({includeWm:journal.wmHandoff?.selected === true});
+    const liveGate = await inspectMemorySuiteOwnerStorageGate();
     if (!liveGate.ready) {
       const error = new Error(`다음 세션 저장 Gate를 통과하지 못했습니다: ${liveGate.reason}`);
       error.code = 'RETRACE_HANDOFF_STORAGE_CONFIGURATION_PENDING';
@@ -12936,7 +12706,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
   };
 
   const performPendingNextSessionHandoff = async loaded => {
-    loaded = await ensurePendingWmHandoff(loaded);
     const bridge = clone(loaded?.bridge, {});
     const journal = clone(loaded?.journal, {});
     const targetChatId = text(bridge.targetChatId || '').trim();
@@ -12944,10 +12713,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const sourceChatId = text(bridge.sourceChatId || '').trim();
     if (!loaded?.available || !targetChatId || !transferId || !sourceChatId || sourceChatId === targetChatId) {
       throw new Error('RE:TRACE pending handoff journal identity is invalid.');
-    }
-    if(loaded.wmBlocked) {
-      const result={ok:false,schema:HANDOFF_SCHEMA,transferId,sourceChatId,targetChatId,wmRequired:true,wmVerified:false,wmVerification:loaded.wmBlocked,requiredOwnerCount:Object.values(journal.ownerStatus||{}).filter(row=>row.required).length,handoffJournalState:journal.state,storagePolicy:clone(journal.storagePolicy,null)};
-      Runtime.lastTransition=result;return result;
     }
     const activeChatId = contextIdentity(await getCurrentContext()).chatId;
     if (activeChatId !== targetChatId) {
@@ -12975,9 +12740,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       expectedArchiveGeneration: Math.max(0, Number(bridge.libraArchiveGeneration || 0) || 0),
       expectedArchiveDigest: text(bridge.libraArchiveDigest || '')
     }, libraWorldAdditional);
-    const liaAdoption = bridge.includeWm === true && liaRequired
-      ? clone(journal.liaPreactivation,{})
-      : await adoptLiaLivePersonaHandoff({ sourceChatId, targetChatId, transferId, sourceLivePersonaId });
+    const liaAdoption = await adoptLiaLivePersonaHandoff({ sourceChatId, targetChatId, transferId, sourceLivePersonaId });
     let liaVerified = !liaRequired || liaAdoptionReceiptMatches(liaAdoption, {
       sourceChatId, targetChatId, transferId, sourceLivePersonaId
     });
@@ -13036,37 +12799,21 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       && hayakuAdoption?.durable === true
       && Number(hayakuAdoption?.records || 0) === hayakuRecords
     );
-    const wmRequired = bridge.includeWm === true;
-    let wmAdoption=null;
-    if(wmRequired) {
-      const wm=journal.wmHandoff,binding={sourceIdentity:wm.sourceIdentity,targetIdentity:wm.targetIdentity,transferId};
-      // Verify the durable same transfer before retrying publication. Neither a
-      // timeout nor an unknown status permits another transfer or another target.
-      const status=await verifyPendingWmHandoff(loaded);
-      if(!status.verified) {
-        try {wmAdoption=await requestWmIpc('adoptHandoff',{transferId,payloadDigest:wm.payloadDigest,targetIdentity:wm.targetIdentity,expectedTargetHead:null,pendingToken:null},{binding,timeoutMs:120000});}
-        catch(error){wmAdoption={ok:false,uncertain:true,reason:text(error?.code || 'wm_adopt_unavailable')};}
-      }
-    }
-    const wmVerification=await verifyPendingWmHandoff(loaded);
-    const wmVerified=!wmRequired || wmVerification.verified === true;
-    if(wmRequired && liaRequired)await verifyPendingWmLiaPersona(loaded);
     const libraVerified = !libraRequired
       || libraVerificationReceiptMatches(libraVerification, libraOptions, libraVerification?.transport);
     const ok = requiredHandoffsVerified({
       flashbackRequired, flashbackVerified,
       hayakuRequired, hayakuVerified,
       libraRequired, libraVerified,
-      liaRequired, liaVerified, wmRequired, wmVerified
+      liaRequired, liaVerified
     });
     const ownerStatus = {
-      wm: {...wmVerification,required:wmRequired,verified:wmVerified},
       flashback: { required: flashbackRequired, verified: flashbackVerified, durable: flashbackAdoption?.durable === true, sourcePreserved: flashbackAdoption?.sourcePreserved === true, reason: text(flashbackAdoption?.reason || ''), receipt: clone(flashbackAdoption, {}) },
       hayaku: { required: hayakuRequired, verified: hayakuVerified, durable: hayakuAdoption?.durable === true, reason: text(hayakuAdoption?.reason || ''), receipt: clone(hayakuAdoption, {}) },
       libra: { required: libraRequired, verified: libraVerified, durable: libraVerification?.durable === true, reason: text(libraVerification?.reason || libraAdoption?.reason || ''), receipt: clone(libraVerification, {}) },
       lia: { required: liaRequired, verified: liaVerified, durable: liaAdoption?.durable === true && liaAdoption?.durableReadbackVerified === true, reason: text(liaAdoption?.reason || ''), receipt: clone(liaAdoption, {}) }
     };
-    const postAdoptionStorageGate = await inspectMemorySuiteOwnerStorageGate({includeWm:wmRequired});
+    const postAdoptionStorageGate = await inspectMemorySuiteOwnerStorageGate();
     if (!postAdoptionStorageGate.ready || !handoffStoragePolicyMatchesGate(storageConfiguration.policy, postAdoptionStorageGate)) {
       await persistNextSessionHandoffJournal(targetChatId, transferId, {
         state: 'pending_storage_configuration',
@@ -13115,7 +12862,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       libraVerified, libraAdoption, libraVerification,
       libraRecords, libraWorldAdditional,
       libraSource: text(bridge.libraSource || 'none'),
-      wmRequired,wmVerified,wmAdoption,wmVerification,requiredOwnerCount:Object.values(ownerStatus).filter(row=>row.required).length,
+      requiredOwnerCount: Object.values(ownerStatus).filter(row => row.required).length,
       liaRequired, liaVerified, liaAdoption,
       sourceLivePersonaId: liaRequired ? sourceLivePersonaId : '',
       targetLivePersonaId: liaRequired ? text(liaAdoption?.livePersonaId || '') : '',
@@ -13206,7 +12953,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         transferId: pending.journal.transferId,
       });
     }
-    const preview = await inspectTransition({ includeServerData: true, includeWm:options.includeWm });
+    const preview = await inspectTransition({ includeServerData: true });
     const { context, identity, flashback, hayaku, libra, pendingColdStart, pendingIncrementalRecovery } = preview;
     const compatibilitySuite = await inspectCompatibilitySuite(preview, { timeoutMs: 3800, forceProbe: true });
     if (!compatibilitySuite.compatible) {
@@ -13217,7 +12964,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       throw error;
     }
     if (!identity.chatId) throw new Error('현재 채팅에 안정적인 id가 없습니다.');
-    const sourceStorageGate = await inspectMemorySuiteOwnerStorageGate({includeWm:preview.includeWm});
+    const sourceStorageGate = await inspectMemorySuiteOwnerStorageGate();
     if (!sourceStorageGate.ready) {
       const error = new Error(`설치되어 응답하는 Librarian System owner의 저장 Gate를 통과하지 못했습니다: ${sourceStorageGate.reason}`);
       error.code = 'RETRACE_HANDOFF_STORAGE_GATE_BLOCKED';
@@ -13265,18 +13012,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         reason: libra.reason, records: libra.recordCount, integrity: libra.integrity, errors: libra.errors || []
       })}`);
     }
-    if(preview.includeWm && (preview.wm?.sourceReady !== true || !WmHandoffReceipt.identity(preview.wm.sourceIdentity) || !WmHandoffReceipt.head(preview.wm.sourceHead)
-      || preview.wm.sourceIdentity.chatId !== identity.chatId || preview.wm.sourceIdentity.characterId !== identity.characterId || preview.wm.sourceIdentity.personaId !== identity.personaId))throw Error('wm_source_preparation_unavailable');
-    if(preview.includeWm && isLiaLivePersonaId(identity.personaId)) {
-      const capabilities=await requestLiaIpc('capabilities',{});
-      if(capabilities?.capabilities?.targetPersonaPreactivation !== 'lia.target-persona-preactivation.v1')throw Error('lia_target_persona_preactivation_unavailable');
-    }
     const targetChatId = uuid();
     const transferId = uuid();
     const createdAt = Date.now();
-    const wmHandoff = preview.includeWm ? {selected:true,transferId,mode:preview.wm.mode,
-      sourceIdentity:clone(preview.wm.sourceIdentity,{}),sourceHead:clone(preview.wm.sourceHead,{}),sourceRoute:clone(preview.wm.payload?.storageStatus?.route,{}),
-      targetIdentity:isLiaLivePersonaId(identity.personaId) ? null : {...clone(preview.wm.sourceIdentity,{}),chatId:targetChatId,scope:`char:${preview.wm.sourceIdentity.characterId}|chat:${targetChatId}|persona:${preview.wm.sourceIdentity.personaId}`,resetGeneration:0},targetPersonaPending:isLiaLivePersonaId(identity.personaId),payloadDigest:null,prepared:null} : {selected:false};
     const sourceLivePersonaId = text(identity.personaId || '').trim();
     const liaRequired = isLiaLivePersonaId(sourceLivePersonaId);
     const libraPrepareOptions = withLegacyLibraWorldAdditionalExpectation({
@@ -13329,7 +13067,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         schema: HANDOFF_SCHEMA,
         timelineContract: 'session_epoch_then_completed_pair_v1',
         sourceHostLineage: MemorySuiteHostLineage.normalize(context.hostLineage || MemorySuiteHostLineage.inspect(context.character, context.chat)),
-        storageContract: preview.includeWm ? 'per_owner_zero_copy_and_wm_materialized_v1' : 'immutable_source_shared_archive_reference_v2',
+        storageContract: 'immutable_source_shared_archive_reference_v2',
         compatibilitySchema: RETRACE_PEER_COMPATIBILITY_SCHEMA,
         compatibilityProtocolMajor: RETRACE_PEER_PROTOCOL_MAJOR,
         handoffContract: FLASHBACK_REQUIRED_HANDOFF_CONTRACT,
@@ -13346,9 +13084,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         sourceHayakuScopeKey: text(hayaku.scope?.scopeKey || pendingIncrementalRecovery?.scope?.scopeKey || pendingColdStart?.scope?.scopeKey || ''),
         sourceLibraScopeKey: text(libra.scope?.scopeKey || ''),
         targetChatId,
-        includeWm: preview.includeWm === true,
-        wmHandoffSelection: clone(wmHandoff,{}),
-        ...(preview.includeWm && liaRequired ? {sourceChatFingerprint:handoffHostValueFingerprint(context.chat)} : {}),
         includeFlashback: true,
         includeHayaku: preview.includeHayaku === true,
         includeLibra: preview.includeLibra === true,
@@ -13387,9 +13122,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       lastError: '',
       storageDestination: targetStorageMode,
       storagePolicy: handoffStoragePolicyFromGate(sourceStorageGate, createdAt),
-      wmHandoff: clone(wmHandoff,{}),
       ownerStatus: {
-        wm: {required:preview.includeWm === true,verified:false},
         flashback: { required: Math.max(0, Number(flashback.loadedRecords ?? flashback.records ?? 0) || 0) > 0, verified: false },
         hayaku: { required: preview.includeHayaku === true, verified: false },
         libra: { required: preview.includeLibra === true, verified: false },
@@ -13430,14 +13163,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         throw new Error('LIBRA canonical memory changed during handoff preparation. Run the transition again.');
       }
     }
-    const writer = await commitFreshNextSessionChat({ context, identity, newChat, targetChatId,preserveSourceSelection:preview.includeWm === true });
-    if(preview.includeWm) {
-      // Target journal is durably saved while the source stays selected. WM
-      // obtains B4 pending ownership before the target can activate or bootstrap.
-      const loaded=await inspectPendingNextSessionHandoff({targetChatId});
-      if(!loaded.available)throw Error('wm_pending_journal_readback_failed');
-      return await resumeNextSessionHandoff({targetChatId,transferId,writer});
-    }
+    const writer = await commitFreshNextSessionChat({ context, identity, newChat, targetChatId });
     const activation = await waitForActiveNextSessionChat(targetChatId, 5000);
     if (!activation.active) {
       throw new Error(`새 RE:TRACE 세션은 저장되었지만 대상 채팅 활성화가 아직 완료되지 않았습니다. 새 세션을 선택한 뒤 이어서 실행하세요. target=${targetChatId} active=${activation.chatId || '(unknown)'}`);
@@ -15360,23 +15086,17 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return await scopeManagerRunDeletion([scope]);
   };
 
-  const MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'wm']);
+  const MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia']);
   const MEMORY_SUITE_OWNER_GATE_SCHEMA = 'retrace.memory_suite_owner_storage_gate.v1';
   const memorySuiteModeLabel = mode => ({
     plugin_only: '플러그인 단독', mirror: '미러 · 전환 미완료', server_only: '서버 단독', per_owner: '플러그인별 저장 위치'
   }[text(mode || '').trim()] || '확인 불가');
   const requestMemorySuiteOwnerStorageStatus = async (owner, options = {}) => {
-    if(owner === 'wm') {
-      try {const api=liveApi(['getDatabase']),db=await api?.getDatabase?.(['plugins']);
-        if(Array.isArray(db?.plugins) && !db.plugins.some(plugin=>plugin?.name === 'libra_world_manager' && plugin.enabled !== false))return {owner,installed:false,connected:false,supported:false,mode:'',state:'absent',reason:'wm_not_installed'};
-      } catch (_) {}
-    }
     const requesters = {
       flashback: () => requestFlashbackIpc('memory_suite_storage_status', {}, { timeoutMs: 2400 }),
       hayaku: () => requestHayakuIpc('memory_suite_storage_status', {}, { timeoutMs: 2400, ignoreCooldown: true, suppressCooldown: true }),
       libra: () => requestLibraIpc('memory_suite_storage_status', {}, { timeoutMs: 2400 }),
-      lia: () => requestLiaIpc('memory_suite_storage_status', {}, { timeoutMs: 2400 }),
-      wm: () => requestWmIpc('capabilities', {includeSource:options.includeSource === true}, {timeoutMs:2400})
+      lia: () => requestLiaIpc('memory_suite_storage_status', {}, { timeoutMs: 2400 })
     };
     try {
       let payload;
@@ -15385,13 +15105,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         if (!/IPC_(TIMEOUT|UNAVAILABLE)$/.test(text(error?.code || ''))) throw error;
         await delay(500);
         payload = await requesters[owner]();
-      }
-      if(owner === 'wm') {
-        const status=payload?.storageStatus || {},compatibility=evaluateWmPeerCompatibility(payload);
-        return {owner,installed:true,connected:true,supported:compatibility.ok && status.ready === true,
-          mode:text(status.mode || ''),state:status.ready ? 'ready' : 'unsupported',reason:status.reason || compatibility.reason,
-          sourceReady:status.sourceReady === true,sourceIdentity:clone(status.sourceIdentity,null),sourceHead:clone(status.sourceHead,null),
-          transition:status.route?.state !== 'active' ? status.route?.state : null,url:'',scope:null,payload:clone(payload,{})};
       }
       const status = payload?.status && typeof payload.status === 'object' ? payload.status : {};
       const mode = text(payload?.mode || status.mode || '').trim();
@@ -15418,7 +15131,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     } catch (error) {
       const reason = compact(error?.message || error, 300);
       const code = text(error?.code || '').trim();
-      const remoteReachable = error?.remoteReachable === true || /(?:FLASHBACK|HAYAKU|LIBRA|LIA|WM)_IPC_REJECTED/.test(code);
+      const remoteReachable = error?.remoteReachable === true || /(?:FLASHBACK|HAYAKU|LIBRA|LIA)_IPC_REJECTED/.test(code);
       const unsupported = remoteReachable || /unsupported|지원하지|unknown.*action|not.*support/i.test(reason);
       const previouslySeen = Runtime.memorySuiteOwnerStorage?.rows?.some(row => row.owner === owner && row.installed === true)
         || Runtime.compatibilitySuite?.peers?.some(peer => peer.key === owner && peer.installed === true);
@@ -15427,7 +15140,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         const api = liveApi(['getDatabase']);
         const db = await api?.getDatabase?.(['plugins']);
         if (Array.isArray(db?.plugins)) {
-          const ids = { flashback: FLASHBACK_PLUGIN_ID, hayaku: HAYAKU_PLUGIN_ID, libra: LIBRA_PLUGIN_ID, lia: LIA_PLUGIN_ID,wm:'libra_world_manager' };
+          const ids = { flashback: FLASHBACK_PLUGIN_ID, hayaku: HAYAKU_PLUGIN_ID, libra: LIBRA_PLUGIN_ID, lia: LIA_PLUGIN_ID };
           present = db.plugins.some(plugin => plugin?.name === ids[owner] && plugin.enabled !== false);
         }
       } catch (_) {}
@@ -15445,11 +15158,10 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       const source = (Array.isArray(rowsValue) ? rowsValue : []).find(item => item?.owner === owner) || { owner };
       return { ...source, owner };
     });
-    const consideredRows = rows.filter(row => row.owner !== 'wm' || row.selected === true);
-    const installedRows = consideredRows.filter(row => row.selected === true || row.installed === true || row.connected === true || row.supported === true || row.discoveryPending === true);
+    const installedRows = rows.filter(row => row.installed === true || row.connected === true || row.supported === true || row.discoveryPending === true);
     const participants = installedRows.filter(row => row.connected === true && row.supported === true && HANDOFF_STORAGE_MODES.includes(text(row.mode || '').trim()));
     const invalidOwners = installedRows.filter(row => !participants.includes(row));
-    const absentOwners = consideredRows.filter(row => !installedRows.includes(row)).map(row => row.owner);
+    const absentOwners = rows.filter(row => !installedRows.includes(row)).map(row => row.owner);
     const modes = [...new Set(participants.map(row => text(row.mode || '').trim()).filter(Boolean))];
     const modeMatched = participants.length > 0 && modes.length === 1;
     const commonMode = modeMatched ? modes[0] : participants.length ? 'per_owner' : '';
@@ -15498,16 +15210,13 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     };
   };
   const inspectMemorySuiteOwnerStorageGate = async (options = {}) => {
-    const includeWm=options.includeWm === undefined ? Runtime.wmHandoffSelected === true : options.includeWm === true;
-    const rawRows = Array.isArray(options.rows) ? options.rows : await Promise.all(MEMORY_SUITE_OWNER_STATUS_ORDER.map(owner=>requestMemorySuiteOwnerStorageStatus(owner)));
-    const rows=rawRows.map(row=>row.owner==='wm'?{...row,selected:includeWm}:row);
+    const rows = Array.isArray(options.rows) ? options.rows : await Promise.all(MEMORY_SUITE_OWNER_STATUS_ORDER.map(owner=>requestMemorySuiteOwnerStorageStatus(owner)));
     let gate = memorySuiteOwnerStorageGateFromRows(rows, null);
     let serverIntegrity = null;
     if (gate.participantCount > 0 && gate.invalidOwners.length === 0 && gate.serverRequired) {
       serverIntegrity = {};
       await Promise.all(gate.serverOwners.map(async owner => {
         try {
-          if(owner === 'wm') {const row=rows.find(r=>r.owner==='wm');serverIntegrity.wm={verified:row?.supported === true && row?.payload?.storageStatus?.ready === true,result:row?.supported ? 'qualified_wm_owner' : 'unavailable',separateWmContract:true};return;}
           const integrity = await MemorySuiteStorageBridge.managerServerIntegrity(owner);
           const verified = integrity?.ok === true && text(integrity?.result || '') === 'ok';
           serverIntegrity[owner] = { verified, result: text(integrity?.result || ''), liveRecords: Number(integrity?.liveRecords || 0), tombstones: Number(integrity?.tombstones || 0) };
@@ -15624,7 +15333,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const gateSummary = !gate
       ? '<div class="owner-storage-gate checking"><strong>플러그인별 저장 모드 확인 중</strong><span>활성 owner 1~4종을 자동으로 판별합니다.</span></div>'
       : `<div class="owner-storage-gate ${gate.ready ? 'ok' : 'bad'}"><div><strong>${escapeHtml(gate.ready ? `${memorySuiteModeLabel(gate.commonMode)} · ${gate.participantCount}/${gate.participantCount} 확인` : '다음 세션 승계 차단')}</strong><span>참여 owner ${formatNumber(gate.participantCount)}종 · ${escapeHtml((gate.participantOwners || []).map(owner => MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner).join(' · ') || '없음')}</span><small>${escapeHtml(gate.ready ? '미설치·비활성으로 확인된 owner만 제외됩니다.' : `사유: ${gate.reason}`)}</small></div><em>${gate.ready ? 'READY' : 'BLOCKED'}</em></div>`;
-    host.innerHTML = `<div class="panel-heading"><div><h2>Librarian System 저장 상태</h2><p>RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다. 기존 owner와 선택한 WM의 현재 저장 모드와 내구성 계약을 읽기 전용으로 검사합니다. WM의 전역 저장 모드는 여기서 바꾸지 않습니다.</p></div><div class="actions"><button id="refreshOwnerStorageStatus" class="btn primary" ${loading ? 'disabled' : ''}>${loading ? '확인 중…' : '새로고침'}</button></div></div>
+    host.innerHTML = `<div class="panel-heading"><div><h2>Librarian System 저장 상태</h2><p>RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다. 각 owner의 현재 저장 모드와 내구성 계약을 읽기 전용으로 검사합니다.</p></div><div class="actions"><button id="refreshOwnerStorageStatus" class="btn primary" ${loading ? 'disabled' : ''}>${loading ? '확인 중…' : '새로고침'}</button></div></div>
       ${error ? `<div class="settings-callout viewer-warning">${escapeHtml(error)}</div>` : ''}
       ${gateSummary}
       <div class="owner-storage-grid">${rowHtml}</div>
@@ -15889,7 +15598,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const summary=root?.querySelector?.('#serverControlSummary');if(!summary)return;
     const status=state.status, list=scopeManagerArray(state.backups), catalog=Runtime.serverScopeCatalog;
     const e=escapeHtml, time=scopeManagerFormatTime;
-    const wmCoverageLabel=value=>value==='included'?'WM 서버 component 포함':value==='unsupported'?'WM 지원되지 않음':'WM 없음';
     const pill=(label,kind='')=>'<span class="control-pill '+kind+'">'+e(label)+'</span>';
     const currentCatalog=catalog&&!Runtime.serverScopeManagerLoading&&!Runtime.serverScopeManagerError;
     const scopes=currentCatalog?scopeManagerArray(catalog.scopes):[];
@@ -15905,34 +15613,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     if(backups){backups.innerHTML='<option value="">백업 선택</option>'+list.map(b=>'<option value="'+e(b.id)+'">'+e(b.createdAt||b.id)+' · '+e(b.label||b.kind||'백업')+'</option>').join('');if(selected&&list.some(b=>b.id===selected))backups.value=selected;}
     const cards=root.querySelector('#serverControlBackupCards');if(cards)cards.innerHTML=list.map(b=>'<button class="btn control-backup" data-control-backup="'+e(b.id)+'" aria-pressed="'+(b.id===backups?.value)+'" '+(Runtime.busy?'disabled':'')+'><span><strong>'+e(time(b.createdAt))+'</strong><small>'+e(b.label||b.kind||'백업')+' · '+e(scopeManagerFormatBytes(Object.values(b.stores||{}).reduce((n,x)=>n+Number(x.bytes||0),0)))+'</small></span>'+pill(b.lastCheckAt?(b.verifiedAtLastCheck?'검사 완료':'검사 실패'):'미검사',b.lastCheckAt?(b.verifiedAtLastCheck?'ok':'warn'):'')+'</button>').join('')||'<div class="empty"><strong>'+('backups' in state?'저장된 백업이 없습니다':'백업 목록 미확인')+'</strong><span>현재 자료의 백업을 만들거나 상태를 다시 조회하세요.</span></div>';
     const backup=list.find(b=>b.id===backups?.value),info=root.querySelector('#serverControlBackupInfo');
-    if(info)info.textContent=backup?(wmCoverageLabel(backup.coverage?.wm)+' · 기존 owner '+(backup.coverage?.legacyOwners||Object.keys(backup.stores||{})).join(' · ')+' · '+(backup.lastCheckAt?'마지막 검사 '+time(backup.lastCheckAt)+' · '+(backup.verifiedAtLastCheck?'정상':'실패 · 다른 백업을 선택하세요.'):'검사 기록 없음')):'검사하거나 복원할 백업을 선택하세요.';
-    const wmChoice=root.querySelector('[data-control-namespace][value="wm"]');if(wmChoice){wmChoice.disabled=backup?.coverage?.wm!=='included'||status?.wmBackup?.restoreEnabled!==true;if(wmChoice.disabled)wmChoice.checked=false;}
-    const wmState=root.querySelector('#serverControlWmRestoreStatus');if(wmState)wmState.textContent=status?.wm?.dataset?.restoreAdmission?'WM 복원 자료는 새 실행 세대로 열렸으며 복구 확인이 필요합니다. 이전 writer·pin·인계·승인 권한을 재사용하지 않습니다.':status?.wmBackup?.restoreEnabled===true?'WM SQLite 복원 provider 사용 가능 · 복원 후 복구 확인 전 새 쓰기 차단':'WM 실제 host 복원 활성화는 닫혀 있습니다. 백업 포함 여부와 복원 가능 여부는 별도입니다.';
-    const importState=status?.wmImport, importOperations=scopeManagerArray(importState?.operations);
-    const importSelect=root.querySelector('#serverControlWmImportOperations');
-    let importView=importOperations.find(v=>v.plan?.operationId===state.wmImportOperationId);
-    if(!importView)importView=importOperations.find(v=>v.plan);
-    if(importView)state.wmImportOperationId=importView.plan.operationId;
-    if(importSelect){importSelect.innerHTML='<option value="">저장된 가져오기 작업 선택</option>'+importOperations.filter(v=>v.plan).map(v=>'<option value="'+e(v.plan.operationId)+'">'+e(v.plan.backupId)+' · '+e(v.phase)+' · '+e(v.plan.planId)+'</option>').join('');importSelect.value=importView?.plan.operationId||'';importSelect.disabled=Runtime.busy===true;}
-    const importStatus=root.querySelector('#serverControlWmImportStatus');
-    if(importStatus)importStatus.textContent=importView?[
-      '작업 '+importView.plan.operationId+' · '+importView.phase,
-      '원본 백업 '+importView.plan.backupId+' · 저장소 '+importView.plan.sourceStoreIdentity.storeId,
-      '새 물리 저장소 '+importView.plan.targetPath,
-      '새 identity '+JSON.stringify(importView.plan.targetIdentity),
-      'incarnation '+importView.plan.incarnation,
-      '채택 '+importView.adoption.state+(importView.adoption.reason?' · '+importView.adoption.reason:''),
-      'recovery_required · 실제 쓰기 활성화 잠김 · native owner 미지원',
-      importView.recovery?.blockedReason?'중단 확인: '+importView.recovery.blockedReason:'',
-      importView.preservedStages?.length?'보존한 중단 stage '+importView.preservedStages.length+'개':'',
-      importView.preservedLocks?.length?'보존한 이전 lock '+importView.preservedLocks.length+'개':''
-    ].filter(Boolean).join('\n'):importState?.enabled===true?'선택한 백업의 WM component를 기존 파일과 분리된 새 SQLite로 가져옵니다. 먼저 준비를 눌러 새 identity를 확인하세요.':'기존 서버의 신뢰된 WM 복원 자격이 없습니다. 가져오기·채택은 잠겨 있으며 이 화면에서 권한을 부여하지 않습니다.';
-    const importDisable=(action,disabled)=>{const node=root.querySelector('[data-server-control="wm-import-'+action+'"]');if(node)node.disabled=Runtime.busy===true||state.wmImportIntentBusy===true||disabled;};
-    importDisable('prepare',importState?.enabled!==true||backup?.coverage?.wm!=='included');
-    importDisable('inspect',!importView);
-    importDisable('apply',!importView||!['prepared','staged','publishing'].includes(importView.phase));
-    importDisable('recover',!importView||importView.phase==='committed');
-    importDisable('adopt',importView?.adoption?.allowed!==true);
+    if(info)info.textContent=backup?('포함 owner '+Object.keys(backup.stores||{}).join(' · ')+' · '+(backup.lastCheckAt?'마지막 검사 '+time(backup.lastCheckAt)+' · '+(backup.verifiedAtLastCheck?'정상':'실패 · 다른 백업을 선택하세요.'):'검사 기록 없음')):'검사하거나 복원할 백업을 선택하세요.';
     const actionNames={'backup-create':'서버 백업','backup-check':'백업 검사','restore-execute':'서버 복원','scope-delete':'서버 사본 삭제',restore:'복원',reset:'초기화'};
     const statusNames={complete:'완료',failed:'실패',running:'진행 중',interrupted:'중단 · 결과 확인 필요'};
     const historyRows=scopeManagerArray(state.history),filter=root.querySelector('#serverControlHistoryFilter')?.value;
@@ -16046,7 +15727,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
   const handleServerControl = async event => {
     const button=event.target?.closest?.('[data-server-control]');if(!button||button.disabled||Runtime.busy)return;
     const action=button.getAttribute('data-server-control'),root=Runtime.root,state=Runtime.serverControl||(Runtime.serverControl={});
-    if(action.startsWith('wm-import-'))return await handleWmImportControl(action.slice('wm-import-'.length));
     const output=root.querySelector('#serverControlResult');
     const say=value=>{if(Runtime.root!==root||Runtime.visible===false)return;if(output){output.textContent=value;if(output.dataset)output.dataset.hasResult='true';}const card=root.querySelector('.control-result');if(card)card.hidden=Runtime.serverControlPage==='data';};
     const backupId=root.querySelector('#serverControlBackups')?.value;
@@ -16070,7 +15750,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         say('서버 응답·프로토콜·저장소 연결 확인 완료. 관리 권한을 확인하고 있습니다…');
         state.diagnosis.management='조회 중';await refreshServerControl();state.diagnosis.management='확인 완료';say('연결 및 관리 API 확인 완료. 조회 작업으로 서버 데이터를 쓰거나 저장 모드를 변경하지 않았습니다.');
       }else if(action==='backup-create'){
-        const result=await MemorySuiteStorageBridge.managerControl(action,{operationId});await refreshServerControl();const select=root.querySelector('#serverControlBackups');if(select)select.value=result.backupId;state.plan=null;say('백업 생성 완료: '+result.backupId+'\nWM '+(result.coverage?.wm==='included'?'포함':result.coverage?.wm==='unsupported'?'지원되지 않음':'없음')); 
+        const result=await MemorySuiteStorageBridge.managerControl(action,{operationId});await refreshServerControl();const select=root.querySelector('#serverControlBackups');if(select)select.value=result.backupId;state.plan=null;say('백업 생성 완료: '+result.backupId);
       }else if(action==='backup-check'){
         if(!backupId)throw new Error('검사할 백업을 선택하세요.');
         const result=await MemorySuiteStorageBridge.managerControl(action,{operationId,backupId});
@@ -16083,53 +15763,10 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         state.plan=null;state.reconnect=plan.namespaces.slice();
         const result=await MemorySuiteStorageBridge.managerControl(action,{operationId,planId:plan.planId,confirmation:'RESTORE '+plan.planId});
         Runtime.serverScopeScanCache={};Runtime.serverScopeCatalog=null;
-        await refreshServerControl();say('복원 완료: '+result.namespaces.join(', ')+(result.wmAdmission?'\nWM은 복구 확인이 필요하며 이전 실행 권한을 재사용하지 않습니다.':'')+'\n각 플러그인의 서버 연결 설정에서 ‘서버 자료 사용 · 로컬 업로드 안 함’을 선택하고 RisuAI를 새로고침하세요. 복원한 서버에 기존 로컬 자료를 자동 업로드하지 마세요.');
+        await refreshServerControl();say('복원 완료: '+result.namespaces.join(', ')+'\n각 플러그인의 서버 연결 설정에서 ‘서버 자료 사용 · 로컬 업로드 안 함’을 선택하고 RisuAI를 새로고침하세요. 복원한 서버에 기존 로컬 자료를 자동 업로드하지 마세요.');
       }
     }catch(error){if(action==='diagnose'&&state.diagnosis?.management==='조회 중')state.diagnosis.management='실패 · 권한/서버 기록 확인';say('작업 확인 필요: '+String(error?.message||error)+'\n응답이 끊겼다면 상태·이력을 먼저 조회하세요. 복원 실행을 시작한 경우 실패하더라도 재연결 확인이 필요할 수 있습니다.');}
     finally{setBusy(false);renderServerControl();}
-  };
-  const handleWmImportControl = async command => {
-    const root=Runtime.root,state=Runtime.serverControl||(Runtime.serverControl={});
-    if(Runtime.busy||state.wmImportIntentBusy||!root)return;
-    const say=value=>{if(root!==Runtime.root||Runtime.visible===false)return;const out=root.querySelector('#serverControlResult');if(out){out.textContent=value;if(out.dataset)out.dataset.hasResult='true';}const card=root.querySelector('.control-result');if(card)card.hidden=false;};
-    state.wmImportIntentBusy=true;renderServerControl();
-    try {
-    const operations=scopeManagerArray(state.status?.wmImport?.operations);
-    const view=operations.find(v=>v.plan?.operationId===state.wmImportOperationId)||operations.find(v=>v.plan);
-    const before=await serverControlReadset();
-    let body;
-    if(command==='prepare'){
-      const backupId=root.querySelector('#serverControlBackups')?.value;
-      if(!backupId){say('가져올 WM component가 포함된 백업을 선택하세요.');return;}
-      const prior=operations.find(v=>v.plan?.backupId===backupId);
-      if(prior){state.wmImportOperationId=prior.plan.operationId;renderServerControl();say('같은 백업의 저장된 작업을 선택했습니다. 상태 확인 후 같은 ID로 계속하세요.');return;}
-      const instance=state.status?.dataInstanceId;
-      if(!state.wmImportIntent||state.wmImportIntent.backupId!==backupId||state.wmImportIntent.instance!==instance)
-        state.wmImportIntent={backupId,instance,operationId:'wm-import-'+Date.now()+'-'+Math.random().toString(36).slice(2)};
-      body={command,operationId:state.wmImportIntent.operationId,backupId};
-    }else{
-      if(!view){say('저장된 가져오기 작업을 선택하거나 상태를 새로고침하세요.');return;}
-      const p=view.plan;body={command,planId:p.planId,operationId:p.operationId,requestFingerprint:p.requestFingerprint};
-      if(command!=='inspect'){
-        if(command==='adopt'&&view.adoption.allowed!==true){say('채택 보류: '+view.adoption.reason);return;}
-        const notice=command==='apply'?'새 독립 SQLite를 만듭니다. 원본과 기존 저장소를 보존하고 새 자료는 recovery_required로 잠깁니다.':command==='recover'?'같은 ID의 중단 상태를 확인합니다. 확인된 사망 프로세스 lock은 보존하고 부분 stage는 남긴 채 새 시도로 이어갑니다. 소유자를 확인할 수 없는 lock은 유지합니다.':'이 새 identity를 서버 재시작 후 열 대상으로 저장합니다. 현재 활성 WM authority가 있으면 거부하며 새 쓰기는 계속 잠깁니다. 기존 파일은 보존합니다.';
-        if(!(await retraceConfirm('백업: '+p.backupId+'\n원본 store: '+p.sourceStoreIdentity.storeId+'\n새 store: '+p.targetIdentity.storeId+'\nplan: '+p.planId+'\n\n'+notice,{title:'WM 백업 가져오기 · '+command,confirmLabel:command==='adopt'?'복구 대상으로 채택':command==='recover'?'같은 ID 복구 확인':'새 저장소 가져오기'})))return;
-        body.confirmation=command==='apply'?p.confirmation:command==='recover'?view.recovery.confirmation:view.adoption.confirmation;
-        if(command==='recover')body.observationFingerprint=view.recovery.observationFingerprint;
-      }
-    }
-    if(root!==Runtime.root||Runtime.visible===false||before!==await serverControlReadset()){say('서버 또는 현재 문맥이 바뀌었습니다. 상태를 다시 확인하세요.');return;}
-    setBusy(true);say('같은 작업 identity로 확인 중…');
-    try{
-      const result=await MemorySuiteStorageBridge.managerControl('wm-import',body);
-      if(root!==Runtime.root||Runtime.visible===false)return;
-      state.wmImportOperationId=result.plan.operationId;
-      const imported=state.status.wmImport;imported.operations=[...scopeManagerArray(imported.operations).filter(v=>v.plan?.operationId!==result.plan.operationId),result];
-      say('WM 가져오기 '+result.phase+' · '+result.plan.planId+'\n채택 '+result.adoption.state+'\nrecovery_required · 쓰기 활성화는 잠겨 있습니다.'+(result.recovery.blockedReason?'\n복구 보류: '+result.recovery.blockedReason:''));
-    }catch(error){say('작업 확인 필요: '+String(error?.message||error)+'\n새 ID로 시작하지 말고 새로고침 또는 같은 작업의 상태 확인을 누르세요. 원본·중단 증거를 보존합니다.');}
-    finally{setBusy(false);}
-    }catch(error){say('서버 문맥 확인 필요: '+String(error?.message||error));}
-    finally{state.wmImportIntentBusy=false;renderServerControl();}
   };
   // Full server-memory ZIP workflow. The UI holds transfer receipts only;
   // server-side SQLite validation/restore remains the data authority.
@@ -16300,13 +15937,12 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       <main class="main"><header class="page-head"><div class="page-head-copy"><span id="pageEyebrow">STATUS</span><h1 id="pageTitle">메모리 시스템 개요</h1><p id="pageDescription">현재 채팅의 호환성, 저장 Gate, Owner 연결 상태를 실제 응답으로 요약합니다.</p></div><div class="page-status-strip"><span class="status-dot"></span><span id="pageStatusText">검증 대기</span></div></header><div class="panel-stack">
         <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview" data-panel="overview"><div id="overviewBody"><div class="empty"><strong>메모리 시스템 확인 대기</strong><span>실제 Owner 응답과 호환 계약을 확인합니다.</span></div></div></section>
         <section id="panel-session" class="panel" role="tabpanel" aria-labelledby="tab-session" data-panel="session">
-          <div class="panel-heading"><div><h2>다음 세션</h2><p>RE:TRACE가 기존 기억 owner와 선택한 WM의 호환 계약, 저장 모드, 원본 보존을 확인한 뒤 다음 세션을 이어갑니다.</p></div></div>
+          <div class="panel-heading"><div><h2>다음 세션</h2><p>RE:TRACE가 기억 owner의 호환 계약, 저장 모드, 원본 보존을 확인한 뒤 다음 세션을 이어갑니다.</p></div></div>
           <div id="compatibilityPanel" class="compatibility-panel checking"><div class="compatibility-head"><div><strong>플러그인 호환성</strong><span>공통 승계 계약을 확인하는 중입니다.</span></div><em>CHECKING</em></div></div>
           <div class="card"><div class="heading"><div><strong>대화 이어가기</strong><span>참여 owner별 저장 모드를 고정하고 내구성을 검증한 뒤 다음 세션을 만듭니다.</span></div><em class="badge">원본 보존</em></div>
-            <div class="flow session-handoff-flow"><div><b>1 · 참여 owner 탐지</b><small>기존 owner와 명시적으로 선택한 WM을 포함</small></div><div><b>2 · 저장 모드 Gate</b><small>owner별 plugin-only / server-only 모드와 전환 완료 확인</small></div><div><b>3 · 내구성 검증</b><small>mirror/server-only이면 참여 namespace의 서버 integrity까지 확인</small></div><div><b>4 · owner 승계</b><small>기존 owner는 참조 승계 · WM은 독립 copy와 전 도메인 readback</small></div><div><b>5 · 새 채팅</b><small>원본은 그대로 두고 새 라이브 계보로 시작</small></div></div>
+            <div class="flow session-handoff-flow"><div><b>1 · 참여 owner 탐지</b><small>설치되어 응답하는 기억 owner를 확인</small></div><div><b>2 · 저장 모드 Gate</b><small>owner별 plugin-only / server-only 모드와 전환 완료 확인</small></div><div><b>3 · 내구성 검증</b><small>mirror/server-only이면 참여 namespace의 서버 integrity까지 확인</small></div><div><b>4 · owner 승계</b><small>원본 보존 · 참조 승계와 내구성 readback</small></div><div><b>5 · 새 채팅</b><small>원본은 그대로 두고 새 라이브 계보로 시작</small></div></div>
             <div id="handoffStorageGate" class="handoff-storage-gate checking"><strong>저장 모드 확인 중</strong><span>활성 owner를 자동으로 판별합니다.</span></div>
             <div id="transitionStatus" class="status">전환 대상을 확인하는 중입니다.</div><p class="note">미설치·비활성으로 확인된 플러그인은 승계를 막지 않습니다. 설치 확인 불가 또는 활성 플러그인의 미응답은 완료를 차단합니다. 각 owner의 저장 모드를 시작 시 고정하며, 승계 시작 후 participant 또는 mode가 바뀌면 fail-closed로 완료 처리를 중단합니다. 원본 세션의 정본/원장/벡터/바인딩은 삭제·비우기·compact·이동하지 않습니다.</p>
-            <label class="control-checks"><input id="wmHandoffSelection" type="checkbox" ${Runtime.wmHandoffSelected ? 'checked' : ''}>WM 기억 포함 · 독립 materialized copy</label><p id="wmHandoffPreview" class="note">WM 저장 모드와 호환 계약 확인 중</p>
             <div class="actions"><button id="refreshTransition" class="btn">다시 확인</button><button id="createSession" class="btn primary">다음 세션 만들기</button></div>
           </div>
         </section>
@@ -16320,10 +15956,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
               <div class="card control-hero"><div class="control-heading"><h3>내 라이브러리 서버</h3><button class="btn" data-server-control="refresh">새로고침</button></div><div id="serverControlSummary"></div></div>
               <div class="control-grid"><div class="card"><h3>플러그인별 저장 상태</h3><p>마지막 접촉은 현재 접속 여부를 뜻하지 않습니다.</p><div id="serverControlPlugins"></div></div><div><div class="card"><h3>필요한 작업으로 바로 이동</h3><div class="control-item"><div class="control-grow"><strong>현재 자료를 안전하게 보관</strong><p>서버에 새 백업을 만듭니다.</p></div><button class="btn primary" data-server-control="backup-create">백업 만들기</button></div><div class="control-item"><strong class="control-grow">이전 상태로 되돌리기</strong><button class="btn" data-server-page="backups">백업 보기</button></div><div class="control-item"><strong class="control-grow">불필요한 서버 사본 정리</strong><button class="btn" data-server-page="data">데이터 관리</button></div><div class="control-item"><strong class="control-grow">연결 문제 확인</strong><button class="btn" data-server-page="connection">진단하기</button></div></div><div class="card"><div class="control-heading"><h3>최근 작업</h3><button class="btn" data-server-page="history">전체 보기</button></div><ul id="serverControlRecent" class="control-history"></ul></div></div></div>
             </section>
-            <section data-server-view="backups" hidden><div class="card" id="portableBackupCard"><h3>서버 데이터 안전 이관 · 백업·복원</h3><p><strong>권장:</strong> 구 DATA 폴더를 새 서버에 붙이지 않고 논리 데이터를 이관 ZIP으로 내보낸 뒤 새 서버가 현재 스키마의 빈 DB를 다시 만듭니다. 기존 DB 스냅샷은 물리 복구 호환용으로만 남깁니다.</p><label>내보내기 형식<select id="portableExportMode"><option value="migration" selected>안전 이관 ZIP (논리 데이터 / 새 DB)</option><option value="snapshot">기존 DB 스냅샷 ZIP (WM component 포함 지원)</option></select></label><div class="actions"><button class="btn primary" data-portable-action="export">전체 데이터 이관 ZIP 저장</button><label class="btn">백업 ZIP 선택<input id="portableBackupFile" type="file" accept=".zip,application/zip" style="display:block;max-width:100%;margin-top:6px"></label><button class="btn" data-portable-action="upload" disabled>선택 ZIP 업로드 · 검사</button><button class="btn danger" data-portable-action="restore" disabled>확인 후 전체 복원</button><button class="btn" id="portableCancel" data-portable-action="cancel" disabled>전송 취소</button></div><p>WM 서버 저장소가 있으면 WM 전용 component가 포함된 스냅샷 ZIP을 선택하세요. WM plugin_only 자료와 실제 host 전용 저장소는 이 서버 백업에 포함되지 않습니다. 안전 이관 ZIP은 기존 다섯 owner 계약을 유지하며 WM을 포함한 전체 이관으로 승인하지 않습니다. 안전 이관은 서버에 실제 저장된 다섯 owner의 레코드·벡터·삭제 표식·scope catalog를 새 DB에 재작성합니다. RisuAI 원본 채팅·plugin_only 자료·API 키·과거 실행 lease는 이관 권한으로 복원하지 않습니다. 파일 전송은 256 KiB 단위, ZIP32 최대 2 GiB입니다.</p><pre id="portableTransferStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><pre id="portableRestorePreview" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div>
-              <div class="card" id="serverControlWmImport"><h3>WM 백업 · 새 물리 저장소 가져오기</h3><p>아래 저장된 백업에서 WM component를 선택한 뒤 준비 → identity 확인 → 가져오기 순서로 진행합니다. ZIP은 위 업로드 · 검사로 백업 목록에 등록할 수 있습니다. 기존 같은 저장소 복원과 별도이며 원본·기존 파일을 덮어쓰지 않습니다.</p><label>보존된 가져오기 작업<select id="serverControlWmImportOperations"><option value="">상태 조회 후 선택</option></select></label><div class="actions"><button class="btn" data-server-control="wm-import-prepare" disabled>선택 백업 가져오기 준비</button><button class="btn" data-server-control="wm-import-inspect" disabled>같은 작업 상태 확인</button><button class="btn primary" data-server-control="wm-import-apply" disabled>확인 후 새 저장소 가져오기</button><button class="btn" data-server-control="wm-import-recover" disabled>같은 ID 중단 복구</button><button class="btn" data-server-control="wm-import-adopt" disabled>확인 후 복구 대상으로 채택</button></div><pre id="serverControlWmImportStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><p>채택은 서버 재시작의 물리 identity 선택입니다. recovery_required와 모든 쓰기 잠금을 유지하며 실제 owner admission·native host 연결을 대신하지 않습니다. 알 수 없는 lock·다른 파일·활성 authority는 자동 해제하지 않습니다.</p></div>
+            <section data-server-view="backups" hidden><div class="card" id="portableBackupCard"><h3>서버 데이터 안전 이관 · 백업·복원</h3><p><strong>권장:</strong> 구 DATA 폴더를 새 서버에 붙이지 않고 논리 데이터를 이관 ZIP으로 내보낸 뒤 새 서버가 현재 스키마의 빈 DB를 다시 만듭니다. 기존 DB 스냅샷은 물리 복구 호환용으로만 남깁니다.</p><label>내보내기 형식<select id="portableExportMode"><option value="migration" selected>안전 이관 ZIP (논리 데이터 / 새 DB)</option><option value="snapshot">기존 DB 스냅샷 ZIP</option></select></label><div class="actions"><button class="btn primary" data-portable-action="export">전체 데이터 이관 ZIP 저장</button><label class="btn">백업 ZIP 선택<input id="portableBackupFile" type="file" accept=".zip,application/zip" style="display:block;max-width:100%;margin-top:6px"></label><button class="btn" data-portable-action="upload" disabled>선택 ZIP 업로드 · 검사</button><button class="btn danger" data-portable-action="restore" disabled>확인 후 전체 복원</button><button class="btn" id="portableCancel" data-portable-action="cancel" disabled>전송 취소</button></div><p>안전 이관은 서버에 실제 저장된 다섯 owner의 레코드·벡터·삭제 표식·scope catalog를 새 DB에 재작성합니다. RisuAI 원본 채팅·plugin_only 자료·API 키·과거 실행 lease는 이관 권한으로 복원하지 않습니다. 파일 전송은 256 KiB 단위, ZIP32 최대 2 GiB입니다.</p><pre id="portableTransferStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><pre id="portableRestorePreview" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div>
               <div class="control-grid"><div class="card"><div class="control-heading"><h3>저장된 백업</h3><button class="btn primary" data-server-control="backup-create">백업 만들기</button></div><p>검사하거나 복원할 백업을 선택하세요.</p><label for="serverControlBackups">백업 선택</label><select id="serverControlBackups"><option value="">먼저 상태 조회</option></select><div id="serverControlBackupCards" class="control-backup-list"></div><div id="serverControlBackupInfo" class="control-detail"></div><button class="btn" data-server-control="backup-check">선택 백업 검사</button><p>검사 표시는 마지막 검사 결과입니다. 복원 전 서버가 다시 검증합니다.</p></div>
-              <div class="card"><h3>복원 범위</h3><p>선택한 플러그인의 서버 자료를 백업 시점으로 되돌립니다.</p><fieldset class="control-checks"><legend>복원할 플러그인 선택</legend><label><input type="checkbox" data-control-namespace value="libra">LIBRA</label><label><input type="checkbox" data-control-namespace value="hayaku">HAYAKU</label><label><input type="checkbox" data-control-namespace value="flashback">Flashback</label><label><input type="checkbox" data-control-namespace value="lia">LIA</label><label><input type="checkbox" data-control-namespace value="retrace">RE:TRACE</label><label><input type="checkbox" data-control-namespace value="wm" disabled>WM 서버 저장소 · 전용 component</label></fieldset><p id="serverControlWmRestoreStatus" role="status"></p><div class="settings-callout">미리보기는 자료를 변경하지 않습니다. 복원을 실행하기 전 현재 서버 자료를 백업합니다.</div><div class="actions"><button class="btn primary" data-server-control="restore-plan">복원 미리보기</button><button class="btn danger" data-server-control="restore-execute" disabled>미리본 내용으로 복원</button></div><div id="serverControlPreview"></div><p>복원 후 각 플러그인에서 ‘서버 자료 사용 · 로컬 업로드 안 함’으로 다시 연결하고 RisuAI를 새로고침하세요.</p></div></div>
+              <div class="card"><h3>복원 범위</h3><p>선택한 플러그인의 서버 자료를 백업 시점으로 되돌립니다.</p><fieldset class="control-checks"><legend>복원할 플러그인 선택</legend><label><input type="checkbox" data-control-namespace value="libra">LIBRA</label><label><input type="checkbox" data-control-namespace value="hayaku">HAYAKU</label><label><input type="checkbox" data-control-namespace value="flashback">Flashback</label><label><input type="checkbox" data-control-namespace value="lia">LIA</label><label><input type="checkbox" data-control-namespace value="retrace">RE:TRACE</label></fieldset><div class="settings-callout">미리보기는 자료를 변경하지 않습니다. 복원을 실행하기 전 현재 서버 자료를 백업합니다.</div><div class="actions"><button class="btn primary" data-server-control="restore-plan">복원 미리보기</button><button class="btn danger" data-server-control="restore-execute" disabled>미리본 내용으로 복원</button></div><div id="serverControlPreview"></div><p>복원 후 각 플러그인에서 ‘서버 자료 사용 · 로컬 업로드 안 함’으로 다시 연결하고 RisuAI를 새로고침하세요.</p></div></div>
             </section>
             <section data-server-view="connection" hidden><div class="card"><h3>연결 상태 확인</h3><p>서버 응답과 프로토콜·저장소 연결을 확인한 뒤 관제 API를 조회합니다.</p><div class="actions"><button class="btn primary" data-server-control="diagnose">진단 시작</button><button class="btn" id="serverControlOpenConnection">서버 연결 설정 · 저장 상태</button><button class="btn" id="serverControlExportDebug">진단 요약 내보내기</button></div><div id="serverControlDiagnosis" aria-live="polite"></div><p>서버 실행과 Docker 네트워크 설정은 사용하는 실행 환경에서 진행합니다. 진단만으로 원인을 구분하지 못할 수도 있습니다.</p></div></section>
             <section data-server-view="history" hidden><div class="card"><div class="control-heading"><h3>관리 작업 이력</h3><button class="btn" data-server-control="refresh">이력 새로고침</button></div><p>중단된 작업은 자동으로 다시 실행하지 않습니다. 결과를 확인한 뒤 진행하세요.</p><label>작업 결과 <select id="serverControlHistoryFilter"><option value="">전체</option><option value="complete">완료</option><option value="failed">실패</option><option value="running">진행 중</option><option value="interrupted">중단 · 결과 확인 필요</option></select></label><ul id="serverControlHistory" class="control-history"></ul></div></section>
@@ -16377,8 +16012,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     node.textContent = '전환 대상을 확인하는 중입니다.';
     try {
       let preview = await inspectTransition();
-      const wmSelect=Runtime.root?.querySelector?.('#wmHandoffSelection');if(wmSelect){wmSelect.disabled=preview.pendingHandoff?.pending === true;wmSelect.checked=preview.pendingHandoff?.pending ? preview.pendingHandoff.bridge?.includeWm === true : preview.includeWm === true;}
-      const wmInfo=Runtime.root?.querySelector?.('#wmHandoffPreview');if(wmInfo)wmInfo.textContent=`WM ${preview.includeWm ? '포함' : '미선택'} · ${memorySuiteModeLabel(preview.wm?.mode)} · 원본 보존 · target 독립 materialized copy${preview.wm?.supported ? '' : ' · 실제 host materializer 미확인'}${preview.includeWm && isLiaLivePersonaId(preview.identity?.personaId) ? ' · LIA 대상 persona 선준비·readback 후 WM 복사' : ''}`;
       const scopeNode = Runtime.root?.querySelector?.('#sidebarScope');
       if (preview.pendingHandoff?.pending) {
         try {
@@ -16394,7 +16027,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       }
       if (preview.pendingHandoff?.pending) {
         const immutableMode = text(preview.pendingHandoff.journal?.storageDestination || '').trim();
-        const pendingGate = await inspectMemorySuiteOwnerStorageGate({includeWm:preview.pendingHandoff.bridge?.includeWm === true}).catch(() => null);
+        const pendingGate = await inspectMemorySuiteOwnerStorageGate().catch(() => null);
         const pendingPolicy = preview.pendingHandoff.journal?.storagePolicy || preview.pendingHandoff.bridge?.targetStoragePolicy || null;
         renderHandoffStorageGate(pendingGate, pendingPolicy);
         const pendingCreateButton = Runtime.root?.querySelector?.('#createSession');
@@ -16445,10 +16078,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       renderHandoffStorageGate(storageGate);
       const createButton = Runtime.root?.querySelector?.('#createSession');
       if (createButton) {
-        const wmLiaUnsupported=preview.includeWm && isLiaLivePersonaId(preview.identity?.personaId)
-          && (await requestLiaIpc('capabilities',{}).catch(()=>null))?.capabilities?.targetPersonaPreactivation !== 'lia.target-persona-preactivation.v1';
-        createButton.disabled = storageGate.ready !== true || wmLiaUnsupported;
-        createButton.title = wmLiaUnsupported ? 'WM + LIA Live Persona는 대상 persona 사전 준비 계약이 필요해 아직 지원하지 않습니다.' : storageGate.ready ? `플러그인별 저장 모드: ${memorySuiteModeLabel(storageGate.commonMode)} · 참여 ${storageGate.participantCount}종` : `승계 차단: ${storageGate.reason || 'storage gate'}`;
+        createButton.disabled = storageGate.ready !== true;
+        createButton.title = storageGate.ready ? `플러그인별 저장 모드: ${memorySuiteModeLabel(storageGate.commonMode)} · 참여 ${storageGate.participantCount}종` : `승계 차단: ${storageGate.reason || 'storage gate'}`;
       }
       const memorySuiteLine = preview.memorySuiteServer?.reason === 'server_probe_deferred'
         ? 'Librarian System 서버 자동 조회 생략 · pluginStorage/owner IPC 경로 사용'
@@ -16458,8 +16089,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         ? `Librarian System 서버 인식 · ${serverDetected.length ? serverDetected.join(' · ') : '저장 데이터 없음'}`
         : 'Librarian System 서버 미연결 · pluginStorage/owner IPC 경로 사용';
       const gateLine = storageGate.ready ? `승계 저장 Gate · ${memorySuiteModeLabel(storageGate.commonMode)} · ${storageGate.participantCount}/${storageGate.participantCount} 확인` : `승계 저장 Gate · 차단 (${storageGate.reason})`;
-      const wmLine=preview.includeWm ? `WM 포함 · ${memorySuiteModeLabel(preview.wm?.mode)} · 원본 보존 · 독립 materialized copy · ${preview.wm?.sourceReady ? 'prepare 가능' : '준비 확인 필요'}` : 'WM 미선택 · 기존 owner 승계';
-      node.textContent = `${gateLine}\n${wmLine}\n${memorySuiteLine}\n${libraLine}\n${flashbackLine}\n${hayakuLine}`;
+      node.textContent = `${gateLine}\n${memorySuiteLine}\n${libraLine}\n${flashbackLine}\n${hayakuLine}`;
       // Transition data is already complete. The secondary contract sweep must
       // not keep the whole RE:TRACE window in a loading state.
       void refreshCompatibility(preview).catch(error => warn('compatibility refresh failed', error));
@@ -16760,7 +16390,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       const node=root.querySelector('#'+id);if(node){node.value=Runtime[key]||'';node.addEventListener('input',()=>{Runtime[key]=node.value;Runtime.serverScopeManagerPage=0;renderServerScopeManagement();});}
     }
 
-    root.querySelector('#serverControl')?.addEventListener('change',event=>{if(event.target?.id==='serverControlWmImportOperations'){Runtime.serverControl.wmImportOperationId=event.target.value;renderServerControl();return;}if(event.target?.id==='serverControlHistoryFilter'){renderServerControl();return;}if(Runtime.serverControl?.plan){Runtime.serverControl.plan=null;const output=root.querySelector('#serverControlResult');if(output)output.textContent='복원 대상이 변경되었습니다. 복원 미리보기를 다시 실행하세요.';}renderServerControl();});
+    root.querySelector('#serverControl')?.addEventListener('change',event=>{if(event.target?.id==='serverControlHistoryFilter'){renderServerControl();return;}if(Runtime.serverControl?.plan){Runtime.serverControl.plan=null;const output=root.querySelector('#serverControlResult');if(output)output.textContent='복원 대상이 변경되었습니다. 복원 미리보기를 다시 실행하세요.';}renderServerControl();});
     renderServerControl();
     root.querySelector('#refreshServerData')?.addEventListener('click', () => refreshServerScopeManagement().catch(async error => {
       warn('server scope manager refresh failed', error);
@@ -16797,7 +16427,6 @@ ${error?.message || error}`);
       });
     });
 
-    root.querySelector('#wmHandoffSelection')?.addEventListener('change',async event=>{Runtime.wmHandoffSelected=event.target.checked === true;await refreshTransition();});
     root.querySelector('#createSession')?.addEventListener('click', async () => {
       setBusy(true);
       try {
@@ -16809,7 +16438,7 @@ ${error?.message || error}`);
           await retraceAlert(`다음 세션 승계를 시작할 수 없습니다.\n\n${blocking}\n\nRE:TRACE 홈 상단의 호환성 패널에서 각 플러그인의 계약 상태를 확인하세요.`);
           return;
         }
-        const storageGate = await inspectMemorySuiteOwnerStorageGate({includeWm:preview.pendingHandoff?.pending ? preview.pendingHandoff.bridge?.includeWm === true : preview.includeWm});
+        const storageGate = await inspectMemorySuiteOwnerStorageGate();
         renderHandoffStorageGate(storageGate, preview.pendingHandoff?.journal?.storagePolicy || null);
         if (!storageGate.ready) {
           const names = (storageGate.participantOwners || []).map(owner => MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner).join(' · ') || '없음';
@@ -16832,7 +16461,6 @@ ${error?.message || error}`);
         const message = `새 채팅을 만들고 기억을 이어갈까요?\n\n`
           + `플러그인별 저장 모드 · ${memorySuiteModeLabel(storageGate.commonMode)}\n`
           + `참여 플러그인 · ${storageGate.participantCount}종 (${storageGate.participantOwners.map(owner => MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner).join(' · ')})\n`
-          + (preview.includeWm ? `WM 포함 · ${memorySuiteModeLabel(preview.wm?.mode)} · 원본 보존 · 독립 materialized copy\n` : 'WM 미선택\n')
           + (preview.includeLibra
             ? `LIBRA 정본 레코드 ${formatNumber(preview.libraRecordCount)}개\n`
             : 'LIBRA 승계 데이터 없음\n')
@@ -16849,7 +16477,6 @@ ${error?.message || error}`);
             result.flashbackVerified ? '' : result.flashbackRecords > 0 ? `Flashback: ${result.flashbackAdoption?.reason || 'not_verified'}` : '',
             result.hayakuVerified ? '' : result.hayakuScheduled ? `HAYAKU: ${result.hayakuAdoption?.reason || 'not_verified'}` : '',
             result.libraVerified ? '' : result.libraScheduled ? `LIBRA: ${result.libraVerification?.reason || result.libraAdoption?.reason || 'not_verified'}` : '',
-            result.wmVerified ? '' : result.wmRequired ? `WM: ${result.wmVerification?.reason || 'not_verified'}` : '',
             result.liaVerified ? '' : result.liaRequired ? `LIA: ${result.liaAdoption?.reason || 'not_verified'}` : ''
           ].filter(Boolean);
           await retraceAlert(`새 채팅은 보존되었지만 일부 승계 대상의 owner handoff가 아직 미완료입니다. 같은 버튼으로 동일 target/transfer를 재시도할 수 있습니다.\ntransferId: ${result.transferId}${failedOwners.length ? `\n\n${failedOwners.join('\n')}` : ''}`);
@@ -16882,7 +16509,6 @@ ${error?.message || error}`);
         await retraceAlert(
           `다음 세션을 만들었습니다.\n`
           + `저장 모드: ${memorySuiteModeLabel(result.storageDestination)} · 참여 ${formatNumber(result.storagePolicy?.participantCount || result.storagePolicy?.participants?.length || 0)}종\n`
-          + (result.wmRequired ? `WM materialized copy · 전 도메인 readback 확인: ${formatNumber(result.wmVerification?.receipt?.physicalCopies || 0)}개\n` : '')
           + `${libraStatus}\n${flashbackStatus}\n${hayakuStatus}\n${liaStatus}\n\n`
           + `원본 세션 데이터는 변경하지 않았습니다.`
         );
@@ -17022,7 +16648,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };
@@ -17515,10 +17141,10 @@ const createMemorySuiteRetraceHealthAdapter = options => {
 
       validateBridgeCapsulePacketSet,
       probeLibraIpc, normalizeLibraInspection, readLibraSource,
-      peerCompatibilityPayload, evaluatePeerCompatibility, evaluateWmPeerCompatibility, wmMaterializedHandoffReceiptMatches, requestWmIpc, registerWmIpc, inspectCompatibilitySuite, probeUniversalPeerCompatibility, sourcePreservationReceiptMatches,
+      peerCompatibilityPayload, evaluatePeerCompatibility, inspectCompatibilitySuite, probeUniversalPeerCompatibility, sourcePreservationReceiptMatches,
       adoptLiaLivePersonaHandoff, liaAdoptionReceiptMatches, isLiaLivePersonaId,
       prepareLibraSessionHandoff, adoptLibraSessionHandoff, adoptLibraSessionHandoffDurable, verifyDurableLibraSessionHandoff,
-      requiredHandoffsVerified, ensurePendingWmHandoff, verifyPendingWmHandoff, ensurePendingHandoffStorageConfiguration, requestOwnerHandoffStorageMode,
+      requiredHandoffsVerified, ensurePendingHandoffStorageConfiguration, requestOwnerHandoffStorageMode,
       requestMemorySuiteOwnerStorageStatus, memorySuiteOwnerStorageGateFromRows, inspectMemorySuiteOwnerStorageGate, handoffStoragePolicyFromGate, handoffStoragePolicyMatchesGate,
       sealNextSessionHandoffJournal, nextSessionHandoffJournalFromChat,
       inspectPendingNextSessionHandoff, inspectPendingHandoffDurableStatus, reconcilePendingHandoffJournalFromDurableReadback, persistNextSessionHandoffJournal, performPendingNextSessionHandoff,
@@ -17545,7 +17171,6 @@ const createMemorySuiteRetraceHealthAdapter = options => {
   // authenticated probe succeeds.
   await registerHayakuIpc().catch(error => warn('HAYAKU IPC registration failed', error));
   await registerLibraIpc().catch(error => warn('LIBRA IPC registration failed', error));
-  await registerWmIpc().catch(error=>warn('WM IPC registration failed',error));
   await registerLiaIpc().catch(error => warn('LIA IPC registration failed', error));
   await refreshHostRuntimeInfo().catch(() => null);
   await registerUi();
@@ -17579,8 +17204,6 @@ const createMemorySuiteRetraceHealthAdapter = options => {
         pending.reject(new Error('RE:TRACE unloaded before LIA IPC completed.'));
       }
       Runtime.liaIpcPending.clear();
-      for(const pending of Runtime.wmIpcPending.values()){clearTimeout(pending.timer);pending.reject(new Error('RE:TRACE unloaded before WM IPC completed.'));}
-      Runtime.wmIpcPending.clear();
       Runtime.portableTransfer?.controller?.abort();
       try { await MemorySuiteStorageBridge.dispose?.(); } catch (_) {}
       for (const bridge of Object.values(MemorySuitePeerServerBridges)) {

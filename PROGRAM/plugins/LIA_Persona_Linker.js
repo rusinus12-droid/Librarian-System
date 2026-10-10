@@ -8705,7 +8705,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');
@@ -13665,8 +13665,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
         sourceImmutableHandoff: true,
         durableTargetReadback: true,
         idempotentHandoff: true,
-        inheritedStateUsable: true,
-        targetPersonaPreactivation: "lia.target-persona-preactivation.v1"
+        inheritedStateUsable: true
       },
       handoff: {
         contract: LIA_SESSION_HANDOFF_CONTRACT,
@@ -14093,42 +14092,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     };
   }
 
-  // Uses the existing local-only owner fork, without selecting the target.
-  // The caller must persist the final persona-bound WM identity before WM prepare.
-  async function prepareLivePersonaHandoff(payload = {}) {
-    const sourceChatId=String(payload.sourceChatId || '').trim(),targetChatId=String(payload.targetChatId || '').trim();
-    const transferId=String(payload.transferId || '').trim(),sourceLivePersonaId=String(payload.sourceLivePersonaId || '').trim();
-    const inspect=async()=>{
-      const active=await getLiveRuntimeContext();
-      const target=await getLiveRuntimeContextForChatId(targetChatId);
-      const bridge=target.chat?.memorySessionBridge || {},journal=bridge.handoffJournal || {},wm=journal.wmHandoff;
-      const characterId=String(active.char?.chaId || active.char?.id || '');
-      if(!sourceChatId || sourceChatId===targetChatId || !transferId || !sourceLivePersonaId
-        || String(active.chat?.id || active.chat?.chatId || '')!==sourceChatId
-        || String(active.chat?.bindedPersona || '')!==sourceLivePersonaId
-        || characterId!==String(target.char?.chaId || target.char?.id || '')
-        || bridge.sourceChatId!==sourceChatId || bridge.targetChatId!==targetChatId || bridge.transferId!==transferId
-        || bridge.includeLiaLivePersona!==true || bridge.sourceLiaLivePersonaId!==sourceLivePersonaId
-        || bridge.includeWm!==true || journal.transferId!==transferId || journal.sourceChatId!==sourceChatId || journal.targetChatId!==targetChatId
-        || journal.state==='completed' || wm?.targetPersonaPending!==true || wm.targetIdentity!==null || wm.payloadDigest || wm.prepared
-        || wm.sourceIdentity?.personaId!==sourceLivePersonaId || wm.sourceIdentity?.characterId!==characterId
-        || wm.sourceIdentity?.chatId!==sourceChatId || wm.transferId!==transferId
-        || target.chat?.liaLivePersonaHandoff?.transferId!==transferId
-        || target.chat?.liaLivePersonaHandoff?.sourceChatId!==sourceChatId
-        || target.chat?.liaLivePersonaHandoff?.targetChatId!==targetChatId
-        || target.chat?.liaLivePersonaHandoff?.sourceLivePersonaId!==sourceLivePersonaId
-        || asArray(target.chat?.message).length!==0)throw new Error('lia_target_persona_preactivation_context_mismatch');
-      return {active,target,sourceFingerprint:hashText(JSON.stringify(active.chat))};
-    };
-    const before=await inspect();
-    if(!PersonaBindingManager.capability().available)throw new Error('lia_target_persona_preactivation_host_unavailable');
-    const adopted=await adoptLivePersonaHandoff(payload);
-    const verification=await verifyChatHandoff({...payload,targetLivePersonaId:adopted.livePersonaId,ownerStorageDigest:adopted.ownerStorageDigest});
-    const after=await inspect();
-    if(before.sourceFingerprint!==after.sourceFingerprint || verification.verified!==true || verification.durable!==true)throw new Error('lia_target_persona_preactivation_readback_failed');
-    return {...adopted,preActivation:{schema:'lia.target-persona-preactivation.v1',sourceActive:true,targetInactive:true}};
-  }
-
   // Read-only verification for the already authenticated RE:TRACE IPC boundary.
   // This deliberately does not repair a drifted binding: callers need a fresh
   // observation before another owner is allowed to treat a fork as continuous.
@@ -14294,7 +14257,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
             compatibility: liaRetraceCompatibility(),
             capabilities: {
               livePersonaHandoff: true,
-              targetPersonaPreactivation: "lia.target-persona-preactivation.v1",
               sourceImmutableHandoff: true,
               handoffContract: LIA_SESSION_HANDOFF_CONTRACT,
               durableReadback: true,
@@ -14329,11 +14291,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
           };
         } else if (action === "memory_suite_set_mode" || action === "memory_suite_prepare_server_scope_delete") {
           throw new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
-        } else if (action === "prepare_chat_handoff") {
-          const before=await MemorySuiteStorageBridge.ensureHandoffReady({phase:"lia_before_prepare_chat_handoff"});
-          const prepared=await prepareLivePersonaHandoff(request.payload || {});
-          const after=await MemorySuiteStorageBridge.ensureHandoffReady({phase:"lia_after_prepare_chat_handoff"});
-          result={...prepared,memorySuiteStorage:{before,after}};
         } else if (action === "adopt_chat_handoff") {
           const memorySuiteBefore = await MemorySuiteStorageBridge.ensureHandoffReady({ phase: "lia_before_adopt_chat_handoff" });
           const adopted = await adoptLivePersonaHandoff(request.payload || {});
@@ -28653,7 +28610,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };

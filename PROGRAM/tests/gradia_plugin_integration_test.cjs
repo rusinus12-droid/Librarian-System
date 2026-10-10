@@ -4,9 +4,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
 const program=path.resolve(__dirname,'..');
-const expected=['flashback','gradia','hayaku','lia','libra','retrace','wm'];
+const expected=['flashback','gradia','hayaku','lia','libra','retrace'];
 
-test('build and release registries contain exactly seven packaged plugins',()=>{
+test('build and release registries contain exactly six packaged plugins',()=>{
  const build=require('../tools/build_plugins.cjs').PLUGINS;
  const metadata=require('../tools/release_metadata.cjs').PLUGINS;
  assert.deepEqual(Object.keys(build).sort(),expected);
@@ -36,7 +36,7 @@ test('actual build CLI accepts GRADIA and preserves its installed plugin identit
  assert.equal(JSON.parse(fs.readFileSync(path.join(out,'ultralight-build-report.json'))).rows.length,1);
 });
 
-test('seven packaged plugins retain three active storage owners and five legacy namespace slots',()=>{
+test('six packaged plugins retain three active storage owners and five legacy namespace slots',()=>{
  const server=fs.readFileSync(path.join(program,'server/server.cjs'),'utf8');
  const registry=require('../server/server.cjs');
  assert.deepEqual(registry.ACTIVE_STORAGE_NAMESPACES,['flashback','hayaku','libra']);

@@ -1,0 +1,78 @@
+{
+  "schema": "librarian.six-plugin-development-publication.v1",
+  "preparedAtUtc": "2026-10-10T07:05:03.847397+00:00",
+  "repository": "rusinus12-droid/Librarian-System",
+  "branch": "development/source-baseline-20261009-142730",
+  "origin": {
+    "builderArtifact": "Librarian-System-0.3.71-Source-Offline-Candidate.zip",
+    "savedSourceFilename": "Librarian-System-0.3.71-6-Plugin-Development-Source-20261010T064528Z.zip",
+    "bytes": 13847687,
+    "sha256": "b9b3c0f1745a9453d43a195388fc812dfdd6e301d5c9d61e393608673dc2f81e",
+    "builderGeneratedAtUtc": "2026-10-10T06:45:28.179Z",
+    "profile": "source",
+    "qualification": "offline_candidate",
+    "files": 1916
+  },
+  "retainedPlugins": [
+    "Flashback",
+    "HAYAKU",
+    "LIBRA",
+    "LIA",
+    "RETRACE",
+    "GRADIA"
+  ],
+  "worldManagerSeparation": {
+    "independentWorldManagerIncluded": false,
+    "standalonePreservationArchivePublished": false,
+    "previousIntegratedSourceRetainedInGitHistory": true
+  },
+  "parity": {
+    "allOriginalZipFileBytesPreserved": true,
+    "allOriginalZipFileModesPreserved": true,
+    "excludedZipFiles": 0,
+    "contentFiltersApplied": [],
+    "repositoryOnlyFiles": [
+      "LICENSE",
+      "PUBLICATION-PROVENANCE.json"
+    ],
+    "repositoryOnlyFilesAreOutsideOriginalSHA256SUMS": true,
+    "originalSourceZipModified": false,
+    "productCodePatchedByPublisher": false
+  },
+  "privacyBoundary": {
+    "selectedRawPromptRequestStorageEvidenceIncluded": false,
+    "runtimeUserDataIncluded": false,
+    "installedDependenciesIncluded": false,
+    "binaryFixtures": "Five required synthetic SQLite/WAL/SHM/journal fixture files are byte-identical to the verified preceding development commit",
+    "cleanDataScaffold": "Only the builder-generated empty DATA scaffold is included"
+  },
+  "verification": {
+    "exactArchiveExtractionFiles": 1916,
+    "archiveChecksumEntries": 1915,
+    "programManifestEntries": 1875,
+    "separateOfficialBuilderGate": {
+      "files": 87,
+      "checksPassed": 400,
+      "failures": 0
+    },
+    "realWindowsRisuHost": "NOT_VERIFIED",
+    "realModelQuality": "NOT_VERIFIED",
+    "wholeHistoricalRegression": "NOT_RUN",
+    "sourceProfilePublicationSmoke": "NOT_RUN"
+  },
+  "activeCheckoutComparison": {
+    "commonNonGeneratedBytesIdentical": true,
+    "changedGeneratedMetadata": [
+      "PROGRAM/program-manifest.json",
+      "SHA256SUMS.txt"
+    ],
+    "zipOnly": "Fifteen generated clean DATA scaffold files",
+    "checkoutOnly": [
+      ".gitattributes",
+      ".gitignore",
+      "README.md"
+    ],
+    "permissions": "Archive modes follow the existing builder normalization: ordinary files0644; launchable shell/command files0755"
+  },
+  "qualification": "This is the frozen six-plugin development source and a packaging/integrity result. The bounded official builder gate does not establish whole-regression, actual-host, real-model or standalone WM qualification."
+}

@@ -10,7 +10,6 @@ const { readJournal, writeJournal, isTerminal, syncDirectory } = require('./jour
 const identity = require('./data-identity.cjs');
 
 const { withUpdateLock } = require('./lock.cjs');
-const { assertWmUpdateAdmission } = require('./wm-update-admission.cjs');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -362,7 +361,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
   const fromVersion = versionFromProgram(program);
   const toVersion = String(receipt.targetVersion || versionFromProgram(programNext));
   if (versionFromProgram(programNext) !== toVersion) throw new Error('program_next_version_mismatch');
-  assertWmUpdateAdmission(data, 'program_only');
   const dataIdentity = prepareFreshDataIdentity(data);
   const operationId = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
   const rollbackRoot = path.join(root, '.rollback', operationId);
@@ -399,7 +397,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
     logger('[1/7] 현재 서버 정지 및 DATA write 종료 확인');
     const stopped = await stop(program, data);
     journal = await writeJournal(journalPath, journal, { phase: 'server_stopped', serverWasRunning: journal.serverWasRunning || stopped.wasRunning === true });
-    assertWmUpdateAdmission(data, 'program_only');
     triggerFailpoint('after_server_stop', failpointEnv);
 
     logger('[2/7] DATA safety checkpoint 생성');
@@ -409,7 +406,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
     journal = await writeJournal(journalPath, journal, { phase: 'data_checkpointed', flags: journal.flags, checkpointDataIdentity:journal.checkpointDataIdentity });
     triggerFailpoint('after_data_checkpoint', failpointEnv);
 
-    assertWmUpdateAdmission(data, 'program_only');
     logger('[3/7] 기존 PROGRAM rollback 사본으로 전환');
     journal = await writeJournal(journalPath, journal, { phase: 'intent_program_old_rename' });
     await renameRetry(program, rollbackProgram);

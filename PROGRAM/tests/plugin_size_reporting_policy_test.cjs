@@ -3,7 +3,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {spawnSync}=require('node:child_process'),{test}=require('node:test');
 const program=path.resolve(__dirname,'..');
-const files=['HAYAKU_Locator_Continuity.js','Flashback_Memory.js','LIBRA.js','LIA_Persona_Linker.js','RETRACE.js','GRADIA.js','LIBRA_World_Manager.js'];
+const files=['HAYAKU_Locator_Continuity.js','Flashback_Memory.js','LIBRA.js','LIA_Persona_Linker.js','RETRACE.js','GRADIA.js'];
 const run=(file,args)=>spawnSync(process.execPath,[path.join(program,'tools',file),...args],{encoding:'utf8',timeout:120000});
 test('growth is visible but does not fail a successfully generated artifact',()=>{
  const out=fs.mkdtempSync(path.join(os.tmpdir(),'size-policy-build-'));
@@ -14,7 +14,7 @@ test('growth is visible but does not fail a successfully generated artifact',()=
 test('standalone size report warns about growth and still fails missing artifacts',()=>{
  const out=fs.mkdtempSync(path.join(os.tmpdir(),'size-policy-check-'));
  try { for(const file of files)fs.writeFileSync(path.join(out,file),' '.repeat(4_000_000));
- const r=run('check_plugin_size.cjs',['--dir',out,'--json']);const report=JSON.parse(r.stdout);assert.equal(report.rows.length,7);assert.ok(report.totalOverFloor>0);assert.equal(r.status,0,r.stderr);assert.equal(report.passed,true);assert.equal(report.warnings.length,7);
+ const r=run('check_plugin_size.cjs',['--dir',out,'--json']);const report=JSON.parse(r.stdout);assert.equal(report.rows.length,6);assert.ok(report.totalOverFloor>0);assert.equal(r.status,0,r.stderr);assert.equal(report.passed,true);assert.equal(report.warnings.length,6);
  fs.unlinkSync(path.join(out,files[0]));const missing=run('check_plugin_size.cjs',['--dir',out,'--json']);assert.notEqual(missing.status,0);assert.equal(JSON.parse(missing.stdout).passed,false);
  } finally { fs.rmSync(out,{recursive:true,force:true}); }
 });

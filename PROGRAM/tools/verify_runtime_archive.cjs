@@ -20,6 +20,9 @@ function inspectExtractedRuntime(rootDir){
   for(const match of source.matchAll(literalRequire)){
    const request=match[2];if(builtins.has(request)){builtinRequires++;continue;}
    if(!request.startsWith('./')&&!request.startsWith('../'))fail('external:'+path.relative(root,file)+':'+request);
+   // Reject lexical escapes before module resolution can inspect any sibling.
+   const requestedPath=path.resolve(path.dirname(file),request);
+   if(requestedPath!==root&&!inside(requestedPath))fail('outside_archive:'+request);
    let resolved,real;try{resolved=resolve(request);real=fs.realpathSync(resolved);}catch{fail('missing:'+path.relative(root,file)+':'+request);}
    if(!inside(resolved)||!inside(real))fail('outside_archive:'+request);
    if(!fs.statSync(resolved).isFile())fail('not_file:'+request);

@@ -13,7 +13,6 @@ const filenames = [
   'HAYAKU_Locator_Continuity.js',
   'GRADIA.js',
   'LIBRA.js',
-  'LIBRA_World_Manager.js',
   'RETRACE.js',
   'LIA_Persona_Linker.js'
 ];
@@ -32,9 +31,6 @@ for (const filename of filenames) {
     checkHeader(read(path.join(program, 'plugins', filename)), filename);
   });
 }
-test('WM authoritative shell retains exact update URL on reassembly', () => {
-  checkHeader(read(path.join(program, 'wm/src/parts/00-plugin-shell-and-args.js')), 'LIBRA_World_Manager.js');
-});
 for (const [label, variable] of [['Full', 'PLUGIN_UPDATE_URL_FULL_DIR'], ['Min', 'PLUGIN_UPDATE_URL_MIN_DIR']]) {
   const directory = process.env[variable];
   test(label + ' generated artifacts retain exact URLs and source versions', { skip: directory ? false : 'set ' + variable + ' after building' }, () => {

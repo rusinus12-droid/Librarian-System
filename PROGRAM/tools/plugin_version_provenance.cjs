@@ -156,32 +156,13 @@ function buildSourceCandidate(catalog, actual) {
   return candidate;
 }
 
-// Inspect only the two authored version forms. Never execute plugin source.
-// WM's derived debug version is admitted solely for its exact owner/file/name;
-// changing that version requires rebuilding the canonical WM source inputs.
-function inspectInternalVersion(source, identity = {}) {
+// Inspect the authored literal version without executing plugin source.
+function inspectInternalVersion(source) {
   const fail = () => { throw new Error('source_version_mismatch:internal'); };
   if ([...source.matchAll(/^\s*const PLUGIN_VERSION\s*=/gm)].length !== 1) fail();
   const literal = [...source.matchAll(/^\s*const PLUGIN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]\s*;/gm)];
-  const wmSource = identity.owner === 'wm' || identity.file === 'LIBRA_World_Manager.js'
-    || /^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/m.test(source);
-  if (literal.length === 1 && !wmSource) return {version:literal[0][1],kind:'literal'};
-  if (identity.owner !== 'wm' || identity.file !== 'LIBRA_World_Manager.js'
-    || [...source.matchAll(/^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/gm)].length !== 1) fail();
-  const forms = [...source.matchAll(/^\s*const PLUGIN_VERSION = \(\(\) => \{\r?\n([\s\S]*?)^\s*\}\)\(\);/gm)];
-  if (forms.length !== 1) fail();
-  const body = forms[0][1].split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
-  const fallback = [...body.matchAll(/^return '(\d+\.\d+\.\d+)';$/gm)];
-  if (fallback.length !== 1) fail();
-  const expected = String.raw`try {
-const src = String((typeof LIBRA_PLUGIN_SHELL_HEADER !== 'undefined' && LIBRA_PLUGIN_SHELL_HEADER) || '');
-const matched = src.match(/@version\s+([0-9][^\s]*)/);
-if (matched && matched[1]) return matched[1];
-} catch (_) {}
-// 폴백 — 헤더를 못 읽어도 실제 버전을 유지한다(0.1 로 회귀 금지).
-return '<version>';`;
-  if (body.replace(`return '${fallback[0][1]}';`, "return '<version>';") !== expected) fail();
-  return {version:fallback[0][1],kind:'wm-derived'};
+  if (literal.length !== 1) fail();
+  return {version:literal[0][1],kind:'literal'};
 }
 
 function rewritePluginVersion(bytes, beforeVersion, afterVersion, identity = {}) {
@@ -203,7 +184,6 @@ function rewritePluginVersion(bytes, beforeVersion, afterVersion, identity = {})
     }
   }
   if (beforeVersion === afterVersion) return Buffer.from(bytes);
-  if (inspected.kind === 'wm-derived') throw new Error('wm_source_rebuild_required');
   return Buffer.from(source.replace(header, (_, gap, old, tail) => `//@version${gap}${afterVersion}${tail}`)
     .replace(internal, (_, prefix, old, tail) => prefix + afterVersion + tail)
     .replace(display, (_, prefix) => prefix + afterVersion));

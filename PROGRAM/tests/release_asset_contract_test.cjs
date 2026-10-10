@@ -24,6 +24,8 @@ const policy = readReleasePolicy(programDir);
 assert.equal(policy.version, version);
 assert.ok(['program_only', 'migration_required', 'manual_required'].includes(policy.updatePolicy));
 const manifest = buildUpdateManifest(programDir);
+assert.deepEqual(Object.keys(manifest.components).sort(), ['backend','computeSdk','flashback','gradia','hayaku','lia','libra','retrace','storageSdk'].sort());
+assert.equal(Object.hasOwn(manifest.components, 'wm'), false);
 assert.equal(manifest.repository, OFFICIAL_REPOSITORY);
 assert.equal(manifest.version, version);
 assert.equal(manifest.assetName, expectedAssetName(version));

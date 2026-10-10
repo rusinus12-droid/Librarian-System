@@ -10,7 +10,6 @@ const { writeUpdateManifest, expectedAssetName, expectedSourceAssetName, readRel
 const { compareVersions, nextPatchVersion, validateTargetVersion, applyReleaseVersion } = require('./release_version.cjs');
 const { assertPristineDistributionData } = require('./runtime_release_validation.cjs');
 
-const {isWmSourceInput,verifyWmFixtures,verifyWmSourceDocuments}=require('./wm_source_catalog.cjs');
 const PRODUCT_NAME = 'Librarian System';
 const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
@@ -19,6 +18,10 @@ const REQUIRED_ROOT_FILE = '0_설치_안내.txt';
 const ACTIVE_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'retrace']);
 const REQUIRED_PLUGIN_IDS = new Set(Object.values(PLUGINS).map(([, , id]) => id));
 const RELEASE_SMOKE_TESTS = Object.freeze([
+  'plugin_catalog_separation_test.cjs',
+  'sdk_wm_separation_test.cjs',
+  'retrace_wm_separation_test.cjs',
+  'retrace_owner_contract_retention_test.cjs',
   'gradia_plugin_integration_test.cjs',
   'gradia_suite_test.cjs',
   'program_data_layout_test.cjs',
@@ -27,7 +30,6 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'windows_bootstrap_contract_test.cjs',
   'distribution_builder_test.cjs',
   'distribution_runtime_dependency_closure_test.cjs',
-  'remote_update_wm_migration_admission_test.cjs',
   'release_metadata_test.cjs',
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
@@ -153,7 +155,7 @@ function verifySourceFixtureBytes(programRoot) {
 }
 const PROGRAM_DENY_SEGMENTS = new Set(['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases']);
 const PROGRAM_ALLOWED_TOP_LEVEL_DIRECTORIES = new Set([
-  '_runtime', '관리도구', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools', 'wm'
+  '_runtime', '관리도구', 'build-support', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools'
 ]);
 const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '_common.cmd',
@@ -192,7 +194,7 @@ const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials
 const REQUIRED_ROOT_UPDATE_LAUNCHERS = Object.freeze(['업데이트.bat', '업데이트.command', '업데이트.sh']);
 const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
-  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/wm-update-admission.cjs', 'core/updater-bootstrap.cjs',
+  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/updater-bootstrap.cjs',
   'runtime.cjs', 'launch.sh', '_find_node.bat', 'core/lock.cjs',
   'logs/README.txt',
   'platform/windows.cjs', 'platform/macos.cjs', 'platform/linux.cjs', 'platform/android.cjs'
@@ -252,7 +254,8 @@ function shouldCopySourceProgram(relativePath) {
   const topLevel = normalized.split('/')[0];
   const isTopLevelFile = !normalized.includes('/');
   if (isTopLevelFile ? !PROGRAM_ALLOWED_TOP_LEVEL_FILES.has(topLevel) : !PROGRAM_ALLOWED_TOP_LEVEL_DIRECTORIES.has(topLevel)) return false;
-  if(parts[0]==='wm'&&!isWmSourceInput(normalized))return false;
+  if (parts[0] === 'plugins' && !Object.values(PLUGINS).some(([file]) => normalized === 'plugins/' + file)) return false;
+  if (/^(?:sdk\/Wm[^/]+|server\/wm(?:\/|$))/.test(normalized)) return false;
   if (parts[0] === '_runtime') return normalized === '_runtime/README.txt';
   if (parts.some(part => PROGRAM_DENY_SEGMENTS.has(part))) return false;
   if (Object.hasOwn(SOURCE_FIXTURE_PINS, normalized)) return true;
@@ -277,7 +280,7 @@ const RUNTIME_TOOL_FILES = new Set([
   'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
 ]);
 const RUNTIME_SDK_FILES = new Set([
-  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js','WmStorageContracts.source.js'
+  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
   'ANDROID_INSTALL_HELPER.md','PORTABLE_BACKUP_USAGE.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
@@ -288,7 +291,8 @@ function shouldCopyRuntimeProgram(relativePath) {
   const [top,...rest]=normalized.split('/');
   if (!rest.length) return RUNTIME_PROGRAM_TOP_FILES.has(top);
   const leaf=rest.join('/');
-  if (top==='server' || top==='plugins') return true;
+  if (top==='plugins') return Object.values(PLUGINS).some(([file]) => leaf===file);
+  if (top==='server') return !leaf.startsWith('wm/');
   if (top==='관리도구') return !['전체_자동시험.bat','전체_자동시험.sh'].includes(leaf);
   if (top==='_runtime') return leaf==='README.txt';
   if (top==='tools') return RUNTIME_TOOL_FILES.has(leaf);
@@ -628,8 +632,7 @@ function buildDistribution(options = {}) {
   let success=false,phase='source_preflight';
   try{
     preflightSourceReleaseGuides(packageRoot);
-    verifyWmFixtures(programDir);
-    if (isSource) { verifySourceFixtureBytes(programDir); verifyWmSourceDocuments(programDir); }
+    if (isSource) { verifySourceFixtureBytes(programDir); }
     const declarationBindings=captureManifestDeclarationBindings();
     phase='release_smoke';
     // Candidate packaging verifies source, syntax, SDK sync, inventory, bytes and privacy.
@@ -640,7 +643,7 @@ function buildDistribution(options = {}) {
     const stagingPredicate=isSource?programPredicate:relative=>programPredicate(relative)&&!relative.split(path.sep).join('/').startsWith('plugins/');
     const copiedProgram=copyTreeAllowlisted(programDir,path.join(stagedRoot,'PROGRAM'),stagingPredicate);
     // Pin the bytes actually copied, not only their earlier source observation.
-    if(isSource){verifySourceFixtureBytes(path.join(stagedRoot,'PROGRAM'));verifyWmSourceDocuments(path.join(stagedRoot,'PROGRAM'));}
+    if(isSource){verifySourceFixtureBytes(path.join(stagedRoot,'PROGRAM'));}
     const sourceUpdater=path.join(packageRoot,'UPDATER');assertUpdaterSourceClean(sourceUpdater);
     const copiedUpdater=copyTreeAllowlisted(sourceUpdater,path.join(stagedRoot,'UPDATER'),shouldCopyUpdater);
     const copiedLaunchers=copyRootUpdateLaunchers(packageRoot,stagedRoot);
@@ -667,7 +670,7 @@ function buildDistribution(options = {}) {
         fs.copyFileSync(artifact,file);replaced+=1;
       }
       if(replaced!==REQUIRED_PLUGIN_IDS.size)throw new Error(`distribution_release_artifact_count:${replaced}`);
-      pluginArtifacts={profile:'release',replaced,sourceBytes,releaseBytes,receipt:JSON.parse(fs.readFileSync(path.join(artifactDir,'ultralight-build-report.json'))).rows.find(row=>row.plugin==='wm').receipt,reductionPercent:Number((100*(sourceBytes-releaseBytes)/sourceBytes).toFixed(1))};
+      pluginArtifacts={profile:'release',replaced,sourceBytes,releaseBytes,reductionPercent:Number((100*(sourceBytes-releaseBytes)/sourceBytes).toFixed(1))};
     } else {
       phase='source_plugins';
       const artifactDir=path.join(temporaryRoot,'source-plugins');
@@ -676,7 +679,7 @@ function buildDistribution(options = {}) {
       const stagedPluginDir=path.join(stagedRoot,'PROGRAM/plugins');
       for(const row of buildReport.rows)fs.copyFileSync(path.join(artifactDir,path.basename(row.file)),path.join(stagedPluginDir,path.basename(row.file)));
       if(buildReport.rows.length!==REQUIRED_PLUGIN_IDS.size||buildReport.rows.some(row=>!row.wrote||row.variant!=='Full'))throw Error('distribution_source_artifact_count');
-      pluginArtifacts={profile:'source',replaced:buildReport.rows.length,note:'all seven Full artifacts built from staged source; WM assembly verified',receipt:buildReport.rows.find(row=>row.plugin==='wm').receipt};
+      pluginArtifacts={profile:'source',replaced:buildReport.rows.length,note:'all six Full artifacts built from staged source'};
     }
     phase='metadata';const releaseMetadata=syncReleaseGuides(stagedRoot);
     const stagedData=createCleanData(stagedRoot),dataCheck=assertPristineDistributionData(stagedData);
@@ -692,7 +695,7 @@ function buildDistribution(options = {}) {
     phase='manifest_and_checksums';const {releasePolicy,updateManifest,checksumCheck}=refreshStagedMetadata(stagedRoot,declarationBindings,qualification);
     if(updateManifest.assetName!==expectedAssetName(version)||updateManifest.updatePolicy!==releasePolicy.updatePolicy)throw new Error('distribution_update_manifest_contract_mismatch');
     assertPristineDistributionData(stagedData);verifyChecksumFile(stagedRoot);
-    if(isSource){verifySourceFixtureBytes(stagedProgram);verifyWmSourceDocuments(stagedProgram);}
+    if(isSource){verifySourceFixtureBytes(stagedProgram);}
     phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName});
     const verification=verifyZipAgainstDirectory(archivePath,stagedRoot,{rootName:topLevelName}),entries=readZipEntries(archivePath);
     assertArchivePrivacy(entries,topLevelName);

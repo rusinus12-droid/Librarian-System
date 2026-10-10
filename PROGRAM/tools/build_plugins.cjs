@@ -29,7 +29,7 @@
 // hard limits. Minifier, parser, transform validation and artifact syntax failures remain fatal.
 //
 // Usage:
-//   node tools/build_plugins.cjs                      # all seven, into .development/build/Min
+//   node tools/build_plugins.cjs                      # all six, into .development/build/Min
 //   node tools/build_plugins.cjs --plugin libra
 //   node tools/build_plugins.cjs --out /tmp/probe     # alternate output dir
 //   node tools/build_plugins.cjs --profile source --no-minify # Full development artifacts
@@ -464,7 +464,6 @@ const PLUGINS = Object.freeze({
   retrace: { file: 'plugins/RETRACE.js', floor: 609_054 },
   // Historical standalone Min byte count; reporting only, never a size gate.
   gradia: { file: 'plugins/GRADIA.js', floor: 1561115 },
-  wm: { file: 'plugins/LIBRA_World_Manager.js', owner: 'wm', floor: 3829773 }
 });
 const TARGETS = Object.keys(PLUGINS);
 const HEADER_PREFIX_BYTES = 512;
@@ -1070,12 +1069,6 @@ const poolStaticPropertyKeys = src => {
   return { src: out, aliases, scopesPooled: declarations.size, accessesReplaced, objectKeysReplaced, literalValuesReplaced, bytesSaved: Buffer.byteLength(src) - Buffer.byteLength(out), astVerified: true };
 };
 
-const WM_TRANSFORM = Object.freeze({tool:'terser',version:'5.51.2',compress:{passes:2,negate_iife:false},mangle:false,directiveComments:'preserved',propertyPooling:false});
-// Post-GUI coordinated rebuild: exact measured WM Min size.
-// Earlier maxima remain history. This changes only build-size bookkeeping, not
-// performance, actual-host, native-CAS or release qualification.
-const WM_RELEASE_BUDGET = Object.freeze({baselineBytes:3829135, featureGrowthBytes:639132, maximumBytes:4468267, headroomBytes:0, baselineSha256:'02847d7ad3ddc31e30860e98cb0901983768001330dece82ab154e8822fe5277', historicalMaximumBytes:3829773, approvedFeatureIncrementBytes:634544, d1R29MaximumBytes:4123525, d1R29Ruling:'D1-R29', fixedDelivery5MaximumBytes:4388732, connectionRepairMaximumBytes:4403344, composedFeatureMaximumBytes:4464075, previousFeatureMaximumBytes:4464075, previousRuling:'composed-feature-rebuild-build-size-only', fixedDelivery5IncrementBytes:265207, connectionRepairIncrementBytes:14612, manualMigrationIncrementBytes:46566, existingCardEditIncrementBytes:14165, guiFixIncrementBytes:242, postGuiMaximumBytes:4464317, fullRegressionRepairIncrementBytes:730,
-  worldlineDurabilityRepairIncrementBytes:931, strictOptionsAndIdentityAdmissionRepairIncrementBytes:7, graphStructuralBudgetRepairIncrementBytes:867, preGraphMaximumBytes:4465985, previousRegressionRuling:'real-handler-binding-css-repair-build-size-only', extensionOwnerAndAbsentDlcRepairIncrementBytes:365, preExtensionOwnerMaximumBytes:4466852, previousGraphRuling:'graph-structural-edge-budget-repair-build-size-only', ownedTimeoutRepairIncrementBytes:279, preOwnedTimeoutMaximumBytes:4467217, previousExtensionOwnerRuling:'extension-owner-absent-dlc-repair-build-size-only', portableCachePublicationRepairIncrementBytes:3, prePortableCachePublicationMaximumBytes:4467496, previousOwnedTimeoutRuling:'owned-timeout-reason-repair-build-size-only', entityShadowProjectionRepairIncrementBytes:199, preEntityShadowProjectionMaximumBytes:4467499, previousPortableCachePublicationRuling:'portable-cache-publication-repair-build-size-only', capturedScopeRefusalRepairIncrementBytes:149, preCapturedScopeRefusalMaximumBytes:4467698, previousEntityShadowProjectionRuling:'entity-shadow-projection-repair-build-size-only', typedGraphCooperativeGuardRepairIncrementBytes:403, preTypedGraphCooperativeGuardMaximumBytes:4467847, previousCapturedScopeRefusalRuling:'captured-scope-refusal-repair-build-size-only', updateUrlMetadataIncrementBytes:17, preUpdateUrlMetadataMaximumBytes:4468250, previousTypedGraphCooperativeGuardRuling:'typed-graph-cooperative-guard-repair-build-size-only', ruling:'update-url-metadata-only-build-size-bookkeeping', qualification:'provisional_feature_build'});
 function parseBuildArgs(argv = process.argv.slice(2), programDir = root) {
   let only=null,outDir=null,profile='release',noMinify=false,doStripRegions=false;
   for(let i=0;i<argv.length;i++) {
@@ -1101,14 +1094,6 @@ async function buildPlugins(options = {}) {
   const list = only ? [only] : TARGETS;
   for (const p of list) if (!PLUGINS[p]) throw new Error(`unknown_plugin:${p}`);
 
-  // Validate the complete memory-only WM assembly and the generated cache before any output.
-  const wmAssembly=list.includes('wm')?await require('./build_wm_source.cjs').assembleWmSource({wmRoot:path.join(programDir,'wm'),verifyPins:true}):null;
-  if(wmAssembly&&profile==='release') {
-    let generated;try{generated=fs.readFileSync(path.join(programDir,PLUGINS.wm.file));}catch(_){throw Error('WM_STALE_GENERATED_SOURCE: missing generated source');}
-    if(sha256(generated)!==wmAssembly.sourceSha256)throw Error('WM_STALE_GENERATED_SOURCE: run source profile first');
-    if(outDir===path.resolve(programDir,'plugins'))throw Error('WM_RELEASE_CANNOT_OVERWRITE_FULL');
-  }
-  if(list.includes('wm')&&doStripRegions)throw Error('WM_TRANSFORM_MUST_REMAIN_CONSERVATIVE');
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ultralight-build-'));
   const report = { schema: 'librarian.ultralight.build.v1', at: new Date().toISOString(), profile, variant:profile==='source'?'Full':'Min', outDir: path.relative(programDir, outDir).split(path.sep).join('/'), rows: [] };
   fs.mkdirSync(outDir, { recursive: true });
@@ -1117,7 +1102,7 @@ async function buildPlugins(options = {}) {
   try {
     for (const plugin of list) {
       const { file, floor } = PLUGINS[plugin];
-      const src = plugin==='wm'?wmAssembly.code:fs.readFileSync(path.join(programDir, file), 'utf8');
+      const src = fs.readFileSync(path.join(programDir, file), 'utf8');
       const sourceBytes = Buffer.byteLength(src);
       const masked = maskSource(src);
       const headerInfo = collectDirectives(src);
@@ -1125,7 +1110,7 @@ async function buildPlugins(options = {}) {
 
       // Dev-surface exclusion (design §11.5): the readable source keeps `_test`;
       // the release artifact does not carry it.
-      const testStripped = profile==='source'||plugin==='wm'?{src,blocks:0,bytes:0}:stripTestSurface(src, masked);
+      const testStripped = profile==='source'?{src,blocks:0,bytes:0}:stripTestSurface(src, masked);
       let working = testStripped.src;
 
       let regionInfo = { rows: [], bytes: 0 };
@@ -1145,11 +1130,11 @@ async function buildPlugins(options = {}) {
       let builtBytes = Buffer.byteLength(working);
       let keyPool = { aliases: 0, accessesReplaced: 0, objectKeysReplaced: 0, bytesSaved: 0 };
       if (doMinify) {
-        const res = plugin==='wm'?await minifyWm(working,programDir):minify(working, scratch, seq++);
+        const res = minify(working, scratch, seq++);
         if (res.error) { report.rows.push({ plugin, file, sourceBytes, floor, wrote: false, refused: `minify failed: ${res.error}` }); continue; }
         builtText = res.text;
         builtBytes = res.bytes;
-        keyPool = plugin==='wm'?{src:builtText,aliases:0,accessesReplaced:0,objectKeysReplaced:0,bytesSaved:0}:poolStaticPropertyKeys(builtText);
+        keyPool = poolStaticPropertyKeys(builtText);
         if (keyPool.error) { report.rows.push({ plugin, file, sourceBytes, floor, wrote: false, refused: keyPool.error }); continue; }
         builtText = keyPool.src;
         builtBytes = Buffer.byteLength(builtText);
@@ -1157,7 +1142,7 @@ async function buildPlugins(options = {}) {
 
       // Minification removes comments, while readable output already retains
       // its original directives. Prepending them again duplicates host settings.
-      const artifact = plugin==='wm'&&doMinify?builtText+'\n':doMinify ? `${header}\n${builtText}` : builtText;
+      const artifact = doMinify ? `${header}\n${builtText}` : builtText;
       const finalBytes = Buffer.byteLength(artifact);
 
       // Syntax verification on the ARTIFACT, not the readable source (design §11.5:
@@ -1170,13 +1155,10 @@ async function buildPlugins(options = {}) {
         continue;
       }
 
-      if(plugin==='wm'&&profile==='release'&&finalBytes>WM_RELEASE_BUDGET.maximumBytes)throw Error('WM_RELEASE_BUDGET_EXCEEDED:'+finalBytes+'>'+WM_RELEASE_BUDGET.maximumBytes);
       const outFile = path.join(outDir, path.basename(file));
       fs.writeFileSync(outFile, artifact);
-      if(plugin==='wm'&&profile==='source'){fs.mkdirSync(path.join(programDir,'plugins'),{recursive:true});fs.writeFileSync(path.join(programDir,file),artifact);}
       report.rows.push({
         plugin, file, profile, variant:profile==='source'?'Full':'Min',
-        ...(plugin==='wm'?{owner:'wm',inputDigest:sha256(JSON.stringify(wmAssembly.inputs)),budget:WM_RELEASE_BUDGET,receipt:{owner:'wm',profile,filename:path.basename(file),inputDigest:sha256(JSON.stringify(wmAssembly.inputs)),outputSha256:sha256(artifact),outputBytes:finalBytes,transforms:profile==='release'?[WM_TRANSFORM]:[]}}:{}),
         sourceBytes,
         floor,
         bytes: finalBytes,
@@ -1217,15 +1199,7 @@ async function buildPlugins(options = {}) {
 
 // The build is a CLI tool, but the `_test` stripper must be importable so
 // tests/test_surface_strip_test.cjs can verify it directly instead of inferring it from a log.
-async function minifyWm(source,programDir) {
- try {
- const compiler=require('../wm/tools/build-portable.cjs').loadPinnedTerser(path.join(programDir,'wm'));
- const result=await compiler.minify(source,{compress:{passes:2,negate_iife:false},mangle:false,format:{comments:/@(?:name|display-name|description|version|author|api|update-url|arg)\b|^!/}});
- if(!result.code)throw Error('WM_MINIFY_FAILED');
- return {text:result.code,bytes:Buffer.byteLength(result.code),error:''};
- }catch(error){return {error:String(error.message||error)};}
-}
-module.exports = { PLUGINS, TARGETS, buildPlugins, parseBuildArgs, WM_TRANSFORM, WM_RELEASE_BUDGET, stripTestSurface, stripRegions, resolveAcorn, resolveNpmPackageBin, minify, poolStaticPropertyKeys };
+module.exports = { PLUGINS, TARGETS, buildPlugins, parseBuildArgs, stripTestSurface, stripRegions, resolveAcorn, resolveNpmPackageBin, minify, poolStaticPropertyKeys };
 
 if (require.main === module) {
   Promise.resolve().then(()=>buildPlugins(parseBuildArgs())).catch(error=>{process.stderr.write(`${error.stack||error}\n`);process.exitCode=1;});

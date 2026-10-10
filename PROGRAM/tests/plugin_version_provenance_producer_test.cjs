@@ -65,21 +65,6 @@ assert.throws(() => rewritePluginVersion(Buffer.from(old.toString().replace('Plu
 assert.throws(() => rewritePluginVersion(Buffer.from(old.toString().replace('//@display-name Plugin v1.0.8\r\n', '')), '1.0.8', '1.0.10'), /display_directive_count/, 'missing display directive is rejected');
 assert.throws(() => rewritePluginVersion(Buffer.concat([old, Buffer.from('//@display-name Extra\n')]), '1.0.8', '1.0.10'), /display_directive_count/, 'duplicate unversioned display directive is rejected');
 
-const wmBytes = fs.readFileSync(path.join(__dirname, '../plugins/LIBRA_World_Manager.js'));
-const wmIdentity = {owner:'wm',file:'LIBRA_World_Manager.js'};
-const wmLiteral = Buffer.from(wmBytes.toString().replace(/^\s*const PLUGIN_VERSION = \(\(\) => \{[\s\S]*?^\s*\}\)\(\);/m, "        const PLUGIN_VERSION = '6.0.0';"));
-assert.throws(()=>rewritePluginVersion(wmLiteral,'6.0.0','6.0.1',wmIdentity),/internal/,'WM literal replacement cannot bypass canonical rebuild requirement');
-assert.throws(()=>rewritePluginVersion(wmLiteral,'6.0.0','6.0.1'),/internal/,'WM named source cannot bypass canonical rebuild by omitting identity');
-const wmVersion = wmBytes.toString().match(/^\/\/@version (\d+\.\d+\.\d+)$/m)[1];
-assert.deepEqual(rewritePluginVersion(wmBytes,wmVersion,wmVersion,wmIdentity),wmBytes,'recognized WM derived version preserves unchanged source bytes');
-assert.throws(()=>rewritePluginVersion(wmBytes,wmVersion,'99.0.0',wmIdentity),/wm_source_rebuild_required/,'WM version changes require canonical source rebuild');
-assert.throws(()=>rewritePluginVersion(wmBytes,wmVersion,wmVersion,{owner:'libra',file:'LIBRA.js'}),/internal/,'derived version is restricted to WM owner/file identity');
-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace("return '6.0.0';", "return '6.0.1';")),wmVersion,wmVersion,wmIdentity),/internal/,'WM fallback/header mismatch is rejected');
-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace("const matched = src.match(/@version", "globalThis.__unexpectedVersionEvaluation = true; const matched = src.match(/@version")),wmVersion,wmVersion,wmIdentity),/internal/,'unrecognized derived body is rejected without evaluating source');
-assert.equal(globalThis.__unexpectedVersionEvaluation,undefined,'version inspection never executes plugin text');
-assert.throws(()=>rewritePluginVersion(Buffer.concat([wmBytes,Buffer.from("\nconst PLUGIN_VERSION = '6.0.0';\n")]),wmVersion,wmVersion,wmIdentity),/internal/,'additional literal declarations cannot mask WM derived declaration');
-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace('//@name libra_world_manager','//@name other')),wmVersion,wmVersion,wmIdentity),/internal/,'derived form also requires exact plugin metadata identity');
-
 const programRoot = path.resolve(__dirname, '..');
 const prepared = prepareSourceRefresh(programRoot);
 assert.deepEqual(validateProvenance(prepared.catalog, prepared.actual), [], 'prepared candidate validates against its post-rewrite actual bytes');

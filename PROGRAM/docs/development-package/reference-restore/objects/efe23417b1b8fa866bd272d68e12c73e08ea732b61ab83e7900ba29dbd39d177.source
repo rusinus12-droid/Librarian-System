@@ -1,7 +1,0 @@
-# Preserve existing byte-pinned source and fixtures on every operating system.
-# Do not normalize line endings during add, clone, checkout, or archive.
-* -text
-*.sqlite binary
-*.sqlite-* binary
-*.db binary
-*.db-* binary

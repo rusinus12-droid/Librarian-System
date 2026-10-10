@@ -21,10 +21,11 @@ try{
  const server=require(serverPath);
  assert.equal(typeof server.createMemorySuiteServer,'function');
  assert.equal(typeof require(path.join(unpacked,'PROGRAM/tools/portable_export_stopped.cjs')).exportStopped,'function');
- assert.equal(fs.existsSync(path.join(unpacked,'PROGRAM/sdk/WmStorageContracts.source.js')),true);
+ assert.equal(fs.existsSync(path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs')),true);
  const {inspectExtractedRuntime}=require('../tools/verify_runtime_archive.cjs');
  const closure=inspectExtractedRuntime(unpacked);assert.equal(closure.verified,true);assert.ok(closure.localRequires>100);
- const dependency=path.join(unpacked,'PROGRAM/sdk/WmStorageContracts.source.js'),saved=fs.readFileSync(dependency);
+ const dependency=path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs'),saved=fs.readFileSync(dependency);
+ assert.equal(typeof require(dependency),'function','the retained search-kernel dependency is actually loaded before the missing-member control');
  fs.unlinkSync(dependency);
  assert.throws(()=>inspectExtractedRuntime(unpacked),/distribution_runtime_dependency_missing/,'a loaded module cache must not hide a missing ZIP member');
  fs.writeFileSync(dependency,saved);
@@ -38,6 +39,8 @@ try{
  fs.writeFileSync(path.join(temp,'outside.cjs'),'module.exports={};\n');
  fs.writeFileSync(lazy,"module.exports=()=>require('../../../outside.cjs');\n");
  assert.throws(()=>inspectExtractedRuntime(unpacked),/distribution_runtime_dependency_outside_archive/,'source siblings cannot satisfy a packaged dependency');
+ fs.unlinkSync(path.join(temp,'outside.cjs'));
+ assert.throws(()=>inspectExtractedRuntime(unpacked),/distribution_runtime_dependency_outside_archive/,'absent siblings are also refused before resolution; existence cannot change the boundary');
  fs.unlinkSync(lazy);
  console.log('distribution_runtime_dependency_closure_test: PASS (actual ZIP server/exporter dependency load)');
 }finally{fs.rmSync(temp,{recursive:true,force:true});}

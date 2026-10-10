@@ -49,7 +49,6 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 - LIA Persona Linker 0.26.83
 - RE:TRACE 1.9.84
 - GRADIA 0.25.83
-- LIBRA World Manager 6.0.0
 
 [호환 정보]
 - Storage SDK 1.8.25
@@ -61,9 +60,8 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 GRADIA 플러그인: PROGRAM/plugins/GRADIA.js. 읽기 전용 LIB 소비자이며 서버 저장 owner는 기존 5개를 유지합니다.
 
-[WM 통합 빌드]
-- 한 LIB 프로젝트에서 7개 플러그인을 관리합니다. WM owner는 wm, plugin ID는 libra_world_manager입니다.
-- 개발 source는 Full, 배포 release는 Min을 생성합니다. 파일명은 모두 LIBRA_World_Manager.js입니다.
+[6종 플러그인 빌드]
+- LIBRA, HAYAKU, Flashback, LIA, RETRACE, GRADIA를 관리합니다.
+- 개발 source는 Full, 배포 release는 Min을 생성합니다.
 - 개발 출력은 .development/build/Full, 배포 출력은 .development/build/Min입니다.
-- WM source/고정 reference는 개발 패키지에만 포함하며 배포 패키지에는 PROGRAM/plugins의 Min만 포함합니다.
 - offline_candidate 검증 패키지는 출시/실제 RisuAI·Windows·서버 저장 qualification을 의미하지 않습니다.

@@ -6,7 +6,6 @@
 const fs=require('node:fs'),fsp=fs.promises,path=require('node:path'),crypto=require('node:crypto');
 const {Worker}=require('node:worker_threads');
 const {LIMITS,sha256File}=require('./stream_archive.cjs');
-const BackupBundle=require('./backup_bundle_v2.cjs');
 const REPLACE_WARNING='기존에 사용하던 데이터가 있습니다. 복원 작업을 진행시 기존 데이터는 복원된 데이터로 대체됩니다. 데이터 폴더를 미리 보존하신 후 사용을 권장합니다. 복원을 시작하시겠습니까?';
 const fail=(code,statusCode=409)=>{throw Object.assign(Error(code),{statusCode});};
 module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespaces,databaseSchemaVersion,serverVersion='0.3.71',protocol={major:1,minor:9},createBackup,listBackups,managerControl,targetState,canStart}){
@@ -20,7 +19,7 @@ module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespac
   expandedBytes:s.expandedBytes||0,sha256:s.sha256||'',filename:(s.archiveKind==='logical_migration'?'Librarian-Migration-':'Librarian-Server-Backup-')+s.id.slice(3,11)+'.zip',
   chunkBytes:LIMITS.chunkBytes,expiresAt:s.expiresAt,backupId:s.backupId||'',error:s.error||'',plan:s.plan||null,
   namespaces:s.namespaces||[],reconnectRequired:s.reconnectRequired===true,restored:s.restored===true,
-  coverage:s.coverage||{legacyOwners:s.namespaces||[],wm:'absent'},result:s.result||null,archiveKind:s.archiveKind||'',migration:s.archiveKind==='logical_migration',verificationScope:s.archiveKind==='logical_migration'?'logical_server_data_rebuilt_to_current_schema':s.archiveKind==='component_bundle'?'legacy_plus_wm_components_verified':'server_snapshot_only',policyReviewRequired:true});
+  coverage:s.coverage||{legacyOwners:s.namespaces||[]},result:s.result||null,archiveKind:s.archiveKind||'',migration:s.archiveKind==='logical_migration',verificationScope:s.archiveKind==='logical_migration'?'logical_server_data_rebuilt_to_current_schema':'server_snapshot_only',policyReviewRequired:true});
  const auth=(principal,b)=>{
   const s=sessions.get(String(b.transferId||''));
   if(!s||s.owner!==principal.pluginId||typeof b.transferToken!=='string'||b.transferToken!==s.token||Date.now()>s.expiresAt)fail('portable_transfer_not_found',404);
@@ -63,9 +62,9 @@ module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespac
    const {s,existing}=await allocate(principal,{...b,mode},'export');if(existing)return publicState(s);s.archiveKind=mode==='migration'?'logical_migration':'server_snapshot';
    launch(s,async()=>{if(!canStart()||workerBusy)fail('portable_maintenance_busy');s.phase='snapshot';const result=await createBackup();if(s.status==='cancelled')return;if(result?.ok!==true||!result.result?.id)fail('portable_snapshot_unverified');s.backupId=result.result.id;
     const backup=listBackups().find(x=>x.id===s.backupId);if(!backup||namespaces.some(ns=>!backup.stores?.[ns]))fail('portable_snapshot_incomplete');
-    await space(Object.values(backup.stores).reduce((n,x)=>n+Number(x.bytes||0),0)+Number(backup.components?.wm?.bytes||0));
+    await space(Object.values(backup.stores).reduce((n,x)=>n+Number(x.bytes||0),0));
     const packed=await runWorker(s,'export',{mode,backupDir:backup.path,archivePath:s.file,sourceDataDir:dataDir,serverVersion,protocol,databaseSchemaVersion});if(s.status==='cancelled')return;
-    s.archiveKind=packed.archiveKind||s.archiveKind;s.totalBytes=packed.bytes;s.sha256=packed.sha256;s.expandedBytes=packed.expandedBytes;s.coverage=packed.coverage||{legacyOwners:namespaces.slice(),wm:'absent'};s.namespaces=[...namespaces,...s.coverage.wm==='included'?['wm']:[]];s.status='ready';s.phase='ready';s.result={archiveKind:s.archiveKind,migrationSchema:packed.migrationSchema||'',coverage:s.coverage};
+    s.archiveKind=packed.archiveKind||s.archiveKind;s.totalBytes=packed.bytes;s.sha256=packed.sha256;s.expandedBytes=packed.expandedBytes;s.coverage=packed.coverage||{legacyOwners:namespaces.slice()};s.namespaces=namespaces.slice();s.status='ready';s.phase='ready';s.result={archiveKind:s.archiveKind,migrationSchema:packed.migrationSchema||'',coverage:s.coverage};
    });return publicState(s);
   }
   if(action==='upload-start'){
@@ -95,7 +94,7 @@ module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespac
    // actual inflated limits; a claimed total cannot make the worker unbounded.
    s.status='inspecting';s.phase='inspecting';
    launch(s,async()=>{const imported=await runWorker(s,'import',{archivePath:s.file,backupRootManual:path.join(dataDir,'backups','manual'),stagingRoot:path.join(s.dir,'staging'),expectedDatabaseSchemaVersion:databaseSchemaVersion,requiredNamespaces:namespaces,expectedArchiveSha256:b.sha256||null,serverVersion});
-    if(s.status==='cancelled')return;s.archiveKind=imported.archiveKind||'server_snapshot';s.sha256=imported.sha256;s.backupId=imported.backupId;s.coverage=BackupBundle.coverageOf(imported.manifest);const legacyManifest=BackupBundle.legacyOf(imported.manifest);s.namespaces=[...Object.keys(legacyManifest.stores),...s.coverage.wm==='included'?['wm']:[]];s.expandedBytes=imported.expandedBytes;
+    if(s.status==='cancelled')return;s.archiveKind=imported.archiveKind||'server_snapshot';s.sha256=imported.sha256;s.backupId=imported.backupId;const legacyManifest=imported.manifest;s.coverage={legacyOwners:Object.keys(legacyManifest.stores)};s.namespaces=Object.keys(legacyManifest.stores);s.expandedBytes=imported.expandedBytes;
     if(namespaces.some(ns=>!legacyManifest.stores?.[ns])||!legacyManifest.scopeCatalog)fail('portable_full_snapshot_required');
     s.status='ready';s.phase='ready';s.result={verified:true,archiveKind:s.archiveKind,migration:s.archiveKind==='logical_migration',importedFromId:imported.manifest.importedFromId||'',sourceVersion:imported.manifest.migrationAux?.source?.serverVersion||imported.manifest.serverVersion};
    });return publicState(s);

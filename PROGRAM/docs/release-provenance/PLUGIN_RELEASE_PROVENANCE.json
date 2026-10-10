@@ -285,38 +285,33 @@
     "plugins": {
       "flashback": {
         "version": "1.0.101",
-        "sha256": "10eb887afb55f5381db651a8dff4f89f3b047317674f804f19e83cc6aab39349",
-        "bytes": 3292044
+        "sha256": "497f0baa2456b8c1679f6d7a28cffa5ed5d5736b5ef5972014aa37f5424335f3",
+        "bytes": 3292027
       },
       "hayaku": {
         "version": "3.0.138",
-        "sha256": "21b935ccc01bacfc57d14a906b40917339bf0c23aa8d522630cc2cf71c1b12f6",
-        "bytes": 3960875
+        "sha256": "020f2d01077ac2ae82ad8226c46d42ce01e86fb3b9a6af367f41658450657e8b",
+        "bytes": 3960858
       },
       "libra": {
         "version": "2.3.149",
-        "sha256": "816802d4b680bb0ca39f0344e6e5bb825e89a2cf72a6c0a07a668e35f3ff7185",
-        "bytes": 5769978
+        "sha256": "81d64516659a7450ad68de7e07bfb29813d9768c7ab6015063a31ad7b16426d0",
+        "bytes": 5769961
       },
       "lia": {
         "version": "0.26.83",
-        "sha256": "2860a6479b8fcf7ed327a9e2151bdf8d138eea830c33aec344390654f89dbca3",
-        "bytes": 1874429
+        "sha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+        "bytes": 1870745
       },
       "retrace": {
         "version": "1.9.84",
-        "sha256": "3cc6626bd108eb645efc27d8140652e126c72d6af51e8e579b53caf8cfef05ac",
-        "bytes": 1202762
+        "sha256": "d3add31214d49199528cebe7a7c84bdf8757d99470f5ae50de9f7ae6c3ee9f34",
+        "bytes": 1159309
       },
       "gradia": {
         "version": "0.25.83",
-        "sha256": "e7b98fa6b20a789077ce4099211551c478a4feb2c274755c1a0ff7b5994f73cb",
-        "bytes": 3035977
-      },
-      "wm": {
-        "version": "6.0.0",
-        "sha256": "65d2e541c07199f4901d1f87f94ec5d30aada37e0beefd39a57c5771e9322fb7",
-        "bytes": 6656517
+        "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+        "bytes": 3035965
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
