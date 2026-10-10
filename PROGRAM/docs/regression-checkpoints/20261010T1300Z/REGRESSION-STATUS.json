@@ -1,0 +1,475 @@
+{
+  "schema": "lib.six-plugin.regression-checkpoint.v2",
+  "capturedAtUtc": "2026-10-10T13:00:25.393549+00:00",
+  "activeCommit": "6d74292ec9274c92248695d531e6763c728ecda2",
+  "originalRootUniverse": 1138,
+  "activeRootUniverse": 1134,
+  "phase1RootFileStatusCounts": {
+    "BLOCKED_GUARD_REVIEW": 186,
+    "FAIL": 232,
+    "PASS": 616,
+    "PASS_WITH_COVERAGE_REVIEW": 1,
+    "PASS_WITH_EXCLUSIONS": 7,
+    "PRIOR_MIN_ARTIFACT_RUNTIME_PASS": 1,
+    "PRIOR_OFFICIAL_GATE_PASS": 87,
+    "PRIOR_PARAMETERIZED_RUNTIME_PASS": 4,
+    "PRIOR_REPORTER_CONTRACT_PASS": 1,
+    "TIMEOUT": 3
+  },
+  "priorBuilderRootFiles": 93,
+  "priorBuilderNodeCases": 400,
+  "phase2NativeNormalization": {
+    "completedRows": 126,
+    "counts": {
+      "PASS": 100,
+      "BLOCKED_GUARD_REVIEW": 2,
+      "PASS_WITH_EXCLUSIONS": 1,
+      "FAIL": 23
+    },
+    "indexSha256": "8ccee997b12367e957a6e13e0f8f34049a5727d9d8ffac962b19e2da70f62623"
+  },
+  "testSuccessors": [
+    {
+      "id": "006",
+      "status": "PREPARED_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        22,
+        172,
+        180,
+        182,
+        183,
+        185,
+        186
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+          "successorPath": "test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+          "sha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Correct the repair fixture default root to its loaded PROGRAM, retaining explicit override and all consumer assertions. SQLite profile normalization remains separate.",
+      "verification": {
+        "runs": [],
+        "completedSelectedIdentities": 0,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "009-v2",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        662,
+        667,
+        668,
+        669,
+        670,
+        671,
+        672,
+        674
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+          "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+          "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+          "sha256": "4173d55d574f3573a50f3246ff4ba3099049a411fb8d5a90b58b927f79028ddc",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs",
+          "sha256": "a3fef4ad12e90a6cc45b12b1973448d5cd6c93d5bdfb5bd07d4874296425c7fb",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs",
+          "sha256": "af3afca534774d5b7fe67582cc44884dfb42f65ed94b423f2d1b8712b196be1d",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs",
+          "sha256": "9f9cd311860a9683fc0afc4a68c1286714c7f0eab42a1c20761c15fdc2db5b17",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+          "sha256": "94435cc7b1026969f44a5a8343d7db555e7e0d07442213dfa90db984b332637e",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+          "sha256": "940d82d16aed514d3dfe78deef31f69c18b9fa71b7db62a7c3471f5f24bb1c12",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs",
+          "sha256": "3d141ccc4b864ef031d8cf86603f32066885071be96b76950fe101a14b4232db",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs",
+          "successorPath": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs",
+          "sha256": "fad2bb36f4a248df43976df4ad47f245c46385ee0b10cf94143b0a7da76ff42a",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Use actual Classic delivery and exact same-request sealed canonical references; retain provider counts and raw durable owner/byte equality. Preserve the timeout and any newly exposed storage mismatch.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 671,
+            "receiptSha256": "ddd41883f69f6c7d91c33990cd0c8fc2ae01a0dd757ecb9e917e97ebd050e992",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 22.792,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:22:39.944678+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 662,
+            "receiptSha256": "fa91d4ebc6c25bf50a00ee21689f05fce4c7ac9c37b1e885bcc2e8f1a03281b3",
+            "executionStatus": "timeout",
+            "classification": "TIMEOUT",
+            "exitCode": 1,
+            "durationSeconds": 60.954,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:24:30.962222+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 667,
+            "receiptSha256": "8e5927723f5f7dd591ac416b665eb4c7aa21ec207a67d074aecd3b518a3e1ca6",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 21.296,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:25:11.847582+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 668,
+            "receiptSha256": "ac70abbff7e8c2806e6b64d7d0182ca9405166f6f9c7a9f6f8bc5b975457cb9f",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 23.792,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:25:57.480559+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 669,
+            "receiptSha256": "c4b45f23362f334fb4f327e561064f78a4f5ae2a4027e2232d28da9c15037d2f",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 22.957,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:26:44.736182+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 670,
+            "receiptSha256": "6deb30e1050fab6605ecfee34feaa2d48b44bc618778cbfd32d3105c4307971d",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 14.163,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:27:19.373620+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 672,
+            "receiptSha256": "2cacd3b0515299f22b7102df71cd06be01a181afced3c2ff1bb022bd963f340e",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 15.498,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:28:20.160379+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 674,
+            "receiptSha256": "425d2d51472cd5420dae8338cb7d5269b0a30f445cafee68038cf654825df0aa",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 22.592,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:29:01.091424+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 8,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "010-v5",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        571,
+        579
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+          "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+          "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+          "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+          "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Retain both positive actual closure-delivery obligations. Mixed pending records globally suppress independently validated accepted successors in the current consumer; the observed failure remains unresolved and no product admission condition is weakened.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 571,
+            "receiptSha256": "9dbce35f62511e8d39610cd38845ffe0d04e0e386315996f5b914995cf638b2e",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 3.796,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:13:25.969416+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 579,
+            "receiptSha256": "a11ec72b2ec422a5c4cc573aa075b879b6199381253f819a51d3da73f3bb7b64",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 10.426,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:14:11.370884+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 2,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "011-v2",
+      "status": "VERIFIED_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        623
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/libra_micro_stage_retry_test.cjs",
+          "successorPath": "test-successors/011-v2/PROGRAM/tests/libra_micro_stage_retry_test.cjs",
+          "sha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Replace only a retired source-edit-journal authority expectation with current receipt-authority success and real in-flight source-change refusal; retain28 other Micro cases and verify actual durable publication.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 623,
+            "receiptSha256": "61278291ff6d63ad932b251c84ae7e2da372553171d67b9c6a37610376bf5472",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 18.779,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:55:56.904169+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": true,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "012",
+      "status": "VERIFIED_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        662
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/run_regression_batch.py",
+          "successorPath": "test-successors/012/PROGRAM/run_regression_batch.py",
+          "sha256": "803adb32d38b597dd94fd7e94f02680ba9f0ca075220b969a36cce622f0cbfa9",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+          "successorPath": "test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+          "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+          "successorPath": "test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+          "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+          "successorPath": "test-successors/012/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+          "sha256": "8f4bbc2522fc9784544397224d8fdc0a3d56f53208282823fc665e0e8e26df60",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Retain all nine portable mode pairs and final inventory assertions. Give only this functional matrix a named180-second safety ceiling and record all12 stage timings; prior60-second timeout remains evidence.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 662,
+            "receiptSha256": "0543aa2f57629fb2ef2e410c64dcf151897af894e0f5249bed134443b9bdf262",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 74.345,
+            "timeoutSeconds": 180,
+            "finishedUtc": "2026-10-10T12:48:30.052653+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true,
+            "functionalCoverageReadback": {
+              "allNinePairsVerified": true,
+              "allTwelvePassedStagesVerified": true,
+              "terminalCleanupMarkerVerified": true,
+              "totalElapsedMs": 67524.732379,
+              "stdoutSha256": "76fcb8462103b56fbae4b9822c002599998b4a47027ee050453e49f257bed973"
+            }
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": true,
+        "actualModelsEvaluated": false
+      }
+    }
+  ],
+  "adoptedTestCorrections": [
+    "PROGRAM/tests/flashback_multilingual_probe_wording_test.cjs",
+    "PROGRAM/tests/hayaku_disposed_topology_runtime_test.cjs",
+    "PROGRAM/tests/libra_feature_parity_test.cjs",
+    "PROGRAM/tests/libra_live_tail_planner_dialogue_source_test.cjs",
+    "PROGRAM/tests/libra_live_tail_supply_measurement_test.cjs",
+    "PROGRAM/tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+    "PROGRAM/tests/libra_narrative_direction_loop_and_general_headers_test.cjs",
+    "PROGRAM/tests/libra_narrative_direction_render_path_test.cjs",
+    "PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs"
+  ],
+  "wholeFileRetirementsApplied": 4,
+  "privateEvidenceManifestSha256": "ba8ec7a1a9806c7a6f478bc0c3a065d9052f96590b931fe028226ea35433a59a",
+  "privateEvidenceTerminalRuns": 1237,
+  "supplemental": {
+    "priorGradiaChildren": 20,
+    "additionalJavascriptEntriesExecuted": 3,
+    "browserEntries": 31,
+    "browserStatus": "NOT_RUN_ENVIRONMENT_BOUNDARY",
+    "browserBoundary": "Native confinement preflight was denied before a browser was launched.",
+    "pythonInstallerEntries": 1,
+    "pythonInstallerStatus": "NOT_RUN",
+    "actualRisu": "NOT_RUN"
+  },
+  "limits": [
+    "Original phase1 results remain separate from later normalized results; no full-regression PASS is claimed.",
+    "Historical root denominator1138 and current discovery1134 are both preserved.",
+    "Candidate files remain outside active PROGRAM/tests until independent replay and adoption.",
+    "Prior failures and timeouts remain in the private sidecar.",
+    "Raw synthetic logs, execution receipts and supervisors are private-only.",
+    "No actual-host, actual-model or product-performance qualification is implied."
+  ]
+}

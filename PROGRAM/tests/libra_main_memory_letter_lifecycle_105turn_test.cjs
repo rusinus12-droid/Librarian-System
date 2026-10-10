@@ -1,8 +1,9 @@
 'use strict';
 // D1: the tracked 105-pair gold transcript traverses the shipped Librarian,
-// canonical storage, State, Recall, History, and Input Writer paths. The provider
+// canonical storage, State, Recall, History, and Classic consumer paths. The provider
 // boundary is controlled and local; this is not a live-model quality claim.
 const assert = require('node:assert/strict');
+const { projectNativePublicReceipt } = require('./fixtures/native_public_receipt_projection.cjs');
 const transcriptFixture = require('./fixtures/acceptance_scenarios.json').gold_transcripts
   .find(row => row.id === 'LETTER-LIFECYCLE');
 const A12_ACTION = require('./fixtures/acceptance_scenarios.json').cases.find(row => row.id === 'A12').action;
@@ -22,6 +23,46 @@ const FORK = transcriptFixture.fork_variant;
 const SUMMARY = '붉은 봉투 편지 전달 약속';
 const clone = value => JSON.parse(JSON.stringify(value));
 const canonicalPacketRows = packet => Object.values(packet?.evidencePacket?.layers || {}).flatMap(rows => Array.isArray(rows) ? rows : []);
+// Observe the actual retained Classic hook. Never build evidence from expected
+// values or from the separate preview API used by the surrounding assertions.
+async function actualClassicPacket(f, query, expectedScopeKey, {allowEmpty = false} = {}) {
+  await f.r.api.saveLibraProviderConfig({responseFamily: 'libra', libraResponseMode: 'classic'});
+  const previous = f.r.api.getLastResponseContext();
+  const canonicalCalls = countCalls(f.control).canonical;
+  assert.equal(typeof f.control.hooks.beforeRequest, 'function');
+  const messages = await f.control.hooks.beforeRequest([{role: 'user', content: query}], 'model');
+  const context = f.r.api.getLastResponseContext();
+  const viewer = f.r.api.getLastMemoryRecallViewer();
+  assert.ok(context?.requestId, 'actual Classic publishes a request-local response context');
+  assert.notEqual(context.requestId, previous?.requestId, 'the witness belongs to this new query');
+  assert.equal(context.route, 'classic');
+  assert.equal(context.scopeKey, expectedScopeKey);
+  assert.equal(context.values?.currentInput, query);
+  assert.equal(viewer?.scopeKey, expectedScopeKey);
+  assert.equal(viewer?.queryText, query);
+  assert.equal(viewer?.responseContextRequestId, context.requestId);
+  assert.equal(viewer?.responseContextDigest, context.contextDigest);
+  const validity = await f.r.api.validateResponseContext(context);
+  assert.equal(validity.ok, true, JSON.stringify(validity));
+  assert.equal(validity.current, true);
+  assert.equal(countCalls(f.control).canonical, canonicalCalls, 'recall never re-analyzes canonical source');
+  const injected = messages.filter(row => row.role === 'system' &&
+    String(row.content || '').includes('[LIBRA CLASSIC RECALL'));
+  const deliveredRows = Array.from(viewer?.rows || []).filter(row => row.classicUsed === true && row.injected === true);
+  if (!allowEmpty) {
+    assert.ok(injected.length > 0, 'the actual returned prompt contains Classic recall');
+    assert.ok(deliveredRows.length > 0, 'at least one canonical row was actually delivered');
+  }
+  const block = injected.map(row => row.content).join('\n');
+  assert.notEqual(viewer.liveTailInjected, true, 'this canonical-only fixture has no Live Tail opt-in');
+  for (const row of deliveredRows) {
+    const exactText = String(row.selectedText || row.text || '');
+    assert.ok(exactText.length > 0, 'each delivered row carries actual selected text');
+    assert.ok(block.includes(exactText), 'each delivered row is present whole in the returned Classic block');
+  }
+  return {evidencePacket: {layers: context.values.canonicalLayers, temporal_scope: viewer.temporalAnchor},
+    actualClassic: {context, viewer, deliveredRows, block}};
+}
 const turnFromRef = ref => Number(/^t(\d+)-/.exec(String(ref || ''))?.[1] || 0);
 const storedJsonFieldBytes = (raw, field) => {
   const source = String(raw), marker = `\"${field}\"`;
@@ -192,6 +233,76 @@ const committedBytesForChat = (server, chatId) => {
   assert.ok([...bytes.values()].every(value => typeof value === 'string'), `${chatId} canonical source bytes are observable`);
   return { manifest, refs, bytes };
 };
+
+// Current native-copy storage contract: the mode must be explicitly registered on
+// the parent before its first write, and the child must inherit an actual binding.
+const branchScope = (proof, characterId, chatId) => ({
+  scopeId: proof.scopeKey, scopeKey: proof.scopeKey, characterId, chatId,
+  aliases: [proof.scopeKey, chatId], label: chatId
+});
+async function assertNativeStorageWitness(f, server, bridge, copy, characterId, chatId, parentScope, mode) {
+  const proof = await f.r.api.getHostLineageStatus();
+  assert.equal(proof.status, 'verified');
+  assert.equal(proof.kind, 'native_branch');
+  assert.equal(proof.inheritanceEligible, true);
+  const scope = branchScope(proof, characterId, chatId);
+  assert.equal((await bridge.getScopeMode(scope)).mode, mode, 'native branch inherits the registered parent mode');
+  const rows = manifestRows(server).filter(row => row.value.chatId === chatId && row.value.scopeKey === proof.scopeKey);
+  assert.equal(rows.length, 1, 'exact chat and scope select one durable manifest in the configured endpoint');
+  assert.equal(rows[0].source, mode === 'server_only' ? 'server' : 'plugin');
+  const receipt = rows[0].value.nativeChatCopy;
+  assert.ok(receipt, 'the durable manifest, rather than an ok wrapper, proves native-copy admission');
+  assert.equal(receipt.schema, 'libra.native_chat_copy.v2');
+  assert.ok(Number(receipt.completenessVersion) >= 5);
+  assert.equal(receipt.complete, true);
+  assert.equal(receipt.durableVerified, true);
+  for (const suffix of ['Memories', 'InheritedMemories', 'MicroRecords', 'PendingMicroTurns',
+    'MicroOwnerRecords', 'InheritedMicroArchives', 'InheritedMicroOwnerRecords']) {
+    assert.ok(Number.isSafeInteger(receipt['expected' + suffix]) && receipt['expected' + suffix] >= 0);
+    assert.ok(Number.isSafeInteger(receipt['verified' + suffix]) && receipt['verified' + suffix] >= 0);
+    assert.equal(receipt['expected' + suffix], receipt['verified' + suffix], `${chatId}: complete ${suffix}`);
+  }
+  assert.ok(receipt.expectedInheritedMicroRefsDigest);
+  assert.equal(receipt.expectedInheritedMicroRefsDigest, receipt.verifiedInheritedMicroRefsDigest);
+  assert.equal(receipt.sourceScopeKey, parentScope.scopeKey);
+  assert.equal(receipt.targetScopeKey, scope.scopeKey);
+  assert.equal(receipt.targetChatId, chatId);
+  assert.equal(receipt.hostLineage.schema, 'librarian.host_lineage.v1');
+  assert.equal(receipt.hostLineage.kind, 'native_branch');
+  assert.equal(receipt.hostLineage.status, 'verified');
+  assert.equal(receipt.hostLineage.inheritanceEligible, true);
+  if (mode === 'server_only') {
+    assert.equal(receipt.storageBinding?.schema, 'librarian.native_branch_storage_binding.v1');
+    assert.equal(receipt.storageBinding?.status, 'complete');
+    assert.equal(receipt.storageBinding?.targetMode, 'server_only');
+    assert.equal([...server.local.keys()].some(key => String(key).includes(scope.scopeKey) && String(key).endsWith(':manifest')), false,
+      'server-only native branch has no fallback local manifest');
+  }
+  // debugNativeChatCopy is a public redacted projection (LIBRA redactPublicSecrets).
+  // Keep the durable receipt authoritative. Only exact canonical address keys
+  // proved by this target manifest may be absent from the public comparison.
+  const targetRefs = Object.values(rows[0].value.memories || {});
+  const allowedMemoryKeys = targetRefs.map(ref => {
+    const stored = parseJson(rawForKey(server, ref.key));
+    assert.equal(stored?.scopeKey, scope.scopeKey, 'redacted address belongs to the actual target scope');
+    assert.equal(stored?.memoryId, ref.memoryId, 'redacted address resolves to the actual manifest memory');
+    assert.equal(Number(stored?.revision), Number(ref.revision));
+    assert.equal(stored?.sourceDigest, ref.sourceDigest);
+    assert.equal(stored?.artifactDigest, ref.artifactDigest);
+    return ref.key;
+  });
+  const publicReceipt = projectNativePublicReceipt(receipt, { targetScopeKey: scope.scopeKey, allowedMemoryKeys });
+  // A newly copied result spreads the receipt; an already-complete result wraps it.
+  const returned = copy.result?.nativeChatCopy || copy.result;
+  for (const key of Object.keys(receipt)) {
+    assert.equal(Object.prototype.hasOwnProperty.call(returned || {}, key), true, `${chatId}: returned receipt includes ${key}`);
+    assert.deepEqual(clone(returned?.[key]), clone(publicReceipt.value[key]), `${chatId}: returned ${key} agrees with the exact public projection of durable receipt`);
+  }
+  console.log(JSON.stringify({record: 'fr_l4_native_storage_witness', mode, chatId,
+    scopeKey: scope.scopeKey, parentScopeKey: parentScope.scopeKey, receipt}));
+  return scope;
+}
+
 const readHead = async api => {
   const replay = await api.rebuildWorldManagerState();
   assert.equal(replay.ok, true, JSON.stringify({ code: replay.code, error: replay.error }));
@@ -250,10 +361,23 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
     const state = { current: mainChat, chats: [mainChat], character: null };
     state.character = { id: 'unified-char', chaId: 'unified-char', name: '민아', chatPage: 0, chats: state.chats };
     const rootBoundary = createRootBoundary();
-    const server = await serverFixture({ mode, snapshot: { chat: mainChat }, host: { ...makeHost(state), getRootDocument: async () => rootBoundary.root } });
+    const server = await serverFixture({ mode, snapshot: { chat: mainChat },
+      transformSource: source => {
+        const anchor = '\n\n  const RisuCompat = (() => {';
+        assert.equal(source.split(anchor).length, 2, 'fixture exposes the existing bridge at one exact assembly anchor');
+        return source.replace(anchor, '\n  globalThis.__fixtureStorageBridge = MemorySuiteStorageBridge;' + anchor);
+      }, host: { ...makeHost(state), getRootDocument: async () => rootBoundary.root } });
     progress(mode, 'server_fixture_ready');
     const f = server.f;
     try {
+      const bridge = f.r.context.__fixtureStorageBridge;
+      assert.ok(bridge && typeof bridge.setScopeMode === 'function');
+      const parentLineage = await f.r.api.getHostLineageStatus();
+      assert.ok(parentLineage.scopeKey);
+      const parentScope = branchScope(parentLineage, state.character.id, mainChat.id);
+      await bridge.setScopeMode(parentScope, mode);
+      assert.equal((await bridge.getScopeMode(parentScope)).mode, mode,
+        'parent scope has an explicit completed mode before the first canonical write');
       const sourceRowsByTurn = new Map(turns.map(row => [row.turn, clone(row)]));
       const providerBatches = [];
       const providerCandidates = [];
@@ -372,25 +496,32 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1 });
       const pastQuery = transcriptFixture.queries[0].text;
       const pastRecall = await f.r.api.previewUnifiedMemoryRecall(pastQuery);
-      const pastPacket = await f.r.api.prepareInputWriterEvidence(pastQuery);
+      const pastPacket = await actualClassicPacket(f, pastQuery, parentBytes.manifest.scopeKey);
       progress(mode, 'historical_recall_and_packet_readback');
       const pastRows = canonicalPacketRows(pastPacket);
       const t5PromiseText = at5Memory.canonicalArtifact.facts.find(fact => fact.claimKind === 'thread').text;
+      assert.ok(pastPacket.actualClassic.deliveredRows.some(row => String(row.text || '').includes(t5PromiseText)), 'actual Classic delivers the historical promise fact');
+      assert.ok(pastPacket.actualClassic.block.includes(t5PromiseText), 'the promise is present in the returned injection block');
+      const laterFulfillmentText = fulfillmentMemory.canonicalArtifact.facts.find(fact => fact.claimKind === 'thread').text;
+      assert.equal(pastPacket.actualClassic.deliveredRows.some(row => String(row.selectedText || row.text || '').includes(laterFulfillmentText)), false,
+        'the historical delivered rows exclude the later T105 fulfillment');
+      assert.equal(pastPacket.actualClassic.block.includes(laterFulfillmentText), false,
+        'the historical returned canonical block excludes the later T105 fulfillment');
       assert.equal(pastRecall.diagnostics?.temporalAnchor?.status, 'resolved',
         'an explicit T5 historical request resolves to one active canonical cursor');
       assert.equal(pastRecall.diagnostics?.temporalAnchor?.requestedTurn, 5);
       assert.ok(pastRecall.memories.some(row => row.memory.turnRange?.start === 1),
         `the historical T5 question selects the original canonical promise memory: ${JSON.stringify({ memories: pastRecall.memories.map(row => ({ start: row.memory.turnRange?.start, text: row.text || row.excerpt })), diagnostics: pastRecall.diagnostics, packet: pastRows.map(row => ({ start: row.turnRange?.start, text: row.text, closure: row.closure })) })}`);
       assert.ok(pastRows.some(row => row.text.includes(t5PromiseText)),
-        `the historical Input Writer packet contains the T5 promise fact: ${JSON.stringify({ anchor: pastPacket.evidencePacket?.temporal_scope, recall: pastRecall.memories.map(row => ({ start: row.memory.turnRange?.start, excerpt: row.text || row.excerpt })), rows: pastRows.map(row => ({ start: row.turnRange?.start, layer: row.section, text: row.text, closure: row.closure })) })}`);
+        `the historical Classic consumer packet contains the T5 promise fact: ${JSON.stringify({ anchor: pastPacket.evidencePacket?.temporal_scope, recall: pastRecall.memories.map(row => ({ start: row.memory.turnRange?.start, excerpt: row.text || row.excerpt })), rows: pastRows.map(row => ({ start: row.turnRange?.start, layer: row.section, text: row.text, closure: row.closure })) })}`);
       assert.equal(pastRecall.diagnostics?.recallContinuityClosure?.asOfTurn, 5,
         'cross-artifact closure keeps the requested historical cursor');
       assert.equal(pastRecall.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 0,
         'a later fulfillment is not attached to the historical T5 answer');
       assert.equal(pastRows.some(row => row.closure === true && row.text.includes(fulfillmentMemory.canonicalArtifact.facts.find(fact => fact.claimKind === 'thread').text)), false,
-        'the historical Input Writer packet does not re-inject the T105 fulfillment as closure');
+        'the historical Classic consumer packet does not re-inject the T105 fulfillment as closure');
       assert.equal(pastPacket.evidencePacket?.temporal_scope?.status, 'resolved',
-        'the requested T5 scope reaches the final Input Writer packet');
+        'the requested T5 scope reaches the final Classic consumer packet');
       assert.equal(pastPacket.evidencePacket?.temporal_scope?.sourceEvidenceCutoffTurn, 5);
       assert.ok(pastPacket.evidencePacket?.temporal_scope?.turnRange?.start === 1
         && pastPacket.evidencePacket?.temporal_scope?.turnRange?.end === 5,
@@ -407,18 +538,26 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.match(midBatchText, /대화 17/);
       assert.doesNotMatch(midBatchText, /대화 (?:18|19|20)/,
         'same-artifact fact selection, closure dependencies, and final excerpts honor exact source-turn cutoff');
-      const midBatchPacket = await f.r.api.prepareInputWriterEvidence(midBatchQuery);
+      const midBatchPacket = await actualClassicPacket(f, midBatchQuery, parentBytes.manifest.scopeKey);
       const midBatchRows = canonicalPacketRows(midBatchPacket);
+      assert.match(midBatchPacket.actualClassic.deliveredRows.map(row => row.text || '').join('\n'), /대화 17/);
+      assert.doesNotMatch(midBatchPacket.actualClassic.deliveredRows.map(row => row.text || '').join('\n'), /대화 (?:18|19|20)/);
+      assert.match(midBatchPacket.actualClassic.block, /대화 17/);
+      assert.doesNotMatch(midBatchPacket.actualClassic.block, /대화 (?:18|19|20)/,
+        'the actual canonical block obeys the T17 evidence cutoff');
       assert.equal(midBatchPacket.evidencePacket?.temporal_scope?.sourceEvidenceCutoffTurn, 17);
       assert.doesNotMatch(midBatchRows.map(row => row.text).join('\n'), /대화 (?:18|19|20)/);
       const currentQuery = transcriptFixture.queries[1].text;
       const currentRecall = await f.r.api.previewUnifiedMemoryRecall(currentQuery);
-      const currentPacket = await f.r.api.prepareInputWriterEvidence(currentQuery);
+      const currentPacket = await actualClassicPacket(f, currentQuery, parentBytes.manifest.scopeKey);
       progress(mode, 'current_recall_and_packet_readback');
       const currentRows = canonicalPacketRows(currentPacket);
+      const fulfilledText = fulfillmentMemory.canonicalArtifact.facts.find(fact => fact.claimKind === 'thread').text;
+      assert.ok(currentPacket.actualClassic.deliveredRows.some(row => String(row.text || '').includes(fulfilledText)), 'actual Classic delivers the fulfilled successor');
+      assert.ok(currentPacket.actualClassic.block.includes(fulfilledText), 'the fulfilled successor is present in the returned injection block');
       assert.ok(currentRecall.memories.length > 0, 'the current-status question returns actual Recall evidence');
       assert.ok(currentRows.some(row => row.text.includes(fulfillmentMemory.canonicalArtifact.facts.find(fact => fact.claimKind === 'thread').text)),
-        'the current Input Writer packet includes the fulfilled successor, whether Recall selects it directly or closure adds it');
+        'the current Classic consumer packet includes the fulfilled successor, whether Recall selects it directly or closure adds it');
       assert.ok(currentRecall.diagnostics?.recallContinuityClosure?.currentness === 'current'
         || currentRecall.diagnostics?.recallContinuityClosure?.currentness === 'last-known',
         'Recall reports observed currentness or its honest last-known limit');
@@ -491,6 +630,7 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.equal(lineage.commonPrefixPairs, 40);
       const copy = await f.r.api.debugNativeChatCopy({ force: true });
       assert.equal(copy.result?.ok, true, JSON.stringify(copy.result));
+      await assertNativeStorageWitness(f, server, bridge, copy, state.character.id, child.id, parentScope, mode);
       const childJob = await runBatchJob(f.r.api, 1, `${mode} native child T41–T45 cancellation`, stateWarningLedger);
       progress(mode, 'child_branch_batch_done');
       assert.equal(childJob.completed, 1);
@@ -511,6 +651,7 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.equal(siblingLineage.commonPrefixPairs, 40);
       const siblingCopy = await f.r.api.debugNativeChatCopy({ force: true });
       assert.equal(siblingCopy.result?.ok, true, JSON.stringify(siblingCopy.result));
+      await assertNativeStorageWitness(f, server, bridge, siblingCopy, state.character.id, sibling.id, parentScope, mode);
       await runBatchJob(f.r.api, 1, `${mode} native sibling T41–T45 neutral continuation`, stateWarningLedger);
       progress(mode, 'sibling_branch_batch_done');
       const siblingHead = await readHead(f.r.api);
@@ -519,6 +660,7 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.equal(siblingHead.narrative.threads[0].lifecycleId, firstThread.lifecycleId);
 
       state.current = mainChat;
+      assert.equal((await bridge.getScopeMode(parentScope)).mode, mode, 'returning to parent preserves the registered mode');
       const parentAfterBranches = await readHead(f.r.api);
       assert.equal(parentAfterBranches.narrative.threads.length, 0, 'native child/sibling work did not alter parent fulfillment');
       for (const [key, bytes] of bytesBeforeReplay) assert.equal(rawForKey(server, key), bytes, `${mode} branch operations preserve parent canonical bytes`);
@@ -538,8 +680,40 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       const oldFulfillmentBytes = bytesBeforeReplay.get(oldFulfillmentRef.key);
       providerBatches.length = 0;
       const callsBeforeReroll = countCalls(f.control).canonical;
+      // A passive request observes the edit but cannot replace approved analysis.
       await f.r.sourceEditBoundary();
-      progress(mode, 'source_edit_revision_readback_done');
+      assert.deepEqual(providerBatches, [], 'ordinary hooks do not reanalyze an edited committed batch');
+      assert.equal(countCalls(f.control).canonical, callsBeforeReroll);
+      const passiveManifest = manifestForChat(server, 'unified-chat');
+      for (const [start, ref] of Object.entries(parentBytes.manifest.memories)) {
+        const actual = passiveManifest.memories[start];
+        assert.equal(actual.key, ref.key, `passive edit preserves approved slot ${start}`);
+        assert.equal(actual.revision, ref.revision);
+        assert.equal(actual.sourceDigest, ref.sourceDigest);
+      }
+      assert.equal(rawForKey(server, oldFulfillmentRef.key), oldFulfillmentBytes);
+      const passiveHead = await readHead(f.r.api);
+      assert.equal(passiveHead.throughTurn, 105);
+      assert.equal(passiveHead.narrative.threads.length, 0, 'approved fulfillment remains until explicit reanalysis');
+      const selectionInventory = await f.r.api.listCanonicalBatchRanges({expectedScopeKey: parentBytes.manifest.scopeKey});
+      assert.equal(selectionInventory.scopeKey, parentBytes.manifest.scopeKey);
+      assert.equal(selectionInventory.completeBatches, 21);
+      const selectedRanges = Array.from(selectionInventory.ranges).filter(range => range.startTurn === 101 && range.endTurn === 105);
+      assert.equal(selectedRanges.length, 1, 'select precisely the edited final five-pair batch');
+      const selectedRange = selectedRanges[0];
+      assert.equal(selectedRange.status, 'saved');
+      assert.ok(selectedRange.identityDigest && selectedRange.sourceDigest);
+      assert.equal(selectedRange.memoryId, oldFulfillmentRef.memoryId);
+      assert.equal(selectedRange.revision, oldFulfillmentRef.revision);
+      assert.notEqual(selectedRange.sourceDigest, oldFulfillmentRef.sourceDigest, 'selection binds current edited source');
+      const selectedResult = await f.r.api.startSelectedCanonicalBatches({
+        scopeKey: selectionInventory.scopeKey, mode: 'source_edit', ranges: [selectedRange]
+      });
+      assert.equal(selectedResult.ok, true, JSON.stringify(selectedResult));
+      assert.ok(['completed', 'completed_with_warnings'].includes(selectedResult.job?.state));
+      assert.equal(selectedResult.job.completed, 1);
+      assert.equal(Number(selectedResult.job.failed || 0), 0);
+      progress(mode, 'source_edit_revision_readback_done', {selectionWarnings: selectedResult.warnings || []});
       assert.deepEqual(providerBatches, [101], 'reroll reprocesses only the changed contiguous final five-pair batch');
       assert.equal(countCalls(f.control).canonical, callsBeforeReroll + 1,
         'the approved source-edit boundary uses exactly one existing-provider call for T101–T105');
@@ -551,6 +725,14 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.equal(rawForKey(server, oldFulfillmentRef.key), oldFulfillmentBytes,
         'the inactive fulfilled canonical revision remains byte-identical after the reroll');
       const rerollManifest = manifestForChat(server, 'unified-chat');
+      for (const [start, ref] of Object.entries(parentBytes.manifest.memories)) {
+        if (Number(start) === 101) continue;
+        const actual = rerollManifest.memories[start];
+        assert.equal(actual.key, ref.key, `explicit selection preserves unselected slot ${start}`);
+        assert.equal(actual.revision, ref.revision);
+        assert.equal(actual.sourceDigest, ref.sourceDigest);
+        assert.equal(rawForKey(server, ref.key), bytesBeforeReplay.get(ref.key));
+      }
       assert.ok(rerollManifest.memories['101'].revision > oldFulfillmentRef.revision,
         'the active final batch advances the slot revision for the reroll');
       assert.notEqual(rerollManifest.memories['101'].sourceDigest, oldFulfillmentRef.sourceDigest,
@@ -597,17 +779,23 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
       assert.equal(ambiguousRecall.diagnostics?.recallContinuityClosure?.currentness, 'unknown');
       assert.equal(ambiguousRecall.diagnostics?.recallContinuityClosure?.closureComplete, false);
       assert.ok(ambiguousRecall.diagnostics?.recallContinuityClosure?.diagnostics?.reasons?.includes('temporal_anchor_ambiguous'));
-      const ambiguousPacket = await f.r.api.prepareInputWriterEvidence(pastQuery);
+      const ambiguousPacket = await actualClassicPacket(f, pastQuery, ambiguousManifest.scopeKey, {allowEmpty: true});
       progress(mode, 'ambiguity_guard_readback_done');
       assert.equal(ambiguousPacket.evidencePacket?.temporal_scope?.status, 'ambiguous');
       assert.equal(ambiguousPacket.evidencePacket?.temporal_scope?.candidateCount, 2);
+      assert.equal(ambiguousPacket.actualClassic.viewer.closureCurrentness, 'unknown');
+      assert.equal(ambiguousPacket.actualClassic.viewer.closureDeliveryComplete, false);
+      assert.equal(ambiguousPacket.actualClassic.viewer.closureInjectedFacts, 0);
+      assert.equal(ambiguousPacket.actualClassic.viewer.closureApplied, false);
+      assert.equal(ambiguousPacket.actualClassic.deliveredRows.some(row => row.closure === true || Number(row.closureFacts || 0) > 0), false,
+        'ambiguous history never delivers a continuity-closure fact');
 
       const finalBytes = committedBytesForChat(server, 'unified-chat');
       const summary = {
         mode,
         actualBatches: { t5: 1, t6To40: 7, t41To105: 13, total: 21, starts: Array.from({ length: 21 }, (_, i) => 1 + i * 5) },
         milestones: { t5: 'open/new', t40: 'same lifecycle/reaffirmed/open', t105: 'same lifecycle/fulfilled/closed' },
-        queryEvidence: { historical: 'T5 direct promise in Recall/Input Writer', current: 'T105 fulfilled closure in Input Writer' },
+        queryEvidence: { historical: 'T5 direct promise in Recall/Classic consumer', current: 'T105 fulfilled closure in Classic consumer' },
         semanticHistory: Array.from(lifecycleEvents, event => ({ type: event.type, start: event.canonicalCursor.turnRange.start })),
         coldReplay: {
           providerCalls: replay.providerCalls,
@@ -646,7 +834,7 @@ const runBatchJob = async (api, expected, label, warningLedger) => {
   for (const row of outcomes) console.log(JSON.stringify({
     schema: 'acceptance.action_result.v1', case_id: 'A18', mode: row.mode,
     action: A18_ACTION, assertion_result: true,
-    observed: 'Historical T5 Recall/Input Writer preserved the original promise without later fulfillment; current Recall/Input Writer included the T105 fulfillment with its evidence-time cutoff.'
+    observed: 'Historical T5 Recall/Classic consumer preserved the original promise without later fulfillment; current Recall/Classic consumer included the T105 fulfillment with its evidence-time cutoff.'
   }));
   console.log(JSON.stringify({ test: 'libra_main_memory_letter_lifecycle_105turn', sourcePairs: turns.length,
     modes: outcomes, liveProviderCalls: 0, liveHostTrial: false }));

@@ -1,0 +1,136 @@
+{
+  "schema": "lib.six-plugin.source-supplement.v2",
+  "privateCutoffManifestSha256": "ba8ec7a1a9806c7a6f478bc0c3a065d9052f96590b931fe028226ea35433a59a",
+  "files": [
+    {
+      "path": "BROWSER-STATUS.json",
+      "bytes": 9348,
+      "sha256": "5339d684a105d24aff8389cdc34a702670790d215225b96dffab1331ea20966b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1114,
+      "sha256": "14ed125820466a9f3012d61b37b3ad4b5cb4bcadcc7a1f2c8ee01598cc1f24f4"
+    },
+    {
+      "path": "REGRESSION-STATUS.json",
+      "bytes": 20261,
+      "sha256": "ab82a5bfd8a3308ac5488386d299e22aa65a279d21680b80796e4d7d972f141d"
+    },
+    {
+      "path": "ROOT-REGRESSION-LEDGER.json",
+      "bytes": 416540,
+      "sha256": "aa71bd9c18d9770a4ee91d8b4d0ac45b95265e0584d4c0efd6c7213d82ae3adf"
+    },
+    {
+      "path": "TEST-NORMALIZATION.json",
+      "bytes": 5623,
+      "sha256": "b18c33e31607b2a1f63dd014c53e6687bac2f89ea7c9158ec74684f1661e8591"
+    },
+    {
+      "path": "TEST-RETIREMENT-AND-ADOPTION.json",
+      "bytes": 13835,
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437"
+    },
+    {
+      "path": "test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+      "bytes": 5189,
+      "sha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+      "bytes": 7657,
+      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+      "bytes": 6703,
+      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+      "bytes": 23319,
+      "sha256": "4173d55d574f3573a50f3246ff4ba3099049a411fb8d5a90b58b927f79028ddc"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs",
+      "bytes": 16065,
+      "sha256": "a3fef4ad12e90a6cc45b12b1973448d5cd6c93d5bdfb5bd07d4874296425c7fb"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs",
+      "bytes": 21803,
+      "sha256": "af3afca534774d5b7fe67582cc44884dfb42f65ed94b423f2d1b8712b196be1d"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs",
+      "bytes": 13167,
+      "sha256": "9f9cd311860a9683fc0afc4a68c1286714c7f0eab42a1c20761c15fdc2db5b17"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+      "bytes": 17720,
+      "sha256": "94435cc7b1026969f44a5a8343d7db555e7e0d07442213dfa90db984b332637e"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+      "bytes": 18286,
+      "sha256": "940d82d16aed514d3dfe78deef31f69c18b9fa71b7db62a7c3471f5f24bb1c12"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs",
+      "bytes": 12285,
+      "sha256": "3d141ccc4b864ef031d8cf86603f32066885071be96b76950fe101a14b4232db"
+    },
+    {
+      "path": "test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs",
+      "bytes": 15926,
+      "sha256": "fad2bb36f4a248df43976df4ad47f245c46385ee0b10cf94143b0a7da76ff42a"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "bytes": 7817,
+      "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+      "bytes": 9404,
+      "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+      "bytes": 16139,
+      "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "bytes": 33850,
+      "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b"
+    },
+    {
+      "path": "test-successors/011-v2/PROGRAM/tests/libra_micro_stage_retry_test.cjs",
+      "bytes": 35435,
+      "sha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354"
+    },
+    {
+      "path": "test-successors/012/PROGRAM/run_regression_batch.py",
+      "bytes": 21245,
+      "sha256": "803adb32d38b597dd94fd7e94f02680ba9f0ca075220b969a36cce622f0cbfa9"
+    },
+    {
+      "path": "test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+      "bytes": 7657,
+      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a"
+    },
+    {
+      "path": "test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+      "bytes": 6703,
+      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806"
+    },
+    {
+      "path": "test-successors/012/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+      "bytes": 24405,
+      "sha256": "8f4bbc2522fc9784544397224d8fdc0a3d56f53208282823fc665e0e8e26df60"
+    }
+  ]
+}

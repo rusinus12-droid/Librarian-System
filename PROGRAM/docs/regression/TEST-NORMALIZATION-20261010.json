@@ -1,0 +1,104 @@
+{
+  "schema": "lib.regression.test-normalization.v1",
+  "dateUtc": "2026-10-10",
+  "baselineCommit": "219bb8eebfce45068210641eccbfe36aab6a7b9d",
+  "originalRootUniverse": 1138,
+  "defaultRootCount": 1134,
+  "wholeFilesRetiredThisAdoption": 0,
+  "productionChanged": false,
+  "registered87GateAndSixPluginsChanged": false,
+  "rows": [
+    {
+      "originalOrdinal": 510,
+      "path": "PROGRAM/tests/libra_feature_parity_test.cjs",
+      "originalSha256": "2547e14e6b77f3c004e452e5b50d3bc9ca04a86e156e93dd39109bb418125566",
+      "adoptedSha256": "fe93cc9733b8f3b1d73a89234802b1dc92e405c1a9db5b36f94e50906ee20523",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeCloseoutSha256": "8a392c6d3e2daebc783d41f94b7c1adda2c57224f05fce4618f31722d5a2001e",
+      "independentRuntimeReviewSha256": "0f5aeec47a292eb7cd90607dddba2cbb220251c7160326369cc2e71f07627113",
+      "reason": "Retired executor calls removed within the retained feature suite; current Narrative API and remaining feature/storage assertions retained."
+    },
+    {
+      "originalOrdinal": 540,
+      "path": "PROGRAM/tests/libra_live_tail_planner_dialogue_source_test.cjs",
+      "originalSha256": "86a46daf86a74a4ebf264c8ec8e66d57a021fc9c0dc91e9a5a8040962642e7cb",
+      "adoptedSha256": "e28a92e86d6b19cbd67dac5a7185e40680e0853f374681880e44b8e3ebb2ead6",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeCloseoutSha256": "8a392c6d3e2daebc783d41f94b7c1adda2c57224f05fce4618f31722d5a2001e",
+      "independentRuntimeReviewSha256": "0f5aeec47a292eb7cd90607dddba2cbb220251c7160326369cc2e71f07627113",
+      "reason": "Observe the real Classic request instead of retired Planner provider; preserve durable Micro and live-tail on/off assertions across all modes."
+    },
+    {
+      "originalOrdinal": 542,
+      "path": "PROGRAM/tests/libra_live_tail_supply_measurement_test.cjs",
+      "originalSha256": "cae231c2a91c9767721f18b2cfd14f4f5c0240411b79594a7dbbcf79c584a14a",
+      "adoptedSha256": "79cce3099cbd8c5e77d43265cbe6439f5676ae2dda3d64c50357005685bea8e9",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeCloseoutSha256": "8a392c6d3e2daebc783d41f94b7c1adda2c57224f05fce4618f31722d5a2001e",
+      "independentRuntimeReviewSha256": "0f5aeec47a292eb7cd90607dddba2cbb220251c7160326369cc2e71f07627113",
+      "reason": "Measure current Classic actual output for the existing two-flag live-tail matrix; preserve all remaining original assertions."
+    },
+    {
+      "originalOrdinal": 664,
+      "path": "PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs",
+      "originalSha256": "37bebbf64f98ede00f04b14c7b2fc63a67d158a35f129242440137c6f0c8ed27",
+      "adoptedSha256": "08e2d2a15904ba320ce39e49509ca5f0fd02dec9d0f62933ac2d512e360dbb3f",
+      "timeoutSeconds": 3300,
+      "result": "PASS",
+      "runtimeCloseoutSha256": "73346b995c8fe23e17410c7ceae56f0c8bc51d96c331024a7ac514f8ae2040cb",
+      "independentRuntimeReviewSha256": "7418d2e9ea3d566673c0da1b0f3c70ee036e51c8257d8d6fbf9810556f3947c4",
+      "reason": "Compare dense cross-realm reason-array values without changing values/order/shape or caps; helper rejects forged iterators."
+    },
+    {
+      "originalOrdinal": 565,
+      "path": "PROGRAM/tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+      "originalSha256": "fb59555c5071f89a16f6f29501256df4bd31ae232dcb1ea3b3de37cb6146eb4d",
+      "adoptedSha256": "2eb84ac909bf6cfa9ff295a41f7ac0ac0c65d9286ca85891a944a7cc01110636",
+      "timeoutSeconds": 840,
+      "result": "PASS",
+      "runtimeSeconds": 149.313,
+      "actualModes": [
+        "plugin_only",
+        "server_only"
+      ],
+      "runtimeCloseoutSha256": "ce83ad69b1b6c06c147fafa97553419606b9f13e6fdbbec4b70b823fd276c0a7",
+      "independentRuntimeReviewSha256": "d22b178b7e755b8cb71d6b66a96f77e3e7e4c3990fdbd2c164f740b77c983c60",
+      "reason": "Retain105-turn lifecycle assertions through actual Classic request, explicit source-edit reanalysis and registered-parent native copy. Compare public returned receipts through the verified narrow address redaction while retaining the complete durable receipt/readback.",
+      "qualification": "Registered-parent synthetic fixture only; no unregistered-parent, global discovery or actual-host qualification. Mock producer calls are used; cold replay makes zero provider calls."
+    }
+  ],
+  "addedSupport": [
+    {
+      "path": "PROGRAM/tests/fixtures/timeline_caps_reason_values.cjs",
+      "sha256": "b0ad06ebe2e35fe8d62be3a16b4be0693dcea886d39e884448856a28760fc117",
+      "verifiedNegativeControls": 16,
+      "actualModes": [
+        "plugin_only",
+        "mirror",
+        "server_only"
+      ]
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/native_public_receipt_projection.cjs",
+      "sha256": "74781b11788a9c3f081adb2421d6a8d324173700506aa777a1c453793cee3d67",
+      "verifiedInvalidRedactionControls": 6,
+      "verifiedPublicMutationControls": 7
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/native_public_receipt_projection_controls.cjs",
+      "sha256": "b036eab22897c403b62983af674190e1d2a89fdeb1a0cb0963af6de77de0b7c0",
+      "scope": "Reproducible helper-only positive/negative controls; not a new default root test."
+    }
+  ],
+  "evidencePolicy": "Original failures and complete private receipts retained separately. Runtime counts refer to bounded cases, not full real-host qualification.",
+  "unadoptedCandidates": [
+    "006",
+    "009",
+    "010"
+  ],
+  "publication": "Local source normalization only; no remote publication is performed by this record.",
+  "previousNormalizationBaseline": "a3eefb399670dc1b07b45475343e609acc7031ef"
+}
