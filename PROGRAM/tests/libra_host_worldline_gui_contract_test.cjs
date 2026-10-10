@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../plugins/LIBRA.js'),'utf8');
+const start=source.indexOf('const buildBookHostLineagePanel =');
+const end=source.indexOf('const buildBookDeskPanel =',start);
+assert.ok(start>=0&&end>start,'host lineage panel source missing');
+const panel=source.slice(start,end);
+assert.ok(panel.includes('snapshot?.manifest?.worldlineMeta'),'panel must read persistent host-worldline metadata');
+assert.ok(panel.includes("field('세계선 구분'"),'panel must distinguish root/branch worldline');
+assert.ok(panel.includes("field('분기 기준 턴'"),'panel must expose host branch fork turn');
+assert.ok(panel.includes("field('부모 월드라인'"),'panel must expose parent worldline relation');
+assert.ok(!panel.includes("field('세계선 ID', snapshot?.continuityState?.worldlineId)"),'scope-local State Worldline ID must not be mislabeled as host chat worldline');
+assert.ok(!panel.includes("text: hostWorldline?.worldlineId"),'raw host-worldline ID stays developer-only');
+console.log(JSON.stringify({test:'libra_host_worldline_gui_contract',passed:6}));

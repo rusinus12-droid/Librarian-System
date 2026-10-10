@@ -1,0 +1,800 @@
+{
+  "schema": "wm.writer-inventory.v1",
+  "status": "PROVISIONAL_FUNCTIONAL",
+  "all_writer_ownership": false,
+  "serverActivation": false,
+  "rows": [
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.save",
+      "domain": "canonical",
+      "operation": "normal",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.save",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.save",
+      "domain": "canonical",
+      "operation": "migration",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.save",
+      "domain": "canonical",
+      "operation": "sync",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.save",
+      "domain": "canonical",
+      "operation": "recovery",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.saveVerified",
+      "domain": "canonical",
+      "operation": "verified",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.saveVerified",
+      "domain": "canonical",
+      "operation": "reset",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.saveVerified",
+      "domain": "canonical",
+      "operation": "restore",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.saveVerified",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.remove",
+      "domain": "canonical",
+      "operation": "remove",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.inheritFromBranch",
+      "domain": "canonical",
+      "operation": "branch",
+      "routeEntry": "explicit authority_upstream_writer_unsupported; trusted native lineage gate remains unavailable",
+      "testId": "deferred_actual_host_native_inheritance"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraDataStorage.inheritFromBranch",
+      "domain": "lineage",
+      "operation": "branch",
+      "routeEntry": "explicit authority_upstream_writer_unsupported; trusted native lineage gate remains unavailable",
+      "testId": "deferred_actual_host_native_inheritance"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraTurnWorldline.put/save/observe",
+      "domain": "lineage",
+      "operation": "normal",
+      "routeEntry": "WmWriterRuntime.putWorldline -> pinned bundle",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraTurnWorldline.put/save/observe",
+      "domain": "lineage",
+      "operation": "verified",
+      "routeEntry": "WmWriterRuntime.putWorldline -> pinned bundle",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraTurnWorldline.put/save/observe",
+      "domain": "lineage",
+      "operation": "sync",
+      "routeEntry": "WmWriterRuntime.putWorldline -> pinned bundle",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01f-lore-consolidation.js",
+      "symbol": "LibraTurnWorldline.put/save/observe",
+      "domain": "lineage",
+      "operation": "recovery",
+      "routeEntry": "WmWriterRuntime.putWorldline -> pinned bundle",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "normal",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "verified",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "migration",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "sync",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01g-lore-concurrent-persistence.js",
+      "symbol": "persistLoreToActiveChat",
+      "domain": "canonical",
+      "operation": "recovery",
+      "routeEntry": "VersionedCanonicalBridge.commit -> router.beginWrite/stageDependency/commitWrite",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/01h-projection-reset.js",
+      "symbol": "purgeLibraManagedLoreForActiveChat",
+      "domain": "canonical",
+      "operation": "reset",
+      "routeEntry": "explicit authority_host_purge_unsupported; canonical reset uses LibraDataStorage.resetVerified",
+      "testId": "deferred_host_purge"
+    },
+    {
+      "file": "src/parts/04f-cold-start-structured-merge.js",
+      "symbol": "mergeStructuredKnowledge",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "captured expectedSource -> persistLoreToActiveChat",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/04h-cold-start-reanalysis.js",
+      "symbol": "reanalyzeHistoricalConversation/integrateImportedKnowledge",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "pre-analysis explicit source -> mergeStructuredKnowledge",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/parts/04j-session-transition.js",
+      "symbol": "TransitionManager.executeTransition",
+      "domain": "canonical",
+      "operation": "branch",
+      "routeEntry": "explicit server_native_transition_unsupported; RETRACE must use later next-session adapter",
+      "testId": "deferred_native_transition"
+    },
+    {
+      "file": "src/parts/04j-session-transition.js",
+      "symbol": "TransitionManager.executeTransition",
+      "domain": "lineage",
+      "operation": "branch",
+      "routeEntry": "explicit server_native_transition_unsupported; RETRACE must use later next-session adapter",
+      "testId": "deferred_native_transition"
+    },
+    {
+      "file": "src/parts/05f-turn-ledgers.js",
+      "symbol": "DurableTurnLedger.appendObserved",
+      "domain": "raw",
+      "operation": "normal",
+      "routeEntry": "WmWriterRuntime.appendObserved -> pinned appendRaw safe projection",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/05f-turn-ledgers.js",
+      "symbol": "DurableTurnLedger.markStatus",
+      "domain": "raw_history",
+      "operation": "normal",
+      "routeEntry": "WmWriterRuntime.markStatus -> append-only history; executable ownership remains process-local",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/05f-turn-ledgers.js",
+      "symbol": "DurableTurnLedger.markStatus",
+      "domain": "raw_history",
+      "operation": "recovery",
+      "routeEntry": "WmWriterRuntime.markStatus -> append-only history; executable ownership remains process-local",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/05g-commit-guard-maintenance-records.js",
+      "symbol": "findVerifiedCanonicalTurnCommit",
+      "domain": "canonical",
+      "operation": "recovery",
+      "routeEntry": "readVerified returns expectedSource for recovered commit",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/05h-turn-maintenance-worker.js",
+      "symbol": "runTurnMaintenanceRecord",
+      "domain": "canonical",
+      "operation": "normal",
+      "routeEntry": "pre-analysis source -> persistLoreToActiveChat",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/09b-archive-integrity.js",
+      "symbol": "ColdArchiveManager.commitPersistentMemoryEntries",
+      "domain": "cold",
+      "operation": "normal",
+      "routeEntry": "verified original/manifest -> stageForScope -> pending bundle closure",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/10k-entity-canonical-name-migration.js",
+      "symbol": "EntityCanonicalNameMigration.run/saveMigratedState",
+      "domain": "canonical",
+      "operation": "migration",
+      "routeEntry": "fresh explicit source -> persistLoreToActiveChat",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/parts/13c-before-request-injection.js",
+      "symbol": "libraBeforeRequestReplacer",
+      "domain": "canonical",
+      "operation": "normal",
+      "routeEntry": "await route request -> request-owned reads/source -> final observation and cleanup",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13c-before-request-injection.js",
+      "symbol": "libraBeforeRequestReplacer",
+      "domain": "lineage",
+      "operation": "normal",
+      "routeEntry": "await route request -> request-owned reads/source -> final observation and cleanup",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "canonical",
+      "operation": "sync",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "canonical",
+      "operation": "recovery",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "raw",
+      "operation": "sync",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "raw",
+      "operation": "recovery",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "raw_history",
+      "operation": "sync",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/13d-after-request-worker-unload.js",
+      "symbol": "libraAfterRequestWorker",
+      "domain": "raw_history",
+      "operation": "recovery",
+      "routeEntry": "pinned consumers; server jobs never reconstructed from imported history",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/14-main-initialization.js",
+      "symbol": "initialize/entityFieldMigration",
+      "domain": "canonical",
+      "operation": "migration",
+      "routeEntry": "fresh hydration source -> routed canonical writer",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/15a-gui-session-data.js",
+      "symbol": "saveLoreToChar",
+      "domain": "canonical",
+      "operation": "verified",
+      "routeEntry": "pre-updater source -> persistLoreToActiveChat",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/15d-gui-events-finalize.js",
+      "symbol": "runTurnCardReanalysis/reset handlers",
+      "domain": "canonical",
+      "operation": "restore",
+      "routeEntry": "strict management reads -> saveVerified/resetVerified source token",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/parts/15d-gui-events-finalize.js",
+      "symbol": "runTurnCardReanalysis/reset handlers",
+      "domain": "canonical",
+      "operation": "reset",
+      "routeEntry": "strict management reads -> saveVerified/resetVerified source token",
+      "testId": "wm_routed_bundle_basic_canonical_raw_cold_lineage"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "normal",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "verified",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "import",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "restore",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "branch",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "migration",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "sync",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "recovery",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "reset",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "canonical",
+      "operation": "remove",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "normal",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "verified",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "import",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "restore",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "branch",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "migration",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "sync",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "recovery",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "reset",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "cold",
+      "operation": "remove",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "normal",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "verified",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "import",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "restore",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "branch",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "migration",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "sync",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "recovery",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "reset",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw",
+      "operation": "remove",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "normal",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "verified",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "import",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "restore",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "branch",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "migration",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "sync",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "recovery",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "reset",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "raw_history",
+      "operation": "remove",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "normal",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "verified",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "import",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "restore",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "branch",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "migration",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "sync",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "recovery",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "reset",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    },
+    {
+      "file": "src/wm-storage-router.source.js",
+      "symbol": "beginWrite/stageDependency/commitWrite/abortWrite",
+      "domain": "lineage",
+      "operation": "remove",
+      "routeEntry": "opaque router context -> selected backend only",
+      "testId": "wm_upstream_operation_facade_basic_fresh_sources"
+    }
+  ],
+  "exceptions": [
+    {
+      "file": "src/parts/01d-debug-export-runtime-trace.js",
+      "symbol": "DebugExportManager",
+      "reason": "Operational diagnostics stay local and are excluded from exported memory."
+    },
+    {
+      "file": "src/parts/15c-gui-settings-config.js",
+      "symbol": "configuration/AI preset persistence",
+      "reason": "Local settings and credentials are outside memory payload."
+    },
+    {
+      "file": "src/parts/10m-semantic-recall-index.js",
+      "symbol": "derived vector cache",
+      "reason": "Derived local cache is not authority."
+    }
+  ],
+  "deferred": [
+    "all-writer static mutation scan",
+    "negative stale/source tests",
+    "full upstream provenance and host integration",
+    "native atomic ownership, all writer fences and B4 qualification",
+    "Full/Min regeneration and broad regression"
+  ]
+}

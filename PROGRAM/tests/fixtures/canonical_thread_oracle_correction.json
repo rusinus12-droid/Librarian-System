@@ -1,0 +1,11 @@
+{
+  "case": "libra-normal/synthetic-five-turns",
+  "priorOracle": "handoff-v4-thread-oracle.cjs required headThreads >= 1",
+  "priorVerdict": "incorrect",
+  "correctHeadThreads": 0,
+  "sourceRef": "t5-a",
+  "sourceQuote": "오늘 열쇠를 반환하겠다는 약속은 이행되었다.",
+  "reason": "The t2 key-return promise was fulfilled in t5; an active open head would be stale.",
+  "separateLimitation": "Gemma omitted the thread extraction; this pipeline fix does not change that model output.",
+  "semanticLimit": "If a model reuses one subject alias, participant set, kind and summary for two distinct promises, structure alone cannot prove semantic sameness. The runtime requires one unique preceding fact and ordered source evidence; otherwise the link remains pending. No keyword rule or relaxed validator is claimed to solve semantic alias reuse."
+}

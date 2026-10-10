@@ -1,0 +1,4 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {create}=require('./fixtures/libra_gui_memory_dom_host.cjs');
+(async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'global-gui-startup-')),file=path.join(dir,'synthetic-owner.js');let f;try{fs.writeFileSync(file,'(async()=>{globalThis.__LIBRA__={openSettingsGui:async()=>{}};await new Promise(resolve=>setTimeout(resolve,160));globalThis.startupReady=true;})();');f=await create('LIBRA','Full',{pluginPath:file});assert.equal(f.context.startupReady,true,'fixture awaits the exact asynchronous initialization result, not only an early API export');console.log('PASS actual owner startup awaited');}finally{await f?.close();fs.rmSync(dir,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,0 +1,23 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),path=require('path'),assert=require('assert/strict');
+const source=fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceEditConsent.source.js'),'utf8');
+const context=()=>{const c=vm.createContext({setTimeout,clearTimeout});vm.runInContext(source,c);return c;};
+(async()=>{
+ let c=context();const store=new Map(),config={owner:'test',requestBoundary:true,read:async k=>store.get(k),write:async(k,v)=>{store.set(k,v);return true;}};let api=c.createMemorySuiteSourceEditConsent(config);await api.ready();
+ const pair=(open,close)=>({open,close}),rules={sourceTags:[pair('[SOURCE START]','[SOURCE END]')],ignoredTags:[pair('[LBDATA START]','[LBDATA END]'),pair('%%display%%','')],unwrapTags:[pair('{{WRAP}}','{{END}}')]};
+ await api.setSourceRules(rules);let p=x=>c.memorySuiteCanonicalSource(x,'test');
+ assert.equal(p('Original'),'Original');assert.equal(p('Translated[SOURCE START]Original[SOURCE END]'),'Original');
+ assert.equal(p('Other translation[SOURCE START]{{WRAP}}Original{{END}}[LBDATA START]hidden[LBDATA END]%%display%%[SOURCE END]'),'Original');
+ assert.equal(p('[SOURCE START]Changed[SOURCE END]'),'Changed');
+ for(const text of ['Text[SOURCE START]','Text[SOURCE START][SOURCE END]','[SOURCE START]A[SOURCE END][SOURCE START]B[SOURCE END]','[SOURCE END]Text'])assert.equal(p(text),text);
+ assert.equal(p('A[LBDATA START]outer[LBDATA START]inner[LBDATA END]outer[LBDATA END]B'),'AB');
+ assert.equal(p('A[LBDATA START]not closed'),'A[LBDATA START]not closed');
+ assert.equal(p('A[lbdata start]kept[lbdata end]'),'A[lbdata start]kept[lbdata end]','literal delimiter is case sensitive');
+ api.dispose();c=context();api=c.createMemorySuiteSourceEditConsent(config);await api.ready();p=x=>c.memorySuiteCanonicalSource(x,'test');assert.equal(p('Translated[SOURCE START]Original[SOURCE END]'),'Original','fresh VM restores literal pairs');
+ await assert.rejects(api.setSourceRules({sourceTags:[pair('[A]','')]}),/INVALID/);
+ await assert.rejects(api.setSourceRules({ignoredTags:[pair('X','X')]}),/INVALID/);
+ await assert.rejects(api.setSourceRules({ignoredTags:[pair('[A]','[B]'),pair('[A]','[C]')]}),/CONFLICT/);
+ await api.setSourceRules({ignoredTags:[pair('<illustration>','</illustration>')]});assert.equal(p('A<Illustration kind="x">image</Illustration>B'),'AB','standard tags retain attribute support');
+ await api.setSourceRules({ignoredTags:[],unwrapTags:[],sourceTags:[]});const all='[LBDATA START]data[LBDATA END]<img src="x">';assert.equal(p(all),all);api.dispose();
+ console.log('PASS literal delimiters: asymmetric markers, nesting, source transition, single markers, malformed fallback, case, fresh storage, conflicts, XML compatibility, empty rules');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict');const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+(async()=>{const f=await createFixture({chat:{message:[{role:'user',chatId:'u1',data:'What happened?'},{role:'assistant',chatId:'a1',data:'Alice kept the blue prism.'}]}});try{
+ await f.api.saveSettings({...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false});await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});await new Promise(r=>setTimeout(r,50));
+ const key=[...f.pluginStorage.values.keys()].find(k=>k.endsWith(':settings:v2'));assert(key);f.pluginStorage.values.set(key,JSON.stringify({version:1,settings:{embeddingProvider:'hash',embeddingEnabled:true,embeddingModel:'hash-v1',autoEpisodeIndex:false}}));
+ const secretKey=key.replace('settings:v2','embedding_secret_synced:v1');f.pluginStorage.values.set(secretKey,JSON.stringify({key:'PRIVATE_READONLY_FIXTURE_SENTINEL',savedAt:new Date().toISOString()}));
+ const before=JSON.stringify([...f.pluginStorage.values]),local=f.host.safeLocalStorage,beforeLocal=JSON.stringify([...local.values]);let writes=0,network=0;
+ const write=async()=>{writes++;throw Error('inspection must not write or migrate')};f.pluginStorage.setItem=write;f.pluginStorage.removeItem=write;local.setItem=write;local.removeItem=write;f.host.setArgument=write;f.host.setArg=write;f.host.nativeFetch=async()=>{network++;throw Error('inspection must not contact network')};f.context.fetch=f.host.nativeFetch;
+ const result=await f.api.inspectMemoryMaintenance();assert.equal(result.inspection.readOnly,true);assert.equal(result.inspection.coverage,'plugin_only');assert.equal(writes,0);assert.equal(network,0);assert.equal(JSON.stringify([...f.pluginStorage.values]),before);assert.equal(JSON.stringify([...local.values]),beforeLocal);assert(!JSON.stringify(result).includes('PRIVATE_READONLY_FIXTURE_SENTINEL'));assert.equal(result.embeddingCredential.present,true);
+ console.log(JSON.stringify({test:'flashback_maintenance_readonly_inspection',passed:true,writes,network,credentialValuesExposed:false,records:result.storedRecords}));
+ }finally{await f.dispose()}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,0 +1,56 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {createOocGui}=require('./fixtures/libra_memory_ooc_gui_fixture.cjs');
+const clone=value=>JSON.parse(JSON.stringify(value));
+const append='OOC_UI_APPEND_SENTINEL: use only source-supported facts.';
+(async()=>{
+ let h=await createOocGui();const cases=[];
+ try {
+  await h.open();await h.memory();await h.expandOoc();
+  const baseline=await h.api.debugCompileMemoryPrompt('librarian');
+  await h.button('대화 시작',h.ooc()).emit('click');
+  assert(h.ooc()?.textContent.includes('OOC · 시작 안내'));
+  assert.equal(h.modelCalls.length,0);assert.equal(h.promptWrites().length,0);
+  const draft=h.ooc().querySelector('textarea');draft.value='Preserve explicit evidence.';await draft.emit('input');
+  const disclosure=h.disclosure('대화로 기억 지침 만들기 · OOC');disclosure.open=false;await h.pause(10);disclosure.open=true;await h.pause(10);
+  assert.equal(h.ooc().querySelector('textarea').value,'Preserve explicit evidence.');
+  h.modelQueue.push({type:'success',result:'We agree: retain only directly supported facts.'});
+  await h.button('OOC 보내기',h.ooc()).emit('click');await h.pause(100);
+  assert(h.ooc(),'dialogue completion keeps the nested lazy OOC editor mounted');
+  assert(h.ooc().textContent.includes('We agree: retain only directly supported facts.'));
+  assert.equal(h.modelCalls.length,1);assert.equal(h.promptWrites().length,0);
+  cases.push('starter/draft/collapse/reopen/dialogue are runtime-only and keep the editor open');
+  h.modelQueue.push({type:'success',result:JSON.stringify({title:'Synthetic memory guidance',append_text:append})});
+  await h.button('지침 미리보기 만들기',h.ooc()).emit('click');await h.pause(50);
+  assert(h.ooc().textContent.includes(append));assert.equal(h.modelCalls.length,2);assert.equal(h.promptWrites().length,0);
+  assert(h.modelCalls[0].messages[0].content.includes('This is a conversation, not the final compiler step.'));
+  assert(h.modelCalls[1].messages[0].content.includes('Never replace or weaken LIBRA base/locked contracts.'));
+  cases.push('explicit preview is separate from dialogue and does not save');
+  await h.button('이 구역의 추가 지침으로 저장',h.ooc()).emit('click');await h.pause(50);
+  assert.equal(h.promptWrites().length,1);assert(h.button('저장 완료',h.ooc()).disabled);
+  const direct=h.disclosure('고급 Prompt Studio · 구역별 직접 편집');
+  assert(direct.querySelectorAll('option').some(n=>n.value==='Ariadne OOC 맞춤 · 기억'),'OOC save refreshes direct profile choices without replacing its outer editor');
+  const stored=await h.api.debugReadPromptOverrides();
+  assert.equal(stored.prompts.activeMemoryProfile,'Ariadne OOC 맞춤 · 기억');
+  assert.equal(stored.prompts.memoryProfiles[stored.prompts.activeMemoryProfile].stages.librarian.sections.custom_addendum.mode,'append');
+  assert.equal(stored.prompts.memoryProfiles[stored.prompts.activeMemoryProfile].stages.librarian.sections.custom_addendum.text,append);
+  const compiled=await h.api.debugCompileMemoryPrompt('librarian');assert(compiled.body.includes(append));assert.deepEqual(clone(compiled.contract),clone(baseline.contract));
+  assert.equal(compiled.provenance.authority,'canonical_candidate_only');assert.equal(compiled.provenance.lockHash,baseline.provenance.lockHash);
+  cases.push('explicit UI save activates only append and preserves the authority lock');
+  await h.button('현재 대화 지우기',h.ooc()).emit('click');assert.equal(h.promptWrites().length,1);assert(!h.ooc().textContent.includes('Synthetic memory guidance'));cases.push('clear only clears runtime conversation/preview');
+  const makePreview=async text=>{
+    h.modelQueue.push({type:'success',result:'Agreed: preserve this durable guidance.'});const input=h.ooc().querySelector('textarea');input.value='Use the agreed guidance';await input.emit('input');await h.button('OOC 보내기',h.ooc()).emit('click');
+    h.modelQueue.push({type:'success',result:JSON.stringify({append_text:text})});await h.button('지침 미리보기 만들기',h.ooc()).emit('click');
+  };
+  await makePreview(append);const writesBeforeDuplicate=h.promptWrites().length;await h.button('이 구역의 추가 지침으로 저장',h.ooc()).emit('click');
+  assert.equal(h.promptWrites().length,writesBeforeDuplicate,'identical explicit UI save is a no-write success');assert(h.ooc().textContent.includes('중복 추가하지 않았습니다'));cases.push('repeated identical UI append is idempotent');
+  await h.button('현재 대화 지우기',h.ooc()).emit('click');await makePreview('OOC_UI_MERGE_SENTINEL');
+  const merge=h.ooc().querySelector('input[type="checkbox"]');assert.equal(merge.checked,false,'merge requires an explicit checkbox');merge.checked=true;await merge.emit('change');await h.button('이 구역의 추가 지침으로 저장',h.ooc()).emit('click');
+  const merged=await h.api.debugCompileMemoryPrompt('librarian');assert(merged.body.includes(append+'\n\nOOC_UI_MERGE_SENTINEL'));cases.push('explicit UI merge preserves the existing append');
+  const values=[...h.values];await h.cleanup();h=await createOocGui({initialValues:values});
+  const restarted=await h.api.debugCompileMemoryPrompt('librarian');assert(restarted.body.includes(append)&&restarted.body.includes('OOC_UI_MERGE_SENTINEL'));assert.equal(restarted.provenance.lockHash,baseline.provenance.lockHash);
+  cases.push('fresh VM restart compiles the saved append with the same lock');
+  assert.equal(h.networkCalls.length,0);
+  console.log(JSON.stringify({status:'PASS',cases,boundary:'registered production UI; synthetic DOM and queued model replies; no native host/network/model'}));
+ }finally{await h.cleanup();}
+})().then(()=>process.exit(0)).catch(e=>{console.error(e);process.exit(1);});

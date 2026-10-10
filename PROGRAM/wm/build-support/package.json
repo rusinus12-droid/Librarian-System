@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "acorn": "^8.15.0",
+    "jsdom": "^26.1.0",
+    "terser": "^5.51.2"
+  }
+}

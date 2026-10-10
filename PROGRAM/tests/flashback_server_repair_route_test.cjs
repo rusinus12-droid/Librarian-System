@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../server/server.cjs'),'utf8');
+const start=source.indexOf("      if (request.method === 'POST' && url.pathname.startsWith('/v1/flashback/physical-repair/')) {");
+assert(start>0,'owner repair route must be registered');
+const end=source.indexOf('\n      if (',start+10),handler=source.slice(start,end);
+assert(source.indexOf('const principal = computeRoute ? authenticateCompute(request) : authenticate(request);')<start);
+assert(source.includes("'flashback-physical-repair-protocol.v2'"));
+(async()=>{let writes=0;const env={request:{method:'POST',headers:{'x-memory-suite-reset-epochs':'{}','x-memory-suite-storage-mode':'server_only','x-memory-suite-scope-id':'s'}},response:{},url:{pathname:'/v1/flashback/physical-repair/reserve'},principal:{namespace:'flashback',roles:['owner']},readBody:async(req,limit)=>{assert.equal(limit,2*1024**2);return {scopeKey:'s',mode:'server_only'}},assertNamespaceAccess:(p,n,a)=>{assert.equal(n,'flashback');assert.equal(a,'write')},namespaceReset:{allows:()=>true},flashbackServerRepair:(p,a,b)=>{writes++;assert.equal(a,'reserve');return {state:'reserved'}},decodeDiagnosticHeader:decodeURIComponent,scheduleChangeSettledBackup:()=>{},sendJson:(req,res,status,body)=>({status,body})};
+ const ctx=vm.createContext(env),call=vm.runInContext('(async()=>{'+handler+'})',ctx);assert.equal((await call()).body.result.state,'reserved');assert.equal(writes,1);
+ ctx.namespaceReset.allows=()=>false;assert.equal((await call()).status,409);assert.equal(writes,1);ctx.namespaceReset.allows=()=>true;
+ ctx.request.headers['x-memory-suite-storage-mode']='plugin_only';assert.equal((await call()).status,409);assert.equal(writes,1);ctx.request.headers['x-memory-suite-storage-mode']='server_only';
+ ctx.request.headers['x-memory-suite-scope-id']='other';assert.equal((await call()).status,409);assert.equal(writes,1);ctx.request.headers['x-memory-suite-scope-id']='s';
+ ctx.assertNamespaceAccess=()=>{throw Error('forbidden')};await assert.rejects(call,/forbidden/);assert.equal(writes,1);
+ console.log(JSON.stringify({test:'flashback_server_repair_route',passed:5,offlineHandler:true,liveRequests:0}));
+})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,0 +1,4791 @@
+{
+  "schema": "hayaku.selection-stage.frozen-holdout.v1",
+  "frozenAt": "2026-10-03T00:27:09.338Z",
+  "query": "Which calibrated instruments and established conditions are recorded?",
+  "worldlineHeadOrdinal": 80,
+  "cases": [
+    {
+      "id": "multi-1",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        }
+      ],
+      "maxItemsPerAxis": 2,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-2",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        }
+      ],
+      "maxItemsPerAxis": 2,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-3",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-4",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        }
+      ],
+      "maxItemsPerAxis": 4,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Hazel narrative station holds calibrated instrument D."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-6",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        }
+      ],
+      "maxItemsPerAxis": 6,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Hazel narrative station holds calibrated instrument D.",
+        "Saffron narrative station holds calibrated instrument E.",
+        "Teal narrative station holds calibrated instrument F."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-8",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-narrative-6",
+          "publicRef": "ref-narrative-6",
+          "packetHash": "proof-narrative-6",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Umber narrative station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-narrative-7",
+          "publicRef": "ref-narrative-7",
+          "packetHash": "proof-narrative-7",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Lilac narrative station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        }
+      ],
+      "maxItemsPerAxis": 8,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Hazel narrative station holds calibrated instrument D.",
+        "Saffron narrative station holds calibrated instrument E.",
+        "Teal narrative station holds calibrated instrument F.",
+        "Umber narrative station holds calibrated instrument G.",
+        "Lilac narrative station holds calibrated instrument H."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-10",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-narrative-6",
+          "publicRef": "ref-narrative-6",
+          "packetHash": "proof-narrative-6",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Umber narrative station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-narrative-7",
+          "publicRef": "ref-narrative-7",
+          "packetHash": "proof-narrative-7",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Lilac narrative station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-narrative-8",
+          "publicRef": "ref-narrative-8",
+          "packetHash": "proof-narrative-8",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Pearl narrative station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-narrative-9",
+          "publicRef": "ref-narrative-9",
+          "packetHash": "proof-narrative-9",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Auburn narrative station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        }
+      ],
+      "maxItemsPerAxis": 10,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Hazel narrative station holds calibrated instrument D.",
+        "Saffron narrative station holds calibrated instrument E.",
+        "Teal narrative station holds calibrated instrument F.",
+        "Umber narrative station holds calibrated instrument G.",
+        "Lilac narrative station holds calibrated instrument H.",
+        "Pearl narrative station holds calibrated instrument I.",
+        "Auburn narrative station holds calibrated instrument J."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "multi-12",
+      "rows": [
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-narrative-6",
+          "publicRef": "ref-narrative-6",
+          "packetHash": "proof-narrative-6",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Umber narrative station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-narrative-7",
+          "publicRef": "ref-narrative-7",
+          "packetHash": "proof-narrative-7",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Lilac narrative station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-narrative-8",
+          "publicRef": "ref-narrative-8",
+          "packetHash": "proof-narrative-8",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Pearl narrative station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-narrative-9",
+          "publicRef": "ref-narrative-9",
+          "packetHash": "proof-narrative-9",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Auburn narrative station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-narrative-10",
+          "publicRef": "ref-narrative-10",
+          "packetHash": "proof-narrative-10",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Ivory narrative station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        },
+        {
+          "id": "frozen-narrative-11",
+          "publicRef": "ref-narrative-11",
+          "packetHash": "proof-narrative-11",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Violet narrative station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 13,
+          "score": 0.0136986301369863,
+          "locator": {
+            "sourcePairIndex": 13,
+            "worldlineOrdinal": 13,
+            "messageIndex": 25
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 14,
+          "score": 0.013513513513513514,
+          "locator": {
+            "sourcePairIndex": 14,
+            "worldlineOrdinal": 14,
+            "messageIndex": 27
+          }
+        }
+      ],
+      "maxItemsPerAxis": 12,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Hazel narrative station holds calibrated instrument D.",
+        "Saffron narrative station holds calibrated instrument E.",
+        "Teal narrative station holds calibrated instrument F.",
+        "Umber narrative station holds calibrated instrument G.",
+        "Lilac narrative station holds calibrated instrument H.",
+        "Pearl narrative station holds calibrated instrument I.",
+        "Auburn narrative station holds calibrated instrument J.",
+        "Ivory narrative station holds calibrated instrument K.",
+        "Violet narrative station holds calibrated instrument L."
+      ],
+      "contract": "distinct same-axis facts fitting configured and global ceilings"
+    },
+    {
+      "id": "other-axis-overload-false",
+      "rows": [
+        {
+          "id": "frozen-entity-0",
+          "publicRef": "ref-entity-0",
+          "packetHash": "proof-entity-0",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Nacre entity station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 21,
+          "score": 0.012345679012345678,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 22,
+          "score": 0.012195121951219513,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-world-1",
+          "publicRef": "ref-world-1",
+          "packetHash": "proof-world-1",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Olive world station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 23,
+          "score": 0.012048192771084338,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-world-2",
+          "publicRef": "ref-world-2",
+          "packetHash": "proof-world-2",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Topaz world station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 24,
+          "score": 0.011904761904761904,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-world-3",
+          "publicRef": "ref-world-3",
+          "packetHash": "proof-world-3",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Hazel world station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 25,
+          "score": 0.011764705882352941,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-world-4",
+          "publicRef": "ref-world-4",
+          "packetHash": "proof-world-4",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Saffron world station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 26,
+          "score": 0.011627906976744186,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-world-5",
+          "publicRef": "ref-world-5",
+          "packetHash": "proof-world-5",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Teal world station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 27,
+          "score": 0.011494252873563218,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-world-6",
+          "publicRef": "ref-world-6",
+          "packetHash": "proof-world-6",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Umber world station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 28,
+          "score": 0.011363636363636364,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-world-7",
+          "publicRef": "ref-world-7",
+          "packetHash": "proof-world-7",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Lilac world station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 29,
+          "score": 0.011235955056179775,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-world-8",
+          "publicRef": "ref-world-8",
+          "packetHash": "proof-world-8",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Pearl world station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 30,
+          "score": 0.011111111111111112,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-world-9",
+          "publicRef": "ref-world-9",
+          "packetHash": "proof-world-9",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Auburn world station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 31,
+          "score": 0.01098901098901099,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-world-10",
+          "publicRef": "ref-world-10",
+          "packetHash": "proof-world-10",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Ivory world station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 32,
+          "score": 0.010869565217391304,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        },
+        {
+          "id": "frozen-world-11",
+          "publicRef": "ref-world-11",
+          "packetHash": "proof-world-11",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Violet world station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 33,
+          "score": 0.010752688172043012,
+          "locator": {
+            "sourcePairIndex": 13,
+            "worldlineOrdinal": 13,
+            "messageIndex": 25
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 14,
+            "worldlineOrdinal": 14,
+            "messageIndex": 27
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 15,
+            "worldlineOrdinal": 15,
+            "messageIndex": 29
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 16,
+            "worldlineOrdinal": 16,
+            "messageIndex": 31
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 37,
+          "score": 0.010309278350515464,
+          "locator": {
+            "sourcePairIndex": 17,
+            "worldlineOrdinal": 17,
+            "messageIndex": 33
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C."
+      ],
+      "contract": "unrelated axis density does not exclude requested facts; configured axis caps remain hard"
+    },
+    {
+      "id": "other-axis-overload-true",
+      "rows": [
+        {
+          "id": "frozen-entity-0",
+          "publicRef": "ref-entity-0",
+          "packetHash": "proof-entity-0",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Nacre entity station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-world-1",
+          "publicRef": "ref-world-1",
+          "packetHash": "proof-world-1",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Olive world station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-world-2",
+          "publicRef": "ref-world-2",
+          "packetHash": "proof-world-2",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Topaz world station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-world-3",
+          "publicRef": "ref-world-3",
+          "packetHash": "proof-world-3",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Hazel world station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-world-4",
+          "publicRef": "ref-world-4",
+          "packetHash": "proof-world-4",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Saffron world station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-world-5",
+          "publicRef": "ref-world-5",
+          "packetHash": "proof-world-5",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Teal world station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-world-6",
+          "publicRef": "ref-world-6",
+          "packetHash": "proof-world-6",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Umber world station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-world-7",
+          "publicRef": "ref-world-7",
+          "packetHash": "proof-world-7",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Lilac world station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-world-8",
+          "publicRef": "ref-world-8",
+          "packetHash": "proof-world-8",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Pearl world station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-world-9",
+          "publicRef": "ref-world-9",
+          "packetHash": "proof-world-9",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Auburn world station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-world-10",
+          "publicRef": "ref-world-10",
+          "packetHash": "proof-world-10",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Ivory world station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        },
+        {
+          "id": "frozen-world-11",
+          "publicRef": "ref-world-11",
+          "packetHash": "proof-world-11",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Violet world station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 13,
+          "score": 0.0136986301369863,
+          "locator": {
+            "sourcePairIndex": 13,
+            "worldlineOrdinal": 13,
+            "messageIndex": 25
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 14,
+          "score": 0.013513513513513514,
+          "locator": {
+            "sourcePairIndex": 14,
+            "worldlineOrdinal": 14,
+            "messageIndex": 27
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 15,
+          "score": 0.013333333333333334,
+          "locator": {
+            "sourcePairIndex": 15,
+            "worldlineOrdinal": 15,
+            "messageIndex": 29
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 16,
+          "score": 0.013157894736842105,
+          "locator": {
+            "sourcePairIndex": 16,
+            "worldlineOrdinal": 16,
+            "messageIndex": 31
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 17,
+          "score": 0.012987012987012988,
+          "locator": {
+            "sourcePairIndex": 17,
+            "worldlineOrdinal": 17,
+            "messageIndex": 33
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C."
+      ],
+      "contract": "unrelated axis density does not exclude requested facts; configured axis caps remain hard"
+    },
+    {
+      "id": "mixed-axes-12",
+      "rows": [
+        {
+          "id": "frozen-entity-0",
+          "publicRef": "ref-entity-0",
+          "packetHash": "proof-entity-0",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Nacre entity station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-entity-1",
+          "publicRef": "ref-entity-1",
+          "packetHash": "proof-entity-1",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Olive entity station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-entity-2",
+          "publicRef": "ref-entity-2",
+          "packetHash": "proof-entity-2",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Topaz entity station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-world-1",
+          "publicRef": "ref-world-1",
+          "packetHash": "proof-world-1",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Olive world station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-world-2",
+          "publicRef": "ref-world-2",
+          "packetHash": "proof-world-2",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Topaz world station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-planner-1",
+          "publicRef": "ref-planner-1",
+          "packetHash": "proof-planner-1",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Olive planner station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-planner-2",
+          "publicRef": "ref-planner-2",
+          "packetHash": "proof-planner-2",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Topaz planner station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 12000,
+      "required": [
+        "Nacre entity station holds calibrated instrument A.",
+        "Olive entity station holds calibrated instrument B.",
+        "Topaz entity station holds calibrated instrument C.",
+        "Nacre world station holds calibrated instrument A.",
+        "Olive world station holds calibrated instrument B.",
+        "Topaz world station holds calibrated instrument C.",
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C.",
+        "Nacre planner station holds calibrated instrument A.",
+        "Olive planner station holds calibrated instrument B.",
+        "Topaz planner station holds calibrated instrument C."
+      ],
+      "contract": "all twelve distinct facts fit the preexisting global16 ceiling"
+    },
+    {
+      "id": "dense-48-axis-coverage",
+      "rows": [
+        {
+          "id": "frozen-entity-0",
+          "publicRef": "ref-entity-0",
+          "packetHash": "proof-entity-0",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Nacre entity station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-entity-1",
+          "publicRef": "ref-entity-1",
+          "packetHash": "proof-entity-1",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Olive entity station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-entity-2",
+          "publicRef": "ref-entity-2",
+          "packetHash": "proof-entity-2",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Topaz entity station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-entity-3",
+          "publicRef": "ref-entity-3",
+          "packetHash": "proof-entity-3",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Hazel entity station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-entity-4",
+          "publicRef": "ref-entity-4",
+          "packetHash": "proof-entity-4",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Saffron entity station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-entity-5",
+          "publicRef": "ref-entity-5",
+          "packetHash": "proof-entity-5",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Teal entity station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-entity-6",
+          "publicRef": "ref-entity-6",
+          "packetHash": "proof-entity-6",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Umber entity station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-entity-7",
+          "publicRef": "ref-entity-7",
+          "packetHash": "proof-entity-7",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Lilac entity station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-entity-8",
+          "publicRef": "ref-entity-8",
+          "packetHash": "proof-entity-8",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Pearl entity station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-entity-9",
+          "publicRef": "ref-entity-9",
+          "packetHash": "proof-entity-9",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Auburn entity station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-entity-10",
+          "publicRef": "ref-entity-10",
+          "packetHash": "proof-entity-10",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Ivory entity station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-entity-11",
+          "publicRef": "ref-entity-11",
+          "packetHash": "proof-entity-11",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Violet entity station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        },
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 13,
+          "score": 0.0136986301369863,
+          "locator": {
+            "sourcePairIndex": 13,
+            "worldlineOrdinal": 13,
+            "messageIndex": 25
+          }
+        },
+        {
+          "id": "frozen-world-1",
+          "publicRef": "ref-world-1",
+          "packetHash": "proof-world-1",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Olive world station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 14,
+          "score": 0.013513513513513514,
+          "locator": {
+            "sourcePairIndex": 14,
+            "worldlineOrdinal": 14,
+            "messageIndex": 27
+          }
+        },
+        {
+          "id": "frozen-world-2",
+          "publicRef": "ref-world-2",
+          "packetHash": "proof-world-2",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Topaz world station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 15,
+          "score": 0.013333333333333334,
+          "locator": {
+            "sourcePairIndex": 15,
+            "worldlineOrdinal": 15,
+            "messageIndex": 29
+          }
+        },
+        {
+          "id": "frozen-world-3",
+          "publicRef": "ref-world-3",
+          "packetHash": "proof-world-3",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Hazel world station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 16,
+          "score": 0.013157894736842105,
+          "locator": {
+            "sourcePairIndex": 16,
+            "worldlineOrdinal": 16,
+            "messageIndex": 31
+          }
+        },
+        {
+          "id": "frozen-world-4",
+          "publicRef": "ref-world-4",
+          "packetHash": "proof-world-4",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Saffron world station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 17,
+          "score": 0.012987012987012988,
+          "locator": {
+            "sourcePairIndex": 17,
+            "worldlineOrdinal": 17,
+            "messageIndex": 33
+          }
+        },
+        {
+          "id": "frozen-world-5",
+          "publicRef": "ref-world-5",
+          "packetHash": "proof-world-5",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Teal world station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 18,
+          "score": 0.01282051282051282,
+          "locator": {
+            "sourcePairIndex": 18,
+            "worldlineOrdinal": 18,
+            "messageIndex": 35
+          }
+        },
+        {
+          "id": "frozen-world-6",
+          "publicRef": "ref-world-6",
+          "packetHash": "proof-world-6",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Umber world station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 19,
+          "score": 0.012658227848101266,
+          "locator": {
+            "sourcePairIndex": 19,
+            "worldlineOrdinal": 19,
+            "messageIndex": 37
+          }
+        },
+        {
+          "id": "frozen-world-7",
+          "publicRef": "ref-world-7",
+          "packetHash": "proof-world-7",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Lilac world station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 20,
+          "score": 0.0125,
+          "locator": {
+            "sourcePairIndex": 20,
+            "worldlineOrdinal": 20,
+            "messageIndex": 39
+          }
+        },
+        {
+          "id": "frozen-world-8",
+          "publicRef": "ref-world-8",
+          "packetHash": "proof-world-8",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Pearl world station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 21,
+          "score": 0.012345679012345678,
+          "locator": {
+            "sourcePairIndex": 21,
+            "worldlineOrdinal": 21,
+            "messageIndex": 41
+          }
+        },
+        {
+          "id": "frozen-world-9",
+          "publicRef": "ref-world-9",
+          "packetHash": "proof-world-9",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Auburn world station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 22,
+          "score": 0.012195121951219513,
+          "locator": {
+            "sourcePairIndex": 22,
+            "worldlineOrdinal": 22,
+            "messageIndex": 43
+          }
+        },
+        {
+          "id": "frozen-world-10",
+          "publicRef": "ref-world-10",
+          "packetHash": "proof-world-10",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Ivory world station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 23,
+          "score": 0.012048192771084338,
+          "locator": {
+            "sourcePairIndex": 23,
+            "worldlineOrdinal": 23,
+            "messageIndex": 45
+          }
+        },
+        {
+          "id": "frozen-world-11",
+          "publicRef": "ref-world-11",
+          "packetHash": "proof-world-11",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Violet world station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 24,
+          "score": 0.011904761904761904,
+          "locator": {
+            "sourcePairIndex": 24,
+            "worldlineOrdinal": 24,
+            "messageIndex": 47
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 25,
+          "score": 0.011764705882352941,
+          "locator": {
+            "sourcePairIndex": 25,
+            "worldlineOrdinal": 25,
+            "messageIndex": 49
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 26,
+          "score": 0.011627906976744186,
+          "locator": {
+            "sourcePairIndex": 26,
+            "worldlineOrdinal": 26,
+            "messageIndex": 51
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 27,
+          "score": 0.011494252873563218,
+          "locator": {
+            "sourcePairIndex": 27,
+            "worldlineOrdinal": 27,
+            "messageIndex": 53
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 28,
+          "score": 0.011363636363636364,
+          "locator": {
+            "sourcePairIndex": 28,
+            "worldlineOrdinal": 28,
+            "messageIndex": 55
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 29,
+          "score": 0.011235955056179775,
+          "locator": {
+            "sourcePairIndex": 29,
+            "worldlineOrdinal": 29,
+            "messageIndex": 57
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 30,
+          "score": 0.011111111111111112,
+          "locator": {
+            "sourcePairIndex": 30,
+            "worldlineOrdinal": 30,
+            "messageIndex": 59
+          }
+        },
+        {
+          "id": "frozen-narrative-6",
+          "publicRef": "ref-narrative-6",
+          "packetHash": "proof-narrative-6",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Umber narrative station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 31,
+          "score": 0.01098901098901099,
+          "locator": {
+            "sourcePairIndex": 31,
+            "worldlineOrdinal": 31,
+            "messageIndex": 61
+          }
+        },
+        {
+          "id": "frozen-narrative-7",
+          "publicRef": "ref-narrative-7",
+          "packetHash": "proof-narrative-7",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Lilac narrative station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 32,
+          "score": 0.010869565217391304,
+          "locator": {
+            "sourcePairIndex": 32,
+            "worldlineOrdinal": 32,
+            "messageIndex": 63
+          }
+        },
+        {
+          "id": "frozen-narrative-8",
+          "publicRef": "ref-narrative-8",
+          "packetHash": "proof-narrative-8",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Pearl narrative station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 33,
+          "score": 0.010752688172043012,
+          "locator": {
+            "sourcePairIndex": 33,
+            "worldlineOrdinal": 33,
+            "messageIndex": 65
+          }
+        },
+        {
+          "id": "frozen-narrative-9",
+          "publicRef": "ref-narrative-9",
+          "packetHash": "proof-narrative-9",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Auburn narrative station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 34,
+          "score": 0.010638297872340425,
+          "locator": {
+            "sourcePairIndex": 34,
+            "worldlineOrdinal": 34,
+            "messageIndex": 67
+          }
+        },
+        {
+          "id": "frozen-narrative-10",
+          "publicRef": "ref-narrative-10",
+          "packetHash": "proof-narrative-10",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Ivory narrative station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 35,
+          "score": 0.010526315789473684,
+          "locator": {
+            "sourcePairIndex": 35,
+            "worldlineOrdinal": 35,
+            "messageIndex": 69
+          }
+        },
+        {
+          "id": "frozen-narrative-11",
+          "publicRef": "ref-narrative-11",
+          "packetHash": "proof-narrative-11",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Violet narrative station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 36,
+          "score": 0.010416666666666666,
+          "locator": {
+            "sourcePairIndex": 36,
+            "worldlineOrdinal": 36,
+            "messageIndex": 71
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 37,
+          "score": 0.010309278350515464,
+          "locator": {
+            "sourcePairIndex": 37,
+            "worldlineOrdinal": 37,
+            "messageIndex": 73
+          }
+        },
+        {
+          "id": "frozen-planner-1",
+          "publicRef": "ref-planner-1",
+          "packetHash": "proof-planner-1",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Olive planner station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 38,
+          "score": 0.01020408163265306,
+          "locator": {
+            "sourcePairIndex": 38,
+            "worldlineOrdinal": 38,
+            "messageIndex": 75
+          }
+        },
+        {
+          "id": "frozen-planner-2",
+          "publicRef": "ref-planner-2",
+          "packetHash": "proof-planner-2",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Topaz planner station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 39,
+          "score": 0.010101010101010102,
+          "locator": {
+            "sourcePairIndex": 39,
+            "worldlineOrdinal": 39,
+            "messageIndex": 77
+          }
+        },
+        {
+          "id": "frozen-planner-3",
+          "publicRef": "ref-planner-3",
+          "packetHash": "proof-planner-3",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Hazel planner station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 40,
+          "score": 0.01,
+          "locator": {
+            "sourcePairIndex": 40,
+            "worldlineOrdinal": 40,
+            "messageIndex": 79
+          }
+        },
+        {
+          "id": "frozen-planner-4",
+          "publicRef": "ref-planner-4",
+          "packetHash": "proof-planner-4",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Saffron planner station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 41,
+          "score": 0.009900990099009901,
+          "locator": {
+            "sourcePairIndex": 41,
+            "worldlineOrdinal": 41,
+            "messageIndex": 81
+          }
+        },
+        {
+          "id": "frozen-planner-5",
+          "publicRef": "ref-planner-5",
+          "packetHash": "proof-planner-5",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Teal planner station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 42,
+          "score": 0.00980392156862745,
+          "locator": {
+            "sourcePairIndex": 42,
+            "worldlineOrdinal": 42,
+            "messageIndex": 83
+          }
+        },
+        {
+          "id": "frozen-planner-6",
+          "publicRef": "ref-planner-6",
+          "packetHash": "proof-planner-6",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Umber planner station holds calibrated instrument G.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 43,
+          "score": 0.009708737864077669,
+          "locator": {
+            "sourcePairIndex": 43,
+            "worldlineOrdinal": 43,
+            "messageIndex": 85
+          }
+        },
+        {
+          "id": "frozen-planner-7",
+          "publicRef": "ref-planner-7",
+          "packetHash": "proof-planner-7",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Lilac planner station holds calibrated instrument H.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 44,
+          "score": 0.009615384615384616,
+          "locator": {
+            "sourcePairIndex": 44,
+            "worldlineOrdinal": 44,
+            "messageIndex": 87
+          }
+        },
+        {
+          "id": "frozen-planner-8",
+          "publicRef": "ref-planner-8",
+          "packetHash": "proof-planner-8",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Pearl planner station holds calibrated instrument I.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 45,
+          "score": 0.009523809523809525,
+          "locator": {
+            "sourcePairIndex": 45,
+            "worldlineOrdinal": 45,
+            "messageIndex": 89
+          }
+        },
+        {
+          "id": "frozen-planner-9",
+          "publicRef": "ref-planner-9",
+          "packetHash": "proof-planner-9",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Auburn planner station holds calibrated instrument J.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 46,
+          "score": 0.009433962264150943,
+          "locator": {
+            "sourcePairIndex": 46,
+            "worldlineOrdinal": 46,
+            "messageIndex": 91
+          }
+        },
+        {
+          "id": "frozen-planner-10",
+          "publicRef": "ref-planner-10",
+          "packetHash": "proof-planner-10",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Ivory planner station holds calibrated instrument K.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 47,
+          "score": 0.009345794392523364,
+          "locator": {
+            "sourcePairIndex": 47,
+            "worldlineOrdinal": 47,
+            "messageIndex": 93
+          }
+        },
+        {
+          "id": "frozen-planner-11",
+          "publicRef": "ref-planner-11",
+          "packetHash": "proof-planner-11",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Violet planner station holds calibrated instrument L.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 48,
+          "score": 0.009259259259259259,
+          "locator": {
+            "sourcePairIndex": 48,
+            "worldlineOrdinal": 48,
+            "messageIndex": 95
+          }
+        }
+      ],
+      "maxItemsPerAxis": 12,
+      "capChars": 12000,
+      "requiredAxes": [
+        "entity",
+        "world",
+        "narrative",
+        "planner"
+      ],
+      "contract": "stage-level balanced coverage among equally eligible direct-ranked axes under global16"
+    },
+    {
+      "id": "configured-axis-ceiling",
+      "rows": [
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        }
+      ],
+      "maxItemsPerAxis": 2,
+      "capChars": 12000,
+      "required": [],
+      "contract": "five distinct facts exceed configured max2; partial delivery is expected and must remain bounded"
+    },
+    {
+      "id": "character-budget",
+      "rows": [
+        {
+          "id": "frozen-entity-0",
+          "publicRef": "ref-entity-0",
+          "packetHash": "proof-entity-0",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Nacre entity station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-entity-1",
+          "publicRef": "ref-entity-1",
+          "packetHash": "proof-entity-1",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Olive entity station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 2,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-entity-2",
+          "publicRef": "ref-entity-2",
+          "packetHash": "proof-entity-2",
+          "axis": "entity",
+          "category": "character",
+          "publicText": "Topaz entity station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 3,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-world-0",
+          "publicRef": "ref-world-0",
+          "packetHash": "proof-world-0",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Nacre world station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 4,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-world-1",
+          "publicRef": "ref-world-1",
+          "packetHash": "proof-world-1",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Olive world station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 5,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-world-2",
+          "publicRef": "ref-world-2",
+          "packetHash": "proof-world-2",
+          "axis": "world",
+          "category": "world_rule",
+          "publicText": "Topaz world station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 6,
+            "messageIndex": 11
+          }
+        },
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 7,
+          "score": 0.014925373134328358,
+          "locator": {
+            "sourcePairIndex": 7,
+            "worldlineOrdinal": 7,
+            "messageIndex": 13
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 8,
+          "score": 0.014705882352941176,
+          "locator": {
+            "sourcePairIndex": 8,
+            "worldlineOrdinal": 8,
+            "messageIndex": 15
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 9,
+          "score": 0.014492753623188406,
+          "locator": {
+            "sourcePairIndex": 9,
+            "worldlineOrdinal": 9,
+            "messageIndex": 17
+          }
+        },
+        {
+          "id": "frozen-planner-0",
+          "publicRef": "ref-planner-0",
+          "packetHash": "proof-planner-0",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Nacre planner station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 10,
+          "score": 0.014285714285714285,
+          "locator": {
+            "sourcePairIndex": 10,
+            "worldlineOrdinal": 10,
+            "messageIndex": 19
+          }
+        },
+        {
+          "id": "frozen-planner-1",
+          "publicRef": "ref-planner-1",
+          "packetHash": "proof-planner-1",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Olive planner station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 11,
+          "score": 0.014084507042253521,
+          "locator": {
+            "sourcePairIndex": 11,
+            "worldlineOrdinal": 11,
+            "messageIndex": 21
+          }
+        },
+        {
+          "id": "frozen-planner-2",
+          "publicRef": "ref-planner-2",
+          "packetHash": "proof-planner-2",
+          "axis": "planner",
+          "category": "continuity_lock",
+          "publicText": "Topaz planner station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 12,
+          "score": 0.013888888888888888,
+          "locator": {
+            "sourcePairIndex": 12,
+            "worldlineOrdinal": 12,
+            "messageIndex": 23
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 1200,
+      "required": [],
+      "contract": "tight character budget cannot be exceeded to preserve all gold"
+    },
+    {
+      "id": "explicit-time-lanes",
+      "rows": [
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 79,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 78,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 76,
+            "messageIndex": 5
+          }
+        },
+        {
+          "id": "frozen-narrative-3",
+          "publicRef": "ref-narrative-3",
+          "packetHash": "proof-narrative-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Hazel narrative station holds calibrated instrument D.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 4,
+          "score": 0.015625,
+          "locator": {
+            "sourcePairIndex": 4,
+            "worldlineOrdinal": 75,
+            "messageIndex": 7
+          }
+        },
+        {
+          "id": "frozen-narrative-4",
+          "publicRef": "ref-narrative-4",
+          "packetHash": "proof-narrative-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Saffron narrative station holds calibrated instrument E.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 5,
+          "score": 0.015384615384615385,
+          "locator": {
+            "sourcePairIndex": 5,
+            "worldlineOrdinal": 60,
+            "messageIndex": 9
+          }
+        },
+        {
+          "id": "frozen-narrative-5",
+          "publicRef": "ref-narrative-5",
+          "packetHash": "proof-narrative-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Teal narrative station holds calibrated instrument F.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 6,
+          "score": 0.015151515151515152,
+          "locator": {
+            "sourcePairIndex": 6,
+            "worldlineOrdinal": 59,
+            "messageIndex": 11
+          }
+        }
+      ],
+      "maxItemsPerAxis": 6,
+      "capChars": 12000,
+      "temporal": {
+        "status": "active",
+        "fingerprint": "frozen-explicit-time-v1",
+        "shortMaxAge": 2,
+        "mediumMaxAge": 7,
+        "quotas": {
+          "short": 1,
+          "medium": 1,
+          "long": 1
+        }
+      },
+      "requiredLanes": [
+        "short",
+        "medium",
+        "long"
+      ],
+      "contract": "retain explicitly defined unique-turn quotas; no defaults assigned"
+    },
+    {
+      "id": "three-memories-one-source-turn",
+      "rows": [
+        {
+          "id": "frozen-narrative-0",
+          "publicRef": "ref-narrative-0",
+          "packetHash": "proof-narrative-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 60,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "frozen-narrative-1",
+          "publicRef": "ref-narrative-1",
+          "packetHash": "proof-narrative-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Olive narrative station holds calibrated instrument B.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 2,
+          "score": 0.016129032258064516,
+          "locator": {
+            "sourcePairIndex": 2,
+            "worldlineOrdinal": 60,
+            "messageIndex": 3
+          }
+        },
+        {
+          "id": "frozen-narrative-2",
+          "publicRef": "ref-narrative-2",
+          "packetHash": "proof-narrative-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Topaz narrative station holds calibrated instrument C.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 3,
+          "score": 0.015873015873015872,
+          "locator": {
+            "sourcePairIndex": 3,
+            "worldlineOrdinal": 60,
+            "messageIndex": 5
+          }
+        }
+      ],
+      "maxItemsPerAxis": 3,
+      "capChars": 12000,
+      "temporal": {
+        "status": "active",
+        "fingerprint": "frozen-one-turn-v1",
+        "shortMaxAge": 2,
+        "mediumMaxAge": 7,
+        "quotas": {
+          "short": 0,
+          "medium": 0,
+          "long": 1
+        }
+      },
+      "required": [
+        "Nacre narrative station holds calibrated instrument A.",
+        "Olive narrative station holds calibrated instrument B.",
+        "Topaz narrative station holds calibrated instrument C."
+      ],
+      "contract": "three distinct memories from one source turn do not count as three temporal turns"
+    },
+    {
+      "id": "duplicate-provenance",
+      "rows": [
+        {
+          "id": "duplicate-0",
+          "publicRef": "duplicate-0",
+          "packetHash": "duplicate-proof-0",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "duplicate-1",
+          "publicRef": "duplicate-1",
+          "packetHash": "duplicate-proof-1",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "duplicate-2",
+          "publicRef": "duplicate-2",
+          "packetHash": "duplicate-proof-2",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "duplicate-3",
+          "publicRef": "duplicate-3",
+          "packetHash": "duplicate-proof-3",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "duplicate-4",
+          "publicRef": "duplicate-4",
+          "packetHash": "duplicate-proof-4",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        },
+        {
+          "id": "duplicate-5",
+          "publicRef": "duplicate-5",
+          "packetHash": "duplicate-proof-5",
+          "axis": "narrative",
+          "category": "summary_memory",
+          "publicText": "Nacre narrative station holds calibrated instrument A.",
+          "visibility": {
+            "privacy": "",
+            "ownerEntityId": "",
+            "holderEntityIds": [],
+            "visibleToEntityIds": [],
+            "deniedToEntityIds": [],
+            "unresolvedEntityRefs": false
+          },
+          "_localRecall": true,
+          "_recallDirectRank": 1,
+          "score": 0.01639344262295082,
+          "locator": {
+            "sourcePairIndex": 1,
+            "worldlineOrdinal": 1,
+            "messageIndex": 1
+          }
+        }
+      ],
+      "maxItemsPerAxis": 1,
+      "capChars": 12000,
+      "required": [
+        "Nacre narrative station holds calibrated instrument A."
+      ],
+      "expectedEntries": 1,
+      "expectedSources": 6,
+      "contract": "dedupe counts one delivered fact and keeps all six provenance references"
+    }
+  ],
+  "limits": [
+    "Independent selection-stage regression/holdout fixture frozen before changing policy. Not a semantic ranker or full registered-hook holdout. Product receives rows/query/config only; required answers are external oracle data. All cases have at most48 prepared input rows.",
+    "No private source data, native Risu, model call or benchmark frozen clock."
+  ]
+}

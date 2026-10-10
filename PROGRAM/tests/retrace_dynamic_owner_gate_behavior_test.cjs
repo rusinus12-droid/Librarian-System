@@ -1,0 +1,18 @@
+const MEMORY_SUITE_OWNER_STATUS_ORDER=Object.freeze(['flashback','hayaku','libra','lia']);
+const HANDOFF_STORAGE_MODES=Object.freeze(['plugin_only','server_only']);
+const MEMORY_SUITE_OWNER_GATE_SCHEMA='retrace.memory_suite_owner_storage_gate.v1';
+const text=v=>String(v??''); const clone=v=>JSON.parse(JSON.stringify(v)); const stableHash64=v=>'h:'+require('crypto').createHash('sha256').update(String(v)).digest('hex').slice(0,16); const deployed=require('node:fs').readFileSync(require('node:path').join(__dirname,'../plugins/RETRACE.js'),'utf8');
+const start=deployed.indexOf('  const memorySuiteOwnerStorageGateFromRows ='),end=deployed.indexOf('  const inspectMemorySuiteOwnerStorageGate =',start);
+const gate=new Function('MEMORY_SUITE_OWNER_STATUS_ORDER','HANDOFF_STORAGE_MODES','MEMORY_SUITE_OWNER_GATE_SCHEMA','text','clone','stableHash64',deployed.slice(start,end)+'return memorySuiteOwnerStorageGateFromRows;')(MEMORY_SUITE_OWNER_STATUS_ORDER,HANDOFF_STORAGE_MODES,MEMORY_SUITE_OWNER_GATE_SCHEMA,text,clone,stableHash64);
+let pass=0,fail=0;const t=(n,c)=>{if(c){pass++;console.log('PASS',n)}else{fail++;console.log('FAIL',n)}}; const r=(owner,mode,extra={})=>({owner,installed:true,connected:true,supported:true,mode,...extra}); const server=(...owners)=>Object.fromEntries(owners.map(o=>[o,{verified:true,result:'ok'}])); let g;
+g=gate([r('libra','plugin_only')],null);t('LIBRA only 1/1',g.ready&&g.participantCount===1&&g.absentOwners.length===3);
+g=gate([r('hayaku','mirror')],server('hayaku'));t('HAYAKU mirror transition blocked',!g.ready&&g.reason==='owner_storage_transition_incomplete');
+g=gate([r('flashback','server_only')],server('flashback'));t('Flashback only server 1/1',g.ready&&g.participantCount===1);
+g=gate([r('lia','plugin_only')],null);t('LIA only 1/1',g.ready&&g.participantCount===1);
+g=gate([r('flashback','plugin_only'),r('libra','plugin_only')],null);t('2/2 same',g.ready&&g.participantCount===2);
+g=gate([r('flashback','mirror'),r('libra','plugin_only')],null);t('mirror participant blocked',!g.ready&&g.reason==='owner_storage_transition_incomplete');
+g=gate([r('flashback','plugin_only'),r('hayaku','plugin_only'),r('libra','plugin_only'),r('lia','plugin_only')],null);t('4/4 same',g.ready&&g.participantCount===4);
+g=gate([],null);t('0 blocked',!g.ready&&g.reason==='no_active_memory_owner');
+g=gate([r('libra','plugin_only'),{owner:'flashback',installed:true,connected:true,supported:false,mode:''}],null);t('installed unsupported blocks',!g.ready&&g.reason==='installed_owner_storage_status_unverified');
+g=gate([r('libra','server_only')],{libra:{verified:false,result:'bad'}});t('server failure blocks',!g.ready&&g.reason==='owner_server_integrity_failed');
+console.log(`RESULT ${pass} PASS / ${fail} FAIL`);process.exit(fail?1:0);

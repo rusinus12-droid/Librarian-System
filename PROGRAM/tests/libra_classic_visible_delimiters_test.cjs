@@ -1,0 +1,21 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');
+const a=source.indexOf('  const stripClassicRecallDelimiters ='),b=source.indexOf('  const stripVisiblePlanningFromMainResponse',a);
+const ctx=vm.createContext({});vm.runInContext(source.slice(a,b)+'\nglobalThis.clean=stripClassicRecallDelimiters;',ctx);
+const clean=ctx.clean;
+assert.equal(clean('본문\n<LIBRA_CLASSIC_RECALL>\n</LIBRA_CLASSIC_RECALL>'),'본문\n\n');
+assert.equal(clean('<LIBRA_CLASSIC_RECALL>대화는 보존</LIBRA_CLASSIC_RECALL>'),'대화는 보존');
+assert.equal(clean('&lt;LIBRA_CLASSIC_RECALL&gt;&lt;/LIBRA_CLASSIC_RECALL&gt;'),'');
+assert.equal(clean('&#60;LIBRA_CLASSIC_RECALL&#62;&#x3c;/LIBRA_CLASSIC_RECALL&#x3e;'),'');
+assert.equal(clean('</LIBRA_CLASSIC_RECALL>'),'');
+const other='<img src="scene"><HAYAKU_STATE_PACKET>ok</HAYAKU_STATE_PACKET>';
+assert.equal(clean(other),other);
+const response={content:[{type:'text',text:'<LIBRA_CLASSIC_RECALL>'},{type:'image',url:'image'}],usage:{tokens:3}};
+const result=clean(response);assert.equal(result.content[0].text,'');assert.equal(response.content[0].text,'<LIBRA_CLASSIC_RECALL>');assert.equal(result.usage,response.usage);
+assert.equal(clean({message:{content:'</LIBRA_CLASSIC_RECALL>'}}).message.content,'');
+// Delimiter removal is a display projection; the stored response stays original.
+assert.match(source,/const handler = content => LibraMemoryCore.state.disposed \? content : stripClassicRecallDelimiters\(content\)/);
+assert.match(source,/addRisuScriptHandler\('display', handler\)/);
+assert.match(source,/removeRisuScriptHandler\?\.\('display', displayRegistration.handler\)/);
+console.log('PASS raw/escaped/empty/orphan delimiters, narrative and foreign tags preserved, structured responses immutable, output/display wiring');

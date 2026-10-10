@@ -1,0 +1,25 @@
+{
+  "schema":"libra.typed_recall.measurement.v1",
+  "oracleStatus":"prepared_pending_parent_review",
+  "corpus":"typed-recall-v1.json",
+  "oracleDerivation":"Hand-written expected canonical identities and roles; never derived from retrieval output or model answers.",
+  "forbidden":["ENTITY_SECRET_CANARY","RELATION_SECRET_CANARY","ROLLED_BACK_4_CANARY","CODEX_DISABLED_CANARY"],
+  "cases":[
+    {"id":"pendant-ko","split":"tuning","language":"ko","query":"펜던트 약속의 인물, 증거, 세계 규칙과 아직 이어지는 사건을 알려줘.","gold":[{"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]},{"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state","relation"]},{"family":"world","subtype":"node","id":"world_old_tower","roles":["world_rule","world_state"]},{"family":"narrative","subtype":"storyline","id":"8","roles":["continuity","evidence"]}]},
+    {"id":"pendant-en","split":"tuning","language":"en","query":"Who kept the pendant promise? Include its evidence, tower rules and continuing thread.","gold":[{"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]},{"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state","relation"]},{"family":"world","subtype":"node","id":"world_old_tower","roles":["world_rule","world_state"]},{"family":"narrative","subtype":"storyline","id":"8","roles":["continuity","evidence"]}]},
+    {"id":"pendant-ja","split":"holdout","language":"ja","query":"預けられた首飾りを返す誓いについて、人物、根拠、塔の規則、未解決の流れを説明して。","gold":[{"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]},{"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state","relation"]},{"family":"world","subtype":"node","id":"world_old_tower","roles":["world_rule","world_state"]},{"family":"narrative","subtype":"storyline","id":"8","roles":["continuity","evidence"]}]},
+    {"id":"pendant-zh","split":"holdout","language":"zh","query":"归还托付项链的承诺涉及谁、哪些证据、塔的规则和未完成的线索？","gold":[{"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]},{"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state","relation"]},{"family":"world","subtype":"node","id":"world_old_tower","roles":["world_rule","world_state"]},{"family":"narrative","subtype":"storyline","id":"8","roles":["continuity","evidence"]}]},
+    {"id":"aftermath-en","split":"holdout","language":"en","query":"What remains after the tower fell silent?","gold":[{"family":"narrative","subtype":"storyline","id":"9","roles":["continuity"]}]},
+    {"id":"vows-ko","split":"holdout","language":"ko","query":"현재 세계에서 약속을 지키는 데 적용되는 규칙은 무엇인가?","gold":[{"family":"world","subtype":"node","id":"world_main","roles":["world_rule","world_state"]}]},
+    {"id":"waiting-en","split":"holdout","language":"en","query":"Which character is waiting for the silver pendant to come back?","gold":[{"family":"entity","subtype":"canonical","id":"promise","roles":["entity_state"]}]},
+    {"id":"evidence-mixed","split":"holdout","language":"ko-en","query":"은 펜던트를 맡기며 return을 부탁했던 기억의 증거는?","gold":[{"family":"memory","subtype":"entry","id":"promise","roles":["memory_evidence"]}]},
+    {"id":"noanswer-ko","split":"holdout","language":"ko","query":"달 원자로 발사 암호는 무엇인가?","gold":[]},
+    {"id":"noanswer-en","split":"holdout","language":"en","query":"Where is the lunar reactor launch password?","gold":[]},
+    {"id":"noanswer-ja","split":"holdout","language":"ja","query":"月面原子炉の発射用パスワードは？","gold":[]},
+    {"id":"noanswer-zh","split":"holdout","language":"zh","query":"月球反应堆的发射密码是什么？","gold":[]},
+    {"id":"hardnegative-return","split":"holdout","language":"en","query":"What evidence proves that the pendant has already been returned?","gold":[]},
+    {"id":"hardnegative-public-secret","split":"holdout","language":"ko","query":"모든 사람에게 공개된 민지의 비밀 암호를 알려줘.","gold":[]}
+  ],
+  "pendingSafetyScenarios":["explicit exclusion","rollback after query","scope and branch switch","POV restriction","same family distinct roles and sources","partial storage and quota","cold/warm/reload coverage"],
+  "limits":"This small prepared corpus does not establish production quality or archive/larger-corpus coverage. Holdout questions and gold require review before any tuning."
+}

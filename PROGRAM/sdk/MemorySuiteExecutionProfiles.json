@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "products": {
+    "LIBRA.js": "libra",
+    "Flashback_Memory.js": "legacy-compatible",
+    "HAYAKU_Locator_Continuity.js": "legacy-compatible"
+  },
+  "profiles": {
+    "legacy-compatible": { "remove": [], "add": {} },
+    "libra": {
+      "remove": ["sga_private_analysis", "sga_full_draft", "sga_patch", "sga_final_rewrite", "sga_length_rewrite"],
+      "add": { "micro_memory": [2048, 4096] }
+    }
+  }
+}

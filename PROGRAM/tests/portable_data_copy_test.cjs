@@ -1,0 +1,143 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { DatabaseSync } = require('node:sqlite');
+const {
+  createMemorySuiteServer,
+  DATABASE_SCHEMA_VERSION,
+  inspectDatabaseFile
+} = require('../server/server.cjs');
+
+const sha256 = filePath => crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+
+async function main() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-suite-portable-copy-'));
+  const firstProgram = path.join(tempRoot, 'PROGRAM_OLD');
+  const firstData = path.join(tempRoot, 'DATA');
+  const copiedRoot = path.join(tempRoot, 'RESTORED');
+  const copiedData = path.join(copiedRoot, 'DATA');
+  fs.mkdirSync(firstProgram, { recursive: true });
+
+  let first = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir: firstData, autoBackup: false });
+  try {
+    await first.listen();
+    first.repositories.libra.mutate({
+      kind: 'set',
+      space: 'plugin',
+      key: 'libra:test:portable-copy',
+      value: { text: 'survives-program-replacement', number: 42 },
+      operationId: 'portable_libra_set_000001',
+      expectedRevision: 0
+    });
+    first.repositories.flashback.mutate({
+      kind: 'set',
+      space: 'local',
+      key: 'vector_rag_memory:test:vector',
+      value: { vector: [0.1, 0.2, 0.3] },
+      operationId: 'portable_flashback_set_000001',
+      expectedRevision: 0
+    });
+    first.repositories.hayaku.mutate({
+      kind: 'set', space: 'plugin', key: 'hayaku:test:portable-copy',
+      value: { ledger: ['portable', 'hayaku'] },
+      operationId: 'portable_hayaku_set_000001', expectedRevision: 0
+    });
+    first.repositories.lia.mutate({
+      kind: 'set', space: 'plugin', key: 'lia:test:portable-copy',
+      value: { persona: 'portable-lia' },
+      operationId: 'portable_lia_set_000001', expectedRevision: 0
+    });
+    first.repositories.retrace.mutate({
+      kind: 'set', space: 'plugin', key: 'retrace:test:portable-copy',
+      value: { handoff: 'portable-retrace' },
+      operationId: 'portable_retrace_set_000001', expectedRevision: 0
+    });
+  } finally {
+    await first.close();
+  }
+
+  // User workflow: stop server, copy the entire DATA folder, discard PROGRAM.
+  fs.mkdirSync(copiedRoot, { recursive: true });
+  fs.cpSync(firstData, copiedData, { recursive: true, force: true });
+  fs.rmSync(firstProgram, { recursive: true, force: true });
+  assert.equal(fs.existsSync(firstProgram), false);
+  assert.ok(fs.existsSync(path.join(copiedData, 'stores', 'libra', 'libra.sqlite')));
+  assert.ok(fs.existsSync(path.join(copiedData, 'runtime-token.txt')));
+  assert.ok(fs.existsSync(path.join(copiedData, 'data-layout.json')));
+
+  const second = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir: copiedData, autoBackup: false });
+  try {
+    await second.listen();
+    assert.deepEqual(second.repositories.libra.get('plugin', 'libra:test:portable-copy').value, {
+      text: 'survives-program-replacement',
+      number: 42
+    });
+    assert.deepEqual(second.repositories.flashback.get('local', 'vector_rag_memory:test:vector').value, {
+      vector: [0.1, 0.2, 0.3]
+    });
+    assert.deepEqual(second.repositories.hayaku.get('plugin', 'hayaku:test:portable-copy').value, {
+      ledger: ['portable', 'hayaku']
+    });
+    assert.deepEqual(second.repositories.lia.get('plugin', 'lia:test:portable-copy').value, {
+      persona: 'portable-lia'
+    });
+    assert.deepEqual(second.repositories.retrace.get('plugin', 'retrace:test:portable-copy').value, {
+      handoff: 'portable-retrace'
+    });
+  } finally {
+    await second.close();
+  }
+
+  // Automatic DB migration creates a pre-migration backup and upgrades metadata.
+  const libraPath = path.join(copiedData, 'stores', 'libra', 'libra.sqlite');
+  {
+    const db = new DatabaseSync(libraPath);
+    db.prepare("UPDATE metadata SET value = '0' WHERE key = 'database_schema_version'").run();
+    db.exec('PRAGMA user_version = 0;');
+    db.close();
+  }
+  const migrating = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir: copiedData, autoBackup: false });
+  try {
+    assert.equal(migrating.databasePreparation.migrated, true);
+    assert.ok(migrating.databasePreparation.backup?.id);
+    assert.ok(fs.existsSync(path.join(copiedData, 'backups', 'pre-migration', migrating.databasePreparation.backup.id, 'manifest.json')));
+    await migrating.listen();
+    const inspected = inspectDatabaseFile(libraPath, 'libra');
+    assert.equal(inspected.version, DATABASE_SCHEMA_VERSION);
+    assert.deepEqual(migrating.repositories.libra.get('plugin', 'libra:test:portable-copy').value, {
+      text: 'survives-program-replacement',
+      number: 42
+    });
+  } finally {
+    await migrating.close();
+  }
+
+  // A DATA schema newer than PROGRAM is rejected without touching layout or DB metadata.
+  const layoutPath = path.join(copiedData, 'data-layout.json');
+  const layoutHashBefore = sha256(layoutPath);
+  {
+    const db = new DatabaseSync(libraPath);
+    db.prepare("UPDATE metadata SET value = '999' WHERE key = 'database_schema_version'").run();
+    db.exec('PRAGMA user_version = 999;');
+    db.close();
+  }
+  const dbHashBefore = sha256(libraPath);
+  assert.throws(
+    () => createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir: copiedData, autoBackup: false }),
+    /data_schema_newer_than_program/
+  );
+  assert.equal(sha256(layoutPath), layoutHashBefore, 'Future DB rejection must not rewrite data-layout.json.');
+  assert.equal(sha256(libraPath), dbHashBefore, 'Future DB rejection must not rewrite the database.');
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  process.stdout.write('portable_data_copy_test: PASS\n');
+}
+
+main().catch(error => {
+  process.stderr.write(`portable_data_copy_test: FAIL\n${error.stack || error}\n`);
+  process.exitCode = 1;
+});

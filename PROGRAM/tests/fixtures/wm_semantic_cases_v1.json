@@ -1,0 +1,1241 @@
+{
+  "schema": "libra.wm_semantic_cases.v1",
+  "source": "synthetic_public_evaluation_only",
+  "caseCount": 16,
+  "semanticScoresNotAssigned": true,
+  "cases": [
+    {
+      "id": "WM-01",
+      "label": "포함·소속·관리 구분",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "도서관의 구조를 알려줘."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "별빛 도서관 안에 서재가 있다. 기록회가 도서관을 관리한다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "서진은 어느 단체에 속해?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 기록회 회원이다. 서진은 서재로 들어왔다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "서재의 소유자는?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "서재의 소유자는 아직 확인되지 않았다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "도서관도 기록회 안에 있는 거야?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "기록회는 조직이다. 도서관의 관리 단체이지 물리적으로 도서관을 담는 장소는 아니다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "지금 서진은?"
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 여전히 서재에 있고 기록회 회원 자격도 유지한다."
+        }
+      ],
+      "expected": [
+        "서재의 상위 장소는 별빛 도서관",
+        "서진의 조직 소속은 기록회",
+        "관리와 소유·공간 포함을 구분"
+      ],
+      "forbidden": [
+        "조직을 장소 parent로 승격",
+        "관리자에서 소유권 추정"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-02",
+      "label": "조건부 규칙과 예외",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "도서관의 규칙은?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "도서관은 정숙 구역이다. 공연실의 허가된 공연 중에만 정숙 규칙의 예외가 인정된다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "공연실로 들어간다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 공연실에 들어갔다. 공연은 아직 시작되지 않았다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "소리를 내도 될까?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "아직 공연 허가가 확인되지 않아 예외 적용 여부는 알 수 없다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "허가서를 찾는다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 빈 서랍만 발견했다. 허가서를 발견하지 못했다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "노래할 계획을 세운다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 나중에 허가를 받으면 노래하겠다고 말했다. 실제 노래와 공연은 아직 없었다."
+        }
+      ],
+      "expected": [
+        "정숙 규칙의 범위·예외 조건 보존",
+        "공연실에 있음만으로 조건 충족 처리하지 않음"
+      ],
+      "forbidden": [
+        "예외 무조건 활성화",
+        "계획을 공연 실행으로 저장"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-03",
+      "label": "극중 세계와 채팅 계통 구분",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "문을 통과한다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진은 푸른 차원에서 붉은 차원으로 이동했다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "두 차원의 연결은?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "차원문은 두 지역을 잇는다. 푸른 차원에는 항구가 있다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "이곳은 어디야?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "현재 서진은 붉은 차원의 광장에 있다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "항구로 돌아갈까?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 돌아갈지를 고민했지만 움직이지 않았다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "잠시 기다린다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 붉은 차원의 광장에서 기다렸다."
+        }
+      ],
+      "expected": [
+        "극중 차원·현재 위치 유지",
+        "host scope/worldline을 모델이 생성·변경하지 않음"
+      ],
+      "forbidden": [
+        "소설 차원 이동을 채팅 브랜치로 취급"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-04",
+      "label": "명시 불가능 보존",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "시간 여행이 가능해?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "이 세계에서는 시간을 거슬러 여행하는 일이 불가능하다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "낡은 시계를 조사한다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 시계를 집어 들었다. 시계는 시간 여행 장치가 아닌 평범한 시계다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "어제 일을 되돌리고 싶다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "서진은 소망을 말했을 뿐 과거로 가지 않았다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "다른 방법은?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "시간을 되돌릴 수 없다는 세계 규칙은 바뀌지 않았다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "시계를 내려놓는다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 시계를 책상에 내려놓고 현재에 머물렀다."
+        }
+      ],
+      "expected": [
+        "시간 여행 불가능은 명시 세계 규칙",
+        "소망과 사건 구분"
+      ],
+      "forbidden": [
+        "평범한 시계를 시간 여행 장치로 승격"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-05",
+      "label": "직업명과 메타 세계 구분",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "카페에 들어간다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "소설가 연우와 독자 지민은 카페에서 만났다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "누가 무슨 일을 해?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "연우는 소설을 쓰는 직업을 갖고 있다. 지민은 그 책의 독자다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "인사한다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "두 사람은 책에 대한 감상을 나눴다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "세계를 바꿀 수 있어?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "연우는 현실을 쓰는 권능이 없으며 그저 작가라고 답했다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "커피를 마신다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "연우와 지민은 같은 카페에 남아 커피를 마셨다."
+        }
+      ],
+      "expected": [
+        "작가·독자는 직업/역할",
+        "일상 카페 장면"
+      ],
+      "forbidden": [
+        "메타 권능·상위 세계 창조"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-06",
+      "label": "미확정 평행우주",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "평행우주가 있을까?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진은 평행우주가 있을지도 모른다고 추측했다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "증거를 보여줘."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "평행우주의 존재는 아직 입증되지 않았다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "없다는 증거는?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "없다는 증거도 없다. 지금은 알 수 없다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "다른 세계로 간다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 갈 수 있다면 가 보고 싶다고 말했지만 이동하지 않았다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "현재 위치를 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 관측소에 그대로 있다. 평행우주는 미확정이다."
+        }
+      ],
+      "expected": [
+        "미확정을 사실·명시 부재와 구분",
+        "현재 관측소"
+      ],
+      "forbidden": [
+        "평행우주 확정",
+        "평행우주 불가능으로 단정"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-07",
+      "label": "미언급·명시 부재 구분",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "방을 살핀다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "방에는 책상과 등불이 있다. 문은 열려 있다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "문을 닫는다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진이 문을 닫았다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "책상을 본다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "책상 위에는 빈 잔이 있다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "등불에 대해 말하지 않는다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 문 옆에 서서 아무 말도 하지 않았다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "열쇠가 있는지 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서랍 안에는 열쇠가 없음을 서진이 직접 확인했다."
+        }
+      ],
+      "expected": [
+        "닫힌 문",
+        "미언급 등불은 삭제하지 않음",
+        "서랍 속 열쇠 부재는 명시"
+      ],
+      "forbidden": [
+        "미언급 등불 clear",
+        "부분 부재를 세계 전체 부재로 확장"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-08",
+      "label": "소지·보관·접근·소유 구분",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "열쇠를 빌린다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "민아는 자신 소유의 은빛 열쇠를 서진에게 빌려줬다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "누가 열쇠를 갖고 있어?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진이 은빛 열쇠를 들고 있다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "서고에 들어간다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "경비원은 서진에게 서고 출입 허가가 없다고 말했다. 서진은 밖에 머물렀다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "열쇠를 보관한다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 은빛 열쇠를 보관함에 넣었다. 소유자는 여전히 민아다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "소유권을 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 빌렸을 뿐 자신 것이 아니라고 말했다."
+        }
+      ],
+      "expected": [
+        "소유자 민아",
+        "보관 장소 보관함",
+        "서진 출입 허가 없음"
+      ],
+      "forbidden": [
+        "소지에서 소유권 추정",
+        "열쇠 소지에서 출입 허가 추정"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-09",
+      "label": "대여·전달·반환 순서",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "준비한다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "민아가 자신의 은빛 열쇠를 꺼냈다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "지호가 빌린다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "민아가 지호에게 은빛 열쇠를 빌려줬다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "준호에게 넘긴다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "지호가 준호에게 열쇠를 전달했다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "반환을 요청한다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "민아가 반환을 요청했으나 준호가 아직 들고 있다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "돌려준다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "준호가 민아에게 열쇠를 반환했다. 이제 민아가 열쇠를 들고 있다."
+        }
+      ],
+      "expected": [
+        "최종 소지자 민아",
+        "대여와 중간 전달의 역사 보존"
+      ],
+      "forbidden": [
+        "중간 소지자만 리콜",
+        "반환 요청을 실제 반환으로 오인"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-10",
+      "label": "비공개 지식 경계",
+      "selectedReview": "character_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "방을 살핀다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진과 지호가 방에 있다. 서술자만 알고 있는 비밀 통로가 벽 뒤에 있다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "서진에게 귓속말한다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "민아는 지호가 듣지 못하도록 서진에게만 금고 암호를 알려줬다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "지호에게 묻는다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "지호는 암호를 모른다고 답했다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "비밀 통로는?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진과 지호는 비밀 통로의 존재를 아직 모른다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "기억을 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 암호를 기억하고 있다. 지호에게는 알려주지 않았다."
+        }
+      ],
+      "expected": [
+        "암호를 아는 사람 서진",
+        "지호의 암호 지식 미부여",
+        "서술자와 등장인물 지식 분리"
+      ],
+      "forbidden": [
+        "비공개 지식 모두에게 공유"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-11",
+      "label": "방향 관계",
+      "selectedReview": "character_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "서진이 민아를 어떻게 봐?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진은 민아의 판단을 신뢰한다고 말했다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "민아는 서진을?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "민아는 서진의 의도를 의심하고 경계한다고 말했다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "협력한다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "둘은 경계와 신뢰가 비대칭인 상태로 자료를 함께 찾았다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "화해한 거야?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "민아는 협력이 곧 신뢰를 뜻하지는 않는다고 말했다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "관계를 정리한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진의 민아에 대한 신뢰와 민아의 서진에 대한 경계는 그대로다."
+        }
+      ],
+      "expected": [
+        "서진→민아 신뢰",
+        "민아→서진 경계"
+      ],
+      "forbidden": [
+        "역방향 자동 대칭",
+        "협력을 친밀한 관계로 과장"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-12",
+      "label": "회상과 현재 장면",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "현재 어디야?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "현재 서진은 도서관에 있다. 지금은 저녁이다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "과거를 떠올린다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 3년 전 섬에 있었던 일을 회상했다. 그때는 아침이었다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "그때의 날씨는?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "회상 속 섬에는 비가 내렸다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "회상을 마친다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 현재의 도서관 책상에 손을 올렸다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "지금은?"
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서진은 저녁의 도서관에 있다. 현재 날씨는 언급되지 않았다."
+        }
+      ],
+      "expected": [
+        "현재 저녁·도서관",
+        "섬·아침·비는 과거"
+      ],
+      "forbidden": [
+        "회상 위치·시각·날씨로 현재 덮기"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-13",
+      "label": "해결 약속과 열린 질문",
+      "selectedReview": "plot_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "약속한다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진은 오늘 민아에게 책을 돌려주겠다고 약속했다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "편지를 읽는다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 발신자가 밝혀지지 않은 편지를 발견했다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "반환한다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "서진이 민아에게 책을 돌려줬다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "약속은?"
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "민아는 책 반환 약속이 이행됐다고 확인했다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "편지의 발신자는?"
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "편지 발신자의 정체는 아직 밝혀지지 않았다."
+        }
+      ],
+      "expected": [
+        "책 반환 약속 해결·역사 보존",
+        "편지 발신자 질문 열린 상태"
+      ],
+      "forbidden": [
+        "해결된 약속 계속 미해결",
+        "열린 질문 삭제"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-14",
+      "label": "최종 사실의 단일 권위",
+      "selectedReview": "world_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "목걸이를 확인한다."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "민아가 붉은 목걸이를 소유하고 있다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "서진에게 빌려준다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "민아는 서진에게 목걸이를 잠깐 빌려줬다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "소유권을 넘기나?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "민아는 아직 선물한 것이 아니라고 말했다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "선물한다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "민아는 서진에게 목걸이를 선물했고 서진은 받았다. 이제 소유자는 서진이다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "최종 소유자를 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "두 사람은 목걸이의 소유자가 서진임을 확인했다."
+        }
+      ],
+      "expected": [
+        "최종 소유자 서진",
+        "본문·검색·State 동일 finalArtifact",
+        "보정 실패 시 직전 유효결과 유지"
+      ],
+      "forbidden": [
+        "초기 Ariadne artifact와 최종 본문 불일치"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-15",
+      "label": "동명이인과 잘못된 구조",
+      "selectedReview": "character_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "사람들을 소개해줘."
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서점 직원 김하늘과 배의 선장 김하늘은 서로 다른 사람이다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "누가 열쇠를 갖고 있지?"
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서점 직원 김하늘만 서점 열쇠를 갖고 있다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "선장은?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "선장 김하늘은 항구에 있고 서점 열쇠가 없다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "장소 구조를 듣는다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "어떤 방문객은 항구가 배 안에 있다고 주장했지만 확인되지 않은 전언이다. 실제 배는 항구에 정박해 있다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "직원을 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "서점 직원 김하늘은 서점에 그대로 있다."
+        }
+      ],
+      "expected": [
+        "동명이인 무근거 병합 차단/보류",
+        "배와 항구 포함 관계 순환 금지",
+        "전언은 현재 확정 아님"
+      ],
+      "forbidden": [
+        "이름만으로 병합",
+        "전언 때문에 포함 순환"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    },
+    {
+      "id": "WM-16",
+      "label": "미래 계획과 현재 Narrative",
+      "selectedReview": "plot_ito",
+      "sourceRows": [
+        {
+          "turn": 1,
+          "ref": "t1-u",
+          "role": "user",
+          "text": "내일 무엇을 할까?"
+        },
+        {
+          "turn": 1,
+          "ref": "t1-a",
+          "role": "char",
+          "text": "서진은 내일 성문을 열 계획을 세웠다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-u",
+          "role": "user",
+          "text": "준비를 한다."
+        },
+        {
+          "turn": 2,
+          "ref": "t2-a",
+          "role": "char",
+          "text": "서진은 계획을 종이에 적었다. 성문은 여전히 닫혀 있다."
+        },
+        {
+          "turn": 3,
+          "ref": "t3-u",
+          "role": "user",
+          "text": "갈등은?"
+        },
+        {
+          "turn": 3,
+          "ref": "t3-a",
+          "role": "char",
+          "text": "민아는 성문을 열면 위험하다고 반대했다."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-u",
+          "role": "user",
+          "text": "다음에는 화해하자."
+        },
+        {
+          "turn": 4,
+          "ref": "t4-a",
+          "role": "char",
+          "text": "서진은 나중에 민아와 화해하고 싶다고 말했다. 아직 합의하지 않았다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-u",
+          "role": "user",
+          "text": "현재를 확인한다."
+        },
+        {
+          "turn": 5,
+          "ref": "t5-a",
+          "role": "char",
+          "text": "성문은 닫힌 상태이고 성문 개방을 둘러싼 갈등은 미해결이다."
+        }
+      ],
+      "expected": [
+        "현재 성문 닫힘",
+        "성문 개방 갈등 미해결",
+        "계획은 계획으로만 과거 발언에 기록"
+      ],
+      "forbidden": [
+        "미래 개방·화해를 완료사건으로 저장",
+        "미래 beats DB 생성"
+      ],
+      "previousState": null,
+      "referenceMaterial": []
+    }
+  ]
+}

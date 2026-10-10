@@ -1,0 +1,11 @@
+'use strict';
+const {workerData,parentPort}=require('node:worker_threads');
+require(workerData.guard);
+if(workerData.mode==='no-result')process.exit(0);
+if(workerData.mode==='error-no-result')throw Error('fixture_worker_early_error');
+require(workerData.realWorker);
+if(workerData.mode==='duplicate')parentPort.postMessage({ok:true,stores:{}});
+if(workerData.mode==='conflict')parentPort.postMessage({ok:false,error:'fixture_conflicting_result'});
+Atomics.wait(new Int32Array(workerData.release),0,0);
+if(workerData.mode==='late-error')throw Error('fixture_worker_late_error');
+if(workerData.mode==='exit-nonzero')process.exitCode=2;

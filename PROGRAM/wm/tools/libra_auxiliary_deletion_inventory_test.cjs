@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
+const s=fs.readFileSync(path.join(__dirname,'runtime-factory-detached-entry.source.js'),'utf8');
+const begin=s.indexOf('            const writes = '),end=s.indexOf('            const definitions = ',begin);
+assert(begin>0&&end>begin);
+const inventory=s.slice(begin,end)+'\nwrites;';
+const run=(baseline,candidate)=>vm.runInNewContext(inventory,{candidateStore:new Map(candidate),baselineStore:new Map(baseline),LibraDataStorage:{storageKeyFor:()=> 'canonical'},admission:{scopeKey:'scope',runtimeScopeKey:'runtime'},scopeCachePrefix:'cache:',TextEncoder});
+assert.throws(()=>run([['canonical','a'],['unknown-before','{}']],[['canonical','b']]),/detached_unknown_auxiliary_write/,'removing unknown baseline storage must fail closed');
+assert.equal(run([['canonical','a']],[['canonical','b']])[0].kind,'canonical_knowledge');
+console.log(JSON.stringify({passed:2,failed:0}));

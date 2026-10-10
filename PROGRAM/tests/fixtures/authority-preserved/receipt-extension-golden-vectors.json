@@ -1,0 +1,196 @@
+{
+  "status": "DESIGN_GOLDEN_VECTORS_NOT_RUNTIME_QUALIFICATION",
+  "hashAlgorithm": "SHA-256",
+  "integerPrefix": "unsigned 32-bit big-endian",
+  "domainUtf8Hex": "6d656d6f72792d73756974652e6f776e65722d736f757263652d7374616d702d73657175656e63652e763100",
+  "operationKey": {
+    "generation": "gen-0001",
+    "namespace": "libra",
+    "operationId": "operation-0001"
+  },
+  "operationKeyCanonicalUtf8Hex": "7b2267656e65726174696f6e223a2267656e2d30303031222c226e616d657370616365223a226c69627261222c226f7065726174696f6e4964223a226f7065726174696f6e2d30303031227d",
+  "operationKeyUtf8Bytes": 76,
+  "sourceSequences": [
+    {
+      "count": 0,
+      "utf8Bytes": 0,
+      "framedHashStreamBytes": 124,
+      "sha256": "e26d64f8d4a07ef6ed066304179c60ef0553b1860e7bc4f2a26cf3c9a6c48094",
+      "streamBase64": "bWVtb3J5LXN1aXRlLm93bmVyLXNvdXJjZS1zdGFtcC1zZXF1ZW5jZS52MQAAAABMeyJnZW5lcmF0aW9uIjoiZ2VuLTAwMDEiLCJuYW1lc3BhY2UiOiJsaWJyYSIsIm9wZXJhdGlvbklkIjoib3BlcmF0aW9uLTAwMDEifQ==",
+      "rows": [],
+      "rowCanonicalUtf8Hex": []
+    },
+    {
+      "count": 1,
+      "utf8Bytes": 235,
+      "framedHashStreamBytes": 367,
+      "sha256": "b0e026856041d509b1cabb92b811b8776e179608703661e430e866d9f8a46c7c",
+      "streamBase64": "bWVtb3J5LXN1aXRlLm93bmVyLXNvdXJjZS1zdGFtcC1zZXF1ZW5jZS52MQAAAABMeyJnZW5lcmF0aW9uIjoiZ2VuLTAwMDEiLCJuYW1lc3BhY2UiOiJsaWJyYSIsIm9wZXJhdGlvbklkIjoib3BlcmF0aW9uLTAwMDEifQAAAAAAAADreyJkaWdlc3QiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiZ2VuZXJhdGlvbiI6Imdlbi0wMDAxIiwia2V5IjoibGlicmE6dGVzdDrtlZzwn5iAIiwicHJlc2VudCI6dHJ1ZSwicmV2aXNpb24iOjIsInNvdXJjZUlkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwic3BhY2UiOiJwbHVnaW4iLCJ2ZXJzaW9uIjoyfQ==",
+      "rows": [
+        {
+          "space": "plugin",
+          "key": "libra:test:한😀",
+          "sourceId": "11111111-1111-4111-8111-111111111111",
+          "generation": "gen-0001",
+          "version": 2,
+          "present": true,
+          "revision": 2,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "rowCanonicalUtf8Hex": [
+        "7b22646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2267656e65726174696f6e223a2267656e2d30303031222c226b6579223a226c696272613a746573743aed959cf09f9880222c2270726573656e74223a747275652c227265766973696f6e223a322c22736f757263654964223a2231313131313131312d313131312d343131312d383131312d313131313131313131313131222c227370616365223a22706c7567696e222c2276657273696f6e223a327d"
+      ]
+    },
+    {
+      "count": 2,
+      "utf8Bytes": 412,
+      "framedHashStreamBytes": 552,
+      "sha256": "b7d9859aaf3da883110972fd282e3df1677c0f6198c77bc1996d2e5789c95bdb",
+      "streamBase64": "bWVtb3J5LXN1aXRlLm93bmVyLXNvdXJjZS1zdGFtcC1zZXF1ZW5jZS52MQAAAABMeyJnZW5lcmF0aW9uIjoiZ2VuLTAwMDEiLCJuYW1lc3BhY2UiOiJsaWJyYSIsIm9wZXJhdGlvbklkIjoib3BlcmF0aW9uLTAwMDEifQAAAAAAAADreyJkaWdlc3QiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiZ2VuZXJhdGlvbiI6Imdlbi0wMDAxIiwia2V5IjoibGlicmE6dGVzdDrtlZzwn5iAIiwicHJlc2VudCI6dHJ1ZSwicmV2aXNpb24iOjIsInNvdXJjZUlkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwic3BhY2UiOiJwbHVnaW4iLCJ2ZXJzaW9uIjoyfQAAAAEAAACxeyJkaWdlc3QiOm51bGwsImdlbmVyYXRpb24iOiJnZW4tMDAwMSIsImtleSI6ImxpYnJhOnRlc3Q6cmVtb3ZlZCIsInByZXNlbnQiOmZhbHNlLCJyZXZpc2lvbiI6bnVsbCwic291cmNlSWQiOiIyMjIyMjIyMi0yMjIyLTQyMjItODIyMi0yMjIyMjIyMjIyMjIiLCJzcGFjZSI6InBsdWdpbiIsInZlcnNpb24iOjN9",
+      "rows": [
+        {
+          "space": "plugin",
+          "key": "libra:test:한😀",
+          "sourceId": "11111111-1111-4111-8111-111111111111",
+          "generation": "gen-0001",
+          "version": 2,
+          "present": true,
+          "revision": 2,
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "space": "plugin",
+          "key": "libra:test:removed",
+          "sourceId": "22222222-2222-4222-8222-222222222222",
+          "generation": "gen-0001",
+          "version": 3,
+          "present": false,
+          "revision": null,
+          "digest": null
+        }
+      ],
+      "rowCanonicalUtf8Hex": [
+        "7b22646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2267656e65726174696f6e223a2267656e2d30303031222c226b6579223a226c696272613a746573743aed959cf09f9880222c2270726573656e74223a747275652c227265766973696f6e223a322c22736f757263654964223a2231313131313131312d313131312d343131312d383131312d313131313131313131313131222c227370616365223a22706c7567696e222c2276657273696f6e223a327d",
+        "7b22646967657374223a6e756c6c2c2267656e65726174696f6e223a2267656e2d30303031222c226b6579223a226c696272613a746573743a72656d6f766564222c2270726573656e74223a66616c73652c227265766973696f6e223a6e756c6c2c22736f757263654964223a2232323232323232322d323232322d343232322d383232322d323232323232323232323232222c227370616365223a22706c7567696e222c2276657273696f6e223a337d"
+      ]
+    }
+  ],
+  "ordinaryResult": {
+    "utf8Bytes": 327,
+    "sha256": "73c2c02da571eff27003d47b5c4cd1bc76aa4be5050cba01d39e706e2421b11e",
+    "originalJson": "{\"ok\":true,\"result\":{\"schema\":\"memory-suite.storage.receipt.v1\",\"namespace\":\"libra\",\"operationId\":\"operation-0001\",\"kind\":\"set\",\"space\":\"plugin\",\"key\":\"libra:test:한😀\",\"durable\":true,\"verified\":true,\"revision\":2,\"digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"committedAt\":1,\"tombstone\":false}}",
+    "originalUtf8Hex": "7b226f6b223a747275652c22726573756c74223a7b22736368656d61223a226d656d6f72792d73756974652e73746f726167652e726563656970742e7631222c226e616d657370616365223a226c69627261222c226f7065726174696f6e4964223a226f7065726174696f6e2d30303031222c226b696e64223a22736574222c227370616365223a22706c7567696e222c226b6579223a226c696272613a746573743aed959cf09f9880222c2264757261626c65223a747275652c227665726966696564223a747275652c227265766973696f6e223a322c22646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c22636f6d6d69747465644174223a312c22746f6d6273746f6e65223a66616c73657d7d"
+  },
+  "compactReceipt": {
+    "json": {
+      "contract": "memory-suite.owner-write-receipt.v2",
+      "generation": "gen-0001",
+      "namespace": "libra",
+      "operationId": "operation-0001",
+      "fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "operationClass": "kv",
+      "controlSequence": 1,
+      "fenceEpoch": 1,
+      "physicalBinding": {
+        "dataInstanceId": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+        "dataIdentityContract": "memory-suite.physical-data-identity.v1",
+        "controlStoreId": "control-0001"
+      },
+      "ownerBinding": {
+        "fileIdentity": {
+          "device": "1",
+          "inode": "2",
+          "pathHash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "resetEpoch": 0
+      },
+      "ordinaryResult": {
+        "encoding": "json-utf8.v1",
+        "utf8Bytes": 327,
+        "sha256": "73c2c02da571eff27003d47b5c4cd1bc76aa4be5050cba01d39e706e2421b11e"
+      },
+      "touchedSources": {
+        "encoding": "owner-source-stamp-sequence.v1",
+        "count": 0,
+        "utf8Bytes": 0,
+        "sha256": "e26d64f8d4a07ef6ed066304179c60ef0553b1860e7bc4f2a26cf3c9a6c48094"
+      }
+    },
+    "canonicalUtf8Bytes": 883,
+    "canonicalSha256": "af8abeb37b504d4d0f99c94fff0616760f5ae25616531e9c89abff007c174216",
+    "canonicalJson": "{\"contract\":\"memory-suite.owner-write-receipt.v2\",\"controlSequence\":1,\"fenceEpoch\":1,\"fingerprint\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"generation\":\"gen-0001\",\"namespace\":\"libra\",\"operationClass\":\"kv\",\"operationId\":\"operation-0001\",\"ordinaryResult\":{\"encoding\":\"json-utf8.v1\",\"sha256\":\"73c2c02da571eff27003d47b5c4cd1bc76aa4be5050cba01d39e706e2421b11e\",\"utf8Bytes\":327},\"ownerBinding\":{\"fileIdentity\":{\"device\":\"1\",\"inode\":\"2\",\"pathHash\":\"0000000000000000000000000000000000000000000000000000000000000000\"},\"resetEpoch\":0},\"physicalBinding\":{\"controlStoreId\":\"control-0001\",\"dataIdentityContract\":\"memory-suite.physical-data-identity.v1\",\"dataInstanceId\":\"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD\"},\"touchedSources\":{\"count\":0,\"encoding\":\"owner-source-stamp-sequence.v1\",\"sha256\":\"e26d64f8d4a07ef6ed066304179c60ef0553b1860e7bc4f2a26cf3c9a6c48094\",\"utf8Bytes\":0}}"
+  },
+  "utf16ChunkBoundaryVectors": [
+    {
+      "utf16SplitOffset": 0,
+      "firstUtf16Units": [],
+      "secondUtf16Units": [
+        65,
+        55357,
+        56832,
+        66
+      ],
+      "expectedUtf8Hex": "41f09f988042",
+      "expectedSha256": "aacfb6637bd0df2238641c5b15898d1a61df3157b1d0b4099f590fc0b0b6fbbd"
+    },
+    {
+      "utf16SplitOffset": 1,
+      "firstUtf16Units": [
+        65
+      ],
+      "secondUtf16Units": [
+        55357,
+        56832,
+        66
+      ],
+      "expectedUtf8Hex": "41f09f988042",
+      "expectedSha256": "aacfb6637bd0df2238641c5b15898d1a61df3157b1d0b4099f590fc0b0b6fbbd"
+    },
+    {
+      "utf16SplitOffset": 2,
+      "firstUtf16Units": [
+        65,
+        55357
+      ],
+      "secondUtf16Units": [
+        56832,
+        66
+      ],
+      "expectedUtf8Hex": "41f09f988042",
+      "expectedSha256": "aacfb6637bd0df2238641c5b15898d1a61df3157b1d0b4099f590fc0b0b6fbbd",
+      "wrongIndependentChunksSha256": "e374a961be8c23bbbd72c264d35a9c350c988d75acc1ec01c3837faac27a555c"
+    },
+    {
+      "utf16SplitOffset": 3,
+      "firstUtf16Units": [
+        65,
+        55357,
+        56832
+      ],
+      "secondUtf16Units": [
+        66
+      ],
+      "expectedUtf8Hex": "41f09f988042",
+      "expectedSha256": "aacfb6637bd0df2238641c5b15898d1a61df3157b1d0b4099f590fc0b0b6fbbd"
+    },
+    {
+      "utf16SplitOffset": 4,
+      "firstUtf16Units": [
+        65,
+        55357,
+        56832,
+        66
+      ],
+      "secondUtf16Units": [],
+      "expectedUtf8Hex": "41f09f988042",
+      "expectedSha256": "aacfb6637bd0df2238641c5b15898d1a61df3157b1d0b4099f590fc0b0b6fbbd"
+    }
+  ],
+  "sqlByteLengthVector": {
+    "value": "A한😀B",
+    "utf16Units": 5,
+    "utf8Bytes": 9,
+    "expectedSQLiteLengthCastAsBlob": 9
+  }
+}

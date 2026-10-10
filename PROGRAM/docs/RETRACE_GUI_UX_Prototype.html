@@ -1,0 +1,2448 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>RE:TRACE GUI UX Prototype</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0b0e14;
+      --surface: #141923;
+      --surface-2: #1a2130;
+      --surface-3: #222b3d;
+      --border: #2d384d;
+      --border-strong: #3d4b65;
+      --text: #f2f5fa;
+      --text-2: #b0bad0;
+      --text-3: #7d8aa6;
+      --accent: #9a8cff;
+      --accent-soft: #29234f;
+      --accent-glow: #493e82;
+      --success: #50d394;
+      --success-soft: #123324;
+      --warning: #f2b55e;
+      --warning-soft: #352713;
+      --danger: #ff7d86;
+      --danger-soft: #391b21;
+      --blue: #7ea5f8;
+      --blue-soft: #1a2b52;
+      --teal: #5fd3c0;
+      --teal-soft: #153a36;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.48);
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(154, 140, 255, 0.12), transparent 34%),
+        radial-gradient(circle at 88% 80%, rgba(126, 165, 248, 0.09), transparent 32%),
+        #07090e;
+      color: var(--text);
+      font-family: Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .app {
+      width: min(1220px, calc(100vw - 40px));
+      height: min(840px, calc(100dvh - 40px));
+      min-height: 620px;
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      grid-template-rows: 54px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: var(--bg);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(20, 25, 35, 0.97);
+    }
+
+    .brand {
+      min-width: 205px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      background: linear-gradient(145deg, var(--accent), #6f78f2);
+      color: #fff;
+      box-shadow: 0 8px 22px rgba(103, 94, 222, 0.28);
+    }
+
+    .brand-mark svg {
+      width: 19px;
+      height: 19px;
+      stroke-width: 2;
+    }
+
+    .brand-copy {
+      display: grid;
+      min-width: 0;
+    }
+
+    .brand-title {
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: 0.04em;
+    }
+
+    .brand-version {
+      color: var(--text-3);
+      font: 9px var(--mono);
+    }
+
+    .scope {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex: 1;
+      padding-left: 12px;
+      border-left: 1px solid var(--border);
+    }
+
+    .scope-avatar {
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .scope-copy {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+
+    .scope-character,
+    .scope-chat {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .scope-character {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .scope-separator,
+    .scope-chat {
+      color: var(--text-3);
+    }
+
+    .health-chip {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 10px;
+      border: 1px solid rgba(80, 211, 148, 0.25);
+      border-radius: 999px;
+      background: var(--success-soft);
+      color: var(--success);
+      font-size: 10px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .health-chip.warning {
+      border-color: rgba(242, 181, 94, 0.28);
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .health-chip.blocked {
+      border-color: rgba(255, 125, 134, 0.28);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .health-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 9px currentColor;
+    }
+
+    .top-actions {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .button,
+    .icon-button {
+      min-height: 31px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-2);
+      cursor: pointer;
+    }
+
+    .button {
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .button:hover,
+    .icon-button:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #10121a;
+    }
+
+    .button.soft {
+      border-color: var(--accent-glow);
+      background: var(--accent-soft);
+      color: #c8c0ff;
+    }
+
+    .button.danger {
+      border-color: rgba(255, 125, 134, 0.45);
+      color: var(--danger);
+    }
+
+    .button:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .icon-button {
+      width: 31px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .icon-button svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .more-menu {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 7px);
+      right: 0;
+      width: 178px;
+      display: none;
+      padding: 5px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--surface-2);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+    }
+
+    .more-menu.open {
+      display: grid;
+    }
+
+    .menu-item {
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-2);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      background: var(--surface-3);
+      color: var(--text);
+    }
+
+    .sidebar {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .side-health {
+      margin: 10px 9px 5px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-2);
+    }
+
+    .side-health-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text-2);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    .side-health-title span:last-child {
+      color: var(--success);
+    }
+
+    .side-health.warning .side-health-title span:last-child {
+      color: var(--warning);
+    }
+
+    .side-health.blocked .side-health-title span:last-child {
+      color: var(--danger);
+    }
+
+    .side-health-copy {
+      margin-top: 4px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .side-nav {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 7px 12px;
+    }
+
+    .nav-group + .nav-group {
+      margin-top: 5px;
+    }
+
+    .nav-group-label {
+      padding: 8px 9px 3px;
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-tab {
+      width: 100%;
+      min-height: 37px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 1px 0;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--text-2);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .nav-tab:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .nav-tab.active {
+      background: var(--accent-soft);
+      color: #d1cbff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .nav-tab svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
+    .nav-label {
+      flex: 1;
+      min-width: 0;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .nav-count {
+      min-width: 18px;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      color: var(--text-3);
+      font: 9px var(--mono);
+      text-align: center;
+    }
+
+    .side-footer {
+      margin-top: auto;
+      padding: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .scope-summary {
+      display: grid;
+      gap: 3px;
+      padding: 9px;
+      border-radius: 9px;
+      background: var(--surface-2);
+    }
+
+    .scope-summary strong {
+      font-size: 10px;
+    }
+
+    .scope-summary span {
+      overflow: hidden;
+      color: var(--text-3);
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .page-head {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 14, 20, 0.88);
+    }
+
+    .page-head-copy {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font: 9px var(--mono);
+      font-weight: 800;
+      letter-spacing: 0.1em;
+    }
+
+    .page-title {
+      margin: 2px 0 0;
+      color: var(--text);
+      font-size: 19px;
+      line-height: 1.25;
+    }
+
+    .page-description {
+      margin: 3px 0 0;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .page-status {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .status-pill,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      width: max-content;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .status-pill {
+      min-height: 24px;
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .status-strip {
+      min-height: 31px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .status-strip-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .status-strip-separator {
+      width: 1px;
+      height: 13px;
+      background: var(--border);
+    }
+
+    .page-body {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: none;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      padding: 15px 18px 72px;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .owner-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: 0 3px 13px rgba(0, 0, 0, 0.12);
+    }
+
+    .card-pad {
+      padding: 13px;
+    }
+
+    .section-gap {
+      margin-top: 10px;
+    }
+
+    .health-banner {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 67px;
+      padding: 12px 13px;
+      border: 1px solid rgba(80, 211, 148, 0.24);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(90deg, var(--success-soft), rgba(18, 51, 36, 0.35));
+    }
+
+    .health-banner.warning {
+      border-color: rgba(242, 181, 94, 0.28);
+      background: linear-gradient(90deg, var(--warning-soft), rgba(53, 39, 19, 0.35));
+    }
+
+    .health-banner.blocked {
+      border-color: rgba(255, 125, 134, 0.28);
+      background: linear-gradient(90deg, var(--danger-soft), rgba(57, 27, 33, 0.35));
+    }
+
+    .health-banner-icon {
+      width: 33px;
+      height: 33px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: rgba(80, 211, 148, 0.12);
+      color: var(--success);
+    }
+
+    .health-banner.warning .health-banner-icon {
+      background: rgba(242, 181, 94, 0.12);
+      color: var(--warning);
+    }
+
+    .health-banner.blocked .health-banner-icon {
+      background: rgba(255, 125, 134, 0.12);
+      color: var(--danger);
+    }
+
+    .health-banner-copy {
+      min-width: 0;
+      display: grid;
+      flex: 1;
+      gap: 2px;
+    }
+
+    .health-banner-title {
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .health-banner-text {
+      color: var(--text-2);
+      font-size: 10px;
+    }
+
+    .stat-card {
+      min-height: 91px;
+      display: grid;
+      align-content: space-between;
+      gap: 5px;
+      padding: 12px;
+    }
+
+    .stat-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 750;
+    }
+
+    .stat-label svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .stat-value {
+      color: var(--text);
+      font: 19px var(--mono);
+      font-weight: 750;
+    }
+
+    .stat-meta {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .stat-meta strong {
+      color: var(--success);
+    }
+
+    .card-header,
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title,
+    .panel-heading h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .panel-heading h2 {
+      font-size: 16px;
+    }
+
+    .card-description,
+    .panel-heading p {
+      margin: 3px 0 0;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .badge {
+      min-height: 20px;
+      padding: 2px 7px;
+      background: var(--surface-3);
+      color: var(--text-3);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+    }
+
+    .badge.success {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .badge.warning {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .badge.danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .badge.accent {
+      background: var(--accent-soft);
+      color: #c8c0ff;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .owner-card {
+      min-height: 132px;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      padding: 11px;
+    }
+
+    .owner-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .owner-name {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .owner-icon {
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font: 10px var(--mono);
+      font-weight: 850;
+    }
+
+    .owner-icon.flashback {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .owner-icon.hayaku {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .owner-icon.lia {
+      background: var(--teal-soft);
+      color: var(--teal);
+    }
+
+    .owner-name strong {
+      overflow: hidden;
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .owner-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--success);
+      font-size: 9px;
+      font-weight: 750;
+    }
+
+    .owner-state.warning {
+      color: var(--warning);
+    }
+
+    .owner-state.blocked {
+      color: var(--danger);
+    }
+
+    .owner-state::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .owner-info {
+      display: grid;
+      gap: 4px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .owner-info div {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .owner-info b {
+      overflow: hidden;
+      color: var(--text-2);
+      font-weight: 650;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .quick-action {
+      min-width: 0;
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--text-2);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .quick-action:hover {
+      border-color: var(--accent-glow);
+      background: var(--accent-soft);
+    }
+
+    .quick-action-icon {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      background: var(--surface-3);
+      color: var(--accent);
+    }
+
+    .quick-action-copy {
+      min-width: 0;
+      display: grid;
+      gap: 1px;
+    }
+
+    .quick-action-title {
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    .quick-action-meta {
+      overflow: hidden;
+      color: var(--text-3);
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .readiness-list,
+    .timeline,
+    .log-list {
+      display: grid;
+      margin-top: 10px;
+    }
+
+    .readiness-row,
+    .timeline-item,
+    .log-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 9px;
+      padding: 8px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .readiness-row:first-child,
+    .timeline-item:first-child,
+    .log-item:first-child {
+      border-top: 0;
+    }
+
+    .check-icon,
+    .timeline-dot {
+      width: 17px;
+      height: 17px;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+      border-radius: 50%;
+      background: var(--success-soft);
+      color: var(--success);
+      font-size: 9px;
+      font-weight: 850;
+    }
+
+    .check-icon.warning,
+    .timeline-dot.warning {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .check-icon.blocked,
+    .timeline-dot.blocked {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .readiness-copy,
+    .timeline-copy,
+    .log-copy {
+      min-width: 0;
+      display: grid;
+      gap: 1px;
+    }
+
+    .readiness-title,
+    .timeline-title,
+    .log-title {
+      color: var(--text-2);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .readiness-meta,
+    .timeline-meta,
+    .log-meta,
+    .timeline-time {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .timeline-time {
+      white-space: nowrap;
+    }
+
+    .callout,
+    .gate {
+      padding: 10px 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--text-2);
+      font-size: 10px;
+    }
+
+    .callout.accent,
+    .gate.ready {
+      border-color: var(--accent-glow);
+      background: var(--accent-soft);
+    }
+
+    .gate {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .gate-copy {
+      display: grid;
+      gap: 2px;
+    }
+
+    .gate-copy strong {
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .gate-copy span {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .gate.warning {
+      border-color: rgba(242, 181, 94, 0.32);
+      background: var(--warning-soft);
+    }
+
+    .gate.blocked {
+      border-color: rgba(255, 125, 134, 0.32);
+      background: var(--danger-soft);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .flow-step {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .flow-step b {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--accent);
+      font-size: 10px;
+    }
+
+    .flow-step span {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .compat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .compat-row {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 3px 8px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-2);
+    }
+
+    .compat-name {
+      display: flex;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .compat-name strong {
+      font-size: 10px;
+    }
+
+    .compat-name span,
+    .compat-row small {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .compat-row small {
+      grid-column: 1 / -1;
+    }
+
+    .compat-state {
+      color: var(--success);
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    .compat-state.warning {
+      color: var(--warning);
+    }
+
+    .compat-state.blocked {
+      color: var(--danger);
+    }
+
+    .viewer-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .viewer-metric {
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-2);
+    }
+
+    .viewer-metric span {
+      display: block;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .viewer-metric strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--text);
+      font: 15px var(--mono);
+    }
+
+    .ledger-key {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-2);
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .ledger-key code {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-2);
+      font: 9px var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ledger-key small {
+      margin-left: auto;
+      white-space: nowrap;
+    }
+
+    .record-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .record {
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .record-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .record-head > div {
+      min-width: 0;
+      display: grid;
+      gap: 1px;
+    }
+
+    .record-head strong {
+      font-size: 11px;
+    }
+
+    .record-head span,
+    .record-meta {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .record p {
+      margin: 8px 0 0;
+      color: var(--text-2);
+      font-size: 10px;
+      white-space: pre-wrap;
+    }
+
+    .record-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .memory-tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .memory-tags span {
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #c8c0ff;
+      font-size: 8px;
+    }
+
+    details.record-json {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    details.record-json summary {
+      cursor: pointer;
+    }
+
+    details.record-json pre {
+      max-height: 220px;
+      overflow: auto;
+      margin: 7px 0 0;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--text-2);
+      font: 9px/1.55 var(--mono);
+      white-space: pre-wrap;
+    }
+
+    .server-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .filter-button,
+    .scenario-button {
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .filter-button.active,
+    .scenario-button.active {
+      border-color: var(--accent-glow);
+      background: var(--accent-soft);
+      color: #d1cbff;
+    }
+
+    .server-scope-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .server-scope-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 10px;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface);
+    }
+
+    .server-scope-card[data-hidden="true"] {
+      display: none;
+    }
+
+    .scope-select {
+      display: grid;
+      place-items: center;
+      min-width: 28px;
+      min-height: 28px;
+    }
+
+    .scope-select input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+    }
+
+    .server-scope-main {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .server-scope-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .server-scope-title > div {
+      min-width: 0;
+      display: grid;
+    }
+
+    .server-scope-title strong,
+    .server-scope-title small {
+      overflow-wrap: anywhere;
+    }
+
+    .server-scope-title strong {
+      font-size: 11px;
+    }
+
+    .server-scope-title small {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .namespace-badge {
+      flex: 0 0 auto;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #c8c0ff;
+      font-size: 8px;
+      font-weight: 850;
+    }
+
+    .server-scope-meta {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .server-scope-meta span {
+      padding: 2px 6px;
+      border-radius: 7px;
+      background: var(--surface-2);
+      color: var(--text-3);
+      font-size: 8px;
+    }
+
+    .server-scope-state {
+      width: max-content;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: var(--success-soft);
+      color: var(--success);
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .server-scope-state.ancestor {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .server-scope-state.orphan {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .server-scope-state.unverified {
+      background: var(--surface-3);
+      color: var(--text-3);
+    }
+
+    .owner-storage-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      margin-top: 10px;
+    }
+
+    .owner-storage-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+    }
+
+    .owner-storage-card strong {
+      font-size: 11px;
+    }
+
+    .owner-storage-card p {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .owner-storage-card em {
+      color: var(--success);
+      font-size: 9px;
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    .diagnostic-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .info-list {
+      display: grid;
+      margin-top: 8px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+      border-top: 1px solid var(--border);
+      font-size: 9px;
+    }
+
+    .info-row:first-child {
+      border-top: 0;
+    }
+
+    .info-label {
+      color: var(--text-3);
+    }
+
+    .info-value {
+      color: var(--text-2);
+      text-align: right;
+    }
+
+    .scenario-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .prototype-note {
+      padding: 8px 10px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 9px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .toast-region {
+      position: fixed;
+      z-index: 50;
+      right: 22px;
+      bottom: 22px;
+      display: grid;
+      gap: 7px;
+      pointer-events: none;
+    }
+
+    .toast {
+      width: min(330px, calc(100vw - 28px));
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 9px;
+      padding: 10px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--surface-2);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .toast-icon {
+      width: 21px;
+      height: 21px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--success-soft);
+      color: var(--success);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .toast-title,
+    .toast-copy {
+      display: block;
+    }
+
+    .toast-title {
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    .toast-copy {
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        padding: 0;
+      }
+
+      .app {
+        width: 100%;
+        height: 100dvh;
+        min-height: 0;
+        grid-template-columns: 1fr;
+        grid-template-rows: 50px auto minmax(0, 1fr);
+        border: 0;
+        border-radius: 0;
+      }
+
+      .brand {
+        min-width: auto;
+      }
+
+      .brand-copy {
+        display: none;
+      }
+
+      .scope {
+        padding-left: 0;
+        border-left: 0;
+      }
+
+      .desktop-action {
+        display: none;
+      }
+
+      .sidebar {
+        flex-direction: row;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+      }
+
+      .side-health,
+      .nav-group-label,
+      .side-footer {
+        display: none;
+      }
+
+      .side-nav {
+        width: max-content;
+        min-width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 6px;
+        overflow: visible;
+      }
+
+      .nav-group {
+        display: contents;
+      }
+
+      .nav-tab {
+        width: auto;
+        min-height: 35px;
+        margin: 0;
+        padding: 6px 9px;
+        white-space: nowrap;
+      }
+
+      .nav-tab.active {
+        box-shadow: inset 0 -3px 0 var(--accent);
+      }
+
+      .nav-tab svg,
+      .nav-count {
+        display: none;
+      }
+
+      .owner-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .flow {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        padding: 0 8px;
+      }
+
+      .scope-avatar,
+      .health-chip span:last-child {
+        display: none;
+      }
+
+      .health-chip {
+        width: 28px;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .page-head {
+        min-height: 64px;
+        padding: 9px 12px;
+      }
+
+      .page-title {
+        font-size: 17px;
+      }
+
+      .page-description {
+        max-width: 74vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .page-status {
+        display: none;
+      }
+
+      .status-strip {
+        padding: 5px 12px;
+      }
+
+      .status-strip span:nth-last-child(-n + 2) {
+        display: none;
+      }
+
+      .panel {
+        padding: 12px 12px 66px;
+      }
+
+      .stats-grid,
+      .viewer-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-col,
+      .diagnostic-grid,
+      .compat-grid,
+      .owner-storage-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-action-meta {
+        white-space: normal;
+      }
+
+      .flow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .server-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .server-scope-card {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .server-scope-card > .actions {
+        grid-column: 2;
+        justify-content: flex-start;
+      }
+
+      .toast-region {
+        right: 12px;
+        bottom: 12px;
+      }
+    }
+
+    @media (max-width: 430px) {
+      .scope-chat {
+        max-width: 44vw;
+      }
+
+      .owner-grid,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .health-banner {
+        align-items: flex-start;
+      }
+
+      .health-banner .button {
+        display: none;
+      }
+
+      .gate {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" data-retrace-prototype>
+    <header class="topbar">
+      <div class="brand" aria-label="RE:TRACE">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M7 7h9a4 4 0 0 1 0 8H9"/><path d="m10 4-3 3 3 3M14 20l3-3-3-3"/></svg>
+        </span>
+        <span class="brand-copy">
+          <span class="brand-title">RE:TRACE</span>
+          <span class="brand-version">v1.9.65 · UX prototype</span>
+        </span>
+      </div>
+
+      <div class="scope" aria-label="현재 스코프">
+        <span class="scope-avatar" aria-hidden="true">AS</span>
+        <span class="scope-copy">
+          <span class="scope-character">아스텔</span>
+          <span class="scope-separator">›</span>
+          <span class="scope-chat">에피소드 42 · 밤의 정원</span>
+        </span>
+      </div>
+
+      <span class="health-chip" id="globalHealthChip" aria-live="polite">
+        <span class="health-dot" aria-hidden="true"></span>
+        <span id="globalHealthText">승계 준비됨</span>
+      </span>
+
+      <div class="top-actions">
+        <button class="icon-button desktop-action" type="button" data-action="refresh" aria-label="새로고침" title="새로고침">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+        </button>
+        <button class="icon-button" type="button" id="moreButton" aria-label="더 보기" aria-expanded="false" aria-controls="moreMenu">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </button>
+        <button class="button primary desktop-action" type="button" data-action="close">닫기</button>
+        <div class="more-menu" id="moreMenu">
+          <button class="menu-item" type="button" data-action="refresh">새로고침</button>
+          <button class="menu-item" type="button" data-goto="diagnostics">진단 및 로그</button>
+          <button class="menu-item" type="button" data-action="debug">디버그 로그 내보내기</button>
+          <button class="menu-item" type="button" data-action="close">닫기</button>
+        </div>
+      </div>
+    </header>
+
+    <aside class="sidebar" aria-label="RE:TRACE 탐색">
+      <div class="side-health" id="sideHealth">
+        <div class="side-health-title"><span>승계 상태</span><span id="sideHealthState">READY</span></div>
+        <div class="side-health-copy" id="sideHealthCopy">Owner 4/4 · 공통 모드 확인됨</div>
+      </div>
+
+      <nav class="side-nav" role="tablist" aria-label="RE:TRACE 화면">
+        <div class="nav-group">
+          <div class="nav-group-label">상태</div>
+          <button class="nav-tab active" id="tab-overview" type="button" role="tab" aria-selected="true" aria-controls="panel-overview" tabindex="0" data-tab="overview">
+            <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>
+            <span class="nav-label">개요</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">연속성</div>
+          <button class="nav-tab" id="tab-session" type="button" role="tab" aria-selected="false" aria-controls="panel-session" tabindex="-1" data-tab="session">
+            <svg viewBox="0 0 24 24"><path d="M5 7h11a4 4 0 0 1 0 8H8"/><path d="m9 4-4 3 4 3"/></svg>
+            <span class="nav-label">다음 세션</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">데이터</div>
+          <button class="nav-tab" id="tab-libra" type="button" role="tab" aria-selected="false" aria-controls="panel-libra" tabindex="-1" data-tab="libra">
+            <svg viewBox="0 0 24 24"><path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"/></svg>
+            <span class="nav-label">LIBRA 뷰어</span>
+            <span class="nav-count">18</span>
+          </button>
+          <button class="nav-tab" id="tab-flashback" type="button" role="tab" aria-selected="false" aria-controls="panel-flashback" tabindex="-1" data-tab="flashback">
+            <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/></svg>
+            <span class="nav-label">Flashback 뷰어</span>
+            <span class="nav-count">1.2K</span>
+          </button>
+          <button class="nav-tab" id="tab-hayaku" type="button" role="tab" aria-selected="false" aria-controls="panel-hayaku" tabindex="-1" data-tab="hayaku">
+            <svg viewBox="0 0 24 24"><path d="M13 3 5 14h6l-1 7 9-12h-6V3Z"/></svg>
+            <span class="nav-label">HAYAKU 뷰어</span>
+            <span class="nav-count">42</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">서버</div>
+          <button class="nav-tab" id="tab-serverdata" type="button" role="tab" aria-selected="false" aria-controls="panel-serverdata" tabindex="-1" data-tab="serverdata">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            <span class="nav-label">서버 데이터 관리</span>
+            <span class="nav-count">3</span>
+          </button>
+          <button class="nav-tab" id="tab-storage" type="button" role="tab" aria-selected="false" aria-controls="panel-storage" tabindex="-1" data-tab="storage">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01"/></svg>
+            <span class="nav-label">저장 상태</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">진단</div>
+          <button class="nav-tab" id="tab-diagnostics" type="button" role="tab" aria-selected="false" aria-controls="panel-diagnostics" tabindex="-1" data-tab="diagnostics">
+            <svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h9"/></svg>
+            <span class="nav-label">진단 및 로그</span>
+            <span class="nav-count">2</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="side-footer">
+        <div class="scope-summary">
+          <strong>현재 스코프</strong>
+          <span>아스텔 · 밤의 정원</span>
+          <span>plugin_only · active lineage</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="page-head">
+        <div class="page-head-copy">
+          <div class="eyebrow" id="pageEyebrow">STATUS</div>
+          <h1 class="page-title" id="pageTitle">RE:TRACE 개요</h1>
+          <p class="page-description" id="pageDescription">현재 스코프의 호환성, 승계 준비 상태와 Owner 연결을 한눈에 확인합니다.</p>
+        </div>
+        <div class="page-status">
+          <span class="status-pill">읽기 전용 제어면</span>
+          <span class="status-pill">샘플 데이터</span>
+        </div>
+      </header>
+
+      <div class="status-strip" aria-live="polite">
+        <span class="status-strip-dot" id="statusStripDot" aria-hidden="true"></span>
+        <span id="statusStripText">현재 확인 범위에서 승계 차단 없음</span>
+        <span class="status-strip-separator" aria-hidden="true"></span>
+        <span>Owner 4/4 응답</span>
+        <span class="status-strip-separator" aria-hidden="true"></span>
+        <span>Storage plugin_only · 서버 요청 0회</span>
+      </div>
+
+      <div class="page-body" id="pageBody">
+        <section class="panel active" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" data-panel="overview">
+          <div class="health-banner" id="overviewHealthBanner">
+            <span class="health-banner-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg>
+            </span>
+            <span class="health-banner-copy">
+              <span class="health-banner-title" id="overviewHealthTitle">현재 확인 범위에서 다음 세션 승계를 진행할 수 있습니다.</span>
+              <span class="health-banner-text" id="overviewHealthText">Owner 호환 계약과 공통 저장 모드가 일치합니다. 실제 승계 직전에 다시 검증합니다.</span>
+            </span>
+            <button class="button soft" type="button" data-action="recheck">승계 상태 확인</button>
+          </div>
+
+          <div class="grid stats-grid section-gap">
+            <article class="card stat-card">
+              <div class="stat-label"><span>활성 Owner</span><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 19c.5-3 2.2-5 5-5s4.5 2 5 5M11 19c.4-2.6 2.1-4.4 5-4.4 2.7 0 4.4 1.8 5 4.4"/></svg></div>
+              <div class="stat-value" id="metricOwners">4 / 4</div>
+              <div class="stat-meta">설치·응답 Owner만 참여</div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-label"><span>호환성</span><svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7"/><circle cx="12" cy="12" r="8"/></svg></div>
+              <div class="stat-value" id="metricCompatibility">4 OK</div>
+              <div class="stat-meta" id="metricCompatibilityMeta"><strong>차단 0</strong> · 경고 0</div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-label"><span>공통 저장 모드</span><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></div>
+              <div class="stat-value" id="metricStorage">LOCAL</div>
+              <div class="stat-meta">plugin_only · 네트워크 0회</div>
+            </article>
+            <article class="card stat-card">
+              <div class="stat-label"><span>미완료 승계</span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></div>
+              <div class="stat-value" id="metricPending">0</div>
+              <div class="stat-meta">durable journal 기준</div>
+            </article>
+          </div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header">
+              <div><h2 class="card-title">Owner 상태</h2><p class="card-description">호환성, 이번 승계 참여 여부와 현재 저장 상태를 함께 표시합니다.</p></div>
+              <span class="badge success" id="ownerSummaryBadge">4/4 응답</span>
+            </div>
+            <div class="grid owner-grid section-gap">
+              <article class="card owner-card">
+                <div class="owner-head"><span class="owner-name"><span class="owner-icon">L</span><strong>LIBRA</strong></span><span class="owner-state">정상</span></div>
+                <div class="owner-info"><div><span>버전</span><b>2.2.12</b></div><div><span>승계</span><b>참여 · 정본 18</b></div><div><span>저장</span><b>plugin_only</b></div></div>
+              </article>
+              <article class="card owner-card">
+                <div class="owner-head"><span class="owner-name"><span class="owner-icon flashback">F</span><strong>Flashback</strong></span><span class="owner-state">정상</span></div>
+                <div class="owner-info"><div><span>버전</span><b>1.0.20</b></div><div><span>승계</span><b>참여 · shard 8</b></div><div><span>저장</span><b>plugin_only</b></div></div>
+              </article>
+              <article class="card owner-card">
+                <div class="owner-head"><span class="owner-name"><span class="owner-icon hayaku">H</span><strong>HAYAKU</strong></span><span class="owner-state">정상</span></div>
+                <div class="owner-info"><div><span>버전</span><b>3.0.25</b></div><div><span>승계</span><b>참여 · packet 42</b></div><div><span>저장</span><b>plugin_only</b></div></div>
+              </article>
+              <article class="card owner-card" id="liaOwnerCard">
+                <div class="owner-head"><span class="owner-name"><span class="owner-icon lia">LIA</span><strong>LIA</strong></span><span class="owner-state" id="liaOwnerState">정상</span></div>
+                <div class="owner-info"><div><span>버전</span><b>0.26.59</b></div><div><span>승계</span><b id="liaParticipation">참여 · Live Persona</b></div><div><span>저장</span><b>plugin_only</b></div></div>
+              </article>
+            </div>
+          </article>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header"><div><h2 class="card-title">빠른 작업</h2><p class="card-description">데이터를 바꾸지 않는 확인과 화면 이동만 제공합니다.</p></div></div>
+            <div class="quick-actions">
+              <button class="quick-action" type="button" data-goto="session"><span class="quick-action-icon"><svg viewBox="0 0 24 24"><path d="M5 7h11a4 4 0 0 1 0 8H8"/><path d="m9 4-4 3 4 3"/></svg></span><span class="quick-action-copy"><span class="quick-action-title">다음 세션 준비</span><span class="quick-action-meta">검증 결과를 확인한 뒤 승계 시작</span></span></button>
+              <button class="quick-action" type="button" data-goto="storage"><span class="quick-action-icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/></svg></span><span class="quick-action-copy"><span class="quick-action-title">Owner 저장 상태</span><span class="quick-action-meta">실제 Owner IPC와 서버 integrity 확인</span></span></button>
+              <button class="quick-action" type="button" data-goto="diagnostics"><span class="quick-action-icon"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h9"/></svg></span><span class="quick-action-copy"><span class="quick-action-title">진단 및 로그</span><span class="quick-action-meta">IPC 오류와 미완료 journal 확인</span></span></button>
+            </div>
+          </article>
+
+          <div class="grid two-col section-gap">
+            <article class="card card-pad">
+              <div class="card-header"><div><h2 class="card-title">승계 준비 체크</h2><p class="card-description">실행 전에 다시 검증되는 핵심 조건입니다.</p></div><button class="button" type="button" data-goto="session">자세히</button></div>
+              <div class="readiness-list">
+                <div class="readiness-row"><span class="check-icon">✓</span><span class="readiness-copy"><span class="readiness-title">현재 스코프 식별 완료</span><span class="readiness-meta">character · chat · persona alias 일치</span></span><span class="badge success">READY</span></div>
+                <div class="readiness-row"><span class="check-icon">✓</span><span class="readiness-copy"><span class="readiness-title">Owner 호환 계약 확인</span><span class="readiness-meta">immutable source · durable readback</span></span><span class="badge success">READY</span></div>
+                <div class="readiness-row" id="overviewGateRow"><span class="check-icon" id="overviewGateIcon">✓</span><span class="readiness-copy"><span class="readiness-title">공통 저장 모드 확인</span><span class="readiness-meta" id="overviewGateMeta">4종 모두 plugin_only</span></span><span class="badge success" id="overviewGateBadge">READY</span></div>
+              </div>
+            </article>
+            <article class="card card-pad">
+              <div class="card-header"><div><h2 class="card-title">최근 동작</h2><p class="card-description">현재 실행에서 확인한 제어면 이벤트입니다.</p></div><button class="button" type="button" data-goto="diagnostics">전체 로그</button></div>
+              <div class="timeline">
+                <div class="timeline-item"><span class="timeline-dot">✓</span><span class="timeline-copy"><span class="timeline-title">Owner 저장 모드 4종을 확인했습니다.</span><span class="timeline-meta">read-only status · plugin_only</span></span><span class="timeline-time">방금</span></div>
+                <div class="timeline-item"><span class="timeline-dot">✓</span><span class="timeline-copy"><span class="timeline-title">승계 호환 계약을 확인했습니다.</span><span class="timeline-meta">blocking=0 · warnings=0</span></span><span class="timeline-time">1분 전</span></div>
+                <div class="timeline-item"><span class="timeline-dot warning">i</span><span class="timeline-copy"><span class="timeline-title">서버 inventory 자동 조회를 생략했습니다.</span><span class="timeline-meta">plugin_only · 명시적 새로고침에서만 조회</span></span><span class="timeline-time">1분 전</span></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-session" role="tabpanel" aria-labelledby="tab-session" data-panel="session" hidden>
+          <div class="panel-heading"><div><h2>다음 세션</h2><p>호환성, 저장 모드와 원본 보존을 확인한 뒤 새 채팅 승계를 시작합니다.</p></div><div class="actions"><button class="button" type="button" data-action="recheck">다시 확인</button></div></div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header"><div><h2 class="card-title" id="compatibilityTitle">4개 플러그인 호환성</h2><p class="card-description" id="compatibilityCopy">이번 승계에 필요한 모든 Owner가 공통 비파괴 승계 계약을 만족합니다.</p></div><span class="badge success" id="compatibilityBadge">호환됨</span></div>
+            <div class="compat-grid">
+              <div class="compat-row"><div class="compat-name"><strong>LIBRA</strong><span>v2.2.12</span></div><div class="compat-state">정상</div><small>immutable source · owner verify · durable readback</small></div>
+              <div class="compat-row"><div class="compat-name"><strong>Flashback</strong><span>v1.0.20</span></div><div class="compat-state">정상</div><small>archive handoff · source preservation receipt</small></div>
+              <div class="compat-row"><div class="compat-name"><strong>HAYAKU</strong><span>v3.0.25</span></div><div class="compat-state">정상</div><small>ledger owner · archive and recovery adoption</small></div>
+              <div class="compat-row" id="liaCompatRow"><div class="compat-name"><strong>LIA</strong><span>v0.26.59</span></div><div class="compat-state" id="liaCompatState">정상</div><small id="liaCompatReason">Live Persona fork · target-specific durable proof</small></div>
+            </div>
+          </article>
+
+          <div class="gate ready section-gap" id="handoffGate">
+            <span class="gate-copy"><strong id="handoffGateTitle">plugin_only · 참여 Owner 4/4 일치</strong><span id="handoffGateCopy">미설치·미응답 Owner는 자동 제외되며, 승계 시작 후 participant와 mode를 고정합니다.</span></span>
+            <span class="badge success" id="handoffGateBadge">READY</span>
+          </div>
+
+          <article class="card card-pad section-gap">
+            <div class="card-header"><div><h2 class="card-title">비파괴 승계 흐름</h2><p class="card-description">각 단계는 이전 단계의 실제 readback을 통과해야 진행됩니다.</p></div><span class="badge accent">원본 보존</span></div>
+            <div class="flow">
+              <div class="flow-step"><b>1 · 참여 Owner</b><span>실제 설치·응답 Owner와 현재 데이터 참여 여부를 확정합니다.</span></div>
+              <div class="flow-step"><b>2 · 저장 Gate</b><span>참여 Owner의 plugin-only / mirror / server-only 일치를 확인합니다.</span></div>
+              <div class="flow-step"><b>3 · 원본 지문</b><span>각 Owner가 승계 전 immutable source fingerprint를 기록합니다.</span></div>
+              <div class="flow-step"><b>4 · Owner 채택</b><span>새 채팅에 prepare · adopt · verify를 Owner별로 실행합니다.</span></div>
+              <div class="flow-step"><b>5 · 내구성 확인</b><span>target readback과 source 불변을 모두 확인한 뒤 완료합니다.</span></div>
+            </div>
+            <div class="callout accent section-gap" id="sessionStatus">승계 대상: 새 채팅 · LIBRA 18 · Flashback shard 8 · HAYAKU packet 42 · LIA Live Persona 포함</div>
+            <div class="actions section-gap"><button class="button" type="button" data-action="recheck">검증 새로고침</button><button class="button primary" id="createSessionButton" type="button" data-action="create-session">다음 세션 만들기</button></div>
+          </article>
+        </section>
+
+        <section class="panel" id="panel-libra" role="tabpanel" aria-labelledby="tab-libra" data-panel="libra" hidden>
+          <div class="panel-heading"><div><h2>LIBRA 정본 기억</h2><p>현재 채팅의 LIBRA 정본과 이전 세션 승계 기억을 공식 IPC로 읽기 전용 표시합니다.</p></div><div class="actions"><button class="button" type="button" data-action="export">JSON 내보내기</button><button class="button primary" type="button" data-action="refresh-viewer">새로고침</button></div></div>
+          <div class="viewer-metrics"><div class="viewer-metric"><span>정본 레코드</span><strong>18</strong></div><div class="viewer-metric"><span>현재 상태</span><strong>12</strong></div><div class="viewer-metric"><span>승계 기억</span><strong>6</strong></div><div class="viewer-metric"><span>마지막 revision</span><strong>842</strong></div></div>
+          <div class="ledger-key"><span class="badge accent">READ ONLY</span><code>libra.memory.canonical::astel/night-garden</code><small>공식 IPC · readback 확인</small></div>
+          <div class="record-list">
+            <article class="record"><div class="record-head"><div><strong>현재 장면과 목표</strong><span>state_projection · revision 842</span></div><span class="badge success">CURRENT</span></div><p>아스텔과 주인공은 북쪽 정원의 기록실 입구에 도착했다. 은색 열쇠의 문양과 잠금장치가 일치한다.</p><div class="record-meta"><span>entity 4</span><span>relationship 2</span><span>source anchors 7</span></div><div class="memory-tags"><span>#북쪽정원</span><span>#은색열쇠</span><span>@아스텔</span></div><details class="record-json"><summary>정본 JSON 보기</summary><pre>{
+  "revision": 842,
+  "kind": "state_projection",
+  "source": "official_owner_ipc",
+  "readOnly": true
+}</pre></details></article>
+            <article class="record"><div class="record-head"><div><strong>승계된 장기 기억</strong><span>inherited_session_memory · source episode 41</span></div><span class="badge accent">INHERITED</span></div><p>보름달이 뜨는 밤에 다시 만나기로 한 약속과 왕실 기록실에 관한 단서가 이전 세션에서 승계되었다.</p><div class="record-meta"><span>immutable source</span><span>durable=true</span><span>verified=true</span></div></article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-flashback" role="tabpanel" aria-labelledby="tab-flashback" data-panel="flashback" hidden>
+          <div class="panel-heading"><div><h2>Flashback 기억</h2><p>현재 채팅의 manifest와 활성 shard를 지연 로드해 읽기 전용으로 표시합니다.</p></div><div class="actions"><button class="button" type="button" data-action="export">JSON 내보내기</button><button class="button primary" type="button" data-action="refresh-viewer">새로고침</button></div></div>
+          <div class="viewer-metrics"><div class="viewer-metric"><span>기억 레코드</span><strong>1,248</strong></div><div class="viewer-metric"><span>활성 shard</span><strong>8</strong></div><div class="viewer-metric"><span>Archive layer</span><strong>2</strong></div><div class="viewer-metric"><span>토큰 추정</span><strong>38.6K</strong></div></div>
+          <div class="ledger-key"><span class="badge accent">READ ONLY</span><code>vector_rag_memory:manifest:astel/night-garden</code><small>owner manifest · shard 8/8</small></div>
+          <div class="callout section-gap">화면에는 최신 240개만 표시하고, 전체 JSON 내보내기에는 활성 manifest가 참조하는 레코드를 포함합니다.</div>
+          <div class="record-list">
+            <article class="record"><div class="record-head"><div><strong>은색 열쇠를 건넨 날</strong><span>turn 811 · episodic · chunk 1/2</span></div><span class="badge success">LIVE</span></div><p>아스텔은 오래된 온실 앞에서 은색 열쇠를 건네며 다음 보름달에 다시 만나자고 말했다.</p><div class="record-meta"><span>qwen3-embedding:0.6b</span><span>vector 1024d</span><span>112 tokens</span></div><div class="memory-tags"><span>#은색열쇠</span><span>#약속</span><span>@아스텔</span></div></article>
+            <article class="record"><div class="record-head"><div><strong>정원사와의 약속</strong><span>turn 803 · inherited archive</span></div><span class="badge accent">PERMANENT</span></div><p>폐쇄된 북쪽 정원은 왕실 기록실로 통하는 비밀 통로와 연결되어 있었다.</p><div class="record-meta"><span>archive layer 2</span><span>source immutable</span><span>readback verified</span></div></article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-hayaku" role="tabpanel" aria-labelledby="tab-hayaku" data-panel="hayaku" hidden>
+          <div class="panel-heading"><div><h2>HAYAKU 원장</h2><p>현재 채팅의 패킷·월드라인·Recovery 데이터를 Owner 원장 기준으로 표시합니다.</p></div><div class="actions"><button class="button" type="button" data-action="export">JSON 내보내기</button><button class="button primary" type="button" data-action="refresh-viewer">새로고침</button></div></div>
+          <div class="viewer-metrics"><div class="viewer-metric"><span>저장 패킷</span><strong>42</strong></div><div class="viewer-metric"><span>Current</span><strong>34</strong></div><div class="viewer-metric"><span>Recovery</span><strong>3</strong></div><div class="viewer-metric"><span>Archive</span><strong>5</strong></div></div>
+          <div class="ledger-key"><span class="badge accent">READ ONLY</span><code>HAYAKU.ledger::chat_7a1f2c</code><small>Owner IPC · worldline active 42/44</small></div>
+          <div class="record-list">
+            <article class="record"><div class="record-head"><div><strong>턴 842 · Current Snapshot</strong><span>slot turn:842 · finalized binding</span></div><span class="badge success">ACTIVE</span></div><p>북쪽 정원 기록실 앞. 은색 열쇠를 사용하기 직전이며, 아스텔은 문 너머의 기척을 경계하고 있다.</p><div class="record-meta"><span>capture final</span><span>worldline node 44</span><span>source verified</span></div><div class="memory-tags"><span>#current_snapshot</span><span>#turn842</span><span>@north-garden</span></div></article>
+            <article class="record"><div class="record-head"><div><strong>턴 817 · Recovery Snapshot</strong><span>recoveryId rc_817_2 · owner adopted</span></div><span class="badge warning">RECOVERY</span></div><p>롤백 이후 누락됐던 장면 연결을 HAYAKU Owner가 원문과 월드라인을 재검증해 채택했다.</p><div class="record-meta"><span>durable=true</span><span>mutation owner verified</span><span>readback complete</span></div></article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-serverdata" role="tabpanel" aria-labelledby="tab-serverdata" data-panel="serverdata" hidden>
+          <div class="panel-heading"><div><h2>서버 데이터 관리</h2><p>Librarian System 서버 스코프를 실제 RisuAI 채팅 목록, 참조 관계와 Owner 증명으로 분류합니다.</p></div><div class="actions"><button class="button primary" type="button" data-action="scan-server">명시적 새로고침</button></div></div>
+          <div class="callout section-gap">채팅이 목록에서 보이지 않는다는 이유만으로 자동 삭제하지 않습니다. 승계 조상·확인 불가·내용이 있는 Owner 스코프는 보호합니다.</div>
+          <div class="gate ready section-gap"><span class="gate-copy"><strong>서버 inventory 23개 · 현재 페이지 3개</strong><span>활성 9 · 승계 조상 7 · 고아 후보 2 · 확인 불가 5</span></span><span class="badge success">SCAN COMPLETE</span></div>
+          <div class="server-toolbar"><div class="filter-row" role="group" aria-label="서버 스코프 필터"><button class="filter-button active" type="button" aria-pressed="true" data-filter="all">전체</button><button class="filter-button" type="button" aria-pressed="false" data-filter="active">활성</button><button class="filter-button" type="button" aria-pressed="false" data-filter="ancestor">승계 조상</button><button class="filter-button" type="button" aria-pressed="false" data-filter="orphan">고아 후보</button><button class="filter-button" type="button" aria-pressed="false" data-filter="unverified">확인 불가</button></div><div class="actions"><span class="badge" id="selectedScopeCount">선택 0</span><button class="button danger" id="prepareDeleteButton" type="button" data-action="prepare-delete" disabled>보존 증명 계획…</button></div></div>
+          <div class="server-scope-list" id="serverScopeList">
+            <article class="server-scope-card" data-classification="active"><label class="scope-select"><input type="checkbox" disabled aria-label="현재 활성 Flashback 스코프 선택 불가" /></label><div class="server-scope-main"><div class="server-scope-title"><span class="namespace-badge">Flashback</span><div><strong>아스텔 · 밤의 정원</strong><small>scope astel/night-garden · 현재 열린 채팅</small></div></div><div class="server-scope-meta"><span>records 1,248</span><span>shards 8</span><span>references 2</span><span>plugin_only mirror copy</span></div><span class="server-scope-state">활성</span></div><div class="actions"><button class="button" type="button" data-action="inspect-scope">상세</button></div></article>
+            <article class="server-scope-card" data-classification="ancestor"><label class="scope-select"><input type="checkbox" disabled aria-label="승계 조상 HAYAKU 스코프 선택 불가" /></label><div class="server-scope-main"><div class="server-scope-title"><span class="namespace-badge">HAYAKU</span><div><strong>아스텔 · 에피소드 41</strong><small>chat_61d9ab · 현재 세션의 immutable ancestor</small></div></div><div class="server-scope-meta"><span>packets 39</span><span>archive 4</span><span>incoming references 1</span></div><span class="server-scope-state ancestor">승계 조상</span></div><div class="actions"><button class="button" type="button" data-action="inspect-scope">참조 보기</button></div></article>
+            <article class="server-scope-card" data-classification="orphan"><label class="scope-select"><input class="scope-checkbox" type="checkbox" aria-label="LIBRA metadata-only 고아 후보 선택" /></label><div class="server-scope-main"><div class="server-scope-title"><span class="namespace-badge">LIBRA</span><div><strong>이름 없는 이전 채팅</strong><small>scope legacy_29c1 · metadata-only shell</small></div></div><div class="server-scope-meta"><span>records 0</span><span>manifest 없음</span><span>안정 관찰 2/2</span><span>Owner 재검증 필요</span></div><span class="server-scope-state orphan">고아 후보</span></div><div class="actions"><button class="button" type="button" data-action="inspect-scope">근거 보기</button></div></article>
+            <article class="server-scope-card" data-classification="unverified"><label class="scope-select"><input type="checkbox" disabled aria-label="확인 불가 LIA 스코프 선택 불가" /></label><div class="server-scope-main"><div class="server-scope-title"><span class="namespace-badge">LIA</span><div><strong>Live Persona scope · identity 불명</strong><small>lia-live-persona::legacy-f3a2</small></div></div><div class="server-scope-meta"><span>index present</span><span>shard 확인 실패</span><span>채팅 목록 불안정</span></div><span class="server-scope-state unverified">확인 불가</span></div><div class="actions"><button class="button" type="button" data-action="inspect-scope">진단</button></div></article>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-storage" role="tabpanel" aria-labelledby="tab-storage" data-panel="storage" hidden>
+          <div class="panel-heading"><div><h2>Librarian System 저장 상태</h2><p>RE:TRACE는 저장 모드를 변경하지 않고, 응답하는 Owner의 모드와 서버 내구성을 읽기 전용으로 확인합니다.</p></div><div class="actions"><button class="button primary" type="button" data-action="refresh-storage">새로고침</button></div></div>
+          <div class="gate ready section-gap" id="storageGate"><span class="gate-copy"><strong id="storageGateTitle">plugin_only · 참여 Owner 4/4 일치</strong><span id="storageGateCopy">서버 integrity 검사는 필요하지 않으며 현재 조회에서 네트워크 요청은 0회입니다.</span></span><span class="badge success" id="storageGateBadge">READY</span></div>
+          <div class="owner-storage-grid">
+            <article class="owner-storage-card"><strong>LIBRA</strong><em>plugin_only</em><p>정본 18개 · local readback 정상 · 작업 대기</p></article>
+            <article class="owner-storage-card"><strong>Flashback</strong><em>plugin_only</em><p>manifest 1 · shard 8 · archive 2 · 복구 보호 정상</p></article>
+            <article class="owner-storage-card"><strong>HAYAKU</strong><em>plugin_only</em><p>ledger 1 · packet 42 · Recovery Vault 정상</p></article>
+            <article class="owner-storage-card"><strong>LIA</strong><em>plugin_only</em><p>Live Persona binding · target proof 정상 · 작업 대기</p></article>
+          </div>
+          <article class="card card-pad section-gap"><div class="card-header"><div><h2 class="card-title">연결 경계</h2><p class="card-description">Storage와 Compute는 Owner별 설정이며 RE:TRACE가 소유하지 않습니다.</p></div></div><div class="info-list"><div class="info-row"><span class="info-label">RE:TRACE 역할</span><span class="info-value">read-only control plane</span></div><div class="info-row"><span class="info-label">Storage 설정</span><span class="info-value">각 Owner의 Server 페이지</span></div><div class="info-row"><span class="info-label">서버 연결 확인</span><span class="info-value">사용자가 명시적으로 새로고침할 때</span></div><div class="info-row"><span class="info-label">현재 네트워크</span><span class="info-value">0 requests</span></div></div></article>
+        </section>
+
+        <section class="panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-panel="diagnostics" hidden>
+          <div class="panel-heading"><div><h2>진단 및 로그</h2><p>현재 실행의 IPC, 승계 journal과 안전하게 정리된 진단 상태를 확인합니다.</p></div><div class="actions"><button class="button" type="button" data-action="debug">디버그 로그 내보내기</button><button class="button primary" type="button" data-action="refresh">새로고침</button></div></div>
+          <div class="diagnostic-grid section-gap">
+            <article class="card card-pad"><div class="card-header"><div><h2 class="card-title">런타임</h2><p class="card-description">식별자와 기억 본문은 내보내기에서 제거됩니다.</p></div><span class="badge success">정상</span></div><div class="info-list"><div class="info-row"><span class="info-label">RisuAI API</span><span class="info-value">3.0 · desktop</span></div><div class="info-row"><span class="info-label">현재 탭</span><span class="info-value" id="diagnosticActiveTab">overview</span></div><div class="info-row"><span class="info-label">미완료 handoff</span><span class="info-value">없음</span></div><div class="info-row"><span class="info-label">민감 정보</span><span class="info-value">credential redacted · body omitted</span></div></div></article>
+            <article class="card card-pad"><div class="card-header"><div><h2 class="card-title">Owner IPC</h2><p class="card-description">호스트가 인증한 sender metadata만 신뢰합니다.</p></div><span class="badge success">4/4</span></div><div class="info-list"><div class="info-row"><span class="info-label">LIBRA</span><span class="info-value">connected · 28ms</span></div><div class="info-row"><span class="info-label">Flashback</span><span class="info-value">connected · 18ms</span></div><div class="info-row"><span class="info-label">HAYAKU</span><span class="info-value">connected · 33ms</span></div><div class="info-row"><span class="info-label">LIA</span><span class="info-value">connected · 24ms</span></div></div></article>
+          </div>
+          <article class="card card-pad section-gap"><div class="card-header"><div><h2 class="card-title">프로토타입 상태 시나리오</h2><p class="card-description">정상·경고·차단 상태에서 개요와 승계 Gate가 어떻게 바뀌는지 확인합니다.</p></div><span class="badge">UI 전용</span></div><div class="scenario-row" role="group" aria-label="프로토타입 상태 선택"><button class="scenario-button active" type="button" aria-pressed="true" data-scenario="ready">승계 준비됨</button><button class="scenario-button" type="button" aria-pressed="false" data-scenario="warning">선택 Owner 경고</button><button class="scenario-button" type="button" aria-pressed="false" data-scenario="blocked">저장 모드 불일치</button></div></article>
+          <article class="card card-pad section-gap"><div class="card-header"><div><h2 class="card-title">작업 로그 <span class="badge warning">2</span></h2><p class="card-description">현재 실행의 읽기·검증·서버 관리 이벤트입니다.</p></div><button class="button" type="button" data-action="clear-log">로그 비우기</button></div><div class="log-list"><div class="log-item"><span class="timeline-dot">✓</span><span class="log-copy"><span class="log-title">owner_storage_gate_ready</span><span class="log-meta">participants=4 · mode=plugin_only · read_only=true</span></span><span class="timeline-time">21:18:22</span></div><div class="log-item"><span class="timeline-dot warning">!</span><span class="log-copy"><span class="log-title">server_probe_deferred</span><span class="log-meta">plugin_only first paint · explicit refresh required</span></span><span class="timeline-time">21:18:21</span></div><div class="log-item"><span class="timeline-dot">✓</span><span class="log-copy"><span class="log-title">gui_open</span><span class="log-meta">scope=hashed · shell=immediate · hydration=deferred</span></span><span class="timeline-time">21:18:20</span></div></div></article>
+          <div class="prototype-note section-gap">이 파일은 UX 예시입니다. Owner IPC, 서버 조회, 파일 내보내기, 세션 생성과 삭제를 실제로 실행하지 않습니다.</div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+    (function () {
+      var pageMeta = {
+        overview: { eyebrow: "STATUS", title: "RE:TRACE 개요", description: "현재 스코프의 호환성, 승계 준비 상태와 Owner 연결을 한눈에 확인합니다." },
+        session: { eyebrow: "CONTINUITY", title: "다음 세션", description: "호환성, 저장 모드와 원본 보존을 확인한 뒤 새 채팅 승계를 시작합니다." },
+        libra: { eyebrow: "READ-ONLY VIEWER", title: "LIBRA 정본 기억", description: "공식 Owner IPC로 읽은 현재 스코프의 정본과 승계 기억을 확인합니다." },
+        flashback: { eyebrow: "READ-ONLY VIEWER", title: "Flashback 기억", description: "manifest와 활성 shard를 지연 로드해 최신 기억을 확인합니다." },
+        hayaku: { eyebrow: "READ-ONLY VIEWER", title: "HAYAKU 원장", description: "패킷, 월드라인과 Recovery 상태를 Owner 원장 기준으로 확인합니다." },
+        serverdata: { eyebrow: "LIBRARIAN SYSTEM", title: "서버 데이터 관리", description: "서버 스코프를 실제 채팅 목록, 참조 관계와 Owner 증명으로 분류합니다." },
+        storage: { eyebrow: "OWNER STORAGE", title: "저장 상태", description: "응답하는 Owner의 저장 모드와 서버 내구성을 읽기 전용으로 확인합니다." },
+        diagnostics: { eyebrow: "DIAGNOSTICS", title: "진단 및 로그", description: "현재 실행의 IPC, 승계 journal과 안전하게 정리된 진단 상태를 확인합니다." }
+      };
+
+      var scenarios = {
+        ready: {
+          tone: "ready",
+          health: "승계 준비됨",
+          side: "READY",
+          sideCopy: "Owner 4/4 · 공통 모드 확인됨",
+          bannerTitle: "현재 확인 범위에서 다음 세션 승계를 진행할 수 있습니다.",
+          bannerText: "Owner 호환 계약과 공통 저장 모드가 일치합니다. 실제 승계 직전에 다시 검증합니다.",
+          strip: "현재 확인 범위에서 승계 차단 없음",
+          owners: "4 / 4",
+          compatibility: "4 OK",
+          compatibilityMeta: "차단 0 · 경고 0",
+          storage: "LOCAL",
+          pending: "0",
+          liaState: "정상",
+          liaParticipation: "참여 · Live Persona",
+          compatCopy: "이번 승계에 필요한 모든 Owner가 공통 비파괴 승계 계약을 만족합니다.",
+          compatBadge: "호환됨",
+          liaCompat: "정상",
+          liaReason: "Live Persona fork · target-specific durable proof",
+          gateTitle: "plugin_only · 참여 Owner 4/4 일치",
+          gateCopy: "미설치·미응답 Owner는 자동 제외되며, 승계 시작 후 participant와 mode를 고정합니다.",
+          gateBadge: "READY",
+          sessionStatus: "승계 대상: 새 채팅 · LIBRA 18 · Flashback shard 8 · HAYAKU packet 42 · LIA Live Persona 포함",
+          createDisabled: false
+        },
+        warning: {
+          tone: "warning",
+          health: "경고 확인 필요",
+          side: "WARNING",
+          sideCopy: "필수 Owner 3/3 · 선택 Owner 경고 1",
+          bannerTitle: "현재 승계는 가능하지만 선택 Owner의 호환 경고가 있습니다.",
+          bannerText: "LIA가 현재 승계에 참여하지 않아 차단하지 않습니다. LIA 데이터가 있는 세션에서는 업데이트가 필요합니다.",
+          strip: "승계 가능 · 현재 미사용 Owner 경고 1",
+          owners: "3 + 1",
+          compatibility: "3 OK",
+          compatibilityMeta: "차단 0 · 경고 1",
+          storage: "LOCAL",
+          pending: "0",
+          liaState: "현재 미사용",
+          liaParticipation: "불참 · 선택 경고",
+          compatCopy: "현재 승계에 사용되지 않는 LIA의 호환 계약이 오래됐습니다. 이번 승계는 진행할 수 있습니다.",
+          compatBadge: "승계 가능 · 경고",
+          liaCompat: "현재 미사용",
+          liaReason: "호환 계약 불일치 · 이번 승계에는 Live Persona 데이터 없음",
+          gateTitle: "plugin_only · 필수 Owner 3/3 일치",
+          gateCopy: "현재 승계에 참여하지 않는 LIA는 저장 Gate에서 제외됐습니다.",
+          gateBadge: "READY",
+          sessionStatus: "승계 대상: 새 채팅 · LIBRA 18 · Flashback shard 8 · HAYAKU packet 42 · LIA 제외",
+          createDisabled: false
+        },
+        blocked: {
+          tone: "blocked",
+          health: "승계 차단",
+          side: "BLOCKED",
+          sideCopy: "Owner 저장 모드 불일치",
+          bannerTitle: "참여 Owner의 저장 모드가 달라 다음 세션 승계를 차단했습니다.",
+          bannerText: "RE:TRACE는 저장 모드를 변경하지 않습니다. 각 Owner의 Server 화면에서 상태를 확인해야 합니다.",
+          strip: "승계 차단 · owner_storage_mode_mismatch",
+          owners: "4 / 4",
+          compatibility: "4 OK",
+          compatibilityMeta: "호환 차단 0 · 저장 Gate 차단 1",
+          storage: "MIXED",
+          pending: "0",
+          liaState: "정상",
+          liaParticipation: "참여 · Live Persona",
+          compatCopy: "호환 계약은 정상이지만 참여 Owner의 저장 모드가 일치하지 않아 승계를 시작할 수 없습니다.",
+          compatBadge: "저장 Gate 차단",
+          liaCompat: "정상",
+          liaReason: "Live Persona fork · target-specific durable proof",
+          gateTitle: "저장 모드 불일치 · Flashback=mirror · 나머지=plugin_only",
+          gateCopy: "RE:TRACE는 Owner 저장 설정을 자동으로 바꾸거나 불일치를 우회하지 않습니다.",
+          gateBadge: "BLOCKED",
+          sessionStatus: "승계를 시작할 수 없습니다. Flashback과 나머지 Owner의 저장 모드를 각 플러그인에서 확인하세요.",
+          createDisabled: true
+        }
+      };
+
+      var tabs = Array.prototype.slice.call(document.querySelectorAll(".nav-tab[data-tab]"));
+      var panels = Array.prototype.slice.call(document.querySelectorAll(".panel[data-panel]"));
+      var pageBody = document.getElementById("pageBody");
+      var pageTitle = document.getElementById("pageTitle");
+      var pageEyebrow = document.getElementById("pageEyebrow");
+      var pageDescription = document.getElementById("pageDescription");
+      var moreButton = document.getElementById("moreButton");
+      var moreMenu = document.getElementById("moreMenu");
+      var activeScenario = "ready";
+
+      function setText(id, value) {
+        var node = document.getElementById(id);
+        if (node) node.textContent = value;
+      }
+
+      function activateTab(name, moveFocus) {
+        var meta = pageMeta[name] || pageMeta.overview;
+        tabs.forEach(function (tab) {
+          var active = tab.getAttribute("data-tab") === name;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+          tab.setAttribute("tabindex", active ? "0" : "-1");
+          if (active && moveFocus) tab.focus();
+        });
+        panels.forEach(function (panel) {
+          var active = panel.getAttribute("data-panel") === name;
+          panel.classList.toggle("active", active);
+          panel.hidden = !active;
+        });
+        pageEyebrow.textContent = meta.eyebrow;
+        pageTitle.textContent = meta.title;
+        pageDescription.textContent = meta.description;
+        setText("diagnosticActiveTab", name);
+        pageBody.scrollTop = 0;
+        if (history.replaceState) history.replaceState(null, "", "#" + name);
+      }
+
+      function toneClass(node, tone, baseClass) {
+        if (!node) return;
+        var modifier = tone === "ready" ? (baseClass === "gate" ? " ready" : "") : " " + tone;
+        node.className = baseClass + modifier;
+      }
+
+      function applyScenario(name) {
+        var scenario = scenarios[name] || scenarios.ready;
+        activeScenario = name;
+        toneClass(document.getElementById("globalHealthChip"), scenario.tone, "health-chip");
+        toneClass(document.getElementById("sideHealth"), scenario.tone, "side-health");
+        toneClass(document.getElementById("overviewHealthBanner"), scenario.tone, "health-banner");
+        toneClass(document.getElementById("handoffGate"), scenario.tone, "gate");
+        toneClass(document.getElementById("storageGate"), scenario.tone, "gate");
+        setText("globalHealthText", scenario.health);
+        setText("sideHealthState", scenario.side);
+        setText("sideHealthCopy", scenario.sideCopy);
+        setText("overviewHealthTitle", scenario.bannerTitle);
+        setText("overviewHealthText", scenario.bannerText);
+        setText("statusStripText", scenario.strip);
+        setText("metricOwners", scenario.owners);
+        setText("metricCompatibility", scenario.compatibility);
+        setText("metricCompatibilityMeta", scenario.compatibilityMeta);
+        setText("metricStorage", scenario.storage);
+        setText("metricPending", scenario.pending);
+        setText("liaOwnerState", scenario.liaState);
+        setText("liaParticipation", scenario.liaParticipation);
+        setText("compatibilityCopy", scenario.compatCopy);
+        setText("compatibilityBadge", scenario.compatBadge);
+        setText("liaCompatState", scenario.liaCompat);
+        setText("liaCompatReason", scenario.liaReason);
+        setText("handoffGateTitle", scenario.gateTitle);
+        setText("handoffGateCopy", scenario.gateCopy);
+        setText("handoffGateBadge", scenario.gateBadge);
+        setText("storageGateTitle", scenario.gateTitle);
+        setText("storageGateCopy", scenario.gateCopy);
+        setText("storageGateBadge", scenario.gateBadge);
+        setText("overviewGateMeta", scenario.gateTitle);
+        setText("overviewGateBadge", scenario.gateBadge);
+        setText("sessionStatus", scenario.sessionStatus);
+
+        var createButton = document.getElementById("createSessionButton");
+        if (createButton) createButton.disabled = scenario.createDisabled;
+
+        var badgeIds = ["compatibilityBadge", "handoffGateBadge", "storageGateBadge", "overviewGateBadge"];
+        badgeIds.forEach(function (id) {
+          var node = document.getElementById(id);
+          if (!node) return;
+          node.className = "badge " + (scenario.tone === "ready" ? "success" : scenario.tone === "warning" ? "warning" : "danger");
+        });
+
+        var liaState = document.getElementById("liaOwnerState");
+        if (liaState) liaState.className = "owner-state " + (scenario.tone === "warning" ? "warning" : "");
+        var liaCompatState = document.getElementById("liaCompatState");
+        if (liaCompatState) liaCompatState.className = "compat-state " + (scenario.tone === "warning" ? "warning" : "");
+        var overviewGateIcon = document.getElementById("overviewGateIcon");
+        if (overviewGateIcon) {
+          overviewGateIcon.className = "check-icon " + (scenario.tone === "ready" ? "" : scenario.tone);
+          overviewGateIcon.textContent = scenario.tone === "blocked" ? "!" : scenario.tone === "warning" ? "i" : "✓";
+        }
+
+        document.querySelectorAll(".scenario-button[data-scenario]").forEach(function (button) {
+          var active = button.getAttribute("data-scenario") === name;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+      }
+
+      function closeMoreMenu() {
+        moreMenu.classList.remove("open");
+        moreButton.setAttribute("aria-expanded", "false");
+      }
+
+      function showToast(title, copy) {
+        var region = document.getElementById("toastRegion");
+        var toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = '<span class="toast-icon">✓</span><span><span class="toast-title"></span><span class="toast-copy"></span></span>';
+        toast.querySelector(".toast-title").textContent = title;
+        toast.querySelector(".toast-copy").textContent = copy || "";
+        region.appendChild(toast);
+        window.setTimeout(function () {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(7px)";
+          window.setTimeout(function () { toast.remove(); }, 180);
+        }, 2800);
+      }
+
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener("click", function () { activateTab(tab.getAttribute("data-tab"), false); });
+        tab.addEventListener("keydown", function (event) {
+          var keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"];
+          if (keys.indexOf(event.key) === -1) return;
+          var nextIndex = index;
+          if (event.key === "Home") nextIndex = 0;
+          else if (event.key === "End") nextIndex = tabs.length - 1;
+          else if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % tabs.length;
+          else nextIndex = (index - 1 + tabs.length) % tabs.length;
+          event.preventDefault();
+          activateTab(tabs[nextIndex].getAttribute("data-tab"), true);
+        });
+      });
+
+      document.querySelectorAll("[data-goto]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          closeMoreMenu();
+          activateTab(button.getAttribute("data-goto"), true);
+        });
+      });
+
+      document.querySelectorAll(".scenario-button[data-scenario]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          applyScenario(button.getAttribute("data-scenario"));
+          showToast("상태 시나리오를 바꿨습니다.", "개요와 다음 세션 Gate에 샘플 상태를 반영했습니다.");
+        });
+      });
+
+      document.querySelectorAll(".filter-button[data-filter]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var filter = button.getAttribute("data-filter");
+          document.querySelectorAll(".filter-button[data-filter]").forEach(function (item) {
+            var active = item === button;
+            item.classList.toggle("active", active);
+            item.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+          document.querySelectorAll(".server-scope-card[data-classification]").forEach(function (card) {
+            card.setAttribute("data-hidden", filter !== "all" && card.getAttribute("data-classification") !== filter ? "true" : "false");
+          });
+        });
+      });
+
+      function updateScopeSelection() {
+        var selected = document.querySelectorAll(".scope-checkbox:checked").length;
+        setText("selectedScopeCount", "선택 " + selected);
+        document.getElementById("prepareDeleteButton").disabled = selected === 0;
+      }
+
+      document.querySelectorAll(".scope-checkbox").forEach(function (checkbox) {
+        checkbox.addEventListener("change", updateScopeSelection);
+      });
+
+      moreButton.addEventListener("click", function (event) {
+        event.stopPropagation();
+        var open = moreMenu.classList.toggle("open");
+        moreButton.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+
+      document.addEventListener("click", function (event) {
+        if (!moreMenu.contains(event.target) && event.target !== moreButton) closeMoreMenu();
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeMoreMenu();
+      });
+
+      document.querySelectorAll("[data-action]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var action = button.getAttribute("data-action");
+          closeMoreMenu();
+          if (action === "refresh" || action === "recheck") {
+            showToast("상태 확인 예시", "실제 구현에서는 캐시된 셸을 유지한 채 현재 탭만 비동기로 갱신합니다.");
+          } else if (action === "refresh-viewer") {
+            showToast("뷰어 새로고침 예시", "Owner의 읽기 전용 IPC 결과만 현재 패널에 반영합니다.");
+          } else if (action === "refresh-storage") {
+            showToast("Owner 저장 상태 확인 예시", "RE:TRACE는 저장 모드를 변경하지 않습니다.");
+          } else if (action === "scan-server") {
+            showToast("서버 inventory 조회 예시", "명시적 새로고침에서만 서버와 채팅 목록을 대조합니다.");
+          } else if (action === "create-session") {
+            if (activeScenario === "blocked") return;
+            showToast("다음 세션 흐름 예시", "실제 구현에서는 확인 dialog 후 Owner별 prepare · adopt · verify를 실행합니다.");
+          } else if (action === "prepare-delete") {
+            showToast("보존 증명 계획 예시", "Owner 복원·readback과 서버 백업이 끝나기 전에는 삭제 계획을 실행하지 않습니다.");
+          } else if (action === "inspect-scope") {
+            showToast("스코프 근거 보기", "분류 근거, 참조와 Owner 증명을 보여주는 예시입니다.");
+          } else if (action === "export") {
+            showToast("JSON 내보내기 예시", "이 프로토타입은 실제 기억 파일을 만들지 않습니다.");
+          } else if (action === "debug") {
+            showToast("디버그 내보내기 예시", "credential은 제거하고 ID는 hash, 기억 본문은 생략합니다.");
+          } else if (action === "clear-log") {
+            showToast("로그 비우기 예시", "프로토타입의 샘플 로그는 그대로 유지됩니다.");
+          } else if (action === "close") {
+            showToast("닫기 버튼 예시", "이 HTML 프로토타입은 브라우저 탭을 자동으로 닫지 않습니다.");
+          }
+        });
+      });
+
+      var initialTab = location.hash.replace("#", "");
+      if (pageMeta[initialTab]) activateTab(initialTab, false);
+      applyScenario("ready");
+      updateScopeSelection();
+    })();
+  </script>
+</body>
+</html>

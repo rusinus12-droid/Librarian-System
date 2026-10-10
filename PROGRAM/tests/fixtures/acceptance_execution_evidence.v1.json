@@ -1,0 +1,1033 @@
+{
+ "schema": "acceptance.execution_evidence.v1",
+ "rows": [
+  {
+   "case_id": "A04",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+   "command": "node tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "exit_code": 0,
+   "observed": "Same operation id was retried after response loss; verified durable receipt and database rows were read back without revision advance, and recovered State reached turn 10.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "test_sha256": "9704680d599106c4a344165a6b3d421a266170c47b6c75eb12a45607704c91ff",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_response_loss_recovery_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_response_loss_recovery_test-resume2-20260928.log": "01e84e460a044f55c52c5c433866c4caeb22cb9db407b09c1263664343ee9d92"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A04",
+    "mode": "mirror",
+    "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local HTTP/SQLite server fixture; no live service claim."
+   ]
+  },
+  {
+   "case_id": "A04",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+   "command": "node tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "exit_code": 0,
+   "observed": "Same operation id was retried after response loss; verified durable receipt and database rows were read back without revision advance, and recovered State reached turn 10.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "test_sha256": "9704680d599106c4a344165a6b3d421a266170c47b6c75eb12a45607704c91ff",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_response_loss_recovery_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_response_loss_recovery_test-resume2-20260928.log": "01e84e460a044f55c52c5c433866c4caeb22cb9db407b09c1263664343ee9d92"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A04",
+    "mode": "server_only",
+    "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local HTTP/SQLite server fixture; no live service claim."
+   ]
+  },
+  {
+   "case_id": "A04",
+   "mode": "plugin_only",
+   "status": "SKIP",
+   "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+   "observed": "Local response-loss equivalent recovered State to turn 10, but this mode has no server receipt or database row and does not perform the exact acceptance action.",
+   "limitations": [
+    "the acceptance action requires a server conditional batch commit and its HTTP response loss with server receipt/DB readback; the SDK refuses that operation in plugin_only, so this mode has no such action (recorded as not-applicable, not as unrun)"
+   ],
+   "command": "node tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "exit_code": 0,
+   "test_file": "tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+   "test_sha256": "370e67c8a92d3fcdf217fd05914bac41f866d23d0057a65bbaf1426fcd892df9",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "90e0a3fed4d3b5dcc046e5cc8aaa7d507a932acdfb95fbb650eb236c2b87518e",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/acceptance-a04-response-loss-20260927.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/acceptance-a04-response-loss-20260927.log": "61195ad4f0d34e5285de8f649511dd5005cfb4c4b564e83b5f49dabefed523d5"
+   }
+  },
+  {
+   "case_id": "A05",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "원래 후보를 commit하려 시도한다.",
+   "command": "node tests/libra_phase_d_a05_action_matrix_test.cjs",
+   "exit_code": 0,
+   "observed": "Concurrent public correction, same-value A→B→A storage revision change, and post-calculation scope transition each reject or recover the stale candidate; valid authority is read back.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a05_action_matrix_test.cjs",
+   "test_sha256": "1387a27e7a037023e871f7a2659d54b4eec8a326d772cc3aa3914c5bf6ab47a4",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a05_action_matrix_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a05_action_matrix_test-resume2-20260928.log": "0809a31b8a33a4fb699ff6f2ab4f55efcab3bd0238df3c7f40581bbbee0728df"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A05",
+    "mode": "mirror",
+    "action": "원래 후보를 commit하려 시도한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and actual local HTTP/SQLite server."
+   ]
+  },
+  {
+   "case_id": "A05",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "원래 후보를 commit하려 시도한다.",
+   "command": "node tests/libra_phase_d_a05_action_matrix_test.cjs",
+   "exit_code": 0,
+   "observed": "Concurrent public correction, same-value A→B→A storage revision change, and post-calculation scope transition each reject or recover the stale candidate; valid authority is read back.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a05_action_matrix_test.cjs",
+   "test_sha256": "1387a27e7a037023e871f7a2659d54b4eec8a326d772cc3aa3914c5bf6ab47a4",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a05_action_matrix_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a05_action_matrix_test-resume2-20260928.log": "0809a31b8a33a4fb699ff6f2ab4f55efcab3bd0238df3c7f40581bbbee0728df"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A05",
+    "mode": "server_only",
+    "action": "원래 후보를 commit하려 시도한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and actual local HTTP/SQLite server."
+   ]
+  },
+  {
+   "case_id": "A05",
+   "mode": "plugin_only",
+   "status": "BLOCKED",
+   "action": "원래 후보를 commit하려 시도한다.",
+   "observed": "After a T10 candidate was calculated, local State was written A→B→A. Raw bytes returned to baseline SHA-256 3e76b325b5e218a9a83fd622e4111f0db78f029e9d19c73d7b0d85dd99558be2; pluginStorage exposed no monotonic revision; the stale T10 candidate then committed.",
+   "limitations": [
+    "Defect reproduction only; expected stale-candidate rejection is absent. Product needs a monotonic plugin_only State revision/read-set and atomic compare-and-write."
+   ],
+   "command": "node tests/libra_phase_d_a05_plugin_aba_diagnostic_test.cjs",
+   "exit_code": 0,
+   "test_file": "tests/libra_phase_d_a05_plugin_aba_diagnostic_test.cjs",
+   "test_sha256": "e165f57438a22b5f1ebe54197e60b00d68ece80f903e68e70f93664aa999e280",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "90e0a3fed4d3b5dcc046e5cc8aaa7d507a932acdfb95fbb650eb236c2b87518e",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/acceptance-a05-plugin-only-aba-diagnostic-20260927.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/acceptance-a05-plugin-only-aba-diagnostic-20260927.log": "29b581b2333e18464ced3562ba67bab2eb1c3b54ac8289e1698c6154c58c3ec2"
+   }
+  },
+  {
+   "case_id": "A06",
+   "mode": "plugin_only",
+   "status": "BLOCKED",
+   "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+   "observed": "No dedicated plugin_only local fault-equivalent action was executed; this mode has no paired local/remote raw State stores for the documented A06 comparison.",
+   "limitations": [
+    "A06 remains BLOCKED in plugin_only."
+   ]
+  },
+  {
+   "case_id": "A06",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+   "command": "node tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+   "exit_code": 0,
+   "observed": "Injected local mirror write failure left local State at turn 5 while server State reached turn 10; reconnect read back turn 10 and repaired local raw State.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+   "test_sha256": "75620927f4f08e2b6fb2ac8fd7d3a9c9261378f481004a05481c217e0957c87f",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_mirror_local_failure_recovery_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_mirror_local_failure_recovery_test-resume2-20260928.log": "62be4f7a5f9d08091859e28d1678ee57ba948bef27ba77380a2f3b4922db17a5"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A06",
+    "mode": "mirror",
+    "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local HTTP/SQLite fault fixture."
+   ]
+  },
+  {
+   "case_id": "A06",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+   "command": "node tests/libra_phase_d_v5_server_only_outage_recovery_test.cjs",
+   "exit_code": 0,
+   "observed": "During transport outage, server raw rows stayed unchanged and local authority remained absent; reconnect completed and read back State through turn 10.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_v5_server_only_outage_recovery_test.cjs",
+   "test_sha256": "13170d07075395c944891176a5269d3f77a0a22d99bee8e870dbec7ca7cdc76d",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_server_only_outage_recovery_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_v5_server_only_outage_recovery_test-resume2-20260928.log": "63e7b7cb52e4a0e1f79c6e6e3f3686444ccdf297986e6b957e41782366262ca8"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A06",
+    "mode": "server_only",
+    "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local HTTP/SQLite fault fixture."
+   ]
+  },
+  {
+   "case_id": "A11",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "한 편지만 전달한 구간을 처리한다.",
+   "command": "node tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "exit_code": 0,
+   "observed": "Current-source controlled fixture admitted both source-backed promises, stored distinct open lifecycle identities, resolved only Mina's promise through its request-local alias, left Junho's promise open, passed public State/History/Recall/Input Writer checks, and rejected the wrong-recipient alias as pending/participant_mismatch. Canonical memory bytes were read back from plugin storage.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "test_sha256": "8cebba203064b0904db3e9b743a580bdbe9553dfb07132782e2f3d1968689e13",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log": "cb3ba120de76f20e56d78fe1b2a4b862158c7cb673f1a77978ee4467153083e3"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A11",
+    "mode": "plugin_only",
+    "action": "한 편지만 전달한 구간을 처리한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider and plugin storage fixture; no live model or UI claim."
+   ]
+  },
+  {
+   "case_id": "A11",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "한 편지만 전달한 구간을 처리한다.",
+   "command": "node tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "exit_code": 0,
+   "observed": "The same positive and wrong-target negative actions passed. Plugin/server parsed manifests differed only in the three allowed audit-time paths on first reads (and were equal on later reads); active refs and digests matched, and canonical memory raw bytes were identical across plugin and server stores. Public State/History/Recall/Input Writer all passed.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "test_sha256": "8cebba203064b0904db3e9b743a580bdbe9553dfb07132782e2f3d1968689e13",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log": "cb3ba120de76f20e56d78fe1b2a4b862158c7cb673f1a77978ee4467153083e3"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A11",
+    "mode": "mirror",
+    "action": "한 편지만 전달한 구간을 처리한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider and actual local HTTP/SQLite fixture; no live model or UI claim."
+   ]
+  },
+  {
+   "case_id": "A11",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "한 편지만 전달한 구간을 처리한다.",
+   "command": "node tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "exit_code": 0,
+   "observed": "The same positive and wrong-target negative actions passed using server-only storage. Opening and delivery canonical records, including their source evidence, were read back by manifest key from SQLite; public State/History/Recall/Input Writer showed only Mina's matching promise closed and preserved Junho's promise open.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a11_same_title_promises_test.cjs",
+   "test_sha256": "8cebba203064b0904db3e9b743a580bdbe9553dfb07132782e2f3d1968689e13",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a11_same_title_promises_test-resume2-20260928.log": "cb3ba120de76f20e56d78fe1b2a4b862158c7cb673f1a77978ee4467153083e3"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A11",
+    "mode": "server_only",
+    "action": "한 편지만 전달한 구간을 처리한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider and actual local HTTP/SQLite fixture; no live model or UI claim."
+   ]
+  },
+  {
+   "case_id": "A12",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "The T5 promise was re-referenced at T40 through its request-local candidate alias, accepted as the same lifecycle, and recorded as reaffirmed in canonical History.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A12",
+    "mode": "plugin_only",
+    "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A17",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "All 21 consecutive five-pair batches reached T105; the T5 promise opened, T40 reaffirmed, T105 fulfilled, reroll returned it to open, and the native T40 child cancellation left parent/sibling unchanged.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A17",
+    "mode": "plugin_only",
+    "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live RisuAI UI claim."
+   ]
+  },
+  {
+   "case_id": "A18",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "Historical T5 Recall/Input Writer preserved the original promise without later fulfillment; current Recall/Input Writer included T105 fulfillment with its evidence-time cutoff.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A18",
+    "mode": "plugin_only",
+    "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A12",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "The T5 promise was re-referenced at T40 through its request-local candidate alias, accepted as the same lifecycle, and recorded as reaffirmed in canonical History.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A12",
+    "mode": "mirror",
+    "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A17",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "All 21 consecutive five-pair batches reached T105; the T5 promise opened, T40 reaffirmed, T105 fulfilled, reroll returned it to open, and the native T40 child cancellation left parent/sibling unchanged.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A17",
+    "mode": "mirror",
+    "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live RisuAI UI claim."
+   ]
+  },
+  {
+   "case_id": "A18",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "Historical T5 Recall/Input Writer preserved the original promise without later fulfillment; current Recall/Input Writer included T105 fulfillment with its evidence-time cutoff.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A18",
+    "mode": "mirror",
+    "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A12",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "The T5 promise was re-referenced at T40 through its request-local candidate alias, accepted as the same lifecycle, and recorded as reaffirmed in canonical History.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A12",
+    "mode": "server_only",
+    "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A17",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "All 21 consecutive five-pair batches reached T105; the T5 promise opened, T40 reaffirmed, T105 fulfilled, reroll returned it to open, and the native T40 child cancellation left parent/sibling unchanged.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A17",
+    "mode": "server_only",
+    "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live RisuAI UI claim."
+   ]
+  },
+  {
+   "case_id": "A18",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+   "command": "node tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "exit_code": 0,
+   "observed": "Historical T5 Recall/Input Writer preserved the original promise without later fulfillment; current Recall/Input Writer included T105 fulfillment with its evidence-time cutoff.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+   "test_sha256": "3b024fbeea5a1e0b82c4861a7b8924e4dab9f0dc4fb42b444a63e34e78fc85db",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_main_memory_letter_lifecycle_105turn_test-resume2-20260928.log": "b82748056a4249d65b4823b6726eecc0bd895672c64414194a768ca1b4286c3c"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A18",
+    "mode": "server_only",
+    "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local provider; no live model-quality claim."
+   ]
+  },
+  {
+   "case_id": "A39",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+   "command": "node tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "exit_code": 0,
+   "observed": "All nine source/destination mode pairs were exercised; destination plugin_only received scope/key remapping, origin/epoch preservation, canonical bytes, and State/History/Recall/Input Writer linked reads.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "test_sha256": "c0d96de708e7ae9bb96a94f714d7e98b7ac4c48831254df867489c098a22108d",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log": "6ac4d8d1b05bb515e7189d5e8181db20c8f98c582de4f2a483c9795e762268a7"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A39",
+    "mode": "plugin_only",
+    "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local storage/provider fixture; no live host claim."
+   ]
+  },
+  {
+   "case_id": "A39",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+   "command": "node tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "exit_code": 0,
+   "observed": "All nine source/destination mode pairs were exercised; destination mirror received scope/key remapping, origin/epoch preservation, canonical bytes, and State/History/Recall/Input Writer linked reads.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "test_sha256": "c0d96de708e7ae9bb96a94f714d7e98b7ac4c48831254df867489c098a22108d",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log": "6ac4d8d1b05bb515e7189d5e8181db20c8f98c582de4f2a483c9795e762268a7"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A39",
+    "mode": "mirror",
+    "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local storage/provider fixture; no live host claim."
+   ]
+  },
+  {
+   "case_id": "A39",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+   "command": "node tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "exit_code": 0,
+   "observed": "All nine source/destination mode pairs were exercised; destination server_only received scope/key remapping, origin/epoch preservation, canonical bytes, and State/History/Recall/Input Writer linked reads.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_portable_nine_pairs_test.cjs",
+   "test_sha256": "c0d96de708e7ae9bb96a94f714d7e98b7ac4c48831254df867489c098a22108d",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_portable_nine_pairs_test-resume2-20260928.log": "6ac4d8d1b05bb515e7189d5e8181db20c8f98c582de4f2a483c9795e762268a7"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A39",
+    "mode": "server_only",
+    "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled local storage/provider fixture; no live host claim."
+   ]
+  },
+  {
+   "case_id": "A13",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+   "command": "node tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "exit_code": 0,
+   "observed": "Four independent outcomes reached canonical readback and public State, History, Recall, Input Writer and production History detail rendering. Recall directly selected T6 with exact status/resolution/source/time. Fulfilled, broken and cancelled rendered distinct History reasons; the blocked obstacle remained nonterminal. plugin_only raw records and exact source refs/digests were read back.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "test_sha256": "1a37ad8e8b0d0f8a5d8d10c779874ac9356496694460375e8a8f987ad3b9578b",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log": "1a338efa2865cf787fe169145c7e3a24d97ef416f4683aa4a8c27d63b3676753"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A13",
+    "mode": "plugin_only",
+    "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and storage fixture; no live model or live host GUI claim."
+   ]
+  },
+  {
+   "case_id": "A13",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+   "command": "node tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "exit_code": 0,
+   "observed": "Four independent outcomes reached canonical readback and public State, History, Recall, Input Writer and production History detail rendering. Recall directly selected T6 with exact status/resolution/source/time. Fulfilled, broken and cancelled rendered distinct History reasons; the blocked obstacle remained nonterminal. Parsed mirror manifests, canonical refs/digests and raw bytes matched across plugin/server stores.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "test_sha256": "1a37ad8e8b0d0f8a5d8d10c779874ac9356496694460375e8a8f987ad3b9578b",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log": "1a338efa2865cf787fe169145c7e3a24d97ef416f4683aa4a8c27d63b3676753"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A13",
+    "mode": "mirror",
+    "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and storage fixture; no live model or live host GUI claim."
+   ]
+  },
+  {
+   "case_id": "A13",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+   "command": "node tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "exit_code": 0,
+   "observed": "Four independent outcomes reached canonical readback and public State, History, Recall, Input Writer and production History detail rendering. Recall directly selected T6 with exact status/resolution/source/time. Fulfilled, broken and cancelled rendered distinct History reasons; the blocked obstacle remained nonterminal. server_only canonical rows were confirmed in SQLite.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a13_four_outcomes_test.cjs",
+   "test_sha256": "1a37ad8e8b0d0f8a5d8d10c779874ac9356496694460375e8a8f987ad3b9578b",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/libra_phase_d_a13_four_outcomes_test-resume2-20260928.log": "1a338efa2865cf787fe169145c7e3a24d97ef416f4683aa4a8c27d63b3676753"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A13",
+    "mode": "server_only",
+    "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and storage fixture; no live model or live host GUI claim."
+   ]
+  },
+  {
+   "case_id": "A15",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "정규화와 link 검증을 수행한다.",
+   "command": "node tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "exit_code": 0,
+   "observed": "All four invalid reference categories are isolated without promotion: the unprovided alias normalizes to pending (unknown_or_stale_candidate_alias), and future cursor, inactive revision, self link and sibling-worldline targets stay un-promoted with their parent lifecycles still open. The independent source-backed event is preserved, and the mutated durable record plus manifest are read back after a real cold restart (plugin storage, mirror agreeing by raw bytes, or SQLite).",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "test_sha256": "64f7ca10b89b63561317e74540e3a0e5b4e8dd38a0fd480cef9dc1525ed5b2c9",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log": "d54de7349915ffc4bc657044fdc58f7b2ac8c581076c08a519fd11ef87a5d518"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A15",
+    "mode": "plugin_only",
+    "action": "정규화와 link 검증을 수행한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A15",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "정규화와 link 검증을 수행한다.",
+   "command": "node tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "exit_code": 0,
+   "observed": "All four invalid reference categories are isolated without promotion: the unprovided alias normalizes to pending (unknown_or_stale_candidate_alias), and future cursor, inactive revision, self link and sibling-worldline targets stay un-promoted with their parent lifecycles still open. The independent source-backed event is preserved, and the mutated durable record plus manifest are read back after a real cold restart (plugin storage, mirror agreeing by raw bytes, or SQLite).",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "test_sha256": "64f7ca10b89b63561317e74540e3a0e5b4e8dd38a0fd480cef9dc1525ed5b2c9",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log": "d54de7349915ffc4bc657044fdc58f7b2ac8c581076c08a519fd11ef87a5d518"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A15",
+    "mode": "mirror",
+    "action": "정규화와 link 검증을 수행한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A15",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "정규화와 link 검증을 수행한다.",
+   "command": "node tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "exit_code": 0,
+   "observed": "All four invalid reference categories are isolated without promotion: the unprovided alias normalizes to pending (unknown_or_stale_candidate_alias), and future cursor, inactive revision, self link and sibling-worldline targets stay un-promoted with their parent lifecycles still open. The independent source-backed event is preserved, and the mutated durable record plus manifest are read back after a real cold restart (plugin storage, mirror agreeing by raw bytes, or SQLite).",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a15_invalid_links_test.cjs",
+   "test_sha256": "64f7ca10b89b63561317e74540e3a0e5b4e8dd38a0fd480cef9dc1525ed5b2c9",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a15-invalid-links-resume-20260928.log": "d54de7349915ffc4bc657044fdc58f7b2ac8c581076c08a519fd11ef87a5d518"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A15",
+    "mode": "server_only",
+    "action": "정규화와 link 검증을 수행한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A16",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "기존 prompt pressure 경로를 실행한다.",
+   "command": "node tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "exit_code": 0,
+   "observed": "A prior request presented one real candidate. Under the one-window pressure request, candidate count fell to zero while all ten source rows stayed exact. The controlled provider repeated that old alias; the runtime stored linkStatus pending with no target or alias, preserved the existing open promise, and read the result back in all three modes.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "71477c001238bf22841085c9fc1bc27b467b3697856cd71a39100ec24f9b3cd8",
+   "test_file": "tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "test_sha256": "bc02911b86f640e312b042e9b9dc51dc1a5c64b1f356f97672d26d655c311011",
+   "evidence_files": [
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log": "c8c60a3a7628e242823530988e197cc80eb3da2c6b677bbde855800ce527044d"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A16",
+    "mode": "plugin_only",
+    "action": "기존 prompt pressure 경로를 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and fixture runtime; live RisuAI host and external model not exercised."
+   ]
+  },
+  {
+   "case_id": "A16",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "기존 prompt pressure 경로를 실행한다.",
+   "command": "node tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "exit_code": 0,
+   "observed": "A prior request presented one real candidate. Under the one-window pressure request, candidate count fell to zero while all ten source rows stayed exact. The controlled provider repeated that old alias; the runtime stored linkStatus pending with no target or alias, preserved the existing open promise, and read the result back in all three modes.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "71477c001238bf22841085c9fc1bc27b467b3697856cd71a39100ec24f9b3cd8",
+   "test_file": "tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "test_sha256": "bc02911b86f640e312b042e9b9dc51dc1a5c64b1f356f97672d26d655c311011",
+   "evidence_files": [
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log": "c8c60a3a7628e242823530988e197cc80eb3da2c6b677bbde855800ce527044d"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A16",
+    "mode": "mirror",
+    "action": "기존 prompt pressure 경로를 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and fixture runtime; live RisuAI host and external model not exercised."
+   ]
+  },
+  {
+   "case_id": "A16",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "기존 prompt pressure 경로를 실행한다.",
+   "command": "node tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "exit_code": 0,
+   "observed": "A prior request presented one real candidate. Under the one-window pressure request, candidate count fell to zero while all ten source rows stayed exact. The controlled provider repeated that old alias; the runtime stored linkStatus pending with no target or alias, preserved the existing open promise, and read the result back in all three modes.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "71477c001238bf22841085c9fc1bc27b467b3697856cd71a39100ec24f9b3cd8",
+   "test_file": "tests/libra_phase_d_a16_prompt_pressure_test.cjs",
+   "test_sha256": "bc02911b86f640e312b042e9b9dc51dc1a5c64b1f356f97672d26d655c311011",
+   "evidence_files": [
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/skill-audit-repair-20260928/reporter/a16-final-20260928.log": "c8c60a3a7628e242823530988e197cc80eb3da2c6b677bbde855800ce527044d"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A16",
+    "mode": "server_only",
+    "action": "기존 prompt pressure 경로를 실행한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and fixture runtime; live RisuAI host and external model not exercised."
+   ]
+  },
+  {
+   "case_id": "A25",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+   "command": "node tests/libra_phase_d_a25_correction_test.cjs",
+   "exit_code": 0,
+   "observed": "Three domains are corrected through the existing Correction journal in all three storage modes: a taste (preferences) and a boundary on separate character targets, and a promise (narrative thread). Each is applied, suspended (the original value returns and no active provenance remains), reactivated (the corrected value and provenance return), and replayed (rebuild keeps the corrected value; no model call). The canonical record's facts/entities/bindings and its artifactDigest are unchanged, and provenance records the real canonical cursor (memoryId/revision/artifactDigest/turnRange) under policy point_in_time_override, keeping the correction id distinct from the source event it is anchored to.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a25_correction_test.cjs",
+   "test_sha256": "96543d739229a5e1e7dfb12d1d252c4547a4b4e9b34e94cbd5af9b1cbb8d741a",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log": "a8f68d8ac400dbfd4366c47bc5e05643eb197562eaa00df4638545a2664635ea"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A25",
+    "mode": "plugin_only",
+    "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A25",
+   "mode": "mirror",
+   "status": "PASS",
+   "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+   "command": "node tests/libra_phase_d_a25_correction_test.cjs",
+   "exit_code": 0,
+   "observed": "Three domains are corrected through the existing Correction journal in all three storage modes: a taste (preferences) and a boundary on separate character targets, and a promise (narrative thread). Each is applied, suspended (the original value returns and no active provenance remains), reactivated (the corrected value and provenance return), and replayed (rebuild keeps the corrected value; no model call). The canonical record's facts/entities/bindings and its artifactDigest are unchanged, and provenance records the real canonical cursor (memoryId/revision/artifactDigest/turnRange) under policy point_in_time_override, keeping the correction id distinct from the source event it is anchored to.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a25_correction_test.cjs",
+   "test_sha256": "96543d739229a5e1e7dfb12d1d252c4547a4b4e9b34e94cbd5af9b1cbb8d741a",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log": "a8f68d8ac400dbfd4366c47bc5e05643eb197562eaa00df4638545a2664635ea"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A25",
+    "mode": "mirror",
+    "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A25",
+   "mode": "server_only",
+   "status": "PASS",
+   "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+   "command": "node tests/libra_phase_d_a25_correction_test.cjs",
+   "exit_code": 0,
+   "observed": "Three domains are corrected through the existing Correction journal in all three storage modes: a taste (preferences) and a boundary on separate character targets, and a promise (narrative thread). Each is applied, suspended (the original value returns and no active provenance remains), reactivated (the corrected value and provenance return), and replayed (rebuild keeps the corrected value; no model call). The canonical record's facts/entities/bindings and its artifactDigest are unchanged, and provenance records the real canonical cursor (memoryId/revision/artifactDigest/turnRange) under policy point_in_time_override, keeping the correction id distinct from the source event it is anchored to.",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "f651cfcca9a0ae722f9460681439a616f0589a664336f2c44d4eeec6eebb845a",
+   "test_file": "tests/libra_phase_d_a25_correction_test.cjs",
+   "test_sha256": "96543d739229a5e1e7dfb12d1d252c4547a4b4e9b34e94cbd5af9b1cbb8d741a",
+   "evidence_files": [
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/PHASE_D_20260927/a25-correction-resume-20260928.log": "a8f68d8ac400dbfd4366c47bc5e05643eb197562eaa00df4638545a2664635ea"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A25",
+    "mode": "server_only",
+    "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+    "assertion_result": true
+   },
+   "limitations": []
+  },
+  {
+   "case_id": "A04L",
+   "mode": "plugin_only",
+   "status": "PASS",
+   "action": "로컬 durable commit 뒤 pluginStorage 쓰기 실패를 걸고 같은 작업을 한 번 재시도한다.",
+   "command": "node tests/libra_phase_d_a04l_a06l_local_contract_test.cjs",
+   "exit_code": 0,
+   "observed": "A local pluginStorage write failed after the durable canonical commit. The committed v5 memory stayed committed (no rollback), the State stayed at turn 5 before the retry, one retry recovered it to turn 10, a second retry applied nothing, and the provider was not re-run (2 calls).",
+   "source_file": "plugins/LIBRA.js",
+   "source_sha256": "71477c001238bf22841085c9fc1bc27b467b3697856cd71a39100ec24f9b3cd8",
+   "test_file": "tests/libra_phase_d_a04l_a06l_local_contract_test.cjs",
+   "test_sha256": "29f6ea6431d8e4581936f922a31751505136c5f5e3c28a20135c3a702c13e0e5",
+   "evidence_files": [
+    "review_artifacts/skill-audit-repair-20260928/reporter/a04l-a06l-final-20260928.log"
+   ],
+   "evidence_file_sha256": {
+    "review_artifacts/skill-audit-repair-20260928/reporter/a04l-a06l-final-20260928.log": "2171387ac4a277fc284745f00c76d62fef7d3456a84429bc9191aa920020c77a"
+   },
+   "evidence_marker": {
+    "schema": "acceptance.action_result.v1",
+    "case_id": "A04L",
+    "mode": "plugin_only",
+    "action": "로컬 durable commit 뒤 pluginStorage 쓰기 실패를 걸고 같은 작업을 한 번 재시도한다.",
+    "assertion_result": true
+   },
+   "limitations": [
+    "Controlled provider and fixture runtime; live RisuAI host and external model not exercised."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,3 @@
+'use strict';
+const assert=require('node:assert/strict');const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
+(async()=>{for(const mode of ['off','verify','retry_once']){const r=await createHayakuRuntime({failedRecoveryAutomation:mode});try{assert.equal(r.hayaku.recovery.failedAnalysis.automationStatus().mode,'off');assert.equal(r.hayaku._test.scheduleFailedAutoRecovery(0),false);const result=await r.hayaku._test.runFailedAutoRecovery();assert.equal(result.reason,'automatic_recovery_disabled');assert.equal(r.llmCalls.length,0);}finally{await r.dispose();}}console.log('PASS retired worker never schedules or pays, including legacy retry_once');})().catch(e=>{console.error(e);process.exitCode=1;});

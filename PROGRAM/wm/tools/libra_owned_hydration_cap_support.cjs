@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict');const base=require('./libra_owned_hydration_test_adapter.cjs');
+const CAP=4194304,COUNT=4096,OLD_CAP=2097152;
+function instrumentCap(code){
+ const ast=require('acorn').parse(code,{ecmaVersion:'latest'}),nodes=[],pending=[ast],edits=[];while(pending.length){const n=pending.pop();if(!n||typeof n!=='object')continue;nodes.push(n);for(const v of Object.values(n))if(Array.isArray(v))pending.push(...v);else if(v&&typeof v==='object')pending.push(v)}
+ const sources=nodes.find(n=>n.type==='VariableDeclarator'&&n.id?.name==='validationSources');assert.ok(sources);const sourceReturn=sources.init.callee.body.body.find(n=>n.type==='ReturnStatement');assert.ok(sourceReturn);edits.push({at:sourceReturn.start,text:'globalThis.__CAP_SOURCE_COUNTS__=()=>({scopes:scopes.size,owners:[...scopes.values()].reduce((n,s)=>n+s.owners.size,0),writes:[...scopes.values()].reduce((n,s)=>n+s.writes,0)});'});
+ const collected=nodes.find(n=>n.type==='VariableDeclarator'&&n.id?.name==='collected'&&n.init?.type==='ObjectExpression');assert.ok(collected,'actual private collector declaration');edits.push({at:collected.init.start,text:'(globalThis.__CAP_COUNTS__.collectors++,'},{at:collected.init.end,text:')'});
+ const core=nodes.find(n=>n.type==='VariableDeclarator'&&n.id?.name==='inspectHydrationCore');assert.ok(core);
+ for(const n of nodes)if(n.type==='CallExpression'&&n.callee?.property?.name==='encode'&&n.callee.object?.type==='NewExpression'&&n.callee.object.callee.name==='TextEncoder'&&n.arguments[0]?.name==='raw')edits.push({at:n.start,text:'(globalThis.__CAP_COUNTS__.encodes++,'},{at:n.end,text:')'});
+ const allocations=nodes.filter(n=>n.start>core.start&&n.end<core.end&&n.type==='CallExpression'&&n.callee?.property?.name==='push'&&n.callee.object?.property?.name==='facts');assert.equal(allocations.length,1);edits.push({at:allocations[0].start,text:'(globalThis.__CAP_COUNTS__.facts++,'},{at:allocations[0].end,text:')'});
+ const integrity=nodes.find(n=>n.type==='VariableDeclaration'&&n.start>core.start&&n.end<core.end&&n.declarations.some(d=>d.id?.name==='integrity'));assert.ok(integrity);edits.push({at:integrity.start,text:'if(globalThis.__CAP_CAPTURE_ROOTS__&&record&&typeof record==="object")globalThis.__CAP_ROOT_REFS__.push(new WeakRef(record));'});
+ for(const e of edits.sort((a,b)=>b.at-a.at))code=code.slice(0,e.at)+e.text+code.slice(e.at);
+ return 'globalThis.__CAP_COUNTS__={collectors:0,facts:0,encodes:0};globalThis.__CAP_ROOT_REFS__=[];globalThis.__CAP_CAPTURE_ROOTS__=false;\n'+code;
+}
+async function fixture(options={}){const r=await base.fixture({...options,transformCode:instrumentCap});r.capCounts=r.context.__CAP_COUNTS__;r.resetCapCounts=()=>{r.resetCounts();r.capCounts.collectors=0;r.capCounts.facts=0;r.capCounts.encodes=0};return r}
+function shortIdentity(r){r.char.id='a';r.chat.id='b';r.chat.bindedPersona='c';r.scope=r.d.scopeKeyFor(r.char,r.chat);r.runtime=r.context.__HYDRATION_RUNTIME_SCOPE__(r.chat,r.char);r.key=r.d.storageKeyFor(r.scope);r.admission={scopeKey:r.scope,runtimeScopeKey:r.runtime,resetGeneration:0};return r}
+function entries(r,count,dense=false){const fields={scopeKey:r.runtime,scopeId:r.runtime,runtimeScopeId:r.runtime,chatId:r.chat.id,chat_id:r.chat.id};const content=dense?JSON.stringify({...fields,meta:{...fields,engineState:{...fields}},engineState:{...fields}}):'plain';return Array.from({length:count},(_,i)=>({key:'lmai_memory::'+i,comment:'lmai_memory',content}))}
+function exactRaw(r,rows,bytes,kind='ascii',extra={}){const skeleton=JSON.stringify({scopeKey:r.scope,resetGeneration:0,entries:rows,...extra,padding:''}),remaining=bytes-Buffer.byteLength(skeleton);assert.ok(remaining>=0,'fixture itself must fit '+bytes);const piece={ascii:'a',bmp:'한',pair:'😀',literal_lone:'\ud800',escaped_lone:'\\ud800'}[kind];assert.ok(piece);const width=Buffer.byteLength(piece),padding=piece.repeat(Math.floor(remaining/width))+'a'.repeat(remaining%width);const raw=skeleton.replace('"padding":""','"padding":"'+padding+'"');assert.equal(Buffer.byteLength(raw),bytes);assert.equal(JSON.parse(raw).entries.length,rows.length);return raw}
+function putRaw(r,raw){r.raw=raw;r.store.set(r.key,raw);return raw}
+function hash(value){let h=0;for(let i=0;i<value.length;i++)h=((h<<5)-h+value.charCodeAt(i))|0;return Math.abs(h).toString(36)}
+const tick=()=>new Promise(resolve=>setImmediate(resolve));const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}};
+async function collect(){for(let i=0;i<12;i++){await tick();global.gc()}}
+module.exports={CAP,COUNT,OLD_CAP,instrumentCap,fixture,shortIdentity,entries,exactRaw,putRaw,hash,tick,deferred,collect,plain:base.plain};

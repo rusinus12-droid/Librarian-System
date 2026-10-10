@@ -1,0 +1,15 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(require.resolve('../server/server.cjs'),'utf8');
+const start=source.indexOf("      if (request.method === 'POST' && url.pathname === '/v1/flashback/scope-health') {");
+assert(start>0,'authenticated read-only Flashback route must be registered');
+const end=source.indexOf('\n      if (',start+10),handler=source.slice(start,end);
+assert(source.indexOf('const principal = computeRoute ? authenticateCompute(request) : authenticate(request);')<start);
+assert(source.indexOf("const flashbackScopeHealth = require('./core/flashback-scope-health.cjs')")>0);
+assert(source.includes("'flashback-scope-health.v1'"));
+(async()=>{let reads=0,inspections=0;const env={request:{method:'POST',headers:{'x-memory-suite-reset-epochs':'{}','x-memory-suite-data-instance':'A'.repeat(32)}},response:{},url:{pathname:'/v1/flashback/scope-health'},principal:{namespace:'flashback',roles:['owner']},readBody:async(req,limit)=>{reads++;assert.equal(limit,8192);return {scopeKey:'s'}},assertNamespaceAccess:(p,n,a)=>{assert.equal(n,'flashback');assert.equal(a,'read')},namespaceReset:{allows:()=>true},flashbackScopeHealth:async(p,b)=>{inspections++;assert.equal(p.namespace,'flashback');return {readOnly:true}},sendJson:(req,res,status,body)=>({status,body})};
+ const ctx=vm.createContext(env),call=vm.runInContext('(async()=>{'+handler+'})',ctx);assert.equal((await call()).body.result.readOnly,true);assert.equal(inspections,1);
+ ctx.namespaceReset.allows=()=>false;assert.equal((await call()).status,409);assert.equal(inspections,1);
+ ctx.principal={namespace:'libra',roles:['owner']};ctx.assertNamespaceAccess=()=>{throw Error('forbidden')};await assert.rejects(call,/forbidden/);assert.equal(inspections,1);
+ console.log(JSON.stringify({test:'flashback_server_health_route',passed:3,offlineHandler:true,liveRequests:0}));
+})().catch(e=>{console.error(e);process.exitCode=1});

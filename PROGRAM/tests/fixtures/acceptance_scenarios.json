@@ -1,0 +1,2105 @@
+{
+ "schema": "documentation.acceptance_manifest.v1",
+ "status": "SPECIFICATION_NOT_EXECUTED",
+ "cases": [
+  {
+   "id": "A01",
+   "title": "기준선·제품 바이트와 테스트 해석",
+   "tasks": [
+    "T00"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "현재 Source ZIP과 제품 파일 해시를 고정하고 기존 18개 테스트를 준비한다.",
+   "action": "syntax 및 기준선 runner를 실행하고 테스트의 실제 기대값과 종료 코드를 읽는다.",
+   "expected": "해시가 기준선과 일치한다. 기존 unsupported 기대값과 정상 기능 성공을 따로 보고한다.",
+   "forbidden": "기존 테스트 이름 또는 최종 PASS 문구만으로 새 복원·완전 parity를 인증하지 않는다.",
+   "verification_layer": "baseline / source",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A02",
+   "title": "State cutoff·재개 3모드 성공",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "세 모드 각각 같은 두 개 이상의 완료 5턴 정본을 저장한다.",
+   "action": "공개 rollbackWorldManagerState를 0과 완료 구간 경계에서 호출하고 setWorldManagerWorldline({})로 재개한다.",
+   "expected": "세 모드의 공개 성공 결과와 실제 authority의 Head가 같다. 정본 및 source 바이트는 불변이다.",
+   "forbidden": "서버 모드의 UNIFIED_BACKEND_NOT_SUPPORTED를 통과 조건으로 유지하거나 로컬 값만 검사하지 않는다.",
+   "verification_layer": "runtime / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A03",
+   "title": "지원하지 않는 임의 논리 fork의 일관성",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "현재 unified main 및 native branch 정책을 적용한다.",
+   "action": "새 이름의 임의 논리 worldline fork를 요청한다.",
+   "expected": "기존 native-branch 유도 계약대로 세 모드가 같은 명시 오류를 반환하고 데이터는 변경하지 않는다.",
+   "forbidden": "새 복원 기능이라는 이유로 named logical fork를 하나의 모드에만 추가하지 않는다.",
+   "verification_layer": "runtime / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A04",
+   "title": "서버 commit 성공·응답 손실",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "서버가 조건부 batch를 commit한 직후 HTTP 응답을 잃는 fault를 건다.",
+   "action": "같은 operation을 재확인·재시도하고 서버 receipt와 DB를 되읽는다.",
+   "expected": "한 번만 적용되며 receipt로 결과가 결정된다. 상태·사실·확인 횟수가 중복되지 않는다.",
+   "forbidden": "응답 실패를 commit 실패로 간주해 이미 저장된 정본을 되돌리거나 중복 적용하지 않는다.",
+   "verification_layer": "fault / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개.",
+   "mode_applicability": {
+    "plugin_only": "not_applicable",
+    "mirror": "applicable",
+    "server_only": "applicable"
+   },
+   "mode_applicability_note": "이 action은 서버 conditional batch commit 직후의 HTTP 응답 손실과 서버 receipt/DB 되읽기를 요구한다. plugin_only에는 서버 경계가 없고 SDK의 conditional batch도 plugin_only를 거부하므로(StorageClient.libra.source.js:5724-5737) 이 모드에는 해당 동작이 존재하지 않는다. 미실행이 아니라 해당 없음이다."
+  },
+  {
+   "id": "A05",
+   "title": "동시 교정·ABA·scope 전환",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "후보 State 계산 후 외부 교정 또는 A→B→A 쓰기, scope/namespace 전환을 삽입한다.",
+   "action": "원래 후보를 commit하려 시도한다.",
+   "expected": "읽기 집합의 revision과 scope 검증이 오래된 후보를 차단한다. 마지막 유효 상태를 보존한다.",
+   "forbidden": "최종 값이 우연히 같다는 이유로 ABA를 무시하거나 다른 chat에 저장하지 않는다.",
+   "verification_layer": "fault / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A06",
+   "title": "mirror 부분 실패·server_only 장애",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "mirror의 서버 commit 후 로컬 적용 실패, server_only 서버 중단을 각각 만든다.",
+   "action": "저장·재접속·복구를 수행하며 양쪽 raw 값을 확인한다.",
+   "expected": "mirror는 기존 불일치/복구 계약을 명시하고 정상화한다. server_only는 명시 실패하며 hidden local authority가 없다.",
+   "forbidden": "일부 저장 성공을 전체 성공 toast로 표시하거나 서버 정본을 로컬 사본으로 몰래 대체하지 않는다.",
+   "verification_layer": "fault / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개.",
+   "mode_applicability": {
+    "plugin_only": "not_applicable",
+    "mirror": "applicable",
+    "server_only": "applicable"
+   },
+   "mode_applicability_note": "server_only에서는 서버 중단, mirror에서는 서버 commit 후 로컬 적용 실패를 요구한다. plugin_only는 어느 쪽도 전제하지 않으므로 이 모드에는 해당 동작이 존재하지 않는다. 미실행이 아니라 해당 없음이다."
+  },
+  {
+   "id": "A07",
+   "title": "독립적인 취향 여러 개의 누적",
+   "tasks": [
+    "T04"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "민아가 민트차를 좋아하고 큰 소리를 싫어한다는 서로 다른 명시 발화를 넣는다.",
+   "action": "각 사실을 서로 다른 5턴에서 생성하고 이후 무관한 구간을 처리한다.",
+   "expected": "두 항목이 각 근거와 함께 유지된다. 원문 미언급은 삭제가 아니다.",
+   "forbidden": "마지막 취향으로 전체 프로필을 덮거나 행동 한 번을 취향으로 추정하지 않는다.",
+   "verification_layer": "deterministic / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A08",
+   "title": "대상·조건·시간별 경계",
+   "tasks": [
+    "T04"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "민아가 지호에게만 오늘 자신의 편지를 열지 말라고 명시한다.",
+   "action": "다른 사람·다른 물건·다음 날의 별도 상황을 분석하고 조회한다.",
+   "expected": "경계는 해당 주체·대상·조건·시간을 보존한다. 적용 범위를 벗어나면 자동 일반화하지 않는다.",
+   "forbidden": "일회적 동의/거절을 영구 취향이나 모든 관계의 권한으로 바꾸지 않는다.",
+   "verification_layer": "deterministic / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A09",
+   "title": "정확한 한 항목 변경·철회",
+   "tasks": [
+    "T04"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "기존 취향 또는 경계 두 개를 저장하고 그중 하나의 변경을 직접 발화한다.",
+   "action": "replace/remove를 적용하고 정본 이력과 Head를 읽는다.",
+   "expected": "지정한 항목만 바뀌고 다른 항목은 보존된다. 과거 값과 변경 근거가 조회된다.",
+   "forbidden": "유사 문자열 전체 삭제·배열 전체 clear·과거 정본 덮어쓰기를 하지 않는다.",
+   "verification_layer": "runtime / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A10",
+   "title": "재확인·재시도·Replay의 멱등성",
+   "tasks": [
+    "T04",
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "같은 취향과 같은 열린 과제를 독립적인 뒤 구간에서 다시 확인한다.",
+   "action": "동일 작업 재시도, 재로드, 두 번 Replay를 수행한다.",
+   "expected": "변경 provenance는 원래 기록을 가리키고 review frontier만 전진한다. 실제 독립 확인 근거와 재실행을 구분한다.",
+   "forbidden": "재생 때 reinforcement를 증가시키거나 confidence를 자동 상승시키지 않는다.",
+   "verification_layer": "runtime / provenance",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A11",
+   "title": "같은 제목의 다른 약속",
+   "tasks": [
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "같은 사람이 다른 수신자 또는 다른 편지에 대해 같은 제목의 약속 두 개를 한다.",
+   "action": "한 편지만 전달한 구간을 처리한다.",
+   "expected": "해당 약속만 종결되고 다른 약속은 열린다. 동일 제목은 동일성의 충분조건이 아니다.",
+   "forbidden": "제목·임베딩 유사도만으로 두 약속을 합치지 않는다.",
+   "verification_layer": "runtime / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A12",
+   "title": "표현이 바뀐 같은 약속",
+   "tasks": [
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "T5의 약속을 T40에서 다른 표현으로 분명히 재지칭한다.",
+   "action": "관련 후보 alias를 제공해 새 원문과의 연결을 제안·검증한다.",
+   "expected": "검증 가능한 경우 기존 Registry/정본 참조로 같은 약속을 유지한다. 불확실하면 연결만 pending이다.",
+   "forbidden": "새 표현이라는 이유로 무조건 복제하거나 이름만 같다고 무조건 합치지 않는다.",
+   "verification_layer": "runtime / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A13",
+   "title": "이행·파기·취소·장애의 구분",
+   "tasks": [
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "같은 초기 약속에서 네 개의 독립 세션/분기를 만들고 각기 이행·파기·합의 취소·장애를 기록한다.",
+   "action": "상태 갱신·이력·리콜·GUI를 비교한다.",
+   "expected": "이행/파기/취소는 근거 있는 서로 다른 종결 사유로 유지한다. 장애만 있을 때는 open/blocked이다.",
+   "forbidden": "broken을 성공적 이행처럼 표시하거나 장애를 종결로 처리하지 않는다.",
+   "verification_layer": "runtime / semantic gold / GUI",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A14",
+   "title": "재개와 비슷한 새 약속",
+   "tasks": [
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "종결된 약속에 대해 명시적 재개가 있는 경우와 비슷한 새 약속을 하는 경우를 만든다.",
+   "action": "reopen 제안을 검증한다.",
+   "expected": "재개는 기존 역사와 연결되고 새 약속은 별개다. 후보에는 필요한 종결 이력도 검증된 범위에서 조회할 수 있다.",
+   "forbidden": "현재 Head에서 종결 항목이 빠졌다는 이유로 재개를 항상 새 항목으로 만들지 않는다.",
+   "verification_layer": "runtime / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A15",
+   "title": "위조·미래·순환·다른 세계선 참조",
+   "tasks": [
+    "T03",
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "존재하지 않는 alias, 미래 cursor, 비활성 revision, 자기/순환 링크, 형제 세계선 target을 섞는다.",
+   "action": "정규화와 link 검증을 수행한다.",
+   "expected": "잘못된 연결만 격리되고 관련 상태는 승격되지 않는다. 독립적으로 유효한 사건은 보존한다.",
+   "forbidden": "문자열 모양만 맞는 참조를 수용하거나 다른 revision으로 자동 리다이렉트하지 않는다.",
+   "verification_layer": "validator / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A16",
+   "title": "후보 참고자료 예산 고갈",
+   "tasks": [
+    "T05"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "긴 정확한 5 U+A와 많은 후보를 제공해 optional 참고자료가 잘리도록 한다.",
+   "action": "기존 prompt pressure 경로를 실행한다.",
+   "expected": "원문 10행은 온전히 유지되고 생략/coverage가 기록된다. 제공되지 않은 후보를 모델이 선택하면 수용하지 않는다.",
+   "forbidden": "원문을 잘라 후보를 늘리거나 후보 부재를 기존 약속 부재로 확정하지 않는다.",
+   "verification_layer": "prompt / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A17",
+   "title": "105턴 장기 약속 전체 흐름",
+   "tasks": [
+    "T05",
+    "T07"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "LETTER-LIFECYCLE의 모든 21개 5턴 구간을 채운다.",
+   "action": "T5 생성→T40 재확인→T105 이행→현재 질문을 실행한다.",
+   "expected": "중간 무언급에도 약속은 유지되다가 정확히 종결된다. 정본·Head·이력·현재 답변이 일치한다.",
+   "forbidden": "5→40→105로 중간 prefix를 생략하거나 오래된 약속을 TTL로 지우지 않는다.",
+   "verification_layer": "runtime / semantic gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A18",
+   "title": "당시 사실과 현재 사실",
+   "tasks": [
+    "T07"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "T5 약속, T105 이행이 모두 있는 상태다.",
+   "action": "“T5 때 무엇을 약속했나?”와 “지금도 해야 하나?”를 각각 조회한다.",
+   "expected": "과거 질문에는 당시 약속을, 현재 질문에는 이행을 반영한 결론을 근거와 함께 제공한다.",
+   "forbidden": "미래 이행으로 과거 약속을 지우거나 과거 상태를 현재로 주입하지 않는다.",
+   "verification_layer": "recall / response",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A19",
+   "title": "작은 주입 예산의 후속 반전",
+   "tasks": [
+    "T07"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "과거 값과 먼 후속 변경을 같은 관련 사실 집합으로 선택한다.",
+   "action": "주입 예산을 두 사실 묶음보다 작게 줄인다.",
+   "expected": "최신 완결 근거를 우선하거나 현재성 미확인을 명시한다. 과거 값만 현재처럼 남지 않는다.",
+   "forbidden": "앞쪽 옛 문장만 자르고 종결·반전 근거를 버리지 않는다.",
+   "verification_layer": "recall / budget",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A20",
+   "title": "선택 인덱스 OFF·cold cache·동료 없음",
+   "tasks": [
+    "T07",
+    "T11"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "ELI OFF/ON, 캐시 초기화, dense embedding 없음, 다른 memory owner 미설치 조건을 준비한다.",
+   "action": "동일 정본으로 핵심 현재성 및 생명주기 질문을 조회한다.",
+   "expected": "기본 lexical/정본 경로로 같은 의미가 성립한다. 선택 가속이 없다고 핵심 기능이 사라지지 않는다.",
+   "forbidden": "서버·ELI·Flashback·HAYAKU가 있어야만 종결을 인식하게 만들지 않는다.",
+   "verification_layer": "runtime / configuration",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A21",
+   "title": "오래된 카탈로그·불완전 coverage",
+   "tasks": [
+    "T07"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "카탈로그 후속 링크 일부를 제거하거나 과거 revision에 고정하고 읽기 예산을 소진한다.",
+   "action": "원본 검증과 closure fallback을 실행한다.",
+   "expected": "검증 가능한 현재성만 말하고 끝내 확인 못한 부분은 last-known/unknown으로 표시한다. 미확인 영역을 완료로 찍지 않는다.",
+   "forbidden": "빈 인덱스 결과를 후속 변경 없음의 증거로 취급하지 않는다.",
+   "verification_layer": "fault / recall",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A22",
+   "title": "전언·가정·상충하는 상태",
+   "tasks": [
+    "T03",
+    "T07"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "“전달했다고 들었다”, “전달했다면”, 서로 모순되는 동시 진술을 넣는다.",
+   "action": "기억 생성과 현재 상태/후속 closure를 실행한다.",
+   "expected": "전언·가정·불확실성은 그대로 남고 확인되지 않은 종결을 현재 값으로 채택하지 않는다.",
+   "forbidden": "나중 턴이라는 이유만으로 모든 불확실 사실을 우선하지 않는다.",
+   "verification_layer": "semantic gold / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A23",
+   "title": "원문 수정 auto/off 경계",
+   "tasks": [
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "동일 message ID의 텍스트만 바꾸고 기존 설정 auto와 off를 각각 준비한다.",
+   "action": "기존 원문 수정 처리 후 연결·정본 revision·State를 읽는다.",
+   "expected": "현행 설정과 권한 경계를 따른다. 채택된 새 revision만 활성 근거로 쓰고 기존 바이트는 보존한다.",
+   "forbidden": "옛 동의창을 새로 부활시키거나 off에서도 몰래 재분석하지 않는다.",
+   "verification_layer": "runtime / source revision",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A24",
+   "title": "리롤·대상 revision 무효화",
+   "tasks": [
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "이행 사실 또는 선행 약속을 가진 assistant 응답을 리롤한다.",
+   "action": "활성 참조 교체 후 State와 관련 이력을 재생한다.",
+   "expected": "살아 있는 근거만 현재에 반영되고 dangling link는 pending이다. 독립적인 새 사건은 계속 보존된다.",
+   "forbidden": "옛 링크를 새 revision으로 자동 치환하거나 이전 미래를 활성화하지 않는다.",
+   "verification_layer": "runtime / revision",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A25",
+   "title": "직접 교정·중단·재활성화",
+   "tasks": [
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "취향/경계/약속에 기존 Correction journal 방식의 사용자 교정을 건다.",
+   "action": "교정 중단·재활성화·Replay 후 현재 값과 provenance를 확인한다.",
+   "expected": "세 모드에서 같은 교정 결과이며 교정이 과거 원문 사건을 발생시킨 것처럼 기록되지 않는다.",
+   "forbidden": "GUI만 수정하고 journal/되읽기를 생략하거나 정본을 교정으로 덮지 않는다.",
+   "verification_layer": "runtime / real storage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A26",
+   "title": "native branch의 부모·형제 불변",
+   "tasks": [
+    "T01",
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "약속 이행 전 시점에서 native branch를 만들고 부모/형제 snapshot을 저장한다.",
+   "action": "자식만 약속을 파기·수정·Replay한다.",
+   "expected": "허용 prefix만 승계하고 자식의 미래만 바뀐다. 부모·형제 source/canonical 바이트가 같다.",
+   "forbidden": "분기 뒤 부모 미래를 그대로 참조하거나 원본 세션을 이동·삭제하지 않는다.",
+   "verification_layer": "runtime / branch",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A27",
+   "title": "세션 재시작의 동일 턴 번호",
+   "tasks": [
+    "T06",
+    "T10"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "승계된 이전 세션 T5와 새 세션 T5에 서로 다른 약속을 기록한다.",
+   "action": "history·recall·종결 연결·portable 복원을 수행한다.",
+   "expected": "sessionEpoch·origin cursor로 구분되고 bare turn 번호 때문에 교차 연결되지 않는다.",
+   "forbidden": "turn=5만으로 검색·중복 제거·교정 대상을 결정하지 않는다.",
+   "verification_layer": "runtime / lineage",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A28",
+   "title": "재생 취소·재시작·구간 누락",
+   "tasks": [
+    "T06"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "많은 연속 구간, 중간 missing prefix, 진행 중 cancel 조건을 각각 만든다.",
+   "action": "Replay 취소 후 재시작하고 다시 replay한다.",
+   "expected": "마지막 유효 상태 또는 명시 pending을 유지한다. 완성된 incremental과 replay의 의미가 같고 LLM 호출은 0이다.",
+   "forbidden": "반쪽 Head를 ready로 공개하거나 prefix hole을 빈 사실로 통과시키지 않는다.",
+   "verification_layer": "fault / replay",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A29",
+   "title": "U+A 주체·직접 근거",
+   "tasks": [
+    "T03",
+    "T11"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "user의 수행 행동, assistant의 타인 행동, 단순 user 요청을 같은 구간에 넣는다.",
+   "action": "단일 Librarian 분석 산출물의 fact와 quote를 검증한다.",
+   "expected": "주체가 보존되고 요청은 완료 사건으로 승격되지 않는다. user 행도 유효한 근거로 남는다.",
+   "forbidden": "World Maker의 assistant-only 정책을 가져오지 않는다.",
+   "verification_layer": "semantic gold / validator",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A30",
+   "title": "불량 선택 필드와 유효 기억의 부분 수용",
+   "tasks": [
+    "T03"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "유효한 사건 하나와 잘못된 optional preference/link를 함께 반환한다.",
+   "action": "normalizer·validator·저장·State를 실행한다.",
+   "expected": "유효한 기억은 저장된다. 불량 항목/연결과 해당 상태만 격리한다.",
+   "forbidden": "여덟 분류를 다 채워야 저장되도록 만들거나 일부 오류로 구간 전체를 폐기하지 않는다.",
+   "verification_layer": "validator / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A31",
+   "title": "구형·신형 혼합·알 수 없는 버전",
+   "tasks": [
+    "T03",
+    "T10"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "고정 v4 bytes와 채택된 신형 schema, 미지원 미래 schema를 준비한다.",
+   "action": "read/render/replay/catalog/history/transfer 소비 경로를 실행한다.",
+   "expected": "v4 bytes/digest가 변하지 않고 신형은 명시 dispatch된다. 미지원 writer가 데이터 손실 없이 차단된다.",
+   "forbidden": "상수 하나 변경으로 구형 전체를 legacy 오류로 몰거나 조용히 필드를 삭제하지 않는다.",
+   "verification_layer": "schema / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A32",
+   "title": "프로필 용량과 미해결 항목의 오래됨",
+   "tasks": [
+    "T04"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "같은 인물의 독립 항목 32개 및 그 이상, 매우 오래된 열린 약속을 준비한다.",
+   "action": "추가 항목 수용과 paging·현재 상태 조회를 실행한다.",
+   "expected": "기억은 보존되고 용량 문제는 명시 pending/설계된 투영으로 처리한다. 열린 약속은 오래됨만으로 종료되지 않는다.",
+   "forbidden": "상한 초과나 TTL 때문에 정본을 삭제하거나 완료처럼 숨기지 않는다.",
+   "verification_layer": "runtime / capacity",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A33",
+   "title": "기존 GUI 전체 연결",
+   "tasks": [
+    "T08"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "기존 인물/서사/기억 상세 화면을 실제 DOM harness로 연다.",
+   "action": "보기→교정→저장→재로드→이력→근거 열기를 수행한다.",
+   "expected": "화면과 public API와 실제 저장 결과가 일치한다. 모드별 메뉴 기능 차이가 없다.",
+   "forbidden": "버튼 문자열 존재 또는 screenshot만으로 연결을 증명하지 않는다.",
+   "verification_layer": "DOM / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A34",
+   "title": "GUI 실패·취소 피드백",
+   "tasks": [
+    "T08"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "쓰기 실패·readback mismatch·취소·중복 클릭을 주입한다.",
+   "action": "기존 GUI 저장/해결 작업을 실행한다.",
+   "expected": "성공은 실제 durable 검증 뒤에만 표시된다. 중복 클릭이 중복 mutation을 만들지 않는다.",
+   "forbidden": "가짜 success toast·비활성 취소 버튼·재로드 후 값 소실을 허용하지 않는다.",
+   "verification_layer": "DOM / fault",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A35",
+   "title": "Classic·Planner·SGA의 기존 권위",
+   "tasks": [
+    "T08"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "동일 정본과 종결된 약속을 각 기존 응답 경로에 준다.",
+   "action": "최종 주입/계획과 side effects를 검사한다.",
+   "expected": "기존 각 모드 형식을 유지하며 현재성은 일치한다. 계획과 작성 결과를 완료 사건으로 저장하지 않는다.",
+   "forbidden": "Classic에 Head prose를 정본처럼 주입하거나 Planner를 두 번째 memory writer로 만들지 않는다.",
+   "verification_layer": "runtime / response",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A36",
+   "title": "관계 이정표와 방향성",
+   "tasks": [
+    "T09"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "한쪽 고백만 존재하는 경우와 화해했지만 신뢰가 회복되지 않은 경우를 만든다.",
+   "action": "event/relationship/history를 연결해 표시한다.",
+   "expected": "실제 고백·화해 사건과 A→B/B→A 현재 관계를 구분한다. 같은 사건을 여러 증거로 세지 않는다.",
+   "forbidden": "고백을 자동 연애·상호 동의·완전 신뢰로 승격하지 않는다.",
+   "verification_layer": "semantic gold / history",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A37",
+   "title": "상징 연결과 평범한 반복 소품",
+   "tasks": [
+    "T09"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "약속의 증표라고 직접 설명된 반지와 무관하게 반복 등장한 반지를 비교한다.",
+   "action": "동일 단어·다른 object·associate link 검증을 수행한다.",
+   "expected": "명시적인 의미 연결만 보존·조회한다. 이름 같은 다른 물건은 구분한다.",
+   "forbidden": "키워드 빈도로 상징·약속·인과관계를 생성하지 않는다.",
+   "verification_layer": "semantic gold / recall",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A38",
+   "title": "여러 구간의 핵심 에피소드",
+   "tasks": [
+    "T09"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "사건 하나의 시작·후속 결과가 여러 canonical 묶음에 분포한다.",
+   "action": "이력/에피소드 읽기와 일부 source revision 교체를 수행한다.",
+   "expected": "근거가 닫힌 참조 집합을 통해 읽고 바뀐 revision을 반영한다. 새 summary authority는 생기지 않는다.",
+   "forbidden": "새 arc/saga DB를 만들거나 부분 참조를 완전한 에피소드로 표시하지 않는다.",
+   "verification_layer": "runtime / history",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A39",
+   "title": "3×3 portable 전송과 cross-chat",
+   "tasks": [
+    "T10"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "v4/신형 혼합 기억과 선행 링크가 있는 세션을 각 저장모드에서 export한다.",
+   "action": "세 수신 모드 각각으로 복원하고 cross-chat 경로도 검증한다.",
+   "expected": "9개 mode pair에서 같은 의미와 유효 참조 closure를 유지한다. remap/origin metadata와 epoch가 정확하다.",
+   "forbidden": "키를 문자열로 치환해 원본 정본 bytes를 고치거나 특정 조합을 생략하지 않는다.",
+   "verification_layer": "real storage / transfer",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A40",
+   "title": "누락·변조된 복원 묶음",
+   "tasks": [
+    "T10"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "link target 누락·digest 변조·잘못된 부모 참조·restore 도중 실패를 만든다.",
+   "action": "validate/restore/재시작을 실행한다.",
+   "expected": "잘못된 묶음은 정상 current로 활성화되지 않는다. 기존 유효 데이터가 보존되고 누락 대상을 보고한다.",
+   "forbidden": "dangling target을 무시하고 성공하거나 재분석으로 사용자 몰래 채우지 않는다.",
+   "verification_layer": "fault / transfer",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A41",
+   "title": "업그레이드·다운그레이드·과거 데이터",
+   "tasks": [
+    "T10"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "기존 v4 또는 World Maker 데이터가 존재하는 환경과 새 writer 기록을 준비한다.",
+   "action": "업그레이드·GUI 열기·재시작 및 구버전 실행 시도를 한다.",
+   "expected": "자동 과거 reanalysis/import가 없다. 신형을 못 읽는 writer는 안전하게 차단하고 이미 생성된 데이터를 보존한다.",
+   "forbidden": "옛 lmai_rp_longterm을 근거 없이 current canon으로 수입하거나 신형을 삭제해 downgrade하지 않는다.",
+   "verification_layer": "runtime / migration",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A42",
+   "title": "호출·예산·긴 작업 반응성",
+   "tasks": [
+    "T11"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "동일 장비에 100/1000/10000 canonical 묶음 workload를 만든다. 지원규모 선언은 아니다.",
+   "action": "정상 분석·실패 복구·cold/warm recall·replay·cancel의 호출/bytes/지연을 측정한다.",
+   "expected": "정상 별도 분석 호출 0, 원문 삭제 0, 총예산 자동 증가 0. 측정된 D05 허용수치와 취소 경계를 충족한다.",
+   "forbidden": "임의 개선율을 보고하거나 성능을 맞추려고 특정 모드의 후보·기억 기능을 줄이지 않는다.",
+   "verification_layer": "benchmark / runtime",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A43",
+   "title": "실제 모델의 의미 품질",
+   "tasks": [
+    "T11"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "고정 gold transcript·기대 사실·금지 사실을 준비하고 provider/model/prompt 설정을 고정한다.",
+   "action": "기준선과 변경본을 동일 조건으로 여러 번 실행하고 독립적으로 판정한다.",
+   "expected": "추출 누락·오탐·다른 약속 종결·근거 정확도·unknown 보존·비용을 각각 보고한다. 실패가 있으면 예시와 빈도를 남긴다.",
+   "forbidden": "stub artifact 통과를 실제 모델 정확도로 보고하거나 모델 변경 효과를 통합 효과로 오인하지 않는다.",
+   "verification_layer": "live model / blind gold",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A44",
+   "title": "실제 Risu·독립 설치·배포본",
+   "tasks": [
+    "T11"
+   ],
+   "modes": [
+    "plugin_only",
+    "mirror",
+    "server_only"
+   ],
+   "setup": "실제 대상 RisuAI 버전과 단독/동료 설치, 세 저장모드, Source/사용자 배포본을 고정한다.",
+   "action": "장기 흐름·source edit·reroll·branch·메뉴·reload·cancel을 조작하고 SDK 및 전체 회귀를 실행한다.",
+   "expected": "모든 지원 조합의 기능·화면·근거가 같고 테스트 범위·OS·호스트·exit 코드가 기록된다. 소스와 배포본이 일치한다.",
+   "forbidden": "VM 성공만으로 live-host나 전체714+ 회귀를 통과했다고 표현하지 않는다.",
+   "verification_layer": "live host / release",
+   "status": "NOT_RUN",
+   "status_note": "복원 구현 후 실행할 신규 수용 규격. 현재 기준선 실행 결과와 별개."
+  },
+  {
+   "id": "A04L",
+   "title": "로컬 저장 실패·응답 손실(plugin_only 별도 계약)",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only"
+   ],
+   "setup": "로컬 저장소 또는 권위 저장소에 실패를 주입한다.",
+   "action": "로컬 durable commit 뒤 pluginStorage 쓰기 실패를 걸고 같은 작업을 한 번 재시도한다.",
+   "expected": "한 번만 적용되며 재시도로 정본·State·History가 중복되지 않는다. 이미 저장된 정본을 되돌리지 않는다.",
+   "forbidden": "일부 저장 성공을 전체 성공으로 표시하거나 서버 정본을 로컬 사본으로 대체하지 않는다.",
+   "verification_layer": "fault / real storage",
+   "status": "NOT_RUN",
+   "derived_from": "A04",
+   "status_note": "A04의 서버 fault 수용을 대체하지 않는 별도 로컬 계약이다. A04/A06의 plugin_only 셀은 해당 없음으로 기록된다."
+  },
+  {
+   "id": "A06L",
+   "title": "권위 저장소 도달 불가(plugin_only/server_only 별도 계약)",
+   "tasks": [
+    "T01"
+   ],
+   "modes": [
+    "plugin_only",
+    "server_only"
+   ],
+   "setup": "로컬 저장소 또는 권위 저장소에 실패를 주입한다.",
+   "action": "권위 저장소에 도달할 수 없게 만든 뒤 저장·재접속·복구를 시도한다.",
+   "expected": "명시적으로 실패하며 hidden local authority가 없다. 로컬 사본이 정본을 몰래 대체하지 않는다.",
+   "forbidden": "일부 저장 성공을 전체 성공으로 표시하거나 서버 정본을 로컬 사본으로 대체하지 않는다.",
+   "verification_layer": "fault / real storage",
+   "status": "NOT_RUN",
+   "derived_from": "A06",
+   "status_note": "A06의 mirror/server_only fault 수용을 대체하지 않는 별도 로컬 계약이다."
+  }
+ ],
+ "gold_transcripts": [
+  {
+   "id": "LETTER-LIFECYCLE",
+   "kind": "synthetic_gold_transcript",
+   "not_product_schema": true,
+   "description": "105 completed U+A, 21 contiguous canonical batches; model gold judgments are independent of runtime reducers.",
+   "turns": [
+    {
+     "turn": 1,
+     "user": {
+      "ref": "t1-u",
+      "text": "두 사람은 기록실에서 대화 1를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t1-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 1에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 2,
+     "user": {
+      "ref": "t2-u",
+      "text": "두 사람은 기록실에서 대화 2를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t2-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 2에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 3,
+     "user": {
+      "ref": "t3-u",
+      "text": "두 사람은 기록실에서 대화 3를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t3-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 3에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 4,
+     "user": {
+      "ref": "t4-u",
+      "text": "두 사람은 기록실에서 대화 4를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t4-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 4에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 5,
+     "user": {
+      "ref": "t5-u",
+      "text": "민아는 지호에게 “붉은 봉투에 든 편지를 네게 직접 전달하겠다고 약속할게.”라고 말했다."
+     },
+     "assistant": {
+      "ref": "t5-a",
+      "text": "지호는 민아의 약속을 들었다. 붉은 봉투는 아직 민아의 서랍에 있다."
+     }
+    },
+    {
+     "turn": 6,
+     "user": {
+      "ref": "t6-u",
+      "text": "두 사람은 기록실에서 대화 6를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t6-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 6에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 7,
+     "user": {
+      "ref": "t7-u",
+      "text": "두 사람은 기록실에서 대화 7를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t7-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 7에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 8,
+     "user": {
+      "ref": "t8-u",
+      "text": "두 사람은 기록실에서 대화 8를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t8-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 8에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 9,
+     "user": {
+      "ref": "t9-u",
+      "text": "두 사람은 기록실에서 대화 9를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t9-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 9에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 10,
+     "user": {
+      "ref": "t10-u",
+      "text": "두 사람은 기록실에서 대화 10를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t10-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 10에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 11,
+     "user": {
+      "ref": "t11-u",
+      "text": "두 사람은 기록실에서 대화 11를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t11-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 11에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 12,
+     "user": {
+      "ref": "t12-u",
+      "text": "두 사람은 기록실에서 대화 12를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t12-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 12에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 13,
+     "user": {
+      "ref": "t13-u",
+      "text": "두 사람은 기록실에서 대화 13를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t13-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 13에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 14,
+     "user": {
+      "ref": "t14-u",
+      "text": "두 사람은 기록실에서 대화 14를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t14-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 14에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 15,
+     "user": {
+      "ref": "t15-u",
+      "text": "두 사람은 기록실에서 대화 15를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t15-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 15에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 16,
+     "user": {
+      "ref": "t16-u",
+      "text": "두 사람은 기록실에서 대화 16를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t16-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 16에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 17,
+     "user": {
+      "ref": "t17-u",
+      "text": "두 사람은 기록실에서 대화 17를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t17-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 17에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 18,
+     "user": {
+      "ref": "t18-u",
+      "text": "두 사람은 기록실에서 대화 18를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t18-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 18에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 19,
+     "user": {
+      "ref": "t19-u",
+      "text": "두 사람은 기록실에서 대화 19를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t19-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 19에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 20,
+     "user": {
+      "ref": "t20-u",
+      "text": "두 사람은 기록실에서 대화 20를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t20-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 20에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 21,
+     "user": {
+      "ref": "t21-u",
+      "text": "두 사람은 기록실에서 대화 21를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t21-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 21에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 22,
+     "user": {
+      "ref": "t22-u",
+      "text": "두 사람은 기록실에서 대화 22를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t22-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 22에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 23,
+     "user": {
+      "ref": "t23-u",
+      "text": "두 사람은 기록실에서 대화 23를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t23-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 23에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 24,
+     "user": {
+      "ref": "t24-u",
+      "text": "두 사람은 기록실에서 대화 24를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t24-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 24에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 25,
+     "user": {
+      "ref": "t25-u",
+      "text": "두 사람은 기록실에서 대화 25를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t25-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 25에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 26,
+     "user": {
+      "ref": "t26-u",
+      "text": "두 사람은 기록실에서 대화 26를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t26-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 26에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 27,
+     "user": {
+      "ref": "t27-u",
+      "text": "두 사람은 기록실에서 대화 27를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t27-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 27에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 28,
+     "user": {
+      "ref": "t28-u",
+      "text": "두 사람은 기록실에서 대화 28를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t28-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 28에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 29,
+     "user": {
+      "ref": "t29-u",
+      "text": "두 사람은 기록실에서 대화 29를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t29-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 29에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 30,
+     "user": {
+      "ref": "t30-u",
+      "text": "두 사람은 기록실에서 대화 30를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t30-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 30에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 31,
+     "user": {
+      "ref": "t31-u",
+      "text": "두 사람은 기록실에서 대화 31를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t31-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 31에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 32,
+     "user": {
+      "ref": "t32-u",
+      "text": "두 사람은 기록실에서 대화 32를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t32-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 32에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 33,
+     "user": {
+      "ref": "t33-u",
+      "text": "두 사람은 기록실에서 대화 33를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t33-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 33에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 34,
+     "user": {
+      "ref": "t34-u",
+      "text": "두 사람은 기록실에서 대화 34를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t34-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 34에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 35,
+     "user": {
+      "ref": "t35-u",
+      "text": "두 사람은 기록실에서 대화 35를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t35-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 35에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 36,
+     "user": {
+      "ref": "t36-u",
+      "text": "두 사람은 기록실에서 대화 36를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t36-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 36에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 37,
+     "user": {
+      "ref": "t37-u",
+      "text": "두 사람은 기록실에서 대화 37를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t37-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 37에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 38,
+     "user": {
+      "ref": "t38-u",
+      "text": "두 사람은 기록실에서 대화 38를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t38-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 38에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 39,
+     "user": {
+      "ref": "t39-u",
+      "text": "두 사람은 기록실에서 대화 39를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t39-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 39에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 40,
+     "user": {
+      "ref": "t40-u",
+      "text": "지호는 민아에게 붉은 봉투를 받았는지 확인했다."
+     },
+     "assistant": {
+      "ref": "t40-a",
+      "text": "민아는 “네게 전하기로 한 붉은 봉투의 편지는 아직 전달하지 못했어.”라고 답했다."
+     }
+    },
+    {
+     "turn": 41,
+     "user": {
+      "ref": "t41-u",
+      "text": "두 사람은 기록실에서 대화 41를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t41-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 41에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 42,
+     "user": {
+      "ref": "t42-u",
+      "text": "두 사람은 기록실에서 대화 42를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t42-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 42에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 43,
+     "user": {
+      "ref": "t43-u",
+      "text": "두 사람은 기록실에서 대화 43를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t43-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 43에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 44,
+     "user": {
+      "ref": "t44-u",
+      "text": "두 사람은 기록실에서 대화 44를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t44-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 44에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 45,
+     "user": {
+      "ref": "t45-u",
+      "text": "두 사람은 기록실에서 대화 45를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t45-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 45에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 46,
+     "user": {
+      "ref": "t46-u",
+      "text": "두 사람은 기록실에서 대화 46를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t46-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 46에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 47,
+     "user": {
+      "ref": "t47-u",
+      "text": "두 사람은 기록실에서 대화 47를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t47-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 47에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 48,
+     "user": {
+      "ref": "t48-u",
+      "text": "두 사람은 기록실에서 대화 48를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t48-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 48에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 49,
+     "user": {
+      "ref": "t49-u",
+      "text": "두 사람은 기록실에서 대화 49를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t49-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 49에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 50,
+     "user": {
+      "ref": "t50-u",
+      "text": "두 사람은 기록실에서 대화 50를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t50-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 50에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 51,
+     "user": {
+      "ref": "t51-u",
+      "text": "두 사람은 기록실에서 대화 51를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t51-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 51에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 52,
+     "user": {
+      "ref": "t52-u",
+      "text": "두 사람은 기록실에서 대화 52를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t52-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 52에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 53,
+     "user": {
+      "ref": "t53-u",
+      "text": "두 사람은 기록실에서 대화 53를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t53-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 53에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 54,
+     "user": {
+      "ref": "t54-u",
+      "text": "두 사람은 기록실에서 대화 54를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t54-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 54에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 55,
+     "user": {
+      "ref": "t55-u",
+      "text": "두 사람은 기록실에서 대화 55를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t55-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 55에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 56,
+     "user": {
+      "ref": "t56-u",
+      "text": "두 사람은 기록실에서 대화 56를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t56-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 56에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 57,
+     "user": {
+      "ref": "t57-u",
+      "text": "두 사람은 기록실에서 대화 57를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t57-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 57에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 58,
+     "user": {
+      "ref": "t58-u",
+      "text": "두 사람은 기록실에서 대화 58를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t58-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 58에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 59,
+     "user": {
+      "ref": "t59-u",
+      "text": "두 사람은 기록실에서 대화 59를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t59-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 59에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 60,
+     "user": {
+      "ref": "t60-u",
+      "text": "두 사람은 기록실에서 대화 60를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t60-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 60에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 61,
+     "user": {
+      "ref": "t61-u",
+      "text": "두 사람은 기록실에서 대화 61를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t61-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 61에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 62,
+     "user": {
+      "ref": "t62-u",
+      "text": "두 사람은 기록실에서 대화 62를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t62-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 62에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 63,
+     "user": {
+      "ref": "t63-u",
+      "text": "두 사람은 기록실에서 대화 63를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t63-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 63에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 64,
+     "user": {
+      "ref": "t64-u",
+      "text": "두 사람은 기록실에서 대화 64를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t64-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 64에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 65,
+     "user": {
+      "ref": "t65-u",
+      "text": "두 사람은 기록실에서 대화 65를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t65-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 65에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 66,
+     "user": {
+      "ref": "t66-u",
+      "text": "두 사람은 기록실에서 대화 66를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t66-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 66에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 67,
+     "user": {
+      "ref": "t67-u",
+      "text": "두 사람은 기록실에서 대화 67를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t67-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 67에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 68,
+     "user": {
+      "ref": "t68-u",
+      "text": "두 사람은 기록실에서 대화 68를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t68-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 68에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 69,
+     "user": {
+      "ref": "t69-u",
+      "text": "두 사람은 기록실에서 대화 69를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t69-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 69에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 70,
+     "user": {
+      "ref": "t70-u",
+      "text": "두 사람은 기록실에서 대화 70를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t70-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 70에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 71,
+     "user": {
+      "ref": "t71-u",
+      "text": "두 사람은 기록실에서 대화 71를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t71-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 71에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 72,
+     "user": {
+      "ref": "t72-u",
+      "text": "두 사람은 기록실에서 대화 72를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t72-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 72에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 73,
+     "user": {
+      "ref": "t73-u",
+      "text": "두 사람은 기록실에서 대화 73를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t73-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 73에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 74,
+     "user": {
+      "ref": "t74-u",
+      "text": "두 사람은 기록실에서 대화 74를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t74-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 74에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 75,
+     "user": {
+      "ref": "t75-u",
+      "text": "두 사람은 기록실에서 대화 75를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t75-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 75에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 76,
+     "user": {
+      "ref": "t76-u",
+      "text": "두 사람은 기록실에서 대화 76를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t76-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 76에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 77,
+     "user": {
+      "ref": "t77-u",
+      "text": "두 사람은 기록실에서 대화 77를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t77-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 77에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 78,
+     "user": {
+      "ref": "t78-u",
+      "text": "두 사람은 기록실에서 대화 78를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t78-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 78에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 79,
+     "user": {
+      "ref": "t79-u",
+      "text": "두 사람은 기록실에서 대화 79를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t79-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 79에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 80,
+     "user": {
+      "ref": "t80-u",
+      "text": "두 사람은 기록실에서 대화 80를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t80-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 80에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 81,
+     "user": {
+      "ref": "t81-u",
+      "text": "두 사람은 기록실에서 대화 81를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t81-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 81에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 82,
+     "user": {
+      "ref": "t82-u",
+      "text": "두 사람은 기록실에서 대화 82를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t82-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 82에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 83,
+     "user": {
+      "ref": "t83-u",
+      "text": "두 사람은 기록실에서 대화 83를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t83-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 83에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 84,
+     "user": {
+      "ref": "t84-u",
+      "text": "두 사람은 기록실에서 대화 84를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t84-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 84에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 85,
+     "user": {
+      "ref": "t85-u",
+      "text": "두 사람은 기록실에서 대화 85를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t85-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 85에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 86,
+     "user": {
+      "ref": "t86-u",
+      "text": "두 사람은 기록실에서 대화 86를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t86-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 86에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 87,
+     "user": {
+      "ref": "t87-u",
+      "text": "두 사람은 기록실에서 대화 87를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t87-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 87에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 88,
+     "user": {
+      "ref": "t88-u",
+      "text": "두 사람은 기록실에서 대화 88를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t88-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 88에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 89,
+     "user": {
+      "ref": "t89-u",
+      "text": "두 사람은 기록실에서 대화 89를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t89-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 89에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 90,
+     "user": {
+      "ref": "t90-u",
+      "text": "두 사람은 기록실에서 대화 90를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t90-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 90에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 91,
+     "user": {
+      "ref": "t91-u",
+      "text": "두 사람은 기록실에서 대화 91를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t91-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 91에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 92,
+     "user": {
+      "ref": "t92-u",
+      "text": "두 사람은 기록실에서 대화 92를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t92-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 92에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 93,
+     "user": {
+      "ref": "t93-u",
+      "text": "두 사람은 기록실에서 대화 93를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t93-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 93에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 94,
+     "user": {
+      "ref": "t94-u",
+      "text": "두 사람은 기록실에서 대화 94를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t94-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 94에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 95,
+     "user": {
+      "ref": "t95-u",
+      "text": "두 사람은 기록실에서 대화 95를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t95-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 95에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 96,
+     "user": {
+      "ref": "t96-u",
+      "text": "두 사람은 기록실에서 대화 96를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t96-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 96에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 97,
+     "user": {
+      "ref": "t97-u",
+      "text": "두 사람은 기록실에서 대화 97를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t97-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 97에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 98,
+     "user": {
+      "ref": "t98-u",
+      "text": "두 사람은 기록실에서 대화 98를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t98-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 98에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 99,
+     "user": {
+      "ref": "t99-u",
+      "text": "두 사람은 기록실에서 대화 99를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t99-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 99에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 100,
+     "user": {
+      "ref": "t100-u",
+      "text": "두 사람은 기록실에서 대화 100를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t100-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 100에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 101,
+     "user": {
+      "ref": "t101-u",
+      "text": "두 사람은 기록실에서 대화 101를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t101-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 101에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 102,
+     "user": {
+      "ref": "t102-u",
+      "text": "두 사람은 기록실에서 대화 102를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t102-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 102에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 103,
+     "user": {
+      "ref": "t103-u",
+      "text": "두 사람은 기록실에서 대화 103를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t103-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 103에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 104,
+     "user": {
+      "ref": "t104-u",
+      "text": "두 사람은 기록실에서 대화 104를 이어갔다."
+     },
+     "assistant": {
+      "ref": "t104-a",
+      "text": "지호는 기록대의 종이를 정리했다. 이번 대화 104에서는 편지 전달이나 기존 약속의 변경이 일어나지 않았다."
+     }
+    },
+    {
+     "turn": 105,
+     "user": {
+      "ref": "t105-u",
+      "text": "민아는 서랍에서 붉은 봉투를 꺼내 지호에게 직접 건넸다."
+     },
+     "assistant": {
+      "ref": "t105-a",
+      "text": "지호는 민아가 약속했던 붉은 봉투의 편지를 받았다. 민아는 전달 약속을 지켰다."
+     }
+    }
+   ],
+   "milestones": [
+    {
+     "through_turn": 5,
+     "expect": "one open promise: 민아 → 지호 / 붉은 봉투의 편지 / 직접 전달",
+     "forbid": "already delivered or third-party ownership change"
+    },
+    {
+     "through_turn": 40,
+     "expect": "same promise still open; original change provenance remains T5; separate reaffirmation history T40",
+     "forbid": "duplicate promise or T5 provenance rewritten to T40"
+    },
+    {
+     "through_turn": 105,
+     "expect": "same promise fulfilled; no current obligation; creation, reaffirmation and fulfillment history linked",
+     "forbid": "T5 obligation injected as currently unresolved"
+    }
+   ],
+   "reroll_variant": {
+    "replace_turn": 105,
+    "user": "민아는 서랍에서 봉투를 찾으려 했다.",
+    "assistant": "서랍은 잠겨 있어 봉투를 꺼내지 못했다. 지호는 아직 편지를 받지 못했다.",
+    "expect": "old fulfillment inactive; promise remains open; old canonical bytes preserved"
+   },
+   "fork_variant": {
+    "fork_through_turn": 40,
+    "child_at_turn": 45,
+    "user": "민아는 지호에게 그 편지를 전달할 수 없다고 밝혔다.",
+    "assistant": "민아와 지호는 붉은 봉투의 편지 전달 약속을 취소하기로 합의했다.",
+    "expect": "child cancellation, not fulfillment; parent future and sibling unchanged"
+   },
+   "queries": [
+    {
+     "text": "민아가 T5 당시에 한 약속은 무엇인가?",
+     "expected": "historical promise, with explicit time label"
+    },
+    {
+     "text": "민아는 지금도 그 편지를 전달해야 하나?",
+     "expected": "through105 fulfilled; through40 open; child45 cancelled"
+    }
+   ]
+  }
+ ]
+}

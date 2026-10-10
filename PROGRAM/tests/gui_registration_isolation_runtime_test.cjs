@@ -1,0 +1,19 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),path=require('path');
+const read=p=>fs.readFileSync(path.join(__dirname,'../plugins',p),'utf8');
+const hay=read('HAYAKU_Locator_Continuity.js'),flash=read('Flashback_Memory.js');
+function fixture(){const parts=new Map(),queue=[];let refuse=false,available=true,calls=0;
+ const api={registerSetting:async(name,cb,icon,type,id)=>{calls++;if(refuse)return false;parts.set(id,{name,cb});},registerButton:async(o,cb)=>{calls++;if(refuse)return false;parts.set(o.id,{name:o.name,cb});},unregisterUIPart:async id=>parts.delete(id)};
+ const ctx={apiCandidates:()=>available?[api]:[],LEDGER_VIEWER_UI_RUNTIME_KEY:'hayaku-fixture',LEDGER_VIEWER_SETTING_UI_ID:'hayaku-ledger-viewer-setting',LEDGER_VIEWER_BUTTON_UI_ID:'hayaku-ledger-viewer-button',RUNTIME_INSTANCE_TOKEN:'one',PLUGIN_NAME:'HAYAKU',ledgerViewerIconSvg:'',Memory:{ledgerViewer:{},lastWarnings:[]},ownsRuntime:()=>true,showLedgerViewer:()=> 'hayaku',text:String,compact:String,ensureArray:x=>x||[],debugLog:()=>{},debugError:()=>{},setTimeout:fn=>{queue.push(fn);return queue.length},clearTimeout:()=>{}};
+ vm.createContext(ctx);vm.runInContext(hay.slice(hay.indexOf('  const ledgerViewerUiRuntime ='),hay.indexOf('  const hayakuRetraceCompatibility ='))+'this.register=registerLedgerViewerUi;this.ensure=ensureLedgerViewerUi;this.remove=unregisterLedgerViewerUiPartsIfOwner;',ctx);
+ const fc={Runtime:{registered:{}},PLUGIN_NAME:'FLASHBACK',showUi:()=> 'flashback',warn:()=>{},text:String};vm.createContext(fc);vm.runInContext(flash.slice(flash.indexOf('  const isDuplicateUiError ='),flash.indexOf('  const registerUiOnce ='))+'this.register=async api=>{this.setting=await registerSettingEntry(api);this.button=await registerHamburgerButtonEntry(api)};',fc);
+ return {ctx,fc,api,parts,queue,refuse:v=>refuse=v,available:v=>available=v,calls:()=>calls};}
+(async()=>{
+ for(const order of ['hay-first','flash-first']){const f=fixture();if(order==='hay-first'){await f.ctx.register();await f.fc.register(f.api)}else{await f.fc.register(f.api);await f.ctx.register()};assert.equal(f.parts.size,4);assert.equal(await f.parts.get('hayaku-ledger-viewer-setting').cb(),'hayaku');assert.equal(await f.parts.get('vector-rag-memory-setting').cb(),'flashback');assert.equal(f.fc.setting.id,'vector-rag-memory-setting');await f.ctx.remove();assert.equal(f.parts.size,2);assert(f.parts.has('vector-rag-memory-setting'));}
+ const f=fixture();f.refuse(true);await f.ctx.ensure();assert.equal(f.parts.size,0);assert.equal(f.ctx['hayaku-fixture'].settingRegistered,false);assert.equal(f.queue.length,1);f.refuse(false);await f.queue.shift()();await new Promise(r=>setImmediate(r));assert.equal(f.parts.size,2);const n=f.calls();await f.ctx.ensure();assert.equal(f.calls(),n);
+ const g=fixture();g.available(false);await g.ctx.ensure();assert.equal(g.queue.length,1);g.available(true);await g.queue.shift()();await new Promise(r=>setImmediate(r));assert.equal(g.parts.size,2);
+ const bounded=fixture();bounded.available(false);await bounded.ctx.ensure();let retries=0;while(bounded.queue.length){if(++retries>60)throw Error('unbounded retry');await bounded.queue.shift()();await new Promise(r=>setImmediate(r));}assert.equal(retries,59);
+ const h=fixture();h.available(false);await h.ctx.ensure();h.ctx.Memory.unloaded=true;await h.queue.shift()();assert.equal(h.calls(),0);assert.equal(h.queue.length,0);
+ assert(hay.indexOf('void ensureLedgerViewerUi();',hay.indexOf('  const install ='))<hay.indexOf('await RisuCompat.refreshInfo();',hay.indexOf('  const install =')));
+ console.log('PASS: both registration orders, callback isolation, owner cleanup, false rejection recovery, late API recovery, deduplication, unload guard, early GUI startup');
+})().catch(e=>{console.error(e);process.exitCode=1});

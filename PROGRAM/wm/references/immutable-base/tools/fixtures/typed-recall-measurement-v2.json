@@ -1,0 +1,1366 @@
+{
+  "schema": "libra.typed_recall.measurement.v2",
+  "oracleStatus": "prepared_pending_parent_review",
+  "adoptionEvidence": false,
+  "corpus": "typed-recall-measurement-corpus-v2.json",
+  "oracleDerivation": "Fixed manually authored facts, queries and declared identities/roles. No retrieval outputs or model judgments are read.",
+  "exposure": {
+    "modelCalls": 0,
+    "policyTuningPerformed": false,
+    "holdoutQueriesUsedForTuning": false,
+    "factOverlap": "Holdout queries share the fixed RAG corpus; questions are disjoint. Reactor and treaty events have no tuning questions."
+  },
+  "forbidden": [
+    "ENTITY_SECRET_CANARY",
+    "RELATION_SECRET_CANARY",
+    "ROLLED_BACK_4_CANARY",
+    "CODEX_DISABLED_CANARY"
+  ],
+  "cases": [
+    {
+      "id": "ferry_permit-memory-ko",
+      "event": "ferry_permit",
+      "split": "tuning",
+      "sourceLanguage": "ko",
+      "language": "ko",
+      "query": "하린이 마지막 나룻배 출항 허가서를 어떻게 처리했는지 기억의 증거는?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_ferry_permit",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-entity-ko",
+      "event": "ferry_permit",
+      "split": "tuning",
+      "sourceLanguage": "ko",
+      "language": "ko",
+      "query": "출항 허가서를 가진 수문지기는 누구와 어떤 합의를 했으며 무엇을 기다리는가?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_ferry_permit",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-world-ko",
+      "event": "ferry_permit",
+      "split": "tuning",
+      "sourceLanguage": "ko",
+      "language": "ko",
+      "query": "수문 부두에서 나룻배 출항을 허용하는 조건은?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_ferry_permit",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-narrative-ko",
+      "event": "ferry_permit",
+      "split": "tuning",
+      "sourceLanguage": "ko",
+      "language": "ko",
+      "query": "마지막 나룻배 사건에서 아직 해결되지 않은 절차는?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "101",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-memory-en",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "en",
+      "query": "What evidence says where the final ferry departure permit was secured?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_ferry_permit",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-entity-en",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "en",
+      "query": "Who holds the ferry permit, what agreement was made, and what notice are they awaiting?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_ferry_permit",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-world-en",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "en",
+      "query": "What condition must be met before a ferry may leave the sluice dock?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_ferry_permit",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-narrative-en",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "en",
+      "query": "Which steps remain unresolved in the last ferry departure?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "101",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-memory-ja",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "ja",
+      "query": "最終便の出航許可書が保管された場所を示す記憶の証拠は？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_ferry_permit",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-entity-ja",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "ja",
+      "query": "許可書の保管者は誰と何を合意し、どんな連絡を待っている？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_ferry_permit",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-world-ja",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "ja",
+      "query": "水門の船着き場で渡し船が出航できる条件は？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_ferry_permit",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-narrative-ja",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "ja",
+      "query": "最終便の出航をめぐって未解決の手続きは？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "101",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-memory-zh",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "zh",
+      "query": "什么记忆证据说明末班渡船的出航许可证被封存在哪里？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_ferry_permit",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-entity-zh",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "zh",
+      "query": "许可证保管人与谁达成了什么约定，正在等待哪项通知？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_ferry_permit",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-world-zh",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "zh",
+      "query": "水闸码头允许渡船出发的条件是什么？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_ferry_permit",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ferry_permit-narrative-zh",
+      "event": "ferry_permit",
+      "split": "holdout",
+      "sourceLanguage": "ko",
+      "language": "zh",
+      "query": "末班渡船出发事件中还有哪些手续未解决？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "101",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-memory-ko",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ko",
+      "query": "관측소 냉각 펌프를 격리하고 재시동 열쇠를 보관한 기억의 증거는?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_reactor_reset",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-entity-ko",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ko",
+      "query": "관측소 재시동 열쇠의 보관자는 누구와 어떤 합의를 했고 어떤 보고를 기다리는가?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_reactor_reset",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-world-ko",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ko",
+      "query": "관측소 냉각 펌프의 재시동에 필요한 조건은?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_reactor_reset",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-narrative-ko",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ko",
+      "query": "관측소 냉각 사고 이후 아직 결정되지 않은 일은?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "102",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-memory-en",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "en",
+      "query": "What evidence records the cooling pump isolation and placement of its restart key?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_reactor_reset",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-entity-en",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "en",
+      "query": "Who holds the observatory restart key, what agreement was made, and which report are they awaiting?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_reactor_reset",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-world-en",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "en",
+      "query": "What must happen before the observatory cooling pump can restart?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_reactor_reset",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-narrative-en",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "en",
+      "query": "What remains unresolved after the observatory pressure spike?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "102",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-memory-ja",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ja",
+      "query": "冷却ポンプの隔離と再起動鍵の保管を示す記憶の証拠は？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_reactor_reset",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-entity-ja",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ja",
+      "query": "観測所の再起動鍵を持つ人物は誰と合意し、何の報告を待っている？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_reactor_reset",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-world-ja",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ja",
+      "query": "観測所の冷却ポンプを再起動できる条件は？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_reactor_reset",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-narrative-ja",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "ja",
+      "query": "観測所の圧力異常後に未決定のことは？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "102",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-memory-zh",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "zh",
+      "query": "什么记忆证据记录了冷却泵的隔离和重启钥匙的存放？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_reactor_reset",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-entity-zh",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "zh",
+      "query": "观测站重启钥匙的保管人与谁约定了什么，正在等待哪份报告？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_reactor_reset",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-world-zh",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "zh",
+      "query": "观测站冷却泵重新启动需要满足什么条件？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_reactor_reset",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reactor_reset-narrative-zh",
+      "event": "reactor_reset",
+      "split": "holdout",
+      "sourceLanguage": "en",
+      "language": "zh",
+      "query": "观测站压力异常之后还有什么未解决？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "102",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-memory-ko",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "ko",
+      "query": "신사 종의 균열 발견과 수리표 보관을 기록한 기억의 증거는?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_shrine_bell",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-entity-ko",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "ko",
+      "query": "신사의 수리표를 보관하는 인물은 누구와 합의했고 어떤 연락을 기다리는가?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_shrine_bell",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-world-ko",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "ko",
+      "query": "산의 신사에서 균열 난 종을 다시 울리는 조건은?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_shrine_bell",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-narrative-ko",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "ko",
+      "query": "아침 종 사건에서 아직 끝나지 않은 일은?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "103",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-memory-en",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "en",
+      "query": "What evidence records finding the shrine bell crack and storing its repair slip?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_shrine_bell",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-entity-en",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "en",
+      "query": "Who keeps the shrine repair slip, what agreement was made, and which notice are they awaiting?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_shrine_bell",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-world-en",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "en",
+      "query": "When may the cracked bell at the mountain shrine ring again?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_shrine_bell",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-narrative-en",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "en",
+      "query": "What remains unfinished in the morning bell incident?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "103",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-memory-ja",
+      "event": "shrine_bell",
+      "split": "tuning",
+      "sourceLanguage": "ja",
+      "language": "ja",
+      "query": "神社の鐘のひび発見と修理札の保管を示す記憶の証拠は？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_shrine_bell",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-entity-ja",
+      "event": "shrine_bell",
+      "split": "tuning",
+      "sourceLanguage": "ja",
+      "language": "ja",
+      "query": "修理札の保管者は誰と何を合意し、どんな知らせを待っている？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_shrine_bell",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-world-ja",
+      "event": "shrine_bell",
+      "split": "tuning",
+      "sourceLanguage": "ja",
+      "language": "ja",
+      "query": "山の神社でひびのある鐘を再び鳴らせる条件は？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_shrine_bell",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-narrative-ja",
+      "event": "shrine_bell",
+      "split": "tuning",
+      "sourceLanguage": "ja",
+      "language": "ja",
+      "query": "朝の鐘の事件でまだ終わっていないことは？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "103",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-memory-zh",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "zh",
+      "query": "什么记忆证据记录了神社钟的裂缝发现和维修单的存放？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_shrine_bell",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-entity-zh",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "zh",
+      "query": "维修单保管人与谁达成了什么约定，正在等待什么通知？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_shrine_bell",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-world-zh",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "zh",
+      "query": "山中神社的破裂钟何时才可以再次敲响？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_shrine_bell",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shrine_bell-narrative-zh",
+      "event": "shrine_bell",
+      "split": "holdout",
+      "sourceLanguage": "ja",
+      "language": "zh",
+      "query": "晨钟事件中还有什么事情没有完成？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "103",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-memory-ko",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ko",
+      "query": "조약 인장을 파란 함에 보관하고 서기와 합의한 기억의 증거는?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_treaty_seal",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-entity-ko",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ko",
+      "query": "조약 인장을 가진 인물은 누구와 무엇을 합의했고 어떤 확인을 기다리는가?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_treaty_seal",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-world-ko",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ko",
+      "query": "강변 대사관에서 조약에 인장을 찍기 위한 조건은?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_treaty_seal",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-narrative-ko",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ko",
+      "query": "대사관 조약 사건에서 아직 완료되지 않은 단계는?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "104",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-memory-en",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "en",
+      "query": "What evidence records securing the treaty seal in a blue case and the agreement with the clerk?",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_treaty_seal",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-entity-en",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "en",
+      "query": "Who holds the treaty seal, what agreement was made, and what confirmation are they awaiting?",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_treaty_seal",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-world-en",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "en",
+      "query": "What must happen before a treaty may be stamped at the riverside embassy?",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_treaty_seal",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-narrative-en",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "en",
+      "query": "What remains unfinished in the embassy treaty incident?",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "104",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-memory-ja",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ja",
+      "query": "条約の印章を青い箱に保管し書記と合意したことを示す記憶の証拠は？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_treaty_seal",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-entity-ja",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ja",
+      "query": "条約の印章の保管者は誰と何を合意し、どんな確認を待っている？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_treaty_seal",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-world-ja",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ja",
+      "query": "川沿いの大使館で条約に印章を押す条件は？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_treaty_seal",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-narrative-ja",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "ja",
+      "query": "大使館の条約事件で未完了の段階は？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "104",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-memory-zh",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "zh",
+      "query": "什么记忆证据记录了条约印章放入蓝色匣子以及与书记的约定？",
+      "gold": [
+        {
+          "family": "memory",
+          "subtype": "entry",
+          "id": "memory_treaty_seal",
+          "roles": [
+            "memory_evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-entity-zh",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "zh",
+      "query": "条约印章的保管人与谁约定了什么，正在等待哪项确认？",
+      "gold": [
+        {
+          "family": "entity",
+          "subtype": "canonical",
+          "id": "entity_treaty_seal",
+          "roles": [
+            "entity_state",
+            "relation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-world-zh",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "zh",
+      "query": "河畔使馆的条约盖章需要满足什么条件？",
+      "gold": [
+        {
+          "family": "world",
+          "subtype": "node",
+          "id": "world_treaty_seal",
+          "roles": [
+            "world_rule",
+            "world_state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "treaty_seal-narrative-zh",
+      "event": "treaty_seal",
+      "split": "holdout",
+      "sourceLanguage": "zh",
+      "language": "zh",
+      "query": "使馆条约事件还有哪些步骤没有完成？",
+      "gold": [
+        {
+          "family": "narrative",
+          "subtype": "storyline",
+          "id": "104",
+          "roles": [
+            "continuity",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "negative-ko-0",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ko",
+      "negativeKind": "hard_negative",
+      "query": "마지막 나룻배의 출항 허가가 이미 승인되었다는 증거는?",
+      "gold": []
+    },
+    {
+      "id": "negative-ko-1",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ko",
+      "negativeKind": "hard_negative",
+      "query": "냉각 펌프가 검사 없이 재시동되었다는 근거는?",
+      "gold": []
+    },
+    {
+      "id": "negative-ko-2",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ko",
+      "negativeKind": "no_answer",
+      "query": "사막 병원의 금고 암호는 무엇인가?",
+      "gold": []
+    },
+    {
+      "id": "negative-ko-3",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ko",
+      "negativeKind": "no_answer",
+      "query": "오늘 조약이 성공적으로 체결된 시각은?",
+      "gold": []
+    },
+    {
+      "id": "negative-en-0",
+      "event": "negative",
+      "split": "holdout",
+      "language": "en",
+      "negativeKind": "hard_negative",
+      "query": "What proves the final ferry departure has already been approved?",
+      "gold": []
+    },
+    {
+      "id": "negative-en-1",
+      "event": "negative",
+      "split": "holdout",
+      "language": "en",
+      "negativeKind": "hard_negative",
+      "query": "What evidence says the cooling pump restarted without an inspection?",
+      "gold": []
+    },
+    {
+      "id": "negative-en-2",
+      "event": "negative",
+      "split": "holdout",
+      "language": "en",
+      "negativeKind": "no_answer",
+      "query": "What is the desert hospital safe password?",
+      "gold": []
+    },
+    {
+      "id": "negative-en-3",
+      "event": "negative",
+      "split": "holdout",
+      "language": "en",
+      "negativeKind": "no_answer",
+      "query": "At what time was the treaty successfully signed today?",
+      "gold": []
+    },
+    {
+      "id": "negative-ja-0",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ja",
+      "negativeKind": "hard_negative",
+      "query": "最終便の出航が既に承認された証拠は？",
+      "gold": []
+    },
+    {
+      "id": "negative-ja-1",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ja",
+      "negativeKind": "hard_negative",
+      "query": "検査なしで冷却ポンプが再起動したという証拠は？",
+      "gold": []
+    },
+    {
+      "id": "negative-ja-2",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ja",
+      "negativeKind": "no_answer",
+      "query": "砂漠の病院の金庫の暗証番号は？",
+      "gold": []
+    },
+    {
+      "id": "negative-ja-3",
+      "event": "negative",
+      "split": "holdout",
+      "language": "ja",
+      "negativeKind": "no_answer",
+      "query": "今日条約が正式に締結された時刻は？",
+      "gold": []
+    },
+    {
+      "id": "negative-zh-0",
+      "event": "negative",
+      "split": "holdout",
+      "language": "zh",
+      "negativeKind": "hard_negative",
+      "query": "什么证据证明末班渡船已经获准出发？",
+      "gold": []
+    },
+    {
+      "id": "negative-zh-1",
+      "event": "negative",
+      "split": "holdout",
+      "language": "zh",
+      "negativeKind": "hard_negative",
+      "query": "什么证据说明冷却泵未经检查就已重启？",
+      "gold": []
+    },
+    {
+      "id": "negative-zh-2",
+      "event": "negative",
+      "split": "holdout",
+      "language": "zh",
+      "negativeKind": "no_answer",
+      "query": "沙漠医院保险箱的密码是什么？",
+      "gold": []
+    },
+    {
+      "id": "negative-zh-3",
+      "event": "negative",
+      "split": "holdout",
+      "language": "zh",
+      "negativeKind": "no_answer",
+      "query": "今天条约正式签署的具体时间是什么？",
+      "gold": []
+    }
+  ],
+  "limits": "80-question expanded proposal; not frozen adoption evidence. Parent oracle review, larger corpus, semantic controls and real host consumption remain required."
+}

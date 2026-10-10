@@ -1,0 +1,21 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/RETRACE.js'),'utf8');
+const a=source.indexOf('  const refreshServerScopeManagement ='),b=source.indexOf('  const scopeManagerFormatBytes =',a);
+(async()=>{
+ const namespaces=['flashback','hayaku','libra','lia','retrace'];let scans=[],fail='',stable=true;
+ const versions=Object.fromEntries(namespaces.map(ns=>[ns,1]));
+ const catalog={scopes:namespaces.map(namespace=>({namespace,scopeId:namespace,version:0}))};
+ const Runtime={serverScopeSelection:new Set()};
+ const deps={Runtime,MEMORY_SUITE_SCOPE_NAMESPACES:namespaces,MEMORY_SUITE_SCOPE_SCAN_CONCURRENCY:2,renderServerScopeManagement(){},assertServerScopeManagerCapabilities:async()=>({url:'http://localhost:47630',resetEpochs:{}}),setServerScopeManagerProgress(){},scopeManagerStableHostInventory:async()=>({stable,complete:true,fingerprint:'host',characterId:'char',currentChatId:'chat',chatRows:[]}),MemorySuiteStorageBridge:{managerListScopes:async()=>JSON.parse(JSON.stringify(catalog)),managerReplaceScopeIndex:async(ns,rows)=>{catalog.scopes=catalog.scopes.filter(r=>r.namespace!==ns).concat(rows);}},scopeManagerPriorMap:()=>new Map(),scopeManagerArray:v=>Array.isArray(v)?v:[],scopeManagerNamespaceListing:async ns=>({integrity:{ok:true},records:[{key:ns,revision:versions[ns],digest:String(versions[ns])}]}),scopeManagerNamespaceSnapshot:async(ns,listing)=>{scans.push(ns);if(fail===ns)throw Error('fixture');return {...listing,batch:{}};},scopeManagerScanNamespace:async(ns)=>[{namespace:ns,scopeId:ns,version:versions[ns],_mutations:[{fixture:ns}]}],scopeManagerRecipeKey:(ns,id)=>ns+'\n'+id,compact:String,warn(){}};
+ const refresh=new Function(...Object.keys(deps),source.slice(a,b)+'\nreturn refreshServerScopeManagement;')(...Object.values(deps));
+ await refresh();assert.equal(scans.length,5);
+ scans=[];await refresh({reuseUnchanged:true});assert.equal(scans.length,0,'unchanged metadata skips body scans');assert.equal(Runtime.serverScopeRecipes.size,5);
+ versions.libra++;scans=[];await refresh({reuseUnchanged:true});assert.deepEqual(scans,['libra'],'changed revision rescans owner');
+ catalog.scopes.find(r=>r.namespace==='hayaku').referenceCount=1;scans=[];await refresh({reuseUnchanged:true});assert.deepEqual(scans,['hayaku'],'changed reference invalidates reuse');
+ stable=false;scans=[];await refresh({reuseUnchanged:true});assert.equal(scans.length,5,'unstable host never reuses');
+ stable=true;await refresh();versions.lia++;fail='lia';await refresh({reuseUnchanged:true});assert.equal(Runtime.serverScopeScanCache.lia,undefined,'failed namespace not cached');
+ fail='';scans=[];await refresh({reuseUnchanged:true});assert.deepEqual(scans,['lia']);
+ scans=[];await refresh();assert.equal(scans.length,5,'manual refresh remains full');
+ console.log('retrace_scope_refresh_cache_test: PASS (5 -> 0 unchanged body scans, revision/reference invalidation, unstable host, failure, manual refresh)');
+})().catch(e=>{console.error(e);process.exitCode=1;});

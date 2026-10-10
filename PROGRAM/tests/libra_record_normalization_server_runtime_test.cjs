@@ -1,0 +1,6 @@
+'use strict';
+const assert=require('node:assert/strict');const {serverFixture}=require('./fixtures/libra_server_runtime_fixture.cjs');
+(async()=>{const s=await serverFixture();try{
+ let f=s.f;for(const row of f.control.artifact.facts)delete row.text;f.control.artifact.facts.find(x=>x.tempFactId==='f9').domain='knowledge';const job=await f.run();assert.equal(job.completed,1,JSON.stringify(job));assert.equal(f.control.calls.length,1);assert.equal(s.getHead().status,'ready');const memory=s.getMemory();assert.equal(memory.artifactValidation.admission.normalizedTextCount,13);assert.equal(memory.artifactValidation.admission.normalizedDomainCount,1);assert.equal(memory.canonicalArtifact.facts.length,13);const bytes=JSON.stringify(memory);
+ f=await s.restart();assert.equal(JSON.stringify(s.getMemory()),bytes);await f.r.api.retryPendingUnifiedState();assert.equal(JSON.stringify(s.getMemory()),bytes);assert.equal(f.control.calls.length,0);assert.equal(s.getHead().status,'ready');console.log(JSON.stringify({test:'libra_record_normalization_server',passed:2,storage:'real local HTTP/SQLite and restart',externalModelCalls:0}));
+}finally{await s.cleanup();}})().catch(e=>{console.error(e);process.exitCode=1;});

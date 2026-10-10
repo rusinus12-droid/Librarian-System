@@ -1,0 +1,8 @@
+{
+  "schema": "memory-suite.server-config.v1",
+  "host": "127.0.0.1",
+  "port": 47630,
+  "autoBackup": true,
+  "computeEnabled": true,
+  "computeWorkers": 0
+}

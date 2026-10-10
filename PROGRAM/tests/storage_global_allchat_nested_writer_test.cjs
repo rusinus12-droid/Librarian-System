@@ -1,0 +1,7 @@
+'use strict';
+const assert=require('node:assert/strict');const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+(async()=>{const failures=[];for(const v of variants){const f=await fixture(v);let release,enteredResolve,prepared=false,accepted,transition;const gate=new Promise(r=>release=r),entered=new Promise(r=>enteredResolve=r);try{
+ accepted=f.bridge.get('plugin',v[0]+'.A',async()=>{enteredResolve();await gate;await f.proxy.getItem(v[0]+'.A');await f.proxy.setItem(v[0]+'.A','ACCEPTED_WRITER');return true;}).then(value=>({ok:true,value}),error=>({ok:false,error}));await entered;
+ const stop=f.bridge.subscribeSyncJob(job=>{if(job?.phase==='prepared')prepared=true;});transition=f.bridge.setGlobalMode('server_only').then(value=>({ok:true,value}),error=>({ok:false,error}));await new Promise(r=>setTimeout(r,30));assert.equal(prepared,false,'accepted nested owner work drains before immutable prepare closes its I/O gate');release();assert.equal((await accepted).ok,true,'accepted owner nested I/O completes');const result=await transition;assert.equal(result.ok,true,result.error?.stack);assert.equal(f.values.get(v[0]+'.A'),'ACCEPTED_WRITER');assert.equal(await f.proxy.getItem(v[0]+'.A'),'ACCEPTED_WRITER');stop();console.log('PASS '+v[0]+' nested accepted writer drains before prepare');
+ }catch(e){failures.push(v[0]+': '+e.message);}finally{release();await accepted;await transition;await f.close();}}
+ if(failures.length)throw Error(failures.join('\n'));})().catch(e=>{console.error(e);process.exitCode=1;});

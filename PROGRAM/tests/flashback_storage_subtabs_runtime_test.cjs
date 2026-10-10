@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const s=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
+const node=(attr,value)=>({hidden:false,attrs:{[attr]:value},getAttribute(k){return this.attrs[k]},setAttribute(k,v){this.attrs[k]=v}});
+const buttons=['response','scopes'].map(v=>node('data-storage-tab',v)),panels=['response','scopes'].map(v=>node('data-storage-pane',v));
+const root={querySelectorAll:q=>q==='[data-storage-tab]'?buttons:panels},Runtime={};
+const context=vm.createContext({Runtime,guiRoot:root});
+vm.runInContext(s.slice(s.indexOf('  const setStorageGuiTab ='),s.indexOf('  const setActiveGuiTab ='))+'globalThis.select=setStorageGuiTab;',context);
+context.select('scopes');assert.equal(panels[0].hidden,true);assert.equal(panels[1].hidden,false);assert.equal(buttons[1].attrs['aria-selected'],'true');assert.equal(buttons[1].attrs.tabindex,'0');assert.equal(Runtime.guiStorageTab,'scopes');
+context.select('response');assert.equal(panels[0].hidden,false);assert.equal(panels[1].hidden,true);assert.equal(buttons[1].attrs.tabindex,'-1');
+context.select('unknown');assert.equal(Runtime.guiStorageTab,'response');
+const open=s.slice(s.indexOf('  const openManualEditorForSourceType ='),s.indexOf('  const bindManualEditorEvents ='));assert(open.includes("setStorageGuiTab('response')"),'cross-screen source link must select the response subtab');
+(async()=>{const f=await require('./fixtures/flashback_native_runtime_fixture.cjs').createFixture();try{const html=await f.api._test.buildUiHtml();const a=html.indexOf('id="fbStorageResponse"'),b=html.indexOf('id="fbStorageScopes"'),end=html.indexOf('</section>',b);assert(a>=0&&b>a);assert(html.slice(a,b).includes('id="manualEditorPanel"'));assert(!html.slice(a,b).includes('id="storageRows"'));assert(html.slice(b,end).includes('id="storageRows"'));assert(!html.slice(b,end).includes('id="manualEditorPanel"'));console.log('PASS storage subtabs: exclusive visibility, ARIA, source entry routing and separated source/scope controls');}finally{await f.dispose()}})().catch(e=>{console.error(e);process.exitCode=1});
