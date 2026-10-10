@@ -1,12 +1,12 @@
 # Restore and build this development package
 
-This ZIP is an offline development candidate created by the actual release builder. It is not an updater-eligible release. Full regression, actual-host qualification and production-provider qualification are not established by packaging success. The source snapshot remains an unfinished development candidate. Consult the dated qualification section of SOURCE-PROVENANCE.json for the exact verified fixes, active failures and pending current-source checks. A narrow timeout-recovery result is not proof of logical-read or host-anchor readiness.
+This GitHub tree is a filtered public derivative of an offline development candidate created by the actual release builder. The original checkpoint ZIP is unchanged. PUBLICATION-EXCLUSIONS.json records the omitted evidence bundle and the origin checkpoint identity. It is not an updater-eligible release. Full regression, actual-host qualification and production-provider qualification are not established by packaging success. The source snapshot remains an unfinished development candidate. Consult the dated qualification section of SOURCE-PROVENANCE.json for the exact verified fixes, active failures and pending current-source checks. A narrow timeout-recovery result is not proof of logical-read or host-anchor readiness.
 
 Consult SOURCE-PROVENANCE.json in this directory for the exact capture time, source identity and Git basis. Later working-tree changes are excluded.
 
 ## Safe restoration
 
-1. Verify the downloaded ZIP's SHA-256 against the saved package receipt.
+1. For the full original checkpoint ZIP, verify its SHA-256 against its saved receipt. For this filtered GitHub export, verify the checked-out commit and the regenerated SHA256SUMS.txt; this tree is not the complete original ZIP.
 2. Extract into a new empty directory. Do not overwrite an installed PROGRAM or an existing DATA directory. Preserve the ZIP and existing backups.
 3. From the extracted package root, verify SHA256SUMS.txt using your platform's SHA-256 tool. PROGRAM/program-manifest.json independently records program-file hashes and sizes.
 4. ZIP names are UTF-8. POSIX .sh/.command launchers are executable (0755); other ZIP files are 0644. Use an extraction tool that preserves those modes, or restore the executable bit only on those launchers.
@@ -38,9 +38,13 @@ node -e "require('./tools/build_distribution.cjs').buildOfflineCandidate({profil
 
 The ordinary build_distribution.cjs --profile source route additionally runs publication smoke checks. Those checks are not claimed for this package. Run only the test suites you intend to exercise and respect their prerequisites; packaging integrity is not an all-regression pass. Some historical evidence-dependent tests may require separately retained development records.
 
+## Public evidence exclusion
+
+The entire selected-mock-results bundle (510 selected records plus its mapping, 511 files total) is intentionally absent from this public export. It contains raw synthetic prompts, request/result records, storage traces and fault evidence. The original full checkpoint is preserved separately. PUBLICATION-EXCLUSIONS.json records the scope and origin; do not infer missing verification records are present in this checkout. Maintained source fixtures and build/test tools remain included. No product code was changed for this filtering step.
+
 ## Restore the required reference separately
 
-The current normalization candidate is explicitly unqualified. This package also contains a finite, hash-bound reverse delta to reference commit f64ef26e1bc6dcd94e160ee4be8d7b66356079a7. It needs neither an older ZIP nor a .git directory. With Python 3 and the Git command-line executable installed, run from the extracted package root:
+The current normalization candidate is explicitly unqualified. The historical f64 reference has confirmed updater dependency and WM handoff/rollback defects; restoration is for reference and comparison, not production update. Current fail-closed safety fixes do not establish complete handoff support. This package also contains a finite, hash-bound reverse delta to reference commit f64ef26e1bc6dcd94e160ee4be8d7b66356079a7. It needs neither an older ZIP nor a .git directory. With Python 3 and the Git command-line executable installed, run from the extracted package root:
 
 ```sh
 python3 PROGRAM/docs/development-package/reference-restore/restore_reference.py --package-root . --output-dir ../reference-source --quarantine-dir ../candidate-preserved

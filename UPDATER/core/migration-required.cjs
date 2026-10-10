@@ -48,6 +48,9 @@ function readJson(file, fallback = null) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; }
 }
 
+const { assertWmUpdateAdmission } = require('./wm-update-admission.cjs');
+const assertNoWmMigrationState = dataDir => assertWmUpdateAdmission(dataDir, 'migration_required');
+
 async function copyIdentityAndEndpoint(sourceData, dataNext) {
   const tokenSource = path.join(sourceData, 'runtime-token.txt');
   if (!fs.existsSync(tokenSource)) throw new Error('migration_runtime_token_missing');
@@ -94,6 +97,8 @@ async function buildMigratedDataNext({ rootDir, receipt, logger = () => {} }) {
   const dataNext = path.join(updateRoot, 'DATA.next');
   assertDirectory(program, 'migration_source_program_missing');
   assertDirectory(data, 'migration_source_data_missing');
+
+  assertNoWmMigrationState(data);
 
   const before = await hashManifest(data);
   const operationId = `migration-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
@@ -150,6 +155,7 @@ async function buildMigratedDataNext({ rootDir, receipt, logger = () => {} }) {
     if (before.treeSha256 !== after.treeSha256 || before.fileCount !== after.fileCount || before.totalBytes !== after.totalBytes) {
       throw new Error('migration_source_data_changed');
     }
+    assertNoWmMigrationState(data);
     const nextConfig = readJson(path.join(dataNext, 'config', 'server-config.json'), null);
     if (!nextConfig || nextConfig.host !== endpointIdentity.host || Number(nextConfig.port) !== endpointIdentity.port) throw new Error('migration_endpoint_identity_changed');
 
@@ -360,6 +366,7 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
   const journalPath = path.join(updaterDir, 'update-state.json');
   const existing = readJournal(journalPath);
   if (existing && !isTerminal(existing)) throw new Error('unfinished_update_recovery_required');
+  assertNoWmMigrationState(data);
   const dataIdentity = prepareFreshDataIdentity(data);
   const fromVersion = versionFromProgram(program);
   const operationId = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
@@ -402,6 +409,7 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
       serverWasRunning: journal.serverWasRunning || stopped?.wasRunning === true,
       fromDataTreeSha256: stoppedData.treeSha256
     });
+    assertNoWmMigrationState(data);
     triggerFailpoint('after_migration_server_stop', failpointEnv);
 
     logger('[2/9] DATA.next 논리 마이그레이션 생성');
@@ -413,6 +421,8 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
     journal.flags.migrationBuilt = true;
     journal = await writeJournal(journalPath, journal, { phase: 'migration_built', nextDataIdentity, flags: journal.flags, migrationReceipt: { archiveSha256: built.archiveSha256 || null, importedBackupId: built.importedBackupId || null, targetDatabaseSchemaVersion: built.targetDatabaseSchemaVersion || null } });
     triggerFailpoint('after_migration_data_next', failpointEnv);
+
+    assertNoWmMigrationState(data);
 
     logger('[3/9] 기존 PROGRAM 보관');
     journal = await writeJournal(journalPath, journal, { phase: 'intent_program_old_rename' });
@@ -501,6 +511,7 @@ module.exports = {
   buildMigratedDataNext,
   readDatabaseSchemaVersion,
   copyIdentityAndEndpoint,
+  assertNoWmMigrationState,
   applyMigrationRequired: async options => { const j=pendingIdentityPreflight(options.rootDir); if(j&&!isTerminal(j)) throw new Error('unfinished_update_recovery_required'); assertFreshDataInputs(path.join(path.resolve(options.rootDir),'DATA')); return withUpdateLock(options.rootDir, () => applyMigrationRequiredUnlocked(options)); },
   rollbackMigrationRequired: async options => { journalPathForRoot(options.rootDir,options.journalPath); const j=pendingIdentityPreflight(options.rootDir,options.journal); if(j&&isTerminal(j)) return j; if(j) assertMigrationAuthorities(migrationPaths(path.resolve(options.rootDir),j),j); return withUpdateLock(options.rootDir, () => rollbackMigrationRequired(options)); },
   recoverInterruptedMigrationRequired: async options => { const j=pendingIdentityPreflight(options.rootDir); if(!j||isTerminal(j)) return {recovered:false,reason:'no_pending_update',journal:j}; assertMigrationAuthorities(migrationPaths(path.resolve(options.rootDir),j),j); return withUpdateLock(options.rootDir, () => recoverInterruptedMigrationRequiredUnlocked(options)); },

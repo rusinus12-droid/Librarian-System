@@ -34,7 +34,7 @@
 //@allowed-ipc flashback_memory
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc lia_persona_linker
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/RETRACE/refs/heads/main/RETRACE.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/RETRACE.js
 //@arg memory_suite_server_url string Librarian System server URL; blank uses http://127.0.0.1:47630
 //@description LIBRA, HAYAKU, Flashback, and LIA next-session handoff and Librarian System server control
 //@author Hayaku

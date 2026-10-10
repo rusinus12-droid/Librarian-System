@@ -156,7 +156,35 @@ function buildSourceCandidate(catalog, actual) {
   return candidate;
 }
 
-function rewritePluginVersion(bytes, beforeVersion, afterVersion) {
+// Inspect only the two authored version forms. Never execute plugin source.
+// WM's derived debug version is admitted solely for its exact owner/file/name;
+// changing that version requires rebuilding the canonical WM source inputs.
+function inspectInternalVersion(source, identity = {}) {
+  const fail = () => { throw new Error('source_version_mismatch:internal'); };
+  if ([...source.matchAll(/^\s*const PLUGIN_VERSION\s*=/gm)].length !== 1) fail();
+  const literal = [...source.matchAll(/^\s*const PLUGIN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]\s*;/gm)];
+  const wmSource = identity.owner === 'wm' || identity.file === 'LIBRA_World_Manager.js'
+    || /^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/m.test(source);
+  if (literal.length === 1 && !wmSource) return {version:literal[0][1],kind:'literal'};
+  if (identity.owner !== 'wm' || identity.file !== 'LIBRA_World_Manager.js'
+    || [...source.matchAll(/^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/gm)].length !== 1) fail();
+  const forms = [...source.matchAll(/^\s*const PLUGIN_VERSION = \(\(\) => \{\r?\n([\s\S]*?)^\s*\}\)\(\);/gm)];
+  if (forms.length !== 1) fail();
+  const body = forms[0][1].split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
+  const fallback = [...body.matchAll(/^return '(\d+\.\d+\.\d+)';$/gm)];
+  if (fallback.length !== 1) fail();
+  const expected = String.raw`try {
+const src = String((typeof LIBRA_PLUGIN_SHELL_HEADER !== 'undefined' && LIBRA_PLUGIN_SHELL_HEADER) || '');
+const matched = src.match(/@version\s+([0-9][^\s]*)/);
+if (matched && matched[1]) return matched[1];
+} catch (_) {}
+// 폴백 — 헤더를 못 읽어도 실제 버전을 유지한다(0.1 로 회귀 금지).
+return '<version>';`;
+  if (body.replace(`return '${fallback[0][1]}';`, "return '<version>';") !== expected) fail();
+  return {version:fallback[0][1],kind:'wm-derived'};
+}
+
+function rewritePluginVersion(bytes, beforeVersion, afterVersion, identity = {}) {
   if (!VERSION.test(beforeVersion) || !VERSION.test(afterVersion)) throw new Error('source_version_invalid');
   const source = bytes.toString('utf8');
   if (!Buffer.from(source).equals(bytes)) throw new Error('source_encoding_invalid');
@@ -166,13 +194,16 @@ function rewritePluginVersion(bytes, beforeVersion, afterVersion) {
   if ([...source.matchAll(/^\/\/@display-name[ \t]+[^\r\n]+(?=\r?$)/gm)].length !== 1) {
     throw new Error('source_version_mismatch:display_directive_count');
   }
-  for (const [label, pattern, required] of [['header', header, true], ['internal', internal, true], ['display', display, false]]) {
+  const inspected = inspectInternalVersion(source, identity);
+  if (inspected.version !== beforeVersion) throw new Error('source_version_mismatch:internal');
+  for (const [label, pattern, required] of [['header', header, true], ['display', display, false]]) {
     const matches = [...source.matchAll(pattern)];
     if ((required && matches.length !== 1) || matches.length > 1 || matches.some(match => match[2] !== beforeVersion)) {
       throw new Error(`source_version_mismatch:${label}`);
     }
   }
   if (beforeVersion === afterVersion) return Buffer.from(bytes);
+  if (inspected.kind === 'wm-derived') throw new Error('wm_source_rebuild_required');
   return Buffer.from(source.replace(header, (_, gap, old, tail) => `//@version${gap}${afterVersion}${tail}`)
     .replace(internal, (_, prefix, old, tail) => prefix + afterVersion + tail)
     .replace(display, (_, prefix) => prefix + afterVersion));
@@ -188,7 +219,7 @@ function readSourceActual(programDir) {
   for (const [owner, [file]] of Object.entries(PLUGINS)) {
     const bytes = fs.readFileSync(path.join(programDir, 'plugins', file));
     const version = metadata.plugins[owner].version;
-    rewritePluginVersion(bytes, version, version);
+    rewritePluginVersion(bytes, version, version, {owner,file});
     actual.plugins[owner] = { version, sha256: metadata.plugins[owner].sha256, bytes: bytes.length, file };
     sources[owner] = bytes;
   }
@@ -236,7 +267,7 @@ function prepareSourceRefresh(programDir) {
   const updates = [];
   for (const [owner, observed] of Object.entries(actual.plugins)) {
     const version = catalog.currentRelease.plugins[owner].version;
-    const after = rewritePluginVersion(sources[owner], observed.version, version);
+    const after = rewritePluginVersion(sources[owner], observed.version, version, {owner,file:observed.file});
     updates.push({ owner, file: path.join(programDir, 'plugins', observed.file),
       before: sources[owner], after, beforeVersion: observed.version, afterVersion: version });
     actual.plugins[owner] = { ...observed, version, sha256: hash(after), bytes: after.length };
@@ -304,7 +335,7 @@ function refreshSourceProvenance(programDir, { write = false, backupFile } = {})
   }
 }
 
-module.exports = { validateProvenance, buildSourceCandidate, rewritePluginVersion,
+module.exports = { inspectInternalVersion, validateProvenance, buildSourceCandidate, rewritePluginVersion,
   readSourceActual, prepareSourceRefresh, refreshSourceProvenance };
 
 if (require.main === module) {

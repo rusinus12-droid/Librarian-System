@@ -9,7 +9,16 @@ const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
 const read = relative => fs.readFileSync(path.join(programDir, ...relative.split('/')), 'utf8');
 
+function assertPublicMetadataBrand(source, label) {
+  const directives = source.match(/^\/\/@[A-Za-z][^\r\n]*/gm) || [];
+  assert.ok(directives.length, `${label}: public metadata exists`);
+  assert.doesNotMatch(directives.join('\n'), /Memory Suite|MEMORY SUITE/, `${label} public metadata must expose the Librarian System brand`);
+}
+
 function main() {
+  assert.doesNotThrow(() => assertPublicMetadataBrand('//@display-name Librarian System\n/* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN */', 'technical marker'));
+  assert.throws(() => assertPublicMetadataBrand('//@display-name Memory Suite plugin\n', 'public marker'), /public metadata/);
+
   const packageVersion = read('VERSION.txt').trim();
   assert.match(packageVersion, /^\d+\.\d+\.\d+$/);
   assert.match(read('server/server.cjs'), /const SERVER_NAME = 'Librarian System Data Server'/);
@@ -26,8 +35,7 @@ function main() {
   for (const [fileName, version] of pluginVersions) {
     const source = read(`plugins/${fileName}`);
     assert.match(source, new RegExp(`^//\\@version ${version.replace(/\./g, '\\.')}$`, 'm'));
-    const publicHeader = source.slice(0, Math.min(source.length, 12000));
-    assert.doesNotMatch(publicHeader, /Memory Suite|MEMORY SUITE/, `${fileName} public header must expose the Librarian System brand`);
+    assertPublicMetadataBrand(source, fileName);
     assert.match(source, /memory-suite|MEMORY_SUITE|MemorySuite/,
       `${fileName} must retain at least one legacy technical identifier for persisted compatibility`);
   }

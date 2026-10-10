@@ -374,7 +374,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
 /* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
 //@allowed-ipc flashback_hayaku_bridge
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/hayaku_locator_continuity/main/hayaku_locator_continuity.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 //@arg hayaku_enabled string true|false
 //@arg hayaku_mode string auto|balanced|fast|deep
 //@arg hayaku_prompt_mode string auto|balanced|full

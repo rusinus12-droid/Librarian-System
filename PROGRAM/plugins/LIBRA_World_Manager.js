@@ -3,7 +3,7 @@
 //@author rusinus12@gmail.com
 //@api 3.0
 //@version 6.0.0
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/libra_world_maker/main/dist/LIBRA%20World%20Manager.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js
 //@arg story_author_enabled string Enable Story Author layer: true|false
 //@arg story_author_mode string Story Author mode: disabled|supportive|proactive|aggressive
 //@arg director_enabled string Enable Director layer: true|false

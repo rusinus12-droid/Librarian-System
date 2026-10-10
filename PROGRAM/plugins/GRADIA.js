@@ -7,7 +7,7 @@
 /* v0.25.82 makes WebRisu credential persistence update-safe by mirroring every provider-preset secret, Narrative Archive embedding key, and hosting token into verified pluginStorage backups while retaining localPluginStorage; startup reads repair a missing local copy from the synced backup, and the active narrative-embedding/hosting credentials also use host arguments when available without changing provider/model selection. */
 /* v0.25.81 aligns GRADIA with RE:TRACE peer-compatibility v1 and makes all next-session state handoff source-immutable: Narrative Archive preparation no longer empties or rewrites the source scope, source Story Arc/Writer/Narrative fingerprints are proven unchanged across prepare/adopt, and future GRADIA versions are negotiated by stable protocol/features instead of exact version gates. */
 /* v0.25.49 fixes the button-only Input Writer GUI capability probe that was referenced by the composer/delivery flow but missing from both the source feature branch and the merged canonical build. v0.25.48 merges the explicit button-only Input Writer flow while preserving the shared Narrative Archive, local Float32 vector tier, and RE:TRACE summary-only handoff contract. */
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/GRADIA/main/GRADIA.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
 //@arg mode string off|lite|normal
 //@arg multi_pipeline_mode string lightweight|heavyweight — lightweight combines analysis and drafting in one call per stage; heavyweight separates them
 //@arg writing_mode string novel|rp — top-level writing control; novel is author-directed full-cast fiction, rp is strict player-controlled user-agency protection
@@ -50,7 +50,6 @@
 //@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks GRADIA may read
 //@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks GRADIA must not read
 //@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries GRADIA must never read
-//@arg excluded_hypa_record_ids string JSON/comma-separated stable IDs of HypaV3 records GRADIA must never read
 //@arg aide_stage_order string JSON/comma-separated order for Character, World, Plot AIDE; SHADOW ACT is always first
 //@arg llm_provider string Fallback main LLM provider
 //@arg llm_url string Fallback main LLM URL
@@ -1007,8 +1006,6 @@
     npc_focus: Object.freeze({ label: '현장 인물 중심', description: '같은 작가 의도를 유지하면서 현재 NPC들의 능동성·관계 역학·대화 가능성을 강화하는 입력' }),
     offscreen_focus: Object.freeze({ label: '세계·외부 인물 중심', description: '같은 작가 의도를 유지하면서 인과적으로 닿는 외부 인물·세력·세계 움직임을 강화하는 입력' })
   });
-  const HYPA_CONTINUITY_SCHEMA = 'gradia_hypa_long_term_continuity_v1';
-  const HYPA_CONTINUITY_MAX_CHARS = 6000;
   const CANONICAL_REFERENCE_PACKET_SCHEMA = 'gradia_reference_packet_v2';
   const SHARED_REFERENCE_TRANSPORT_SCHEMA = 'gradia_shared_reference_transport_v1';
   const REFERENCE_BUDGET_MIGRATION_VERSION = 3;
@@ -2386,7 +2383,6 @@
     return out;
   };
 
-  const normalizeExcludedHypaRecordIds = value => normalizeExcludedCharacterLoreIds(value);
   const normalizeExcludedModuleLoreIds = value => normalizeExcludedCharacterLoreIds(value);
 
   const moduleSelectionKey = module => firstFilled(
@@ -3620,7 +3616,7 @@
     'information_transfer_mode', 'nsfw_mode', 'nsfw_guidance_enabled', 'lore_activation_mode',
     'lore_reranker_top_k', 'skill_router_enabled', 'skill_router_top_k',
     'skill_router_references', 'selected_module_lore_ids', 'excluded_module_lore_ids', 'excluded_character_lore_ids',
-    'excluded_hypa_record_ids', 'aide_stage_order', 'enable_shadow_act',
+    'aide_stage_order', 'enable_shadow_act',
     'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'shadow_prompt_extra',
     'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'shadow_prompt_mode',
     'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'shadow_prompt_custom',
@@ -4168,10 +4164,12 @@
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
       loreActivationMode: 'lore_activation_mode', loreRerankerTopK: 'lore_reranker_top_k', skillRouterEnabled: 'skill_router_enabled', skillRouterTopK: 'skill_router_top_k', skillRouterReferences: 'skill_router_references', skillCustomLibrary: 'skill_custom_library', skillPriorityOverrides: 'skill_priority_overrides',
       excludedCharacterLoreIds: 'excluded_character_lore_ids',
-      excludedHypaRecordIds: 'excluded_hypa_record_ids'
     };
     const out = {};
-    for (const [key, value] of Object.entries(source || {})) out[aliases[key] || key] = value;
+    for (const [key, value] of Object.entries(source || {})) {
+      if (key === 'excluded_hypa_record_ids' || key === 'excludedHypaRecordIds') continue;
+      out[aliases[key] || key] = value;
+    }
     for (const key of Object.keys(out)) if (/^(?:arc_|arcDirector|arcHorizon|arcAutoReplan|arcNovelty|writer_|writerEnabled|writerReview|writerMax)/.test(key)) delete out[key];
     if (Object.prototype.hasOwnProperty.call(out, 'output_mode')) out.output_mode = 'draft_guided';
     if (Object.prototype.hasOwnProperty.call(out, 'information_transfer_mode')) out.information_transfer_mode = 'draft_only';
@@ -5296,7 +5294,6 @@
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(await runtimeCfg('selected_module_lore_ids', runtimeStored.selected_module_lore_ids || [])),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(await runtimeCfg('excluded_module_lore_ids', runtimeStored.excluded_module_lore_ids || [])),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(await runtimeCfg('excluded_character_lore_ids', runtimeStored.excluded_character_lore_ids || [])),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(await runtimeCfg('excluded_hypa_record_ids', runtimeStored.excluded_hypa_record_ids || [])),
       stagePresetNames: {
         [ARC_DIRECTOR_STAGE_ID]: compact(await slotCfg(ARC_DIRECTOR_STAGE_ID, 'preset', 'arc_director_preset', await slotCfg('shadow_act', 'preset', 'shadow_act_preset', '')), 120),
         [INPUT_ASSIST_STAGE_ID]: compact(await slotCfg(INPUT_ASSIST_STAGE_ID, 'preset', 'input_assist_preset', ''), 120),
@@ -6133,7 +6130,9 @@ ${text(paired.leadingAssistant.content || '')}
       .filter(m => ['system', 'user', 'assistant', 'developer'].includes(m.role))
       .filter(m => ['user', 'assistant'].includes(m.role) || text(m.content || '').trim())
       .filter(m => !isSgaInjectionText(m.content));
-    const systemContextMessages = allowed.filter(m => ['system', 'developer'].includes(m.role));
+    const systemContextMessages = allowed
+      .filter(m => ['system', 'developer'].includes(m.role) && !['supaMemory', 'hypaMemory'].includes(m.memo))
+      .map(m => ({ ...m, content: m.content.replace(/<Past Events Summary>[\s\S]*?<\/Past Events Summary>/gi, '').trim() }));
     const otherInfoMessages = allowed.filter(m => {
       if (['system', 'developer'].includes(m.role)) return false;
       return isOthersInfoMessage(m.content) || (m.role === 'user' && isLikelyMetaUserMessage(m.content));
@@ -9354,7 +9353,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
-    excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
     loreActivationMode: normalizeLoreActivationMode(settings.loreActivationMode),
     inputAssistLoreActivationMode: normalizeInputAssistLoreActivationMode(settings.inputAssistLoreActivationMode),
     turnWindow: Number(settings.turnWindow || 0),
@@ -9456,22 +9454,11 @@ function mergeAgentCbsWarnings(...warningLists) {
     if (!inputAssistTerminalPath) {
       writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
     }
-    const hypaContinuity = inputAssistTerminalPath
-      ? null
-      : buildHypaContinuityPacket(
-          { chatInfo, actualChatContext },
-          ragRecent,
-          {
-            excludedRecordIds: settings.excludedHypaRecordIds,
-            requestMessages
-          }
-        );
     return {
       ...staticSource,
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
       candidates,
       activeLore,
       keyActiveLore: independentRendering.activeLore,
@@ -9480,7 +9467,6 @@ function mergeAgentCbsWarnings(...warningLists) {
       actualChatContext,
       cbsContext,
       authorNote,
-      hypaContinuity,
       loreSettings: {
         activationMode: loreActivationMode,
         activationModeLabel: inputAssistTerminalPath
@@ -13534,7 +13520,7 @@ ${passage.text || ''}`, 420));
     return compact(sections.filter(item => item !== null && item !== undefined).join('\n'), contextBudget);
   };
 
-  const loreSelectionBudgetForStage = ({ settings = {}, stageName = 'shadow_act', refs = {}, source = {}, hypaContinuity = null, authorNote = null, capacityOptions = null, capacity: suppliedCapacity = null } = {}) => {
+  const loreSelectionBudgetForStage = ({ settings = {}, stageName = 'shadow_act', refs = {}, source = {}, authorNote = null, capacityOptions = null, capacity: suppliedCapacity = null } = {}) => {
     const options = capacityOptions || { stageNames: [stageName] };
     const capacity = suppliedCapacity || resolveReferenceCapacity(settings, options);
     let nonLoreChars = 1800; // transport headings and continuity metadata
@@ -13551,9 +13537,6 @@ ${passage.text || ''}`, 420));
         character.exampleDialogue ?? character.mes_example,
         character.firstMessage ?? character.first_message
       ].map(value => text(value || '').length).reduce((sum, value) => sum + value, 0) + 240;
-    }
-    if (hypaContinuity?.records?.length) {
-      nonLoreChars += Math.min(HYPA_CONTINUITY_MAX_CHARS, hypaContinuity.records.reduce((sum, record) => sum + text(record?.body || '').length + 80, 0));
     }
     const effective = Math.max(1000, Number(capacity.effectiveBudgetChars || REFERENCE_PROFILE_CAPS.balanced));
     const minimumLoreBudget = Math.min(effective, 2400);
@@ -13857,7 +13840,6 @@ ${passage.text || ''}`, 420));
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings?.selectedModuleLoreIds),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings?.excludedHypaRecordIds),
       characterSource: 'missing',
       personaSource: 'missing',
       currentChatSource: 'missing',
@@ -13892,17 +13874,6 @@ ${passage.text || ''}`, 420));
       recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
     );
-    const hypaContinuity = source.hypaContinuity || buildHypaContinuityPacket(
-      source,
-      recent,
-      {
-        excludedRecordIds: settings?.excludedHypaRecordIds,
-        requestMessages: messages
-      }
-    );
-    const hypaContinuityBlock = formatHypaContinuityPacket(hypaContinuity);
-    recent.longTermContinuity = hypaContinuity;
-    recent.longTermContinuityBlock = hypaContinuityBlock;
     const { characterInfo, character, chatInfo, persona, candidates } = source;
     const continuityLedger = inputAssistTerminalPath
       ? {
@@ -13988,7 +13959,7 @@ ${passage.text || ''}`, 420));
     if (!inputAssistTerminalPath && source.loreSettings?.continuityScope) {
       writeLoreContinuityIds(source.loreSettings.continuityScope, activeLore, recent?.latestUser || '');
     }
-    meta.available = !!(character || source.db || chatInfo?.chat || persona || selectedCandidates.length || hypaContinuity?.selectedCount);
+    meta.available = !!(character || source.db || chatInfo?.chat || persona || selectedCandidates.length);
     meta.character = !!character;
     meta.persona = !!persona;
     meta.characterSource = characterInfo?.source || 'missing';
@@ -14014,23 +13985,6 @@ ${passage.text || ''}`, 420));
       requestMatchedKnown: source.actualChatContext?.requestGreetingMatchedKnown === true
     };
     meta.rawMemorySnapshotDisabled = true;
-    meta.hypaContinuity = {
-      schema: hypaContinuity?.schema || HYPA_CONTINUITY_SCHEMA,
-      authority: hypaContinuity?.authority || 'long_term_history_only',
-      currentSceneAuthority: hypaContinuity?.currentSceneAuthority || 'terminal_assistant_tail_2400',
-      selectionAuthority: hypaContinuity?.selectionAuthority || 'risu_hypav3_current_request',
-      selectionSource: hypaContinuity?.selectionSource || 'unavailable',
-      currentSelectionObserved: hypaContinuity?.currentSelectionObserved === true,
-      metricsAvailable: hypaContinuity?.metricsAvailable === true,
-      availableCount: hypaContinuity?.availableCount || 0,
-      selectedBeforeExclusionCount: hypaContinuity?.selectedBeforeExclusionCount || 0,
-      selectedCount: hypaContinuity?.selectedCount || 0,
-      excludedSelectedCount: hypaContinuity?.excludedSelectedCount || 0,
-      excludedCount: hypaContinuity?.excludedCount || 0,
-      selectedRecordIds: Array.isArray(hypaContinuity?.selectedRecordIds) ? hypaContinuity.selectedRecordIds : [],
-      coverageEnd: hypaContinuity?.coverageEnd || 0,
-      terminalChars: recent.terminalVisibleScene.length
-    };
     meta.continuityLedger = {
       version: continuityLedger.version,
       boundary: continuityLedger.boundary,
@@ -14206,7 +14160,6 @@ ${passage.text || ''}`, 420));
       stageName: settings?.activeStageName || 'shadow_act',
       refs,
       source,
-      hypaContinuity,
       authorNote,
       capacityOptions: referenceCapacityOptions
     });
@@ -14295,7 +14248,6 @@ ${passage.text || ''}`, 420));
         references: refs,
         loreMode: loreActivationMode,
         activeLore: retrievedActiveLore,
-        hypaContinuity,
         authorNote,
         continuityLedger,
         capacity: referenceCapacity,
@@ -14396,7 +14348,7 @@ ${passage.text || ''}`, 420));
         source.cbsContext,
         `stage:${settings?.activeStageName || 'unknown'}`
       );
-      referencePacketBlock = [renderedLegacyBlock, hypaContinuityBlock].filter(Boolean).join('\n\n');
+      referencePacketBlock = renderedLegacyBlock;
       referencePacketHash = referenceContentHash(referencePacketBlock);
       referenceCapacity = resolveReferenceCapacity(settings, referenceCapacityOptions || {});
       const fallbackReferences = Object.fromEntries(REFERENCE_GROUP_ORDER.map(group => [group, []]));
@@ -14433,7 +14385,6 @@ ${passage.text || ''}`, 420));
           selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
           excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
           excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
-          excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
           selectedIds: referencePacketBlock ? [`legacy-risu-context:${referencePacketHash}`] : [],
           duplicateIds: [],
           degradedFallbacks: ['legacy_combined_risu_context']
@@ -14501,8 +14452,6 @@ ${passage.text || ''}`, 420));
       continuityLedgerBlock: recent.continuityLedgerBlock || '',
       relationshipCanonLock,
       relationshipCanonLockBlock: recent.relationshipCanonLockBlock || '',
-      hypaContinuity,
-      hypaContinuityBlock,
       authoritativeCurrentInput,
       authorNote,
       memory: '',
@@ -14537,7 +14486,7 @@ ${passage.text || ''}`, 420));
   };
 
   // Materialize a stage view from the one request-scoped reference snapshot.
-  // Character/persona/Hypa loading, module scanning, activation, and Jaccard promotion
+  // Character/persona loading, module scanning, activation, and Jaccard promotion
   // are still performed once. Only the already-collected lore pool is reranked locally
   // for SHADOW/Character/World/Plot, so stage specialization adds no provider call.
   const materializeSharedRisuContext = (shared, recent, settings, references = null) => {
@@ -14574,8 +14523,6 @@ ${passage.text || ''}`, 420));
       recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
     );
-    recent.longTermContinuity = shared.hypaContinuity || null;
-    recent.longTermContinuityBlock = shared.hypaContinuityBlock || '';
     recent.continuityLedger = shared.continuityLedger || recent.continuityLedger || null;
     recent.continuityLedgerBlock = shared.continuityLedgerBlock || recent.continuityLedgerBlock || '';
 
@@ -14616,7 +14563,6 @@ ${passage.text || ''}`, 420));
       stageName,
       refs,
       source,
-      hypaContinuity: shared.hypaContinuity || null,
       authorNote: sharedAuthorNote,
       capacityOptions: { stageNames: [stageName] }
     });
@@ -14666,7 +14612,6 @@ ${passage.text || ''}`, 420));
           references: refs,
           loreMode: shared.meta?.loreActivationMode || shared.referencePacket?.loreMode || settings?.loreActivationMode,
           activeLore: retrievedActiveLore,
-          hypaContinuity: shared.hypaContinuity || null,
           authorNote: sharedAuthorNote,
           continuityLedger: shared.continuityLedger || recent.continuityLedger || null,
           capacity: referenceCapacity || undefined
@@ -14841,8 +14786,6 @@ ${passage.text || ''}`, 420));
       continuityLedgerBlock: shared.continuityLedgerBlock || '',
       relationshipCanonLock,
       relationshipCanonLockBlock: recent.relationshipCanonLockBlock || '',
-      hypaContinuity: shared.hypaContinuity || null,
-      hypaContinuityBlock: shared.hypaContinuityBlock || '',
       authoritativeCurrentInput: shared.authoritativeCurrentInput || '',
       authorNote: sharedAuthorNote,
       memory: '',
@@ -15055,230 +14998,6 @@ ${passage.text || ''}`, 420));
 
   
 
-  const hypaContinuitySummaryText = item => {
-    if (!item) return '';
-    if (typeof item === 'string') return sanitizeMessageContentForHistory('assistant', item);
-    if (typeof item !== 'object') return '';
-    const main = firstFilled(item.text, item.summary, item.content, item.memo, item.description, item.data);
-    const memos = Array.isArray(item.chatMemos || item.chat_memos)
-      ? (item.chatMemos || item.chat_memos).map(row => typeof row === 'string' ? row : firstFilled(row?.content, row?.text, row?.message)).filter(Boolean).slice(-4).join(' / ')
-      : '';
-    const tags = Array.isArray(item.tags) ? item.tags.slice(0, 8).join(', ') : '';
-    const meta = [item.isImportant === true ? 'important' : '', item.category || '', tags].filter(Boolean).join(' | ');
-    const body = [meta ? `[${meta}]` : '', main, memos ? `대화 단서: ${memos}` : ''].filter(Boolean).join('\n');
-    return sanitizeMessageContentForHistory('assistant', body);
-  };
-
-  
-
-  const hypaContinuityMessageIndex = (item, body = '') => {
-    if (item && typeof item === 'object' && !Array.isArray(item)) {
-      const candidates = [
-        item.message_index,
-        item.messageIndex,
-        item.end_index,
-        item.endIndex,
-        item.range_end,
-        item.rangeEnd,
-        item.until,
-        item.chatIndex
-      ];
-      for (const value of candidates) {
-        if (Number.isFinite(Number(value))) return Math.max(0, parseInt(value, 10) || 0);
-      }
-    }
-    const match = text(body || '').match(/(?:message[_\s-]*index|range[_\s-]*end|end[_\s-]*index|chat[_\s-]*index)\s*[:=]\s*(\d+)/i);
-    return match ? Math.max(0, parseInt(match[1], 10) || 0) : null;
-  };
-
-  const hypaContinuityRawCandidates = (snapshot, recent) => {
-    const chat = snapshot?.chatInfo?.chat || {};
-    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
-    const structured = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.summaries) ? raw.summaries
-        : Array.isArray(raw?.memories) ? raw.memories
-          : Array.isArray(raw?.data) ? raw.data : [];
-    const injected = [];
-    const systemText = text(recent?.systemContext || '');
-    const re = /<Past Events Summary>([\s\S]*?)<\/Past Events Summary>/gi;
-    let match;
-    while ((match = re.exec(systemText))) {
-      injected.push({ text: text(match[1]).trim(), __injectedPastEvents: true });
-    }
-    // Native HypaV3 records are the authoritative source whenever the chat exposes
-    // them. The already-injected aggregate is only a compatibility fallback; mixing
-    // both would let an excluded native record return through the aggregate prompt.
-    return structured.length ? structured : injected;
-  };
-
-  const hypaContinuityCategoryMap = snapshot => {
-    const chat = snapshot?.chatInfo?.chat || {};
-    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
-    const categories = Array.isArray(raw?.categories) ? raw.categories : [];
-    return new Map(categories.map(item => [text(item?.id || '').trim(), text(item?.name || '').trim()]).filter(([id]) => id));
-  };
-
-  const risuHypaSelectionState = snapshot => {
-    const chat = snapshot?.chatInfo?.chat || {};
-    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
-    const metrics = raw?.metrics && typeof raw.metrics === 'object' ? raw.metrics : null;
-    const groups = {
-      important: Array.isArray(metrics?.lastImportantSummaries) ? metrics.lastImportantSummaries : [],
-      recent: Array.isArray(metrics?.lastRecentSummaries) ? metrics.lastRecentSummaries : [],
-      similar: Array.isArray(metrics?.lastSimilarSummaries) ? metrics.lastSimilarSummaries : [],
-      random: Array.isArray(metrics?.lastRandomSummaries) ? metrics.lastRandomSummaries : [],
-      legacy: Array.isArray(raw?.lastSelectedSummaries) ? raw.lastSelectedSummaries : []
-    };
-    const normalizeIndexes = values => Array.from(new Set((values || [])
-      .map(value => Number(value))
-      .filter(value => Number.isInteger(value) && value >= 0)));
-    const normalizedGroups = Object.fromEntries(
-      Object.entries(groups).map(([name, values]) => [name, normalizeIndexes(values)])
-    );
-    return {
-      metricsAvailable: !!metrics || normalizedGroups.legacy.length > 0,
-      indexes: normalizeIndexes(Object.values(normalizedGroups).flat()),
-      groups: normalizedGroups
-    };
-  };
-
-  const currentRisuHypaPromptPresent = requestMessages => (Array.isArray(requestMessages) ? requestMessages : [])
-    .some(message => {
-      if (isSgaTransportInjectionMessage(message)) return false;
-      const body = contentToText(message?.content);
-      return /<Past Events Summary>[\s\S]*?<\/Past Events Summary>/i.test(body);
-    });
-
-  const buildHypaContinuityRecords = (snapshot, recent) => {
-    const candidates = hypaContinuityRawCandidates(snapshot, recent);
-    const categoryMap = hypaContinuityCategoryMap(snapshot);
-    return candidates.map((item, sourceOrder) => {
-      const body = hypaContinuitySummaryText(item);
-      if (!body) return null;
-      const hash = stableDraftHash(body);
-      const messageIndex = hypaContinuityMessageIndex(item, body);
-      const important = item?.isImportant === true || item?.important === true;
-      const categoryId = text(item?.categoryId ?? item?.category_id ?? '').trim();
-      const category = firstFilled(item?.category, categoryMap.get(categoryId), categoryId);
-      const tags = Array.isArray(item?.tags) ? item.tags.map(tag => text(tag).trim()).filter(Boolean).slice(0, 12) : [];
-      const explicitId = firstFilled(item?.id, item?.summaryId, item?.uuid);
-      return {
-        id: explicitId || `hypa:${hash}`,
-        sourceOrder,
-        messageIndex,
-        important,
-        injected: item?.__injectedPastEvents === true,
-        categoryId,
-        category,
-        tags,
-        title: firstFilled(item?.title, category, tags[0], `HypaV3 기록 ${sourceOrder + 1}`),
-        body
-      };
-    }).filter(Boolean);
-  };
-
-  const buildHypaContinuityPacket = (snapshot, recent, options = {}) => {
-    const allRecords = buildHypaContinuityRecords(snapshot, recent);
-    const excludedIds = new Set(normalizeExcludedHypaRecordIds(options?.excludedRecordIds));
-    const records = allRecords.filter(record => !excludedIds.has(record.id));
-    const terminalScene = extractInputAssistTerminalTail(
-      recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
-    );
-    const currentMessageCount = Math.max(
-      Number(snapshot?.actualChatContext?.storedMessageCount || 0),
-      Number(snapshot?.actualChatContext?.messageCount || 0),
-      Array.isArray(snapshot?.chatInfo?.chat?.message) ? snapshot.chatInfo.chat.message.length : 0
-    );
-    const risuSelection = risuHypaSelectionState(snapshot);
-    const currentSelectionObserved = options?.assumeCurrentSelection === true
-      || currentRisuHypaPromptPresent(options?.requestMessages);
-    const selectedBeforeExclusion = currentSelectionObserved && risuSelection.metricsAvailable
-      ? risuSelection.indexes
-        .map(index => allRecords.find(record => record.sourceOrder === index))
-        .filter(Boolean)
-      : [];
-    const selected = selectedBeforeExclusion
-      .filter(record => !excludedIds.has(record.id))
-      .map(record => {
-        const groups = Object.entries(risuSelection.groups || {})
-          .filter(([, indexes]) => indexes.includes(record.sourceOrder))
-          .map(([name]) => name);
-        return { ...record, selectionGroups: groups };
-      })
-      .sort((left, right) => (
-        Number.isFinite(Number(left.messageIndex)) && Number.isFinite(Number(right.messageIndex))
-          ? Number(left.messageIndex) - Number(right.messageIndex)
-          : left.sourceOrder - right.sourceOrder
-      ) || left.sourceOrder - right.sourceOrder);
-
-    const packet = {
-      schema: HYPA_CONTINUITY_SCHEMA,
-      authority: 'long_term_history_only',
-      currentSceneAuthority: 'terminal_assistant_tail_2400',
-      selectionAuthority: 'risu_hypav3_current_request',
-      selectionSource: !currentSelectionObserved
-        ? 'risu_hypa_not_present_in_current_request'
-        : risuSelection.metricsAvailable
-          ? 'risu_hypav3_metrics'
-          : 'risu_hypav3_metrics_unavailable',
-      currentSelectionObserved,
-      metricsAvailable: risuSelection.metricsAvailable,
-      risuSelectedIndexes: risuSelection.indexes,
-      risuSelectionGroups: risuSelection.groups,
-      currentMessageCount,
-      totalCount: allRecords.length,
-      excludedCount: allRecords.length - records.length,
-      availableCount: records.length,
-      selectedBeforeExclusionCount: selectedBeforeExclusion.length,
-      excludedSelectedCount: selectedBeforeExclusion.length - selected.length,
-      selectedCount: selected.length,
-      excludedRecordIds: Array.from(excludedIds),
-      selectedRecordIds: selected.map(record => record.id),
-      coverageEnd: selected.reduce((max, record) => record.messageIndex === null ? max : Math.max(max, record.messageIndex), 0),
-      terminalHash: stableDraftHash(terminalScene),
-      queryHash: stableDraftHash(risuSelection.indexes.join(',')),
-      records: selected
-    };
-    return Object.freeze({
-      ...packet,
-      excludedRecordIds: Object.freeze([...packet.excludedRecordIds]),
-      selectedRecordIds: Object.freeze([...packet.selectedRecordIds]),
-      risuSelectedIndexes: Object.freeze([...packet.risuSelectedIndexes]),
-      risuSelectionGroups: Object.freeze(Object.fromEntries(
-        Object.entries(packet.risuSelectionGroups).map(([name, indexes]) => [name, Object.freeze([...indexes])])
-      )),
-      records: Object.freeze(selected.map(record => Object.freeze({ ...record })))
-    });
-  };
-
-  const buildHypaV3Catalog = (snapshot, recent = {}) => {
-    const selectedIndexes = new Set(risuHypaSelectionState(snapshot).indexes);
-    return buildHypaContinuityRecords(snapshot, recent).map(record => ({
-      ...record,
-      risuSelected: selectedIndexes.has(record.sourceOrder),
-      contentPreview: compact(text(record.body || '').replace(/\s+/g, ' '), 360)
-    }));
-  };
-
-  const formatHypaContinuityPacket = packet => {
-    const records = Array.isArray(packet?.records) ? packet.records : [];
-    if (!records.length) return '';
-    const body = records.map((record, index) => [
-      `[Historical continuity ${index + 1}${record.messageIndex === null ? '' : ` / through message ${record.messageIndex}`}${record.important ? ' / important' : ''}]`,
-      record.body
-    ].join('\n')).join('\n\n');
-    return compactMiddle([
-      '[ESTABLISHED LONG-TERM CONTINUITY / READ-ONLY HISTORY]',
-      'Use these records only for established past events, relationship changes, character knowledge, promises, obligations, and unresolved consequences relevant to the current response.',
-      'They do not establish the live location, cast, posture, contact, object placement, or action. The exact terminal scene passage and current user input control the live scene.',
-      'Do not replay, relocate to, or resume a historical scene merely because it appears here. Bring forward only a consequence with a concrete connection to the terminal scene.',
-      '',
-      body
-    ].join('\n'), HYPA_CONTINUITY_MAX_CHARS);
-  };
-
   const normalizeReferenceContent = value => {
     let body = text(value || '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '');
     try { body = body.normalize('NFKC'); } catch (_) {}
@@ -15322,12 +15041,6 @@ ${passage.text || ''}`, 420));
     lore_recursive: 0.92,
     lore_jaccard_current: 1.34,
     lore_jaccard_terminal: 0.78,
-    hypa_multi: 1.34,
-    hypa_important: 1.28,
-    hypa_similar: 1.22,
-    hypa_recent: 0.96,
-    hypa_legacy: 1.16,
-    hypa_random: 0.58,
     auxiliary: 0.55
   }[value] || 1);
 
@@ -15415,7 +15128,6 @@ ${passage.text || ''}`, 420));
     'persona',
     'characterDefinition',
     'lore',
-    'hypa',
     'auxiliary'
   ]);
   const referenceGroupForItem = item => ({
@@ -15423,7 +15135,6 @@ ${passage.text || ''}`, 420));
     persona: 'persona',
     character_definition: 'characterDefinition',
     lore: 'lore',
-    hypa: 'hypa',
     auxiliary: 'auxiliary'
   }[item?.sourceType] || 'auxiliary');
   const referenceGroupLabel = group => ({
@@ -15431,15 +15142,8 @@ ${passage.text || ''}`, 420));
     persona: 'USER PERSONA',
     characterDefinition: 'CHARACTER DEFINITION',
     lore: 'ACTIVATED LORE',
-    hypa: 'ESTABLISHED LONG-TERM CONTINUITY',
     auxiliary: 'AUXILIARY REFERENCE'
   }[group] || 'REFERENCE');
-  const referenceGroupPreamble = group => group === 'hypa'
-    ? [
-        'These records describe long-term history only: past events, relationship changes, learned knowledge, promises, obligations, and unresolved consequences.',
-        'They do not override the latest visible scene location, cast, posture, contact, speaker, objects, or ongoing action.'
-      ].join('\n')
-    : '';
 
   const serializeCanonicalReferenceItem = item => {
     const meta = [
@@ -15455,20 +15159,6 @@ ${passage.text || ''}`, 420));
   const referenceSerializedChars = item => serializeCanonicalReferenceItem(item).length + 2;
 
   const referenceItemPriority = item => {
-    const groups = new Set(item.selectionGroups || []);
-    const hypaBoost = groups.size > 1
-      ? 42
-      : groups.has('important')
-        ? 35
-        : groups.has('similar')
-          ? 28
-            : groups.has('recent')
-              ? 14
-              : groups.has('legacy')
-                ? 20
-              : groups.has('random')
-                ? -12
-              : 0;
     const routeBoost = {
       risu_request_selected: 46,
       risu_request_selected_injection: 44,
@@ -15487,7 +15177,6 @@ ${passage.text || ''}`, 420));
       + (item.coverageCritical ? 34 : 0)
       + (item.candidateProtected ? 18 : 0)
       + routeBoost
-      + hypaBoost
       + Math.max(-20, Math.min(30, item.relevanceScore * 20));
   };
 
@@ -15946,40 +15635,6 @@ ${passage.text || ''}`, 420));
     };
   }).filter(item => item.content);
 
-  const canonicalHypaReferenceItems = packet => (Array.isArray(packet?.records) ? packet.records : []).map((record, sourceOrder) => {
-    const groups = Array.isArray(record.selectionGroups) ? record.selectionGroups : [];
-    const authorityClass = groups.length > 1
-      ? 'hypa_multi'
-      : groups.includes('important')
-        ? 'hypa_important'
-        : groups.includes('similar')
-          ? 'hypa_similar'
-            : groups.includes('recent')
-              ? 'hypa_recent'
-              : groups.includes('legacy')
-                ? 'hypa_legacy'
-              : groups.includes('random')
-                ? 'hypa_random'
-                : 'hypa_recent';
-    return {
-      id: `hypa:${record.id}`,
-      sourceType: 'hypa',
-      sourceNamespace: 'risu_hypav3_current_request',
-      label: record.title || `Historical continuity ${sourceOrder + 1}`,
-      content: text(record.body || '').trim(),
-      sourceOrder: Number.isFinite(Number(record.sourceOrder)) ? Number(record.sourceOrder) : sourceOrder,
-      authorityClass,
-      selectionReason: 'risu_hypav3_current_request',
-      relevanceScore: groups.includes('similar') ? 1 : groups.includes('important') ? 0.9 : groups.includes('recent') ? 0.6 : 0.2,
-      protected: ['hypa_multi', 'hypa_important', 'hypa_similar', 'hypa_legacy'].includes(authorityClass),
-      optional: !['hypa_multi', 'hypa_important', 'hypa_legacy'].includes(authorityClass),
-      recordId: record.id,
-      messageIndex: record.messageIndex,
-      selectionGroups: groups,
-      longTermAuthority: 'long_term_history_only'
-    };
-  }).filter(item => item.content);
-
   const serializeCanonicalReferencePacket = (packet = {}, options = {}) => {
     const excludeTypes = new Set(Array.isArray(options.excludeTypes) ? options.excludeTypes : ['author_note']);
     const sections = [];
@@ -15987,15 +15642,10 @@ ${passage.text || ''}`, 420));
       const items = (packet.references?.[group] || []).filter(item => !excludeTypes.has(item.sourceType));
       if (!items.length) continue;
       sections.push(`[${referenceGroupLabel(group)}]`);
-      const preamble = referenceGroupPreamble(group);
-      if (preamble) sections.push(preamble);
       sections.push(items
         .slice()
         .sort((left, right) => (
-          group === 'hypa'
-            ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
-              || left.sourceOrder - right.sourceOrder
-            : left.sourceOrder - right.sourceOrder
+          left.sourceOrder - right.sourceOrder
         ))
         .map(serializeCanonicalReferenceItem)
         .join('\n\n'));
@@ -16019,15 +15669,10 @@ ${passage.text || ''}`, 420));
       const items = (packet.references?.[group] || []).filter(item => !excludeTypes.has(item.sourceType));
       if (!items.length) continue;
       sections.push(`[${referenceGroupLabel(group)}]`);
-      const preamble = referenceGroupPreamble(group);
-      if (preamble) sections.push(preamble);
       sections.push(items
         .slice()
         .sort((left, right) => (
-          group === 'hypa'
-            ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
-              || left.sourceOrder - right.sourceOrder
-            : left.sourceOrder - right.sourceOrder
+          left.sourceOrder - right.sourceOrder
         ))
         .map(item => [`[${item.label || item.id}]`, item.content].join('\n'))
         .join('\n\n'));
@@ -16167,7 +15812,6 @@ ${passage.text || ''}`, 420));
     if (refs.persona) items.push(...personaReferenceItems(source.persona));
     if (refs.characterDescription) items.push(...characterDefinitionReferenceItems(source.character));
     if (refs.characterLorebook || refs.moduleLorebook) items.push(...canonicalLoreReferenceItems(input.activeLore, loreMode));
-    items.push(...canonicalHypaReferenceItems(input.hypaContinuity));
     const structuredCount = items.length;
     const degradedFallbacks = [];
     if (!structuredCount && text(input.legacyBlock || '').trim()) {
@@ -16194,7 +15838,6 @@ ${passage.text || ''}`, 420));
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
       selectedIds: candidateSelection.unique.map(item => item.id),
       packedIds: allocated.selected.map(item => item.id),
       duplicateIds: allocated.duplicateIds,
@@ -16207,7 +15850,6 @@ ${passage.text || ''}`, 420));
         selectedModuleLoreIds: normalizedSelection.selectedModuleLoreIds,
         excludedModuleLoreIds: normalizedSelection.excludedModuleLoreIds,
         excludedCharacterLoreIds: normalizedSelection.excludedCharacterLoreIds,
-        excludedHypaRecordIds: normalizedSelection.excludedHypaRecordIds
       }))
       .digest();
     const packedHash = createTextHasher()
@@ -16226,12 +15868,6 @@ ${passage.text || ''}`, 420));
         chars: 0,
         reason: 'excluded_by_user'
       })),
-      ...normalizedSelection.excludedHypaRecordIds.map(id => ({
-        id,
-        sourceType: 'hypa',
-        chars: 0,
-        reason: 'excluded_by_user'
-      }))
     ];
     const packet = {
       schema: CANONICAL_REFERENCE_PACKET_SCHEMA,
@@ -22592,7 +22228,6 @@ ${passage.text || ''}`, 420));
     persona: 'persona',
     characterDefinition: 'character_definition',
     lore: 'lore',
-    hypa: 'hypa',
     auxiliary: 'auxiliary'
   }[group] || group || 'reference');
 
@@ -22659,7 +22294,7 @@ ${passage.text || ''}`, 420));
         passages
       });
     };
-    ['persona', 'characterDefinition', 'lore', 'hypa', 'auxiliary'].forEach(group => {
+    ['persona', 'characterDefinition', 'lore', 'auxiliary'].forEach(group => {
       const list = Array.isArray(references?.[group]) ? references[group] : [];
       list.forEach((item, order) => pushReference(group, item, order));
     });
@@ -22784,7 +22419,7 @@ ${passage.text || ''}`, 420));
   const reconcileStageMaterialUsageWithPacket = (usage, packet) => {
     if (!usage || !packet?.references) return usage;
     const selectedById = new Map();
-    ['persona', 'characterDefinition', 'lore', 'hypa', 'auxiliary'].forEach(group => {
+    ['persona', 'characterDefinition', 'lore', 'auxiliary'].forEach(group => {
       const items = Array.isArray(packet.references?.[group]) ? packet.references[group] : [];
       items.forEach(item => {
         const id = text(item?.id || '').trim();
@@ -26918,16 +26553,13 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       .filter(filter)
       .slice()
       .sort((left, right) => (
-        group === 'hypa'
-          ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
-            || Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
-          : Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
+        Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
       ))
       .map(serializeReferenceItemForEngine)
       .join('\n\n');
     const preamble = options.preamble === false
       ? ''
-      : text(options.preamble || referenceGroupPreamble(group));
+      : text(options.preamble || '');
     const raw = [preamble, items].filter(Boolean).join('\n\n');
     return raw ? renderRagCbsText(raw, cbsContext, `response-engine:${group}`) : '';
   };
@@ -27077,8 +26709,6 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       persona: serializeReferenceGroupForEngine(packet, 'persona', cbsContext),
       coreLore: serializeReferenceGroupForEngine(packet, 'lore', cbsContext, { filter: coreReference }),
       optionalLore: serializeReferenceGroupForEngine(packet, 'lore', cbsContext, { filter: optionalReference, preamble: '[Additional Activated Lore]' }),
-      coreHypa: serializeReferenceGroupForEngine(packet, 'hypa', cbsContext, { filter: coreReference }),
-      optionalHypa: serializeReferenceGroupForEngine(packet, 'hypa', cbsContext, { filter: optionalReference, preamble: '[Additional Long-Term Continuity]' }),
       packetAuxiliary: serializeReferenceGroupForEngine(packet, 'auxiliary', cbsContext),
       creativeConstraints: buildActiveCreativeConstraintBlock(stages, settings, recent),
       analysisTransfer: buildInformationTransferBlock(stages, settings, recent),
@@ -27089,7 +26719,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
 
   const buildNovelCanonicalRisuEnginePromptBundle = (recent, finalDraft, stages, settings, ledger, presetStageName = 'aide_plot') => {
     const {
-      characterDefinition, persona, coreLore, optionalLore, coreHypa, optionalHypa,
+      characterDefinition, persona, coreLore, optionalLore,
       packetAuxiliary, creativeConstraints, analysisTransfer, legacyReference, conversation
     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
     const synthesisContract = buildFinalSynthesisContract('full');
@@ -27108,8 +26738,6 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       persona ? { type: 'persona', role: 'system', name: 'User Persona', content: persona, _fitPriority: 10, _trimPolicy: 'middle', _order: 20, _key: 'persona' } : null,
       coreLore ? { type: 'lorebook', role: 'system', name: 'Activated Lore', content: coreLore, _fitPriority: 10, _trimPolicy: 'middle', _order: 30, _key: 'core_lore' } : null,
       optionalLore ? { type: 'lorebook', role: 'system', name: 'Additional Activated Lore', content: optionalLore, _fitPriority: 20, _trimPolicy: 'none', _order: 31, _key: 'optional_lore' } : null,
-      coreHypa ? { type: 'memory', role: 'system', name: 'Established Long-Term Continuity', content: coreHypa, _fitPriority: 10, _trimPolicy: 'middle', _order: 40, _key: 'core_hypa' } : null,
-      optionalHypa ? { type: 'memory', role: 'system', name: 'Additional Long-Term Continuity', content: optionalHypa, _fitPriority: 20, _trimPolicy: 'none', _order: 41, _key: 'optional_hypa' } : null,
       legacyReference || packetAuxiliary ? { type: 'plain', type2: 'normal', role: 'system', name: 'Additional Reference', content: [legacyReference, packetAuxiliary].filter(Boolean).join('\n\n'), _fitPriority: 40, _trimPolicy: 'none', _order: 50, _key: 'packet_auxiliary' } : null,
       creativeConstraints ? { type: 'plain', type2: 'normal', role: 'system', name: 'Creative Direction', content: creativeConstraints, _fitPriority: 40, _trimPolicy: 'none', _order: 51, _key: 'creative_constraints' } : null,
       analysisTransfer ? { type: 'plain', type2: 'normal', role: 'system', name: 'Scene Constraints', content: analysisTransfer, _fitPriority: 40, _trimPolicy: 'none', _order: 52, _key: 'analysis_transfer' } : null,
@@ -27130,7 +26758,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
 
   const buildPlayerControlledRpCanonicalRisuEnginePromptBundle = (recent, finalDraft, stages, settings, ledger, presetStageName = 'aide_plot') => {
     const {
-      characterDefinition, persona, coreLore, optionalLore, coreHypa, optionalHypa,
+      characterDefinition, persona, coreLore, optionalLore,
       packetAuxiliary, legacyReference, conversation
     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
     const synthesisContract = buildPlayerControlledFinalSynthesisContract('full');
@@ -27186,8 +26814,6 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       personaGuarded ? { type: 'persona', role: 'system', name: 'User Persona Reference Only', content: personaGuarded, _fitPriority: 10, _trimPolicy: 'middle', _order: 25, _key: 'persona_reference_only' } : null,
       coreLore ? { type: 'lorebook', role: 'system', name: 'Activated Lore', content: coreLore, _fitPriority: 10, _trimPolicy: 'middle', _order: 30, _key: 'core_lore' } : null,
       optionalLore ? { type: 'lorebook', role: 'system', name: 'Additional Activated Lore', content: optionalLore, _fitPriority: 20, _trimPolicy: 'none', _order: 31, _key: 'optional_lore' } : null,
-      coreHypa ? { type: 'memory', role: 'system', name: 'Established Long-Term Continuity', content: coreHypa, _fitPriority: 10, _trimPolicy: 'middle', _order: 40, _key: 'core_hypa' } : null,
-      optionalHypa ? { type: 'memory', role: 'system', name: 'Additional Long-Term Continuity', content: optionalHypa, _fitPriority: 20, _trimPolicy: 'none', _order: 41, _key: 'optional_hypa' } : null,
       legacyReference || packetAuxiliary ? { type: 'plain', type2: 'normal', role: 'system', name: 'Additional Reference — continuity evidence only', content: [legacyReference, packetAuxiliary].filter(Boolean).join('\n\n'), _fitPriority: 35, _trimPolicy: 'none', _order: 50, _key: 'packet_auxiliary' } : null,
       conversation.olderConversation ? { type: 'chat', rangeStart: 0, rangeEnd: 'completed', name: 'Earlier Completed Conversation — historical evidence only', content: conversation.olderConversation, _fitPriority: 30, _trimPolicy: 'tail', _order: 60, _key: 'older_conversation' } : null,
       conversation.latestScene ? { type: 'chat', rangeStart: 'latest', rangeEnd: 'latest', name: 'Latest Visible Scene', content: conversation.latestScene, _mandatory: true, _order: 70, _key: 'latest_scene' } : null,
@@ -27822,7 +27448,6 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings?.selectedModuleLoreIds),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings?.excludedHypaRecordIds),
       aideStageOrder: settings?.aideStageOrder,
       stageOptions: settings?.stageOptions,
       stagePresetNames: settings?.stagePresetNames,
@@ -28830,6 +28455,18 @@ function createGradiaEvidenceBudget({ digest }) {
   const ROUTE = 'https://api.openai.com/v1/chat/completions';
   const MAX_CONTEXT = 128000;
   const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
+  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
+  // Exact production wrappers for successful four/eight-stage profiles only.
+  // Schema, names, descriptions and serialization changes require requalification.
+  const STRUCTURED_SCHEMA_PINS = Object.freeze({
+    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
+    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
+    "gradia_aide_character_patch": "d0409eb67068aed48f356aed804d72076a9b530706b53f65718805ed4a29551a",
+    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
+    "gradia_aide_world_patch": "9ff7f71db44fdf932dc43137b050fee47d96cb5a7b936b7c1932aa05b4cb6c1d",
+    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
+    "gradia_aide_plot_patch": "d8438ca82453dedf811892912788d68b2daf7dd1d2322389f969ed782f09571c"
+});
   const issued = new WeakMap();
   const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
   const integer = (value, positive = false) => Number.isSafeInteger(value)
@@ -28887,7 +28524,7 @@ function createGradiaEvidenceBudget({ digest }) {
     // Actual builder serialization round-trips exactly. This rejects duplicate
     // keys, whitespace and alternate encodings instead of interpreting ambiguity.
     if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options'], 'token_accounting_unavailable');
+    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
     if (value.model !== MODEL || typeof value.stream !== 'boolean'
       || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
       || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
@@ -28908,7 +28545,18 @@ function createGradiaEvidenceBudget({ digest }) {
       content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
       content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
     }
-    return { body, content, output };
+    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
+    if (Object.hasOwn(value, 'response_format')) {
+      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
+      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
+      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
+        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
+        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
+      structuredName = schema.name;
+      structuredSerialized = JSON.stringify(value.response_format);
+      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
+    }
+    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
   }
   function sameBase(base, final, evidence) {
     const left = base.body, right = final.body;
@@ -28938,16 +28586,26 @@ function createGradiaEvidenceBudget({ digest }) {
       if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
       const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
       if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
-      const framing = Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0);
+      let structuredSchemaSha256 = null;
+      if (final.structuredBytes) {
+        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
+        catch (_) { stop('payload_hash_unavailable'); }
+        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
+      }
+      // The raw envelope already charges the schema once. Reserve its complete
+      // UTF-8 wrapper again for structured framing; this remains a conservative
+      // engineering estimate, not a provider tokenizer or server-internals proof.
+      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
       const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
       const fits = add(add(allowance, final.output), margin) <= context.limit;
       const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
         requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
-        contextSourceIdentity: context.identity, meterId: PROFILE, meterVersion: 1,
+        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
         meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
         framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
         safetyMargin: margin, selectedContentTokenBound: selectedContent,
-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance };
+        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
+        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
       // Only already captured primitives survive the await; caller mutations cannot
       // replace the body or envelope. The adapter owns cancellation/generation.
       const body = input.finalBody;
@@ -37626,9 +37284,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         latestUserChars: finalRecent.latestUser.length,
         latestUserPreview: compact(finalRecent.latestUser, 400),
         terminalSceneChars: text(finalRecent.terminalVisibleScene || '').length,
-        hypaContinuityAvailable: Number(finalRecent.longTermContinuity?.availableCount || 0),
-        hypaContinuitySelected: Number(finalRecent.longTermContinuity?.selectedCount || 0),
-        hypaContinuityCoverageEnd: Number(finalRecent.longTermContinuity?.coverageEnd || 0),
         currentUserInputSource: finalRecent.currentTurnResolution?.source || 'none',
         currentUserInputConfidence: finalRecent.currentTurnResolution?.confidence || 'none',
         runId: runLineage.runId,
@@ -38100,11 +37755,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     characterLoreCatalogError: '',
     characterLoreCatalogLoadedAt: 0,
     characterLoreCatalogScope: '',
-    hypaCatalog: [],
-    hypaCatalogLoading: false,
-    hypaCatalogError: '',
-    hypaCatalogLoadedAt: 0,
-    hypaCatalogScope: '',
     userIntentOocDraft: '',
     confirmationVisible: false,
     pageId: 'overview',
@@ -38214,7 +37864,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       archive: ['narrative_archive', ''],
       modules: ['references', 'modules'],
       character_lore_exclusions: ['references', 'character_lore_exclusions'],
-      hypa_v3: ['references', 'hypa_v3'],
       references: ['references', 'selection'],
       skills: ['skills', ''],
       skill: ['skills', ''],
@@ -38317,7 +37966,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (/writingMode|novelShadowDraftMode/.test(path)) return '작성 모드';
     if (/^agents\.|^prompts\.|aideStageOrder|multiPipelineMode|shadowDraftMode/.test(path)) return '초안 파이프라인';
     if (/skillRouter|skillCustomLibrary|skillPriorityOverrides/.test(path)) return 'Skill';
-    if (/selectedModuleLoreIds|excludedModuleLoreIds|excludedCharacterLoreIds|excludedHypaRecordIds|loreActivationMode|loreRerankerTopK/.test(path)) return '참고 자료';
+    if (/selectedModuleLoreIds|excludedModuleLoreIds|excludedCharacterLoreIds|loreActivationMode|loreRerankerTopK/.test(path)) return '참고 자료';
     if (/informationTransferMode|outputMode/.test(path)) return '정보 전달과 메인 응답';
     if (/nsfw/.test(path)) return '응답 옵션';
     if (/quickProfile|targetDraft|internalDraftLanguage/.test(path)) return '빠른 설정';
@@ -38428,7 +38077,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
-    excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
     targetDraftMinChars: settings.targetDraftMinChars,
     targetDraftMaxChars: settings.targetDraftMaxChars,
     backendHosting: normalizeBackendHostingConfig(settings.backendHosting || {}),
@@ -38665,43 +38313,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
-  const refreshHypaV3Catalog = async (force = false) => {
-    if (Gui.hypaCatalogLoading) return Gui.hypaCatalog;
-    Gui.hypaCatalogLoading = true;
-    Gui.hypaCatalogError = '';
-    const requestEpoch = Gui.renderEpoch;
-    const discardWhenStale = Gui.visible && Gui.pageId === 'references' && Gui.pageSubview === 'hypa_v3';
-    try {
-      const characterInfo = await loadCurrentCharacterForRisuContext(false);
-      const character = characterInfo.character;
-      const chatInfo = await loadCurrentChatForRisuContext(character, false);
-      const scope = loreContinuityScopeKey(character, chatInfo.chat);
-      if (
-        !force
-        && Gui.hypaCatalogLoadedAt
-        && Gui.hypaCatalogScope === scope
-        && Date.now() - Gui.hypaCatalogLoadedAt < 60000
-      ) {
-        return Gui.hypaCatalog;
-      }
-      const messageCount = Array.isArray(chatInfo.chat?.message) ? chatInfo.chat.message.length : 0;
-      if (discardWhenStale && (requestEpoch !== Gui.renderEpoch || Gui.pageId !== 'references' || Gui.pageSubview !== 'hypa_v3')) return Gui.hypaCatalog;
-      Gui.hypaCatalog = buildHypaV3Catalog({
-        chatInfo,
-        actualChatContext: { messageCount, storedMessageCount: messageCount }
-      }, {});
-      Gui.hypaCatalogScope = scope;
-      Gui.hypaCatalogLoadedAt = Date.now();
-      return Gui.hypaCatalog;
-    } catch (error) {
-      if (!discardWhenStale || (requestEpoch === Gui.renderEpoch && Gui.pageId === 'references' && Gui.pageSubview === 'hypa_v3')) Gui.hypaCatalogError = compact(error?.message || error, 500);
-      return Gui.hypaCatalog;
-    } finally {
-      Gui.hypaCatalogLoading = false;
-      if (Gui.visible && Gui.pageId === 'references' && ['hypa_v3', 'selection'].includes(Gui.pageSubview)) queueGuiRender(0);
-    }
-  };
-
   const settingsForGuiPreview = () => {
     const base = Runtime.settings || {};
     const runtime = Gui.state?.runtime || {};
@@ -38837,7 +38448,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         selected_module_lore_ids: JSON.stringify(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),
         excluded_module_lore_ids: JSON.stringify(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds)),
         excluded_character_lore_ids: JSON.stringify(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds)),
-        excluded_hypa_record_ids: JSON.stringify(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds)),
         target_draft_min_chars: String(runtime.targetDraftMinChars || DEFAULT_TARGET_DRAFT_MIN_CHARS),
         target_draft_max_chars: String(runtime.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS),
         backend_hosting_mode: backendConfig.mode,
@@ -39022,9 +38632,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 .sga-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sga-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-card{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.92),rgba(17,24,39,.92));padding:16px;box-shadow:0 18px 45px rgba(0,0,0,.13)}.sga-card.wide{grid-column:1/-1}.sga-card h2,.sga-card h3{margin:0 0 8px}.sga-card h2{font-size:17px}.sga-card h3{font-size:14px}.sga-note{color:var(--sga-muted);font-size:12px;line-height:1.55}.sga-section-title{margin-bottom:14px}.sga-section-title h2{margin:0;font-size:18px}.sga-section-title p{margin:6px 0 0;color:var(--sga-muted);font-size:12px}
 .sga-stat{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sga-stat-value{font-size:28px;font-weight:900}.sga-stat-label{color:var(--sga-muted);font-size:12px}.sga-badge{display:inline-flex;align-items:center;border:1px solid var(--sga-line);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}.sga-badge.good{color:#bbf7d0;border-color:#166534;background:rgba(34,197,94,.08)}.sga-badge.warn{color:#fde68a;border-color:#854d0e;background:rgba(251,191,36,.08)}.sga-badge.danger{color:#fecdd3;border-color:#9f1239;background:rgba(244,63,94,.09)}.sga-badge.off{color:#cbd5e1}.sga-flow{display:flex;align-items:stretch;gap:8px;overflow:auto;padding:8px 0}.sga-flow-node{min-width:150px;flex:1;border:1px solid var(--sga-line);border-radius:13px;padding:12px;background:#0d1421}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node span{display:block;color:var(--sga-muted);font-size:11px;margin-top:5px;line-height:1.4}.sga-arrow{display:flex;align-items:center;color:var(--sga-muted)}
 .sga-count-badge{align-self:flex-start;flex:0 0 auto;min-width:max-content;justify-content:center;white-space:nowrap;line-height:1.2;padding:6px 10px}
-.sga-hypa-count{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;flex:0 0 auto;min-width:max-content;padding:7px 11px;border:1px solid rgba(74,222,128,.34);border-radius:999px;background:linear-gradient(135deg,rgba(22,101,52,.2),rgba(6,78,59,.1));color:#bbf7d0;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
-.sga-hypa-count.has-exclusions{border-color:rgba(251,113,133,.42);background:linear-gradient(135deg,rgba(136,19,55,.2),rgba(76,5,25,.1));color:#fecdd3}
-.sga-hypa-count-label{font-size:10px;font-weight:700;letter-spacing:.03em;opacity:.82}.sga-hypa-count strong{font-size:13px;line-height:1}.sga-hypa-count-total{font-size:10px;color:var(--sga-muted)}.sga-hypa-count-dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.55}
 .sga-split{display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:14px}.sga-list{border:1px solid var(--sga-line);border-radius:14px;background:#0d1421;overflow:hidden}.sga-list-head{display:flex;gap:7px;padding:10px;border-bottom:1px solid var(--sga-line)}.sga-list-items{max-height:620px;overflow:auto;padding:8px}.sga-list-item{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--sga-text);padding:10px;cursor:pointer}.sga-list-item:hover{background:var(--sga-surface2)}.sga-list-item[data-selected="true"]{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.45)}.sga-list-item strong{display:block;font-size:12px}.sga-list-item span{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sga-field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}.sga-field label{font-size:11px;font-weight:800;color:#cbd5e1}.sga-field small{color:var(--sga-muted);font-size:10px;line-height:1.45}.sga-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sga-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sga-input,.sga-select,.sga-textarea{width:100%;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:9px 10px;font-size:12px;outline:none}.sga-input:focus,.sga-select:focus,.sga-textarea:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}.sga-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}.sga-textarea.tall{min-height:310px}.sga-textarea.preview{min-height:270px;color:#cbd5e1;background:#060a11}.sga-check{display:flex;align-items:center;gap:8px;font-size:12px;color:#dbe4f3}.sga-check input{width:17px;height:17px;accent-color:var(--sga-accent)}
 .sga-actions{display:flex;gap:8px;flex-wrap:wrap}.sga-btn{border:1px solid var(--sga-line);border-radius:10px;background:var(--sga-surface3);color:var(--sga-text);padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer}.sga-btn:hover{filter:brightness(1.15)}.sga-btn.primary{background:#4f67d8;border-color:#6f86f5}.sga-btn.good{background:#165c34;border-color:#25894f}.sga-btn.danger{background:#641f31;border-color:#9f3450}.sga-btn.ghost{background:transparent}.sga-btn:disabled{opacity:.45;cursor:not-allowed}
@@ -41045,7 +40652,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     persona: '페르소나',
     character_definition: '캐릭터 정의',
     lore: '로어',
-    hypa: 'HypaV3',
     auxiliary: '보조 자료',
     current_input: '현재 입력',
     terminal_scene: '직전 장면',
@@ -41851,7 +41457,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         checkboxNode(slot.risuRefs.characterLorebook, '캐릭터 로어북', next => { slotValue.risuRefs.characterLorebook = next; }),
         checkboxNode(slot.risuRefs.moduleLorebook, '선택한 모듈 로어북', next => { slotValue.risuRefs.moduleLorebook = next; })
       ]),
-      guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 참고할 자료 종류와 로어 후보 풀을 한 번 확정합니다. 페르소나·캐릭터 설명·HypaV3는 공통으로 재사용하고, 로어만 각 단계가 관련도를 다시 계산합니다. 일반 로어는 설정한 슬롯 수까지 선택하며 강제/항상 활성 로어와 현재 관계·호칭 잠금은 별도로 보존합니다. 기본 일반 슬롯은 8개입니다.' })
+      guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 참고할 자료 종류와 로어 후보 풀을 한 번 확정합니다. 페르소나·캐릭터 설명은 공통으로 재사용하고, 로어만 각 단계가 관련도를 다시 계산합니다. 일반 로어는 설정한 슬롯 수까지 선택하며 강제/항상 활성 로어와 현재 관계·호칭 잠금은 별도로 보존합니다. 기본 일반 슬롯은 8개입니다.' })
     ]) : isBefore ? guiEl('div', { class: 'sga-reference-box' }, [
       guiEl('div', { class: 'sga-reference-head' }, [
         guiEl('strong', { text: '공통 후보 · 단계별 리랭킹' }),
@@ -43297,107 +42903,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     ]);
   };
 
-  const buildHypaV3Panel = () => {
-    const runtime = Gui.state.runtime;
-    const excludedIds = normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds);
-    runtime.excludedHypaRecordIds = excludedIds;
-    const excluded = new Set(excludedIds);
-    const catalog = Array.isArray(Gui.hypaCatalog) ? Gui.hypaCatalog : [];
-    const shadowSelectedIds = new Set(
-      Runtime.lastRisuContext?.shared?.meta?.hypaContinuity?.selectedRecordIds || []
-    );
-    const currentUsedCount = catalog.filter(item => !excluded.has(item.id)).length;
-    const setUsed = (item, used) => {
-      const next = new Set(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds));
-      if (used) next.delete(item.id);
-      else next.add(item.id);
-      runtime.excludedHypaRecordIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const rows = catalog.map((item, index) => {
-      const used = !excluded.has(item.id);
-      const selectedByShadow = used && shadowSelectedIds.has(item.id);
-      return guiEl('article', {
-        class: `sga-module-lore-item${used ? selectedByShadow ? ' selected' : '' : ' excluded'}`,
-        style: { cursor: 'default' }
-      }, [
-        guiEl('label', { class: 'sga-check', style: { alignSelf: 'flex-start', gridColumn: '1 / -1' } }, [
-          guiEl('input', {
-            class: 'sga-module-lore-check',
-            type: 'checkbox',
-            checked: used,
-            'aria-label': `${item.title} HypaV3 기록 사용`,
-            onChange: event => setUsed(item, event.target.checked)
-          }),
-          guiEl('span', { text: '이 기록 사용' })
-        ]),
-        guiEl('div', { class: 'sga-module-lore-copy', style: { gridColumn: '1 / -1' } }, [
-          guiEl('div', { class: 'sga-module-lore-head' }, [
-            guiEl('strong', { text: item.title || `HypaV3 기록 ${index + 1}` }),
-            guiEl('span', {
-              class: `sga-badge ${!used ? 'off' : selectedByShadow ? 'good' : item.risuSelected ? 'good' : 'off'}`,
-              text: !used ? '사용 안 함' : selectedByShadow ? '현재 채택' : item.risuSelected ? 'RisuAI 최근 선택' : '사용 가능'
-            })
-          ]),
-          guiEl('div', { class: 'sga-module-lore-meta' }, [
-            item.category ? guiEl('span', { text: `분류 · ${item.category}` }) : null,
-            item.important ? guiEl('span', { text: '중요 기록' }) : null,
-            item.tags?.length ? guiEl('span', { text: `태그 · ${item.tags.join(', ')}` }) : null,
-            item.messageIndex === null ? null : guiEl('span', { text: `메시지 ${item.messageIndex}까지` })
-          ]),
-          guiEl('details', { class: 'sga-advanced', style: { marginTop: '8px' } }, [
-            guiEl('summary', { text: '기록 내용 보기' }),
-            guiEl('pre', { class: 'sga-code', text: item.body || '(내용 없음)' })
-          ])
-        ])
-      ]);
-    });
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: 'HypaV3 기록' }),
-          guiEl('div', { class: 'sga-note', text: '체크는 “GRADIA가 사용할 수 있음”을 뜻합니다. 실제 주입은 RisuAI가 현재 요청에서 선택한 기록 중 허용된 항목만 사용합니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${currentUsedCount ? 'good' : 'off'}`, text: `${currentUsedCount}/${catalog.length} 사용` })
-      ]),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-        guiEl('button', {
-          class: 'sga-btn',
-          text: '모두 사용',
-          disabled: !catalog.length || currentUsedCount === catalog.length,
-          onClick: () => {
-            const currentIds = new Set(catalog.map(item => item.id));
-            runtime.excludedHypaRecordIds = excludedIds.filter(id => !currentIds.has(id));
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          text: '모두 끄기',
-          disabled: !catalog.length || currentUsedCount === 0,
-          onClick: () => {
-            runtime.excludedHypaRecordIds = normalizeExcludedHypaRecordIds([...excludedIds, ...catalog.map(item => item.id)]);
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          text: Gui.hypaCatalogLoading ? '불러오는 중…' : '기록 새로고침',
-          disabled: Gui.hypaCatalogLoading,
-          onClick: () => { void refreshHypaV3Catalog(true); }
-        })
-      ]),
-      Gui.hypaCatalogLoading ? guiEl('div', { class: 'sga-callout', text: '현재 채팅방의 HypaV3 기록을 불러오고 있습니다.' }) : null,
-      Gui.hypaCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `HypaV3 기록을 불러오지 못했습니다: ${Gui.hypaCatalogError}` }) : null,
-      !Gui.hypaCatalogLoading && !catalog.length ? guiEl('div', { class: 'sga-callout', text: '현재 채팅방에 HypaV3 기록이 없거나 플러그인 API에서 기록에 접근할 수 없습니다.' }) : null,
-      rows.length ? guiEl('div', { class: 'sga-module-lore-grid' }, rows) : null,
-      guiEl('div', { class: 'sga-note', text: `체크 해제한 항목은 RisuAI가 선택해도 GRADIA 내부 자료에서 제외됩니다. 다른 채팅방 기록을 포함한 전체 제외 저장 수는 ${excludedIds.length}개입니다.` })
-    ]);
-  };
-
   const buildModuleLoreSelectionPanel = () => {
     const runtime = Gui.state.runtime;
     const selectedIds = normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds);
@@ -43861,7 +43366,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(pick('selected_module_lore_ids', 'selectedModuleLoreIds', current.selectedModuleLoreIds || [])),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(pick('excluded_module_lore_ids', 'excludedModuleLoreIds', current.excludedModuleLoreIds || [])),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(pick('excluded_character_lore_ids', 'excludedCharacterLoreIds', current.excludedCharacterLoreIds || [])),
-      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(pick('excluded_hypa_record_ids', 'excludedHypaRecordIds', current.excludedHypaRecordIds || [])),
       builtInStylePreset: normalizeBuiltInStylePreset(pick('built_in_style_preset', 'builtInStylePreset', current.builtInStylePreset || 'unified_stylepack')),
       maxPreviousStageChars: Number(pick('max_previous_stage_chars', 'maxPreviousStageChars', current.maxPreviousStageChars)),
       maxInjectionChars: Number(pick('max_injection_chars', 'maxInjectionChars', current.maxInjectionChars)),
@@ -44451,7 +43955,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (section === 'runtime') return page('전문가 설정', '내부 한도와 실행 방식을 조정합니다.', buildRuntimeTab());
     if (section === 'modules') return page('모듈 로어북', '사용할 모듈과 내부 로어를 선택합니다.', buildModuleLoreSelectionPanel());
     if (section === 'character_lore_exclusions') return page('캐릭터 로어북', 'GRADIA가 사용할 캐릭터 로어북을 선택합니다.', buildCharacterLoreExclusionPanel());
-    if (section === 'hypa_v3') return page('HypaV3 기록', 'GRADIA가 사용할 수 있는 장기 기록을 선택합니다.', buildHypaV3Panel());
     if (section === 'information_transfer') return page('정보 전달 도우미', 'GRADIA의 최종 초안과 단계별 분석 자료 중 무엇을 메인 응답 모델에 제공할지 선택합니다.', buildInformationTransferSettingsPanel());
     if (section === 'main') return page('메인 응답', 'GRADIA 초안을 최종 응답 모델에 전달하는 방식을 확인합니다.', buildMainResponseBridge());
     if (section === 'transfer') return page('가져오기 / 내보내기', '설정 JSON을 이동하거나 병합합니다.', buildTransferTab());
@@ -44694,10 +44197,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     const moduleLoreTotal = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).length, 0);
     const moduleLoreUsed = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).filter(entry => !moduleExcluded.has(entry.key)).length, 0);
 
-    const hypaCatalog = Array.isArray(Gui.hypaCatalog) ? Gui.hypaCatalog : [];
-    const hypaExcluded = new Set(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds));
-    const hypaUsed = hypaCatalog.filter(item => !hypaExcluded.has(item.id)).length;
-
     return guiEl('div', { class: 'sga-card wide' }, [
       guiEl('div', { class: 'sga-agent-head' }, [
         guiEl('div', {}, [
@@ -44706,7 +44205,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         ]),
         guiEl('span', { class: 'sga-badge good', text: '자동 검색' })
       ]),
-      guiEl('div', { class: 'sga-simple-choice-grid four', style: { marginTop: '12px' } }, [
+      guiEl('div', { class: 'sga-simple-choice-grid three', style: { marginTop: '12px' } }, [
         simpleChoiceCard({
           active: characterUsed > 0,
           title: '캐릭터',
@@ -44724,14 +44223,6 @@ html,body{width:100%;height:100%;overflow:hidden}
           onClick: () => navigateGui('flow', '', 'modules')
         }),
         simpleChoiceCard({
-          active: hypaUsed > 0,
-          title: 'HypaV3',
-          description: hypaCatalog.length ? `${hypaUsed}/${hypaCatalog.length} 사용 가능` : '현재 기록 없음 또는 불러오는 중',
-          meta: '장기 기록',
-          badge: '관리',
-          onClick: () => navigateGui('flow', '', 'hypa_v3')
-        }),
-        simpleChoiceCard({
           active: true,
           title: '로어 검색',
           description: '자동',
@@ -44740,7 +44231,7 @@ html,body{width:100%;height:100%;overflow:hidden}
           onClick: () => navigateGui('flow', '#sga-flow-runtime', 'runtime')
         })
       ]),
-      (Gui.moduleCatalogLoading || Gui.characterLoreCatalogLoading || Gui.hypaCatalogLoading)
+      (Gui.moduleCatalogLoading || Gui.characterLoreCatalogLoading)
         ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '자료 목록을 불러오는 중입니다…' })
         : null,
       guiEl('details', { class: 'sga-advanced', style: { marginTop: '12px' } }, [
@@ -44777,17 +44268,15 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
 
   const buildReferenceSettingsPage = () => {
-    const subview = ['selection', 'modules', 'character_lore_exclusions', 'hypa_v3'].includes(Gui.pageSubview) ? Gui.pageSubview : 'selection';
+    const subview = ['selection', 'modules', 'character_lore_exclusions'].includes(Gui.pageSubview) ? Gui.pageSubview : 'selection';
     const tabs = [
       ['selection', '요약'],
       ['character_lore_exclusions', '캐릭터'],
-      ['modules', '모듈'],
-      ['hypa_v3', 'HypaV3']
+      ['modules', '모듈']
     ];
     const body = subview === 'modules' ? buildModuleLoreSelectionPanel()
       : subview === 'character_lore_exclusions' ? buildCharacterLoreExclusionPanel()
-        : subview === 'hypa_v3' ? buildHypaV3Panel()
-          : buildReferenceSummaryPanel();
+        : buildReferenceSummaryPanel();
     return guiPageFrame('references', '자료', 'GRADIA가 읽을 수 있는 자료를 한곳에서 관리합니다.', [
       buildLibReadConnectionCard(),
       guiEl('div', { class: 'sga-redesign-subnav' }, tabs.map(([id, label]) => guiEl('button', { class: `sga-btn${subview === id ? ' primary' : ' ghost'}`, text: label, onClick: () => navigateGui('flow', '', id === 'selection' ? 'references' : id) }))),
@@ -45166,11 +44655,9 @@ html,body{width:100%;height:100%;overflow:hidden}
       if (!route.subview || route.subview === 'selection') {
         void refreshModuleLoreCatalog(false);
         void refreshCharacterLoreCatalog(false);
-        void refreshHypaV3Catalog(false);
       } else {
         if (route.subview === 'modules') void refreshModuleLoreCatalog(false);
         if (route.subview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
-        if (route.subview === 'hypa_v3') void refreshHypaV3Catalog(false);
       }
     }
     if (selector) setTimeout(() => {
@@ -45932,7 +45419,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (Gui.pageId === 'references') {
       if (Gui.pageSubview === 'modules') void refreshModuleLoreCatalog(false);
       if (Gui.pageSubview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
-      if (Gui.pageSubview === 'hypa_v3') void refreshHypaV3Catalog(false);
     }
     forceTransparentGuiSurface();
     return true;
@@ -46041,7 +45527,6 @@ html,body{width:100%;height:100%;overflow:hidden}
         catalogs: {
           modulesLoadedAt: Gui.moduleCatalogLoadedAt,
           characterLoreLoadedAt: Gui.characterLoreCatalogLoadedAt,
-          hypaLoadedAt: Gui.hypaCatalogLoadedAt
         }
       };
     },
@@ -46059,7 +45544,6 @@ html,body{width:100%;height:100%;overflow:hidden}
         catalogs: {
           modulesLoadedAt: Gui.moduleCatalogLoadedAt,
           characterLoreLoadedAt: Gui.characterLoreCatalogLoadedAt,
-          hypaLoadedAt: Gui.hypaCatalogLoadedAt
         }
       };
     },
@@ -46630,13 +46114,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       await refreshCharacterLoreCatalog(true);
       return JSON.parse(JSON.stringify(Gui.characterLoreCatalog || []));
     },
-    getExcludedHypaRecordIds() {
-      return normalizeExcludedHypaRecordIds(Runtime.settings?.excludedHypaRecordIds || Gui.state?.runtime?.excludedHypaRecordIds);
-    },
-    async listHypaV3Records() {
-      await refreshHypaV3Catalog(true);
-      return JSON.parse(JSON.stringify(Gui.hypaCatalog || []));
-    },
     debugFilterModuleLorebooks(character = {}, db = {}, chat = {}, persona = null, selectedIds = [], excludedModuleLoreIds = []) {
       return collectRisuLorebookCandidates(character, db, chat, persona, { selectedModuleLoreIds: selectedIds, excludedModuleLoreIds })
         .filter(item => item.sourceType === 'module')
@@ -46846,34 +46323,6 @@ html,body{width:100%;height:100%;overflow:hidden}
         block: authorNoteEnabled && stageName === 'shadow_act' ? buildShadowAuthorNoteAuthorityBlock(recent) : '',
         meta: recent.authorNoteMeta
       }));
-    },
-    debugBuildHypaContinuity(chat = {}, recent = {}, storedMessageCount = 0, excludedRecordIds = [], requestMessages = []) {
-      const packet = buildHypaContinuityPacket({
-        chatInfo: { chat },
-        actualChatContext: {
-          storedMessageCount: Number(storedMessageCount || (Array.isArray(chat?.message) ? chat.message.length : 0)),
-          messageCount: Number(storedMessageCount || (Array.isArray(chat?.message) ? chat.message.length : 0))
-        }
-      }, {
-        terminalVisibleScene: recent?.terminalVisibleScene || '',
-        latestAssistantRaw: recent?.latestAssistantRaw || recent?.latestAssistant || '',
-        latestUser: recent?.latestUser || '',
-        systemContext: recent?.systemContext || '',
-        sceneAnchor: recent?.sceneAnchor || ''
-      }, { excludedRecordIds, requestMessages });
-      return JSON.parse(JSON.stringify({
-        packet,
-        block: formatHypaContinuityPacket(packet)
-      }));
-    },
-    debugBuildHypaV3Catalog(chat = {}) {
-      return JSON.parse(JSON.stringify(buildHypaV3Catalog({
-        chatInfo: { chat },
-        actualChatContext: {
-          storedMessageCount: Array.isArray(chat?.message) ? chat.message.length : 0,
-          messageCount: Array.isArray(chat?.message) ? chat.message.length : 0
-        }
-      }, {})));
     },
     debugBuildDraftPatchDocument(value = '') {
       const document = buildDraftPatchDocument(value);

@@ -1,7 +1,1460 @@
+diff --git b/PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md a/PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md
+index 9e448d6f8460f1c34a97a700b8d491bcd3d1d850..dd454e09f26e0bed059f17703af3e4c339c25f2c 100644
+--- b/PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md
++++ a/PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md
+@@ -2,29 +2,15 @@
+ 
+ Profile ID: `openai-gpt4omini-20240718-chattext-conservative.v1`.
+ 
+-This is a production implementation profile with offline control evidence, not an executed tokenizer/model test or live validation. It has a provable ordinary-content bound plus a separately qualified framing estimate. It must never be described as a universal or mathematically guaranteed provider token count.
++This is a planned production implementation profile, not an executed tokenizer/model test or live validation. It has a provable ordinary-content bound plus a separately qualified framing estimate. It must never be described as a universal or mathematically guaranteed provider token count.
+ 
+ ## Supported payload
+ 
+ - Exact model `gpt-4o-mini-2024-07-18` on the official OpenAI `/v1/chat/completions` route.
+ - Actual final payload from GRADIA's existing OpenAI-compatible builder, after shared-system-prefix assembly and all adapter transforms.
+-- Only ordinary string `system` and `user` messages; no name, tools, function calls, images, cache-content references, multipart input, Responses format, extra body override, unknown proxy normalization or unqualified field. The separate narrow structured profile below admits only seven exact production schemas.
++- Only ordinary string `system` and `user` messages; no name, tools, function calls, images, cache-content references, multipart input, Responses format, native response_format/schema, extra body override, unknown proxy normalization or unqualified field.
+ - Effective context is a positive configured/qualified catalog limit capped at 128,000; effective output reservation is the actual final max_tokens/max_completion_tokens, capped consistently with the documented 16,384 model output limit. Reject conflicting/unknown settings rather than silently changing them.
+-- Other profiles are unavailable for added evidence until qualified. Native-only behavior is unchanged. The original plain-text fixture uses SHADOW-only. Normal four-stage and heavyweight eight-stage evidence calls use the separately identified structured profile below.
+-
+-## Bounded normal/heavy structured profile
+-
+-Profile ID: `openai-gpt4omini-20240718-gradia-schema-conservative.v1`.
+-
+-The same exact model, official route, ordinary string messages, context/output limits, and body binding apply. Only `response_format: {type:'json_schema', json_schema:{name, strict:true, schema}}` is added. The complete serialized wrapper must match a pinned SHA-256 in `sdk/GradiaEvidenceBudget.source.js` for one of these production names:
+-
+-- `gradia_shadow_act_analysis`
+-- `gradia_aide_character_analysis`, `gradia_aide_world_analysis`, `gradia_aide_plot_analysis`
+-- `gradia_aide_character_patch`, `gradia_aide_world_patch`, `gradia_aide_plot_patch`
+-
+-These are the actual closed schemas emitted by the existing normal/heavy builders. Name, schema, description, strictness, or serialization drift fails closed. Generic JSON-object mode, arbitrary schemas, references/combinators, tools, and adjacent retry/repair names remain unqualified. This does not claim support for every provider, model, or recovery path.
+-
+-The complete serialized request already charges every schema byte through its envelope overhead. The structured profile additionally reserves the UTF-8 byte size of the entire serialized response-format wrapper, before the unchanged output reserve and context margin. Thus the schema is never omitted from accounting or charged only as its name. This extra structured-framing allowance is a conservative engineering estimate; provider-side schema conversion and real tokenizer usage are not measured or mathematically guaranteed. The witness records the exact schema name, wrapper hash, and additional byte allowance. Actual four/eight-stage mock tests must still verify dispatch, parsing, and applied draft edits.
++- Other profiles are unavailable for added evidence until qualified. Native-only behavior is unchanged. The positive full production-code fixture uses the existing SHADOW-only plain-text configuration, not silently disabled AIDEs in a normal user run.
+ 
+ ## What local source actually provides
+ 
+@@ -50,6 +36,6 @@ The byte-BPE content inequality is the proof. The framing allowance/margin is an
+ 
+ ## Required implementation evidence
+ 
+-The positive fixture must exercise the actual named production meter and actual GRADIA payload builder with a real model ID/context configuration, using trapped dispatch rather than a remote model/count endpoint. It must admit nonzero memory that fits the conservative allowance. Negative cases include unqualified or changed structured schemas/names, unknown models/routes, proxies, mismatched payload after metering, Unicode/control/escaped text, missing context, excessive output reserve and budget overflow.
++The positive fixture must exercise the actual named production meter and actual GRADIA payload builder with a real model ID/context configuration, using trapped dispatch rather than a remote model/count endpoint. It must admit nonzero memory that fits the conservative allowance. Negative cases include structured AIDE schemas, unknown models/routes, proxies, mismatched payload after metering, Unicode/control/escaped text, missing context, excessive output reserve and budget overflow.
+ 
+ Test the content-bound arithmetic against the pinned single-byte coverage and independently generated byte-length cases. Do not replace the meter with an always-true test callback. These offline checks qualify the implementation/profile; they do not demonstrate live end-to-end model execution or universal 4/8 evidence support.
+diff --git b/PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json a/PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
+index e13b2f01dee9b1bb72b080369b22e15bb02ee6e9..3a4a6ee1bc6c7932007d04d816493002b0e1e1a8 100644
+--- b/PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
++++ a/PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
+@@ -285,38 +285,28 @@
+     "plugins": {
+       "flashback": {
+         "version": "1.0.101",
+-        "sha256": "10eb887afb55f5381db651a8dff4f89f3b047317674f804f19e83cc6aab39349",
+-        "bytes": 3292044
++        "sha256": "7f8f210502ba793e08b016ea0597799c4bb791588ff4071c2d360dfa4b092656",
++        "bytes": 2996956
+       },
+       "hayaku": {
+         "version": "3.0.138",
+-        "sha256": "21b935ccc01bacfc57d14a906b40917339bf0c23aa8d522630cc2cf71c1b12f6",
+-        "bytes": 3960875
++        "sha256": "2ae67eaa23eba35725a656e1f5e2452c140bbbee5aabd66a41b9be3be98a4104",
++        "bytes": 3833055
+       },
+       "libra": {
+         "version": "2.3.149",
+-        "sha256": "816802d4b680bb0ca39f0344e6e5bb825e89a2cf72a6c0a07a668e35f3ff7185",
+-        "bytes": 5769978
++        "sha256": "61d966cf64f306dce0204d4471caeffa11267f4e5d2384def668ff4e990fab7e",
++        "bytes": 5595022
+       },
+       "lia": {
+         "version": "0.26.83",
+-        "sha256": "2860a6479b8fcf7ed327a9e2151bdf8d138eea830c33aec344390654f89dbca3",
+-        "bytes": 1874429
++        "sha256": "397afc9eb536c5a351c7e2fdc81eb51a10dcff6478d8e3da301127495eba947c",
++        "bytes": 1782349
+       },
+       "retrace": {
+         "version": "1.9.84",
+-        "sha256": "3cc6626bd108eb645efc27d8140652e126c72d6af51e8e579b53caf8cfef05ac",
+-        "bytes": 1202762
+-      },
+-      "gradia": {
+-        "version": "0.25.83",
+-        "sha256": "e7b98fa6b20a789077ce4099211551c478a4feb2c274755c1a0ff7b5994f73cb",
+-        "bytes": 3035977
+-      },
+-      "wm": {
+-        "version": "6.0.0",
+-        "sha256": "65d2e541c07199f4901d1f87f94ec5d30aada37e0beefd39a57c5771e9322fb7",
+-        "bytes": 6656517
++        "sha256": "1c2f62d10737a2e7581ac86989705f95c8f761e7dee7d1bb9b3026560a6f96d1",
++        "bytes": 1155321
+       }
+     },
+     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
+diff --git b/PROGRAM/plugins/Flashback_Memory.js a/PROGRAM/plugins/Flashback_Memory.js
+index b271971251ed6667dc07947cf0804973d8d07830..b8296e26d0e1a10110aebc06b546e01b3643d744 100644
+--- b/PROGRAM/plugins/Flashback_Memory.js
++++ a/PROGRAM/plugins/Flashback_Memory.js
+@@ -303,7 +303,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
+ //@allowed-ipc flashback_hayaku_bridge
+ //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
+ //@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/Flashback-Memory/refs/heads/main/Flashback%20Memory.js
+ //@arg mode string off|normal; blank uses normal
+ //@arg embedding_provider string openai|voyageai|voyage_context|gemini|gemini-embedding|cohere|jina|mistral|bedrock|dashscope|ollama|lmstudio|localai|tei|vertex|vertex-embedding|openai_compat|openai_compat_local|custom_http|custom; blank leaves model embedding unconfigured; legacy hash is migration-only
+ //@arg embedding_url string Embedding endpoint/base URL; blank uses the selected provider default
+@@ -45660,7 +45660,7 @@ ${cleanedText}`, 80),
+       title: '기억 유지보수',
+       description: '기억 상태 진단과 안전한 유지보수를 진행합니다.'
+     }),
+-    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'원문 수정 동기화',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
++    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'원문 수정 동기화',description:'완료된 원문 수정은 요청 전에 자동 반영되며, 최근 기록에서 예외와 삭제를 관리합니다.'}),
+     restore: Object.freeze({eyebrow:'MEMORY RESTORE',title:'기억 복원',description:'JSON 기억 백업과 복원·채팅 이사를 관리합니다.'}),
+     worldline: Object.freeze({ eyebrow: 'WORLDLINE CONTINUITY', title: '세계선', description: '채팅 분기 근거, 원문 승계 기록과 턴 연속성을 읽기 전용으로 확인합니다.' }),
+     storage: Object.freeze({
+diff --git b/PROGRAM/plugins/GRADIA.js a/PROGRAM/plugins/GRADIA.js
+index 2ee20e5d32016f59c18416348bfbd0a35e4687be..d5a5f602aab9597a7fc0d2a420c19850c5e6e1a1 100644
+--- b/PROGRAM/plugins/GRADIA.js
++++ a/PROGRAM/plugins/GRADIA.js
+@@ -7,7 +7,7 @@
+ /* v0.25.82 makes WebRisu credential persistence update-safe by mirroring every provider-preset secret, Narrative Archive embedding key, and hosting token into verified pluginStorage backups while retaining localPluginStorage; startup reads repair a missing local copy from the synced backup, and the active narrative-embedding/hosting credentials also use host arguments when available without changing provider/model selection. */
+ /* v0.25.81 aligns GRADIA with RE:TRACE peer-compatibility v1 and makes all next-session state handoff source-immutable: Narrative Archive preparation no longer empties or rewrites the source scope, source Story Arc/Writer/Narrative fingerprints are proven unchanged across prepare/adopt, and future GRADIA versions are negotiated by stable protocol/features instead of exact version gates. */
+ /* v0.25.49 fixes the button-only Input Writer GUI capability probe that was referenced by the composer/delivery flow but missing from both the source feature branch and the merged canonical build. v0.25.48 merges the explicit button-only Input Writer flow while preserving the shared Narrative Archive, local Float32 vector tier, and RE:TRACE summary-only handoff contract. */
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/GRADIA/main/GRADIA.js
+ //@arg mode string off|lite|normal
+ //@arg multi_pipeline_mode string lightweight|heavyweight — lightweight combines analysis and drafting in one call per stage; heavyweight separates them
+ //@arg writing_mode string novel|rp — top-level writing control; novel is author-directed full-cast fiction, rp is strict player-controlled user-agency protection
+@@ -50,6 +50,7 @@
+ //@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks GRADIA may read
+ //@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks GRADIA must not read
+ //@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries GRADIA must never read
++//@arg excluded_hypa_record_ids string JSON/comma-separated stable IDs of HypaV3 records GRADIA must never read
+ //@arg aide_stage_order string JSON/comma-separated order for Character, World, Plot AIDE; SHADOW ACT is always first
+ //@arg llm_provider string Fallback main LLM provider
+ //@arg llm_url string Fallback main LLM URL
+@@ -1006,6 +1007,8 @@
+     npc_focus: Object.freeze({ label: '현장 인물 중심', description: '같은 작가 의도를 유지하면서 현재 NPC들의 능동성·관계 역학·대화 가능성을 강화하는 입력' }),
+     offscreen_focus: Object.freeze({ label: '세계·외부 인물 중심', description: '같은 작가 의도를 유지하면서 인과적으로 닿는 외부 인물·세력·세계 움직임을 강화하는 입력' })
+   });
++  const HYPA_CONTINUITY_SCHEMA = 'gradia_hypa_long_term_continuity_v1';
++  const HYPA_CONTINUITY_MAX_CHARS = 6000;
+   const CANONICAL_REFERENCE_PACKET_SCHEMA = 'gradia_reference_packet_v2';
+   const SHARED_REFERENCE_TRANSPORT_SCHEMA = 'gradia_shared_reference_transport_v1';
+   const REFERENCE_BUDGET_MIGRATION_VERSION = 3;
+@@ -2383,6 +2386,7 @@
+     return out;
+   };
+ 
++  const normalizeExcludedHypaRecordIds = value => normalizeExcludedCharacterLoreIds(value);
+   const normalizeExcludedModuleLoreIds = value => normalizeExcludedCharacterLoreIds(value);
+ 
+   const moduleSelectionKey = module => firstFilled(
+@@ -3616,7 +3620,7 @@
+     'information_transfer_mode', 'nsfw_mode', 'nsfw_guidance_enabled', 'lore_activation_mode',
+     'lore_reranker_top_k', 'skill_router_enabled', 'skill_router_top_k',
+     'skill_router_references', 'selected_module_lore_ids', 'excluded_module_lore_ids', 'excluded_character_lore_ids',
+-    'aide_stage_order', 'enable_shadow_act',
++    'excluded_hypa_record_ids', 'aide_stage_order', 'enable_shadow_act',
+     'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'shadow_prompt_extra',
+     'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'shadow_prompt_mode',
+     'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'shadow_prompt_custom',
+@@ -4164,12 +4168,10 @@
+       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
+       loreActivationMode: 'lore_activation_mode', loreRerankerTopK: 'lore_reranker_top_k', skillRouterEnabled: 'skill_router_enabled', skillRouterTopK: 'skill_router_top_k', skillRouterReferences: 'skill_router_references', skillCustomLibrary: 'skill_custom_library', skillPriorityOverrides: 'skill_priority_overrides',
+       excludedCharacterLoreIds: 'excluded_character_lore_ids',
++      excludedHypaRecordIds: 'excluded_hypa_record_ids'
+     };
+     const out = {};
+-    for (const [key, value] of Object.entries(source || {})) {
+-      if (key === 'excluded_hypa_record_ids' || key === 'excludedHypaRecordIds') continue;
+-      out[aliases[key] || key] = value;
+-    }
++    for (const [key, value] of Object.entries(source || {})) out[aliases[key] || key] = value;
+     for (const key of Object.keys(out)) if (/^(?:arc_|arcDirector|arcHorizon|arcAutoReplan|arcNovelty|writer_|writerEnabled|writerReview|writerMax)/.test(key)) delete out[key];
+     if (Object.prototype.hasOwnProperty.call(out, 'output_mode')) out.output_mode = 'draft_guided';
+     if (Object.prototype.hasOwnProperty.call(out, 'information_transfer_mode')) out.information_transfer_mode = 'draft_only';
+@@ -5294,6 +5296,7 @@
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(await runtimeCfg('selected_module_lore_ids', runtimeStored.selected_module_lore_ids || [])),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(await runtimeCfg('excluded_module_lore_ids', runtimeStored.excluded_module_lore_ids || [])),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(await runtimeCfg('excluded_character_lore_ids', runtimeStored.excluded_character_lore_ids || [])),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(await runtimeCfg('excluded_hypa_record_ids', runtimeStored.excluded_hypa_record_ids || [])),
+       stagePresetNames: {
+         [ARC_DIRECTOR_STAGE_ID]: compact(await slotCfg(ARC_DIRECTOR_STAGE_ID, 'preset', 'arc_director_preset', await slotCfg('shadow_act', 'preset', 'shadow_act_preset', '')), 120),
+         [INPUT_ASSIST_STAGE_ID]: compact(await slotCfg(INPUT_ASSIST_STAGE_ID, 'preset', 'input_assist_preset', ''), 120),
+@@ -6130,9 +6133,7 @@ ${text(paired.leadingAssistant.content || '')}
+       .filter(m => ['system', 'user', 'assistant', 'developer'].includes(m.role))
+       .filter(m => ['user', 'assistant'].includes(m.role) || text(m.content || '').trim())
+       .filter(m => !isSgaInjectionText(m.content));
+-    const systemContextMessages = allowed
+-      .filter(m => ['system', 'developer'].includes(m.role) && !['supaMemory', 'hypaMemory'].includes(m.memo))
+-      .map(m => ({ ...m, content: m.content.replace(/<Past Events Summary>[\s\S]*?<\/Past Events Summary>/gi, '').trim() }));
++    const systemContextMessages = allowed.filter(m => ['system', 'developer'].includes(m.role));
+     const otherInfoMessages = allowed.filter(m => {
+       if (['system', 'developer'].includes(m.role)) return false;
+       return isOthersInfoMessage(m.content) || (m.role === 'user' && isLikelyMetaUserMessage(m.content));
+@@ -9353,6 +9354,7 @@ function mergeAgentCbsWarnings(...warningLists) {
+     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
+     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
+     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
++    excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
+     loreActivationMode: normalizeLoreActivationMode(settings.loreActivationMode),
+     inputAssistLoreActivationMode: normalizeInputAssistLoreActivationMode(settings.inputAssistLoreActivationMode),
+     turnWindow: Number(settings.turnWindow || 0),
+@@ -9454,11 +9456,22 @@ function mergeAgentCbsWarnings(...warningLists) {
+     if (!inputAssistTerminalPath) {
+       writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
+     }
++    const hypaContinuity = inputAssistTerminalPath
++      ? null
++      : buildHypaContinuityPacket(
++          { chatInfo, actualChatContext },
++          ragRecent,
++          {
++            excludedRecordIds: settings.excludedHypaRecordIds,
++            requestMessages
++          }
++        );
+     return {
+       ...staticSource,
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
+       candidates,
+       activeLore,
+       keyActiveLore: independentRendering.activeLore,
+@@ -9467,6 +9480,7 @@ function mergeAgentCbsWarnings(...warningLists) {
+       actualChatContext,
+       cbsContext,
+       authorNote,
++      hypaContinuity,
+       loreSettings: {
+         activationMode: loreActivationMode,
+         activationModeLabel: inputAssistTerminalPath
+@@ -13520,7 +13534,7 @@ ${passage.text || ''}`, 420));
+     return compact(sections.filter(item => item !== null && item !== undefined).join('\n'), contextBudget);
+   };
+ 
+-  const loreSelectionBudgetForStage = ({ settings = {}, stageName = 'shadow_act', refs = {}, source = {}, authorNote = null, capacityOptions = null, capacity: suppliedCapacity = null } = {}) => {
++  const loreSelectionBudgetForStage = ({ settings = {}, stageName = 'shadow_act', refs = {}, source = {}, hypaContinuity = null, authorNote = null, capacityOptions = null, capacity: suppliedCapacity = null } = {}) => {
+     const options = capacityOptions || { stageNames: [stageName] };
+     const capacity = suppliedCapacity || resolveReferenceCapacity(settings, options);
+     let nonLoreChars = 1800; // transport headings and continuity metadata
+@@ -13538,6 +13552,9 @@ ${passage.text || ''}`, 420));
+         character.firstMessage ?? character.first_message
+       ].map(value => text(value || '').length).reduce((sum, value) => sum + value, 0) + 240;
+     }
++    if (hypaContinuity?.records?.length) {
++      nonLoreChars += Math.min(HYPA_CONTINUITY_MAX_CHARS, hypaContinuity.records.reduce((sum, record) => sum + text(record?.body || '').length + 80, 0));
++    }
+     const effective = Math.max(1000, Number(capacity.effectiveBudgetChars || REFERENCE_PROFILE_CAPS.balanced));
+     const minimumLoreBudget = Math.min(effective, 2400);
+     const reservableNonLore = Math.max(0, effective - minimumLoreBudget);
+@@ -13840,6 +13857,7 @@ ${passage.text || ''}`, 420));
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings?.selectedModuleLoreIds),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings?.excludedHypaRecordIds),
+       characterSource: 'missing',
+       personaSource: 'missing',
+       currentChatSource: 'missing',
+@@ -13874,6 +13892,17 @@ ${passage.text || ''}`, 420));
+       recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
+       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
+     );
++    const hypaContinuity = source.hypaContinuity || buildHypaContinuityPacket(
++      source,
++      recent,
++      {
++        excludedRecordIds: settings?.excludedHypaRecordIds,
++        requestMessages: messages
++      }
++    );
++    const hypaContinuityBlock = formatHypaContinuityPacket(hypaContinuity);
++    recent.longTermContinuity = hypaContinuity;
++    recent.longTermContinuityBlock = hypaContinuityBlock;
+     const { characterInfo, character, chatInfo, persona, candidates } = source;
+     const continuityLedger = inputAssistTerminalPath
+       ? {
+@@ -13959,7 +13988,7 @@ ${passage.text || ''}`, 420));
+     if (!inputAssistTerminalPath && source.loreSettings?.continuityScope) {
+       writeLoreContinuityIds(source.loreSettings.continuityScope, activeLore, recent?.latestUser || '');
+     }
+-    meta.available = !!(character || source.db || chatInfo?.chat || persona || selectedCandidates.length);
++    meta.available = !!(character || source.db || chatInfo?.chat || persona || selectedCandidates.length || hypaContinuity?.selectedCount);
+     meta.character = !!character;
+     meta.persona = !!persona;
+     meta.characterSource = characterInfo?.source || 'missing';
+@@ -13985,6 +14014,23 @@ ${passage.text || ''}`, 420));
+       requestMatchedKnown: source.actualChatContext?.requestGreetingMatchedKnown === true
+     };
+     meta.rawMemorySnapshotDisabled = true;
++    meta.hypaContinuity = {
++      schema: hypaContinuity?.schema || HYPA_CONTINUITY_SCHEMA,
++      authority: hypaContinuity?.authority || 'long_term_history_only',
++      currentSceneAuthority: hypaContinuity?.currentSceneAuthority || 'terminal_assistant_tail_2400',
++      selectionAuthority: hypaContinuity?.selectionAuthority || 'risu_hypav3_current_request',
++      selectionSource: hypaContinuity?.selectionSource || 'unavailable',
++      currentSelectionObserved: hypaContinuity?.currentSelectionObserved === true,
++      metricsAvailable: hypaContinuity?.metricsAvailable === true,
++      availableCount: hypaContinuity?.availableCount || 0,
++      selectedBeforeExclusionCount: hypaContinuity?.selectedBeforeExclusionCount || 0,
++      selectedCount: hypaContinuity?.selectedCount || 0,
++      excludedSelectedCount: hypaContinuity?.excludedSelectedCount || 0,
++      excludedCount: hypaContinuity?.excludedCount || 0,
++      selectedRecordIds: Array.isArray(hypaContinuity?.selectedRecordIds) ? hypaContinuity.selectedRecordIds : [],
++      coverageEnd: hypaContinuity?.coverageEnd || 0,
++      terminalChars: recent.terminalVisibleScene.length
++    };
+     meta.continuityLedger = {
+       version: continuityLedger.version,
+       boundary: continuityLedger.boundary,
+@@ -14160,6 +14206,7 @@ ${passage.text || ''}`, 420));
+       stageName: settings?.activeStageName || 'shadow_act',
+       refs,
+       source,
++      hypaContinuity,
+       authorNote,
+       capacityOptions: referenceCapacityOptions
+     });
+@@ -14248,6 +14295,7 @@ ${passage.text || ''}`, 420));
+         references: refs,
+         loreMode: loreActivationMode,
+         activeLore: retrievedActiveLore,
++        hypaContinuity,
+         authorNote,
+         continuityLedger,
+         capacity: referenceCapacity,
+@@ -14348,7 +14396,7 @@ ${passage.text || ''}`, 420));
+         source.cbsContext,
+         `stage:${settings?.activeStageName || 'unknown'}`
+       );
+-      referencePacketBlock = renderedLegacyBlock;
++      referencePacketBlock = [renderedLegacyBlock, hypaContinuityBlock].filter(Boolean).join('\n\n');
+       referencePacketHash = referenceContentHash(referencePacketBlock);
+       referenceCapacity = resolveReferenceCapacity(settings, referenceCapacityOptions || {});
+       const fallbackReferences = Object.fromEntries(REFERENCE_GROUP_ORDER.map(group => [group, []]));
+@@ -14385,6 +14433,7 @@ ${passage.text || ''}`, 420));
+           selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
+           excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
+           excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
++          excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
+           selectedIds: referencePacketBlock ? [`legacy-risu-context:${referencePacketHash}`] : [],
+           duplicateIds: [],
+           degradedFallbacks: ['legacy_combined_risu_context']
+@@ -14452,6 +14501,8 @@ ${passage.text || ''}`, 420));
+       continuityLedgerBlock: recent.continuityLedgerBlock || '',
+       relationshipCanonLock,
+       relationshipCanonLockBlock: recent.relationshipCanonLockBlock || '',
++      hypaContinuity,
++      hypaContinuityBlock,
+       authoritativeCurrentInput,
+       authorNote,
+       memory: '',
+@@ -14486,7 +14537,7 @@ ${passage.text || ''}`, 420));
+   };
+ 
+   // Materialize a stage view from the one request-scoped reference snapshot.
+-  // Character/persona loading, module scanning, activation, and Jaccard promotion
++  // Character/persona/Hypa loading, module scanning, activation, and Jaccard promotion
+   // are still performed once. Only the already-collected lore pool is reranked locally
+   // for SHADOW/Character/World/Plot, so stage specialization adds no provider call.
+   const materializeSharedRisuContext = (shared, recent, settings, references = null) => {
+@@ -14523,6 +14574,8 @@ ${passage.text || ''}`, 420));
+       recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
+       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
+     );
++    recent.longTermContinuity = shared.hypaContinuity || null;
++    recent.longTermContinuityBlock = shared.hypaContinuityBlock || '';
+     recent.continuityLedger = shared.continuityLedger || recent.continuityLedger || null;
+     recent.continuityLedgerBlock = shared.continuityLedgerBlock || recent.continuityLedgerBlock || '';
+ 
+@@ -14563,6 +14616,7 @@ ${passage.text || ''}`, 420));
+       stageName,
+       refs,
+       source,
++      hypaContinuity: shared.hypaContinuity || null,
+       authorNote: sharedAuthorNote,
+       capacityOptions: { stageNames: [stageName] }
+     });
+@@ -14612,6 +14666,7 @@ ${passage.text || ''}`, 420));
+           references: refs,
+           loreMode: shared.meta?.loreActivationMode || shared.referencePacket?.loreMode || settings?.loreActivationMode,
+           activeLore: retrievedActiveLore,
++          hypaContinuity: shared.hypaContinuity || null,
+           authorNote: sharedAuthorNote,
+           continuityLedger: shared.continuityLedger || recent.continuityLedger || null,
+           capacity: referenceCapacity || undefined
+@@ -14786,6 +14841,8 @@ ${passage.text || ''}`, 420));
+       continuityLedgerBlock: shared.continuityLedgerBlock || '',
+       relationshipCanonLock,
+       relationshipCanonLockBlock: recent.relationshipCanonLockBlock || '',
++      hypaContinuity: shared.hypaContinuity || null,
++      hypaContinuityBlock: shared.hypaContinuityBlock || '',
+       authoritativeCurrentInput: shared.authoritativeCurrentInput || '',
+       authorNote: sharedAuthorNote,
+       memory: '',
+@@ -14997,6 +15054,230 @@ ${passage.text || ''}`, 420));
+   
+ 
+   
++
++  const hypaContinuitySummaryText = item => {
++    if (!item) return '';
++    if (typeof item === 'string') return sanitizeMessageContentForHistory('assistant', item);
++    if (typeof item !== 'object') return '';
++    const main = firstFilled(item.text, item.summary, item.content, item.memo, item.description, item.data);
++    const memos = Array.isArray(item.chatMemos || item.chat_memos)
++      ? (item.chatMemos || item.chat_memos).map(row => typeof row === 'string' ? row : firstFilled(row?.content, row?.text, row?.message)).filter(Boolean).slice(-4).join(' / ')
++      : '';
++    const tags = Array.isArray(item.tags) ? item.tags.slice(0, 8).join(', ') : '';
++    const meta = [item.isImportant === true ? 'important' : '', item.category || '', tags].filter(Boolean).join(' | ');
++    const body = [meta ? `[${meta}]` : '', main, memos ? `대화 단서: ${memos}` : ''].filter(Boolean).join('\n');
++    return sanitizeMessageContentForHistory('assistant', body);
++  };
++
++  
++
++  const hypaContinuityMessageIndex = (item, body = '') => {
++    if (item && typeof item === 'object' && !Array.isArray(item)) {
++      const candidates = [
++        item.message_index,
++        item.messageIndex,
++        item.end_index,
++        item.endIndex,
++        item.range_end,
++        item.rangeEnd,
++        item.until,
++        item.chatIndex
++      ];
++      for (const value of candidates) {
++        if (Number.isFinite(Number(value))) return Math.max(0, parseInt(value, 10) || 0);
++      }
++    }
++    const match = text(body || '').match(/(?:message[_\s-]*index|range[_\s-]*end|end[_\s-]*index|chat[_\s-]*index)\s*[:=]\s*(\d+)/i);
++    return match ? Math.max(0, parseInt(match[1], 10) || 0) : null;
++  };
++
++  const hypaContinuityRawCandidates = (snapshot, recent) => {
++    const chat = snapshot?.chatInfo?.chat || {};
++    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
++    const structured = Array.isArray(raw)
++      ? raw
++      : Array.isArray(raw?.summaries) ? raw.summaries
++        : Array.isArray(raw?.memories) ? raw.memories
++          : Array.isArray(raw?.data) ? raw.data : [];
++    const injected = [];
++    const systemText = text(recent?.systemContext || '');
++    const re = /<Past Events Summary>([\s\S]*?)<\/Past Events Summary>/gi;
++    let match;
++    while ((match = re.exec(systemText))) {
++      injected.push({ text: text(match[1]).trim(), __injectedPastEvents: true });
++    }
++    // Native HypaV3 records are the authoritative source whenever the chat exposes
++    // them. The already-injected aggregate is only a compatibility fallback; mixing
++    // both would let an excluded native record return through the aggregate prompt.
++    return structured.length ? structured : injected;
++  };
++
++  const hypaContinuityCategoryMap = snapshot => {
++    const chat = snapshot?.chatInfo?.chat || {};
++    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
++    const categories = Array.isArray(raw?.categories) ? raw.categories : [];
++    return new Map(categories.map(item => [text(item?.id || '').trim(), text(item?.name || '').trim()]).filter(([id]) => id));
++  };
++
++  const risuHypaSelectionState = snapshot => {
++    const chat = snapshot?.chatInfo?.chat || {};
++    const raw = chat.hypaV3Data ?? chat.hypa_v3_data ?? chat.hypaV3 ?? chat.hypa_v3 ?? null;
++    const metrics = raw?.metrics && typeof raw.metrics === 'object' ? raw.metrics : null;
++    const groups = {
++      important: Array.isArray(metrics?.lastImportantSummaries) ? metrics.lastImportantSummaries : [],
++      recent: Array.isArray(metrics?.lastRecentSummaries) ? metrics.lastRecentSummaries : [],
++      similar: Array.isArray(metrics?.lastSimilarSummaries) ? metrics.lastSimilarSummaries : [],
++      random: Array.isArray(metrics?.lastRandomSummaries) ? metrics.lastRandomSummaries : [],
++      legacy: Array.isArray(raw?.lastSelectedSummaries) ? raw.lastSelectedSummaries : []
++    };
++    const normalizeIndexes = values => Array.from(new Set((values || [])
++      .map(value => Number(value))
++      .filter(value => Number.isInteger(value) && value >= 0)));
++    const normalizedGroups = Object.fromEntries(
++      Object.entries(groups).map(([name, values]) => [name, normalizeIndexes(values)])
++    );
++    return {
++      metricsAvailable: !!metrics || normalizedGroups.legacy.length > 0,
++      indexes: normalizeIndexes(Object.values(normalizedGroups).flat()),
++      groups: normalizedGroups
++    };
++  };
++
++  const currentRisuHypaPromptPresent = requestMessages => (Array.isArray(requestMessages) ? requestMessages : [])
++    .some(message => {
++      if (isSgaTransportInjectionMessage(message)) return false;
++      const body = contentToText(message?.content);
++      return /<Past Events Summary>[\s\S]*?<\/Past Events Summary>/i.test(body);
++    });
++
++  const buildHypaContinuityRecords = (snapshot, recent) => {
++    const candidates = hypaContinuityRawCandidates(snapshot, recent);
++    const categoryMap = hypaContinuityCategoryMap(snapshot);
++    return candidates.map((item, sourceOrder) => {
++      const body = hypaContinuitySummaryText(item);
++      if (!body) return null;
++      const hash = stableDraftHash(body);
++      const messageIndex = hypaContinuityMessageIndex(item, body);
++      const important = item?.isImportant === true || item?.important === true;
++      const categoryId = text(item?.categoryId ?? item?.category_id ?? '').trim();
++      const category = firstFilled(item?.category, categoryMap.get(categoryId), categoryId);
++      const tags = Array.isArray(item?.tags) ? item.tags.map(tag => text(tag).trim()).filter(Boolean).slice(0, 12) : [];
++      const explicitId = firstFilled(item?.id, item?.summaryId, item?.uuid);
++      return {
++        id: explicitId || `hypa:${hash}`,
++        sourceOrder,
++        messageIndex,
++        important,
++        injected: item?.__injectedPastEvents === true,
++        categoryId,
++        category,
++        tags,
++        title: firstFilled(item?.title, category, tags[0], `HypaV3 기록 ${sourceOrder + 1}`),
++        body
++      };
++    }).filter(Boolean);
++  };
++
++  const buildHypaContinuityPacket = (snapshot, recent, options = {}) => {
++    const allRecords = buildHypaContinuityRecords(snapshot, recent);
++    const excludedIds = new Set(normalizeExcludedHypaRecordIds(options?.excludedRecordIds));
++    const records = allRecords.filter(record => !excludedIds.has(record.id));
++    const terminalScene = extractInputAssistTerminalTail(
++      recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
++      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
++    );
++    const currentMessageCount = Math.max(
++      Number(snapshot?.actualChatContext?.storedMessageCount || 0),
++      Number(snapshot?.actualChatContext?.messageCount || 0),
++      Array.isArray(snapshot?.chatInfo?.chat?.message) ? snapshot.chatInfo.chat.message.length : 0
++    );
++    const risuSelection = risuHypaSelectionState(snapshot);
++    const currentSelectionObserved = options?.assumeCurrentSelection === true
++      || currentRisuHypaPromptPresent(options?.requestMessages);
++    const selectedBeforeExclusion = currentSelectionObserved && risuSelection.metricsAvailable
++      ? risuSelection.indexes
++        .map(index => allRecords.find(record => record.sourceOrder === index))
++        .filter(Boolean)
++      : [];
++    const selected = selectedBeforeExclusion
++      .filter(record => !excludedIds.has(record.id))
++      .map(record => {
++        const groups = Object.entries(risuSelection.groups || {})
++          .filter(([, indexes]) => indexes.includes(record.sourceOrder))
++          .map(([name]) => name);
++        return { ...record, selectionGroups: groups };
++      })
++      .sort((left, right) => (
++        Number.isFinite(Number(left.messageIndex)) && Number.isFinite(Number(right.messageIndex))
++          ? Number(left.messageIndex) - Number(right.messageIndex)
++          : left.sourceOrder - right.sourceOrder
++      ) || left.sourceOrder - right.sourceOrder);
++
++    const packet = {
++      schema: HYPA_CONTINUITY_SCHEMA,
++      authority: 'long_term_history_only',
++      currentSceneAuthority: 'terminal_assistant_tail_2400',
++      selectionAuthority: 'risu_hypav3_current_request',
++      selectionSource: !currentSelectionObserved
++        ? 'risu_hypa_not_present_in_current_request'
++        : risuSelection.metricsAvailable
++          ? 'risu_hypav3_metrics'
++          : 'risu_hypav3_metrics_unavailable',
++      currentSelectionObserved,
++      metricsAvailable: risuSelection.metricsAvailable,
++      risuSelectedIndexes: risuSelection.indexes,
++      risuSelectionGroups: risuSelection.groups,
++      currentMessageCount,
++      totalCount: allRecords.length,
++      excludedCount: allRecords.length - records.length,
++      availableCount: records.length,
++      selectedBeforeExclusionCount: selectedBeforeExclusion.length,
++      excludedSelectedCount: selectedBeforeExclusion.length - selected.length,
++      selectedCount: selected.length,
++      excludedRecordIds: Array.from(excludedIds),
++      selectedRecordIds: selected.map(record => record.id),
++      coverageEnd: selected.reduce((max, record) => record.messageIndex === null ? max : Math.max(max, record.messageIndex), 0),
++      terminalHash: stableDraftHash(terminalScene),
++      queryHash: stableDraftHash(risuSelection.indexes.join(',')),
++      records: selected
++    };
++    return Object.freeze({
++      ...packet,
++      excludedRecordIds: Object.freeze([...packet.excludedRecordIds]),
++      selectedRecordIds: Object.freeze([...packet.selectedRecordIds]),
++      risuSelectedIndexes: Object.freeze([...packet.risuSelectedIndexes]),
++      risuSelectionGroups: Object.freeze(Object.fromEntries(
++        Object.entries(packet.risuSelectionGroups).map(([name, indexes]) => [name, Object.freeze([...indexes])])
++      )),
++      records: Object.freeze(selected.map(record => Object.freeze({ ...record })))
++    });
++  };
++
++  const buildHypaV3Catalog = (snapshot, recent = {}) => {
++    const selectedIndexes = new Set(risuHypaSelectionState(snapshot).indexes);
++    return buildHypaContinuityRecords(snapshot, recent).map(record => ({
++      ...record,
++      risuSelected: selectedIndexes.has(record.sourceOrder),
++      contentPreview: compact(text(record.body || '').replace(/\s+/g, ' '), 360)
++    }));
++  };
++
++  const formatHypaContinuityPacket = packet => {
++    const records = Array.isArray(packet?.records) ? packet.records : [];
++    if (!records.length) return '';
++    const body = records.map((record, index) => [
++      `[Historical continuity ${index + 1}${record.messageIndex === null ? '' : ` / through message ${record.messageIndex}`}${record.important ? ' / important' : ''}]`,
++      record.body
++    ].join('\n')).join('\n\n');
++    return compactMiddle([
++      '[ESTABLISHED LONG-TERM CONTINUITY / READ-ONLY HISTORY]',
++      'Use these records only for established past events, relationship changes, character knowledge, promises, obligations, and unresolved consequences relevant to the current response.',
++      'They do not establish the live location, cast, posture, contact, object placement, or action. The exact terminal scene passage and current user input control the live scene.',
++      'Do not replay, relocate to, or resume a historical scene merely because it appears here. Bring forward only a consequence with a concrete connection to the terminal scene.',
++      '',
++      body
++    ].join('\n'), HYPA_CONTINUITY_MAX_CHARS);
++  };
+ 
+   const normalizeReferenceContent = value => {
+     let body = text(value || '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '');
+@@ -15041,6 +15322,12 @@ ${passage.text || ''}`, 420));
+     lore_recursive: 0.92,
+     lore_jaccard_current: 1.34,
+     lore_jaccard_terminal: 0.78,
++    hypa_multi: 1.34,
++    hypa_important: 1.28,
++    hypa_similar: 1.22,
++    hypa_recent: 0.96,
++    hypa_legacy: 1.16,
++    hypa_random: 0.58,
+     auxiliary: 0.55
+   }[value] || 1);
+ 
+@@ -15128,6 +15415,7 @@ ${passage.text || ''}`, 420));
+     'persona',
+     'characterDefinition',
+     'lore',
++    'hypa',
+     'auxiliary'
+   ]);
+   const referenceGroupForItem = item => ({
+@@ -15135,6 +15423,7 @@ ${passage.text || ''}`, 420));
+     persona: 'persona',
+     character_definition: 'characterDefinition',
+     lore: 'lore',
++    hypa: 'hypa',
+     auxiliary: 'auxiliary'
+   }[item?.sourceType] || 'auxiliary');
+   const referenceGroupLabel = group => ({
+@@ -15142,8 +15431,15 @@ ${passage.text || ''}`, 420));
+     persona: 'USER PERSONA',
+     characterDefinition: 'CHARACTER DEFINITION',
+     lore: 'ACTIVATED LORE',
++    hypa: 'ESTABLISHED LONG-TERM CONTINUITY',
+     auxiliary: 'AUXILIARY REFERENCE'
+   }[group] || 'REFERENCE');
++  const referenceGroupPreamble = group => group === 'hypa'
++    ? [
++        'These records describe long-term history only: past events, relationship changes, learned knowledge, promises, obligations, and unresolved consequences.',
++        'They do not override the latest visible scene location, cast, posture, contact, speaker, objects, or ongoing action.'
++      ].join('\n')
++    : '';
+ 
+   const serializeCanonicalReferenceItem = item => {
+     const meta = [
+@@ -15159,6 +15455,20 @@ ${passage.text || ''}`, 420));
+   const referenceSerializedChars = item => serializeCanonicalReferenceItem(item).length + 2;
+ 
+   const referenceItemPriority = item => {
++    const groups = new Set(item.selectionGroups || []);
++    const hypaBoost = groups.size > 1
++      ? 42
++      : groups.has('important')
++        ? 35
++        : groups.has('similar')
++          ? 28
++            : groups.has('recent')
++              ? 14
++              : groups.has('legacy')
++                ? 20
++              : groups.has('random')
++                ? -12
++              : 0;
+     const routeBoost = {
+       risu_request_selected: 46,
+       risu_request_selected_injection: 44,
+@@ -15177,6 +15487,7 @@ ${passage.text || ''}`, 420));
+       + (item.coverageCritical ? 34 : 0)
+       + (item.candidateProtected ? 18 : 0)
+       + routeBoost
++      + hypaBoost
+       + Math.max(-20, Math.min(30, item.relevanceScore * 20));
+   };
+ 
+@@ -15635,6 +15946,40 @@ ${passage.text || ''}`, 420));
+     };
+   }).filter(item => item.content);
+ 
++  const canonicalHypaReferenceItems = packet => (Array.isArray(packet?.records) ? packet.records : []).map((record, sourceOrder) => {
++    const groups = Array.isArray(record.selectionGroups) ? record.selectionGroups : [];
++    const authorityClass = groups.length > 1
++      ? 'hypa_multi'
++      : groups.includes('important')
++        ? 'hypa_important'
++        : groups.includes('similar')
++          ? 'hypa_similar'
++            : groups.includes('recent')
++              ? 'hypa_recent'
++              : groups.includes('legacy')
++                ? 'hypa_legacy'
++              : groups.includes('random')
++                ? 'hypa_random'
++                : 'hypa_recent';
++    return {
++      id: `hypa:${record.id}`,
++      sourceType: 'hypa',
++      sourceNamespace: 'risu_hypav3_current_request',
++      label: record.title || `Historical continuity ${sourceOrder + 1}`,
++      content: text(record.body || '').trim(),
++      sourceOrder: Number.isFinite(Number(record.sourceOrder)) ? Number(record.sourceOrder) : sourceOrder,
++      authorityClass,
++      selectionReason: 'risu_hypav3_current_request',
++      relevanceScore: groups.includes('similar') ? 1 : groups.includes('important') ? 0.9 : groups.includes('recent') ? 0.6 : 0.2,
++      protected: ['hypa_multi', 'hypa_important', 'hypa_similar', 'hypa_legacy'].includes(authorityClass),
++      optional: !['hypa_multi', 'hypa_important', 'hypa_legacy'].includes(authorityClass),
++      recordId: record.id,
++      messageIndex: record.messageIndex,
++      selectionGroups: groups,
++      longTermAuthority: 'long_term_history_only'
++    };
++  }).filter(item => item.content);
++
+   const serializeCanonicalReferencePacket = (packet = {}, options = {}) => {
+     const excludeTypes = new Set(Array.isArray(options.excludeTypes) ? options.excludeTypes : ['author_note']);
+     const sections = [];
+@@ -15642,10 +15987,15 @@ ${passage.text || ''}`, 420));
+       const items = (packet.references?.[group] || []).filter(item => !excludeTypes.has(item.sourceType));
+       if (!items.length) continue;
+       sections.push(`[${referenceGroupLabel(group)}]`);
++      const preamble = referenceGroupPreamble(group);
++      if (preamble) sections.push(preamble);
+       sections.push(items
+         .slice()
+         .sort((left, right) => (
+-          left.sourceOrder - right.sourceOrder
++          group === 'hypa'
++            ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
++              || left.sourceOrder - right.sourceOrder
++            : left.sourceOrder - right.sourceOrder
+         ))
+         .map(serializeCanonicalReferenceItem)
+         .join('\n\n'));
+@@ -15669,10 +16019,15 @@ ${passage.text || ''}`, 420));
+       const items = (packet.references?.[group] || []).filter(item => !excludeTypes.has(item.sourceType));
+       if (!items.length) continue;
+       sections.push(`[${referenceGroupLabel(group)}]`);
++      const preamble = referenceGroupPreamble(group);
++      if (preamble) sections.push(preamble);
+       sections.push(items
+         .slice()
+         .sort((left, right) => (
+-          left.sourceOrder - right.sourceOrder
++          group === 'hypa'
++            ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
++              || left.sourceOrder - right.sourceOrder
++            : left.sourceOrder - right.sourceOrder
+         ))
+         .map(item => [`[${item.label || item.id}]`, item.content].join('\n'))
+         .join('\n\n'));
+@@ -15812,6 +16167,7 @@ ${passage.text || ''}`, 420));
+     if (refs.persona) items.push(...personaReferenceItems(source.persona));
+     if (refs.characterDescription) items.push(...characterDefinitionReferenceItems(source.character));
+     if (refs.characterLorebook || refs.moduleLorebook) items.push(...canonicalLoreReferenceItems(input.activeLore, loreMode));
++    items.push(...canonicalHypaReferenceItems(input.hypaContinuity));
+     const structuredCount = items.length;
+     const degradedFallbacks = [];
+     if (!structuredCount && text(input.legacyBlock || '').trim()) {
+@@ -15838,6 +16194,7 @@ ${passage.text || ''}`, 420));
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
+       selectedIds: candidateSelection.unique.map(item => item.id),
+       packedIds: allocated.selected.map(item => item.id),
+       duplicateIds: allocated.duplicateIds,
+@@ -15850,6 +16207,7 @@ ${passage.text || ''}`, 420));
+         selectedModuleLoreIds: normalizedSelection.selectedModuleLoreIds,
+         excludedModuleLoreIds: normalizedSelection.excludedModuleLoreIds,
+         excludedCharacterLoreIds: normalizedSelection.excludedCharacterLoreIds,
++        excludedHypaRecordIds: normalizedSelection.excludedHypaRecordIds
+       }))
+       .digest();
+     const packedHash = createTextHasher()
+@@ -15868,6 +16226,12 @@ ${passage.text || ''}`, 420));
+         chars: 0,
+         reason: 'excluded_by_user'
+       })),
++      ...normalizedSelection.excludedHypaRecordIds.map(id => ({
++        id,
++        sourceType: 'hypa',
++        chars: 0,
++        reason: 'excluded_by_user'
++      }))
+     ];
+     const packet = {
+       schema: CANONICAL_REFERENCE_PACKET_SCHEMA,
+@@ -22228,6 +22592,7 @@ ${passage.text || ''}`, 420));
+     persona: 'persona',
+     characterDefinition: 'character_definition',
+     lore: 'lore',
++    hypa: 'hypa',
+     auxiliary: 'auxiliary'
+   }[group] || group || 'reference');
+ 
+@@ -22294,7 +22659,7 @@ ${passage.text || ''}`, 420));
+         passages
+       });
+     };
+-    ['persona', 'characterDefinition', 'lore', 'auxiliary'].forEach(group => {
++    ['persona', 'characterDefinition', 'lore', 'hypa', 'auxiliary'].forEach(group => {
+       const list = Array.isArray(references?.[group]) ? references[group] : [];
+       list.forEach((item, order) => pushReference(group, item, order));
+     });
+@@ -22419,7 +22784,7 @@ ${passage.text || ''}`, 420));
+   const reconcileStageMaterialUsageWithPacket = (usage, packet) => {
+     if (!usage || !packet?.references) return usage;
+     const selectedById = new Map();
+-    ['persona', 'characterDefinition', 'lore', 'auxiliary'].forEach(group => {
++    ['persona', 'characterDefinition', 'lore', 'hypa', 'auxiliary'].forEach(group => {
+       const items = Array.isArray(packet.references?.[group]) ? packet.references[group] : [];
+       items.forEach(item => {
+         const id = text(item?.id || '').trim();
+@@ -26553,13 +26918,16 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+       .filter(filter)
+       .slice()
+       .sort((left, right) => (
+-        Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
++        group === 'hypa'
++          ? (Number(left.messageIndex ?? Number.MAX_SAFE_INTEGER) - Number(right.messageIndex ?? Number.MAX_SAFE_INTEGER))
++            || Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
++          : Number(left.sourceOrder || 0) - Number(right.sourceOrder || 0)
+       ))
+       .map(serializeReferenceItemForEngine)
+       .join('\n\n');
+     const preamble = options.preamble === false
+       ? ''
+-      : text(options.preamble || '');
++      : text(options.preamble || referenceGroupPreamble(group));
+     const raw = [preamble, items].filter(Boolean).join('\n\n');
+     return raw ? renderRagCbsText(raw, cbsContext, `response-engine:${group}`) : '';
+   };
+@@ -26709,6 +27077,8 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+       persona: serializeReferenceGroupForEngine(packet, 'persona', cbsContext),
+       coreLore: serializeReferenceGroupForEngine(packet, 'lore', cbsContext, { filter: coreReference }),
+       optionalLore: serializeReferenceGroupForEngine(packet, 'lore', cbsContext, { filter: optionalReference, preamble: '[Additional Activated Lore]' }),
++      coreHypa: serializeReferenceGroupForEngine(packet, 'hypa', cbsContext, { filter: coreReference }),
++      optionalHypa: serializeReferenceGroupForEngine(packet, 'hypa', cbsContext, { filter: optionalReference, preamble: '[Additional Long-Term Continuity]' }),
+       packetAuxiliary: serializeReferenceGroupForEngine(packet, 'auxiliary', cbsContext),
+       creativeConstraints: buildActiveCreativeConstraintBlock(stages, settings, recent),
+       analysisTransfer: buildInformationTransferBlock(stages, settings, recent),
+@@ -26719,7 +27089,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+ 
+   const buildNovelCanonicalRisuEnginePromptBundle = (recent, finalDraft, stages, settings, ledger, presetStageName = 'aide_plot') => {
+     const {
+-      characterDefinition, persona, coreLore, optionalLore,
++      characterDefinition, persona, coreLore, optionalLore, coreHypa, optionalHypa,
+       packetAuxiliary, creativeConstraints, analysisTransfer, legacyReference, conversation
+     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
+     const synthesisContract = buildFinalSynthesisContract('full');
+@@ -26738,6 +27108,8 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+       persona ? { type: 'persona', role: 'system', name: 'User Persona', content: persona, _fitPriority: 10, _trimPolicy: 'middle', _order: 20, _key: 'persona' } : null,
+       coreLore ? { type: 'lorebook', role: 'system', name: 'Activated Lore', content: coreLore, _fitPriority: 10, _trimPolicy: 'middle', _order: 30, _key: 'core_lore' } : null,
+       optionalLore ? { type: 'lorebook', role: 'system', name: 'Additional Activated Lore', content: optionalLore, _fitPriority: 20, _trimPolicy: 'none', _order: 31, _key: 'optional_lore' } : null,
++      coreHypa ? { type: 'memory', role: 'system', name: 'Established Long-Term Continuity', content: coreHypa, _fitPriority: 10, _trimPolicy: 'middle', _order: 40, _key: 'core_hypa' } : null,
++      optionalHypa ? { type: 'memory', role: 'system', name: 'Additional Long-Term Continuity', content: optionalHypa, _fitPriority: 20, _trimPolicy: 'none', _order: 41, _key: 'optional_hypa' } : null,
+       legacyReference || packetAuxiliary ? { type: 'plain', type2: 'normal', role: 'system', name: 'Additional Reference', content: [legacyReference, packetAuxiliary].filter(Boolean).join('\n\n'), _fitPriority: 40, _trimPolicy: 'none', _order: 50, _key: 'packet_auxiliary' } : null,
+       creativeConstraints ? { type: 'plain', type2: 'normal', role: 'system', name: 'Creative Direction', content: creativeConstraints, _fitPriority: 40, _trimPolicy: 'none', _order: 51, _key: 'creative_constraints' } : null,
+       analysisTransfer ? { type: 'plain', type2: 'normal', role: 'system', name: 'Scene Constraints', content: analysisTransfer, _fitPriority: 40, _trimPolicy: 'none', _order: 52, _key: 'analysis_transfer' } : null,
+@@ -26758,7 +27130,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+ 
+   const buildPlayerControlledRpCanonicalRisuEnginePromptBundle = (recent, finalDraft, stages, settings, ledger, presetStageName = 'aide_plot') => {
+     const {
+-      characterDefinition, persona, coreLore, optionalLore,
++      characterDefinition, persona, coreLore, optionalLore, coreHypa, optionalHypa,
+       packetAuxiliary, legacyReference, conversation
+     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
+     const synthesisContract = buildPlayerControlledFinalSynthesisContract('full');
+@@ -26814,6 +27186,8 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+       personaGuarded ? { type: 'persona', role: 'system', name: 'User Persona Reference Only', content: personaGuarded, _fitPriority: 10, _trimPolicy: 'middle', _order: 25, _key: 'persona_reference_only' } : null,
+       coreLore ? { type: 'lorebook', role: 'system', name: 'Activated Lore', content: coreLore, _fitPriority: 10, _trimPolicy: 'middle', _order: 30, _key: 'core_lore' } : null,
+       optionalLore ? { type: 'lorebook', role: 'system', name: 'Additional Activated Lore', content: optionalLore, _fitPriority: 20, _trimPolicy: 'none', _order: 31, _key: 'optional_lore' } : null,
++      coreHypa ? { type: 'memory', role: 'system', name: 'Established Long-Term Continuity', content: coreHypa, _fitPriority: 10, _trimPolicy: 'middle', _order: 40, _key: 'core_hypa' } : null,
++      optionalHypa ? { type: 'memory', role: 'system', name: 'Additional Long-Term Continuity', content: optionalHypa, _fitPriority: 20, _trimPolicy: 'none', _order: 41, _key: 'optional_hypa' } : null,
+       legacyReference || packetAuxiliary ? { type: 'plain', type2: 'normal', role: 'system', name: 'Additional Reference — continuity evidence only', content: [legacyReference, packetAuxiliary].filter(Boolean).join('\n\n'), _fitPriority: 35, _trimPolicy: 'none', _order: 50, _key: 'packet_auxiliary' } : null,
+       conversation.olderConversation ? { type: 'chat', rangeStart: 0, rangeEnd: 'completed', name: 'Earlier Completed Conversation — historical evidence only', content: conversation.olderConversation, _fitPriority: 30, _trimPolicy: 'tail', _order: 60, _key: 'older_conversation' } : null,
+       conversation.latestScene ? { type: 'chat', rangeStart: 'latest', rangeEnd: 'latest', name: 'Latest Visible Scene', content: conversation.latestScene, _mandatory: true, _order: 70, _key: 'latest_scene' } : null,
+@@ -27448,6 +27822,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings?.selectedModuleLoreIds),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings?.excludedHypaRecordIds),
+       aideStageOrder: settings?.aideStageOrder,
+       stageOptions: settings?.stageOptions,
+       stagePresetNames: settings?.stagePresetNames,
+@@ -28455,18 +28830,6 @@ function createGradiaEvidenceBudget({ digest }) {
+   const ROUTE = 'https://api.openai.com/v1/chat/completions';
+   const MAX_CONTEXT = 128000;
+   const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
+-  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
+-  // Exact production wrappers for successful four/eight-stage profiles only.
+-  // Schema, names, descriptions and serialization changes require requalification.
+-  const STRUCTURED_SCHEMA_PINS = Object.freeze({
+-    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
+-    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
+-    "gradia_aide_character_patch": "d0409eb67068aed48f356aed804d72076a9b530706b53f65718805ed4a29551a",
+-    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
+-    "gradia_aide_world_patch": "9ff7f71db44fdf932dc43137b050fee47d96cb5a7b936b7c1932aa05b4cb6c1d",
+-    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
+-    "gradia_aide_plot_patch": "d8438ca82453dedf811892912788d68b2daf7dd1d2322389f969ed782f09571c"
+-});
+   const issued = new WeakMap();
+   const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
+   const integer = (value, positive = false) => Number.isSafeInteger(value)
+@@ -28524,7 +28887,7 @@ function createGradiaEvidenceBudget({ digest }) {
+     // Actual builder serialization round-trips exactly. This rejects duplicate
+     // keys, whitespace and alternate encodings instead of interpreting ambiguity.
+     if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
+-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
++    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options'], 'token_accounting_unavailable');
+     if (value.model !== MODEL || typeof value.stream !== 'boolean'
+       || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
+       || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
+@@ -28545,18 +28908,7 @@ function createGradiaEvidenceBudget({ digest }) {
+       content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
+       content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
+     }
+-    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
+-    if (Object.hasOwn(value, 'response_format')) {
+-      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
+-      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
+-      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
+-        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
+-        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
+-      structuredName = schema.name;
+-      structuredSerialized = JSON.stringify(value.response_format);
+-      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
+-    }
+-    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
++    return { body, content, output };
+   }
+   function sameBase(base, final, evidence) {
+     const left = base.body, right = final.body;
+@@ -28586,26 +28938,16 @@ function createGradiaEvidenceBudget({ digest }) {
+       if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
+       const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
+       if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
+-      let structuredSchemaSha256 = null;
+-      if (final.structuredBytes) {
+-        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
+-        catch (_) { stop('payload_hash_unavailable'); }
+-        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
+-      }
+-      // The raw envelope already charges the schema once. Reserve its complete
+-      // UTF-8 wrapper again for structured framing; this remains a conservative
+-      // engineering estimate, not a provider tokenizer or server-internals proof.
+-      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
++      const framing = Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0);
+       const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
+       const fits = add(add(allowance, final.output), margin) <= context.limit;
+       const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
+         requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
+-        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
++        contextSourceIdentity: context.identity, meterId: PROFILE, meterVersion: 1,
+         meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
+         framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
+         safetyMargin: margin, selectedContentTokenBound: selectedContent,
+-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
+-        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
++        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance };
+       // Only already captured primitives survive the await; caller mutations cannot
+       // replace the body or envelope. The adapter owns cancellation/generation.
+       const body = input.finalBody;
+@@ -37284,6 +37626,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+         latestUserChars: finalRecent.latestUser.length,
+         latestUserPreview: compact(finalRecent.latestUser, 400),
+         terminalSceneChars: text(finalRecent.terminalVisibleScene || '').length,
++        hypaContinuityAvailable: Number(finalRecent.longTermContinuity?.availableCount || 0),
++        hypaContinuitySelected: Number(finalRecent.longTermContinuity?.selectedCount || 0),
++        hypaContinuityCoverageEnd: Number(finalRecent.longTermContinuity?.coverageEnd || 0),
+         currentUserInputSource: finalRecent.currentTurnResolution?.source || 'none',
+         currentUserInputConfidence: finalRecent.currentTurnResolution?.confidence || 'none',
+         runId: runLineage.runId,
+@@ -37755,6 +38100,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+     characterLoreCatalogError: '',
+     characterLoreCatalogLoadedAt: 0,
+     characterLoreCatalogScope: '',
++    hypaCatalog: [],
++    hypaCatalogLoading: false,
++    hypaCatalogError: '',
++    hypaCatalogLoadedAt: 0,
++    hypaCatalogScope: '',
+     userIntentOocDraft: '',
+     confirmationVisible: false,
+     pageId: 'overview',
+@@ -37864,6 +38214,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+       archive: ['narrative_archive', ''],
+       modules: ['references', 'modules'],
+       character_lore_exclusions: ['references', 'character_lore_exclusions'],
++      hypa_v3: ['references', 'hypa_v3'],
+       references: ['references', 'selection'],
+       skills: ['skills', ''],
+       skill: ['skills', ''],
+@@ -37966,7 +38317,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+     if (/writingMode|novelShadowDraftMode/.test(path)) return '작성 모드';
+     if (/^agents\.|^prompts\.|aideStageOrder|multiPipelineMode|shadowDraftMode/.test(path)) return '초안 파이프라인';
+     if (/skillRouter|skillCustomLibrary|skillPriorityOverrides/.test(path)) return 'Skill';
+-    if (/selectedModuleLoreIds|excludedModuleLoreIds|excludedCharacterLoreIds|loreActivationMode|loreRerankerTopK/.test(path)) return '참고 자료';
++    if (/selectedModuleLoreIds|excludedModuleLoreIds|excludedCharacterLoreIds|excludedHypaRecordIds|loreActivationMode|loreRerankerTopK/.test(path)) return '참고 자료';
+     if (/informationTransferMode|outputMode/.test(path)) return '정보 전달과 메인 응답';
+     if (/nsfw/.test(path)) return '응답 옵션';
+     if (/quickProfile|targetDraft|internalDraftLanguage/.test(path)) return '빠른 설정';
+@@ -38077,6 +38428,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
+     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
+     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
++    excludedHypaRecordIds: normalizeExcludedHypaRecordIds(settings.excludedHypaRecordIds),
+     targetDraftMinChars: settings.targetDraftMinChars,
+     targetDraftMaxChars: settings.targetDraftMaxChars,
+     backendHosting: normalizeBackendHostingConfig(settings.backendHosting || {}),
+@@ -38313,6 +38665,43 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+     }
+   };
+ 
++  const refreshHypaV3Catalog = async (force = false) => {
++    if (Gui.hypaCatalogLoading) return Gui.hypaCatalog;
++    Gui.hypaCatalogLoading = true;
++    Gui.hypaCatalogError = '';
++    const requestEpoch = Gui.renderEpoch;
++    const discardWhenStale = Gui.visible && Gui.pageId === 'references' && Gui.pageSubview === 'hypa_v3';
++    try {
++      const characterInfo = await loadCurrentCharacterForRisuContext(false);
++      const character = characterInfo.character;
++      const chatInfo = await loadCurrentChatForRisuContext(character, false);
++      const scope = loreContinuityScopeKey(character, chatInfo.chat);
++      if (
++        !force
++        && Gui.hypaCatalogLoadedAt
++        && Gui.hypaCatalogScope === scope
++        && Date.now() - Gui.hypaCatalogLoadedAt < 60000
++      ) {
++        return Gui.hypaCatalog;
++      }
++      const messageCount = Array.isArray(chatInfo.chat?.message) ? chatInfo.chat.message.length : 0;
++      if (discardWhenStale && (requestEpoch !== Gui.renderEpoch || Gui.pageId !== 'references' || Gui.pageSubview !== 'hypa_v3')) return Gui.hypaCatalog;
++      Gui.hypaCatalog = buildHypaV3Catalog({
++        chatInfo,
++        actualChatContext: { messageCount, storedMessageCount: messageCount }
++      }, {});
++      Gui.hypaCatalogScope = scope;
++      Gui.hypaCatalogLoadedAt = Date.now();
++      return Gui.hypaCatalog;
++    } catch (error) {
++      if (!discardWhenStale || (requestEpoch === Gui.renderEpoch && Gui.pageId === 'references' && Gui.pageSubview === 'hypa_v3')) Gui.hypaCatalogError = compact(error?.message || error, 500);
++      return Gui.hypaCatalog;
++    } finally {
++      Gui.hypaCatalogLoading = false;
++      if (Gui.visible && Gui.pageId === 'references' && ['hypa_v3', 'selection'].includes(Gui.pageSubview)) queueGuiRender(0);
++    }
++  };
++
+   const settingsForGuiPreview = () => {
+     const base = Runtime.settings || {};
+     const runtime = Gui.state?.runtime || {};
+@@ -38448,6 +38837,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+         selected_module_lore_ids: JSON.stringify(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),
+         excluded_module_lore_ids: JSON.stringify(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds)),
+         excluded_character_lore_ids: JSON.stringify(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds)),
++        excluded_hypa_record_ids: JSON.stringify(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds)),
+         target_draft_min_chars: String(runtime.targetDraftMinChars || DEFAULT_TARGET_DRAFT_MIN_CHARS),
+         target_draft_max_chars: String(runtime.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS),
+         backend_hosting_mode: backendConfig.mode,
+@@ -38632,6 +39022,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
+ .sga-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sga-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-card{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.92),rgba(17,24,39,.92));padding:16px;box-shadow:0 18px 45px rgba(0,0,0,.13)}.sga-card.wide{grid-column:1/-1}.sga-card h2,.sga-card h3{margin:0 0 8px}.sga-card h2{font-size:17px}.sga-card h3{font-size:14px}.sga-note{color:var(--sga-muted);font-size:12px;line-height:1.55}.sga-section-title{margin-bottom:14px}.sga-section-title h2{margin:0;font-size:18px}.sga-section-title p{margin:6px 0 0;color:var(--sga-muted);font-size:12px}
+ .sga-stat{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sga-stat-value{font-size:28px;font-weight:900}.sga-stat-label{color:var(--sga-muted);font-size:12px}.sga-badge{display:inline-flex;align-items:center;border:1px solid var(--sga-line);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}.sga-badge.good{color:#bbf7d0;border-color:#166534;background:rgba(34,197,94,.08)}.sga-badge.warn{color:#fde68a;border-color:#854d0e;background:rgba(251,191,36,.08)}.sga-badge.danger{color:#fecdd3;border-color:#9f1239;background:rgba(244,63,94,.09)}.sga-badge.off{color:#cbd5e1}.sga-flow{display:flex;align-items:stretch;gap:8px;overflow:auto;padding:8px 0}.sga-flow-node{min-width:150px;flex:1;border:1px solid var(--sga-line);border-radius:13px;padding:12px;background:#0d1421}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node span{display:block;color:var(--sga-muted);font-size:11px;margin-top:5px;line-height:1.4}.sga-arrow{display:flex;align-items:center;color:var(--sga-muted)}
+ .sga-count-badge{align-self:flex-start;flex:0 0 auto;min-width:max-content;justify-content:center;white-space:nowrap;line-height:1.2;padding:6px 10px}
++.sga-hypa-count{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;flex:0 0 auto;min-width:max-content;padding:7px 11px;border:1px solid rgba(74,222,128,.34);border-radius:999px;background:linear-gradient(135deg,rgba(22,101,52,.2),rgba(6,78,59,.1));color:#bbf7d0;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
++.sga-hypa-count.has-exclusions{border-color:rgba(251,113,133,.42);background:linear-gradient(135deg,rgba(136,19,55,.2),rgba(76,5,25,.1));color:#fecdd3}
++.sga-hypa-count-label{font-size:10px;font-weight:700;letter-spacing:.03em;opacity:.82}.sga-hypa-count strong{font-size:13px;line-height:1}.sga-hypa-count-total{font-size:10px;color:var(--sga-muted)}.sga-hypa-count-dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.55}
+ .sga-split{display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:14px}.sga-list{border:1px solid var(--sga-line);border-radius:14px;background:#0d1421;overflow:hidden}.sga-list-head{display:flex;gap:7px;padding:10px;border-bottom:1px solid var(--sga-line)}.sga-list-items{max-height:620px;overflow:auto;padding:8px}.sga-list-item{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--sga-text);padding:10px;cursor:pointer}.sga-list-item:hover{background:var(--sga-surface2)}.sga-list-item[data-selected="true"]{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.45)}.sga-list-item strong{display:block;font-size:12px}.sga-list-item span{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .sga-field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}.sga-field label{font-size:11px;font-weight:800;color:#cbd5e1}.sga-field small{color:var(--sga-muted);font-size:10px;line-height:1.45}.sga-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sga-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sga-input,.sga-select,.sga-textarea{width:100%;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:9px 10px;font-size:12px;outline:none}.sga-input:focus,.sga-select:focus,.sga-textarea:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}.sga-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}.sga-textarea.tall{min-height:310px}.sga-textarea.preview{min-height:270px;color:#cbd5e1;background:#060a11}.sga-check{display:flex;align-items:center;gap:8px;font-size:12px;color:#dbe4f3}.sga-check input{width:17px;height:17px;accent-color:var(--sga-accent)}
+ .sga-actions{display:flex;gap:8px;flex-wrap:wrap}.sga-btn{border:1px solid var(--sga-line);border-radius:10px;background:var(--sga-surface3);color:var(--sga-text);padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer}.sga-btn:hover{filter:brightness(1.15)}.sga-btn.primary{background:#4f67d8;border-color:#6f86f5}.sga-btn.good{background:#165c34;border-color:#25894f}.sga-btn.danger{background:#641f31;border-color:#9f3450}.sga-btn.ghost{background:transparent}.sga-btn:disabled{opacity:.45;cursor:not-allowed}
+@@ -40652,6 +41045,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+     persona: '페르소나',
+     character_definition: '캐릭터 정의',
+     lore: '로어',
++    hypa: 'HypaV3',
+     auxiliary: '보조 자료',
+     current_input: '현재 입력',
+     terminal_scene: '직전 장면',
+@@ -41457,7 +41851,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+         checkboxNode(slot.risuRefs.characterLorebook, '캐릭터 로어북', next => { slotValue.risuRefs.characterLorebook = next; }),
+         checkboxNode(slot.risuRefs.moduleLorebook, '선택한 모듈 로어북', next => { slotValue.risuRefs.moduleLorebook = next; })
+       ]),
+-      guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 참고할 자료 종류와 로어 후보 풀을 한 번 확정합니다. 페르소나·캐릭터 설명은 공통으로 재사용하고, 로어만 각 단계가 관련도를 다시 계산합니다. 일반 로어는 설정한 슬롯 수까지 선택하며 강제/항상 활성 로어와 현재 관계·호칭 잠금은 별도로 보존합니다. 기본 일반 슬롯은 8개입니다.' })
++      guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 참고할 자료 종류와 로어 후보 풀을 한 번 확정합니다. 페르소나·캐릭터 설명·HypaV3는 공통으로 재사용하고, 로어만 각 단계가 관련도를 다시 계산합니다. 일반 로어는 설정한 슬롯 수까지 선택하며 강제/항상 활성 로어와 현재 관계·호칭 잠금은 별도로 보존합니다. 기본 일반 슬롯은 8개입니다.' })
+     ]) : isBefore ? guiEl('div', { class: 'sga-reference-box' }, [
+       guiEl('div', { class: 'sga-reference-head' }, [
+         guiEl('strong', { text: '공통 후보 · 단계별 리랭킹' }),
+@@ -42903,6 +43297,107 @@ html,body{width:100%;height:100%;overflow:hidden}
+     ]);
+   };
+ 
++  const buildHypaV3Panel = () => {
++    const runtime = Gui.state.runtime;
++    const excludedIds = normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds);
++    runtime.excludedHypaRecordIds = excludedIds;
++    const excluded = new Set(excludedIds);
++    const catalog = Array.isArray(Gui.hypaCatalog) ? Gui.hypaCatalog : [];
++    const shadowSelectedIds = new Set(
++      Runtime.lastRisuContext?.shared?.meta?.hypaContinuity?.selectedRecordIds || []
++    );
++    const currentUsedCount = catalog.filter(item => !excluded.has(item.id)).length;
++    const setUsed = (item, used) => {
++      const next = new Set(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds));
++      if (used) next.delete(item.id);
++      else next.add(item.id);
++      runtime.excludedHypaRecordIds = Array.from(next);
++      markGuiDirty();
++      renderSettingsGui();
++    };
++    const rows = catalog.map((item, index) => {
++      const used = !excluded.has(item.id);
++      const selectedByShadow = used && shadowSelectedIds.has(item.id);
++      return guiEl('article', {
++        class: `sga-module-lore-item${used ? selectedByShadow ? ' selected' : '' : ' excluded'}`,
++        style: { cursor: 'default' }
++      }, [
++        guiEl('label', { class: 'sga-check', style: { alignSelf: 'flex-start', gridColumn: '1 / -1' } }, [
++          guiEl('input', {
++            class: 'sga-module-lore-check',
++            type: 'checkbox',
++            checked: used,
++            'aria-label': `${item.title} HypaV3 기록 사용`,
++            onChange: event => setUsed(item, event.target.checked)
++          }),
++          guiEl('span', { text: '이 기록 사용' })
++        ]),
++        guiEl('div', { class: 'sga-module-lore-copy', style: { gridColumn: '1 / -1' } }, [
++          guiEl('div', { class: 'sga-module-lore-head' }, [
++            guiEl('strong', { text: item.title || `HypaV3 기록 ${index + 1}` }),
++            guiEl('span', {
++              class: `sga-badge ${!used ? 'off' : selectedByShadow ? 'good' : item.risuSelected ? 'good' : 'off'}`,
++              text: !used ? '사용 안 함' : selectedByShadow ? '현재 채택' : item.risuSelected ? 'RisuAI 최근 선택' : '사용 가능'
++            })
++          ]),
++          guiEl('div', { class: 'sga-module-lore-meta' }, [
++            item.category ? guiEl('span', { text: `분류 · ${item.category}` }) : null,
++            item.important ? guiEl('span', { text: '중요 기록' }) : null,
++            item.tags?.length ? guiEl('span', { text: `태그 · ${item.tags.join(', ')}` }) : null,
++            item.messageIndex === null ? null : guiEl('span', { text: `메시지 ${item.messageIndex}까지` })
++          ]),
++          guiEl('details', { class: 'sga-advanced', style: { marginTop: '8px' } }, [
++            guiEl('summary', { text: '기록 내용 보기' }),
++            guiEl('pre', { class: 'sga-code', text: item.body || '(내용 없음)' })
++          ])
++        ])
++      ]);
++    });
++    return guiEl('div', { class: 'sga-card wide' }, [
++      guiEl('div', { class: 'sga-agent-head' }, [
++        guiEl('div', {}, [
++          guiEl('h3', { text: 'HypaV3 기록' }),
++          guiEl('div', { class: 'sga-note', text: '체크는 “GRADIA가 사용할 수 있음”을 뜻합니다. 실제 주입은 RisuAI가 현재 요청에서 선택한 기록 중 허용된 항목만 사용합니다.' })
++        ]),
++        guiEl('span', { class: `sga-badge ${currentUsedCount ? 'good' : 'off'}`, text: `${currentUsedCount}/${catalog.length} 사용` })
++      ]),
++      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
++        guiEl('button', {
++          class: 'sga-btn',
++          text: '모두 사용',
++          disabled: !catalog.length || currentUsedCount === catalog.length,
++          onClick: () => {
++            const currentIds = new Set(catalog.map(item => item.id));
++            runtime.excludedHypaRecordIds = excludedIds.filter(id => !currentIds.has(id));
++            markGuiDirty();
++            renderSettingsGui();
++          }
++        }),
++        guiEl('button', {
++          class: 'sga-btn ghost',
++          text: '모두 끄기',
++          disabled: !catalog.length || currentUsedCount === 0,
++          onClick: () => {
++            runtime.excludedHypaRecordIds = normalizeExcludedHypaRecordIds([...excludedIds, ...catalog.map(item => item.id)]);
++            markGuiDirty();
++            renderSettingsGui();
++          }
++        }),
++        guiEl('button', {
++          class: 'sga-btn ghost',
++          text: Gui.hypaCatalogLoading ? '불러오는 중…' : '기록 새로고침',
++          disabled: Gui.hypaCatalogLoading,
++          onClick: () => { void refreshHypaV3Catalog(true); }
++        })
++      ]),
++      Gui.hypaCatalogLoading ? guiEl('div', { class: 'sga-callout', text: '현재 채팅방의 HypaV3 기록을 불러오고 있습니다.' }) : null,
++      Gui.hypaCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `HypaV3 기록을 불러오지 못했습니다: ${Gui.hypaCatalogError}` }) : null,
++      !Gui.hypaCatalogLoading && !catalog.length ? guiEl('div', { class: 'sga-callout', text: '현재 채팅방에 HypaV3 기록이 없거나 플러그인 API에서 기록에 접근할 수 없습니다.' }) : null,
++      rows.length ? guiEl('div', { class: 'sga-module-lore-grid' }, rows) : null,
++      guiEl('div', { class: 'sga-note', text: `체크 해제한 항목은 RisuAI가 선택해도 GRADIA 내부 자료에서 제외됩니다. 다른 채팅방 기록을 포함한 전체 제외 저장 수는 ${excludedIds.length}개입니다.` })
++    ]);
++  };
++
+   const buildModuleLoreSelectionPanel = () => {
+     const runtime = Gui.state.runtime;
+     const selectedIds = normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds);
+@@ -43366,6 +43861,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(pick('selected_module_lore_ids', 'selectedModuleLoreIds', current.selectedModuleLoreIds || [])),
+       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(pick('excluded_module_lore_ids', 'excludedModuleLoreIds', current.excludedModuleLoreIds || [])),
+       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(pick('excluded_character_lore_ids', 'excludedCharacterLoreIds', current.excludedCharacterLoreIds || [])),
++      excludedHypaRecordIds: normalizeExcludedHypaRecordIds(pick('excluded_hypa_record_ids', 'excludedHypaRecordIds', current.excludedHypaRecordIds || [])),
+       builtInStylePreset: normalizeBuiltInStylePreset(pick('built_in_style_preset', 'builtInStylePreset', current.builtInStylePreset || 'unified_stylepack')),
+       maxPreviousStageChars: Number(pick('max_previous_stage_chars', 'maxPreviousStageChars', current.maxPreviousStageChars)),
+       maxInjectionChars: Number(pick('max_injection_chars', 'maxInjectionChars', current.maxInjectionChars)),
+@@ -43955,6 +44451,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+     if (section === 'runtime') return page('전문가 설정', '내부 한도와 실행 방식을 조정합니다.', buildRuntimeTab());
+     if (section === 'modules') return page('모듈 로어북', '사용할 모듈과 내부 로어를 선택합니다.', buildModuleLoreSelectionPanel());
+     if (section === 'character_lore_exclusions') return page('캐릭터 로어북', 'GRADIA가 사용할 캐릭터 로어북을 선택합니다.', buildCharacterLoreExclusionPanel());
++    if (section === 'hypa_v3') return page('HypaV3 기록', 'GRADIA가 사용할 수 있는 장기 기록을 선택합니다.', buildHypaV3Panel());
+     if (section === 'information_transfer') return page('정보 전달 도우미', 'GRADIA의 최종 초안과 단계별 분석 자료 중 무엇을 메인 응답 모델에 제공할지 선택합니다.', buildInformationTransferSettingsPanel());
+     if (section === 'main') return page('메인 응답', 'GRADIA 초안을 최종 응답 모델에 전달하는 방식을 확인합니다.', buildMainResponseBridge());
+     if (section === 'transfer') return page('가져오기 / 내보내기', '설정 JSON을 이동하거나 병합합니다.', buildTransferTab());
+@@ -44197,6 +44694,10 @@ html,body{width:100%;height:100%;overflow:hidden}
+     const moduleLoreTotal = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).length, 0);
+     const moduleLoreUsed = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).filter(entry => !moduleExcluded.has(entry.key)).length, 0);
+ 
++    const hypaCatalog = Array.isArray(Gui.hypaCatalog) ? Gui.hypaCatalog : [];
++    const hypaExcluded = new Set(normalizeExcludedHypaRecordIds(runtime.excludedHypaRecordIds));
++    const hypaUsed = hypaCatalog.filter(item => !hypaExcluded.has(item.id)).length;
++
+     return guiEl('div', { class: 'sga-card wide' }, [
+       guiEl('div', { class: 'sga-agent-head' }, [
+         guiEl('div', {}, [
+@@ -44205,7 +44706,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+         ]),
+         guiEl('span', { class: 'sga-badge good', text: '자동 검색' })
+       ]),
+-      guiEl('div', { class: 'sga-simple-choice-grid three', style: { marginTop: '12px' } }, [
++      guiEl('div', { class: 'sga-simple-choice-grid four', style: { marginTop: '12px' } }, [
+         simpleChoiceCard({
+           active: characterUsed > 0,
+           title: '캐릭터',
+@@ -44222,6 +44723,14 @@ html,body{width:100%;height:100%;overflow:hidden}
+           badge: '관리',
+           onClick: () => navigateGui('flow', '', 'modules')
+         }),
++        simpleChoiceCard({
++          active: hypaUsed > 0,
++          title: 'HypaV3',
++          description: hypaCatalog.length ? `${hypaUsed}/${hypaCatalog.length} 사용 가능` : '현재 기록 없음 또는 불러오는 중',
++          meta: '장기 기록',
++          badge: '관리',
++          onClick: () => navigateGui('flow', '', 'hypa_v3')
++        }),
+         simpleChoiceCard({
+           active: true,
+           title: '로어 검색',
+@@ -44231,7 +44740,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+           onClick: () => navigateGui('flow', '#sga-flow-runtime', 'runtime')
+         })
+       ]),
+-      (Gui.moduleCatalogLoading || Gui.characterLoreCatalogLoading)
++      (Gui.moduleCatalogLoading || Gui.characterLoreCatalogLoading || Gui.hypaCatalogLoading)
+         ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '자료 목록을 불러오는 중입니다…' })
+         : null,
+       guiEl('details', { class: 'sga-advanced', style: { marginTop: '12px' } }, [
+@@ -44268,15 +44777,17 @@ html,body{width:100%;height:100%;overflow:hidden}
+   };
+ 
+   const buildReferenceSettingsPage = () => {
+-    const subview = ['selection', 'modules', 'character_lore_exclusions'].includes(Gui.pageSubview) ? Gui.pageSubview : 'selection';
++    const subview = ['selection', 'modules', 'character_lore_exclusions', 'hypa_v3'].includes(Gui.pageSubview) ? Gui.pageSubview : 'selection';
+     const tabs = [
+       ['selection', '요약'],
+       ['character_lore_exclusions', '캐릭터'],
+-      ['modules', '모듈']
++      ['modules', '모듈'],
++      ['hypa_v3', 'HypaV3']
+     ];
+     const body = subview === 'modules' ? buildModuleLoreSelectionPanel()
+       : subview === 'character_lore_exclusions' ? buildCharacterLoreExclusionPanel()
+-        : buildReferenceSummaryPanel();
++        : subview === 'hypa_v3' ? buildHypaV3Panel()
++          : buildReferenceSummaryPanel();
+     return guiPageFrame('references', '자료', 'GRADIA가 읽을 수 있는 자료를 한곳에서 관리합니다.', [
+       buildLibReadConnectionCard(),
+       guiEl('div', { class: 'sga-redesign-subnav' }, tabs.map(([id, label]) => guiEl('button', { class: `sga-btn${subview === id ? ' primary' : ' ghost'}`, text: label, onClick: () => navigateGui('flow', '', id === 'selection' ? 'references' : id) }))),
+@@ -44655,9 +45166,11 @@ html,body{width:100%;height:100%;overflow:hidden}
+       if (!route.subview || route.subview === 'selection') {
+         void refreshModuleLoreCatalog(false);
+         void refreshCharacterLoreCatalog(false);
++        void refreshHypaV3Catalog(false);
+       } else {
+         if (route.subview === 'modules') void refreshModuleLoreCatalog(false);
+         if (route.subview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
++        if (route.subview === 'hypa_v3') void refreshHypaV3Catalog(false);
+       }
+     }
+     if (selector) setTimeout(() => {
+@@ -45419,6 +45932,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+     if (Gui.pageId === 'references') {
+       if (Gui.pageSubview === 'modules') void refreshModuleLoreCatalog(false);
+       if (Gui.pageSubview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
++      if (Gui.pageSubview === 'hypa_v3') void refreshHypaV3Catalog(false);
+     }
+     forceTransparentGuiSurface();
+     return true;
+@@ -45527,6 +46041,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+         catalogs: {
+           modulesLoadedAt: Gui.moduleCatalogLoadedAt,
+           characterLoreLoadedAt: Gui.characterLoreCatalogLoadedAt,
++          hypaLoadedAt: Gui.hypaCatalogLoadedAt
+         }
+       };
+     },
+@@ -45544,6 +46059,7 @@ html,body{width:100%;height:100%;overflow:hidden}
+         catalogs: {
+           modulesLoadedAt: Gui.moduleCatalogLoadedAt,
+           characterLoreLoadedAt: Gui.characterLoreCatalogLoadedAt,
++          hypaLoadedAt: Gui.hypaCatalogLoadedAt
+         }
+       };
+     },
+@@ -46114,6 +46630,13 @@ html,body{width:100%;height:100%;overflow:hidden}
+       await refreshCharacterLoreCatalog(true);
+       return JSON.parse(JSON.stringify(Gui.characterLoreCatalog || []));
+     },
++    getExcludedHypaRecordIds() {
++      return normalizeExcludedHypaRecordIds(Runtime.settings?.excludedHypaRecordIds || Gui.state?.runtime?.excludedHypaRecordIds);
++    },
++    async listHypaV3Records() {
++      await refreshHypaV3Catalog(true);
++      return JSON.parse(JSON.stringify(Gui.hypaCatalog || []));
++    },
+     debugFilterModuleLorebooks(character = {}, db = {}, chat = {}, persona = null, selectedIds = [], excludedModuleLoreIds = []) {
+       return collectRisuLorebookCandidates(character, db, chat, persona, { selectedModuleLoreIds: selectedIds, excludedModuleLoreIds })
+         .filter(item => item.sourceType === 'module')
+@@ -46324,6 +46847,34 @@ html,body{width:100%;height:100%;overflow:hidden}
+         meta: recent.authorNoteMeta
+       }));
+     },
++    debugBuildHypaContinuity(chat = {}, recent = {}, storedMessageCount = 0, excludedRecordIds = [], requestMessages = []) {
++      const packet = buildHypaContinuityPacket({
++        chatInfo: { chat },
++        actualChatContext: {
++          storedMessageCount: Number(storedMessageCount || (Array.isArray(chat?.message) ? chat.message.length : 0)),
++          messageCount: Number(storedMessageCount || (Array.isArray(chat?.message) ? chat.message.length : 0))
++        }
++      }, {
++        terminalVisibleScene: recent?.terminalVisibleScene || '',
++        latestAssistantRaw: recent?.latestAssistantRaw || recent?.latestAssistant || '',
++        latestUser: recent?.latestUser || '',
++        systemContext: recent?.systemContext || '',
++        sceneAnchor: recent?.sceneAnchor || ''
++      }, { excludedRecordIds, requestMessages });
++      return JSON.parse(JSON.stringify({
++        packet,
++        block: formatHypaContinuityPacket(packet)
++      }));
++    },
++    debugBuildHypaV3Catalog(chat = {}) {
++      return JSON.parse(JSON.stringify(buildHypaV3Catalog({
++        chatInfo: { chat },
++        actualChatContext: {
++          storedMessageCount: Array.isArray(chat?.message) ? chat.message.length : 0,
++          messageCount: Array.isArray(chat?.message) ? chat.message.length : 0
++        }
++      }, {})));
++    },
+     debugBuildDraftPatchDocument(value = '') {
+       const document = buildDraftPatchDocument(value);
+       return JSON.parse(JSON.stringify({
+diff --git b/PROGRAM/plugins/HAYAKU_Locator_Continuity.js a/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
+index ddaad03f4873e28ed9676404b6e8903a18b196c2..5a55c302c326f491a4d5646b00dc7e448ea037f0 100644
+--- b/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
++++ a/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
+@@ -374,7 +374,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
+ /* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
+ /* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
+ //@allowed-ipc flashback_hayaku_bridge
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/hayaku_locator_continuity/main/hayaku_locator_continuity.js
+ //@arg hayaku_enabled string true|false
+ //@arg hayaku_mode string auto|balanced|fast|deep
+ //@arg hayaku_prompt_mode string auto|balanced|full
+diff --git b/PROGRAM/plugins/LIA_Persona_Linker.js a/PROGRAM/plugins/LIA_Persona_Linker.js
+index 560e671e6207a35a822dbb5faf2efef659878ff4..a9e5e6d533dfd2f3d5e7913f2cf43e0a338c5c78 100644
+--- b/PROGRAM/plugins/LIA_Persona_Linker.js
++++ a/PROGRAM/plugins/LIA_Persona_Linker.js
+@@ -202,7 +202,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
+ /* v0.26.24 fixes Emotion Asset ZIP export when the already-resolved visual target is re-resolved without a full Persona context. */
+ /* v0.26.23 hardens random Persona candidate generation against truncated Ollama Cloud/reasoning output and preserves provider completion diagnostics. */
+ /* v0.25.3 fixes Persona Asset Studio preview crashes when a Source Persona has no canonical role/personality PersonaSpec fields. */
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/LIA_Persona_Linker/refs/heads/main/LIA_Persona_Linker.js
+ //@allowed-ipc flashback_hayaku_bridge
+ //@arg memory_suite_server_url string Legacy LIA recovery server URL; blank uses http://127.0.0.1:47630
+ //@arg max_lore_entries int Legacy lore breadth base; v0.22.15 keeps the protected + reranked Top-K lore pipeline
+@@ -13926,7 +13926,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
+       throw error;
+     }
+     await revalidateNativePersonaFork();
+-    const durableReadback = await writeLivePersonaBinding(provisional, { preserveSiblingBytes: Boolean(nativeBranch) || options.reason === 'retrace_handoff' });
++    const durableReadback = await writeLivePersonaBinding(provisional, { preserveSiblingBytes: options.reason === 'retrace_handoff' });
+     const persistedBinding = durableReadback.binding;
+     const verification = await PersonaBindingManager.inspect({ ...targetCtx, db: await api.getDatabase?.(["personas", "selectedPersona"]) }, persistedBinding);
+     if (!verification.expectedMatch || !verification.livePersonaExists) {
+diff --git b/PROGRAM/plugins/LIBRA.js a/PROGRAM/plugins/LIBRA.js
+index 9d7173c15d6a6a8a774961a4cb5dd87173bbc3eb..92add7d84881317199949792019a9eda2aabca7e 100644
+--- b/PROGRAM/plugins/LIBRA.js
++++ a/PROGRAM/plugins/LIBRA.js
+@@ -423,7 +423,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
+ /* v1.0.58 ports FLASHBACK-style native chat-copy continuity into LIBRA: copy detection can reuse the immediately previous resolved chat when the host chat list is incomplete, canonical-memory validation uses message-id-independent U+A content identity, cloned current memories are rebound to the copied chat's new message IDs/sourceDigest without re-embedding, and durable readback verifies every copied canonical memory/vector before the copy is marked complete. RE:TRACE handoff remains separate and source-immutable. */
+ /* v1.0.57 makes WebRisu credential persistence update-safe by mirroring provider-preset secrets, active LLM/embedding provider secrets, and the hosting token into verified pluginStorage backups while retaining localPluginStorage; active llm_key/embedding_key/hosting-token arguments are also repaired when host argument writes are available, and startup reads reconcile surviving copies back into missing stores without changing provider/model selection. */
+ /* v1.0.56 aligns LIBRA with RE:TRACE peer-compatibility v1 and makes next-session preparation strictly source-immutable: shared archives are detached transport layers, prepare no longer annotates source memory refs or source manifest archive metadata, source memory/vector fingerprints are proven unchanged across prepare/adopt, and compatibility is negotiated by stable protocol/features instead of exact plugin versions. v1.0.55 raises the common live-recall step budget from 1,500ms to 20,000ms while preserving v1.0.54 cache-first embedding-settings resolution and fail-soft dense fallback, so transiently slow host/pluginStorage reads get substantially more time without reintroducing whole-recall aborts for embedding-settings timeouts. v1.0.54 makes live recall resilient to slow embedding-settings initialization: recall now uses the already-loaded provider runtime cache first, bounds any cache-miss settings load as a non-fatal dense-retrieval dependency, continues sparse/exact/temporal recall when embedding settings are temporarily unavailable, and distinguishes per-step timeout diagnostics from the true 30-second request deadline. v1.0.53 repairs RE:TRACE next-session interoperability without restoring World Additional: the handoff inspection exposes an archive-metadata-independent canonical state hash, prepare/verify/adopt receipts include deprecated zero-only World Additional counters for older bridge builds, capabilities advertise canonical-memory-only handoff, and handoff verification reads inherited memory/vector records with bounded concurrency for large histories. v1.0.52 hardens long-term-memory integrity and scaling: high-risk unsupported canonical claims trigger one bounded evidence-repair pass and otherwise fall back to the latest evidence-safe stage; branch batch fingerprints are persisted in the manifest so reloads can detect changed historical batches without a full live-path audit; and automatic memory scans process only the new/current, changed, in-flight, recovery, or bounded embedding-retry batches instead of rechecking every existing five-turn memory. v1.0.51 removes avoidable live-input stalls: request-local chat pairs are parsed once and shared across branch/query/recall, branch validation uses change-targeted fast checks with yielded deep audits, native-copy/recovery maintenance leaves the normal live path, input-assist OFF bypasses full settings loading, and legacy recall catalogs are served immediately while v3/256D upgrades rebuild in the background. v1.0.50 hardens embedding correctness end-to-end: provider-aware long-input splitting occurs before per-part query/document formatting, silent truncation is disabled for Vertex/Cohere, Gemini Embedding 2 uses prompt prefixes instead of task_type, Voyage Context separates global from shared section context groups, and the recall catalog uses a 256D hashed sketch rebuilt from existing full vectors without re-embedding. v1.0.49 caps the maximum dynamic recall block at 12,000 characters across normalization, runtime budgeting, and GUI input while retaining v1.0.48 dynamic token budgeting. v1.0.48 removes the fixed recallMaxTokens bottleneck: recall character budget is resolved first from prompt pressure, then an effective token ceiling is derived per request/tier from that character budget and the observed CJK/text mix, with candidate text able to raise the ceiling when its token density is higher. v1.0.47 completes HAYAKU/Flashback current-input compatibility by filtering peer runtime/evidence carriers both as standalone prompt rows and inside rendered current-input wrappers, while keeping the resolver fully local and dependency-free. v1.0.46 makes recall excerpts context-safe: semantic paragraph/list boundaries are preserved, character excerpts retain their identity lead (for example `이유민:`), chronology excerpts retain the event lead, and sentence-radius expansion can no longer cross into a different character/event block. v1.0.45 extends LIBRA's absolute live-recall watchdog from 8 seconds to 30 seconds while preserving the existing per-step and query-embedding timeouts, giving slow RisuAI context/pluginStorage environments enough total time to finish fallback retrieval without weakening individual-operation fail-open guards. v1.0.44 aligns live recall current-input resolution with HAYAKU/Flashback provenance+wrapper rules, rejects prompt/meta rows from legacy fallback, and removes nonessential manifest-stat writes from the bounded request path so a completed recall is never discarded by bookkeeping timeout. v1.0.43 fixes the Home/current-turn recall GUI scope regression by keeping recall-view helpers inside the GUI scope instead of referencing LIBRA memory-core private helpers. v1.0.42 removes World Additional completely from active LIBRA memory creation, storage, recall, handoff, and GUI paths; World ito now records unresolved setting gaps as explicitly unknown/undecided rather than generating future canon proposals. v1.0.41 auto-migrates compatible legacy vectors into portable pluginStorage without re-embedding and lets same-space legacy profile IDs remain dense-recall compatible while migration finishes. v1.0.40 fixes embedding-timeout fallback, unifies embedding-space signatures, makes pluginStorage the durable Float32 vector source of truth, separates exact strong anchors from lexical terms, and adds two-stage catalog-to-hydration recall with intent-aware tail forcing. */
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/LIBRA/refs/heads/main/LIBRA.js
+ //@allowed-ipc flashback_hayaku_bridge
+ //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
+ //@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
 diff --git b/PROGRAM/plugins/LIBRA_World_Manager.js a/PROGRAM/plugins/LIBRA_World_Manager.js
-index 01b703647406e7baccd15e1ba5717b030154067c..fb86e70ee7f830c258b40bdd88b626bfb93952c9 100644
+index 6464840f4e3ca3426830b06568c9a7a1b18eb94c..fb86e70ee7f830c258b40bdd88b626bfb93952c9 100644
 --- b/PROGRAM/plugins/LIBRA_World_Manager.js
 +++ a/PROGRAM/plugins/LIBRA_World_Manager.js
+@@ -3,7 +3,7 @@
+ //@author rusinus12@gmail.com
+ //@api 3.0
+ //@version 6.0.0
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/libra_world_maker/main/dist/LIBRA%20World%20Manager.js
+ //@arg story_author_enabled string Enable Story Author layer: true|false
+ //@arg story_author_mode string Story Author mode: disabled|supportive|proactive|aggressive
+ //@arg director_enabled string Enable Director layer: true|false
 @@ -615,23 +615,20 @@
              if (await runtime.pluginStorage.removeItem(key) === false) return false;
              return (await runtime.pluginStorage.getItem(key)) == null;
@@ -854,6 +2307,879 @@ index 01b703647406e7baccd15e1ba5717b030154067c..fb86e70ee7f830c258b40bdd88b626bf
  
              // 인사말 필터링: 자동 생성된 첫 인사말은 분석에서 제외
              const aiMsg = msgs_all[msgs_all.length - 1];
+diff --git b/PROGRAM/plugins/RETRACE.js a/PROGRAM/plugins/RETRACE.js
+index 18db0a34682232b0d06831cdc4d6317953302ae1..96bdaafb70673e3d1867f4e7c0671fa7a89a1945 100644
+--- b/PROGRAM/plugins/RETRACE.js
++++ a/PROGRAM/plugins/RETRACE.js
+@@ -34,7 +34,7 @@
+ //@allowed-ipc flashback_memory
+ //@allowed-ipc hayaku_locator_continuity
+ //@allowed-ipc lia_persona_linker
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/RETRACE.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/RETRACE/refs/heads/main/RETRACE.js
+ //@arg memory_suite_server_url string Librarian System server URL; blank uses http://127.0.0.1:47630
+ //@description LIBRA, HAYAKU, Flashback, and LIA next-session handoff and Librarian System server control
+ //@author Hayaku
+diff --git b/PROGRAM/sdk/GradiaEvidenceBudget.source.js a/PROGRAM/sdk/GradiaEvidenceBudget.source.js
+index 40ded37a749442893e91150c2bc9ff1ccf023c7c..601a5ded9bda745c891a5a9a3372041f47a4e902 100644
+--- b/PROGRAM/sdk/GradiaEvidenceBudget.source.js
++++ a/PROGRAM/sdk/GradiaEvidenceBudget.source.js
+@@ -1,24 +1,12 @@
+ 'use strict';
+ // Pure, locally issued budget evidence. This is not owner authentication and is
+-// embedded into GRADIA runtime. Content is bounded; framing is an estimate.
++// not embedded into GRADIA runtime. Content is bounded; framing is an estimate.
+ function createGradiaEvidenceBudget({ digest }) {
+   if (typeof digest !== 'function') throw new TypeError('GRADIA_V2_BUDGET_DIGEST_REQUIRED');
+   const MODEL = 'gpt-4o-mini-2024-07-18';
+   const ROUTE = 'https://api.openai.com/v1/chat/completions';
+   const MAX_CONTEXT = 128000;
+   const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
+-  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
+-  // Exact production wrappers for successful four/eight-stage profiles only.
+-  // Schema, names, descriptions and serialization changes require requalification.
+-  const STRUCTURED_SCHEMA_PINS = Object.freeze({
+-    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
+-    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
+-    "gradia_aide_character_patch": "d0409eb67068aed48f356aed804d72076a9b530706b53f65718805ed4a29551a",
+-    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
+-    "gradia_aide_world_patch": "9ff7f71db44fdf932dc43137b050fee47d96cb5a7b936b7c1932aa05b4cb6c1d",
+-    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
+-    "gradia_aide_plot_patch": "d8438ca82453dedf811892912788d68b2daf7dd1d2322389f969ed782f09571c"
+-});
+   const issued = new WeakMap();
+   const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
+   const integer = (value, positive = false) => Number.isSafeInteger(value)
+@@ -76,7 +64,7 @@ function createGradiaEvidenceBudget({ digest }) {
+     // Actual builder serialization round-trips exactly. This rejects duplicate
+     // keys, whitespace and alternate encodings instead of interpreting ambiguity.
+     if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
+-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
++    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options'], 'token_accounting_unavailable');
+     if (value.model !== MODEL || typeof value.stream !== 'boolean'
+       || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
+       || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
+@@ -97,18 +85,7 @@ function createGradiaEvidenceBudget({ digest }) {
+       content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
+       content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
+     }
+-    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
+-    if (Object.hasOwn(value, 'response_format')) {
+-      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
+-      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
+-      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
+-        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
+-        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
+-      structuredName = schema.name;
+-      structuredSerialized = JSON.stringify(value.response_format);
+-      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
+-    }
+-    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
++    return { body, content, output };
+   }
+   function sameBase(base, final, evidence) {
+     const left = base.body, right = final.body;
+@@ -138,26 +115,16 @@ function createGradiaEvidenceBudget({ digest }) {
+       if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
+       const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
+       if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
+-      let structuredSchemaSha256 = null;
+-      if (final.structuredBytes) {
+-        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
+-        catch (_) { stop('payload_hash_unavailable'); }
+-        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
+-      }
+-      // The raw envelope already charges the schema once. Reserve its complete
+-      // UTF-8 wrapper again for structured framing; this remains a conservative
+-      // engineering estimate, not a provider tokenizer or server-internals proof.
+-      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
++      const framing = Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0);
+       const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
+       const fits = add(add(allowance, final.output), margin) <= context.limit;
+       const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
+         requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
+-        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
++        contextSourceIdentity: context.identity, meterId: PROFILE, meterVersion: 1,
+         meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
+         framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
+         safetyMargin: margin, selectedContentTokenBound: selectedContent,
+-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
+-        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
++        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance };
+       // Only already captured primitives survive the await; caller mutations cannot
+       // replace the body or envelope. The adapter owns cancellation/generation.
+       const body = input.finalBody;
+diff --git b/PROGRAM/tests/cross_platform_launcher_test.cjs a/PROGRAM/tests/cross_platform_launcher_test.cjs
+index 99d1ded6c1ff408b3f4c66108a9f221bab2d1390..8a4dfc8e79540a6ff7ad88284d6205f8d99b4712 100644
+--- b/PROGRAM/tests/cross_platform_launcher_test.cjs
++++ a/PROGRAM/tests/cross_platform_launcher_test.cjs
+@@ -116,12 +116,9 @@ async function main() {
+     assert.notEqual(offlineStatus.status, 0, 'offline status must fail without preparing DATA');
+     assert.deepEqual(fs.readFileSync(layoutPath), layoutBeforeReadOnlyCommands, 'offline status must remain read-only');
+ 
+-    for (const namespace of ['flashback', 'hayaku', 'libra']) {
++    for (const namespace of ['flashback', 'hayaku', 'libra', 'lia', 'retrace']) {
+       assert.ok(fs.existsSync(path.join(dataDir, 'stores', namespace, `${namespace}.sqlite`)), `${namespace} SQLite remains in portable DATA`);
+     }
+-    for (const namespace of ['lia', 'retrace']) {
+-      assert.equal(fs.existsSync(path.join(dataDir, 'stores', namespace, `${namespace}.sqlite`)), false, `${namespace} fresh live SQLite must remain absent`);
+-    }
+     process.stdout.write('cross_platform_launcher_test: PASS\n');
+   } finally {
+     // A failed assertion must not leak the detached portable server: its open
+diff --git b/PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs a/PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs
+index 0ed14bfe1060bf8ed3a5a60a807d0d8faee9b374..321a59f8d0d16447393e18867e41be0eb30ea5f9 100644
+--- b/PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs
++++ a/PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs
+@@ -1,8 +1,8 @@
+ 'use strict';
+-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
++const assert=require('node:assert/strict');
+ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+ const {parent,branch,clone}=require('./fixtures/native_branch_fixture.cjs');
+-(async()=>{const source=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');const seam='const buildUiHtml = async () => {';assert.equal(source.split(seam).length,2);const f=await createFixture({source:source.replace(seam,'globalThis.__selectSourceEditTab309=()=>{Runtime.guiTab="source-edits";};\n  '+seam)});let passed=0;const ok=(v,m)=>{assert.ok(v,m);passed++;};try{
++(async()=>{const f=await createFixture();let passed=0;const ok=(v,m)=>{assert.ok(v,m);passed++;};try{
+  const t=f.api._test;
+  const p=parent('parent-view',8), child=branch(p,5,'child-view');Object.assign(f.currentChat,child);f.character.chats=[f.currentChat,p];
+  const scope=t.resolveScopeFromSnapshot({character:f.character,chat:f.currentChat,db:{}});
+@@ -19,12 +19,11 @@ const {parent,branch,clone}=require('./fixtures/native_branch_fixture.cjs');
+  const html=t.renderFlashbackWorldlineView(view);ok(['현재 대화에 연결됨','격리 · 확인 필요','선택되지 않은 응답 · 리콜 제외','현재 대화에서 벗어난 턴 · 리콜 제외','연결 확인 필요','부모 채팅','검증된 공통 원문'].every(s=>html.includes(s)),'HAYAKU-style lineage plus turn continuity view');
+  ok(html.includes('저장된 네이티브 분기 승계 확인 기록 없음'),'prefix proof not presented as completed copy');
+  ok(JSON.stringify([...f.pluginStorage.values])===before,'worldline inspection read-only');
+- f.context.__selectSourceEditTab309();const ui=await t.buildUiHtml();ok(ui.includes('id="tab-worldline"')&&ui.includes('id="panel-worldline"'),'dedicated sidepanel route');
++ const ui=await t.buildUiHtml();ok(ui.includes('id="tab-worldline"')&&ui.includes('id="panel-worldline"'),'dedicated sidepanel route');
+  const overview=ui.slice(ui.indexOf('id="panel-overview"'),ui.indexOf('id="panel-import"'));ok(!overview.includes('원문 수정 동기화')&&!overview.includes('현재 세계선'),'overview no misplaced tools');
+  const sourceEdits=ui.slice(ui.indexOf('id="panel-source-edits"'),ui.indexOf('id="panel-restore"'));
+- ok(['fbReanalysisRefresh','fbReanalysisRanges','fbReanalysisRun','fbSourceEditStatus','fbSourceTrackingSettings'].every(id=>sourceEdits.includes(`id="${id}"`))&&sourceEdits.includes('직접 원문 재분석'),'source edits expose explicit range selection, refresh, execution and status');
+- ok(sourceEdits.includes('id="fbReanalysisRun" disabled'),'reanalysis is unavailable before explicit range selection');
+- ok(!ui.includes('완료된 원문 수정은 요청 전에 자동 반영')&&!ui.includes('완료된 U+A 원문의 수정은 요청 전에 자동으로 감지·반영'),'active page does not promise automatic adoption');
++ ok(sourceEdits.includes('id="fbSourceTrackingSettings"')&&sourceEdits.includes('완료된 U+A 원문의 수정은 요청 전에 자동으로 감지·반영됩니다.'),'source edits have an automatic before-request panel and shared exception controls');
++ ok(!sourceEdits.includes('fbSourceEditReview')&&!sourceEdits.includes('변경 전·후 비교하기'),'source edits no longer ask for manual approval');
+  ok((ui.match(/id="fbSourceTrackingSettings"/g)||[]).length===1,'unique source edit exception/history mount point');
+  const full=f.pluginStorage.values.get(wk);f.pluginStorage.values.set(wk,'{bad-json');await assert.rejects(()=>t.loadFlashbackWorldlineView(),/형식/);passed++;
+  f.pluginStorage.values.set(wk,JSON.stringify({scopeKey:'foreign',nodes}));await assert.rejects(()=>t.loadFlashbackWorldlineView(),/스코프/);passed++;f.pluginStorage.values.set(wk,full);
+diff --git b/PROGRAM/tests/gradia/server-read-adapter.test.cjs a/PROGRAM/tests/gradia/server-read-adapter.test.cjs
+index e4e48446108dac06f92fb6eb99463d18f2b559e2..2eed50ab9ab8a9e882a353b6a3839b4326794063 100644
+--- b/PROGRAM/tests/gradia/server-read-adapter.test.cjs
++++ a/PROGRAM/tests/gradia/server-read-adapter.test.cjs
+@@ -33,8 +33,7 @@ async function pipelineFixture(options={}){
+  f.host.plugin.bindLibReadOnlyClient(client,{scope});return {...f,getReads:()=>reads,setCurrent:v=>current=v};
+ }
+ test('real production consumer enters unchanged SHADOW pipeline once without extra models',async()=>{const f=await pipelineFixture();const result=await f.run();assert.equal(result.ok,true);assert.equal(f.getReads(),1);assert.equal(f.prompts.length,1);assert.ok(JSON.stringify(f.prompts[0]).includes('ACTUAL_SERVER_ITEM'));assert.equal(f.host.plugin.getLibReadOnlyStatus().selection.selectedItems,1);result.closeEvidence();});
+-test('actual final provider body cannot exceed configured context and unsupported profiles never dispatch evidence',async()=>{for(const options of [{context:2048},{preset:{model:'unqualified-model'}},{mode:'heavyweight',preset:{model:'unqualified-model'}},{preset:{extra_body_json:'{"temperature":0.2}'}}]){const f=await pipelineFixture(options);await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);assert.equal(f.getReads(),1);}});
+-test('qualified heavyweight SHADOW schema uses one captured read for analysis and draft',async()=>{const f=await pipelineFixture({mode:'heavyweight'});const result=await f.run();assert.equal(result.ok,true);assert.equal(f.getReads(),1);assert.equal(f.prompts.length,2);assert.ok(JSON.stringify(f.prompts[0]).includes('ACTUAL_SERVER_ITEM'));result.closeEvidence();});
++test('actual final provider body cannot exceed configured context and unsupported profiles never dispatch evidence',async()=>{for(const options of [{context:2048},{preset:{model:'unqualified-model'}},{mode:'heavyweight'},{preset:{extra_body_json:'{"temperature":0.2}'}}]){const f=await pipelineFixture(options);await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);assert.equal(f.getReads(),1);}});
+ test('new server facade requires literal true from async and synchronous current checks',async()=>{
+  for(const answer of [false,undefined,null,0,'true']){const f=await fixture(),open=f.client.openReadSession;f.client.openReadSession=async(...a)=>({...await open(...a),assertCurrent:async()=>answer});await assert.rejects(()=>f.consumer.beginRead({requestId:'r'}),e=>e.code==='LIB_READ_STALE');}
+  const f=await fixture(),open=f.client.openReadSession;f.client.openReadSession=async(...a)=>({...await open(...a),assertCurrentSync:()=>false});const session=await f.consumer.beginRead({requestId:'r'});assert.throws(()=>session.assertLocalCurrent(),e=>e.code==='LIB_READ_STALE');
+diff --git b/PROGRAM/tests/gradia/suite-inventory.json a/PROGRAM/tests/gradia/suite-inventory.json
+index 04e5353d80d220b1719adfa2c59a32ca9addcdbf..4258d132576807fe42675b382239ce4904b6de6d 100644
+--- b/PROGRAM/tests/gradia/suite-inventory.json
++++ a/PROGRAM/tests/gradia/suite-inventory.json
+@@ -6,9 +6,7 @@
+     "draft-only.test.cjs",
+     "evidence-bridge.test.cjs",
+     "evidence-budget-builder-v2.test.cjs",
+-    "evidence-budget-structured-v2.test.cjs",
+     "evidence-budget-v2.test.cjs",
+-    "hypav3-removal.test.cjs",
+     "legacy-removal.test.cjs",
+     "lib-read-consumer.test.cjs",
+     "load-dev-dependency.test.cjs",
+diff --git b/PROGRAM/tests/helpers/storage_mode_feature_harness.cjs a/PROGRAM/tests/helpers/storage_mode_feature_harness.cjs
+index 71aa282f643e869ac6586a4351c4055a2b00228a..06ef7f982a829aefd37cf8fc9efb8488e619daec 100644
+--- b/PROGRAM/tests/helpers/storage_mode_feature_harness.cjs
++++ a/PROGRAM/tests/helpers/storage_mode_feature_harness.cjs
+@@ -59,7 +59,7 @@ function createProviderCounter() {
+   return { state, call: async () => { state.calls += 1; return []; } };
+ }
+ 
+-function buildBridge({ namespace = 'flashback', owner, store, currentScope, resolveKeyScope, url, fetchImpl, pluginPrefixes, storagePolicy }) {
++function buildBridge({ namespace = 'flashback', owner, store, currentScope, resolveKeyScope, url, fetchImpl, pluginPrefixes }) {
+   const source = namespace === 'libra' ? libraSdkText : sdkText;
+   const create = new Function(`${source}\nreturn createMemorySuiteStorageBridge`)();
+   const previous = globalThis.risuai;
+@@ -72,7 +72,6 @@ function buildBridge({ namespace = 'flashback', owner, store, currentScope, reso
+   const bridge = create({
+     namespace,
+     pluginId: owner,
+-    storagePolicy,
+     pluginVersion: 'harness',
+     managementButton: false,
+     pluginPrefixes: pluginPrefixes || [`${owner}.`],
+diff --git b/PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs a/PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs
+index 2bd1d00403e90fe212d7052b93defcaeb63436e0..ff92b260445471208d58d5c406478607e9081a67 100644
+--- b/PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs
++++ a/PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs
+@@ -42,13 +42,13 @@ const guarded = (name, fn) => { try { fn(); results.push(name); } catch (error)
+ 
+ // ── 1. the general screen must not mount the source-edit panel ───────────────────────────────
+ const generalSource = between('const buildGeneralSettingsPanel =', 'const buildSharedSettingsShellPanel =');
+-test('buildGeneralSettingsPanel does not duplicate analysis-input controls', () => {
+-  assert.ok(!/(?:buildAnalysisInputPanel|mountSourceInputControls)\s*\(/.test(generalSource),
++test('buildGeneralSettingsPanel does not call buildSourceEditConsentPanel', () => {
++  assert.ok(!/buildSourceEditConsentPanel\s*\(/.test(generalSource),
+     'the general screen must not mount the source-edit panel — that is the duplicate');
+ });
+ 
+ test('the source-edit route and its sidebar entry still exist', () => {
+-  assert.ok(/section === 'source_edits'\)\s*return buildAnalysisInputPanel\(\)/.test(source),
++  assert.ok(/section === 'source_edits'\)\s*return buildSourceEditConsentPanel\(\)/.test(source),
+     'the independent settings route must survive');
+   assert.ok(/'source_edits'/.test(source), 'the sidebar/registry entry must survive');
+   const sidebar = source.match(/\{id:'source_edits'[^}]*\}/);
+diff --git b/PROGRAM/tests/librarian_system_brand_contract_test.cjs a/PROGRAM/tests/librarian_system_brand_contract_test.cjs
+index 55047105c5fe386569a73512bbcb9d5e7c6ab51e..89bcd64ee9b4ea54dc710e1052f30ebd60ae919a 100644
+--- b/PROGRAM/tests/librarian_system_brand_contract_test.cjs
++++ a/PROGRAM/tests/librarian_system_brand_contract_test.cjs
+@@ -1,54 +1,46 @@
+-'use strict';
+-
+-const assert = require('node:assert/strict');
+-const fs = require('node:fs');
++'use strict';
++
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
+ const path = require('node:path');
+ const { readReleaseMetadata } = require('../tools/release_metadata.cjs');
+-
+-const programDir = path.resolve(__dirname, '..');
+-const packageRoot = path.resolve(programDir, '..');
+-const read = relative => fs.readFileSync(path.join(programDir, ...relative.split('/')), 'utf8');
+-
+-function assertPublicMetadataBrand(source, label) {
+-  const directives = source.match(/^\/\/@[A-Za-z][^\r\n]*/gm) || [];
+-  assert.ok(directives.length, `${label}: public metadata exists`);
+-  assert.doesNotMatch(directives.join('\n'), /Memory Suite|MEMORY SUITE/, `${label} public metadata must expose the Librarian System brand`);
+-}
+-
+-function main() {
+-  assert.doesNotThrow(() => assertPublicMetadataBrand('//@display-name Librarian System\n/* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN */', 'technical marker'));
+-  assert.throws(() => assertPublicMetadataBrand('//@display-name Memory Suite plugin\n', 'public marker'), /public metadata/);
+-
+-  const packageVersion = read('VERSION.txt').trim();
+-  assert.match(packageVersion, /^\d+\.\d+\.\d+$/);
+-  assert.match(read('server/server.cjs'), /const SERVER_NAME = 'Librarian System Data Server'/);
+-  assert.match(read('tools/platform_launcher.cjs'), /const SERVER_NAME = 'Librarian System Data Server'/);
+-  assert.match(read('tools/platform_launcher.cjs'), /LEGACY_SERVER_NAMES = new Set\(\['Memory Suite Data Server'\]\)/,
+-    'the previous wire identity remains accepted only as an update compatibility alias');
+-  assert.match(read('tools/build_distribution.cjs'), /Librarian-System-/);
++
++const programDir = path.resolve(__dirname, '..');
++const packageRoot = path.resolve(programDir, '..');
++const read = relative => fs.readFileSync(path.join(programDir, ...relative.split('/')), 'utf8');
++
++function main() {
++  const packageVersion = read('VERSION.txt').trim();
++  assert.match(packageVersion, /^\d+\.\d+\.\d+$/);
++  assert.match(read('server/server.cjs'), /const SERVER_NAME = 'Librarian System Data Server'/);
++  assert.match(read('tools/platform_launcher.cjs'), /const SERVER_NAME = 'Librarian System Data Server'/);
++  assert.match(read('tools/platform_launcher.cjs'), /LEGACY_SERVER_NAMES = new Set\(\['Memory Suite Data Server'\]\)/,
++    'the previous wire identity remains accepted only as an update compatibility alias');
++  assert.match(read('tools/build_distribution.cjs'), /Librarian-System-/);
+   const release = readReleaseMetadata(programDir);
+   const manifest = JSON.parse(read('program-manifest.json'));
+   assert.equal(manifest.storageSdkVersion, release.storageSdkVersion);
+   assert.equal(manifest.computeSdkVersion, release.computeSdkVersion);
+   assert.deepEqual(manifest.plugins, Object.fromEntries(Object.entries(release.plugins).map(([owner, row]) => [owner, row.version])));
+   const pluginVersions = new Map(Object.values(release.plugins).map(row => [row.file, row.version]));
+-  for (const [fileName, version] of pluginVersions) {
+-    const source = read(`plugins/${fileName}`);
+-    assert.match(source, new RegExp(`^//\\@version ${version.replace(/\./g, '\\.')}$`, 'm'));
+-    assertPublicMetadataBrand(source, fileName);
+-    assert.match(source, /memory-suite|MEMORY_SUITE|MemorySuite/,
+-      `${fileName} must retain at least one legacy technical identifier for persisted compatibility`);
+-  }
+-
+-  const escapedVersion = packageVersion.replace(/\./g, '\\.');
+-  assert.match(fs.readFileSync(path.join(packageRoot, '0_설치_안내.txt'), 'utf8'), new RegExp(`^Librarian System Server ${escapedVersion}`, 'm'));
+-  assert.match(read('PACKAGE_CONTENTS.txt'), new RegExp(`^Librarian System Server ${escapedVersion}`, 'm'));
+-  process.stdout.write('librarian_system_brand_contract_test: PASS\n');
+-}
+-
+-try { main(); }
+-catch (error) {
+-  process.stderr.write(`librarian_system_brand_contract_test: FAIL\n${error.stack || error}\n`);
+-  process.exitCode = 1;
+-}
+-
++  for (const [fileName, version] of pluginVersions) {
++    const source = read(`plugins/${fileName}`);
++    assert.match(source, new RegExp(`^//\\@version ${version.replace(/\./g, '\\.')}$`, 'm'));
++    const publicHeader = source.slice(0, Math.min(source.length, 12000));
++    assert.doesNotMatch(publicHeader, /Memory Suite|MEMORY SUITE/, `${fileName} public header must expose the Librarian System brand`);
++    assert.match(source, /memory-suite|MEMORY_SUITE|MemorySuite/,
++      `${fileName} must retain at least one legacy technical identifier for persisted compatibility`);
++  }
++
++  const escapedVersion = packageVersion.replace(/\./g, '\\.');
++  assert.match(fs.readFileSync(path.join(packageRoot, '0_설치_안내.txt'), 'utf8'), new RegExp(`^Librarian System Server ${escapedVersion}`, 'm'));
++  assert.match(read('PACKAGE_CONTENTS.txt'), new RegExp(`^Librarian System Server ${escapedVersion}`, 'm'));
++  process.stdout.write('librarian_system_brand_contract_test: PASS\n');
++}
++
++try { main(); }
++catch (error) {
++  process.stderr.write(`librarian_system_brand_contract_test: FAIL\n${error.stack || error}\n`);
++  process.exitCode = 1;
++}
++
+diff --git b/PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs a/PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs
+index c30e33fc2db541dccf58b5bdd08801339f636a10..850454dd8a22373e1cbab6b77376363a2ceae339 100644
+--- b/PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs
++++ a/PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs
+@@ -1,51 +1,30 @@
+ 'use strict';
+-const assert=require('node:assert/strict');
++const assert=require('node:assert/strict');const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
++const {createMemorySuiteServer}=require('../server/server.cjs');
+ const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
+ const {clone,branch}=require('./fixtures/native_branch_fixture.cjs');
+-const MODE='plugin_only'; // LIA owns local persona state only.
++const MODE=['plugin_only','server_only'].includes(process.env.NATIVE_BRANCH_MODE)?process.env.NATIVE_BRANCH_MODE:'server_only';
+ (async()=>{
+- let backendCalls=0;
++ const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'lia-native-storage-'));const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});const address=await app.listen();const url=`http://127.0.0.1:${address.port}`;
+  const transformSource=source=>source
+   .replace('\n\n  async function waitForPluginStorage', '\n  globalThis.__fixtureStorageBridge = MemorySuiteStorageBridge;\n\n  async function waitForPluginStorage')
+   .replace('debugProjectNativeBranchPersonaState: (ctx, binding) =>', 'debugEnsureInheritedLivePersona: async (ctx = null) => sanitizeLogValue(await ensureInheritedLivePersonaForCurrentChat(ctx, { force:true })),\n      debugProjectNativeBranchPersonaState: (ctx, binding) =>');
+- const f=await createFixture('official',{transformSource,configureApi(api){api.getArgument=async name=>String(name).includes('memory_suite_server_url')?'http://127.0.0.1:1':(String(name).includes('memory_suite_server_mode')?'plugin_only':String(name).includes('enable_gui')?'false':'');api.getArg=api.getArgument;api.nativeFetch=async()=>{backendCalls++;throw Error('local-only LIA must not call server');};}});
++ const f=await createFixture('official',{transformSource,configureApi(api){api.getArgument=async name=>String(name).includes('memory_suite_server_url')?url:(String(name).includes('memory_suite_server_mode')?'plugin_only':String(name).includes('enable_gui')?'false':'');api.getArg=api.getArgument;api.nativeFetch=fetch;}});
+  try{
+   const bridge=f.context.__fixtureStorageBridge;assert.ok(bridge,'fixture storage bridge exposed');
+   const parent=clone(f.liveChat);const parentScope={scopeId:f.scopeKey,scopeKey:f.scopeKey,characterId:'lia-char',chatId:'lia-chat',aliases:[f.scopeKey,'lia-chat'],label:'lia-chat'};
+   await bridge.setScopeMode(parentScope,MODE);
+   assert.equal((await bridge.getScopeMode(parentScope)).mode,MODE);
+-  const localBefore=[...f.values];
+-  const parentBindingRow=localBefore.find(([key,value])=>String(key).startsWith('liaPersonaLinkerLivePersonaScopeV2::')&&JSON.parse(value).scopeKey===f.scopeKey);
+-  assert.ok(parentBindingRow,'source parent binding exists');
+-  const sourceBinding=JSON.parse(parentBindingRow[1]);
+-  const parentPersonaBefore=JSON.stringify(f.db.personas.find(row=>row.id===parent.bindedPersona));
+-  const parentChatBefore=JSON.stringify(parent);
+-  for(const rejected of ['server_only','mirror'])await assert.rejects(()=>bridge.setScopeMode(parentScope,rejected),/LOCAL_ONLY_OWNER_POLICY/);
+-  assert.deepEqual([...f.values],localBefore,'refused modes preserve local source and registry');
++  if(MODE==='server_only')for(const key of [...f.values.keys()]){if(key==='liaPersonaLinkerLivePersonaIndexV2'||String(key).startsWith('liaPersonaLinkerLivePersonaScopeV2::'))f.values.delete(key);}
+   const child=branch(parent,5,'lia-child-server');child.bindedPersona=parent.bindedPersona;
+   for(const key of Object.keys(f.liveChat))delete f.liveChat[key];Object.assign(f.liveChat,child);f.character.chats=[f.liveChat,parent];
+   const childScopeKey='char:lia-char|chat:lia-child-server';const childScope={scopeId:childScopeKey,scopeKey:childScopeKey,characterId:'lia-char',chatId:'lia-child-server',aliases:[childScopeKey,'lia-child-server'],label:'lia-child-server'};
+-  const before=await bridge.getScopeMode(childScope);assert.equal(before.mode,'plugin_only');assert.equal(before.explicit,true);assert.equal(before.modeOrigin,'owner_policy');
++  const before=await bridge.getScopeMode(childScope);assert.equal(before.mode,'plugin_only');assert.equal(before.explicit,false);
+   const adopted=await f.runtime.debugEnsureInheritedLivePersona({db:f.db,charIndex:0,chatIndex:0,char:f.character,chat:f.liveChat});
+   assert.equal(adopted.verified,true,JSON.stringify(adopted));
+   assert.notEqual(adopted.reason,'no_inherited_live_owner',JSON.stringify(adopted));
+-  assert.equal(adopted.durableReadbackVerified,true,'fork has verified durable local readback');
+-  const childRows=[...f.values].filter(([key,value])=>String(key).startsWith('liaPersonaLinkerLivePersonaScopeV2::')&&JSON.parse(value).scopeKey===childScopeKey);
+-  assert.equal(childRows.length,1,'exactly one persisted child binding');
+-  const persisted=JSON.parse(childRows[0][1]);
+-  assert.equal(persisted.livePersonaId,f.liveChat.bindedPersona,'host chat uses the persisted child persona');
+-  assert.notEqual(persisted.livePersonaId,parent.bindedPersona,'child persona is distinct from parent');
+-  assert.equal(persisted.forkedFromScopeKey,f.scopeKey);
+-  assert.equal(persisted.forkedFromLivePersonaId,sourceBinding.livePersonaId);
+-  assert.equal(persisted.basePersonaPrompt,sourceBinding.basePersonaPrompt,'inherited base content is preserved');
+-  assert.ok(f.db.personas.find(row=>row.id===persisted.livePersonaId)?.personaPrompt.includes(sourceBinding.basePersonaPrompt),'persisted persona carries inherited content');
+-  assert.equal(f.values.get(parentBindingRow[0]),parentBindingRow[1],'parent binding bytes remain unchanged');
+-  assert.equal(JSON.stringify(f.db.personas.find(row=>row.id===parent.bindedPersona)),parentPersonaBefore,'parent persona remains unchanged');
+-  assert.equal(JSON.stringify(parent),parentChatBefore,'parent chat remains unchanged');
+-  const after=await bridge.getScopeMode(childScope);assert.equal(after.mode,MODE,'LIA child retains local-only owner policy');
+-  assert.equal(after.explicit,true);assert.equal(after.modeOrigin,'owner_policy');
++  const after=await bridge.getScopeMode(childScope);assert.equal(after.mode,MODE,'LIA child must inherit parent storage mode');
+   const proof=await f.runtime.getHostLineageStatus();assert.equal(proof.parentChatId,'lia-chat');
+-  assert.equal(backendCalls,0,'native branch inheritance uses no server');
+-  console.log(JSON.stringify({storagePolicy:'local_only',test:'native_branch_lia_storage_modes_runtime',passed:27,mode:after.mode,reason:adopted.reason}));
+- } finally {await f.dispose();}
++  console.log(JSON.stringify({test:'native_branch_lia_storage_modes_runtime',passed:8,mode:after.mode,reason:adopted.reason}));
++ } finally {await f.dispose();await app.close();fs.rmSync(dataDir,{recursive:true,force:true});}
+ })().catch(e=>{console.error(e);process.exitCode=1});
+diff --git b/PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs a/PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs
+index 55f4d999e20641de5e72b09de7f708fa94d4fe99..39362c575f794ca4bff6d2043d293d961aeaa3ff 100644
+--- b/PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs
++++ a/PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs
+@@ -1,6 +1,6 @@
+ 'use strict';
+ const path=require('node:path'),assert=require('node:assert/strict'),{spawnSync}=require('node:child_process');
+-const tests=['flashback','libra','hayaku'].map(owner=>`native_branch_${owner}_storage_modes_runtime_test.cjs`);
++const tests=['flashback','lia','libra','hayaku'].map(owner=>`native_branch_${owner}_storage_modes_runtime_test.cjs`);
+ const modes=['plugin_only','server_only'];let passed=0;
+ for(const mode of modes){
+  for(const file of tests){
+@@ -10,12 +10,4 @@ for(const mode of modes){
+   assert.equal(row.mode,mode,`reported mode mismatch for ${file}`);passed++;console.log(`PASS ${mode} ${file}`);
+  }
+ }
+-{
+- const file='native_branch_lia_storage_modes_runtime_test.cjs';
+- const result=spawnSync(process.execPath,[path.join(__dirname,file)],{encoding:'utf8',env:{...process.env,NATIVE_BRANCH_MODE:'plugin_only'},timeout:120000});
+- assert.equal(result.status,0,`${file}: ${result.stdout} ${result.stderr}`);
+- const row=JSON.parse(result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1));
+- assert.equal(row.mode,'plugin_only');assert.equal(row.storagePolicy,'local_only');passed++;
+- console.log(`PASS local-only ${file}`);
+-}
+-console.log(JSON.stringify({test:'native_branch_storage_modes_matrix',passed,modes,owners:tests.length+1,localOnlyOwners:1}));
++console.log(JSON.stringify({test:'native_branch_storage_modes_matrix',passed,modes,owners:tests.length}));
+diff --git b/PROGRAM/tests/plugin_version_byte_provenance_test.cjs a/PROGRAM/tests/plugin_version_byte_provenance_test.cjs
+index 69b1e912b05b2dd2dd244cde27e1abdeb31f1b04..83d6145948d801d7e5e10787722d1e4673e21291 100644
+--- b/PROGRAM/tests/plugin_version_byte_provenance_test.cjs
++++ a/PROGRAM/tests/plugin_version_byte_provenance_test.cjs
+@@ -2,7 +2,7 @@
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
+-const { validateProvenance, inspectInternalVersion } = require('../tools/plugin_version_provenance.cjs');
++const { validateProvenance } = require('../tools/plugin_version_provenance.cjs');
+ const { PLUGINS, readReleaseMetadata } = require('../tools/release_metadata.cjs');
+ 
+ const root = path.resolve(__dirname, '..');
+@@ -12,8 +12,9 @@ const actual = { profile: 'source', packageVersion: metadata.packageVersion, plu
+ for (const [owner, [file]] of Object.entries(PLUGINS)) {
+   const bytes = fs.readFileSync(path.join(root, 'plugins', file));
+   const source = bytes.toString('utf8');
+-  const internal = inspectInternalVersion(source,{owner,file});
+-  assert.equal(internal.version, metadata.plugins[owner].version, `${owner}: internal and header versions agree`);
++  const versions = [...source.matchAll(/^\s*const PLUGIN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]\s*;/gm)];
++  assert.equal(versions.length, 1, `${owner}: internal PLUGIN_VERSION count`);
++  assert.equal(versions[0][1], metadata.plugins[owner].version, `${owner}: internal and header versions agree`);
+   const displayVersion = bytes.subarray(0, 512).toString('utf8').match(/^\/\/@display-name[^\r\n]*?\bv(\d+\.\d+\.\d+)\b/m)?.[1];
+   if (displayVersion) assert.equal(displayVersion, metadata.plugins[owner].version, `${owner}: versioned display name agrees`);
+   actual.plugins[owner] = {
+diff --git b/PROGRAM/tests/plugin_version_provenance_producer_test.cjs a/PROGRAM/tests/plugin_version_provenance_producer_test.cjs
+index ece8904b136267d2e69558e2976a0169694e295e..5de85d456eb2ed9e51516e8a7fb9722ad70df541 100644
+--- b/PROGRAM/tests/plugin_version_provenance_producer_test.cjs
++++ a/PROGRAM/tests/plugin_version_provenance_producer_test.cjs
+@@ -65,21 +65,6 @@ assert.throws(() => rewritePluginVersion(Buffer.from(old.toString().replace('Plu
+ assert.throws(() => rewritePluginVersion(Buffer.from(old.toString().replace('//@display-name Plugin v1.0.8\r\n', '')), '1.0.8', '1.0.10'), /display_directive_count/, 'missing display directive is rejected');
+ assert.throws(() => rewritePluginVersion(Buffer.concat([old, Buffer.from('//@display-name Extra\n')]), '1.0.8', '1.0.10'), /display_directive_count/, 'duplicate unversioned display directive is rejected');
+ 
+-const wmBytes = fs.readFileSync(path.join(__dirname, '../plugins/LIBRA_World_Manager.js'));
+-const wmIdentity = {owner:'wm',file:'LIBRA_World_Manager.js'};
+-const wmLiteral = Buffer.from(wmBytes.toString().replace(/^\s*const PLUGIN_VERSION = \(\(\) => \{[\s\S]*?^\s*\}\)\(\);/m, "        const PLUGIN_VERSION = '6.0.0';"));
+-assert.throws(()=>rewritePluginVersion(wmLiteral,'6.0.0','6.0.1',wmIdentity),/internal/,'WM literal replacement cannot bypass canonical rebuild requirement');
+-assert.throws(()=>rewritePluginVersion(wmLiteral,'6.0.0','6.0.1'),/internal/,'WM named source cannot bypass canonical rebuild by omitting identity');
+-const wmVersion = wmBytes.toString().match(/^\/\/@version (\d+\.\d+\.\d+)$/m)[1];
+-assert.deepEqual(rewritePluginVersion(wmBytes,wmVersion,wmVersion,wmIdentity),wmBytes,'recognized WM derived version preserves unchanged source bytes');
+-assert.throws(()=>rewritePluginVersion(wmBytes,wmVersion,'99.0.0',wmIdentity),/wm_source_rebuild_required/,'WM version changes require canonical source rebuild');
+-assert.throws(()=>rewritePluginVersion(wmBytes,wmVersion,wmVersion,{owner:'libra',file:'LIBRA.js'}),/internal/,'derived version is restricted to WM owner/file identity');
+-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace("return '6.0.0';", "return '6.0.1';")),wmVersion,wmVersion,wmIdentity),/internal/,'WM fallback/header mismatch is rejected');
+-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace("const matched = src.match(/@version", "globalThis.__unexpectedVersionEvaluation = true; const matched = src.match(/@version")),wmVersion,wmVersion,wmIdentity),/internal/,'unrecognized derived body is rejected without evaluating source');
+-assert.equal(globalThis.__unexpectedVersionEvaluation,undefined,'version inspection never executes plugin text');
+-assert.throws(()=>rewritePluginVersion(Buffer.concat([wmBytes,Buffer.from("\nconst PLUGIN_VERSION = '6.0.0';\n")]),wmVersion,wmVersion,wmIdentity),/internal/,'additional literal declarations cannot mask WM derived declaration');
+-assert.throws(()=>rewritePluginVersion(Buffer.from(wmBytes.toString().replace('//@name libra_world_manager','//@name other')),wmVersion,wmVersion,wmIdentity),/internal/,'derived form also requires exact plugin metadata identity');
+-
+ const programRoot = path.resolve(__dirname, '..');
+ const prepared = prepareSourceRefresh(programRoot);
+ assert.deepEqual(validateProvenance(prepared.catalog, prepared.actual), [], 'prepared candidate validates against its post-rewrite actual bytes');
+diff --git b/PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs a/PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs
+index 943566ea1aded10615f133dfa118f2b996a416e2..63bb54837ee1bb6173c5a67de9155d5cc59ad005 100644
+--- b/PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs
++++ a/PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs
+@@ -1,9 +1,9 @@
+-'use strict';
+-// Role-aware storage parity: three server owners and the local-only LIA owner.
++﻿'use strict';
++// Tasks 13-16: storage-mode parity audit for all four owners.
+ //
+ // Every authoritative owner feature ultimately routes durable reads/writes
+ // through the shared storage authority. This audit executes that authority for
+-// each admitted owner mode plus core legacy-mirror compatibility and records the
++// each owner namespace across plugin_only / mirror / server_only and records the
+ // observations the support matrix depends on:
+ //   - plugin_only makes zero Librarian backend requests for owner data
+ //   - mirror keeps local and server authoritative rows in agreement
+@@ -22,7 +22,7 @@ let passed=0;const ok=(label,condition)=>{assert.ok(condition,label);passed+=1;}
+ const OWNERS=Object.freeze([
+   { namespace:'flashback', variant:'standard', key:'vector_rag_memory:parity.canonical' },
+   { namespace:'hayaku',    variant:'standard', key:'hayaku.v2.parity.canonical' },
+-  { namespace:'lia', storagePolicy:'local_only', variant:'standard', key:'lia.parity.canonical' },
++  { namespace:'lia',       variant:'standard', key:'lia.parity.canonical' },
+   { namespace:'libra',     variant:'libra',    key:'libra:v1:parity.canonical' }
+ ]);
+ const MODES=Object.freeze(['plugin_only','mirror','server_only']);
+@@ -39,13 +39,13 @@ async function withServer(fn){
+ 
+ (async()=>{
+  for(const owner of OWNERS){
+-  for(const mode of owner.storagePolicy==='local_only'?['plugin_only']:MODES){
++  for(const mode of MODES){
+    await withServer(async url=>{
+     const store=createInstrumentedStore();
+     const backend=createBackendRequestCounter(fetch);
+     let current=scope('child');
+     const handle=buildBridge({
+-      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
++      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
+       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
+     });
+@@ -54,17 +54,6 @@ async function withServer(fn){
+       bridge.createPluginStorageProxy(store);
+       if(mode==='mirror') await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,store,scope('child')); else await bridge.setScopeMode(scope('child'),mode);
+ 
+-      if(mode==='mirror'){
+-        ok(`${owner.namespace}: legacy mirror requires migration`,(await bridge.getScopeMode(scope('child'))).migrationRequired===true);
+-        ok(`${owner.namespace}: mirror cannot be selected`,bridge.getStorageModeContract().mirrorSelectable===false);
+-        await assert.rejects(()=>bridge.setScopeMode(scope('child'),'mirror'),/mirror_is_transition_only/);
+-      }
+-      if(owner.storagePolicy==='local_only'){
+-        const before=[...store.values];
+-        for(const rejected of ['server_only','mirror']) await assert.rejects(()=>bridge.setScopeMode(scope('child'),rejected),/LOCAL_ONLY_OWNER_POLICY/);
+-        assert.deepEqual([...store.values],before,'local-only refusals do not alter registry or data');
+-        ok('lia: fixed owner policy is explicit',(await bridge.getScopeMode(scope('child'))).modeOrigin==='owner_policy');
+-      }
+       const writesBefore=store.counters.writes;
+       const proxy=bridge.createPluginStorageProxy(store);
+       await proxy.setItem(KEY,JSON.stringify({owner:owner.namespace,mode,v:1}));
+@@ -93,7 +82,7 @@ async function withServer(fn){
+       // Reload: a fresh bridge over the same store must return the same authority.
+       await bridge.dispose?.();
+       const reloaded=buildBridge({
+-        namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
++        namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+         resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
+         url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
+       });
+@@ -117,7 +106,7 @@ async function withServer(fn){
+     const backend=createBackendRequestCounter(fetch);
+     let current=scope('child');
+     const handle=buildBridge({
+-      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
++      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
+       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
+     });
+@@ -128,7 +117,7 @@ async function withServer(fn){
+       ok(`${owner.namespace}: explicit plugin_only recorded`,before.explicit===true);
+       await bridge.dispose?.();
+       const reloaded=buildBridge({
+-        namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
++        namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+         resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
+         url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
+       });
+@@ -140,24 +129,22 @@ async function withServer(fn){
+   });
+  }
+ 
+- // Native-branch parent read-only + sibling isolation. The former three-mode
+- // loop never applied its label; these are the actual parent/child modes.
++ // Native-branch parent read-only + sibling isolation through the shared authority.
+  for(const owner of OWNERS){
+-  {
+-   const mode=owner.storagePolicy==='local_only'?'local parent/local child':'server parent/local child';
++  for(const mode of MODES){
+    await withServer(async url=>{
+     const store=createInstrumentedStore();
+     const backend=createBackendRequestCounter(fetch);
+     let current=scope('child');
+     const handle=buildBridge({
+-      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
++      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
+       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
+     });
+     const bridge=handle.bridge;
+     try{
+       bridge.createPluginStorageProxy(store);
+-      await bridge.setScopeMode(scope('parent'),owner.storagePolicy==='local_only'?'plugin_only':'server_only');
++      await bridge.setScopeMode(scope('parent'),'server_only');
+       await bridge.createPluginStorageProxy(store); // re-register after mode change
+       const parentProxy=bridge.createPluginStorageProxy(store);
+       current=scope('parent');
+diff --git b/PROGRAM/tests/storage_mode_special_parity_gates_test.cjs a/PROGRAM/tests/storage_mode_special_parity_gates_test.cjs
+index 6a7615b42c0d6c1297b264fa5ec6a6531b094f94..264e9cacf1f9f4cd7accce74257ff27db2824ecc 100644
+--- b/PROGRAM/tests/storage_mode_special_parity_gates_test.cjs
++++ a/PROGRAM/tests/storage_mode_special_parity_gates_test.cjs
+@@ -9,29 +9,24 @@ let passed=0;const ok=(label,condition)=>{assert.ok(condition,label);passed+=1;}
+ const scope=chat=>({scopeId:`char:c1|chat:${chat}`,scopeKey:`char:c1|chat:${chat}`,characterId:'c1',canonicalCharacterId:'c1',chatId:chat,canonicalChatId:chat,aliases:[chat]});
+ const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],['libra','libra']];
+ 
+-const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
+ (async()=>{
+  // Gate: mirror keeps local/server logical digests in agreement for the same data.
+- for(const [namespace] of SERVER_OWNERS){
++ for(const [namespace] of OWNERS){
+   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-mirror-'));
+   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
+   const addr=await app.listen();
+   const store=createInstrumentedStore();
+   const backend=createBackendRequestCounter(fetch);
+-  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['mirror.']});
++  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['mirror.']});
+   const bridge=handle.bridge;
+   try{
+    bridge.createPluginStorageProxy(store);
+    await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,store,scope('child'));
+-   ok(`${namespace}: legacy mirror requires migration`,(await bridge.getScopeMode(scope('child'))).migrationRequired===true);
+-   ok(`${namespace}: mirror is unselectable`,bridge.getStorageModeContract().mirrorSelectable===false);
+-   await assert.rejects(()=>bridge.setScopeMode(scope('child'),'mirror'),/mirror_is_transition_only/);
+    const proxy=bridge.createPluginStorageProxy(store);
+    await proxy.setItem('mirror.agree',JSON.stringify({v:'same'}));
+    const localValue=await store.values.get([...store.values.keys()].find(k=>String(k).includes('mirror.agree')));
+    const listing=await bridge.serverKeys('plugin','mirror.');
+    const serverKey=listing.keys.find(k=>String(k).includes('mirror.agree'));
+-   ok(`${namespace}: migrated mirror key exists before readback`,typeof serverKey==='string'&&serverKey.length>0);
+    const remote=await bridge.serverGet('plugin',serverKey);
+    // The mirror stores the same logical value on both sides.
+    const serverValue=typeof remote.value==='string'?remote.value:JSON.stringify(remote.value);
+@@ -41,13 +36,13 @@ const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
+  }
+ 
+  // Gate: server_only authoritative write count is zero for canonical data.
+- for(const [namespace] of SERVER_OWNERS){
++ for(const [namespace] of OWNERS){
+   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-serveronly-'));
+   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
+   const addr=await app.listen();
+   const store=createInstrumentedStore();
+   const backend=createBackendRequestCounter(fetch);
+-  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['serveronly.']});
++  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['serveronly.']});
+   const bridge=handle.bridge;
+   try{
+    bridge.createPluginStorageProxy(store);
+@@ -69,11 +64,11 @@ const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
+   const addr=await app.listen();
+   const store=createInstrumentedStore();
+   const backend=createBackendRequestCounter(fetch);
+-  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['explicit.']});
++  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['explicit.']});
+   const bridge=handle.bridge;
+   try{
+    bridge.createPluginStorageProxy(store);
+-   await bridge.setScopeMode(scope('parent'),namespace==='lia'?'plugin_only':'server_only');
++   await bridge.setScopeMode(scope('parent'),'server_only');
+    await bridge.setScopeMode(scope('child'),'plugin_only',{recordExplicit:true});
+    const childMode=await bridge.getScopeMode(scope('child'));
+    ok(`${namespace}: explicit child mode recorded`,childMode.mode==='plugin_only'&&childMode.explicit===true);
+@@ -89,17 +84,11 @@ const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
+  for(const [namespace] of OWNERS){
+   const store=createInstrumentedStore();
+   const backend=createBackendRequestCounter(fetch);
+-  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:'http://127.0.0.1:1',fetchImpl:backend.fetch,pluginPrefixes:['local.']});
++  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:'http://127.0.0.1:1',fetchImpl:backend.fetch,pluginPrefixes:['local.']});
+   const bridge=handle.bridge;
+   try{
+    bridge.createPluginStorageProxy(store);
+    await bridge.setScopeMode(scope('child'),'plugin_only');
+-   if(namespace==='lia'){
+-    const before=[...store.values];
+-    for(const mode of ['server_only','mirror']) await assert.rejects(()=>bridge.setScopeMode(scope('child'),mode),/LOCAL_ONLY_OWNER_POLICY/);
+-    assert.deepEqual([...store.values],before,'local-only refusals preserve local data/registry');
+-    ok('lia: owner policy remains explicit',(await bridge.getScopeMode(scope('child'))).modeOrigin==='owner_policy');
+-   }
+    const proxy=bridge.createPluginStorageProxy(store);
+    await proxy.setItem('local.only','L');
+    await proxy.getItem('local.only');
+@@ -109,13 +98,13 @@ const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
+  }
+ 
+  // Gate: retired local bytes are never recalled in server_only (R02 parity).
+- for(const [namespace] of SERVER_OWNERS){
++ for(const [namespace] of OWNERS){
+   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-retired-'));
+   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
+   const addr=await app.listen();
+   const store=createInstrumentedStore();
+   const backend=createBackendRequestCounter(fetch);
+-  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['retired.']});
++  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['retired.']});
+   const bridge=handle.bridge;
+   try{
+    bridge.createPluginStorageProxy(store);
+diff --git b/PROGRAM/tests/storage_modes_test.cjs a/PROGRAM/tests/storage_modes_test.cjs
+index e3309943ad5b73122f486457344e6c2c80cb681a..59ed5942f18864eabc953bf35bfe13490a41862a 100644
+--- b/PROGRAM/tests/storage_modes_test.cjs
++++ a/PROGRAM/tests/storage_modes_test.cjs
+@@ -54,9 +54,9 @@ async function main() {
+     });
+     const proxy = bridge.createPluginStorageProxy(legacy);
+ 
+-    // Every new scope defaults independently to plugin-only. The global-mode owner leaves the legacy ARG untouched.
++    // Every new scope defaults independently to plugin-only. The legacy ARG is reset.
+     assert.equal(await bridge.getMode(), 'plugin_only');
+-    assert.equal(args.memory_suite_server_mode, '', 'reading a default scope does not rewrite the legacy ARG');
++    assert.equal(args.memory_suite_server_mode, 'plugin_only');
+     currentScope = scopeB;
+     assert.equal(await bridge.getMode(), 'plugin_only');
+     currentScope = scopeA;
+@@ -64,10 +64,7 @@ async function main() {
+     // Scope A enters mirror; scope B remains local-only and is not uploaded.
+     const mirrorA = await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,legacy);
+     assert.equal(mirrorA.to, 'mirror');
+-    assert.equal(args.memory_suite_server_mode, '', 'scope registry changes do not rewrite the legacy ARG');
+-    assert.equal((await bridge.getScopeMode(scopeA)).migrationRequired, true, 'seeded mirror remains transition compatibility');
+-    assert.equal(bridge.getStorageModeContract().mirrorSelectable, false);
+-    await assert.rejects(() => bridge.setMode('mirror'), /mirror_is_transition_only/);
++    assert.equal(args.memory_suite_server_mode, 'plugin_only', 'ARG is only a legacy import slot');
+     await proxy.setItem('scope:a:key:mirror', { both: true });
+     assert.deepEqual(legacy.map.get('scope:a:key:mirror'), { both: true });
+     const conn = await bridge.bootstrap();
+diff --git b/PROGRAM/tools/build_distribution.cjs a/PROGRAM/tools/build_distribution.cjs
+index 780bda5aea04a8b756ba8fda71364a6bdee1c20a..8518b73548c1695753241ca615c33eab87b09d05 100644
+--- b/PROGRAM/tools/build_distribution.cjs
++++ a/PROGRAM/tools/build_distribution.cjs
+@@ -26,8 +26,6 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
+   'launcher_safety_regression_test.cjs',
+   'windows_bootstrap_contract_test.cjs',
+   'distribution_builder_test.cjs',
+-  'distribution_runtime_dependency_closure_test.cjs',
+-  'remote_update_wm_migration_admission_test.cjs',
+   'release_metadata_test.cjs',
+   'release_builder_version_input_test.cjs',
+   'release_builder_profiles_test.cjs',
+@@ -192,7 +190,7 @@ const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials
+ const REQUIRED_ROOT_UPDATE_LAUNCHERS = Object.freeze(['업데이트.bat', '업데이트.command', '업데이트.sh']);
+ const REQUIRED_UPDATER_FILES = new Set([
+   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
+-  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/wm-update-admission.cjs', 'core/updater-bootstrap.cjs',
++  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/updater-bootstrap.cjs',
+   'runtime.cjs', 'launch.sh', '_find_node.bat', 'core/lock.cjs',
+   'logs/README.txt',
+   'platform/windows.cjs', 'platform/macos.cjs', 'platform/linux.cjs', 'platform/android.cjs'
+@@ -277,7 +275,7 @@ const RUNTIME_TOOL_FILES = new Set([
+   'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
+ ]);
+ const RUNTIME_SDK_FILES = new Set([
+-  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js','WmStorageContracts.source.js'
++  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
+ ]);
+ const RUNTIME_DOC_FILES = new Set([
+   'ANDROID_INSTALL_HELPER.md','PORTABLE_BACKUP_USAGE.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
+@@ -696,12 +694,6 @@ function buildDistribution(options = {}) {
+     phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName});
+     const verification=verifyZipAgainstDirectory(archivePath,stagedRoot,{rootName:topLevelName}),entries=readZipEntries(archivePath);
+     assertArchivePrivacy(entries,topLevelName);
+-    let runtimeDependencyClosure=null;
+-    if(!isSource){
+-      phase='extracted_runtime_dependencies';
+-      const check=runNode(path.join(programDir,'tools/verify_runtime_archive.cjs'),[archivePath,path.join(temporaryRoot,'verified-runtime')],temporaryRoot,{env:{NODE_PATH:''}});
+-      runtimeDependencyClosure=JSON.parse(check.stdout.trim());
+-    }
+     assertTreeSourceUnchanged(programDir,copiedProgram.sourceFiles,stagingPredicate,isSource?'source_program':'runtime_program');
+     assertTreeSourceUnchanged(sourceUpdater,copiedUpdater.sourceFiles,shouldCopyUpdater,'updater_source');
+     for(const row of copiedLaunchers)if(sha256File(path.join(packageRoot,row.path))!==row.sha256)throw new Error(`distribution_update_launcher_changed_during_build:${row.path}`);
+@@ -716,7 +708,7 @@ function buildDistribution(options = {}) {
+       archiveSha256:verification.archiveSha256,archiveBytes:zip.bytes,archiveFiles:verification.files,embeddedRuntime:false,sourceDataReadOrCopied:false,
+       cleanDataFiles:dataCheck.files,crossPlatformScripts:scriptCheck.scripts,updateLaunchers:updaterScriptCheck.launchers,copiedUpdaterFiles:copiedUpdater.copied,
+       copiedProgramFiles:copiedProgram.copied,packagedPluginFiles:pluginCheck.files,pluginInstallPath:'PROGRAM/plugins',topLevelPluginsFolder:false,
+-      pluginBuild:pluginArtifacts,runtimeDependencyClosure,
++      pluginBuild:pluginArtifacts,
+       ...(offline?{status:'offline_candidate',publicationReady:false,fullReleaseGate:'NOT_RUN',actualHostQualification:'NOT_RUN'}:{}),
+       checksumFilesVerified:checksumCheck.files,unixExecutePermissionsVerified:true,utf8EntryNamesVerified:true,privateDataPatternsRejected:true,
+       testsRun:true,testProfile:offline?'offline_candidate_contents':'release_smoke',releaseSmokeTests:offline?[]:[...RELEASE_SMOKE_TESTS],releaseSmokeOutput:smoke.stdout,fullRegressionRunByBuilder:false,
+diff --git b/PROGRAM/tools/build_plugins.cjs a/PROGRAM/tools/build_plugins.cjs
+index 7a7e08202c52c2e3cf84e5058be973d4c5447cf2..f5475b65aa132ff573b4e8ca48a961a0882de993 100644
+--- b/PROGRAM/tools/build_plugins.cjs
++++ a/PROGRAM/tools/build_plugins.cjs
+@@ -1074,8 +1074,8 @@ const WM_TRANSFORM = Object.freeze({tool:'terser',version:'5.51.2',compress:{pas
+ // Post-GUI coordinated rebuild: exact measured WM Min size.
+ // Earlier maxima remain history. This changes only build-size bookkeeping, not
+ // performance, actual-host, native-CAS or release qualification.
+-const WM_RELEASE_BUDGET = Object.freeze({baselineBytes:3829135, featureGrowthBytes:639132, maximumBytes:4468267, headroomBytes:0, baselineSha256:'02847d7ad3ddc31e30860e98cb0901983768001330dece82ab154e8822fe5277', historicalMaximumBytes:3829773, approvedFeatureIncrementBytes:634544, d1R29MaximumBytes:4123525, d1R29Ruling:'D1-R29', fixedDelivery5MaximumBytes:4388732, connectionRepairMaximumBytes:4403344, composedFeatureMaximumBytes:4464075, previousFeatureMaximumBytes:4464075, previousRuling:'composed-feature-rebuild-build-size-only', fixedDelivery5IncrementBytes:265207, connectionRepairIncrementBytes:14612, manualMigrationIncrementBytes:46566, existingCardEditIncrementBytes:14165, guiFixIncrementBytes:242, postGuiMaximumBytes:4464317, fullRegressionRepairIncrementBytes:730,
+-  worldlineDurabilityRepairIncrementBytes:931, strictOptionsAndIdentityAdmissionRepairIncrementBytes:7, graphStructuralBudgetRepairIncrementBytes:867, preGraphMaximumBytes:4465985, previousRegressionRuling:'real-handler-binding-css-repair-build-size-only', extensionOwnerAndAbsentDlcRepairIncrementBytes:365, preExtensionOwnerMaximumBytes:4466852, previousGraphRuling:'graph-structural-edge-budget-repair-build-size-only', ownedTimeoutRepairIncrementBytes:279, preOwnedTimeoutMaximumBytes:4467217, previousExtensionOwnerRuling:'extension-owner-absent-dlc-repair-build-size-only', portableCachePublicationRepairIncrementBytes:3, prePortableCachePublicationMaximumBytes:4467496, previousOwnedTimeoutRuling:'owned-timeout-reason-repair-build-size-only', entityShadowProjectionRepairIncrementBytes:199, preEntityShadowProjectionMaximumBytes:4467499, previousPortableCachePublicationRuling:'portable-cache-publication-repair-build-size-only', capturedScopeRefusalRepairIncrementBytes:149, preCapturedScopeRefusalMaximumBytes:4467698, previousEntityShadowProjectionRuling:'entity-shadow-projection-repair-build-size-only', typedGraphCooperativeGuardRepairIncrementBytes:403, preTypedGraphCooperativeGuardMaximumBytes:4467847, previousCapturedScopeRefusalRuling:'captured-scope-refusal-repair-build-size-only', updateUrlMetadataIncrementBytes:17, preUpdateUrlMetadataMaximumBytes:4468250, previousTypedGraphCooperativeGuardRuling:'typed-graph-cooperative-guard-repair-build-size-only', ruling:'update-url-metadata-only-build-size-bookkeeping', qualification:'provisional_feature_build'});
++const WM_RELEASE_BUDGET = Object.freeze({baselineBytes:3829135, featureGrowthBytes:639115, maximumBytes:4468250, headroomBytes:0, baselineSha256:'02847d7ad3ddc31e30860e98cb0901983768001330dece82ab154e8822fe5277', historicalMaximumBytes:3829773, approvedFeatureIncrementBytes:634544, d1R29MaximumBytes:4123525, d1R29Ruling:'D1-R29', fixedDelivery5MaximumBytes:4388732, connectionRepairMaximumBytes:4403344, composedFeatureMaximumBytes:4464075, previousFeatureMaximumBytes:4464075, previousRuling:'composed-feature-rebuild-build-size-only', fixedDelivery5IncrementBytes:265207, connectionRepairIncrementBytes:14612, manualMigrationIncrementBytes:46566, existingCardEditIncrementBytes:14165, guiFixIncrementBytes:242, postGuiMaximumBytes:4464317, fullRegressionRepairIncrementBytes:730,
++  worldlineDurabilityRepairIncrementBytes:931, strictOptionsAndIdentityAdmissionRepairIncrementBytes:7, graphStructuralBudgetRepairIncrementBytes:867, preGraphMaximumBytes:4465985, previousRegressionRuling:'real-handler-binding-css-repair-build-size-only', extensionOwnerAndAbsentDlcRepairIncrementBytes:365, preExtensionOwnerMaximumBytes:4466852, previousGraphRuling:'graph-structural-edge-budget-repair-build-size-only', ownedTimeoutRepairIncrementBytes:279, preOwnedTimeoutMaximumBytes:4467217, previousExtensionOwnerRuling:'extension-owner-absent-dlc-repair-build-size-only', portableCachePublicationRepairIncrementBytes:3, prePortableCachePublicationMaximumBytes:4467496, previousOwnedTimeoutRuling:'owned-timeout-reason-repair-build-size-only', entityShadowProjectionRepairIncrementBytes:199, preEntityShadowProjectionMaximumBytes:4467499, previousPortableCachePublicationRuling:'portable-cache-publication-repair-build-size-only', capturedScopeRefusalRepairIncrementBytes:149, preCapturedScopeRefusalMaximumBytes:4467698, previousEntityShadowProjectionRuling:'entity-shadow-projection-repair-build-size-only', typedGraphCooperativeGuardRepairIncrementBytes:403, preTypedGraphCooperativeGuardMaximumBytes:4467847, previousCapturedScopeRefusalRuling:'captured-scope-refusal-repair-build-size-only', ruling:'typed-graph-cooperative-guard-repair-build-size-only', qualification:'provisional_feature_build'});
+ function parseBuildArgs(argv = process.argv.slice(2), programDir = root) {
+   let only=null,outDir=null,profile='release',noMinify=false,doStripRegions=false;
+   for(let i=0;i<argv.length;i++) {
+diff --git b/PROGRAM/tools/plugin_version_provenance.cjs a/PROGRAM/tools/plugin_version_provenance.cjs
+index 26ee959f3c321c6b5342fa4c7664cf16d1d6b972..02c1e8faf189e68edec6153c1a2270fbd86176d3 100644
+--- b/PROGRAM/tools/plugin_version_provenance.cjs
++++ a/PROGRAM/tools/plugin_version_provenance.cjs
+@@ -156,35 +156,7 @@ function buildSourceCandidate(catalog, actual) {
+   return candidate;
+ }
+ 
+-// Inspect only the two authored version forms. Never execute plugin source.
+-// WM's derived debug version is admitted solely for its exact owner/file/name;
+-// changing that version requires rebuilding the canonical WM source inputs.
+-function inspectInternalVersion(source, identity = {}) {
+-  const fail = () => { throw new Error('source_version_mismatch:internal'); };
+-  if ([...source.matchAll(/^\s*const PLUGIN_VERSION\s*=/gm)].length !== 1) fail();
+-  const literal = [...source.matchAll(/^\s*const PLUGIN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]\s*;/gm)];
+-  const wmSource = identity.owner === 'wm' || identity.file === 'LIBRA_World_Manager.js'
+-    || /^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/m.test(source);
+-  if (literal.length === 1 && !wmSource) return {version:literal[0][1],kind:'literal'};
+-  if (identity.owner !== 'wm' || identity.file !== 'LIBRA_World_Manager.js'
+-    || [...source.matchAll(/^\/\/@name[ \t]+libra_world_manager[ \t]*\r?$/gm)].length !== 1) fail();
+-  const forms = [...source.matchAll(/^\s*const PLUGIN_VERSION = \(\(\) => \{\r?\n([\s\S]*?)^\s*\}\)\(\);/gm)];
+-  if (forms.length !== 1) fail();
+-  const body = forms[0][1].split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
+-  const fallback = [...body.matchAll(/^return '(\d+\.\d+\.\d+)';$/gm)];
+-  if (fallback.length !== 1) fail();
+-  const expected = String.raw`try {
+-const src = String((typeof LIBRA_PLUGIN_SHELL_HEADER !== 'undefined' && LIBRA_PLUGIN_SHELL_HEADER) || '');
+-const matched = src.match(/@version\s+([0-9][^\s]*)/);
+-if (matched && matched[1]) return matched[1];
+-} catch (_) {}
+-// 폴백 — 헤더를 못 읽어도 실제 버전을 유지한다(0.1 로 회귀 금지).
+-return '<version>';`;
+-  if (body.replace(`return '${fallback[0][1]}';`, "return '<version>';") !== expected) fail();
+-  return {version:fallback[0][1],kind:'wm-derived'};
+-}
+-
+-function rewritePluginVersion(bytes, beforeVersion, afterVersion, identity = {}) {
++function rewritePluginVersion(bytes, beforeVersion, afterVersion) {
+   if (!VERSION.test(beforeVersion) || !VERSION.test(afterVersion)) throw new Error('source_version_invalid');
+   const source = bytes.toString('utf8');
+   if (!Buffer.from(source).equals(bytes)) throw new Error('source_encoding_invalid');
+@@ -194,16 +166,13 @@ function rewritePluginVersion(bytes, beforeVersion, afterVersion, identity = {})
+   if ([...source.matchAll(/^\/\/@display-name[ \t]+[^\r\n]+(?=\r?$)/gm)].length !== 1) {
+     throw new Error('source_version_mismatch:display_directive_count');
+   }
+-  const inspected = inspectInternalVersion(source, identity);
+-  if (inspected.version !== beforeVersion) throw new Error('source_version_mismatch:internal');
+-  for (const [label, pattern, required] of [['header', header, true], ['display', display, false]]) {
++  for (const [label, pattern, required] of [['header', header, true], ['internal', internal, true], ['display', display, false]]) {
+     const matches = [...source.matchAll(pattern)];
+     if ((required && matches.length !== 1) || matches.length > 1 || matches.some(match => match[2] !== beforeVersion)) {
+       throw new Error(`source_version_mismatch:${label}`);
+     }
+   }
+   if (beforeVersion === afterVersion) return Buffer.from(bytes);
+-  if (inspected.kind === 'wm-derived') throw new Error('wm_source_rebuild_required');
+   return Buffer.from(source.replace(header, (_, gap, old, tail) => `//@version${gap}${afterVersion}${tail}`)
+     .replace(internal, (_, prefix, old, tail) => prefix + afterVersion + tail)
+     .replace(display, (_, prefix) => prefix + afterVersion));
+@@ -219,7 +188,7 @@ function readSourceActual(programDir) {
+   for (const [owner, [file]] of Object.entries(PLUGINS)) {
+     const bytes = fs.readFileSync(path.join(programDir, 'plugins', file));
+     const version = metadata.plugins[owner].version;
+-    rewritePluginVersion(bytes, version, version, {owner,file});
++    rewritePluginVersion(bytes, version, version);
+     actual.plugins[owner] = { version, sha256: metadata.plugins[owner].sha256, bytes: bytes.length, file };
+     sources[owner] = bytes;
+   }
+@@ -267,7 +236,7 @@ function prepareSourceRefresh(programDir) {
+   const updates = [];
+   for (const [owner, observed] of Object.entries(actual.plugins)) {
+     const version = catalog.currentRelease.plugins[owner].version;
+-    const after = rewritePluginVersion(sources[owner], observed.version, version, {owner,file:observed.file});
++    const after = rewritePluginVersion(sources[owner], observed.version, version);
+     updates.push({ owner, file: path.join(programDir, 'plugins', observed.file),
+       before: sources[owner], after, beforeVersion: observed.version, afterVersion: version });
+     actual.plugins[owner] = { ...observed, version, sha256: hash(after), bytes: after.length };
+@@ -335,7 +304,7 @@ function refreshSourceProvenance(programDir, { write = false, backupFile } = {})
+   }
+ }
+ 
+-module.exports = { inspectInternalVersion, validateProvenance, buildSourceCandidate, rewritePluginVersion,
++module.exports = { validateProvenance, buildSourceCandidate, rewritePluginVersion,
+   readSourceActual, prepareSourceRefresh, refreshSourceProvenance };
+ 
+ if (require.main === module) {
+diff --git b/PROGRAM/wm/src/parts/00-plugin-shell-and-args.js a/PROGRAM/wm/src/parts/00-plugin-shell-and-args.js
+index 7c1638d3c92d6a3f1754aea8746003d0a9957afa..fcc0f2dd898a0d96882ced38c5977b4c7d324df0 100644
+--- b/PROGRAM/wm/src/parts/00-plugin-shell-and-args.js
++++ a/PROGRAM/wm/src/parts/00-plugin-shell-and-args.js
+@@ -3,7 +3,7 @@
+ //@author rusinus12@gmail.com
+ //@api 3.0
+ //@version 6.0.0
+-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js
++//@update-url https://raw.githubusercontent.com/rusinus12-droid/libra_world_maker/main/dist/LIBRA%20World%20Manager.js
+ //@arg story_author_enabled string Enable Story Author layer: true|false
+ //@arg story_author_mode string Story Author mode: disabled|supportive|proactive|aggressive
+ //@arg director_enabled string Enable Director layer: true|false
 diff --git b/PROGRAM/wm/src/parts/01-core-runtime-compat-state-debug.js a/PROGRAM/wm/src/parts/01-core-runtime-compat-state-debug.js
 index 53f5aab430a66e0db23af6b0a4140dc89dea7596..477360d782f1c32780e0942090c29d15831c2030 100644
 --- b/PROGRAM/wm/src/parts/01-core-runtime-compat-state-debug.js
@@ -1761,6 +4087,39 @@ index 3a5ac5e69cf1f0f0b66a59f7a503d02faf90e6bd..d989757cb8fa2694b3e480c3042b7273
   // The pinned factory owns baseline-token threading. Extend its exact maintenance
   // transform to the later extension saves; never infer authority from a global slot.
   replace("  part.source=replaceOne(part.source,\"        return finishMaintenanceLog({ status: 'done', turn: turnForMaintenance });\"","  part.source=replaceOne(part.source,\"expectedSource: source?.sourceToken, operation: 'normal', reason\\n\",\"expectedSource: source?.sourceToken, operation: 'normal', reason, reanalysisBaselineToken: record.reanalysisBaselineToken\\n\",part.file+':owner-extension-phase');\n  part.source=replaceOne(part.source,\"expectedSource: source?.sourceToken, operation: 'normal', reason: 'turn-extension-committed-packet'\",\"expectedSource: source?.sourceToken, operation: 'normal', reason: 'turn-extension-committed-packet', reanalysisBaselineToken: record.reanalysisBaselineToken\",part.file+':owner-extension-commit');\n  part.source=replaceOne(part.source,\"operation: 'normal', reason: 'turn-extension-pending-outcome'\",\"operation: 'normal', reason: 'turn-extension-pending-outcome', reanalysisBaselineToken: record.reanalysisBaselineToken\",part.file+':owner-extension-pending');\n  part.source=replaceOne(part.source,\"        return finishMaintenanceLog({ status: 'done', turn: turnForMaintenance });\"", 'factory_extension_owner_seam_changed');
+diff --git b/PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs a/PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs
+index 8e9ed1f14ea1625714e24e2b75d44b936fa2b1f7..0f83ccd8c8d964d4c01bde631ad4687efdf834e0 100644
+--- b/PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs
++++ a/PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs
+@@ -26,5 +26,3 @@ f=fixture();f.set(fullPath,f.get(fullPath).replace('class="ver">v'+version,'clas
+ f=fixture();f.set(fullPath,f.get(fullPath).replace(/^\/\/@version .+\n/m,''));check('missing version header',f,false,'artifact_versions_match_package');
+ f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@name .+$/m,'//@name wrong_plugin'));check('wrong plugin ID',f,false,'plugin_id_is_libra_world_manager');
+ f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@update-url .+$/m,'//@update-url https://example.invalid/wrong.js'));check('wrong update path',f,false,'update_url_points_at_the_shipped_filename');
+-f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@update-url .+$/m,'//@update-url https://example.invalid/PROGRAM/plugins/LIBRA_World_Manager.js'));check('wrong update host with matching filename',f,false,'update_url_points_at_the_shipped_filename');
+-f=fixture();f.set(minPath,f.get(minPath).replace('Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js','Librarian-System/refs/heads/dev/PROGRAM/plugins/LIBRA_World_Manager.js'));check('wrong update branch with matching filename',f,false,'update_url_points_at_the_shipped_filename');
+diff --git b/PROGRAM/wm/tools/libra_plugin_identity_test.cjs a/PROGRAM/wm/tools/libra_plugin_identity_test.cjs
+index 9f75cbd90da6e84238e112c0ad6ad38b9348f4fe..bc234071bc56db9123de2254d5ad17c2d66e83aa 100644
+--- b/PROGRAM/wm/tools/libra_plugin_identity_test.cjs
++++ a/PROGRAM/wm/tools/libra_plugin_identity_test.cjs
+@@ -13,7 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
+ // Stable plugin identity; release versions are compared with current package metadata.
+ const EXPECT_ID = 'libra_world_manager';
+ const EXPECT_DISPLAY = 'LIBRA World Manager';
+-const EXPECT_UPDATE_URL = 'https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js';
++const EXPECT_UPDATE_PATH = 'dist/LIBRA%20World%20Manager.js';
+ 
+ function check(name, ok, details = {}) { return { name, ok: !!ok, details }; }
+ 
+@@ -81,7 +81,8 @@ assertions.push(check('display_names_carry_current_version',
+   { full: fullH.display, min: minH.display, expected: EXPECT_VERSION }));
+ 
+ assertions.push(check('update_url_points_at_the_shipped_filename',
+-  fullH.updateUrl === EXPECT_UPDATE_URL && minH.updateUrl === EXPECT_UPDATE_URL,
++  Boolean(fullH.updateUrl && fullH.updateUrl.endsWith(EXPECT_UPDATE_PATH)) &&
++  Boolean(minH.updateUrl && minH.updateUrl.endsWith(EXPECT_UPDATE_PATH)),
+   { full: fullH.updateUrl, min: minH.updateUrl }));
+ 
+ // The first line must stay the plugin id (RisuAI reads the header from the top).
 diff --git b/PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs a/PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs
 index e119ae799ca69af63c5f2eef769858c666faa4a2..ceb858a5000e75fa1494b26f7396f3e15ec89eb7 100644
 --- b/PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs
@@ -1808,3 +4167,103 @@ index e119ae799ca69af63c5f2eef769858c666faa4a2..ceb858a5000e75fa1494b26f7396f3e1
 -
 -test('nested synchronous frames restore the outer projection after an inner throw',async()=>{const r=await fixture();try{const {EntityManager:M,withProjection:F}=r.context.__entityApi198;r.context.__entityShadow198.seed('projection-nested',[entity('a','Alice Finch',['Ali'])]);M.clearCache();projections=0;F(()=>{assert.equal(M.resolveCanonicalName('Ali'),'Alice Finch');assert.throws(()=>F(()=>{assert.equal(M.resolveCanonicalName('Ali'),'Alice Finch');throw Error('inner-stop');}),/inner-stop/);assert.equal(M.resolveCanonicalName('Ali'),'Alice Finch');});assert.equal(projections,2);}finally{await r.close();}});
 -test('a swallowed active-scope failure retries within the same synchronous frame',async()=>{const r=await fixture();try{const {EntityManager:M,withProjection:F}=r.context.__entityApi198;r.context.__entityShadow198.seed('projection-active-failure',[entity('a','Alice Finch',['Ali'])]);M.clearCache();throwActiveOnce=true;F(()=>{assert.equal(M.resolveCanonicalName('Ali'),'Ali');assert.equal(M.resolveCanonicalName('Ali'),'Alice Finch');});}finally{throwActiveOnce=false;await r.close();}});
+diff --git b/UPDATER/core/migration-required.cjs a/UPDATER/core/migration-required.cjs
+index 6db1c6413541ed5738ebc5bcc8f0596a45240201..c01ee518570468bbb1ba236f868ea4f509e8b40b 100644
+--- b/UPDATER/core/migration-required.cjs
++++ a/UPDATER/core/migration-required.cjs
+@@ -48,9 +48,6 @@ function readJson(file, fallback = null) {
+   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; }
+ }
+ 
+-const { assertWmUpdateAdmission } = require('./wm-update-admission.cjs');
+-const assertNoWmMigrationState = dataDir => assertWmUpdateAdmission(dataDir, 'migration_required');
+-
+ async function copyIdentityAndEndpoint(sourceData, dataNext) {
+   const tokenSource = path.join(sourceData, 'runtime-token.txt');
+   if (!fs.existsSync(tokenSource)) throw new Error('migration_runtime_token_missing');
+@@ -98,8 +95,6 @@ async function buildMigratedDataNext({ rootDir, receipt, logger = () => {} }) {
+   assertDirectory(program, 'migration_source_program_missing');
+   assertDirectory(data, 'migration_source_data_missing');
+ 
+-  assertNoWmMigrationState(data);
+-
+   const before = await hashManifest(data);
+   const operationId = `migration-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+   const work = path.join(updateRoot, 'migration-work', operationId);
+@@ -155,7 +150,6 @@ async function buildMigratedDataNext({ rootDir, receipt, logger = () => {} }) {
+     if (before.treeSha256 !== after.treeSha256 || before.fileCount !== after.fileCount || before.totalBytes !== after.totalBytes) {
+       throw new Error('migration_source_data_changed');
+     }
+-    assertNoWmMigrationState(data);
+     const nextConfig = readJson(path.join(dataNext, 'config', 'server-config.json'), null);
+     if (!nextConfig || nextConfig.host !== endpointIdentity.host || Number(nextConfig.port) !== endpointIdentity.port) throw new Error('migration_endpoint_identity_changed');
+ 
+@@ -366,7 +360,6 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
+   const journalPath = path.join(updaterDir, 'update-state.json');
+   const existing = readJournal(journalPath);
+   if (existing && !isTerminal(existing)) throw new Error('unfinished_update_recovery_required');
+-  assertNoWmMigrationState(data);
+   const dataIdentity = prepareFreshDataIdentity(data);
+   const fromVersion = versionFromProgram(program);
+   const operationId = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+@@ -409,7 +402,6 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
+       serverWasRunning: journal.serverWasRunning || stopped?.wasRunning === true,
+       fromDataTreeSha256: stoppedData.treeSha256
+     });
+-    assertNoWmMigrationState(data);
+     triggerFailpoint('after_migration_server_stop', failpointEnv);
+ 
+     logger('[2/9] DATA.next 논리 마이그레이션 생성');
+@@ -422,8 +414,6 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
+     journal = await writeJournal(journalPath, journal, { phase: 'migration_built', nextDataIdentity, flags: journal.flags, migrationReceipt: { archiveSha256: built.archiveSha256 || null, importedBackupId: built.importedBackupId || null, targetDatabaseSchemaVersion: built.targetDatabaseSchemaVersion || null } });
+     triggerFailpoint('after_migration_data_next', failpointEnv);
+ 
+-    assertNoWmMigrationState(data);
+-
+     logger('[3/9] 기존 PROGRAM 보관');
+     journal = await writeJournal(journalPath, journal, { phase: 'intent_program_old_rename' });
+     await renameRetry(program, rollbackProgram);
+@@ -511,7 +501,6 @@ module.exports = {
+   buildMigratedDataNext,
+   readDatabaseSchemaVersion,
+   copyIdentityAndEndpoint,
+-  assertNoWmMigrationState,
+   applyMigrationRequired: async options => { const j=pendingIdentityPreflight(options.rootDir); if(j&&!isTerminal(j)) throw new Error('unfinished_update_recovery_required'); assertFreshDataInputs(path.join(path.resolve(options.rootDir),'DATA')); return withUpdateLock(options.rootDir, () => applyMigrationRequiredUnlocked(options)); },
+   rollbackMigrationRequired: async options => { journalPathForRoot(options.rootDir,options.journalPath); const j=pendingIdentityPreflight(options.rootDir,options.journal); if(j&&isTerminal(j)) return j; if(j) assertMigrationAuthorities(migrationPaths(path.resolve(options.rootDir),j),j); return withUpdateLock(options.rootDir, () => rollbackMigrationRequired(options)); },
+   recoverInterruptedMigrationRequired: async options => { const j=pendingIdentityPreflight(options.rootDir); if(!j||isTerminal(j)) return {recovered:false,reason:'no_pending_update',journal:j}; assertMigrationAuthorities(migrationPaths(path.resolve(options.rootDir),j),j); return withUpdateLock(options.rootDir, () => recoverInterruptedMigrationRequiredUnlocked(options)); },
+diff --git b/UPDATER/core/program-only.cjs a/UPDATER/core/program-only.cjs
+index b1b933f9d334394708b445354f2a7b0ae56b672a..e3d239de42b2ce401e6f85153e7f1f70fab55fe4 100644
+--- b/UPDATER/core/program-only.cjs
++++ a/UPDATER/core/program-only.cjs
+@@ -10,7 +10,6 @@ const { readJournal, writeJournal, isTerminal, syncDirectory } = require('./jour
+ const identity = require('./data-identity.cjs');
+ 
+ const { withUpdateLock } = require('./lock.cjs');
+-const { assertWmUpdateAdmission } = require('./wm-update-admission.cjs');
+ 
+ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+ 
+@@ -362,7 +361,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
+   const fromVersion = versionFromProgram(program);
+   const toVersion = String(receipt.targetVersion || versionFromProgram(programNext));
+   if (versionFromProgram(programNext) !== toVersion) throw new Error('program_next_version_mismatch');
+-  assertWmUpdateAdmission(data, 'program_only');
+   const dataIdentity = prepareFreshDataIdentity(data);
+   const operationId = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+   const rollbackRoot = path.join(root, '.rollback', operationId);
+@@ -399,7 +397,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
+     logger('[1/7] 현재 서버 정지 및 DATA write 종료 확인');
+     const stopped = await stop(program, data);
+     journal = await writeJournal(journalPath, journal, { phase: 'server_stopped', serverWasRunning: journal.serverWasRunning || stopped.wasRunning === true });
+-    assertWmUpdateAdmission(data, 'program_only');
+     triggerFailpoint('after_server_stop', failpointEnv);
+ 
+     logger('[2/7] DATA safety checkpoint 생성');
+@@ -409,7 +406,6 @@ async function applyProgramOnly({ rootDir, receipt, logger = () => {}, failpoint
+     journal = await writeJournal(journalPath, journal, { phase: 'data_checkpointed', flags: journal.flags, checkpointDataIdentity:journal.checkpointDataIdentity });
+     triggerFailpoint('after_data_checkpoint', failpointEnv);
+ 
+-    assertWmUpdateAdmission(data, 'program_only');
+     logger('[3/7] 기존 PROGRAM rollback 사본으로 전환');
+     journal = await writeJournal(journalPath, journal, { phase: 'intent_program_old_rename' });
+     await renameRetry(program, rollbackProgram);

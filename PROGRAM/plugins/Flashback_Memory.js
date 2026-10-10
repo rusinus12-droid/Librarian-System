@@ -303,7 +303,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
 //@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Flashback-Memory/refs/heads/main/Flashback%20Memory.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
 //@arg mode string off|normal; blank uses normal
 //@arg embedding_provider string openai|voyageai|voyage_context|gemini|gemini-embedding|cohere|jina|mistral|bedrock|dashscope|ollama|lmstudio|localai|tei|vertex|vertex-embedding|openai_compat|openai_compat_local|custom_http|custom; blank leaves model embedding unconfigured; legacy hash is migration-only
 //@arg embedding_url string Embedding endpoint/base URL; blank uses the selected provider default
@@ -45660,7 +45660,7 @@ ${cleanedText}`, 80),
       title: '기억 유지보수',
       description: '기억 상태 진단과 안전한 유지보수를 진행합니다.'
     }),
-    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'원문 수정 동기화',description:'완료된 원문 수정은 요청 전에 자동 반영되며, 최근 기록에서 예외와 삭제를 관리합니다.'}),
+    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'원문 수정 동기화',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
     restore: Object.freeze({eyebrow:'MEMORY RESTORE',title:'기억 복원',description:'JSON 기억 백업과 복원·채팅 이사를 관리합니다.'}),
     worldline: Object.freeze({ eyebrow: 'WORLDLINE CONTINUITY', title: '세계선', description: '채팅 분기 근거, 원문 승계 기록과 턴 연속성을 읽기 전용으로 확인합니다.' }),
     storage: Object.freeze({

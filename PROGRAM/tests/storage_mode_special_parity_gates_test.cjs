@@ -9,24 +9,29 @@ let passed=0;const ok=(label,condition)=>{assert.ok(condition,label);passed+=1;}
 const scope=chat=>({scopeId:`char:c1|chat:${chat}`,scopeKey:`char:c1|chat:${chat}`,characterId:'c1',canonicalCharacterId:'c1',chatId:chat,canonicalChatId:chat,aliases:[chat]});
 const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],['libra','libra']];
 
+const SERVER_OWNERS=OWNERS.filter(([namespace])=>namespace!=='lia');
 (async()=>{
  // Gate: mirror keeps local/server logical digests in agreement for the same data.
- for(const [namespace] of OWNERS){
+ for(const [namespace] of SERVER_OWNERS){
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-mirror-'));
   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
   const addr=await app.listen();
   const store=createInstrumentedStore();
   const backend=createBackendRequestCounter(fetch);
-  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['mirror.']});
+  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['mirror.']});
   const bridge=handle.bridge;
   try{
    bridge.createPluginStorageProxy(store);
    await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,store,scope('child'));
+   ok(`${namespace}: legacy mirror requires migration`,(await bridge.getScopeMode(scope('child'))).migrationRequired===true);
+   ok(`${namespace}: mirror is unselectable`,bridge.getStorageModeContract().mirrorSelectable===false);
+   await assert.rejects(()=>bridge.setScopeMode(scope('child'),'mirror'),/mirror_is_transition_only/);
    const proxy=bridge.createPluginStorageProxy(store);
    await proxy.setItem('mirror.agree',JSON.stringify({v:'same'}));
    const localValue=await store.values.get([...store.values.keys()].find(k=>String(k).includes('mirror.agree')));
    const listing=await bridge.serverKeys('plugin','mirror.');
    const serverKey=listing.keys.find(k=>String(k).includes('mirror.agree'));
+   ok(`${namespace}: migrated mirror key exists before readback`,typeof serverKey==='string'&&serverKey.length>0);
    const remote=await bridge.serverGet('plugin',serverKey);
    // The mirror stores the same logical value on both sides.
    const serverValue=typeof remote.value==='string'?remote.value:JSON.stringify(remote.value);
@@ -36,13 +41,13 @@ const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],
  }
 
  // Gate: server_only authoritative write count is zero for canonical data.
- for(const [namespace] of OWNERS){
+ for(const [namespace] of SERVER_OWNERS){
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-serveronly-'));
   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
   const addr=await app.listen();
   const store=createInstrumentedStore();
   const backend=createBackendRequestCounter(fetch);
-  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['serveronly.']});
+  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['serveronly.']});
   const bridge=handle.bridge;
   try{
    bridge.createPluginStorageProxy(store);
@@ -64,11 +69,11 @@ const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],
   const addr=await app.listen();
   const store=createInstrumentedStore();
   const backend=createBackendRequestCounter(fetch);
-  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['explicit.']});
+  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['explicit.']});
   const bridge=handle.bridge;
   try{
    bridge.createPluginStorageProxy(store);
-   await bridge.setScopeMode(scope('parent'),'server_only');
+   await bridge.setScopeMode(scope('parent'),namespace==='lia'?'plugin_only':'server_only');
    await bridge.setScopeMode(scope('child'),'plugin_only',{recordExplicit:true});
    const childMode=await bridge.getScopeMode(scope('child'));
    ok(`${namespace}: explicit child mode recorded`,childMode.mode==='plugin_only'&&childMode.explicit===true);
@@ -84,11 +89,17 @@ const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],
  for(const [namespace] of OWNERS){
   const store=createInstrumentedStore();
   const backend=createBackendRequestCounter(fetch);
-  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:'http://127.0.0.1:1',fetchImpl:backend.fetch,pluginPrefixes:['local.']});
+  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:'http://127.0.0.1:1',fetchImpl:backend.fetch,pluginPrefixes:['local.']});
   const bridge=handle.bridge;
   try{
    bridge.createPluginStorageProxy(store);
    await bridge.setScopeMode(scope('child'),'plugin_only');
+   if(namespace==='lia'){
+    const before=[...store.values];
+    for(const mode of ['server_only','mirror']) await assert.rejects(()=>bridge.setScopeMode(scope('child'),mode),/LOCAL_ONLY_OWNER_POLICY/);
+    assert.deepEqual([...store.values],before,'local-only refusals preserve local data/registry');
+    ok('lia: owner policy remains explicit',(await bridge.getScopeMode(scope('child'))).modeOrigin==='owner_policy');
+   }
    const proxy=bridge.createPluginStorageProxy(store);
    await proxy.setItem('local.only','L');
    await proxy.getItem('local.only');
@@ -98,13 +109,13 @@ const OWNERS=[['flashback','standard'],['hayaku','standard'],['lia','standard'],
  }
 
  // Gate: retired local bytes are never recalled in server_only (R02 parity).
- for(const [namespace] of OWNERS){
+ for(const [namespace] of SERVER_OWNERS){
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'special-parity-retired-'));
   const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir,autoBackup:false});
   const addr=await app.listen();
   const store=createInstrumentedStore();
   const backend=createBackendRequestCounter(fetch);
-  const handle=buildBridge({namespace,owner:namespace,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['retired.']});
+  const handle=buildBridge({namespace,owner:namespace,storagePolicy:namespace==='lia'?'local_only':undefined,store,currentScope:()=>scope('child'),resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(currentScope||{}),scopedContainer:true}),url:`http://127.0.0.1:${addr.port}`,fetchImpl:backend.fetch,pluginPrefixes:['retired.']});
   const bridge=handle.bridge;
   try{
    bridge.createPluginStorageProxy(store);

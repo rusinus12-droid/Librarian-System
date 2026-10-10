@@ -42,13 +42,13 @@ const guarded = (name, fn) => { try { fn(); results.push(name); } catch (error) 
 
 // ── 1. the general screen must not mount the source-edit panel ───────────────────────────────
 const generalSource = between('const buildGeneralSettingsPanel =', 'const buildSharedSettingsShellPanel =');
-test('buildGeneralSettingsPanel does not call buildSourceEditConsentPanel', () => {
-  assert.ok(!/buildSourceEditConsentPanel\s*\(/.test(generalSource),
+test('buildGeneralSettingsPanel does not duplicate analysis-input controls', () => {
+  assert.ok(!/(?:buildAnalysisInputPanel|mountSourceInputControls)\s*\(/.test(generalSource),
     'the general screen must not mount the source-edit panel — that is the duplicate');
 });
 
 test('the source-edit route and its sidebar entry still exist', () => {
-  assert.ok(/section === 'source_edits'\)\s*return buildSourceEditConsentPanel\(\)/.test(source),
+  assert.ok(/section === 'source_edits'\)\s*return buildAnalysisInputPanel\(\)/.test(source),
     'the independent settings route must survive');
   assert.ok(/'source_edits'/.test(source), 'the sidebar/registry entry must survive');
   const sidebar = source.match(/\{id:'source_edits'[^}]*\}/);

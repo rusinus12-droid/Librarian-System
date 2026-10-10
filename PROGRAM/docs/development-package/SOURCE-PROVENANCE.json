@@ -1,14 +1,14 @@
 {
   "schema": "librarian.frozen-development-source-provenance.v1",
-  "scheduledForUtc": "2026-10-10T01:45:10+00:00",
-  "captureStartedAtUtc": "2026-10-10T01:46:15.090093+00:00",
-  "captureCompletedAtUtc": "2026-10-10T01:46:18.421677+00:00",
-  "sourceContentIdentity": "f406c9dd64abb1be13065cb51c4e07dcb5de5f63c880eadf13b85f60016b946d",
+  "scheduledForUtc": "2026-10-10T03:45:10+00:00",
+  "captureStartedAtUtc": "2026-10-10T03:46:44.524038+00:00",
+  "captureCompletedAtUtc": "2026-10-10T03:46:46.669618+00:00",
+  "sourceContentIdentity": "6cb95a6aab6536b859a6613c06c701e89456061517f8716ce0b94910e71f18e1",
   "git": {
     "branch": "dev/unified-lib-20261009",
     "head": "f64ef26e1bc6dcd94e160ee4be8d7b66356079a7",
     "workingTreeDirty": true,
-    "statusPorcelainV1": " M PROGRAM/plugins/LIBRA_World_Manager.js\n M PROGRAM/wm/src/parts/01-core-runtime-compat-state-debug.js\n M PROGRAM/wm/src/parts/01f-lore-consolidation.js\n M PROGRAM/wm/src/parts/01g-lore-concurrent-persistence.js\n M PROGRAM/wm/src/parts/03a-compact-memory-core.js\n M PROGRAM/wm/src/parts/08b-entity-identity-schema.js\n M PROGRAM/wm/src/parts/10d-hme-scope-index.js\n M PROGRAM/wm/src/parts/10f-hybrid-shortlist-lore-embedding.js\n M PROGRAM/wm/src/parts/13d-after-request-worker-unload.js\n M PROGRAM/wm/src/wm-manual-storage.source.js\n M PROGRAM/wm/tools/build-libra-runtime-factory.cjs\n M PROGRAM/wm/tools/factory-edits.cjs\n M PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_integration_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_owner_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_persist_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_save_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_test.cjs\n?? PROGRAM/wm/tools/wm-owned-preparation-guard.test.cjs\n"
+    "statusPorcelainV1": " M 0_설치_안내.txt\n M PROGRAM/PACKAGE_CONTENTS.txt\n M PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md\n M PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json\n M PROGRAM/plugins/Flashback_Memory.js\n M PROGRAM/plugins/GRADIA.js\n M PROGRAM/plugins/HAYAKU_Locator_Continuity.js\n M PROGRAM/plugins/LIA_Persona_Linker.js\n M PROGRAM/plugins/LIBRA.js\n M PROGRAM/plugins/LIBRA_World_Manager.js\n M PROGRAM/plugins/RETRACE.js\n M PROGRAM/sdk/GradiaEvidenceBudget.source.js\n M PROGRAM/tests/cross_platform_launcher_test.cjs\n M PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs\n M PROGRAM/tests/gradia/server-read-adapter.test.cjs\n M PROGRAM/tests/gradia/suite-inventory.json\n M PROGRAM/tests/helpers/storage_mode_feature_harness.cjs\n M PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs\n M PROGRAM/tests/librarian_system_brand_contract_test.cjs\n M PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs\n M PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs\n M PROGRAM/tests/plugin_version_byte_provenance_test.cjs\n M PROGRAM/tests/plugin_version_provenance_producer_test.cjs\n M PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs\n M PROGRAM/tests/storage_mode_special_parity_gates_test.cjs\n M PROGRAM/tests/storage_modes_test.cjs\n M PROGRAM/tools/build_distribution.cjs\n M PROGRAM/tools/build_plugins.cjs\n M PROGRAM/tools/plugin_version_provenance.cjs\n M PROGRAM/wm/src/parts/00-plugin-shell-and-args.js\n M PROGRAM/wm/src/parts/01-core-runtime-compat-state-debug.js\n M PROGRAM/wm/src/parts/01f-lore-consolidation.js\n M PROGRAM/wm/src/parts/01g-lore-concurrent-persistence.js\n M PROGRAM/wm/src/parts/03a-compact-memory-core.js\n M PROGRAM/wm/src/parts/08b-entity-identity-schema.js\n M PROGRAM/wm/src/parts/10d-hme-scope-index.js\n M PROGRAM/wm/src/parts/10f-hybrid-shortlist-lore-embedding.js\n M PROGRAM/wm/src/parts/13d-after-request-worker-unload.js\n M PROGRAM/wm/src/wm-manual-storage.source.js\n M PROGRAM/wm/tools/build-libra-runtime-factory.cjs\n M PROGRAM/wm/tools/factory-edits.cjs\n M PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs\n M PROGRAM/wm/tools/libra_plugin_identity_test.cjs\n M PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs\n M PROGRAM/처음_읽어주세요.txt\n M UPDATER/core/migration-required.cjs\n M UPDATER/core/program-only.cjs\n?? PROGRAM/docs/gradia/HYPAV3-REMOVAL-20261010.md\n?? PROGRAM/tests/distribution_runtime_dependency_closure_test.cjs\n?? PROGRAM/tests/gradia/evidence-budget-structured-v2.test.cjs\n?? PROGRAM/tests/gradia/hypav3-removal.test.cjs\n?? PROGRAM/tests/plugin_update_url_headers_test.cjs\n?? PROGRAM/tests/remote_update_wm_migration_admission_test.cjs\n?? PROGRAM/tools/verify_runtime_archive.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_integration_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_owner_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_persist_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_save_test.cjs\n?? PROGRAM/wm/tools/libra_owned_normalization_test.cjs\n?? PROGRAM/wm/tools/wm-owned-preparation-guard.test.cjs\n?? UPDATER/core/wm-update-admission.cjs\n"
   },
   "scope": "Current source inputs accepted by the release-builder source/updater allowlists after narrow private-history exclusions; no runtime DATA or installed dependencies",
   "sourceFiles": [
@@ -27,7 +27,7 @@
     {
       "path": "0_설치_안내.txt",
       "bytes": 3457,
-      "sha256": "d99ee749444b7500dc12eb940d683fc297521ae7500b0f0dd5894deabf20d174",
+      "sha256": "c83786155330e1290cf938ee7a5d0a70d790ee9c1e6d8b43d119c8a48168c004",
       "mode": 384
     },
     {
@@ -63,7 +63,7 @@
     {
       "path": "PROGRAM/PACKAGE_CONTENTS.txt",
       "bytes": 3623,
-      "sha256": "cd6f50532c00b3998491f3cc1203464a93a45c96f8b78a8ebc4506a17ee61b66",
+      "sha256": "874e310e8f8bfe24027a7cbfc0d23e757c79423386ceb8756ff413fdbe0158b7",
       "mode": 384
     },
     {
@@ -1417,6 +1417,12 @@
       "mode": 420
     },
     {
+      "path": "PROGRAM/docs/gradia/HYPAV3-REMOVAL-20261010.md",
+      "bytes": 1530,
+      "sha256": "13ef5497d39c5a88074a3516196e9b7a7bdfbae1067062d58059a808cdc16847",
+      "mode": 420
+    },
+    {
       "path": "PROGRAM/docs/gradia/LIB-GRADIA-IMPLEMENTATION-PLAN-20261007.md",
       "bytes": 6070,
       "sha256": "e3e0f97f71b3d4c9601b6fb313b2573a1d563d142c66233365d9b26d88173df9",
@@ -1448,8 +1454,8 @@
     },
     {
       "path": "PROGRAM/docs/gradia/TOKEN-ACCOUNTING-PROFILE.md",
-      "bytes": 5124,
-      "sha256": "9d51ba80b874a87a964592804f6282c4f629f4cffb1feae1da7c54cfbb251bc2",
+      "bytes": 6994,
+      "sha256": "1b2ef26bbdf910ec85cffc373fe49f9650d689c11c9f8d4eb0e6d37248a08832",
       "mode": 420
     },
     {
@@ -1478,8 +1484,8 @@
     },
     {
       "path": "PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json",
-      "bytes": 11674,
-      "sha256": "1a32e545ea4810ca500a859e245933bba4ae951017bf93d2ee568a94eba3ccd0",
+      "bytes": 12004,
+      "sha256": "a7aa7ad82e668bd7313a59b1ee4f224b55f95318fe40704d90bbb19eced39dbf",
       "mode": 384
     },
     {
@@ -1730,44 +1736,44 @@
     },
     {
       "path": "PROGRAM/plugins/Flashback_Memory.js",
-      "bytes": 3292015,
-      "sha256": "722daaf87adfd9fc10b276e175c317c75fc55cc9e03237ca282f3e66391cf90c",
+      "bytes": 3292044,
+      "sha256": "10eb887afb55f5381db651a8dff4f89f3b047317674f804f19e83cc6aab39349",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/GRADIA.js",
-      "bytes": 3064720,
-      "sha256": "b038d6448084d68310b6b09fd6026aee2fa26ff1ba9e171d780a41dc865625db",
+      "bytes": 3035977,
+      "sha256": "e7b98fa6b20a789077ce4099211551c478a4feb2c274755c1a0ff7b5994f73cb",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/HAYAKU_Locator_Continuity.js",
-      "bytes": 3960857,
-      "sha256": "e399ac58a25451e116d10595d354fa14b67a17fba8c88701a703a500f0e8a178",
+      "bytes": 3960875,
+      "sha256": "21b935ccc01bacfc57d14a906b40917339bf0c23aa8d522630cc2cf71c1b12f6",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/LIA_Persona_Linker.js",
-      "bytes": 1874390,
-      "sha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
+      "bytes": 1874429,
+      "sha256": "2860a6479b8fcf7ed327a9e2151bdf8d138eea830c33aec344390654f89dbca3",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/LIBRA.js",
-      "bytes": 5769951,
-      "sha256": "0a2aac0ba61eb361ad9ea347dd94d852a2e6388a288652ccec2ccf18239a5c50",
+      "bytes": 5769978,
+      "sha256": "816802d4b680bb0ca39f0344e6e5bb825e89a2cf72a6c0a07a668e35f3ff7185",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/LIBRA_World_Manager.js",
-      "bytes": 6656500,
-      "sha256": "78e0e8b9804dc853fad55af056cdcddd4695988f9df485a6974acdd3f3ebd337",
+      "bytes": 6656517,
+      "sha256": "65d2e541c07199f4901d1f87f94ec5d30aada37e0beefd39a57c5771e9322fb7",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/RETRACE.js",
-      "bytes": 1202737,
-      "sha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
+      "bytes": 1202762,
+      "sha256": "3cc6626bd108eb645efc27d8140652e126c72d6af51e8e579b53caf8cfef05ac",
       "mode": 420
     },
     {
@@ -1796,8 +1802,8 @@
     },
     {
       "path": "PROGRAM/sdk/GradiaEvidenceBudget.source.js",
-      "bytes": 10300,
-      "sha256": "55a90dcb2d8817380f72b68c241e44721f5333f19a317141fa2d7fbb31503882",
+      "bytes": 13070,
+      "sha256": "ec74f563c680bf3ddcb93484ccd1f45fc63690941223c0a73e6951798546dfef",
       "mode": 420
     },
     {
@@ -2978,8 +2984,8 @@
     },
     {
       "path": "PROGRAM/tests/cross_platform_launcher_test.cjs",
-      "bytes": 6336,
-      "sha256": "bb5163ed62c117a5e42a78888f933160f843d2d937324880a83580b261958556",
+      "bytes": 6533,
+      "sha256": "13822e88a93b1bc7a12b299608829ed444657bfd90913c6290bd6ed7e1c15676",
       "mode": 384
     },
     {
@@ -3017,6 +3023,12 @@
       "bytes": 7025,
       "sha256": "e0928f57e0db2ecd6ebc77bec4a2940546c04414a7565f0040a668df3da92df5",
       "mode": 384
+    },
+    {
+      "path": "PROGRAM/tests/distribution_runtime_dependency_closure_test.cjs",
+      "bytes": 3710,
+      "sha256": "4c8a78da9bd8df5e61a74ae03477e1e46d4ef297af094aa00f97f66a40f9ada9",
+      "mode": 420
     },
     {
       "path": "PROGRAM/tests/distribution_updater_migration_file_test.cjs",
@@ -4466,8 +4478,8 @@
     },
     {
       "path": "PROGRAM/tests/flashback_worldline_workspace_v129_runtime_test.cjs",
-      "bytes": 4440,
-      "sha256": "4225ae9360b62548477194ec9251dc36f8c382115f4fbace12d177265dae5d3e",
+      "bytes": 5040,
+      "sha256": "7466ce4d8f548ea08c21982d10151010f61fecd5c9cd475fea37353ac28dde81",
       "mode": 384
     },
     {
@@ -4531,6 +4543,12 @@
       "mode": 420
     },
     {
+      "path": "PROGRAM/tests/gradia/evidence-budget-structured-v2.test.cjs",
+      "bytes": 4866,
+      "sha256": "97a166cdffeb865e520ce68d41284f92c2d1f4c6b839bedfe3ef9532ad44c107",
+      "mode": 420
+    },
+    {
       "path": "PROGRAM/tests/gradia/evidence-budget-v2.test.cjs",
       "bytes": 12505,
       "sha256": "0015ad35806da84c92ea34162b72fe41159ea827da64e3d280a1c0c6c028e625",
@@ -4588,6 +4606,12 @@
       "path": "PROGRAM/tests/gradia/host.cjs",
       "bytes": 2187,
       "sha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f",
+      "mode": 420
+    },
+    {
+      "path": "PROGRAM/tests/gradia/hypav3-removal.test.cjs",
+      "bytes": 9211,
+      "sha256": "821002f0785a35ea38efc64e36cb7fed1818942599028dfcbbbe5a327ba8d03a",
       "mode": 420
     },
     {
@@ -4652,8 +4676,8 @@
     },
     {
       "path": "PROGRAM/tests/gradia/server-read-adapter.test.cjs",
-      "bytes": 8230,
-      "sha256": "6a80a1f798cb33eadd6e1f3c6ba2927d485c0b87772433606c2fa58e38d3516b",
+      "bytes": 8632,
+      "sha256": "ef3904952e73f5c023fc0e731e7668b544e3d0c51e668ffe2c7c3e43396d6a1d",
       "mode": 420
     },
     {
@@ -4670,8 +4694,8 @@
     },
     {
       "path": "PROGRAM/tests/gradia/suite-inventory.json",
-      "bytes": 668,
-      "sha256": "ae8a29011bc67a3abde12796af7c57f3ecec15c83afdca0c39d58a93bc9f3486",
+      "bytes": 745,
+      "sha256": "331f9f8fd1ffb424030e04c03d20abeda1e9a81ba37fdc9f89ea886c5a4a30dc",
       "mode": 420
     },
     {
@@ -5774,8 +5798,8 @@
     },
     {
       "path": "PROGRAM/tests/helpers/storage_mode_feature_harness.cjs",
-      "bytes": 9702,
-      "sha256": "f0086b6a901b07817634b606efd22a506c0da7acd37ed9e9d7d0c61a6992d7b7",
+      "bytes": 9736,
+      "sha256": "f8d6013e2829392a23d5ce395daf45c66835e207ae0e169ce034a5e774de3f98",
       "mode": 384
     },
     {
@@ -8138,8 +8162,8 @@
     },
     {
       "path": "PROGRAM/tests/libra_settings_diagnostics_consolidation_test.cjs",
-      "bytes": 9613,
-      "sha256": "1d95166e5ccdc0a941543b089191cc336b453464a07838135a121df59ddc0040",
+      "bytes": 9635,
+      "sha256": "26795aefabe0eacd09d9a00a9fa3fa3ec3798c2bac2f5f6168d66135b9161941",
       "mode": 384
     },
     {
@@ -8582,8 +8606,8 @@
     },
     {
       "path": "PROGRAM/tests/librarian_system_brand_contract_test.cjs",
-      "bytes": 2676,
-      "sha256": "78950b9eeafcb886d4dd7515045ca131a07d9725298a463cc246c8b8ffc2afc4",
+      "bytes": 3107,
+      "sha256": "6dac03b5858a5a25cc20da0bda3cef0c3ae6b5d6539e4ee97190a5ef3944a44b",
       "mode": 384
     },
     {
@@ -8756,8 +8780,8 @@
     },
     {
       "path": "PROGRAM/tests/native_branch_lia_storage_modes_runtime_test.cjs",
-      "bytes": 3521,
-      "sha256": "1d396f7e9ee716d768a8bc5f1848c14c19bc87e2a41a52d08ab06e3a2d56aaf3",
+      "bytes": 5225,
+      "sha256": "9f0eb894967f689fb2ce1579e7c3db0a57ac8a8513a060bdf16ff8e5cce3792c",
       "mode": 384
     },
     {
@@ -8852,8 +8876,8 @@
     },
     {
       "path": "PROGRAM/tests/native_branch_storage_modes_matrix_test.cjs",
-      "bytes": 1055,
-      "sha256": "04a9cf70e07518f40bcd39219de025804664de9f9876474a2256c4984fed082e",
+      "bytes": 1589,
+      "sha256": "23400819a3f3693b8a73ed18e1090e8f5c13085287f523da2052bbfa35f5b922",
       "mode": 384
     },
     {
@@ -8923,9 +8947,15 @@
       "mode": 420
     },
     {
+      "path": "PROGRAM/tests/plugin_update_url_headers_test.cjs",
+      "bytes": 2216,
+      "sha256": "814a56046617205a779e3569ed62e9816642efab31f6ac24ea798b5501d03589",
+      "mode": 420
+    },
+    {
       "path": "PROGRAM/tests/plugin_version_byte_provenance_test.cjs",
-      "bytes": 1931,
-      "sha256": "40ba2a10d511572fafaf6e47843b60cfb96c38f30b54fe15388aa19302d93ca0",
+      "bytes": 1837,
+      "sha256": "9aa0e63fbb6953d2cce895c134b26911160689c5763f5286dd22e977bf7c0889",
       "mode": 384
     },
     {
@@ -8936,8 +8966,8 @@
     },
     {
       "path": "PROGRAM/tests/plugin_version_provenance_producer_test.cjs",
-      "bytes": 13057,
-      "sha256": "53b57b49c07f1a7596898d65ed34a9a62d108db44ac41b49355769d28526bca8",
+      "bytes": 15353,
+      "sha256": "bdae1f55566379f5b044465a549edb41023a7abdb6d41eed9c2c94f7e703da38",
       "mode": 384
     },
     {
@@ -9335,6 +9365,12 @@
       "bytes": 1803,
       "sha256": "8a0e008741e7473c262737c120dc48f06df46041af207502555972c661d41f61",
       "mode": 384
+    },
+    {
+      "path": "PROGRAM/tests/remote_update_wm_migration_admission_test.cjs",
+      "bytes": 7888,
+      "sha256": "170a3805aa3fda40f26a20717f09da58d8d325ec3dcbe3f97d0ee09f5e1fe8ae",
+      "mode": 420
     },
     {
       "path": "PROGRAM/tests/reset_owner_reconnect_test.cjs",
@@ -10280,8 +10316,8 @@
     },
     {
       "path": "PROGRAM/tests/storage_mode_owner_parity_audit_test.cjs",
-      "bytes": 11015,
-      "sha256": "8b177ae8108f0b34fa5c7be36fd5cc1f350a8aee98fc5b9de02191e18c5602af",
+      "bytes": 12343,
+      "sha256": "528404b975b0637c7c0b8228064dc971844f77754b67cdadc39aed62ed41c880",
       "mode": 384
     },
     {
@@ -10292,8 +10328,8 @@
     },
     {
       "path": "PROGRAM/tests/storage_mode_special_parity_gates_test.cjs",
-      "bytes": 9752,
-      "sha256": "43649fc26952997aecfafdc37f06156a0af2465faa8346aee372e8c9aea3b78c",
+      "bytes": 11023,
+      "sha256": "ea47f5e9c772161a71b085caef7dced89a189cc0b44fbe86d79210d56bca6ee2",
       "mode": 384
     },
     {
@@ -10304,8 +10340,8 @@
     },
     {
       "path": "PROGRAM/tests/storage_modes_test.cjs",
-      "bytes": 10887,
-      "sha256": "34190de8c8a51fd089b6f4bf54691a403609825298c1af9cf895a7cc8891490d",
+      "bytes": 11265,
+      "sha256": "1c6bc63f67cdb9b4109040e3a712af87bad0bf56cd91ad12c378cb006f04db29",
       "mode": 384
     },
     {
@@ -10922,8 +10958,8 @@
     },
     {
       "path": "PROGRAM/tools/build_distribution.cjs",
-      "bytes": 48812,
-      "sha256": "52514ea30a2d727520c7398ccbde74e3846dc9c09744787a1fbc9a9a5458a496",
+      "bytes": 49357,
+      "sha256": "02b1d09312c2b583297c61c1b0dc1355ef1d0da90ab79fd58d6280295b6516b1",
       "mode": 384
     },
     {
@@ -10934,8 +10970,8 @@
     },
     {
       "path": "PROGRAM/tools/build_plugins.cjs",
-      "bytes": 82519,
-      "sha256": "0e77dbbbc5ca00ae7ff83402ec55539f04cb8695e08d8597c05b36f8dd6d73d4",
+      "bytes": 82689,
+      "sha256": "6813b9cb2d8cd5807afe95380a28af0bf80ad7ca4637bf0012ed0f3098d0974b",
       "mode": 384
     },
     {
@@ -11102,8 +11138,8 @@
     },
     {
       "path": "PROGRAM/tools/plugin_version_provenance.cjs",
-      "bytes": 17596,
-      "sha256": "9f41ea3641a744f97b0642a167b0215d1f25f4825163db34dabe0c56cefea3e7",
+      "bytes": 19745,
+      "sha256": "b20b38f245a05dfb393e99143985987678f36e2f22c0e2c7d57b1ad97276de17",
       "mode": 384
     },
     {
@@ -11315,6 +11351,12 @@
       "bytes": 62984,
       "sha256": "48a500f800c0f38661aa23e06c9d51cc67bf99fdecffe58b4a17f7415011798f",
       "mode": 384
+    },
+    {
+      "path": "PROGRAM/tools/verify_runtime_archive.cjs",
+      "bytes": 4033,
+      "sha256": "b262ace7d9ab76bd7b45bf40f9deae0b464da94f8ac023af413679134d4a298e",
+      "mode": 420
     },
     {
       "path": "PROGRAM/tools/wm_source_catalog.cjs",
@@ -15266,8 +15308,8 @@
     },
     {
       "path": "PROGRAM/wm/src/parts/00-plugin-shell-and-args.js",
-      "bytes": 15308,
-      "sha256": "db753b520d9b3ef7338ac3972439505c5be32701bf496f7d54673fd44bcbebf7",
+      "bytes": 15325,
+      "sha256": "e5dd5d2e28d227e6dc70364ee011861083d6ef4318f95289c2f0ea9bbd5c763a",
       "mode": 420
     },
     {
@@ -17354,14 +17396,14 @@
     },
     {
       "path": "PROGRAM/wm/tools/libra_plugin_identity_portability_test.cjs",
-      "bytes": 3384,
-      "sha256": "f0f7c69e359ae7ece96b50b9380daa3ef6483a2b8c454e36ad7c078871917677",
+      "bytes": 3944,
+      "sha256": "3474af7020824fa49f32e549453f3102598fd4258976e9c7f7786de4e864cb6b",
       "mode": 420
     },
     {
       "path": "PROGRAM/wm/tools/libra_plugin_identity_test.cjs",
-      "bytes": 7219,
-      "sha256": "7cd97bbcaee75e328c10a3b3b22124c4487f7a6ac5edefc58192b84249abc5b8",
+      "bytes": 7237,
+      "sha256": "6e0cea4c6f58bfc2c337ca0df62fd08b63a23eb5de0558b6d3eaf2d8928f0b65",
       "mode": 420
     },
     {
@@ -19413,7 +19455,7 @@
     {
       "path": "PROGRAM/처음_읽어주세요.txt",
       "bytes": 3730,
-      "sha256": "9db09733f4ec562b70e2c93b85c26b29c2abfaaf492ceb0deb53875fb06e101b",
+      "sha256": "396d9efc4b62e09d1e4fefa3c6cefa378961130d98e9e3141411d728f61dd9d6",
       "mode": 384
     },
     {
@@ -19460,14 +19502,14 @@
     },
     {
       "path": "UPDATER/core/migration-required.cjs",
-      "bytes": 30996,
-      "sha256": "d521062abf9c498563aeb3df8cfcf3ffa6d5a595dab27f38683c56b1546376f8",
+      "bytes": 31377,
+      "sha256": "5316c9b8b27a9ebef833110b67354cad03d483222836f49df5b5cc1ca5ea07a7",
       "mode": 384
     },
     {
       "path": "UPDATER/core/program-only.cjs",
-      "bytes": 27513,
-      "sha256": "95e1104df60af2bd0fedb340f54719581a210dede3bdc3a3f3d3cc4305fc1dec",
+      "bytes": 27738,
+      "sha256": "3656161dbd565ff0c4a11953e46e4f4d9bd704f5fb8d4f3038aa63ac68aef99a",
       "mode": 384
     },
     {
@@ -19475,6 +19517,12 @@
       "bytes": 6713,
       "sha256": "48f4d9dc0f88d4d6a1e8410e207f3516faae57ff9dd8eee98abd10f42bc60965",
       "mode": 384
+    },
+    {
+      "path": "UPDATER/core/wm-update-admission.cjs",
+      "bytes": 8068,
+      "sha256": "6e8f3a5875e24be3c5a35b0b6447ae41220781e53d10cc43f998a519652a71f5",
+      "mode": 420
     },
     {
       "path": "UPDATER/launch.sh",
@@ -19654,57 +19702,61 @@
   "preservation": "Prior checkpoints and the designated 2026-10-09 14:27:30 comparison baseline remain unchanged. Later work is outside this frozen source identity.",
   "sourceVsPackage": "The builder rebuilds all seven Full artifacts, generates clean DATA and metadata, and normalizes ZIP file modes. Check PROGRAM/program-manifest.json and SHA256SUMS.txt for the resulting package bytes. A canonical pre-build WM artifact may differ from its freshly assembled output; the external build receipt records that distinction.",
   "knownQualificationLimits": {
-    "status": "UNQUALIFIED_RESPONSIVENESS_CANDIDATE",
+    "status": "UNQUALIFIED_CURRENT_DEVELOPMENT_CANDIDATE",
     "referenceCommit": "f64ef26e1bc6dcd94e160ee4be8d7b66356079a7",
-    "referenceLogicCommit": "e134c7c82a506212d0df2037b60f034bac7e78cc",
-    "currentCandidateFullSha256": "78e0e8b9804dc853fad55af056cdcddd4695988f9df485a6974acdd3f3ebd337",
-    "candidateAdopted": false,
-    "currentFocusedChecks": {
-      "scopeRowProjection": 13,
-      "canonicalMigrationReportedChecks": 19,
-      "normalizationParity": 9,
-      "postingsReportedChecks": 4,
-      "status": "PASS; packaging did not rerun product tests"
-    },
-    "performance": "Current Full304C has no 2000-record performance result. Prior Full298/299 completed logical work in260.34 seconds, but readiness timer starvation75.04 seconds remains a release blocker. Earlier normalization candidate357-376 seconds was not adopted. These earlier results are not current304C qualification.",
-    "artifactBoundary": "WM Min245 historical,not current candidate;other six unchanged245source bindings",
-    "releaseBuilderQualification": "Normalized f64 actualrelease attempt363pass/9fail,noZIP;mandatory failures306reviewpending",
-    "limits": [
-      "No2000/performance result for78e0e8b9 yet. Last29975.04s timer starvation remains unresolved release blocker.",
-      "Current WM Min is historical245. Full/Min parity and original affected gates remain pending.",
-      "Scope algorithm/publication/canonical ownership order unchanged; this is one synchronous row-local memo only.",
-      "New official release-builder attempt on isolated f64 had363passing and9failing mandatory smoke assertions; no updaterZIP. Those failures remain for causal reconciliation.",
-      "Real Risu/Windows and strong native-authority host unsupported/not run."
+    "referenceSafetyLimits": [
+      "Historical f64 has subsequently confirmed updater apply dependency and WM handoff/rollback defects. Restore for comparison/reference only; not production update.",
+      "Current338+349 fail-closed safety is narrow; successful general WM handoff and repeated no-WM admission remain unresolved."
     ],
-    "fullRegression": "Incomplete mixed-source campaign; no all-current pass claimed",
-    "host": "Actual Risu/Windows/model and server-process restart NOT_RUN. Native strong-authority/CAS unsupported. Approved manual host mode is separately documented.",
-    "portableGuard": "Packaged closure verified by identity; writer separately reported8/8 inherited and packaged-default controls291. Packaging does not rerun them.",
-    "evidencePins": {
-      "artifactManifest": {
-        "name": "MANIFEST.json",
-        "sha256": "333af347d764a11ea6442122aaa118e97dac95b6749a48b9777b31f459e1da71"
+    "currentWM": {
+      "candidate": "65d2e541c07199f4901d1f87f94ec5d30aada37e0beefd39a57c5771e9322fb7",
+      "smallActualMockCases": "12/12 PASS; no model quality or 2000/5s claim",
+      "original2000Gate": "323 source78e0e8b9 PASS219.062s, hook-to-pendingzero200.202s, max20ms timer gap62.791s; target not met; current candidate differs by URL metadata only"
+    },
+    "currentGRADIA": {
+      "Full": "e7b98fa6b20a789077ce4099211551c478a4feb2c274755c1a0ff7b5994f73cb",
+      "controls": "271/271 final assertions across18 admitted source files; actual4/8stage mocks succeed with3 applied edits each;12/24/48KiB matrix, currentness/malformed and Hypa poison controls pass; two deferred nested tests passed27/27 in official isolated scope",
+      "limits": "Conservative fixed-profile estimate; no real provider/tokenizer quality. Full current271assertions, deferred27, actual Min2profiles; whole-regression and host qualification incomplete.",
+      "Min": "Actual emitted Min from held intermediate stable ZIP: normal4/heavy8 2/2 PASS, exact4/8 mock calls. Its Full source is e7b98fa6; updater helper changes do not alter any plugin bytes. This is narrow Min pipeline evidence, not approval of held ZIP or current WM Min."
+    },
+    "updater": {
+      "safety": "338+349 retained-WM refusal under both policies; six focused files and34 admission controls pass; actual intermediate ZIP CLI refusal preserved DATA/PROGRAM bytes and created no decision journal. Exact five builder marker paths/80bytes admitted after retained no-WM red.",
+      "releaseBlocker": "Successful general WM data handoff remains unqualified; original migration path drops active WM, program_only rollback changes DATA identity. Original public ZIP retained unchanged. Versioned identity-preserving continuation design under review.",
+      "latestOfficialGate": {
+        "intermediate338plus342": "385/385 PASS, ZIP35fcee1658af6b7e2d53a6602996a002994cbbaeb712bd5cd24913d34c32b854; known template-marker refusal, held",
+        "marker349Retry": "384/385 FAIL,225.360s under240s; native_branch_storage_design_contract_test HAYAKU MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE; no marker-fixed ZIP",
+        "unchangedIsolatedReplay": "33 assertions PASS; aggregate failure retained, not reclassified",
+        "next": "Reconcile whole legitimate backup producer family; later unchanged official retry still required. No marker-fixed ZIP. Historical WM handoff and protocol bootstrap remain open."
       },
-      "qualificationCapsule": {
-        "name": "SCOPE-ROW-PROJECTION-304.json",
-        "sha256": "ec58c0078610d456c3d3a29fd3db4a54dc848340735f72ca38c1139eb2d6b8dc"
-      },
-      "reverseDelta": {
-        "name": "RESTORATION-DELTA.json",
-        "sha256": "e2835d328cafcdf67734f5271343806047542074a93c4d759731324700564dc9"
-      }
-    }
+      "diagnostic349": "One exact helper amendment to preserved intermediate runtime: no-WM actual apply complete/restart and15 rows/settings/credentials preserved. Subsequent admission FAIL backup_metadata_unverified on current-generated backup/quarantine/history/sidecar inventory.28 exact generated files/manifests retained. Original ZIP unchanged; does not qualify a marker-fixed release or broad no-WM support."
+    },
+    "artifactBoundary": "Live WM candidate Min remains stale/unqualified. GRADIA Min emitted from stable intermediate build now passes actual4/8stage mocks; selected-reference WM Min must not be bound to live WM candidate.",
+    "sourceMetadata": {
+      "provenanceCatalogSha256": "a7aa7ad82e668bd7313a59b1ee4f224b55f95318fe40704d90bbb19eced39dbf",
+      "allSevenCurrentFullBindings": true,
+      "historyObjectsAndPrefixUnchanged": true,
+      "versionChanges": [],
+      "checks": "--check PASS,15byte-provenance assertions and61 producer controls PASS"
+    },
+    "historicalEvidence": "Campaign counts mix source versions; no whole-regression PASS. Inventory007 overwritten incident remains unrecovered. Real Windows/Risu/strong native-authority host qualification not run.",
+    "fullRegression": "INCOMPLETE; packaging runs integrity/build checks only",
+    "publicRelease": "HOLD; source backup does not promote the held public ZIP or marker-fixed retry",
+    "host": "Real Windows/Risu/provider/model and strong native-authority qualification NOT_RUN",
+    "qualificationCapsuleSha256": "78c422e3e776d3ce8d48fccebd46ddf9bf281812716124edd2032ad1d3f679e6",
+    "selectedEvidenceManifestSha256": "5207f135a6d12aa1c215415c390e79c9c60a629ec33566e32ef14aebeaddf833",
+    "selectedEvidenceCutoff": "355;510 files16,997,654 bytes; selected synthetic results, not all historical workspace"
   },
   "matchingArtifactIdentity": {
     "schema": "librarian.development-artifact-identity.v2",
-    "recordedAtUtc": "2026-10-10T01:46:19.186530+00:00",
-    "sourceCaptureId": "f406c9dd64abb1be13065cb51c4e07dcb5de5f63c880eadf13b85f60016b946d",
+    "recordedAtUtc": "2026-10-10T03:46:47.070186+00:00",
+    "sourceCaptureId": "6cb95a6aab6536b859a6613c06c701e89456061517f8716ce0b94910e71f18e1",
     "artifacts": [
       {
         "owner": "Flashback_Memory.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "722daaf87adfd9fc10b276e175c317c75fc55cc9e03237ca282f3e66391cf90c",
-        "bytes": 3292015,
+        "sha256": "10eb887afb55f5381db651a8dff4f89f3b047317674f804f19e83cc6aab39349",
+        "bytes": 3292044,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19712,8 +19764,8 @@
         "owner": "GRADIA.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "b038d6448084d68310b6b09fd6026aee2fa26ff1ba9e171d780a41dc865625db",
-        "bytes": 3064720,
+        "sha256": "e7b98fa6b20a789077ce4099211551c478a4feb2c274755c1a0ff7b5994f73cb",
+        "bytes": 3035977,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19721,8 +19773,8 @@
         "owner": "HAYAKU_Locator_Continuity.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "e399ac58a25451e116d10595d354fa14b67a17fba8c88701a703a500f0e8a178",
-        "bytes": 3960857,
+        "sha256": "21b935ccc01bacfc57d14a906b40917339bf0c23aa8d522630cc2cf71c1b12f6",
+        "bytes": 3960875,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19730,8 +19782,8 @@
         "owner": "LIA_Persona_Linker.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
-        "bytes": 1874390,
+        "sha256": "2860a6479b8fcf7ed327a9e2151bdf8d138eea830c33aec344390654f89dbca3",
+        "bytes": 1874429,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19739,8 +19791,8 @@
         "owner": "LIBRA.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "0a2aac0ba61eb361ad9ea347dd94d852a2e6388a288652ccec2ccf18239a5c50",
-        "bytes": 5769951,
+        "sha256": "816802d4b680bb0ca39f0344e6e5bb825e89a2cf72a6c0a07a668e35f3ff7185",
+        "bytes": 5769978,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19748,8 +19800,8 @@
         "owner": "LIBRA_World_Manager.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "78e0e8b9804dc853fad55af056cdcddd4695988f9df485a6974acdd3f3ebd337",
-        "bytes": 6656500,
+        "sha256": "65d2e541c07199f4901d1f87f94ec5d30aada37e0beefd39a57c5771e9322fb7",
+        "bytes": 6656517,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       },
@@ -19757,8 +19809,8 @@
         "owner": "RETRACE.js",
         "kind": "Full",
         "profile": "source",
-        "sha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
-        "bytes": 1202737,
+        "sha256": "3cc6626bd108eb645efc27d8140652e126c72d6af51e8e579b53caf8cfef05ac",
+        "bytes": 1202762,
         "mode": 420,
         "basis": "Exact frozen canonical source; actual builder must reproduce same bytes"
       }
@@ -19766,22 +19818,43 @@
     "qualification": "UNQUALIFIED_CANDIDATE",
     "currentSevenFullVerified": true,
     "currentMinArtifactsIncluded": false,
-    "priorMinStatus": "WM Min245 historical,not current candidate;other six unchanged245source bindings",
+    "priorMinStatus": "Live WM candidate Min remains stale/unqualified. GRADIA Min emitted from stable intermediate build now passes actual4/8stage mocks; selected-reference WM Min must not be bound to live WM candidate.",
     "fourteenCurrentArtifactParityClaimed": false,
     "referenceCommit": "f64ef26e1bc6dcd94e160ee4be8d7b66356079a7",
     "referenceRestoration": "Packaged finite delta will be validated from actual extracted ZIP"
   },
   "privacy": "Private development chronology/audit dumps, credentials, live user DATA, installed dependencies, checkpoint history and unrelated evidence are omitted. Known-pattern screening does not guarantee arbitrary secrets absent.",
+  "selectedSyntheticMockDocumentation": {
+    "status": "EXCLUDED_FROM_PUBLIC_EXPORT",
+    "originalCheckpointSelectedRecords": 510,
+    "excludedFilesIncludingMapping": 511,
+    "excludedBytes": 17213588,
+    "explanation": "The original checkpoint retained this selected evidence; the owner requested its exclusion from this filtered public GitHub derivative. See PUBLICATION-EXCLUSIONS.json."
+  },
   "referenceRestoration": {
     "referenceCommit": "f64ef26e1bc6dcd94e160ee4be8d7b66356079a7",
     "sourceFiles": 3253,
-    "modifiedPaths": 13,
-    "candidateOnlyFiles": 6,
-    "patchSha256": "61b1b3083d38b206cbf59c403895866594abd76aaba55ee767765c7e4efac1fd",
-    "referencePlanSha256": "78f7d838565347089bf29d894eaec207085a6c931d110b1f1abf63539aa594ee",
+    "modifiedPaths": 44,
+    "candidateOnlyFiles": 14,
+    "patchSha256": "61cd87b78b231a58c3631c28bdb476ba77327709cd9bffc59addd854c2d7a8eb",
+    "referencePlanSha256": "1b00e5dcf770af184b2a0c28046c3ead1ce5cdd801c74a0ca9e0a0df1f28b0ca",
     "sourceScope": "Complete source-profile PROGRAM/UPDATER and launchers with required root development controls; private history/runtime/dependencies excluded. Source hashes and Git file modes are exact; program-manifest and SHA256SUMS are regenerated after restoration and exact originals are preserved separately.",
     "restoreHelper": "PROGRAM/docs/development-package/reference-restore/restore_reference.py",
     "candidateQualification": "UNQUALIFIED_CANDIDATE",
     "validation": "Final actual-ZIP standalone restore must succeed before delivery"
+  },
+  "publicExport": {
+    "kind": "filtered-derivative",
+    "preparedAtUtc": "2026-10-10T04:26:52.787160+00:00",
+    "originCheckpoint": {
+      "filename": "Librarian-System-0.3.71-Development-Source-20261010T034646Z.zip",
+      "sha256": "f7f9169653048d12dabec1ed3c11562370b7a65ef8330075900d79545cc8a5d8",
+      "bytes": 30912745,
+      "capturedAtUtc": "2026-10-10T03:46:46.669618Z",
+      "sourceContentIdentity": "6cb95a6aab6536b859a6613c06c701e89456061517f8716ce0b94910e71f18e1"
+    },
+    "exclusionsMetadata": "PUBLICATION-EXCLUSIONS.json",
+    "productCodeChanged": false,
+    "fullOriginalCheckpointTreeClaimed": false
   }
 }

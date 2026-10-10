@@ -2,15 +2,29 @@
 
 Profile ID: `openai-gpt4omini-20240718-chattext-conservative.v1`.
 
-This is a planned production implementation profile, not an executed tokenizer/model test or live validation. It has a provable ordinary-content bound plus a separately qualified framing estimate. It must never be described as a universal or mathematically guaranteed provider token count.
+This is a production implementation profile with offline control evidence, not an executed tokenizer/model test or live validation. It has a provable ordinary-content bound plus a separately qualified framing estimate. It must never be described as a universal or mathematically guaranteed provider token count.
 
 ## Supported payload
 
 - Exact model `gpt-4o-mini-2024-07-18` on the official OpenAI `/v1/chat/completions` route.
 - Actual final payload from GRADIA's existing OpenAI-compatible builder, after shared-system-prefix assembly and all adapter transforms.
-- Only ordinary string `system` and `user` messages; no name, tools, function calls, images, cache-content references, multipart input, Responses format, native response_format/schema, extra body override, unknown proxy normalization or unqualified field.
+- Only ordinary string `system` and `user` messages; no name, tools, function calls, images, cache-content references, multipart input, Responses format, extra body override, unknown proxy normalization or unqualified field. The separate narrow structured profile below admits only seven exact production schemas.
 - Effective context is a positive configured/qualified catalog limit capped at 128,000; effective output reservation is the actual final max_tokens/max_completion_tokens, capped consistently with the documented 16,384 model output limit. Reject conflicting/unknown settings rather than silently changing them.
-- Other profiles are unavailable for added evidence until qualified. Native-only behavior is unchanged. The positive full production-code fixture uses the existing SHADOW-only plain-text configuration, not silently disabled AIDEs in a normal user run.
+- Other profiles are unavailable for added evidence until qualified. Native-only behavior is unchanged. The original plain-text fixture uses SHADOW-only. Normal four-stage and heavyweight eight-stage evidence calls use the separately identified structured profile below.
+
+## Bounded normal/heavy structured profile
+
+Profile ID: `openai-gpt4omini-20240718-gradia-schema-conservative.v1`.
+
+The same exact model, official route, ordinary string messages, context/output limits, and body binding apply. Only `response_format: {type:'json_schema', json_schema:{name, strict:true, schema}}` is added. The complete serialized wrapper must match a pinned SHA-256 in `sdk/GradiaEvidenceBudget.source.js` for one of these production names:
+
+- `gradia_shadow_act_analysis`
+- `gradia_aide_character_analysis`, `gradia_aide_world_analysis`, `gradia_aide_plot_analysis`
+- `gradia_aide_character_patch`, `gradia_aide_world_patch`, `gradia_aide_plot_patch`
+
+These are the actual closed schemas emitted by the existing normal/heavy builders. Name, schema, description, strictness, or serialization drift fails closed. Generic JSON-object mode, arbitrary schemas, references/combinators, tools, and adjacent retry/repair names remain unqualified. This does not claim support for every provider, model, or recovery path.
+
+The complete serialized request already charges every schema byte through its envelope overhead. The structured profile additionally reserves the UTF-8 byte size of the entire serialized response-format wrapper, before the unchanged output reserve and context margin. Thus the schema is never omitted from accounting or charged only as its name. This extra structured-framing allowance is a conservative engineering estimate; provider-side schema conversion and real tokenizer usage are not measured or mathematically guaranteed. The witness records the exact schema name, wrapper hash, and additional byte allowance. Actual four/eight-stage mock tests must still verify dispatch, parsing, and applied draft edits.
 
 ## What local source actually provides
 
@@ -36,6 +50,6 @@ The byte-BPE content inequality is the proof. The framing allowance/margin is an
 
 ## Required implementation evidence
 
-The positive fixture must exercise the actual named production meter and actual GRADIA payload builder with a real model ID/context configuration, using trapped dispatch rather than a remote model/count endpoint. It must admit nonzero memory that fits the conservative allowance. Negative cases include structured AIDE schemas, unknown models/routes, proxies, mismatched payload after metering, Unicode/control/escaped text, missing context, excessive output reserve and budget overflow.
+The positive fixture must exercise the actual named production meter and actual GRADIA payload builder with a real model ID/context configuration, using trapped dispatch rather than a remote model/count endpoint. It must admit nonzero memory that fits the conservative allowance. Negative cases include unqualified or changed structured schemas/names, unknown models/routes, proxies, mismatched payload after metering, Unicode/control/escaped text, missing context, excessive output reserve and budget overflow.
 
 Test the content-bound arithmetic against the pinned single-byte coverage and independently generated byte-length cases. Do not replace the meter with an always-true test callback. These offline checks qualify the implementation/profile; they do not demonstrate live end-to-end model execution or universal 4/8 evidence support.

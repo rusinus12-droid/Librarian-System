@@ -13,7 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 // Stable plugin identity; release versions are compared with current package metadata.
 const EXPECT_ID = 'libra_world_manager';
 const EXPECT_DISPLAY = 'LIBRA World Manager';
-const EXPECT_UPDATE_PATH = 'dist/LIBRA%20World%20Manager.js';
+const EXPECT_UPDATE_URL = 'https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js';
 
 function check(name, ok, details = {}) { return { name, ok: !!ok, details }; }
 
@@ -81,8 +81,7 @@ assertions.push(check('display_names_carry_current_version',
   { full: fullH.display, min: minH.display, expected: EXPECT_VERSION }));
 
 assertions.push(check('update_url_points_at_the_shipped_filename',
-  Boolean(fullH.updateUrl && fullH.updateUrl.endsWith(EXPECT_UPDATE_PATH)) &&
-  Boolean(minH.updateUrl && minH.updateUrl.endsWith(EXPECT_UPDATE_PATH)),
+  fullH.updateUrl === EXPECT_UPDATE_URL && minH.updateUrl === EXPECT_UPDATE_URL,
   { full: fullH.updateUrl, min: minH.updateUrl }));
 
 // The first line must stay the plugin id (RisuAI reads the header from the top).

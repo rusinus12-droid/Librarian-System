@@ -26,3 +26,5 @@ f=fixture();f.set(fullPath,f.get(fullPath).replace('class="ver">v'+version,'clas
 f=fixture();f.set(fullPath,f.get(fullPath).replace(/^\/\/@version .+\n/m,''));check('missing version header',f,false,'artifact_versions_match_package');
 f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@name .+$/m,'//@name wrong_plugin'));check('wrong plugin ID',f,false,'plugin_id_is_libra_world_manager');
 f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@update-url .+$/m,'//@update-url https://example.invalid/wrong.js'));check('wrong update path',f,false,'update_url_points_at_the_shipped_filename');
+f=fixture();f.set(minPath,f.get(minPath).replace(/^\/\/@update-url .+$/m,'//@update-url https://example.invalid/PROGRAM/plugins/LIBRA_World_Manager.js'));check('wrong update host with matching filename',f,false,'update_url_points_at_the_shipped_filename');
+f=fixture();f.set(minPath,f.get(minPath).replace('Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA_World_Manager.js','Librarian-System/refs/heads/dev/PROGRAM/plugins/LIBRA_World_Manager.js'));check('wrong update branch with matching filename',f,false,'update_url_points_at_the_shipped_filename');

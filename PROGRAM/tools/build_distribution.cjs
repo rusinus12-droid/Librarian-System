@@ -26,6 +26,8 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'launcher_safety_regression_test.cjs',
   'windows_bootstrap_contract_test.cjs',
   'distribution_builder_test.cjs',
+  'distribution_runtime_dependency_closure_test.cjs',
+  'remote_update_wm_migration_admission_test.cjs',
   'release_metadata_test.cjs',
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
@@ -190,7 +192,7 @@ const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials
 const REQUIRED_ROOT_UPDATE_LAUNCHERS = Object.freeze(['업데이트.bat', '업데이트.command', '업데이트.sh']);
 const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
-  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/updater-bootstrap.cjs',
+  'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/wm-update-admission.cjs', 'core/updater-bootstrap.cjs',
   'runtime.cjs', 'launch.sh', '_find_node.bat', 'core/lock.cjs',
   'logs/README.txt',
   'platform/windows.cjs', 'platform/macos.cjs', 'platform/linux.cjs', 'platform/android.cjs'
@@ -275,7 +277,7 @@ const RUNTIME_TOOL_FILES = new Set([
   'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
 ]);
 const RUNTIME_SDK_FILES = new Set([
-  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
+  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js','WmStorageContracts.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
   'ANDROID_INSTALL_HELPER.md','PORTABLE_BACKUP_USAGE.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
@@ -694,6 +696,12 @@ function buildDistribution(options = {}) {
     phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName});
     const verification=verifyZipAgainstDirectory(archivePath,stagedRoot,{rootName:topLevelName}),entries=readZipEntries(archivePath);
     assertArchivePrivacy(entries,topLevelName);
+    let runtimeDependencyClosure=null;
+    if(!isSource){
+      phase='extracted_runtime_dependencies';
+      const check=runNode(path.join(programDir,'tools/verify_runtime_archive.cjs'),[archivePath,path.join(temporaryRoot,'verified-runtime')],temporaryRoot,{env:{NODE_PATH:''}});
+      runtimeDependencyClosure=JSON.parse(check.stdout.trim());
+    }
     assertTreeSourceUnchanged(programDir,copiedProgram.sourceFiles,stagingPredicate,isSource?'source_program':'runtime_program');
     assertTreeSourceUnchanged(sourceUpdater,copiedUpdater.sourceFiles,shouldCopyUpdater,'updater_source');
     for(const row of copiedLaunchers)if(sha256File(path.join(packageRoot,row.path))!==row.sha256)throw new Error(`distribution_update_launcher_changed_during_build:${row.path}`);
@@ -708,7 +716,7 @@ function buildDistribution(options = {}) {
       archiveSha256:verification.archiveSha256,archiveBytes:zip.bytes,archiveFiles:verification.files,embeddedRuntime:false,sourceDataReadOrCopied:false,
       cleanDataFiles:dataCheck.files,crossPlatformScripts:scriptCheck.scripts,updateLaunchers:updaterScriptCheck.launchers,copiedUpdaterFiles:copiedUpdater.copied,
       copiedProgramFiles:copiedProgram.copied,packagedPluginFiles:pluginCheck.files,pluginInstallPath:'PROGRAM/plugins',topLevelPluginsFolder:false,
-      pluginBuild:pluginArtifacts,
+      pluginBuild:pluginArtifacts,runtimeDependencyClosure,
       ...(offline?{status:'offline_candidate',publicationReady:false,fullReleaseGate:'NOT_RUN',actualHostQualification:'NOT_RUN'}:{}),
       checksumFilesVerified:checksumCheck.files,unixExecutePermissionsVerified:true,utf8EntryNamesVerified:true,privateDataPatternsRejected:true,
       testsRun:true,testProfile:offline?'offline_candidate_contents':'release_smoke',releaseSmokeTests:offline?[]:[...RELEASE_SMOKE_TESTS],releaseSmokeOutput:smoke.stdout,fullRegressionRunByBuilder:false,

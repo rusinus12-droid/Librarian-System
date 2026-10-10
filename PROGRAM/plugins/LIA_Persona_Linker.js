@@ -202,7 +202,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v0.26.24 fixes Emotion Asset ZIP export when the already-resolved visual target is re-resolved without a full Persona context. */
 /* v0.26.23 hardens random Persona candidate generation against truncated Ollama Cloud/reasoning output and preserves provider completion diagnostics. */
 /* v0.25.3 fixes Persona Asset Studio preview crashes when a Source Persona has no canonical role/personality PersonaSpec fields. */
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/LIA_Persona_Linker/refs/heads/main/LIA_Persona_Linker.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_url string Legacy LIA recovery server URL; blank uses http://127.0.0.1:47630
 //@arg max_lore_entries int Legacy lore breadth base; v0.22.15 keeps the protected + reranked Top-K lore pipeline
@@ -13926,7 +13926,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       throw error;
     }
     await revalidateNativePersonaFork();
-    const durableReadback = await writeLivePersonaBinding(provisional, { preserveSiblingBytes: options.reason === 'retrace_handoff' });
+    const durableReadback = await writeLivePersonaBinding(provisional, { preserveSiblingBytes: Boolean(nativeBranch) || options.reason === 'retrace_handoff' });
     const persistedBinding = durableReadback.binding;
     const verification = await PersonaBindingManager.inspect({ ...targetCtx, db: await api.getDatabase?.(["personas", "selectedPersona"]) }, persistedBinding);
     if (!verification.expectedMatch || !verification.livePersonaExists) {

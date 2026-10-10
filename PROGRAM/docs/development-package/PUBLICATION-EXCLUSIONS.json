@@ -1,0 +1,32 @@
+{
+  "schema": "librarian.filtered-public-development-export.v1",
+  "preparedAtUtc": "2026-10-10T04:26:52.787160+00:00",
+  "originCheckpoint": {
+    "filename": "Librarian-System-0.3.71-Development-Source-20261010T034646Z.zip",
+    "sha256": "f7f9169653048d12dabec1ed3c11562370b7a65ef8330075900d79545cc8a5d8",
+    "bytes": 30912745,
+    "capturedAtUtc": "2026-10-10T03:46:46.669618Z",
+    "sourceContentIdentity": "6cb95a6aab6536b859a6613c06c701e89456061517f8716ce0b94910e71f18e1"
+  },
+  "exportKind": "Filtered derivative of the frozen release-builder development-source package",
+  "notExactCompleteCheckpoint": true,
+  "excluded": [
+    {
+      "category": "Selected raw synthetic prompt/request/result, storage-trace and fault-verification evidence bundle with its mapping",
+      "directory": "PROGRAM/docs/development-package/selected-mock-results/",
+      "files": 511,
+      "bytes": 17213588,
+      "reason": "Excluded from the public GitHub export at the owner request after publication review; retained separately outside this public export"
+    }
+  ],
+  "retained": "All other frozen product source, seven readable Full plugins, SDK/server, assembly/build/test tools, required maintained fixtures, reference restoration inputs and development guidance are retained. Product code bytes are unchanged.",
+  "metadataReconciliation": [
+    "PROGRAM/docs/development-package/SOURCE-PROVENANCE.json",
+    "PROGRAM/docs/development-package/RESTORE-AND-BUILD.md",
+    "PROGRAM/program-manifest.json",
+    "SHA256SUMS.txt"
+  ],
+  "qualification": "Unqualified development candidate; removing evidence does not establish any test, release, updater, performance or privacy certification",
+  "originalCheckpointModified": false,
+  "originalRepositoryLicensePreserved": true
+}
