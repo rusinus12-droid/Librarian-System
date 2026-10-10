@@ -205,7 +205,7 @@
             let db = await getLibraIdentityDatabase();
             EntityManager.refreshIdentity(char, db, chat);
             tryRearmGreetingIsolation(chat);
-            const msgs_all = getChatMessages(chat);
+            let msgs_all = getChatMessages(chat);
             if (!chat || msgs_all.length === 0) {
                 DebugExportManager.finishRequest(afterDebugKey, 'skipped', { reason: !chat ? 'missing_chat' : 'empty_chat_messages' });
                 return content;
@@ -268,12 +268,16 @@
             }
             clearStreamOutputRecoveryTimer(chat);
 
-            if (await MemoryEngine.normalizeLoreStorage(char, chat)) {
-                const normalizationPersistResult = await persistLoreToActiveChat(chat, MemoryEngine.getLorebook(char, chat), {
-                    ...(WmWriterRuntime.enabled?{expectedSource:WmWriterRuntime.latestSource(LibraDataStorage.scopeKeyFor(char,chat)),operation:'sync'}:{globalLore:Array.isArray(char?.globalLore)?char.globalLore:(Array.isArray(char?.lorebook)?char.lorebook:[])})
-                });
-                requireSuccessfulLorePersist(normalizationPersistResult, 'afterRequest lore normalization persist');
-            }
+            const normalizationResult = await normalizeOwnedLoreStorage(char, chat, {
+                admission: activation.admission,
+                transaction: runtimeTransactionToken,
+                targetContext: afterRequestOrigin,
+                signal: workerContext.signal
+            });
+            requireSuccessfulLorePersist(normalizationResult, 'afterRequest lore normalization persist');
+            char = normalizationResult.char;
+            chat = normalizationResult.chat;
+            msgs_all = getChatMessages(chat);
 
             // 인사말 필터링: 자동 생성된 첫 인사말은 분석에서 제외
             const aiMsg = msgs_all[msgs_all.length - 1];

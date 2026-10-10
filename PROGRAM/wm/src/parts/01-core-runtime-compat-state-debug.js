@@ -212,20 +212,23 @@
             if (await runtime.pluginStorage.removeItem(key) === false) return false;
             return (await runtime.pluginStorage.getItem(key)) == null;
         };
-        const cleanupCompatOwnedChunkKeys = async (runtime, key, chunks, expectedRoot) => {
+        const cleanupCompatOwnedChunkKeys = async (runtime, key, chunks, expectedRoot, checkCurrent = () => {}) => {
             try {
                 for (const chunkKey of chunks) {
+                    checkCurrent();
                     // This observation reduces known races; it is not host CAS
                     // and does not pin readers in another runtime.
                     if (!sameCompatStorageRoot(await runtime.pluginStorage.getItem(key), expectedRoot)) return false;
+                    checkCurrent();
                     if (!await removePluginStorageItem(runtime, chunkKey)) return false;
+                    checkCurrent();
                 }
                 return sameCompatStorageRoot(await runtime.pluginStorage.getItem(key), expectedRoot);
             } catch (_) { return false; }
         };
-        const tryCleanupChunkedStorage = async (runtime, key, manifest, expectedRoot) => {
+        const tryCleanupChunkedStorage = async (runtime, key, manifest, expectedRoot, checkCurrent) => {
             if (!validCompatChunkManifest(manifest, key)) return false;
-            return cleanupCompatOwnedChunkKeys(runtime, key, manifest.chunks, expectedRoot);
+            return cleanupCompatOwnedChunkKeys(runtime, key, manifest.chunks, expectedRoot, checkCurrent);
         };
         const pluginStorage = {
             // Closure-local route identity only; never a storage revision/currentness proof.
@@ -300,9 +303,21 @@
                 let rootWriteIssued = false;
                 let previous = null, previousRead = false;
                 const stagedChunkKeys = [];
+                // Opt-in synchronous ownership fence. The caller supplies a
+                // runtime/write guard, never a receipt revoked by its own save.
+                const guarded = Object.prototype.hasOwnProperty.call(options, 'isCurrent');
+                let invalidated = false;
+                const checkCurrent = () => {
+                    if (!guarded) return;
+                    try { if (!invalidated && typeof options.isCurrent === 'function' && options.isCurrent() === true) return; } catch (_) {}
+                    invalidated = true;
+                    throw new Error('storage_write_invalidated');
+                };
                 try {
+                    checkCurrent();
                     previous = await runtime.pluginStorage.getItem(key);
                     previousRead = true;
+                    checkCurrent();
                     const previousManifest = parseCompatChunkManifest(previous);
                     // A corrupt root needs explicit recovery, not a destructive
                     // replacement that follows untrusted chunk references.
@@ -310,25 +325,32 @@
                         throw new Error('storage_set_invalid_manifest');
                     }
                     if (stringValue.length <= COMPAT_CHUNK_SIZE) {
+                        checkCurrent();
                         rootWriteIssued = true;
                         if (await runtime.pluginStorage.setItem(key, stringValue) === false) {
                             throw new Error('storage_set_failed');
                         }
+                        checkCurrent();
                         if (await runtime.pluginStorage.getItem(key) !== stringValue) throw new Error('storage_set_readback_mismatch');
-                        if (previousManifest && !await tryCleanupChunkedStorage(runtime, key, previousManifest, stringValue)) {
+                        checkCurrent();
+                        if (previousManifest && !await tryCleanupChunkedStorage(runtime, key, previousManifest, stringValue, checkCurrent)) {
                             compatDiagnostics.storage.lastError = 'storage_cleanup_unverified';
                         }
+                        checkCurrent();
                         return true;
                     }
                     const chunkCount = Math.ceil(stringValue.length / COMPAT_CHUNK_SIZE);
                     const chunks = stagedChunkKeys;
                     const stamp = `${Date.now().toString(36)}-${compatChunkRuntimeNonce}-${++compatChunkWriteSequence}`;
                     for (let i = 0; i < chunkCount; i += 1) {
+                        checkCurrent();
                         const chunkKey = `${key}::chunk:v1:${stamp}:${String(i).padStart(4, '0')}`;
                         chunks.push(chunkKey);
                         const chunkValue = stringValue.slice(i * COMPAT_CHUNK_SIZE, (i + 1) * COMPAT_CHUNK_SIZE);
                         if (await runtime.pluginStorage.setItem(chunkKey, chunkValue) === false) throw new Error('storage_chunk_set_failed');
+                        checkCurrent();
                         if (await runtime.pluginStorage.getItem(chunkKey) !== chunkValue) throw new Error('storage_chunk_readback_mismatch');
+                        checkCurrent();
                     }
                     const manifest = {
                         [COMPAT_CHUNK_SENTINEL]: true,
@@ -339,14 +361,18 @@
                         updatedAt: Date.now()
                     };
                     const manifestValue = JSON.stringify(manifest);
+                    checkCurrent();
                     rootWriteIssued = true;
                     if (await runtime.pluginStorage.setItem(key, manifestValue) === false) {
                         throw new Error('storage_manifest_set_failed');
                     }
+                    checkCurrent();
                     if (await runtime.pluginStorage.getItem(key) !== manifestValue) throw new Error('storage_manifest_readback_mismatch');
-                    if (previousManifest && !await tryCleanupChunkedStorage(runtime, key, previousManifest, manifestValue)) {
+                    checkCurrent();
+                    if (previousManifest && !await tryCleanupChunkedStorage(runtime, key, previousManifest, manifestValue, checkCurrent)) {
                         compatDiagnostics.storage.lastError = 'storage_cleanup_unverified';
                     }
+                    checkCurrent();
                     compatDiagnostics.storage.chunkedWrites += 1;
                     compatDiagnostics.storage.lastChunkedKey = String(key || '');
                     return true;

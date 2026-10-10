@@ -1,4 +1,4 @@
-        const buildHybridScopeIndexRow = (entry = null, index = 0, currentTurn = 0, options = {}) => {
+        const buildHybridScopeIndexRow = (entry = null, index = 0, currentTurn = 0, options = {}) => withSynchronousEntityProjection(() => {
             if (!entry || String(entry?.comment || '') !== 'lmai_memory') return null;
             try {
                 const contentHash = String(getEntryContentHash(entry));
@@ -190,7 +190,7 @@
                 if (CONFIG.debug) recordRuntimeDebug('warn', '[LIBRA][HMEIndex] row build failed:', error?.message || error);
                 return null;
             }
-        };
+        });
         const isHybridScopeIndexRowGraphV2Ready = (row = null) => !!row
             && Number(row.entityAliasVersion || 0) >= 2
             && Number(row.hotIndexVersion || row.hotIndex?.version || 0) >= HME_SCOPE_INDEX_VERSION

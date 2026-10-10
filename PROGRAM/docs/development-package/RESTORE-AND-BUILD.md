@@ -37,3 +37,13 @@ node -e "require('./tools/build_distribution.cjs').buildOfflineCandidate({profil
 ```
 
 The ordinary build_distribution.cjs --profile source route additionally runs publication smoke checks. Those checks are not claimed for this package. Run only the test suites you intend to exercise and respect their prerequisites; packaging integrity is not an all-regression pass. Some historical evidence-dependent tests may require separately retained development records.
+
+## Restore the required reference separately
+
+The current normalization candidate is explicitly unqualified. This package also contains a finite, hash-bound reverse delta to reference commit f64ef26e1bc6dcd94e160ee4be8d7b66356079a7. It needs neither an older ZIP nor a .git directory. With Python 3 and the Git command-line executable installed, run from the extracted package root:
+
+```sh
+python3 PROGRAM/docs/development-package/reference-restore/restore_reference.py --package-root . --output-dir ../reference-source --quarantine-dir ../candidate-preserved
+```
+
+Both destination directories must be new. The original candidate package stays unchanged. The helper verifies every package checksum, applies only the sealed reverse source delta in the new directory, preserves candidate-only files and metadata in the separate quarantine, restores the complete required reference source hashes and Git file modes, and regenerates two integrity inventories. Exact historical manifest/checksum bytes remain preserved separately; regenerated metadata is not represented as the historical Git tree. The clean DATA scaffold is retained, never live user DATA. Use `bash script.sh` if a restored reference shell file has its historical non-executable Git mode. Restoring the reference does not establish release, performance or actual-host qualification.

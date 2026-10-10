@@ -216,7 +216,118 @@
         return false;
     };
 
+    // Native legacy preparation owns only private drafts until the queued save
+    // and explicit indexed host cleanup acknowledge. This is not host CAS.
+    const normalizeOwnedLoreStorage = async (char, chat, options = {}) => {
+        if (typeof WmManualRuntime !== 'undefined' && WmManualRuntime?.isRouted()) return { ok: true, changed: false, char, chat };
+        if (VersionedCanonicalBridge.mode === 'authority') return { ok: false, reason: 'authority_mixed_scope_unsupported' };
+        const admission = options.admission && Object.freeze({ ...options.admission });
+        const transaction = options.transaction, lease = RuntimeStateLease.capture(admission?.runtimeScopeKey);
+        const cbsEnabled = MemoryEngine.CONFIG.cbsEnabled;
+        let source = null, postSource = null, latest = null, canonicalWritten = false;
+        const runtimeGuard = () => !!admission && !!transaction && RuntimeStateLease.isCurrent(lease)
+            && ScopedRuntimeTransaction.owns(transaction) && transaction.scopeKey === admission.runtimeScopeKey
+            && MemoryEngine.CONFIG.cbsEnabled === cbsEnabled && !options.signal?.aborted
+            && LibraDataStorage.scopeKeyFor(char, chat) === admission.scopeKey
+            && (PersonaScopeIdentity.get(char, chat)?.resetGeneration ?? 0) === admission.resetGeneration;
+        const copyData = (value, seen = new Set()) => {
+            if (value == null || ['string', 'boolean', 'undefined'].includes(typeof value)) return value;
+            if (typeof value === 'number' && Number.isFinite(value)) return value;
+            if (typeof value !== 'object' || seen.has(value) || (!Array.isArray(value) && Object.prototype.toString.call(value) !== '[object Object]'))
+                throw new Error('normalization_input_not_plain_data');
+            seen.add(value); const out = Array.isArray(value) ? [] : {};
+            for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+                if (!descriptor.enumerable) continue;
+                if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) throw new Error('normalization_input_accessor');
+                out[key] = copyData(descriptor.value, seen);
+            }
+            seen.delete(value); return out;
+        };
+        const project = (c, ch) => {
+            const fields = (value, omit) => {
+                const out = {};
+                for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value || {}))) {
+                    if (!descriptor.enumerable || omit.has(key)) continue;
+                    if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) throw new Error('normalization_input_accessor');
+                    out[key] = descriptor.value;
+                }
+                return out;
+            };
+            // Message appends are rebased by persistence and do not replace lore
+            // source ownership. All lore aliases/card/CBS inputs remain captured.
+            return copyData({ char: fields(c, new Set(['chats'])), chat: fields(ch, new Set(['message', 'messages', 'msgs'])) });
+        };
+        const sameAdmission = resolved => {
+            const proof = resolved?.personaAdmission || PersonaScopeIdentity.get(resolved?.char, resolved?.chat);
+            return resolved?.ok && proof?.characterId === admission.characterId && proof?.chatId === admission.chatId
+                && proof?.personaId === admission.personaId && proof?.resetGeneration === admission.resetGeneration
+                && LibraDataStorage.scopeKeyFor(resolved.char, resolved.chat) === admission.scopeKey
+                && getChatRuntimeScopeKey(resolved.chat, resolved.char) === admission.runtimeScopeKey;
+        };
+        try {
+            if (!runtimeGuard() || !options.targetContext) throw new Error('normalization_source_invalidated');
+            const targetContext = Object.freeze({ ...options.targetContext, characterId: admission.characterId, chatId: admission.chatId,
+                canonicalScope: admission.scopeKey, runtimeScopeKey: admission.runtimeScopeKey, resetGeneration: admission.resetGeneration });
+            latest = await resolveChatContextByTarget(targetContext, { allowActiveFallback: false });
+            if (!runtimeGuard() || !sameAdmission(latest)) throw new Error('normalization_identity_changed');
+            const captured = JSON.stringify(project(latest.char, latest.chat));
+            const matchesHost = (c, ch) => runtimeGuard() && JSON.stringify(project(c, ch)) === captured;
+            const freshTargetCheck = async () => {
+                if (!runtimeGuard()) return false;
+                const next = await resolveChatContextByTarget(targetContext, { allowActiveFallback: false });
+                if (!runtimeGuard() || !sameAdmission(next) || !matchesHost(next.char, next.chat)) return false;
+                if (source && !source.matchesShadow()) return false;
+                latest = next; return true;
+            };
+            source = await OwnedNormalizationSource.open(admission, runtimeGuard);
+            if (!source.matchesShadow()) throw new Error('normalization_shadow_source_mismatch');
+            const draftChar = copyData(project(latest.char, latest.chat).char), draftChat = copyData(latest.chat);
+            draftChar.chats = []; draftChar.chats[latest.chatIndex] = draftChat;
+            PersonaScopeIdentity.remember(draftChar, draftChat, admission.personaId, admission.source, admission.resetGeneration);
+            const changed = await MemoryEngine.normalizeLoreStorage(draftChar, draftChat, {
+                cooperative: source.status === 'issued', isCurrent: source.isCurrent,
+                refresh: async () => await freshTargetCheck() && await source.refresh() && source.matchesShadow()
+            });
+            if (!runtimeGuard() || !source.isCurrent()) throw new Error('normalization_source_invalidated');
+            if (!source.matchesShadow()) throw new Error('normalization_shadow_source_mismatch');
+            if (!changed) return { ok: true, changed: false, char: latest.char, chat: latest.chat };
+            const fence = Object.freeze({ expectedRaw: source.expectedRaw, expectedGeneration: admission.resetGeneration,
+                prewriteGuard: source.isCurrent, runtimeGuard, freshTargetCheck, matchesHost,
+                observeAcknowledged: async raw => {
+                    if (!runtimeGuard()) return null;
+                    postSource = await OwnedNormalizationSource.open(admission, runtimeGuard);
+                    if (postSource.status !== 'issued' || postSource.expectedRaw !== raw) { postSource.close(); return null; }
+                    return postSource;
+                }
+            });
+            const originalGlobal = Array.isArray(latest.char.globalLore) ? latest.char.globalLore : (Array.isArray(latest.char.lorebook) ? latest.char.lorebook : []);
+            const needsGlobalCleanup = JSON.stringify(originalGlobal) !== JSON.stringify(draftChar.globalLore || []);
+            const persisted = await persistLoreToActiveChat(draftChat, MemoryEngine.getLorebook(draftChar, draftChat), {
+                ...(needsGlobalCleanup ? { globalLore: draftChar.globalLore } : {}),
+                targetContext, runtimeLease: lease, normalizationFence: fence
+            });
+            if (!persisted?.ok) return persisted;
+            canonicalWritten = true;
+            const current = await resolveChatContextByTarget(targetContext, { allowActiveFallback: false });
+            if (!runtimeGuard() || !sameAdmission(current)) return { ok: false, reason: 'normalization_identity_changed', canonicalWritten: true };
+            return { ok: true, changed: true, char: current.char, chat: current.chat };
+        } catch (error) {
+            return { ok: false, reason: String(error?.message || 'normalization_source_invalidated'), canonicalWritten };
+        } finally { source?.close(); postSource?.close(); }
+    };
+
     const persistLoreToActiveChat = async (preferredChat, lore, opts = {}) => {
+        const ownedNormalization = Object.prototype.hasOwnProperty.call(opts, 'normalizationFence');
+        const fence = opts.normalizationFence;
+        if (ownedNormalization && (VersionedCanonicalBridge.mode === 'authority' || typeof WmManualRuntime !== 'undefined' && WmManualRuntime?.isRouted()))
+            return { ok: false, reason: 'normalization_backend_unsupported', canonicalWritten: false };
+        if (ownedNormalization && (!fence || !opts.targetContext || ['prewriteGuard', 'runtimeGuard', 'freshTargetCheck', 'matchesHost', 'observeAcknowledged'].some(name => typeof fence[name] !== 'function')))
+            return { ok: false, reason: 'normalization_fence_invalid', canonicalWritten: false };
+        const ownedCurrent = (prewrite = false) => {
+            if (!ownedNormalization) return true;
+            try { return fence.runtimeGuard() === true && (!prewrite || fence.prewriteGuard() === true); } catch (_) { return false; }
+        };
+        if (!ownedCurrent(true)) return { ok: false, reason: 'normalization_source_invalidated', canonicalWritten: false };
         if(WmWriterRuntime.enabled && !opts.expectedSource)opts={...opts,expectedSource:WmWriterRuntime.latestSource(LibraDataStorage.scopeKeyFor(null,preferredChat))};
         if (VersionedCanonicalBridge.mode === "authority" && !WmWriterRuntime.enabled && !opts.expectedSource) return {ok:false,reason:"authority_write_token_required"};
         if (!Array.isArray(lore)) return { ok: false, reason: 'invalid_lore' };
@@ -226,7 +337,7 @@
         const { targetContext = null } = opts;
         const capturedProof = typeof PersonaScopeIdentity === 'undefined' ? null : PersonaScopeIdentity.chatProof(preferredChat);
         const expectedGeneration = targetContext?.resetGeneration ?? capturedProof?.resetGeneration ?? 0;
-        const isCurrent = () => !opts.runtimeLease || RuntimeStateLease.isCurrent(opts.runtimeLease);
+        const isCurrent = () => ownedCurrent() && (!opts.runtimeLease || RuntimeStateLease.isCurrent(opts.runtimeLease));
         if (!isCurrent()) return { ok: false, reason: 'runtime_lease_invalidated' };
         
         bindUiInteractionGuards();
@@ -271,13 +382,20 @@
             return { ok: false, reason: 'reset_generation_changed' };
         }
 
+        if (!ownedCurrent(true) || ownedNormalization && fence.matchesHost(freshChar, freshChat) !== true)
+            return { ok: false, reason: 'normalization_host_changed', canonicalWritten: false };
+        if (ownedNormalization && (Array.isArray(globalLore) && globalLore.some(LibraDataStorage.isLibraEntry)))
+            return { ok: false, reason: 'normalization_global_managed_remaining', canonicalWritten: false };
+        if (ownedNormalization && (charIdx < 0 || (Array.isArray(globalLore)
+            ? !RisuCompat.has('setCharacterToIndex') : !RisuCompat.has('setChatToIndex') && !RisuCompat.has('setCharacterToIndex'))))
+            return { ok: false, reason: 'target_granular_writer_unavailable', canonicalWritten: false };
         const expectedChatId = String(freshChat?.id || '');
         // Capture before save mutates shadow/cache and strips managed chat lore.
         let typedRecallBefore = null;
         try {
             if (SemanticRecallJobs.watchesScope(getChatRuntimeScopeKey(freshChat, freshChar))) {
                 const beforeCanonical = await LibraDataStorage.readVerified(admission.scopeKey, { readonly: true });
-                if (!beforeCanonical.ok || beforeCanonical.resetGeneration !== expectedGeneration || !isCurrent()) throw new Error('canonical_generation_changed');
+                if (!beforeCanonical.ok || beforeCanonical.resetGeneration !== expectedGeneration || !isCurrent() || !ownedCurrent(true)) throw new Error('canonical_generation_changed');
                 typedRecallBefore = TypedRecallCorpus.capture(freshChar, freshChat, {
                     currentTurn: MemoryEngine.getCurrentTurn?.() || 0,
                     resetGeneration: beforeCanonical.resetGeneration,
@@ -286,6 +404,7 @@
                 SemanticRecallJobs.beginPersist(typedRecallBefore);
             }
         } catch (_) {}
+        if (!ownedCurrent(true)) return { ok: false, reason: 'normalization_source_invalidated', canonicalWritten: false };
         const nextChat = cloneChatForLoreMutation(freshChat);
         const activeScopeKeyForDebug = getChatRuntimeScopeKey(freshChat, freshChar);
         // A declared deletion is a complete requested revision. Hydrated shadow
@@ -364,8 +483,18 @@
             if(root.scope!==admission.scopeKey || root.eventScope!==activeScopeKeyForDebug)return {ok:false,reason:'history_scope_changed'};
             if(root.phase==='ready' && libraLore.some(WmExtensionHistory.historyRow))return {ok:false,reason:'history_inline_rows_after_cutover'};
         }
-        const storageResult = await LibraDataStorage.save(freshChar, freshChat, libraLore);
+        if (!ownedCurrent(true)) return { ok: false, reason: 'normalization_source_invalidated', canonicalWritten: false };
+        // save may strip managed host fields after readback. Owned preparation
+        // gives it private target objects; only the indexed writer changes host.
+        const canonicalChar = ownedNormalization ? { ...freshChar } : freshChar;
+        const canonicalChat = ownedNormalization ? { ...freshChat, localLore: Array.isArray(freshChat.localLore) ? freshChat.localLore.slice() : [] } : freshChat;
+        if (ownedNormalization) PersonaScopeIdentity.remember(canonicalChar, canonicalChat, admission.personaId, admission.source, expectedGeneration);
+        const storageResult = await LibraDataStorage.save(canonicalChar, canonicalChat, libraLore, {
+            ...opts, reanalysisBaselineToken: opts.reanalysisBaselineToken, expectedSource: opts.expectedSource,
+            ...(ownedNormalization ? { normalizationFence: fence } : {})
+        });
         if (!storageResult?.ok) return { ok: false, reason: storageResult?.reason || 'canonical_save_failed',uncertain:storageResult?.uncertain===true };
+        try {
         if(WmWriterRuntime.enabled || typeof WmManualRuntime !== 'undefined' && WmManualRuntime?.isRouted())return {ok:true,canonicalVerified:true,canonicalWritten:true,scopeKey:storageResult.scopeKey,backend:WmWriterRuntime.enabled?'server_only':'wm.manual-copy-switch.v1'};
         if (!isCurrent()) return { ok: false, reason: 'runtime_lease_invalidated', canonicalWritten: true };
         const packedLibraLore = storageResult?.ok === false && LibraDataStorage.isHydrated(LibraDataStorage.scopeKeyFor(freshChar, freshChat))
@@ -397,6 +526,7 @@
                     .filter(e => e.comment && String(e.comment).startsWith('lmai_') && !isRetiredOrchestrationLoreEntry(e))
                     .map(e => ({ ...e }));
                 // 전역 로어도 스토리지로 보낸다. 캐릭터 로어에는 비-LIBRA 만 남긴다.
+                if (ownedNormalization && libraGlobal.length > 0) throw new Error('normalization_global_managed_remaining');
                 if (libraGlobal.length > 0) await LibraDataStorage.save(checkpointChar, null, libraGlobal);
                 checkpointChar.globalLore = [...externalGlobal];
             }
@@ -414,18 +544,21 @@
                 const verifyResolved = explicitTarget
                     ? await resolveChatContextByTarget(explicitTarget, { allowActiveFallback: false })
                     : null;
-                if (explicitTarget && !verifyResolved?.ok) return { ok: false, reason: verifyResolved?.reason || 'target_changed_before_save' };
+                if (explicitTarget && !verifyResolved?.ok) return { ok: false, reason: verifyResolved?.reason || 'target_changed_before_save', ...(ownedNormalization ? {canonicalWritten:true} : {}) };
+                if (ownedNormalization && (verifyResolved.chatIndex !== chatIndex || verifyResolved.charIdx !== charIdx)) return { ok: false, reason: 'normalization_target_position_changed', canonicalWritten: true };
                 const verifyChar = verifyResolved?.char || await RisuCompat.getCharacter();
                 const verifyChat = verifyChar?.chats?.[chatIndex];
                 if (expectedChatId && String(verifyChat?.id || '') !== expectedChatId) {
-                    return { ok: false, reason: 'chat_changed_before_save' };
+                    return { ok: false, reason: 'chat_changed_before_save', ...(ownedNormalization ? { canonicalWritten: true } : {}) };
                 }
+                if (ownedNormalization && (!ownedCurrent() || fence.matchesHost(verifyChar, verifyChat) !== true)) return { ok: false, reason: 'normalization_host_changed', canonicalWritten: true };
                 persistedChat = rebaseManagedLoreOntoChat(verifyChat);
                 if (!isCurrent()) return { ok: false, reason: 'runtime_lease_invalidated', canonicalWritten: true };
                 const chatSaved = await RisuCompat.setChatToIndex(charIdx, chatIndex, persistedChat);
-                if (chatSaved === false) return { ok: false, reason: 'chat_write_failed' };
+                if (chatSaved === false) return { ok: false, reason: 'chat_write_failed', ...(ownedNormalization ? {canonicalWritten:true} : {}) };
                 savedByGranularChatApi = true;
             } catch (granularSaveError) {
+                if (ownedNormalization) return { ok: false, reason: 'normalization_host_cleanup_unverified', canonicalWritten: true };
                 if (MemoryEngine.CONFIG?.debug) {
                     recordRuntimeDebug('warn', '[LIBRA] setChatToIndex failed; falling back to setCharacter:', granularSaveError?.message || granularSaveError);
                 }
@@ -437,14 +570,17 @@
             // a safe fallback for an explicit background target.
             if (explicitTarget) {
                 if (charIdx < 0 || !RisuCompat.has('setCharacterToIndex')) {
-                    return { ok: false, reason: 'target_granular_writer_unavailable' };
+                    return { ok: false, reason: 'target_granular_writer_unavailable', ...(ownedNormalization ? { canonicalWritten: true } : {}) };
                 }
                 const verifyResolved = await resolveChatContextByTarget(explicitTarget, { allowActiveFallback: false });
-                if (!verifyResolved?.ok) return { ok: false, reason: verifyResolved?.reason || 'target_changed_before_save' };
+                if (!verifyResolved?.ok) return { ok: false, reason: verifyResolved?.reason || 'target_changed_before_save', ...(ownedNormalization ? {canonicalWritten:true} : {}) };
+                if (ownedNormalization && (verifyResolved.chatIndex !== chatIndex || verifyResolved.charIdx !== charIdx)) return { ok: false, reason: 'normalization_target_position_changed', canonicalWritten: true };
+                if (ownedNormalization && (!ownedCurrent() || fence.matchesHost(verifyResolved.char, verifyResolved.chat) !== true)) return { ok: false, reason: 'normalization_host_changed', canonicalWritten: true };
                 persistedChat = rebaseManagedLoreOntoChat(verifyResolved.chat);
                 const checkpointChar = await buildCheckpointChar(verifyResolved.char, persistedChat);
+                if (ownedNormalization && !ownedCurrent()) return { ok: false, reason: 'normalization_source_invalidated', canonicalWritten: true };
                 const saved = await RisuCompat.setCharacterToIndex(charIdx, checkpointChar);
-                if (saved === false) return { ok: false, reason: 'target_character_write_failed' };
+                if (saved === false) return { ok: false, reason: 'target_character_write_failed', ...(ownedNormalization ? {canonicalWritten:true} : {}) };
                 savedByGranularChatApi = true;
             }
         }
@@ -453,7 +589,7 @@
             const verifyChar = await RisuCompat.getCharacter();
             const verifyChat = verifyChar?.chats?.[chatIndex];
             if (expectedChatId && String(verifyChat?.id || '') !== expectedChatId) {
-                return { ok: false, reason: 'chat_changed_before_save' };
+                return { ok: false, reason: 'chat_changed_before_save', ...(ownedNormalization ? { canonicalWritten: true } : {}) };
             }
             persistedChat = rebaseManagedLoreOntoChat(verifyChat);
             const checkpointChar = await buildCheckpointChar(verifyChar, persistedChat);
@@ -462,13 +598,17 @@
 
         // Both canonical storage and host chat must acknowledge success. Failed
         // cache-first canonical saves must never produce semantic change jobs.
-        let canonicalVerified = false;
+        let canonicalVerified = false, normalizedSource = null;
         if (storageResult?.ok === true) {
             try {
                 const canonical = await LibraDataStorage.readVerified(admission.scopeKey, { readonly: true });
                 if (!canonical.ok || canonical.resetGeneration !== expectedGeneration || !isCurrent()
                     || LibraDataStorage.scopeKeyFor(freshChar, persistedChat) !== admission.scopeKey
                     || JSON.stringify(canonical.entries) !== JSON.stringify(libraLore)) throw new Error('acknowledged_source_changed');
+                if (ownedNormalization) {
+                    normalizedSource = await fence.observeAcknowledged(storageResult.acknowledgedRaw);
+                    if (!normalizedSource?.isCurrent()) throw new Error('normalization_source_invalidated');
+                }
                 canonicalVerified = true;
                 const after = TypedRecallCorpus.capture(freshChar, persistedChat, {
                     currentTurn: MemoryEngine.getCurrentTurn?.() || 0,
@@ -480,16 +620,23 @@
                 try {
                     if (typedRecallBefore) void SemanticRecallJobs.onPersist(typedRecallBefore, after).catch(() => {});
                 } catch (_) { /* a semantic scheduling failure cannot skip HME maintenance */ }
-                await MemoryEngine.maintainHmeTypedSourceGraph(after, { guard: () => isCurrent()
+                await MemoryEngine.maintainHmeTypedSourceGraph(after, { guard: () => isCurrent() && (!ownedNormalization || normalizedSource?.isCurrent())
                     && LibraDataStorage.scopeKeyFor(freshChar, persistedChat) === admission.scopeKey
                     && (PersonaScopeIdentity.get(freshChar, freshChat)?.resetGeneration ?? 0) === expectedGeneration });
-            } catch (_) { /* indexing failure must not fail canonical conversation persistence */ }
+            } catch (_) {
+                if (ownedNormalization) return { ok: false, reason: 'normalization_post_save_unverified', canonicalWritten: true };
+                /* indexing failure must not fail canonical conversation persistence */
+            } finally { normalizedSource?.close(); }
         }
         const unpackedSavedChat = {
             ...persistedChat,
             localLore: LibraLoreConsolidator.unpack(persistedChat.localLore)
         };
         return { ok: true, canonicalVerified, chat: unpackedSavedChat, storedChat: persistedChat, chatIndex: chatIndex, charIdx: charIdx, savedByGranularChatApi };
+        } catch (error) {
+            if (ownedNormalization) return { ok: false, reason: 'normalization_host_cleanup_unverified', canonicalWritten: true, uncertain: true };
+            throw error;
+        }
     };
     const requireSuccessfulLorePersist = (result = null, operation = 'lore persist') => {
         if (!result?.ok) {

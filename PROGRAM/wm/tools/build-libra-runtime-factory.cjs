@@ -78,7 +78,6 @@ for(const part of sources){
                 } finally { reanalysisDerivedGuard = null; }
             },
             ensureHybridScopeIndex,`,part.file+':derived-refresh');
- if(part.file==='parts/01g-lore-concurrent-persistence.js')part.source=replaceOne(part.source,'const storageResult = await LibraDataStorage.save(freshChar, freshChat, libraLore);','const storageResult = await LibraDataStorage.save(freshChar, freshChat, libraLore, { reanalysisBaselineToken: opts.reanalysisBaselineToken });',part.file+':owner-forward-save');
  if(part.file==='parts/05j-pending-turn-manager.js') {
   part.source=replaceOne(part.source,'            const originalChat = chat;','            const originalChat = chat;\n            let reanalysisBaselineProof = null;',part.file+':owner-proof-slot');
   part.source=replaceOne(part.source,'                        chat = resolved.chat;\n                        char = resolved.char;','                        chat = resolved.chat;\n                        char = resolved.char;\n                        reanalysisBaselineProof = resolved.personaAdmission || null;',part.file+':owner-proof-target');

@@ -18,12 +18,18 @@ Accept HTTPS origins or HTTP loopback (`localhost`, `127.0.0.1`, `[::1]`). Rejec
 
 Both metadata responses are limited while streaming to 128 KiB; excess data is cancelled. The complete check times out after 10 seconds. These are metadata-check safety boundaries, not new limits on WM memory or data. Protocol/capability/status fields and initialized dataset identity/route/health are checked. Public success returns only `ok`, backend ID, protocol, and the three documented capacity values. A successful check certifies neither native all-writer ownership nor a valid server writer route. Configuration changes/disposal invalidate in-flight reads/checks; the UI invalidates stale connection success on save, clear, changed persisted config or failed config read. These ordinary settings readbacks are not cross-executor CAS.
 
-## Activation remains unsupported on the stock host
+## Strong native-authority activation remains unsupported on the stock host
 
-The original approved design §7.3 and implementation plan's blocker section already require native all-writer fencing, durable route CAS and restart qualification for real server-mode activation, in addition to safe whole-data migration. This condition is not introduced by the stronger later GRADIA profile.
+The original approved design §7.3 and implementation plan's blocker section already require native all-writer fencing, durable route CAS and restart qualification for strong native-authority server-mode activation, in addition to safe whole-data migration. This condition is not introduced by the stronger later GRADIA profile.
 
 `WmNativeHostGate.qualifiedProductionProfiles` remains empty. `check({route})` still rejects `server_only` without a supported native provider. `WmStorageRouter` still checks that gate on server requests and rejects server-only without it. Ordinary pluginStorage get/set/readback does not satisfy these guarantees; manually selecting an empty server dataset would not create a qualified route or fence older writers.
 
 The full injectable server backend additionally requires trusted identity, route, writer epoch, incarnation, operation journal and authenticated transport metadata. Ordinary HTTP capabilities/status do not provide a trusted incarnation. This repair deliberately constructs no full writer backend or storage router and makes no such metadata up. The default server also keeps external source-fence migration and handoff activation opt-ins closed.
 
-Thus existing plugin-only usage and explicit connection checking are the currently usable default paths. No already-approved stock-host ordinary server activation path was found that works without the missing authority contract. RisuAI core changes, weaker/exclusive-writer mode contracts, credential provisioning, actual DATA operations, and release/deployment are not part of this repair. Full/Min publication and later actual-host checks are separate stages.
+## Approved ordinary manual storage profile
+
+The separate `wm.manual-copy-switch.v1` implementation in `wm/src/wm-manual-storage.source.js` supports the approved `plugin_only` and `server_only` manual profiles. Its explicit copy, verify and switch flow is distinct from `WmStorageRouter`'s strong native-authority route. The profile uses the existing server connection and checks its own copy/readback conditions; a successful connection-only check does not itself switch storage or copy data.
+
+The ordinary manual profile does not claim native all-writer ownership, durable host route CAS, atomic host-wide migration, or enforcement against unknown external writers. `all_writer_ownership:false`, a closed strong `serverActivation` capability and an empty `qualifiedProductionProfiles` list describe that unsupported strong contract; they do not by themselves disable the separately approved manual profile.
+
+Offline in-process controls have exercised manual GUI server writes and GUI close/reopen readback in the same server process. An actual server-process restart, live RisuAI/browser connectivity and Windows lifecycle qualification remain NOT_RUN. No offline receipt substitutes for those checks. RisuAI core changes, new credentials and stronger native authority remain outside this implementation. Development-package builds and byte parity do not establish release qualification.

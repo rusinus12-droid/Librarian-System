@@ -122,6 +122,8 @@ const relationEnvelopeFor = receipt => {
       return classified && rowsWith(rows, 'libra.person_span_inventory_head.v1')[0]?.value.inventoryKey === classified.key;
     }, 15000);
     assert.equal((await partial.f.r.api.debugReadPersonSpanInventory(1)).status, 'verified');
+    // Inventory is an earlier durable frontier; retain the Micro assertion after its own queue settles.
+    await waitFor(() => partial.f.r.api.getCaptureBackendState().microQueuedJobs === 0, 15000);
     assert.equal((await partial.f.r.api.debugReadActiveMicroMemory(1)).record.analysisStatus,
       'minimum_source_bound', 'invalid Micro candidate does not erase valid person discovery');
     console.log('PASS classified person discovery survives invalid Micro candidate');

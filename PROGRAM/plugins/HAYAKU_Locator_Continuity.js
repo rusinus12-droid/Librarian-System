@@ -7664,7 +7664,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registry = await loadScopeRegistry(false, false);
     // The global entry counts: if the user made the whole install server-backed, a shared record must
     // still be mirrored even when no individual chat scope has been touched yet.
-    return Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+    if (Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) return true;
+    // Scoped reads already admit an unconsumed legacy global argument. Shared
+    // owner infrastructure must use that same fallback, without overriding a
+    // published global choice or importing/publishing any new mode here.
+    return globalModeEnabled && !registry.legacyGlobalModeImported && !liveGlobalRow(registry)
+      && normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) !== MODE_PLUGIN_ONLY;
   };
 
   const normalizeRouteDescriptor = async (rawValue, space, key, currentScope) => {

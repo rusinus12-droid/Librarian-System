@@ -49,7 +49,7 @@ const WmManualStorage=(()=>{
    const saved=await readJson('WMManual::private::'+loadedRoute.generation+'::'+id);
    if(saved&&saved.sha256===d.sha256&&typeof saved.wire==='string'){if(I.projectManualRecord(key,saved.wire).raw!==raw)fail('manual_private_binding_invalid');return saved.wire;}return raw;
   }
-  async function set(space,key,value,remove=false){if(loadedRoute.generation===null)return remove?nativeStores[space].removeItem(key):nativeStores[space].setItem(key,value,{strict:true});const kind=I.manualKeyKind(key);if(kind==='private')return remove?nativeStores[space].removeItem(key):nativeStores[space].setItem(key,value,{strict:true});if(kind==='unknown')fail('manual_record_unsupported');
+  async function set(space,key,value,remove=false,options={}){if(loadedRoute.generation===null)return remove?nativeStores[space].removeItem(key):nativeStores[space].setItem(key,value,{...options,strict:true});if(Object.prototype.hasOwnProperty.call(options,'isCurrent'))fail('manual_guarded_write_unsupported');const kind=I.manualKeyKind(key);if(kind==='private')return remove?nativeStores[space].removeItem(key):nativeStores[space].setItem(key,value,{strict:true});if(kind==='unknown')fail('manual_record_unsupported');
    if(loadedRoute.generation===null)return remove?nativeStores[space].removeItem(key):nativeStores[space].setItem(key,value,{strict:true});
    const projected=remove?{raw:'',private:{},kind}:I.projectManualRecord(key,String(value)),d=await descriptor(space,key,kind,projected.raw,remove),id=d.id;
    if(loadedRoute.mode==='server_only'){
@@ -68,7 +68,7 @@ const WmManualStorage=(()=>{
   const privateKey=(space,k)=>loadedRoute.generation!==null&&executionKey(k)?'WMManual::execution::'+loadedRoute.generation+'::'+space+'::'+k:k;
   const privateIO=(space,k,fn)=>executionKey(k)?own(()=>fn(privateKey(space,k))):fn(k);
   const wrap=space=>Object.freeze({
-   getItem:(k,o={})=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].getItem(key,o)):own(()=>get(space,k)),setItem:(k,v,o={})=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].setItem(key,v,o)):own(()=>serialWrite(()=>set(space,k,v))),removeItem:k=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].removeItem(key)):own(()=>serialWrite(()=>set(space,k,'',true))),
+   getItem:(k,o={})=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].getItem(key,o)):own(()=>get(space,k)),setItem:(k,v,o={})=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].setItem(key,v,o)):own(()=>serialWrite(()=>set(space,k,v,false,o))),removeItem:k=>I.manualKeyKind(k)==='private'?privateIO(space,k,key=>nativeStores[space].removeItem(key)):own(()=>serialWrite(()=>set(space,k,'',true))),
    keys:()=>own(async()=>{if(loadedRoute.generation===null)return nativeStores[space].keys({strict:true});const localKeys=(await nativeStores[space].keys({strict:true})).filter(k=>I.manualKeyKind(k)==='private'&&!executionKey(k)&&!k.startsWith('WMManual::'));
     let ds;if(loadedRoute.mode==='server_only'){const s=await serverStatus();if(!serverMatches(s))fail('manual_server_identity_changed');ds=await remoteRows(s);}else ds=(await catalog(loadedRoute.generation)).records;return [...new Set([...localKeys,...ds.filter(d=>d.space===space&&!d.tombstone).map(d=>d.key)])];}),
    inventoryPhysicalKeys:k=>loadedRoute.generation===null?nativeStores[space].inventoryPhysicalKeys?.(k)||[]:[],readRouteIdentity:()=>loadedRoute.generation===null?nativeStores[space].readRouteIdentity?.()||null:null

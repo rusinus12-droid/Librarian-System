@@ -1,5 +1,17 @@
     // [MANAGER] Entity Manager
     // ══════════════════════════════════════════════════════════════
+    // Scope-row construction is synchronous and does not mutate entity sources.
+    // Keep its lazy empty-input projection only until that one call returns.
+    let synchronousEntityProjectionFrame = null;
+    const withSynchronousEntityProjection = callback => {
+        const previous = synchronousEntityProjectionFrame;
+        synchronousEntityProjectionFrame = { projection: null };
+        try {
+            const result = callback();
+            if (result && typeof result.then === 'function') throw new Error('entity_projection_must_be_synchronous');
+            return result;
+        } finally { synchronousEntityProjectionFrame = previous; }
+    };
     const EntityManager = (() => {
         const entityCache = new Map();
         const relationCache = new Map();
@@ -460,7 +472,19 @@
         const isActiveEntityRecord = (entity = null) => !!entity && !isEntityAbsorptionApplied(entity);
         const isPromptVisibleEntityRecord = (entity = null) => isActiveEntityRecord(entity) && !isEntityAbsorptionPending(entity);
 
-        const collectKnownEntities = (lorebook) => {
+        // Ordinary calls stay fresh. Only a synchronous scope row can share its
+        // successful empty-input projection; local lore always uses a fresh view.
+        const readKnownEntityProjection = lorebook => {
+            const source = Array.isArray(lorebook) ? lorebook : [];
+            const frame = synchronousEntityProjectionFrame;
+            if (!frame || !Array.isArray(lorebook) || source.length) return LibraLoreConsolidator.unpack(source, { shadowEntryComment: ENTITY_COMMENT });
+            if (frame.projection !== null) return frame.projection;
+            const outcome = { ok: false };
+            const projection = LibraLoreConsolidator.unpack(source, { shadowEntryComment: ENTITY_COMMENT, entityProjectionReadOutcome: outcome });
+            if (outcome.ok === true) frame.projection = projection;
+            return projection;
+        };
+        const collectKnownEntities = (lorebook, sourceProjection = null) => {
             // If entityCache is populated (after rebuildCache), use it directly to avoid
             // redundant lorebook parsing and duplicate entries
             if (entityCache.size > 0) {
@@ -468,7 +492,7 @@
             }
             // Fallback: parse lorebook entries when cache is not yet built
             const known = [];
-            for (const entry of LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [], { shadowEntryComment: ENTITY_COMMENT })) {
+            for (const entry of sourceProjection || readKnownEntityProjection(lorebook)) {
                 if (entry.comment !== ENTITY_COMMENT) continue;
                 try {
                     const parsed = JSON.parse(entry.content || '{}');
@@ -482,9 +506,9 @@
             return known;
         };
 
-        const getKnownEntitySignature = (knownEntities = [], lorebook = []) => {
+        const getKnownEntitySignature = (knownEntities = [], lorebook = [], sourceProjection = null) => {
             if (entityCache.size > 0) return `cache:${entityCacheRevision}:${entityCache.size}`;
-            const loreEntries = LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [], { shadowEntryComment: ENTITY_COMMENT })
+            const loreEntries = (sourceProjection || readKnownEntityProjection(lorebook))
                 .filter(entry => entry?.comment === ENTITY_COMMENT);
             const digest = stableHash(loreEntries.map(entry => `${entry.comment}:${entry.content || ''}`).join('|'));
             return `lore:${loreEntries.length}:${digest}`;
@@ -503,8 +527,8 @@
             return [...set][0] || '';
         };
 
-        const getEntityLookupIndex = (knownEntities = [], lorebook = []) => {
-            const signature = getKnownEntitySignature(knownEntities, lorebook);
+        const getEntityLookupIndex = (knownEntities = [], lorebook = [], sourceProjection = null) => {
+            const signature = getKnownEntitySignature(knownEntities, lorebook, sourceProjection);
             if (entityLookupIndexCache?.signature === signature) return entityLookupIndexCache;
             const aliasToName = new Map();
             const identityTokenToName = new Map();
@@ -541,8 +565,9 @@
             if (!base) return '';
             if (isUserAlias(base)) return identityState.userCanonical || base;
 
-            const knownEntities = collectKnownEntities(lorebook);
-            const lookupIndex = getEntityLookupIndex(knownEntities, lorebook);
+            const sourceProjection = entityCache.size > 0 ? null : readKnownEntityProjection(lorebook);
+            const knownEntities = collectKnownEntities(lorebook, sourceProjection);
+            const lookupIndex = getEntityLookupIndex(knownEntities, lorebook, sourceProjection);
             const cacheKey = `${lookupIndex.signature}::${base}::${String(name || '').trim()}`;
             if (entityResolveCache.has(cacheKey)) return entityResolveCache.get(cacheKey);
             const finish = (value) => {

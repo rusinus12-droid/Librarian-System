@@ -508,9 +508,15 @@
             return merged;
         };
 
-        const normalizeLoreStorage = async (char, chat) => {
+        const normalizeLoreStorage = async (char, chat, ownedPreparation = null) => {
             if (typeof WmManualRuntime !== 'undefined' && WmManualRuntime?.isRouted()) return false;
             if (VersionedCanonicalBridge.mode === "authority") throw new Error("authority_mixed_scope_unsupported");
+            const checkOwned = () => {
+                if (ownedPreparation && (typeof ownedPreparation.isCurrent !== 'function'
+                    || typeof ownedPreparation.refresh !== 'function' || typeof ownedPreparation.cooperative !== 'boolean'
+                    || ownedPreparation.isCurrent() !== true)) throw new Error('normalization_source_invalidated');
+            };
+            checkOwned();
             const globalLore = Array.isArray(char?.globalLore)
                 ? char.globalLore
                 : (Array.isArray(char?.lorebook) ? char.lorebook : []);
@@ -526,15 +532,35 @@
                 return !LibraLoreConsolidator.isContainer(entry) && (comment === 'lmai_memory' || comment === 'lmai_entity' || comment === 'lmai_relation');
             });
             let localMemoryCompacted = false;
-            let compactedLocalLore = unpackedLocalLore.map(entry => {
+            const migrate = (entry, local) => {
                 const migrated = CompactMemoryCodec.migrateEntry(entry);
-                if (migrated?.changed) localMemoryCompacted = true;
+                if (local && migrated?.changed) localMemoryCompacted = true;
                 return migrated?.entry || entry;
-            });
-            const compactedGlobalLore = unpackedGlobalLore.map(entry => {
-                const migrated = CompactMemoryCodec.migrateEntry(entry);
-                return migrated?.entry || entry;
-            });
+            };
+            let compactedLocalLore, compactedGlobalLore;
+            if (ownedPreparation?.cooperative === true) {
+                const controller = ResourceGovernor.createYieldController('lore_normalization');
+                const prepare = async (rows, local) => {
+                    const out = [];
+                    for (const entry of rows) {
+                        checkOwned();
+                        out.push(migrate(entry, local));
+                        checkOwned();
+                        await ResourceGovernor.yieldIfNeeded(controller, 1);
+                        checkOwned();
+                    }
+                    return out;
+                };
+                compactedLocalLore = await prepare(unpackedLocalLore, true);
+                checkOwned();
+                compactedGlobalLore = await prepare(unpackedGlobalLore, false);
+                checkOwned();
+            } else {
+                compactedLocalLore = unpackedLocalLore.map(entry => migrate(entry, true));
+                compactedGlobalLore = unpackedGlobalLore.map(entry => migrate(entry, false));
+            }
+            if (ownedPreparation && await ownedPreparation.refresh() !== true) throw new Error('normalization_source_invalidated');
+            checkOwned();
             let characterLoreCueIndexChanged = false;
             try {
                 const withoutCharacterLoreCueIndex = compactedLocalLore.filter(entry => String(entry?.comment || '') !== CharacterLoreCueIndex.COMMENT);
@@ -561,6 +587,7 @@
                 if (CONFIG.debug) recordRuntimeDebug('warn', '[LIBRA] Character lore cue index normalize failed:', error?.message || error);
             }
 
+            checkOwned();
             const globalLibra = compactedGlobalLore.filter(isLibraManagedEntry);
             if (globalLibra.length === 0 && !localNeedsContainerPacking && !localMemoryCompacted && !characterLoreCueIndexChanged) return false;
 
@@ -573,6 +600,7 @@
                 migrated.push(entry);
             }
 
+            checkOwned();
             char.globalLore = compactedGlobalLore.filter(entry => !isLibraManagedEntry(entry));
             chat.localLore = migrated.length > 0 ? [...compactedLocalLore, ...migrated] : [...compactedLocalLore];
             return migrated.length > 0 || globalLibra.length > 0 || localNeedsContainerPacking || localMemoryCompacted || characterLoreCueIndexChanged;

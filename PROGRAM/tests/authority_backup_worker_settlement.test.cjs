@@ -3,12 +3,15 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {Worker}=require('node:worker_threads'),{DatabaseSync}=require('node:sqlite');
 const root=path.resolve(__dirname,'..');
 const inheritedGuard=process.env.NODE_OPTIONS?.match(/--require[= ]([^ ]*\/no-network\.cjs)/)?.[1];
-const guard=inheritedGuard||path.resolve(root,'../../evidence/no-network.cjs');
+// The inherited audited preload remains the explicit override. Standalone source
+// packages carry the same portable guard and load it before any fixture operation.
+const guard=inheritedGuard||path.join(__dirname,'fixtures/authority_no_network.cjs');
+if(!inheritedGuard)require(guard);
 if(inheritedGuard){
  assert(require.cache[require.resolve(guard)],'selected inherited audited guard is already loaded');
- assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(guard)).digest('hex'),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','current reviewed A4 guard identity');
 }
-const strict=require('./fixtures/authority_strict_guard_probe.cjs').capture();
+assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(guard)).digest('hex'),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','reviewed portable offline guard identity');
+const strict=require('./fixtures/authority_strict_guard_probe.cjs').capture({guard});
 function fixture(t,mode='success'){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lib-task5a-worker-')),src=path.join(dir,'source.sqlite'),dst=path.join(dir,'target.sqlite');
  const db=new DatabaseSync(src);db.exec('CREATE TABLE kv(deleted INTEGER NOT NULL);INSERT INTO kv VALUES(0);');db.close();

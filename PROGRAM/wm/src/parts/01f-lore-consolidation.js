@@ -57,6 +57,7 @@
     let disposeValidationSourceOwners = () => {};
     let originalHydrationValidator = () => null;
     let OwnedHydrationValidation = null;
+    let OwnedNormalizationSource = null;
     let isOwnedHydrationHostEligible = () => false;
     const LibraDataStorage = (() => {
         const manualRouted = () => typeof WmManualRuntime !== 'undefined' && WmManualRuntime?.isRouted() === true;
@@ -182,6 +183,44 @@
             return Object.freeze({ createOwner, acquire, acquireObserved, source, matches, close, revoke, retire, beginWrite, endWrite, disposeAll });
         })();
         disposeValidationSourceOwners = validationSources.disposeAll;
+        // Lexical preparation ownership only. Absence is conditional input, never
+        // an issued source receipt or authority to adopt unverified host rows.
+        OwnedNormalizationSource = Object.freeze({
+            async open(admission, guard) {
+                if (!admission || !isManagementScopeResolved(admission.scopeKey) || typeof guard !== 'function')
+                    throw new Error('normalization_identity_unresolved');
+                let owner = validationSources.createOwner(admission.scopeKey), observation = null, closed = false;
+                const close = () => { if (owner) validationSources.close(owner); owner = null; observation = null; closed = true; };
+                const live = () => {
+                    try { if (!closed && guard() === true) return true; } catch (_) {}
+                    close(); return false;
+                };
+                if (!owner || !live()) { close(); throw new Error('normalization_source_invalidated'); }
+                observation = await validationSources.acquireObserved(owner);
+                if (!live() || !['issued', 'missing'].includes(observation?.status)
+                    || observation.read?.resetGeneration !== admission.resetGeneration) {
+                    close(); throw new Error('normalization_source_unavailable');
+                }
+                const status = observation.status, expectedRaw = observation.read.raw;
+                if (status === 'missing') { validationSources.close(owner); owner = null; observation = null; }
+                const isCurrent = () => live() && (status === 'missing'
+                    || validationSources.matches(owner, observation?.receipt, observation?.read));
+                const refresh = async () => {
+                    if (!isCurrent()) { close(); return false; }
+                    const next = status === 'missing' ? { status: 'missing', read: await readVerified(admission.scopeKey, { readonly: true }) }
+                        : await validationSources.acquireObserved(owner);
+                    if (!live() || next.status !== status || !next.read?.ok || next.read.raw !== expectedRaw
+                        || next.read.resetGeneration !== admission.resetGeneration
+                        || (status === 'missing' ? !next.read.missing : !next.receipt)) { close(); return false; }
+                    if (status === 'issued') observation = next;
+                    return isCurrent();
+                };
+                const matchesShadow = () => isCurrent() && getActiveScope() === admission.scopeKey
+                    && (status === 'missing' ? getShadow(admission.scopeKey).length === 0
+                        : isHydrated(admission.scopeKey) && JSON.stringify(getShadow(admission.scopeKey)) === JSON.stringify(observation.read.entries));
+                return Object.freeze({ status, expectedRaw, isCurrent, matchesShadow, refresh, close });
+            }
+        });
 
         const invalidateScopeWriters = scope => {
             scopeMutations.set(scope, ++mutationSerial);
@@ -669,12 +708,35 @@
         };
         const save = async (charArg = null, chatArg = null, entryArg = []) => {
 
+            if (Object.prototype.hasOwnProperty.call(saveOptions, 'normalizationFence')
+                && (VersionedCanonicalBridge.mode === 'authority' || manualRouted()))
+                return { ok: false, reason: 'normalization_backend_unsupported', uncertain: false };
             const capturedMutation = mutationSerial;
             const parsed = args(charArg, chatArg);
             const char = parsed.char; const chat = parsed.chat;
             const entries = parsed.entries || entryArg;
             const expectedGeneration = capturedGeneration(char, chat);
+            const ownedNormalization = Object.prototype.hasOwnProperty.call(saveOptions, 'normalizationFence');
+            const fence = ownedNormalization && saveOptions.normalizationFence ? Object.freeze({ ...saveOptions.normalizationFence }) : null;
+            if (ownedNormalization && (!fence || !Object.prototype.hasOwnProperty.call(fence, 'expectedRaw')
+                || !(fence.expectedRaw === null || typeof fence.expectedRaw === 'string')
+                || fence.expectedGeneration !== expectedGeneration
+                || ['prewriteGuard', 'runtimeGuard', 'freshTargetCheck'].some(name => typeof fence[name] !== 'function')))
+                return { ok: false, reason: 'normalization_fence_invalid', uncertain: false };
+            let normalizationInvalidated = false;
+            const normalizationCurrent = (prewrite = false) => {
+                if (!ownedNormalization) return true;
+                try {
+                    if (!normalizationInvalidated && fence.runtimeGuard() === true
+                        && (!prewrite || fence.prewriteGuard() === true)
+                        && capturedGeneration(char, chat) === expectedGeneration) return true;
+                } catch (_) {}
+                normalizationInvalidated = true;
+                return false;
+            };
+            if (!normalizationCurrent(true)) return { ok: false, reason: 'normalization_source_invalidated', uncertain: false };
             const scopeKey = await scopeKeyForAsync(char, chat);
+            if (ownedNormalization && !isManagementScopeResolved(scopeKey)) return { ok: false, scopeKey, reason: 'normalization_identity_unresolved', uncertain: false };
             const pendingAdmission=await WmPendingAdmission.forChat(char,chat,"save");if(!pendingAdmission.ok)return pendingAdmission;
             if(WmWriterRuntime.enabled&&!saveOptions.expectedSource)saveOptions={...saveOptions,expectedSource:WmWriterRuntime.latestSource(scopeKey)};
             if (VersionedCanonicalBridge.mode === "authority" && !VersionedCanonicalBridge.validateSource(scopeKey,saveOptions.expectedSource).ok) return {ok:false,reason:"authority_write_token_required"};
@@ -682,11 +744,24 @@
                 // Fence old work before any cache or host mutation. The queue
                 // serializes writers in this runtime; it is not cross-runtime CAS.
                 let previousEnvelope = {};
+                let ownedWriteIssued = false, acknowledgedRaw = null;
+                if (!normalizationCurrent(true)) return { ok: false, scopeKey, reason: 'normalization_source_invalidated', uncertain: false };
                 if (isManagementScopeResolved(scopeKey)) {
                     const before = await readVerified(scopeKey);
                     if (!before.ok) return { ok: false, scopeKey, reason: before.reason };
                     if (VersionedCanonicalBridge.mode === "authority" && !VersionedCanonicalBridge.matches(saveOptions.expectedSource,before.authoritySource)) return {ok:false,scopeKey,reason:"authority_source_changed"};
                     if (before.resetGeneration !== expectedGeneration) return { ok: false, scopeKey, reason: 'reset_generation_changed' };
+                    if (ownedNormalization) {
+                        if (before.raw !== fence.expectedRaw) return { ok: false, scopeKey, reason: 'normalization_source_changed', uncertain: false };
+                        let targetCurrent = false;
+                        try { targetCurrent = await fence.freshTargetCheck() === true; } catch (_) {}
+                        if (!targetCurrent || !normalizationCurrent(true)) return { ok: false, scopeKey, reason: 'normalization_source_invalidated', uncertain: false };
+                        const observedAgain = await readVerified(scopeKey);
+                        if (!observedAgain.ok || observedAgain.raw !== fence.expectedRaw || observedAgain.resetGeneration !== expectedGeneration)
+                            return { ok: false, scopeKey, reason: 'normalization_source_changed', uncertain: false };
+                        if (!normalizationCurrent(true)) return { ok: false, scopeKey, reason: 'normalization_source_invalidated', uncertain: false };
+                        acknowledgedRaw = before.raw;
+                    }
                     previousEnvelope = before.missing ? {} : JSON.parse(before.raw);
                 }
                 if (getHydrationDiagnostics(scopeKey).readOnly) return { ok: false, scopeKey, reason: 'canonical_provenance_unverified' };
@@ -707,6 +782,7 @@
                         && previousEnvelope.entryCount === normalized.length
                         && previousEnvelope.resetGeneration === expectedGeneration
                         && JSON.stringify(previousEnvelope.entries) === JSON.stringify(normalized);
+                    if (!normalizationCurrent(true)) return { ok: false, scopeKey, reason: 'normalization_source_invalidated', uncertain: false };
                     if (!unchanged) {
                         const payload = JSON.stringify({ ...previousEnvelope, version: previousEnvelope.version ?? '1.0', scopeKey,
                             entryCount: normalized.length, updatedAt: Date.now(), entries: normalized, resetGeneration: expectedGeneration });
@@ -721,10 +797,23 @@
                                 baselineWriteTicket = LatestTurnBaselineOwner.beforeWrite(scopeKey, saveOptions.reanalysisBaselineToken, baselineVerifiedRaw);
                                 authorityCommit = await VersionedCanonicalBridge.commit(scopeKey,saveOptions.expectedSource,payload,WmWriterRuntime.enabled?(saveOptions.operation||'normal'):'normal');
                                 if (!authorityCommit.ok) return {ok:false,scopeKey,reason:authorityCommit.reason,uncertain:authorityCommit.uncertain===true};
+                            } else if (ownedNormalization) {
+                                baselineWriteTicket = LatestTurnBaselineOwner.beforeWrite(scopeKey, saveOptions.reanalysisBaselineToken, baselineVerifiedRaw);
+                                ownedWriteIssued = true;
+                                try {
+                                    if (await RisuCompat.pluginStorage.setItem(storageKeyFor(scopeKey), payload, {
+                                        strict: true, isCurrent: () => normalizationCurrent() && scopeKeyFor(char, chat) === scopeKey
+                                            && (scopeMutations.get(scopeKey) || 0) <= capturedMutation && !getHydrationDiagnostics(scopeKey).readOnly
+                                    }) !== true) throw new Error('canonical_save_unverified');
+                                } catch (error) {
+                                    if (error?.storageWriteUnverified === false) ownedWriteIssued = false;
+                                    throw error;
+                                }
                             } else {
                             try { await RisuCompat.pluginStorage.setItem(storageKeyFor(scopeKey), payload); } catch (_) {}
                             }
                         } finally { validationSources.endWrite(validationWrite); }
+                        if (!normalizationCurrent()) return { ok: false, uncertain: ownedWriteIssued, scopeKey, reason: 'normalization_source_invalidated' };
                         const readbackSource = await readCanonicalSource(scopeKey,{strict:true});
                         const readback = readbackSource.raw;
                         if (authorityCommit && !VersionedCanonicalBridge.sameHead(readbackSource.head,authorityCommit.head)) return {ok:false,scopeKey,reason:'authority_source_changed',uncertain:true};
@@ -733,11 +822,13 @@
                         if (scopeKeyFor(char, chat) !== scopeKey) return { ok: false, uncertain: true, scopeKey, reason: 'stale_identity' };
                         if (capturedGeneration(char, chat) !== expectedGeneration) return { ok: false, uncertain: true, scopeKey, reason: 'reset_generation_changed' };
                         if (readback !== payload) return { ok: false, uncertain: true, scopeKey, reason: 'canonical_save_unverified' };
+                        if (ownedNormalization) acknowledgedRaw = readback;
                     }
                     if (scopeKeyFor(char, chat) !== scopeKey) return { ok: false, uncertain: true, scopeKey, reason: 'stale_identity' };
                     if (capturedGeneration(char, chat) !== expectedGeneration) return { ok: false, uncertain: true, scopeKey, reason: 'reset_generation_changed' };
                     if ((scopeMutations.get(scopeKey) || 0) > capturedMutation || getHydrationDiagnostics(scopeKey).readOnly)
                         return { ok: false, uncertain: true, scopeKey, reason: 'canonical_operation_invalidated' };
+                    if (!normalizationCurrent()) return { ok: false, uncertain: ownedWriteIssued, scopeKey, reason: 'normalization_source_invalidated' };
                     shadow.set(scopeKey, normalized);
                     hydratedScopes.add(scopeKey);
                     // Do not remove additions made while persistence was awaited.
@@ -746,10 +837,14 @@
                         const preserved = new Set(normalized.map(entry => JSON.stringify(entry)));
                         hostOwner[hostField] = hostOwner[hostField].filter(entry => !isLibraEntry(entry) || !preserved.has(JSON.stringify(entry)));
                     }
+                    if (ownedNormalization) {
+                        LatestTurnBaselineOwner.verifiedWrite(scopeKey, baselineWriteTicket, baselineVerifiedRaw);
+                        return { ok: true, verified: true, unchanged, scopeKey, entryCount: normalized.length, resetGeneration: expectedGeneration, acknowledgedRaw };
+                    }
                     return { ok: true, verified: true, unchanged, scopeKey, entryCount: normalized.length, resetGeneration: expectedGeneration };
                 } catch (error) {
                     try { recordRuntimeDebug('warn', '[LIBRA][Storage] save failed:', error?.message || error); } catch (_) {}
-                    return { ok: false, uncertain: true, scopeKey, reason: 'canonical_save_unverified' };
+                    return { ok: false, uncertain: ownedNormalization ? ownedWriteIssued : true, scopeKey, reason: ownedNormalization && !normalizationCurrent() ? 'normalization_source_invalidated' : 'canonical_save_unverified' };
                 }
             });
         };
@@ -2790,8 +2885,15 @@
             } finally { managementRawReadDepth -= 1; }
         };
         const unpack = (lorebook = [], options = {}) => {
+            // Optional read outcome is local memo bookkeeping, not source authority.
+            const outcome = options?.entityProjectionReadOutcome;
+            if (outcome) outcome.ok = false;
+            let readCompleted = true;
             const fromLore = unpackRawFromLore(lorebook);
-            if (managementRawReadDepth > 0 || (options && options.raw === true)) return fromLore;
+            if (managementRawReadDepth > 0 || (options && options.raw === true)) {
+                if (outcome) outcome.ok = true;
+                return fromLore;
+            }
             // 스코프 해석: 로어 배열에는 char/chat 신원이 없으므로 활성 스코프를 쓴다.
             // (로어에서 유추한 스코프는 `char:unknown|...` 이 되어 항상 빗나간다.)
             const scopeKey = (() => {
@@ -2799,10 +2901,11 @@
                     const fromActive = LibraDataStorage.getActiveScope?.() || '';
                     if (fromActive) return fromActive;
                     return LibraDataStorage.scopeKeyFor(null, { localLore: lorebook });
-                } catch (_) { return ''; }
+                } catch (_) { readCompleted = false; return ''; }
             })();
             let shadowEntries = [];
-            try { shadowEntries = LibraDataStorage.isHydrated(scopeKey) ? LibraDataStorage.getShadowEntries(scopeKey, options?.shadowEntryComment) : []; } catch (_) {}
+            try { shadowEntries = LibraDataStorage.isHydrated(scopeKey) ? LibraDataStorage.getShadowEntries(scopeKey, options?.shadowEntryComment) : []; } catch (_) { readCompleted = false; }
+            if (outcome) outcome.ok = readCompleted;
             if (shadowEntries.length === 0) return fromLore;
             const seen = new Set(fromLore.map(entry => String(entry?.key || '')));
             return [...fromLore, ...shadowEntries.filter(entry => !seen.has(String(entry?.key || '')))];

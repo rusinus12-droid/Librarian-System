@@ -180,6 +180,7 @@
                 .trim();
             if (!candidate) return '';
             if (isBlockedCompactMemoryEntityRef(candidate)) return '';
+            let canonicalFallback = null;
             try {
                 if (typeof EntityManager !== 'undefined' && EntityManager?.resolveCanonicalName && EntityManager?.getEntityCache) {
                     const canonical = String(EntityManager.resolveCanonicalName(candidate) || '').trim();
@@ -188,6 +189,7 @@
                         const canonicalName = String(cache.get(canonical)?.name || canonical).trim();
                         if (canonicalName && !isBlockedCompactMemoryEntityRef(canonicalName)) return canonicalName;
                     }
+                    canonicalFallback = canonical;
                 }
             } catch (_) {}
             const exactKnown = knownNames.find(name => String(name || '').trim() === candidate);
@@ -208,7 +210,7 @@
             // 더 긴 문자열이 더 정확한 이름이라는 보장이 없으므로 확장 방향 매칭만 신뢰한다.
             try {
                 if (typeof EntityManager !== 'undefined' && EntityManager?.normalizeName) {
-                    const normalized = EntityManager.normalizeName(candidate);
+                    const normalized = canonicalFallback !== null ? canonicalFallback : EntityManager.normalizeName(candidate);
                     if (String(normalized || '').trim() && !isBlockedCompactMemoryEntityRef(normalized)) return String(normalized || '').trim();
                 }
             } catch (_) {}

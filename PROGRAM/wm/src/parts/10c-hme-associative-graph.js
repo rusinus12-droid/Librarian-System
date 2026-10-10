@@ -2415,8 +2415,21 @@
                 return typeof back === 'string' && back === JSON.stringify(serialized);
             };
             const maintainNow = async (units, context) => {
-                if (context.guard && !context.guard()) throw new Error('graph_source_invalidated');
                 const scopeKey = context.scopeKey, preset = getHmeGraphPreset();
+                const policy = JSON.stringify(preset);
+                const isCurrent = () => CONFIG.hybridMemoryEngineEnabled !== false && CONFIG.hybridScopeIndexEnabled !== false
+                    && preset.enabled === true && JSON.stringify(getHmeGraphPreset()) === policy
+                    && (!context.guard || context.guard());
+                const checkCurrent = () => {
+                    if (!isCurrent()) throw new Error('graph_source_invalidated');
+                };
+                checkCurrent();
+                const yieldController = ResourceGovernor.createYieldController('typed_hme_nodes');
+                const checkpoint = async () => {
+                    checkCurrent();
+                    await ResourceGovernor.yieldIfNeeded(yieldController);
+                    checkCurrent();
+                };
                 const valid = units.filter(unit => unit?.scopeKey === scopeKey && families.includes(unit.family));
                 const counts = new Map();
                 for (const unit of valid) counts.set(unit.entry?.key, (counts.get(unit.entry?.key) || 0) + 1);
@@ -2433,7 +2446,7 @@
                     persistedReject: '', readbackVerified: false, independentDurabilityRead: false };
                 if (state?.revision === revision) {
                     if (!state.readbackVerified) {
-                        state.readbackVerified = await persistGraph(scopeKey, payloadFor(binding, revision, state.totalNodes, state.graph), context.guard);
+                        state.readbackVerified = await persistGraph(scopeKey, payloadFor(binding, revision, state.totalNodes, state.graph), isCurrent);
                         report.mode = 'persistence_retried';
                     }
                     return { graph: state.graph, totalNodes: state.totalNodes, report: { ...report, readbackVerified: state.readbackVerified } };
@@ -2442,6 +2455,7 @@
                 const sourceById = new Map(sourceRows), unitById = new Map(valid.map(unit => [unit.identity, unit]));
                 if (!state) {
                     const raw = await HmeDerivedCacheStore.read('typed-graph', scopeKey);
+                    checkCurrent();
                     let saved;
                     try { saved = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { report.persistedReject = 'parse'; }
                     if (saved) {
@@ -2455,10 +2469,14 @@
                             // The persisted inventory is not an authority. Derive
                             // the complete retained inventory from current source
                             // inputs, including omitted nodes, once at restart.
-                            const checked = valid.map(unit => {
+                            const checked = [];
+                            for (const unit of valid) {
+                                checkCurrent();
                                 report.rebuiltNodes++;
-                                return makeNode(unit, counts, sourceById.get(unit.identity));
-                            }).filter(Boolean);
+                                const node = makeNode(unit, counts, sourceById.get(unit.identity));
+                                if (node) checked.push(node);
+                                await checkpoint();
+                            }
                             const expectedNodes = retainedNodes(checked, preset);
                             if (saved.totalNodes !== checked.length || hash(expectedNodes.map(stableNode)) !== hash(saved.graph.nodes.map(stableNode))) report.persistedReject = 'source_nodes';
                             else {
@@ -2476,24 +2494,26 @@
                         }
                     }
                     if (report.mode === 'restored') {
-                        if (context.guard && !context.guard()) throw new Error('graph_source_invalidated');
+                        checkCurrent();
                         if (!states.has(scopeKey) && states.size >= 48) states.delete(states.keys().next().value);
                         states.set(scopeKey, state); return { graph: state.graph, totalNodes: state.totalNodes, report };
                     }
                 }
                 const nodes = new Map(), oldSources = state?.sources || new Map();
                 for (const [id, fingerprint] of sourceRows) {
+                    checkCurrent();
                     const prior = oldSources.get(id) === fingerprint && state?.nodes.get(id);
                     if (prior) nodes.set(id, prior);
                     else { const node = makeNode(unitById.get(id), counts, fingerprint); report.rebuiltNodes++; report.sourceChanges++;
                         if (node) nodes.set(id, node); }
+                    await checkpoint();
                 }
                 report.removedNodes = [...oldSources.keys()].filter(id => !sourceById.has(id)).length;
                 const graph = compile(scopeKey, revision, retainedNodes([...nodes.values()], preset));
                 if (!graph) throw new Error('graph_build_failed');
-                report.readbackVerified = await persistGraph(scopeKey, payloadFor(binding, revision, nodes.size, graph), context.guard);
+                report.readbackVerified = await persistGraph(scopeKey, payloadFor(binding, revision, nodes.size, graph), isCurrent);
                 report.mode = state ? 'updated' : 'built';
-                if (context.guard && !context.guard()) throw new Error('graph_source_invalidated');
+                checkCurrent();
                 // Match the established HME scope cache bound.
                 if (!states.has(scopeKey) && states.size >= 48) states.delete(states.keys().next().value);
                 states.set(scopeKey, { revision, binding, graph, nodes, sources: sourceById, totalNodes: nodes.size, readbackVerified: report.readbackVerified });
