@@ -1,7 +1,7 @@
 {
   "schema": "lib.regression.test-normalization.v1",
   "dateUtc": "2026-10-10",
-  "baselineCommit": "c470556589150cb88b9e41f31ad561d1487922df",
+  "baselineCommit": "702afc8a4379a43741032e0a3ad6f0b412c5b871",
   "originalRootUniverse": 1138,
   "defaultRootCount": 1134,
   "wholeFilesRetiredThisAdoption": 0,
@@ -231,6 +231,19 @@
       "independentRuntimeReviewSha256": "1c43114be77620d53d957c42be186852b4f9decf70049c832d6ee3599e2825ea",
       "reason": "Replace only LIA obsolete generic server/Compute panel expectation with the exact current local-only owner factory policies; retain other owners and all SDK/Compute route assertions, and validate the checker with two positive and26 exact assertion-negative fixtures.",
       "qualification": "Source AST structural contract and synthetic checker controls only. Existing source-route checks remain; no whole Compute runtime, actual host, browser or real provider qualification. The prior fixture SyntaxError remains retained."
+    },
+    {
+      "originalOrdinal": 647,
+      "path": "PROGRAM/tests/libra_person_inventory_3mode_test.cjs",
+      "originalSha256": "a1ca697dc3fa5caf3602585d37f5142eebf8ff3debbcea3a97edf060d99c7c57",
+      "adoptedSha256": "39bbdec07948433a1495458aae80fc7cdeaf9c1ab5a7f9965307c7eeb12282af",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 14.225,
+      "runtimeCloseoutSha256": "ad5b265b4f65b0e88bcf898e63d15cf263339194c6d01da6c9b0f858995e14c1",
+      "independentRuntimeReviewSha256": "35ec84b5cd319644e1950b69c04cb40aa14209945498edd06163310fea1763c8",
+      "reason": "Replace obsolete immediate known-inventory and generic Micro readiness expectations with exact receipt/key/scope/revision-bound durable known inventory and real queue completion; retain three modes, same-identity duplicate/history, five-pair batch and one-sided mirror repair obligations.",
+      "qualification": "Actual isolated synthetic plugin_only/mirror/server_only known-only inventory and fallback with five ordered terminal markers. All28 original assertion and7 wait obligations were mapped. This establishes structural durability/admission and observed provider call counts, not actual Risu, browser or real model quality."
     }
   ],
   "addedSupport": [
@@ -288,14 +301,12 @@
   ],
   "evidencePolicy": "Original failures and complete private receipts retained separately. Runtime counts refer to bounded cases, not full real-host qualification.",
   "unadoptedCandidates": [
-    "006",
-    "010-v5",
-    "017:source-reviewed-unexecuted",
-    "018:source-reviewed-unexecuted",
-    "019:source-preparation"
+    "010-v5:retained-positive-failures",
+    "017:replayed-failures",
+    "019:retained-handoff-safety-failure"
   ],
   "publication": "Local source normalization only; no remote publication is performed by this record.",
-  "previousNormalizationBaseline": "11058c19b29aed9d2fb11ce0c0e70076d8994e7a",
+  "previousNormalizationBaseline": "8e77dd932f943ab8ffcd0bec05aa45f885a30b83",
   "namedFunctionalTimeoutOverrides": [
     {
       "path": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
@@ -304,5 +315,172 @@
       "scope": "Only nine-pair functional fixture; unchanged assertions and no product latency requirement change."
     }
   ],
-  "cumulativeCorrectedRootFiles": 21
+  "cumulativeCorrectedRootFiles": 22,
+  "cumulativeRetiredRootFiles": 4,
+  "sharedFixtureCorrections": [
+    {
+      "successor": "006",
+      "path": "PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+      "originalSha256": "7524f28862e8675bfcda8d01a472f6ec69bb9fb898906f1545016e6a0992fa15",
+      "candidateSha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f",
+      "result": "ACCEPTED_FIXTURE_CORRECTION_WITH_TWO_BLOCKED_CONSUMERS",
+      "reason": "Default BASE now resolves to the local PROGRAM used by the loaded server. The explicit LIB_BASE_PROGRAM override is preserved statically and was not exercised.",
+      "runtimeCloseoutSha256": "4824acb6bd0ea31f16e0d7623c886225aa5da9848f800d09d958cc360bc8f1e1",
+      "rawInventorySha256": "a1ac7e3ea0028691d9453f2d2ff5280d3a4efb5cc32d401426191b3115b88fe0",
+      "independentRuntimeReviewSha256": "2d422c0a13aa691dc09eca968ca04ae361f323e9d53b65d22fdef706934883b0",
+      "qualifiedSqliteProfileSha256": "d163e78e6d727f44c1a235c32f446150d15dd6167117050312e0ab822f47b1e5",
+      "rootTestFilesChanged": 0,
+      "rootCorrectionCountIncrease": 0,
+      "consumerOutcomes": [
+        {
+          "originalOrdinal": 22,
+          "path": "PROGRAM/tests/authority_server_writer_inventory.test.cjs",
+          "sourceSha256": "25937956d02cfbbeca2d859f0d16afbe4a2eff7dc0b9d37c5d94819314dff3b5",
+          "timeoutSeconds": 60,
+          "result": "BLOCKED_GUARD_REVIEW",
+          "runtimeSeconds": 1.378,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "06763b145abe4730470cd0257b615d1ed89f4286aad6885f6272ed07bb8dac5e"
+        },
+        {
+          "originalOrdinal": 172,
+          "path": "PROGRAM/tests/flashback_server_backup_authority_test.cjs",
+          "sourceSha256": "96ca4cda4e2862077c57b71949396c7c5772daf1523775af0b582d0b72cfdc05",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 3.375,
+          "nodeCases": {
+            "tests": 2,
+            "suites": 0,
+            "pass": 2,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "2a393a86a68e3672c40b8a9bdb2c9bcad98ee8a4e69b268886d3261c3a182aa7"
+        },
+        {
+          "originalOrdinal": 180,
+          "path": "PROGRAM/tests/flashback_server_repair_public_path_test.cjs",
+          "sourceSha256": "cdfc1577055cee9b881401a408f3dd552ac9a379f9717084b4d9885a755339a4",
+          "timeoutSeconds": 60,
+          "result": "BLOCKED_GUARD_REVIEW",
+          "runtimeSeconds": 1.949,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "289cb0e1f7657698e093effbe35e0d0d7295f815ef39cb8c8f0a1a4822ef5388"
+        },
+        {
+          "originalOrdinal": 182,
+          "path": "PROGRAM/tests/flashback_server_repair_v2_sdk_test.cjs",
+          "sourceSha256": "acb8dafc11c5c58d5a2e13569596708c554dd1d145fbac4beeb9bee1c936fb0e",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.718,
+          "nodeCases": {
+            "tests": 7,
+            "suites": 0,
+            "pass": 7,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "30e2f4819bdead35a3cc39660aef8084c425c09be66efd2d1f8f72364a43d19e"
+        },
+        {
+          "originalOrdinal": 183,
+          "path": "PROGRAM/tests/flashback_server_repair_v2_security_test.cjs",
+          "sourceSha256": "03464881c0832848e42b9f0f32a86923c8975e23e5ca2501f25630dda30549fc",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 2.665,
+          "nodeCases": {
+            "tests": 24,
+            "suites": 0,
+            "pass": 24,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "b53c3dbc7b7b9e7699aef64a2d8d6ae975655ecd455e7df3c0323851ab6a3321"
+        },
+        {
+          "originalOrdinal": 185,
+          "path": "PROGRAM/tests/flashback_server_repair_v4_metadata_test.cjs",
+          "sourceSha256": "89d912cec63c61b703a5dcb13aeb0f7973c9b8c1e642d6870bbaa79da1ae1dcc",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.737,
+          "nodeCases": {
+            "tests": 4,
+            "suites": 0,
+            "pass": 4,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "6408c2db8d8d436a6f9613dcfb3783a70608df1cabcc8509fd9708aad12ae644"
+        },
+        {
+          "originalOrdinal": 186,
+          "path": "PROGRAM/tests/flashback_server_vector_proof_test.cjs",
+          "sourceSha256": "4d3ffcbfcb64f26b224cec377b694b0fba0eb706895b5a8bb3fda08f0e56c57e",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.389,
+          "nodeCases": {
+            "tests": 2,
+            "suites": 0,
+            "pass": 2,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "cbe524eab555c07bfe64dd43ddb9ca202ee6a67d4ba457c80861c648ebca93e0"
+        }
+      ],
+      "nodeCaseTotals": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 39,
+        "fail": 2,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "pendingConsumers": [
+        {
+          "originalOrdinal": 22,
+          "status": "BLOCKED_GUARD_REVIEW",
+          "reason": "fetch setter is denied during fixture import before intended assertions; the later immutable DB.exec seam is unexecuted."
+        },
+        {
+          "originalOrdinal": 180,
+          "status": "BLOCKED_GUARD_REVIEW",
+          "reason": "readFileSync finally restoration throws and can mask a body error; body completion and test-local app.close are not established."
+        }
+      ],
+      "qualification": "Five unchanged roots passed; two remain blocked. 172 exercises the corrected default backup-worker lookup. 182/183 qualify the candidate plus the pinned SQLite profile together, not the isolated fixture effect. 186 covers module availability and early dot-path denial, not actual backup/restore. No seven-root complete pass, whole-regression, actual host or real-model claim; original outcomes remain retained."
+    }
+  ]
 }

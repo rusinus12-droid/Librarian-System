@@ -1,0 +1,106 @@
+{
+  "schema": "lib.six-plugin.source-supplement.v2",
+  "privateCutoffManifestSha256": "5ba1d5882b419ede67ea1411882e6f66f175d655263d18de112f45a72e0e1919",
+  "files": [
+    {
+      "path": "BROWSER-STATUS.json",
+      "bytes": 9348,
+      "sha256": "3811325813ffbd0b18186500c668f52170d2afab95805ef14a639b723d79d7b8"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1308,
+      "sha256": "74c7eefe1a5badb6219c7b5ce7cb6674e40e638d2768236ce716d49fabbc50be"
+    },
+    {
+      "path": "REGRESSION-STATUS.json",
+      "bytes": 30787,
+      "sha256": "47d4caccd9a7f86afb8d647ec76d2d0c8ce486ba6cd36fae814a37dff9ec42c7"
+    },
+    {
+      "path": "ROOT-REGRESSION-LEDGER.json",
+      "bytes": 437072,
+      "sha256": "0cfc168cfaad1f10b9d9adf2843e11f0a2988de37d58a6c28e878a543fa1de04"
+    },
+    {
+      "path": "TEST-NORMALIZATION.json",
+      "bytes": 28948,
+      "sha256": "8d7d1de0d972392e70e3ebb7d9488fb87ef360f63e25724e28758a02fccc6a55"
+    },
+    {
+      "path": "TEST-RETIREMENT-AND-ADOPTION.json",
+      "bytes": 13835,
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "bytes": 7817,
+      "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+      "bytes": 9404,
+      "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+      "bytes": 16139,
+      "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "bytes": 33850,
+      "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b"
+    },
+    {
+      "path": "test-successors/017/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "bytes": 18202,
+      "sha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0"
+    },
+    {
+      "path": "test-successors/017/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 11816,
+      "sha256": "2fd193fd72c9875117055600bc98d4515ce23fae38a5ecfa8136b81d47659786"
+    },
+    {
+      "path": "test-successors/017-capture-diagnostic/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "bytes": 24887,
+      "sha256": "58bfa3f6e9a46bb08331bebb01d0a7f5073ca81c807756e8ec728fb3e7899886"
+    },
+    {
+      "path": "test-successors/017-raw-diagnostic/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 18911,
+      "sha256": "d144e17158d2ffb8fee56e62d52b2fa23beec920c2f213e8b592741629381f5b"
+    },
+    {
+      "path": "test-successors/019/PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+      "bytes": 26303,
+      "sha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3"
+    },
+    {
+      "path": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+      "bytes": 25334,
+      "sha256": "59af58088f74816ac27f90c88ea7025f603f253d37fc820200a4448071c9b58d"
+    },
+    {
+      "path": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+      "bytes": 23827,
+      "sha256": "99ded99dc36dd7d3b2910b633d1dc239a971c52f588ea5adb5ea76347312bb7a"
+    },
+    {
+      "path": "test-successors/020-v2/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 16323,
+      "sha256": "927e907c76933cee1cbb42a003488fedc800a6fcff431eacc45fcdb71ef74272"
+    },
+    {
+      "path": "test-successors/021/PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+      "bytes": 6359,
+      "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f"
+    },
+    {
+      "path": "test-successors/022/PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
+      "bytes": 1147,
+      "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3"
+    }
+  ]
+}

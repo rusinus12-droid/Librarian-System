@@ -1,0 +1,791 @@
+{
+  "schema": "lib.six-plugin.regression-checkpoint.v2",
+  "capturedAtUtc": "2026-10-10T17:00:00.040340+00:00",
+  "activeCommit": "2a138a585d6f26c79cfd5d7ccc716b5fc65da88f",
+  "originalRootUniverse": 1138,
+  "activeRootUniverse": 1134,
+  "phase1RootFileStatusCounts": {
+    "BLOCKED_GUARD_REVIEW": 186,
+    "FAIL": 232,
+    "PASS": 616,
+    "PASS_WITH_COVERAGE_REVIEW": 1,
+    "PASS_WITH_EXCLUSIONS": 7,
+    "PRIOR_MIN_ARTIFACT_RUNTIME_PASS": 1,
+    "PRIOR_OFFICIAL_GATE_PASS": 87,
+    "PRIOR_PARAMETERIZED_RUNTIME_PASS": 4,
+    "PRIOR_REPORTER_CONTRACT_PASS": 1,
+    "TIMEOUT": 3
+  },
+  "priorBuilderRootFiles": 93,
+  "priorBuilderNodeCases": 400,
+  "phase2NativeNormalization": {
+    "completedRows": 126,
+    "counts": {
+      "PASS": 100,
+      "BLOCKED_GUARD_REVIEW": 2,
+      "PASS_WITH_EXCLUSIONS": 1,
+      "FAIL": 23
+    },
+    "indexSha256": "8ccee997b12367e957a6e13e0f8f34049a5727d9d8ffac962b19e2da70f62623"
+  },
+  "phase2SqliteConsumers": {
+    "counts": {
+      "rootFiles": 6,
+      "pass": 2,
+      "blocked": 4,
+      "nodeCases": 98,
+      "nodePass": 74,
+      "nodeFail": 24,
+      "nodeSkip": 0,
+      "nodeCancel": 0
+    },
+    "overlaySha256": "da93bd3b146ff3a3319a4dbfd4a39706d63f488da6e529176f9d022b9d2e8a15"
+  },
+  "testSuccessors": [
+    {
+      "id": "010-v5",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        571,
+        579
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+          "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+          "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+          "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+          "successorPath": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+          "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Retain both positive actual closure-delivery obligations and observed failures; no product currentness or admission condition is weakened.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 571,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "9dbce35f62511e8d39610cd38845ffe0d04e0e386315996f5b914995cf638b2e",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 3.796,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:13:25.969416+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 579,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "a11ec72b2ec422a5c4cc573aa075b879b6199381253f819a51d3da73f3bb7b64",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 10.426,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T12:14:11.370884+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 2,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "017",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        479,
+        568
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+          "successorPath": "test-successors/017/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+          "sha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "successorPath": "test-successors/017/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "sha256": "2fd193fd72c9875117055600bc98d4515ce23fae38a5ecfa8136b81d47659786",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Normalize obsolete Micro work expectations to actual receipt/plan admission; retain split-capture repair, canonical success, history and physical source preservation. Its strict whole-record byte assertion at568 was added by this candidate.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 479,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "c7c139d311628ab7543ccf53b81b86833c23d969552f1fe8eac2dc2dcd33ced4",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 16.776,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T14:51:03.888836+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 568,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "f64800d63e2fc9b6c0a40dc0991698222183cde90fadce96a3a66dddd74aa6a8",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 3.341,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T14:52:30.333698+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 2,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "017-raw-diagnostic",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        568
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "successorPath": "test-successors/017-raw-diagnostic/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "sha256": "d144e17158d2ffb8fee56e62d52b2fa23beec920c2f213e8b592741629381f5b",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Bounded observation retains the017 whole-record assertion. The observed three embedding paths and parsed canonical serialization equality do not establish writer identity, exact values or harmlessness.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 568,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "168780d4ab38292f87b083f7e68e3058420e82fd2317ec4fd4772ee5d28e0052",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 3.409,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T15:47:55.397991+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "017-capture-diagnostic",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        479
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+          "successorPath": "test-successors/017-capture-diagnostic/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+          "sha256": "58bfa3f6e9a46bb08331bebb01d0a7f5073ca81c807756e8ec728fb3e7899886",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Bounded call-order observation retains original017 wrapper effects, readiness predicates and deadlines; pure controls do not establish native repair timing or success.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 479,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "e1c8f1533dc0a7db374881f3b7a53c0332475ae3bdfadd08522bc8e3dfd3245b",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 17.374,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:34:14.104654+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "019",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        1100
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+          "successorPath": "test-successors/019/PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+          "sha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Provide complete known-scope inventory for the actual aggregate upload fault; retain the failed handoff refusal and incomplete-publication safety obligations.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 1100,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "59cd29d720ff399d378ab43d870ffed53463856b77f284692cd0664c21979e97",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 2.199,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T14:49:53.714006+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "020-v2",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        568
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+          "successorPath": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+          "sha256": "59af58088f74816ac27f90c88ea7025f603f253d37fc820200a4448071c9b58d",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+          "successorPath": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+          "sha256": "99ded99dc36dd7d3b2910b633d1dc239a971c52f588ea5adb5ea76347312bb7a",
+          "originalMode": 420
+        },
+        {
+          "originalPath": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "successorPath": "test-successors/020-v2/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "sha256": "927e907c76933cee1cbb42a003488fedc800a6fcff431eacc45fcdb71ef74272",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Settle the exact pending v4 derived embedding state once through the public queue API before a separate v5-write baseline; keep the earlier read-only baseline and later full raw/owner/revision equality.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 568,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "9d309c718544cefae0409ce4f94c160c29ad1a6381f766edbc59d7ddbbb1a6cb",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 3.546,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:54:03.019627+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "021",
+      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        97,
+        98,
+        99
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+          "successorPath": "test-successors/021/PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+          "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Remove only an eager assertion-message call to a removed diagnostic API; all consumer bytes, readiness predicates and other assertions stay unchanged. The separate earlier97/98 failures remain.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 97,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 1.487,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:38:39.166063+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 98,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
+            "executionStatus": "completed_fail",
+            "classification": "FAIL",
+            "exitCode": 1,
+            "durationSeconds": 9.294,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:39:40.289672+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          },
+          {
+            "ordinal": 99,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 1,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 10.174,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:40:08.305174+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 3,
+        "allSelectedIdentitiesPassed": false,
+        "actualModelsEvaluated": false
+      }
+    },
+    {
+      "id": "022",
+      "status": "EXECUTED_PASS_UNADOPTED",
+      "activeSourceAdopted": false,
+      "selectedOrdinals": [
+        120
+      ],
+      "files": [
+        {
+          "originalPath": "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
+          "successorPath": "test-successors/022/PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
+          "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
+          "originalMode": 420
+        }
+      ],
+      "reason": "Retain root120 and its five source/SDK/security checks while proposing retirement of55 removed hash-pilot assertion sites and3 executed generic replacements. No retirement is adopted merely by packaging this candidate.",
+      "verification": {
+        "runs": [
+          {
+            "ordinal": 120,
+            "nodeSummary": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 1,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "candidateFilePinsMatch": true,
+            "receiptSha256": "0e3a9c9e5e723056c05c5e8ce78e346da5842c2aed808314eb5230bdb44dcc4d",
+            "executionStatus": "completed_pass",
+            "classification": "PASS",
+            "exitCode": 0,
+            "durationSeconds": 1.15,
+            "timeoutSeconds": 60,
+            "finishedUtc": "2026-10-10T16:52:17.267606+00:00",
+            "allIntegrityPinsUnchanged": true,
+            "guardDenialCount": 0,
+            "guardFailureSignalCount": 0,
+            "survivorCount": 0,
+            "allObservedPortsClosed": true
+          }
+        ],
+        "completedSelectedIdentities": 1,
+        "allSelectedIdentitiesPassed": true,
+        "actualModelsEvaluated": false
+      }
+    }
+  ],
+  "adoptedTestCorrections": [
+    "PROGRAM/tests/flashback_multilingual_probe_wording_test.cjs",
+    "PROGRAM/tests/hayaku_disposed_topology_runtime_test.cjs",
+    "PROGRAM/tests/libra_feature_parity_test.cjs",
+    "PROGRAM/tests/libra_live_tail_planner_dialogue_source_test.cjs",
+    "PROGRAM/tests/libra_live_tail_supply_measurement_test.cjs",
+    "PROGRAM/tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+    "PROGRAM/tests/libra_micro_stage_retry_test.cjs",
+    "PROGRAM/tests/libra_narrative_direction_loop_and_general_headers_test.cjs",
+    "PROGRAM/tests/libra_narrative_direction_render_path_test.cjs",
+    "PROGRAM/tests/libra_person_inventory_3mode_test.cjs",
+    "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+    "PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs",
+    "PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs",
+    "PROGRAM/tests/libra_receipt_nonblocking_context_test.cjs",
+    "PROGRAM/tests/libra_receipt_recent_dialogue_reader_test.cjs",
+    "PROGRAM/tests/storage-compute-mode-contract-v2.test.cjs"
+  ],
+  "adoptedSharedFixtureCorrections": [
+    {
+      "successor": "006",
+      "path": "PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+      "originalSha256": "7524f28862e8675bfcda8d01a472f6ec69bb9fb898906f1545016e6a0992fa15",
+      "candidateSha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f",
+      "result": "ACCEPTED_FIXTURE_CORRECTION_WITH_TWO_BLOCKED_CONSUMERS",
+      "reason": "Default BASE now resolves to the local PROGRAM used by the loaded server. The explicit LIB_BASE_PROGRAM override is preserved statically and was not exercised.",
+      "runtimeCloseoutSha256": "4824acb6bd0ea31f16e0d7623c886225aa5da9848f800d09d958cc360bc8f1e1",
+      "rawInventorySha256": "a1ac7e3ea0028691d9453f2d2ff5280d3a4efb5cc32d401426191b3115b88fe0",
+      "independentRuntimeReviewSha256": "2d422c0a13aa691dc09eca968ca04ae361f323e9d53b65d22fdef706934883b0",
+      "qualifiedSqliteProfileSha256": "d163e78e6d727f44c1a235c32f446150d15dd6167117050312e0ab822f47b1e5",
+      "rootTestFilesChanged": 0,
+      "rootCorrectionCountIncrease": 0,
+      "consumerOutcomes": [
+        {
+          "originalOrdinal": 22,
+          "path": "PROGRAM/tests/authority_server_writer_inventory.test.cjs",
+          "sourceSha256": "25937956d02cfbbeca2d859f0d16afbe4a2eff7dc0b9d37c5d94819314dff3b5",
+          "timeoutSeconds": 60,
+          "result": "BLOCKED_GUARD_REVIEW",
+          "runtimeSeconds": 1.378,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "06763b145abe4730470cd0257b615d1ed89f4286aad6885f6272ed07bb8dac5e"
+        },
+        {
+          "originalOrdinal": 172,
+          "path": "PROGRAM/tests/flashback_server_backup_authority_test.cjs",
+          "sourceSha256": "96ca4cda4e2862077c57b71949396c7c5772daf1523775af0b582d0b72cfdc05",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 3.375,
+          "nodeCases": {
+            "tests": 2,
+            "suites": 0,
+            "pass": 2,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "2a393a86a68e3672c40b8a9bdb2c9bcad98ee8a4e69b268886d3261c3a182aa7"
+        },
+        {
+          "originalOrdinal": 180,
+          "path": "PROGRAM/tests/flashback_server_repair_public_path_test.cjs",
+          "sourceSha256": "cdfc1577055cee9b881401a408f3dd552ac9a379f9717084b4d9885a755339a4",
+          "timeoutSeconds": 60,
+          "result": "BLOCKED_GUARD_REVIEW",
+          "runtimeSeconds": 1.949,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "289cb0e1f7657698e093effbe35e0d0d7295f815ef39cb8c8f0a1a4822ef5388"
+        },
+        {
+          "originalOrdinal": 182,
+          "path": "PROGRAM/tests/flashback_server_repair_v2_sdk_test.cjs",
+          "sourceSha256": "acb8dafc11c5c58d5a2e13569596708c554dd1d145fbac4beeb9bee1c936fb0e",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.718,
+          "nodeCases": {
+            "tests": 7,
+            "suites": 0,
+            "pass": 7,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "30e2f4819bdead35a3cc39660aef8084c425c09be66efd2d1f8f72364a43d19e"
+        },
+        {
+          "originalOrdinal": 183,
+          "path": "PROGRAM/tests/flashback_server_repair_v2_security_test.cjs",
+          "sourceSha256": "03464881c0832848e42b9f0f32a86923c8975e23e5ca2501f25630dda30549fc",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 2.665,
+          "nodeCases": {
+            "tests": 24,
+            "suites": 0,
+            "pass": 24,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "b53c3dbc7b7b9e7699aef64a2d8d6ae975655ecd455e7df3c0323851ab6a3321"
+        },
+        {
+          "originalOrdinal": 185,
+          "path": "PROGRAM/tests/flashback_server_repair_v4_metadata_test.cjs",
+          "sourceSha256": "89d912cec63c61b703a5dcb13aeb0f7973c9b8c1e642d6870bbaa79da1ae1dcc",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.737,
+          "nodeCases": {
+            "tests": 4,
+            "suites": 0,
+            "pass": 4,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "6408c2db8d8d436a6f9613dcfb3783a70608df1cabcc8509fd9708aad12ae644"
+        },
+        {
+          "originalOrdinal": 186,
+          "path": "PROGRAM/tests/flashback_server_vector_proof_test.cjs",
+          "sourceSha256": "4d3ffcbfcb64f26b224cec377b694b0fba0eb706895b5a8bb3fda08f0e56c57e",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 1.389,
+          "nodeCases": {
+            "tests": 2,
+            "suites": 0,
+            "pass": 2,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "cbe524eab555c07bfe64dd43ddb9ca202ee6a67d4ba457c80861c648ebca93e0"
+        }
+      ],
+      "nodeCaseTotals": {
+        "tests": 41,
+        "suites": 0,
+        "pass": 39,
+        "fail": 2,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "pendingConsumers": [
+        {
+          "originalOrdinal": 22,
+          "status": "BLOCKED_GUARD_REVIEW",
+          "reason": "fetch setter is denied during fixture import before intended assertions; the later immutable DB.exec seam is unexecuted."
+        },
+        {
+          "originalOrdinal": 180,
+          "status": "BLOCKED_GUARD_REVIEW",
+          "reason": "readFileSync finally restoration throws and can mask a body error; body completion and test-local app.close are not established."
+        }
+      ],
+      "qualification": "Five unchanged roots passed; two remain blocked. 172 exercises the corrected default backup-worker lookup. 182/183 qualify the candidate plus the pinned SQLite profile together, not the isolated fixture effect. 186 covers module availability and early dot-path denial, not actual backup/restore. No seven-root complete pass, whole-regression, actual host or real-model claim; original outcomes remain retained."
+    }
+  ],
+  "correctedRootCount": 22,
+  "correctedSharedFixtureCount": 1,
+  "wholeFileRetirementsApplied": 4,
+  "privateEvidenceManifestSha256": "5ba1d5882b419ede67ea1411882e6f66f175d655263d18de112f45a72e0e1919",
+  "privateEvidenceTerminalRuns": 1281,
+  "supplemental": {
+    "priorGradiaChildren": 20,
+    "additionalJavascriptEntriesExecuted": 3,
+    "browserEntries": 31,
+    "browserStatus": "NOT_RUN_ENVIRONMENT_BOUNDARY",
+    "browserBoundary": "Native confinement preflight was denied before a browser was launched.",
+    "pythonInstallerEntries": 1,
+    "pythonInstallerStatus": "NOT_RUN",
+    "actualRisu": "NOT_RUN"
+  },
+  "limits": [
+    "Original phase1 results remain separate from later normalized results; no full-regression PASS is claimed.",
+    "Historical root denominator1138 and current discovery1134 are both preserved.",
+    "Candidate files remain outside active PROGRAM/tests until independent replay and adoption.",
+    "Prior failures and timeouts remain in the private sidecar.",
+    "Raw synthetic logs, execution receipts and supervisors are private-only.",
+    "No actual-host, actual-model or product-performance qualification is implied."
+  ]
+}

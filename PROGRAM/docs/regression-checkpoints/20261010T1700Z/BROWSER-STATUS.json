@@ -1,0 +1,196 @@
+{
+  "schema": "lib.six-plugin.public-browser-status.v1",
+  "cutoffUtc": "2026-10-10T17:00:00.040340+00:00",
+  "count": 31,
+  "status": "NOT_RUN_ENVIRONMENT_BOUNDARY",
+  "actualRisu": false,
+  "boundaryProofSha256": "f45761de6102835f5cb8a4db02de053d08aab70c34eca21fa770a3d7f69363aa",
+  "rows": [
+    {
+      "path": "PROGRAM/tests/browser/hayaku_gui_workspace_browser_test.py",
+      "sha256": "23962c3adc0a353ced4f95ec04a8446bede3511530aa5238cc220d3534359a68",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_character_cabinet_browser_test.cjs",
+      "sha256": "b5470eed7c67ba1fde28ec0f8396146c95c861222da80b333e6d0ed42a8caad7",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_character_profile_browser_test.cjs",
+      "sha256": "18af39f24c10c2f5a3f7430117622e1fbc825e7ff8057f6fc6d71966034e759e",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_desk_results_contrast_test.cjs",
+      "sha256": "7483bec06ab46e8965e37064bfdad20b937d7d78a5de0d94f2305dfa865271b2",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_gradia_book_workbench_browser_test.cjs",
+      "sha256": "626d3dc15a475dc36a6cb3bfac08039ca47a8690bcc5331ff12f0883a6ec51ac",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_gui_task_layout_browser_test.cjs",
+      "sha256": "a050b8d1ad678fef701fc7a9215c17d74592bb48e10253f1f7fe26e04ac62355",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_header_mode_authority_browser_test.cjs",
+      "sha256": "ccd7d23cdff8ceba103194a6607eaf32e04f77993d0ba117bf3ae84be938c0b8",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_identity_knowledge_merge_browser_test.cjs",
+      "sha256": "e3089cec26082a1824f176670e88481f4ce7932d89fe34d11c69dff6304a74dc",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_input_writer_nsfw_model_test.cjs",
+      "sha256": "006a5d91a3c378ffc88e4057f757b606991fb39940f0d65d38c7275b3442f175",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_librarian_browser_test.py",
+      "sha256": "799e22ebf3cdb84bc22b7c6723f5469cbde1ad5d5570eb672d5b1d6781bd9d94",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_medium_sidebar_browser_test.cjs",
+      "sha256": "42566f4b17c8da3619990ae99749610057c3bf76b67e8109830844d3eb64b17f",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_mobile_close_browser_test.cjs",
+      "sha256": "b44052aa1597779ce1cd95b38b4079acb56630961292b6f19d3786c231d6f8d4",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_mobile_settings_scroll_browser_test.cjs",
+      "sha256": "cec743c3f78a9e57e751fc9d39fd2aed434904f628d4c3640bb60efdb18fbdfc",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_narrative_almanac_browser_test.cjs",
+      "sha256": "10b87426e9ca70837d035792db8f792cda23c9850cba94f2c170cfe4404733f8",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_reading_desk_controls_browser_test.cjs",
+      "sha256": "2b0994b7c697ab9ac3a1119d2fb0fc4b39764471a8841c49c9df8efa0b2cea12",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_reading_space_measure_browser_test.cjs",
+      "sha256": "a670ade5bf59f7bcf4ee3e5b38d1c8b59088bd0b90a99b3f90010196cdb379da",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_response_consumers_v2_browser_test.py",
+      "sha256": "068c53f9e6adc5ba73594e881b03ba9c6e098e29c4f2957885387d65f977af7d",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_scope_reference_regression_test.cjs",
+      "sha256": "d5d1bfd9d3e2a5fb59b3d9a8abe6885433c1dcc10682dd536ac264cc010d7a44",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_unified_fifth_browser_test.py",
+      "sha256": "ccc48dd7e2bd080251a1400f013c99fe0810cbca6b2106982ad06dd96d191b99",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_unified_quick_settings_browser_test.cjs",
+      "sha256": "1895c0b05b537b97538d13cbc297fb768b3850a44ca3ee35bda3053b88bc14f6",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_unified_seventh_browser_test.py",
+      "sha256": "9c2db953509bccf2753da94e170ab6ba8f0c376111c88f0701538b4f70675897",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_unified_sixth_browser_test.py",
+      "sha256": "db3e0bf1d5eff4657d4984270160176e3ee4445bb973b5403127c9581bdd19a1",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_unified_world_v2_browser_test.py",
+      "sha256": "52427528fffe0307ab36966974a839e6ca15bf0e4260f8668b41d33cf1781c37",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_workbench_consolidation_browser_test.cjs",
+      "sha256": "d0a6028efdbf8c02b8691fb9f6a7872dac92f025eb824169ae792a3056b558fd",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_world_atlas_browser_test.cjs",
+      "sha256": "89fad3ee95040043e0b7ec4df622447cfdcd23e4fd3009fbfdbb700684ba2d94",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_writer_additional_browser_test.py",
+      "sha256": "c2c4ea0e18c8fa1771ef572174c843d83215a5436f7069659ee6bb5d4af9be50",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/libra_writer_browser_test.py",
+      "sha256": "ef58fc7d3e794eb92b90d3b75d548314086ea87a9255ac6f733298e31deeef2e",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/source_review_browser_test.py",
+      "sha256": "3e818ad549aaa7a6e551a023db90050ebd2894904a2007dedd1a4fa260914d26",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/source_review_owners_browser_test.py",
+      "sha256": "eb0f4124615dab6f9bda1014edadbb698b847dbc3f831d1fea5b85e4effb9487",
+      "language": "python",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/source_rules_gui_browser_test.cjs",
+      "sha256": "79819a4e030a3b16f4ecf47cfc2076ce8a3139d139308c824d2081031199109d",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    },
+    {
+      "path": "PROGRAM/tests/browser/source_tracking_modes_browser_test.cjs",
+      "sha256": "ea7c3cf99796596a3615fa6926651a2ba019564972281efb261fb464ec7bdc68",
+      "language": "node-cjs",
+      "executionKind": "real-Chromium-rendering-with-synthetic-host-and-mock-provider"
+    }
+  ]
+}
