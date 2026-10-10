@@ -269,7 +269,7 @@ const runPair = async (sourceMode, destinationMode) => {
     const destMemories = Array.isArray(destinationReadback?.memories) ? destinationReadback.memories : [];
     observation.destinationRecallReturnedRows = destMemories.length;
     observation.destinationRecallError = destinationReadback?.__error || '';
-    observation.destinationResetGateActive = /초기화 또는 복원|server_unavailable|memory_suite_server_unavailable/.test(String(observation.destinationRecallError));
+    observation.destinationResetGateActive = observation.destinationRecallError === 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' || /초기화 또는 복원|server_unavailable|memory_suite_server_unavailable/.test(String(observation.destinationRecallError));
     const destRow = destMemories.find(row => String(row?.memory?.memoryId || '') === String(observation.sourceMemoryId));
     observation.destinationRecallResolvedId = String(destRow?.memory?.memoryId || '');
     observation.destinationRecallResolvedIdMatches = observation.destinationRecallResolvedId === String(observation.sourceMemoryId);

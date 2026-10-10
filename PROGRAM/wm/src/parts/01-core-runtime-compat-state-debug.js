@@ -94,6 +94,7 @@
                 requestInit.networkRoute = 'local_network';
             }
             let abortTimer = null;
+            let ownedTimeoutError = null;
             let timeoutTimer = null;
             let externalAbort = null;
             const externalSignal = requestInit.signal;
@@ -108,6 +109,7 @@
                 else externalSignal?.addEventListener?.('abort', externalAbort, { once: true });
                 abortTimer = setTimeout(() => {
                     const timeoutError = new LIBRAError('API Request timed out', 'TIMEOUT');
+                    if (!controller.signal.aborted) ownedTimeoutError = timeoutError;
                     try { controller.abort(timeoutError); }
                     catch (_) { try { controller.abort(); } catch (_) {} }
                 }, timeoutMs);
@@ -126,7 +128,8 @@
             try {
                 return await Promise.race([fetchPromise, timeoutPromise]);
             } catch (error) {
-                throw normalizeNetworkError(error, url);
+                const ownedTimeout = ownedTimeoutError && requestInit.signal?.aborted && requestInit.signal.reason === ownedTimeoutError;
+                throw normalizeNetworkError(ownedTimeout ? ownedTimeoutError : error, url);
             } finally {
                 if (abortTimer != null && typeof clearTimeout === 'function') clearTimeout(abortTimer);
                 if (timeoutTimer != null && typeof clearTimeout === 'function') clearTimeout(timeoutTimer);

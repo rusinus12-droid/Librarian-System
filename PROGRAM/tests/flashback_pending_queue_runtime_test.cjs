@@ -320,7 +320,18 @@ test('automatic continuation reaches a valid tail across several failed front pa
       return index === tailIndex ? success(init) : { ok: true, status: 200, async json() { return { data: [{ index: 0, embedding: [0, 0, 0] }] }; } };
     };
     x.h.context.__queueCapture.schedulePendingEmbeddingWork(x.scope.scopeKey);
-    await waitFor(async () => (await x.read()).find(row => row.sourceHash === tail.sourceHash).embeddingReceipt?.status === 'ready', 'automatic passes never reached the valid tail');
+    try {
+    await waitFor(async () => (await x.read()).find(row => row.sourceHash === tail.sourceHash).embeddingReceipt?.status === 'ready', 'automatic passes never reached the valid tail',15000);
+    } catch (error) {
+      console.error('QUEUE_TIMEOUT_DIAGNOSTIC',JSON.stringify({counts:[...counts],lastQueue:x.h.audit.Runtime.lastEmbeddingQueue,states:(await x.read()).map(row=>({sourceHash:row.sourceHash,status:row.embeddingWork?.status,receipt:row.embeddingReceipt?.status}))}));
+      if(process.env.REGRESSION_QUEUE_DIAGNOSTIC_GRACE==='1') {
+        const diagnosticStart=Date.now();
+        await waitFor(async()=>(await x.read()).find(row=>row.sourceHash===tail.sourceHash).embeddingReceipt?.status==='ready','diagnostic bounded tail still incomplete',15000);
+        assert.equal(counts.size,10);assert([...counts.values()].every(value=>value===1));assert(x.h.audit.Runtime.lastEmbeddingQueue.physicalRequests<=3);
+        console.error('QUEUE_DIAGNOSTIC_TERMINAL',JSON.stringify({afterOriginalFailureMs:Date.now()-diagnosticStart,uniqueProviderSubmissions:counts.size,noRetries:true,lastQueue:x.h.audit.Runtime.lastEmbeddingQueue}));
+      }
+      throw error; // A diagnostic grace never promotes a failed completion assertion.
+    }
     assert.equal(counts.size, 10); assert([...counts.values()].every(value => value === 1));
     assert(x.h.audit.Runtime.lastEmbeddingQueue.physicalRequests <= 3);
   } finally { await x.h.cleanup(); }
@@ -342,7 +353,7 @@ test('an uncertain provider outcome stops automatic continuation without resubmi
   } finally { await x.h.cleanup(); }
 });
 
-for (const option of ['maxSources', 'maxRequests']) test(`zero ${option} reports disabled without scanning the source inventory`, async () => {
+for (const option of ['maxSources', 'maxRequests', 'maxRecords', 'maxChars']) test(`zero ${option} reports disabled without scanning the source inventory`, async () => {
   const x = await setup();
   try {
     await x.store([source(0)]);

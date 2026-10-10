@@ -12,6 +12,7 @@
 //   V3 쓰기 경로가 옛 이름을 만들지 않는다 (신규 데이터는 정본 어휘)
 //   V4 표시 라벨은 옛 이름도 그대로 낸다 (구 데이터도 라벨이 나온다)
 //   V5 알 수 없는 상태는 orphaned 로 수렴한다 (fail-safe — 정본도 같은 방향)
+(async () => {
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -20,11 +21,8 @@ const ROOT = path.resolve(__dirname, '..');
 const SRC01F = fs.readFileSync(path.join(ROOT, 'src/parts/01f-lore-consolidation.js'), 'utf8');
 
 let code = fs.readFileSync(path.join(ROOT, 'dist', 'LIBRA World Manager Full.js'), 'utf8');
-const SCOPE_TAIL = 'return { analyzeUserIntent, detectConflict, executeAdjustment, applyChange };';
-const tailAt = code.indexOf(SCOPE_TAIL, code.indexOf('const MemoryEngine = (() => {'));
-if (tailAt < 0) { console.log(JSON.stringify({ ok: false, reason: 'scope_tail_not_found' }, null, 2)); process.exit(1); }
-const closeMark = code.indexOf('\n})();', tailAt);
-const injectAt = closeMark + '\n})();'.length;
+const injectAt = code.lastIndexOf('})();');
+if (injectAt < 0) throw new Error('portable_factory_closure_tail_not_found');
 code = code.slice(0, injectAt)
   + '\n;globalThis.__SW__={' + "LibraTurnWorldline: typeof LibraTurnWorldline !== 'undefined' ? LibraTurnWorldline : null" + '};'
   + code.slice(injectAt);
@@ -54,7 +52,7 @@ const ctx = {
 ctx.globalThis = ctx; ctx.window = ctx;
 vm.createContext(ctx);
 let runErr = '';
-try { vm.runInContext(code, ctx, { filename: 'libra-bundle.js', timeout: 120000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
+try { await vm.runInContext(code, ctx, { filename: 'libra-bundle.js', timeout: 120000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
 
 const assertions = [];
 const assert = (name, ok, details = {}) => assertions.push({ name, ok: !!ok, details });
@@ -147,3 +145,5 @@ assert('status_label_covers_legacy_names',
 const ok = assertions.every(a => a.ok);
 console.log(JSON.stringify({ ok, assertions }, null, 2));
 process.exit(ok ? 0 : 1);
+
+})().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

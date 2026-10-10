@@ -198,6 +198,25 @@ if (build && typeof selectionFn === 'function') {
     JSON.stringify(again) === JSON.stringify(top3),
     { first: top3.map(p => p.row), again: again.map(p => p.row) });
 
+  // Duplicate relations must not spend distinct-memory capacity. Inspect the raw
+  // product selection, before runSelect's reporting dedup can hide the defect.
+  const pairNodes = [{id:'E',nodeType:'entity'},
+    ...[['r5',15],['r4',14],['r3',13]].map(([id,turn])=>({id,nodeType:'memory',turn,importance:1}))];
+  const pairEdges = [['a','r5'],['b','r5'],['c','r5'],['d','r4'],['e','r3']]
+    .map(([id,to])=>({id,from:'E',to,relation:'mentions_entity',weight:1}));
+  for (const direction of ['forward','reverse']) {
+    const edges = direction === 'forward' ? pairEdges : pairEdges.slice().reverse();
+    const chosenIds = new Set(['E']), entities = new Set(['E']);
+    const selected = selectionFn({nodes:pairNodes,edges},g=>g.edges,entities,new Map(pairNodes.map(n=>[n.id,n])),3,chosenIds);
+    const memories = [...chosenIds].filter(id=>id!=='E').sort();
+    const raw = selected.keptMemoryEdges;
+    const pairs = new Set(raw.map(e=>[e.from,e.to].sort().join('\u0001')));
+    assert('duplicate_pairs_'+direction+'_preserve_distinct_memory_capacity',
+      JSON.stringify(memories)===JSON.stringify(['r3','r4','r5']),{memories,limit:3});
+    assert('duplicate_pairs_'+direction+'_raw_edges_are_unique',
+      raw.length===3&&pairs.size===3,{rawEdges:raw.map(e=>({id:e.id,from:e.from,to:e.to})),pairCount:pairs.size});
+  }
+
   // ── S5: 배선 — 선택 전에 정렬이 있는가 (기존 관례 turn/importance) ──
   const selBlock = (() => {
     const i = SRC10J.indexOf('// 인물-기억 엣지(E1) 중 인물당 상한만큼');

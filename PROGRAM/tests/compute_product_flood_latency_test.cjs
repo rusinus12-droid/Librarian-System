@@ -95,7 +95,7 @@ async function main() {
 
     const soakStartedAt = performance.now();
     const soakPending = [];
-    for (let wave = 1; wave <= 6; wave += 1) {
+    for (let wave = 1; wave <= 8; wave += 1) {
       for (const spec of specs) {
         soakPending.push(submitProductJob(base, spec, {
           operationId: `product_soak_${spec.identity.namespace}_${String(wave).padStart(4, '0')}`,
@@ -143,7 +143,7 @@ async function main() {
       interactiveTotalMs: interactive.result.timing.totalMs,
       interactiveWallMs: Number(interactiveWallMs.toFixed(2)),
       interactiveLeadMs: queuedBackgroundStarts[0] - Number(interactive.status.startedAt),
-      boundedSoakWaves: 6,
+      boundedSoakWaves: 8,
       boundedSoakJobs: soakResults.length,
       soakWallMs: Number(soakWallMs.toFixed(2)),
       soakConcurrency,

@@ -127,3 +127,15 @@ test('core3 bootstrap refuses excluded WM and strong GRADIA consumers rather tha
  const f=prepared(t),app=appFor(t,f);
  for(const plugin of ['libra_world_manager','serial_gradation_agents_for_rp']){const r=await request(app,'/bootstrap',{}, {method:'GET',headers:{'x-memory-suite-plugin':plugin}}).result;assert.equal(r.status,503,plugin);assert.equal(r.body.token,undefined);}
 });
+
+for(const authorityEvidence of ['prepared','orphan'])test(`invalid physical reset and ${authorityEvidence} authority evidence both remain fail-closed`,t=>{
+ const f=prepared(t),reset=path.join(f.dataDir,'config','namespace-reset.json');
+ if(authorityEvidence==='orphan'){
+  fs.renameSync(f.markerPath,path.join(f.root,'retained-marker.json'));
+  fs.renameSync(path.dirname(f.controlPath),path.join(f.root,'retained-authority'));
+ }
+ fs.writeFileSync(reset,JSON.stringify({epochs:{libra:1},pending:{schema:'memory-suite.namespace-reset-job.v2',dataInstanceId:'A'.repeat(32),dataIdentityContract:'memory-suite.physical-data-identity.v1',id:'dual-invalid',namespaces:['libra'],completed:[]}}));
+ const snapshot=()=>{const rows=[];const visit=dir=>{for(const name of fs.readdirSync(dir).sort()){const file=path.join(dir,name);if(fs.lstatSync(file).isDirectory())visit(file);else rows.push([path.relative(f.dataDir,file),fs.readFileSync(file).toString('base64')]);}};visit(f.dataDir);return rows;};
+ const before=snapshot();assert.throws(()=>createMemorySuiteServer({dataDir:f.dataDir,autoBackup:false,computeEnabled:false}),/namespace_reset_physical_binding_changed/);assert.deepEqual(snapshot(),before,'dual-invalid refusal changes no DATA bytes');
+ fs.unlinkSync(reset);const authorityOnly=snapshot();assert.throws(()=>createMemorySuiteServer({dataDir:f.dataDir,autoBackup:false,computeEnabled:false}),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);assert.deepEqual(snapshot(),authorityOnly,'clearing invalid reset cannot bypass prepared or orphan authority');
+});

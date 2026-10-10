@@ -2330,6 +2330,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const host = options.host || DEFAULT_HOST;
   const port = Number(options.port ?? DEFAULT_PORT);
   const dataDir = path.resolve(options.dataDir || path.resolve(__dirname, '..', '..', 'DATA'));
+  // Even read-only SQLite admission may materialize WAL sidecars. Reject an
+  // invalid physical reset journal before that owner-store observation.
+  require('./core/namespace-reset.cjs').preflightPhysicalAdmission(dataDir, NAMESPACES);
   if (!authorityRuntime) assertLegacyAuthorityUnavailable({dataDir});
   const backupDir = path.resolve(options.backupDir || path.join(dataDir, 'backups'));
   const autoBackupIntervalMs = Math.max(1000, Number(options.autoBackupIntervalMs || AUTO_BACKUP_INTERVAL_MS));
@@ -2337,7 +2340,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const changeSettledBackupDelayMs = Math.max(10, Number(options.changeSettledBackupDelayMs || CHANGE_SETTLED_BACKUP_DELAY_MS));
   if (!['127.0.0.1', 'localhost', '::1'].includes(host)) throw new Error('memory_suite_server_must_bind_to_loopback');
   if (!pathIsInside(dataDir, backupDir)) throw new Error('backup_directory_must_be_inside_DATA');
-  require('./core/namespace-reset.cjs').preflightPhysicalAdmission(dataDir, NAMESPACES);
   let interruptedRestoreRecovery = { recovered: false, reason: 'data_dir_absent' };
   if (authorityRuntime) interruptedRestoreRecovery = {recovered:false,reason:'qualified_core3_lifecycle_closed'};
   else if (fs.existsSync(dataDir)) interruptedRestoreRecovery = recoverInterruptedRestore(dataDir);
@@ -2775,6 +2777,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     if (!namespaces.length) throw Object.assign(new Error('restore_namespace_required'), { statusCode: 400 });
 
     let restoreRequiresRecovery = false;
+    const stagedRestoreFiles = new Set();
     maintenanceMode = true;
     try {
       // Single owner of restore-time epoch advancement for every entrypoint
@@ -2800,7 +2803,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const nonce = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
         const tempPath = `${currentPath}.restore-temp-${nonce}`;
         const rollbackPath = `${currentPath}.restore-rollback-${nonce}`;
+        // Explicit backup restoration may materialize legacy inventory. Reopening
+        // below retains the ordinary retired-owner read-only repository policy.
+        fs.mkdirSync(path.dirname(currentPath), { recursive: true });
         fs.copyFileSync(sourcePath, tempPath);
+        stagedRestoreFiles.add(tempPath);
         fsyncFile(tempPath);
         if (sha256File(tempPath) !== storeMeta.sha256) {
           fs.rmSync(tempPath, { force: true });
@@ -2832,6 +2839,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const tempPath = `${scopeCatalogPath}.restore-temp-${restoreNonce}`;
         const rollbackPath = `${scopeCatalogPath}.restore-rollback-${restoreNonce}`;
         fs.writeFileSync(tempPath, `${JSON.stringify(nextCatalog, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+        stagedRestoreFiles.add(tempPath);
         fsyncFile(tempPath);
         catalogPlan = {
           currentPath: scopeCatalogPath, tempPath, rollbackPath,
@@ -2983,7 +2991,12 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       };
     } finally {
       // An incomplete rollback must not reopen writes or overwrite its journal.
-      if (!restoreRequiresRecovery) maintenanceMode = false;
+      if (!restoreRequiresRecovery) {
+        // Staging can fail before the install try/finally or journal exists.
+        // Remove only copies successfully created by this invocation.
+        for (const stagedPath of stagedRestoreFiles) cleanupRestoreArtifact(stagedPath);
+        maintenanceMode = false;
+      }
     }
   };
 

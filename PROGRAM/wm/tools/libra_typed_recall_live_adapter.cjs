@@ -49,7 +49,7 @@ async function observeHost(observer,frame){
 }
 async function session(options){
  const t=transport(options);let stageCapture=null;
- const r=await runtime(options.shared,{countEnumeration:options.countEnumeration,dist:options.dist,observeStages:value=>{stageCapture=copy(value);}});installCorpus(r,options.corpus);
+ const r=await runtime(options.shared,{admittedHost:true,countEnumeration:options.countEnumeration,dist:options.dist,observeStages:value=>{stageCapture=copy(value);}});installCorpus(r,options.corpus);
  // Restore actual wall time and deadlines after the synthetic host fixture loads.
  const timers=new Set();r.context.Date=Date;
  r.context.setTimeout=(fn,ms,...args)=>{const timer=setTimeout(()=>{timers.delete(timer);fn(...args);},ms);timers.add(timer);return timer;};
@@ -96,7 +96,7 @@ async function session(options){
  };
  return{runtime:r,provider,policy,capture:t.capture,backfill,pilotDocuments,importCapturedDocuments,beforeRequest,setSender:t.setSender,snapshot,
   readiness:async()=>{const snap=snapshot(),units=r.corpus.enumerate(snap,policy);return copy(r.index.read(await r.index.open(snap,provider,policy),units).readiness);},
-  close:async()=>{r.jobs.pause(r.snapshot.scopeKey);rollout.setMode('legacy');for(const timer of timers)clearTimeout(timer);timers.clear();},
+  close:async()=>{r.jobs.pause(r.snapshot.scopeKey);rollout.setMode('legacy');for(const timer of timers)clearTimeout(timer);timers.clear();await r.close();},
   storage:()=>({keys:r.store.size,bytes:[...r.store].reduce((n,[k,v])=>n+Buffer.byteLength(k)+Buffer.byteLength(String(v)),0)})};
 }
 module.exports={transport,session,observeHost,installCorpus,local};

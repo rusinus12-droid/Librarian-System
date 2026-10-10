@@ -174,20 +174,18 @@ expectRejectedObservation('G18-empty-recall-rejected', { memories: [] },
       const ref = firstRefOf(snap);
       assert.ok(ref?.key, 'G11: fixture must create a canonical row');
       const canonicalBefore = rawCanonical(snap, ref);
-      const autoStatus = await f.r.api.getSourceEditSyncStatus();
-      const offSet = await f.r.api.setSourceEditTrackingMode('off');
-      const offStatus = await f.r.api.getSourceEditSyncStatus();
-      const restoreMode = autoStatus?.mode || 'auto';
-      await f.r.api.setSourceEditTrackingMode(restoreMode);
-      const restored = await f.r.api.getSourceEditSyncStatus();
-      assert.equal(offStatus?.mode, 'off', 'G11: status reports the off mode after setting it');
-      assert.equal(restored?.mode, restoreMode, 'G11: status reports the restored mode');
-      assert.equal(rawCanonical(snap, ref), canonicalBefore, 'G11: changing the policy alone leaves the canonical source bytes unchanged');
-      record('G11', 'Toggle source-tracing mode off and restore it without editing chat source',
-        `mode round-trip ${autoStatus?.mode || 'auto'} -> ${offStatus?.mode} -> ${restored?.mode}; no source edit was applied during OFF`,
-        'UNVERIFIED', { autoMode: autoStatus?.mode || null, offMode: offStatus?.mode || null,
-          restoredMode: restored?.mode || null, setterResult: offSet ?? null, canonicalUnchanged: true,
-          missing: 'source edit while OFF and durable source evidence readback after that edit' });
+      // Automatic edit-detection modes were explicitly retired on 2026-10-06.
+      // Keep this gate identity and canonical preservation control; never fake the removed toggle.
+      for (const name of ['getSourceEditSyncStatus','setSourceEditTrackingMode']) {
+        assert.equal(typeof f.r.api[name], 'undefined', 'G11: retired automatic tracking control stays absent');
+      }
+      assert.equal(rawCanonical(snap, ref), canonicalBefore, 'G11: retirement inspection leaves canonical source bytes unchanged');
+      record('G11', 'Inspect retired automatic source-tracking controls without altering canonical data',
+        'The historical auto/off toggle contract is retired. Explicit source view and user-selected reanalysis are covered by their dedicated runtime gates.',
+        'NONAPPLICABLE_RETIRED', { canonicalUnchanged: true,
+          contract: 'docs/SOURCE_EDIT_DETECTION_RETIREMENT_20261006.md',
+          replacementGate: 'tests/source_edit_detection_retirement_test.cjs',
+          historicalExpectationPassed: false });
     } finally { await snap.cleanup(); }
   }
 

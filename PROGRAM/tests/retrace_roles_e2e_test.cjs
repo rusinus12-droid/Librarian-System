@@ -252,12 +252,15 @@ async function runMode(mode) {
       rowCount: Array.isArray(gate?.rows) ? gate.rows.length : null,
       owners: Array.isArray(gate?.rows) ? gate.rows.map(row => ({ owner: row.owner, installed: row.installed, mode: row.mode })) : []
     };
-    assert.equal(handoff.storageGate.rowCount, 4, 'the storage gate must cover all four owners');
+    // Four legacy IPC peers above remain covered; the current readiness inventory also
+    // includes WM. This fixture does not load WM, so its row must stay absent/nonparticipating.
+    assert.deepEqual(Array.from(handoff.storageGate.owners,row=>row.owner),['flashback','hayaku','libra','lia','wm'],'current five-owner readiness inventory');
+    const wmRow=gate.rows.find(row=>row.owner==='wm');assert.equal(wmRow.installed,false);assert.equal(wmRow.connected,false);assert.equal(wmRow.supported,false);
 
     // The gate's contract, read from `memorySuiteOwnerStorageGateFromRows` in the plugin: it judges
     // the owners that are INSTALLED AND ANSWERING. An owner that is not installed is not a blocking
     // condition — `continueToNextSession` words the requirement as "the storage gate of the installed,
-    // responding owners" — so readiness is a claim about the participants, not about all four rows.
+    // responding owners" — so readiness is a claim about the participants, not about all five inventory rows.
     // What must hold is that readiness AGREES with the participants it reports.
     const rows = Array.isArray(gate?.rows) ? gate.rows : [];
     const participants = rows.filter(row => row.connected === true && row.supported === true);
@@ -281,15 +284,20 @@ async function runMode(mode) {
     //     gate rather than a function that answers `ready` unconditionally.
     const gateFromRows = retrace._test.memorySuiteOwnerStorageGateFromRows;
     assert.equal(typeof gateFromRows, 'function', 'the gate function must be reachable for the negative control');
-    const refused = gateFromRows([
+    const mixedRows = [
       { owner: 'flashback', installed: true, connected: true, supported: true, mode: 'plugin_only' },
       { owner: 'hayaku', installed: true, connected: true, supported: true, mode: 'server_only' }
-    ], null);
+    ];
+    const refused = gateFromRows(mixedRows, null);
     handoff.negativeControl = { ready: refused?.ready, reason: refused?.reason, commonMode: refused?.commonMode };
-    assert.equal(refused?.ready, false, 'owners reporting DIFFERENT modes must not pass the gate');
-    assert.equal(refused?.reason, 'owner_storage_mode_mismatch',
-      `a mode mismatch must be reported as such (got '${refused?.reason}')`);
-    assert.equal(refused?.commonMode, '', 'a mismatched gate must not name a common mode');
+    assert.equal(refused?.ready, false, 'mixed per-owner modes still require server integrity evidence');
+    assert.equal(refused?.reason, 'server_integrity_not_checked',
+      `missing server integrity must be reported as such (got '${refused?.reason}')`);
+    assert.equal(refused?.commonMode, 'per_owner', 'the current contract permits independently selected owner modes');
+    const verifiedMixed=gateFromRows(mixedRows,{hayaku:{verified:true}});
+    assert.equal(verifiedMixed.ready,true);assert.equal(verifiedMixed.commonMode,'per_owner');
+    const failedMixed=gateFromRows(mixedRows,{hayaku:{verified:false}});
+    assert.equal(failedMixed.ready,false);assert.equal(failedMixed.reason,'owner_server_integrity_failed');
     const refusedEmpty = gateFromRows([], null);
     assert.equal(refusedEmpty?.ready, false, 'a gate with no active owner must not be ready');
     assert.equal(refusedEmpty?.reason, 'no_active_memory_owner',

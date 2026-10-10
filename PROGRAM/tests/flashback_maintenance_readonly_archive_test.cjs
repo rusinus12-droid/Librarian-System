@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {establishExplicitLocalRoute}=require('./fixtures/flashback_explicit_route_fixture.cjs');
 (async()=>{const f=await createFixture();const restore=[];try{
- const cfg=await f.api.saveSettings({...await f.api.loadSettings(),embeddingProvider:'openai_compat',embeddingUrl:'https://synthetic.invalid/v1',embeddingModel:'fixture-model',embeddingDimensions:3,embeddingEnabled:true,embeddingAutoProcess:false,autoEpisodeIndex:false,episodeIndexEnabled:false});const scope=await f.api.resolveCurrentScope(false);
+ const cfg=await f.api.saveSettings({...await f.api.loadSettings(),embeddingProvider:'openai_compat',embeddingUrl:'https://synthetic.invalid/v1',embeddingModel:'fixture-model',embeddingDimensions:3,embeddingEnabled:true,embeddingAutoProcess:false,autoEpisodeIndex:false,episodeIndexEnabled:false});const scope=await f.api.resolveCurrentScope(false);await establishExplicitLocalRoute(f,scope);
  const records=await f.api._test.buildRecordsFromSources([{sourceType:'response',sourceId:'fixture',sourceHash:'fixture-hash',origin:'live_chat',role:'turn_pair',turnIndex:1,pairIndex:1,text:'User:\nWhere is Alice?\n\n---\n\nAssistant:\nAlice is in the hall.'}],cfg,scope,{deferEmbedding:true});
  for(const record of records){delete record.embeddingWork;Object.assign(record,{vector:[.25,.5,.75],dim:3,embeddingDimensions:3,provider:'openai_compat',model:'fixture-model',embeddingProvider:'openai_compat',embeddingModel:'fixture-model',embeddingProfileId:'fixture-profile'})}
  await f.api._test.saveAllRecords(records,cfg,scope);const archive=await f.api._test.createImmutableFlashbackHandoffArchive(scope.scopeKey,records.length,cfg);const manifest=await f.api._test.loadScopeManifest(scope);await f.api._test.saveScopeManifest({...manifest,archiveRef:archive.archiveRef},scope);

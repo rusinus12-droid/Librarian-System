@@ -124,13 +124,7 @@ function fixture(mode = "plugin_only", opts = {}) {
     localBackend: local,
     serverBackend: () => server,
     journal: j,
-    hostGate: {
-      async check() {
-        return {
-          ok: true
-        };
-      }
-    }
+    hostGate: require('./wm-host-gate-fixture.cjs').fixture({initialRoute:route}).gate
   });
   return {
     router: router,

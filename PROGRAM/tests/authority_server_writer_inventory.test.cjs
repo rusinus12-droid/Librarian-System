@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { test } = require('node:test');
-const { fixture, snapshotDurable, OWNERS, controlApi, ownerApi, fresh, current, put } = require('./fixtures/authority_server_fixture.cjs');
+const { currentFixture: fixture, snapshotDurable, CURRENT_OWNERS: OWNERS, controlApi, ownerApi, fresh, current, put } = require('./fixtures/authority_server_fixture.cjs');
 const refused = /AUTHORITY_(?:LIFECYCLE_UNAVAILABLE|QUARANTINED|CONTROL_REQUIRED|UNAVAILABLE|WRITE_DENIED)|INVALID_AUTHORITY_STORE|AUTHORITY_CLOSED/;
 const count = (repo, table) => repo.database.prepare(`SELECT count(*) AS n FROM ${table}`).get().n;
 
@@ -293,4 +293,12 @@ test('conclusive_owner_close_uses_current_transaction_facade_without_legacy_fall
     assert.equal(JSON.parse(currentDb.prepare("SELECT value_json FROM kv WHERE key='libra:test:current-handle'").get().value_json), 'yes');
   } finally { currentDb.close(); }
   assert.throws(() => repo.database.exec('COMMIT'), /not open|closed|not a database/i, 'old raw handle must never resume');
+});
+
+for (const namespace of ['lia', 'retrace']) test(`retired_${namespace}_writer_is_rejected_before_current_profile_storage_open`, t => {
+  const f = fixture(t); f.activate();
+  const before = f.readControl('SELECT COUNT(*) n FROM write_intents')[0].n;
+  assert.throws(() => f.loaded.__task4.createRepository(f.dataDir, namespace, () => false, f.control), { code: 'AUTHORITY_OWNER_NOT_IN_PROFILE' });
+  assert.equal(f.readControl('SELECT COUNT(*) n FROM write_intents')[0].n, before);
+  assert.equal(fs.existsSync(path.join(f.dataDir, 'stores', namespace, namespace + '.sqlite')), false);
 });

@@ -6,7 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 // Test-only differential runner: the same assertions can load the sealed old
 // source tree. Each fixture imports its own real core modules consistently.
 const program = process.env.LIB_AUTHORITY_REVIEW_PROGRAM || path.resolve(__dirname, '..');
-const { fixture, fresh, put } = require(path.join(program, 'tests/fixtures/authority_server_fixture.cjs'));
+const { currentFixture: fixture, fresh, put } = require(path.join(program, 'tests/fixtures/authority_server_fixture.cjs'));
 const count = (repo, table) => repo.database.prepare('SELECT count(*) n FROM ' + table).get().n;
 
 test('authorized_maintenance_batch_threshold_preserves_receipt_and_guarded_cleanup', t => {
@@ -60,7 +60,7 @@ test('unsafe_cleanup_termination_remains_fatal_without_success_continuation', ()
   const fs = require('node:fs');
   const os = require('node:os');
   const { spawnSync } = require('node:child_process');
-  const child = spawnSync(process.execPath, [path.join(__dirname, 'fixtures/authority_cleanup_fatal_child.cjs')], { encoding: 'utf8', timeout: 30000, env: { NODE_OPTIONS:process.env.NODE_OPTIONS, LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT, LANG: 'C', TZ: 'UTC', NODE_NO_WARNINGS: '1', LIB_AUTHORITY_REVIEW_PROGRAM: program } });
+  const child = spawnSync(process.execPath, [path.join(__dirname, 'fixtures/authority_cleanup_fatal_child.cjs')], { encoding: 'utf8', timeout: 30000, env: { ...process.env, NODE_OPTIONS:process.env.NODE_OPTIONS, LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT, LANG: 'C', TZ: 'UTC', NODE_NO_WARNINGS: '1', LIB_AUTHORITY_REVIEW_PROGRAM: program } });
   assert.equal(child.error, undefined);
   const info = JSON.parse(child.stdout.split('\n')[0]);
   assert(path.resolve(info.root).startsWith(path.resolve(os.tmpdir()) + path.sep + 'lib-authority-task4-'));

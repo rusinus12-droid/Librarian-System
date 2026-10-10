@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),crypto=require('crypto'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'..'),base=JSON.parse(fs.readFileSync(root+'/BASE-PINS.json')).base,freeze=JSON.parse(fs.readFileSync(base+'/PRODUCT-SUPPORT-FREEZE.json'));
+const root=path.resolve(__dirname,'..'),base=require('./wm-historical-fixture-paths.cjs').immutableBaseRoot({wmRoot:root}),freeze=JSON.parse(fs.readFileSync(base+'/PRODUCT-SUPPORT-FREEZE.json'));
 const intentionallyUnpackaged=['tools/__pycache__/verify_required_support.cpython-312.pyc'];
 let exact=0;const absent=[],different=[];
 for(const [name,pin]of Object.entries(freeze.files)){const file=path.join(base,name);if(!fs.existsSync(file)){absent.push(name);continue;}const bytes=fs.readFileSync(file);if(bytes.length!==pin.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==pin.sha256)different.push(name);else exact++;}

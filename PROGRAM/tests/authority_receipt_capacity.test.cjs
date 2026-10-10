@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { fixture, fresh, put, snapshotDurable, ownerApi } = require('./fixtures/authority_server_fixture.cjs');
+const { currentFixture: fixture, fresh, put, snapshotDurable, ownerApi } = require('./fixtures/authority_server_fixture.cjs');
 function originalResult(f, namespace, operationId) {
   assert.equal(typeof ownerApi.readOwnerOperationResult, 'function', 'retained result reader is required');
   const key = { generation: f.control.readWitness().generation, namespace, operationId };

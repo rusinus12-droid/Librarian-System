@@ -1,4 +1,7 @@
 'use strict';
+// 2026-10-09 current-owner fixture: three active kernels, four rounds (12 jobs);
+// historical four-owner assertions are retired, LIA denial is checked by the fixture.
+// Worker widths, physical overlap floor and original RSS limits remain unchanged.
 // E2E finding — the product worker concurrency matrix demanded a physically impossible overlap.
 //
 // Discovered by E2E review of the 0.3.63 fix branch. `compute_product_worker_matrix_test` and
@@ -49,7 +52,7 @@ const {
 } = require('./fixtures/compute_product_load_fixture.cjs');
 
 const COMPUTE_SIGNING_KEY = 'product-worker-matrix-signing-key-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const NAMESPACES = ['flashback', 'lia', 'libra', 'hayaku'];
+const NAMESPACES = ['flashback', 'libra', 'hayaku'];
 
 (async () => {
   const workerCount = 4;
@@ -66,12 +69,12 @@ const NAMESPACES = ['flashback', 'lia', 'libra', 'hayaku'];
 
     const specs = await createProductSpecs(base);
     assert.deepEqual(specs.map(spec => spec.identity.namespace).sort(), NAMESPACES.slice().sort(),
-      'all four product namespaces must be represented');
+      'all three currently authorized product namespaces must be represented');
 
     const localResults = executeProductLocals(specs);
     const startedAt = performance.now();
     const pending = [];
-    for (let round = 1; round <= 3; round += 1) {
+    for (let round = 1; round <= 4; round += 1) {
       for (const spec of specs) {
         pending.push(submitProductJob(base, spec, {
           operationId: `overlap_w${workerCount}_${spec.identity.namespace}_${String(round).padStart(3, '0')}`,
@@ -121,8 +124,8 @@ const NAMESPACES = ['flashback', 'lia', 'libra', 'hayaku'];
     console.log(JSON.stringify({ test: 'compute_product_worker_overlap', observations: observed }, null, 1));
 
     // Physical parallelism is the real evidence: the pool must fill.
-    assert.ok(concurrency.peakJobs >= Math.min(workerCount, NAMESPACES.length),
-      `the pool must saturate at ${Math.min(workerCount, NAMESPACES.length)} concurrent jobs: ${JSON.stringify(concurrency)}`);
+    assert.ok(concurrency.peakJobs >= Math.min(workerCount, 4),
+      `the pool must saturate at ${Math.min(workerCount, 4)} concurrent jobs: ${JSON.stringify(concurrency)}`);
     assert.ok(concurrency.peakJobs <= workerCount,
       `peakJobs must never exceed the physical pool: ${JSON.stringify(concurrency)}`);
 

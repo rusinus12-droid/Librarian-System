@@ -1,4 +1,7 @@
 'use strict';
+// 2026-10-09 current-owner fixture: three active kernels, four rounds (12 jobs);
+// historical four-owner assertions are retired, LIA denial is checked by the fixture.
+// Worker widths, physical overlap floor and original RSS limits remain unchanged.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -49,7 +52,7 @@ async function runMatrixCell(workerCount) {
       .map(([namespace, repository]) => [namespace, repositoryDigest(repository.filePath)]));
     const startedAt = performance.now();
     const pending = [];
-    for (let round = 1; round <= 3; round += 1) {
+    for (let round = 1; round <= 4; round += 1) {
       for (const spec of specs) {
         pending.push(submitProductJob(base, spec, {
           operationId: `matrix_w${workerCount}_${spec.identity.namespace}_${String(round).padStart(3, '0')}`,
@@ -64,6 +67,7 @@ async function runMatrixCell(workerCount) {
     }
     const submissions = await Promise.all(pending);
     const results = await Promise.all(submissions.map(item => waitProductResult(base, item)));
+    assert.equal(results.length, 12);
     const wallMs = performance.now() - startedAt;
     clearInterval(sampler);
     sampler = null;
@@ -101,9 +105,9 @@ async function runMatrixCell(workerCount) {
       jobs: results.length,
       ...concurrency,
       localSerialMs: Number(localSerialMs.toFixed(2)),
-      serialEquivalentMs: Number((localSerialMs * 3).toFixed(2)),
+      serialEquivalentMs: Number((localSerialMs * 4).toFixed(2)),
       wallMs: Number(wallMs.toFixed(2)),
-      observedThroughputFactor: Number(((localSerialMs * 3) / wallMs).toFixed(3)),
+      observedThroughputFactor: Number(((localSerialMs * 4) / wallMs).toFixed(3)),
       rssBaselineMiB: Number((rssBaseline / MIB).toFixed(2)),
       rssPeakMiB: Number((rssPeak / MIB).toFixed(2)),
       rssPeakDeltaMiB: Number((rssPeakDeltaBytes / MIB).toFixed(2)),

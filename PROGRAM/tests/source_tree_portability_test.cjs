@@ -111,7 +111,8 @@ function sourceScriptFiles() {
   return files.sort();
 }
 
-const repositoryRoot = findGitRepository();
+// Explicit unpacked-export mode does not claim Git index or HEAD coverage.
+const repositoryRoot = process.env.SOURCE_TREE_PORTABILITY_EXPORT === '1' ? null : findGitRepository();
 const sourceMode = !repositoryRoot;
 const files = sourceMode ? sourceScriptFiles() : trackedScriptFiles(repositoryRoot);
 assert.ok(files.length > 0, `source_tree_portability found zero shipped test/tool source files (${sourceMode ? 'source' : 'Git'} scan)`);

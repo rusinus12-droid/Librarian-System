@@ -27,7 +27,6 @@ for (const [name, source] of [
   ['LIBRA', libra],
   ['HAYAKU', hayaku],
   ['Flashback', flashback],
-  ['LIA', lia],
 ]) {
   assert.match(source, /chat_output_registered_but_silent/, `${name}: silent registered-listener reason exists`);
   assert.match(source, /observedRunsAtAfter/, `${name}: afterRequest witness stores the observed callback counter`);
@@ -59,9 +58,11 @@ assert.match(flashback, /scheduleFinalizedCaptureMonitor\(pending, settings, \{ 
 // LIA: official v3 lifecycle first, legacy/fork event fallback second.
 assert.match(lia, /if \(typeof api\.onUnload === "function"\)[\s\S]*?api\.onUnload\(unloadEventHandler\)[\s\S]*?else if \(typeof api\.addEventListener === "function"\)/);
 assert.doesNotMatch(lia, /await api\.log\?\./, 'LIA startup no longer uses deprecated api.log');
-assert.match(lia, /const target = normalizeLiveSyncTarget\(health\?\.target \|\| recentLiveSyncRequestTarget\(\) \|\| \{\}\)/);
-assert.match(lia, /reason: "chat_output_silent_failover_reconcile"/);
-assert.match(lia, /if \(isNarrativePersonaProofRequest\(type\)\) await maybeFailoverSilentLiveSyncBackend\(\)/);
+// LIA manual-only policy retains explicit analysis and source/ledger guards.
+assert.match(lia, /async function registerLiveSyncCaptureBackend\(\) \{\s*liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.NONE;\s*liveSyncCaptureFallbackReason = "manual_only";\s*return false;/);
+assert.match(lia, /async function maybeFailoverSilentLiveSyncBackend\(\) \{ return false; \}/);
+assert.match(lia, /verifyLivePersonaBatchStillCurrent/);
+assert.match(lia, /validateLivePersonaLedger/);
 
 // No new unconditional timer is used to *decide* that the official listener is
 // silent; the proof point is the next main beforeRequest after a main afterRequest.
@@ -69,7 +70,6 @@ for (const [name, source, marker] of [
   ['LIBRA', libra, 'activateLegacyBackendAfterSilentV3'],
   ['HAYAKU', hayaku, 'failoverSilentChatOutputBackend'],
   ['Flashback', flashback, 'failoverSilentFlashbackChatOutputBackend'],
-  ['LIA', lia, 'activateLegacyLiveSyncBackendAfterSilentV3'],
 ]) {
   const at = source.indexOf(marker);
   assert.ok(at >= 0, `${name}: helper found`);

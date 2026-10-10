@@ -44,8 +44,7 @@ assert.match(libraPanel, /renderConnectionSettings\(await scopedGetConnectionSet
 const integrations = [
   ['plugins/Flashback_Memory.js', 'flashbackMemorySuiteServerConnectionPanel'],
   ['plugins/HAYAKU_Locator_Continuity.js', 'hayakuMemorySuiteServerConnectionPanel'],
-  ['plugins/LIBRA.js', 'libraMemorySuiteServerConnectionPanel'],
-  ['plugins/LIA_Persona_Linker.js', 'liaMemorySuiteServerConnectionPanel']
+  ['plugins/LIBRA.js', 'libraMemorySuiteServerConnectionPanel']
 ];
 for (const [relative, hostId] of integrations) {
   const source = read(relative);
@@ -53,6 +52,12 @@ for (const [relative, hostId] of integrations) {
   assert.match(source, /MemorySuiteStorageBridge\.mountConnectionPanel\([\s\S]{0,500}?computeBridge:/);
   assert.doesNotMatch(source, /MemorySuiteComputeSettingsPanel/);
 }
+
+const lia = read('plugins/LIA_Persona_Linker.js');
+assert.match(lia, /storagePolicy:\s*'local_only'/);
+assert.doesNotMatch(lia, /MemorySuiteStorageBridge\.mountConnectionPanel\(/, 'LIA retired ordinary server/compute panel stays absent');
+assert.match(lia, /await LiaLegacyServerRecovery\.preview\(/, 'explicit read-only legacy recovery remains reachable');
+assert.match(lia, /await LiaLegacyServerRecovery\.publish\(/, 'separate explicit recovery publication remains reachable');
 
 const libra = read('plugins/LIBRA.js');
 const renderOnce = between(libra, 'async function renderSettingsGuiOnce() {', 'const hideSettingsGui = async () =>');

@@ -1,7 +1,13 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),vm=require('node:vm');
 const {Worker}=require('node:worker_threads'),{DatabaseSync}=require('node:sqlite');
-const root=path.resolve(__dirname,'..'),guard=path.resolve(root,'../../evidence/no-network.cjs');
+const root=path.resolve(__dirname,'..');
+const inheritedGuard=process.env.NODE_OPTIONS?.match(/--require[= ]([^ ]*\/no-network\.cjs)/)?.[1];
+const guard=inheritedGuard||path.resolve(root,'../../evidence/no-network.cjs');
+if(inheritedGuard){
+ assert(require.cache[require.resolve(guard)],'selected inherited audited guard is already loaded');
+ assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(guard)).digest('hex'),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','current reviewed A4 guard identity');
+}
 const strict=require('./fixtures/authority_strict_guard_probe.cjs').capture();
 function fixture(t,mode='success'){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lib-task5a-worker-')),src=path.join(dir,'source.sqlite'),dst=path.join(dir,'target.sqlite');
@@ -11,7 +17,7 @@ function fixture(t,mode='success'){
  class TestWorker extends Worker{
   constructor(file,options){
    assert.equal(file,path.join(root,'server/backup_worker.cjs'));
-   super(path.join(__dirname,'fixtures/authority_backup_worker_wrapper.cjs'),{workerData:{...options.workerData,realWorker:file,guard,release,mode},execArgv:['--require',guard]});
+   super(path.join(__dirname,'fixtures/authority_backup_worker_wrapper.cjs'),{workerData:{...options.workerData,realWorker:file,guard,release,mode},execArgv:[...process.execArgv,'--require',guard],env:{...process.env,NODE_OPTIONS:process.env.NODE_OPTIONS}});
    state.worker=this;this.on('message',m=>messageResolve(m));this.on('error',e=>state.error=e);this.once('exit',code=>{state.exited=true;exitResolve(code);});
   }
  }

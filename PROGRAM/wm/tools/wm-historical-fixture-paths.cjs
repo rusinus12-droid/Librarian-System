@@ -29,4 +29,24 @@ function privacyArtifacts({ wmRoot, artifact, label, sha256 } = {}) {
   if (process.env.WM_PRIVACY_TARGET_AUDIT) fs.appendFileSync(process.env.WM_PRIVACY_TARGET_AUDIT, JSON.stringify({ path: file, sha256: actual, label, kind: 'read-and-verify-explicit-privacy-artifact' }) + '\n');
   return [{ file: label, path: file, sha256: actual }];
 }
-module.exports = { frozenBArtifact, privacyArtifacts, artifactProfile, profileLabel };
+function immutableBaseRoot({ wmRoot }) {
+  const root = path.resolve(wmRoot), pins = JSON.parse(fs.readFileSync(path.join(root, 'BASE-PINS.json'), 'utf8'));
+  if (pins.base !== 'references/immutable-base' || !Array.isArray(pins.files) || !pins.files.length) throw Error('WM_IMMUTABLE_BASE_PINS_INVALID');
+  const base = path.resolve(root, pins.base);
+  if (fs.realpathSync(base) !== base) throw Error('WM_IMMUTABLE_BASE_PATH_INVALID');
+  const seen = new Set();
+  for (const pin of pins.files) {
+    if (!pin || typeof pin.file !== 'string' || !pin.file || path.isAbsolute(pin.file) || pin.file.split(/[\\/]/).includes('..') || seen.has(pin.file) || !/^[a-f0-9]{64}$/.test(pin.sha256 || '')) throw Error('WM_IMMUTABLE_BASE_PIN_INVALID');
+    seen.add(pin.file);
+    const file = path.resolve(base, pin.file);
+    if (!file.startsWith(base + path.sep) || fs.realpathSync(file) !== file) throw Error('WM_IMMUTABLE_BASE_FILE_INVALID');
+    if (crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') !== pin.sha256) throw Error('WM_IMMUTABLE_BASE_HASH_MISMATCH:' + pin.file);
+  }
+  return base;
+}
+function immutableBaseArtifact({ wmRoot, profile = artifactProfile() }) {
+  const names = { source: 'LIBRA World Manager Full.js', release: 'LIBRA World Manager.js' };
+  if (!names[profile]) throw Error('WM_FIXTURE_PROFILE_INVALID');
+  return path.join(immutableBaseRoot({ wmRoot }), 'dist', names[profile]);
+}
+module.exports = { frozenBArtifact, privacyArtifacts, artifactProfile, profileLabel, immutableBaseRoot, immutableBaseArtifact };

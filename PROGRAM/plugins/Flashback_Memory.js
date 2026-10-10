@@ -9612,12 +9612,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const withOwnerIO = async (space, key, factory) => {
     if (!matchesRoute(space, String(key || '')) && key !== '') return await factory();
+    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     await loadPersistedSyncJob();
     if(state.syncJob.current?.kind==='global_mode'&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
     // Preparation still uses the source store: an admitted writer may call
     // the proxy again before it finishes. Freeze I/O only after that work drains.
     if (modeConfigurationFrozen || (storageTransition && storageTransition.phase !== 'draining')) throw transitionBusyError();
-    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     const work = Promise.resolve().then(factory);
     ownerIOWork.add(work);
     try { return await work; } finally { ownerIOWork.delete(work); }
@@ -11531,7 +11531,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!Number.isInteger(normalizedNext) || normalizedNext <= cursor || normalizedNext > list.length) throw new Error('memory_suite_manager_get_many_pagination_cursor_invalid');
       cursor = normalizedNext;
     }
-    if(requestOptions.strictInventory===true&&(oversizedKeys.size||list.some(key=>!Object.hasOwn(values,key))))throw globalModeError('remote_values_incomplete_or_oversized');
     for (const key of oversizedKeys) defineStorageRecordValue(values, key, await managerServerGet(ns, space, key));
     return { values, pages, oversizedKeys: [...oversizedKeys] };
   };
@@ -11548,12 +11547,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await managerRequest('GET', `/v1/kv/keys?namespace=${encodeURIComponent(ns)}&space=${encodeURIComponent(normalizedSpace)}&prefix=${encodeURIComponent(normalizedPrefix)}&paged=1&limit=${keyPageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
       pages += 1;
       const result = payload?.result || { keys: [], tombstones: [], records: [] };
-      if(requestOptions.strictInventory===true){
-        if(!Array.isArray(result.keys)||!Array.isArray(result.tombstones)||!Array.isArray(result.records))throw globalModeError('remote_keys_incomplete');
-        const pageKeys=[...result.keys,...result.tombstones];
-        if(new Set(pageKeys).size!==pageKeys.length||pageKeys.some(key=>typeof key!=='string'||seenKeys.has(key)||seenTombstones.has(key)))throw globalModeError('remote_keys_duplicate');
-        if(result.records.length!==pageKeys.length||new Set(result.records.map(row=>row.key)).size!==pageKeys.length||result.records.some(row=>!pageKeys.includes(row.key)||!Number.isSafeInteger(row.revision)||!row.digest))throw globalModeError('remote_metadata_incomplete');
-      }
       for (const key of Array.isArray(result.keys) ? result.keys : []) { const value = String(key); if (!seenKeys.has(value)) { seenKeys.add(value); keys.push(value); } }
       for (const key of Array.isArray(result.tombstones) ? result.tombstones : []) { const value = String(key); if (!seenTombstones.has(value)) { seenTombstones.add(value); tombstones.push(value); } }
       for (const row of Array.isArray(result.records) ? result.records : []) { const identity = `${String(row?.space || normalizedSpace)}\u0000${String(row?.key || '')}`; if (!seenRecords.has(identity)) { seenRecords.add(identity); records.push(row); } }
@@ -30168,8 +30161,12 @@ const MemorySuiteHealthRecovery = (() => {
     if(!snapshot)throw Error('SOURCE_EDIT_SCOPE_UNAVAILABLE');
     return {scopeKey:snapshot.scopeKey,topology:snapshot.topology,ranges:snapshot.units.map(({sourceDigest,...unit})=>unit)};
   };
+  const flashbackReanalysisBusy=()=>flashbackReanalysisRunning||Runtime.unloaded||Runtime.sourceEditDisposed||flashbackInputRequestActive||Runtime.inBefore===true||Runtime.inAfter===true||Runtime.maintenanceActiveOperationId||Runtime.finalizedCaptureInFlight?.size>0;
   const selectFlashbackReanalysisRanges=async keys=>{
+    if(Runtime.settings?.mode==='off')return {allowed:false,reason:'owner_disabled'};
+    if(flashbackReanalysisBusy())return {allowed:false,reason:'reanalysis_busy'};
     const inventory=await listFlashbackReanalysisRanges(),wanted=new Set((Array.isArray(keys)?keys:[]).map(String));
+    if(flashbackReanalysisBusy())return {allowed:false,reason:'reanalysis_busy'};
     const units=inventory.ranges.filter(unit=>wanted.has(unit.key));
     if(!wanted.size||wanted.size!==units.length)return {allowed:false,reason:'selected_source_unavailable'};
     return {allowed:true,owner:'flashback',scopeKey:inventory.scopeKey,topology:inventory.topology,units,model:false,warning:'선택한 턴의 현재 U+A 원문을 다시 저장합니다. 요약 LLM은 호출하지 않습니다.'};
@@ -30177,7 +30174,7 @@ const MemorySuiteHealthRecovery = (() => {
   const runFlashbackSelectedReanalysis=(selection,ownerLease=null)=>{
     if(flashbackReanalysisRunning?.selection===selection)return flashbackReanalysisRunning.promise;
     if(Runtime.settings?.mode==='off')return Promise.resolve({ok:false,reason:'owner_disabled'});
-    if(flashbackReanalysisRunning||Runtime.unloaded||Runtime.sourceEditDisposed||flashbackInputRequestActive||Runtime.inBefore===true||Runtime.inAfter===true||Runtime.maintenanceActiveOperationId||Runtime.finalizedCaptureInFlight?.size>0)
+    if(flashbackReanalysisBusy())
       return Promise.resolve({ok:false,reason:'reanalysis_busy'});
     const lease=ownerLease||claimFlashbackOwner('source_reanalysis');
     if(!lease?.current())return Promise.resolve({ok:false,reason:'reanalysis_busy'});
@@ -38946,6 +38943,13 @@ const MemorySuiteHealthRecovery = (() => {
   const processPendingEmbeddingQueue = async (options = {}) => {
     if(flashbackRecoveryActions?.isBusy()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_REPAIR_ACTION_BUSY'};
     if(physicalRepairUnresolved()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED'};
+    // Explicitly disabled work has no scope/inventory read authority. Preserve
+    // busy/unresolved fences above and perform all authority checks for real work.
+    if (['maxSources','maxRequests','maxRecords','maxChars'].some(name => Object.hasOwn(options,name)
+      && clampInt(options[name],0,50000,1) === 0)) {
+      return { scopeKey: text(options.scopeKey || ''), ready: 0, failed: 0, processedSources: 0,
+        physicalRequests: 0, pendingSources: 0, ok: false, inventoryKnown: false, reason: 'budget_disabled' };
+    }
     const startedAt = Date.now();
     const boundary = await readEmbeddingWorkBoundary(options), scopeKey = boundary.scope.scopeKey;
     const empty = { scopeKey, ready: 0, failed: 0, processedSources: 0, physicalRequests: 0, pendingSources: 0 };

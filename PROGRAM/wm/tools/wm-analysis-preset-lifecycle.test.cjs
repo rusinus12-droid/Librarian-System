@@ -3,6 +3,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),acorn=require('acorn');
 const {runtime}=require('./libra_typed_recall_queue_test.cjs');
 const {profile}=require('./wm-analysis-preset-test-support.cjs');
+const fixtures=[];test.after(async()=>{for(const r of fixtures)await r.close();});
 function observe(code){
  const ast=acorn.parse(code,{ecmaVersion:'latest'}),stack=[ast];let cold,merge;
  while(stack.length){const n=stack.pop();if(!n||typeof n!=='object')continue;if(n.type==='VariableDeclarator'&&n.id?.name==='ColdStartManager')cold=n;if(n.type==='VariableDeclarator'&&n.id?.name==='mergeStructuredKnowledge')merge=n;for(const v of Object.values(n)){if(Array.isArray(v))stack.push(...v);else if(v&&typeof v==='object')stack.push(v);}}
@@ -12,7 +13,7 @@ function observe(code){
  if(merge?.init?.body){const pos=merge.init.body.start+1;code=code.slice(0,pos)+'if(globalThis.__WM_STAGE_PUBLICATION__)return await globalThis.__WM_STAGE_PUBLICATION__();'+code.slice(pos);}
  const end=code.lastIndexOf('})();');return code.slice(0,end)+';globalThis.__WM_STAGE_API__={AutoProvider,LLMProvider,MemoryEngine,TurnMaintenanceOptimizer,captureWmAnalysisConfig,ColdStartManager};'+code.slice(end);
 }
-async function setup(measurement={}){const r=await runtime(null,{...measurement,dist:process.env.WM_CHECKSUM_DIST,transformCode:observe});r.stage=r.context.__WM_STAGE_API__;r.cold=r.context.__WM_STAGE_COLD__;Object.assign(r.stage.MemoryEngine.CONFIG,{useLLM:true,llm:profile('legacy'),llmPresets:{a:profile('A'),b:profile('B')},llmDefaultPreset:'a',worldAdditionalEnabled:false,userDlcEntityBatchSize:1,debug:false});return r;}
+async function setup(measurement={}){const r=await runtime(null,{...measurement,dist:process.env.WM_CHECKSUM_DIST,transformCode:observe});fixtures.push(r);r.stage=r.context.__WM_STAGE_API__;r.cold=r.context.__WM_STAGE_COLD__;Object.assign(r.stage.MemoryEngine.CONFIG,{useLLM:true,llm:profile('legacy'),llmPresets:{a:profile('A'),b:profile('B')},llmDefaultPreset:'a',worldAdditionalEnabled:false,userDlcEntityBatchSize:1,debug:false});return r;}
 async function complete(r,p){let done=false,result,error;Promise.resolve(p).then(x=>{done=true;result=x},e=>{done=true;error=e});for(let i=0;i<600&&!done;i++){await r.advance(20);await new Promise(res=>setImmediate(res));}assert(done,'actual multi-stage operation settles');if(error)throw error;return result;}
 const summary={summary:'The group reached the old city.',entities:[],world:{},narrative:'The group reached the old city.'};
 const messages=[{msg:{role:'assistant',data:'The group reached the old city.'},text:'The group reached the old city.',sourceIndex:0,sourceTurn:1}];

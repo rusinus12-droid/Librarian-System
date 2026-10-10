@@ -24,7 +24,6 @@ for (const [name, source, prefix] of [
   ['LIBRA', libra, 'LIBRA_CAPTURE_BACKENDS'],
   ['HAYAKU', hayaku, 'HAYAKU_CAPTURE_BACKENDS'],
   ['Flashback', flashback, 'FLASHBACK_CAPTURE_BACKENDS'],
-  ['LIA', lia, 'LIVE_SYNC_CAPTURE_BACKENDS'],
 ]) {
   assert.match(source, new RegExp(`const ${prefix} = Object\\.freeze`), `${name}: backend enum exists`);
   assert.match(source, /chat_output_v3/, `${name}: current RisuAI backend exists`);
@@ -66,10 +65,9 @@ assert.match(flashback, /Runtime\.captureBackend !== FLASHBACK_CAPTURE_BACKENDS\
 assert.match(flashback, /removeRisuScriptHandler\('output', Runtime\.legacyScriptOutputHandler\)/);
 assert.match(flashback, /getCaptureBackendState: captureBackendSnapshot/);
 
-// LIA remains on the already-applied same contract and keeps its 5-turn source
-// revision gates/ledger rollback independently of backend selection.
-assert.match(lia, /liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.CHAT_OUTPUT_V3;[\s\S]*?return true;[\s\S]*?addRisuScriptHandler/);
-assert.match(lia, /liveSyncCaptureBackend = personaProofHooksEnabled[\s\S]*?AFTER_REQUEST_RECONCILE/);
+// LIA manual-only policy retains explicit analysis and source/ledger guards.
+assert.match(lia, /async function registerLiveSyncCaptureBackend\(\) \{\s*liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.NONE;\s*liveSyncCaptureFallbackReason = "manual_only";\s*return false;/);
+assert.match(lia, /async function maybeFailoverSilentLiveSyncBackend\(\) \{ return false; \}/);
 assert.match(lia, /verifyLivePersonaBatchStillCurrent/);
 assert.match(lia, /validateLivePersonaLedger/);
 

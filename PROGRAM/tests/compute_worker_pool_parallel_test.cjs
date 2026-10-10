@@ -97,11 +97,14 @@ async function withServer(workerCount, callback, options = {}) {
 
 async function main() {
   await withServer(4, async base => {
+    const retired = await jsonFetch(`${base}/v1/compute/bootstrap`, {method:'POST',headers:{'X-Memory-Suite-Plugin':'lia_persona_linker'}});
+    assert.equal(retired.response.status,403);assert.equal(retired.payload.code,'COMPUTE_OWNER_PLUGIN_REQUIRED');
+    // Keep four simultaneous jobs while honoring the three current owner roles.
     const specs = [
       ['flashback_memory', 'parallel_flashback_000001'],
       ['hayaku_locator_continuity', 'parallel_hayaku_000000001'],
       ['libra', 'parallel_libra_0000000001'],
-      ['lia_persona_linker', 'parallel_lia_000000000001']
+      ['flashback_memory', 'parallel_flashback_000002']
     ];
     const identities = await Promise.all(specs.map(([pluginId]) => computeIdentity(base, pluginId)));
     const storageBootstrap = await jsonFetch(`${base}/bootstrap`, {
@@ -142,7 +145,7 @@ async function main() {
     const results = await Promise.all(identities.map((identity, index) => waitResult(base, identity, jobIds[index])));
     const intervals = results.map(result => result.result);
     assert.ok(Math.max(...intervals.map(item => item.startedAt)) < Math.min(...intervals.map(item => item.completedAt)),
-      `four namespace jobs must overlap: ${JSON.stringify(intervals)}`);
+      `four jobs across three current owners must overlap: ${JSON.stringify(intervals)}`);
     assert.equal(new Set(intervals.map(item => item.startedAt)).size > 1, true);
   });
 

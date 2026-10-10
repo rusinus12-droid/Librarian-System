@@ -4,12 +4,14 @@ const {runtime,request}=require('./integration-runtime.cjs'),{createReferencePro
 const dist=process.env.WM_VERSIONED_DIST||path.join(__dirname,'../dist/LIBRA World Manager Full.js');
 const config={enabled:true,qualification:{kind:'test-fixture',reference:'wm-common-derived-controlled',version:'1'},budgets:{maxBytes:4*1024*1024,maxEntries:8,maxFlights:8,maxSubscribers:32,maxOwners:64,maxObservations:64,maxValueNodes:100000}};
 const tick=()=>new Promise(r=>setImmediate(r)),defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}};
-async function fixture({enabled=true,cacheConfig=config,wrap,provider=true}={}){
- const p=createReferenceProvider(),r=await runtime(provider?(wrap?wrap(p):p):undefined,{dist,transformCode(code){
+async function fixture({enabled=true,cacheConfig=config,wrap,provider=true,settleStartup=false}={}){
+ const p=createReferenceProvider(),r=await runtime(provider?(wrap?wrap(p):p):undefined,{dist,observeStartupCompletion:settleStartup,transformCode(code){
  const seam='snapshotAuthority: globalThis.__SNAPSHOT_PROVIDER__';assert.equal(code.split(seam).length,2);code=code.replace(seam,seam+', snapshotDerivedCache: '+JSON.stringify(enabled?cacheConfig:null));
  const end=code.lastIndexOf('})();');return code.slice(0,end)+';globalThis.__WM_DERIVED_TEST__=typeof WmReadonlyDerivedCache!=="undefined"?WmReadonlyDerivedCache:null;'+code.slice(end);
  }});const d=r.api.LibraDataStorage,b=r.context.__WM_SNAPSHOT_TEST__.bridge,scope=d.scopeKeyFor(r.char,r.chat),key=d.storageKeyFor(scope),raw=r.store.get(key);if(provider)await p.seed(scope,raw);
- return {p,r,d,b,scope,key,raw,cache:r.context.__WM_DERIVED_TEST__};
+ const cache=r.context.__WM_DERIVED_TEST__;
+ if(settleStartup){const startup=await r.waitForStartupCompletion();assert.equal(startup.scheduled,1);assert.equal(startup.completed,1);cache.invalidateScope(scope);await cache.drain();if(cache.enabled)assert.equal(cache.stats().core.entries,0,'measurement starts from a cold derived cache after real startup');p.resetCounters();}
+ return {p,r,d,b,scope,key,raw,cache};
 }
 function cacheOf(f){assert.ok(f.cache,'WM derived adapter is not implemented');return f.cache;}
 const read=async(f,owner)=>f.d.readVerified(f.scope,{readonly:true,authorityRequest:owner});
@@ -45,7 +47,7 @@ test('writer admission failure alone does not invalidate unrelated parsed genera
  const f=await fixture(),cache=cacheOf(f),a=f.b.openRequest(),x=await read(f,a);await f.b.closeRequest(a);const before=cache.stats().core.invalidations;assert.equal((await f.d.save(f.r.char,f.r.chat,[])).reason,'authority_write_token_required');const b=f.b.openRequest(),y=await read(f,b);assert.equal(y.entries,x.entries);assert.equal(cache.stats().core.invalidations,before);await f.b.closeRequest(b);
 });
 test('registered cold and warm output stays exact and cache savings do not claim a second whole-read reduction',async()=>{
- const cached=await fixture(),control=await fixture({enabled:false});const cache=cacheOf(cached);
+ const cached=await fixture({settleStartup:true}),control=await fixture({enabled:false,settleStartup:true});const cache=cacheOf(cached);
  for(const f of [cached,control]){f.r.chat.message=Array.from({length:10},(_,i)=>[{role:'user',data:'A asks about pendant '+i},{role:'assistant',data:'A replies in city '+i}]).flat();f.r.api.MemoryEngine.CONFIG.injectionUnknownHostCapTokens=8000;f.r.api.MemoryEngine.CONFIG.injectionBudgetMaxTokens=16000;}
  const evidence=[];
  for(const phase of ['cold','warm']){cached.p.resetCounters();control.p.resetCounters();const before=cache.stats().parseLoads;const got=await cached.r.api.libraBeforeRequestReplacer(request(),'model'),expected=await control.r.api.libraBeforeRequestReplacer(request(),'model');assert.equal(JSON.stringify(got),JSON.stringify(expected));assert.match(JSON.stringify(got),/Historical reference;/);assert.equal(cached.p.counters().wholePayloadReads,1);assert.equal(control.p.counters().wholePayloadReads,1);assert.equal(cache.stats().requestBorrows,0);assert.equal(cached.p.activeLeases(),0);evidence.push({phase,cacheParseLoads:cache.stats().parseLoads-before,cached:cached.p.counters(),control:control.p.counters(),cache:cache.stats()});}

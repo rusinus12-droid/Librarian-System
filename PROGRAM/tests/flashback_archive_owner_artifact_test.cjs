@@ -20,7 +20,8 @@ for (const kind of ['source', 'Full', 'Min']) {
           .map(row => f.audit.prepareEmbeddingInput(row.text, 'document', f.targetSettings));
         await f.restart(sourcePath);
         assert.equal(f.context.__FlashbackEmbeddingAudit, undefined, 'consumer runtime has no injected fixture exports');
-        if (kind !== 'source') assert.equal(f.api._test, undefined, 'built artifact has no private test surface');
+        if (kind === 'Min') assert.equal(f.api._test, undefined, 'release Min artifact has no private test surface');
+        if (kind === 'Full') assert.equal(typeof f.api._test, 'object', 'development Full retains its documented source test surface without using it for the public action');
         const before = f.snapshot(), preview = await f.archive().preview();
         assert.equal(preview.actionable, true, JSON.stringify(preview));
         assert.equal(preview.counts.eligibleRecords, f.selectedRows.length);

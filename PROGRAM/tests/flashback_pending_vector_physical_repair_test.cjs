@@ -1,4 +1,5 @@
 'use strict';
+const {establishExplicitLocalRoute}=require('./fixtures/flashback_explicit_route_fixture.cjs');
 const assert=require('node:assert/strict'),path=require('node:path');
 const {test}=require('node:test');
 const {createFlashback}=require('./fixtures/embedding_contract_harness.cjs');
@@ -97,13 +98,17 @@ test('legacy public queue cannot enter a common physical execution in flight',as
  const x=await setup(1);let release;try{
   let started;const entered=new Promise(r=>started=r),gate=new Promise(r=>release=r);let calls=0;
   x.h.host.nativeFetch=async(_u,i)=>{calls++;started();await gate;return success(i)};
-  const ticket=await x.h.api.healthRecovery.previewPhysicalRepair(),work=x.h.api.healthRecovery.repair(ticket);await entered;
+  const ticket=await x.h.api.healthRecovery.previewPhysicalRepair();assert.equal(ticket.allowed,true,'physical preview reaches the intended provider frontier');
+  const work=x.h.api.healthRecovery.repair(ticket);
+  try {let timer;try {await Promise.race([entered,work.then(result=>{throw Error('repair settled before provider entry: '+JSON.stringify(result))}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('provider-entry frontier timed out')),10000)})]);}finally{clearTimeout(timer);}
   const legacy=await Promise.race([x.h.api.processPendingEmbeddingQueue(),new Promise(r=>setTimeout(()=>r({reason:'incorrectly_entered_queue'}),1000))]);assert.equal(legacy.reason,'FLASHBACK_REPAIR_ACTION_BUSY');
   x.h.api.healthRecovery.clear();assert.equal((await x.h.api.healthRecovery.previewPhysicalRepair()).allowed,false);release();await work;assert.equal(calls,1);
+  } finally {release();await work;}
  }finally{release?.();await x.h.cleanup()}
 });
 for(const change of ['host','settings','credential','manifest','server'])test(`a ${change} change invalidates the ticket before any write or request`,async()=>{
  const x=await setup(1);try{
+  if(change==='server')await establishExplicitLocalRoute(x.h,x.scope);
   const ticket=await x.h.api.healthRecovery.previewPhysicalRepair(),store=x.h.host.pluginStorage;
   if(change==='host')(await x.h.host.getCurrentChat()).message.push({role:'user',chatId:'new',data:'Different source'});
   if(change==='settings'){const k=[...store.values.keys()].find(k=>k.endsWith(':settings:v2'));const v=JSON.parse(store.values.get(k));v.overrides={...v.overrides,embeddingModel:'other-model'};store.values.set(k,JSON.stringify(v));}

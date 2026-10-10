@@ -245,8 +245,8 @@ const WmStorageContracts = (() => {
   // Explicit field maps, never prefix or secret-word filtering. Classification does not copy,
   // sanitize or delete anything. unknown MUST block completeness in the inventory adapter.
   const RECORD_FIELDS = Object.freeze(Object.fromEntries(Object.entries({
-    'wm.dependency-root.v1':['schema','scope','generationId','manifestDigest','kind','dependencies'],
     'wm.extension-history-page.v1':['schema','scope','logicalId','raw','dependencies'],
+    'wm.dependency-root.v1':['schema','scope','generationId','manifestDigest','kind','dependencies'],
     'wm.cold-shard.v1':['schema','scope','logicalId','raw'],
     'wm.cold-manifest.v1':['schema','scope','logicalId','shards'],
     'wm.raw-turn.v1':['schema','originScope','logicalId','raw','provenance'],
@@ -267,8 +267,8 @@ const WmStorageContracts = (() => {
   const recordCheck = (schema,value) => {
     if(!keys(value,['schema'],RECORD_FIELDS[schema].filter(k=>k!=='schema')) || value.schema!==schema)return false;
     switch(schema){
+      case 'wm.extension-history-page.v1':return keys(value,RECORD_FIELDS[schema])&&scope(value.scope)&&/^eh-[a-f0-9]{64}$/.test(value.logicalId)&&string(value.raw)&&Array.isArray(value.dependencies)&&value.dependencies.every(token)&&new Set(value.dependencies).size===value.dependencies.length;
       case 'wm.dependency-root.v1':return keys(value,RECORD_FIELDS[schema])&&scope(value.scope)&&token(value.generationId)&&digest(value.manifestDigest)&&['generation','legacy-bridge'].includes(value.kind)&&Array.isArray(value.dependencies)&&value.dependencies.length<=128&&value.dependencies.every(token)&&new Set(value.dependencies).size===value.dependencies.length;
-      case 'wm.extension-history-page.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && /^eh-[a-f0-9]{64}$/.test(value.logicalId) && string(value.raw) && Array.isArray(value.dependencies) && value.dependencies.every(token) && new Set(value.dependencies).size===value.dependencies.length;
       case 'wm.cold-shard.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && token(value.logicalId) && string(value.raw);
       case 'wm.cold-manifest.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && token(value.logicalId) && stringList(value.shards);
       case 'wm.raw-turn.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.originScope) && token(value.logicalId) && string(value.raw) && keys(value.provenance,['sourceId','observedAt']) && string(value.provenance.sourceId) && count(value.provenance.observedAt);

@@ -15,7 +15,7 @@ for (let i = 0; i < process.execArgv.length; i++) {
 }
 const plugins = {
   flashback: 'Flashback_Memory.js', hayaku: 'HAYAKU_Locator_Continuity.js',
-  libra: 'LIBRA.js', lia: 'LIA_Persona_Linker.js', retrace: 'RETRACE.js'
+  libra: 'LIBRA.js', lia: 'LIA_Persona_Linker.js', retrace: 'RETRACE.js', gradia: 'GRADIA.js', wm: 'LIBRA_World_Manager.js'
 };
 const names = {
   libra: ['LIBRA_RECALL_BM25F_COMPUTE_OPERATION', 'LIBRA_RECALL_BM25F_COMPUTE_FINGERPRINT'],
@@ -143,6 +143,7 @@ test('an unavailable local tokenizer rejects renamed inputs before any write', (
   renameAll(f);
   put(f.staged, 'tools/update_manifest.cjs', fs.readFileSync(tool));
   put(f.staged, 'tools/lib/ultralight_scan.cjs', fs.readFileSync(path.join(program, 'tools/lib/ultralight_scan.cjs')));
+  for(const dependency of ['tools/wm_source_catalog.cjs','tools/lib/sdk_variants.cjs'])put(f.staged,dependency,fs.readFileSync(path.join(program,dependency)));
   put(f.staged, 'tools/build_plugins.cjs', "'use strict';module.exports={resolveAcorn:()=>null};\n");
   f.tool = path.join(f.staged, 'tools/update_manifest.cjs');
   rejectWithoutWrites(f, /manifest_declaration_parser_unavailable/);
@@ -150,6 +151,7 @@ test('an unavailable local tokenizer rejects renamed inputs before any write', (
 test('ordinary readable model-only generation needs no local tokenizer package', () => withFixture(f => {
   put(f.staged, 'tools/update_manifest.cjs', fs.readFileSync(tool));
   put(f.staged, 'tools/lib/ultralight_scan.cjs', fs.readFileSync(path.join(program, 'tools/lib/ultralight_scan.cjs')));
+  for(const dependency of ['tools/wm_source_catalog.cjs','tools/lib/sdk_variants.cjs'])put(f.staged,dependency,fs.readFileSync(path.join(program,dependency)));
   put(f.staged, 'tools/build_plugins.cjs', "'use strict';module.exports={resolveAcorn:()=>{throw Error('tokenizer_must_remain_lazy')}};\n");
   f.tool = path.join(f.staged, 'tools/update_manifest.cjs');
   const result = run(f); assert.equal(result.status, 0, result.stderr);

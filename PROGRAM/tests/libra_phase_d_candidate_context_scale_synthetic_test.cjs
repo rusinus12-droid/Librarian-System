@@ -70,7 +70,7 @@ ${candidateBuilderAnchor}`);
       const __phaseDPairBuildSignal=globalThis.__phaseDPairBuildSignal;
       __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_snapshot:start');`);
   const projectionsAnchor = `      const projections = rawMessages.map((raw, index) => {
-        const projection = pairRevisionProjection(raw, index, cacheKey);
+        const projection = pairRevisionProjectionWithCache(raw, index, cache, sourceTagKey, observation);
         seenKeys.push(projection.key);
         return projection;
       });`;
@@ -79,14 +79,11 @@ ${candidateBuilderAnchor}`);
       __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_projection:start');
 ${projectionsAnchor}
       __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_projection:end');`);
-  const observationAnchor = [
-    '      finalizePairRevisionObservation(cache, seenKeys);',
-    '      const sequence = projections.map((projection, index) => `${index}\\u0001${projection.key}\\u0001${projection.signature}`);',
-    "      const observationHash = branchContentHash(sequence.join('\\u001e'));"
-  ].join('\n');
-  assert.equal(source.includes(observationAnchor), true, 'pair observation stage probe anchor exists');
+  const observationAnchor = "      finalizePairRevisionObservation(cache, seenKeys);\n      retainPairRevisionObservation(cache, projections);\n      const sequence = projections.map((projection, index) => `${index}\\u0001${projection.key}\\u0001${projection.signature}\\u0001${projection.rawPayloadDigest}\\u0001${projection.sanitizedTextDigest}`);\n      // A digest is not an exact raw witness. Misses (including uncached\n      // over-budget rows) rebuild pairs even if their hash strings collide.\n      if (observation.allUnchanged && cache.pairs && pairRevisionSequenceEqual(cache.sequence, sequence)) {\n        state.pairRevisionCacheStats.lastObservationHash = cache.observationHash;\n        state.pairRevisionCacheStats.pairReuses += 1;\n        return cache.pairs;\n      }\n      const observationHash = branchContentHash(sequence.join('\\u001e'));";
+  assert.equal(source.includes(observationAnchor), true, 'current bounded pair observation stage probe anchor exists');
+  const observedCurrent=observationAnchor.replace('        return cache.pairs;', "        __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_observation:end');\n        return cache.pairs;");
   source = source.replace(observationAnchor, `      __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_observation:start');
-${observationAnchor}
+${observedCurrent}
       __phaseDPairBuildSignal?.__phaseDStageEvent?.('candidate_build_pairs_observation:end');`);
   const pairLoopAnchor = '      for (const projection of projections) {';
   assert.equal(source.includes(pairLoopAnchor), true, 'pair assembly stage probe anchor exists');

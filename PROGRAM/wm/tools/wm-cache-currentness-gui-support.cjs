@@ -10,6 +10,7 @@ const review={key:'q-state',comment:'lmai_analysis_quarantine',content:JSON.stri
 async function loadGui(options={}){
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://wm-fixture.invalid/',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:new VirtualConsole()});
  const w=dom.window,store=options.store||new Map(),pending=[],calls={writes:[],hostWrites:[]},callbacks={};
+ try {
  const defaultChat={id:'fixture-chat',bindedPersona:options.unbound?undefined:'persona-a',localLore:[],message:[],msgs:[],isStreaming:false};
  const char=options.character?clone(options.character):{id:'fixture-char',name:'Fixture',chatPage:0,chats:[defaultChat],globalLore:[],lorebook:[]};
  const chat=char.chats[Number(char.chatPage||0)];
@@ -55,5 +56,6 @@ async function loadGui(options={}){
  calls.writes.length=0;calls.hostWrites.length=0;
  const click=async(selector)=>{const node=typeof selector==='string'?overlay.querySelector(selector):selector;assert(node,'registered GUI control exists');node.click();await Promise.allSettled(pending.splice(0));};
  return {preGuiConfig,dom,w,api,store,key,control,calls,callbacks,overlay,pending,click,close:()=>w.close(),canonicalPayload:()=>JSON.parse(store.get(key))};
+ } catch(error) { w.close(); throw error; }
 }
 module.exports={loadGui,canonical,runtimeKey,review};

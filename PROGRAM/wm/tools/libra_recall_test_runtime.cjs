@@ -10,7 +10,7 @@ const DIST = process.env.LIBRA_RECALL_TEST_DIST || path.join(ROOT, 'dist', 'LIBR
 const clone = v => v == null ? v : JSON.parse(JSON.stringify(v));
 
 async function load(options = {}) {
-  const replacers={};
+  const replacers={}, timers=new Set(), intervals=new Set(), unload=[];
   const store=options.store || new Map();
   const chat = { id: 'anchor-memo', localLore: [], msgs: [], message: [], isStreaming: false };
   const char = { id: 'anchor-memo-c', name: 'A', chats: [chat], globalLore: [], lorebook: [] };
@@ -21,7 +21,7 @@ async function load(options = {}) {
     async getCharacterFromIndex(){ return clone(char); }, async getChatFromIndex(){ return clone(chat); },
     async setChatToIndex(){ return true; }, async setCharacter(){ return true; }, async getDatabase(){ return { personas: [] }; },
     async addRisuReplacer(type,fn){ replacers[type]=fn; }, async removeRisuReplacer(){}, async addRisuScriptHandler(){}, async removeRisuScriptHandler(){},
-    async registerBodyIntercepter(){ return 'x'; }, async unregisterBodyIntercepter(){}, async onUnload(){},
+    async registerBodyIntercepter(){ return 'x'; }, async unregisterBodyIntercepter(){}, async onUnload(callback){ unload.push(callback); },
     async registerSetting(){}, async registerButton(){}, async showContainer(){}, async hideContainer(){},
     pluginStorage: {
       async getItem(key){ return store.get(key) ?? null; },
@@ -40,7 +40,11 @@ async function load(options = {}) {
     + '\n;globalThis.__ANCHOR_MEMO_TEST__={MemoryEngine,MemoryState,CompactMemoryCodec,TokenizerEngine,KoreanTextCore,StrengthenedJaccardCore,LibraTurnWorldline,LibraDataStorage,IntegrityMetaManager,RecallScoringCore:typeof RecallScoringCore!=="undefined"?RecallScoringCore:null};\n'
     + code.slice(close);
   const context = {
-    console: { log(){}, warn(){}, error(){}, debug(){} }, setTimeout, clearTimeout, setInterval, clearInterval, performance,
+    console: { log(){}, warn(){}, error(){}, debug(){} },
+    setTimeout(fn,ms,...args){let t;t=setTimeout(()=>{timers.delete(t);fn(...args);},ms);timers.add(t);return t;},
+    clearTimeout(t){timers.delete(t);clearTimeout(t);},
+    setInterval(fn,ms,...args){const t=setInterval(fn,ms,...args);intervals.add(t);return t;},
+    clearInterval(t){intervals.delete(t);clearInterval(t);}, performance,
     crypto: { randomUUID: crypto.randomUUID }, AbortController, TextEncoder, TextDecoder, URL, Buffer,
     fetch: async()=>{ throw new Error('no fetch'); }, risuai, Risuai: risuai, globalThis: null, process: { env: {} },
     atob: t => Buffer.from(String(t), 'base64').toString('binary'), btoa: t => Buffer.from(String(t), 'binary').toString('base64')
@@ -51,7 +55,8 @@ async function load(options = {}) {
   await vm.runInContext(code, context, { filename: selectedDist, timeout: 15000 });
   await new Promise(r => setTimeout(r, 40));
   context.__ANCHOR_MEMO_TEST__.libraBeforeRequestReplacer=replacers.beforeRequest;
-  return { api: context.__ANCHOR_MEMO_TEST__, char, chat, context, store };
+  const closeFixture=async()=>{try{for(const callback of unload.splice(0))await callback();}finally{for(const t of timers)clearTimeout(t);for(const t of intervals)clearInterval(t);timers.clear();intervals.clear();}};
+  return { api: context.__ANCHOR_MEMO_TEST__, char, chat, context, store, close:closeFixture, fixtureTimers:()=>({timeouts:timers.size,intervals:intervals.size}) };
 }
 
 function memoryEntry(i, text, imp = 5) {

@@ -7,7 +7,7 @@ const savedWeights = {word:0.4,char:0.2,concept:0.2,lexicalCoverage:0.1,focus:0.
 const stored = f => JSON.parse(f.store.get('LMAI_Config'));
 const edit = (f,id,value,event='change') => { const node=f.overlay.querySelector('#'+id); if(node.type==='checkbox')node.checked=value;else node.value=String(value);if(event)node.dispatchEvent(new f.w.Event(event,{bubbles:true})); };
 const save = f => f.overlay.querySelector('#btn-save-settings').onclick();
-const imported = (f,obj) => f.overlay.querySelector('#settings-file-input').onchange({target:{files:[{name:'reviewer-synthetic.json',text:async()=>JSON.stringify(obj)}]}});
+const {importSettings:imported}=require('./libra_portable_settings_fixture.cjs');
 async function state(f,wanted='saved'){ const end=Date.now()+6000;while(f.overlay.querySelector('#settings-auto-save-status').dataset.state!==wanted){assert(Date.now()<end,'expected '+wanted);await new Promise(r=>setTimeout(r,10));} }
 async function open(flavor){process.env.LIBRA_GUI_TEST_DIST=path.resolve(__dirname,'../dist/'+(flavor==='Full'?'LIBRA World Manager Full.js':'LIBRA World Manager.js'));return loadGui({store:new Map([['LMAI_Config',JSON.stringify({scoringProfile:'balanced',scoringWeights:savedWeights})]]),nativeInitialization:true,args:{scoring_profile:'lexical'}});}
 for(const flavor of ['Full','Min']){

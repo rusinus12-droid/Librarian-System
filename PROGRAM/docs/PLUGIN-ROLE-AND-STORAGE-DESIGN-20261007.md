@@ -58,7 +58,7 @@
 
 핵심 기억 저장 owner는 **LIBRA·HAYAKU·Flashback 세 개를 유지**하는 것이 승인된 목표입니다. 이 세 플러그인의 서버 저장, plugin_only/server_only를 포함한 기존 모드와 이관 기능은 제거하지 않습니다.
 
-현재 통합본에 활성 writer 세 개와 legacy namespace 다섯 개의 구분을 적용했습니다. LIA는 `legacy_reader`이며 `lia`만 읽고 쓰기 권한은 없습니다. RETRACE는 `manager_only`로 관리·legacy 읽기를 유지하며 자체 일반 쓰기 권한은 없습니다. 새 LIA/RETRACE live DB를 만들지 않고 과거 DATA·백업 호환 슬롯은 보존합니다.
+현재 통합본에 활성 writer 세 개와 legacy namespace 다섯 개의 구분을 적용했습니다. LIA는 `legacy_reader`이며 `lia`만 읽고 쓰기 권한은 없습니다. RETRACE는 `manager_only`로 관리·legacy 읽기를 유지하며 자체 일반 쓰기 권한은 없습니다. 일반 시작·백업에서는 새 LIA/RETRACE live DB를 만들지 않고 과거 DATA·백업 호환 슬롯은 보존합니다. 명시적으로 선택한 유효한 백업을 복원할 때는 과거 namespace 파일을 복원할 수 있습니다. 복원한 LIA/RETRACE inventory는 계속 read-only로 열며 writer 권한·authority enrollment를 추가하지 않습니다. 복원 원본의 digest·integrity 검증을 통과한 뒤에만 대상 디렉터리를 준비합니다.
 
 GRADIA는 제한된 읽기 전용 경로를 사용합니다. 통합만을 이유로 새 서버 writer, DATA namespace, 자격 증명을 추가하지 않습니다.
 

@@ -15,6 +15,7 @@
 //   W4 턴을 알 수 없는 노드·규칙은 **버리지 않는다** (정보 손실 방지 — 상속 규칙과 동일)
 //   W5 fork 지점을 못 구하거나 세계 그래프가 없으면 **종전과 동일**하다 (fail-open)
 //   W6 필터를 **직접 실행**해 판정한다 (배선이 죽어 있어도 통과하는 게이트 금지)
+(async () => {
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -24,13 +25,9 @@ const SRC_01F = fs.readFileSync(path.join(ROOT, 'src/parts/01f-lore-consolidatio
 const SRC_15A = fs.readFileSync(path.join(ROOT, 'src/parts/15a-gui-session-data.js'), 'utf8');
 
 let code = fs.readFileSync(path.join(ROOT, 'dist', 'LIBRA World Manager Full.js'), 'utf8');
-const SCOPE_TAIL = 'return { analyzeUserIntent, detectConflict, executeAdjustment, applyChange };';
-const tailAt = code.indexOf(SCOPE_TAIL, code.indexOf('const MemoryEngine = (() => {'));
-if (tailAt < 0) { console.log(JSON.stringify({ ok: false, reason: 'scope_tail_not_found' })); process.exit(1); }
-const closeMark = code.indexOf('\n})();', tailAt);
-code = code.slice(0, closeMark + '\n})();'.length)
-  + "\n;globalThis.__probe = { LibraDataStorage: typeof LibraDataStorage !== 'undefined' ? LibraDataStorage : null };"
-  + code.slice(closeMark + '\n})();'.length);
+const injectAt = code.lastIndexOf('})();');
+if (injectAt < 0) throw Error('portable_factory_closure_tail_not_found');
+code = code.slice(0, injectAt) + "\n;globalThis.__probe = { LibraDataStorage };" + code.slice(injectAt);
 
 const assertions = [];
 const assert = (name, ok, details = {}) => assertions.push({ name, ok: !!ok, details });
@@ -39,11 +36,11 @@ const mk = () => ({ style: {}, classList: { toggle: noop, add: noop, remove: noo
 const document = { createElement: () => mk(), createTextNode: () => mk(), querySelector: () => null, getElementById: () => null, head: mk(), body: mk(), addEventListener: noop };
 const store = new Map();
 const R = { apiVersion: '3.0', getRuntimeInfo: async () => ({}), pluginStorage: { getItem: async (k) => (store.has(k) ? store.get(k) : null), setItem: async (k, v) => { store.set(k, String(v)); return true; }, removeItem: async (k) => store.delete(k), keys: async () => [...store.keys()] }, getLocalPluginStorage: async () => ({ getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }), getCurrentCharacterIndex: async () => 0, getCurrentChatIndex: async () => 0, registerSetting: async () => {}, showContainer: async () => {}, hideContainer: async () => {}, addRisuScriptHandler: noop, onUnload: noop };
-const ctx = { console, setTimeout, clearTimeout, setInterval, clearInterval, Date, Math, JSON, Number, String, Boolean, Array, Object, RegExp, Error, URL, Promise, Set, Map, globalThis: null, window: null, document, Risuai: R, risuai: R, structuredClone: global.structuredClone, fetch: async () => { throw new Error('x'); }, AbortController, performance: { now: () => Date.now() } };
+const ctx = { console, setTimeout, clearTimeout, setInterval, clearInterval, Date, Math, JSON, Number, String, Boolean, Array, Object, RegExp, Error, URL, Promise, Set, Map, globalThis: null, window: null, document, Risuai: R, risuai: R, structuredClone: global.structuredClone, TextEncoder, TextDecoder, fetch: async () => { throw new Error('x'); }, AbortController, performance: { now: () => Date.now() } };
 ctx.globalThis = ctx; ctx.window = ctx;
 vm.createContext(ctx);
 let runErr = '';
-try { vm.runInContext(code, ctx, { timeout: 30000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
+try { await vm.runInContext(code, ctx, { timeout: 30000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
 
 const LS = (ctx.__probe && ctx.__probe.LibraDataStorage) || ctx.LibraDataStorage;
 const fn = LS && LS.filterBranchInheritanceByFork;
@@ -189,3 +186,5 @@ if (typeof fn === 'function') {
 const ok = assertions.every(a => a.ok);
 console.log(JSON.stringify({ ok, assertions }, null, 2));
 process.exit(ok ? 0 : 1);
+
+})().catch(error => { console.error(error); process.exitCode = 1; });

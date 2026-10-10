@@ -1,6 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
+const {establishExplicitLocalRoute}=require('./fixtures/flashback_explicit_route_fixture.cjs');
+
 const {createArchiveReportingFixture}=require('./fixtures/archive_reporting_fixture.cjs');
 test('public three-row portable archive reporting remains local-only and truthful',async t=>{
  const f=await createArchiveReportingFixture();
@@ -85,6 +87,9 @@ test('public three-row portable archive reporting remains local-only and truthfu
     finally {pluginStorage.getItem=get;await flashback.saveSettings(next);}
   });
   await t.test('foreign archive storage route remains unknown, with no reporting request',async()=>{
+    const routeFixtureKey='__memory_suite_internal_scope_routes_v1__:flashback';
+    const priorPlugin=pluginStorage.values.get(routeFixtureKey),priorLocal=safeLocalStorage.values.get(routeFixtureKey);
+    await establishExplicitLocalRoute(f,scope);
     const key=[...pluginStorage.values.keys()].find(key=>key.includes('scope_routes_v1__:flashback'));
     assert(key,'durable routing fixture is present');
     const raw=pluginStorage.values.get(key),local=safeLocalStorage.values.get(key),routes=JSON.parse(raw);
@@ -92,7 +97,7 @@ test('public three-row portable archive reporting remains local-only and truthfu
     pluginStorage.values.set(key,JSON.stringify(routes));safeLocalStorage.values.set(key,JSON.stringify(routes));
     const before=f.requests;
     try {const full=await flashback.reembedAllRecords({scope});assert.equal(full.archiveCoverage.inspection,'unknown');assert.equal(full.archiveRecordsNeedingEmbedding,null);assert.equal(f.requests,before);}
-    finally {pluginStorage.values.set(key,raw);if(local===undefined)safeLocalStorage.values.delete(key);else safeLocalStorage.values.set(key,local);}
+    finally {if(priorPlugin===undefined)pluginStorage.values.delete(key);else pluginStorage.values.set(key,priorPlugin);if(priorLocal===undefined)safeLocalStorage.values.delete(key);else safeLocalStorage.values.set(key,priorLocal);}
   });
   const chunked=flashback._test.normalizeSettings({...next,chunkChars:400,chunkOverlap:0});
   await flashback.saveSettings(chunked);

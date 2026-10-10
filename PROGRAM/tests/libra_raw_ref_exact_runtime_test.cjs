@@ -62,7 +62,8 @@ for(const phase of ['provider_result','candidate_write'])test(`new tag-only SHA 
     assert.equal(activeCandidate,true,'verified analysis commits while retaining its original consumed capture');
     const committed=manifests.find(m=>Object.keys(m.memories||{}).length>0).memories['1'];
     const memory=JSON.parse(fx.local.get(committed.key));
-    assert.deepEqual(memory.rawPacketRefs,refsA,'exact original SHA refs remain the analysis provenance, never the colliding new active refs');
+    assert.deepEqual(memory.rawPacketRefs,clone(refsA),'exact original SHA refs remain the analysis provenance, never the colliding new active refs');
+    assert.notDeepEqual(memory.rawPacketRefs,clone(refsB),'colliding later active refs must not replace exact consumed provenance');
     assert.equal((await fx.f.r.api.debugReadActiveRawPacket(5)).rawPacketRef.packetDigest,refsB[4].packetDigest);
   }finally{await fx.cleanup();}
 });

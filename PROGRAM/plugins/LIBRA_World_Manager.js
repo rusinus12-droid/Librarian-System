@@ -497,6 +497,7 @@
                 requestInit.networkRoute = 'local_network';
             }
             let abortTimer = null;
+            let ownedTimeoutError = null;
             let timeoutTimer = null;
             let externalAbort = null;
             const externalSignal = requestInit.signal;
@@ -511,6 +512,7 @@
                 else externalSignal?.addEventListener?.('abort', externalAbort, { once: true });
                 abortTimer = setTimeout(() => {
                     const timeoutError = new LIBRAError('API Request timed out', 'TIMEOUT');
+                    if (!controller.signal.aborted) ownedTimeoutError = timeoutError;
                     try { controller.abort(timeoutError); }
                     catch (_) { try { controller.abort(); } catch (_) {} }
                 }, timeoutMs);
@@ -529,7 +531,8 @@
             try {
                 return await Promise.race([fetchPromise, timeoutPromise]);
             } catch (error) {
-                throw normalizeNetworkError(error, url);
+                const ownedTimeout = ownedTimeoutError && requestInit.signal?.aborted && requestInit.signal.reason === ownedTimeoutError;
+                throw normalizeNetworkError(ownedTimeout ? ownedTimeoutError : error, url);
             } finally {
                 if (abortTimer != null && typeof clearTimeout === 'function') clearTimeout(abortTimer);
                 if (timeoutTimer != null && typeof clearTimeout === 'function') clearTimeout(timeoutTimer);
@@ -4234,8 +4237,8 @@ const WmStorageContracts = (() => {
   // Explicit field maps, never prefix or secret-word filtering. Classification does not copy,
   // sanitize or delete anything. unknown MUST block completeness in the inventory adapter.
   const RECORD_FIELDS = Object.freeze(Object.fromEntries(Object.entries({
-    'wm.dependency-root.v1':['schema','scope','generationId','manifestDigest','kind','dependencies'],
     'wm.extension-history-page.v1':['schema','scope','logicalId','raw','dependencies'],
+    'wm.dependency-root.v1':['schema','scope','generationId','manifestDigest','kind','dependencies'],
     'wm.cold-shard.v1':['schema','scope','logicalId','raw'],
     'wm.cold-manifest.v1':['schema','scope','logicalId','shards'],
     'wm.raw-turn.v1':['schema','originScope','logicalId','raw','provenance'],
@@ -4256,8 +4259,8 @@ const WmStorageContracts = (() => {
   const recordCheck = (schema,value) => {
     if(!keys(value,['schema'],RECORD_FIELDS[schema].filter(k=>k!=='schema')) || value.schema!==schema)return false;
     switch(schema){
+      case 'wm.extension-history-page.v1':return keys(value,RECORD_FIELDS[schema])&&scope(value.scope)&&/^eh-[a-f0-9]{64}$/.test(value.logicalId)&&string(value.raw)&&Array.isArray(value.dependencies)&&value.dependencies.every(token)&&new Set(value.dependencies).size===value.dependencies.length;
       case 'wm.dependency-root.v1':return keys(value,RECORD_FIELDS[schema])&&scope(value.scope)&&token(value.generationId)&&digest(value.manifestDigest)&&['generation','legacy-bridge'].includes(value.kind)&&Array.isArray(value.dependencies)&&value.dependencies.length<=128&&value.dependencies.every(token)&&new Set(value.dependencies).size===value.dependencies.length;
-      case 'wm.extension-history-page.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && /^eh-[a-f0-9]{64}$/.test(value.logicalId) && string(value.raw) && Array.isArray(value.dependencies) && value.dependencies.every(token) && new Set(value.dependencies).size===value.dependencies.length;
       case 'wm.cold-shard.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && token(value.logicalId) && string(value.raw);
       case 'wm.cold-manifest.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.scope) && token(value.logicalId) && stringList(value.shards);
       case 'wm.raw-turn.v1':return keys(value,RECORD_FIELDS[schema]) && scope(value.originScope) && token(value.logicalId) && string(value.raw) && keys(value.provenance,['sourceId','observedAt']) && string(value.provenance.sourceId) && count(value.provenance.observedAt);
@@ -30316,12 +30319,17 @@ ${split.body || ''}
                                     IntegratedAnalysisJournal.loadState(extensionLore);
                                     if (!(await IntegratedAnalysisJournal.setExtensionOutcome(extensionLore, committedExtensionToken, 'waiting', extensions.reason, IntegratedAnalysisJournal.extensionAttempted(committedExtensionToken)))) throw Error('extension_receipt_changed');
                                 } else {
-                                    (await UserDlcCore.ingestAutomaticBundle(extensions.worldAdditional?.extensionProposal, context));
+                                    const automatic = (await UserDlcCore.ingestAutomaticBundle(extensions.worldAdditional?.extensionProposal, context));
                                     (await WorldAdditionalCore.ingestMaintenance?.(extensions.worldAdditional, '', context, maintenanceConfig));
                                     const interpreted = (await UserDlcCore.applyTrackerUpdates?.(extensions.userDlcTrackerUpdates, context));
                                     if (interpreted && interpreted.evaluated < (extensions.userDlcTrackerUpdates || []).length) { extensions.skipped = true; extensions.reason = 'tracker_result_evidence_rejected'; }
                                     await WorldAdditionalCore.saveState?.(extensionLore);
-                                    await UserDlcCore.saveState?.(extensionLore);
+                                    // An unchanged absent DLC owner must stay absent. Existing owners
+                                    // and every actual DLC mutation still use the same durable save.
+                                    if (candidateLifecycle.changed || calculations.changed || automatic.changed || interpreted?.changed
+                                        || LibraLoreConsolidator.unpack(extensionLore).some(entry => entry?.comment === 'lmai_user_dlc')) {
+                                        await UserDlcCore.saveState?.(extensionLore);
+                                    }
                                     const recorded = extensions.skipped
                                         ? (await IntegratedAnalysisJournal.setExtensionOutcome(extensionLore, committedExtensionToken, 'waiting', extensions.reason, IntegratedAnalysisJournal.extensionAttempted(committedExtensionToken)))
                                         : (await IntegratedAnalysisJournal.markExtensionApplied(extensionLore, committedExtensionToken));
@@ -35223,7 +35231,10 @@ ${split.body || ''}
                 if (signal?.aborted || Date.now() >= deadline) return { ok: false, reason: signal?.aborted ? 'cancelled' : 'deadline', uncertain: true };
                 return { ok: true, vector: Object.freeze([...vector]), provider: SemanticRecallIndex.providerDescriptor(p),
                     sourceHash: SemanticRecallIndex.sourceHash(text), mode, dimension: p.dimension };
-            } catch (error) { return { ok: false, reason: String(error?.message || 'embedding_failed'), attempted, uncertain: attempted }; }
+            } catch (error) {
+                const reason = error?.code === 'TIMEOUT' && Number.isFinite(deadline) && Date.now() >= deadline ? 'deadline' : String(error?.message || 'embedding_failed');
+                return { ok: false, reason, attempted, uncertain: attempted };
+            }
         }
     });
 
@@ -94823,10 +94834,12 @@ details.entity-edit[open]>summary::before{content:'▾'}
             // Ordinary saves pass an already patched latest live layer; replacement/import remain explicit.
             Object.assign(MemoryEngine.CONFIG, cfg);
             const changed = path => changedPaths === null || changedPaths.has(path);
-            if (reason !== 'settings-portable-import' && (changedPaths === null || Array.from(changedPaths).some(path => path.startsWith('embed.') || path.startsWith('dualRecall')))) {
+            if (changedPaths === null || Array.from(changedPaths).some(path => path.startsWith('embed.') || path.startsWith('dualRecall'))) {
                 MemoryEngine.EmbeddingEngine.noteConfigurationPublished();
-                TypedRecallRollout.configureProduction(MemoryEngine.CONFIG);
-                syncDualRecallReadiness();
+                if (reason !== 'settings-portable-import') {
+                    TypedRecallRollout.configureProduction(MemoryEngine.CONFIG);
+                    syncDualRecallReadiness();
+                }
             }
             _CFG = { ...MemoryEngine.CONFIG };
             syncSimpleSettingsIntentStatus();

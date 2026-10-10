@@ -13,7 +13,17 @@ const apiFile = path.join(programDir, 'tools/build_wm_source.cjs');
 const api = fs.existsSync(apiFile) ? require(apiFile) : {};
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 // P0b scoped official UI-id cleanup adds 1,015 Full bytes; frozen P0a baseline remains in its checkpoint.
-const approved = '03cbbda4977c3574b99fe668802000c284352317e5d269a8168220ce13d2488c';
+const currentApprovalFile = process.env.WM_INTEGRATION_CURRENT_APPROVAL || '';
+const currentApproval = currentApprovalFile ? (() => {
+  const bytes = fs.readFileSync(currentApprovalFile);
+  assert.equal(sha(bytes), '23303224cea81b07687670735dc33baa187e15677f403a9107a02a1ddc1061ee', 'sealed current approval identity');
+  const row = JSON.parse(bytes).rows.find(row => row.owner === 'LIBRA_World_Manager.js' && row.kind === 'Full');
+  assert.ok(row && row.sha256 === row.sourceSha256, 'approval binds exact source Full');
+  assert.equal(sha(fs.readFileSync(row.path)), row.sha256, 'approved immutable artifact bytes');
+  return row;
+})() : null;
+const approved = currentApproval?.sha256 || '03cbbda4977c3574b99fe668802000c284352317e5d269a8168220ce13d2488c';
+const approvedBytes = currentApproval?.bytes || 5810381;
 function requireApi() {
   assert.equal(typeof api.assembleWmSource, 'function', 'WM source assembly API must be available in the unified LIB project');
   assert.equal(typeof api.writeWmDevelopmentSource, 'function', 'WM development output adapter must be available');
@@ -24,7 +34,7 @@ test('wm_assembly_preserves_approved_candidate_bytes', async () => {
   const assembled = await api.assembleWmSource({ wmRoot, verifyPins: true });
   assert.equal(assembled.sourceSha256, approved);
   assert.equal(sha(assembled.code), approved);
-  assert.equal(Buffer.byteLength(assembled.code), 5810381);
+  assert.equal(Buffer.byteLength(assembled.code), approvedBytes);
   assert.match(assembled.code, /@name libra_world_manager\b/);
   assert.equal(fs.existsSync(path.join(wmRoot, 'dist')), false, 'assembly must not create a second install-artifact folder');
 });
@@ -99,7 +109,7 @@ test('wm_development_adapter_writes_full_with_unified_filename_and_receipt', asy
     assert.equal(receipt.profile, 'source');
     assert.equal(receipt.filename, 'LIBRA_World_Manager.js');
     assert.equal(receipt.outputSha256, approved);
-    assert.equal(receipt.outputBytes, 5810381);
+    assert.equal(receipt.outputBytes, approvedBytes);
     assert.match(receipt.inputDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(receipt.transforms, []);
     assert.deepEqual(fs.readdirSync(temp), ['LIBRA_World_Manager.js']);
@@ -179,9 +189,9 @@ test('wm_development_cli_does_not_silently_emit_full_for_a_legacy_min_request', 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-wm-cli-'));
   const output = path.join(temp, 'Full');
   try {
-    const result = spawnSync(process.execPath, [path.join(wmRoot, 'tools/build-portable.cjs')], {
-      encoding: 'utf8', env: { PATH: path.dirname(process.execPath), WM_BUILD_MIN: '1', WM_FULL_OUTPUT_DIR: output,
-        NODE_OPTIONS: '--require=' + JSON.stringify(path.join(wmRoot, 'tools/strict-offline-guard.cjs')) }
+    const result = spawnSync(process.execPath, ['--require', path.join(wmRoot, 'tools/strict-offline-guard.cjs'), path.join(wmRoot, 'tools/build-portable.cjs')], {
+      encoding: 'utf8', env: { ...process.env, PATH: path.dirname(process.execPath), WM_BUILD_MIN: '1', WM_FULL_OUTPUT_DIR: output,
+        NODE_OPTIONS: process.env.NODE_OPTIONS }
     });
     assert.equal(result.status, 1, 'legacy Min intent must wait for the separate LIB release profile');
     assert.match(result.stderr, /WM_RELEASE_PROFILE_REQUIRED/);

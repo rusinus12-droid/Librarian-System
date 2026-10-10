@@ -11,7 +11,8 @@ const { DEFINITIONS, executeOperation } = require('../server/compute/registry.cj
 const program = path.resolve(__dirname, '..');
 const computeSource = fs.readFileSync(path.join(program, 'sdk', 'MemorySuiteComputeClient.source.js'), 'utf8');
 const { createMemorySuiteComputeBridge } = new Function(`${computeSource}\nreturn { createMemorySuiteComputeBridge };`)();
-const fileDigest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+// Exact file/WAL presence and bytes are preserved, including absent retired stores.
+const { repositoryDigest: fileDigest } = require('./fixtures/compute_product_load_fixture.cjs');
 
 async function main() {
   const tempRoot = path.resolve(os.tmpdir());
@@ -71,6 +72,7 @@ async function main() {
       localReserveMs: 200,
       validateBinding: binding => binding.revision === revision
     });
+    for (const name of ['lia','retrace']) for (const suffix of ['', '-wal']) assert.equal(fs.existsSync(app.repositories[name].filePath + suffix), false, 'retired live store must remain absent');
     const before = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
     const direct = await bridge.execute(request());
     assert.equal(direct.source, 'server');
@@ -81,6 +83,7 @@ async function main() {
     const stale = await bridge.execute(staleRequest);
     assert.equal(stale.source, 'local', 'changed HAYAKU owner binding falls back to the local kernel');
     assert.equal(localCalls, 1);
+    for (const name of ['lia','retrace']) for (const suffix of ['', '-wal']) assert.equal(fs.existsSync(app.repositories[name].filePath + suffix), false, 'Compute must not create a retired store');
     const after = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
     assert.deepEqual(after, before, 'HAYAKU RRF Compute never mutates canonical namespace databases');
     assert.ok(routes.includes('/v1/compute/bootstrap'));

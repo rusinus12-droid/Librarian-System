@@ -19,6 +19,7 @@
 //   W4 살아있는 턴의 엔티티·관계는 그대로 저장된다 (과잉 제거 금지)
 //   W5 turn 도장이 없는 항목은 버리지 않는다 (정보 손실 방지 — 보수적)
 //   W6 worldline 상태가 없으면 종전과 동일 (fail-open, 하위 호환)
+(async () => {
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -27,11 +28,8 @@ const ROOT = path.resolve(__dirname, '..');
 const SRC08E = fs.readFileSync(path.join(ROOT, 'src/parts/08e-entity-prompt-cache-persistence.js'), 'utf8');
 
 let code = fs.readFileSync(path.join(ROOT, 'dist', 'LIBRA World Manager Full.js'), 'utf8');
-const SCOPE_TAIL = 'return { analyzeUserIntent, detectConflict, executeAdjustment, applyChange };';
-const tailAt = code.indexOf(SCOPE_TAIL, code.indexOf('const MemoryEngine = (() => {'));
-if (tailAt < 0) { console.log(JSON.stringify({ ok: false, reason: 'scope_tail_not_found' }, null, 2)); process.exit(1); }
-const closeMark = code.indexOf('\n})();', tailAt);
-const injectAt = closeMark + '\n})();'.length;
+const injectAt = code.lastIndexOf('})();');
+if (injectAt < 0) throw new Error('portable_factory_closure_tail_not_found');
 code = code.slice(0, injectAt)
   + '\n;globalThis.__W5__={' + "MemoryEngine: typeof MemoryEngine !== 'undefined' ? MemoryEngine : null,"
   + "LibraTurnWorldline: typeof LibraTurnWorldline !== 'undefined' ? LibraTurnWorldline : null"
@@ -63,7 +61,7 @@ const ctx = {
 ctx.globalThis = ctx; ctx.window = ctx;
 vm.createContext(ctx);
 let runErr = '';
-try { vm.runInContext(code, ctx, { filename: 'libra-bundle.js', timeout: 120000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
+try { await vm.runInContext(code, ctx, { filename: 'libra-bundle.js', timeout: 120000 }); } catch (e) { runErr = String(e.message).slice(0, 300); }
 
 const assertions = [];
 const assert = (name, ok, details = {}) => assertions.push({ name, ok: !!ok, details });
@@ -245,3 +243,5 @@ verifyActualSavePath().catch(error => assert('actual_save_runtime_check_complete
     console.log(JSON.stringify({ ok, assertions }, null, 2));
     process.exit(ok ? 0 : 1);
   });
+
+})().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

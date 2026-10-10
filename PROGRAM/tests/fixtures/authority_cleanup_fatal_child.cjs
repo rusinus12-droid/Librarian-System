@@ -2,7 +2,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
 const program = process.env.LIB_AUTHORITY_REVIEW_PROGRAM || path.resolve(__dirname, '../..');
-const { fixture, fresh } = require(path.join(program, 'tests/fixtures/authority_server_fixture.cjs'));
+const { currentFixture: fixture, fresh } = require(path.join(program, 'tests/fixtures/authority_server_fixture.cjs'));
 const f = fixture({ after() {} }); f.activate(); const repo = f.repositories.libra;
 process.stdout.write(JSON.stringify({ root: f.root, dataDir: f.dataDir, filePath: repo.filePath }) + '\n');
 const originalPrepare = DatabaseSync.prototype.prepare;

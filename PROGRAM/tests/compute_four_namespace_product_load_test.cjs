@@ -1,4 +1,7 @@
 'use strict';
+// 2026-10-09 current-owner fixture: three active kernels, four rounds (12 jobs);
+// historical four-owner assertions are retired, LIA denial is checked by the fixture.
+// Worker widths, physical overlap floor and original RSS limits remain unchanged.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -111,7 +114,7 @@ async function main() {
     });
 
     const submissionPromises = [];
-    for (let round = 1; round <= 3; round += 1) {
+    for (let round = 1; round <= 4; round += 1) {
       for (const spec of specs) {
         submissionPromises.push(submitProductJob(base, spec, {
           operationId: `fourload_${spec.identity.namespace}_${String(round).padStart(4, '0')}`,
@@ -143,7 +146,7 @@ async function main() {
       `storage probe did not overlap a product Worker interval: ${JSON.stringify({ storageObservation, intervals: results.map(item => ({ namespace: item.spec.identity.namespace, startedAt: item.status.startedAt, completedAt: item.status.completedAt })) })}`);
     const serverWallMs = performance.now() - serverStartedAt;
     assert.equal(results.length, 12);
-    assert.equal(new Set(results.map(item => item.spec.identity.namespace)).size, 4);
+    assert.equal(new Set(results.map(item => item.spec.identity.namespace)).size, 3);
     for (const spec of specs) {
       const first = results.find(item => item.spec === spec);
       assert.ok(first);
@@ -176,13 +179,13 @@ async function main() {
     const metrics = {
       schema: 'memory-suite.compute.four-namespace-load-report.v1',
       workers: 4,
-      rounds: 3,
+      rounds: 4,
       jobs: results.length,
       ...concurrency,
       localSerialMs: Number(localSerialMs.toFixed(2)),
-      serialEquivalentMs: Number((localSerialMs * 3).toFixed(2)),
+      serialEquivalentMs: Number((localSerialMs * 4).toFixed(2)),
       serverWallMs: Number(serverWallMs.toFixed(2)),
-      observedThroughputFactor: Number(((localSerialMs * 3) / serverWallMs).toFixed(3)),
+      observedThroughputFactor: Number(((localSerialMs * 4) / serverWallMs).toFixed(3)),
       storageRoundtripMs: Number(storageRoundtripMs.toFixed(2)),
       namespaces: summarizeProductResults(results)
     };

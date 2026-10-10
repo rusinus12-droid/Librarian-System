@@ -14,10 +14,12 @@
             // Ordinary saves pass an already patched latest live layer; replacement/import remain explicit.
             Object.assign(MemoryEngine.CONFIG, cfg);
             const changed = path => changedPaths === null || changedPaths.has(path);
-            if (reason !== 'settings-portable-import' && (changedPaths === null || Array.from(changedPaths).some(path => path.startsWith('embed.') || path.startsWith('dualRecall')))) {
+            if (changedPaths === null || Array.from(changedPaths).some(path => path.startsWith('embed.') || path.startsWith('dualRecall'))) {
                 MemoryEngine.EmbeddingEngine.noteConfigurationPublished();
-                TypedRecallRollout.configureProduction(MemoryEngine.CONFIG);
-                syncDualRecallReadiness();
+                if (reason !== 'settings-portable-import') {
+                    TypedRecallRollout.configureProduction(MemoryEngine.CONFIG);
+                    syncDualRecallReadiness();
+                }
             }
             _CFG = { ...MemoryEngine.CONFIG };
             syncSimpleSettingsIntentStatus();

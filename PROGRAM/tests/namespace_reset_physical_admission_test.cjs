@@ -6,7 +6,8 @@ const createReset = require('../server/core/namespace-reset.cjs');
 const { readDataInstanceIdentity } = require('../server/core/data-instance-identity.cjs');
 const { spawnSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
-const namespaces = ['flashback','hayaku','libra','lia','retrace'];
+const currentOwners = process.env.RESET_PHYSICAL_CURRENT_OWNERS === '1';
+const namespaces = currentOwners ? [...require('../server/authority/contracts.cjs').CORE3_OWNERS] : ['flashback','hayaku','libra','lia','retrace'];
 const schema = 'memory-suite.namespace-reset-job.v2';
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const tree = root => {
@@ -71,9 +72,12 @@ async function historyNegative(root,name,history) {
   const dataDir=path.join(root,name),pin=await prepare(dataDir),state=pending(dataDir,pin);state.history=history;
   fs.writeFileSync(path.join(dataDir,'config','namespace-reset.json'),JSON.stringify(state)+'\n');
   const beforeStores=storeCounts(dataDir),before=tree(dataDir);
-  const guard='C:/Users/rusin/Desktop/LIB/LIB/work/recovery-20261002/no-model-network.cjs';
+  const guard=process.env.RESET_PHYSICAL_GUARD || 'C:/Users/rusin/Desktop/LIB/LIB/work/recovery-20261002/no-model-network.cjs';
+  if(process.env.RESET_PHYSICAL_GUARD)assert.equal(hash(fs.readFileSync(guard)),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','exact current inherited A4 guard');
+  const adapter=process.env.RESET_PHYSICAL_ADAPTER || '';
+  if(adapter)assert.equal(hash(fs.readFileSync(adapter)),'8f21bb71f788c7ccff39912b5fb3ab274996e8b09068118eb254593bdf1d937b','exact owned handler adapter');
   assert.ok(process.env.NODE_OPTIONS?.includes(guard));assert.ok(process.execArgv.includes(guard));
-  const child=spawnSync(process.execPath,['--require',guard,__filename,'--history-child'],{env:{...process.env,RESET_HISTORY_CHILD_DATA:dataDir},encoding:'utf8',timeout:10000,windowsHide:true});
+  const child=spawnSync(process.execPath,['--require',guard,...(adapter?['--require',adapter]:[]),__filename,'--history-child'],{env:{...process.env,RESET_HISTORY_CHILD_DATA:dataDir},encoding:'utf8',timeout:10000,windowsHide:true});
   assert.equal(child.error,undefined,'owned constructor child finished within deadline');
   const line=String(child.stdout).split(/\r?\n/).find(row=>row.startsWith('HISTORY_CHILD_RECEIPT '));assert.ok(line,'actual child receipt');
   const childReceipt=JSON.parse(line.slice('HISTORY_CHILD_RECEIPT '.length)),after=tree(dataDir),afterStores=storeCounts(dataDir);

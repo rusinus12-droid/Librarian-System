@@ -265,7 +265,7 @@ test("wm_adapter_partial_upload_limit_fails_closed_and_read_chunk_exact", async 
   assert.equal(f.backend.describe().partialChunkUpload, false);
 });
 
-function bridge(f) {
+async function bridge(f) {
   const vm = require("node:vm");
   const context = vm.createContext({
     console: console,
@@ -277,10 +277,14 @@ function bridge(f) {
       snapshotAuthority: f.backend,
       operationJournal: f.journal
     },
+    WmNativePortability: require('../src/wm-native-portability.source.js'),
+    WmNativeHostGate: require('../src/wm-native-host-gate.source.js'),
+    WmWriterRouting: require('../src/wm-writer-routing.source.js'),
+    RisuCompat: {pluginStorage: {}, localPluginStorage: {}},
     runtimeDetached: false,
     runtimeDisposers: []
   });
-  new vm.Script(`const WmSnapshotAuthorityModule=(()=>{const module={exports:{}};${fs.readFileSync(__dirname + "/../src/wm-versioned-snapshot.cjs", "utf8")};return module.exports;})();\n${fs.readFileSync(__dirname + "/../src/wm-storage-contracts.source.js", "utf8")}\n${fs.readFileSync(__dirname + "/../src/versioned-canonical-bridge.source.js", "utf8")}\nglobalThis.bridge=VersionedCanonicalBridge;`).runInContext(context);
+  await new vm.Script(`(async()=>{const WmSnapshotAuthorityModule=(()=>{const module={exports:{}};${fs.readFileSync(__dirname + "/../src/wm-versioned-snapshot.cjs", "utf8")};return module.exports;})();\n${fs.readFileSync(__dirname + "/../src/wm-storage-contracts.source.js", "utf8")}\n${fs.readFileSync(__dirname + "/../src/versioned-canonical-bridge.source.js", "utf8")}\nglobalThis.bridge=VersionedCanonicalBridge;})()`).runInContext(context);
   return context.bridge;
 }
 
@@ -301,7 +305,7 @@ test("wm_adapter_snapshot_provider_compatibility_uses_real_a4", async t => {
 test("wm_bridge_uncertain_reload_preserves_original_id_and_status_only", async t => {
   const f = fixture(t);
   await initialized(f);
-  const b = bridge(f), read = await b.read("scope-a");
+  const b = await bridge(f), read = await b.read("scope-a");
   assert.equal(read.ok, true);
   f.state.loss = true;
   f.state.statusLoss = true;
@@ -309,7 +313,7 @@ test("wm_bridge_uncertain_reload_preserves_original_id_and_status_only", async t
   assert.equal(first.uncertain, true);
   assert.ok(first.operationId);
   const publishes = f.calls.filter(v => v.path.endsWith("/publish")).length;
-  const next = f.create(), other = bridge({
+  const next = f.create(), other = await bridge({
     ...f,
     backend: next
   });
@@ -325,7 +329,7 @@ test("wm_bridge_uncertain_reload_preserves_original_id_and_status_only", async t
 test("wm_bridge_final_observation_supplies_live_request_leases", async t => {
   const f = fixture(t);
   await initialized(f);
-  const b = bridge(f), owner = b.openRequest();
+  const b = await bridge(f), owner = b.openRequest();
   assert.equal((await b.read("scope-a", owner)).ok, true);
   assert.equal((await b.finalObservation(owner)).ok, true);
   const observations = f.calls.filter(v => v.path.endsWith("/observe"));
@@ -444,13 +448,7 @@ test("wm_router_real_adapter_canonical_raw_history_and_companions", async t => {
     },
     serverBackend: () => f.backend,
     journal: f.journal,
-    hostGate: {
-      async check() {
-        return {
-          ok: true
-        };
-      }
-    }
+    hostGate: require('./wm-host-gate-fixture.cjs').fixture({initialRoute:F.storeRoute()}).gate
   }), handle = await router.openRequest(), initial = await router.initializeScope({
     handle: handle,
     scope: "scope-a",

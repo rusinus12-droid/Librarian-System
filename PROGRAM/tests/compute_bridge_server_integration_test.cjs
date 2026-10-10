@@ -22,7 +22,8 @@ const memoryStore = () => {
     async keys() { return [...values.keys()]; }
   };
 };
-const fileDigest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+// Exact file/WAL presence and bytes are preserved, including absent retired stores.
+const { repositoryDigest: fileDigest } = require('./fixtures/compute_product_load_fixture.cjs');
 
 async function main() {
   const tempRoot = path.resolve(os.tmpdir());
@@ -75,6 +76,7 @@ async function main() {
       probeTimeoutMs: 1200
     });
 
+    for (const name of ['lia','retrace']) for (const suffix of ['', '-wal']) assert.equal(fs.existsSync(app.repositories[name].filePath + suffix), false, 'retired live store must remain absent');
     const before = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
     const input = { texts: ['hello memory', '기억 회상'], dimensions: 64 };
     const result = await computeBridge.execute({ operation: definition.operation, input, mode: 'prefer_server' });
@@ -126,6 +128,7 @@ async function main() {
     assert.equal(warmBackground.source, 'server_cache', 'verified async job result is adopted on the matching subsequent snapshot');
     assert.equal(localCalls, localBeforeBackground + 1, 'only the cold cache call uses local CPU');
 
+    for (const name of ['lia','retrace']) for (const suffix of ['', '-wal']) assert.equal(fs.existsSync(app.repositories[name].filePath + suffix), false, 'Compute must not create a retired store');
     const after = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
     assert.deepEqual(after, before, 'bridge compute never mutates canonical namespace databases');
     process.stdout.write('compute_bridge_server_integration_test: PASS\n');

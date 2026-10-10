@@ -1,7 +1,7 @@
 'use strict';
 // Exact shared work-state race and panel lifecycle controls migrated from the
 // retired GRADIA contract. Only helper-specific result acknowledgement is gone.
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),acorn=require('G:/LIBRA World Maker/node_modules/acorn/dist/acorn.js');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),acorn=require('acorn');
 const source=fs.readFileSync(path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8'),all=[],parents=new WeakMap();
 function visit(n,p){if(!n?.type)return;all.push(n);parents.set(n,p);for(const[k,v]of Object.entries(n)){if(Array.isArray(v))for(const c of v)visit(c,n);else if(v?.type)visit(v,n);}}visit(acorn.parse(source,{ecmaVersion:'latest'}));
 const extractConst=name=>{const found=all.filter(n=>n.type==='VariableDeclarator'&&n.id.name===name);assert.equal(found.length,1,name);const declaration=parents.get(found[0]);return source.slice(declaration.start,declaration.end);};

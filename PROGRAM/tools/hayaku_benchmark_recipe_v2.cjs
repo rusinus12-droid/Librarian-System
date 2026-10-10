@@ -18,7 +18,9 @@ const PINS = Object.freeze({
 });
 const archive = path.resolve(__dirname, '../tests/fixtures/hayaku-benchmark-recipe-v2');
 const workspace = path.resolve(__dirname, '../../..');
-const GUARD = 'C:/Users/rusin/Desktop/LIB/LIB/work/recovery-20261002/no-model-network.cjs';
+const EXPLICIT_GUARD = process.env.HAYAKU_RECIPE_GUARD || '';
+const GUARD = EXPLICIT_GUARD || 'C:/Users/rusin/Desktop/LIB/LIB/work/recovery-20261002/no-model-network.cjs';
+const CURRENT_GUARD_SHA256 = '2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3';
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function verifyPin(bytes, expected, label) {
   const actual = hash(bytes);
@@ -37,6 +39,10 @@ function verifyExecutionGuard(execArgv = process.execArgv, nodeOptions = process
   assert.ok(String(nodeOptions || '').replace(/\\/g, '/').includes(`--require=${GUARD}`), 'NODE_OPTIONS recovery guard is required');
   assert.ok(networkLog, 'private network log is required');
   privateOutput(networkLog);
+  if (EXPLICIT_GUARD) {
+    assert.equal(fs.realpathSync(GUARD), path.resolve(GUARD), 'explicit recovery guard must resolve exactly');
+    verifyPin(fs.readFileSync(GUARD), CURRENT_GUARD_SHA256, 'explicit recovery guard');
+  }
 }
 
 function loadRecipe({ fixtureVersion = 'v1', outputRoot = path.join(workspace, 'work/hayaku-recipe-v2/runs') } = {}) {

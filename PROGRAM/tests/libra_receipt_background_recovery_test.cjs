@@ -9,11 +9,9 @@ function transformSource(source) {
   assert.ok(source.includes(core), 'fixture core anchor');
   source = source.replace(core, `      debugReceiptRecoveryFixture: async (action, turn = 1) => {
         const context = await resolveContext(true), pair = buildPairs(context.chat, context.scope.scopeKey)[turn - 1];
+        if (action === 'connection') return MemorySuiteStorageBridge.getConnectionSettings({scope:context.scope,force:true});
         if (action === 'persist') return persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', {deferInventory:true});
         if (action === 'restore') { state.worldManagerRuntimeMetaGeneration = Number(state.worldManagerRuntimeMetaGeneration || 0) + 1; return; }
-        if (action === 'deny') { libraSourceEdits = {canWrite:()=>false}; return; }
-        if (action === 'loadOtherSourceEdit') { await getLibraSourceEdits().loadScope('other-scope'); return; }
-        if (action === 'sourceEditPermit') { return getLibraSourceEdits().canWrite(context.scope.scopeKey,1,sourceDigest(buildPairs(context.chat,context.scope.scopeKey).slice(0,5))); }
         if (action === 'partialProbe') {
           const identity=receiptRecoveryIdentity(context,pair),scope=context.scope;
           return provenOneSidedReceiptRecoveryCopy({scope,identity,boundary:{mode:'mirror'},
@@ -206,19 +204,75 @@ test('scope change pauses without retargeting',async()=>withFixture('plugin_only
   const input=await api.debugReceiptRecoveryFixture('input');x.f.chat.id='another-chat';x.f.chat.chatId='another-chat';
   const {result}=await run(api,input);assert.equal(result.status,'paused');assert.equal(rawWrites.length,0);
 }));
-test('revision permit denied',async()=>withFixture('plugin_only',async({api,rawWrites})=>{
-  const input=await api.debugReceiptRecoveryFixture('input');await api.debugReceiptRecoveryFixture('deny');
-  const {result}=await run(api,input);assert.equal(result.status,'paused');assert.match(result.reason,/permit/);assert.equal(rawWrites.length,0);
-}));
-test('durable source-edit task blocks unloaded current-scope controller',async()=>withFixture('plugin_only',async({x,api,rawWrites})=>{
+// The native tracker/controller was removed by the explicit-reanalysis contract.
+// These are named current replacements; original tracker failures remain in evidence.
+test('owner transition permit denied before receipt recovery I/O',async()=>withFixture('plugin_only',async({x,api,rawWrites})=>{
   const input=await api.debugReceiptRecoveryFixture('input');
-  const key=`libra:v1:scope:${input.scope.scopeKey}:source-edit-consent:v1`;
-  x.local.set(key,JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner:'libra',scopeKey:input.scope.scopeKey,
-    tasks:{'1':{key:'1',start:1,end:5,state:'awaiting_consent',revisionId:'revision_blocked'}},exceptions:{}}));
-  await api.debugReceiptRecoveryFixture('loadOtherSourceEdit');
-  assert.equal(await api.debugReceiptRecoveryFixture('sourceEditPermit'),true,'unloaded canWrite defaults true');
-  const {result}=await run(api,input);
-  assert.equal(result.status,'paused');assert.match(result.reason,/permit/);assert.equal(rawWrites.length,0);
+  // Queue before the transition and do not schedule the background worker.
+  const queued=await api.queueReceiptRecovery({...input,deferRun:true});
+  const settings=await api.debugReceiptRecoveryFixture('connection');
+  assert.equal(settings.mode,'plugin_only');
+  assert.equal(settings.transition,null);
+  const registryKey='__memory_suite_internal_scope_routes_v1__:libra';
+  const original=x.local.get(registryKey);
+  const registry=original == null ? {entries:{}} : JSON.parse(original);
+  registry.entries=registry.entries || {};
+  const scopeId=settings.scope.scopeId;
+  assert.ok(scopeId,'use real bridge scope identity');
+  registry.entries[scopeId]={...settings.scope,...registry.entries[scopeId],
+    scopeId,mode:'plugin_only',origin:'transition_pending',pendingTargetMode:'server_only',
+    updatedAt:Math.max(Date.now(),Number(registry.entries[scopeId]?.updatedAt || 0)+1)};
+  const set=x.backend.setItem;
+  let headWrites=0;
+  x.backend.setItem=async(k,v)=>{if(k.includes(':source-receipt-head:'))headWrites++;return set(k,v);};
+  try {
+    x.local.set(registryKey,JSON.stringify(registry));
+    const blocked=await api.debugReceiptRecoveryFixture('connection');
+    assert.equal(blocked.mode,'plugin_only');
+    assert.equal(blocked.transition?.scopeId,scopeId);
+    assert.equal(blocked.transition?.fromMode,'plugin_only');
+    assert.equal(blocked.transition?.toMode,'server_only');
+    assert.equal(blocked.transition?.phase,'pending','real bridge must see the seeded owner state');
+    const result=await api.runReceiptRecoveryJob({jobId:queued.jobId,suppressMicroResume:true});
+    assert.equal(result.status,'paused');
+    assert.equal(result.reason,'owner_permit_unavailable');
+    assert.equal(rawWrites.length,0);
+    assert.equal(headWrites,0);
+  } finally {
+    if(original == null)x.local.delete(registryKey);else x.local.set(registryKey,original);
+    await api.debugReceiptRecoveryFixture('connection');
+    x.backend.setItem=set;
+  }
+}));
+test('legacy source-edit journal stays inert during current receipt recovery',async()=>withFixture('plugin_only',async({x,api,rawWrites})=>{
+  const input=await api.debugReceiptRecoveryFixture('input');
+  const legacyKey=`libra:v1:scope:${input.scope.scopeKey}:source-edit-consent:v1`;
+  const legacy=JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner:'libra',scopeKey:input.scope.scopeKey,
+    tasks:{'1':{key:'1',start:1,end:5,state:'awaiting_consent',revisionId:'revision_blocked'}},exceptions:{}});
+  x.local.set(legacyKey,legacy);
+  const get=x.backend.getItem,set=x.backend.setItem,remove=x.backend.removeItem;
+  let trackerReads=0,trackerWrites=0,trackerRemovals=0;
+  x.backend.getItem=async k=>{if(k===legacyKey)trackerReads++;return get(k);};
+  x.backend.setItem=async(k,v)=>{if(k===legacyKey)trackerWrites++;return set(k,v);};
+  x.backend.removeItem=async k=>{if(k===legacyKey)trackerRemovals++;return remove(k);};
+  try {
+    const queued=await api.queueReceiptRecovery({...input,deferRun:true});
+    // Keep this compatibility test about receipt recovery. Separate existing
+    // cases cover the downstream Micro scheduler; do not start it here.
+    const result=await api.runReceiptRecoveryJob({jobId:queued.jobId,suppressMicroResume:true});
+    assert.equal(result.status,'verified');
+    const active=await api.debugReadActiveCompletedTurnReceipt(1);
+    assert.equal(active.status,'verified');
+    assert.equal(active.receipt.revisionId,input.missingTurns[0].revisionId);
+    assert.equal(active.receipt.sourceDigest,input.missingTurns[0].sourceDigest);
+    assert.equal(rawWrites.length,1);
+    assert.equal(trackerReads,0);
+    assert.equal(trackerWrites,0);
+    assert.equal(trackerRemovals,0);
+    assert.equal(x.local.get(legacyKey),legacy);
+  } finally {
+    x.backend.getItem=get;x.backend.setItem=set;x.backend.removeItem=remove;
+  }
 }));
 test('corrupt recovery ledger cannot block a fresh normal output',async()=>withFixture('plugin_only',async({x,api,rawWrites})=>{
   const input=await api.debugReceiptRecoveryFixture('input');

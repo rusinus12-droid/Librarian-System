@@ -44,12 +44,24 @@ async function exercise(dir, [owner,file,globalName], options={}) {
   const fixedCrypto={subtle:globalThis.crypto.subtle,getRandomValues(array){for(let i=0;i<array.length;i++)array[i]=Math.floor(fixedMath.random()*256);return array;},randomUUID(){return '00000000-0000-4000-8000-'+Math.floor(fixedMath.random()*1e12).toString().padStart(12,'0');}};
   const context=vm.createContext({risuai:host,window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Element:dom.window.Element,Node:dom.window.Node,MutationObserver:dom.window.MutationObserver,Event:dom.window.Event,CustomEvent:dom.window.CustomEvent,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),Date:FixedDate,Math:fixedMath,console:{log(){},info(){},warn(){},error(){},debug(){}},setTimeout(fn,delay,...args){let timer;const effectiveDelay=owner==='libra'&&portalPhase&&Number(delay)===0?Math.max(Number(delay),options.libraHydrationDelayMs||0):delay;timer=setTimeout(()=>{timers.delete(timer);fn(...args);},effectiveDelay);timers.add(timer);return timer;},clearTimeout(t){timers.delete(t);clearTimeout(t);},setInterval(fn,delay,...args){const t=setInterval(fn,delay,...args);intervals.add(t);return t;},clearInterval(t){intervals.delete(t);clearInterval(t);},queueMicrotask,AbortController,AbortSignal,DOMException,URL,URLSearchParams,TextEncoder,TextDecoder,crypto:fixedCrypto,structuredClone,performance,Headers,Request,Response,FormData,Blob,atob,btoa,confirm:()=>false,alert(){},prompt:()=>null,addEventListener(){},removeEventListener(){},dispatchEvent(){},fetch:async()=>{networkCalls++;throw Error('offline artifact parity');}});
   try {
-    vm.runInContext(source,context,{filename:path.join(dir,file)});
+    await vm.runInContext(source,context,{filename:path.join(dir,file)});
     const api=await until(()=>context[globalName],`${owner} public API`);
     await until(()=>registrations.find(r=>r.kind==='setting'&&r.callback),`${owner} setting callback`);
     await sleep(80);
     const hookResults={};
-    if(owner!=='retrace') {
+    if(owner==='lia') {
+      assert.equal(hooks.has('beforeRequest'),false,'manual-only LiA does not register automatic before-request tracking');
+      assert.equal(listeners.has('output'),false,'manual-only LiA does not register automatic output capture');
+      assert.equal(typeof hooks.get('afterRequest'),'function','independent emotion asset after hook remains');
+      hookResults.after=plain(await hooks.get('afterRequest')('Alice stays in the hall.','model'));
+      assert.equal(hookResults.after,'Alice stays in the hall.');
+      hookResults.manualIdle=plain(api.getLiveSyncCaptureState());
+      assert.equal(hookResults.manualIdle.backend,'none');
+      assert.equal(hookResults.manualIdle.registered,false);
+      assert.equal(hookResults.manualIdle.trackedTurnRevisions,0);
+      assert.equal(hookResults.manualIdle.scheduledScopes,0);
+      assert.equal(modelCalls,0);
+    } else if(owner!=='retrace') {
       const before=await until(()=>hooks.get('beforeRequest'),`${owner} beforeRequest`);
       hookResults.before=plain(await before([{role:'system',content:'Continue the scene.'},{role:'user',content:'Where is Alice and the blue prism?'}],'model'));
       assert.ok(Array.isArray(hookResults.before),`${owner}: actual beforeRequest returns the request messages`);

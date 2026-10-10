@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createLibraVmHarness,waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const source=fs.readFileSync(path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8');
-const acorn=require('G:/LIBRA World Maker/node_modules/acorn/dist/acorn.js');
+const acorn=require('acorn');
 const syntax=acorn.parse(source,{ecmaVersion:'latest'}),bindings=new Set();
 function collectBindings(n){if(!n||!n.type)return;if(n.type==='VariableDeclarator'&&n.id.type==='Identifier')bindings.add(n.id.name);if(n.type==='FunctionDeclaration')bindings.add(n.id.name);for(const [k,v]of Object.entries(n)){if(Array.isArray(v))for(const c of v)collectBindings(c);else if(v&&v.type)collectBindings(v);}}
 collectBindings(syntax);
@@ -38,7 +38,7 @@ test('retirement settings save/restart preserve historic raw memory and draft st
 });
 
 test('actual settings DOM retains all six pages and memory import/save/restart while excluding retired helper actions',async()=>{
- const {JSDOM}=require('C:/Users/rusin/AppData/Local/Temp/LIB-WM-Recovery-20261002/test-deps/node_modules/jsdom');
+ const {JSDOM}=require('jsdom');
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'http://localhost/retirement'}),window=dom.window,registrations=[],logs=[];
  const chat={id:'retirement-gui-chat',chatId:'retirement-gui-chat',message:[]};chat.messages=chat.message;
  const character={id:'retirement-gui-char',chaId:'retirement-gui-char',name:'Fixture',chatPage:0,chats:[chat]};

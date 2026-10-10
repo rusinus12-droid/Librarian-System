@@ -38,24 +38,30 @@ async function apply(s,mode){
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
  const handler=createHandlerFixture(),namespace=owners[name],pluginPath=artifactRoot?path.join(artifactRoot,kind,META[name][0]):path.resolve(__dirname,'../plugins',META[name][0]);let s,restart;
  try{
-  s=await create(name,kind,{pluginPath,initialValues:seedRoots(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
+  s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(s);
   const before=[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'));
+  // Ordinary startup may normalize a minimal legacy manifest before confirmation.
+  // Freeze the actual durable source while requiring every seeded identity/data field.
+  const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed)))assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);return [key,value];});
+  console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
-  for(const [key,value]of seedRoots(name))assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
+  for(const [key,value]of frozenRoots)assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
   assert(rows.some(row=>row.key===`__memory_suite_scope_routes_v1__:${namespace}`),'global policy published to actual handler');
   for(const [key,value]of before)assert.equal(s.values.get(key),value,'forward preserves local source '+key);
-  const saved=[...s.values];await s.close();s=null;
-  restart=await create(name,kind,{pluginPath,initialValues:saved,args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
+  const saved=[...s.values],savedDevice=[...s.deviceValues];await s.close();s=null;
+  restart=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:saved,initialDeviceValues:savedDevice,args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(restart);
   assert.equal(restart.doc.querySelector('input[value="server_only"]').checked,true,'restart sees committed global policy');
+  const reverseRows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
+  console.log('REVERSE_PREFLIGHT_DIAGNOSTIC',JSON.stringify({name,kind,differences:reverseRows.filter(row=>restart.values.has(row.key)&&JSON.stringify(restart.values.get(row.key))!==row.value_json).map(row=>({key:row.key,local:restart.values.get(row.key),server:JSON.parse(row.value_json)}))}));
   const reverse=await apply(restart,'plugin_only');
-  for(const [key,value]of seedRoots(name))assert.equal(restart.values.get(key),value,'exact native root survives roundtrip '+key);
+  for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'exact pre-confirmation native root survives roundtrip '+key);
   const registry=JSON.parse(restart.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`));assert.equal(registry.entries.__memory_suite_global__.mode,'plugin_only');
   assert(Object.values(registry.entries).filter(row=>row.scopeId!=='__memory_suite_global__').every(row=>row.origin==='inherited'));
   assert.equal(restart.wire.length,0,'no external network/model fallback');
   const result={name,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,handlerRequests:handler.trace.length,readOnlyPreviewRefreshes:forwardRefreshes+(restart.globalInventoryRefreshes||0)};results.push(result);console.log(JSON.stringify(result));
- }catch(error){const active=restart||s;if(active)console.error(JSON.stringify({name,kind,keys:[...active.values.keys()],journal:active.values.get(`__memory_suite_internal_sync_job_v1__:${namespace}`),registry:active.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`),status:active.doc.querySelector('[data-status]')?.textContent,errors:active.errors,logs:active.logs.slice(-8)},null,2));throw error;}
+ }catch(error){const active=restart||s;if(active)console.error(JSON.stringify({name,kind,keys:[...active.values.keys()],localValues:[...active.values],deviceValues:[...active.deviceValues],serverRows:handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all(),journal:active.values.get(`__memory_suite_internal_sync_job_v1__:${namespace}`),registry:active.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`),status:active.doc.querySelector('[data-status]')?.textContent,errors:active.errors,logs:active.logs.slice(-8)},null,2));throw error;}
  finally{await restart?.close();await s?.close();await handler.close();}
 }console.log(JSON.stringify({flows:results.length,results},null,2));})().catch(error=>{console.error(error);process.exitCode=1;});

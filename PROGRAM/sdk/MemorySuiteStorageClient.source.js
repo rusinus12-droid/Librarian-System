@@ -5277,12 +5277,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const withOwnerIO = async (space, key, factory) => {
     if (!matchesRoute(space, String(key || '')) && key !== '') return await factory();
+    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     await loadPersistedSyncJob();
     if(state.syncJob.current?.kind==='global_mode'&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
     // Preparation still uses the source store: an admitted writer may call
     // the proxy again before it finishes. Freeze I/O only after that work drains.
     if (modeConfigurationFrozen || (storageTransition && storageTransition.phase !== 'draining')) throw transitionBusyError();
-    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     const work = Promise.resolve().then(factory);
     ownerIOWork.add(work);
     try { return await work; } finally { ownerIOWork.delete(work); }
@@ -7196,7 +7196,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!Number.isInteger(normalizedNext) || normalizedNext <= cursor || normalizedNext > list.length) throw new Error('memory_suite_manager_get_many_pagination_cursor_invalid');
       cursor = normalizedNext;
     }
-    if(requestOptions.strictInventory===true&&(oversizedKeys.size||list.some(key=>!Object.hasOwn(values,key))))throw globalModeError('remote_values_incomplete_or_oversized');
     for (const key of oversizedKeys) defineStorageRecordValue(values, key, await managerServerGet(ns, space, key));
     return { values, pages, oversizedKeys: [...oversizedKeys] };
   };
@@ -7213,12 +7212,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await managerRequest('GET', `/v1/kv/keys?namespace=${encodeURIComponent(ns)}&space=${encodeURIComponent(normalizedSpace)}&prefix=${encodeURIComponent(normalizedPrefix)}&paged=1&limit=${keyPageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
       pages += 1;
       const result = payload?.result || { keys: [], tombstones: [], records: [] };
-      if(requestOptions.strictInventory===true){
-        if(!Array.isArray(result.keys)||!Array.isArray(result.tombstones)||!Array.isArray(result.records))throw globalModeError('remote_keys_incomplete');
-        const pageKeys=[...result.keys,...result.tombstones];
-        if(new Set(pageKeys).size!==pageKeys.length||pageKeys.some(key=>typeof key!=='string'||seenKeys.has(key)||seenTombstones.has(key)))throw globalModeError('remote_keys_duplicate');
-        if(result.records.length!==pageKeys.length||new Set(result.records.map(row=>row.key)).size!==pageKeys.length||result.records.some(row=>!pageKeys.includes(row.key)||!Number.isSafeInteger(row.revision)||!row.digest))throw globalModeError('remote_metadata_incomplete');
-      }
       for (const key of Array.isArray(result.keys) ? result.keys : []) { const value = String(key); if (!seenKeys.has(value)) { seenKeys.add(value); keys.push(value); } }
       for (const key of Array.isArray(result.tombstones) ? result.tombstones : []) { const value = String(key); if (!seenTombstones.has(value)) { seenTombstones.add(value); tombstones.push(value); } }
       for (const row of Array.isArray(result.records) ? result.records : []) { const identity = `${String(row?.space || normalizedSpace)}\u0000${String(row?.key || '')}`; if (!seenRecords.has(identity)) { seenRecords.add(identity); records.push(row); } }

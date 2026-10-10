@@ -42,7 +42,7 @@ async function createCostFixture(options={}){
  const root=options.root||fs.mkdtempSync(path.join(os.tmpdir(),'flashback-append-cost-')),trace=[];
  let runtimeContext=null;
  const pluginStorage=options.pluginStorage||diskStore(root,'plugin',trace,()=>runtimeContext?.__appendCostStage||null),safeLocalStorage=options.safeLocalStorage||diskStore(root,'local',trace,()=>runtimeContext?.__appendCostStage||null);
- const source=fs.readFileSync(PLUGIN,'utf8').replace('const finishPublishedRawEmbedding = async','const finishPublishedRawEmbeddingImplementation = async')
+ let source=fs.readFileSync(PLUGIN,'utf8').replace('const finishPublishedRawEmbedding = async','const finishPublishedRawEmbeddingImplementation = async')
  .replace('      const preparedBinding = flashbackRecallPreparations.get(recall)?.binding;','      await globalThis.__rawCowBeforeConsumer?.(recall);\n      const preparedBinding = flashbackRecallPreparations.get(recall)?.binding;')
  .replace('  const ingestSources = async','  const finishPublishedRawEmbedding = async (...args) => { globalThis.__appendCostDurableAckAt=performance.now(); globalThis.__appendCostStage="finish"; globalThis.__appendCostPublication=args[4]; try { await globalThis.__appendCostBeforeFinish?.(...args); return await finishPublishedRawEmbeddingImplementation(...args); } finally { globalThis.__appendCostStage=null; } };\n  const ingestSources = async')
  .replace('    const saveStartedAt = Date.now();','    globalThis.__rawCowWriterCalls?.push({ stack: new Error().stack, metadataOnly: saveOptions.metadataOnly === true, publicationSources: [...(saveOptions.publicationSourceHashes || [])], recordCount: records.length });\n    const saveStartedAt = Date.now();')
@@ -50,6 +50,11 @@ async function createCostFixture(options={}){
  .replace('    await prev.catch(() => {});','    await prev.catch(() => {});\n    if(globalThis.__appendCostTurnActive)(globalThis.__appendCostQueueWaits ||= []).push({scopeKey:key,waitMs:performance.now()-__appendCostQueueAt});')
  .replace('  globalThis.__FlashbackMemory = publicApi;',
  '  globalThis.__appendCost = { ingestSources, saveScopeRecords, loadScopeRecordsRaw, scopeKeys, storageShardChecksum, embeddingCheckpointDigest, cleanupListedScopeShardOrphans, flashbackRecallPreparations, finishPublishedRawEmbedding, Runtime };\n  globalThis.__FlashbackMemory = publicApi;');
+ if(options.ownerDiagnostics){
+  source=source.replace('    flashbackOwnerWriters += 1; flashbackOwnerEpoch += 1;', '    const debugOwnerId=(globalThis.__appendOwnerSeq=(globalThis.__appendOwnerSeq||0)+1);(globalThis.__appendOwnerEvents||=[]).push({id:debugOwnerId,event:"enter",stack:new Error().stack}); flashbackOwnerWriters += 1; flashbackOwnerEpoch += 1;')
+    .replace('flashbackOwnerWriters-=1;', 'flashbackOwnerWriters-=1;(globalThis.__appendOwnerEvents||=[]).push({id:debugOwnerId,event:"exit"});')
+    .replace('  globalThis.__appendCost = {', '  globalThis.__appendOwnerSnapshot=()=>({writers:flashbackOwnerWriters,lease:flashbackOwnerLease?{kind:flashbackOwnerLease.kind,ended:flashbackOwnerLease.ended,holds:flashbackOwnerLease.holds.size}:null,events:globalThis.__appendOwnerEvents||[]}); globalThis.__appendCost = {');
+ }
  let providerCalls=0,mockQueryCalls=0;
  const f=await createFixture({source,pluginStorage,safeLocalStorage,chat:options.chat,arguments:{hook_recall_timeout_ms:'20000',...options.arguments},exposeStorageBridge:true,nativeFetch:async(url,init)=>{
   if(options.precomputedVectors&&String(url).startsWith('https://fixture.invalid/')){mockQueryCalls++;const input=JSON.parse(init.body).input;return{ok:true,status:200,async json(){return{data:(Array.isArray(input)?input:[input]).map((text,index)=>({index,embedding:fixtureVectorForQuery(text)}))};}};}

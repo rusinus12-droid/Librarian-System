@@ -13,6 +13,8 @@ const controlApi = require('../../server/authority/control-store.cjs');
 const ownerApi = require('../../server/authority/owner-store.cjs');
 const { ensureDataInstanceIdentity } = require('../../server/core/data-instance-identity.cjs');
 const OWNERS = ['libra', 'hayaku', 'flashback', 'lia', 'retrace'];
+const authorityContracts = require('../../server/authority/contracts.cjs');
+const CURRENT_OWNERS = authorityContracts.CORE3_OWNERS;
 const program = path.resolve(__dirname, '../..');
 const serverPath = path.join(program, 'server/server.cjs');
 const strictGuard=require('./authority_strict_guard_probe.cjs').capture();
@@ -37,9 +39,9 @@ function loadServer() {
   const target = '  return {\n    server,\n    token,';
   assert.equal(source.split(target).length, 2, 'one server return hook anchor');
   let exposed = source.replace(target, `  return {\n    __task4: { writeScopeCatalog, replaceNamespaceScopeIndex, removeCatalogScope, setCatalogScopePinned, saveDeletePlan, prepareJobBackup, advanceDeleteJob, createScopeDeletePlan, executeScopeDeletePlan, namespaceReset, ownerScopeDelete, getLibraNativeArchiveRepair, setMaintenance: value => { maintenanceMode = value; } },\n    server,\n    token,`);
-  const repositoryTarget = '  return { namespace, database, filePath, get, getMetadata,';
+  const repositoryTarget = '  return { namespace, database:publicDatabase, filePath, ephemeral:opened.ephemeral === true, legacyReadOnly, ...(options.protectedRuntime ? {maintainReceipts:maintenance} : {}), get, getMetadata,';
   assert.equal(exposed.split(repositoryTarget).length, 2, 'one repository return hook anchor');
-  exposed = exposed.replace(repositoryTarget, '  return { __task4Maintenance: maintenance, namespace, database, filePath, get, getMetadata,');
+  exposed = exposed.replace(repositoryTarget, '  return { __task4Maintenance: maintenance, namespace, database:publicDatabase, filePath, ephemeral:opened.ephemeral === true, legacyReadOnly, ...(options.protectedRuntime ? {maintainReceipts:maintenance} : {}), get, getMetadata,');
   const m = new Module(serverPath, module);
   m.filename = serverPath;
   m.paths = Module._nodeModulePaths(path.dirname(serverPath));
@@ -56,26 +58,28 @@ function snapshotDurable(root) {
   }
   return out;
 }
-function fixture(t, { server = false } = {}) {
+function fixture(t, { server = false, authorityProfile } = {}) {
+  const fixtureOwners = authorityProfile ? authorityContracts.authorityProfile(authorityProfile).owners : OWNERS;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lib-authority-task4-'));
   const dataDir = path.join(root, 'DATA');
   fs.mkdirSync(dataDir);
   const loaded = loadServer();
   const app = server ? loaded.createMemorySuiteServer({ dataDir, autoBackup: false, computeEnabled: false, token: 'fixture-only-offline-token-0000000000000000' }) : null;
   const physicalBinding = { ...ensureDataInstanceIdentity(dataDir), controlStoreId: crypto.randomUUID() };
-  const repositories = app?.repositories || Object.fromEntries(OWNERS.map(namespace => [namespace, loaded.__task4.createRepository(dataDir, namespace)]));
+  const repositories = app?.repositories || Object.fromEntries(fixtureOwners.map(namespace => [namespace, loaded.__task4.createRepository(dataDir, namespace)]));
   const originals = { ...repositories };
   const owners = {}, extraRepos = [], extraHandles = [];
   let control;
   const f = {
     root, dataDir, app, loaded, physicalBinding, repositories, originals, owners,
+    ...(authorityProfile ? { authorityProfile } : {}),
     activationId: crypto.randomUUID(),
-    ownerBindings: Object.fromEntries(OWNERS.map(namespace => [namespace, { filePath: repositories[namespace].filePath, resetEpoch: 0 }])),
+    ownerBindings: Object.fromEntries(fixtureOwners.map(namespace => [namespace, { filePath: repositories[namespace].filePath, resetEpoch: 0 }])),
     get control() { return control; },
     activate({ open = true } = {}) {
       control = controlApi.initializeAuthorityStore({ ...f, ownerBindings: f.ownerBindings });
       const generation = control.readWitness().generation;
-      for (const namespace of OWNERS) {
+      for (const namespace of fixtureOwners) {
         const store = ownerApi.bindOwnerStore({ database: originals[namespace].database, namespace, ...f.ownerBindings[namespace], physicalBinding });
         owners[namespace] = store;
         ownerApi.installOwnerGuards(store, { activationId: f.activationId, generation });
@@ -83,7 +87,7 @@ function fixture(t, { server = false } = {}) {
       // Explicit disposable-fixture publication. No production flag can do this.
       const db = new DatabaseSync(path.join(dataDir, 'stores/_authority/server-authority.sqlite'));
       try { db.exec("UPDATE authority_state SET status='ready' WHERE singleton=1"); } finally { db.close(); }
-      if (open) for (const namespace of OWNERS) repositories[namespace] = f.open(namespace);
+      if (open) for (const namespace of fixtureOwners) repositories[namespace] = f.open(namespace);
       return control;
     },
     open(namespace, maintenance = () => false, selectedControl = control) {
@@ -135,4 +139,5 @@ const current = (repo, key, kind = 'remove', value, space = 'plugin') => {
   return { kind, space, key, ...(kind === 'set' ? { value } : {}), expectedRevision: row.revision, expectedDigest: row.digest, expectedExists: row.exists, expectedTombstone: row.tombstone };
 };
 const put = (repo, key, value, operationId = 'fixture-' + crypto.randomUUID()) => repo.mutate({ kind: 'set', space: 'plugin', key, value, operationId });
-module.exports = { fixture, snapshotDurable, OWNERS, controlApi, ownerApi, fresh, current, put, program };
+const currentFixture = (t, options = {}) => fixture(t, { ...options, authorityProfile: authorityContracts.CORE3_AUTHORITY_PROFILE });
+module.exports = { fixture, currentFixture, CURRENT_OWNERS, snapshotDurable, OWNERS, controlApi, ownerApi, fresh, current, put, program };

@@ -193,9 +193,13 @@ function hayakuInput() {
 }
 
 async function createProductSpecs(base) {
+  // Current role contract retires LIA server ownership. Preserve the denied path.
+  const retired = await jsonFetch(`${base}/v1/compute/bootstrap`, { method: 'POST', headers: { 'X-Memory-Suite-Plugin': 'lia_persona_linker' } });
+  assert.equal(retired.response.status, 403);
+  assert.equal(retired.payload.code, 'COMPUTE_OWNER_PLUGIN_REQUIRED');
+  assert.equal(Object.hasOwn(retired.payload, 'token'), false);
   const descriptors = [
     ['flashback_memory', DEFINITIONS['flashback.hash-embedding-batch.v1'], flashbackInput()],
-    ['lia_persona_linker', DEFINITIONS['lia.world-lore-rerank.v2'], liaInput()],
     ['libra', DEFINITIONS['libra.recall-bm25f.v1'], libraInput()],
     ['hayaku_locator_continuity', DEFINITIONS['hayaku.sparse-rrf-fusion.v1'], hayakuInput()]
   ];
@@ -243,7 +247,7 @@ function peakProductConcurrency(results) {
 }
 
 function summarizeProductResults(results) {
-  return Object.fromEntries(['flashback', 'lia', 'libra', 'hayaku'].map(namespace => {
+  return Object.fromEntries(['flashback', 'libra', 'hayaku'].map(namespace => {
     const rows = results.filter(item => item.spec.identity.namespace === namespace);
     const values = key => rows.map(item => Number(item.result.timing[key] || 0));
     return [namespace, {

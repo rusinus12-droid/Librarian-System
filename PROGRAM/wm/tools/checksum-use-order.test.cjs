@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
 const {fixture}=require('./checksum-fixture.cjs');
-const root=path.resolve(__dirname,'..'),base=path.join(JSON.parse(require('node:fs').readFileSync(root+'/BASE-PINS.json')).base,'dist/LIBRA World Manager Full.js');
+const root=path.resolve(__dirname,'..'),base=require('./wm-historical-fixture-paths.cjs').immutableBaseArtifact({wmRoot:root,profile:'source'});
 async function probe(artifact,kind,uncachedReference=false){
  const f=await fixture(4,artifact),a=f.r.corpus.adapters.world,representation=a.representation,scope=f.snapshot.scopeKey;let armed=false,reads=0,done=false,record,observed,checksumGets=0;
  const snapshot={...f.snapshot};Object.defineProperty(snapshot,'scopeKey',{enumerable:true,get(){if(armed&&++reads===2){armed=false;if(kind==='context')record.turnLog[0].worldSummary='CONTEXT_GETTER_MUTATION';else{const original=record.meta.integrity.checksum;Object.defineProperty(record.meta.integrity,'checksum',{enumerable:true,configurable:true,get(){checksumGets++;record.turnLog[0].worldSummary='INTEGRITY_GETTER_MUTATION';return original;}});}}return scope;}});

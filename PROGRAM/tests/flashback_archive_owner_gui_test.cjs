@@ -18,7 +18,8 @@ for (const kind of ['source', 'Full', 'Min']) {
           const scriptPath = path.join(artifacts, kind, 'plugins/Flashback_Memory.js');
           assert(fs.existsSync(scriptPath), `${kind} artifact must exist when explicitly requested`);
           await f.restart(scriptPath);
-          assert.equal(f.api._test, undefined);
+          if (kind === 'Min') assert.equal(f.api._test, undefined, 'release Min has no private test surface');
+          if (kind === 'Full') assert.equal(typeof f.api._test, 'object', 'development Full retains its source test surface; GUI action remains public');
           assert.equal(f.context.__FlashbackEmbeddingAudit, undefined);
         }
         dom = new JSDOM('<!doctype html><html><head></head><body></body></html>',

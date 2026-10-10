@@ -10,7 +10,7 @@ const { writeUpdateManifest, expectedAssetName, expectedSourceAssetName, readRel
 const { compareVersions, nextPatchVersion, validateTargetVersion, applyReleaseVersion } = require('./release_version.cjs');
 const { assertPristineDistributionData } = require('./runtime_release_validation.cjs');
 
-const {isWmSourceInput,verifyWmFixtures}=require('./wm_source_catalog.cjs');
+const {isWmSourceInput,verifyWmFixtures,verifyWmSourceDocuments}=require('./wm_source_catalog.cjs');
 const PRODUCT_NAME = 'Librarian System';
 const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
@@ -118,6 +118,37 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_real_server_runtime_test.cjs'
 ]);
 const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
+// Accepted synthetic source fixtures only; never a general SQLite/private-data exception.
+const SOURCE_FIXTURE_PINS = Object.freeze({
+  "tests/fixtures/authority-preserved/logical-reader-fixtures/wal-only-authority/source.sqlite": {
+    "sha256": "3d09bfa7cc857b75e485c292535b3edb3cdc24ffb4b45be47869b80f7e3f95b0",
+    "bytes": 16384
+  },
+  "tests/fixtures/authority-preserved/logical-reader-fixtures/wal-only-authority/source.sqlite-shm": {
+    "sha256": "02ffaa72024ddf140f87ecee9bcf631b1f558c454f15b0300f4691bb5309017a",
+    "bytes": 32768
+  },
+  "tests/fixtures/authority-preserved/logical-reader-fixtures/wal-only-authority/source.sqlite-wal": {
+    "sha256": "97e64eef20e7509fcbd72f639cd7c2d5febacde5dd59bcde227b177958de44e0",
+    "bytes": 12392
+  },
+  "tests/fixtures/authority-preserved/logical-reader-fixtures/hot-journal-readonly/source.sqlite": {
+    "sha256": "bce2d7984767bf62a352c60c962f2e9fe4475c9a842a54095898e0a67fd22d4e",
+    "bytes": 942080
+  },
+  "tests/fixtures/authority-preserved/logical-reader-fixtures/hot-journal-readonly/source.sqlite-journal": {
+    "sha256": "d4e767e770fb4922056067b6bb54797278e5d3baff1fa53f37ddaf816345ae1e",
+    "bytes": 1131016
+  }
+});
+function verifySourceFixtureBytes(programRoot) {
+  for (const [relative, pin] of Object.entries(SOURCE_FIXTURE_PINS)) {
+    const file = path.join(programRoot, ...relative.split('/'));
+    let stat; try { stat = fs.lstatSync(file); } catch (_) { throw new Error('distribution_source_fixture_missing:'+relative); }
+    if (!stat.isFile() || stat.size !== pin.bytes || sha256File(file) !== pin.sha256) throw new Error('distribution_source_fixture_mismatch:'+relative);
+  }
+  return { files: Object.keys(SOURCE_FIXTURE_PINS).length };
+}
 const PROGRAM_DENY_SEGMENTS = new Set(['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases']);
 const PROGRAM_ALLOWED_TOP_LEVEL_DIRECTORIES = new Set([
   '_runtime', '관리도구', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools', 'wm'
@@ -222,6 +253,7 @@ function shouldCopySourceProgram(relativePath) {
   if(parts[0]==='wm'&&!isWmSourceInput(normalized))return false;
   if (parts[0] === '_runtime') return normalized === '_runtime/README.txt';
   if (parts.some(part => PROGRAM_DENY_SEGMENTS.has(part))) return false;
+  if (Object.hasOwn(SOURCE_FIXTURE_PINS, normalized)) return true;
   if (PROGRAM_SENSITIVE_PATH_PATTERN.test(normalized)) return false;
   if (/(?:^|\/)(?:full_test|test_report|npm-debug|yarn-error)[^/]*$/i.test(normalized)) return false;
   if (/\.(?:tmp|temp|bak|old|log|pyc|sqlite(?:-(?:wal|shm))?|db)$/i.test(normalized)) return false;
@@ -595,6 +627,7 @@ function buildDistribution(options = {}) {
   try{
     preflightSourceReleaseGuides(packageRoot);
     verifyWmFixtures(programDir);
+    if (isSource) { verifySourceFixtureBytes(programDir); verifyWmSourceDocuments(programDir); }
     const declarationBindings=captureManifestDeclarationBindings();
     phase='release_smoke';
     // Candidate packaging verifies source, syntax, SDK sync, inventory, bytes and privacy.
@@ -604,6 +637,8 @@ function buildDistribution(options = {}) {
     const programPredicate=isSource?shouldCopySourceProgram:shouldCopyRuntimeProgram;
     const stagingPredicate=isSource?programPredicate:relative=>programPredicate(relative)&&!relative.split(path.sep).join('/').startsWith('plugins/');
     const copiedProgram=copyTreeAllowlisted(programDir,path.join(stagedRoot,'PROGRAM'),stagingPredicate);
+    // Pin the bytes actually copied, not only their earlier source observation.
+    if(isSource){verifySourceFixtureBytes(path.join(stagedRoot,'PROGRAM'));verifyWmSourceDocuments(path.join(stagedRoot,'PROGRAM'));}
     const sourceUpdater=path.join(packageRoot,'UPDATER');assertUpdaterSourceClean(sourceUpdater);
     const copiedUpdater=copyTreeAllowlisted(sourceUpdater,path.join(stagedRoot,'UPDATER'),shouldCopyUpdater);
     const copiedLaunchers=copyRootUpdateLaunchers(packageRoot,stagedRoot);
@@ -655,6 +690,7 @@ function buildDistribution(options = {}) {
     phase='manifest_and_checksums';const {releasePolicy,updateManifest,checksumCheck}=refreshStagedMetadata(stagedRoot,declarationBindings,qualification);
     if(updateManifest.assetName!==expectedAssetName(version)||updateManifest.updatePolicy!==releasePolicy.updatePolicy)throw new Error('distribution_update_manifest_contract_mismatch');
     assertPristineDistributionData(stagedData);verifyChecksumFile(stagedRoot);
+    if(isSource){verifySourceFixtureBytes(stagedProgram);verifyWmSourceDocuments(stagedProgram);}
     phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName});
     const verification=verifyZipAgainstDirectory(archivePath,stagedRoot,{rootName:topLevelName}),entries=readZipEntries(archivePath);
     assertArchivePrivacy(entries,topLevelName);
@@ -795,6 +831,7 @@ module.exports = { buildOfflineCandidate,
   parseArgs,
   shouldCopyProgram,
   shouldCopySourceProgram,
+  verifySourceFixtureBytes,
   shouldCopyRuntimeProgram,
   shouldCopyUpdater,
   assertUpdaterSourceClean,

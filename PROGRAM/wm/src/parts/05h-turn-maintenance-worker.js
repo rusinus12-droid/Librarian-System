@@ -889,12 +889,17 @@
                                     IntegratedAnalysisJournal.loadState(extensionLore);
                                     if (!(await IntegratedAnalysisJournal.setExtensionOutcome(extensionLore, committedExtensionToken, 'waiting', extensions.reason, IntegratedAnalysisJournal.extensionAttempted(committedExtensionToken)))) throw Error('extension_receipt_changed');
                                 } else {
-                                    (await UserDlcCore.ingestAutomaticBundle(extensions.worldAdditional?.extensionProposal, context));
+                                    const automatic = (await UserDlcCore.ingestAutomaticBundle(extensions.worldAdditional?.extensionProposal, context));
                                     (await WorldAdditionalCore.ingestMaintenance?.(extensions.worldAdditional, '', context, maintenanceConfig));
                                     const interpreted = (await UserDlcCore.applyTrackerUpdates?.(extensions.userDlcTrackerUpdates, context));
                                     if (interpreted && interpreted.evaluated < (extensions.userDlcTrackerUpdates || []).length) { extensions.skipped = true; extensions.reason = 'tracker_result_evidence_rejected'; }
                                     await WorldAdditionalCore.saveState?.(extensionLore);
-                                    await UserDlcCore.saveState?.(extensionLore);
+                                    // An unchanged absent DLC owner must stay absent. Existing owners
+                                    // and every actual DLC mutation still use the same durable save.
+                                    if (candidateLifecycle.changed || calculations.changed || automatic.changed || interpreted?.changed
+                                        || LibraLoreConsolidator.unpack(extensionLore).some(entry => entry?.comment === 'lmai_user_dlc')) {
+                                        await UserDlcCore.saveState?.(extensionLore);
+                                    }
                                     const recorded = extensions.skipped
                                         ? (await IntegratedAnalysisJournal.setExtensionOutcome(extensionLore, committedExtensionToken, 'waiting', extensions.reason, IntegratedAnalysisJournal.extensionAttempted(committedExtensionToken)))
                                         : (await IntegratedAnalysisJournal.markExtensionApplied(extensionLore, committedExtensionToken));

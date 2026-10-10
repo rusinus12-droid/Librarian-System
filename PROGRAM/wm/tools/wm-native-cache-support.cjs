@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
-const root=path.resolve(__dirname,'..'),base=JSON.parse(fs.readFileSync(root+'/BASE-PINS.json')).base;
+const root=path.resolve(__dirname,'..'),base=require('./wm-historical-fixture-paths.cjs').immutableBaseRoot({wmRoot:root});
 const {runtime}=require(base+'/tools/libra_typed_recall_queue_test.cjs');
 const {instrumentRefreshes,request}=require(base+'/tools/libra_owned_hydration_hook_support.cjs');
 const dist=process.env.WM_VERSIONED_DIST||root+'/dist/LIBRA World Manager Full.js';

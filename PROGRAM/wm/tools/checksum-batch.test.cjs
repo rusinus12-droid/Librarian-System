@@ -109,7 +109,7 @@ test('batch clears synchronously on throw and before asynchronous continuation',
  f.reset();await x.batch(f.snapshot,async()=>{run();await Promise.resolve();assert.equal(f.r.corpus.adapters.world.eligibility(units[0],f.snapshot).eligible,true);});assert.equal(f.count(),2);
 });
 test('exact opaque consumer outputs match the unchanged repaired base',async()=>{
- const candidate=await fixture(4),base=await fixture(4,path.join(JSON.parse(fs.readFileSync(root+'/BASE-PINS.json')).base,'dist/LIBRA World Manager Full.js'));
+ const candidate=await fixture(4),base=await fixture(4,require('./wm-historical-fixture-paths.cjs').immutableBaseArtifact({wmRoot:root,profile:'source'}));
  const a=candidate.finalize(),b=base.finalize();assert.deepEqual(plain(a),plain(b));assert.equal(candidate.c.verified(a),base.c.verified(b));
 });
 module.exports={fixture,instrument,plain};

@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {fixture,put}=require('./fixtures/authority_server_fixture.cjs');
+const {currentFixture:fixture,put}=require('./fixtures/authority_server_fixture.cjs');
 test('retired_repository_refuses_mutation_before_publishing_intent',t=>{
  const f=fixture(t);f.activate();const repo=f.repositories.libra;repo.close();
  const before=f.readControl('SELECT COUNT(*) n FROM write_intents')[0].n;

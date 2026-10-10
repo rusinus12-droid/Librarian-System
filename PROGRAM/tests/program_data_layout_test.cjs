@@ -59,14 +59,15 @@ function main() {
   assert.ok(programFiles.some(file => /server[\\/]server\.cjs$/i.test(file)));
   assert.ok(programFiles.some(file => /plugins[\\/]LIBRA\.js$/i.test(file)));
   assert.equal(programFiles.some(file => /plugins[\\/]GRADIA\.js$/i.test(file)), true, 'GRADIA is the sixth packaged read-only consumer plugin.');
-  assert.equal(programFiles.filter(file => /plugins[\\/][^\\/]+\.js$/i.test(file)).length, 6, 'Exactly six active plugins are packaged.');
+  assert.equal(programFiles.filter(file => /plugins[\\/][^\\/]+\.js$/i.test(file)).length, 7, 'Exactly seven declared plugins are packaged.');
   const canonicalPluginNames = [
     'Flashback_Memory.js',
     'HAYAKU_Locator_Continuity.js',
     'LIBRA.js',
     'LIA_Persona_Linker.js',
     'RETRACE.js',
-    'GRADIA.js'
+    'GRADIA.js',
+    'LIBRA_World_Manager.js'
   ];
   assert.deepEqual(
     fs.readdirSync(path.join(programDir, 'plugins')).filter(name => /\.js$/i.test(name)).sort(),

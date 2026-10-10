@@ -156,7 +156,7 @@ const waitRoot=async()=>{for(let i=0;i<500;i++){if(await rootBoundary.ready())re
 (async()=>{
  try{
   currentChat.message=[{role:'user',chatId:'u1',data:'What happens?'},{role:'assistant',chatId:'a1',data:'Alice signed the agreement.'}];currentChat.messages=currentChat.message;
-  vm.runInContext(source,context,{filename:'Flashback-source-edit-runtime.js'});
+  await vm.runInContext(source,context,{filename:'Flashback-source-edit-runtime.js'});
   const api=await waitFor(()=>context.__FlashbackMemory);
   await api.saveSettings({...await api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false});
   const initial=await api.ingestLiveChatColdStart({scope:'current',canonical:true});
@@ -172,7 +172,8 @@ const waitRoot=async()=>{for(let i=0;i<500;i++){if(await rootBoundary.ready())re
   assert.equal((await api.applySourceEdits(ticket)).status,'blocked');
   const after=await api.inspectMemoryLedger(scope,{includeRecords:true});
   assert.ok(after.records.some(r=>r.text.includes('did not sign the agreement.')),'edited source is saved only after explicit apply');
-  assert.equal(api.getSourceEditSyncStatus().tasks[0].state,'applied');
+  assert.equal(typeof api.getSourceEditSyncStatus,'undefined','retired automatic source-edit task API stays absent');
+  const status=api.getReanalysisStatus();assert.equal(status.running,false);assert.equal(status.error,'');assert.equal(status.scopeKey,scope.scopeKey);assert.equal(status.lastResult.ok,true);assert.equal(JSON.stringify(status.lastResult),JSON.stringify(result),'public explicit reanalysis status reports the actual accepted result');
   assert.equal(currentChat.message[1].data,'Alice did not sign the agreement.','source not rewritten');
   const history=JSON.parse([...pluginStorage.values.entries()].find(([key])=>key.endsWith(':turn_worldline:v1'))?.[1]||'{}');assert.ok(history.retiredRecords.some(r=>r.text.includes('Alice signed')),'old source retained as inactive history');
   console.log(JSON.stringify({test:'source_edit_flashback_runtime',passed:4}));

@@ -13,7 +13,7 @@ async function runtime(shared, measurement = {}) {
   const store=shared?.store||new Map(), cache=shared?.cache||new Map();
   const state={calls:[],failSet:false,failCanonical:false,failChat:false,cacheFirst:false,blockDoc:false,blockQuery:false,pending:[],quota:Infinity};
   if(measurement.settings)store.set('LMAI_Config',JSON.stringify(measurement.settings));
-  let r; const replacers={};
+  let r; const replacers={}, unload=[];
   const storage={async getItem(k){measurement.io?.push({operation:'read',key:k});return state.cacheFirst&&cache.has(k)?cache.get(k):store.get(k)??null;},async setItem(k,v){
     measurement.io?.push({operation:'write',key:k});
     if(state.cacheFirst)cache.set(k,v);
@@ -26,7 +26,7 @@ async function runtime(shared, measurement = {}) {
     async getDatabase(){return measurement.admittedHost?{personas:[{id:'typed-persona-a',name:'Typed Alice',personaPrompt:'Alice is the active test persona.'},{id:'typed-persona-b',name:'Typed Bob',personaPrompt:'Bob is a separate test persona.'}],selectedPersona:0}:{personas:[]};},
     async addRisuReplacer(type,fn){replacers[type]=fn;},async removeRisuReplacer(){},async addRisuScriptHandler(){},async removeRisuScriptHandler(){},async requestPluginPermission(){return true;},
     async getCharacter(){return r?clone(r.char):null;},async getCharacterFromIndex(){return r?clone(r.char):null;},async getChatFromIndex(){return r?clone(r.chat):null;},
-    async getCurrentCharacterIndex(){return 0;},async getCurrentChatIndex(){return 0;},async registerSetting(){},async registerButton(){},async onUnload(){},
+    async getCurrentCharacterIndex(){return 0;},async getCurrentChatIndex(){return 0;},async registerSetting(){},async registerButton(){},async onUnload(callback){unload.push(callback);},
     async setChatToIndex(a,b,c){if(state.failChat)return false;Object.assign(r.chat,clone(c));return true;},async setCharacter(c){if(state.failChat)return false;Object.assign(r.char,clone(c));return true;},
     async nativeFetch(url,init){const body=JSON.parse(init.body), role=String(body.input).startsWith('QUERY:')?'query':'document';state.calls.push({role,url,body:clone(body),headers:clone(init.headers),at:clock.now});
       const answer=()=>({ok:true,status:200,text:async()=>JSON.stringify({embeddings:[[1,.25,-.5]]})});
@@ -50,7 +50,7 @@ async function runtime(shared, measurement = {}) {
   const advance=async ms=>{clock.now+=ms;for(let i=0;i<12;i++){const ready=[...clock.timers].filter(([,t])=>t.at<=clock.now);for(const [id,t]of ready){clock.timers.delete(id);t.fn();}await flush();if(![...clock.timers.values()].some(t=>t.at<=clock.now))break;}};
   const snap=(options={})=>corpus.capture(r.char,r.chat,{currentTurn:10,...options});
   const snapshot=snap(), all=corpus.enumerate(snapshot).filter(u=>corpus.adapters[u.family].eligibility(u,snapshot).eligible);
-  return {...r,corpus,index,jobs,engine,persist,state,storage,store,cache,clock,advance,snapshot,all,snap,signed,entry,host,shared:{store,cache,lore:clone(r.chat.localLore)}};
+  return {...r,close:async()=>{try{for(const callback of unload.splice(0))await callback();}finally{clock.timers.clear();await r.close();}},corpus,index,jobs,engine,persist,state,storage,store,cache,clock,advance,snapshot,all,snap,signed,entry,host,shared:{store,cache,lore:clone(r.chat.localLore)}};
 }
 const results=[];
 async function check(name,fn){try{await fn();results.push({name,ok:true});console.log('PASS '+name);}catch(e){results.push({name,ok:false,error:e.stack});console.error('FAIL '+name+' '+e.message);}}

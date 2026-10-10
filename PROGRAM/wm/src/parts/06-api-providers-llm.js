@@ -2448,7 +2448,10 @@
                 if (signal?.aborted || Date.now() >= deadline) return { ok: false, reason: signal?.aborted ? 'cancelled' : 'deadline', uncertain: true };
                 return { ok: true, vector: Object.freeze([...vector]), provider: SemanticRecallIndex.providerDescriptor(p),
                     sourceHash: SemanticRecallIndex.sourceHash(text), mode, dimension: p.dimension };
-            } catch (error) { return { ok: false, reason: String(error?.message || 'embedding_failed'), attempted, uncertain: attempted }; }
+            } catch (error) {
+                const reason = error?.code === 'TIMEOUT' && Number.isFinite(deadline) && Date.now() >= deadline ? 'deadline' : String(error?.message || 'embedding_failed');
+                return { ok: false, reason, attempted, uncertain: attempted };
+            }
         }
     });
 

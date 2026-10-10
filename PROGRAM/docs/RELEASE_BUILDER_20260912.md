@@ -8,7 +8,7 @@ Release Builder는 하나의 공통 엔진에서 두 종류의 패키지를 만�
 - 프로필: `release`
 - GitHub Release의 공식 updater asset이다.
 - `PROGRAM/tests`, 개발 이력 문서, 회귀 runner, Release Builder 자체와 개발 전용 도구는 포함하지 않는다.
-- 서버 런타임, 5개 RisuAI 플러그인 JS, 필요한 SDK/도구, 관리도구, clean DATA, UPDATER만 runtime allowlist로 포함한다.
+- 서버 런타임, 7개 RisuAI 플러그인 JS, 필요한 SDK/도구, 관리도구, clean DATA, UPDATER만 runtime allowlist로 포함한다.
 - `update-manifest.json`의 `assetName`은 항상 이 파일을 가리킨다.
 
 실행:
@@ -25,6 +25,9 @@ Windows에서는 `배포본_만들기.bat`, POSIX에서는 `배포본_만들기.
 - 프로필: `source`
 - tests/docs/개발 도구를 포함한 개발자용 전체 소스다.
 - clean DATA만 포함하며 사용자 DB, 인증 토큰, 로그는 포함하지 않는다.
+- 예외는 소스 검증에 필요한 합성 golden fixture 5개(SQLite 및 sidecar)뿐이다. 정확한 경로·크기·SHA-256을 원본 검사, staging 직후, ZIP 직전에 확인하며 임의 DB는 허용하지 않는다.
+- 현재 WM 계약·inventory 문서 13개를 명시적 source allowlist로 포함한다. 이 fixture와 문서는 runtime 배포본에 포함하지 않는다.
+- `offline_candidate` 소스 패키지는 오프라인 검증용 스냅샷이다. 전체 release gate 또는 실제 RisuAI·Windows 검증 완료를 뜻하지 않는다.
 - 파일명과 ZIP root 모두 `-Source`가 붙으므로 updater의 공식 asset parser가 거부한다.
 
 실행:

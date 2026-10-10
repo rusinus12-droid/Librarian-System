@@ -8,10 +8,15 @@ try {
   const source=path.resolve(__dirname,'..'),packageSource=path.resolve(source,'..'),packageTarget=path.join(root,'package'),target=path.join(packageTarget,'PROGRAM'),out=path.join(root,'output');
   fs.cpSync(source,target,{recursive:true,filter:file=>fs.statSync(file).isDirectory()||shouldCopyProgram(path.relative(source,file))});
   fs.cpSync(path.join(packageSource,'UPDATER'),path.join(packageTarget,'UPDATER'),{recursive:true});
-  fs.cpSync(path.join(packageSource,'DATA'),path.join(packageTarget,'DATA'),{recursive:true});
+  // Owned synthetic DATA is sufficient to prove the builder never mutates it.
+  const syntheticData=path.join(packageTarget,'DATA');
+  fs.mkdirSync(path.join(syntheticData,'stores','libra'),{recursive:true});
+  fs.mkdirSync(path.join(syntheticData,'config'),{recursive:true});
+  fs.writeFileSync(path.join(syntheticData,'stores','libra','owned-sentinel.bin'),Buffer.from([0,1,127,255]));
+  fs.writeFileSync(path.join(syntheticData,'config','fixture.json'),JSON.stringify({fixture:'synthetic-only',preserve:true}));
   fs.copyFileSync(path.join(packageSource,'SHA256SUMS.txt'),path.join(packageTarget,'SHA256SUMS.txt'));
   fs.copyFileSync(path.resolve(source,'../0_설치_안내.txt'),path.join(packageTarget,'0_설치_안내.txt'));
-  const dataSnapshot=JSON.stringify(fs.readdirSync(path.join(packageTarget,'DATA'),{recursive:true,withFileTypes:true}).map(entry=>[entry.parentPath||entry.path||'',entry.name,entry.isDirectory()?'d':'f']).sort());
+  const dataSnapshot=JSON.stringify(fs.readdirSync(path.join(packageTarget,'DATA'),{recursive:true,withFileTypes:true}).map(entry=>[entry.parentPath||entry.path||'',entry.name,entry.isDirectory()?'d':require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(entry.parentPath||entry.path,entry.name))).digest('hex')]).sort());
   for(const name of ['업데이트.bat','업데이트.command','업데이트.sh'])fs.copyFileSync(path.join(packageSource,name),path.join(packageTarget,name));
   const original=fs.readFileSync(path.resolve(source,'../0_설치_안내.txt'),'utf8');
   const malformed=original.replace(/^- LIBRA \d+\.\d+\.\d+\r?$/m,'missing LIBRA inventory');
@@ -44,7 +49,7 @@ try {
   assert.equal(report.phase,'source_preflight');assert.equal(report.artifactProduced,false);assert.match(report.error,/release_guide_inventory_invalid:LIBRA/);
   assert.ok(elapsedMs<30000,`malformed inventory rejects before smoke with a bounded preflight (${elapsedMs}ms)`);
   assert.equal(fs.readFileSync(guide,'utf8'),malformed,'builder must not repair source guides');
-  const dataAfter=JSON.stringify(fs.readdirSync(path.join(packageTarget,'DATA'),{recursive:true,withFileTypes:true}).map(entry=>[entry.parentPath||entry.path||'',entry.name,entry.isDirectory()?'d':'f']).sort());
+  const dataAfter=JSON.stringify(fs.readdirSync(path.join(packageTarget,'DATA'),{recursive:true,withFileTypes:true}).map(entry=>[entry.parentPath||entry.path||'',entry.name,entry.isDirectory()?'d':require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(entry.parentPath||entry.path,entry.name))).digest('hex')]).sort());
   assert.equal(dataAfter,dataSnapshot,'release smoke must not mutate source DATA');
   console.log('distribution_builder_failure_runtime_test: PASS (real builder rejects malformed inventory, retains failure report, removes staging, produces no ZIP, preserves source DATA)');
 }finally{

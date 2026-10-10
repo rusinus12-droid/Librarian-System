@@ -4,6 +4,8 @@ const { test } = require('node:test');
 const { createArchiveOwnerFixture, canonicalNonVector, canonicalIdentity, plain, parse, syntheticResponse }
   = require('./fixtures/archive_owner_fixture.cjs');
 
+const {establishExplicitLocalRoute}=require('./fixtures/flashback_explicit_route_fixture.cjs');
+
 const counts = preview => preview.counts;
 const registry = manifest => typeof manifest.embeddingAttemptRegistry === 'string'
   ? JSON.parse(manifest.embeddingAttemptRegistry) : manifest.embeddingAttemptRegistry;
@@ -340,6 +342,7 @@ for (const placement of ['owner', 'ancestor']) {
   test(`server-only ${placement} route refuses without migration, fallback or credential reconciliation`, async () => {
     const f = await createArchiveOwnerFixture();
     try {
+      await establishExplicitLocalRoute(f, f.scope); // Only this route-mutation scenario needs persisted authority.
       const key = [...f.pluginStorage.values.keys()].find(item => item.includes('scope_routes_v1__:flashback'));
       assert(key, 'route witness exists');
       const routes = parse(f.pluginStorage.values.get(key));

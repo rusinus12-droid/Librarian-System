@@ -16,7 +16,14 @@ test('registered successful settings reset keeps dual recall available now and a
     assert(f.w.document.body.textContent.includes('설정 초기화됨'));
     assert.equal(JSON.parse(f.store.get('LMAI_Config')).dualRecallMode, 'dual');
     assert(f.api.TypedRecallRollout.begin(), 'successful reset retains an available typed rollout');
-    assert.match(f.overlay.querySelector('#sdual-readiness').textContent, /Mode dual; semantic configured false; semantic ready false/);
+    const readiness=f.api.TypedRecallRollout.inspect().readiness;
+    assert.equal(readiness.semanticConfigured,false);
+    assert.equal(readiness.semanticReady,false);
+    const readinessText=f.overlay.querySelector('#sdual-readiness').textContent;
+    assert.match(readinessText,/연결 설정 확인 필요/);
+    assert.match(readinessText,/뜻 검색 준비 미확인/);
+    assert.match(readinessText,/현재 검색 경로: dual/);
+    assert.match(readinessText,/연결 테스트 성공만으로 검색 색인 준비를 보장하지 않습니다/);
     await f.callbacks.beforeRequest({ messages: [{ role: 'user', content: 'recall current context' }], maxContextTokens: 128000 }, 'model');
     assert.equal(f.api.TypedRecallRollout.inspect().last.mode, 'dual');
     fresh = await loadGui({ store: f.store });

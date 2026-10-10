@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const { createMemorySuiteServer } = require('../server/server.cjs');
 const { digestJson } = require('../server/compute/contracts.cjs');
 
-const fileDigest = filePath => crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+const { repositoryDigest: fileDigest } = require('./fixtures/compute_product_load_fixture.cjs'); // Include exact missing retired SQLite/WAL state.
 
 async function jsonFetch(url, init = {}) {
   const response = await fetch(url, init);

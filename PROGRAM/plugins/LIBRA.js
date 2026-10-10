@@ -9324,12 +9324,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const withOwnerIO = async (space, key, factory) => {
     if (!matchesRoute(space, String(key || '')) && key !== '') return await factory();
+    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     await loadPersistedSyncJob();
     if(state.syncJob.current?.kind==='global_mode'&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
     // Preparation still uses the source store: an admitted operation may call
     // the proxy again before it finishes. Freeze I/O only after that work drains.
     if (modeConfigurationFrozen || (storageTransition && storageTransition.phase !== 'draining')) throw transitionBusyError();
-    return await withOwnerOperation({kind:'owner_io',space,key:String(key || '')}, async () => {
     const work = Promise.resolve().then(factory);
     ownerIOWork.add(work);
     try { return await work; } finally { ownerIOWork.delete(work); }
@@ -11304,7 +11304,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!Number.isInteger(normalizedNext) || normalizedNext <= cursor || normalizedNext > list.length) throw new Error('memory_suite_manager_get_many_pagination_cursor_invalid');
       cursor = normalizedNext;
     }
-    if(requestOptions.strictInventory===true&&(oversizedKeys.size||list.some(key=>!Object.hasOwn(values,key))))throw globalModeError('remote_values_incomplete_or_oversized');
     for (const key of oversizedKeys) defineStorageRecordValue(values, key, await managerServerGet(ns, space, key));
     return { values, pages, oversizedKeys: [...oversizedKeys] };
   };
@@ -11321,12 +11320,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await managerRequest('GET', `/v1/kv/keys?namespace=${encodeURIComponent(ns)}&space=${encodeURIComponent(normalizedSpace)}&prefix=${encodeURIComponent(normalizedPrefix)}&paged=1&limit=${keyPageSize}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
       pages += 1;
       const result = payload?.result || { keys: [], tombstones: [], records: [] };
-      if(requestOptions.strictInventory===true){
-        if(!Array.isArray(result.keys)||!Array.isArray(result.tombstones)||!Array.isArray(result.records))throw globalModeError('remote_keys_incomplete');
-        const pageKeys=[...result.keys,...result.tombstones];
-        if(new Set(pageKeys).size!==pageKeys.length||pageKeys.some(key=>typeof key!=='string'||seenKeys.has(key)||seenTombstones.has(key)))throw globalModeError('remote_keys_duplicate');
-        if(result.records.length!==pageKeys.length||new Set(result.records.map(row=>row.key)).size!==pageKeys.length||result.records.some(row=>!pageKeys.includes(row.key)||!Number.isSafeInteger(row.revision)||!row.digest))throw globalModeError('remote_metadata_incomplete');
-      }
       for (const key of Array.isArray(result.keys) ? result.keys : []) { const value = String(key); if (!seenKeys.has(value)) { seenKeys.add(value); keys.push(value); } }
       for (const key of Array.isArray(result.tombstones) ? result.tombstones : []) { const value = String(key); if (!seenTombstones.has(value)) { seenTombstones.add(value); tombstones.push(value); } }
       for (const row of Array.isArray(result.records) ? result.records : []) { const identity = `${String(row?.space || normalizedSpace)}\u0000${String(row?.key || '')}`; if (!seenRecords.has(identity)) { seenRecords.add(identity); records.push(row); } }
@@ -38932,6 +38925,7 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {
+      const preparationGuard = options.receiptPreparationGuard;
       const reason = string(options.reason || options.mode || 'scan');
       const historical = options.allowHistoricalBackfill === true
         || ['manual_cold_start', 'manual_cold_start_retry', 'historical_reanalysis'].includes(reason.toLowerCase());
@@ -38973,7 +38967,9 @@ function createLibraReadonlySourceContext(owner) {
       for (const pair of candidates) {
         let recoveryBoundary = null;
         try {
+          await preparationGuard?.();
           await loadReceiptRecoveryJobs(context.scope);
+          await preparationGuard?.();
           const existing = state.receiptRecoveryJobs.get('receipt_'+digest(receiptRecoveryIdentity(context,pair)));
           if(existing && existing.status !== 'verified'){
             result.pending += 1;
@@ -38982,12 +38978,14 @@ function createLibraReadonlySourceContext(owner) {
             continue;
           }
           recoveryBoundary = await captureReceiptRecoveryBoundary(context,pair);
-          const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', { deferInventory: true });
+          const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', { deferInventory: true, beforeWrite: preparationGuard });
+          await preparationGuard?.();
           result.verified += 1;
           if (persisted.captureStatus !== 'verified') result.capturePending += 1;
           inventoryTurns.push(Number(pair.turn));
           microTurns.push({ turn: Number(pair.turn), revisionId: persisted.revisionId });
         } catch (error) {
+          if (error?.receiptPreparationRejected === true) throw error;
           noteCompletedTurnReceiptFailure(context,pair,recoveryBoundary,error);
           result.pending += 1;
           result.gaps.push({ turn: Number(pair?.turn || 0), reason: compact(error?.message || error, 300) });
@@ -38995,19 +38993,63 @@ function createLibraReadonlySourceContext(owner) {
       }
       await Promise.all(inventoryTurns.map(async turn => {
         try {
+          await preparationGuard?.();
           const saved = await persistKnownPersonSpanInventory(context.scope,
             hostWorldlineIdForScope(context.scope), 0, turn);
           if (saved.status !== 'verified') result.inventoryPending += 1;
         } catch (error) {
+          if (error?.receiptPreparationRejected === true) throw error;
           result.inventoryPending += 1;
           result.gaps.push({ turn, reason: `person_inventory:${compact(error?.message || error, 300)}` });
         }
       }));
+      await preparationGuard?.();
       for (const item of microTurns) {
         void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
           0, item.turn, item.revisionId);
       }
       state.lastSourceReceiptReconcile = result;
+      return result;
+    };
+    // The normal scan prepares only a bounded tail. An admitted older batch
+    // needs its own five original receipts before the read-only canonical gate.
+    const prepareSelectedCompletedTurnReceipts = async (context, pairs, startTurn, options = {}) => {
+      const batch = batchForStart(pairs, startTurn);
+      unifiedAssert(batch.length === BATCH_SIZE && (startTurn - 1) % BATCH_SIZE === 0,
+        'SELECTED_RECEIPT_BATCH_INVALID');
+      const expectedDigest = sourceDigest(batch);
+      const expectedRevisions = batch.map(pair => completedTurnRevisionId(pair)).join('|');
+      let freshContext = context, freshBatch = batch;
+      const validate = async () => {
+        try {
+          if (state.disposed || options.signal?.aborted || state.canonicalJob?.cancelRequested === true)
+            throw new DOMException('Canonical job cancelled.', 'AbortError');
+          await options.sourceEditValidate?.();
+          const current = await verifyBatchStillCurrent(context, startTurn, expectedDigest);
+          unifiedAssert(current.ok && sameSnapshotScope(current.liveContext?.scope, context.scope)
+            && hostWorldlineIdForScope(current.liveContext.scope) === hostWorldlineIdForScope(context.scope),
+            'SELECTED_RECEIPT_SOURCE_CHANGED');
+          const selected = batchForStart(buildPairs(current.liveContext.chat, context.scope.scopeKey), startTurn);
+          unifiedAssert(selected.length === BATCH_SIZE
+            && selected.map(pair => completedTurnRevisionId(pair)).join('|') === expectedRevisions,
+            'SELECTED_RECEIPT_IDENTITY_CHANGED');
+          freshContext = current.liveContext;
+          freshBatch = selected;
+          if (state.disposed || options.signal?.aborted || state.canonicalJob?.cancelRequested === true)
+            throw new DOMException('Canonical job cancelled.', 'AbortError');
+        } catch (error) { error.receiptPreparationRejected = true; throw error; }
+      };
+      await validate();
+      if (options.allowHistoricalBackfill !== true) {
+        await new Promise(resolve => setTimeout(resolve, clamp(options.sourceStabilityDelay, 120, 2000, 250)));
+        await validate();
+      }
+      // Exact selection was settled above. Passing only these five pairs keeps
+      // reconciliation bounded without its live-tail reselection changing range.
+      const result = await reconcileCompletedTurnReceipts(freshContext, freshBatch, {
+        ...options, allowHistoricalBackfill: true, receiptPreparationGuard: validate
+      });
+      await validate();
       return result;
     };
     const transcript = batch => batch.map(pair => [
@@ -54636,7 +54678,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         if (state.deletingScopes.has(context.scope.scopeKey)) return { ok: true, skipped: true, reason: 'scope_deleting' };
         const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
-        await reconcileCompletedTurnReceipts(context, pairs, options);
+        const receiptPreparation = await reconcileCompletedTurnReceipts(context, pairs, options);
         let manifest = await loadManifest(context.scope, pairs.length);
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         manifest = await migrateTerminalInFlightFailure(context, manifest);
@@ -54825,6 +54867,22 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             }
           }
           try {
+            // Live settling can move the tail after a benign later append.
+            // Use the actual prepared window rather than the scan's old length.
+            const receiptTailStart = receiptPreparation.olderUnexamined + 1;
+            const receiptTailEnd = receiptPreparation.olderUnexamined + receiptPreparation.examined;
+            if (startTurn < receiptTailStart || startTurn + BATCH_SIZE - 1 > receiptTailEnd) {
+              await prepareSelectedCompletedTurnReceipts(context, pairs, startTurn, {
+                ...options, allowHistoricalBackfill
+              });
+              await options.sourceEditValidate?.();
+              if (selection) {
+                const selectedCurrent = await verifyBatchStillCurrent(context, startTurn, sourceHash);
+                if (!selectedCurrent.ok) throw new Error('selected_batch_source_changed:' + selectedCurrent.reason);
+              }
+            }
+            if (options.signal?.aborted || state.canonicalJob?.cancelRequested === true)
+              throw new DOMException('Canonical job cancelled.', 'AbortError');
             cancellationBatchStarted = true;
             const committedMemory = await processBatch(context, manifest, pairs, startTurn, { ...options, mode: scanMode,
               onCancellationManifestCleanup: result => { cancellationManifestCleanup = result; } });
@@ -62572,12 +62630,17 @@ ${string(queryBundle?.sceneText || '')}`;
       return attachUnifiedResponseContext(packet,{scope:context.scope,manifest:view.manifest,view,boundary,route:'read_only'});
     };
 
+    let latestRecallPublicationOwner = null;
     const beforeRequest = async (messages, type) => {
+      let requestOwner = null;
+      let requestScope = null;
       let guard = null;
       let queryBundle = null;
       let liveTailAttempt = null;
       try {
         if (!isMainNarrativeRequest(type)) return messages;
+        requestOwner = {};
+        latestRecallPublicationOwner = requestOwner;
         if (state.captureBackend === LIBRA_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && state.captureBackendHealthPending) {
           state.captureBackendHealthChecks += 1;
           const health = clone(state.captureBackendHealthPending);
@@ -62613,6 +62676,10 @@ ${string(queryBundle?.sceneText || '')}`;
           () => resolveContext(),
           1800
         );
+        requestScope = clone(asObject(context.scope));
+        // Context resolution may finish after a newer request has published.
+        // End this superseded recall before clearing or publishing shared state.
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         const previousRequestScope = state.lastRequestScope ? clone(state.lastRequestScope) : null;
         const completedPairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
         clearStaleMemoryInjectionDebug(context.scope, 'before_request_scope_changed');
@@ -63027,7 +63094,12 @@ ${string(queryBundle?.sceneText || '')}`;
         scheduleGuiTraceRefresh();
         return finalMessages;
       } catch (error) {
-
+        // A superseded asynchronous failure must not erase a newer request's
+        // delivery diagnostics, including when both requests share a scope.
+        if (requestOwner !== latestRecallPublicationOwner) {
+          warn('LIBRA superseded recall failed open', error);
+          return messages;
+        }
 
         const failedPipelineRequestId = Math.max(0, Number(error?.pipelineWorkRequestId) || 0);
 
@@ -63038,8 +63110,8 @@ ${string(queryBundle?.sceneText || '')}`;
         const failure = {
           schema: 'libra.current_turn_recall_delivery.v1',
           at: Date.now(),
-          scope: clone(asObject(state.lastRequestScope?.scope)),
-          scopeKey: string(state.lastRequestScope?.scope?.scopeKey || ''),
+          scope: clone(asObject(requestScope)),
+          scopeKey: string(requestScope?.scopeKey || ''),
           queryText: compact(queryBundle?.currentText || '', 6000),
           queryType: string(queryBundle?.queryType || ''),
           inputSource: string(queryBundle?.inputSource || state.lastRecallInputResolution?.source || 'none'),

@@ -63,7 +63,7 @@ function snapshotFiles(root) {
  const result={}; const visit=p=>{for(const e of fs.readdirSync(p,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){const full=path.join(p,e.name); if(e.isDirectory())visit(full);else result[path.relative(root,full)]=fs.readFileSync(full).toString('base64');}}; visit(root);return result;
 }
 function spawnChild(f,config) {
- const child=spawn(process.execPath,[path.join(__dirname,'authority_process_driver.cjs'),JSON.stringify({dataDir:f.dataDir,...config})],{env:{LANG:'C',TZ:'UTC',NODE_OPTIONS:process.env.NODE_OPTIONS,LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT},stdio:['ignore','pipe','pipe','ipc']});
+ const child=spawn(process.execPath,[path.join(__dirname,'authority_process_driver.cjs'),JSON.stringify({dataDir:f.dataDir,...config})],{env:{...process.env,LANG:'C',TZ:'UTC',NODE_OPTIONS:process.env.NODE_OPTIONS,LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT},stdio:['ignore','pipe','pipe','ipc']});
  const events=[],waiters=[];let stderr='',stdout='';child.stderr.on('data',b=>stderr=(stderr+b).slice(-8192));child.stdout.on('data',b=>stdout=(stdout+b).slice(-8192));
  child.on('message',event=>{events.push(event);for(const w of [...waiters])if(w.name===event.event){waiters.splice(waiters.indexOf(w),1);clearTimeout(w.timer);w.resolve(event);}});
  const done=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>{for(const w of waiters){clearTimeout(w.timer);w.reject(new Error('child ended before '+w.name+': '+code+'/'+signal+' '+stderr));}resolve({code,signal,stderr,stdout,events});});});

@@ -36,7 +36,7 @@ test('private_rollback_failure_close_success_remains_recoverable',t=>{
 });
 test('public_close_failure_preserves_fatal_exit70',async t=>{
  const f=fixture(t);f.activate();const {spawn}=require('node:child_process'),path=require('node:path');
- const child=spawn(process.execPath,[path.join(__dirname,'fixtures/authority_owner_retirement_driver.cjs'),JSON.stringify({dataDir:f.dataDir})],{env:{LANG:'C',TZ:'UTC',NODE_OPTIONS:process.env.NODE_OPTIONS,LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);
+ const child=spawn(process.execPath,[path.join(__dirname,'fixtures/authority_owner_retirement_driver.cjs'),JSON.stringify({dataDir:f.dataDir})],{env:{...process.env,LANG:'C',TZ:'UTC',NODE_OPTIONS:process.env.NODE_OPTIONS,LIBRA_NETWORK_AUDIT:process.env.LIBRA_NETWORK_AUDIT},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);
  const done=new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>resolve({code,signal}));});f.children.add({child,done});const result=await done;
  assert.equal(result.code,70);assert.equal(result.signal,null);assert.equal(stdout,'');assert.equal(stderr,'AUTHORITY_UNSAFE_TRANSACTION_END\n');
 });

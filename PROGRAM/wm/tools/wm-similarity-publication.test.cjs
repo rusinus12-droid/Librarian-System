@@ -1,8 +1,10 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {loadGui,cfg,plain}=require('./wm-similarity-cache-support.cjs');
+const {loadGui:loadGuiBase,cfg,plain}=require('./wm-similarity-cache-support.cjs');
+// Portable imports preserve local connection admission; seed an already configured synthetic fixture.
+const loadGui=options=>loadGuiBase({store:new Map([['LMAI_Config',JSON.stringify({embed:cfg()})]]),...options});
 const pair=['Alice remembers the silver pendant promise at the market','Alice remembers the silver pendant promise after meeting Bob at the tower'];
-async function imported(f,settings){await f.overlay.querySelector('#settings-file-input').onchange({target:{files:[{name:'synthetic.json',text:async()=>JSON.stringify(settings)}]}});}
+const {importSettings:imported,decodePhysical}=require('./libra_portable_settings_fixture.cjs');
 async function waitFor(fn){const end=Date.now()+5000;while(!fn()){assert(Date.now()<end,'registered GUI publication settled');await new Promise(r=>setTimeout(r,10));}}
 async function reset(f){const p=f.overlay.querySelector('#btn-reset-settings').onclick();const modal=f.w.document.querySelector('[data-libra-dialog="true"]');assert(modal);[...modal.querySelectorAll('button')].find(n=>n.textContent==='확인').click();await p;}
 for(const kind of ['manual save','autosave','import','reset'])test('registered '+kind+' config ABA retires pending actual similarity score',async()=>{
@@ -10,8 +12,15 @@ for(const kind of ['manual save','autosave','import','reset'])test('registered '
  const f=await loadGui({args:{embedding_enabled:''},nativeFetch:async()=>{calls++;started();await gate;return {ok:true,status:200,text:async()=>JSON.stringify({embeddings:[[1,.25,-.5]]})};}});
  try{
   await imported(f,{embed:cfg()});const identity=f.m.CONFIG,descriptor=Object.getOwnPropertyDescriptor(identity,'embed');const pending=f.a.calcSimilarity(...pair),cache=f.a.getSimCache();await ready;
-  if(kind==='reset'){await reset(f);await imported(f,{embed:cfg()});}
-  else if(kind==='import'){await imported(f,{embed:cfg({enabled:false})});await imported(f,{embed:cfg()});}
+  if(kind==='reset'){
+   await reset(f);
+   // Reset selects the current provider defaults. Restore the synthetic connection through
+   // the registered Save path; portable import correctly refuses a provider collision.
+   const expected=cfg();for(const [id,value] of [['#sep',expected.provider],['#seu',expected.url],['#sem',expected.model],['#sek',expected.key||'']])f.overlay.querySelector(id).value=value;
+   f.overlay.querySelector('#seenabled').checked=true;f.overlay.querySelector('#btn-save-settings').onclick();
+   await waitFor(()=>f.overlay.querySelector('#settings-auto-save-status').dataset.state==='saved'&&Object.entries(expected).every(([key,value])=>f.m.CONFIG.embed[key]===value));
+  }
+  else if(kind==='import'){await imported(f,{embed:cfg({model:'temporary-synthetic-model'})});await imported(f,{embed:cfg()});}
   else for(const value of [false,true]){
    const input=f.overlay.querySelector('#seenabled');input.checked=value;
    if(kind==='manual save')f.overlay.querySelector('#btn-save-settings').onclick();else input.dispatchEvent(new f.w.Event('change',{bubbles:true}));
@@ -21,15 +30,17 @@ for(const kind of ['manual save','autosave','import','reset'])test('registered '
   const after=Object.getOwnPropertyDescriptor(identity,'embed');assert.equal(after.get,descriptor.get);assert.equal(after.set,descriptor.set);assert.equal(calls,1,'existing stale embedding behavior unchanged');
  }finally{finish();f.close();}
 });
-test('registered weight-only import ABA is observed even while embedding identity is unchanged',async()=>{
- let started,finish;const ready=new Promise(r=>started=r),gate=new Promise(r=>finish=r);let calls=0;
- const f=await loadGui({args:{embedding_enabled:''},nativeFetch:async()=>{calls++;started();await gate;return {ok:true,status:200,text:async()=>JSON.stringify({embeddings:[[1,.25,-.5]]})};}});
+test('closed portable settings exclude scoring weights and reject injected weight fields without publication',async()=>{
+ const f=await loadGui();
  try{
-  await imported(f,{embed:cfg()});const initial=plain(f.m.CONFIG.scoringWeights);const pending=f.a.calcSimilarity(...pair),cache=f.a.getSimCache();await ready;
-  await imported(f,{embed:cfg(),scoringWeights:{...initial,word:initial.word+.05}});assert.notEqual(f.m.CONFIG.scoringWeights.word,initial.word);
-  await imported(f,{embed:cfg(),scoringWeights:initial});assert.deepEqual(plain(f.m.CONFIG.scoringWeights),initial);
-  finish();assert.equal(typeof await pending,'number');assert.equal(cache.stats.size,0);assert.equal(calls,2,'unchanged existing detailed scorer path, no retry');
- }finally{finish();f.close();}
+  const initial=plain(f.m.CONFIG.scoringWeights),envelope=f.w.LibraSettingsSchema.buildPublicExport({...decodePhysical(f.store),scoringWeights:{...initial,word:initial.word+.05}});
+  assert.equal(Object.hasOwn(envelope,'scoringWeights'),false);assert.equal(Object.hasOwn(envelope.settings,'scoringWeights'),false);
+  const before=JSON.stringify([...f.store]),writes=f.calls.writes.length,config=plain(f.m.CONFIG),publications=f.obs.publications.length,cache=f.a.getSimCache(),stats=plain(cache.stats);
+  envelope.settings.scoringWeights={...initial,word:initial.word+.05};const raw=JSON.stringify(envelope);
+  await f.overlay.querySelector('#settings-file-input').onchange({target:{files:[{name:'forbidden-scoring-field.json',size:Buffer.byteLength(raw),text:async()=>raw}]}});
+  assert.equal(f.overlay.querySelector('#settings-transfer-status').dataset.state,'rejected');assert.equal(f.overlay.querySelector('#btn-apply-settings-import').disabled,true);
+  assert.equal(JSON.stringify([...f.store]),before);assert.equal(f.calls.writes.length,writes);assert.deepEqual(plain(f.m.CONFIG),config);assert.equal(f.obs.publications.length,publications);assert.equal(f.a.getSimCache(),cache);assert.deepEqual(plain(cache.stats),stats);
+ }finally{f.close();}
 });
 test('unchanged publication and unrelated registered debug autosave preserve similarity hit',async()=>{
  let calls=0;const f=await loadGui({args:{embedding_enabled:''},nativeFetch:async()=>{calls++;return {ok:true,status:200,text:async()=>JSON.stringify({embeddings:[[1,.25,-.5]]})};}});

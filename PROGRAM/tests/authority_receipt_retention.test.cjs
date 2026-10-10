@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
-const { fixture, put, ownerApi, snapshotDurable } = require('./fixtures/authority_server_fixture.cjs');
+const { currentFixture: fixture, put, ownerApi, snapshotDurable } = require('./fixtures/authority_server_fixture.cjs');
 const { createAuthorityCoordinator } = require('../server/authority/coordinator.cjs');
 const C = require('../server/authority/contracts.cjs');
 const keyFor = (f, operationId) => ({ generation: f.control.readWitness().generation, namespace: 'libra', operationId });

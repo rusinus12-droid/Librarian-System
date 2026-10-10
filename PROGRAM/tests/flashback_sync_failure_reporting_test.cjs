@@ -17,6 +17,9 @@ const injected = source.replace(marker, marker + `
   try {
     const settings = { ...await f.api.loadSettings(), embeddingProvider:'hash', embeddingModel:'hash-v1', embeddingEnabled:true, autoEpisodeIndex:false };
     await f.api.saveSettings(settings);
+    // This no-sources test starts from an explicitly prepared empty canonical scope.
+    // Read-only inspection must not create the absent manifest itself.
+    await f.api._test.saveAllRecords([], settings, await f.api.resolveCurrentScope());
     await f.api.runMemoryMaintenance('sync');
     let logs = f.api.getActivityLog();
     const empty = logs.find(x => x.event === 'live_chat_sync_completed');
