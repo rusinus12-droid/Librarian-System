@@ -1200,10 +1200,15 @@
         const remove = async (charArg = null, chatArg = null, options = {}) => {
             const { char, chat } = args(charArg, chatArg);
             const scopeKey = scopeKeyFor(char, chat);
-            const pendingAdmission=await WmPendingAdmission.forChat(char,chat,'remove');if(!pendingAdmission.ok)return pendingAdmission;
-            if (VersionedCanonicalBridge.mode === 'authority') {
-                if (!VersionedCanonicalBridge.validateSource(scopeKey,options.expectedSource).ok) return {ok:false,reason:'authority_write_token_required'};
-                return withScopeWrite(scopeKey, async () => {
+            const isCurrent = () => scopeKeyFor(char, chat) === scopeKey;
+            // Reserve invocation order before asynchronous admission can yield.
+            return withScopeWrite(scopeKey, async () => {
+                if (!isCurrent()) return { ok: false, reason: 'stale_identity' };
+                const pendingAdmission = await WmPendingAdmission.forChat(char, chat, 'remove');
+                if (!pendingAdmission.ok) return pendingAdmission;
+                if (!isCurrent()) return { ok: false, reason: 'stale_identity' };
+                if (VersionedCanonicalBridge.mode === 'authority') {
+                    if (!VersionedCanonicalBridge.validateSource(scopeKey,options.expectedSource).ok) return {ok:false,reason:'authority_write_token_required'};
                     const before=await readVerified(scopeKey);
                     if (!before.ok || !VersionedCanonicalBridge.matches(options.expectedSource,before.authoritySource)) return {ok:false,reason:'authority_source_changed'};
                     const marker=validationSources.beginWrite(scopeKey);let committed;
@@ -1214,18 +1219,22 @@
                     if (!checked.ok) return {ok:false,reason:checked.reason,uncertain:true};
                     invalidateScopeWriters(scopeKey);validationSources.retire(scopeKey);shadow.set(scopeKey,[]);
                     return {ok:true,verified:true,scopeKey};
-                });
-            }
-            invalidateScopeWriters(scopeKey);
-            validationSources.retire(scopeKey);
-            return withScopeWrite(scopeKey, async () => {
+                }
+                invalidateScopeWriters(scopeKey);
+                validationSources.retire(scopeKey);
                 shadow.set(scopeKey, []);
                 const validationWrite = validationSources.beginWrite(scopeKey);
                 try { return await RisuCompat.pluginStorage.removeItem(storageKeyFor(scopeKey)); } catch (_) { return false; }
                 finally { validationSources.endWrite(validationWrite); }
             });
         };
-        const getShadowEntries = (scopeKey = '') => getShadow(scopeKey).map(entry => cloneData(entry));
+        // Entity fallback needs fresh entity rows, not cloned memory payloads.
+        // This is a projection of the existing view, never a cached authority.
+        const getShadowEntries = (scopeKey = '', entryComment = null) => (
+            typeof entryComment === 'string'
+                ? getShadow(scopeKey).filter(entry => entry?.comment === entryComment)
+                : getShadow(scopeKey)
+        ).map(cloneData);
         // 네이티브 브랜치 상속: 계보가 verified 면 자식 채팅이 부모 스코프의 데이터를
         // 물려받는다. 부모 원문이 실제로 공통 접두로 확인된 경우에만(verified) 한다 —
         // 그렇지 않으면 무관한 채팅의 기억이 섞인다.
@@ -2793,7 +2802,7 @@
                 } catch (_) { return ''; }
             })();
             let shadowEntries = [];
-            try { shadowEntries = LibraDataStorage.isHydrated(scopeKey) ? LibraDataStorage.getShadowEntries(scopeKey) : []; } catch (_) {}
+            try { shadowEntries = LibraDataStorage.isHydrated(scopeKey) ? LibraDataStorage.getShadowEntries(scopeKey, options?.shadowEntryComment) : []; } catch (_) {}
             if (shadowEntries.length === 0) return fromLore;
             const seen = new Set(fromLore.map(entry => String(entry?.key || '')));
             return [...fromLore, ...shadowEntries.filter(entry => !seen.has(String(entry?.key || '')))];

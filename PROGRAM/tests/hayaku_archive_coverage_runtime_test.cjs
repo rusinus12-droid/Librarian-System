@@ -2,8 +2,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {createHayakuRuntime,createStore,createValidPacket,hiddenPacketMessage,waitFor}=require('./fixtures/hayaku_runtime_harness.cjs');
 
-// Four distinct admitted facts are the existing frozen recipe's add/edit
-// requirements. Keeping all labels in tests must not put them in production.
+// Four distinct admitted facts remain authoritative across append and passive
+// edits. Current explicit-reanalysis policy requires adoption before A1 can
+// replace A0; it also forbids blacking out unrelated approved archive facts.
+// Keeping all labels in tests must not put them in production.
 const facts={A0:'Aurora vault contains amethyst calibration spindle BENCH_A0.',A1:'Aurora vault contains silver calibration spindle BENCH_A1.',B0:'Borealis shelf contains cobalt tuning prism BENCH_B0.',C0:'Cirrus case contains jade alignment ring BENCH_C0.',D1:'Dawn drawer contains garnet indexing pin BENCH_D1.'};
 const queries=['What does Aurora vault contain?','What does Borealis shelf contain?','What does Cirrus case contain?','What does Dawn drawer contain?','Which archive entries are established?'];
 const packet=(turn,key)=>{const p=createValidPacket({turn,summary:key?facts[key]:'Routine archive entry '+turn+' has been recorded.',subject:'Archivist',scene:'archive'});p.world.world_rules=[{id:'fact-'+turn,summary:p.meta.summary_memory.summary}];return p;};
@@ -25,7 +27,7 @@ async function observe(){
         assert.equal(JSON.stringify(messages),before,'recall cannot alter canonical transcript');
         if(query===queries[4]){
           const context=output.filter(row=>row.memo==='hayaku-runtime-context-v3').map(row=>String(row.content||'')).join('\n');
-          const expected=phase==='add'?['BENCH_A0','BENCH_B0','BENCH_C0','BENCH_D1']:['BENCH_A1','BENCH_B0','BENCH_C0','BENCH_D1'];
+          const expected=['BENCH_A0','BENCH_B0','BENCH_C0','BENCH_D1']; // Passive source edits do not adopt replacement canon.
           const debug=h.hayaku.lastDebug();
           results.push({phase,wallMs,stageMs:debug.lastBeforeRequest?.stages,context,expected,missing:expected.filter(marker=>!context.includes(marker)),delivery:debug.lastRecallDelivery,rows:debug.lastBeforeRequest?.viewerRecall?.rows||debug.lastViewerRecall?.rows||[]});
         }
@@ -43,7 +45,7 @@ for(const phase of ['add','edit'])test(phase+': all four established archive fac
   const result=observed.find(row=>row.phase===phase);
   assert.deepEqual(result.missing,[],'missing established facts: '+result.missing.join(', '));
   assert.ok(result.context.length>0);
-  if(phase==='edit')assert.equal(result.context.includes('BENCH_A0'),false,'edited old fact cannot survive delivery');
+  if(phase==='edit')assert.equal(result.context.includes('BENCH_A1'),false,'a passively pasted carrier cannot replace approved facts without explicit adoption');
 });
 
 const heldoutFacts=['Vesper alcove holds a porcelain compass.','Iona cabinet keeps a tungsten lens.','Ravel drawer protects a sapphire ratchet.','Sable case contains a linen spindle.'];

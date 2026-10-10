@@ -138,6 +138,15 @@ for(const replacement of [false,true])for(const correction of [false,true])test(
   x.f.context.__rawCowBeforeConsumer=async()=>{
    visited=true;
    if(correction){const key=x.f.context.__appendCost.scopeKeys.worldline(x.scope.scopeKey),proxy=bridge.createPluginStorageProxy(x.pluginStorage),history=JSON.parse(await proxy.getItem(key)),node=history.nodes.find(n=>n.status==='active');assert(node);node.status='orphaned';node.activeOrdinal=0;await bridge.withFlashbackWriter(key,()=>proxy.setItem(key,JSON.stringify(history)));}
+   // This startup-only baseline excludes the already-admitted request journal
+   // tail. Settle its exact promise once, without a new operation or timed wait.
+   // Refuse a newer request/tail rather than masking unrelated concurrency.
+   const probe=x.f.context.__authorityProbe,attempt=probe.requests.active,branch=attempt?.branch;
+   assert(attempt&&!attempt.cancelled,'the enclosing recall attempt is active');
+   const priorJournal=probe.Runtime.pendingCaptureJournalWrite;
+   if(priorJournal)await priorJournal;
+   assert.equal(probe.Runtime.pendingCaptureJournalWrite,null,'no later capture-journal tail is silently drained');
+   assert.equal(probe.requests.active,attempt);assert.equal(attempt.cancelled,false);assert.equal(attempt.branch,branch);
    before=rows();inStartup=true;
    try{result=await x.t.synchronizeFlashbackTurnWorldline(x.scope,live(x),x.cfg,{allowRetirement:false,forceReconcile:true,reason:'startup_restore_only'});}
    catch(error){result={error:error.code||error.message};}

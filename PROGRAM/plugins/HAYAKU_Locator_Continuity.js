@@ -51965,13 +51965,15 @@ const MemorySuiteHealthRecovery = (() => {
     if (ledger.enabled !== true) {
       return { durable: false, saved: false, bound: false, reason: ledger.reason || 'storage_unavailable' };
     }
+    const bindingSnapshot=hayakuCanonicalTopologySnapshot(candidate.snapshot,ledger,pending?.lineage?.targetPairIndex);
+    if(bindingSnapshot.canonicalIdentityUnresolved)return {durable:false,saved:false,bound:false,reason:'canonical_native_identity_unresolved'};
     // The normal monitor deliberately binds only the already captured sidecar.
     // At the terminal timeout boundary, import only the authoritative current
     // snapshot from the finalized pair before re-running identity/worldline
     // checks. A recovery snapshot belongs to its earlier recovery target and
     // must never be retargeted to the physical pair that carries the comment.
     const finalizedChatMirror = options?.importFinalizedChatMirror === true
-      ? importChatPacketsIntoStorageLedger(ledger, candidate.snapshot, scope, {
+      ? importChatPacketsIntoStorageLedger(ledger, bindingSnapshot, scope, {
           pairIndexes: [Number(candidate?.pair?.pairIndex || 0)],
           packetTypes: ['current_snapshot'],
           updateMigration: false
@@ -51984,7 +51986,7 @@ const MemorySuiteHealthRecovery = (() => {
           normalizedImported: 0,
           normalizedUpdated: 0
         };
-    const topologyHash = compact(turnTopologySnapshotHash(candidate.snapshot), 96);
+    const topologyHash = compact(turnTopologySnapshotHash(bindingSnapshot), 96);
     const identityRefresh = refreshCapturedRecordIdentitiesForFinalPair(
       finalizedChatMirror.ledger,
       pending,
@@ -51992,8 +51994,8 @@ const MemorySuiteHealthRecovery = (() => {
       options
     );
     const workingLedger = identityRefresh.ledger;
-    const worldline = reconcileTurnWorldline(workingLedger.worldline, candidate.snapshot, scope);
-    const binding = bindStorageLedgerToSnapshot(workingLedger, candidate.snapshot, worldline);
+    const worldline = reconcileTurnWorldline(workingLedger.worldline, bindingSnapshot, scope);
+    const binding = bindStorageLedgerToSnapshot(workingLedger, bindingSnapshot, worldline);
     const expectedNonce = compact(pending?.lineage?.requestNonce || '', 96);
     const expectedTypes = expectedCapturePacketTypes(pending);
     const pairForPacketType = packetType => (
@@ -52289,7 +52291,9 @@ const MemorySuiteHealthRecovery = (() => {
       if (ledger.enabled !== true) {
         return { durable: false, saved: false, reason: ledger.reason || 'storage_unavailable' };
       }
-      const worldline = reconcileTurnWorldline(ledger.worldline, candidate.snapshot, scope);
+      const bindingSnapshot=hayakuCanonicalTopologySnapshot(candidate.snapshot,ledger,pending?.lineage?.targetPairIndex);
+      if(bindingSnapshot.canonicalIdentityUnresolved)return {durable:false,saved:false,bound:false,reason:'canonical_native_identity_unresolved'};
+      const worldline = reconcileTurnWorldline(ledger.worldline, bindingSnapshot, scope);
       const targetPairIndex = Number(candidate.pair.pairIndex || 0);
       const owner = ensureArray(worldline.nodes).find(node => (
         node?.status === 'active'
@@ -52331,7 +52335,7 @@ const MemorySuiteHealthRecovery = (() => {
       }
       owner.updatedAt = now();
       worldline.revision = Math.max(0, Number(worldline.revision || 0) || 0) + 1;
-      const policy = finalizedBindingRejectionPolicy(worldline, candidate.snapshot);
+      const policy = finalizedBindingRejectionPolicy(worldline, bindingSnapshot);
       const records = ensureArray(ledger.records).map(record => {
         if (record?.inheritedSessionHistory === true) return record;
         if (policy.exactHashRejected(record?.hash)) {
@@ -52360,7 +52364,7 @@ const MemorySuiteHealthRecovery = (() => {
       });
       const commit = await writeStorageLedgerDirect(scope, {
         ...ledger,
-        chatTopologyHash: compact(turnTopologySnapshotHash(candidate.snapshot), 96),
+        chatTopologyHash: compact(turnTopologySnapshotHash(bindingSnapshot), 96),
         worldline,
         records
       }, 'finalized_binding_foreign_hash_rejection');
@@ -54411,10 +54415,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     catch(error){hayakuSourceInputReadyError=compact(error?.message||error,160)||'SOURCE_INPUT_PREFERENCES_UNAVAILABLE';
       Memory.lastWarnings=[...ensureArray(Memory.lastWarnings),`source_input_preferences_unavailable:${hayakuSourceInputReadyError}`].slice(-20);return false;}
   };
-  const hayakuCanonicalTopologySnapshot = (snapshot,ledger) => {
+  const hayakuCanonicalTopologySnapshot = (snapshot,ledger,requestOwnedTargetPairIndex=0) => {
     const records=ensureArray(ledger?.records),tombstones=new Map(ensureArray(ledger?.tombstones).filter(t=>t?.active).map(t=>[t.slotId,t]));
     let canonicalIdentityUnresolved=false;
     const pairs=ensureArray(snapshot?.conversationPairs).map(pair=>{
+      // Only an internal pending request may exempt its exact target from the
+      // ordinary projection. Packet-carried nonce claims never choose this index.
+      if(Number(requestOwnedTargetPairIndex)>0&&Number(pair.pairIndex)===Number(requestOwnedTargetPairIndex))return pair;
       const atTurn=records.filter(record=>Number(record.targetPairIndex)===Number(pair.pairIndex)&&!record.inheritedSessionHistory&&!record.auditRetained&&['active','unbound'].includes(record.recordState));
       if(pair.userMessageIdentityStable!==true||pair.assistantMessageIdentityStable!==true||!pair.userMessageIdHash||!pair.assistantMessageIdHash){if(atTurn.length)canonicalIdentityUnresolved=true;return pair;}
       const candidates=atTurn.filter(record=>record.userMessageIdHash===pair.userMessageIdHash&&record.assistantMessageIdHash===pair.assistantMessageIdHash
@@ -54422,11 +54429,41 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if(!candidates.length)return pair;
       const identities=new Set(candidates.map(record=>JSON.stringify([record.userHash,record.assistantVisibleHash])));
       if(identities.size!==1){canonicalIdentityUnresolved=true;return pair;}
-      const liveHashes=ensureArray(pair.packetHashes),approvedHashes=new Set(candidates.map(record=>record.hash));
-      if(liveHashes.length&&!liveHashes.some(hash=>approvedHashes.has(hash)))return pair;
-      const record=candidates[0];return {...pair,userHash:record.userHash,assistantVisibleHash:record.assistantVisibleHash};
+      const approvedHashes=new Set(candidates.map(record=>record.hash));
+      // Ordinary source observation cannot adopt a newly pasted carrier. Only
+      // already-admitted packet hashes may accompany this approved native pair.
+      // Explicit adoption remains independent. Finalized capture preserves this
+      // approved prefix while its exact pending-owned target stays raw.
+      const validPackets=ensureArray(pair.validPackets).filter(packet=>approvedHashes.has(packet.hash));
+      const repairablePackets=ensureArray(pair.repairablePackets).filter(packet=>approvedHashes.has(packet.hash));
+      const packetHashes=ensureArray(pair.packetHashes).filter(hash=>approvedHashes.has(hash));
+      const retainedPackets=[...validPackets,...repairablePackets]
+        .filter((packet,index,rows)=>rows.findIndex(other=>other.hash===packet.hash)===index)
+        .sort((a,b)=>ensureArray(pair.packetHashes).indexOf(a.hash)-ensureArray(pair.packetHashes).indexOf(b.hash));
+      const lineageRecord=[...retainedPackets].reverse().find(packet=>packet.packetType==='current_snapshot')
+        ||retainedPackets[retainedPackets.length-1]||null;
+      const lineage=lineageRecord&&(lineageRecord.parentTurnNodeId||lineageRecord.logicalTurnId||lineageRecord.requestNonce)
+        ?lineageRecord:null;
+      const record=candidates[0];
+      return {...pair,userHash:record.userHash,assistantVisibleHash:record.assistantVisibleHash,
+        validPackets,repairablePackets,packetHashes,
+        validPacketHashes:validPackets.map(packet=>packet.hash),
+        repairablePacketHashes:repairablePackets.map(packet=>packet.hash),
+        validPacketTypes:[...new Set(validPackets.map(packet=>packet.packetType))].slice(0,8),
+        packetDiagnostics:ensureArray(pair.packetDiagnostics).filter(packet=>
+          (!packet.valid&&!packet.normalizationRepairable)||approvedHashes.has(packet.hash)),
+        lineageDeclared:!!lineage,declaredParentTurnNodeId:lineage?.parentTurnNodeId||'',
+        declaredLogicalTurnId:lineage?.logicalTurnId||'',requestNonce:lineage?.requestNonce||'',
+        identityVersion:finiteNonNegativeInteger(lineage?.identityVersion,0),
+        lineageSchema:lineage?.lineageSchema||'',turnOwnerKey:lineage?.turnOwnerKey||'',
+        generationAttemptId:lineage?.generationAttemptId||''};
     });
-    return {...snapshot,conversationPairs:pairs,canonicalIdentityUnresolved};
+    const historyPairs=pairs.filter(pair=>ensureArray(pair.packetHashes).length>0);
+    const cloneFingerprint=stableHash64(historyPairs.map(pair=>[
+      pair.pairIndex,pair.userHash,pair.assistantVisibleHash,ensureArray(pair.packetHashes).join(',')
+    ].join('\u0001')).join('\u0002'));
+    return {...snapshot,conversationPairs:pairs,conversationPairCount:pairs.length,
+      historyPairs,historyPairCount:historyPairs.length,cloneFingerprint,canonicalIdentityUnresolved};
   };
   // Manual recapture is deliberately separate from the ordinary chat mirror.
   // Building this preview may populate the in-memory transcript parser cache,

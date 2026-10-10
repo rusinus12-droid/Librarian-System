@@ -41,7 +41,7 @@ const endMarker = 'const WORLD_ADDITIONAL_REMOVAL_MIGRATION_KEY';
 let start = source.indexOf(startMarker);
 let end = source.indexOf(endMarker, start);
 // loadManifest/saveManifest live ABOVE that marker, so slice a wider window around them.
-const loadAt = source.indexOf('const loadManifest = async (scope, observedTurn = 0) =>');
+const loadAt = source.indexOf('const loadManifest = async (');
 const saveAt = source.indexOf('const saveManifest = async (scope, manifest) =>');
 assert.ok(loadAt >= 0 && saveAt > loadAt, 'loadManifest/saveManifest must be locatable');
 const saveEnd = source.indexOf('const WORLD_ADDITIONAL_REMOVAL_MIGRATION_KEY', saveAt);
@@ -52,7 +52,7 @@ const helperStart = source.indexOf('const MANIFEST_SCHEMA =');
 const helperEnd = source.indexOf('const HOST_WORLDLINE_META_SCHEMA', helperStart);
 const helpers = source.slice(helperStart, helperEnd);
 const normalizeStartMarker = 'const normalizeManifestReadSnapshot =';
-const normalizeEndMarker = 'const loadManifest = async (scope, observedTurn = 0) =>';
+const normalizeEndMarker = 'const loadManifest = async (';
 const normalizeStart = source.indexOf(normalizeStartMarker);
 const normalizeEnd = source.indexOf(normalizeEndMarker, normalizeStart + normalizeStartMarker.length);
 assert.ok(normalizeStart >= 0 && normalizeEnd > normalizeStart, 'normalizeManifestReadSnapshot must be locatable');
@@ -159,6 +159,14 @@ vm.runInContext(`${helpers}\n${manifestNormalizer}\n${core}\nthis.loadManifest =
   assert.equal(stored?.bField, 'writer-B', "writer B's independent field must not be reverted");
   assert.equal(Number(stored?.stats?.embeddings || 0), 7, "writer B's stats must not be reverted");
   assert.notEqual(stored?.aInFlight, 'writer-A', "writer A's stale document must not have been published");
+
+  // A refusal must not consume the stale basis and allow the same proposal to
+  // overwrite the intervening writer when a cleanup/failure path saves again.
+  const afterRejectedBeforeRetry = values.get(MANIFEST_KEY);
+  await assert.rejects(() => saveManifest(scope, docA), error => error?.code === 'LIBRA_COMMIT_CONFLICT',
+    'the exact same rejected proposal remains fenced on a subsequent save');
+  assert.equal(values.get(MANIFEST_KEY), afterRejectedBeforeRetry,
+    'a repeated rejected save cannot publish stale independent fields');
 
   // 3. A FRESH document still commits (the guard is not a blanket refusal).
   const docC = await loadManifest(scope, 12);

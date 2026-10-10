@@ -31,13 +31,17 @@ test('registered final consumer preserves rare-query eligible gold through exist
     assert.equal(f.h.llmCalls.length,0);assert.equal(f.h.fetchCalls.length,0);
   }finally{await f.dispose();}
 });
-test('source tracking OFF does not issue redundant ledger reread after its no-work consent boundary',async()=>{
+test('registered recall performs exactly admission, canonical-load and final-authority ledger reads',async()=>{
   const f=await runtime();try{
     await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}]);
-    const scope=await f.h.hayaku._test.currentChatScope(),get=f.store.getItem;let reads=0;
-    f.store.getItem=async key=>{if(key==='hayaku.v2.ledger.'+scope.key)reads++;return get(key);};
+    const scope=await f.h.hayaku._test.currentChatScope(),get=f.store.getItem,phases=[];
+    f.store.getItem=async key=>{if(key==='hayaku.v2.ledger.'+scope.key){
+      const oldLimit=Error.stackTraceLimit;Error.stackTraceLimit=40;const stack=new Error().stack;Error.stackTraceLimit=oldLimit;
+      const matches=['captureHayakuReadset','loadStorageLedger','verifyHayakuReadset'].filter(name=>stack.includes('at async '+name+' '));
+      assert.equal(matches.length,1,'each physical ledger read has one current contract owner');phases.push(matches[0]);
+    }return get(key);};
     await f.h.callBeforeRequest([{role:'user',content:'What does Borealis shelf contain?'}]);
-    assert.equal(reads,1,'current physical ledger validation remains, but an OFF no-work stage must not reread it');
+    assert.deepEqual(phases,['captureHayakuReadset','loadStorageLedger','verifyHayakuReadset'],'both fresh authority checks and the canonical load remain; no redundant consent-stage read');
     assert.equal(f.h.llmCalls.length,0);assert.equal(f.h.fetchCalls.length,0);
   }finally{await f.dispose();}
 });

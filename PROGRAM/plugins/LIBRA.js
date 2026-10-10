@@ -39282,10 +39282,10 @@ function createLibraReadonlySourceContext(owner) {
       return manifest;
     };
 
-    const loadManifest = async (scope, observedTurn = 0) => {
+    const loadManifest = async (scope, observedTurn = 0, options = {}) => {
       const storageKey = key.manifest(scope);
       let loaded;
-      if(unavailableManifestKeys.has(storageKey)){
+      if(unavailableManifestKeys.has(storageKey) || options.requireExisting===true){
         // A normalized empty document cannot restore a lost durable basis.
         // Only a physically verified existing owner manifest releases this fence.
         loaded=await storage.getVerifiedJson(storageKey,scope,null);
@@ -39293,7 +39293,7 @@ function createLibraReadonlySourceContext(owner) {
           || loaded.characterId!==scope.characterId || loaded.chatId!==scope.chatId
           || loaded.worldlineMeta?.scopeKey!==scope.scopeKey
           || loaded.worldlineMeta?.worldlineId!==hostWorldlineIdForScope(scope)){
-          const error=new Error('manifest durable basis unavailable after rejected canonical admission');
+          const error=new Error('manifest durable basis unavailable for required existing owner');
           error.code='LIBRA_MANIFEST_DURABLE_RELOAD_UNAVAILABLE';throw error;
         }
         unavailableManifestKeys.delete(storageKey);
@@ -39346,7 +39346,6 @@ function createLibraReadonlySourceContext(owner) {
       // it; callers that do not now fail loudly instead of corrupting state.
       const basis = manifest[MANIFEST_STORAGE_BASIS];
       if (basis !== undefined) {
-        try { delete manifest[MANIFEST_STORAGE_BASIS]; } catch (_) {}
         if (Number(basis?.revision || 0) !== manifestRevisionOf(manifestKey)) {
           const error = new Error('manifest commit conflict: another writer committed this manifest after this document was loaded');
           error.code = 'LIBRA_COMMIT_CONFLICT';
@@ -39354,6 +39353,9 @@ function createLibraReadonlySourceContext(owner) {
           error.storageMutationKey = manifestKey;
           throw error;
         }
+        // A rejected proposal keeps its basis, including in caller cleanup.
+        // Only an admitted save consumes the load-time fence.
+        try { delete manifest[MANIFEST_STORAGE_BASIS]; } catch (_) {}
       }
       manifestWriteRevisions.set(manifestKey, manifestRevisionOf(manifestKey) + 1);
       await storage.setJson(manifestKey, manifest);
@@ -54375,10 +54377,22 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const context=contextValue || await resolveContext();
       return await enqueue(context.scope.scopeKey,async()=>{
         const live=await resolveContext();if(live.scope.scopeKey!==context.scope.scopeKey)return {ok:false,reason:'scope_changed',attempted:0};
-        const manifest=await loadManifest(live.scope,buildPairs(live.chat,live.scope.scopeKey).length);
+        const observedTurns=buildPairs(live.chat,live.scope.scopeKey).length;
+        let manifest=await loadManifest(live.scope,observedTurns);
         const refs=Object.values(asObject(manifest.memories)).filter(r=>r.status==='committed' && unifiedArtifactSchemaReadable(r.artifactSchema) && (r.embeddingStatus==='pending' || (options.retry===true&&r.embeddingStatus==='retry_pending'))).slice(0,2);
         let completed=0;const results=[];
-        for(const ref of refs){
+        for(const plannedRef of refs){
+          // Each prior retry may have published a separate fresh manifest.
+          // Re-resolve the exact planned canonical identity in verified owner
+          // bytes; the captured refs array is not the new document's authority.
+          manifest=await loadManifest(live.scope,observedTurns,{requireExisting:true});
+          const ref=memoryRefForStart(manifest,Number(plannedRef.turnRange?.start));
+          if(ref?.status!=='committed' || ref.key!==plannedRef.key
+            || ref.sourceDigest!==plannedRef.sourceDigest || ref.artifactDigest!==plannedRef.artifactDigest){
+            const diagnostic={ok:false,staleDiscarded:true,memoryId:plannedRef.memoryId,reason:'UNIFIED_VECTOR_CANONICAL_CHANGED'};
+            state.lastUnifiedVectorResult=clone(diagnostic);
+            results.push({memoryId:plannedRef.memoryId,status:'retry_pending',diagnostic});continue;
+          }
           state.lastUnifiedVectorResult=null;
           const memory=await retryEmbeddingForMemory(live,manifest,ref);
           let diagnostic=clone(state.lastUnifiedVectorResult);
@@ -54842,6 +54856,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               && asArray(rebuildState?.items).some(item => item.memoryKey === ref.key && item.status !== 'complete');
             if (!manuallyQuarantined && (['pending', 'retry_pending'].includes(ref.embeddingStatus) || needsProjectionUpgrade)) {
               await retryEmbeddingForMemory(context, manifest, ref, needsProjectionUpgrade);
+              // Derived retry can publish its own freshly loaded document.
+              // Resume from verified durable owner bytes, never advance the
+              // stale outer document's revision or normalize a missing owner.
+              manifest = await loadManifest(context.scope, pairs.length, { requireExisting: true });
             }
             continue;
           }

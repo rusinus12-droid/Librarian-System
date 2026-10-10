@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-09T21:46:08.491Z",
+  "generatedAt": "2026-10-09T23:54:11.953Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1512,12 +1512,12 @@
       "bytes": 9379
     },
     "docs/development-package/RESTORE-AND-BUILD.md": {
-      "sha256": "a2c5f1429e3d52a5cc06c816c424118b0ec8060177c1753728af2397b1687406",
-      "bytes": 3534
+      "sha256": "8eace4e2b735c1d3fc457599083a7aa281b1df04be53c0210d823bdee3e69de8",
+      "bytes": 3471
     },
     "docs/development-package/SOURCE-PROVENANCE.json": {
-      "sha256": "04d192fc02c22c82613598dfd0a0f814fae0056cba194777e4e20a152fb40837",
-      "bytes": 692405
+      "sha256": "bc205e3804fa68ff855370f56cdb02ead50c53f81f7c9d928b4eda0ae0ae1f4f",
+      "bytes": 704756
     },
     "docs/DOCKER_POCKET_CONNECTION.md": {
       "sha256": "2923715dbff0ee116df8e988b8be1d9be6e27fe35629b8c1b5f294e6ceb46de8",
@@ -2584,20 +2584,20 @@
       "bytes": 3064720
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "c1ddfd080cb1e1a830687679d222ac732e58aa98b04b271b17d413f31eacff44",
-      "bytes": 3957211
+      "sha256": "6e25bb8a9973b1b71a8a835099fc65d6e3adbcc5212699bd33557e745dc7a3b3",
+      "bytes": 3960419
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
       "bytes": 1874390
     },
     "plugins/LIBRA_World_Manager.js": {
-      "sha256": "89d314a65c165388b6bd37c1316b8396ff32fbda76693f50dfb7e65b33fa7808",
-      "bytes": 6628304
+      "sha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
+      "bytes": 6629024
     },
     "plugins/LIBRA.js": {
-      "sha256": "862b3cf613424abcb10241034caceb68e9acc731868cf0c540e0aedbe3a10d1a",
-      "bytes": 5768059
+      "sha256": "13ad3ea743a55ef1c681bd9696914df7f8bdc783519f9498768a3529bd302aa1",
+      "bytes": 5769513
     },
     "plugins/RETRACE.js": {
       "sha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
@@ -4352,8 +4352,8 @@
       "bytes": 9819
     },
     "tests/flashback_startup_authority_runtime_test.cjs": {
-      "sha256": "1e205bfa2aa881b2978d0dfb30636bb14d6a525b4a0a297a67cc35024ae8828f",
-      "bytes": 18163
+      "sha256": "1e9ab1a8403be1a1ceed9a15afde487d5bf347b37c839f45eadd59484da3d62f",
+      "bytes": 18921
     },
     "tests/flashback_startup_currentness_runtime_test.cjs": {
       "sha256": "f5accba888bf3647a02637f7175fcea34f06b1c6c4dd0983a3e795bebe7f401b",
@@ -4648,8 +4648,8 @@
       "bytes": 9429
     },
     "tests/hayaku_archive_coverage_runtime_test.cjs": {
-      "sha256": "46f596f55236db90035ecfaa15f66ae5bfb1e1d61f1517e2a98ab0a21cec6382",
-      "bytes": 13272
+      "sha256": "021f53d8f8282ab89cadc2a5aa25a179d04549a22017f5ddfb8fbbd7bd3a1deb",
+      "bytes": 13457
     },
     "tests/hayaku_before_request_source_preservation_runtime_test.cjs": {
       "sha256": "31ab71ed4a79ac6a627153bf8ad436439e0381d8f407fedb125fe9fb5bf231b2",
@@ -4664,8 +4664,8 @@
       "bytes": 3455
     },
     "tests/hayaku_cache_rediscovery_runtime_test.cjs": {
-      "sha256": "b741a4a71821230023dd17916e480857b472ffd3ca0bb8716904334e8122fccf",
-      "bytes": 6579
+      "sha256": "e3a2c3af76c818410e2652daf422104d0428e1bd8836df3ff1ca57eac38e28ec",
+      "bytes": 6647
     },
     "tests/hayaku_canonical_builtin_access_runtime_test.cjs": {
       "sha256": "838e95416cba02418e224405c9b8527e8b917ac900e9eb00b907054187fc0663",
@@ -4967,6 +4967,18 @@
       "sha256": "fffb5cc865d361a36bcadb0abccbf70f776b6a70f7902fca100ba87dbd8fbb8d",
       "bytes": 3496
     },
+    "tests/hayaku_passive_append_capture_test.cjs": {
+      "sha256": "287605c13f93c1fcd6b17383e3c0b8beb679148023a572e250fed680aa801f6b",
+      "bytes": 4223
+    },
+    "tests/hayaku_passive_carrier_admission_test.cjs": {
+      "sha256": "ddfe27d0a0ab80dd77fb8354c549ddcfe0e5a7d4af67b2b1cdf55f2a3436c33d",
+      "bytes": 2797
+    },
+    "tests/hayaku_passive_foreign_rejection_test.cjs": {
+      "sha256": "f8c26c1c7169ede9e9e592d4dcde625863a26544e96e57e181401a9d950dba7b",
+      "bytes": 3989
+    },
     "tests/hayaku_portable_cross_chat_import_runtime_test.cjs": {
       "sha256": "f0ee01a4fe14064c734df07177c051508b4c19fa3110660a7eb9d0706c6cb60c",
       "bytes": 27593
@@ -5036,8 +5048,8 @@
       "bytes": 3975
     },
     "tests/hayaku_registered_search_frontier_runtime_test.cjs": {
-      "sha256": "69f6b5e61be6bc85044d130929194c3a784b944cb49b78fb5dcf8cb83e63ceba",
-      "bytes": 9289
+      "sha256": "4f034c8b2c8579ebae960f3aac25e15cb1948ca153f261c8c12645294e0fc28b",
+      "bytes": 9749
     },
     "tests/hayaku_regular_source_basis_runtime_test.cjs": {
       "sha256": "63a5ee210226a2693cb89dec1a9d4bf273cac40748ecb475804108117c731be1",
@@ -5480,8 +5492,8 @@
       "bytes": 6179
     },
     "tests/libra_associative_recall_test.cjs": {
-      "sha256": "a283704fd14b0a928a8209353bee0a247998a7bb10481fe27f342173e74cb2bb",
-      "bytes": 34695
+      "sha256": "2278c477b57bd56ace7c8572757280123451aa2d751221d383c17927a13b12ce",
+      "bytes": 34491
     },
     "tests/libra_book_failure_notice_runtime_test.cjs": {
       "sha256": "8e3cc35bb89e7adcb68de27bf7e4eb7a485c0a9ffaa7289ab4131c5ddac227b4",
@@ -5690,6 +5702,10 @@
     "tests/libra_debug_serial_stage_contrast_contract_test.cjs": {
       "sha256": "8d657746b9b61dcab7c4a96a8e1d5002aaeba5278494473af44071bfee9ff4de",
       "bytes": 1281
+    },
+    "tests/libra_derived_two_ref_settlement_test.cjs": {
+      "sha256": "65824584e2a2c67dc719acd2dcfaaaac11e9ab5857b9ae426b443e64033b0851",
+      "bytes": 6869
     },
     "tests/libra_diagnostic_log_contract_test.cjs": {
       "sha256": "23e910ebaedf78d6fca2a27298de36e786a65b25a86cfd60b2f7f4b14c5d2228",
@@ -6096,8 +6112,8 @@
       "bytes": 5287
     },
     "tests/libra_manifest_cas_test.cjs": {
-      "sha256": "dfbd7e51febc43f73386bec0991cc0211b81a8c8d6b1a2435c4add033f5f3b43",
-      "bytes": 9356
+      "sha256": "5bb76f085417af55bb7c62d8f3cd34447ece0e995bae55c79208bc0e5521fe40",
+      "bytes": 9845
     },
     "tests/libra_manual_anchor_materializer_runtime_test.cjs": {
       "sha256": "359cfa6a6b19987c1217c0dbba5ee8da0e6247a85b1dd868a98d52654cc93c3a",
@@ -6726,6 +6742,10 @@
     "tests/libra_record_quarantine_server_runtime_test.cjs": {
       "sha256": "7aceb00d93ab23b21adaa8812cc3ea528f88bdf5ade5a8aa7036c47108d6c1f7",
       "bytes": 1524
+    },
+    "tests/libra_required_manifest_reload_test.cjs": {
+      "sha256": "f06d2c55dab7b6140aae969e31ac5f7f521006686fc616e3d23f6c0c35964441",
+      "bytes": 9011
     },
     "tests/libra_response_context_v1_test.cjs": {
       "sha256": "8b9d19479e081657693a04a29817c07d2fb02a0bb55585f4167d3ea2e6be0930",
@@ -8000,8 +8020,8 @@
       "bytes": 30670
     },
     "tests/source_edit_canonical_identity_test.cjs": {
-      "sha256": "0a3ab961b5a5ffa0c301eb905480ff75a7b7adb2e039c5aaa372b3be0dfc66ee",
-      "bytes": 4638
+      "sha256": "3a4e33bd0c094ec90010c251e8772f68ae965e34ee611da93992912243161e3d",
+      "bytes": 4845
     },
     "tests/source_edit_cause_log_test.cjs": {
       "sha256": "9682bab29e46148433f667262ca3bfa343649fb21a7a018016d37dae3c9cbcce",
@@ -8680,8 +8700,8 @@
       "bytes": 449
     },
     "tools/build_plugins.cjs": {
-      "sha256": "d097fb0dac1d56731d71ff2cfac977cbb7a6114e88419b1fcf0d0293728c409b",
-      "bytes": 81963
+      "sha256": "b48407a1d55bd3a1911c54933d03092d06261c663ff792b41bd0c2e480884fea",
+      "bytes": 82325
     },
     "tools/build_storage_mode_matrix.cjs": {
       "sha256": "62f12582d3dfa5949fcbc6b19d07480508d35ad75e7e86e37e6cc73010754c3c",
@@ -11600,8 +11620,8 @@
       "bytes": 10523
     },
     "wm/src/parts/01f-lore-consolidation.js": {
-      "sha256": "1fe6f1d35fcbad21aba29e63f7b6ca644adaf0da446b45d3e96f7dde8649d521",
-      "bytes": 200797
+      "sha256": "4fad5a61de0b05d551633a2f78dc301b569c0f2c0fe6ab89610c0b51d72a51fb",
+      "bytes": 201437
     },
     "wm/src/parts/01g-lore-concurrent-persistence.js": {
       "sha256": "88ba4b08f3a0f2b61612cadf21560e2f46ddacc612bed57ca44d6cc037d251ec",
@@ -11788,8 +11808,8 @@
       "bytes": 66933
     },
     "wm/src/parts/08b-entity-identity-schema.js": {
-      "sha256": "266eba3d4186197ae57199efdd8bded3c22b8ea8bb440d92fa6b4953ce677bf0",
-      "bytes": 127605
+      "sha256": "0f21444d7a7791a7777d5fe33ee7d8d4a59829a076b2de968941d230e1d6653b",
+      "bytes": 127685
     },
     "wm/src/parts/08c-relation-timeline.js": {
       "sha256": "b8bdfbf4fec922bb2c57e540826298db29e5c3d759fcfeb7c0effc486c743b70",
@@ -13899,6 +13919,10 @@
       "sha256": "a2e7d0ec24e2abbb2015052e582ff156b858405ecaf8bfc44ab29104dbe58736",
       "bytes": 7007
     },
+    "wm/tools/wm-entity-shadow-projection.test.cjs": {
+      "sha256": "efc3f7f0ed6edd8e9b2a40cd20bd976231091b23553d4cfded319f5be6840304",
+      "bytes": 4294
+    },
     "wm/tools/wm-existing-card-edit-basic.test.cjs": {
       "sha256": "9abd9d7a3c9153ea60690659ce2666a1bd85c1337c553a561a226257b952febd",
       "bytes": 13899
@@ -14062,6 +14086,10 @@
     "wm/tools/wm-related-extension-batch-basic.test.cjs": {
       "sha256": "87f3021243349b38ebdee8ab3b692ad43390300aa4d855180e1386c5d354dff5",
       "bytes": 7646
+    },
+    "wm/tools/wm-remove-scope-currentness.test.cjs": {
+      "sha256": "1abe3b1b33445f94c893ca8133ac0f2cc448cfdf38426eb4277c011ed361a9a6",
+      "bytes": 1885
     },
     "wm/tools/wm-retrace-conditional-rollback.test.cjs": {
       "sha256": "53c6c4c0a492eff5fd6930369918988e71199265e64e3bf3ba45587efb1b5bf1",

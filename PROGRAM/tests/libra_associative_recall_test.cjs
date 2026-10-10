@@ -351,7 +351,7 @@ async function test(name, args, fn) {
     await assertTraversable(false);
   });
 
-  await test('lore-enabled preview and Input Writer preflight do not persist a rebuilt link index', {}, async f => {
+  await test('lore-enabled preview stays request-local and a persistent reader flushes the rebuilt index', {}, async f => {
     assert.equal((await f.run()).completed, 1);
     assert.equal(f.getRecords('libra.lore_link_index.v1').length, 0);
     const loreWritesBefore = f.r.storageWrites.filter(row => row.key.includes('lore_link_index')).length;
@@ -359,10 +359,7 @@ async function test(name, args, fn) {
     assert.equal(f.r.storageWrites.filter(row => row.key.includes('lore_link_index')).length, loreWritesBefore,
       'preview recall must not write the regenerated lore index');
     assert.equal(f.getRecords('libra.lore_link_index.v1').length, 0);
-    await f.r.api.prepareInputWriterEvidence('이유를 묻는다.');
-    assert.equal(f.r.storageWrites.filter(row => row.key.includes('lore_link_index')).length, loreWritesBefore,
-      'Input Writer preflight must not persist the regenerated lore index');
-    assert.equal(f.getRecords('libra.lore_link_index.v1').length, 0);
+    assert.equal(typeof f.r.api.prepareInputWriterEvidence, 'undefined', 'retired Input Writer remains unavailable');
     const persisted = plain(await f.r.api.getLoreLinkIndex());
     assert.equal(persisted.status.persisted, true, 'a later persistent reader flushes a request-local cached index');
     assert.equal(f.getRecords('libra.lore_link_index.v1').length, 1);

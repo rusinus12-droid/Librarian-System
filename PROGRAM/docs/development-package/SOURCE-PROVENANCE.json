@@ -1,12 +1,12 @@
 {
   "schema": "librarian.frozen-development-source-provenance.v1",
-  "scheduledForUtc": "2026-10-09T21:45:10+00:00",
-  "captureStartedAtUtc": "2026-10-09T21:45:35.881532+00:00",
-  "captureCompletedAtUtc": "2026-10-09T21:45:37.391014+00:00",
-  "sourceContentIdentity": "3e070995dd5edff8ca047dfbea967800a1f846810cefd6842cc847cc2812a1b2",
+  "scheduledForUtc": "2026-10-09T23:45:10+00:00",
+  "captureStartedAtUtc": "2026-10-09T23:52:58.099513+00:00",
+  "captureCompletedAtUtc": "2026-10-09T23:52:59.612726+00:00",
+  "sourceContentIdentity": "3401c1e3a5c6ba7740ad31ee4d81ad6f1e7f9a18b1e32e1f36b0d4dee4d11c85",
   "git": {
     "branch": "dev/unified-lib-20261009",
-    "head": "c3caa07bf3f19466e30a8a0895c396adaff51e45",
+    "head": "771f839c0d56608eea1b36055a3234fcefbb7bfd",
     "workingTreeDirty": false,
     "statusPorcelainV1": ""
   },
@@ -1742,8 +1742,8 @@
     },
     {
       "path": "PROGRAM/plugins/HAYAKU_Locator_Continuity.js",
-      "bytes": 3957211,
-      "sha256": "c1ddfd080cb1e1a830687679d222ac732e58aa98b04b271b17d413f31eacff44",
+      "bytes": 3960419,
+      "sha256": "6e25bb8a9973b1b71a8a835099fc65d6e3adbcc5212699bd33557e745dc7a3b3",
       "mode": 420
     },
     {
@@ -1754,14 +1754,14 @@
     },
     {
       "path": "PROGRAM/plugins/LIBRA.js",
-      "bytes": 5768059,
-      "sha256": "862b3cf613424abcb10241034caceb68e9acc731868cf0c540e0aedbe3a10d1a",
+      "bytes": 5769513,
+      "sha256": "13ad3ea743a55ef1c681bd9696914df7f8bdc783519f9498768a3529bd302aa1",
       "mode": 420
     },
     {
       "path": "PROGRAM/plugins/LIBRA_World_Manager.js",
-      "bytes": 6628304,
-      "sha256": "89d314a65c165388b6bd37c1316b8396ff32fbda76693f50dfb7e65b33fa7808",
+      "bytes": 6629024,
+      "sha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
       "mode": 420
     },
     {
@@ -1772,8 +1772,8 @@
     },
     {
       "path": "PROGRAM/program-manifest.json",
-      "bytes": 658082,
-      "sha256": "5b7f3a7d6d4ac273301a31034855d22f1fc122bceebf278c2b5547925f9e07f5",
+      "bytes": 659249,
+      "sha256": "9b0e61240686fcfafdb317289f092c27787228eaa67338eaef7f81bd75de6f7f",
       "mode": 384
     },
     {
@@ -4394,8 +4394,8 @@
     },
     {
       "path": "PROGRAM/tests/flashback_startup_authority_runtime_test.cjs",
-      "bytes": 18163,
-      "sha256": "1e205bfa2aa881b2978d0dfb30636bb14d6a525b4a0a297a67cc35024ae8828f",
+      "bytes": 18921,
+      "sha256": "1e9ab1a8403be1a1ceed9a15afde487d5bf347b37c839f45eadd59484da3d62f",
       "mode": 384
     },
     {
@@ -4838,8 +4838,8 @@
     },
     {
       "path": "PROGRAM/tests/hayaku_archive_coverage_runtime_test.cjs",
-      "bytes": 13272,
-      "sha256": "46f596f55236db90035ecfaa15f66ae5bfb1e1d61f1517e2a98ab0a21cec6382",
+      "bytes": 13457,
+      "sha256": "021f53d8f8282ab89cadc2a5aa25a179d04549a22017f5ddfb8fbbd7bd3a1deb",
       "mode": 384
     },
     {
@@ -4862,8 +4862,8 @@
     },
     {
       "path": "PROGRAM/tests/hayaku_cache_rediscovery_runtime_test.cjs",
-      "bytes": 6579,
-      "sha256": "b741a4a71821230023dd17916e480857b472ffd3ca0bb8716904334e8122fccf",
+      "bytes": 6647,
+      "sha256": "e3a2c3af76c818410e2652daf422104d0428e1bd8836df3ff1ca57eac38e28ec",
       "mode": 384
     },
     {
@@ -5317,6 +5317,24 @@
       "mode": 384
     },
     {
+      "path": "PROGRAM/tests/hayaku_passive_append_capture_test.cjs",
+      "bytes": 4223,
+      "sha256": "287605c13f93c1fcd6b17383e3c0b8beb679148023a572e250fed680aa801f6b",
+      "mode": 420
+    },
+    {
+      "path": "PROGRAM/tests/hayaku_passive_carrier_admission_test.cjs",
+      "bytes": 2797,
+      "sha256": "ddfe27d0a0ab80dd77fb8354c549ddcfe0e5a7d4af67b2b1cdf55f2a3436c33d",
+      "mode": 420
+    },
+    {
+      "path": "PROGRAM/tests/hayaku_passive_foreign_rejection_test.cjs",
+      "bytes": 3989,
+      "sha256": "f8c26c1c7169ede9e9e592d4dcde625863a26544e96e57e181401a9d950dba7b",
+      "mode": 420
+    },
+    {
       "path": "PROGRAM/tests/hayaku_portable_cross_chat_import_runtime_test.cjs",
       "bytes": 27593,
       "sha256": "f0ee01a4fe14064c734df07177c051508b4c19fa3110660a7eb9d0706c6cb60c",
@@ -5420,8 +5438,8 @@
     },
     {
       "path": "PROGRAM/tests/hayaku_registered_search_frontier_runtime_test.cjs",
-      "bytes": 9289,
-      "sha256": "69f6b5e61be6bc85044d130929194c3a784b944cb49b78fb5dcf8cb83e63ceba",
+      "bytes": 9749,
+      "sha256": "4f034c8b2c8579ebae960f3aac25e15cb1948ca153f261c8c12645294e0fc28b",
       "mode": 384
     },
     {
@@ -6086,8 +6104,8 @@
     },
     {
       "path": "PROGRAM/tests/libra_associative_recall_test.cjs",
-      "bytes": 34695,
-      "sha256": "a283704fd14b0a928a8209353bee0a247998a7bb10481fe27f342173e74cb2bb",
+      "bytes": 34491,
+      "sha256": "2278c477b57bd56ace7c8572757280123451aa2d751221d383c17927a13b12ce",
       "mode": 384
     },
     {
@@ -6401,6 +6419,12 @@
       "bytes": 1281,
       "sha256": "8d657746b9b61dcab7c4a96a8e1d5002aaeba5278494473af44071bfee9ff4de",
       "mode": 384
+    },
+    {
+      "path": "PROGRAM/tests/libra_derived_two_ref_settlement_test.cjs",
+      "bytes": 6869,
+      "sha256": "65824584e2a2c67dc719acd2dcfaaaac11e9ab5857b9ae426b443e64033b0851",
+      "mode": 420
     },
     {
       "path": "PROGRAM/tests/libra_diagnostic_log_contract_test.cjs",
@@ -7010,8 +7034,8 @@
     },
     {
       "path": "PROGRAM/tests/libra_manifest_cas_test.cjs",
-      "bytes": 9356,
-      "sha256": "dfbd7e51febc43f73386bec0991cc0211b81a8c8d6b1a2435c4add033f5f3b43",
+      "bytes": 9845,
+      "sha256": "5bb76f085417af55bb7c62d8f3cd34447ece0e995bae55c79208bc0e5521fe40",
       "mode": 384
     },
     {
@@ -7955,6 +7979,12 @@
       "bytes": 1524,
       "sha256": "7aceb00d93ab23b21adaa8812cc3ea528f88bdf5ade5a8aa7036c47108d6c1f7",
       "mode": 384
+    },
+    {
+      "path": "PROGRAM/tests/libra_required_manifest_reload_test.cjs",
+      "bytes": 9011,
+      "sha256": "f06d2c55dab7b6140aae969e31ac5f7f521006686fc616e3d23f6c0c35964441",
+      "mode": 420
     },
     {
       "path": "PROGRAM/tests/libra_response_context_v1_test.cjs",
@@ -9866,8 +9896,8 @@
     },
     {
       "path": "PROGRAM/tests/source_edit_canonical_identity_test.cjs",
-      "bytes": 4638,
-      "sha256": "0a3ab961b5a5ffa0c301eb905480ff75a7b7adb2e039c5aaa372b3be0dfc66ee",
+      "bytes": 4845,
+      "sha256": "3a4e33bd0c094ec90010c251e8772f68ae965e34ee611da93992912243161e3d",
       "mode": 420
     },
     {
@@ -10886,8 +10916,8 @@
     },
     {
       "path": "PROGRAM/tools/build_plugins.cjs",
-      "bytes": 81963,
-      "sha256": "d097fb0dac1d56731d71ff2cfac977cbb7a6114e88419b1fcf0d0293728c409b",
+      "bytes": 82325,
+      "sha256": "b48407a1d55bd3a1911c54933d03092d06261c663ff792b41bd0c2e480884fea",
       "mode": 384
     },
     {
@@ -15260,8 +15290,8 @@
     },
     {
       "path": "PROGRAM/wm/src/parts/01f-lore-consolidation.js",
-      "bytes": 200797,
-      "sha256": "1fe6f1d35fcbad21aba29e63f7b6ca644adaf0da446b45d3e96f7dde8649d521",
+      "bytes": 201437,
+      "sha256": "4fad5a61de0b05d551633a2f78dc301b569c0f2c0fe6ab89610c0b51d72a51fb",
       "mode": 420
     },
     {
@@ -15542,8 +15572,8 @@
     },
     {
       "path": "PROGRAM/wm/src/parts/08b-entity-identity-schema.js",
-      "bytes": 127605,
-      "sha256": "266eba3d4186197ae57199efdd8bded3c22b8ea8bb440d92fa6b4953ce677bf0",
+      "bytes": 127685,
+      "sha256": "0f21444d7a7791a7777d5fe33ee7d8d4a59829a076b2de968941d230e1d6653b",
       "mode": 420
     },
     {
@@ -18709,6 +18739,12 @@
       "mode": 420
     },
     {
+      "path": "PROGRAM/wm/tools/wm-entity-shadow-projection.test.cjs",
+      "bytes": 4294,
+      "sha256": "efc3f7f0ed6edd8e9b2a40cd20bd976231091b23553d4cfded319f5be6840304",
+      "mode": 420
+    },
+    {
       "path": "PROGRAM/wm/tools/wm-existing-card-edit-basic.test.cjs",
       "bytes": 13899,
       "sha256": "9abd9d7a3c9153ea60690659ce2666a1bd85c1337c553a561a226257b952febd",
@@ -18952,6 +18988,12 @@
       "path": "PROGRAM/wm/tools/wm-related-extension-batch-basic.test.cjs",
       "bytes": 7646,
       "sha256": "87f3021243349b38ebdee8ab3b692ad43390300aa4d855180e1386c5d354dff5",
+      "mode": 420
+    },
+    {
+      "path": "PROGRAM/wm/tools/wm-remove-scope-currentness.test.cjs",
+      "bytes": 1885,
+      "sha256": "1abe3b1b33445f94c893ca8133ac0f2cc448cfdf38426eb4277c011ed361a9a6",
       "mode": 420
     },
     {
@@ -19316,8 +19358,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 6225,
-      "sha256": "ebacd13dcb7bc8028f304a2ee18a627c32e96e7676e6ed8a168109d32525c986",
+      "bytes": 7608,
+      "sha256": "7118313a816ecb3f59eaac07af55feb2bf950712cc8ccd911423dd42eb86e636",
       "mode": 420
     },
     {
@@ -19552,33 +19594,277 @@
   "preservation": "Prior checkpoints and the designated 2026-10-09 14:27:30 comparison baseline remain unchanged. Later work is outside this frozen source identity.",
   "sourceVsPackage": "The builder rebuilds all seven Full artifacts, generates clean DATA and metadata, and normalizes ZIP file modes. Check PROGRAM/program-manifest.json and SHA256SUMS.txt for the resulting package bytes. A canonical pre-build WM artifact may differ from its freshly assembled output; the external build receipt records that distinction.",
   "knownQualificationLimits": {
-    "recordedAtUtc": "2026-10-09T21:35:00Z",
-    "sourceHeadAtReportedRuns": "90b4057116979fb43d3509ac2a83c659135bc69e",
-    "pluginOnlyTimeline": {
-      "status": "PASS",
-      "batches": 65,
-      "expectedBatches": 65
+    "status": "UNFINISHED_RELEASE_BLOCKED",
+    "asOfUtc": "2026-10-09T23:52:35.617512+00:00",
+    "capturedGitHead": "771f839c0d56608eea1b36055a3234fcefbb7bfd",
+    "wm2000": {
+      "sourceFullSha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
+      "eventualSyntheticCompletion": {
+        "attempt": 220,
+        "status": "PASS",
+        "elapsedSeconds": 206.28797323600156,
+        "committedDoneSeconds": 202.108303265,
+        "logicalMemories": 2001,
+        "logicalEntries": 2014,
+        "exactNewMemoryIndexed": true,
+        "hmeIndexRows": 2001,
+        "pendingRaw": 0,
+        "profile": "manual/native-storage synthetic fixture; strong native host provider absent"
+      },
+      "responsiveness": {
+        "status": "UNRESOLVED_RELEASE_BLOCKER",
+        "originalReadinessTimerBudgetSeconds": 12,
+        "observedOriginalFrontierSeconds": 141.778453585,
+        "otherRetainedObservationApproxSeconds": 149,
+        "cause": "synchronous legacy migration/HME starves the timer",
+        "eventualCorrectnessClearsResponsiveness": false
+      },
+      "originalFinalSourceGate": {
+        "attempt": 225,
+        "status": "INTERRUPTED_LIFECYCLE_UNKNOWN",
+        "terminalResultPresent": false,
+        "completeLookingStdoutIsPass": false,
+        "exactRetry": "not run at capture"
+      },
+      "earlier157SecondResult": "timeout-recovery evidence only, not eventual logical or host qualification"
     },
-    "serverOnlyTimeline": {
-      "status": "FAIL_OOM",
-      "completedBatches": 50,
-      "expectedBatches": 65,
-      "elapsedSeconds": 332.43,
-      "retainedNodeHeapApproxGiB": 1.97,
-      "sampledRssApproxGiB": 2.78,
-      "supportedMode": true,
-      "releaseBlocker": true,
-      "legacyMirrorExclusion": false,
-      "limitsRaised": false
+    "finalArtifactRuntimeReplays224": "NOT_RUN at capture",
+    "remainingFiniteLowerTier": "31 reviewed identities; queue defect repaired; 9 unchanged replays and 20 conditional units remain planned",
+    "mixedHistoricalLedger": {
+      "sha256": "f100759c6c63868fc30b97d0c355fc441bb352476c24a2dde654517e7f3265f9",
+      "identities": 1625,
+      "counts": {
+        "BLOCKED_ENV_LISTENER": 15,
+        "PASS": 1200,
+        "FAIL": 273,
+        "NOT_RUN_RESOURCE_NODE_DEPTH_2": 5,
+        "NOT_RUN_POLICY_SHELL_AND_LISTENER": 1,
+        "PASS_WITH_EXCLUSIONS": 6,
+        "BLOCKED_ENV_BROWSER": 36,
+        "NOT_RUN_MISSING_PINNED_BASELINE": 1,
+        "TIMEOUT": 3,
+        "FAIL_PARTIAL": 1,
+        "NOT_RUN_POLICY_GIT_AND_MISSING_HEAD": 2,
+        "PASS_PARTIAL": 3,
+        "PASS_WITH_PROCESS_EXCLUSIONS_PARTIAL": 1,
+        "NOT_RUN_UPDATER_LIFECYCLE_ENVIRONMENT": 7,
+        "NOT_RUN_POLICY_SHELL": 1,
+        "NOT_RUN_POLICY_DATA_AND_PUBLICATION_GATE": 1,
+        "NOT_RUN_POLICY_GIT_MIXED_CONTROLS": 1,
+        "NOT_RUN_WRAPPER_FLATTENED": 1,
+        "UNQUALIFIED_NEGATIVE_CONTROL": 1,
+        "UNQUALIFIED_NEGATIVE_CONTROL_REVIEWED": 16,
+        "PASS_REVIEWED_NEGATIVE_CONTROL": 21,
+        "BLOCKED_RESOURCE_PROCESS_DEPTH": 2,
+        "NOT_RUN_MISSING_PROBE_FIXTURE": 6,
+        "NOT_RUN_MISSING_INDEPENDENT_COMPARISON": 5,
+        "NOT_RUN_MISSING_DESIGN_REFERENCE": 1,
+        "NOT_RUN_HISTORICAL_STANDALONE_WM_METADATA": 4,
+        "NOT_RUN_MISSING_PINNED_COMPARISON": 2,
+        "NONAPPLICABLE_RETIRED_CONTRACT": 3,
+        "PASS_FLATTENED_ORIGINAL_ASSERTIONS_PARTIAL": 1,
+        "NOT_RUN_MISSING_HISTORICAL_SUPPORT_LAYOUT": 1,
+        "NOT_RUN_MISSING_PINNED_HISTORICAL_INPUT": 3,
+        "NOT_RUN_MISSING_CAPTURED_RECORDS": 1
+      },
+      "interpretation": "Mixed historical source versions and contracts; never whole-current PASS."
     },
-    "qualificationEffect": "Current supported server_only timeline is a release blocker. A local-mode pass does not establish all-mode or full regression qualification; later source changes do not clear this failure without a matching successful rerun.",
-    "latestFailureReviewRecordedAtUtc": "2026-10-09T21:41:57Z",
-    "otherActiveFailureAreas": [
-      "HAYAKU archive preservation and read-frontier checks",
-      "LIBRA associative batch fixture",
-      "Flashback startup snapshot comparisons"
+    "environmentLimits": [
+      "Actual Risu, Windows and model/provider behavior unverified",
+      "Seven updater suites with 29 scenarios not run",
+      "Browser and listener restrictions retained",
+      "Strong native/CAS not enabled or qualified; retired LIA/RETRACE writer roles are not revived"
     ],
-    "causeReview": "unfinished; these results are not cleared by packaging"
+    "unrecoveredHistory": "Exact overwritten inventory007 bytes remain unrecovered",
+    "evidencePins": [
+      {
+        "name": "WM2000-LOGICAL-AND-RESPONSIVENESS-223.json",
+        "sha256": "aa7366992b9541d570bcbdfeb428a70cf009e83ab8ab20cf53f50fc9fea61940",
+        "bytes": 8904
+      },
+      {
+        "name": "RESULT.json",
+        "sha256": "094a23692260cc1d06828552b19357c12b62d133c9085cb1ff47cf70e89f584e",
+        "bytes": 5701
+      },
+      {
+        "name": "COMPLETION.json",
+        "sha256": "027f024d6be6b5fb4d93ee7219506bfb052d6c9a87cc67219fb2a89bb4182452",
+        "bytes": 1127
+      },
+      {
+        "name": "MIN-BUDGET-CURRENTNESS-221.json",
+        "sha256": "80cbe8cdfbc4d8f3e193b429b7427892343b6e457e553ad03f814761d3c5978f",
+        "bytes": 873
+      },
+      {
+        "name": "RETAINED-FAILURE-CAUSAL-207-review.json",
+        "sha256": "010570308e25dbe25f5da6e5647ea84d4fd3f8c2f53ed543921740012adcbe05",
+        "bytes": 330252
+      },
+      {
+        "name": "REMOVE-QUEUE-AND-COMPLETION-FINAL-REVIEW-222.json",
+        "sha256": "6b4b3c2c0b605aa576639b7494a85ec5c4f4e30f9de1e86adf7e5b055647d327",
+        "bytes": 13532
+      },
+      {
+        "name": "WM2000-225-LIFECYCLE-INTERRUPTION-229.json",
+        "sha256": "24097872c73954690d9d65b2017db791a4d39a6fb4e03eb36463546d0e6b3cfe",
+        "bytes": 1084
+      }
+    ]
+  },
+  "matchingArtifactIdentity": {
+    "schema": "librarian.development-artifact-identity.v1",
+    "recordedAtUtc": "2026-10-09T23:52:59.999495+00:00",
+    "sourceCaptureId": "3401c1e3a5c6ba7740ad31ee4d81ad6f1e7f9a18b1e32e1f36b0d4dee4d11c85",
+    "manifestName": "current-artifacts-221/MANIFEST.json",
+    "manifestSha256": "5088eeb460c76e1e826ed9ed5f638d042920a68f8add1358a3ab9fe71be9ab7f",
+    "artifacts": [
+      {
+        "owner": "Flashback_Memory.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "0b4e840604a8a96196abcc44bca3a69d3f4a5fc7d687d70d423a935b5e9b4b29",
+        "bytes": 3291577,
+        "sourceSha256": "0b4e840604a8a96196abcc44bca3a69d3f4a5fc7d687d70d423a935b5e9b4b29",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "GRADIA.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "b038d6448084d68310b6b09fd6026aee2fa26ff1ba9e171d780a41dc865625db",
+        "bytes": 3064720,
+        "sourceSha256": "b038d6448084d68310b6b09fd6026aee2fa26ff1ba9e171d780a41dc865625db",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "HAYAKU_Locator_Continuity.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "6e25bb8a9973b1b71a8a835099fc65d6e3adbcc5212699bd33557e745dc7a3b3",
+        "bytes": 3960419,
+        "sourceSha256": "6e25bb8a9973b1b71a8a835099fc65d6e3adbcc5212699bd33557e745dc7a3b3",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "LIA_Persona_Linker.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
+        "bytes": 1874390,
+        "sourceSha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "LIBRA.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "13ad3ea743a55ef1c681bd9696914df7f8bdc783519f9498768a3529bd302aa1",
+        "bytes": 5769513,
+        "sourceSha256": "13ad3ea743a55ef1c681bd9696914df7f8bdc783519f9498768a3529bd302aa1",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "LIBRA_World_Manager.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
+        "bytes": 6629024,
+        "sourceSha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "RETRACE.js",
+        "kind": "Full",
+        "profile": "source",
+        "sha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
+        "bytes": 1202737,
+        "sourceSha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
+        "buildResultSha256": "dba853da70e72c112f4a0dea34061a7c21330a10035204eabeb62157b5682337"
+      },
+      {
+        "owner": "Flashback_Memory.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "32af8b65a32f72524a91cf85a9a8cd0eaef4e80e6238d7d0b862cb408bc31a11",
+        "bytes": 1724260,
+        "sourceSha256": "0b4e840604a8a96196abcc44bca3a69d3f4a5fc7d687d70d423a935b5e9b4b29",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "GRADIA.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "21783272d8f85332f76a834b1d62e0d9df04b30fd354b4af0a1ecfc03447f132",
+        "bytes": 1659242,
+        "sourceSha256": "b038d6448084d68310b6b09fd6026aee2fa26ff1ba9e171d780a41dc865625db",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "HAYAKU_Locator_Continuity.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "6c4fd7d8056e1e9f2e255993653321c06b0c419f9d6825423205b803765b5c18",
+        "bytes": 1954448,
+        "sourceSha256": "6e25bb8a9973b1b71a8a835099fc65d6e3adbcc5212699bd33557e745dc7a3b3",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "LIA_Persona_Linker.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "b47d1a67aac0288013b7595a688bc60ffe2adb3de9a611b6dc92ae71f3273cb1",
+        "bytes": 1082183,
+        "sourceSha256": "f13c26d74db3e893fad6c3aba523c32a3805207fc01cafd5927385ece4992649",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "LIBRA.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "4539cbeee5b8ba57d6d7efbc6a9b37d01587b815a7db90ff45c51f27f04f9531",
+        "bytes": 3056157,
+        "sourceSha256": "13ad3ea743a55ef1c681bd9696914df7f8bdc783519f9498768a3529bd302aa1",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "LIBRA_World_Manager.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "34ec05b8526121fd2bdde343397ec951b07abf1ef0d362329abdc82bd45e434e",
+        "bytes": 4467847,
+        "sourceSha256": "c4d60ba5bf7fddbc31d50f2ea355245314bf3c85d343c9a049a673db28c2764c",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      },
+      {
+        "owner": "RETRACE.js",
+        "kind": "Min",
+        "profile": "release",
+        "sha256": "caae655870f5274f68a787650175a682a7e377099e09f89fbab766ce66b72db6",
+        "bytes": 668375,
+        "sourceSha256": "4458da812ba8c9bd35649ca95d99fd843125f21a243a2f5a7c49290bc8851584",
+        "buildResultSha256": "a90f5c1d53d3a44254b46f7079a9e0a0377a2af00134e90ce855460a5e80234a"
+      }
+    ],
+    "wmBuildSizeBookkeeping": {
+      "at": "2026-10-09T23:34:04.911643+00:00",
+      "priorLimit": 4467698,
+      "newMeasuredLimit": 4467847,
+      "incrementBytes": 149,
+      "aggregateSincePreEntityLimit": 348,
+      "originalPreEntityLimit": 4467499,
+      "headroomBytes": 0,
+      "reason": "Captured scope refusal around asynchronous remove admission, supported by two retained real-VM red controls and green219. No runtime limit changes.",
+      "receiptSha256": "80cbe8cdfbc4d8f3e193b429b7427892343b6e457e553ad03f814761d3c5978f",
+      "currentWmMinBytes": 4467847,
+      "currentSourceBindingVerified": true
+    },
+    "allFourteenArtifactBytesVerified": true,
+    "allSevenFullBoundToFrozenSource": true,
+    "currentMinArtifactsPackaged": false,
+    "scope": "Current matching Min artifacts are identity/provenance records only; the development package contains seven Full plugins. This is build parity, not regression qualification."
   },
   "privacy": "Private development chronology/audit dumps, credentials, live user DATA, installed dependencies, checkpoint history and unrelated evidence are omitted. Known-pattern screening does not guarantee arbitrary secrets absent."
 }

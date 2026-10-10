@@ -1,6 +1,6 @@
 # Restore and build this development package
 
-This ZIP is an offline development candidate created by the actual release builder. It is not an updater-eligible release. Full regression, actual-host qualification and production-provider qualification are not established by packaging success. The recorded plugin_only timeline passed 65/65 batches, while the supported server_only timeline failed with out-of-memory after 50/65 batches at 332.43 seconds (about 1.97 GiB retained Node heap and sampled RSS 2.78 GiB). This is an active release blocker, not a legacy mirror exclusion. Later source changes do not clear it without a matching successful rerun.
+This ZIP is an offline development candidate created by the actual release builder. It is not an updater-eligible release. Full regression, actual-host qualification and production-provider qualification are not established by packaging success. The source snapshot remains an unfinished development candidate. Consult the dated qualification section of SOURCE-PROVENANCE.json for the exact verified fixes, active failures and pending current-source checks. A narrow timeout-recovery result is not proof of logical-read or host-anchor readiness.
 
 Consult SOURCE-PROVENANCE.json in this directory for the exact capture time, source identity and Git basis. Later working-tree changes are excluded.
 

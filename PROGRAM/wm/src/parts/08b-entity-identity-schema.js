@@ -468,7 +468,7 @@
             }
             // Fallback: parse lorebook entries when cache is not yet built
             const known = [];
-            for (const entry of LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [])) {
+            for (const entry of LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [], { shadowEntryComment: ENTITY_COMMENT })) {
                 if (entry.comment !== ENTITY_COMMENT) continue;
                 try {
                     const parsed = JSON.parse(entry.content || '{}');
@@ -484,7 +484,7 @@
 
         const getKnownEntitySignature = (knownEntities = [], lorebook = []) => {
             if (entityCache.size > 0) return `cache:${entityCacheRevision}:${entityCache.size}`;
-            const loreEntries = LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [])
+            const loreEntries = LibraLoreConsolidator.unpack(Array.isArray(lorebook) ? lorebook : [], { shadowEntryComment: ENTITY_COMMENT })
                 .filter(entry => entry?.comment === ENTITY_COMMENT);
             const digest = stableHash(loreEntries.map(entry => `${entry.comment}:${entry.content || ''}`).join('|'));
             return `lore:${loreEntries.length}:${digest}`;
