@@ -1,7 +1,7 @@
 {
   "schema": "lib.regression.test-normalization.v1",
   "dateUtc": "2026-10-10",
-  "baselineCommit": "219bb8eebfce45068210641eccbfe36aab6a7b9d",
+  "baselineCommit": "c470556589150cb88b9e41f31ad561d1487922df",
   "originalRootUniverse": 1138,
   "defaultRootCount": 1134,
   "wholeFilesRetiredThisAdoption": 0,
@@ -68,6 +68,169 @@
       "independentRuntimeReviewSha256": "d22b178b7e755b8cb71d6b66a96f77e3e7e4c3990fdbd2c164f740b77c983c60",
       "reason": "Retain105-turn lifecycle assertions through actual Classic request, explicit source-edit reanalysis and registered-parent native copy. Compare public returned receipts through the verified narrow address redaction while retaining the complete durable receipt/readback.",
       "qualification": "Registered-parent synthetic fixture only; no unregistered-parent, global discovery or actual-host qualification. Mock producer calls are used; cold replay makes zero provider calls."
+    },
+    {
+      "originalOrdinal": 623,
+      "path": "PROGRAM/tests/libra_micro_stage_retry_test.cjs",
+      "originalSha256": "0ac9b5002457177f55ff44dd9733b545c8cce077ded758c94cfd54ef0c0cbc44",
+      "adoptedSha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 18.779,
+      "runtimeCloseoutSha256": "f31e841e22c29e0c4405939160bd0c6d84bd2a9fd812cb9450aaa6b66e7317be",
+      "independentRuntimeReviewSha256": "26f176d100e6f4616ff4e4e6be5d500a7920e860c8ba90010ad4edc72dff3caa",
+      "reason": "Retain 28 existing Micro cases and replace one retired journal-authority expectation with current receipt-authority publication and real in-flight source-change refusal, including durable Micro readback.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification.",
+      "internalCases": 30,
+      "unchangedExistingCases": 28,
+      "replacementCases": 2
+    },
+    {
+      "originalOrdinal": 662,
+      "path": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+      "originalSha256": "c0d96de708e7ae9bb96a94f714d7e98b7ac4c48831254df867489c098a22108d",
+      "adoptedSha256": "8f4bbc2522fc9784544397224d8fdc0a3d56f53208282823fc665e0e8e26df60",
+      "timeoutSeconds": 180,
+      "result": "PASS",
+      "runtimeSeconds": 74.345,
+      "runtimeCloseoutSha256": "e62460c6a8ad8c1a0b04f2d22048aabdfc08b57d32523c5811b73a0d2587ccd6",
+      "independentRuntimeReviewSha256": "60c80545a88cb8e58e043d5eeb87f980c69134c15c2071b92029fa64d874638b",
+      "reason": "Retain all nine portable mode pairs and complete final inventories; give this functional matrix alone an evidenced 180-second safety ceiling with 12 explicit stage timings. Original60-second timeout is retained, not a changed product performance criterion.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification.",
+      "originalTimeoutSeconds": 60,
+      "functionalModePairs": 9,
+      "passedTimedStages": 12,
+      "priorTimeoutPreserved": true
+    },
+    {
+      "originalOrdinal": 667,
+      "path": "PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs",
+      "originalSha256": "1c345cea1c3b1037817561bb906c161ad8b1304197231aa1f39bc5a50b508896",
+      "adoptedSha256": "a3fef4ad12e90a6cc45b12b1973448d5cd6c93d5bdfb5bd07d4874296425c7fb",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 21.296,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 668,
+      "path": "PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs",
+      "originalSha256": "ad263600d8edf23f6fc916a00d16d748d91c2bcee6044fa4f1556ea5ce9d31f9",
+      "adoptedSha256": "af3afca534774d5b7fe67582cc44884dfb42f65ed94b423f2d1b8712b196be1d",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 23.792,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 669,
+      "path": "PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs",
+      "originalSha256": "e149fda024ed5d214ed479fae9cf3bcb4d2c418bf3ea9231863c93410b784a2a",
+      "adoptedSha256": "9f9cd311860a9683fc0afc4a68c1286714c7f0eab42a1c20761c15fdc2db5b17",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 22.957,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 670,
+      "path": "PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs",
+      "originalSha256": "75620927f4f08e2b6fb2ac8fd7d3a9c9261378f481004a05481c217e0957c87f",
+      "adoptedSha256": "94435cc7b1026969f44a5a8343d7db555e7e0d07442213dfa90db984b332637e",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 14.163,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 671,
+      "path": "PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs",
+      "originalSha256": "9704680d599106c4a344165a6b3d421a266170c47b6c75eb12a45607704c91ff",
+      "adoptedSha256": "940d82d16aed514d3dfe78deef31f69c18b9fa71b7db62a7c3471f5f24bb1c12",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 22.792,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 674,
+      "path": "PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs",
+      "originalSha256": "5044ef2967be0958753e0033c490a46d5fb2394f8e1122a3a47aa8ca89de6c66",
+      "adoptedSha256": "fad2bb36f4a248df43976df4ad47f245c46385ee0b10cf94143b0a7da76ff42a",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 22.592,
+      "runtimeCloseoutSha256": "802de3535740d012ccde29681b3b91b3e227be629a30c3521f2de675c62fd2df",
+      "independentRuntimeReviewSha256": "e990580dc0527c0e462f4035ba5e8b7450a7ef0d031b404a7b74bf5c835e892b",
+      "reason": "Replace the retired Input Writer consumer with the actual registered Classic hook and same-request canonical identity proof; preserve provider-count, whole fact delivery and complete durable-byte/physical-revision assertions.",
+      "qualification": "Synthetic fixtures with deterministic mock producers; no actual external model or actual host qualification."
+    },
+    {
+      "originalOrdinal": 672,
+      "path": "PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs",
+      "originalSha256": "c6d621754df80e71758aba1294ae5f0e90c3b552343f75d42a8deb6a6c322042",
+      "adoptedSha256": "0ce10520e9da82639579d9a28f59c6944e19702b89d77fea32b457e8c740d0ad",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 23.175,
+      "runtimeCloseoutSha256": "dd3dac25405fae4504cbf039771f05b9f0f0e27ce4a1de670bac946eba08d1db",
+      "independentRuntimeReviewSha256": "42e3663804c3b2996c6f76800dafc3dc4bc401f7e6e063090772b0122ef1cee4",
+      "reason": "Use the real bounded derived-vector queue before the test baseline, requiring preserved canonical authority/provider counts and zero pending/transaction records; retain the complete post-hook canonical/ref/Head/registry/transaction bytes and physical-revision equality.",
+      "qualification": "Synthetic actual registered hook in mirror/server_only. One queue invocation per fixture; attempted refs bounded 0..2 with final pending/transaction0. Actual number processed was not separately logged. No real model or actual host."
+    },
+    {
+      "originalOrdinal": 716,
+      "path": "PROGRAM/tests/libra_receipt_recent_dialogue_reader_test.cjs",
+      "originalSha256": "5ab6be9ba35ac4c4c3720c23e0f4b4f67b968e622243144de052878fb70be12e",
+      "adoptedSha256": "14c02baa1fb447df7ffd2624f396ffc9ec6625d233ffb5f3d86de59a0f51e246",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 3.399,
+      "runtimeCloseoutSha256": "974bed1b775b8ae65714af33907017a15ed55357611bc7a181660784bab09a9a",
+      "independentRuntimeReviewSha256": "113e184c4dcfb90bdfd78bcedfd551b2ad4cded2a2c811e167881bc71599bc6e",
+      "reason": "Explicitly enable Classic live tail in positive formatter fixtures, retaining the original37 assertion-bearing lines and adding default/off/legacy-label controls without restoring removed Planner behavior.",
+      "qualification": "Direct formatter fixture and policy-negative controls; scoped source-receipt/head write count and added-provider count0. Not actual hook, browser or actual host qualification."
+    },
+    {
+      "originalOrdinal": 715,
+      "path": "PROGRAM/tests/libra_receipt_nonblocking_context_test.cjs",
+      "originalSha256": "e083344c5580534da552106416e103289b11a90fb358ebe053ea888f52038896",
+      "adoptedSha256": "d73b461e67195b7aa0dcfd1be3257059615ae92754a87d47966579193ac156fe",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 16.748,
+      "runtimeCloseoutSha256": "1d4c74694adf315fe22d1441f14eaad0813d734016e578d85e57eda845e0c3a2",
+      "independentRuntimeReviewSha256": "a62cb487d1474f623b4761c78c902842a7ad8399b31bc400c904f58f22392950",
+      "reason": "Replace removed response-lore diagnostics with actual Classic hook/read-only output and receipt exclusion; bind physical read gates to exact async-operation identity, retain unchanged-source delivery and edited-source refusal plus exact Canonical positive.",
+      "qualification": "Actual Classic hook in plugin_only synthetic host: six ordered missing/held-read/Canonical/read-only/source-currentness cases and gate ownership controls. This does not qualify all storage modes, actual Risu, or real model quality."
+    },
+    {
+      "originalOrdinal": 1085,
+      "path": "PROGRAM/tests/storage-compute-mode-contract-v2.test.cjs",
+      "originalSha256": "0024f9a991af9a99328cc3c58d31b7c2cc0b48dd0f56ce70fe6f6ea978c9e44e",
+      "adoptedSha256": "9d48b97524beb6eb8189175eb56abdc3ba105b7e1685302e7c74d5ae836aec56",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 3.283,
+      "runtimeCloseoutSha256": "e05fbdd39390fcda0b48e3e3f2fe08ac5d5fc5908a7bff59ca0084c392a45e3e",
+      "independentRuntimeReviewSha256": "1c43114be77620d53d957c42be186852b4f9decf70049c832d6ee3599e2825ea",
+      "reason": "Replace only LIA obsolete generic server/Compute panel expectation with the exact current local-only owner factory policies; retain other owners and all SDK/Compute route assertions, and validate the checker with two positive and26 exact assertion-negative fixtures.",
+      "qualification": "Source AST structural contract and synthetic checker controls only. Existing source-route checks remain; no whole Compute runtime, actual host, browser or real provider qualification. The prior fixture SyntaxError remains retained."
     }
   ],
   "addedSupport": [
@@ -91,14 +254,55 @@
       "path": "PROGRAM/tests/fixtures/native_public_receipt_projection_controls.cjs",
       "sha256": "b036eab22897c403b62983af674190e1d2a89fdeb1a0cb0963af6de77de0b7c0",
       "scope": "Reproducible helper-only positive/negative controls; not a new default root test."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs",
+      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
+      "qualification": "Exact009-v2 identity helper and its controls. The original009-v2 receipt alone did not qualify672; the separately recorded013 normalized runtime now preserves and passes the same hook-byte equality obligations."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs",
+      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
+      "qualification": "Exact009-v2 identity helper and its controls. The original009-v2 receipt alone did not qualify672; the separately recorded013 normalized runtime now preserves and passes the same hook-byte equality obligations."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_672_derived_queue_precondition.cjs",
+      "sha256": "b2aa67a45304ebdb6a6f7cfb09b2ccfb610c6cf0619f6eea0f4868ff4ee4774c",
+      "qualification": "Exact013 helper with four positive,30 invalid-preparation,one queue-error and three retained hook-mutation controls verified under the recovered supervisor; actual672 whole-hook preservation passed independently."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_672_derived_queue_precondition_controls.cjs",
+      "sha256": "366a42fad195927c20cc10d29afc66206b4ccda921e0ebd32c0b18fae8b58a2c",
+      "qualification": "Exact013 helper with four positive,30 invalid-preparation,one queue-error and three retained hook-mutation controls verified under the recovered supervisor; actual672 whole-hook preservation passed independently."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/lia_local_compute_owner_contract.cjs",
+      "sha256": "3d8194c91f443a900df21d8b37070fc9dd8f559b6cbe2a077aaece9871c1305a",
+      "qualification": "Exact LIA owner source-structural checker and finite control fixture invoked once by retained ordinal1085; two positive and26 expected assertion-negative controls passed in the unchanged native profile."
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/lia_local_compute_owner_contract_controls.cjs",
+      "sha256": "13b5011d618c6c9f3fe6ecb6a1eab87df9ad862627155bb35cf3f722c50dbec2",
+      "qualification": "Exact LIA owner source-structural checker and finite control fixture invoked once by retained ordinal1085; two positive and26 expected assertion-negative controls passed in the unchanged native profile."
     }
   ],
   "evidencePolicy": "Original failures and complete private receipts retained separately. Runtime counts refer to bounded cases, not full real-host qualification.",
   "unadoptedCandidates": [
     "006",
-    "009",
-    "010"
+    "010-v5",
+    "017:source-reviewed-unexecuted",
+    "018:source-reviewed-unexecuted",
+    "019:source-preparation"
   ],
   "publication": "Local source normalization only; no remote publication is performed by this record.",
-  "previousNormalizationBaseline": "a3eefb399670dc1b07b45475343e609acc7031ef"
+  "previousNormalizationBaseline": "11058c19b29aed9d2fb11ce0c0e70076d8994e7a",
+  "namedFunctionalTimeoutOverrides": [
+    {
+      "path": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
+      "originalSeconds": 60,
+      "seconds": 180,
+      "scope": "Only nine-pair functional fixture; unchanged assertions and no product latency requirement change."
+    }
+  ],
+  "cumulativeCorrectedRootFiles": 21
 }

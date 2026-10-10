@@ -4,6 +4,8 @@
 // durable State/History/Recall surfaces recover. This is intentionally a
 // narrow semantic fixture; the older v4 fault matrix remains separate.
 const assert = require('node:assert/strict');
+const { readActualCanonicalDelivery } = require('./fixtures/libra_actual_canonical_delivery.cjs');
+const { prepare672DerivedQueue } = require('./fixtures/libra_672_derived_queue_precondition.cjs');
 const { serverFixture, fiveMore } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 
@@ -173,10 +175,11 @@ const runMode = async mode => {
     const recallText = JSON.stringify(recall);
     assert.match(recallText, /민트차를 좋아한다/, `${mode}: restored-scope Recall keeps structured preference`);
     assert.match(recallText, /이행되었다|반환/, `${mode}: restored-scope Recall keeps resolved lifecycle`);
-    const packet = await f.r.api.prepareInputWriterEvidence('민아 민트차 열쇠 반환 약속');
-    const packetText = JSON.stringify(packet?.evidencePacket || {});
-    assert.match(packetText, /민트차를 좋아한다/, `${mode}: restored-scope Input Writer keeps structured preference`);
-    assert.match(packetText, /이행되었다/, `${mode}: restored-scope Input Writer keeps resolved lifecycle`);
+    await prepare672DerivedQueue(snapshot, { expectedMemories: [memoryOf(snapshot, 1), memory] });
+    const packet = await readActualCanonicalDelivery(snapshot, '민아 민트차 열쇠 반환 약속', { expectedMemory: memory });
+    const packetText = packet.canonicalText;
+    assert.match(packetText, /민트차를 좋아한다/, `${mode}: restored-scope Classic consumer keeps structured preference`);
+    assert.match(packetText, /이행되었다/, `${mode}: restored-scope Classic consumer keeps resolved lifecycle`);
     observation.providerCalls = f.control.calls.length;
     observation.transitionRejected = transitioned.completed === 0;
     observation.memoryId = memory.memoryId;
@@ -198,6 +201,6 @@ const runMode = async mode => {
     test: 'libra_phase_d_v5_scope_chat_transition_recovery',
     passed: MODES.length,
     results,
-    boundary: 'synthetic provider artifact; chat identity transition during provider wait rejects the original candidate, explicit identity restoration reruns v5 semantics through State/History/Recall/Input Writer in mirror and server_only'
+    boundary: 'synthetic provider artifact; chat identity transition during provider wait rejects the original candidate, explicit identity restoration reruns v5 semantics through State/History/Recall/Classic consumer in mirror and server_only'
   }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

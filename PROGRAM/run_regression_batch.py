@@ -108,6 +108,8 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # Functional 3-source x 3-destination portable matrix; default60 timeout retained as prior evidence.
+    'libra_phase_d_portable_nine_pairs_test.cjs': 180,
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
     # This is one discovered suite; retain its individual test deadlines unchanged.
     'gradia_suite_test.cjs': 240,

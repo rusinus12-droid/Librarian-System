@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-10T13:07:09.228Z",
+  "generatedAt": "2026-10-10T15:07:26.456Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2179,165 +2179,121 @@
       "sha256": "51238f67cf0a7a073137cd5bcc914c08a72dcbe81c9e3b5512d670ce084c6cb6",
       "bytes": 2578
     },
-    "docs/regression-checkpoints/20261010T1300Z/ACTIVE-SOURCE-MANIFEST.json": {
-      "sha256": "4edec846152c13afa2b70ab111104f32203ca5224284f7cc1cc0f5ef9f5fc463",
-      "bytes": 413602
+    "docs/regression-checkpoints/20261010T1500Z/ACTIVE-SOURCE-MANIFEST.json": {
+      "sha256": "1abf6f5d2e7f8abd63ab605d9d72427fe7c2e7586bf3175c1bfba9349eb1a5e7",
+      "bytes": 414964
     },
-    "docs/regression-checkpoints/20261010T1300Z/BROWSER-STATUS.json": {
-      "sha256": "5339d684a105d24aff8389cdc34a702670790d215225b96dffab1331ea20966b",
+    "docs/regression-checkpoints/20261010T1500Z/BROWSER-STATUS.json": {
+      "sha256": "145476404d4f8a6c19e08fe81e67f0c87d3b1079e61a8a60affa2bbb2aeeebc0",
       "bytes": 9348
     },
-    "docs/regression-checkpoints/20261010T1300Z/CHECKPOINT-PAIR.json": {
-      "sha256": "119924516a84eeb13de0de36c84ed79b6bc37e96bbc9d6399170d12b698f5c08",
+    "docs/regression-checkpoints/20261010T1500Z/CHECKPOINT-PAIR.json": {
+      "sha256": "26bf258a1f41d21e83a8e093088927d8186e872e9e9aabcf18f3d8180727ee0d",
       "bytes": 1276
     },
-    "docs/regression-checkpoints/20261010T1300Z/README.md": {
-      "sha256": "14ed125820466a9f3012d61b37b3ad4b5cb4bcadcc7a1f2c8ee01598cc1f24f4",
-      "bytes": 1114
+    "docs/regression-checkpoints/20261010T1500Z/README.md": {
+      "sha256": "1720860863411af3eb7770a1fdaa064dda0a1a1d834db1632b314e25260fd7e4",
+      "bytes": 1262
     },
-    "docs/regression-checkpoints/20261010T1300Z/REGRESSION-STATUS.json": {
-      "sha256": "ab82a5bfd8a3308ac5488386d299e22aa65a279d21680b80796e4d7d972f141d",
-      "bytes": 20261
+    "docs/regression-checkpoints/20261010T1500Z/REGRESSION-STATUS.json": {
+      "sha256": "4791410f9f2af85efb8d7fdfd07354316fcdb1d851ecbeb17e702d317896240e",
+      "bytes": 15078
     },
-    "docs/regression-checkpoints/20261010T1300Z/RESTART.md": {
-      "sha256": "ae8afd738dcfd758ddf85a673d7324f0610e497db5354a4890ba5d482c1d538f",
-      "bytes": 2582
+    "docs/regression-checkpoints/20261010T1500Z/RESTART.md": {
+      "sha256": "910498791927f6d2357fcf3b1b201ddfa11b930f6df96b343e1f2795b22d7529",
+      "bytes": 2571
     },
-    "docs/regression-checkpoints/20261010T1300Z/RESTORE-SOURCE.py": {
-      "sha256": "d60c9270d90d8cae4be91b15c80fcf6fe58a2be82bb5723ac5f6c3caaa898e01",
+    "docs/regression-checkpoints/20261010T1500Z/RESTORE-SOURCE.py": {
+      "sha256": "46fd654b2ceaa1a60b466a8667be4e49cb09948c9243563c270b5338a9a4a9d2",
       "bytes": 2935
     },
-    "docs/regression-checkpoints/20261010T1300Z/RESTORE.md": {
-      "sha256": "6398d8dc593a784fab1776a509744b00842802cb676b2a552cf9defa8a09c843",
-      "bytes": 2493
+    "docs/regression-checkpoints/20261010T1500Z/RESTORE.md": {
+      "sha256": "1ba9e8cf6bbba45d0e6f8d6efc8e7cf7e7d07ab9fe5c1a721ae2d98b85be5094",
+      "bytes": 2482
     },
-    "docs/regression-checkpoints/20261010T1300Z/ROOT-REGRESSION-LEDGER.json": {
-      "sha256": "aa71bd9c18d9770a4ee91d8b4d0ac45b95265e0584d4c0efd6c7213d82ae3adf",
-      "bytes": 416540
+    "docs/regression-checkpoints/20261010T1500Z/ROOT-REGRESSION-LEDGER.json": {
+      "sha256": "685e71a9bfad6eaa5becf8ed1d41d90c7e344b54631976d4edc807e3f5dd6fe3",
+      "bytes": 421483
     },
-    "docs/regression-checkpoints/20261010T1300Z/SOURCE-PREIMAGE-PRIVACY.json": {
-      "sha256": "b1218523c7221b5c83e9712da2255a3edcfbbc6aba6ef7681568ad68356b9cc8",
-      "bytes": 2141
+    "docs/regression-checkpoints/20261010T1500Z/SOURCE-PREIMAGE-PRIVACY.json": {
+      "sha256": "7e554f9c3b261c73f861ad83f37336d2ba86ea37e85d92f4dc672afae766af3f",
+      "bytes": 2262
     },
-    "docs/regression-checkpoints/20261010T1300Z/source-preimage/.gitattributes": {
+    "docs/regression-checkpoints/20261010T1500Z/source-preimage/.gitattributes": {
       "sha256": "efe23417b1b8fa866bd272d68e12c73e08ea732b61ab83e7900ba29dbd39d177",
       "bytes": 220
     },
-    "docs/regression-checkpoints/20261010T1300Z/source-preimage/.gitignore": {
+    "docs/regression-checkpoints/20261010T1500Z/source-preimage/.gitignore": {
       "sha256": "51d0fa0b3e6992d12d465d9b68eeb04053b9adc24e552eec1220e4c0a7ab59e6",
       "bytes": 2161
     },
-    "docs/regression-checkpoints/20261010T1300Z/source-preimage/PROGRAM/program-manifest.json": {
-      "sha256": "81625a5dd4b1fa36371578fd0a123bc1241901c49f340b5500594da6f239aa53",
-      "bytes": 367438
+    "docs/regression-checkpoints/20261010T1500Z/source-preimage/PROGRAM/program-manifest.json": {
+      "sha256": "5a8897535af0cb6a99f3e9bea3d24318cb442236e3fee40c207562e348248a2a",
+      "bytes": 368506
     },
-    "docs/regression-checkpoints/20261010T1300Z/source-preimage/README.md": {
+    "docs/regression-checkpoints/20261010T1500Z/source-preimage/README.md": {
       "sha256": "8218e65cd3d3562bef3ed1d5176c69edfe483b9bc1c43a4191b50296be4ea380",
       "bytes": 2791
     },
-    "docs/regression-checkpoints/20261010T1300Z/source-preimage/SHA256SUMS.txt": {
-      "sha256": "7af2c6f4b2bf1f74980470936723fe6d2a1d59723e1d09211865dcd81f40e972",
-      "bytes": 231579
+    "docs/regression-checkpoints/20261010T1500Z/source-preimage/SHA256SUMS.txt": {
+      "sha256": "ecf5abad95958e9031caa2b1de19c1c559a50887eeb7707631e3d9a1a37d9fb6",
+      "bytes": 232380
     },
-    "docs/regression-checkpoints/20261010T1300Z/SOURCE-PRESERVATION-MAP.json": {
-      "sha256": "015fa362f0cab3416f089df4d3a55dbf9c3e7ddb30332fcf49356a9524b791bf",
+    "docs/regression-checkpoints/20261010T1500Z/SOURCE-PRESERVATION-MAP.json": {
+      "sha256": "0cc58c8cf9f22c1f7b6f5600bfb21e5abfa064be7d948a290e5f41d83a0f3079",
       "bytes": 897
     },
-    "docs/regression-checkpoints/20261010T1300Z/SUPPLEMENT-MANIFEST.json": {
-      "sha256": "9d5d298b11992dd992de4bd2baeea6841a2fbbdcc975738188b5482b3de6ee37",
-      "bytes": 5480
+    "docs/regression-checkpoints/20261010T1500Z/SUPPLEMENT-MANIFEST.json": {
+      "sha256": "01683f9622d3be9b267b3e86db0e103bcf738d36e84f355a20c47d2ce77dc172",
+      "bytes": 3071
     },
-    "docs/regression-checkpoints/20261010T1300Z/TEST-NORMALIZATION.json": {
-      "sha256": "b18c33e31607b2a1f63dd014c53e6687bac2f89ea7c9158ec74684f1661e8591",
-      "bytes": 5623
+    "docs/regression-checkpoints/20261010T1500Z/TEST-NORMALIZATION.json": {
+      "sha256": "10ab80413238f033a103c6bf05ad1c29c05d25903ad10b4477bf543fb59e0082",
+      "bytes": 21004
     },
-    "docs/regression-checkpoints/20261010T1300Z/TEST-RETIREMENT-AND-ADOPTION.json": {
+    "docs/regression-checkpoints/20261010T1500Z/TEST-RETIREMENT-AND-ADOPTION.json": {
       "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437",
       "bytes": 13835
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs": {
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs": {
       "sha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f",
       "bytes": 5189
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs": {
-      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
-      "bytes": 6703
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs": {
-      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
-      "bytes": 7657
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs": {
-      "sha256": "4173d55d574f3573a50f3246ff4ba3099049a411fb8d5a90b58b927f79028ddc",
-      "bytes": 23319
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_aba_correction_recovery_test.cjs": {
-      "sha256": "a3fef4ad12e90a6cc45b12b1973448d5cd6c93d5bdfb5bd07d4874296425c7fb",
-      "bytes": 16065
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_correction_race_recovery_test.cjs": {
-      "sha256": "af3afca534774d5b7fe67582cc44884dfb42f65ed94b423f2d1b8712b196be1d",
-      "bytes": 21803
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs": {
-      "sha256": "9f9cd311860a9683fc0afc4a68c1286714c7f0eab42a1c20761c15fdc2db5b17",
-      "bytes": 13167
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs": {
-      "sha256": "94435cc7b1026969f44a5a8343d7db555e7e0d07442213dfa90db984b332637e",
-      "bytes": 17720
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_response_loss_recovery_test.cjs": {
-      "sha256": "940d82d16aed514d3dfe78deef31f69c18b9fa71b7db62a7c3471f5f24bb1c12",
-      "bytes": 18286
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs": {
-      "sha256": "3d141ccc4b864ef031d8cf86603f32066885071be96b76950fe101a14b4232db",
-      "bytes": 12285
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/009-v2/PROGRAM/tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs": {
-      "sha256": "fad2bb36f4a248df43976df4ad47f245c46385ee0b10cf94143b0a7da76ff42a",
-      "bytes": 15926
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs": {
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs": {
       "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8",
       "bytes": 9404
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs": {
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs": {
       "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd",
       "bytes": 7817
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs": {
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs": {
       "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816",
       "bytes": 16139
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs": {
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs": {
       "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b",
       "bytes": 33850
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/011-v2/PROGRAM/tests/libra_micro_stage_retry_test.cjs": {
-      "sha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354",
-      "bytes": 35435
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/017/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs": {
+      "sha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0",
+      "bytes": 18202
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/012/PROGRAM/run_regression_batch.py": {
-      "sha256": "803adb32d38b597dd94fd7e94f02680ba9f0ca075220b969a36cce622f0cbfa9",
-      "bytes": 21245
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/017/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs": {
+      "sha256": "2fd193fd72c9875117055600bc98d4515ce23fae38a5ecfa8136b81d47659786",
+      "bytes": 11816
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery_controls.cjs": {
-      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
-      "bytes": 6703
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/018/PROGRAM/tests/libra_person_inventory_3mode_test.cjs": {
+      "sha256": "39bbdec07948433a1495458aae80fc7cdeaf9c1ab5a7f9965307c7eeb12282af",
+      "bytes": 24123
     },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/012/PROGRAM/tests/fixtures/libra_actual_canonical_delivery.cjs": {
-      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
-      "bytes": 7657
-    },
-    "docs/regression-checkpoints/20261010T1300Z/test-successors/012/PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs": {
-      "sha256": "8f4bbc2522fc9784544397224d8fdc0a3d56f53208282823fc665e0e8e26df60",
-      "bytes": 24405
+    "docs/regression-checkpoints/20261010T1500Z/test-successors/019/PROGRAM/tests/storage_mirror_transition_retirement_test.cjs": {
+      "sha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3",
+      "bytes": 26303
     },
     "docs/regression/TEST-NORMALIZATION-20261010.json": {
-      "sha256": "b18c33e31607b2a1f63dd014c53e6687bac2f89ea7c9158ec74684f1661e8591",
-      "bytes": 5623
+      "sha256": "10ab80413238f033a103c6bf05ad1c29c05d25903ad10b4477bf543fb59e0082",
+      "bytes": 21004
     },
     "docs/regression/TEST-RETIREMENT-20261010.json": {
       "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437",
@@ -2740,8 +2696,8 @@
       "bytes": 49
     },
     "run_regression_batch.py": {
-      "sha256": "0539facf21e42997b959f6bf69a203571a92554263fa7ce5e7fe91a089cbc074",
-      "bytes": 21085
+      "sha256": "803adb32d38b597dd94fd7e94f02680ba9f0ca075220b969a36cce622f0cbfa9",
+      "bytes": 21245
     },
     "sdk/FlashbackServerRepair.source.js": {
       "sha256": "891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5",
@@ -3787,9 +3743,33 @@
       "sha256": "0f9af3bd3c7f45f09fc2146314d4018661f39745396f882d3a75c9e88aa046f4",
       "bytes": 184990
     },
+    "tests/fixtures/lia_local_compute_owner_contract_controls.cjs": {
+      "sha256": "13b5011d618c6c9f3fe6ecb6a1eab87df9ad862627155bb35cf3f722c50dbec2",
+      "bytes": 6054
+    },
+    "tests/fixtures/lia_local_compute_owner_contract.cjs": {
+      "sha256": "3d8194c91f443a900df21d8b37070fc9dd8f559b6cbe2a077aaece9871c1305a",
+      "bytes": 3561
+    },
     "tests/fixtures/lia_native_runtime_fixture.cjs": {
       "sha256": "d613075e1919ba224208b0e7604ec23838aeb54198ef23c41a726ce9eb6fc5df",
       "bytes": 10002
+    },
+    "tests/fixtures/libra_672_derived_queue_precondition_controls.cjs": {
+      "sha256": "366a42fad195927c20cc10d29afc66206b4ccda921e0ebd32c0b18fae8b58a2c",
+      "bytes": 12058
+    },
+    "tests/fixtures/libra_672_derived_queue_precondition.cjs": {
+      "sha256": "b2aa67a45304ebdb6a6f7cfb09b2ccfb610c6cf0619f6eea0f4868ff4ee4774c",
+      "bytes": 12629
+    },
+    "tests/fixtures/libra_actual_canonical_delivery_controls.cjs": {
+      "sha256": "5ecc4b9d8a372ce980b8d8fbeabcc63f20a412045ee255727a3121dd1b7b9806",
+      "bytes": 6703
+    },
+    "tests/fixtures/libra_actual_canonical_delivery.cjs": {
+      "sha256": "e5744d1cea7f22bd65bdd2c9612787ab1587107314e648a0e90343aab0852e0a",
+      "bytes": 7657
     },
     "tests/fixtures/libra_candidate_source_hook.cjs": {
       "sha256": "f559161c54db122216cd93c84ab46372f8cf57f61ce0c642ffb960acf101f721",
@@ -6340,8 +6320,8 @@
       "bytes": 5864
     },
     "tests/libra_micro_stage_retry_test.cjs": {
-      "sha256": "0ac9b5002457177f55ff44dd9733b545c8cce077ded758c94cfd54ef0c0cbc44",
-      "bytes": 32801
+      "sha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354",
+      "bytes": 35435
     },
     "tests/libra_micro_state_admission_3mode_test.cjs": {
       "sha256": "a6d216345dfbf38b4892977ea29bf8db471229d0d1ca3f920f2b54ccb02bf006",
@@ -6508,8 +6488,8 @@
       "bytes": 33129
     },
     "tests/libra_phase_d_portable_nine_pairs_test.cjs": {
-      "sha256": "c0d96de708e7ae9bb96a94f714d7e98b7ac4c48831254df867489c098a22108d",
-      "bytes": 23178
+      "sha256": "8f4bbc2522fc9784544397224d8fdc0a3d56f53208282823fc665e0e8e26df60",
+      "bytes": 24405
     },
     "tests/libra_phase_d_response_boundary_identity_test.cjs": {
       "sha256": "46e07e0e38e3d87711744fc5e8e6cb207a0facd80808b2b2a5c13287a2de869a",
@@ -6528,36 +6508,36 @@
       "bytes": 8439
     },
     "tests/libra_phase_d_v5_aba_correction_recovery_test.cjs": {
-      "sha256": "1c345cea1c3b1037817561bb906c161ad8b1304197231aa1f39bc5a50b508896",
-      "bytes": 15925
+      "sha256": "a3fef4ad12e90a6cc45b12b1973448d5cd6c93d5bdfb5bd07d4874296425c7fb",
+      "bytes": 16065
     },
     "tests/libra_phase_d_v5_correction_race_recovery_test.cjs": {
-      "sha256": "ad263600d8edf23f6fc916a00d16d748d91c2bcee6044fa4f1556ea5ce9d31f9",
-      "bytes": 21659
+      "sha256": "af3afca534774d5b7fe67582cc44884dfb42f65ed94b423f2d1b8712b196be1d",
+      "bytes": 21803
     },
     "tests/libra_phase_d_v5_fault_semantic_recovery_test.cjs": {
-      "sha256": "e149fda024ed5d214ed479fae9cf3bcb4d2c418bf3ea9231863c93410b784a2a",
-      "bytes": 13027
+      "sha256": "9f9cd311860a9683fc0afc4a68c1286714c7f0eab42a1c20761c15fdc2db5b17",
+      "bytes": 13167
     },
     "tests/libra_phase_d_v5_mirror_local_failure_recovery_test.cjs": {
-      "sha256": "75620927f4f08e2b6fb2ac8fd7d3a9c9261378f481004a05481c217e0957c87f",
-      "bytes": 17594
+      "sha256": "94435cc7b1026969f44a5a8343d7db555e7e0d07442213dfa90db984b332637e",
+      "bytes": 17720
     },
     "tests/libra_phase_d_v5_response_loss_recovery_test.cjs": {
-      "sha256": "9704680d599106c4a344165a6b3d421a266170c47b6c75eb12a45607704c91ff",
-      "bytes": 18146
+      "sha256": "940d82d16aed514d3dfe78deef31f69c18b9fa71b7db62a7c3471f5f24bb1c12",
+      "bytes": 18286
     },
     "tests/libra_phase_d_v5_scope_chat_transition_recovery_test.cjs": {
-      "sha256": "c6d621754df80e71758aba1294ae5f0e90c3b552343f75d42a8deb6a6c322042",
-      "bytes": 12167
+      "sha256": "0ce10520e9da82639579d9a28f59c6944e19702b89d77fea32b457e8c740d0ad",
+      "bytes": 12483
     },
     "tests/libra_phase_d_v5_server_only_outage_recovery_test.cjs": {
       "sha256": "13170d07075395c944891176a5269d3f77a0a22d99bee8e870dbec7ca7cdc76d",
       "bytes": 17900
     },
     "tests/libra_phase_d_v5_state_scope_commit_boundary_test.cjs": {
-      "sha256": "5044ef2967be0958753e0033c490a46d5fb2394f8e1122a3a47aa8ca89de6c66",
-      "bytes": 15808
+      "sha256": "fad2bb36f4a248df43976df4ad47f245c46385ee0b10cf94143b0a7da76ff42a",
+      "bytes": 15926
     },
     "tests/libra_phase06_post_adoption_p1_transform.cjs": {
       "sha256": "f3ee6a18ceca1fe29d8b688c7e902ac1186ab0e75bf06f867fee7e62a815639f",
@@ -6796,12 +6776,12 @@
       "bytes": 3803
     },
     "tests/libra_receipt_nonblocking_context_test.cjs": {
-      "sha256": "e083344c5580534da552106416e103289b11a90fb358ebe053ea888f52038896",
-      "bytes": 13157
+      "sha256": "d73b461e67195b7aa0dcfd1be3257059615ae92754a87d47966579193ac156fe",
+      "bytes": 22844
     },
     "tests/libra_receipt_recent_dialogue_reader_test.cjs": {
-      "sha256": "5ab6be9ba35ac4c4c3720c23e0f4b4f67b968e622243144de052878fb70be12e",
-      "bytes": 6394
+      "sha256": "14c02baa1fb447df7ffd2624f396ffc9ec6625d233ffb5f3d86de59a0f51e246",
+      "bytes": 7784
     },
     "tests/libra_receipt_recovery_desk_contract_test.cjs": {
       "sha256": "8cd2c276edd702a3403ae531c7515970daa129958fdd67a892701c6cbb2f95c1",
@@ -8408,8 +8388,8 @@
       "bytes": 2080
     },
     "tests/storage-compute-mode-contract-v2.test.cjs": {
-      "sha256": "0024f9a991af9a99328cc3c58d31b7c2cc0b48dd0f56ce70fe6f6ea978c9e44e",
-      "bytes": 2800
+      "sha256": "9d48b97524beb6eb8189175eb56abdc3ba105b7e1685302e7c74d5ae836aec56",
+      "bytes": 3148
     },
     "tests/suite_durable_commit_fault_test.cjs": {
       "sha256": "28f9c4d8259a89a244f65de1bfc08a9d2d18773b7fd2b9a3bb316a51b23e54f5",

@@ -29,15 +29,32 @@ const rows = local => [...local].flatMap(([key, raw]) => {
     assert.equal(full.status, 'complete');
     assert.deepEqual(Array.from(full.pairs, pair => pair.turn), [3, 4, 5]);
     assert.deepEqual(Array.from(full.pairs, pair => pair.user.chatId), ['t3-u', 't4-u', 't5-u']);
-    const projection = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: full, settings: {liveTailMaxTurns: 3}, route: 'planner'});
+    for (const [label, options] of [
+      ['default Classic OFF', {settings: {}, route: 'classic'}],
+      ['explicit Classic OFF', {settings: {classicLiveTailEnabled: false}, route: 'classic'}],
+      ['legacy Planner alias cannot enable Live Tail', {settings: {}, route: 'planner'}]
+    ]) {
+      const disabled = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: full, ...options});
+      assert.equal(disabled.liveTail, null, label);
+      assert.equal(disabled.queryScene, '', `${label}: no unapproved recent dialogue projection`);
+      assert.equal(disabled.receiptReadSet.readSetDigest, full.readSetDigest,
+        `${label}: route gating preserves receipt authority`);
+    }
+    const projection = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: full, settings: {classicLiveTailEnabled: true, liveTailMaxTurns: 3}, route: 'classic'});
     assert.deepEqual(Array.from(projection.receiptReadSet.refs, ref => ref.turn), [3, 4, 5]);
     assert.match(projection.liveTail.transcript, /\[USER chatId=t5-u\]/);
     assert.equal(projection.latestAssistant, full.pairs[2].assistant.text);
     assert.equal(projection.queryScene, projection.liveTail.transcript);
+    const legacyAlias = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: full,
+      settings: {classicLiveTailEnabled: true, liveTailMaxTurns: 3}, route: 'planner'});
+    assert.equal(legacyAlias.liveTail.transcript, projection.liveTail.transcript,
+      'legacy route label normalizes to the same explicitly enabled Classic projection');
+    assert.equal(legacyAlias.receiptReadSet.readSetDigest, projection.receiptReadSet.readSetDigest,
+      'legacy route label does not change receipt authority');
     const legacyBudget = f.r.api.debugBuildLiveTailContext(full.pairs, null,
-      {liveTailMaxTurns: 3, liveTailMaxChars: 4000}, 'planner');
+      {classicLiveTailEnabled: true, liveTailMaxTurns: 3, liveTailMaxChars: 4000}, 'classic');
     const receiptBudget = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: full,
-      settings: {liveTailMaxTurns: 3, liveTailMaxChars: 4000}, route: 'planner'}).liveTail;
+      settings: {classicLiveTailEnabled: true, liveTailMaxTurns: 3, liveTailMaxChars: 4000}, route: 'classic'}).liveTail;
     assert.equal(receiptBudget.transcript, legacyBudget.transcript, 'same verified U+A text and chronological order');
     assert.equal(receiptBudget.maxChars, legacyBudget.maxChars, 'same character ceiling');
     assert.deepEqual(Array.from(receiptBudget.droppedTurns), Array.from(legacyBudget.droppedTurns));
@@ -73,14 +90,14 @@ const rows = local => [...local].flatMap(([key, raw]) => {
     assert.equal(partial.status, 'partial');
     assert.deepEqual(Array.from(partial.pairs, pair => pair.turn), [3, 5]);
     assert.deepEqual(Array.from(partial.gaps, gap => gap.turn), [4]);
-    const withHole = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: partial, settings: {liveTailMaxTurns: 3}, route: 'planner'});
+    const withHole = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: partial, settings: {classicLiveTailEnabled: true, liveTailMaxTurns: 3}, route: 'classic'});
     assert.match(withHole.liveTail.transcript, /\[TURN 3\]/);
     assert.match(withHole.liveTail.transcript, /\[TURN 5\]/);
     assert.doesNotMatch(withHole.liveTail.transcript, /\[TURN 4\]/);
     assert.equal(withHole.liveTail.completeRequestedCoverage, false);
     const newestMissing = await read([3, 4]);
     assert.equal(f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: newestMissing,
-      settings: {}, route: 'planner'}).latestAssistant, '',
+      settings: {classicLiveTailEnabled: true, }, route: 'classic'}).latestAssistant, '',
       'an older verified assistant cannot impersonate a missing terminal turn');
     assert.equal(writes, 0);
     assert.equal(f.control.calls.length, calls);
@@ -89,7 +106,7 @@ const rows = local => [...local].flatMap(([key, raw]) => {
     const empty = await read([3, 4, 5]);
     assert.equal(empty.status, 'empty');
     assert.deepEqual(Array.from(empty.pairs), []);
-    const missing = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: empty, settings: {}, route: 'planner'});
+    const missing = f.r.api.debugProvideRecentDialogueFromReceipts({receiptSet: empty, settings: {classicLiveTailEnabled: true, }, route: 'classic'});
     assert.equal(missing.liveTail, null);
     assert.equal(missing.queryScene, '');
     assert.equal(missing.latestAssistant, '');

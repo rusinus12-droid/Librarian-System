@@ -335,12 +335,46 @@ test('unconfirmed invocation-start record prevents a model call and planned work
   await api.resumeNeverStartedMicro(input);
   assert.equal(x.f.control.calls.length,1);
 }));
-test('durable source-edit permit denial prevents Micro start',async()=>fixture(async({x,api,input})=>{
-  x.local.set(`libra:v1:scope:${input.scope.scopeKey}:source-edit-consent:v1`,JSON.stringify({
-    schema:'memory-suite.source-edit-consent.v1',owner:'libra',scopeKey:input.scope.scopeKey,
-    tasks:{'1':{key:'1',start:1,end:5,state:'awaiting_consent',revisionId:'blocked'}},exceptions:{}}));
+test('retired source-edit journal is inert for a current proven Micro plan',async()=>fixture(async({x,api,input})=>{
+  const legacyKey=`libra:v1:scope:${input.scope.scopeKey}:source-edit-consent:v1`;
+  const legacyRaw=JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner:'libra',scopeKey:input.scope.scopeKey,
+    tasks:{'1':{key:'1',start:1,end:5,state:'awaiting_consent',revisionId:'blocked'}},exceptions:{}});
+  x.local.set(legacyKey,legacyRaw);
+  const receipt=(await api.debugReadActiveCompletedTurnReceipt(1)).receipt;
+  const originalReceiptRaw=x.local.get(input.receiptRef);
+  x.f.control.onCall=()=>envelope(receipt);
   const result=await api.resumeNeverStartedMicro(input);
-  assert.equal(result.status,'paused');assert.equal(x.f.control.calls.length,0);
+  assert.equal(result.status,'verified','a current proven plan uses the current receipt authority');
+  assert.equal(x.f.control.calls.length,1,'retired journal does not add or duplicate a provider call');
+  assert.equal((await api.debugMicroStageFixture('work')).physicalAttemptsUsed,1);
+  assert.equal((await api.getReceiptRecoveryStatus({scope:input.scope})).microJobs[0].status,'succeeded');
+  const published=await api.debugReadActiveMicroMemory(1);
+  assert.equal(published.status,'verified','the actual active Micro head resolves to its durable body');
+  assert.equal(published.record.analysisStatus,'verified');
+  assert.equal(published.record.scopeKey,receipt.scopeKey);
+  assert.equal(published.record.sourceRevisionId,receipt.revisionId);
+  assert.equal(published.record.sourceDigest,receipt.sourceDigest);
+  assert.equal(published.record.claims.length,1);
+  assert.equal(published.record.claims[0].text,'An event happened.');
+  assert.equal(x.f.control.calls.length,1,'durable readback does not create a second provider call');
+  assert.equal(x.local.get(input.receiptRef),originalReceiptRaw,'the original receipt bytes are preserved');
+  assert.equal(x.local.get(legacyKey),legacyRaw,'retired journal bytes are not rewritten or deleted');
+}));
+test('inert legacy journal does not bypass the current source-change guard',async()=>fixture(async({x,api,input})=>{
+  const legacyKey=`libra:v1:scope:${input.scope.scopeKey}:source-edit-consent:v1`;
+  const legacyRaw=JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner:'libra',scopeKey:input.scope.scopeKey,
+    tasks:{'1':{key:'1',start:1,end:5,state:'awaiting_consent',revisionId:'blocked'}},exceptions:{}});
+  x.local.set(legacyKey,legacyRaw);
+  const receipt=(await api.debugReadActiveCompletedTurnReceipt(1)).receipt;
+  const originalReceiptRaw=x.local.get(input.receiptRef);
+  x.f.control.onCall=()=>{x.f.chat.message[1].data+=' current source changed during Micro';return envelope(receipt);};
+  const result=await api.resumeNeverStartedMicro(input);
+  assert.equal(result.status,'stale','actual changed source still rejects the awaited result');
+  assert.equal(x.f.control.calls.length,1);
+  assert.equal(x.local.has(`libra:v1:scope:${input.scope.scopeKey}:micro-memory-head:${receipt.worldlineId}:e0:t1`),false,
+    'stale work is never published as an active Micro head');
+  assert.equal(x.local.get(input.receiptRef),originalReceiptRaw);
+  assert.equal(x.local.get(legacyKey),legacyRaw);
 }));
 test('source changed while model runs discards late result',async()=>fixture(async({x,api,input})=>{
   const receipt=(await api.debugReadActiveCompletedTurnReceipt(1)).receipt;

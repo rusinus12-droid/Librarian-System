@@ -5,6 +5,7 @@
 // failure is removed an explicit retry restores the v5 State/History/Recall
 // surfaces. This is intentionally a narrow semantic fixture.
 const assert = require('node:assert/strict');
+const { readActualCanonicalDelivery } = require('./fixtures/libra_actual_canonical_delivery.cjs');
 const { serverFixture, fiveMore } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const A06_ACTION = require('./fixtures/acceptance_scenarios.json').cases.find(row => row.id === 'A06').action;
@@ -212,7 +213,7 @@ const runMode = async mode => {
     await snapshot.restart();
     f = snapshot.f;
     // serverFixture restart intentionally creates a fresh runtime. Restore the
-    // same accepted v5 transcript so Input Writer can be checked against the
+    // same accepted v5 transcript so Classic consumer can be checked against the
     // exact source evidence after the storage repair.
     f.chat.id = semanticChatSnapshot.id;
     f.chat.chatId = semanticChatSnapshot.chatId;
@@ -246,20 +247,20 @@ const runMode = async mode => {
     const recallText = JSON.stringify(recall);
     assert.match(recallText, /민트차를 좋아한다/, `${mode}: v5 preference is readable through Recall`);
     assert.match(recallText, /이행되었다|반환/, `${mode}: v5 linked thread is readable through Recall`);
-    const packet = await f.r.api.prepareInputWriterEvidence('민아 민트차 열쇠 반환 약속');
-    const packetText = JSON.stringify(packet?.evidencePacket || {});
+    const packet = await readActualCanonicalDelivery(snapshot, '민아 민트차 열쇠 반환 약속', { expectedMemory: memory });
+    const packetText = packet.canonicalText;
     if (!/민트차를 좋아한다/.test(packetText)) {
       throw new Error(JSON.stringify({
         headStatus: head.status,
         headThroughTurn: head.throughTurn,
         characterNames: (head.characters || []).map(character => character.name),
         minaState: head.characters?.find(character => character.name === '민아')?.state || null,
-        packetMemoryCount: packet?.evidencePacket?.memories?.length || 0,
+        packetMemoryCount: packet.deliveredRows.length,
         packetPreview: packetText.slice(0, 500)
       }));
     }
-    assert.match(packetText, /민트차를 좋아한다/, `${mode}: Input Writer packet carries the structured profile`);
-    assert.match(packetText, /이행되었다/, `${mode}: Input Writer packet carries the accepted resolved lifecycle`);
+    assert.match(packetText, /민트차를 좋아한다/, `${mode}: Classic delivered canonical evidence carries the structured profile`);
+    assert.match(packetText, /이행되었다/, `${mode}: Classic delivered canonical evidence carries the accepted resolved lifecycle`);
 
     observation.providerCalls = providerCallsBeforeRestart;
     observation.injectionObserved = fault.observation.injected;

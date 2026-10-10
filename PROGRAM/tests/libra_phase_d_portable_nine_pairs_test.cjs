@@ -5,6 +5,8 @@
 // batch and two v5 batches (open -> accepted/fulfilled lifecycle plus profile
 // fields); every destination is a copied chat with a distinct chat identity.
 const assert = require('node:assert/strict');
+const { performance } = require('node:perf_hooks');
+const { readActualCanonicalDelivery } = require('./fixtures/libra_actual_canonical_delivery.cjs');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const A39_ACTION = require('./fixtures/acceptance_scenarios.json').cases.find(row => row.id === 'A39').action;
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
@@ -322,10 +324,10 @@ const reconstructPair = async (sourceMode, destinationMode, envelope, sourceChat
     const recallText = JSON.stringify(recall);
     assert.match(recallText, /민트차를 좋아한다/, `${sourceMode}->${destinationMode}: Recall keeps profile meaning`);
     assert.match(recallText, /이행되었다/, `${sourceMode}->${destinationMode}: Recall keeps resolved linked thread meaning`);
-    const packet = await destination.f.r.api.prepareInputWriterEvidence('민아 민트차 열쇠 반환 약속');
-    const packetText = JSON.stringify(packet?.evidencePacket || {});
-    assert.match(packetText, /민트차를 좋아한다/, `${sourceMode}->${destinationMode}: Input Writer packet keeps profile meaning`);
-    assert.match(packetText, /이행되었다/, `${sourceMode}->${destinationMode}: Input Writer packet keeps resolved lifecycle meaning`);
+    const packet = await readActualCanonicalDelivery(destination, '민아 민트차 열쇠 반환 약속', { expectedMemory: copiedMemory });
+    const packetText = packet.canonicalText;
+    assert.match(packetText, /민트차를 좋아한다/, `${sourceMode}->${destinationMode}: Classic delivered canonical evidence keeps profile meaning`);
+    assert.match(packetText, /이행되었다/, `${sourceMode}->${destinationMode}: Classic delivered canonical evidence keeps resolved lifecycle meaning`);
     return {
       sourceMode, destinationMode, copiedStarts: Object.keys(manifest.memories || {}).map(Number).sort((a, b) => a - b),
       origin: copiedMemory.nativeCopiedFromScopeKey, sessionEpoch: Number(copiedRef.sessionEpoch),
@@ -341,11 +343,29 @@ const reconstructPair = async (sourceMode, destinationMode, envelope, sourceChat
 (async () => {
   const results = [];
   const sources = [];
+  const stageTimings = [];
+  const startedAt = performance.now();
+  const timedStage = async (stage, sourceMode, destinationMode, operation) => {
+    const stageStartedAt = performance.now();
+    let status = 'failed';
+    try {
+      const result = await operation();
+      status = 'passed';
+      return result;
+    } finally {
+      const observation = { stage, sourceMode, destinationMode, status,
+        elapsedMs: performance.now() - stageStartedAt };
+      stageTimings.push(observation);
+      console.log(JSON.stringify({ testProgress: 'portable-nine-pairs-stage-v1', ...observation }));
+    }
+  };
   try {
-    for (const sourceMode of MODES) sources.push({ sourceMode, ...(await seedSource(sourceMode)) });
+    for (const sourceMode of MODES) sources.push({ sourceMode,
+      ...(await timedStage('source-export',sourceMode,null,() => seedSource(sourceMode))) });
     for (const source of sources) {
       for (const destinationMode of MODES) {
-        results.push(await reconstructPair(source.sourceMode, destinationMode, source.envelope, source.sourceChat, source.sourceManifest, source.sourceMemory, source.sourceCanonicalArtifacts, source.sourceCanonicalBytes));
+        results.push(await timedStage('destination-reconstruct',source.sourceMode,destinationMode,
+          () => reconstructPair(source.sourceMode, destinationMode, source.envelope, source.sourceChat, source.sourceManifest, source.sourceMemory, source.sourceCanonicalArtifacts, source.sourceCanonicalBytes)));
       }
     }
     assert.equal(results.length, 9);
@@ -357,14 +377,17 @@ const reconstructPair = async (sourceMode, destinationMode, envelope, sourceChat
       console.log(JSON.stringify({
         schema: 'acceptance.action_result.v1', case_id: 'A39', mode,
         action: A39_ACTION, assertion_result: true,
-        observed: `All three source modes were exported, validated and reconstructed into ${mode}; destination scopes/keys were remapped, canonical bytes and origin/epoch were preserved, and State, History, Recall, Input Writer and linked-reference resolution were checked.`
+        observed: `All three source modes were exported, validated and reconstructed into ${mode}; destination scopes/keys were remapped, canonical bytes and origin/epoch were preserved, and State, History, Recall, Classic consumer and linked-reference resolution were checked.`
       }));
     }
     console.log(JSON.stringify({
-      test: 'libra_phase_d_portable_nine_pairs', passed: results.length, results,
+      test: 'libra_phase_d_portable_nine_pairs', passed: results.length, results, stageTimings,
       boundary: 'actual __LIBRAPortableMemoryBackup; mixed v4/v5 synthetic provider artifacts; no server manager exporter'
     }));
   } finally {
     for (const source of sources) await source.snapshot.cleanup();
+    console.log(JSON.stringify({ testProgress: 'portable-nine-pairs-terminal-v1',
+      completedPairs:results.length, completedStages:stageTimings.filter(row => row.status==='passed').length,
+      elapsedMs:performance.now()-startedAt, cleanupCompleted:true }));
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
