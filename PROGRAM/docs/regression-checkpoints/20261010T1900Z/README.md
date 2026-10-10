@@ -1,6 +1,6 @@
 # Six-plugin regression continuation
 
-The captured active source is 2a138a585d6f26c79cfd5d7ccc716b5fc65da88f. Twenty-two retained root tests and one shared fixture have independently reviewed corrections; four fully justified root tests are retired. Product and prompt bytes are unchanged. Historical1138 identities remain in ROOT-REGRESSION-LEDGER.json, with current1134 active roots.
+This is a delayed actual-time checkpoint; scheduled19:00 was not created because its disk precondition failed. The manifest capture timestamp is authoritative and must never be backdated. The captured active source is aff403fe04ea417d9121ca52330c44ba0681343b. Twenty-six retained root tests and two shared fixtures have independently reviewed corrections; four fully justified root tests are retired. Product and prompt bytes are unchanged. Historical1138 identities remain in ROOT-REGRESSION-LEDGER.json, with current1134 active roots.
 
 TEST-RETIREMENT-AND-ADOPTION.json and TEST-NORMALIZATION.json identify the adopted changes. Complete unadopted test/fixture/runner candidates are under test-successors with original paths, hashes and modes in REGRESSION-STATUS.json. They are not automatically loaded. The main source package alone supports development restart; the paired private sidecar reconstructs raw verification evidence.
 

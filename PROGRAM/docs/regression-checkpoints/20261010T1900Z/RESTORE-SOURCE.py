@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Restore captured original source from a builder package, without modifying it."""
 import argparse,hashlib,json,os,pathlib,shutil,stat
-CAPSULE='PROGRAM/docs/regression-checkpoints/20261010T1700Z'
+CAPSULE='PROGRAM/docs/regression-checkpoints/20261010T1900Z'
 def sha(p):
  h=hashlib.sha256()
  with p.open('rb') as f:

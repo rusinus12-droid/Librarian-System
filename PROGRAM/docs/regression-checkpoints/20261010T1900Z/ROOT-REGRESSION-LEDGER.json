@@ -1,6 +1,6 @@
 {
   "schema": "lib.six-plugin.public-root-status.v1",
-  "cutoffUtc": "2026-10-10T17:00:00.040340+00:00",
+  "cutoffUtc": "2026-10-10T19:59:31.691218+00:00",
   "originalRootUniverse": 1138,
   "activeRootUniverse": 1134,
   "rows": [
@@ -812,7 +812,24 @@
       "sha256": "7a9a2a524d2f91f8eae5dc4411f2181fa40be119150140e9118b7811e95854d5",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "a72c6c5320a9bb66d4829a93a5153158f57f006b07b1fabd2832f8088e85a68c",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 7.345,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 74,
@@ -1037,32 +1054,36 @@
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
       "active": true,
-      "unadoptedCandidateReplays": [
+      "adoptedTestCorrection": {
+        "currentSha256": "5dcd640084f0725040abbc50c9367c94ad6f63072c4b7d484255b0108788fa0b",
+        "result": "PASS",
+        "reason": "Replace the single obsolete scheduling-derived absence premise with two strict separate scenarios. A preserves original official dispatch/immediate disposal order and proves admitted output durability. B calls the existing API only after full disposal, requires exact unloaded refusal and physical absence, then real cold start recovers the intended absent source."
+      },
+      "adoptedSharedFixtureCorrections": [
         {
-          "successorId": "021",
-          "ordinal": 97,
-          "nodeSummary": {
-            "tests": 1,
-            "suites": 0,
-            "pass": 0,
-            "fail": 1,
-            "cancelled": 0,
-            "skipped": 0,
-            "todo": 0
+          "fixturePath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+          "fixtureSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+          "successor": "021",
+          "consumerOutcome": {
+            "originalOrdinal": 97,
+            "path": "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+            "sourceSha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c",
+            "timeoutSeconds": 60,
+            "result": "FAIL",
+            "runtimeSeconds": 1.487,
+            "nodeCases": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "runtimeResultSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
+            "failure": "same-tick unload memory persistence expectation: true !== false at root line62"
           },
-          "candidateFilePinsMatch": true,
-          "receiptSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
-          "executionStatus": "completed_fail",
-          "classification": "FAIL",
-          "exitCode": 1,
-          "durationSeconds": 1.487,
-          "timeoutSeconds": 60,
-          "finishedUtc": "2026-10-10T16:38:39.166063+00:00",
-          "allIntegrityPinsUnchanged": true,
-          "guardDenialCount": 0,
-          "guardFailureSignalCount": 0,
-          "survivorCount": 0,
-          "allObservedPortsClosed": true
+          "qualification": "Consumer 99 passed both raw-only and configured synthetic writer-drain/recall modes; 97 and 98 remain ordinary FAIL before the shared readiness helper. No all-consumer pass, root retirement, actual host, real-model or whole-regression certification. Original failures remain preserved."
         }
       ]
     },
@@ -1074,32 +1095,36 @@
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
       "active": true,
-      "unadoptedCandidateReplays": [
+      "adoptedTestCorrection": {
+        "currentSha256": "6238827f392b2874cec6432900a1d2160c84f6d3fcd2a8d5a713484f7bc7198a",
+        "result": "PASS",
+        "reason": "Replace removed automatic source-journal diagnostics with separate explicit current SDK writer-fence probes while retaining the original real first request, bounded unload, durable canonical readback, post-release request and raw-only/configured recall obligations."
+      },
+      "adoptedSharedFixtureCorrections": [
         {
-          "successorId": "021",
-          "ordinal": 98,
-          "nodeSummary": {
-            "tests": 1,
-            "suites": 0,
-            "pass": 0,
-            "fail": 1,
-            "cancelled": 0,
-            "skipped": 0,
-            "todo": 0
+          "fixturePath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+          "fixtureSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+          "successor": "021",
+          "consumerOutcome": {
+            "originalOrdinal": 98,
+            "path": "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+            "sourceSha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22",
+            "timeoutSeconds": 60,
+            "result": "FAIL",
+            "runtimeSeconds": 9.294,
+            "nodeCases": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 0,
+              "fail": 1,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "runtimeResultSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
+            "failure": "obsolete getSourceEditSyncStatus call within unchanged root line169"
           },
-          "candidateFilePinsMatch": true,
-          "receiptSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
-          "executionStatus": "completed_fail",
-          "classification": "FAIL",
-          "exitCode": 1,
-          "durationSeconds": 9.294,
-          "timeoutSeconds": 60,
-          "finishedUtc": "2026-10-10T16:39:40.289672+00:00",
-          "allIntegrityPinsUnchanged": true,
-          "guardDenialCount": 0,
-          "guardFailureSignalCount": 0,
-          "survivorCount": 0,
-          "allObservedPortsClosed": true
+          "qualification": "Consumer 99 passed both raw-only and configured synthetic writer-drain/recall modes; 97 and 98 remain ordinary FAIL before the shared readiness helper. No all-consumer pass, root retirement, actual host, real-model or whole-regression certification. Original failures remain preserved."
         }
       ]
     },
@@ -1111,32 +1136,31 @@
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
       "active": true,
-      "unadoptedCandidateReplays": [
+      "adoptedSharedFixtureCorrections": [
         {
-          "successorId": "021",
-          "ordinal": 99,
-          "nodeSummary": {
-            "tests": 1,
-            "suites": 0,
-            "pass": 1,
-            "fail": 0,
-            "cancelled": 0,
-            "skipped": 0,
-            "todo": 0
+          "fixturePath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+          "fixtureSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+          "successor": "021",
+          "consumerOutcome": {
+            "originalOrdinal": 99,
+            "path": "PROGRAM/tests/flashback_chat_output_unload_writer_drain_test.cjs",
+            "sourceSha256": "492572ee1f43db6cb0f925f402521f11634234e781ec209f6fa2c0b4578dbc59",
+            "timeoutSeconds": 60,
+            "result": "PASS",
+            "runtimeSeconds": 10.174,
+            "nodeCases": {
+              "tests": 1,
+              "suites": 0,
+              "pass": 1,
+              "fail": 0,
+              "cancelled": 0,
+              "skipped": 0,
+              "todo": 0
+            },
+            "runtimeResultSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
+            "failure": null
           },
-          "candidateFilePinsMatch": true,
-          "receiptSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
-          "executionStatus": "completed_pass",
-          "classification": "PASS",
-          "exitCode": 0,
-          "durationSeconds": 10.174,
-          "timeoutSeconds": 60,
-          "finishedUtc": "2026-10-10T16:40:08.305174+00:00",
-          "allIntegrityPinsUnchanged": true,
-          "guardDenialCount": 0,
-          "guardFailureSignalCount": 0,
-          "survivorCount": 0,
-          "allObservedPortsClosed": true
+          "qualification": "Consumer 99 passed both raw-only and configured synthetic writer-drain/recall modes; 97 and 98 remain ordinary FAIL before the shared readiness helper. No all-consumer pass, root retirement, actual host, real-model or whole-regression certification. Original failures remain preserved."
         }
       ]
     },
@@ -1165,7 +1189,24 @@
       "sha256": "3836f794c02d6aafb9ec0aea3d7f7240f693a5ae47fdb790d77a1aff896819bf",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "40b5526a40efa94f34006207f1fd99489bc2def123c950af5fe5bd2333e0a855",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 6.385,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 103,
@@ -1201,7 +1242,24 @@
       "sha256": "855066f668f76ecabd5b2e7bcaafb61eb2b1d004545366879bec4b31c9d14642",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "fe8dee51fd2f485211d004184e54c21cd821aba1021c1924940ff67a0ee0c5c9",
+        "nodeSummary": {
+          "tests": 15,
+          "suites": 0,
+          "pass": 15,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 17.926,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 107,
@@ -1237,7 +1295,12 @@
       "sha256": "2af70054eb005a3e12348103b8b9a8b1e3571f2d6b1ee42c37c6190dc8d85333",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "adoptedTestCorrection": {
+        "currentSha256": "13bce2cd008d045126cfc6e7a07a0a1deeda4991981af8843d009424f1fe1d2d",
+        "result": "PASS",
+        "reason": "Construct the original eight sources through the current deferred producer and validate actual bounded queue reservations, document requests and durable ready receipts before the original public rebuild and recall assertions. Remove only the predecessor fixture positive queue override of 5000ms and read/assert the supported existing 30000ms default; preserve the original outer 60-second deadline."
+      }
     },
     {
       "ordinal": 111,
@@ -1332,34 +1395,11 @@
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
       "active": true,
-      "unadoptedCandidateReplays": [
-        {
-          "successorId": "022",
-          "ordinal": 120,
-          "nodeSummary": {
-            "tests": 1,
-            "suites": 0,
-            "pass": 1,
-            "fail": 0,
-            "cancelled": 0,
-            "skipped": 0,
-            "todo": 0
-          },
-          "candidateFilePinsMatch": true,
-          "receiptSha256": "0e3a9c9e5e723056c05c5e8ce78e346da5842c2aed808314eb5230bdb44dcc4d",
-          "executionStatus": "completed_pass",
-          "classification": "PASS",
-          "exitCode": 0,
-          "durationSeconds": 1.15,
-          "timeoutSeconds": 60,
-          "finishedUtc": "2026-10-10T16:52:17.267606+00:00",
-          "allIntegrityPinsUnchanged": true,
-          "guardDenialCount": 0,
-          "guardFailureSignalCount": 0,
-          "survivorCount": 0,
-          "allObservedPortsClosed": true
-        }
-      ]
+      "adoptedTestCorrection": {
+        "currentSha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
+        "result": "PASS",
+        "reason": "Partial assertion retirement of the removed Flashback hash-pilot API and unused VM/server fixture. Retain the five exact existing source-wide contracts; preserve the three live generic security/database obligations through independently accepted historical replacement witnesses."
+      }
     },
     {
       "ordinal": 121,
@@ -1679,7 +1719,24 @@
       "sha256": "6d5c64ddadf68248d48e897fa68d9c62990ed4afe59c01e61ccf685dc654bd64",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "TIMEOUT",
+        "receiptSha256": "5fa6decf5157c1d7ea110e170b130c6fb41fb61ee865516a13024dd353ac444d",
+        "nodeSummary": {
+          "tests": 22,
+          "suites": 0,
+          "pass": 21,
+          "fail": 0,
+          "cancelled": 1,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_NONPASS_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 60.902,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 156,
@@ -1697,7 +1754,24 @@
       "sha256": "b87683290d8359c0fa55b87e91a37f16dc7474d65a6df4903ed1a4c091e252c4",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "0d076cfedc05ad47016651adec359bd4fd1d1430dd5b7a000e09de7c296700bd",
+        "nodeSummary": {
+          "tests": 26,
+          "suites": 0,
+          "pass": 26,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 25.037,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 158,
@@ -2222,7 +2296,24 @@
       "sha256": "f5accba888bf3647a02637f7175fcea34f06b1c6c4dd0983a3e795bebe7f401b",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "d527b1ce1154c8834b1b272e5a11184b470308d3846fed755c4879d7ee794f2c",
+        "nodeSummary": {
+          "tests": 32,
+          "suites": 0,
+          "pass": 32,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 22.611,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 199,
@@ -5666,7 +5757,24 @@
       "sha256": "49402de943e76f6facb4b3a3171fbf8ec6984fab89005caca638b5685fdc76e3",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "03e838dfc11e33ed1479f1986e4b0faf44316cf6c86e7245dde07c1a0faffa78",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 22.114,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 560,
@@ -5697,7 +5805,24 @@
       "sha256": "5cea4ad62f9830bacc83dab7ff81f5787f4c0d4a8a836a80ed7399fa9ac48f72",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "f1f76e38bbb2de53c7f1fc2a586ed98551ada1d86834ee838b27ce802b7583eb",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 3.219,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 563,
@@ -5827,25 +5952,25 @@
           "allObservedPortsClosed": true
         },
         {
-          "successorId": "020-v2",
+          "successorId": "020-v5",
           "ordinal": 568,
           "nodeSummary": {
             "tests": 1,
             "suites": 0,
-            "pass": 0,
-            "fail": 1,
+            "pass": 1,
+            "fail": 0,
             "cancelled": 0,
             "skipped": 0,
             "todo": 0
           },
           "candidateFilePinsMatch": true,
-          "receiptSha256": "9d309c718544cefae0409ce4f94c160c29ad1a6381f766edbc59d7ddbbb1a6cb",
-          "executionStatus": "completed_fail",
-          "classification": "FAIL",
-          "exitCode": 1,
-          "durationSeconds": 3.546,
+          "receiptSha256": "174122978beb40a9d7b11436287564184b2f95bafee212d5ddeb88955c3a2e83",
+          "executionStatus": "completed_pass",
+          "classification": "PASS",
+          "exitCode": 0,
+          "durationSeconds": 18.632,
           "timeoutSeconds": 60,
-          "finishedUtc": "2026-10-10T16:54:03.019627+00:00",
+          "finishedUtc": "2026-10-10T19:46:14.746838+00:00",
           "allIntegrityPinsUnchanged": true,
           "guardDenialCount": 0,
           "guardFailureSignalCount": 0,
@@ -9738,7 +9863,24 @@
       "sha256": "8220a71649bf6c1bf4b098d20ef76df422dda25305320c8e7c7446691948c06c",
       "timeoutSeconds": 60,
       "phase1Status": "FAIL",
-      "active": true
+      "active": true,
+      "phase2NativeNormalization002": {
+        "status": "PASS",
+        "receiptSha256": "fb3278aed7565d83516a67b7b7ad1af723400e7e8142fdfdf296cbe685d69e06",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 2.797,
+        "timeoutSeconds": 60
+      }
     },
     {
       "ordinal": 958,

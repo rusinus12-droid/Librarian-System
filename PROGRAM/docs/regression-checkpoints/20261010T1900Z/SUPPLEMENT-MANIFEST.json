@@ -1,31 +1,31 @@
 {
-  "schema": "lib.six-plugin.source-supplement.v2",
-  "privateCutoffManifestSha256": "5ba1d5882b419ede67ea1411882e6f66f175d655263d18de112f45a72e0e1919",
+  "schema": "lib.six-plugin.source-supplement.v3",
+  "privateCutoffManifestSha256": "f215b5f50e569f20a9c5f098fc19824ec6bc4c58a3224dd839259259148abf4b",
   "files": [
     {
       "path": "BROWSER-STATUS.json",
       "bytes": 9348,
-      "sha256": "3811325813ffbd0b18186500c668f52170d2afab95805ef14a639b723d79d7b8"
+      "sha256": "8924f585d7be779c44be1d04fedbc99030a383f96205f477e2562c05b6686434"
     },
     {
       "path": "README.md",
-      "bytes": 1308,
-      "sha256": "74c7eefe1a5badb6219c7b5ce7cb6674e40e638d2768236ce716d49fabbc50be"
+      "bytes": 1497,
+      "sha256": "a80bd1a4ab48b5344ecf281e146feba75c88d2fa54272db4a326e976135c0941"
     },
     {
       "path": "REGRESSION-STATUS.json",
-      "bytes": 30787,
-      "sha256": "47d4caccd9a7f86afb8d647ec76d2d0c8ce486ba6cd36fae814a37dff9ec42c7"
+      "bytes": 43330,
+      "sha256": "e365bd54cc436feccf1b717dae570aee17261e75a8a4a523ddf62f325fce91ed"
     },
     {
       "path": "ROOT-REGRESSION-LEDGER.json",
-      "bytes": 437072,
-      "sha256": "0cfc168cfaad1f10b9d9adf2843e11f0a2988de37d58a6c28e878a543fa1de04"
+      "bytes": 445052,
+      "sha256": "b87d968ddcec8459b30cfadccbfe2f49d1c355db6257b5c5fdd6396b73e4d11f"
     },
     {
       "path": "TEST-NORMALIZATION.json",
-      "bytes": 28948,
-      "sha256": "8d7d1de0d972392e70e3ebb7d9488fb87ef360f63e25724e28758a02fccc6a55"
+      "bytes": 52415,
+      "sha256": "8d37c20fa3c755e428c0f5214e1feaf66f5e110ca57569c7a0eb314f40c8d21a"
     },
     {
       "path": "TEST-RETIREMENT-AND-ADOPTION.json",
@@ -78,29 +78,19 @@
       "sha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3"
     },
     {
-      "path": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
-      "bytes": 25334,
-      "sha256": "59af58088f74816ac27f90c88ea7025f603f253d37fc820200a4448071c9b58d"
+      "path": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+      "bytes": 44423,
+      "sha256": "a8facb299697e4418a04aded03544c81ce12ebfb6d0365726a6d837ae76f7a9e"
     },
     {
-      "path": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
-      "bytes": 23827,
-      "sha256": "99ded99dc36dd7d3b2910b633d1dc239a971c52f588ea5adb5ea76347312bb7a"
+      "path": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+      "bytes": 58186,
+      "sha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1"
     },
     {
-      "path": "test-successors/020-v2/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
-      "bytes": 16323,
-      "sha256": "927e907c76933cee1cbb42a003488fedc800a6fcff431eacc45fcdb71ef74272"
-    },
-    {
-      "path": "test-successors/021/PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
-      "bytes": 6359,
-      "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f"
-    },
-    {
-      "path": "test-successors/022/PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
-      "bytes": 1147,
-      "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3"
+      "path": "test-successors/020-v5/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 19143,
+      "sha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da"
     }
   ]
 }

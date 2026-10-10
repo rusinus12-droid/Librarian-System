@@ -1,7 +1,7 @@
 {
-  "schema": "lib.six-plugin.regression-checkpoint.v2",
-  "capturedAtUtc": "2026-10-10T17:00:00.040340+00:00",
-  "activeCommit": "2a138a585d6f26c79cfd5d7ccc716b5fc65da88f",
+  "schema": "lib.six-plugin.regression-checkpoint.v3",
+  "capturedAtUtc": "2026-10-10T19:59:31.691218+00:00",
+  "activeCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
   "originalRootUniverse": 1138,
   "activeRootUniverse": 1134,
   "phase1RootFileStatusCounts": {
@@ -364,8 +364,8 @@
       }
     },
     {
-      "id": "020-v2",
-      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
+      "id": "020-v5",
+      "status": "EXECUTED_PASS_UNADOPTED",
       "activeSourceAdopted": false,
       "selectedOrdinals": [
         568
@@ -373,24 +373,24 @@
       "files": [
         {
           "originalPath": "PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
-          "successorPath": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
-          "sha256": "59af58088f74816ac27f90c88ea7025f603f253d37fc820200a4448071c9b58d",
+          "successorPath": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+          "sha256": "a8facb299697e4418a04aded03544c81ce12ebfb6d0365726a6d837ae76f7a9e",
           "originalMode": 420
         },
         {
           "originalPath": "PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
-          "successorPath": "test-successors/020-v2/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
-          "sha256": "99ded99dc36dd7d3b2910b633d1dc239a971c52f588ea5adb5ea76347312bb7a",
+          "successorPath": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+          "sha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1",
           "originalMode": 420
         },
         {
           "originalPath": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
-          "successorPath": "test-successors/020-v2/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
-          "sha256": "927e907c76933cee1cbb42a003488fedc800a6fcff431eacc45fcdb71ef74272",
+          "successorPath": "test-successors/020-v5/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+          "sha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da",
           "originalMode": 420
         }
       ],
-      "reason": "Settle the exact pending v4 derived embedding state once through the public queue API before a separate v5-write baseline; keep the earlier read-only baseline and later full raw/owner/revision equality.",
+      "reason": "Exact v5 one-record witness: 49 current assertions, including 44 inherited from accepted 017, one no-argument queue retry, full owner/revision/raw equality and60s limit. G392 synthetic controls are separate from native568; native result is read only from this fixed cutoff. When present, detailReturnTypeCompatible=false is an unasserted observation and does not certify a normal detail return type. Intermediate snapshot contents and exact queue-attempt values are not reported in stdout.",
       "verification": {
         "runs": [
           {
@@ -398,107 +398,6 @@
             "nodeSummary": {
               "tests": 1,
               "suites": 0,
-              "pass": 0,
-              "fail": 1,
-              "cancelled": 0,
-              "skipped": 0,
-              "todo": 0
-            },
-            "candidateFilePinsMatch": true,
-            "receiptSha256": "9d309c718544cefae0409ce4f94c160c29ad1a6381f766edbc59d7ddbbb1a6cb",
-            "executionStatus": "completed_fail",
-            "classification": "FAIL",
-            "exitCode": 1,
-            "durationSeconds": 3.546,
-            "timeoutSeconds": 60,
-            "finishedUtc": "2026-10-10T16:54:03.019627+00:00",
-            "allIntegrityPinsUnchanged": true,
-            "guardDenialCount": 0,
-            "guardFailureSignalCount": 0,
-            "survivorCount": 0,
-            "allObservedPortsClosed": true
-          }
-        ],
-        "completedSelectedIdentities": 1,
-        "allSelectedIdentitiesPassed": false,
-        "actualModelsEvaluated": false
-      }
-    },
-    {
-      "id": "021",
-      "status": "REPLAY_FAILED_OR_INCOMPLETE_UNADOPTED",
-      "activeSourceAdopted": false,
-      "selectedOrdinals": [
-        97,
-        98,
-        99
-      ],
-      "files": [
-        {
-          "originalPath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
-          "successorPath": "test-successors/021/PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
-          "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
-          "originalMode": 420
-        }
-      ],
-      "reason": "Remove only an eager assertion-message call to a removed diagnostic API; all consumer bytes, readiness predicates and other assertions stay unchanged. The separate earlier97/98 failures remain.",
-      "verification": {
-        "runs": [
-          {
-            "ordinal": 97,
-            "nodeSummary": {
-              "tests": 1,
-              "suites": 0,
-              "pass": 0,
-              "fail": 1,
-              "cancelled": 0,
-              "skipped": 0,
-              "todo": 0
-            },
-            "candidateFilePinsMatch": true,
-            "receiptSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
-            "executionStatus": "completed_fail",
-            "classification": "FAIL",
-            "exitCode": 1,
-            "durationSeconds": 1.487,
-            "timeoutSeconds": 60,
-            "finishedUtc": "2026-10-10T16:38:39.166063+00:00",
-            "allIntegrityPinsUnchanged": true,
-            "guardDenialCount": 0,
-            "guardFailureSignalCount": 0,
-            "survivorCount": 0,
-            "allObservedPortsClosed": true
-          },
-          {
-            "ordinal": 98,
-            "nodeSummary": {
-              "tests": 1,
-              "suites": 0,
-              "pass": 0,
-              "fail": 1,
-              "cancelled": 0,
-              "skipped": 0,
-              "todo": 0
-            },
-            "candidateFilePinsMatch": true,
-            "receiptSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
-            "executionStatus": "completed_fail",
-            "classification": "FAIL",
-            "exitCode": 1,
-            "durationSeconds": 9.294,
-            "timeoutSeconds": 60,
-            "finishedUtc": "2026-10-10T16:39:40.289672+00:00",
-            "allIntegrityPinsUnchanged": true,
-            "guardDenialCount": 0,
-            "guardFailureSignalCount": 0,
-            "survivorCount": 0,
-            "allObservedPortsClosed": true
-          },
-          {
-            "ordinal": 99,
-            "nodeSummary": {
-              "tests": 1,
-              "suites": 0,
               "pass": 1,
               "fail": 0,
               "cancelled": 0,
@@ -506,62 +405,13 @@
               "todo": 0
             },
             "candidateFilePinsMatch": true,
-            "receiptSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
+            "receiptSha256": "174122978beb40a9d7b11436287564184b2f95bafee212d5ddeb88955c3a2e83",
             "executionStatus": "completed_pass",
             "classification": "PASS",
             "exitCode": 0,
-            "durationSeconds": 10.174,
+            "durationSeconds": 18.632,
             "timeoutSeconds": 60,
-            "finishedUtc": "2026-10-10T16:40:08.305174+00:00",
-            "allIntegrityPinsUnchanged": true,
-            "guardDenialCount": 0,
-            "guardFailureSignalCount": 0,
-            "survivorCount": 0,
-            "allObservedPortsClosed": true
-          }
-        ],
-        "completedSelectedIdentities": 3,
-        "allSelectedIdentitiesPassed": false,
-        "actualModelsEvaluated": false
-      }
-    },
-    {
-      "id": "022",
-      "status": "EXECUTED_PASS_UNADOPTED",
-      "activeSourceAdopted": false,
-      "selectedOrdinals": [
-        120
-      ],
-      "files": [
-        {
-          "originalPath": "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
-          "successorPath": "test-successors/022/PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
-          "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
-          "originalMode": 420
-        }
-      ],
-      "reason": "Retain root120 and its five source/SDK/security checks while proposing retirement of55 removed hash-pilot assertion sites and3 executed generic replacements. No retirement is adopted merely by packaging this candidate.",
-      "verification": {
-        "runs": [
-          {
-            "ordinal": 120,
-            "nodeSummary": {
-              "tests": 1,
-              "suites": 0,
-              "pass": 1,
-              "fail": 0,
-              "cancelled": 0,
-              "skipped": 0,
-              "todo": 0
-            },
-            "candidateFilePinsMatch": true,
-            "receiptSha256": "0e3a9c9e5e723056c05c5e8ce78e346da5842c2aed808314eb5230bdb44dcc4d",
-            "executionStatus": "completed_pass",
-            "classification": "PASS",
-            "exitCode": 0,
-            "durationSeconds": 1.15,
-            "timeoutSeconds": 60,
-            "finishedUtc": "2026-10-10T16:52:17.267606+00:00",
+            "finishedUtc": "2026-10-10T19:46:14.746838+00:00",
             "allIntegrityPinsUnchanged": true,
             "guardDenialCount": 0,
             "guardFailureSignalCount": 0,
@@ -576,6 +426,10 @@
     }
   ],
   "adoptedTestCorrections": [
+    "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+    "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+    "PROGRAM/tests/flashback_episode_index_rebuild_injection_negative_test.cjs",
+    "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
     "PROGRAM/tests/flashback_multilingual_probe_wording_test.cjs",
     "PROGRAM/tests/hayaku_disposed_topology_runtime_test.cjs",
     "PROGRAM/tests/libra_feature_parity_test.cjs",
@@ -763,13 +617,98 @@
         }
       ],
       "qualification": "Five unchanged roots passed; two remain blocked. 172 exercises the corrected default backup-worker lookup. 182/183 qualify the candidate plus the pinned SQLite profile together, not the isolated fixture effect. 186 covers module availability and early dot-path denial, not actual backup/restore. No seven-root complete pass, whole-regression, actual host or real-model claim; original outcomes remain retained."
+    },
+    {
+      "successor": "021",
+      "path": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+      "originalSha256": "8271a41c7c2f75c0a65283079c68b74573b310497c2cc4cae8f8739a0b7563a9",
+      "candidateSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+      "result": "ACCEPTED_HELPER_CORRECTION_WITH_TWO_FAILING_CONSUMERS",
+      "reason": "Delete only the 49-byte obsolete eager diagnostic getter expression. All assertion predicates, other calls, awaited operations and root consumer files remain unchanged.",
+      "runtimeCloseoutSha256": "4307f984278b72af9f14591e2417b8f865428089dca34c015d11886bb77e6566",
+      "rawInventorySha256": "50255e39d38a4d43a43bb4a78498fc14bb6af760bbf176bed17e7849cda66dff",
+      "independentRuntimeReviewSha256": "8165f906570e781f8a1f8262efcfe8234d4a0325508999ca3a42e1aeee654733",
+      "rootTestFilesChanged": 0,
+      "rootCorrectionCountIncrease": 0,
+      "consumerOutcomes": [
+        {
+          "originalOrdinal": 97,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+          "sourceSha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c",
+          "timeoutSeconds": 60,
+          "result": "FAIL",
+          "runtimeSeconds": 1.487,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
+          "failure": "same-tick unload memory persistence expectation: true !== false at root line62"
+        },
+        {
+          "originalOrdinal": 98,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+          "sourceSha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22",
+          "timeoutSeconds": 60,
+          "result": "FAIL",
+          "runtimeSeconds": 9.294,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
+          "failure": "obsolete getSourceEditSyncStatus call within unchanged root line169"
+        },
+        {
+          "originalOrdinal": 99,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_writer_drain_test.cjs",
+          "sourceSha256": "492572ee1f43db6cb0f925f402521f11634234e781ec209f6fa2c0b4578dbc59",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 10.174,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 1,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
+          "failure": null
+        }
+      ],
+      "pendingConsumers": [
+        {
+          "originalOrdinal": 97,
+          "status": "FAIL",
+          "reason": "same-tick unload memory persistence expectation: true !== false at root line62"
+        },
+        {
+          "originalOrdinal": 98,
+          "status": "FAIL",
+          "reason": "obsolete getSourceEditSyncStatus call within unchanged root line169"
+        }
+      ],
+      "qualification": "Consumer 99 passed both raw-only and configured synthetic writer-drain/recall modes; 97 and 98 remain ordinary FAIL before the shared readiness helper. No all-consumer pass, root retirement, actual host, real-model or whole-regression certification. Original failures remain preserved."
     }
   ],
-  "correctedRootCount": 22,
-  "correctedSharedFixtureCount": 1,
+  "correctedRootCount": 26,
+  "correctedSharedFixtureCount": 2,
   "wholeFileRetirementsApplied": 4,
-  "privateEvidenceManifestSha256": "5ba1d5882b419ede67ea1411882e6f66f175d655263d18de112f45a72e0e1919",
-  "privateEvidenceTerminalRuns": 1281,
+  "privateEvidenceManifestSha256": "f215b5f50e569f20a9c5f098fc19824ec6bc4c58a3224dd839259259148abf4b",
+  "privateEvidenceTerminalRuns": 1303,
   "supplemental": {
     "priorGradiaChildren": 20,
     "additionalJavascriptEntriesExecuted": 3,
@@ -787,5 +726,287 @@
     "Prior failures and timeouts remain in the private sidecar.",
     "Raw synthetic logs, execution receipts and supervisors are private-only.",
     "No actual-host, actual-model or product-performance qualification is implied."
-  ]
+  ],
+  "scheduledCheckpointUtc": "2026-10-10T19:00:00+00:00",
+  "scheduledCheckpointStatus": "NOT_CREATED_DISK_PRECONDITION",
+  "delayedCapture": true,
+  "adoptedSuccessorHistory": [
+    {
+      "id": "021",
+      "status": "ADOPTED_INDEPENDENTLY_VERIFIED",
+      "adoption": "009",
+      "activePath": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+      "activeSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+      "adoptionCommit": "5b51260b5dc2296a90ababf9709bea32d1cc6819",
+      "receiptSha256": "11a86e19b04d3a4340a7842118549eba3b3227fed2e991e9e7763c025c01875d",
+      "qualification": "The exact021 diagnostic-only helper correction and022 partial assertion retirement are adopted. No whole-root retirement or denominator reduction occurs. Source-wide retained checks and historical replacement witnesses remain explicitly bounded; current search-client lifecycle, actual host/model, full regression and release qualification are not established."
+    },
+    {
+      "id": "022",
+      "status": "ADOPTED_INDEPENDENTLY_VERIFIED",
+      "adoption": "009",
+      "activePath": "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
+      "activeSha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
+      "adoptionCommit": "5b51260b5dc2296a90ababf9709bea32d1cc6819",
+      "receiptSha256": "11a86e19b04d3a4340a7842118549eba3b3227fed2e991e9e7763c025c01875d",
+      "qualification": "The exact021 diagnostic-only helper correction and022 partial assertion retirement are adopted. No whole-root retirement or denominator reduction occurs. Source-wide retained checks and historical replacement witnesses remain explicitly bounded; current search-client lifecycle, actual host/model, full regression and release qualification are not established."
+    },
+    {
+      "id": "023-v2",
+      "status": "ADOPTED_INDEPENDENTLY_VERIFIED",
+      "adoption": "010",
+      "activePath": "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+      "activeSha256": "6238827f392b2874cec6432900a1d2160c84f6d3fcd2a8d5a713484f7bc7198a",
+      "adoptionCommit": "7758446ef8df1110d9328e33238435dbefafd98f",
+      "receiptSha256": "28e1141c613586bd1d94727cce3e7382f5495bd7f28169c865b8cf44dee7b78c",
+      "qualification": "Exact root98 current writer-fence normalization:12 original assertions preserved and2 obsolete automatic-journal assertions replaced with explicit held/released writer probes. Separate28 fixture controls and actual two-mode13.605-second PASS are verified. First fresh request is busy-refused in both modes; final raw-only stays noninjecting and configured injects after exact release. Helper021 is unchanged and root97 remains FAIL. Root1134 and whole-file retirement4 stay unchanged. No composed-tree replay, actual Risu host, real-model, universal timing, whole-regression or release qualification."
+    },
+    {
+      "id": "024-v2",
+      "status": "ADOPTED_INDEPENDENTLY_VERIFIED",
+      "adoption": "011",
+      "activePath": "PROGRAM/tests/flashback_episode_index_rebuild_injection_negative_test.cjs",
+      "activeSha256": "13bce2cd008d045126cfc6e7a07a0a1deeda4991981af8843d009424f1fe1d2d",
+      "adoptionCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+      "receiptSha256": "f4affe7ebf0e369df5aff2472b9c0f623db32318384e168f2737811d0d59aa85",
+      "qualification": "Exact025 root97 and024-v2 root110 test-only normalization over A10. Separate pinned candidate executions passed2.997s and25.108s under original60s limits. Root97 admitted durability and direct post-disposal refusal/cold recovery remain separate; official listener-before-worker cancellation is unverified. Root110 preserves29 original assertions,8-source readiness and two real no-work API negatives using the existing30000ms default. Warmup is unasserted, successful hook is the second hook, and source projections do not establish full physical-byte equality. Historical failures are retained. No composed-tree replay, actual host/model, whole-regression or release certification."
+    },
+    {
+      "id": "025",
+      "status": "ADOPTED_INDEPENDENTLY_VERIFIED",
+      "adoption": "011",
+      "activePath": "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+      "activeSha256": "5dcd640084f0725040abbc50c9367c94ad6f63072c4b7d484255b0108788fa0b",
+      "adoptionCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+      "receiptSha256": "f4affe7ebf0e369df5aff2472b9c0f623db32318384e168f2737811d0d59aa85",
+      "qualification": "Exact025 root97 and024-v2 root110 test-only normalization over A10. Separate pinned candidate executions passed2.997s and25.108s under original60s limits. Root97 admitted durability and direct post-disposal refusal/cold recovery remain separate; official listener-before-worker cancellation is unverified. Root110 preserves29 original assertions,8-source readiness and two real no-work API negatives using the existing30000ms default. Warmup is unasserted, successful hook is the second hook, and source projections do not establish full physical-byte equality. Historical failures are retained. No composed-tree replay, actual host/model, whole-regression or release certification."
+    }
+  ],
+  "currentUnloadConsumerStatus": [
+    {
+      "originalOrdinal": 97,
+      "latestSuccessor": "025",
+      "currentResult": "PASS",
+      "runtimeSeconds": 2.997,
+      "scope": "Admitted durability plus separate post-disposal refusal/recovery; official pre-worker cancellation remains unverified.",
+      "runtimeCloseoutSha256": "0195104449b2105f6ed470136cd99bcfeb0add2f6f334c41a96380213e69bb4f"
+    },
+    {
+      "originalOrdinal": 98,
+      "latestSuccessor": "023-v2",
+      "currentResult": "PASS",
+      "runtimeSeconds": 13.605,
+      "scope": "Existing adopted exact old-owner release and fresh writer probes; first request remains busy in both modes.",
+      "runtimeCloseoutSha256": "0c26ff5839fcee756db99d7a649b5f1f86fe8e2c1707a5117ac4809becf39935"
+    },
+    {
+      "originalOrdinal": 99,
+      "latestSuccessor": "021",
+      "currentResult": "PASS",
+      "runtimeSeconds": 10.174,
+      "scope": "Unchanged consumer with adopted shared-helper correction; separate synthetic writer-drain/recall evidence.",
+      "runtimeCloseoutSha256": "4307f984278b72af9f14591e2417b8f865428089dca34c015d11886bb77e6566"
+    }
+  ],
+  "currentUnloadStatusQualification": "Latest scoped receipts are listed separately. Original failures, helper021 historical pending97/98 and later historical resolution records remain unchanged; no new composed-tree or real-host execution is claimed.",
+  "phase2NativeNormalization002": {
+    "queueOrdinals": [
+      73,
+      102,
+      106,
+      155,
+      157,
+      198,
+      559,
+      562,
+      957
+    ],
+    "status": "TERMINAL",
+    "completedRows": 9,
+    "counts": {
+      "PASS": 8,
+      "TIMEOUT": 1
+    },
+    "qualification": "Only an exact cutoff-terminal index and its matching terminal receipts establish queue statistics; no result is inferred from preparation or synthetic controls.",
+    "indexStatus": "TERMINAL",
+    "indexSha256": "84ebcee1ac56ffdaa2f65a233a7269c6ec6e671749d02906724a265f13efd2c6",
+    "rows": [
+      {
+        "ordinal": 73,
+        "status": "PASS",
+        "receiptSha256": "a72c6c5320a9bb66d4829a93a5153158f57f006b07b1fabd2832f8088e85a68c",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 7.345,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 102,
+        "status": "PASS",
+        "receiptSha256": "40b5526a40efa94f34006207f1fd99489bc2def123c950af5fe5bd2333e0a855",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 6.385,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 106,
+        "status": "PASS",
+        "receiptSha256": "fe8dee51fd2f485211d004184e54c21cd821aba1021c1924940ff67a0ee0c5c9",
+        "nodeSummary": {
+          "tests": 15,
+          "suites": 0,
+          "pass": 15,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 17.926,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 155,
+        "status": "TIMEOUT",
+        "receiptSha256": "5fa6decf5157c1d7ea110e170b130c6fb41fb61ee865516a13024dd353ac444d",
+        "nodeSummary": {
+          "tests": 22,
+          "suites": 0,
+          "pass": 21,
+          "fail": 0,
+          "cancelled": 1,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_NONPASS_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 60.902,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 157,
+        "status": "PASS",
+        "receiptSha256": "0d076cfedc05ad47016651adec359bd4fd1d1430dd5b7a000e09de7c296700bd",
+        "nodeSummary": {
+          "tests": 26,
+          "suites": 0,
+          "pass": 26,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 25.037,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 198,
+        "status": "PASS",
+        "receiptSha256": "d527b1ce1154c8834b1b272e5a11184b470308d3846fed755c4879d7ee794f2c",
+        "nodeSummary": {
+          "tests": 32,
+          "suites": 0,
+          "pass": 32,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 22.611,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 559,
+        "status": "PASS",
+        "receiptSha256": "03e838dfc11e33ed1479f1986e4b0faf44316cf6c86e7245dde07c1a0faffa78",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 22.114,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 562,
+        "status": "PASS",
+        "receiptSha256": "f1f76e38bbb2de53c7f1fc2a586ed98551ada1d86834ee838b27ce802b7583eb",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 3.219,
+        "timeoutSeconds": 60
+      },
+      {
+        "ordinal": 957,
+        "status": "PASS",
+        "receiptSha256": "fb3278aed7565d83516a67b7b7ad1af723400e7e8142fdfdf296cbe685d69e06",
+        "nodeSummary": {
+          "tests": 1,
+          "suites": 0,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0,
+          "todo": 0
+        },
+        "nodeSummaryAvailability": "COMPLETE_MATCHING_WRAPPER_SUMMARY",
+        "nodeCountBoundary": "Reported Node wrapper counts are not internal product assertion counts.",
+        "durationSeconds": 2.797,
+        "timeoutSeconds": 60
+      }
+    ]
+  },
+  "sourceEdit1077": {
+    "status": "STATIC_RETIREMENT_CANDIDATE_ONLY",
+    "applied": false
+  },
+  "syntheticControlQualification": "G controls are separate from root test executions; G392 does not establish native568 PASS.",
+  "publication": {
+    "deliveryPriority": "LIBRARY_FIRST",
+    "sameCaptureGit": "PUBLISHER_SINGLE_LANE",
+    "checkpoint17Backlog": "AUTHORIZED_RETRY_IN_PROGRESS_FINAL_OUTCOME_PENDING",
+    "checkpoint19Git": "PUBLISHER_SINGLE_LANE_AUTHORIZATION_REQUIRED",
+    "observedAtUtc": "2026-10-10T19:56:00+00:00",
+    "source": "Parent coordinator publication progress report; timestamp precision is one minute.",
+    "qualification": "Publication progress observation only; capture does not re-query remote; final handoff records later publisher outcome. Library delivery is first. Git publication is separate and belongs only to the publisher lane within current authorization; this checkpoint does not promise a publication outcome."
+  }
 }

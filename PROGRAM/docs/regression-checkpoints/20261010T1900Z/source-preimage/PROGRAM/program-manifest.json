@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-10T15:58:51.155Z",
+  "generatedAt": "2026-10-10T19:09:32.294Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2180,8 +2180,8 @@
       "bytes": 2578
     },
     "docs/regression/TEST-NORMALIZATION-20261010.json": {
-      "sha256": "8d7d1de0d972392e70e3ebb7d9488fb87ef360f63e25724e28758a02fccc6a55",
-      "bytes": 28948
+      "sha256": "8d37c20fa3c755e428c0f5214e1feaf66f5e110ca57569c7a0eb314f40c8d21a",
+      "bytes": 52415
     },
     "docs/regression/TEST-RETIREMENT-20261010.json": {
       "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437",
@@ -3900,12 +3900,12 @@
       "bytes": 11188
     },
     "tests/flashback_chat_output_unload_microtask_recovery_test.cjs": {
-      "sha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c",
-      "bytes": 4663
+      "sha256": "5dcd640084f0725040abbc50c9367c94ad6f63072c4b7d484255b0108788fa0b",
+      "bytes": 18793
     },
     "tests/flashback_chat_output_unload_timeout_recovery_test.cjs": {
-      "sha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22",
-      "bytes": 13857
+      "sha256": "6238827f392b2874cec6432900a1d2160c84f6d3fcd2a8d5a713484f7bc7198a",
+      "bytes": 24637
     },
     "tests/flashback_chat_output_unload_writer_drain_test.cjs": {
       "sha256": "492572ee1f43db6cb0f925f402521f11634234e781ec209f6fa2c0b4578dbc59",
@@ -3952,8 +3952,8 @@
       "bytes": 13667
     },
     "tests/flashback_episode_index_rebuild_injection_negative_test.cjs": {
-      "sha256": "2af70054eb005a3e12348103b8b9a8b1e3571f2d6b1ee42c37c6190dc8d85333",
-      "bytes": 13935
+      "sha256": "13bce2cd008d045126cfc6e7a07a0a1deeda4991981af8843d009424f1fe1d2d",
+      "bytes": 36592
     },
     "tests/flashback_episode_index_rebuild_runtime_test.cjs": {
       "sha256": "ebc9a0f2188b21a575df4634634d22e4895ff0ecdbee2c4d5553c6fdd5634e5a",
@@ -3992,8 +3992,8 @@
       "bytes": 11264
     },
     "tests/flashback_hash_embedding_batch_pilot_test.cjs": {
-      "sha256": "3daef4aa4fceaa99afe1a16e81ff500135535bafd0dbefeb58ec777b6a9052c4",
-      "bytes": 22377
+      "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
+      "bytes": 1147
     },
     "tests/flashback_host_request_type_test.cjs": {
       "sha256": "d5a77004428e13e4f50a0f319bb1bf5a543e5cf182eefc336504454f41db2814",
@@ -5228,8 +5228,8 @@
       "bytes": 9736
     },
     "tests/helpers/unload_recall_contract_fixture.cjs": {
-      "sha256": "8271a41c7c2f75c0a65283079c68b74573b310497c2cc4cae8f8739a0b7563a9",
-      "bytes": 6408
+      "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+      "bytes": 6359
     },
     "tests/helpers/updater_fixture.cjs": {
       "sha256": "b1c7d1ed22706de04f86362d57729c14a9dd6ef52858e8999c01cf5cd500190c",

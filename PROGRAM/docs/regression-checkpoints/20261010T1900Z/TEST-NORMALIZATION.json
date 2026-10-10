@@ -1,7 +1,7 @@
 {
   "schema": "lib.regression.test-normalization.v1",
   "dateUtc": "2026-10-10",
-  "baselineCommit": "702afc8a4379a43741032e0a3ad6f0b412c5b871",
+  "baselineCommit": "7758446ef8df1110d9328e33238435dbefafd98f",
   "originalRootUniverse": 1138,
   "defaultRootCount": 1134,
   "wholeFilesRetiredThisAdoption": 0,
@@ -244,6 +244,306 @@
       "independentRuntimeReviewSha256": "35ec84b5cd319644e1950b69c04cb40aa14209945498edd06163310fea1763c8",
       "reason": "Replace obsolete immediate known-inventory and generic Micro readiness expectations with exact receipt/key/scope/revision-bound durable known inventory and real queue completion; retain three modes, same-identity duplicate/history, five-pair batch and one-sided mirror repair obligations.",
       "qualification": "Actual isolated synthetic plugin_only/mirror/server_only known-only inventory and fallback with five ordered terminal markers. All28 original assertion and7 wait obligations were mapped. This establishes structural durability/admission and observed provider call counts, not actual Risu, browser or real model quality."
+    },
+    {
+      "successor": "022",
+      "originalOrdinal": 120,
+      "path": "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs",
+      "originalSha256": "3daef4aa4fceaa99afe1a16e81ff500135535bafd0dbefeb58ec777b6a9052c4",
+      "adoptedSha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 1.15,
+      "normalization": "PARTIAL_ASSERTION_RETIREMENT",
+      "wholeFileRetired": false,
+      "rootFileRetained": true,
+      "assertionDisposition": {
+        "originalStaticCallSites": 63,
+        "retainedByteIdenticalInOrder": 5,
+        "obsoleteOrRemovedFixtureSitesRetired": 55,
+        "liveGenericObligationsReplaced": 3
+      },
+      "retainedOriginalLines": [
+        27,
+        28,
+        29,
+        31,
+        46
+      ],
+      "runtimeNodeCases": {
+        "cancelled": 0,
+        "fail": 0,
+        "pass": 1,
+        "skipped": 0,
+        "suites": 0,
+        "tests": 1,
+        "todo": 0
+      },
+      "retainedAssertionsReached": "Five unconditional synchronous assertions reached in source order by normal exact-file Node completion; one Node wrapper case, no per-assertion trace.",
+      "reason": "Partial assertion retirement of the removed Flashback hash-pilot API and unused VM/server fixture. Retain the five exact existing source-wide contracts; preserve the three live generic security/database obligations through independently accepted historical replacement witnesses.",
+      "runtimeCloseoutSha256": "9a57b6abd2a36b1325e9b3395c59d83aa58bbb70316e8bdd9cba6b0e0ed87888",
+      "rawInventorySha256": "f5344d3e862f7c86770262e527e80812f08ea47a6cfd44e51f07b5f74e35fc74",
+      "independentRuntimeReviewSha256": "8c16f9f4de395358b44b0aeabe39895a474c80dc7dac3e0bd7471c63be439df5",
+      "independentAssertionReviewPinsSha256": "82cb2b95991aa4984d15d9b49e6d0739a5968c84a85a052def51d65215e43e2d",
+      "assertionMapSha256": "bbdd9ab8bdb42d82416996d109f5025c465d3a9c1650036a21bca0769a4ce3b6",
+      "historicalReplacementProofSha256": "8312d8fb491f947a09000b8602381d7e28fd3afca4a4423539059f217322a8ad",
+      "historicalReplacementWitnesses": [
+        {
+          "originalOrdinal": 41,
+          "path": "PROGRAM/tests/compute_bridge_server_integration_test.cjs",
+          "sourceSha256": "bccdabbb7f97ff94f0bfbf47e431071b23860cbe1ef119344f63a7d03b46ef55",
+          "result": "HISTORICAL_PASS",
+          "runtimeSeconds": 1.87,
+          "runtimeResultSha256": "5c675a2e02827f9a598f9a490d1435b9da6cfe7dcfbd06b5ba6fd97e16400592",
+          "newExecution": false
+        },
+        {
+          "originalOrdinal": 42,
+          "path": "PROGRAM/tests/compute_bridge_test.cjs",
+          "sourceSha256": "429de8e0d99464cb8365f764bbeca7a1faf47b31392d7cc130a5eb56b0e482f9",
+          "result": "HISTORICAL_PASS",
+          "runtimeSeconds": 1.475,
+          "runtimeResultSha256": "94f6e1a543a50de5b4c1d642601d2047b43e33cc54bdb00bde04322de3b3d011",
+          "newExecution": false
+        },
+        {
+          "originalOrdinal": 54,
+          "path": "PROGRAM/tests/compute_server_integration_test.cjs",
+          "sourceSha256": "5f030522f53a962a63514e974c930d40ae8b2685c7c21d5ac639b4e01c2e9b2b",
+          "result": "HISTORICAL_PASS",
+          "runtimeSeconds": 5.077,
+          "runtimeResultSha256": "ec774e7490c875f0ae5800cffeb6a50c3acff79ddd03903837512fdd3bbc738c",
+          "newExecution": false
+        }
+      ],
+      "replacementMapping": [
+        {
+          "originalLine": 242,
+          "obligation": "Compute bootstrap omits the pairing header",
+          "witnessOriginalOrdinals": [
+            42
+          ]
+        },
+        {
+          "originalLine": 243,
+          "obligation": "Compute bootstrap omits the storage Authorization header",
+          "witnessOriginalOrdinals": [
+            42
+          ]
+        },
+        {
+          "originalLine": 430,
+          "obligation": "Compute preserves canonical namespace database bytes",
+          "witnessOriginalOrdinals": [
+            41,
+            54
+          ]
+        }
+      ],
+      "qualification": "The PASS covers only the five retained synchronous source assertions. The old bridge disposal expression proves source presence only; current search-client lifecycle remains unproved here. Historical SDK-VM and temporary real-server witnesses establish bounded generic header exclusion and database/WAL/absence preservation, and were not rerun by this replay. No model/browser/provider, populated production database, all-operation, actual-host or release certification. The original 120 FAIL and preimage remain retained."
+    },
+    {
+      "successor": "023-v2",
+      "originalOrdinal": 98,
+      "path": "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+      "originalSha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22",
+      "adoptedSha256": "6238827f392b2874cec6432900a1d2160c84f6d3fcd2a8d5a713484f7bc7198a",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 13.605,
+      "actualModes": [
+        "raw-only",
+        "configured"
+      ],
+      "wholeFileRetired": false,
+      "normalization": "CURRENT_WRITER_FENCE_CONTRACT_WITH_TWO_OBSOLETE_AUTOMATIC_JOURNAL_ASSERTIONS_RETIRED",
+      "assertionDisposition": {
+        "originalRootSites": 14,
+        "originalSitesRetainedByteExact": 12,
+        "obsoleteAutomaticJournalSitesRetired": 2,
+        "candidateRootSites": 71,
+        "newNativeRepresentationChecks": 3,
+        "unchangedExistingHelperSites": 26
+      },
+      "reason": "Replace removed automatic source-journal diagnostics with separate explicit current SDK writer-fence probes while retaining the original real first request, bounded unload, durable canonical readback, post-release request and raw-only/configured recall obligations.",
+      "originalToCurrentMapping": [
+        {
+          "originalLines": [
+            169,
+            170
+          ],
+          "removed": "Removed getter diagnostic and automatic source-journal rejection expectation.",
+          "currentLines": [
+            223,
+            230,
+            232,
+            263
+          ],
+          "replacement": "Save actual first-request writer-busy diagnostics immediately. A separately identified fresh SDK no-op probe must reject with HTTP409 FLASHBACK_WRITER_BUSY, callback0, one acquire, exact held-owner SQL equality and complete canonical/source byte equality. The explicit probe is not attributed to the first hook."
+        },
+        {
+          "originalLines": [
+            176,
+            180
+          ],
+          "removed": "Obsolete automatic journal-recovery explanation and removed getter error-empty assertion only; original real post-release request assertion remains.",
+          "currentLines": [
+            264,
+            308
+          ],
+          "replacement": "Verify the exact old-owner release, then one bounded fresh-owner acquire/release with callback1, next epoch, exact receipts and SQL rows, unchanged seven-column canonical/source snapshots and complete original commit. Retain real post-release request, unchanged readiness helper and final hook injection only in configured mode."
+        }
+      ],
+      "typedFixtureCorrections": {
+        "nativeRow": "Require native null prototype and exactly four ordered own columns before projecting every uncoerced value for strict comparisons.",
+        "canonicalSnapshot": "Include exact updated_at alongside all six existing canonical KV columns; preserve complete byte comparisons and scoped local/live-source payloads."
+      },
+      "fixedFixtureControls": {
+        "cases": 28,
+        "nativeRowCases": 17,
+        "canonicalSnapshotCases": 11,
+        "positiveCases": 3,
+        "expectedRefusals": 25,
+        "rollbackRestores": 9,
+        "runtimeSeconds": 0.366,
+        "independentReadbackSha256": "930204df02d59017b7b899723681b24f2ed9de8dda3f58b47e9767cfba3ba90c",
+        "scope": "Separate exact fixture contrasts; not the root integration run."
+      },
+      "currentRuntime": {
+        "nodeCases": {
+          "tests": 1,
+          "pass": 1,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0
+        },
+        "firstFreshRequest": "Fails closed with before_request_error / FLASHBACK_WRITER_BUSY and no fact injection in both modes.",
+        "heldOwner": "Exact old alias/owner/epoch/expiry remains unchanged through unload and first request.",
+        "explicitProbeCallbacksPerMode": {
+          "held": 0,
+          "released": 1
+        },
+        "completeCanonicalAndSourceBytesPreserved": true,
+        "rawOnly": "Unconfigured, no ready receipts or semantic items, and no final injection.",
+        "configured": "Source-bound ready receipt, semantic positive and unrelated-query zero; final real hook injects only after confirmed release and readiness.",
+        "root97": "Still FAIL; not corrected or retired by this normalization."
+      },
+      "runtimeCloseoutSha256": "0c26ff5839fcee756db99d7a649b5f1f86fe8e2c1707a5117ac4809becf39935",
+      "runtimeResultSha256": "d595a3072a26cb55d3e3a956fce41a22a17461ab7742ca264f214537c491f979",
+      "rawInventorySha256": "a4cba604b09927224b71089e8636fe2c899e6da179b2eef47f406d3024cf3206",
+      "independentRuntimeReviewSha256": "a4cdd51a939c8c322e02585bca2522b6f63102dce46871931a47b8af4f607a66",
+      "independentStaticReviewSha256": "b3205c2d4654753f6bfd56a79ba14dd437ef416d29344aedefd13d5ea819adc1",
+      "assertionMapSha256": "4b63912688924b946c197fd3518a7fcead7441826651b69128a0d94de4c69fe1",
+      "obligationMapSha256": "11346148498843fdef6ad9c6d81f511aa7a8a8c89e3137e5ab5c178984d0145d",
+      "historicalFailuresPreserved": true,
+      "priorStaticBlockedCandidatePreserved": true,
+      "qualification": "Bounded synthetic host/provider fixture using the unchanged deployed product and native server. First fresh request is a witnessed writer-busy refusal, never success. Explicit SDK probes are separate actions. No actual Risu host, external model quality, universal unload timing, whole-regression or release certification. Original and helper-only root98 failures and the blocked predecessor remain historical evidence. Existing helper021 is unchanged."
+    },
+    {
+      "successor": "025",
+      "originalOrdinal": 97,
+      "path": "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+      "originalSha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c",
+      "adoptedSha256": "5dcd640084f0725040abbc50c9367c94ad6f63072c4b7d484255b0108788fa0b",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 2.997,
+      "wholeFileRetired": false,
+      "runtimeNodeCases": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "runtimeCloseoutSha256": "0195104449b2105f6ed470136cd99bcfeb0add2f6f334c41a96380213e69bb4f",
+      "runtimeResultSha256": "a06a7ce8abfcd8ea39eea1792a71a22e20eee580f2f23f7dbaa2c72433efb7d7",
+      "rawInventorySha256": "be01cf8eeedc8fd111852384d523abc89fcb178c17061b223701e571ff956880",
+      "independentRuntimeReviewSha256": "468ee287b356a19bfc56905074a49efe03e4c1ceab39f68a2ff4510f5031b8ff",
+      "assertionMapSha256": "3c05a639363a95bcd3f1fc1d55a532b56932aa0016e2435abbdd101f21cceae8",
+      "historicalFailuresPreserved": true,
+      "normalization": "ADMITTED_OUTPUT_DURABILITY_AND_SEPARATE_POST_DISPOSAL_REFUSAL_RECOVERY",
+      "actualModes": [
+        "raw-only",
+        "configured"
+      ],
+      "orderedScenarioCount": 4,
+      "reason": "Replace the single obsolete scheduling-derived absence premise with two strict separate scenarios. A preserves original official dispatch/immediate disposal order and proves admitted output durability. B calls the existing API only after full disposal, requires exact unloaded refusal and physical absence, then real cold start recovers the intended absent source.",
+      "originalToCurrentMapping": [
+        {
+          "originalLines": [
+            62,
+            63
+          ],
+          "obsoletePremise": "Same-tick disposal supposedly prevents admitted official-output persistence.",
+          "scenarioA": "Require the exact durable raw source before fresh cold start and preserve physical/API commit and source identity.",
+          "scenarioB": "Independent backing stores remain empty after exact post-disposal refusal; fresh pre-cold count is zero and real cold start produces exactly one intended complete source."
+        }
+      ],
+      "currentRecall": "Both scenarios preserve the existing source-bound readiness helper and actual final hook: raw-only stays unconfigured and noninjecting; configured semantic positive and orthogonal zero precede final injection.",
+      "officialListenerPreWorkerCancellation": "UNVERIFIED",
+      "fixedFixtureControls": {
+        "cases": 40,
+        "positiveCases": 5,
+        "expectedRefusals": 35,
+        "obligations": 30,
+        "independentReadbackSha256": "58faa48deb95e8438fad7f39bd30cc9753022c56048b4f216e86a53ddf254fe5",
+        "scope": "Separate detached fixture controls, not official pre-worker cancellation."
+      },
+      "qualification": "Controlled native fixture and synthetic provider only. A admitted-dispatch durability and B direct post-disposal refusal are distinct; the official listener-observed-before-worker cancellation interleaving remains unverified. Transient full source/store/receipt values were checked by exact pinned assertions but were not fully printed as independent raw snapshots. No actual host, external model quality, automatic journal recovery, whole-regression or release certification."
+    },
+    {
+      "successor": "024-v2",
+      "originalOrdinal": 110,
+      "path": "PROGRAM/tests/flashback_episode_index_rebuild_injection_negative_test.cjs",
+      "originalSha256": "2af70054eb005a3e12348103b8b9a8b1e3571f2d6b1ee42c37c6190dc8d85333",
+      "adoptedSha256": "13bce2cd008d045126cfc6e7a07a0a1deeda4991981af8843d009424f1fe1d2d",
+      "timeoutSeconds": 60,
+      "result": "PASS",
+      "runtimeSeconds": 25.108,
+      "wholeFileRetired": false,
+      "runtimeNodeCases": {
+        "tests": 1,
+        "pass": 1,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "runtimeCloseoutSha256": "1fed15541939e47854208fc5cdb53b0934e5ba549e6206de21d27a8d152585e2",
+      "runtimeResultSha256": "99042c9c9cd1aaf61a1d0ad586ebe795150165335089891a084f6ce5b2175f35",
+      "rawInventorySha256": "077af69bcbe54dcac661f94f448cfb07385e46b7298f3a7088c6c3c4341c3aa2",
+      "independentRuntimeReviewSha256": "45737f637607337db4660f8563993b9b050db47d60d0278d6b989acf692213cf",
+      "assertionMapSha256": "a2ee731a0aabe75e9fd44b2184228e9ea65344d9519a7251942c75da9cf1876d",
+      "historicalFailuresPreserved": true,
+      "normalization": "CURRENT_EIGHT_SOURCE_MODEL_READINESS_FIXTURE_WITH_ORIGINAL_ASSERTIONS_RETAINED",
+      "actualModes": [
+        "plugin_only",
+        "mirror",
+        "server_only"
+      ],
+      "originalAssertionsRetainedExactly": 29,
+      "predecessorAssertionsRetainedExactly": 136,
+      "addedV2AssertionStatements": 37,
+      "retiredAssertions": 0,
+      "reason": "Construct the original eight sources through the current deferred producer and validate actual bounded queue reservations, document requests and durable ready receipts before the original public rebuild and recall assertions. Remove only the predecessor fixture positive queue override of 5000ms and read/assert the supported existing 30000ms default; preserve the original outer 60-second deadline.",
+      "runtimePerMode": {
+        "canonicalSources": 8,
+        "reservations": 8,
+        "documentRequests": 8,
+        "ready": 8,
+        "pending": 0,
+        "effectiveEmbeddingTimeoutMs": 30000,
+        "positiveQueueCalls": 1,
+        "expiredDeadlineNoWorkCalls": 1,
+        "zeroRequestBudgetNoWorkCalls": 1
+      },
+      "budgetNegativeBoundary": "Both real no-work API calls preserve all eight pending rows, provider-call count and reservation-map bytes. Early pendingSources0 means undiscovered inventory, not an empty corpus. The disabled branch does not supply processedRecords or processedChars, and those fields are not invented.",
+      "coverage": "Original public rebuild, derived-only removal, measured canonical recall, missing-canonical denial, stale-derived exclusion and three-mode storage ownership assertions completed. Per-row source/profile/job/attempt/runtime/storage receipt predicates precede aggregate success; logs report summaries rather than complete independent receipt-row dumps.",
+      "warmupHookResult": "UNASSERTED",
+      "measuredSuccessfulHook": "SECOND_HOOK_AFTER_WARMUP",
+      "indexAbsentDuringRecall": "REPORT_ONLY; no whole-hook or first-request absence guarantee. Immediate absence before first public rebuild is a separate assertion.",
+      "sourcePreservationScope": "rawSource and stableSource are bounded projections. Complete physical storage-byte immutability is not established; full pending/legacy row equality and durable receipt-field checks are separate bounded witnesses.",
+      "qualification": "Synthetic provider and controlled host, with real loopback storage in server modes. No actual external model or Risu host certification. The eight-source functional fixture completed within the original outer 60 seconds on this run; no universal performance guarantee, timeout extension or retry. The original root110 failure and predecessor inner-5000ms failure remain historical evidence."
     }
   ],
   "addedSupport": [
@@ -306,7 +606,7 @@
     "019:retained-handoff-safety-failure"
   ],
   "publication": "Local source normalization only; no remote publication is performed by this record.",
-  "previousNormalizationBaseline": "8e77dd932f943ab8ffcd0bec05aa45f885a30b83",
+  "previousNormalizationBaseline": "5b51260b5dc2296a90ababf9709bea32d1cc6819",
   "namedFunctionalTimeoutOverrides": [
     {
       "path": "PROGRAM/tests/libra_phase_d_portable_nine_pairs_test.cjs",
@@ -315,7 +615,7 @@
       "scope": "Only nine-pair functional fixture; unchanged assertions and no product latency requirement change."
     }
   ],
-  "cumulativeCorrectedRootFiles": 22,
+  "cumulativeCorrectedRootFiles": 26,
   "cumulativeRetiredRootFiles": 4,
   "sharedFixtureCorrections": [
     {
@@ -481,6 +781,134 @@
         }
       ],
       "qualification": "Five unchanged roots passed; two remain blocked. 172 exercises the corrected default backup-worker lookup. 182/183 qualify the candidate plus the pinned SQLite profile together, not the isolated fixture effect. 186 covers module availability and early dot-path denial, not actual backup/restore. No seven-root complete pass, whole-regression, actual host or real-model claim; original outcomes remain retained."
+    },
+    {
+      "successor": "021",
+      "path": "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs",
+      "originalSha256": "8271a41c7c2f75c0a65283079c68b74573b310497c2cc4cae8f8739a0b7563a9",
+      "candidateSha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f",
+      "result": "ACCEPTED_HELPER_CORRECTION_WITH_TWO_FAILING_CONSUMERS",
+      "reason": "Delete only the 49-byte obsolete eager diagnostic getter expression. All assertion predicates, other calls, awaited operations and root consumer files remain unchanged.",
+      "runtimeCloseoutSha256": "4307f984278b72af9f14591e2417b8f865428089dca34c015d11886bb77e6566",
+      "rawInventorySha256": "50255e39d38a4d43a43bb4a78498fc14bb6af760bbf176bed17e7849cda66dff",
+      "independentRuntimeReviewSha256": "8165f906570e781f8a1f8262efcfe8234d4a0325508999ca3a42e1aeee654733",
+      "rootTestFilesChanged": 0,
+      "rootCorrectionCountIncrease": 0,
+      "consumerOutcomes": [
+        {
+          "originalOrdinal": 97,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs",
+          "sourceSha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c",
+          "timeoutSeconds": 60,
+          "result": "FAIL",
+          "runtimeSeconds": 1.487,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "c422806634f37a5585625ab2ae34b120ef01edb5af3adf7c05856e8f78a17614",
+          "failure": "same-tick unload memory persistence expectation: true !== false at root line62"
+        },
+        {
+          "originalOrdinal": 98,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs",
+          "sourceSha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22",
+          "timeoutSeconds": 60,
+          "result": "FAIL",
+          "runtimeSeconds": 9.294,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 0,
+            "fail": 1,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "594aee284662e78f27adb8d561927eb75d361c043ca4476dfdbc48a59f4eab05",
+          "failure": "obsolete getSourceEditSyncStatus call within unchanged root line169"
+        },
+        {
+          "originalOrdinal": 99,
+          "path": "PROGRAM/tests/flashback_chat_output_unload_writer_drain_test.cjs",
+          "sourceSha256": "492572ee1f43db6cb0f925f402521f11634234e781ec209f6fa2c0b4578dbc59",
+          "timeoutSeconds": 60,
+          "result": "PASS",
+          "runtimeSeconds": 10.174,
+          "nodeCases": {
+            "tests": 1,
+            "suites": 0,
+            "pass": 1,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 0,
+            "todo": 0
+          },
+          "runtimeResultSha256": "22d74488e49ebbfa4236b3ff361aca791749b11743ffcbe942ea77f27032d15e",
+          "failure": null
+        }
+      ],
+      "pendingConsumers": [
+        {
+          "originalOrdinal": 97,
+          "status": "FAIL",
+          "reason": "same-tick unload memory persistence expectation: true !== false at root line62"
+        },
+        {
+          "originalOrdinal": 98,
+          "status": "FAIL",
+          "reason": "obsolete getSourceEditSyncStatus call within unchanged root line169"
+        }
+      ],
+      "qualification": "Consumer 99 passed both raw-only and configured synthetic writer-drain/recall modes; 97 and 98 remain ordinary FAIL before the shared readiness helper. No all-consumer pass, root retirement, actual host, real-model or whole-regression certification. Original failures remain preserved."
     }
-  ]
+  ],
+  "cumulativeSharedFixtureCorrections": 2,
+  "currentConsumerResolutions": [
+    {
+      "originalOrdinal": 98,
+      "successor": "023-v2",
+      "currentResult": "PASS",
+      "runtimeSeconds": 13.605,
+      "historicalHelper021Result": "FAIL",
+      "historicalHelper021RecordPreserved": true,
+      "remainingFailingConsumerOrdinals": [
+        97
+      ],
+      "runtimeCloseoutSha256": "0c26ff5839fcee756db99d7a649b5f1f86fe8e2c1707a5117ac4809becf39935"
+    }
+  ],
+  "currentUnloadConsumerStatus": [
+    {
+      "originalOrdinal": 97,
+      "latestSuccessor": "025",
+      "currentResult": "PASS",
+      "runtimeSeconds": 2.997,
+      "scope": "Admitted durability plus separate post-disposal refusal/recovery; official pre-worker cancellation remains unverified.",
+      "runtimeCloseoutSha256": "0195104449b2105f6ed470136cd99bcfeb0add2f6f334c41a96380213e69bb4f"
+    },
+    {
+      "originalOrdinal": 98,
+      "latestSuccessor": "023-v2",
+      "currentResult": "PASS",
+      "runtimeSeconds": 13.605,
+      "scope": "Existing adopted exact old-owner release and fresh writer probes; first request remains busy in both modes.",
+      "runtimeCloseoutSha256": "0c26ff5839fcee756db99d7a649b5f1f86fe8e2c1707a5117ac4809becf39935"
+    },
+    {
+      "originalOrdinal": 99,
+      "latestSuccessor": "021",
+      "currentResult": "PASS",
+      "runtimeSeconds": 10.174,
+      "scope": "Unchanged consumer with adopted shared-helper correction; separate synthetic writer-drain/recall evidence.",
+      "runtimeCloseoutSha256": "4307f984278b72af9f14591e2417b8f865428089dca34c015d11886bb77e6566"
+    }
+  ],
+  "currentUnloadStatusQualification": "Latest scoped receipts are listed separately. Original failures, helper021 historical pending97/98 and later historical resolution records remain unchanged; no new composed-tree or real-host execution is claimed.",
+  "unadoptedCandidatesQualification": "Historical, non-exhaustive list retained from prior adoption records; it is not a complete inventory of currently pending candidates."
 }

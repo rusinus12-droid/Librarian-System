@@ -1,7 +1,7 @@
 {
   "schema": "lib.original-development-source.v1",
-  "capturedAtUtc": "2026-10-10T17:01:59.671407+00:00",
-  "commit": "2a138a585d6f26c79cfd5d7ccc716b5fc65da88f",
+  "capturedAtUtc": "2026-10-10T20:05:14.982518+00:00",
+  "commit": "aff403fe04ea417d9121ca52330c44ba0681343b",
   "rootMode": 493,
   "excluded": [
     ".git"
@@ -1523,9 +1523,9 @@
     },
     "PROGRAM/docs/regression/TEST-NORMALIZATION-20261010.json": {
       "kind": "file",
-      "bytes": 28948,
+      "bytes": 52415,
       "mode": 420,
-      "sha256": "8d7d1de0d972392e70e3ebb7d9488fb87ef360f63e25724e28758a02fccc6a55"
+      "sha256": "8d37c20fa3c755e428c0f5214e1feaf66f5e110ca57569c7a0eb314f40c8d21a"
     },
     "PROGRAM/docs/regression/TEST-RETIREMENT-20261010.json": {
       "kind": "file",
@@ -1857,7 +1857,7 @@
       "kind": "file",
       "bytes": 368507,
       "mode": 384,
-      "sha256": "4c80c8e4c763b437f0b033e6a042f3b03153844268da2d7565d314675cc0963b"
+      "sha256": "9facf13e31e06035267308c1dccfbff21829e79c4189b9b4700214c6c0e5d0fe"
     },
     "PROGRAM/release-policy.json": {
       "kind": "file",
@@ -3901,15 +3901,15 @@
     },
     "PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs": {
       "kind": "file",
-      "bytes": 4663,
+      "bytes": 18793,
       "mode": 384,
-      "sha256": "440637dff30b8e0b6c50c201d32fa009b527d242c19e61e46bf6fd8aaca1252c"
+      "sha256": "5dcd640084f0725040abbc50c9367c94ad6f63072c4b7d484255b0108788fa0b"
     },
     "PROGRAM/tests/flashback_chat_output_unload_timeout_recovery_test.cjs": {
       "kind": "file",
-      "bytes": 13857,
+      "bytes": 24637,
       "mode": 384,
-      "sha256": "6447e73d3bdc947d101f107b78dfa3ffd700f28725dce7feeb95c848e0da7e22"
+      "sha256": "6238827f392b2874cec6432900a1d2160c84f6d3fcd2a8d5a713484f7bc7198a"
     },
     "PROGRAM/tests/flashback_chat_output_unload_writer_drain_test.cjs": {
       "kind": "file",
@@ -3979,9 +3979,9 @@
     },
     "PROGRAM/tests/flashback_episode_index_rebuild_injection_negative_test.cjs": {
       "kind": "file",
-      "bytes": 13935,
+      "bytes": 36592,
       "mode": 384,
-      "sha256": "2af70054eb005a3e12348103b8b9a8b1e3571f2d6b1ee42c37c6190dc8d85333"
+      "sha256": "13bce2cd008d045126cfc6e7a07a0a1deeda4991981af8843d009424f1fe1d2d"
     },
     "PROGRAM/tests/flashback_episode_index_rebuild_runtime_test.cjs": {
       "kind": "file",
@@ -4039,9 +4039,9 @@
     },
     "PROGRAM/tests/flashback_hash_embedding_batch_pilot_test.cjs": {
       "kind": "file",
-      "bytes": 22377,
+      "bytes": 1147,
       "mode": 384,
-      "sha256": "3daef4aa4fceaa99afe1a16e81ff500135535bafd0dbefeb58ec777b6a9052c4"
+      "sha256": "1bd4561cd44e810ef7cff21f1ce5d088138623da640f5dcad63db968b29b5ca3"
     },
     "PROGRAM/tests/flashback_host_request_type_test.cjs": {
       "kind": "file",
@@ -5929,9 +5929,9 @@
     },
     "PROGRAM/tests/helpers/unload_recall_contract_fixture.cjs": {
       "kind": "file",
-      "bytes": 6408,
+      "bytes": 6359,
       "mode": 420,
-      "sha256": "8271a41c7c2f75c0a65283079c68b74573b310497c2cc4cae8f8739a0b7563a9"
+      "sha256": "74a39281535a1f824b67a538584e5e1a398aae5351b46bbbe159cf964ef9606f"
     },
     "PROGRAM/tests/helpers/updater_fixture.cjs": {
       "kind": "file",
@@ -11509,7 +11509,7 @@
       "kind": "file",
       "bytes": 232380,
       "mode": 384,
-      "sha256": "7dda99fb511d8494e87f5ca4cc025cb4f958b79f18720bbecc99598dfe50fe12"
+      "sha256": "fbc657c9ef4f4f577c91e4ac2b9d8ef5b7331c796c4c794fd62f4d1763c80334"
     },
     "UPDATER": {
       "kind": "dir",
@@ -11666,5 +11666,5 @@
       "sha256": "b67088930d3a2ec47262f0378aca74e069943ef7185412c3397bcc50a7a6cba7"
     }
   },
-  "treeSha256": "59bcadf4d67affcabcfbc168840dfcdf4beec1727c15aa129134578253a260b4"
+  "treeSha256": "b76eb8e5f6d870695d915c79c9425d64db4b7363c6525d1b5c1d2821e77a8274"
 }

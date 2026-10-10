@@ -1,6 +1,6 @@
 {
   "schema": "lib.six-plugin.public-browser-status.v1",
-  "cutoffUtc": "2026-10-10T17:00:00.040340+00:00",
+  "cutoffUtc": "2026-10-10T19:59:31.691218+00:00",
   "count": 31,
   "status": "NOT_RUN_ENVIRONMENT_BOUNDARY",
   "actualRisu": false,

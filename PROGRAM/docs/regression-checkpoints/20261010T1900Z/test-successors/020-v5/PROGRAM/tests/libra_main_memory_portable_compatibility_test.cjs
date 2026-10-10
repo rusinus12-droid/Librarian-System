@@ -47,31 +47,70 @@ const manifestOf = snapshot => {
   return key ? (() => { try { return JSON.parse(snapshot.local.get(key)); } catch { return null; } })() : null;
 };
 
-// Capture real physical owners separately; never hide mirror copies by key deduplication.
-const physicalRows568 = snapshot => [
-  ...[...snapshot.local].map(([key, raw]) => ({ owner: 'local', key, raw, revision: null })),
-  ...snapshot.storedRows().map(({ key, raw, revision }) => ({ owner: 'server', key, raw, revision }))
-].sort((a, b) => a.owner.localeCompare(b.owner) || a.key.localeCompare(b.key));
+// All Map entries and all live libra KV rows only. No tombstone/table/WAL claim.
+// No new connection or public read: existing synchronous repository handle, LIMIT 1,
+// one-over detection, and bounded text projection tied to each exact row read.
+const bindingChecks568 = new WeakMap();
+const bindingInput568 = snapshot => ({ local: snapshot.local, backend: snapshot.backend,
+  repository: snapshot.app.repositories.libra, database: snapshot.app.repositories.libra.database,
+  host: snapshot.f.r.context.risuai, localGetter: snapshot.f.r.context.risuai.getLocalPluginStorage,
+  fixtureDir: path568.resolve(snapshot.dir), filePath: snapshot.app.repositories.libra.filePath });
+const stores568 = snapshot => {
+  const input = bindingInput568(snapshot);
+  if (!bindingChecks568.has(snapshot)) bindingChecks568.set(snapshot, witness568.bindingGuard(input));
+  return bindingChecks568.get(snapshot)(input);
+};
+const physicalRows568 = snapshot => {
+  const stores = stores568(snapshot), limit = witness568.LIMITS;
+  assert.ok(snapshot.local.size <= limit.rows, '568 capture: bounded local live count');
+  const rows = [];
+  for (const [key, raw] of snapshot.local) {
+    assert.ok(rows.length < limit.rows, '568 capture: local one-over row rejection');
+    rows.push(witness568.localRow(key, raw));
+    witness568.copy(rows); // cumulative text/node budget before retaining another row
+  }
+  const query = snapshot.app.repositories.libra.database.prepare(`SELECT
+    CASE WHEN length(CAST(space AS BLOB)) <= 6 THEN space ELSE NULL END AS space,
+    CASE WHEN length(CAST(key AS BLOB)) <= ? THEN key ELSE NULL END AS key,
+    CASE WHEN typeof(value_json)='text' AND length(CAST(value_json AS BLOB)) <= ? THEN value_json ELSE NULL END AS value_json,
+    deleted, revision, CASE WHEN length(CAST(digest AS BLOB)) <= 64 THEN digest ELSE NULL END AS digest, updated_at
+    FROM kv WHERE deleted=0 ORDER BY space COLLATE BINARY, key COLLATE BINARY LIMIT 1 OFFSET ?`);
+  for (let index = 0; index <= limit.rows; index += 1) {
+    const record = query.get(limit.keyChars * 4, limit.envelopeBytes, index);
+    if (record === undefined) break;
+    assert.ok(rows.length < limit.rows, '568 capture: server one-over row rejection');
+    rows.push(witness568.serverRow(record, stores));
+    witness568.copy(rows); // retain envelope AND logical/typed content in the same budget
+  }
+  rows.sort(witness568.compareRows);
+  witness568.validateRows(rows, stores);
+  return witness568.freezeCopy(rows);
+};
 const capture568 = (snapshot, mode) => {
-  const rows = physicalRows568(snapshot);
-  return witness568.copy({ mode, rows, origin: snapshot.url,
-    source: { chat: snapshot.f.chat, characterId: snapshot.f.character.id,
-      characterAlias: snapshot.f.character.chaId, chatPage: snapshot.f.character.chatPage },
-    projections: rows.filter(row => row.key.endsWith(':continuity-state')).map(row => ({
-      owner: row.owner, key: row.key,
-      value: snapshot.f.r.api.getUnifiedStateReadProjection(JSON.parse(row.raw))
-    })),
-    calls: snapshot.f.control.calls, requests: snapshot.requests,
-    sourceHashes: Object.fromEntries(Object.keys(witness568.SOURCE_HASHES).map(relative => [relative,
-      witness568.sha256(fs568.readFileSync(relative === 'PROGRAM/plugins/LIBRA.js'
-        ? (process.env.LIBRA_TEST_PLUGIN || path568.resolve(__dirname, '../plugins/LIBRA.js'))
-        : path568.resolve(__dirname, '../..', relative), 'utf8'))]))
+  const startedAt = Date.now(), rows = physicalRows568(snapshot), stores = stores568(snapshot);
+  const character = witness568.copy(snapshot.f.character), chat = witness568.copy(snapshot.f.chat);
+  const source = witness568.copy({ chat, characterId: character.id,
+    characterAlias: character.chaId, chatPage: character.chatPage,
+    characterChatIds: character.chats.map(value => ({ id: value.id, chatId: value.chatId })) });
+  const projections = rows.filter(row => witness568.canonicalAddress(row) && row.key.endsWith(':continuity-state')).map(row => {
+    assert.equal(typeof row.raw, 'string', '568 capture: Canonical Head string before parsing');
+    return { owner: row.owner, key: row.key,
+      value: witness568.copy(snapshot.f.r.api.getUnifiedStateReadProjection(JSON.parse(row.raw))) };
   });
+  const calls = witness568.copy(snapshot.f.control.calls);
+  assert.ok(snapshot.requests.length <= witness568.LIMITS.requests, '568 capture: bounded request inventory');
+  const requests = witness568.copy(snapshot.requests);
+  const sourceHashes = Object.fromEntries(Object.keys(witness568.SOURCE_HASHES).map(relative => [relative,
+    witness568.sha256(fs568.readFileSync(relative === 'PROGRAM/plugins/LIBRA.js'
+      ? (process.env.LIBRA_TEST_PLUGIN || path568.resolve(__dirname, '../plugins/LIBRA.js'))
+      : path568.resolve(__dirname, '../..', relative), 'utf8'))]));
+  return witness568.freezeCopy({ mode, rows, stores, origin: snapshot.url, source, projections,
+    calls, requests, sourceHashes, clock: { startedAt, endedAt: Date.now() } });
 };
 async function settleOldV4BeforeNewWrite568(snapshot, mode) {
   const api = snapshot.f.r.api;
   for (const name of ['retryPendingUnifiedVectors', 'getEmbeddingSettings',
-    'debugReadActiveCompletedTurnReceipt', 'debugReadActiveRawPacket', 'getReceiptRecoveryStatus']) {
+    'debugReadActiveCompletedTurnReceipt', 'debugReadActiveRawPacket', 'getReceiptRecoveryStatus', 'getHostLineageStatus']) {
     assert.equal(typeof api[name], 'function', `${mode}: existing public ${name} is available`);
   }
   // This physical/source/provider/request witness precedes the FIRST await.
@@ -80,7 +119,8 @@ async function settleOldV4BeforeNewWrite568(snapshot, mode) {
   witness568.physical(before);
   const settingsBefore = witness568.copy(await api.getEmbeddingSettings());
   witness568.verifySettings(settingsBefore);
-  const evidence = { receipts: [], raw: [], recovery: null };
+  const evidence = { receipts: [], raw: [], recovery: null, lineage: null };
+  evidence.lineage = await api.getHostLineageStatus();
   for (const turn of [1, 2, 3, 4, 5]) {
     evidence.receipts.push(await api.debugReadActiveCompletedTurnReceipt(turn));
     evidence.raw.push(await api.debugReadActiveRawPacket(turn));
