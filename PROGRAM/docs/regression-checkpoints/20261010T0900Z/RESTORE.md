@@ -1,0 +1,9 @@
+# Restore this development checkpoint
+
+The main source ZIP contains all captured development source and fixed fixtures, all four separate unadopted test-successor snapshots, and current bounded result summaries. No earlier incremental archive is required. Successors 001/002 are verified but unadopted; 003 is unexecuted. No whole-file test retirement is applied. This is an offline candidate, not a qualified release or updater asset.
+
+Keep the freshly extracted package unchanged. From any working directory, run Python 3 on PROGRAM/docs/regression-checkpoints/20261010T0900Z/RESTORE-SOURCE.py with --package-root pointing to this package and --output pointing to a NEW, separate directory. The script verifies all source hashes, restores exact original paths/bytes/modes, and checks the complete reconstructed tree. It never overwrites an existing destination. The restored original tree omits supplemental checkpoint documents by design; keep this package alongside it for current status and unadopted corrections.
+
+The builder omits original root README/.gitignore/.gitattributes and regenerates program-manifest/checksums; exact originals are preserved in source-preimage and explicitly mapped. ZIP modes are normalized to 0755 for .sh/.command and 0644 otherwise; ACTIVE-SOURCE-MANIFEST restores original modes, including original 0600 manifests. No Git object history, installed dependency tree, model files or user runtime DATA is included. Dependencies remain specified by existing locked build-support files; restoring source does not install or execute them.
+
+The separate private raw-evidence ZIP is needed only to reconstruct selected verification logs, guard evidence, receipts and original correction archives. It is not needed to resume development and must not be published to public GitHub. Both original ZIP files have separately reported external SHA-256 and byte sizes.

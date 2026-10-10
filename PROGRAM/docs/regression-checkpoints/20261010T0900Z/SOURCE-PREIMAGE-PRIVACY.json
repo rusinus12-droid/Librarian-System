@@ -1,0 +1,54 @@
+{
+  "schema": "lib.selected-source-preimage-privacy-review.v1",
+  "reviewedAtUtc": "2026-10-10T08:56:20.215816+00:00",
+  "scope": "Only five selected ordinary source files; no .git contents or credential locations read. Read-only preparatory inspection, not checkpoint source capture.",
+  "categories": [
+    "absolute_private_path",
+    "private_library_reference",
+    "email_address",
+    "credential_url",
+    "credential_literal"
+  ],
+  "rows": [
+    {
+      "path": "README.md",
+      "bytes": 2791,
+      "sha256": "8218e65cd3d3562bef3ed1d5176c69edfe483b9bc1c43a4191b50296be4ea380",
+      "mode": "0o644",
+      "hits": []
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 2161,
+      "sha256": "51d0fa0b3e6992d12d465d9b68eeb04053b9adc24e552eec1220e4c0a7ab59e6",
+      "mode": "0o644",
+      "hits": []
+    },
+    {
+      "path": ".gitattributes",
+      "bytes": 220,
+      "sha256": "efe23417b1b8fa866bd272d68e12c73e08ea732b61ab83e7900ba29dbd39d177",
+      "mode": "0o644",
+      "hits": []
+    },
+    {
+      "path": "PROGRAM/program-manifest.json",
+      "bytes": 367281,
+      "sha256": "6b83a2b7e5e48f7dc94f4fd3823c8b08ad9b3b0bc6b7f7c688f29dddaaa5aef7",
+      "mode": "0o600",
+      "hits": []
+    },
+    {
+      "path": "SHA256SUMS.txt",
+      "bytes": 231469,
+      "sha256": "3967f1f98de50780bb69dd85da9ca9bdc2ee9179ceb43e300a59591e57102925",
+      "mode": "0o600",
+      "hits": []
+    }
+  ],
+  "patternHits": 0,
+  "limits": [
+    "Pattern checks cannot prove absence of arbitrary secrets. Root ordinary text files were also inspected as source content.",
+    "Capture must repeat checks on final bytes and refuse source changes."
+  ]
+}

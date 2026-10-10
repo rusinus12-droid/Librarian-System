@@ -1,0 +1,18 @@
+{
+  "schema": "lib.source-restoration-map.v1",
+  "manifestSha256": "dabbb678328dac7cd776b484e66ac416905489348acf78dd5b1712a2723da24a",
+  "sourceFiles": 1904,
+  "overrides": {
+    "README.md": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/source-preimage/README.md",
+    ".gitignore": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/source-preimage/.gitignore",
+    ".gitattributes": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/source-preimage/.gitattributes",
+    "PROGRAM/program-manifest.json": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/source-preimage/PROGRAM/program-manifest.json",
+    "SHA256SUMS.txt": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/source-preimage/SHA256SUMS.txt"
+  },
+  "default": "same relative path in builder output",
+  "zipModeNormalization": {
+    "shAndCommand": "0755",
+    "otherFiles": "0644"
+  },
+  "gitHistoryIncluded": false
+}

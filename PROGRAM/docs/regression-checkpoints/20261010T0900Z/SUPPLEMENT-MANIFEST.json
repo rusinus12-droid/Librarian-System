@@ -1,0 +1,40 @@
+{
+  "privateCutoffManifestSha256": "e856dd7716e98cec1a1f35e42fbb60b8e1ac901c7daa891384597a1a3a84f4a3",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 915,
+      "sha256": "c05233d062ba3392cbd6094c99922e21179987b1ddd35cbf722e53f545fab41e"
+    },
+    {
+      "path": "REGRESSION-STATUS.json",
+      "bytes": 5701,
+      "sha256": "a1bb43eb18a9c7fa1223a6f16ffd5550aa72a1b61ee957a951184dd1d87a9351"
+    },
+    {
+      "path": "RETIREMENT-CANDIDATES.json",
+      "bytes": 5655,
+      "sha256": "30e70df2e7235b330cace4d8abd5c170dcbeecce24f3e73e666dc2554a46d6f6"
+    },
+    {
+      "path": "test-successors/001/flashback_multilingual_probe_wording_test.cjs",
+      "bytes": 5649,
+      "sha256": "5942c3d8438a9541c48ddab196440be7924902e991141a00bafe458ae7999f98"
+    },
+    {
+      "path": "test-successors/002/hayaku_disposed_topology_runtime_test.cjs",
+      "bytes": 9068,
+      "sha256": "1b51d816bee927dae186208822723f7a80ef5d89389c91eff808c2908620a85c"
+    },
+    {
+      "path": "test-successors/003/libra_narrative_direction_loop_and_general_headers_test.cjs",
+      "bytes": 6813,
+      "sha256": "77a911c75ee7c89cab6c1509198f4fa3f4bd0c249f9c53be8dbbd07c226f401c"
+    },
+    {
+      "path": "test-successors/003/libra_narrative_direction_render_path_test.cjs",
+      "bytes": 5727,
+      "sha256": "7839d533e0b899c76536f1ec6d896341f76687b057626650fe0f1ce29ed21238"
+    }
+  ]
+}

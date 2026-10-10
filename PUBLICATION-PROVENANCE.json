@@ -1,17 +1,20 @@
 {
-  "schema": "librarian.six-plugin-development-publication.v1",
-  "preparedAtUtc": "2026-10-10T07:05:03.847397+00:00",
-  "repository": "rusinus12-droid/Librarian-System",
-  "branch": "development/source-baseline-20261009-142730",
+  "schema": "librarian.six-plugin-checkpoint-publication.v1",
+  "scheduledForUtc": "2026-10-10T09:00:00Z",
+  "sourceCaptureStartedUtc": "2026-10-10T09:01:31.558490Z",
+  "sourceCaptureFinishedUtc": "2026-10-10T09:01:32.351760Z",
+  "evidenceCutoffUtc": "2026-10-10T09:00:05.893301Z",
+  "sourceCommit": "2f6c49e69768232f8284163ef25252b987032e83",
+  "sourceOriginalFiles": 1904,
+  "sourceOriginalTreeSha256": "848401e65404f20e2231a4b2219b6d8459856e2f770361221d1f18aabaffc379",
   "origin": {
     "builderArtifact": "Librarian-System-0.3.71-Source-Offline-Candidate.zip",
-    "savedSourceFilename": "Librarian-System-0.3.71-6-Plugin-Development-Source-20261010T064528Z.zip",
-    "bytes": 13847687,
-    "sha256": "b9b3c0f1745a9453d43a195388fc812dfdd6e301d5c9d61e393608673dc2f81e",
-    "builderGeneratedAtUtc": "2026-10-10T06:45:28.179Z",
+    "savedSourceFilename": "Librarian-System-Development-Source-20261010T090131Z.zip",
+    "bytes": 14197348,
+    "sha256": "9af6842b4a0cca56c17afa6ea02c6212771a4ceb725efd88854bfbd4e556cd83",
     "profile": "source",
     "qualification": "offline_candidate",
-    "files": 1916
+    "files": 1936
   },
   "retainedPlugins": [
     "Flashback",
@@ -21,16 +24,9 @@
     "RETRACE",
     "GRADIA"
   ],
-  "worldManagerSeparation": {
-    "independentWorldManagerIncluded": false,
-    "standalonePreservationArchivePublished": false,
-    "previousIntegratedSourceRetainedInGitHistory": true
-  },
   "parity": {
-    "allOriginalZipFileBytesPreserved": true,
-    "allOriginalZipFileModesPreserved": true,
+    "allOriginalZipFileBytesAndModesPreserved": true,
     "excludedZipFiles": 0,
-    "contentFiltersApplied": [],
     "repositoryOnlyFiles": [
       "LICENSE",
       "PUBLICATION-PROVENANCE.json"
@@ -39,40 +35,37 @@
     "originalSourceZipModified": false,
     "productCodePatchedByPublisher": false
   },
-  "privacyBoundary": {
-    "selectedRawPromptRequestStorageEvidenceIncluded": false,
-    "runtimeUserDataIncluded": false,
-    "installedDependenciesIncluded": false,
-    "binaryFixtures": "Five required synthetic SQLite/WAL/SHM/journal fixture files are byte-identical to the verified preceding development commit",
-    "cleanDataScaffold": "Only the builder-generated empty DATA scaffold is included"
+  "testWork": {
+    "activeProductSourceUnchanged": true,
+    "originalRootTestIdentities": 1138,
+    "successors001And002": "Verified isolated test-only successors, not adopted in active source",
+    "successor003": "Prepared but not executed; two tests",
+    "wholeFileRetirementsApplied": 0,
+    "wrapperRetirementCandidates": 3,
+    "afterEvidenceCutoffResultsIncluded": false,
+    "statusDocument": "PROGRAM/docs/regression-checkpoints/20261010T0900Z/REGRESSION-STATUS.json"
   },
-  "verification": {
-    "exactArchiveExtractionFiles": 1916,
-    "archiveChecksumEntries": 1915,
-    "programManifestEntries": 1875,
-    "separateOfficialBuilderGate": {
-      "files": 87,
-      "checksPassed": 400,
-      "failures": 0
-    },
-    "realWindowsRisuHost": "NOT_VERIFIED",
-    "realModelQuality": "NOT_VERIFIED",
-    "wholeHistoricalRegression": "NOT_RUN",
-    "sourceProfilePublicationSmoke": "NOT_RUN"
+  "privateSidecar": {
+    "filename": "Librarian-System-Regression-Evidence-20261010T090005Z.zip",
+    "bytes": 59088899,
+    "sha256": "f290cf3e212273265d8634bc0626eaee17ea12ea02726618bec46b321f0221a2",
+    "purpose": "Private reconstruction of selected raw verification records; not required to resume source development",
+    "includedInPublicTree": false,
+    "rawObjectsOrPathmapPublished": false
   },
-  "activeCheckoutComparison": {
-    "commonNonGeneratedBytesIdentical": true,
-    "changedGeneratedMetadata": [
-      "PROGRAM/program-manifest.json",
-      "SHA256SUMS.txt"
-    ],
-    "zipOnly": "Fifteen generated clean DATA scaffold files",
-    "checkoutOnly": [
-      ".gitattributes",
-      ".gitignore",
-      "README.md"
-    ],
-    "permissions": "Archive modes follow the existing builder normalization: ordinary files0644; launchable shell/command files0755"
+  "sourceRestoration": {
+    "capsule": "PROGRAM/docs/regression-checkpoints/20261010T0900Z",
+    "actualBuilderTreePublished": true,
+    "originalProjectionSubstituted": false,
+    "preimagePurpose": "Five original source/control files restore paths and bytes the builder omits or regenerates. Original modes are retained by the independent restoration inventory.",
+    "builderNormalizedPermissions": "Ordinary files0644; shell/command launchers0755"
   },
-  "qualification": "This is the frozen six-plugin development source and a packaging/integrity result. The bounded official builder gate does not establish whole-regression, actual-host, real-model or standalone WM qualification."
+  "builderAuditDisclosure": {
+    "optionalGitInventoryAttemptBlocked": 1,
+    "blockedActionRetried": false,
+    "authorityExpanded": false,
+    "handling": "Existing update_manifest filesystem inventory fallback; final PROGRAM path set,1895 file byte/hash rows and1935 package checksum rows were directly verified. No mandatory gate was omitted by this fallback.",
+    "archiveQualification": "Offline development candidate only; this is not a claim of a denial-free run or full-regression/host/model qualification"
+  },
+  "qualification": "Source integrity and recovery were verified. Existing failures, guard blocks, timeouts and pending roots remain disclosed in the checkpoint. No new product regression or model execution was performed by packaging/publication; no LIBRA reinforcement patch is applied."
 }
