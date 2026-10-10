@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-10T22:47:39.323Z",
+  "generatedAt": "2026-10-10T23:03:06.767Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2306,6 +2306,10 @@
     "docs/regression/REGRESSION-CONTINUATION-20261011.json": {
       "sha256": "019544dbc9804a4321987c44dee26e8aa492aeb3e1579f5114c8d0f0f9f3f456",
       "bytes": 48041
+    },
+    "docs/regression/SOURCE-REANALYSIS-SUCCESSORS-20261011.json": {
+      "sha256": "95807001fd598aa2dfd28dbade07a0dd1ba38d3798bc8c3112002fd559655f71",
+      "bytes": 20785
     },
     "docs/regression/TEST-NORMALIZATION-20261010.json": {
       "sha256": "8d37c20fa3c755e428c0f5214e1feaf66f5e110ca57569c7a0eb314f40c8d21a",
@@ -7000,8 +7004,8 @@
       "bytes": 11091
     },
     "tests/libra_source_edit_final_injection_3mode_test.cjs": {
-      "sha256": "aed07770df267b8fbbab6ac8ecc570e0d49bd591b064c08a44ecb02ea7b4d1d4",
-      "bytes": 22812
+      "sha256": "132415ba1d77eadc3542c489afc5b9d5859306cfebe06ec4b9b0f23de3ac686b",
+      "bytes": 20148
     },
     "tests/libra_source_edit_policy_epoch_runtime_test.cjs": {
       "sha256": "754db51cff43b5b428d26f22d329cb56624bbaa22cafed9518b6ce2210647a5f",
@@ -7156,12 +7160,12 @@
       "bytes": 7531
     },
     "tests/libra_unified_server_writer_v1_test.cjs": {
-      "sha256": "df17cc4b2f5280042d8d19b57757552ab0f18efc5f30ad6ca2bfb06fc8ec6da2",
-      "bytes": 14035
+      "sha256": "7a339b2395c554a6854136697b673867f273536010047792e4c873432170cb58",
+      "bytes": 14100
     },
     "tests/libra_unified_source_edit_v2_test.cjs": {
-      "sha256": "6a18651195939c9becf24f2932bb19061bffabae2e99f2b237443712d46bba66",
-      "bytes": 9010
+      "sha256": "e1236288071dbd83d085b815441f7e18a4bd8d7af884b43b1facac85004a648a",
+      "bytes": 9978
     },
     "tests/libra_unified_values_coercion_v1_test.cjs": {
       "sha256": "c608357985ba05fbb863c2838d3e08c81e00a2a69b788274af1e304db218ad9c",

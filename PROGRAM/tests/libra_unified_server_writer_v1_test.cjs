@@ -2,7 +2,6 @@
 const assert=require('node:assert/strict');const {serverFixture,fiveMore}=require('./fixtures/libra_server_runtime_fixture.cjs');
 const {createRootBoundary}=require('./fixtures/source_edit_root_boundary.cjs');const {artifact}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const {classifyCall,countCalls}=require('./fixtures/libra_provider_call_kinds.cjs');
-const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const assertCanonicalCalls=(f,expected)=>{assert.equal(countCalls(f.control).canonical,expected,'Canonical extraction count');assert.equal(countCalls(f.control).other,0,'no unrelated provider call');};
 const onCanonicalCall=(f,handler)=>{f.control.onCall=async args=>classifyCall(args)==='canonical'?handler(args):{type:'success',result:JSON.stringify(f.control.artifact)};};
 const results=[];async function test(name,fn,opts={}){if(process.env.LIBRA_SERVER_TEST_FILTER&&!name.includes(process.env.LIBRA_SERVER_TEST_FILTER))return;const s=await serverFixture(opts);try{await fn(s);results.push(name);console.log('PASS',name);}finally{await s.cleanup();}}
@@ -61,15 +60,15 @@ const authoritativeHead=raw=>{const v=typeof raw==='string'?JSON.parse(raw):raw;
   await assert.rejects(()=>s.f.r.api.addWorldManagerCorrection({anchorTurn:5,target:{domain:'world'},patch:{world:[{id:world.id,set:{condition:'교정값'}}]}}));assert.equal(beforeView(s),head);assert.equal(JSON.stringify(s.getRecords('libra.state_correction_store.v1')),journals);
   s.app.repositories.libra.database.exec('DROP TRIGGER correction_fail');const r=await s.f.r.api.rebuildWorldManagerState();assert.equal(r.ok,true,JSON.stringify(r));assert.equal(s.getHead().world.find(r=>r.id===world.id).state.condition,'교정값');assertCanonicalCalls(s.f,1);assert.equal(s.f.control.calls.length,callsBeforeCorrection,'failed correction and replay make no physical provider call');
  });
- const root=createRootBoundary();await test('beforeRequest automatically replaces source and server atomically replays while preserving old revision',async s=>{
-  const f=s.f;await f.run();const oldKey=s.getManifest().memories['1'].key,old=s.storedRows().find(r=>r.key===oldKey).raw;
+ const root=createRootBoundary();await test('explicit selected source replacement atomically replays on server while preserving old revision',async s=>{
+  const f=s.f;await f.run();await f.r.api.retryPendingUnifiedVectors();const oldKey=s.getManifest().memories['1'].key,old=s.storedRows().find(r=>r.key===oldKey).raw;
   const quote='서재에서 지호는 은빛 열쇠를 민아에게 반환하지 않았다. 반환 약속은 아직 남았다. 공연 허가자는 알려지지 않았다.';f.chat.message[9].data=quote;const a=artifact();for(const x of [...a.entities,...a.facts])for(const e of x.evidenceSpans)if(e.ref==='t5-a')e.quote=quote;a.facts.find(x=>x.tempFactId==='f11').values.holderRef='jiho';a.facts.find(x=>x.tempFactId==='f11').text='지호는 은빛 열쇠를 아직 반환하지 않았다.';a.facts.find(x=>x.tempFactId==='f12').values.thread.status='open';a.facts.find(x=>x.tempFactId==='f12').text='반환 약속은 아직 이행되지 않았다.';f.control.artifact=a;
-  await f.r.sourceEditBoundary();assert.equal(await root.ready(),false,'automatic source repair shows no consent dialog');
-  // Request deadlines may return while original-packet verification/replay is
-  // still running. Check its actual terminal publication, without extending a
-  // product deadline or treating a scheduled task as a committed replacement.
-  await waitFor(()=>!['queued','running'].includes(f.r.api.getSourceEditSyncStatus().tasks[0]?.state),30000);
-  assert.equal(f.r.api.getSourceEditSyncStatus().tasks[0].state,'applied');assert.equal(s.getMemory().revision,2);assert.equal(s.storedRows().find(r=>r.key===oldKey).raw,old);assertCanonicalCalls(f,2);const head=s.getHead();assert.equal(head.world.find(r=>r.name==='은빛 열쇠').state.holderRef,head.characters.find(r=>r.name==='지호').id);
+  await f.r.sourceEditBoundary();assert.equal(await root.ready(),false,'request observation shows no legacy consent dialog');
+  assertCanonicalCalls(f,1);assert.equal(s.getManifest().memories['1'].key,oldKey,'request does not replace an approved source');
+  const selection=await f.r.api.listCanonicalBatchRanges();assertCanonicalCalls(f,1);
+  const result=await f.r.api.startSelectedCanonicalBatches({scopeKey:selection.scopeKey,mode:'source_edit',ranges:selection.ranges.filter(row=>row.startTurn===1)});
+  assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.job.completed,1);assert.equal(result.job.failed,0);
+  assert.equal(s.getMemory().revision,2);assert.equal(s.storedRows().find(r=>r.key===oldKey).raw,old);assertCanonicalCalls(f,2);const head=s.getHead();assert.equal(head.world.find(r=>r.name==='은빛 열쇠').state.holderRef,head.characters.find(r=>r.name==='지호').id);
  },{host:{getRootDocument:async()=>root.root}});
  await test('rollback is a supported view and handoff cannot bypass bounded server writer support',async s=>{
   await s.f.run();await s.f.r.api.retryPendingUnifiedVectors();const memory=JSON.stringify(s.getMemory()),head=beforeView(s),calls=s.f.control.calls.length;
