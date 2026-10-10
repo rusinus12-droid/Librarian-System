@@ -1,0 +1,1134 @@
+{
+  "schema": "librarian.regression.continuation.v1",
+  "recordedAtUtc": "2026-10-10T22:47:38.368302+00:00",
+  "branch": "codex/regression-continuation-20261011",
+  "baselinePackageCommit": "70f9d9e9b5ab4e7a203c56eac1ac6bb3d3e5d31d",
+  "baselineCapturedSourceCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+  "immutableCheckpoint": "PROGRAM/docs/regression-checkpoints/20261010T1900Z",
+  "originalResultsPreserved": {
+    "path": "/workspace/librarian-regression/RESULTS.json",
+    "sha256": "95ae483c0d31031fbe3aff0d20ba7cbdaa38e7c72a4adf56b253c250792d80fc",
+    "bytes": 24270
+  },
+  "historicalOriginalRootUniverse": 1138,
+  "carriedRetiredWholeFiles": 4,
+  "previousActiveRootCount": 1134,
+  "addedRootCount": 4,
+  "activeRootCount": 1138,
+  "previousCorrectedRootCount": 26,
+  "retainedRootSuccessorsThisContinuation": 7,
+  "cumulativeCorrectedHistoricalRootCount": 33,
+  "productionChanged": true,
+  "promptTextChanged": false,
+  "productChanges": [
+    "Block both readiness APIs for nonterminal aggregate migrations in every scope.",
+    "Repair exact server-present/local-missing mirror captures only inside the producer, with owner/currentness/binding and physical-copy guards.",
+    "Deliver individually validated current/last-known closure facts without promoting aggregate completeness."
+  ],
+  "adoptions": [
+    {
+      "candidate": "017",
+      "path": "PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "originalOrdinal": 479,
+      "baselineSha256": "e896247bc6a1be01d6bb6b3b084ab4b388ac6c6e9ce2b846918958b500c0f386",
+      "adoptedSha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0",
+      "result": {
+        "name": "libra_completed_turn_scope_lifecycle_test.cjs",
+        "runnerIndex": 482,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.64,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/482-libra_completed_turn_scope_lifecycle_test.cjs.log",
+          "sha256": "942a2a27834e39e581c8a22493bc0be05496bb4e436bcdf9a411c298bc470a42",
+          "bytes": 6757
+        }
+      },
+      "reason": "Exact checkpoint successor, producer repair proven."
+    },
+    {
+      "candidate": "020-v5-rebased-20261011",
+      "path": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "originalOrdinal": 568,
+      "baselineSha256": "4eeacc0694462f51ae10cbf11901b3e3fa711df2c06f7c662f3210e2b7e11086",
+      "adoptedSha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da",
+      "result": {
+        "name": "libra_main_memory_portable_compatibility_test.cjs",
+        "runnerIndex": 571,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 18.93,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/571-libra_main_memory_portable_compatibility_test.cjs.log",
+          "sha256": "f15d29f1c93cf1301c66ad67e23326e7e595e2229be22b75cde47adde6189841",
+          "bytes": 855
+        }
+      },
+      "reason": "Root unchanged from 020-v5; witness has only two reviewed source-pin changes."
+    },
+    {
+      "candidate": "010-v5",
+      "path": "PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+      "originalOrdinal": 571,
+      "baselineSha256": "1611ad8fc4ed9f986424f1e428bcce8ef48f26559ae2299db43744d9e3d87ee4",
+      "adoptedSha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816",
+      "result": {
+        "name": "libra_main_memory_recall_successor_delivery_test.cjs",
+        "runnerIndex": 574,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 30.33,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/574-libra_main_memory_recall_successor_delivery_test.cjs.log",
+          "sha256": "4747b8c8ee402f9076887c78694088361b6110b8e534dc9108f00cb8a8708d77",
+          "bytes": 4721
+        }
+      },
+      "reason": "Exact checkpoint successor; actual three-mode Classic delivery."
+    },
+    {
+      "candidate": "010-v6",
+      "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "originalOrdinal": 579,
+      "baselineSha256": "9057e129ab6a14d315c40d5548f265473fcfd65fa29b03942e7a3426f28482cc",
+      "adoptedSha256": "d92afa5b6a06bcf49c4c0f4234c6505df2f87dc7a8a4f50b06851062548f28fb",
+      "result": {
+        "name": "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+        "runnerIndex": 582,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 66.07,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-matrix-ceiling/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+          "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+          "bytes": 7467
+        }
+      },
+      "reason": "Disposable semantic-probe descriptor synchronization/restoration, with explicit mismatch negatives."
+    },
+    {
+      "candidate": "019",
+      "path": "PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+      "originalOrdinal": 1100,
+      "baselineSha256": "7a70b4c509bf229b09236eb5819fce546ed1434fb90b685adf1a2e75c31d75ad",
+      "adoptedSha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3",
+      "result": {
+        "name": "storage_mirror_transition_retirement_test.cjs",
+        "runnerIndex": 1101,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.57,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1101-storage_mirror_transition_retirement_test.cjs.log",
+          "sha256": "67458fe78f0859ed4b8801c3ab4b4267a75a88ecd48ad3c3fd66039103c297ff",
+          "bytes": 618
+        }
+      },
+      "reason": "Exact checkpoint successor; five namespaces and real aggregate pause."
+    },
+    {
+      "candidate": "retained-classic-successor",
+      "path": "PROGRAM/tests/libra_classic_provenance_rescue_contract_test.cjs",
+      "originalOrdinal": 473,
+      "baselineSha256": "cc6b992d54b8d1205a8a2085d01e72e69a8e9e29abd790b386965b4c87cbd27f",
+      "adoptedSha256": "60d963fc495ef9ea1b10e9df63b40c98dfff0b2a36ced6dc2f6a11188b57d09b",
+      "result": {
+        "name": "libra_classic_provenance_rescue_contract_test.cjs",
+        "runnerIndex": 476,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.29,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/476-libra_classic_provenance_rescue_contract_test.cjs.log",
+          "sha256": "fdc149ae97b9181524c34c8d64c473785aaf9ab65c46ad3e0a9a021d13204a0c",
+          "bytes": 262
+        }
+      },
+      "reason": "Preserve source guards; actual Classic rescue and State exclusion replace obsolete branch checks."
+    },
+    {
+      "candidate": "retained-classic-successor",
+      "path": "PROGRAM/tests/libra_main_memory_candidate_boundary_test.cjs",
+      "originalOrdinal": 557,
+      "baselineSha256": "689295295c5a34a098a5d66ef9047fd3d3650ffd75d94b01ef1ad33bdc6784e2",
+      "adoptedSha256": "d9f6f2b241d3a584b1cbd07fed3fd6a6afb7fe175053aef4585d67da11644148",
+      "result": {
+        "name": "libra_main_memory_candidate_boundary_test.cjs",
+        "runnerIndex": 560,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.04,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/560-libra_main_memory_candidate_boundary_test.cjs.log",
+          "sha256": "21c2129782b7fd37e723ee5ffbab00350348d5790e57414c39d12056c5c77571",
+          "bytes": 205
+        }
+      },
+      "reason": "Pending exclusion through actual sealed Classic request replaces removed preflight."
+    }
+  ],
+  "addedRoots": [
+    {
+      "path": "PROGRAM/tests/storage_global_handoff_transition_test.cjs",
+      "sha256": "e0da868fafded0076c4e5f5c57f8ef284fac30e3cdf376e87c976695122a57d3",
+      "result": {
+        "name": "storage_global_handoff_transition_test.cjs",
+        "runnerIndex": 1098,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.97,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1098-storage_global_handoff_transition_test.cjs.log",
+          "sha256": "4153fa48e9f648540abe6dff996e955dab7ac1f42e386f20131b2653f47a1b84",
+          "bytes": 1937
+        }
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_classic_partial_closure_delivery_test.cjs",
+      "sha256": "273122520c384fbc7058f2cd9870b09809e8fab26b8353374926416280eb3d17",
+      "result": {
+        "name": "libra_classic_partial_closure_delivery_test.cjs",
+        "runnerIndex": 474,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.51,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/474-libra_classic_partial_closure_delivery_test.cjs.log",
+          "sha256": "e6404921c16945f642270a613c37fc0ddf7c80c2ac768b8676e8787aa5ea2968",
+          "bytes": 539
+        }
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_capture_mirror_repair_test.cjs",
+      "sha256": "05aca1b0f35ee11fbc3304d0b3039306dd479b777db04c5c892e18868acd752d",
+      "result": {
+        "name": "libra_capture_mirror_repair_test.cjs",
+        "runnerIndex": 465,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.28,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/465-libra_capture_mirror_repair_test.cjs.log",
+          "sha256": "73ee956c0223a02c8be294f5e35455588a3cbabe0a63fb7c3081394a30dd9153",
+          "bytes": 1130
+        }
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_capture_mirror_sdk_repair_test.cjs",
+      "sha256": "f4021062ed101952a1ae1c2c353f03881ac5c73a9121931f9e1afe3e4c283b02",
+      "result": {
+        "name": "libra_capture_mirror_sdk_repair_test.cjs",
+        "runnerIndex": 466,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 0.47,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/466-libra_capture_mirror_sdk_repair_test.cjs.log",
+          "sha256": "971a7dffbb9867e3dfc638237b03c839768c8115ea51c95f1d535783b89ef249",
+          "bytes": 1211
+        }
+      }
+    }
+  ],
+  "support": [
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "candidate": "010-v5",
+      "checkpointSha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd",
+      "adoptedSha256": "df80cca242b4f984079a907863625c84b89713a59f0af7cfde2959b6f1e0cb4f",
+      "qualification": "EOF blank line normalized only"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+      "candidate": "010-v5",
+      "checkpointSha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8",
+      "adoptedSha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8",
+      "qualification": "Exact checkpoint bytes"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+      "candidate": "020-v5",
+      "checkpointSha256": "a8facb299697e4418a04aded03544c81ce12ebfb6d0365726a6d837ae76f7a9e",
+      "adoptedSha256": "fc4a417af53e499282f283493b1bcd7158b8f85efee65d11421b3b056fc2b58f",
+      "qualification": "Two reviewed product pin literals only"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+      "candidate": "020-v5",
+      "checkpointSha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1",
+      "adoptedSha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1",
+      "qualification": "Exact checkpoint bytes"
+    }
+  ],
+  "sourceBindings": [
+    {
+      "path": "PROGRAM/plugins/Flashback_Memory.js",
+      "baselineSha256": "497f0baa2456b8c1679f6d7a28cffa5ed5d5736b5ef5972014aa37f5424335f3",
+      "currentSha256": "05a75bbe9d85b89d0eb11f3e525150f46eb7a8ff8a2298acb8c64a2ff7973ea0"
+    },
+    {
+      "path": "PROGRAM/plugins/HAYAKU_Locator_Continuity.js",
+      "baselineSha256": "020f2d01077ac2ae82ad8226c46d42ce01e86fb3b9a6af367f41658450657e8b",
+      "currentSha256": "98893723eb56e2446dabf74d70469886ac6284f939b415339ecfa7612eec194b"
+    },
+    {
+      "path": "PROGRAM/plugins/LIBRA.js",
+      "baselineSha256": "81d64516659a7450ad68de7e07bfb29813d9768c7ab6015063a31ad7b16426d0",
+      "currentSha256": "ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180"
+    },
+    {
+      "path": "PROGRAM/run_regression_batch.py",
+      "baselineSha256": "803adb32d38b597dd94fd7e94f02680ba9f0ca075220b969a36cce622f0cbfa9",
+      "currentSha256": "8241551d49588ebfe4ed313a779b59032c7ae313546ee57c32ea576eaab661f8"
+    },
+    {
+      "path": "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js",
+      "baselineSha256": "122d3d9b0c0e17ae20e3b3af8e49bfcb4776f07dab63d46e8d76d4c8a46c20ed",
+      "currentSha256": "af3349dbcb14bb59c92792b68ba49965cd599333343a172ecf0de8132ac91517"
+    },
+    {
+      "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+      "baselineSha256": "7931974599d53803df9d994c1fe83cafd6d7a976ad73680f521acc5af956b351",
+      "currentSha256": "5fdee683c17555036e093b206d5eef622a1033a3e340a700e4389f380587fccf"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+      "baselineSha256": null,
+      "currentSha256": "fc4a417af53e499282f283493b1bcd7158b8f85efee65d11421b3b056fc2b58f"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+      "baselineSha256": null,
+      "currentSha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "baselineSha256": null,
+      "currentSha256": "df80cca242b4f984079a907863625c84b89713a59f0af7cfde2959b6f1e0cb4f"
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+      "baselineSha256": null,
+      "currentSha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8"
+    },
+    {
+      "path": "PROGRAM/tests/libra_capture_mirror_repair_test.cjs",
+      "baselineSha256": null,
+      "currentSha256": "05aca1b0f35ee11fbc3304d0b3039306dd479b777db04c5c892e18868acd752d"
+    },
+    {
+      "path": "PROGRAM/tests/libra_capture_mirror_sdk_repair_test.cjs",
+      "baselineSha256": null,
+      "currentSha256": "f4021062ed101952a1ae1c2c353f03881ac5c73a9121931f9e1afe3e4c283b02"
+    },
+    {
+      "path": "PROGRAM/tests/libra_classic_partial_closure_delivery_test.cjs",
+      "baselineSha256": null,
+      "currentSha256": "273122520c384fbc7058f2cd9870b09809e8fab26b8353374926416280eb3d17"
+    },
+    {
+      "path": "PROGRAM/tests/libra_classic_provenance_rescue_contract_test.cjs",
+      "baselineSha256": "cc6b992d54b8d1205a8a2085d01e72e69a8e9e29abd790b386965b4c87cbd27f",
+      "currentSha256": "60d963fc495ef9ea1b10e9df63b40c98dfff0b2a36ced6dc2f6a11188b57d09b"
+    },
+    {
+      "path": "PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "baselineSha256": "e896247bc6a1be01d6bb6b3b084ab4b388ac6c6e9ce2b846918958b500c0f386",
+      "currentSha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0"
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_candidate_boundary_test.cjs",
+      "baselineSha256": "689295295c5a34a098a5d66ef9047fd3d3650ffd75d94b01ef1ad33bdc6784e2",
+      "currentSha256": "d9f6f2b241d3a584b1cbd07fed3fd6a6afb7fe175053aef4585d67da11644148"
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "baselineSha256": "4eeacc0694462f51ae10cbf11901b3e3fa711df2c06f7c662f3210e2b7e11086",
+      "currentSha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da"
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+      "baselineSha256": "1611ad8fc4ed9f986424f1e428bcce8ef48f26559ae2299db43744d9e3d87ee4",
+      "currentSha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816"
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "baselineSha256": "9057e129ab6a14d315c40d5548f265473fcfd65fa29b03942e7a3426f28482cc",
+      "currentSha256": "d92afa5b6a06bcf49c4c0f4234c6505df2f87dc7a8a4f50b06851062548f28fb"
+    },
+    {
+      "path": "PROGRAM/tests/storage_global_handoff_transition_test.cjs",
+      "baselineSha256": null,
+      "currentSha256": "e0da868fafded0076c4e5f5c57f8ef284fac30e3cdf376e87c976695122a57d3"
+    },
+    {
+      "path": "PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+      "baselineSha256": "7a70b4c509bf229b09236eb5819fce546ed1434fb90b685adf1a2e75c31d75ad",
+      "currentSha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3"
+    }
+  ],
+  "preservedPluginBindings": [
+    {
+      "path": "PROGRAM/plugins/LIA_Persona_Linker.js",
+      "sha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8"
+    },
+    {
+      "path": "PROGRAM/plugins/RETRACE.js",
+      "sha256": "d3add31214d49199528cebe7a7c84bdf8757d99470f5ae50de9f7ae6c3ee9f34"
+    },
+    {
+      "path": "PROGRAM/plugins/GRADIA.js",
+      "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+    }
+  ],
+  "sourcePinRebase": {
+    "predecessor": "020-v5",
+    "successor": "020-v5-rebased-20261011",
+    "witnessPath": "PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+    "checkpointWitnessSha256": "a8facb299697e4418a04aded03544c81ce12ebfb6d0365726a6d837ae76f7a9e",
+    "successorWitnessSha256": "fc4a417af53e499282f283493b1bcd7158b8f85efee65d11421b3b056fc2b58f",
+    "changedPins": [
+      {
+        "path": "PROGRAM/plugins/LIBRA.js",
+        "checkpoint_sha256": "81d64516659a7450ad68de7e07bfb29813d9768c7ab6015063a31ad7b16426d0",
+        "successor_sha256": "ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180"
+      },
+      {
+        "path": "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js",
+        "checkpoint_sha256": "122d3d9b0c0e17ae20e3b3af8e49bfcb4776f07dab63d46e8d76d4c8a46c20ed",
+        "successor_sha256": "af3349dbcb14bb59c92792b68ba49965cd599333343a172ecf0de8132ac91517"
+      }
+    ],
+    "unchangedPins": {
+      "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd",
+      "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52",
+      "PROGRAM/tests/fixtures/libra_vm_harness.cjs": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100",
+      "PROGRAM/tests/fixtures/unified_vertical_source.json": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb",
+      "PROGRAM/server/server.cjs": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+    },
+    "allowedTransformationsChanged": false,
+    "validationPending": false
+  },
+  "rawCow": {
+    "originalTimeoutSeconds": 60,
+    "adoptedFileTimeoutSeconds": 110,
+    "assertionsAndCaseDeadlinesChanged": false,
+    "testSha256": "6d5c64ddadf68248d48e897fa68d9c62990ed4afe59c01e61ccf685dc654bd64",
+    "extendedObservation": {
+      "path": "/workspace/librarian-regression/RAW-COW-OBSERVATION.json",
+      "sha256": "4b13038b38da97b3c74404767321bdbd4e6bb79a8af9b5cbd666bc4d2c847838",
+      "bytes": 569
+    },
+    "officialRunnerResult": {
+      "name": "flashback_raw_cow_append_runtime_test.cjs",
+      "runnerIndex": 156,
+      "activeRootCount": 1135,
+      "status": "PASS",
+      "elapsedSeconds": 83.91,
+      "output": {
+        "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/156-flashback_raw_cow_append_runtime_test.cjs.log",
+        "sha256": "65ea4423aec47245acc35dd616635d5c47f19c530f3c181a915dbdb5c980dd04",
+        "bytes": 8205
+      }
+    },
+    "qualification": "All 29 cases complete. Earlier default60 TIMEOUT retained. Functional scheduling ceiling, no performance claim."
+  },
+  "matrixFileCeiling": {
+    "originalTimeoutSeconds": 60,
+    "adoptedFileTimeoutSeconds": 90,
+    "assertionsAndCaseDeadlinesChanged": false,
+    "originalIntegratedResult": {
+      "name": "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "runnerIndex": 582,
+      "activeRootCount": 1138,
+      "status": "TIMEOUT",
+      "elapsedSeconds": 60.12,
+      "output": {
+        "path": "/workspace/librarian-regression/fix-logs/final-integrated/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+        "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+        "bytes": 7467
+      }
+    },
+    "extendedObservation": {
+      "path": "/workspace/librarian-regression/fix-logs/matrix-extended-observation.json",
+      "sha256": "3d7b30a8e2b1647d825dce6572f1bb07e330589445d89cb8a9f387add503e33c",
+      "bytes": 198
+    },
+    "officialRunnerResult": {
+      "name": "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "runnerIndex": 582,
+      "activeRootCount": 1138,
+      "status": "PASS",
+      "elapsedSeconds": 66.07,
+      "output": {
+        "path": "/workspace/librarian-regression/fix-logs/final-matrix-ceiling/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+        "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+        "bytes": 7467
+      }
+    }
+  },
+  "verification": {
+    "finalIntegrated": [
+      {
+        "name": "libra_capture_durable_priority_test.cjs",
+        "runnerIndex": 463,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 22.92,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/463-libra_capture_durable_priority_test.cjs.log",
+          "sha256": "3b3c4c0c14c8177511ab4b30aaef49313c61a719c782fff58b5581640d153ed0",
+          "bytes": 1188
+        }
+      },
+      {
+        "name": "libra_capture_mirror_repair_test.cjs",
+        "runnerIndex": 465,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.28,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/465-libra_capture_mirror_repair_test.cjs.log",
+          "sha256": "73ee956c0223a02c8be294f5e35455588a3cbabe0a63fb7c3081394a30dd9153",
+          "bytes": 1130
+        }
+      },
+      {
+        "name": "libra_capture_mirror_sdk_repair_test.cjs",
+        "runnerIndex": 466,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 0.47,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/466-libra_capture_mirror_sdk_repair_test.cjs.log",
+          "sha256": "971a7dffbb9867e3dfc638237b03c839768c8115ea51c95f1d535783b89ef249",
+          "bytes": 1211
+        }
+      },
+      {
+        "name": "libra_classic_partial_closure_delivery_test.cjs",
+        "runnerIndex": 474,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.51,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/474-libra_classic_partial_closure_delivery_test.cjs.log",
+          "sha256": "e6404921c16945f642270a613c37fc0ddf7c80c2ac768b8676e8787aa5ea2968",
+          "bytes": 539
+        }
+      },
+      {
+        "name": "libra_classic_provenance_rescue_contract_test.cjs",
+        "runnerIndex": 476,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.29,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/476-libra_classic_provenance_rescue_contract_test.cjs.log",
+          "sha256": "fdc149ae97b9181524c34c8d64c473785aaf9ab65c46ad3e0a9a021d13204a0c",
+          "bytes": 262
+        }
+      },
+      {
+        "name": "libra_completed_turn_receipt_3mode_test.cjs",
+        "runnerIndex": 481,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 13.71,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/481-libra_completed_turn_receipt_3mode_test.cjs.log",
+          "sha256": "ddd25aa0475ee999110ed4f76f173b57e5abe79d82f25e33c589a79d7b54c33d",
+          "bytes": 665
+        }
+      },
+      {
+        "name": "libra_completed_turn_scope_lifecycle_test.cjs",
+        "runnerIndex": 482,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.64,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/482-libra_completed_turn_scope_lifecycle_test.cjs.log",
+          "sha256": "942a2a27834e39e581c8a22493bc0be05496bb4e436bcdf9a411c298bc470a42",
+          "bytes": 6757
+        }
+      },
+      {
+        "name": "libra_main_memory_candidate_boundary_test.cjs",
+        "runnerIndex": 560,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.04,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/560-libra_main_memory_candidate_boundary_test.cjs.log",
+          "sha256": "21c2129782b7fd37e723ee5ffbab00350348d5790e57414c39d12056c5c77571",
+          "bytes": 205
+        }
+      },
+      {
+        "name": "libra_main_memory_portable_compatibility_test.cjs",
+        "runnerIndex": 571,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 18.93,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/571-libra_main_memory_portable_compatibility_test.cjs.log",
+          "sha256": "f15d29f1c93cf1301c66ad67e23326e7e595e2229be22b75cde47adde6189841",
+          "bytes": 855
+        }
+      },
+      {
+        "name": "libra_main_memory_recall_currentness_test.cjs",
+        "runnerIndex": 573,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 20.83,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/573-libra_main_memory_recall_currentness_test.cjs.log",
+          "sha256": "cbc20557a4f78faa4718a80baa3afd32e7ba39ff9134e45fc1a128a8d762abd8",
+          "bytes": 580
+        }
+      },
+      {
+        "name": "libra_main_memory_recall_successor_delivery_test.cjs",
+        "runnerIndex": 574,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 30.33,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/574-libra_main_memory_recall_successor_delivery_test.cjs.log",
+          "sha256": "4747b8c8ee402f9076887c78694088361b6110b8e534dc9108f00cb8a8708d77",
+          "bytes": 4721
+        }
+      },
+      {
+        "name": "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+        "runnerIndex": 582,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 66.07,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-matrix-ceiling/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+          "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+          "bytes": 7467
+        }
+      },
+      {
+        "name": "libra_micro_stage_retry_test.cjs",
+        "runnerIndex": 626,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 8.86,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/626-libra_micro_stage_retry_test.cjs.log",
+          "sha256": "9ac1ca36a581baaa58786a3d8fecd0d38ed47b033198af6a37e75b4eec650f14",
+          "bytes": 2270
+        }
+      },
+      {
+        "name": "libra_q04_classic_closure_consumer_test.cjs",
+        "runnerIndex": 695,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 11.77,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/695-libra_q04_classic_closure_consumer_test.cjs.log",
+          "sha256": "b995b06dea3f4546ec811610eaced1d24a8c194cad88a573fcc1aec4043616dc",
+          "bytes": 763
+        }
+      },
+      {
+        "name": "libra_q04_closure_accounting_test.cjs",
+        "runnerIndex": 696,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 8.29,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/696-libra_q04_closure_accounting_test.cjs.log",
+          "sha256": "ef0e0c3d97056222e286617d80b61346e4b821b96b5216029cdf3a8b5423d62f",
+          "bytes": 119
+        }
+      },
+      {
+        "name": "libra_q04_inherited_closure_test.cjs",
+        "runnerIndex": 697,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.19,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/697-libra_q04_inherited_closure_test.cjs.log",
+          "sha256": "bb09128f895e15038ce80e3d5bf37e53090c9c4a0284efce4beb37c49aad1802",
+          "bytes": 94
+        }
+      },
+      {
+        "name": "libra_raw_variant_canonical_runtime_test.cjs",
+        "runnerIndex": 703,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 15.85,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/703-libra_raw_variant_canonical_runtime_test.cjs.log",
+          "sha256": "cbf430114ad866b40035c25ccd878afe8418a926d1bcb44142d4b7bac0de8fe5",
+          "bytes": 1735
+        }
+      },
+      {
+        "name": "libra_receipt_recovery_desk_contract_test.cjs",
+        "runnerIndex": 720,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 2.93,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/720-libra_receipt_recovery_desk_contract_test.cjs.log",
+          "sha256": "ab0c3991383e2662c2e35ab7c13dbac76d409b9f3191a250d6d7c99faa610130",
+          "bytes": 1192
+        }
+      },
+      {
+        "name": "libra_sdk_conditional_batch_v1_test.cjs",
+        "runnerIndex": 745,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 0.52,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/745-libra_sdk_conditional_batch_v1_test.cjs.log",
+          "sha256": "e67519e341f5d3ba48e1d58bc51dfbebbffb87f787e06e6f8f4a5e743f29b3fb",
+          "bytes": 2016
+        }
+      },
+      {
+        "name": "storage_global_handoff_transition_test.cjs",
+        "runnerIndex": 1098,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.97,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1098-storage_global_handoff_transition_test.cjs.log",
+          "sha256": "4153fa48e9f648540abe6dff996e955dab7ac1f42e386f20131b2653f47a1b84",
+          "bytes": 1937
+        }
+      },
+      {
+        "name": "storage_mirror_transition_retirement_test.cjs",
+        "runnerIndex": 1101,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.57,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1101-storage_mirror_transition_retirement_test.cjs.log",
+          "sha256": "67458fe78f0859ed4b8801c3ab4b4267a75a88ecd48ad3c3fd66039103c297ff",
+          "bytes": 618
+        }
+      }
+    ],
+    "initialIntegratedResultsPreserved": [
+      {
+        "name": "libra_capture_durable_priority_test.cjs",
+        "runnerIndex": 463,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 22.92,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/463-libra_capture_durable_priority_test.cjs.log",
+          "sha256": "3b3c4c0c14c8177511ab4b30aaef49313c61a719c782fff58b5581640d153ed0",
+          "bytes": 1188
+        }
+      },
+      {
+        "name": "libra_capture_mirror_repair_test.cjs",
+        "runnerIndex": 465,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.28,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/465-libra_capture_mirror_repair_test.cjs.log",
+          "sha256": "73ee956c0223a02c8be294f5e35455588a3cbabe0a63fb7c3081394a30dd9153",
+          "bytes": 1130
+        }
+      },
+      {
+        "name": "libra_capture_mirror_sdk_repair_test.cjs",
+        "runnerIndex": 466,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 0.47,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/466-libra_capture_mirror_sdk_repair_test.cjs.log",
+          "sha256": "971a7dffbb9867e3dfc638237b03c839768c8115ea51c95f1d535783b89ef249",
+          "bytes": 1211
+        }
+      },
+      {
+        "name": "libra_classic_partial_closure_delivery_test.cjs",
+        "runnerIndex": 474,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.51,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/474-libra_classic_partial_closure_delivery_test.cjs.log",
+          "sha256": "e6404921c16945f642270a613c37fc0ddf7c80c2ac768b8676e8787aa5ea2968",
+          "bytes": 539
+        }
+      },
+      {
+        "name": "libra_classic_provenance_rescue_contract_test.cjs",
+        "runnerIndex": 476,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.29,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/476-libra_classic_provenance_rescue_contract_test.cjs.log",
+          "sha256": "fdc149ae97b9181524c34c8d64c473785aaf9ab65c46ad3e0a9a021d13204a0c",
+          "bytes": 262
+        }
+      },
+      {
+        "name": "libra_completed_turn_receipt_3mode_test.cjs",
+        "runnerIndex": 481,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 13.71,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/481-libra_completed_turn_receipt_3mode_test.cjs.log",
+          "sha256": "ddd25aa0475ee999110ed4f76f173b57e5abe79d82f25e33c589a79d7b54c33d",
+          "bytes": 665
+        }
+      },
+      {
+        "name": "libra_completed_turn_scope_lifecycle_test.cjs",
+        "runnerIndex": 482,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 9.64,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/482-libra_completed_turn_scope_lifecycle_test.cjs.log",
+          "sha256": "942a2a27834e39e581c8a22493bc0be05496bb4e436bcdf9a411c298bc470a42",
+          "bytes": 6757
+        }
+      },
+      {
+        "name": "libra_main_memory_candidate_boundary_test.cjs",
+        "runnerIndex": 560,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.04,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/560-libra_main_memory_candidate_boundary_test.cjs.log",
+          "sha256": "21c2129782b7fd37e723ee5ffbab00350348d5790e57414c39d12056c5c77571",
+          "bytes": 205
+        }
+      },
+      {
+        "name": "libra_main_memory_portable_compatibility_test.cjs",
+        "runnerIndex": 571,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 18.93,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/571-libra_main_memory_portable_compatibility_test.cjs.log",
+          "sha256": "f15d29f1c93cf1301c66ad67e23326e7e595e2229be22b75cde47adde6189841",
+          "bytes": 855
+        }
+      },
+      {
+        "name": "libra_main_memory_recall_currentness_test.cjs",
+        "runnerIndex": 573,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 20.83,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/573-libra_main_memory_recall_currentness_test.cjs.log",
+          "sha256": "cbc20557a4f78faa4718a80baa3afd32e7ba39ff9134e45fc1a128a8d762abd8",
+          "bytes": 580
+        }
+      },
+      {
+        "name": "libra_main_memory_recall_successor_delivery_test.cjs",
+        "runnerIndex": 574,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 30.33,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/574-libra_main_memory_recall_successor_delivery_test.cjs.log",
+          "sha256": "4747b8c8ee402f9076887c78694088361b6110b8e534dc9108f00cb8a8708d77",
+          "bytes": 4721
+        }
+      },
+      {
+        "name": "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+        "runnerIndex": 582,
+        "activeRootCount": 1138,
+        "status": "TIMEOUT",
+        "elapsedSeconds": 60.12,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+          "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+          "bytes": 7467
+        }
+      },
+      {
+        "name": "libra_micro_stage_retry_test.cjs",
+        "runnerIndex": 626,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 8.86,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/626-libra_micro_stage_retry_test.cjs.log",
+          "sha256": "9ac1ca36a581baaa58786a3d8fecd0d38ed47b033198af6a37e75b4eec650f14",
+          "bytes": 2270
+        }
+      },
+      {
+        "name": "libra_q04_classic_closure_consumer_test.cjs",
+        "runnerIndex": 695,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 11.77,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/695-libra_q04_classic_closure_consumer_test.cjs.log",
+          "sha256": "b995b06dea3f4546ec811610eaced1d24a8c194cad88a573fcc1aec4043616dc",
+          "bytes": 763
+        }
+      },
+      {
+        "name": "libra_q04_closure_accounting_test.cjs",
+        "runnerIndex": 696,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 8.29,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/696-libra_q04_closure_accounting_test.cjs.log",
+          "sha256": "ef0e0c3d97056222e286617d80b61346e4b821b96b5216029cdf3a8b5423d62f",
+          "bytes": 119
+        }
+      },
+      {
+        "name": "libra_q04_inherited_closure_test.cjs",
+        "runnerIndex": 697,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 7.19,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/697-libra_q04_inherited_closure_test.cjs.log",
+          "sha256": "bb09128f895e15038ce80e3d5bf37e53090c9c4a0284efce4beb37c49aad1802",
+          "bytes": 94
+        }
+      },
+      {
+        "name": "libra_raw_variant_canonical_runtime_test.cjs",
+        "runnerIndex": 703,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 15.85,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/703-libra_raw_variant_canonical_runtime_test.cjs.log",
+          "sha256": "cbf430114ad866b40035c25ccd878afe8418a926d1bcb44142d4b7bac0de8fe5",
+          "bytes": 1735
+        }
+      },
+      {
+        "name": "libra_receipt_recovery_desk_contract_test.cjs",
+        "runnerIndex": 720,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 2.93,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/720-libra_receipt_recovery_desk_contract_test.cjs.log",
+          "sha256": "ab0c3991383e2662c2e35ab7c13dbac76d409b9f3191a250d6d7c99faa610130",
+          "bytes": 1192
+        }
+      },
+      {
+        "name": "libra_sdk_conditional_batch_v1_test.cjs",
+        "runnerIndex": 745,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 0.52,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/745-libra_sdk_conditional_batch_v1_test.cjs.log",
+          "sha256": "e67519e341f5d3ba48e1d58bc51dfbebbffb87f787e06e6f8f4a5e743f29b3fb",
+          "bytes": 2016
+        }
+      },
+      {
+        "name": "storage_global_handoff_transition_test.cjs",
+        "runnerIndex": 1098,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.97,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1098-storage_global_handoff_transition_test.cjs.log",
+          "sha256": "4153fa48e9f648540abe6dff996e955dab7ac1f42e386f20131b2653f47a1b84",
+          "bytes": 1937
+        }
+      },
+      {
+        "name": "storage_mirror_transition_retirement_test.cjs",
+        "runnerIndex": 1101,
+        "activeRootCount": 1138,
+        "status": "PASS",
+        "elapsedSeconds": 1.57,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/final-integrated/1101-storage_mirror_transition_retirement_test.cjs.log",
+          "sha256": "67458fe78f0859ed4b8801c3ab4b4267a75a88ecd48ad3c3fd66039103c297ff",
+          "bytes": 618
+        }
+      }
+    ],
+    "initialStorageAndRawCow": [
+      {
+        "name": "flashback_raw_cow_append_runtime_test.cjs",
+        "runnerIndex": 156,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 83.91,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/156-flashback_raw_cow_append_runtime_test.cjs.log",
+          "sha256": "65ea4423aec47245acc35dd616635d5c47f19c530f3c181a915dbdb5c980dd04",
+          "bytes": 8205
+        }
+      },
+      {
+        "name": "storage_global_allchat_faults_test.cjs",
+        "runnerIndex": 1087,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 4.58,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/1087-storage_global_allchat_faults_test.cjs.log",
+          "sha256": "b82f29253d0f34f096c5b9a061791fb763174ca6f73c855c325080be5a2ce6c3",
+          "bytes": 4225
+        }
+      },
+      {
+        "name": "storage_global_allchat_job_test.cjs",
+        "runnerIndex": 1088,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 0.67,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/1088-storage_global_allchat_job_test.cjs.log",
+          "sha256": "4b266bb2d3a49d7c68d0715c588ba07b871c6a1e40cd8aa2a2a5f0c1c7d6fa62",
+          "bytes": 343
+        }
+      },
+      {
+        "name": "storage_global_handoff_transition_test.cjs",
+        "runnerIndex": 1095,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 1.77,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/1095-storage_global_handoff_transition_test.cjs.log",
+          "sha256": "8f83f5c6af79df4257713477d88305116af5c630c235e1c84027b39cc6b05b16",
+          "bytes": 1934
+        }
+      },
+      {
+        "name": "storage_mirror_transition_retirement_test.cjs",
+        "runnerIndex": 1098,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 1.37,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-and-raw-cow/1098-storage_mirror_transition_retirement_test.cjs.log",
+          "sha256": "67458fe78f0859ed4b8801c3ab4b4267a75a88ecd48ad3c3fd66039103c297ff",
+          "bytes": 618
+        }
+      }
+    ],
+    "storageBoundaryControls": [
+      {
+        "name": "authority_libra_source_closure.test.cjs",
+        "runnerIndex": 12,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 1.92,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-boundary-controls/012-authority_libra_source_closure.test.cjs.log",
+          "sha256": "e4def7b78aaa640aeae6409c7f80a01e8ce06e630b99c4c6fe9d50419f2e7554",
+          "bytes": 1203
+        }
+      },
+      {
+        "name": "health_sdk_sync_test.cjs",
+        "runnerIndex": 387,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 0.27,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-boundary-controls/387-health_sdk_sync_test.cjs.log",
+          "sha256": "be67eef36288923b2552e11f340357633dee37972be9c37e257153ac28a8e506",
+          "bytes": 285
+        }
+      },
+      {
+        "name": "storage_global_transition_real_handler_test.cjs",
+        "runnerIndex": 1097,
+        "activeRootCount": 1135,
+        "status": "PASS",
+        "elapsedSeconds": 0.57,
+        "output": {
+          "path": "/workspace/librarian-regression/fix-logs/storage-boundary-controls/1097-storage_global_transition_real_handler_test.cjs.log",
+          "sha256": "54cdfc353186090ee9fb631761065ad4a91caf8d66083973327847ce15d34c5a",
+          "bytes": 140
+        }
+      }
+    ],
+    "uniqueSelectedRootFiles": 27,
+    "witness392SyntheticControls": {
+      "path": "/workspace/librarian-regression/fix-logs/020-controls-final-v3.log",
+      "sha256": "fc1152d11d5e982bbc1dae4e6f25e16a69c0b173128c61bc1bba89f1bcf8a94a",
+      "bytes": 83
+    },
+    "classicRequestSyntheticControls": {
+      "path": "/workspace/librarian-regression/fix-logs/classic-request-controls-final.log",
+      "sha256": "e8d86576ac31c5c06d48162cbbd8c32e63582b32ee24ed0a772b41366983199c",
+      "bytes": 319
+    },
+    "sdkParity": {
+      "path": "/workspace/librarian-regression/fix-logs/sdk-check-final-v3.log",
+      "sha256": "e294c501be34fb51bb6665c1dfe72b5d7340305ccbf5af2011554fb53b09d670",
+      "bytes": 1355
+    }
+  },
+  "independentReview": {
+    "agent": "/root/review_020",
+    "remainingBlockers": [],
+    "scope": "Read-only product/test diffs, recorded RED/GREEN logs, hashes, SDK parity, witness rebase, syntax and whitespace."
+  },
+  "knownRemainingCampaignFailures": [
+    {
+      "originalOrdinal": 758,
+      "path": "PROGRAM/tests/libra_source_edit_final_injection_3mode_test.cjs",
+      "reason": "Historical removed getSourceEditSyncStatus surface; separate source-review migration, unchanged in this candidate batch."
+    },
+    {
+      "originalOrdinal": 798,
+      "path": "PROGRAM/tests/libra_unified_source_edit_v2_test.cjs",
+      "reason": "Historical removed getSourceEditSyncStatus surface; separate source-review migration, unchanged in this candidate batch."
+    },
+    {
+      "originalOrdinal": 797,
+      "path": "PROGRAM/tests/libra_unified_server_writer_v1_test.cjs",
+      "reason": "Historical removed getSourceEditSyncStatus surface; separate source-review migration, unchanged in this candidate batch."
+    }
+  ],
+  "unadopted": [
+    "017 portable root replaced by reviewed 020-v5 witness successor; strict raw-equality failure preserved.",
+    "017-raw-diagnostic and 017-capture-diagnostic remain diagnostic only."
+  ],
+  "qualification": {
+    "fullRootCampaignRun": false,
+    "actualRisuAIHostRun": false,
+    "onlineModelOrEmbeddingQualification": false,
+    "releaseOrUpdaterQualified": false,
+    "020Limits": "No actual detail retrieval, 3x3 portable transfer, damaged/future-schema imports or older-reader upgrade. G392 is synthetic only.",
+    "019Limits": "Retired branches use canonical SDK policy variants; preserved embedded runtimes pinned separately. No exhaustive all-table namespace snapshot.",
+    "captureLimits": "Controlled owner/SDK paths and physical readback; no atomic guarantee across arbitrary external writers."
+  }
+}

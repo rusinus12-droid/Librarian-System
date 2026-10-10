@@ -1,4 +1,6 @@
 'use strict';
+// Current consumer rebinding preserves the historical notes below. Their old
+// beforeRequest observation is not a claim about the present Classic route.
 // A17/T07 -- DELIVERY OF A SUCCESSOR THAT RECALL DID NOT SELECT.
 //
 // WHY THIS SUITE WAS REWRITTEN FIVE TIMES, and what review said each time:
@@ -19,6 +21,7 @@
 // Every measurement is taken from the PRODUCT: its own recall, its own closure, and its own
 // preflight packet. The test synthesises no memory, no layer row and no prompt fragment.
 const assert = require('node:assert/strict');
+const { actualClassicPacket, deliveredClosureRows, assertHealthyEmpty, assertOriginalOrdinarySelection } = require('./fixtures/libra_actual_classic_request.cjs');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 
@@ -45,8 +48,8 @@ const runMode = async mode => {
   try {
     const f = snapshot.f;
     const api = f.r.api;
-    assert.equal(typeof api.prepareInputWriterEvidence, 'function',
-      `${mode}: the product exposes the preflight that builds the request packet`);
+    assert.equal(typeof f.control.hooks.beforeRequest, 'function',
+      `${mode}: the product registers the actual retained request consumer`);
     const prompts = [];
     f.control.onCall = args => {
       const rows = candidateRowsFromPrompt(args);
@@ -80,6 +83,24 @@ const runMode = async mode => {
     openFact.text = `은빛 열쇠 반환 약속은 ${OLD}.`;
     f.control.artifact = first;
     observation.batch1 = (await f.run()).completed;
+    // Capture the actual first committed owner record, not a preview selection.
+    const originalScope = (await api.getHostLineageStatus()).scopeKey;
+    const physicalRows = mode === 'server_only' ? snapshot.storedRows().map(row => ({key:row.key,value:row.value}))
+      : [...snapshot.local.entries()].map(([key,raw]) => { let value; try { value=JSON.parse(raw); } catch {} return {key,value}; });
+    const originalManifest = physicalRows.find(row => row.key === `libra:v1:scope:${originalScope}:manifest`)?.value;
+    const originalRef = originalManifest?.memories?.['1'];
+    assert.ok(originalRef?.key, `${mode}: first committed manifest supplies the original memory address`);
+    const originalBody = physicalRows.find(row => row.key === originalRef.key)?.value;
+    assert.ok(originalBody?.canonicalArtifact?.facts?.some(fact => fact.text.includes(OLD)),
+      `${mode}: the captured original canonical body contains the open promise`);
+    for (const field of ['memoryId','revision','sourceDigest','artifactDigest']) {
+      assert.equal(originalBody[field], originalRef[field], `${mode}: original body and manifest agree on ${field}`);
+    }
+    assert.equal(originalBody.scopeKey, originalScope);
+    const originalIdentity = {memoryId:String(originalBody.memoryId),revision:Number(originalBody.revision),
+      scopeKey:originalScope,memoryKey:originalRef.key,sourceDigest:originalBody.sourceDigest,artifactDigest:originalBody.artifactDigest,
+      turnRange:JSON.parse(JSON.stringify(originalRef.turnRange)),sessionEpoch:Number(originalRef.sessionEpoch||0),inherited:originalRef.inheritedSessionHistory===true};
+
 
     // ── batch 2: the promise under test is NOT restated. Only the OTHER thread (the question)
     //    is worked, so the promise stays a live open item and the closure is the only thing
@@ -141,13 +162,27 @@ const runMode = async mode => {
       `${mode}: and NOT the outcome -- the artifact stating it is unselected, which makes the closure the only route`);
 
     // ── (2) THE PRODUCT'S OWN PACKET
-    const preflight = await api.prepareInputWriterEvidence(QUESTION);
+    const preflight = await actualClassicPacket(f, QUESTION, rows[0]?.memory?.scopeKey);
     const packet = preflight?.evidencePacket;
     observation.packetPresent = !!packet;
     assert.ok(packet, `${mode}: the product builds a request packet for this input`);
     const layers = packet.layers || {};
     observation.layerSizes = Object.fromEntries(Object.entries(layers).map(([key, value]) => [key, (value || []).length]));
-    const packetText = JSON.stringify(layers);
+    const packetText = preflight.actualClassic.block;
+    const selectedOrdinaryRows = assertOriginalOrdinarySelection(preflight, originalIdentity);
+    assert.equal(selectedOrdinaryRows.some(row => String(row.selectedText || row.text || '').includes(NEW)), false,
+      `${mode}: no selected ordinary successor supplies the later outcome`);
+    const ordinaryRows = preflight.actualClassic.deliveredRows.filter(row => row.closure !== true);
+    const ordinaryText = ordinaryRows.map(row => String(row.selectedText || row.text || '')).join('\n');
+    assert.equal(new Set(ordinaryRows.map(row => `${row.memoryId}:${row.revision}`)).size, 1,
+      `${mode}: this actual request selected only the original memory outside closure`);
+    assert.equal(ordinaryText.includes(OLD), true, `${mode}: this request selected the open promise`);
+    assert.equal(ordinaryText.includes(NEW), false, `${mode}: ordinary actual selection cannot supply the outcome`);
+    const actualClosures = deliveredClosureRows(preflight);
+    assert.equal(actualClosures.filter(row => row.text.includes(NEW)).length, 1,
+      `${mode}: one validated later closure fact actually reaches the returned block`);
+    assert.equal(preflight.actualClassic.viewer.closureInjectedFacts, 1,
+      `${mode}: the actual renderer records that one closure admission`);
 
     // ── (3) THE DELIVERY: the outcome must reach the packet even though the artifact that
     //        states it was never selected. Only the closure can put it there, so this is the
@@ -174,8 +209,14 @@ const runMode = async mode => {
     {
       const control = await serverFixture({ mode });
       try {
-        const controlPreflight = await control.f.r.api.prepareInputWriterEvidence(QUESTION);
-        const controlText = JSON.stringify(controlPreflight?.evidencePacket?.layers || {});
+        const emptyScope = (await control.f.r.api.getHostLineageStatus()).scopeKey;
+        const controlPreflight = await actualClassicPacket(control.f, QUESTION, emptyScope, { allowEmpty: true });
+        assertHealthyEmpty(controlPreflight);
+        const controlText = controlPreflight.actualClassic.block;
+        assert.equal(controlPreflight.actualClassic.deliveredRows.length, 0,
+          `${mode}: a fresh healthy empty request has no injected canonical rows`);
+        assert.equal(Object.values(controlPreflight.evidencePacket.layers || {}).flat().length, 0,
+          `${mode}: the sealed empty result contains no canonical layer evidence`);
         observation.controlPacketCarriesOutcome = controlText.includes(NEW);
         observation.controlPacketCarriesOpenWording = controlText.includes(OLD);
         assert.equal(observation.controlPacketCarriesOutcome, false,
@@ -194,7 +235,7 @@ const run = async () => {
   console.log(JSON.stringify({
     test: 'libra_main_memory_recall_successor_delivery',
     passed: 1,
-    boundary: "recall constrained to one memory so the successor stays unselected; the PRODUCT's own preflight packet is then asserted to carry the outcome the unselected later artifact states, with an empty-store control in each mode",
+    boundary: "recall constrained to one memory so the successor stays unselected; the PRODUCT's actual Classic output is then asserted to carry the outcome the unselected later artifact states, with an empty-store control in each mode",
     results
   }));
 };

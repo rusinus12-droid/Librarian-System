@@ -9612,7 +9612,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (localOnlyOwner) return;
     await loadPersistedSyncJob();
     const job = getSyncJob();
-    if (job?.kind === 'connection_config' && !syncJobTerminal(job.status) && job.scopeId === scope.scopeId) {
+    // An aggregate migration owns every scope, including scopes discovered
+    // after it paused. Per-scope connection changes retain their own boundary.
+    if (job && !syncJobTerminal(job.status) && (job.kind === 'global_mode' || (job.kind === 'connection_config' && job.scopeId === scope.scopeId))) {
       const error = transitionBusyError();
       error.transition = {scopeId:job.scopeId,fromMode:job.sourceMode,toMode:job.targetMode,phase:job.phase,jobId:job.jobId};
       throw error;

@@ -3,6 +3,7 @@
 // become a Recall successor merely because its generic thread title matches.
 const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+const { actualClassicPacket, deliveredClosureRows, assertNoForbiddenClosure } = require('./fixtures/libra_actual_classic_request.cjs');
 
 const rows = [];
 const pairs = [
@@ -94,7 +95,7 @@ const artifact = ({ turn, status, link = '', resolution = '', text }) => ({
     assert.equal(f.getHead().narrative.threads[0].status, 'open');
 
     const settings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1 });
+    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, recallQueryMessages: 1 });
     const query = '열쇠 반환은 아직 확인되지 않았다';
     const recall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(recall.memories.length, 1);
@@ -112,10 +113,22 @@ const artifact = ({ turn, status, link = '', resolution = '', text }) => ({
       'an unaddressed v5 event prevents Recall from claiming the selected promise is current');
     assert.ok(recallClosure?.diagnostics?.reasons?.some(reason => reason.startsWith('thread_lifecycle_pending_not_authorized:')),
       'the lack of lifecycle authority is disclosed in Recall diagnostics');
-    const preflight = await f.r.api.prepareInputWriterEvidence(query);
+    const preflight = await actualClassicPacket(f, query, first.scopeKey);
     const packetClosureRows = (preflight?.evidencePacket?.layers?.memory || []).filter(row => row.closure === true);
     assert.equal(packetClosureRows.some(row => row.memoryId === second.memoryId), false,
-      'the actual Input Writer packet does not label the pending event as a lifecycle closure');
+      'the actual Classic packet does not label the pending event as a lifecycle closure');
+    const viewer = preflight.actualClassic.viewer;
+    const ordinaryRows = viewer.rows.filter(row => row.closure !== true);
+    assert.equal(ordinaryRows.length, 1);
+    assert.equal(ordinaryRows[0].memoryId, first.memoryId, 'the same actual request selects only the original open promise');
+    assert.equal(deliveredClosureRows(preflight).length, 0, 'the returned Classic block delivers no pending closure');
+    assert.equal(viewer.closureCurrentness, 'last-known');
+    assert.equal(viewer.closureFacts, 0);
+    assert.equal(viewer.closureInjectedFacts, 0);
+    assert.equal(viewer.closureApplied, false);
+    assert.equal(viewer.closureDeliveryComplete, false);
+    assertNoForbiddenClosure(preflight, [pendingText]);
+    assert.ok(preflight.actualClassic.block.includes('Canonical continuity coverage is incomplete.'));
 
     console.log(JSON.stringify({
       test: 'libra_main_memory_candidate_boundary',

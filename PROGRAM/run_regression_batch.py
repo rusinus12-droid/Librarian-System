@@ -108,6 +108,12 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # All 29 raw-COW cases complete in 71.71s on restored A11. Preserve case
+    # deadlines and the earlier default60 timeout; allow bounded file overhead.
+    'flashback_raw_cow_append_runtime_test.cjs': 110,
+    # Three-mode descriptor/tamper matrix: 55.77s isolated, 66.07s in this runner.
+    # Preserve the default60 timeout evidence and case deadlines; margin is 36%.
+    'libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs': 90,
     # Functional 3-source x 3-destination portable matrix; default60 timeout retained as prior evidence.
     'libra_phase_d_portable_nine_pairs_test.cjs': 180,
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
