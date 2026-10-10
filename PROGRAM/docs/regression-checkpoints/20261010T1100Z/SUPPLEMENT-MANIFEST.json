@@ -1,0 +1,56 @@
+{
+  "schema": "lib.six-plugin.source-supplement.v2",
+  "privateCutoffManifestSha256": "ebc7fff0b5ed7e85cee287de859b97a8203d2373a0409fbda95ffc56c686a7b4",
+  "files": [
+    {
+      "path": "BROWSER-STATUS.json",
+      "bytes": 9348,
+      "sha256": "c421fbcaeb89b4ef24e7b62feddf36cf20d9361169c3a308ae14b9329e6eab09"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1279,
+      "sha256": "408a9d8871548c6f38e67b765b90c50cf1df3d2f6ea4bfa3ee0f42c6809e3874"
+    },
+    {
+      "path": "REGRESSION-STATUS.json",
+      "bytes": 5825,
+      "sha256": "117e7183f12eecb3127447492f4089bcee78c384bafec2f13472f167da167c79"
+    },
+    {
+      "path": "ROOT-REGRESSION-LEDGER.json",
+      "bytes": 406760,
+      "sha256": "042e86cfc8c60158c78c2f3818e9c559aa864f8fb21a550599fcca4a0f89ff48"
+    },
+    {
+      "path": "TEST-RETIREMENT-AND-ADOPTION.json",
+      "bytes": 13835,
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437"
+    },
+    {
+      "path": "test-successors/004/PROGRAM/tests/fixtures/timeline_caps_reason_values.cjs",
+      "bytes": 944,
+      "sha256": "b0ad06ebe2e35fe8d62be3a16b4be0693dcea886d39e884448856a28760fc117"
+    },
+    {
+      "path": "test-successors/004/PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs",
+      "bytes": 9197,
+      "sha256": "08e2d2a15904ba320ce39e49509ca5f0fd02dec9d0f62933ac2d512e360dbb3f"
+    },
+    {
+      "path": "test-successors/004/timeline-realm-negative-controls.cjs",
+      "bytes": 3027,
+      "sha256": "d34ec7e2441a9818377b1148d858cf760683b9ea23a6730662540d2233691196"
+    },
+    {
+      "path": "test-successors/005-v3/PROGRAM/tests/libra_main_memory_letter_lifecycle_105turn_test.cjs",
+      "bytes": 50200,
+      "sha256": "4c5faa8ff8348a173876ad32e02646589d09fa5188258403537d88820d48764e"
+    },
+    {
+      "path": "test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs",
+      "bytes": 5189,
+      "sha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f"
+    }
+  ]
+}

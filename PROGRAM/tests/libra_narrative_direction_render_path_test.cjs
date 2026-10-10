@@ -58,7 +58,7 @@ const buildHarness = scopeKey => {
     libraStatusBadge: (label, tone) => el('span', { text: label, dataset: { tone } }),
     Promise, JSON, Number, String, Error, console,
     __LIBRA__: {
-      getPlannerNarrativeDirection: async ({ scopeKey: requested }) => ({
+      getNarrativeDirection: async ({ scopeKey: requested }) => ({
         schema: 'libra.narrative_direction.v1', scopeKey: requested, revision: 1, goal: 'g',
         completionConditions: [], doNotForce: [], softPreferences: [], locked: false, source: 'test', updatedAt: 1
       })

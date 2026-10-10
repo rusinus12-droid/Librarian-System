@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-10T09:11:12.502Z",
+  "generatedAt": "2026-10-10T11:06:08.552Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2179,85 +2179,101 @@
       "sha256": "51238f67cf0a7a073137cd5bcc914c08a72dcbe81c9e3b5512d670ce084c6cb6",
       "bytes": 2578
     },
-    "docs/regression-checkpoints/20261010T0900Z/ACTIVE-SOURCE-MANIFEST.json": {
-      "sha256": "dabbb678328dac7cd776b484e66ac416905489348acf78dd5b1712a2723da24a",
-      "bytes": 413317
+    "docs/regression-checkpoints/20261010T1100Z/ACTIVE-SOURCE-MANIFEST.json": {
+      "sha256": "53ec4fa42a08f424b5d83265349c03f3c35b497a0bbf367a1ceeb4f0b1ada70b",
+      "bytes": 412718
     },
-    "docs/regression-checkpoints/20261010T0900Z/CHECKPOINT-PAIR.json": {
-      "sha256": "0b968db54ecb459e3cde116fd46fe712aeb4102c68c78d0d62e0d362cacbd808",
-      "bytes": 1306
+    "docs/regression-checkpoints/20261010T1100Z/BROWSER-STATUS.json": {
+      "sha256": "c421fbcaeb89b4ef24e7b62feddf36cf20d9361169c3a308ae14b9329e6eab09",
+      "bytes": 9348
     },
-    "docs/regression-checkpoints/20261010T0900Z/README.md": {
-      "sha256": "c05233d062ba3392cbd6094c99922e21179987b1ddd35cbf722e53f545fab41e",
-      "bytes": 915
+    "docs/regression-checkpoints/20261010T1100Z/CHECKPOINT-PAIR.json": {
+      "sha256": "2ff85f1a3ba441944812f2a03f5795f6d620b7fa999d6ceb6664024f47bf2f5f",
+      "bytes": 1275
     },
-    "docs/regression-checkpoints/20261010T0900Z/REGRESSION-STATUS.json": {
-      "sha256": "a1bb43eb18a9c7fa1223a6f16ffd5550aa72a1b61ee957a951184dd1d87a9351",
-      "bytes": 5701
+    "docs/regression-checkpoints/20261010T1100Z/README.md": {
+      "sha256": "408a9d8871548c6f38e67b765b90c50cf1df3d2f6ea4bfa3ee0f42c6809e3874",
+      "bytes": 1279
     },
-    "docs/regression-checkpoints/20261010T0900Z/RESTART.md": {
-      "sha256": "ef6be5008bc5ee4d81cb642879dcf4f314ba682859d0bf54274a7089be36308e",
-      "bytes": 2785
+    "docs/regression-checkpoints/20261010T1100Z/REGRESSION-STATUS.json": {
+      "sha256": "117e7183f12eecb3127447492f4089bcee78c384bafec2f13472f167da167c79",
+      "bytes": 5825
     },
-    "docs/regression-checkpoints/20261010T0900Z/RESTORE-SOURCE.py": {
-      "sha256": "03e4ef87040efc90376e36b6c451dd4e190d99b48f79e3883724868c557d5dec",
+    "docs/regression-checkpoints/20261010T1100Z/RESTART.md": {
+      "sha256": "8f6ab39c3cdc3f731eac33e12cc57de47e6931af943d492e8168ce29e570a7de",
+      "bytes": 2565
+    },
+    "docs/regression-checkpoints/20261010T1100Z/RESTORE-SOURCE.py": {
+      "sha256": "0a7da798f4f635a25dcaab5b58c7a5ad14aeeb1936383b2b494102c2d4358c76",
       "bytes": 2935
     },
-    "docs/regression-checkpoints/20261010T0900Z/RESTORE.md": {
-      "sha256": "12eb236407076dde772ef70f4fa55a043fa152243be95df4fb3b045f21fd2774",
-      "bytes": 1892
+    "docs/regression-checkpoints/20261010T1100Z/RESTORE.md": {
+      "sha256": "37cec89e905e22b2f437b4ae9afc062c03c50e02664e80d51268c85a56c236a2",
+      "bytes": 2466
     },
-    "docs/regression-checkpoints/20261010T0900Z/RETIREMENT-CANDIDATES.json": {
-      "sha256": "30e70df2e7235b330cace4d8abd5c170dcbeecce24f3e73e666dc2554a46d6f6",
-      "bytes": 5655
+    "docs/regression-checkpoints/20261010T1100Z/ROOT-REGRESSION-LEDGER.json": {
+      "sha256": "042e86cfc8c60158c78c2f3818e9c559aa864f8fb21a550599fcca4a0f89ff48",
+      "bytes": 406760
     },
-    "docs/regression-checkpoints/20261010T0900Z/SOURCE-PREIMAGE-PRIVACY.json": {
-      "sha256": "5d47b20a7b0a67879badeee57f81dff51d0c69545db4b84519cb9b50f9ef1e03",
-      "bytes": 1659
+    "docs/regression-checkpoints/20261010T1100Z/SOURCE-PREIMAGE-PRIVACY.json": {
+      "sha256": "d5fcc7f770de9bf0b124366c4bb17b87179044e521790501af2e1d31e3dd4f9a",
+      "bytes": 1744
     },
-    "docs/regression-checkpoints/20261010T0900Z/source-preimage/.gitattributes": {
+    "docs/regression-checkpoints/20261010T1100Z/source-preimage/.gitattributes": {
       "sha256": "efe23417b1b8fa866bd272d68e12c73e08ea732b61ab83e7900ba29dbd39d177",
       "bytes": 220
     },
-    "docs/regression-checkpoints/20261010T0900Z/source-preimage/.gitignore": {
+    "docs/regression-checkpoints/20261010T1100Z/source-preimage/.gitignore": {
       "sha256": "51d0fa0b3e6992d12d465d9b68eeb04053b9adc24e552eec1220e4c0a7ab59e6",
       "bytes": 2161
     },
-    "docs/regression-checkpoints/20261010T0900Z/source-preimage/PROGRAM/program-manifest.json": {
-      "sha256": "6b83a2b7e5e48f7dc94f4fd3823c8b08ad9b3b0bc6b7f7c688f29dddaaa5aef7",
-      "bytes": 367281
+    "docs/regression-checkpoints/20261010T1100Z/source-preimage/PROGRAM/program-manifest.json": {
+      "sha256": "01752f88871e47c5ba8842129a9efe2548b0cfdb024907a1838871d9b413c575",
+      "bytes": 366750
     },
-    "docs/regression-checkpoints/20261010T0900Z/source-preimage/README.md": {
+    "docs/regression-checkpoints/20261010T1100Z/source-preimage/README.md": {
       "sha256": "8218e65cd3d3562bef3ed1d5176c69edfe483b9bc1c43a4191b50296be4ea380",
       "bytes": 2791
     },
-    "docs/regression-checkpoints/20261010T0900Z/source-preimage/SHA256SUMS.txt": {
-      "sha256": "3967f1f98de50780bb69dd85da9ca9bdc2ee9179ceb43e300a59591e57102925",
-      "bytes": 231469
+    "docs/regression-checkpoints/20261010T1100Z/source-preimage/SHA256SUMS.txt": {
+      "sha256": "882262154106740414acc2e769f7ac63bcc08e14e55524561c01a762cea89d30",
+      "bytes": 231066
     },
-    "docs/regression-checkpoints/20261010T0900Z/SOURCE-PRESERVATION-MAP.json": {
-      "sha256": "9510c741803664f285c24e8f250b37392c408b14485887ae57988fd618213154",
+    "docs/regression-checkpoints/20261010T1100Z/SOURCE-PRESERVATION-MAP.json": {
+      "sha256": "01f8b74d7b4429bc7a2065a636d1aa59756a0162882bd3fa92f0204936e6df95",
       "bytes": 897
     },
-    "docs/regression-checkpoints/20261010T0900Z/SUPPLEMENT-MANIFEST.json": {
-      "sha256": "9181b9de3a695a0a321e9708a0d11945ee86c2b3ad546835b08f2717f6b72700",
-      "bytes": 1393
+    "docs/regression-checkpoints/20261010T1100Z/SUPPLEMENT-MANIFEST.json": {
+      "sha256": "d9bd90e54db21b391e73aff8c1eec96e4b0de094630fd6ad95fc975b4d370c8f",
+      "bytes": 1991
     },
-    "docs/regression-checkpoints/20261010T0900Z/test-successors/001/flashback_multilingual_probe_wording_test.cjs": {
-      "sha256": "5942c3d8438a9541c48ddab196440be7924902e991141a00bafe458ae7999f98",
-      "bytes": 5649
+    "docs/regression-checkpoints/20261010T1100Z/TEST-RETIREMENT-AND-ADOPTION.json": {
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437",
+      "bytes": 13835
     },
-    "docs/regression-checkpoints/20261010T0900Z/test-successors/002/hayaku_disposed_topology_runtime_test.cjs": {
-      "sha256": "1b51d816bee927dae186208822723f7a80ef5d89389c91eff808c2908620a85c",
-      "bytes": 9068
+    "docs/regression-checkpoints/20261010T1100Z/test-successors/004/PROGRAM/tests/fixtures/timeline_caps_reason_values.cjs": {
+      "sha256": "b0ad06ebe2e35fe8d62be3a16b4be0693dcea886d39e884448856a28760fc117",
+      "bytes": 944
     },
-    "docs/regression-checkpoints/20261010T0900Z/test-successors/003/libra_narrative_direction_loop_and_general_headers_test.cjs": {
-      "sha256": "77a911c75ee7c89cab6c1509198f4fa3f4bd0c249f9c53be8dbbd07c226f401c",
-      "bytes": 6813
+    "docs/regression-checkpoints/20261010T1100Z/test-successors/004/PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs": {
+      "sha256": "08e2d2a15904ba320ce39e49509ca5f0fd02dec9d0f62933ac2d512e360dbb3f",
+      "bytes": 9197
     },
-    "docs/regression-checkpoints/20261010T0900Z/test-successors/003/libra_narrative_direction_render_path_test.cjs": {
-      "sha256": "7839d533e0b899c76536f1ec6d896341f76687b057626650fe0f1ce29ed21238",
-      "bytes": 5727
+    "docs/regression-checkpoints/20261010T1100Z/test-successors/004/timeline-realm-negative-controls.cjs": {
+      "sha256": "d34ec7e2441a9818377b1148d858cf760683b9ea23a6730662540d2233691196",
+      "bytes": 3027
+    },
+    "docs/regression-checkpoints/20261010T1100Z/test-successors/005-v3/PROGRAM/tests/libra_main_memory_letter_lifecycle_105turn_test.cjs": {
+      "sha256": "4c5faa8ff8348a173876ad32e02646589d09fa5188258403537d88820d48764e",
+      "bytes": 50200
+    },
+    "docs/regression-checkpoints/20261010T1100Z/test-successors/006/PROGRAM/tests/fixtures/server_repair_fixture.cjs": {
+      "sha256": "498fc808fe3be1e03493b4e923d13ebd08e3d9e580060c87fc60d3405898be9f",
+      "bytes": 5189
+    },
+    "docs/regression/TEST-RETIREMENT-20261010.json": {
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437",
+      "bytes": 13835
     },
     "docs/RELEASE_0_3_49_FIXES_20260914.md": {
       "sha256": "2938608fa5d14bd784216a588733af01437e297e95bd071ab03d60e8ad75a335",
@@ -2316,8 +2332,8 @@
       "bytes": 6635
     },
     "docs/SDK_PROBE_UI_CURRENTNESS_20261005.md": {
-      "sha256": "1bc90c90f826e429e8242582b1f064c7642e0dba6909315c84f8dae912b4fc8a",
-      "bytes": 5763
+      "sha256": "fd5bbfb1a4ec09a4496e12ae83bc914a5ccec4c724bea42b3b5cc1262be77e0f",
+      "bytes": 6663
     },
     "docs/SDK_RESET_BOOTSTRAP_SEQUENCE_20261003.md": {
       "sha256": "f9776bd8d397eba07a17a9ba69a771948c4be4e9b0738a933fcfb08b7757823a",
@@ -4100,8 +4116,8 @@
       "bytes": 21596
     },
     "tests/flashback_multilingual_probe_wording_test.cjs": {
-      "sha256": "72e041057c5442bbbfb930e80439f7e1c3819d5cc6187ae4f3a15aa04de78d28",
-      "bytes": 5734
+      "sha256": "5942c3d8438a9541c48ddab196440be7924902e991141a00bafe458ae7999f98",
+      "bytes": 5649
     },
     "tests/flashback_ordinary_journal_physical_predecessor_test.cjs": {
       "sha256": "9db5ad61dae014f7f7bb7a51a2f87aa74c1d46ca1e18c6924f6d8137e302336e",
@@ -4724,8 +4740,8 @@
       "bytes": 1395
     },
     "tests/hayaku_disposed_topology_runtime_test.cjs": {
-      "sha256": "d4c0f5cac46e9cc6c5dd50f06955d9a876b9d5358c984ea0f593292544463887",
-      "bytes": 8624
+      "sha256": "1b51d816bee927dae186208822723f7a80ef5d89389c91eff808c2908620a85c",
+      "bytes": 9068
     },
     "tests/hayaku_engine_search_contract_runtime_test.cjs": {
       "sha256": "7cc28d8404232578af47e5fe328c35619a2100b2c2f59b6a6cab6ba13f59594d",
@@ -5106,10 +5122,6 @@
     "tests/hayaku_settings_gui_transaction_test.cjs": {
       "sha256": "35a647cd5b22eb18fc1405de44919005b174862ba0b4d8a21579380806fa6a0c",
       "bytes": 8521
-    },
-    "tests/hayaku_shared_missing_source_test.cjs": {
-      "sha256": "80cfbef9dd13603381254eb6656a9459201cfcb77f00e2105aec93d575b27892",
-      "bytes": 2049
     },
     "tests/hayaku_shared_source_policy_test.cjs": {
       "sha256": "36ff980387232b6206075c9300d28c67b05d52301e5ac92750edc1fbbed8b4a3",
@@ -6316,12 +6328,12 @@
       "bytes": 4787
     },
     "tests/libra_narrative_direction_loop_and_general_headers_test.cjs": {
-      "sha256": "fe5bf5e713a7daa43d48c100cf5b9984c363c13dca01e6b9cc5fc5c487b19090",
-      "bytes": 6820
+      "sha256": "77a911c75ee7c89cab6c1509198f4fa3f4bd0c249f9c53be8dbbd07c226f401c",
+      "bytes": 6813
     },
     "tests/libra_narrative_direction_render_path_test.cjs": {
-      "sha256": "b8c64e43a27eb4ab93a950a46e46378ea7fe6af17cb01b1f461e47766477c17d",
-      "bytes": 5734
+      "sha256": "7839d533e0b899c76536f1ec6d896341f76687b057626650fe0f1ce29ed21238",
+      "bytes": 5727
     },
     "tests/libra_narrative_event_projection_runtime_test.cjs": {
       "sha256": "932ce47bf7e63e27f0250e4af2ab03676b10174fec2fa9c88e62897130e3a907",
@@ -7174,14 +7186,6 @@
     "tests/memory_suite_global_storage_mode_contract_test.cjs": {
       "sha256": "dd28223e6017c3d996b63b5ae9b5a9242f9acb923825c7ad7f98157fe912b6f2",
       "bytes": 1318
-    },
-    "tests/memory_suite_global_storage_mode_migration_test.cjs": {
-      "sha256": "b780d77a4181671bc4a4054a48f13da6b72259a86d7608bcd968e64e5ebb0940",
-      "bytes": 246
-    },
-    "tests/memory_suite_global_storage_mode_panel_mounted_test.cjs": {
-      "sha256": "f4f07454a5d0876f78cf6b2db0694c00425af40f4a4103981baeb94e2cf7332e",
-      "bytes": 162
     },
     "tests/mobile_gpu_effect_contract_test.cjs": {
       "sha256": "043f1f90d5b30e457232652bacf5eb270cc220c020238186a4589cc52185b6be",
@@ -8238,10 +8242,6 @@
     "tests/storage_global_owner_public_gui_test.cjs": {
       "sha256": "da7e0a2000a17f77290b3d06c52ebdfb7c12cedfa95f1244502e6e4400803168",
       "bytes": 8708
-    },
-    "tests/storage_global_transition_owner_admission_test.cjs": {
-      "sha256": "e15d029e795f90e266ed494c59ac01c4abf7415de79975a7ed56a4eb0db24be5",
-      "bytes": 310
     },
     "tests/storage_global_transition_real_handler_test.cjs": {
       "sha256": "df8b4bf25eb28bf325945389ca3e0ed6468c8dc9c85b96adb41da75e4ec05e32",

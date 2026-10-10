@@ -40,3 +40,11 @@ Set NODE_PATH to the existing `min-verification-20261004T2120Z/toolchain/node_mo
 - In PROGRAM: `python run_regression_batch.py --match '*sdk*' --match '*connection*' --match '*global_storage*'`
 
 The sibling evidence directory preserves RED/GREEN logs, actual artifact factory byte offsets/hashes, baseline failure logs, build logs, patches, and hash manifests.
+
+## 2026-10-10: equivalent focused selection after duplicate-wrapper retirement
+
+The earlier command and results above remain the historical 2026-10-05 record. After retiring the duplicate migration and mounted-panel wrapper files, use the following current equivalent selection in PROGRAM to retain their underlying test coverage:
+
+`python run_regression_batch.py --match '*sdk*' --match '*connection*' --match '*global_storage*' --match 'storage_global_allchat_job_test.cjs' --match 'storage_global_allchat_panel_test.cjs'`
+
+The three original selection globs are unchanged. The two explicit targets run the same test bodies formerly selected through `memory_suite_global_storage_mode_migration_test.cjs` and `memory_suite_global_storage_mode_panel_mounted_test.cjs`. This command update is a coverage-preservation note, not a new execution result or a revision of the historical pass/fail counts.
