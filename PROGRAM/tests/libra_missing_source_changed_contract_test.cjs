@@ -1,54 +1,30 @@
 'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-
-const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'LIBRA.js'), 'utf8');
-const drawer = source.slice(source.indexOf('const showCanonicalRangeDrawer ='), source.indexOf('const buildBookMemoryModelSummary ='));
-const core = source.slice(source.indexOf('const LibraMemoryCore = (() => {'), source.indexOf('const memoryStageEnabledForSettings ='));
-const gui = source.slice(source.indexOf('const buildSourceEditConsentPanel ='), source.indexOf('const buildSwallowedDiagPanel ='));
-
-assert.match(drawer, /const eligible = row => currentMode === 'regenerate' \? row\.status === 'saved' : currentMode === 'failed' \? row\.status === 'failed' : row\.status === 'missing';/,
-  'default drawer eligibility must select only missing ranges');
-assert.doesNotMatch(drawer, /currentMode !== 'saved'|row\.status !== 'saved'/,
-  'default drawer must not treat every non-saved range as missing');
-assert.match(drawer, /sourceChangedNotice/,
-  'source_changed ranges must have a separate notice');
-assert.doesNotMatch(drawer, /sourceReviewCta|sourceReviewButton|reviewLibraSourceEdits/,
-  'the range drawer must not offer manual consent/reanalysis for source edits');
-assert.match(drawer, /원문 수정 · 자동 처리 대기/,
-  'source_changed ranges must be labeled as automatic work');
-assert.match(drawer, /요청 시작 시 자동으로 다시 분석합니다/,
-  'the drawer must explain automatic before-request processing');
-assert.match(drawer, /후속 영향 구간은 회상에서 제외/,
-  'pending dependent ranges must be disclosed as withheld from recall');
-assert.match(core, /const getLibraSourceEdits = \(\) =>/,
-  'LIBRA retains its owner-scoped source edit journal and automatic processor');
-assert.match(core, /reviewSourceEdits: async \(\) => \(\{ok:false,reason:'automatic_before_request_only'/,
-  'the legacy public review API cannot launch a consent prompt');
-assert.doesNotMatch(core, /reviewSourceEdits:[^\n]*\.review\(true\)/,
-  'no public source-edit API can grant a manual reanalysis permit');
-assert.match(core, /const inspectLibraSourceEdits = async/,
-  'source edit inspection must remain available');
-assert.match(core, /const completedTurnIds=\[\.\.\.new Set\(pairs[\s\S]*?identityStable===true[\s\S]*?chatId[\s\S]*?\.map\(pair=>string\(pair\.user\.chatId\)\)\)\]/,
-  'the owner supplies only stable completed U IDs for SDK-managed TTL accounting');
-assert.match(core, /rawDigest:currentRawDigest[\s\S]*originalDigest:previousDigests\.originalDigest,originalRawDigest:previousDigests\.originalRawDigest,policyUncertain:previousDigests\.policyUncertain/,
-  'the owner supplies raw/projected hashes and validated previous-source evidence to policy reconciliation');
-assert.match(core, /const suppressLibraSourceEditImpactForRequest=[\s\S]*source_edit_exception[\s\S]*source_edit_pending/,
-  'exception, failed, and pending impacts are filtered from the request-local canonical manifest');
-assert.match(core, /sourceEditRequestSerial[\s\S]*SOURCE_EDIT_REQUEST_CHANGED/,
-  'a newer request invalidates late replacement commits');
-assert.match(core, /sourceGuard\.canWrite\(selection\.scopeKey, row\.startTurn, row\.sourceDigest\)/,
-  'canonical writes remain blocked until the automatic replacement permit is current');
-assert.match(core, /sourceGuard\.refresh\(\{\s*prompt\s*:\s*false\s*\}\)/,
-  'canonical selection must refresh source state before writing');
-assert.match(core, /const expectedStatus = selection\.mode === 'regenerate' \? 'saved' : selection\.mode === 'failed' \? 'failed' : 'missing';/,
-  'API selection must reject source_changed and other non-mode statuses');
-assert.match(core, /if \(actual\.status !== expectedStatus\) throw new Error\('selected_batch_status_changed'\);/,
-  'API selection must fail closed when status changes after rendering');
-assert.match(gui, /LibraMemoryCore\.mountSourceEditTrackingControls\(card\)/,
-  'LIBRA settings mount the shared recent-edit, exception, deletion, and rule controls');
-assert.match(source, /setSourceEditRules: rules => getLibraSourceEdits\(\)\.setSourceRules\(rules\)/,
-  'LIBRA public settings API stores rules through the owner-scoped shared SDK');
-
-process.stdout.write('libra_missing_source_changed_contract_test: PASS\n');
+// Retained missing/failed/saved range separation and explicit source replacement.
+// Runtime replacement safety is covered by libra_source_edit_final_injection_3mode_test.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const source=fs.readFileSync(path.join(__dirname,'..','plugins','LIBRA.js'),'utf8');
+const between=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a);return source.slice(a,b);};
+const drawer=between('const showCanonicalRangeDrawer =','const buildBookMemoryModelSummary =');
+const declaration=drawer.match(/const eligible = row =>[^;]+;/)?.[0];assert.ok(declaration);
+for(const mode of ['missing','failed','regenerate','source_edit']){
+ const context=vm.createContext({currentMode:mode});vm.runInContext(declaration+'\nthis.eligible=eligible;',context);
+ for(const status of ['missing','failed','saved','source_changed'])assert.equal(context.eligible({status}),
+  mode==='source_edit'||status==={missing:'missing',failed:'failed',regenerate:'saved'}[mode],`${mode}/${status} drawer eligibility`);
+}
+assert.match(drawer,/value: 'source_edit', text: '선택 구간 재분석'/);
+assert.match(drawer,/성공하면 기존 기억을 바꾸고, 실패하면 기존 기억을 유지합니다/);
+assert.match(drawer,/모델 사용량이 발생할 수 있습니다/);
+assert.match(drawer,/identityDigest: row\.identityDigest/,'drawer carries the current source identity into the explicit selection');
+assert.match(drawer,/LibraMemoryCore\.startSelectedCanonicalBatches\(request\)/);
+assert.match(drawer,/if \(result\?\.ok !== true\) throw new Error/,'failed replacement is surfaced by the drawer');
+const selection=between('const startSelectedCanonicalBatchesOnce =','const startSelectedCanonicalBatches =');
+assert.match(selection,/row\.identityDigest!==actual\.identityDigest/,'edited source requires exact current range identity');
+assert.match(selection,/selected_batch_identity_changed/);
+assert.match(selection,/sourceDigest\(current\)!==source/,'provider-wait source changes cannot activate stale results');
+assert.match(selection,/selected_batch_source_changed/);
+assert.match(selection,/freshTerminalAttempt:true/,'explicit replacement gets a new operation budget');
+assert.match(selection,/Number\(ref\.revision\)>Number\(row\.revision\|\|0\)/,'success is backed by a newer durable revision');
+assert.match(selection,/ref\.sourceDigest===row\.sourceDigest&&ref\.sourceEditBasis===basis/,'success binds exact source and replacement basis');
+assert.match(source,/setSourceEditRules: rules => LibraMemoryCore\.setSourceEditRules\(rules\)/,'source input rules remain on the public settings surface');
+assert.match(source,/기존 기억은 유지됩니다/,'rule editing discloses retention of approved memory');
+console.log('libra_missing_source_changed_contract_test: PASS (current explicit replacement contract)');
