@@ -30,7 +30,7 @@
   ],
   "observer": "Generated isolated source wraps the three actual getVerifiedJson head await sites; observes keys/phases without changing await order, bytes or values; observed reads must match actual backend head-read count and keys.",
   "preservedBoundaries": "Synthetic heads only exercise catalog scale. Positive evidence still comes from actual producer/source receipts. Production file byte equality asserted. No shared harness or production edits.",
-  "qualification": "Static syntax/observer compilation only. Runtime blocked until parent authorizes after normal campaign completion.",
+  "qualification": "Actual official root625 PASS1.48s on final committed test; cold64/warm2 headreads, incremental5 mapped catalog1+hydration2+finalreread2, publicselectedT2 vs hydratedT1/T2 recorded, actual physicalT2head mutation refused stale_source/micro_head_changed_during_read. External cache-625-results.json binds exact source/test/log SHA. Original campaign FAIL and all corrective failures preserved.",
   "actualDiagnosticFailure": "cache-625-trace-logs/625-libra_micro_recall_incremental_head_index_test.cjs.log: actual5 reads = catalogT2 + hydrationT2,T1 + rereadT2,T1; firstcandidate onlyT2 assumption failed and is preserved",
   "warmDiagnostic": "cache-625-final-logs retainedFAIL: guessed warmT1/T2 assertion observes onlyT2, independently distinct from incremental two-candidate hydration"
 }
