@@ -20,8 +20,8 @@ const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs')
 const MODES = ['plugin_only', 'mirror', 'server_only'];
 
 const instrument = source => {
-  const coreAnchor = '      debugNormalizeSgaPatchResult: ';
-  const publicAnchor = "    debugSgaPatchOperations(draft = '', edits = [])";
+  const coreAnchor = '      debugReadActiveCompletedTurnReceipt: async turnValue => {';
+  const publicAnchor = "    debugBuildPairs(chat = {}, cacheKey = '')";
   for (const [name, value] of [['core', coreAnchor], ['public', publicAnchor]]) {
     if (source.split(value).length !== 2) throw new Error(`the ${name} anchor must be unique`);
   }
