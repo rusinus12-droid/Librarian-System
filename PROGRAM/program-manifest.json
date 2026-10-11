@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T13:01:19.336Z",
+  "generatedAt": "2026-10-11T16:28:30.850Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2316,12 +2316,12 @@
       "bytes": 9032
     },
     "docs/regression/FIX39_PROCESSING_20261011.json": {
-      "sha256": "23bd2820054eb5842d12dcd97fadb6828e89893502a3e396882e95c206b7b817",
-      "bytes": 3578053
+      "sha256": "2b76605590f0ff2a4ee544e99f5735cb2bb9a01591d6e1e0ef0ee671b0edcb93",
+      "bytes": 6241623
     },
     "docs/regression/FIX39_PROCESSING_20261011.md": {
-      "sha256": "a379016193203142260f79cb6f8ce78d22dc05b49261fdffaed2fc775957abcd",
-      "bytes": 8272
+      "sha256": "aa57e73db913267c5c3e77b08e31b65c1baaf2c3100e959d250de033c25a6928",
+      "bytes": 8807
     },
     "docs/regression/fix39-20261011/contracts-assertion-map.json": {
       "sha256": "c7a6ca7e53beedfdff4200f2bdd6e2bd7cac42d5b227c645974dacff0b7f81df",
@@ -3607,6 +3607,22 @@
       "sha256": "738438a7f747a80714fbafa0d3e17c2bc6cdec32e746966a400a9ebffde01904",
       "bytes": 78642
     },
+    "tests/fixtures/archive_issued_tail_control.cjs": {
+      "sha256": "de9c2ea87f42dcc0695d6af4d7a2dcc066698a2801f035cb2481aef7de5932bd",
+      "bytes": 3029
+    },
+    "tests/fixtures/archive_issued_tail_fixture.cjs": {
+      "sha256": "2c7339431faaec911fc00777433f1a12596885835cc1107c1083dffba6c357bf",
+      "bytes": 19639
+    },
+    "tests/fixtures/archive_issued_tail_plan_generator.cjs": {
+      "sha256": "9d1bedfe827666e2f33f9628805da639dcf164dd5692ccb5bc5ad94d40252c7e",
+      "bytes": 10942
+    },
+    "tests/fixtures/archive_issued_tail_plans.json": {
+      "sha256": "53084bc5c2b5fdf876ee181c4938ec44b361a36a5bf38637e92b214c1c8a8055",
+      "bytes": 111124
+    },
     "tests/fixtures/archive_owner_fixture.cjs": {
       "sha256": "0dadeb85fa5b287ce76a329f216c7e81d29f0471fe2a0ff5fc4a7817f59e6b8c",
       "bytes": 24801
@@ -4043,6 +4059,22 @@
       "sha256": "78403b598b321b1536bee1c971455f3a43630ecec1553c6b7c69628ca7756b34",
       "bytes": 12732
     },
+    "tests/fixtures/raw_pending_159_diagnostic_harness.cjs": {
+      "sha256": "7ce3ac6e4f87d354699aab4b6f306bab5153d4f1269be523fb1b22b9b337f985",
+      "bytes": 12947
+    },
+    "tests/fixtures/raw_pending_159_observer_control.cjs": {
+      "sha256": "37316334609a1aec25f1398dfcc1cf4b3945a878c570d75eca255f46d051c3bd",
+      "bytes": 5826
+    },
+    "tests/fixtures/raw_pending_159_readiness_control.cjs": {
+      "sha256": "9ef03735aa36fdc27745713d371721ba6a57a47b431d050203b3c97e6a1f3045",
+      "bytes": 4481
+    },
+    "tests/fixtures/raw_pending_portable_fixture.cjs": {
+      "sha256": "84a9151872b8285a88308ac2fcde4dd6919e9b8d3f5d430c2940b1285f4c3bdc",
+      "bytes": 10854
+    },
     "tests/fixtures/recall_model_runtime_fixture.cjs": {
       "sha256": "e7a91abc8eee13d924a2b4aecc50c16564a47c55f3715ab4da442b1cbc114475",
       "bytes": 1359
@@ -4136,8 +4168,8 @@
       "bytes": 4717
     },
     "tests/flashback_archive_owner_failure_test.cjs": {
-      "sha256": "8acc07a68d2f46a2fbdd4f29b993e6cf8199cd46805c13ecf10f2f00cce4f648",
-      "bytes": 31262
+      "sha256": "e8ce96cb03d701d09968e6ff6dd35824f83492ff5ee2655fffb07a0700f27b5e",
+      "bytes": 31347
     },
     "tests/flashback_archive_owner_gui_test.cjs": {
       "sha256": "c618aefedeb0226c9c6cb50f788298c6b09c6d75ad98cadc90d93aac3375b701",
@@ -4436,8 +4468,8 @@
       "bytes": 21370
     },
     "tests/flashback_raw_pending_contract_runtime_test.cjs": {
-      "sha256": "b1c6bd0de6a264387c0e75cb828a7d6ac195487bb2ea28f463e4eb020eb2fd88",
-      "bytes": 25520
+      "sha256": "10b2724fdcb77c36066daae86c6858ee1814d66b7ab195a198ef8a0722e051fa",
+      "bytes": 25945
     },
     "tests/flashback_recall_parity_public_path_test.cjs": {
       "sha256": "58ab59028e54897f354ef4f908e6d090dec42c9b380b885abd1a6590c86b7658",
