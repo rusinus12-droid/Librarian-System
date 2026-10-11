@@ -19,13 +19,23 @@
 .owner:first-child{border-top:0}
 .owner b{font-size:13.5px}.owner small{grid-column:1;font-size:12px;color:var(--text3)}
 .owner .role{font:700 11.5px var(--font-mono);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:2px 7px;align-self:start;background:var(--surface2)}
-.scope-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-left:5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}
+.scope-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 14px;align-items:start;padding:14px 16px;border:1px solid var(--border);border-left:5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}
 .scope-card.k-active{border-left-color:var(--ok)}
 .scope-card.k-ancestor{border-left-color:var(--accent)}
 .scope-card.k-orphan{border-left-color:var(--warn)}
 .scope-card.k-unknown{border-left-color:var(--danger)}
 .scope-card.k-pair{border-left-color:#6a3fa0}
 .scope-card b{font-size:14px}.scope-card small{display:block;font-size:12.5px;color:var(--text3);margin-top:2px}
+.scope-card .sel{width:20px;height:20px;margin-top:2px;accent-color:var(--accent)}
+.scope-card .sel[disabled]{opacity:.35}
+.scope-card .acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.scope-block{grid-column:2/-1;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--danger-soft);border:1px solid var(--danger-line);color:var(--danger-ink)}
+.scope-ready{grid-column:2/-1;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--ok-soft);border:1px solid var(--ok-line);color:var(--ok-ink)}
+.scope-wait{grid-column:2/-1;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--warn-soft);border:1px solid var(--warn-line);color:var(--warn-ink)}
+.group-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin:8px 0 2px}
+.group-head h3{margin:0;font-size:15px}.group-head p{margin:0;font-size:12.5px;color:var(--text3)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2)}
+.toolbar span{font-size:12.5px;color:var(--text2)}
 .kinds{display:flex;flex-wrap:wrap;gap:8px}
 .kind{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border2);border-radius:99px;background:var(--surface);font:650 12.5px var(--font-sans);color:var(--text2)}
 .kind[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
@@ -39,30 +49,38 @@
 .check-item b{font-size:13.5px}.check-item small{display:block;font-size:12.5px;color:var(--text3)}
 .danger-zone{border:1px solid var(--danger-line);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
 .danger-zone__head{padding:12px 16px;background:var(--danger-soft);color:var(--danger-ink);font-weight:800;font-size:13px;border-bottom:1px solid var(--danger-line)}
-.danger-zone .setting{padding:14px 16px}
-.typed{margin-top:12px}
-.typed .input{font-family:var(--font-mono)}
+.danger-zone .body{padding:14px 16px;display:grid;gap:12px}
+.typed{margin-top:12px}.typed .input{font-family:var(--font-mono)}
 .mono{font-family:var(--font-mono);font-size:12px;color:var(--text2)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.two>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}
+.two b{display:block;margin-bottom:3px;font-size:12px;color:var(--text3)}
+.excluded{display:flex;flex-wrap:wrap;gap:6px}
+.stat-chip{display:inline-flex;gap:6px;align-items:center;font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface)}
+.res{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}
+.res:first-child{border-top:0}.res small{grid-column:1;color:var(--text3)}
+html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=partial] [data-scenario-show]:not([data-scenario-show~=partial]){display:none}
 @container app (max-width:900px){.relay{grid-template-columns:1fr 1fr}.relay__node:nth-child(3){border-left:0}.relay__node:nth-child(n+3){border-top:1px solid var(--border)}.relay__node:nth-child(2)::after{display:none}}
-@container app (max-width:640px){.relay{grid-template-columns:1fr}.relay__node{border-left:0;border-top:1px solid var(--border)}.relay__node:first-child{border-top:0}.relay__node::after{display:none}.scope-card{grid-template-columns:1fr}}
+@container app (max-width:640px){.relay{grid-template-columns:1fr}.relay__node{border-left:0;border-top:1px solid var(--border)}.relay__node:first-child{border-top:0}.relay__node::after{display:none}.scope-card{grid-template-columns:auto minmax(0,1fr)}.scope-card .acts{grid-column:2/-1;justify-content:flex-start}.two{grid-template-columns:1fr}}
 </style>
 </head>
 <body class="t-retrace">
 <div class="proto-bar">
   <a href="index.html">← 시안 목록</a><b>RE:TRACE · 인계소</b>
   <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
-  <span class="grp"><span>열기</span><button data-open="dlg-del">사본 정리</button><button data-open="dlg-reset">전체 초기화</button><button data-run-job="job-clean">정리 진행</button></span>
+  <span class="grp"><span>열기</span><button data-open="dlg-next">다음 세션 승인</button><button data-open="dlg-del" data-ctx='{"name":"아스텔 / 에피소드 40","meta":"고아 메모리 후보 · 마지막 저장 2주 전 · 402개","srv":"이 스코프의 서버 사본(저장 원문·벡터·아카이브) 402개","loc":"로컬 원본은 그대로 보존. 필요하면 플러그인 단독 모드로 전환","cnt":"1개"}'>사본 삭제</button><button data-open="dlg-reset" data-ctx='{"target":"전체 5개 플러그인","backup":"초기화 전에 서버 백업을 생성합니다."}'>서버 초기화</button></span>
+  <span class="grp"><span>승계 결과</span><button data-scenario="partial" aria-pressed="true">일부 미완료</button><button data-scenario="ok" aria-pressed="false">모두 완료</button></span>
 </div>
 <div class="stage"><div class="frame" data-device="desktop">
 <div class="app">
 
   <header class="topbar">
-    <div class="brand"><div class="brand__mark"><i data-i="route" data-size="lg"></i></div><div><div class="brand__name">RE:TRACE</div><div class="brand__ver">인계소 · v2.3.0</div></div></div>
+    <div class="brand"><div class="brand__mark"><i data-i="route" data-size="lg"></i></div><div><div class="brand__name">RE:TRACE</div><div class="brand__ver">인계소 · 시안 (제품 v1.9.84 기준)</div></div></div>
     <div class="scope"><b>아스텔</b><span>›</span><span>에피소드 42</span></div>
     <div class="grow"></div>
-    <span class="health health--warn" title="정리할 사본이 있습니다"><i></i>정리할 사본 3개</span>
+    <span class="health health--warn" title="정리 후보와 확인 불가 사본이 있습니다"><i></i>점검할 사본 3개</span>
     <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
-      <div class="menu__panel"><button data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button><button data-toast="진단 정보를 복사했습니다."><i data-i="log"></i>진단 정보 복사</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
+      <div class="menu__panel"><button data-toast="새로 읽었습니다. (시안)"><i data-i="refresh"></i>새로 읽기</button><button data-toast="진단 정보를 복사했습니다. (시안)"><i data-i="log"></i>진단 정보 복사</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
   </header>
 
   <nav class="sidebar" aria-label="RE:TRACE 메뉴">
@@ -73,124 +91,199 @@
     <button class="nav-item" data-go="server" data-short="서버 관리"><i data-i="server"></i><span class="nav-text">서버 관리</span><span class="count">3</span></button>
     <div class="nav-label">점검</div>
     <button class="nav-item" data-go="diag" data-short="진단"><i data-i="shield"></i><span class="nav-text">진단</span></button>
-    <div class="side-foot"><b>보관 소유자 5곳</b><span>쓰기 3 · 읽기 1 · 기기 전용 1</span></div>
+    <div class="side-foot"><b>관리 대상 5개 플러그인</b><span>flashback · hayaku · libra · lia · retrace</span></div>
   </nav>
 
   <main class="main"><div class="page-body">
 
   <!-- ===== 1. 개요 ===== -->
   <section class="page is-active" data-page="overview">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Overview</div><h1 class="page-title">인계 현황</h1><p class="page-desc">다음 세션으로 이어질 기억이 어디에 저장되어 있고, 서버에 무엇이 남아 있는지 한눈에 봅니다.</p></div><div class="page-actions"><button class="btn" data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Overview</div><h1 class="page-title">인계 현황</h1><p class="page-desc">다음 세션으로 이어질 기억이 어디에 저장되어 있고, 서버에 무엇이 남아 있는지 한눈에 봅니다.</p></div><div class="page-actions"><button class="btn" data-toast="새로 읽었습니다. (시안)"><i data-i="refresh"></i>새로 읽기</button></div></div>
     <div class="stack">
       <div class="relay" aria-label="인계 흐름">
         <div class="relay__node"><b>1 · 기록</b><small>플러그인이 각자 저장</small><span class="badge badge--ok">정상</span></div>
-        <div class="relay__node"><b>2 · 서버 보관</b><small>사본 12개 · 3개 정리 후보</small><span class="badge badge--warn">정리 필요</span></div>
+        <div class="relay__node"><b>2 · 서버 보관</b><small>사본 12개 · 정리 후보 2개</small><span class="badge badge--warn">정리 필요</span></div>
         <div class="relay__node"><b>3 · 호환 확인</b><small>다음 세션 읽기 가능 여부</small><span class="badge badge--ok">호환</span></div>
         <div class="relay__node"><b>4 · 인계</b><small>새 세션이 이어 읽음</small><span class="badge badge--info">대기</span></div>
       </div>
 
       <div class="stats">
         <div class="stat"><div class="stat__label">서버 사본</div><div class="stat__value">12</div><div class="stat__meta">활성 1 · 조상 4 · 기타 7</div></div>
-        <div class="stat"><div class="stat__label">정리 후보</div><div class="stat__value">3</div><div class="stat__meta">고아 2 · 확인 불가 1</div></div>
+        <div class="stat"><div class="stat__label">정리 후보</div><div class="stat__value">2</div><div class="stat__meta">고아 후보 2</div></div>
+        <div class="stat"><div class="stat__label">확인 불가</div><div class="stat__value">1</div><div class="stat__meta">삭제 차단 · 자동 정리 안 함</div></div>
         <div class="stat"><div class="stat__label">마지막 백업</div><div class="stat__value" style="font-size:22px">어제</div><div class="stat__meta">21:40 · 41MB</div></div>
-        <div class="stat"><div class="stat__label">디스크 사용</div><div class="stat__value">128<span style="font-size:15px">MB</span></div><div class="stat__meta">한도 2GB</div></div>
       </div>
 
       <div class="card card--tight">
-        <div class="card__head"><div><h2 class="card__title">저장 소유자</h2><p class="card__desc">각 플러그인이 맡은 역할입니다. RE:TRACE는 직접 쓰지 않고 관리만 합니다.</p></div></div>
+        <div class="card__head"><div><h2 class="card__title">저장 소유자</h2><p class="card__desc">각 플러그인이 맡은 역할입니다. RE:TRACE는 직접 쓰지 않고 관리만 합니다. (표본 데이터)</p></div></div>
         <div class="list">
           <div class="owner"><b>LIBRA</b><span class="role">writer</span><small>기억 서가 · 인물 · 세계 · 서사</small></div>
           <div class="owner"><b>HAYAKU</b><span class="role">writer</span><small>연속성 패킷 · 세계선</small></div>
           <div class="owner"><b>Flashback</b><span class="role">writer</span><small>응답 원문 · 임베딩 · 필름</small></div>
-          <div class="owner"><b>GRADIA</b><span class="role">reader</span><small>LIBRA 자료를 읽기 전용으로 사용</small></div>
-          <div class="owner"><b>LIA</b><span class="role">local_only</span><small>페르소나는 이 기기에만 저장</small></div>
+          <div class="owner"><b>GRADIA</b><span class="role">reader</span><small>LIBRA · HAYAKU · Flashback 자료를 읽기 전용으로 사용</small></div>
+          <div class="owner"><b>LIA</b><span class="role">local_only</span><small>페르소나는 LIA 영구 저장 정책상 이 기기에 둡니다 (생성 시 AI 제공자로 전송될 수 있음)</small></div>
           <div class="owner"><b>RE:TRACE <span class="badge" style="margin-left:6px">레거시 보존 슬롯</span></b><span class="role">manager_only</span><small>직접 저장하지 않습니다. 예전 자료만 읽기 전용으로 보관합니다.</small></div>
         </div>
       </div>
-      <div class="banner banner--warn"><span class="banner__icon"><i data-i="alert"></i></span><div><b>정리할 사본 3개가 있습니다.</b><p class="muted" style="margin:2px 0 8px">고아 후보 2개와 확인 불가 1개. 지우기 전에 목록을 먼저 확인하세요.</p><button class="btn btn--sm btn--primary" data-go="server">사본 정리로 이동</button></div></div>
+      <div class="banner banner--warn"><span class="banner__icon"><i data-i="alert"></i></span><div><b>정리 후보 2개, 확인 불가 1개가 있습니다.</b><p class="muted" style="margin:2px 0 8px">확인 불가 사본은 삭제할 수 없습니다. 후보도 지우기 전에 사유와 참조를 먼저 확인하세요.</p><button class="btn btn--sm btn--primary" data-go="server" data-go-sub="clean">사본 정리로 이동</button></div></div>
     </div>
   </section>
 
   <!-- ===== 2. 다음 세션 ===== -->
   <section class="page" data-page="next">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Next session</div><h1 class="page-title">다음 세션 준비</h1><p class="page-desc">새 세션에서 이어 읽으려면 아래 순서대로 확인하세요. 위에서부터 하나씩 통과합니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Next session</div><h1 class="page-title">다음 세션 만들기</h1><p class="page-desc">새 채팅을 만들고, 참여 플러그인의 기억을 같은 transfer로 승계합니다. 원본 세션 데이터는 바꾸지 않습니다.</p></div></div>
     <div class="stack">
-      <div class="steps"><div class="step is-done"><span class="step__no">✓</span><b>저장 확인</b></div><div class="step is-done"><span class="step__no">✓</span><b>호환 확인</b></div><div class="step is-active"><span class="step__no">3</span><b>백업</b></div><div class="step"><span class="step__no">4</span><b>세션 전환</b></div></div>
+      <div class="steps"><div class="step is-done"><span class="step__no">✓</span><b>참여·저장 확인</b></div><div class="step is-done"><span class="step__no">✓</span><b>호환 확인</b></div><div class="step is-active"><span class="step__no">3</span><b>백업(권장)</b></div><div class="step"><span class="step__no">4</span><b>세션 만들기</b></div></div>
       <div class="list">
-        <div class="check-item ok"><span class="dot">✓</span><div><b>LIBRA · HAYAKU · Flashback 저장 완료</b><small>마지막 저장 3분 전</small></div><span class="badge badge--ok">통과</span></div>
-        <div class="check-item ok"><span class="dot">✓</span><div><b>호환성</b><small>현재 버전으로 다음 세션을 읽을 수 있습니다.</small></div><span class="badge badge--ok">통과</span></div>
-        <div class="check-item warn"><span class="dot">!</span><div><b>최신 백업</b><small>마지막 백업 어제 21:40 — 오늘 변경분이 포함되지 않았습니다.</small></div><button class="btn btn--sm btn--primary" data-go="server" data-toast="백업·복원 탭으로 이동">지금 백업</button></div>
-        <div class="check-item"><span class="dot">4</span><div><b>세션 전환</b><small>위 항목이 모두 통과되면 새 세션을 시작해도 안전합니다.</small></div><span class="badge">대기</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>참여 플러그인 탐지</b><small>Flashback · HAYAKU · LIBRA · LIA 응답. 미설치·미응답은 제외됩니다.</small></div><span class="badge badge--ok">통과</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>저장 Gate</b><small>참여 4종의 저장 모드가 서버로 같고, 내구성이 확인되었습니다.</small></div><span class="badge badge--ok">통과</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>호환성</b><small>각 플러그인의 계약 상태에서 승계를 막는 항목이 없습니다.</small></div><span class="badge badge--ok">통과</span></div>
+        <div class="check-item warn"><span class="dot">!</span><div><b>최신 백업 (권장)</b><small>마지막 백업 어제 21:40 — 오늘 변경분이 포함되지 않았습니다.</small></div><button class="btn btn--sm" data-go="server" data-go-sub="backup">백업·복원으로 이동</button></div>
       </div>
-      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">호환성 자세히 보기</summary>
-        <dl class="kv" style="margin-top:10px"><dt>저장 형식</dt><dd>v5 (현재) · v4 읽기 가능</dd><dt>소유자 계약</dt><dd class="mono">owner-ipc v3 · fail-closed</dd><dt>다음 세션 읽기</dt><dd>가능 (경고 0)</dd></dl></details>
+      <div class="card card--accent">
+        <div class="card__head"><div><h2 class="card__title">다음 세션 만들기</h2><p class="card__desc">누르면 전환 가능 여부·호환성·저장 조건을 <b>다시 확인</b>한 뒤, 이동할 수량을 보여주고 승인을 받습니다.</p></div></div>
+        <div class="cluster"><button class="btn btn--primary" data-open="dlg-next"><i data-i="route"></i>다음 세션 만들기</button></div>
+      </div>
+
+      <!-- 마지막 실행 결과 (표본) -->
+      <div class="card" aria-live="polite">
+        <div class="card__head"><div><h2 class="card__title">마지막 실행 결과 <span class="muted" style="font-weight:500;font-size:13px">(표본)</span></h2><p class="card__desc mono">transferId tr-20261012-0042</p></div>
+          <span class="badge badge--warn" data-scenario-show="partial">새 세션 생성됨 · 승계 미완료</span><span class="badge badge--ok" data-scenario-show="ok">승계 완료</span></div>
+        <div class="list">
+          <div class="res"><b>Flashback 기억 승계</b><span class="badge badge--ok">확인 1,248개</span></div>
+          <div class="res"><b>HAYAKU 패킷 승계</b><span class="badge badge--ok">패킷 147 · Recovery Vault 3</span><small>승계 표식을 저장하고 즉시 검증했습니다.</small></div>
+          <div class="res"><b>LIBRA 데이터 승계</b><span class="badge badge--warn" data-scenario-show="partial">영속 검증 실패</span><span class="badge badge--ok" data-scenario-show="ok">확인 412개</span><small data-scenario-show="partial">승계 표식은 저장되었으나 영속 검증을 통과하지 못했습니다.</small></div>
+          <div class="res"><b>LIA Live Persona Fork</b><span class="badge badge--ok">새 채팅 전용 Fork 확인</span></div>
+        </div>
+        <div class="note" data-scenario-show="partial" style="margin-top:12px"><b>새 채팅은 보존되었습니다.</b> 일부 owner의 승계가 아직 미완료입니다. 같은 target/transfer로 다시 확인할 수 있으며 새 채팅을 추가로 만들지 않습니다.</div>
+        <div class="cluster" style="margin-top:12px" data-scenario-show="partial"><button class="btn btn--primary" data-open="dlg-retry">미완료 승계 재검증</button></div>
+        <p class="hint" style="margin-top:10px">원본 세션 데이터는 변경하지 않았습니다.</p>
+      </div>
+
+      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">호환성 자세히 보기 (표본)</summary>
+        <dl class="kv" style="margin-top:10px"><dt>Flashback</dt><dd>계약 확인됨</dd><dt>HAYAKU</dt><dd>계약 확인됨</dd><dt>LIBRA</dt><dd>계약 확인됨</dd><dt>LIA</dt><dd>계약 확인됨 · Live Persona는 새 채팅 전용 Fork로 복사</dd></dl></details>
     </div>
   </section>
 
   <!-- ===== 3. 서버 관리 ===== -->
   <section class="page" data-page="server">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Server data</div><h1 class="page-title">서버 관리</h1><p class="page-desc">서버에 남은 사본을 확인하고, 필요 없는 것만 정리합니다. 백업과 복원도 여기서 합니다.</p></div></div>
-    <div class="tabs" role="tablist" data-subtabs="sv"><button class="tab" role="tab" aria-selected="true" data-subtab="glance">한눈에</button><button class="tab" role="tab" aria-selected="false" data-subtab="clean">사본 정리 <span class="count">3</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="backup">백업 · 복원</button><button class="tab" role="tab" aria-selected="false" data-subtab="hist">이력</button></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Server data</div><h1 class="page-title">서버 관리</h1><p class="page-desc">서버에 남은 사본을 확인하고, 조건을 통과한 것만 정리합니다. 백업·복원·초기화도 여기서 합니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="sv"><button class="tab" role="tab" aria-selected="true" data-subtab="glance">한눈에</button><button class="tab" role="tab" aria-selected="false" data-subtab="clean">서버 데이터 <span class="count">3</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="backup">백업 · 복원</button><button class="tab" role="tab" aria-selected="false" data-subtab="conn">연결 진단</button><button class="tab" role="tab" aria-selected="false" data-subtab="hist">작업 이력</button></div>
     <div class="stack">
+
       <!-- 한눈에 -->
       <div data-subpanel="glance" data-group="sv" class="is-active"><div class="stack">
         <div class="stats">
-          <div class="stat"><div class="stat__label">활성</div><div class="stat__value">1</div><div class="stat__meta">지금 쓰는 채팅</div></div>
-          <div class="stat"><div class="stat__label">승계 조상</div><div class="stat__value">4</div><div class="stat__meta">이어받은 이전 채팅</div></div>
-          <div class="stat"><div class="stat__label">고아 후보</div><div class="stat__value">2</div><div class="stat__meta">연결된 채팅 없음</div></div>
-          <div class="stat"><div class="stat__label">확인 불가</div><div class="stat__value">1</div><div class="stat__meta">읽을 수 없음</div></div>
+          <div class="stat"><div class="stat__label">활성 스코프</div><div class="stat__value">1</div><div class="stat__meta">지금 쓰는 채팅</div></div>
+          <div class="stat"><div class="stat__label">승계 조상</div><div class="stat__value">4</div><div class="stat__meta">참조 중이면 삭제 차단</div></div>
+          <div class="stat"><div class="stat__label">고아 메모리 후보</div><div class="stat__value">2</div><div class="stat__meta">조건 충족 시 정리 가능</div></div>
+          <div class="stat"><div class="stat__label">확인 불가</div><div class="stat__value">1</div><div class="stat__meta">삭제 차단</div></div>
         </div>
-        <p class="lead" style="font-size:13px;color:var(--text2);margin:0">‘정리’는 고아 후보와 확인 불가 사본만 대상으로 합니다. 활성·승계 조상은 지울 수 없습니다.</p>
-        <button class="btn btn--primary" data-subtab-go="clean" style="justify-self:start">사본 정리로 가기</button>
+        <div class="card card--tight"><div class="card__head"><div><h2 class="card__title">플러그인별 저장 상태</h2><p class="card__desc">마지막 접촉은 현재 접속 여부를 뜻하지 않습니다. (표본)</p></div></div>
+          <div class="list"><div class="owner"><b>LIBRA</b><span class="role">서버</span><small>마지막 접촉 3분 전</small></div><div class="owner"><b>HAYAKU</b><span class="role">서버</span><small>마지막 접촉 3분 전</small></div><div class="owner"><b>Flashback</b><span class="role">서버</span><small>마지막 접촉 5분 전</small></div><div class="owner"><b>LIA</b><span class="role">로컬 전용</span><small>서버 사본은 metadata만</small></div></div></div>
+        <div class="cluster"><button class="btn btn--primary" data-go="server" data-go-sub="clean">서버 데이터 확인</button><button class="btn" data-go="server" data-go-sub="backup">백업·복원</button></div>
       </div></div>
 
-      <!-- 사본 정리 -->
+      <!-- 서버 데이터 (사본 정리) -->
       <div data-subpanel="clean" data-group="sv"><div class="stack">
-        <div class="kinds" role="group" aria-label="종류 필터"><button class="kind" aria-pressed="true">전체 <span class="n">12</span></button><button class="kind" aria-pressed="false">활성 <span class="n">1</span></button><button class="kind" aria-pressed="false">승계 조상 <span class="n">4</span></button><button class="kind" aria-pressed="false">고아 후보 <span class="n">2</span></button><button class="kind" aria-pressed="false">확인 불가 <span class="n">1</span></button><button class="kind" aria-pressed="false">복구 페어링 <span class="n">4</span></button></div>
-        <div class="stack stack--sm">
-          <div class="scope-card k-active"><div><b>아스텔 / 에피소드 42</b><small>활성 · 마지막 저장 3분 전 · 기억 1,248개</small></div><span class="badge badge--ok">활성 · 삭제 불가</span></div>
-          <div class="scope-card k-ancestor"><div><b>아스텔 / 에피소드 41</b><small>승계 조상 · 에피소드 42가 이어받음</small></div><span class="badge badge--info">조상 · 삭제 불가</span></div>
-          <div class="scope-card k-orphan"><div><b>아스텔 / 에피소드 40</b><small>고아 후보 · 연결된 채팅 없음 · 2주 전 · 402개</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
-          <div class="scope-card k-orphan"><div><b>시험용 채팅</b><small>고아 후보 · 연결된 채팅 없음 · 한 달 전 · 18개</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
-          <div class="scope-card k-unknown"><div><b>알 수 없는 사본 (7f3a…)</b><small>확인 불가 · 형식을 읽을 수 없습니다. 삭제 증명이 필요합니다.</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
-          <div class="scope-card k-pair"><div><b>복구 페어링 4쌍</b><small>복사된 채팅과 원본의 연결 기록. 복구에만 사용되며 정리 대상이 아닙니다.</small></div><button class="btn btn--sm" data-toast="페어링 목록 (시안)">보기</button></div>
-        </div>
-        <p class="hint">삭제 전에 서버가 대상을 다시 확인합니다(삭제 증명). 다른 사본이 참조 중이면 삭제가 차단됩니다.</p>
+        <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div>채팅이 보이지 않아도 자동 삭제하지 않습니다. 활성 스코프는 owner 플러그인이 서버 데이터를 로컬에 복원하고 <strong>플러그인 단독 모드 전환을 증명</strong>한 뒤에만 삭제됩니다. 승계 조상과 확인 불가 데이터는 보호됩니다.</div></div>
+        <div class="kinds" role="group" aria-label="종류 필터"><button class="kind" aria-pressed="true">전체 <span class="n">12</span></button><button class="kind" aria-pressed="false">활성 스코프 <span class="n">1</span></button><button class="kind" aria-pressed="false">승계 조상 <span class="n">4</span></button><button class="kind" aria-pressed="false">고아 메모리 후보 <span class="n">2</span></button><button class="kind" aria-pressed="false">확인 불가 <span class="n">1</span></button><button class="kind" aria-pressed="false">복구 페어링 <span class="n">4</span></button></div>
+        <div class="toolbar"><div><b>다중 작업</b> <span>삭제 가능 <b id="elig-n">3</b>개 · 선택 <b id="sel-n">0</b>개</span></div><div class="cluster"><button class="btn btn--sm" id="btn-sel-all">삭제 가능 전체 선택</button><button class="btn btn--sm btn--danger" id="btn-sel-del" disabled data-open="dlg-del" data-ctx='{"name":"선택한 서버 사본","meta":"여러 개를 한 번에 처리합니다","srv":"선택한 스코프의 서버 사본","loc":"각 스코프의 로컬 원본은 보존","cnt":"선택"}'>선택 삭제…</button></div></div>
+        <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·스코프로 찾기" aria-label="서버 사본 검색"></div>
+
+        <div class="group-head"><h3>활성 스코프</h3><p>현재 사용 중</p></div>
+        <div class="scope-card k-active"><input type="checkbox" class="sel" data-elig="1" aria-label="아스텔 / 에피소드 42 선택"><div><b>아스텔 / 에피소드 42 <span class="badge badge--ok">LIBRA · HAYAKU · Flashback</span></b><small>마지막 저장 3분 전 · 기억 1,248개</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button><button class="btn btn--sm" data-toast="보존 상태로 고정했습니다. (시안)">보존 고정</button><button class="btn btn--sm btn--danger" data-open="dlg-del" data-ctx='{"name":"아스텔 / 에피소드 42","meta":"활성 스코프 · 지금 쓰는 채팅","srv":"이 스코프의 서버 사본 전체","loc":"삭제 전에 owner가 서버 데이터를 로컬에 복원하고 플러그인 단독 모드 전환을 증명해야 합니다. 증명 실패 시 삭제하지 않습니다.","cnt":"1개"}'>삭제…</button></div>
+          <div class="scope-ready">로컬 보존·모드 전환 증명 후 삭제할 수 있습니다. 확인 한 번으로 보존 확인 → 참조 검사 → 백업 → 삭제를 자동 진행합니다.</div></div>
+
+        <div class="group-head"><h3>승계 조상</h3><p>다른 스코프가 이어받음</p></div>
+        <div class="scope-card k-ancestor"><input type="checkbox" class="sel" disabled aria-label="아스텔 / 에피소드 41 선택 불가"><div><b>아스텔 / 에피소드 41</b><small>에피소드 42가 이어받은 이전 채팅</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세: 다른 스코프 1개가 참조 중 (시안)">참조 상세</button></div>
+          <div class="scope-block">삭제 차단 · 다른 스코프 1개가 참조 중입니다.</div></div>
+
+        <div class="group-head"><h3>고아 메모리 후보</h3><p>연결된 채팅 없음</p></div>
+        <div class="scope-card k-orphan"><input type="checkbox" class="sel" data-elig="1" aria-label="아스텔 / 에피소드 40 선택"><div><b>아스텔 / 에피소드 40</b><small>마지막 저장 2주 전 · 402개</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세: 참조 없음 (시안)">참조 상세</button><button class="btn btn--sm" data-toast="복구 페어링 검증을 시작합니다. (시안)">복구 페어링</button><button class="btn btn--sm btn--danger" data-open="dlg-del" data-ctx='{"name":"아스텔 / 에피소드 40","meta":"고아 메모리 후보 · 마지막 저장 2주 전 · 402개","srv":"이 스코프의 서버 사본(저장 원문·벡터·아카이브) 402개","loc":"로컬 원본은 그대로 보존. 필요하면 플러그인 단독 모드로 전환","cnt":"1개"}'>삭제…</button></div></div>
+        <div class="scope-card k-orphan"><input type="checkbox" class="sel" disabled aria-label="LIA 시험 항목 선택 불가"><div><b>시험용 채팅 <span class="badge">LIA metadata-only</span></b><small>마지막 저장 한 달 전 · 18개</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button></div>
+          <div class="scope-wait">LIA metadata-only 후보입니다. 안전한 정리를 위해 동일 상태를 한 번 더 확인해야 합니다. (1/2)</div></div>
+        <div class="scope-card k-orphan"><input type="checkbox" class="sel" data-elig="1" aria-label="바닷가 마을 선택"><div><b>바닷가 마을 <span class="badge badge--warn">보존 고정</span></b><small>마지막 저장 3일 전 · 96개</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="보존 고정을 해제했습니다. (시안)">보존 해제</button></div>
+          <div class="scope-block">삭제 차단 · 사용자가 보존 상태로 고정한 스코프입니다.</div></div>
+
+        <div class="group-head"><h3>확인 불가</h3><p>자동 정리 대상 아님</p></div>
+        <div class="scope-card k-unknown"><input type="checkbox" class="sel" disabled aria-label="알 수 없는 사본 선택 불가"><div><b>알 수 없는 사본 (7f3a…)</b><small>형식 또는 채팅 연결을 읽을 수 없습니다.</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button></div>
+          <div class="scope-block">삭제 차단 · RisuAI 채팅 존재 여부를 안전하게 확정할 수 없습니다.</div></div>
+
+        <div class="group-head"><h3>복구 페어링</h3><p>복사된 채팅 복구용 연결</p></div>
+        <div class="scope-card k-pair"><input type="checkbox" class="sel" disabled aria-label="복구 페어링 선택 불가"><div><b>복구 페어링 4쌍</b><small>현재 채팅 목록·캐릭터·ID·본문 지문을 검증한 뒤 연결합니다. 해당 플러그인이 로컬 복원과 모드 전환을 수행하며 <b>원본 서버 레코드는 보존</b>됩니다.</small></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="페어링 목록 (시안)">목록 보기</button><button class="btn btn--sm" data-toast="페어링을 해제했습니다. 다시 검사하세요. (시안)">페어링 해제</button></div>
+          <div class="scope-block">삭제 차단 · 복구 페어링된 스코프입니다. 페어링을 해제한 뒤 다시 검사하세요.</div></div>
+
+        <p class="hint">다른 사본이 참조 중이거나 내용·참조·Owner 정본이 불완전하면 자동 삭제하지 않습니다. 상세 사유는 각 카드에 표시됩니다.</p>
+        <div class="cluster"><button class="btn" data-go="server" data-go-sub="hist">이전 작업 결과 확인·실패 항목 재시도</button></div>
       </div></div>
 
       <!-- 백업·복원 -->
       <div data-subpanel="backup" data-group="sv"><div class="stack">
-        <div class="card"><div class="card__head"><div><h2 class="card__title">백업</h2><p class="card__desc">현재 서버 데이터 전체를 하나의 파일로 저장합니다.</p></div><span class="badge">마지막 어제 21:40</span></div>
-          <div class="cluster"><button class="btn btn--primary" data-run-job="job-clean"><i data-i="download"></i>지금 백업</button><button class="btn" data-toast="백업 목록 (시안)">백업 목록</button></div></div>
-        <div class="card"><div class="card__head"><div><h2 class="card__title">복원</h2><p class="card__desc">백업 파일을 선택하면 먼저 어떻게 달라지는지 보여드립니다.</p></div></div>
-          <div class="cluster"><button class="btn" data-toast="파일을 선택하세요 (시안)"><i data-i="upload"></i>백업 파일 선택</button></div></div>
-        <div class="danger-zone"><div class="danger-zone__head">위험 구역</div>
-          <div class="setting"><div><div class="setting__name">서버 데이터 전체 초기화</div><div class="setting__desc">모든 사본과 설정을 지웁니다. 먼저 자동으로 백업이 만들어집니다.</div></div><button class="btn btn--danger" data-open="dlg-reset">초기화…</button></div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">서버 데이터 안전 이관 · 백업</h2><p class="card__desc"><b>권장:</b> 논리 데이터를 이관 ZIP으로 내보내면 새 서버가 현재 스키마의 빈 DB를 다시 만듭니다. 기존 DB 스냅샷은 물리 복구 호환용입니다.</p></div><span class="badge">마지막 어제 21:40</span></div>
+          <div class="stack stack--sm">
+            <div class="field"><label>내보내기 형식</label><select class="select" data-no-track><option>안전 이관 ZIP (논리 데이터 · 권장)</option><option>기존 DB 스냅샷 ZIP (물리 복구 호환용)</option></select></div>
+            <div class="cluster"><button class="btn btn--primary" data-run-job="job-backup"><i data-i="download"></i>백업 만들기</button><button class="btn" data-toast="내보내기 ZIP을 만들었습니다. (시안)">이관 ZIP 내보내기</button></div>
+          </div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">복원</h2><p class="card__desc">저장된 백업을 고른 뒤 <b>검사 → 미리보기 → 확인</b> 순서로 진행합니다. 선택한 플러그인의 서버 자료만 백업 시점으로 되돌립니다.</p></div></div>
+          <div class="stack stack--sm">
+            <div class="field"><label>저장된 백업</label><select class="select" data-no-track><option>bk-20261011-2140 · 어제 21:40 · 41MB</option><option>bk-20261009-1015 · 3일 전 · 39MB</option></select></div>
+            <fieldset class="field" style="border:0;padding:0;margin:0"><legend class="label" style="font-weight:650;font-size:12.5px">복원할 플러그인</legend>
+              <div class="kinds"><label class="check"><input type="checkbox" data-no-track checked>LIBRA</label><label class="check"><input type="checkbox" data-no-track checked>HAYAKU</label><label class="check"><input type="checkbox" data-no-track>Flashback</label><label class="check"><input type="checkbox" data-no-track>LIA</label><label class="check"><input type="checkbox" data-no-track>RE:TRACE</label></div></fieldset>
+            <div class="note"><b>복원 범위에 포함되지 않는 것</b><div class="excluded" style="margin-top:6px"><span class="stat-chip">RisuAI 원본 채팅</span><span class="stat-chip">plugin_only(로컬 전용) 자료</span><span class="stat-chip">API 키</span><span class="stat-chip">과거 실행 lease</span></div></div>
+            <div class="cluster"><button class="btn" data-toast="백업 파일을 검사하고 변경 내용을 미리 보여줍니다. (시안)">복원 미리보기</button><button class="btn btn--danger" data-open="dlg-restore">복원 실행…</button></div>
+            <p class="hint">복원이 끝나면 선택한 플러그인마다 <b>서버 연결 설정</b>에서 재연결 방식(서버 자료 사용 · 로컬 업로드 안 함)을 고르고 RisuAI를 새로고침해야 합니다.</p>
+          </div></div>
+        <div class="danger-zone"><div class="danger-zone__head">위험 구역 · 서버 기억 초기화</div>
+          <div class="body">
+            <p class="muted" style="margin:0;font-size:13px">선택한 플러그인의 <b>서버 기억을 모두 비웁니다.</b> 로컬 기억과 기존 백업은 보존됩니다. 초기화 후에는 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침해야 합니다.</p>
+            <div class="field"><label>초기화 대상</label><select class="select" id="reset-target" data-no-track><option value="all">전체 5개 플러그인 (flashback · hayaku · libra · lia · retrace)</option><option value="hayaku">HAYAKU</option><option value="libra">LIBRA</option><option value="flashback">Flashback</option><option value="lia">LIA</option><option value="retrace">RE:TRACE</option></select></div>
+            <label class="check"><input type="checkbox" id="reset-nobackup" data-no-track><span>백업 없이 진행 (복구용 새 백업을 만들지 않음) <span class="hint">— 백업이 실패했을 때만 내용을 확인한 뒤 선택하세요.</span></span></label>
+            <div class="cluster"><button class="btn btn--danger" id="btn-reset-open" data-open="dlg-reset" data-ctx='{"target":"전체 5개 플러그인","backup":"초기화 전에 서버 백업을 생성합니다."}'>서버 기억 초기화…</button></div>
+          </div></div>
       </div></div>
 
-      <!-- 이력 -->
-      <div data-subpanel="hist" data-group="sv"><div class="list">
-        <div class="owner"><b>백업 생성</b><span class="role">어제 21:40</span><small>41MB · 사본 12개 포함</small></div>
-        <div class="owner"><b>사본 정리</b><span class="role">3일 전</span><small>‘아스텔 / 에피소드 38’ 삭제 · 증명 확인됨</small></div>
-        <div class="owner"><b>복원</b><span class="role">지난주</span><small>백업 05-12에서 복원 · 안전 백업 먼저 생성</small></div>
-        <div class="owner"><b>호환성 경고 해소</b><span class="role">지난주</span><small>저장 형식 v4 → v5 이행</small></div>
+      <!-- 연결 진단 -->
+      <div data-subpanel="conn" data-group="sv"><div class="stack">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">연결 상태 확인</h2><p class="card__desc">서버 응답과 프로토콜·저장소 연결을 확인한 뒤 관제 API를 조회합니다. 읽기 전용이며 아무것도 바꾸지 않습니다.</p></div></div>
+          <div class="cluster"><button class="btn btn--primary" data-toast="진단을 마쳤습니다. 이상 없음 (시안)"><i data-i="shield"></i>진단 시작</button><button class="btn" data-toast="서버 연결 설정 · 저장 상태 패널을 엽니다. (공용 패널, 시안)">서버 연결 설정 · 저장 상태</button></div></div>
+        <div class="list"><div class="check-item ok"><span class="dot">✓</span><div><b>서버 응답</b><small>응답 42ms (표본)</small></div><span class="badge badge--ok">정상</span></div><div class="check-item ok"><span class="dot">✓</span><div><b>프로토콜 · 저장소 연결</b><small>scope-delete-job.v1 지원 확인 (표본)</small></div><span class="badge badge--ok">정상</span></div></div>
+      </div></div>
+
+      <!-- 작업 이력 -->
+      <div data-subpanel="hist" data-group="sv"><div class="stack">
+        <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div>중단된 작업은 <strong>자동으로 다시 실행하지 않습니다.</strong> 결과를 확인한 뒤 진행하세요.</div></div>
+        <div class="field" style="max-width:260px"><label>작업 결과</label><select class="select" data-no-track><option>전체</option><option>삭제 완료</option><option>결과 확인 보류</option><option>중단 · 재조회 필요</option></select></div>
+        <div class="list">
+          <div class="owner"><b>서버 사본 삭제 · 아스텔 / 에피소드 38</b><span class="badge badge--ok">삭제 완료</span><small>3일 전 · 백업 bk-20261009-1015 · 삭제 증명 확인</small></div>
+          <div class="owner"><b>서버 사본 삭제 · 시험용 채팅</b><span class="badge badge--warn">결과 확인 보류</span><small>어제 · 결과를 확인하지 못했습니다. 다시 조회한 뒤 판단하세요.</small></div>
+          <div class="owner"><b>서버 사본 삭제 · 바닷가 마을 외 2개</b><span class="badge badge--danger">중단 · 재조회 필요</span><small>지난주 · 중단됨 — 완료된 삭제는 유지됩니다.</small></div>
+          <div class="owner"><b>백업 생성</b><span class="badge badge--ok">완료</span><small>어제 21:40 · 41MB</small></div>
+        </div>
+        <div class="cluster"><button class="btn" data-toast="이전 작업 결과를 다시 조회했습니다. (시안)">이전 작업 결과 확인</button><button class="btn" data-toast="실패 항목만 재시도합니다. (시안)">실패 항목 재시도</button></div>
       </div></div>
     </div>
   </section>
 
   <!-- ===== 4. 진단 ===== -->
   <section class="page" data-page="diag">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Diagnostics</div><h1 class="page-title">진단</h1><p class="page-desc">읽기 전용 점검입니다. 아무것도 바꾸지 않습니다.</p></div><div class="page-actions"><button class="btn btn--primary" data-toast="점검을 마쳤습니다. 이상 없음."><i data-i="shield"></i>지금 점검</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Diagnostics</div><h1 class="page-title">진단</h1><p class="page-desc">읽기 전용 점검입니다. 아무것도 바꾸지 않습니다. (표본 결과)</p></div><div class="page-actions"><button class="btn btn--primary" data-toast="점검을 마쳤습니다. (시안)"><i data-i="shield"></i>지금 점검</button></div></div>
     <div class="stack">
       <div class="list">
         <div class="check-item ok"><span class="dot">✓</span><div><b>서버 연결</b><small>응답 42ms</small></div><span class="badge badge--ok">정상</span></div>
-        <div class="check-item ok"><span class="dot">✓</span><div><b>소유자 계약 (owner-ipc)</b><small>LIBRA · HAYAKU · Flashback 응답</small></div><span class="badge badge--ok">정상</span></div>
-        <div class="check-item warn"><span class="dot">!</span><div><b>사본 정리 후보</b><small>3개 — 서버 관리에서 확인</small></div><button class="btn btn--sm" data-go="server">이동</button></div>
-        <div class="check-item ok"><span class="dot">✓</span><div><b>삭제 증명 경로</b><small>fail-closed 동작 확인</small></div><span class="badge badge--ok">정상</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>플러그인 응답(Owner)</b><small>LIBRA · HAYAKU · Flashback · LIA 응답</small></div><span class="badge badge--ok">정상</span></div>
+        <div class="check-item warn"><span class="dot">!</span><div><b>서버 사본</b><small>정리 후보 2개 · 확인 불가 1개 — 서버 관리에서 확인</small></div><button class="btn btn--sm" data-go="server" data-go-sub="clean">이동</button></div>
       </div>
-      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">진단 원문 (고급)</summary><pre class="mono" style="margin:10px 0 0;white-space:pre-wrap">owner-ipc: ok libra=3.1 hayaku=3.0 flashback=1.0.101
+      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">진단 원문 (고급 · 표본)</summary><pre class="mono" style="margin:10px 0 0;white-space:pre-wrap">owners: libra ok · hayaku ok · flashback ok · lia ok
 retrace-slot: legacy manager_only
-scopes: active=1 ancestor=4 orphan=2 unknown=1</pre></details>
+scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
     </div>
   </section>
 
@@ -198,37 +291,102 @@ scopes: active=1 ancestor=4 orphan=2 unknown=1</pre></details>
 
   <nav class="tabbar" aria-label="RE:TRACE 하단 메뉴"></nav>
 
-  <!-- 사본 정리: 삭제 확인(타이핑) -->
+  <!-- 다음 세션 승인 -->
+  <div class="overlay" id="dlg-next" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dn-t">
+    <div class="eyebrow">Next session</div><h2 id="dn-t">다음 세션을 만들까요?</h2>
+    <p class="muted" style="font-size:13px">승인 직전에 전환 가능 여부·호환성·저장 조건을 다시 확인했습니다. (표본)</p>
+    <div class="two"><div><b>참여 플러그인 · 저장 모드</b>Flashback · HAYAKU · LIBRA · LIA<br>서버 · 4종 공통</div><div><b>승계할 수량</b>Flashback 기억 1,248개<br>HAYAKU 패킷 147 · Recovery Vault 3<br>LIBRA 기록 412개</div></div>
+    <div class="note" style="margin-top:10px"><b>LIA Live Persona</b> · 새 채팅 전용 Fork로 복사합니다. 원본은 그대로 둡니다.</div>
+    <p class="hint" style="margin-top:8px">원본 세션 데이터는 변경하지 않습니다. 일부 owner가 실패해도 새 채팅은 보존되며 같은 transfer로 재시도할 수 있습니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-next">승계 시작</button></div></div></div>
+
+  <!-- 미완료 승계 재검증 -->
+  <div class="overlay" id="dlg-retry" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dtr-t">
+    <div class="eyebrow">Retry</div><h2 id="dtr-t">미완료 승계를 재검증할까요?</h2>
+    <p>미완료 다음 세션 handoff를 <b>같은 target/transfer</b>로 다시 검증합니다. 새 채팅은 추가로 만들지 않습니다.</p>
+    <dl class="kv"><dt>transferId</dt><dd class="mono">tr-20261012-0042</dd><dt>저장 모드</dt><dd>서버 · 참여 4종</dd></dl>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="재검증을 마쳤습니다. 승계가 완료되었습니다. (시안)">재검증</button></div></div></div>
+
+  <!-- 사본 삭제 (대상별 내용은 data-ctx 로 채움) -->
   <div class="overlay" id="dlg-del" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dd-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="dd-t">사본 1개(기억 402개)를 정리할까요?</h2>
-    <p><b>아스텔 / 에피소드 40</b> — 고아 후보 · 마지막 저장 2주 전</p>
-    <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 서버가 삭제 전에 대상을 다시 확인하며, 다른 사본이 참조 중이면 차단됩니다.</div>
+    <div class="eyebrow" style="color:var(--danger-ink)">Server copy delete</div><h2 id="dd-t">서버 사본 삭제 (<span data-fill="cnt">1개</span>)</h2>
+    <p><b data-fill="name">아스텔 / 에피소드 40</b><br><span class="muted" data-fill="meta">고아 메모리 후보</span></p>
+    <div class="two"><div><b>서버에서 삭제되는 자료</b><span data-fill="srv">서버 사본</span></div><div><b>로컬에 남는 자료</b><span data-fill="loc">로컬 원본 보존</span></div></div>
+    <div class="note note--danger" style="margin-top:10px"><b>되돌릴 수 없습니다.</b> 로컬 원본을 보존하고 필요하면 플러그인 단독 모드로 전환한 뒤, <b>백업과 검증</b>을 거쳐 자동으로 삭제합니다. 다른 사본이 참조 중이면 차단됩니다.</div>
     <div class="typed field"><label for="t-del">계속하려면 <b>정리</b> 라고 입력하세요</label><input class="input" id="t-del" autocomplete="off" data-typed="정리" data-typed-target="btn-del"></div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-del" disabled data-close data-run-job="job-clean">정리 실행</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-del" disabled data-close data-run-job="job-del">삭제 실행</button></div></div></div>
 
-  <!-- 전체 초기화 -->
+  <!-- 복원 -->
+  <div class="overlay" id="dlg-restore" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="drs-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Restore</div><h2 id="drs-t">선택한 플러그인의 서버 자료를 백업 시점으로 되돌릴까요?</h2>
+    <dl class="kv"><dt>백업</dt><dd class="mono">bk-20261011-2140 · 어제 21:40</dd><dt>복원 대상</dt><dd>LIBRA · HAYAKU</dd></dl>
+    <div class="note note--danger" style="margin-top:10px"><b>선택한 플러그인의 현재 서버 자료가 백업 내용으로 바뀝니다.</b> RisuAI 원본 채팅, plugin_only 자료, API 키는 복원되지 않습니다.</div>
+    <div class="typed field"><label for="t-restore">계속하려면 <b>복원</b> 이라고 입력하세요</label><input class="input" id="t-restore" autocomplete="off" data-typed="복원" data-typed-target="btn-restore"></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-restore" disabled data-close data-run-job="job-restore">복원 실행</button></div></div></div>
+
+  <!-- 서버 기억 초기화 -->
   <div class="overlay" id="dlg-reset" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dr-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Reset all</div><h2 id="dr-t">서버 데이터를 모두 초기화할까요?</h2>
-    <div class="note note--danger"><b>모든 사본과 설정이 지워집니다.</b> 실행 직전에 자동 백업이 만들어지며, 그 백업이 실패하면 초기화는 시작되지 않습니다.</div>
+    <div class="eyebrow" style="color:var(--danger-ink)">Reset server memory</div><h2 id="dr-t">서버 기억 초기화 최종 확인</h2>
+    <dl class="kv"><dt>대상</dt><dd data-fill="target">전체 5개 플러그인</dd><dt>백업</dt><dd data-fill="backup">초기화 전에 서버 백업을 생성합니다.</dd></dl>
+    <div class="note note--danger" style="margin-top:10px"><b>서버 기억을 모두 비웁니다.</b> 로컬 데이터와 기존 백업은 지우지 않습니다. 초기화 후 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하고 RisuAI를 새로고침해야 합니다.</div>
     <div class="typed field"><label for="t-reset">계속하려면 <b>초기화</b> 라고 입력하세요</label><input class="input" id="t-reset" autocomplete="off" data-typed="초기화" data-typed-target="btn-reset"></div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-reset" disabled data-close data-toast="안전 백업을 만든 뒤 초기화했습니다.">초기화 실행</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-reset" disabled data-close data-run-job="job-reset">초기화 실행</button></div></div></div>
 
-  <!-- 작업 진행 -->
-  <div class="overlay" id="job-clean" aria-hidden="true" data-job-labels="대상을 다시 확인하는 중|안전 백업을 만드는 중|서버에서 삭제하는 중|삭제 결과를 검증하는 중|완료했습니다. 목록을 다시 읽었습니다.">
-    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jc-t"><div class="split"><div><div class="eyebrow">Working</div><h2 id="jc-t">작업을 진행하고 있습니다</h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+  <!-- 작업: 다음 세션 -->
+  <div class="overlay" id="job-next" aria-hidden="true" data-job-labels="전환·호환성·저장 조건 다시 확인하는 중|새 채팅을 만드는 중|참여 플러그인 기억을 승계하는 중|승계 결과를 검증하는 중|새 세션을 만들었습니다. 일부 승계는 결과 화면에서 확인하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jn-t"><div class="split"><div><div class="eyebrow">Working</div><h2 id="jn-t">다음 세션을 만들고 있습니다</h2></div><span class="badge badge--info">창을 닫아도 계속됩니다</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
-      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>확인</b></div><div class="step"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>실행</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
-      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중지 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>재확인</b></div><div class="step"><span class="step__no">2</span><b>새 채팅</b></div><div class="step"><span class="step__no">3</span><b>승계</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden data-go="next">결과 보기</button></div></div></div>
+
+  <!-- 작업: 사본 삭제 -->
+  <div class="overlay" id="job-del" aria-hidden="true" data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jd-t"><div class="split"><div><div class="eyebrow">Server copy delete</div><h2 id="jd-t">서버 사본을 삭제하고 있습니다</h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>로컬 보존</b></div><div class="step"><span class="step__no">2</span><b>백업·조건</b></div><div class="step"><span class="step__no">3</span><b>삭제</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
+      <p class="hint" style="margin-top:10px">진행 중 작업을 중단해도 <b>이미 완료된 삭제는 유지</b>됩니다. 결과가 불명확한 항목은 작업 이력에서 다시 확인하세요.</p>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>진행 중 작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden data-go="server" data-go-sub="hist">작업 이력 보기</button></div></div></div>
+
+  <!-- 작업: 백업 -->
+  <div class="overlay" id="job-backup" aria-hidden="true" data-job-labels="서버 상태를 확인하는 중|백업을 만드는 중|백업 파일을 검증하는 중|백업을 만들었습니다. (bk-20261012-표본)">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jb-t"><div class="eyebrow">Backup</div><h2 id="jb-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">서버 백업을 만들고 있습니다</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>상태 확인</b></div><div class="step"><span class="step__no">2</span><b>백업 생성</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div></div>
+      <p class="hint" style="margin-top:10px">백업은 데이터를 삭제하거나 바꾸지 않습니다.</p>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <!-- 작업: 복원 -->
+  <div class="overlay" id="job-restore" aria-hidden="true" data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t"><div class="split"><div><div class="eyebrow">Restore</div><h2 id="jr-t">서버 자료를 복원하고 있습니다</h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>검사</b></div><div class="step"><span class="step__no">2</span><b>복원</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div></div>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <!-- 작업: 초기화 -->
+  <div class="overlay" id="job-reset" aria-hidden="true" data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jx-t"><div class="split"><div><div class="eyebrow">Reset</div><h2 id="jx-t">서버 기억을 초기화하고 있습니다</h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>비우기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>
+      <p class="hint" style="margin-top:10px">백업이 실패하면 초기화는 시작되지 않습니다. 로컬 데이터와 기존 백업은 지우지 않습니다.</p>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
   <div class="toasts" aria-live="polite"></div>
 </div></div></div>
 <script src="assets/suite.js"></script>
 <script>
-/* 확인 문구 입력 시에만 위험 버튼 활성화 */
+/* 확인 문구 입력 시에만 위험 버튼 활성화 (열 때마다 초기화는 suite.js) */
 document.addEventListener('input',function(e){var t=e.target;if(t.dataset&&t.dataset.typed){var b=document.getElementById(t.dataset.typedTarget);if(b)b.disabled=(t.value.trim()!==t.dataset.typed);}});
-/* '사본 정리로 가기' → 같은 페이지의 서브탭 전환 */
-document.addEventListener('click',function(e){var g=e.target.closest('[data-subtab-go]');if(g){var tab=document.querySelector('[data-subtabs="sv"] [data-subtab="'+g.dataset.subtabGo+'"]');if(tab)tab.click();}var k=e.target.closest('.kind');if(k){var grp=k.parentElement;grp.querySelectorAll('.kind').forEach(function(x){x.setAttribute('aria-pressed',String(x===k));});}});
+document.addEventListener('click',function(e){
+  var k=e.target.closest('.kind');if(k){k.parentElement.querySelectorAll('.kind').forEach(function(x){x.setAttribute('aria-pressed',String(x===k));});}
+  if(e.target.closest('#btn-sel-all')){document.querySelectorAll('.sel[data-elig]').forEach(function(c){c.checked=true;});count();}
+});
+document.addEventListener('change',function(e){if(e.target.classList&&e.target.classList.contains('sel'))count();if(e.target.id==='reset-target'||e.target.id==='reset-nobackup')syncReset();});
+function count(){var n=document.querySelectorAll('.sel[data-elig]:checked').length;document.getElementById('sel-n').textContent=n;document.getElementById('btn-sel-del').disabled=n===0;
+  var b=document.getElementById('btn-sel-del');var ctx=JSON.parse(b.getAttribute('data-ctx'));ctx.cnt=n+'개';b.setAttribute('data-ctx',JSON.stringify(ctx));}
+function syncReset(){var sel=document.getElementById('reset-target');var nb=document.getElementById('reset-nobackup').checked;var btn=document.getElementById('btn-reset-open');
+  btn.setAttribute('data-ctx',JSON.stringify({target:sel.options[sel.selectedIndex].text.split(' (')[0],backup:nb?'새 백업 없이 진행합니다.':'초기화 전에 서버 백업을 생성합니다.'}));}
+document.documentElement.dataset.scenario='partial';
 </script>
 </body>
 </html>

@@ -27,43 +27,64 @@
 button.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}
 .pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}
 .pcard__side{display:grid;gap:6px;justify-items:end}
-.traits{display:flex;flex-wrap:wrap;gap:6px}
-.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}
+.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}
 .big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}
 .big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
 .big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}
 .big-choice .row__icon{width:44px;height:44px;border-radius:50%}
+.big-choice .pick{font-size:12px;font-weight:700;color:var(--text3)}
+.big-choice.is-on .pick{color:var(--accent-ink)}
+.mode-panel{display:none}.mode-panel.is-on{display:block}
 .emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center}
+.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center;color:var(--text);width:100%}
+button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 .emo .avatar{width:48px;height:48px;font-size:20px}
 .emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}
+.emo.is-master{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .emo .avatar.todo{background:var(--surface3);color:var(--text3)}
 .base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}
 .base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}
-.lead{font-size:13.5px;color:var(--text2);margin:0}
 .back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}
 .turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}
 .jargon{font-size:12px;color:var(--text3)}
 .confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}
-@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}}
+.fld{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--border)}
+.fld:first-child{border-top:0}
+.fld__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.fld__head label{font-weight:700;font-size:13px}.fld__key{font:11.5px var(--font-mono);color:var(--text3)}
+.fld__act{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.fld__act .check{font-size:12.5px;color:var(--text2)}
+.diff-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}
+.diff-row:first-child{border-top:0}
+.diff-row del{color:var(--danger-ink);background:var(--danger-soft);text-decoration:line-through;padding:0 3px;border-radius:3px}
+.diff-row ins{color:var(--ok-ink);background:var(--ok-soft);text-decoration:none;padding:0 3px;border-radius:3px}
+.chk-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);font-size:12px;font-weight:650;background:var(--surface)}
+.chk-chip.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.chk-chip.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}
+.target-card{display:grid;gap:10px;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)}
+.target-card h3{margin:0;font-size:14.5px}
+.target-card h3 small{font-weight:500;color:var(--text3);margin-left:6px}
+.lock-card dl{margin:0}
+.ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}
+.ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}
+@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body class="t-lia">
 <div class="proto-bar">
   <a href="index.html">← 시안 목록</a><b>LIA · 내 페르소나</b>
   <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
-  <span class="grp"><span>열기</span><button data-open="sheet-bind">연결 시트</button><button data-run-job="job-gen">생성 진행</button><button data-open="sheet-del">삭제 확인</button></span>
+  <span class="grp"><span>열기</span><button data-open="sheet-bind">연결 시트</button><button data-run-job="job-gen">Persona 생성</button><button data-run-job="job-emo">감정 묶음</button><button data-open="sheet-del-vault">보관함 삭제</button></span>
 </div>
 <div class="stage"><div class="frame" data-device="desktop">
 <div class="app">
 
   <header class="topbar">
-    <div class="brand"><div class="brand__mark"><i data-i="user" data-size="lg"></i></div><div><div class="brand__name">LIA</div><div class="brand__ver">v1.4.2 · Persona Linker</div></div></div>
+    <div class="brand"><div class="brand__mark"><i data-i="user" data-size="lg"></i></div><div><div class="brand__name">LIA</div><div class="brand__ver">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>
     <div class="scope"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>
     <div class="grow"></div>
-    <span class="health health--ok" title="이 기기에 저장됩니다"><i></i>이 기기에 저장됨</span>
+    <span class="health health--ok" title="LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다"><i></i>LIA 자료 local_only</span>
     <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
-      <div class="menu__panel"><button data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button><button data-go="recover"><i data-i="db"></i>이전 자료 복구</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
+      <div class="menu__panel"><button data-toast="새로 읽었습니다. (시안)"><i data-i="refresh"></i>새로 읽기</button><button data-go="recover"><i data-i="db"></i>이전 자료 복구</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
   </header>
 
   <nav class="sidebar" aria-label="LIA 메뉴">
@@ -71,152 +92,285 @@ button.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}
     <button class="nav-item" data-go="make" data-short="만들기"><i data-i="spark"></i><span class="nav-text">만들기</span></button>
     <button class="nav-item" data-go="shelf" data-short="보관함"><i data-i="shelf"></i><span class="nav-text">보관함</span><span class="count">6</span></button>
     <button class="nav-item" data-go="settings" data-short="설정"><i data-i="sliders"></i><span class="nav-text">설정</span></button>
-    <div class="side-foot"><b>용어 도움말</b><span>‘연결’ = 이 채팅에서 쓸 페르소나를 고르는 일</span></div>
+    <div class="side-foot"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>
   </nav>
 
   <main class="main"><div class="page-body">
 
   <!-- ===== 1. 내 페르소나 ===== -->
   <section class="page is-active" data-page="mine">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Now</div><h1 class="page-title">내 페르소나</h1><p class="page-desc">이 채팅에서 지금 쓰는 페르소나와, 연결 상태를 한 곳에서 봅니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Now</div><h1 class="page-title">내 페르소나</h1><p class="page-desc">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>
     <div class="stack">
       <div class="pocket">
         <div class="avatar">세</div>
-        <div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">세라 하운</h2><p>왕실 기록실 사서 · 신중하고 약속을 가볍게 여기지 않음</p></div>
-        <div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit"><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button></div>
+        <div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">세라 하운</h2><p>원본: RisuAI Persona ‘세라 하운’ · Live: 이 채팅 소유 복사본</p></div>
+        <div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit"><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button></div>
       </div>
 
       <div class="card card--tight">
-        <div class="card__head"><div><h2 class="card__title">다음 갱신까지</h2><p class="card__desc">자동으로 바뀌지 않습니다. 5턴이 쌓이면 <b>직접 눌러서</b> 반영합니다.</p></div><span class="badge badge--warn">3 / 5턴</span></div>
-        <div class="turns" aria-label="3 / 5턴"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
-        <p class="hint" style="margin-top:8px">마지막 갱신: 어제 21:40 · 성격 1줄, 현재 위치 변경</p>
+        <div class="card__head"><div><h2 class="card__title">다음 갱신 범위</h2><p class="card__desc">자동으로 바뀌지 않습니다. 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 직접 눌러서 한 번에 분석·반영합니다.</p></div><span class="badge badge--warn">3 / 5쌍</span></div>
+        <div class="turns" aria-label="3 / 5쌍"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <p class="hint" style="margin-top:8px">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>
       </div>
 
+      <div class="note"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>
+
       <div>
-        <div class="section-title"><h2>이 캐릭터에 연결된 페르소나</h2></div>
+        <div class="section-title"><h2>선택할 수 있는 Persona</h2></div>
         <div class="stack stack--sm">
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm">세</div><div><b>세라 하운</b><small>이 채팅 · 마지막 사용 방금</small></div><div class="pcard__side"><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></div></button>
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 (여름 이야기)</b><small>다른 채팅 ‘바닷가 마을’에 연결</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="link" data-size="sm"></i>다른 채팅</span></div></button>
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손</b><small>아직 어느 채팅에도 연결되지 않음</small></div><div class="pcard__side"><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></div></button>
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm">세</div><div><b>세라 하운 <span class="muted" style="font-weight:500">원본</span></b><small>이 채팅에 연결 · 방금 갱신</small></div><div class="pcard__side"><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></div></button>
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live <span class="muted" style="font-weight:500">Live Persona</span></b><small>‘바닷가 마을’ 채팅이 관리 중</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="lock" data-size="sm"></i>다른 채팅 관리 · 직접 연결 불가</span></div></button>
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손 <span class="muted" style="font-weight:500">원본</span></b><small>어느 채팅에도 연결되지 않음</small></div><div class="pcard__side"><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></div></button>
         </div>
-        <div class="legend" style="margin-top:10px"><span>✓ 이 채팅에 연결됨</span><span>↔ 다른 채팅에 연결됨</span><span>＋ 연결 안 됨</span></div>
+        <div class="legend" style="margin-top:10px"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>
       </div>
     </div>
   </section>
 
   <!-- ===== 2. 만들기 ===== -->
   <section class="page" data-page="make">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Create</div><h1 class="page-title">새 페르소나 만들기</h1><p class="page-desc">어디서 시작할지만 고르면, 나머지는 단계별로 안내합니다.</p></div></div>
-    <div class="steps" style="margin-bottom:18px"><div class="step is-active"><span class="step__no">1</span><b>출발점</b></div><div class="step"><span class="step__no">2</span><b>방향</b></div><div class="step"><span class="step__no">3</span><b>만들기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>
-    <div class="stack">
-      <div class="stack stack--sm" data-single>
-        <button class="big-choice is-on" data-select-row="chat"><span class="row__icon"><i data-i="chat"></i></span><div><b>지금 채팅에서 만들기</b><span>최근 대화를 읽어 말투·관계·현재 상황을 정리합니다. (추천)</span></div></button>
-        <button class="big-choice" data-select-row="char"><span class="row__icon"><i data-i="book"></i></span><div><b>캐릭터 설명에서 만들기</b><span>캐릭터 카드의 설명만 바탕으로 처음 상태를 만듭니다.</span></div></button>
-        <button class="big-choice" data-select-row="free"><span class="row__icon"><i data-i="pen"></i></span><div><b>직접 쓰기</b><span>AI 없이 빈 양식에서 시작합니다.</span></div></button>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Create</div><h1 class="page-title">Persona 만들기</h1><p class="page-desc">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>
+    <div class="stack" data-detail-root>
+      <div class="stack stack--sm" role="group" aria-label="생성 모드">
+        <button class="big-choice is-on" data-select-row="classic"><span class="row__icon"><i data-i="user"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class="pick">선택</span></button>
+        <button class="big-choice" data-select-row="random"><span class="row__icon"><i data-i="spark"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class="pick">선택</span></button>
+        <button class="big-choice" data-select-row="character"><span class="row__icon"><i data-i="users"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class="pick">선택</span></button>
+        <button class="big-choice" data-select-row="conversation"><span class="row__icon"><i data-i="chat"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class="pick">선택</span></button>
       </div>
-      <div class="field"><label>하고 싶은 방향 (선택)</label><textarea class="textarea" rows="3" placeholder="예) 조금 더 차분하고 말수가 적은 사람으로"></textarea><span class="hint">비워 두면 대화에서 드러난 모습 그대로 정리합니다.</span></div>
-      <div class="note"><b>AI 요청이 1번 사용됩니다.</b> 약 10~20초. 결과는 저장 전에 먼저 보여드립니다.</div>
-      <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen"><i data-i="spark"></i>만들기 시작</button><button class="btn" data-go="mine">취소</button></div>
+
+      <div class="card">
+        <div class="mode-panel is-on" data-detail="classic"><div class="stack stack--sm">
+          <div class="field"><label>Source Persona</label><select class="select" data-no-track><option>세라 하운 (RisuAI Persona)</option><option>이름 없는 길손</option></select><span class="hint">성격·외모·배경의 출발점이 되는 기존 페르소나입니다.</span></div>
+          <p class="muted" style="margin:0;font-size:13px">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>
+          <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen"><i data-i="spark"></i>Persona 만들기</button></div></div></div>
+        <div class="mode-panel" data-detail="random"><div class="stack stack--sm">
+          <p class="muted" style="margin:0;font-size:13px">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>
+          <div class="field"><label>컨셉 (선택)</label><textarea class="textarea" rows="2" data-no-track placeholder="예) 북쪽 항구 도시의 약재상 견습생"></textarea></div>
+          <div class="note"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>
+          <div class="cluster"><button class="btn btn--primary" data-run-job="job-cand"><i data-i="spark"></i>후보 3개 만들기</button></div></div></div>
+        <div class="mode-panel" data-detail="character"><div class="stack stack--sm">
+          <p class="muted" style="margin:0;font-size:13px">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>
+          <div class="cluster"><button class="btn btn--primary" data-run-job="job-cand"><i data-i="users"></i>등장인물 후보 찾기</button></div></div></div>
+        <div class="mode-panel" data-detail="conversation"><div class="stack stack--sm">
+          <div class="kv-line"><dl class="kv"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>
+          <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen"><i data-i="chat"></i>대화에서 추출</button></div></div></div>
+      </div>
+
+      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">사용할 자료 · 세계관 분석 (고급)</summary>
+        <div class="stack stack--sm" style="margin-top:12px">
+          <dl class="kv"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>
+          <div class="field"><label>자료 항목별 최대 문자 수</label><input class="input" type="number" min="240" max="3000" step="1" value="1200" data-no-track><span class="hint">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>
+          <label class="check"><input type="checkbox" data-no-track checked><span>상세 프로필 사용 <span class="hint">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>
+          <div class="cluster"><button class="btn btn--sm" data-toast="세계관을 분석합니다. (시안)">세계관 분석</button><button class="btn btn--sm" data-toast="세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)">재분석</button><button class="btn btn--sm" data-open="sheet-evidence">근거 검토</button></div>
+        </div></details>
+
+      <div class="note"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>
     </div>
   </section>
 
   <!-- ===== 3. 보관함 ===== -->
   <section class="page" data-page="shelf">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Shelf</div><h1 class="page-title">보관함</h1><p class="page-desc">만들어 둔 페르소나 6개. 눌러서 연결하거나 편집합니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Vault</div><h1 class="page-title">보관함</h1><p class="page-desc">생성 직후 자동 보관된 결과입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>
     <div class="stack">
-      <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·특징으로 찾기"></div>
+      <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·특징으로 찾기" aria-label="보관함 검색"></div>
       <div class="list">
-        <button class="row" data-go="edit"><div class="avatar avatar--sm">세</div><div><div class="row__title">세라 하운</div><div class="row__meta">수정 방금 · 감정 6/8</div></div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></button>
-        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--b">세</div><div><div class="row__title">세라 (여름 이야기)</div><div class="row__meta">수정 3일 전 · 감정 8/8</div></div><span class="bind bind--other"><i data-i="link" data-size="sm"></i>다른 채팅</span></button>
-        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--c">카</div><div><div class="row__title">카엘 로웬</div><div class="row__meta">수정 지난주 · 이미지 없음</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
-        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--d">리</div><div><div class="row__title">리오넬</div><div class="row__meta">수정 2주 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
-        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--n">?</div><div><div class="row__title">이름 없는 길손</div><div class="row__meta">수정 한 달 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
-        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--b">미</div><div><div class="row__title">미라</div><div class="row__meta">수정 한 달 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm">세</div><div><div class="row__title">세라 하운 <span class="badge badge--ok">채택됨</span></div><div class="row__meta">클래식 · v3 · 수정 방금</div></div><i class="ic faint" data-i="arrow"></i></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--c">카</div><div><div class="row__title">카엘 로웬 <span class="badge badge--warn">초안</span></div><div class="row__meta">랜덤 신규 · v1 · 아직 채택 전</div></div><i class="ic faint" data-i="arrow"></i></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--d">리</div><div><div class="row__title">리오넬 <span class="badge badge--warn">초안</span></div><div class="row__meta">등장인물 추출 · v1</div></div><i class="ic faint" data-i="arrow"></i></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--n">?</div><div><div class="row__title">이름 없는 길손</div><div class="row__meta">대화에서 추출 · v2</div></div><i class="ic faint" data-i="arrow"></i></button>
       </div>
-      <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class="muted" style="margin:2px 0 8px">이전 서버에 남은 페르소나를 이 기기로 가져올 수 있습니다.</p><button class="btn btn--sm" data-go="recover">이전 자료 복구</button></div></div>
+      <div class="note"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>
+      <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class="muted" style="margin:2px 0 8px">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class="btn btn--sm" data-go="recover">이전 자료 복구</button></div></div>
     </div>
   </section>
 
   <!-- ===== 4. 설정 ===== -->
   <section class="page" data-page="settings" data-track>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">바꾸는 즉시 적용되지 않고, 아래 저장 막대에서 한 번에 저장합니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>
     <div class="stack">
-      <div class="card"><div class="card__head"><div><h2 class="card__title">AI 연결</h2><p class="card__desc">페르소나를 만들고 갱신할 때 쓸 모델입니다.</p></div><span class="badge badge--ok">연결됨</span></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">텍스트 AI</h2><p class="card__desc">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class="badge badge--ok">연결됨 (표본)</span></div>
         <div class="stack stack--sm">
-          <div class="field"><label>모델</label><select class="select" data-dirty><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select></div>
-          <div class="field"><label>이미지 모델 (선택)</label><select class="select" data-dirty><option>사용 안 함</option><option>stable-diffusion-xl</option></select><span class="hint">끄면 이미지·감정 만들기 메뉴가 숨겨집니다.</span></div>
+          <div class="field"><label>제공자</label><select class="select"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>
+          <div class="field"><label>Endpoint URL</label><input class="input" value="https://api.example.com/v1"></div>
+          <div class="field"><label>모델</label><input class="input" value="model-name"></div>
+          <div class="field"><label>API 키</label><input class="input" type="password" value="" placeholder="저장된 키가 있습니다"></div>
+          <div class="cluster"><button class="btn btn--sm" data-toast="연결 테스트 성공 (시안)">연결 테스트</button></div>
+          <details><summary style="cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center">고급 옵션</summary><p class="hint">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>
         </div></div>
-      <div class="card"><div class="card__head"><div><h2 class="card__title">갱신 방식</h2><p class="card__desc">대화가 쌓였을 때 페르소나를 어떻게 최신으로 유지할지 정합니다.</p></div></div>
-        <div class="setting"><div><div class="setting__name">알림 띄우기</div><div class="setting__desc">몇 턴마다 ‘갱신할 때가 됐어요’ 알려드립니다. 자동으로 바꾸지는 않습니다.</div></div><label class="switch"><input type="checkbox" checked data-dirty><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-        <div class="setting"><div><div class="setting__name">알림 간격</div><div class="setting__desc">현재 5턴</div></div><div class="range" style="min-width:160px"><input type="range" min="3" max="15" value="5" data-dirty><div class="range__row"><span>3</span><span>15</span></div></div></div>
-        <div class="setting"><div><div class="setting__name">갱신 전에 미리 보기</div><div class="setting__desc">바뀔 내용을 먼저 보고 직접 승인합니다.</div></div><label class="switch"><input type="checkbox" checked data-dirty><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-      </div>
-      <div class="card"><div class="card__head"><div><h2 class="card__title">저장 위치</h2><p class="card__desc">페르소나는 이 기기에만 저장됩니다. 서버로 보내지 않습니다.</p></div><span class="badge">이 기기 전용</span></div>
-        <div class="cluster"><button class="btn" data-toast="백업 파일을 내보냈습니다."><i data-i="download"></i>백업 내보내기</button><button class="btn" data-toast="파일을 선택하세요 (시안)"><i data-i="upload"></i>가져오기</button><button class="btn" data-go="recover"><i data-i="db"></i>이전 자료 복구</button></div></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">이미지 AI</h2><p class="card__desc">끄면 이미지·감정 메뉴가 숨겨집니다.</p></div></div>
+        <div class="stack stack--sm">
+          <div class="field"><label>이미지 제공자</label><select class="select"><option>사용 안 함</option><option>워크플로 기반</option></select></div>
+          <div class="field"><label>Endpoint URL</label><input class="input" value="" placeholder="https://"></div>
+          <div class="cluster"><button class="btn btn--sm" data-toast="워크플로를 검사했습니다. (시안)">워크플로 검사</button><button class="btn btn--sm" data-toast="이미지 연결 테스트 (시안)">연결 테스트</button></div>
+        </div></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">저장 위치와 전송</h2><p class="card__desc">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>
+        <dl class="kv"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>
+        <div class="setting" style="margin-top:12px"><div><div class="setting__name">진단</div><div class="setting__desc">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class="btn btn--sm" data-toast="진단을 마쳤습니다. (읽기 전용, 시안)">진단 실행</button></div>
+        <div class="cluster" style="margin-top:12px"><button class="btn" data-toast="에셋 ZIP을 내보냈습니다. (시안)"><i data-i="download"></i>에셋 ZIP 내보내기</button><button class="btn" data-toast="ZIP 파일을 선택하세요 (시안)"><i data-i="upload"></i>에셋 ZIP 가져오기</button><button class="btn" data-toast="디버그 JSON을 내보냈습니다. (시안)">디버그 JSON</button><button class="btn" data-go="recover"><i data-i="db"></i>이전 자료 복구</button></div></div>
     </div>
   </section>
 
   <!-- ===== 서브: 편집 ===== -->
   <section class="page" data-page="edit" data-track>
     <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Edit</div><h1 class="page-title">세라 하운 편집</h1></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Edit · v3</div><h1 class="page-title">세라 하운</h1><p class="page-desc">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="ed"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="all">전체 23개 항목</button><button class="tab" role="tab" aria-selected="false" data-subtab="rev">검토</button><button class="tab" role="tab" aria-selected="false" data-subtab="ver">버전·기록</button><button class="tab" role="tab" aria-selected="false" data-subtab="out">채택·연결·삭제</button></div>
     <div class="stack">
-      <div class="field"><label>이름</label><input class="input" value="세라 하운" data-dirty></div>
-      <div class="field"><label>한 줄 소개</label><input class="input" value="왕실 기록실 사서" data-dirty></div>
-      <div class="field"><label>성격</label><textarea class="textarea" rows="3" data-dirty>신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>
-      <div class="field"><label>말투</label><textarea class="textarea" rows="2" data-dirty>짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
-      <div class="field"><label>현재 상황</label><textarea class="textarea" rows="2" data-dirty>북쪽 정원 · 은색 열쇠 소지</textarea><span class="hint">‘수동 갱신’을 하면 대화 내용에 맞게 이 칸이 제안됩니다.</span></div>
-      <div class="card card--flat"><div class="split"><div><b>이 페르소나 삭제</b><p class="muted" style="margin:2px 0 0;font-size:12.5px">연결된 채팅에서는 연결이 풀립니다.</p></div><button class="btn btn--danger" data-toggle="confirm-del">삭제…</button></div>
-        <div class="confirm-inline" id="confirm-del"><div class="note note--danger"><b>정말 삭제할까요?</b> 되돌릴 수 없습니다. 백업을 먼저 내보내는 것을 권장합니다.</div><div class="cluster" style="margin-top:10px"><button class="btn" data-toggle="confirm-del">취소</button><button class="btn btn--danger-solid" data-toast="삭제했습니다." data-go="shelf">삭제</button></div></div></div>
+      <div data-subpanel="sum" data-group="ed" class="is-active"><div class="stack">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">장기 Persona 요약</h2><p class="card__desc">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>
+          <div class="stack stack--sm">
+            <div class="field"><label>이름</label><input class="input" value="세라 하운"></div>
+            <div class="field"><label>역할/직업</label><input class="input" value="왕실 기록실 사서"></div>
+            <div class="field"><label>성격</label><textarea class="textarea" rows="2">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>
+            <div class="field"><label>말투</label><textarea class="textarea" rows="2">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
+          </div></div>
+        <div class="card card--flat"><div class="card__head"><div><h2 class="card__title">현재 상태 (일시적)</h2><p class="card__desc">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>
+          <dl class="kv"><dt>현재 위치</dt><dd>북쪽 정원</dd><dt>소지</dt><dd>은색 열쇠</dd></dl></div>
+      </div></div>
+
+      <div data-subpanel="all" data-group="ed"><div class="stack">
+        <div class="seg" role="group" aria-label="보기 언어" data-dirty><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
+        <p class="hint">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>
+        <div class="card card--tight">
+<div class="fld"><div class="fld__head"><label for="f-name">이름</label><code class="fld__key">name</code></div><input class="input" id="f-name" value="세라 하운"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="이름 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘이름’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-gender">성별</label><code class="fld__key">gender</code></div><input class="input" id="f-gender" value="여성"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="성별 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘성별’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-age">나이</label><code class="fld__key">age</code></div><input class="input" id="f-age" value="29세"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="나이 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘나이’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-speciesRace">종족</label><code class="fld__key">speciesRace</code></div><input class="input" id="f-speciesRace" value="인간"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="종족 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘종족’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-origin">출신</label><code class="fld__key">origin</code></div><input class="input" id="f-origin" value="북쪽 도서 도시 ‘하운’"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="출신 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘출신’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-role">역할/직업</label><code class="fld__key">role</code></div><input class="input" id="f-role" value="왕실 기록실 사서"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="역할/직업 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘역할/직업’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-appearance">외모</label><code class="fld__key">appearance</code></div><input class="input" id="f-appearance" value="짙은 회색 외투, 은색 열쇠"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="외모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘외모’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-personality">성격</label><code class="fld__key">personality</code></div><input class="input" id="f-personality" value="신중하지만 약속을 가볍게 여기지 않는다"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="성격 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘성격’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-visibleSide">겉으로 보이는 면</label><code class="fld__key">visibleSide</code></div><input class="input" id="f-visibleSide" value="차분하고 예의 바름"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="겉으로 보이는 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘겉으로 보이는 면’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-hiddenSide">숨은 면</label><code class="fld__key">hiddenSide</code></div><input class="input" id="f-hiddenSide" value="기록되지 않은 일에 대한 집착"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="숨은 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘숨은 면’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-internalContradiction">내적 모순</label><code class="fld__key">internalContradiction</code></div><input class="input" id="f-internalContradiction" value="비밀을 지키려다 진실을 외면한다"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="내적 모순 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘내적 모순’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-background">배경</label><code class="fld__key">background</code></div><input class="input" id="f-background" value="기록실에서 자라 외부와 거리를 둠"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="배경 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘배경’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-speech">말투</label><code class="fld__key">speech</code></div><input class="input" id="f-speech" value="짧고 낮은 어조"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="말투 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘말투’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-motivation">동기/욕망</label><code class="fld__key">motivation</code></div><input class="input" id="f-motivation" value="사라진 기록의 행방을 찾는 것"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="동기/욕망 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘동기/욕망’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-relationshipStyle">관계 방식</label><code class="fld__key">relationshipStyle</code></div><input class="input" id="f-relationshipStyle" value="거리를 두되 한번 믿으면 끝까지"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="관계 방식 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘관계 방식’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-relationshipToCharacter">{{char}}와의 접점</label><code class="fld__key">relationshipToCharacter</code></div><input class="input" id="f-relationshipToCharacter" value="열쇠를 맡긴 첫 의뢰인"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="{{char}}와의 접점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘{{char}}와의 접점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-preferences">선호/취향</label><code class="fld__key">preferences</code></div><input class="input" id="f-preferences" value="오래된 종이 냄새, 식은 차"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="선호/취향 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘선호/취향’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-conflictRepair">갈등/회복</label><code class="fld__key">conflictRepair</code></div><input class="input" id="f-conflictRepair" value="말수가 줄었다가 사실부터 정리해 사과"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="갈등/회복 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘갈등/회복’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-skills">기술/강점</label><code class="fld__key">skills</code></div><input class="input" id="f-skills" value="고문서 판독, 암기"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="기술/강점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘기술/강점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-limitations">한계/약점</label><code class="fld__key">limitations</code></div><input class="input" id="f-limitations" value="몸싸움에 약함"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="한계/약점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘한계/약점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-knowledgeBoundary">지식 경계</label><code class="fld__key">knowledgeBoundary</code></div><input class="input" id="f-knowledgeBoundary" value="왕실 외부 소식은 소문 수준"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="지식 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘지식 경계’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-boundaries">RP 경계</label><code class="fld__key">boundaries</code></div><input class="input" id="f-boundaries" value="직접 묘사하지 않을 수위 설정은 보관 결과 기준"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="RP 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘RP 경계’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-worldFitNotes">세계관 적합 메모</label><code class="fld__key">worldFitNotes</code></div><input class="input" id="f-worldFitNotes" value="보름달 전 개방 금지 규칙을 인지"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="세계관 적합 메모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘세계관 적합 메모’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+        </div>
+      </div></div>
+
+      <div data-subpanel="rev" data-group="ed"><div class="stack">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">검사 결과</h2><p class="card__desc">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>
+          <div class="cluster"><span class="chk-chip ok">✓ 세계관 적합</span><span class="chk-chip warn">! Agency 점검 1건</span><span class="chk-chip ok">✓ 필수 항목</span></div>
+          <p class="muted" style="margin:10px 0 0;font-size:13px">Agency: ‘숨은 면’ 항목이 User의 결정을 대신 서술할 소지가 있어 수정 제안이 있습니다.</p></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">수정 미리보기</h2><p class="card__desc">적용 전에 바뀔 내용을 확인합니다.</p></div></div>
+          <div class="diff-row"><b>숨은 면</b><div><del>모든 선택에서 기록을 우선한다</del> <ins>기록에 대한 집착이 크지만 최종 선택은 상황에 맡긴다</ins></div></div>
+          <div class="cluster" style="margin-top:10px"><button class="btn btn--primary" data-toast="수정을 초안에 적용했습니다. (시안)">초안에 적용</button><button class="btn" data-toast="수정 제안을 무시했습니다. (시안)">무시</button></div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">밀도 변환</h2><p class="card__desc">RisuAI Persona로 채택할 때 길이를 선택합니다.</p></div></div>
+          <div class="choices" data-dirty><button class="choice"><b>Full</b><span>전체 항목</span></button><button class="choice is-on"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class="choice"><b>Compact</b><span>짧게 압축</span></button></div></div>
+      </div></div>
+
+      <div data-subpanel="ver" data-group="ed"><div class="stack">
+        <div class="list">
+          <div class="ver"><span class="badge badge--ok">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class="btn btn--sm" data-toast="v3를 열었습니다. (시안)">열기</button></div>
+          <div class="ver"><span class="badge">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class="btn btn--sm" data-toast="v2와 비교합니다. (시안)">비교</button></div>
+          <div class="ver"><span class="badge">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class="btn btn--sm" data-toast="v1에서 파생본을 만들었습니다. (시안)">파생본 만들기</button></div>
+        </div>
+        <div class="cluster"><button class="btn" data-toast="생성 Blueprint를 열었습니다. (시안)">생성 Blueprint</button><button class="btn" data-toast="PersonaSpec JSON을 복사했습니다. (시안)">JSON 보기</button></div>
+      </div></div>
+
+      <div data-subpanel="out" data-group="ed"><div class="stack">
+        <div class="target-card"><h3>① LIA 보관함 <small>자동 보관됨</small></h3><p class="muted" style="margin:0;font-size:13px">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>
+          <div class="cluster"><button class="btn btn--sm btn--danger" data-open="sheet-del-vault">보관함에서 삭제…</button></div></div>
+        <div class="target-card"><h3>② RisuAI Persona로 채택 <small>여기서 비로소 Persona가 만들어집니다</small></h3>
+          <div class="field"><label>채택할 내용</label><div class="seg" role="group" aria-label="채택본"><button aria-pressed="true">원문</button><button aria-pressed="false">번역본</button></div></div>
+          <div class="choices"><button class="choice is-on"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class="choice"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>
+          <div class="note"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다.</div>
+          <div class="cluster"><button class="btn btn--primary" data-toast="채택본을 RisuAI Persona로 저장했습니다. (시안)">채택하기</button><button class="btn btn--sm btn--danger" data-open="sheet-del-persona">생성한 Persona 정리…</button></div></div>
+        <div class="target-card"><h3>③ 현재 채팅에 연결 <small>채택과는 별도 동작</small></h3><p class="muted" style="margin:0;font-size:13px">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>
+          <div class="cluster"><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button><button class="btn btn--sm btn--danger" data-open="sheet-unbind">연결 해제…</button></div></div>
+      </div></div>
     </div>
   </section>
 
   <!-- ===== 서브: 수동 갱신 ===== -->
   <section class="page" data-page="update">
     <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Manual update</div><h1 class="page-title">수동 갱신</h1><p class="page-desc">최근 5턴의 대화를 바탕으로 바뀐 점을 제안합니다. 승인한 것만 반영됩니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Manual update</div><h1 class="page-title">수동 갱신</h1><p class="page-desc">두 가지 서로 다른 검토가 있습니다. 근거와 반영 대상이 다릅니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="up"><button class="tab" role="tab" aria-selected="true" data-subtab="five">다음 5턴 갱신</button><button class="tab" role="tab" aria-selected="false" data-subtab="full">전체 대화 변화 검토</button></div>
     <div class="stack">
-      <div class="steps"><div class="step is-done"><span class="step__no">✓</span><b>대화 읽기</b></div><div class="step is-active"><span class="step__no">2</span><b>변경 제안</b></div><div class="step"><span class="step__no">3</span><b>반영</b></div></div>
-      <div class="list">
-        <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">현재 위치</div><div class="row__meta">북쪽 정원 → <b>기록실 입구</b></div></div></label>
-        <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">성격</div><div class="row__meta">+ “비밀을 지키는 일에는 예외를 두지 않는다”</div></div></label>
-        <label class="row"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">말투</div><div class="row__meta">변화 감지 약함 · 기본 해제</div></div></label>
-      </div>
-      <div class="cluster"><button class="btn btn--primary" data-toast="선택한 2건을 반영했습니다." data-go="mine">선택한 2건 반영</button><button class="btn" data-go="mine">나중에</button></div>
+      <div data-subpanel="five" data-group="up" class="is-active"><div class="stack">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">처리 범위</h2><p class="card__desc">마지막 처리 지점 다음의 <b>완결된 5쌍</b>만 한 번 분석해 Live Persona를 갱신합니다.</p></div><span class="badge badge--ok">준비됨</span></div>
+          <dl class="kv"><dt>범위</dt><dd>TURN 6~10 · 다음 5턴만 분석합니다.</dd><dt>정책</dt><dd>자동 갱신 꺼짐 · 수동 실행만</dd><dt>대상</dt><dd>이 채팅 소유 Live Persona</dd></dl>
+          <div class="note" style="margin-top:12px">결과별 체크 승인 단계는 없습니다. 한 번 실행하면 분석 결과가 Live Persona에 반영되고, 기록에 남습니다. 실행 전 바인딩은 기록에서 <b>복원</b>할 수 있습니다.</div>
+          <div class="cluster" style="margin-top:12px"><button class="btn btn--primary" data-run-job="job-update"><i data-i="sync"></i>다음 5턴 갱신 실행</button></div></div>
+        <div class="card card--tight"><div class="card__head"><div><h2 class="card__title">갱신 기록</h2></div></div>
+          <div class="list"><div class="ver"><span class="badge badge--ok">완료</span><div><b>TURN 1~5 · 어제 21:40</b><small>성격 1줄, 현재 위치 변경</small></div><button class="btn btn--sm" data-open="sheet-restore">이전 바인딩 복원…</button></div></div></div>
+      </div></div>
+      <div data-subpanel="full" data-group="up"><div class="stack">
+        <div class="note"><b>다른 기능입니다.</b> 채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 Live Persona가 아니라 <b>초안</b>에 반영됩니다.</div>
+        <div class="list">
+          <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">말투 — 줄임표가 늘어남</div><div class="row__meta">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>
+          <label class="row"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">선호 — 차를 즐기게 됨</div><div class="row__meta">근거: User 메시지 #77 · 근거 1건</div></div></label>
+        </div>
+        <div class="cluster"><button class="btn" data-toast="사용자 작성 메시지 전체를 비교합니다. (시안)">변화 후보 찾기</button><button class="btn btn--primary" data-toast="선택한 후보를 초안에 반영했습니다. (시안)">선택 후보를 초안에 반영</button></div>
+      </div></div>
     </div>
   </section>
 
   <!-- ===== 서브: 이미지·감정 ===== -->
-  <section class="page" data-page="assets">
+  <section class="page" data-page="assets" data-track>
     <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Image &amp; emotions</div><h1 class="page-title">이미지 · 감정</h1><p class="page-desc">기준 얼굴을 먼저 정하고, 그 얼굴로 감정 이미지를 만듭니다.</p></div></div>
-    <div class="steps" style="margin-bottom:16px"><div class="step is-done"><span class="step__no">✓</span><b>기본 이미지</b></div><div class="step is-done"><span class="step__no">✓</span><b>기준 확정</b></div><div class="step is-active"><span class="step__no">3</span><b>감정 묶음</b></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Persona asset studio</div><h1 class="page-title">이미지 · 감정</h1><p class="page-desc">기본 모습을 정하고, 다양한 표정을 더합니다.</p></div></div>
+    <div class="steps" style="margin-bottom:16px"><div class="step is-done"><span class="step__no">✓</span><b>Neutral 생성</b></div><div class="step is-done"><span class="step__no">✓</span><b>기준 확정</b></div><div class="step is-active"><span class="step__no">3</span><b>감정 묶음</b></div></div>
     <div class="stack">
-      <div class="card"><div class="base-frame"><div class="avatar">세</div><div><span class="badge badge--ok">기준 확정됨</span><h2 class="card__title" style="margin-top:6px">기준 얼굴</h2><p class="card__desc">이 얼굴을 바탕으로 감정 이미지가 만들어집니다. 바꾸면 감정 이미지를 다시 만들어야 합니다.</p><button class="btn btn--sm" style="margin-top:8px" data-toast="기준을 다시 정하려면 확인이 필요합니다 (시안)">기준 다시 정하기</button></div></div></div>
-      <div><div class="section-title"><h2>감정 이미지 <span class="muted" style="font-weight:500">6 / 8</span></h2></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">대상</h2><p class="card__desc">기본값은 현재 Source Persona입니다. 다른 Persona를 골라 그 Persona 전용 에셋을 만들 수 있습니다.</p></div></div>
+        <div class="field"><label>에셋 타겟 Persona</label><select class="select"><option>자동 (현재 Source Persona) · 세라 하운</option><option>이름 없는 길손</option></select></div>
+        <dl class="kv" style="margin-top:10px"><dt>저장 상태</dt><dd>9개 저장됨 · Neutral Master 있음</dd><dt>대상 요약</dt><dd>짙은 회색 외투, 은색 열쇠를 쥔 29세 여성</dd></dl></div>
+      <div class="card lock-card"><div class="card__head"><div><h2 class="card__title">Visual Generation Lock</h2><p class="card__desc">기준은 <b>프롬프트와 생성 조건(Lock)</b>입니다. 확정 뒤에는 감정별로 바뀌지 않습니다.</p></div><span class="badge badge--ok">확정됨</span></div>
+        <dl class="kv"><dt>생성 조건</dt><dd>seed 482913 · 832×1216 · sampler 표본</dd><dt>구도</dt><dd>표준 감정 에셋 · 상반신</dd><dt>구형 Lock</dt><dd>해당 없음 — 이전 형식의 Lock이 남아 있으면 이곳에 ‘구형’으로 표시됩니다.</dd><dt>배경 규칙</dt><dd>순백색 고정 · Positive/Negative 양쪽에서 강제 · 투명/장면 배경 사용 안 함</dd></dl>
+        <div class="field" style="margin-top:12px"><label>구도 프리셋 <span class="hint">(Neutral 기준 확정 시 Lock에 포함)</span></label>
+          <div class="choices" data-dirty><button class="choice is-on"><b>표준 감정 에셋 · 상반신</b><span>허리 위 · 중앙 · 손 최소</span></button><button class="choice"><b>얼굴 중심 에셋 · 흉상</b><span>머리와 어깨 중심</span></button><button class="choice"><b>반신 에셋 · 반신</b><span>허리~허벅지 중간까지</span></button></div></div>
+        <div class="field" style="margin-top:12px"><label>추가 스타일 메모</label><textarea class="textarea" rows="2">부드러운 수채 질감</textarea><span class="hint">Neutral 생성 시 Lock 후보에 포함됩니다. 기준 확정 뒤에는 바뀌지 않습니다.</span></div>
+        <div class="cluster" style="margin-top:12px"><button class="btn" data-run-job="job-neutral">Neutral 다시 만들기</button><button class="btn" data-toast="Neutral 기준을 확정했습니다. (시안)">Neutral 기준 확정</button></div></div>
+      <div><div class="section-title"><h2>감정 이미지 <span class="muted" style="font-weight:500">9 / 12</span></h2><span class="hint">눌러서 업로드·프롬프트 편집·재생성·삭제</span></div>
         <div class="emo-grid">
-          <div class="emo is-done"><div class="avatar">😐</div>기본<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-done"><div class="avatar avatar--b">😊</div>기쁨<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-done"><div class="avatar avatar--d">😠</div>분노<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-done"><div class="avatar avatar--n">😢</div>슬픔<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-done"><div class="avatar avatar--c">😲</div>놀람<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-done"><div class="avatar avatar--b">😳</div>부끄러움<br><span class="muted">✓ 완료</span></div>
-          <div class="emo is-todo"><div class="avatar todo">?</div>두려움<br>— 아직</div>
-          <div class="emo is-todo"><div class="avatar todo">?</div>혐오<br>— 아직</div>
-        </div></div>
-      <button class="btn btn--primary" data-run-job="job-gen"><i data-i="spark"></i>남은 2개 만들기</button>
+          <button class="emo is-done is-master" data-open="sheet-emo" data-ctx='{"emo":"neutral (Visual Master)"}'><div class="avatar">N</div>neutral<br><span class="muted">✓ Master</span></button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"gentle smile"}'><div class="avatar avatar--b">G</div>gentle smile<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"happy"}'><div class="avatar avatar--b">H</div>happy<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"angry"}'><div class="avatar avatar--d">A</div>angry<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"sad"}'><div class="avatar avatar--n">S</div>sad<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"embarrassed"}'><div class="avatar avatar--c">E</div>embarrassed<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-todo" data-open="sheet-emo" data-ctx='{"emo":"jealous"}'><div class="avatar todo">?</div>jealous<br>— 아직</button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"surprised"}'><div class="avatar avatar--c">S</div>surprised<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-todo" data-open="sheet-emo" data-ctx='{"emo":"worried"}'><div class="avatar todo">?</div>worried<br>— 아직</button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"determined"}'><div class="avatar">D</div>determined<br><span class="muted">✓ 완료</span></button>
+          <button class="emo is-todo" data-open="sheet-emo" data-ctx='{"emo":"affectionate"}'><div class="avatar todo">?</div>affectionate<br>— 아직</button>
+          <button class="emo is-done" data-open="sheet-emo" data-ctx='{"emo":"exhausted"}'><div class="avatar avatar--n">E</div>exhausted<br><span class="muted">✓ 완료</span></button>
+        </div>
+        <div class="field" style="margin-top:12px"><label>감정 목록 (한 줄에 하나 또는 쉼표)</label><textarea class="textarea" rows="3">neutral, gentle smile, happy, angry, sad, embarrassed, jealous, surprised, worried, determined, affectionate, exhausted</textarea><span class="hint">Neutral은 Visual Master입니다. 사용자 정의 감정 추가는 Neutral 기준이 확정된 뒤에만 가능합니다.</span></div>
+      </div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">묶음 작업</h2></div></div>
+        <div class="note"><b>묶음 생성은 neutral을 제외한 전체 감정을 생성·갱신합니다.</b> 이미 있는 감정도 다시 만들어질 수 있습니다. 하나만 만들려면 위에서 해당 감정을 눌러 개별 재생성하세요.</div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" checked><span>해당 감정이 없으면 neutral로 대체해 자동 첨부 <span class="hint">— 런타임 neutral 대체</span></span></label>
+        <div class="cluster" style="margin-top:12px"><button class="btn btn--primary" data-run-job="job-emo"><i data-i="spark"></i>감정 묶음 생성·갱신</button><button class="btn" data-toast="에셋 ZIP을 내보냈습니다. (시안)"><i data-i="download"></i>ZIP 내보내기</button><button class="btn" data-toast="ZIP 파일을 선택하세요 (시안)"><i data-i="upload"></i>ZIP 가져오기</button><button class="btn btn--danger" data-open="sheet-bundle-del">묶음 폐기…</button></div></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">감정 에셋 프리셋</h2><p class="card__desc">Persona 고유 이미지와 Visual Lock은 저장하지 않습니다.</p></div></div>
+        <div class="cluster"><select class="select" style="max-width:240px" aria-label="프리셋 선택"><option>기본 수채</option></select><button class="btn btn--sm" data-toast="프리셋을 불러왔습니다. (시안)">불러오기</button><button class="btn btn--sm" data-toast="프리셋을 삭제했습니다. (시안)">삭제</button></div></div>
     </div>
   </section>
 
   <!-- ===== 서브: 이전 자료 복구 ===== -->
   <section class="page" data-page="recover">
     <button class="back" data-go="settings"><i data-i="back" data-size="sm"></i>설정</button>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recovery</div><h1 class="page-title">이전 자료 복구</h1><p class="page-desc">예전 서버에 저장했던 페르소나를 이 기기로 가져옵니다. 현재 자료는 지워지지 않습니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recovery</div><h1 class="page-title">이전 자료 복구</h1><p class="page-desc">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>
+    <div class="steps" style="margin-bottom:16px"><div class="step is-done"><span class="step__no">✓</span><b>검사</b></div><div class="step is-active"><span class="step__no">2</span><b>결과·충돌</b></div><div class="step"><span class="step__no">3</span><b>가져오기</b></div><div class="step"><span class="step__no">4</span><b>읽기 확인</b></div></div>
     <div class="stack">
-      <div class="banner banner--warn"><span class="banner__icon"><i data-i="alert"></i></span><div><b>서버 주소가 필요합니다.</b><p class="muted" style="margin:2px 0 0">예전에 쓰던 LIA 서버 주소를 입력하면 가져올 수 있는 목록을 보여드립니다.</p></div></div>
-      <div class="field"><label>이전 서버 주소</label><input class="input" placeholder="https://"></div>
-      <div class="cluster"><button class="btn btn--primary" data-toast="목록을 읽는 중… (시안)">목록 읽기</button><button class="btn" data-go="settings">취소</button></div>
-      <p class="jargon">읽기만 하며, 서버의 자료는 바꾸지 않습니다.</p>
+      <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class="muted" style="margin:2px 0 0">목록·Live shard·이미지 조각을 검증했습니다. (표본)</p></div></div>
+      <div class="list">
+        <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">카엘 로웬 <span class="badge badge--ok">충돌 없음</span></div><div class="row__meta">Live shard 검증됨 · 이미지 조각 12/12</div></div></label>
+        <label class="row"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">세라 하운 <span class="badge badge--warn">로컬과 충돌</span></div><div class="row__meta">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>
+        <div class="row"><span class="row__icon"><i data-i="alert"></i></span><div><div class="row__title">리오넬 <span class="badge badge--danger">가져올 수 없음</span></div><div class="row__meta">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>
+      </div>
+      <div class="cluster"><button class="btn btn--primary" data-toast="선택한 1개를 가져오고 다시 읽어 확인했습니다. (시안)">선택 항목 가져오기</button><button class="btn" data-go="settings">취소</button></div>
     </div>
   </section>
 
@@ -231,35 +385,118 @@ button.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}
 
   <!-- 연결 바텀 시트 -->
   <div class="overlay overlay--bottom" id="sheet-bind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sb-t">
-    <div class="eyebrow">Connect</div><h2 id="sb-t" style="margin:2px 0 4px;font:800 19px var(--font-display)">이 채팅에서 쓸 페르소나</h2>
-    <p class="muted" style="margin:0 0 12px;font-size:13px">‘세라 · 북쪽 정원’ 채팅에 연결합니다. 한 채팅에는 하나만 연결됩니다.</p>
-    <div class="stack stack--sm" data-single>
-      <button class="big-choice is-on" data-select-row="a"><div class="avatar avatar--sm">세</div><div><b>세라 하운</b><span>✓ 지금 이 채팅에 연결됨</span></div></button>
-      <button class="big-choice" data-select-row="b"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 (여름 이야기)</b><span>↔ ‘바닷가 마을’에 연결됨 · 옮기면 그쪽은 풀립니다</span></div></button>
-      <button class="big-choice" data-select-row="c"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손</b><span>＋ 연결 안 됨</span></div></button>
+    <div class="eyebrow">Connect</div><h2 id="sb-t" style="margin:2px 0 4px;font:800 19px var(--font-display)">이 채팅에서 쓸 Persona</h2>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>
+    <div class="stack stack--sm" data-detail-root>
+      <button class="big-choice is-on" data-select-row="a"><div class="avatar avatar--sm">세</div><div><b>세라 하운 (원본)</b><span>✓ 지금 이 채팅에 연결됨</span></div><span class="pick">선택</span></button>
+      <button class="big-choice" data-select-row="c"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손 (원본)</b><span>＋ 연결 안 됨</span></div><span class="pick">선택</span></button>
+      <div class="big-choice" aria-disabled="true" style="opacity:.7;cursor:not-allowed"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live (‘바닷가 마을’ 관리)</b><span>🔒 다른 채팅에서 관리 중인 Live Persona는 이 채팅에 직접 연결할 수 없습니다. 원본 Persona를 선택하세요.</span></div><span class="pick">불가</span></div>
     </div>
-    <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" data-close data-toast="이 채팅에 연결했습니다.">연결하기</button></div></div></div>
+    <p class="hint" style="margin-top:10px">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" data-close data-toast="이 채팅의 연결을 바꿨습니다. (시안)">연결하기</button></div></div></div>
 
-  <!-- 삭제 바텀 시트(네이티브 confirm 대체) -->
-  <div class="overlay overlay--bottom" id="sheet-del" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sd-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Delete</div><h2 id="sd-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘이름 없는 길손’을 삭제할까요?</h2>
-    <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 연결된 채팅이 없어 다른 곳에는 영향이 없습니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="삭제했습니다.">삭제</button></div></div></div>
+  <!-- 연결 해제 -->
+  <div class="overlay overlay--bottom" id="sheet-unbind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="su-t">
+    <div class="eyebrow">Unlink</div><h2 id="su-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이 채팅의 Persona 연결을 해제할까요?</h2>
+    <div class="note"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger" data-close data-toast="연결을 해제했습니다. (시안)">연결 해제</button></div></div></div>
 
-  <!-- 생성 진행 -->
-  <div class="overlay" id="job-gen" aria-hidden="true" data-job-labels="대화를 읽는 중|특징과 관계를 정리하는 중|AI에게 요청을 보내는 중|결과를 확인하는 중|완료했어요. 저장 전에 내용을 확인해 보세요.">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jg-t"><div class="eyebrow">Working</div><h2 id="jg-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">페르소나를 만들고 있어요</h2>
+  <!-- 보관함 항목 삭제 -->
+  <div class="overlay overlay--bottom" id="sheet-del-vault" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdv-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Delete vault item</div><h2 id="sdv-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">보관함에서 ‘카엘 로웬’을 삭제할까요?</h2>
+    <div class="note note--danger"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="보관함 항목을 삭제했습니다. (시안)">보관함에서 삭제</button></div></div></div>
+
+  <!-- 생성 Persona 정리 -->
+  <div class="overlay overlay--bottom" id="sheet-del-persona" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdp-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Clean up Persona</div><h2 id="sdp-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">LIA가 만든 RisuAI Persona를 정리할까요?</h2>
+    <div class="note note--danger"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. 보관함 항목은 그대로 남으며, 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="생성한 Persona를 정리했습니다. (시안)">Persona 정리</button></div></div></div>
+
+  <!-- 이전 바인딩 복원 -->
+  <div class="overlay overlay--bottom" id="sheet-restore" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sr-t">
+    <div class="eyebrow">Restore binding</div><h2 id="sr-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">갱신 전 바인딩으로 되돌릴까요?</h2>
+    <p class="muted" style="font-size:13px">TURN 1~5 갱신 이전의 Live Persona 연결 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="이전 바인딩으로 복원했습니다. (시안)">복원</button></div></div></div>
+
+  <!-- 감정 개별 관리 -->
+  <div class="overlay overlay--bottom" id="sheet-emo" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="se-t">
+    <div class="eyebrow">Emotion asset</div><h2 id="se-t" style="margin:2px 0 8px;font:800 19px var(--font-display)" data-fill="emo">happy</h2>
+    <div class="stack stack--sm">
+      <button class="big-choice" data-close data-toast="이미지 업로드 (시안)"><span class="row__icon"><i data-i="upload"></i></span><div><b>이미지 업로드</b><span>직접 만든 이미지로 바꿉니다.</span></div><span class="pick"></span></button>
+      <button class="big-choice" data-close data-toast="프롬프트 편집 (시안)"><span class="row__icon"><i data-i="pen"></i></span><div><b>프롬프트 편집</b><span>이 감정의 표정 지시만 고칩니다. 생성 조건(Lock)은 바뀌지 않습니다.</span></div><span class="pick"></span></button>
+      <button class="big-choice" data-close data-run-job="job-neutral"><span class="row__icon"><i data-i="refresh"></i></span><div><b>이 감정만 재생성</b><span>확정된 Lock 그대로, 표정만 다시 만듭니다.</span></div><span class="pick"></span></button>
+      <button class="big-choice" data-close data-toast="이 감정 이미지를 삭제했습니다. (시안)"><span class="row__icon"><i data-i="trash"></i></span><div><b>이 이미지 삭제</b><span>다른 감정에는 영향이 없습니다.</span></div><span class="pick"></span></button>
+    </div>
+    <div class="dialog__actions"><button class="btn" data-close>닫기</button></div></div></div>
+
+  <!-- 묶음 폐기 -->
+  <div class="overlay overlay--bottom" id="sheet-bundle-del" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sbd-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Discard bundle</div><h2 id="sbd-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이 Persona의 감정 묶음을 폐기할까요?</h2>
+    <div class="note note--danger"><b>저장된 감정 이미지 9개와 Visual Lock이 폐기됩니다.</b> 다시 만들려면 Neutral부터 새로 시작해야 합니다. 먼저 ZIP으로 내보내 두는 것을 권장합니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="감정 묶음을 폐기했습니다. (시안)">폐기</button></div></div></div>
+
+  <!-- 세계관 근거 검토 -->
+  <div class="overlay overlay--bottom" id="sheet-evidence" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sev-t">
+    <div class="eyebrow">World blueprint</div><h2 id="sev-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">세계관 분석 근거</h2>
+    <div class="list"><div class="row"><div><div class="row__title">보름달 전 개방 금지</div><div class="row__meta">Character Lore #3 · 근거 확인됨</div></div></div><div class="row"><div><div class="row__title">왕실 기록실 출입 규칙</div><div class="row__meta">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close>닫기</button></div></div></div>
+
+  <!-- 후보 선택 (랜덤·등장인물 추출) -->
+  <div class="overlay overlay--bottom" id="dlg-cand" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dc-t">
+    <div class="eyebrow">Candidates</div><h2 id="dc-t" style="margin:2px 0 4px;font:800 19px var(--font-display)">후보를 하나 고르세요</h2>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p>
+    <div class="stack stack--sm" data-detail-root>
+      <button class="big-choice is-on" data-select-row="c1"><div class="avatar avatar--sm avatar--c">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class="pick">선택</span></button>
+      <button class="big-choice" data-select-row="c2"><div class="avatar avatar--sm avatar--b">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class="pick">선택</span></button>
+      <button class="big-choice" data-select-row="c3"><div class="avatar avatar--sm avatar--d">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class="pick">선택</span></button>
+    </div>
+    <div class="dialog__actions"><button class="btn" data-close>취소</button><button class="btn btn--primary" data-close data-run-job="job-gen">이 후보로 상세 생성</button></div></div></div>
+
+  <!-- 작업: 후보 만들기 -->
+  <div class="overlay" id="job-cand" aria-hidden="true" data-job-labels="세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jc-t"><div class="eyebrow">Working</div><h2 id="jc-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">후보를 만들고 있어요</h2>
       <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
-      <p class="hint">화면을 닫아도 작업은 이어집니다. 실패하면 다시 시도할 수 있어요.</p>
-      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-go="edit">확인하러 가기</button></div></div></div>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>자료</b></div><div class="step"><span class="step__no">2</span><b>후보 생성</b></div><div class="step"><span class="step__no">3</span><b>정리</b></div></div>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-then-open="dlg-cand">후보 보기</button></div></div></div>
+
+  <!-- 작업: 생성 -->
+  <div class="overlay" id="job-gen" aria-hidden="true" data-job-labels="선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jg-t"><div class="eyebrow">Working</div><h2 id="jg-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">Persona를 만들고 있어요</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>자료</b></div><div class="step"><span class="step__no">2</span><b>생성</b></div><div class="step"><span class="step__no">3</span><b>검사</b></div><div class="step"><span class="step__no">4</span><b>보관</b></div></div>
+      <p class="hint" style="margin-top:10px">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-then-go="edit">초안 열기</button></div></div></div>
+
+  <!-- 작업: 5턴 갱신 -->
+  <div class="overlay" id="job-update" aria-hidden="true" data-job-labels="계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="ju-t"><div class="eyebrow">Manual update</div><h2 id="ju-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">TURN 6~10을 분석하고 있어요</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step"><span class="step__no">2</span><b>분석</b></div><div class="step"><span class="step__no">3</span><b>갱신안</b></div><div class="step"><span class="step__no">4</span><b>저장</b></div></div>
+      <p class="hint" style="margin-top:10px">저장이 시작되기 전까지만 취소할 수 있습니다. 저장 중에는 취소 버튼이 동작하지 않습니다.</p>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-then-go="mine">내 페르소나로</button></div></div></div>
+
+  <!-- 작업: Neutral / 개별 감정 -->
+  <div class="overlay" id="job-neutral" aria-hidden="true" data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|이미지를 생성하는 중|저장 상태를 확인하는 중|이미지를 저장했습니다.">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jn-t"><div class="eyebrow">Image</div><h2 id="jn-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이미지를 만들고 있어요</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>조건 확인</b></div><div class="step"><span class="step__no">2</span><b>생성</b></div><div class="step"><span class="step__no">3</span><b>저장</b></div></div>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <!-- 작업: 감정 묶음 (페르소나 생성 작업과 분리) -->
+  <div class="overlay" id="job-emo" aria-hidden="true" data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|neutral 외 11개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="je-t"><div class="eyebrow">Emotion bundle</div><h2 id="je-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">감정 이미지를 만들고 있어요</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>Lock 확인</b></div><div class="step"><span class="step__no">2</span><b>감정 생성</b></div><div class="step"><span class="step__no">3</span><b>저장 확인</b></div></div>
+      <p class="hint" style="margin-top:10px">이미지 AI를 감정 수만큼 호출합니다. 이미 있는 감정도 다시 만들어질 수 있습니다.</p>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
   <div class="toasts" aria-live="polite"></div>
 </div></div></div>
 <script src="assets/suite.js"></script>
 <script>
-document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='edit');});
-document.addEventListener('click',function(e){var t=e.target.closest('[data-toggle]');if(t){var el=document.getElementById(t.dataset.toggle);if(el)el.classList.toggle('is-open');}});
+document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='edit'||e.detail==='assets');});
 </script>
 </body>
 </html>

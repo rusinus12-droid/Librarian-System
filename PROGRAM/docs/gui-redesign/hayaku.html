@@ -58,6 +58,19 @@ pre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(
 .st-nav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}
 .lvl{display:inline-flex;margin-left:6px;padding:0 7px;border-radius:99px;font:650 11px/1.7 var(--font-sans);background:var(--surface3);color:var(--text2)}
 html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=warn] [data-scenario-show]:not([data-scenario-show~=warn]),html[data-scenario=fail] [data-scenario-show]:not([data-scenario-show~=fail]),html:not([data-scenario]) [data-scenario-show]:not([data-scenario-show~=ok]){display:none!important}
+.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}
+.pk-list.is-world .pk-row{position:relative}.pk-list.is-world .pk-row::before{content:"";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}
+.fail-box{display:none}
+html[data-scenario=fail] .fail-box{display:block}
+.cost-table{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}
+.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}
+.fd-grid{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,1.6fr);gap:14px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cmp>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}.cmp b{display:block;font-size:12px;color:var(--text3);margin-bottom:3px}
+.cmp ins{background:var(--ok-soft);color:var(--ok-ink);text-decoration:none;padding:0 3px;border-radius:3px}.cmp del{background:var(--danger-soft);color:var(--danger-ink);padding:0 3px;border-radius:3px}
+.btn[disabled]+.why{display:block}.why{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}
+.why.on{display:block}
+@container app (max-width:900px){.fd-grid,.cmp{grid-template-columns:1fr}}
+@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}
 @container app (max-width:900px){
   .metric-row{grid-template-columns:repeat(2,1fr)}.dash,.pk-layout,.axes{grid-template-columns:1fr}
   .st-layout{grid-template-columns:1fr}.st-nav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}.st-nav small{display:none}
@@ -114,20 +127,21 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
       <div class="banner banner--warn" data-scenario-show="warn"><div class="banner__icon"><i data-i="alert"></i></div><div><b>누락 1턴, 검토 대기 1턴이 있습니다.</b><span>T132는 패킷이 없고, T139는 원문 수정 후 재분석 승인을 기다립니다.</span></div><button class="btn btn--primary" data-go="recovery">복구하러 가기</button></div>
       <div class="banner banner--danger" data-scenario-show="fail"><div class="banner__icon"><i data-i="x"></i></div><div><b>현재 채팅 원장을 읽지 못했습니다.</b><span>사유: current_chat_indexes_invalid — 채팅이 열린 상태에서 다시 확인하세요. 정상으로 간주하지 않습니다.</span></div><button class="btn" data-toast="채팅 범위를 다시 확인했습니다.">다시 확인</button></div>
 
-      <div class="metric-row">
+      <div class="card fail-box"><div class="empty"><b>원장을 읽지 못해 수치와 노선도를 표시하지 않습니다.</b><span>정상 수치를 그대로 보여주면 오해할 수 있어 숨겼습니다. 위의 ‘다시 확인’으로 채팅 범위를 먼저 확인하세요.</span></div></div>
+      <div class="metric-row" data-scenario-show="ok warn">
         <div class="card card--tight"><div class="label">패킷 원장</div><div class="stat__value">147<span class="faint" style="font-size:16px"> / 152</span></div><div class="stat__meta">활성·영구 / 전체 레코드</div></div>
         <div class="card card--tight"><div class="label">기억이 연결된 턴</div><div class="stat__value">147<span class="faint" style="font-size:16px"> / 147</span></div><div class="stat__meta">패킷 보유 / 완료 U+A</div></div>
         <div class="card card--tight"><div class="label">복구 대기</div><div class="stat__value" data-scenario-show="ok">0</div><div class="stat__value" data-scenario-show="warn fail">2</div><div class="stat__meta">Recovery Journal</div></div>
         <div class="card card--tight"><div class="label">이번 회상</div><div class="stat__value">6</div><div class="stat__meta">2,184자 · 주입됨</div></div>
       </div>
 
-      <div class="card">
+      <div class="card" data-scenario-show="ok warn">
         <div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><button class="btn btn--sm" data-go="packets">전체 기록 →</button></div>
         <div class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div>
         <div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div>
       </div>
 
-      <div class="dash">
+      <div class="dash" data-scenario-show="ok warn">
         <div class="card"><div class="card__head"><div><h2 class="card__title">이번에 떠올린 기억</h2><p class="card__desc">현재 입력에 실제로 전달된 기억</p></div><span class="badge badge--ok">6개 · 2,184자</span></div>
           <div class="rec"><span class="score">0.947</span><div><b style="font-size:13px">T128 · 은색 열쇠를 건넨 약속</b><p>아스텔은 비밀 정원에서 열쇠를 돌려주겠다고 약속했다.</p></div><span class="badge">entity</span></div>
           <div class="rec"><span class="score">0.912</span><div><b style="font-size:13px">T141 · 정원의 북쪽 문</b><p>북쪽 문은 월식이 시작될 때만 열린다.</p></div><span class="badge">world</span></div>
@@ -142,61 +156,159 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
 
   <!-- ===== 패킷 · 세계선 ===== -->
   <section class="page" data-page="packets">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory ledger</div><h1 class="page-title">패킷 · 세계선</h1><p class="page-desc">같은 원장을 목록으로도, 세계선으로도 봅니다. 삭제·정리는 검증 후 영구 삭제되므로 별도 도구로 분리했습니다.</p></div>
-      <div class="page-actions"><div class="seg"><button aria-pressed="true" data-val="list" data-subtab-link>목록</button><button aria-pressed="false" data-val="world">세계선</button></div><button class="btn" data-toast="원장 JSON(조회용)을 내보냈습니다."><i data-i="download"></i>원장 JSON</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory ledger</div><h1 class="page-title">패킷 · 세계선</h1><p class="page-desc">같은 원장을 목록으로도, 세계선으로도 봅니다. 두 보기는 같은 항목을 선택합니다. 삭제·정리는 검증 후 영구 삭제되므로 별도 도구로 분리했습니다.</p></div>
+      <div class="page-actions"><div class="seg" id="pk-view" role="group" aria-label="보기 방식"><button aria-pressed="true" data-val="list">목록</button><button aria-pressed="false" data-val="world">세계선</button></div><button class="btn" data-toast="원장 JSON(조회용)을 내보냈습니다. (시안)"><i data-i="download"></i>원장 JSON</button></div></div>
     <div class="stack">
+      <div class="card fail-box"><div class="empty"><b>현재 채팅 원장을 읽지 못했습니다.</b><span>정상으로 간주하지 않고 패킷 목록을 표시하지 않습니다. 개요에서 다시 확인하세요.</span></div></div>
+      <div class="stack" data-scenario-show="ok warn">
       <div class="cluster"><select class="select" style="width:auto" aria-label="상태 필터"><option>모든 상태</option><option>활성</option><option>영구 과거</option><option>감사 사본</option></select><select class="select" style="width:auto" aria-label="타입"><option>모든 패킷 타입</option><option>current_snapshot</option><option>recovery_snapshot</option></select><div class="search grow" style="min-width:200px"><i data-i="search" data-size="sm"></i><input class="input" placeholder="본문 · hash · nonce 검색" aria-label="패킷 검색"></div></div>
-      <div class="pk-layout">
+      <div class="pk-layout" data-detail-root>
         <div class="list pk-list" id="pk-list">
-          <button class="pk-row is-on" data-select-row="147"><b>T147</b><span><strong>은색 열쇠와 북쪽 문의 조건</strong><small>current_snapshot · 23:41 · 2,411자</small></span><span class="badge badge--ok">active</span></button>
-          <button class="pk-row" data-select-row="146"><b>T146</b><span><strong>누락 복구된 장면 변화</strong><small>recovery_snapshot · Other Ax</small></span><span class="badge">history</span></button>
-          <button class="pk-row" data-select-row="145"><b>T145</b><span><strong>열쇠를 숨긴 위치와 월식 조건</strong><small>current_snapshot · afterRequest</small></span><span class="badge badge--ok">active</span></button>
-          <button class="pk-row" data-select-row="144"><b>T144</b><span><strong>문 확인</strong><small>current_snapshot</small></span><span class="badge badge--ok">active</span></button>
+          <button class="pk-row is-on" data-select-row="147"><b>T147</b><span><strong>은색 열쇠와 북쪽 문의 조건</strong><small>current_snapshot · 23:41:08</small></span><span class="badge badge--ok">active</span></button>
+          <button class="pk-row" data-select-row="146"><b>T146</b><span><strong>누락 복구된 장면 변화</strong><small>recovery_snapshot · 21:12:30</small></span><span class="badge">history</span></button>
+          <button class="pk-row" data-select-row="145"><b>T145</b><span><strong>열쇠를 숨긴 위치와 월식 조건</strong><small>current_snapshot · 20:58:02</small></span><span class="badge badge--ok">active</span></button>
+          <button class="pk-row" data-select-row="144"><b>T144</b><span><strong>문 확인</strong><small>current_snapshot · 20:41:55</small></span><span class="badge badge--ok">active</span></button>
         </div>
         <div class="card" data-detail="147">
           <div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">T147 · current_snapshot</h2><p class="card__desc">활성 세계선 · afterRequest commit readback 완료</p></div><span class="badge badge--ok">active</span></div>
-          <div class="tabs" role="tablist" data-subtabs="pk"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="axes">기억 축</button><button class="tab" role="tab" aria-selected="false" data-subtab="bind">결속</button><button class="tab" role="tab" aria-selected="false" data-subtab="json">원본 JSON</button></div>
-          <div data-subpanel="sum" data-group="pk" class="is-active"><p style="margin:0 0 12px;font-weight:650">은색 열쇠와 북쪽 문의 조건을 현재 장면에 결속</p><dl class="kv"><dt>패킷 타입</dt><dd>current_snapshot</dd><dt>저장 시각</dt><dd>23:41:08</dd><dt>저장 확인</dt><dd>개별 쓰기 readback 완료 · 활성 결속은 별도</dd><dt>회상 가능</dt><dd>요청별 관련도·근거 검사를 통과한 경우에만 사용</dd></dl></div>
-          <div data-subpanel="axes" data-group="pk"><div class="axes"><div class="axis"><h4>인물과 관계</h4><p>아스텔 ↔ 로웬: 신뢰 상승</p></div><div class="axis"><h4>세계와 상황</h4><p>북쪽 문: 월식 때만 개방</p></div><div class="axis"><h4>이야기의 흐름</h4><p>열쇠 반환 약속 유지</p></div><div class="axis"><h4>이어갈 내용</h4><p>정원사에게 출처를 밝힐지 선택</p></div></div></div>
-          <div data-subpanel="bind" data-group="pk"><dl class="kv"><dt>Record state</dt><dd>active</dd><dt>Slot ID</dt><dd class="mono">slot-0147</dd><dt>Request nonce</dt><dd class="mono">rq-9f21…c0a</dd><dt>Parent hash</dt><dd class="mono">b3a1…e72</dd></dl></div>
-          <div data-subpanel="json" data-group="pk"><pre class="json">{ "packet": "hayaku_packet_v1",
-  "revision": 2,
+          <div class="tabs" role="tablist" data-subtabs="pk147"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="axes">기억 축</button><button class="tab" role="tab" aria-selected="false" data-subtab="bind">결속</button><button class="tab" role="tab" aria-selected="false" data-subtab="json">원본 JSON</button></div>
+          <div data-subpanel="sum" data-group="pk147" class="is-active"><p style="margin:0 0 12px;font-weight:650">은색 열쇠와 북쪽 문의 조건을 현재 장면에 결속</p><dl class="kv"><dt>패킷 타입</dt><dd>current_snapshot</dd><dt>저장 시각</dt><dd>23:41:08</dd><dt>저장 확인</dt><dd>개별 쓰기 readback 완료 · 활성 결속은 별도</dd><dt>회상 가능</dt><dd>요청별 관련도·근거 검사를 통과한 경우에만 사용</dd></dl></div>
+          <div data-subpanel="axes" data-group="pk147"><div class="axes"><div class="axis"><h4>인물과 관계</h4><p>T147 장면의 인물·관계 변화 (표본)</p></div><div class="axis"><h4>세계와 상황</h4><p>T147 장면의 세계 상태 (표본)</p></div><div class="axis"><h4>이야기의 흐름</h4><p>T147 이후 이어지는 약속·갈등 (표본)</p></div><div class="axis"><h4>이어갈 내용</h4><p>다음 장면에서 이어질 선택 (표본)</p></div></div></div>
+          <div data-subpanel="bind" data-group="pk147"><dl class="kv"><dt>Record state</dt><dd>active</dd><dt>Slot ID</dt><dd class="mono">slot-0147</dd><dt>Request nonce</dt><dd class="mono">rq-9f21…c0a</dd><dt>Parent hash</dt><dd class="mono">b3a1…e72</dd></dl></div>
+          <div data-subpanel="json" data-group="pk147"><pre class="json">{ "packet": "hayaku_packet_v1",
   "type": "current_snapshot",
   "turn": 147,
-  "meta": { "confidence": 0.94 } }</pre></div>
-          <div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" data-open="dlg-regen"><i data-i="refresh" data-size="sm"></i>Other Ax로 재생성</button><button class="btn btn--ghost" data-toast="패킷 JSON을 복사했습니다.">패킷 복사</button></div>
+  "meta": { "sample": true } }</pre></div>
+<div class="note" style="margin-top:12px"><b>이전 패킷 보존</b> revision 1이 보존되어 있습니다. <button class="btn btn--sm" data-open="dlg-readopt" style="margin-left:6px">이전 패킷 다시 채택…</button></div>
+          <div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" data-open="dlg-regen" data-ctx='{"target":"T147 · current_snapshot"}'><i data-i="refresh" data-size="sm"></i>Other Ax로 재생성</button><button class="btn btn--ghost" data-toast="패킷 JSON을 복사했습니다. (시안)">패킷 복사</button></div>
+        </div>
+        <div class="card" data-detail="146" hidden>
+          <div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">T146 · recovery_snapshot</h2><p class="card__desc">과거 기록 · Other Ax 복구로 생성</p></div><span class="badge">history</span></div>
+          <div class="tabs" role="tablist" data-subtabs="pk146"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="axes">기억 축</button><button class="tab" role="tab" aria-selected="false" data-subtab="bind">결속</button><button class="tab" role="tab" aria-selected="false" data-subtab="json">원본 JSON</button></div>
+          <div data-subpanel="sum" data-group="pk146" class="is-active"><p style="margin:0 0 12px;font-weight:650">누락 복구된 장면 변화 요약</p><dl class="kv"><dt>패킷 타입</dt><dd>recovery_snapshot</dd><dt>저장 시각</dt><dd>21:12:30</dd><dt>저장 확인</dt><dd>개별 쓰기 readback 완료 · 활성 결속은 별도</dd><dt>회상 가능</dt><dd>요청별 관련도·근거 검사를 통과한 경우에만 사용</dd></dl></div>
+          <div data-subpanel="axes" data-group="pk146"><div class="axes"><div class="axis"><h4>인물과 관계</h4><p>T146 장면의 인물·관계 변화 (표본)</p></div><div class="axis"><h4>세계와 상황</h4><p>T146 장면의 세계 상태 (표본)</p></div><div class="axis"><h4>이야기의 흐름</h4><p>T146 이후 이어지는 약속·갈등 (표본)</p></div><div class="axis"><h4>이어갈 내용</h4><p>다음 장면에서 이어질 선택 (표본)</p></div></div></div>
+          <div data-subpanel="bind" data-group="pk146"><dl class="kv"><dt>Record state</dt><dd>history</dd><dt>Slot ID</dt><dd class="mono">slot-0146</dd><dt>Request nonce</dt><dd class="mono">rq-9f21…c0a</dd><dt>Parent hash</dt><dd class="mono">b3a1…e72</dd></dl></div>
+          <div data-subpanel="json" data-group="pk146"><pre class="json">{ "packet": "hayaku_packet_v1",
+  "type": "recovery_snapshot",
+  "turn": 146,
+  "meta": { "sample": true } }</pre></div>
+
+          <div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" data-open="dlg-regen" data-ctx='{"target":"T146 · recovery_snapshot"}'><i data-i="refresh" data-size="sm"></i>Other Ax로 재생성</button><button class="btn btn--ghost" data-toast="패킷 JSON을 복사했습니다. (시안)">패킷 복사</button></div>
+        </div>
+        <div class="card" data-detail="145" hidden>
+          <div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">T145 · current_snapshot</h2><p class="card__desc">활성 세계선 · afterRequest commit readback 완료</p></div><span class="badge badge--ok">active</span></div>
+          <div class="tabs" role="tablist" data-subtabs="pk145"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="axes">기억 축</button><button class="tab" role="tab" aria-selected="false" data-subtab="bind">결속</button><button class="tab" role="tab" aria-selected="false" data-subtab="json">원본 JSON</button></div>
+          <div data-subpanel="sum" data-group="pk145" class="is-active"><p style="margin:0 0 12px;font-weight:650">열쇠를 숨긴 위치와 월식 조건</p><dl class="kv"><dt>패킷 타입</dt><dd>current_snapshot</dd><dt>저장 시각</dt><dd>20:58:02</dd><dt>저장 확인</dt><dd>개별 쓰기 readback 완료 · 활성 결속은 별도</dd><dt>회상 가능</dt><dd>요청별 관련도·근거 검사를 통과한 경우에만 사용</dd></dl></div>
+          <div data-subpanel="axes" data-group="pk145"><div class="axes"><div class="axis"><h4>인물과 관계</h4><p>T145 장면의 인물·관계 변화 (표본)</p></div><div class="axis"><h4>세계와 상황</h4><p>T145 장면의 세계 상태 (표본)</p></div><div class="axis"><h4>이야기의 흐름</h4><p>T145 이후 이어지는 약속·갈등 (표본)</p></div><div class="axis"><h4>이어갈 내용</h4><p>다음 장면에서 이어질 선택 (표본)</p></div></div></div>
+          <div data-subpanel="bind" data-group="pk145"><dl class="kv"><dt>Record state</dt><dd>active</dd><dt>Slot ID</dt><dd class="mono">slot-0145</dd><dt>Request nonce</dt><dd class="mono">rq-9f21…c0a</dd><dt>Parent hash</dt><dd class="mono">b3a1…e72</dd></dl></div>
+          <div data-subpanel="json" data-group="pk145"><pre class="json">{ "packet": "hayaku_packet_v1",
+  "type": "current_snapshot",
+  "turn": 145,
+  "meta": { "sample": true } }</pre></div>
+
+          <div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" data-open="dlg-regen" data-ctx='{"target":"T145 · current_snapshot"}'><i data-i="refresh" data-size="sm"></i>Other Ax로 재생성</button><button class="btn btn--ghost" data-toast="패킷 JSON을 복사했습니다. (시안)">패킷 복사</button></div>
+        </div>
+        <div class="card" data-detail="144" hidden>
+          <div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">T144 · current_snapshot</h2><p class="card__desc">활성 세계선</p></div><span class="badge badge--ok">active</span></div>
+          <div class="tabs" role="tablist" data-subtabs="pk144"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="axes">기억 축</button><button class="tab" role="tab" aria-selected="false" data-subtab="bind">결속</button><button class="tab" role="tab" aria-selected="false" data-subtab="json">원본 JSON</button></div>
+          <div data-subpanel="sum" data-group="pk144" class="is-active"><p style="margin:0 0 12px;font-weight:650">북쪽 문을 확인한 장면</p><dl class="kv"><dt>패킷 타입</dt><dd>current_snapshot</dd><dt>저장 시각</dt><dd>20:41:55</dd><dt>저장 확인</dt><dd>개별 쓰기 readback 완료 · 활성 결속은 별도</dd><dt>회상 가능</dt><dd>요청별 관련도·근거 검사를 통과한 경우에만 사용</dd></dl></div>
+          <div data-subpanel="axes" data-group="pk144"><div class="axes"><div class="axis"><h4>인물과 관계</h4><p>T144 장면의 인물·관계 변화 (표본)</p></div><div class="axis"><h4>세계와 상황</h4><p>T144 장면의 세계 상태 (표본)</p></div><div class="axis"><h4>이야기의 흐름</h4><p>T144 이후 이어지는 약속·갈등 (표본)</p></div><div class="axis"><h4>이어갈 내용</h4><p>다음 장면에서 이어질 선택 (표본)</p></div></div></div>
+          <div data-subpanel="bind" data-group="pk144"><dl class="kv"><dt>Record state</dt><dd>active</dd><dt>Slot ID</dt><dd class="mono">slot-0144</dd><dt>Request nonce</dt><dd class="mono">rq-9f21…c0a</dd><dt>Parent hash</dt><dd class="mono">b3a1…e72</dd></dl></div>
+          <div data-subpanel="json" data-group="pk144"><pre class="json">{ "packet": "hayaku_packet_v1",
+  "type": "current_snapshot",
+  "turn": 144,
+  "meta": { "sample": true } }</pre></div>
+
+          <div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" data-open="dlg-regen" data-ctx='{"target":"T144 · current_snapshot"}'><i data-i="refresh" data-size="sm"></i>Other Ax로 재생성</button><button class="btn btn--ghost" data-toast="패킷 JSON을 복사했습니다. (시안)">패킷 복사</button></div>
         </div>
       </div>
       <details class="fold"><summary>정리 도구 · 고아 데이터 <span class="badge badge--warn">정리 가능 2</span></summary><div class="fold__body"><p class="muted" style="margin-top:0">활성·상속·영구·보호 데이터는 건드리지 않습니다. 삭제는 다시 검증한 뒤에만 실행되며 되돌릴 수 없습니다.</p><button class="btn btn--danger" data-open="dlg-orphan"><i data-i="trash" data-size="sm"></i>고아 데이터 정리 (2)…</button></div></details>
+      </div>
     </div>
   </section>
 
   <!-- ===== 구간 점검 · 복구 ===== -->
   <section class="page" data-page="recovery">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Section maintenance</div><h1 class="page-title">구간 점검 · 복구</h1><p class="page-desc">진단은 읽기 전용입니다. AI 재분석은 마지막에 확인을 받은 뒤에만 시작됩니다.</p></div><div class="page-actions"><button class="btn" data-toast="복구 상태를 새로고침했습니다."><i data-i="refresh"></i>상태 새로고침</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Section maintenance</div><h1 class="page-title">구간 점검 · 복구</h1><p class="page-desc">진단은 읽기 전용입니다. AI를 쓰는 작업은 대상·비용을 먼저 보여주고 확인을 받은 뒤에만 시작됩니다.</p></div><div class="page-actions"><button class="btn" data-toast="복구 상태를 새로고침했습니다. (시안)"><i data-i="refresh"></i>상태 새로고침</button></div></div>
     <div class="stack">
-      <div class="card"><div class="steps">
-        <div class="step is-done"><span class="step__no"><i data-i="check" data-size="sm"></i></span><b>1 · 진단</b><span>누락 1 · 검토 1 · 실패 2</span></div>
-        <div class="step is-active"><span class="step__no">2</span><b>2 · 대상 선택</b><span>복구할 턴을 고릅니다</span></div>
-        <div class="step"><span class="step__no">3</span><b>3 · 비용 확인</b><span>Other Ax 호출 승인</span></div>
-        <div class="step"><span class="step__no">4</span><b>4 · 복구·검증</b><span>readback 확인</span></div></div></div>
+      <div class="tabs" role="tablist" data-subtabs="rc"><button class="tab" role="tab" aria-selected="true" data-subtab="miss">누락 복구 <span class="count">2</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="reana">직접 원문 재분석 <span class="count">1</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="failed">실패 후보 수리 <span class="count">2</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="cold">Cold Start</button></div>
 
-      <div class="card"><div class="card__head"><div><h2 class="card__title">복구할 턴 선택</h2><p class="card__desc">누락된 턴과 원문이 수정된 턴만 표시합니다.</p></div><div class="cluster"><button class="btn btn--sm" data-toast="전체 선택">전체 선택</button><button class="btn btn--sm">해제</button></div></div>
-        <div class="picker"><label><input type="checkbox" checked><span><b>T132</b><small>누락 · 시도 1/3</small></span></label><label><input type="checkbox"><span><b>T139</b><small>원문 수정됨 · 검토 대기</small></span></label><label><input type="checkbox"><span><b>T118</b><small>누락 · 재시도 대기</small></span></label></div>
-        <div class="note note--warn cost" style="margin-top:14px"><i data-i="alert"></i><span><b>비용 안내</b> — 복구는 RisuAI에 설정된 Provider(Other Ax)를 호출하며 비용이 발생할 수 있습니다. 정상 패킷 응답에는 추가 호출이 없습니다.</span></div>
-        <div class="cluster" style="margin-top:14px"><button class="btn btn--primary" data-run-job="job-repair"><i data-i="wrench"></i>선택한 1턴 복구…</button><span class="hint">호출 최대 1회 · 중단 가능</span></div></div>
+      <div data-subpanel="miss" data-group="rc" class="is-active"><div class="stack">
+        <div class="card"><div class="steps">
+          <div class="step is-done"><span class="step__no"><i data-i="check" data-size="sm"></i></span><b>1 · 진단</b><span>누락 2 · 검토 1 · 실패 2</span></div>
+          <div class="step is-active"><span class="step__no">2</span><b>2 · 대상 선택</b><span>복구할 턴을 고릅니다</span></div>
+          <div class="step"><span class="step__no">3</span><b>3 · 비용 확인</b><span>Other Ax 호출 승인</span></div>
+          <div class="step"><span class="step__no">4</span><b>4 · 복구·결과</b><span>readback 확인</span></div></div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">복구할 턴 선택</h2><p class="card__desc">패킷이 없는 턴만 표시합니다. 원문이 수정된 턴은 ‘직접 원문 재분석’에서 다룹니다.</p></div><div class="cluster"><button class="btn btn--sm" data-toast="전체 선택 (시안)">전체 선택</button><button class="btn btn--sm" data-toast="해제 (시안)">해제</button></div></div>
+          <div class="picker"><label><input type="checkbox" checked><span><b>T132</b><small>누락 · 시도 1/3</small></span></label><label><input type="checkbox"><span><b>T118</b><small>누락 · 재시도 대기</small></span></label></div>
+          <div class="note note--warn cost" style="margin-top:14px"><i data-i="alert"></i><span><b>비용 안내</b> — 복구는 RisuAI에 설정된 Provider(Other Ax)를 호출하며 비용이 발생할 수 있습니다. 정상 패킷 응답에는 추가 호출이 없습니다.</span></div>
+          <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd>T132 (1턴 선택)</dd><dt>선택 묶음</dt><dd>1묶음</dd><dt>예상 기본 호출</dt><dd>1회</dd><dt>추가 복구 허용량</dt><dd>설정: 작업당 최대 +1회 (형식 오류 시) — <button class="linkbtn" style="border:0;background:none;color:var(--accent-ink);text-decoration:underline;font-weight:650" data-go="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
+          <div class="cluster" style="margin-top:14px"><button class="btn btn--primary" data-open="dlg-miss" data-ctx='{"title":"T132 누락 복구","target":"T132 (1턴)","kind":"누락 복구"}'><i data-i="wrench"></i>선택한 1턴 복구…</button></div></div>
+      </div></div>
+
+      <div data-subpanel="reana" data-group="rc"><div class="stack">
+        <div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">원문이 수정된 턴</h2><p class="card__desc">수정 이후 패킷과 원문이 어긋난 턴입니다.</p></div></div>
+          <div class="list">
+            <label class="row"><input type="checkbox" checked><div><div class="row__title">T139 <span class="badge badge--warn">원문 수정됨</span></div><div class="row__meta">scope ✓ · topology ✓ · 메시지 identity ✓ · 원문 digest 변경 확인</div></div></label>
+            <div class="row"><span class="row__icon"><i data-i="lock"></i></span><div><div class="row__title">T120 <span class="badge badge--danger">차단</span></div><div class="row__meta">메시지 identity가 바뀌어 재분석할 수 없습니다. 다른 채팅/분기의 기록일 수 있습니다.</div></div></div>
+          </div>
+          <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>직접 원문 재분석</dd><dt>대상 턴</dt><dd>T139 (1턴)</dd><dt>예상 기본 호출</dt><dd>1회 (+ 추가 복구 허용 시 최대 1회)</dd></dl>
+          <div class="cluster" style="margin-top:12px"><button class="btn btn--primary" data-open="dlg-miss" data-ctx='{"title":"T139 직접 재분석","target":"T139 (1턴)","kind":"직접 원문 재분석"}'>선택한 턴 재분석…</button></div></div>
+      </div></div>
+
+      <div data-subpanel="failed" data-group="rc"><div class="fd-grid" data-detail-root>
+        <div class="list">
+          <button class="row is-on" data-select-row="f132"><span class="row__icon"><i data-i="alert"></i></span><div><div class="row__title">T132 · 형식 오류</div><div class="row__meta">JSON schema 검사 실패 · 후보 있음</div></div></button>
+          <button class="row" data-select-row="f118"><span class="row__icon"><i data-i="alert"></i></span><div><div class="row__title">T118 · 응답 절단</div><div class="row__meta">marker 미완성 · 후보 부적합</div></div></button>
+        </div>
+        <div>
+        <div class="card" data-detail="f132">
+          <div class="card__head"><div><div class="eyebrow">Failed recovery</div><h2 class="card__title" style="font-size:19px">T132 · 형식 오류</h2><p class="card__desc">JSON schema 검사 실패 · 처리 이력 2개</p></div><span class="badge badge--danger">수리 필요</span></div>
+          <div class="tabs" role="tablist" data-subtabs="fd132"><button class="tab" role="tab" aria-selected="true" data-subtab="src">원문 U+A</button><button class="tab" role="tab" aria-selected="false" data-subtab="raw">원시 응답</button><button class="tab" role="tab" aria-selected="false" data-subtab="dx">진단</button><button class="tab" role="tab" aria-selected="false" data-subtab="cand">승격 후보</button><button class="tab" role="tab" aria-selected="false" data-subtab="hist">처리 이력</button></div>
+          <div data-subpanel="src" data-group="fd132" class="is-active"><p class="muted" style="margin:0 0 6px">U</p><p style="margin:0 0 10px">열쇠를 쥔 손을 펴며 문양을 바라본다. (표본)</p><p class="muted" style="margin:0 0 6px">A</p><p style="margin:0">아스텔의 손끝이 문양을 따라 움직였다. (표본)</p></div>
+          <div data-subpanel="raw" data-group="fd132"><pre class="json">{"memory": [ {"axis": "entity", "text": "…" ]  // 응답이 중간에 끊김 (표본)</pre></div>
+          <div data-subpanel="dx" data-group="fd132"><dl class="kv"><dt>오류 분류</dt><dd>형식 오류</dd><dt>grounding</dt><dd>인용 근거 누락 1건</dd><dt>시도</dt><dd>1/3</dd></dl></div>
+          <div data-subpanel="cand" data-group="fd132"><pre class="json">{ "promotion_candidate": { "turn": 132, "valid": true } }</pre></div>
+          <div data-subpanel="hist" data-group="fd132"><div class="list"><div class="res-row"><b>자동 검증</b><span class="badge badge--danger">실패</span><small>형식 오류</small></div></div></div>
+          <div class="note" style="margin-top:12px"><b>같은 문제의 수정·AI 재시도를 한 항목에 모았습니다.</b> 이전 기록은 보존됩니다. 아래 세 가지 수리 방식은 비용과 영향이 다릅니다.</div>
+          <div class="stack stack--sm" style="margin-top:12px">
+            <div><button class="btn btn--primary" data-toast="후보를 채택했습니다. 추가 AI 호출 없이 readback으로 확인했습니다. (시안)">후보 채택 (추가 AI 호출 없음)</button><p class="hint">검증된 승격 후보를 그대로 원장에 반영합니다. readback이 끝나지 않았거나 이미 해결된 항목은 채택할 수 없습니다.</p></div>
+            <div><button class="btn" data-toast="후보를 직접 편집하고 검증하는 화면을 엽니다. (시안)">직접 수정·검증</button><p class="hint">AI 호출 없이 후보를 고쳐 형식·근거를 다시 검사합니다.</p></div>
+            <div><button class="btn" data-open="dlg-reanalyze" data-ctx='{"title":"T132 AI 다시 분석","target":"T132 · 실패 후보 수리","kind":"실패 후보 AI 재분석"}'>AI 다시 분석…</button><p class="hint">Other Ax를 호출합니다(비용 발생 가능).</p></div>
+          </div>
+          <div class="cluster" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"><button class="btn btn--sm btn--danger" data-open="dlg-delete">이 실패 기록 삭제…</button><span class="hint">삭제는 수리와 별개입니다.</span></div>
+        </div>
+        <div class="card" data-detail="f118" hidden>
+          <div class="card__head"><div><div class="eyebrow">Failed recovery</div><h2 class="card__title" style="font-size:19px">T118 · 응답 절단</h2><p class="card__desc">marker 미완성 · 처리 이력 1개</p></div><span class="badge badge--danger">수리 필요</span></div>
+          <div class="tabs" role="tablist" data-subtabs="fd118"><button class="tab" role="tab" aria-selected="true" data-subtab="src">원문 U+A</button><button class="tab" role="tab" aria-selected="false" data-subtab="raw">원시 응답</button><button class="tab" role="tab" aria-selected="false" data-subtab="dx">진단</button><button class="tab" role="tab" aria-selected="false" data-subtab="cand">승격 후보</button><button class="tab" role="tab" aria-selected="false" data-subtab="hist">처리 이력</button></div>
+          <div data-subpanel="src" data-group="fd118" class="is-active"><p class="muted" style="margin:0 0 6px">U</p><p style="margin:0 0 10px">열쇠를 쥔 손을 펴며 문양을 바라본다. (표본)</p><p class="muted" style="margin:0 0 6px">A</p><p style="margin:0">아스텔의 손끝이 문양을 따라 움직였다. (표본)</p></div>
+          <div data-subpanel="raw" data-group="fd118"><pre class="json">{"memory": [ {"axis": "entity", "text": "…" ]  // 응답이 중간에 끊김 (표본)</pre></div>
+          <div data-subpanel="dx" data-group="fd118"><dl class="kv"><dt>오류 분류</dt><dd>응답 절단</dd><dt>grounding</dt><dd>인용 근거 누락 1건</dd><dt>시도</dt><dd>1/3</dd></dl></div>
+          <div data-subpanel="cand" data-group="fd118"><pre class="json">{ "promotion_candidate": { "turn": 118, "valid": false } }</pre></div>
+          <div data-subpanel="hist" data-group="fd118"><div class="list"><div class="res-row"><b>자동 검증</b><span class="badge badge--danger">실패</span><small>응답 절단</small></div></div></div>
+          <div class="note" style="margin-top:12px"><b>같은 문제의 수정·AI 재시도를 한 항목에 모았습니다.</b> 이전 기록은 보존됩니다. 아래 세 가지 수리 방식은 비용과 영향이 다릅니다.</div>
+          <div class="stack stack--sm" style="margin-top:12px">
+            <div><button class="btn btn--primary" disabled>후보 채택 (추가 AI 호출 없음)</button><p class="why on">채택할 수 없음 — 부적합 후보 — 응답이 끊겨 근거가 완성되지 않았습니다.</p><p class="hint">검증된 승격 후보를 그대로 원장에 반영합니다. readback이 끝나지 않았거나 이미 해결된 항목은 채택할 수 없습니다.</p></div>
+            <div><button class="btn" data-toast="후보를 직접 편집하고 검증하는 화면을 엽니다. (시안)">직접 수정·검증</button><p class="hint">AI 호출 없이 후보를 고쳐 형식·근거를 다시 검사합니다.</p></div>
+            <div><button class="btn" data-open="dlg-reanalyze" data-ctx='{"title":"T118 AI 다시 분석","target":"T118 · 실패 후보 수리","kind":"실패 후보 AI 재분석"}'>AI 다시 분석…</button><p class="hint">Other Ax를 호출합니다(비용 발생 가능).</p></div>
+          </div>
+          <div class="cluster" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"><button class="btn btn--sm btn--danger" data-open="dlg-delete">이 실패 기록 삭제…</button><span class="hint">삭제는 수리와 별개입니다.</span></div>
+        </div>
+        </div>
+      </div></div>
+
+      <div data-subpanel="cold" data-group="rc"><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc" style="margin-bottom:10px">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="field"><label>호출당 U+A</label><select class="select"><option>1턴</option><option selected>5턴 · 속도 권장</option><option>10턴</option></select></div>
+        <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd>완료 U+A 147턴</dd><dt>선택 묶음</dt><dd>30묶음 (5턴씩)</dd><dt>예상 기본 호출</dt><dd>30회</dd><dt>추가 복구 허용량</dt><dd>묶음마다 최대 +1회 (설정에 따름)</dd></dl>
+        <div class="cluster" style="margin-top:12px"><button class="btn" data-open="dlg-cold">Cold Start 실행…</button></div></div></div>
 
       <div class="grid g2">
         <div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc" style="margin-bottom:6px">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p>
-          <div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">누락이 감지되면 성공 시에만 원장에 기록합니다.</div></div><span class="badge badge--ok">켜짐</span></div>
-          <div class="setting"><div><div class="setting__name">백그라운드 자동 복구</div><div class="setting__desc">시작 전 항상 확인을 요청합니다.</div></div><span class="badge badge--ok">켜짐</span></div><button class="linkbtn" style="border:0;background:none;color:var(--accent-ink);text-decoration:underline;font-weight:650" data-go="settings">설정에서 변경 →</button></div>
-        <div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc" style="margin-bottom:10px">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="field"><label>호출당 U+A</label><select class="select"><option>1턴</option><option selected>5턴 · 속도 권장</option><option>10턴</option></select></div><div class="cluster" style="margin-top:12px"><button class="btn" data-open="dlg-cold">Cold Start 실행…</button></div></div>
+          <div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 성공 시에만 원장에 기록합니다.</div></div><span class="badge badge--ok">켜짐</span></div>
+          <div class="setting"><div><div class="setting__name">백그라운드 자동 복구</div><div class="setting__desc">매번 시작 전에 확인을 요청합니다.</div></div><span class="badge badge--ok">켜짐</span></div>
+          <div class="cluster" style="margin-top:8px"><button class="btn btn--sm" data-open="dlg-bg">확인창 미리보기</button><button class="linkbtn" style="border:0;background:none;color:var(--accent-ink);text-decoration:underline;font-weight:650" data-go="settings" data-go-sub="safe">설정에서 변경 →</button></div></div>
+        <div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div class="cluster"><button class="btn" data-toast="JSON 백업을 내보냈습니다. (시안)"><i data-i="download" data-size="sm"></i>JSON 백업</button><button class="btn" data-toast="복원 파일 검사 (시안)"><i data-i="upload" data-size="sm"></i>복원…</button></div></div>
       </div>
-
-      <details class="fold"><summary>실패 복구 기록 <span class="badge badge--danger">2</span></summary><div class="fold__body"><div class="list">
-        <div class="row"><input type="checkbox" aria-label="선택"><div><div class="row__title">T132 · 형식 오류</div><div class="row__meta">JSON schema 검사 실패 · 처리 이력 2개</div></div><button class="btn btn--sm btn--danger" data-open="dlg-delete">삭제…</button></div>
-        <div class="row"><input type="checkbox" aria-label="선택"><div><div class="row__title">T118 · 응답 절단</div><div class="row__meta">marker 미완성 · 처리 이력 1개</div></div><button class="btn btn--sm btn--danger" data-open="dlg-delete">삭제…</button></div></div></div></details>
-      <details class="fold"><summary>기억 복원 · Portable JSON</summary><div class="fold__body"><p class="muted" style="margin-top:0">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div class="cluster"><button class="btn"><i data-i="download" data-size="sm"></i>JSON 백업</button><button class="btn"><i data-i="upload" data-size="sm"></i>복원…</button></div></div></details>
     </div>
   </section>
 
@@ -208,26 +320,15 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
 
   <!-- ===== 설정 ===== -->
   <section class="page" data-page="settings" data-track>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">변경은 초안으로 유지되고, 저장할 때 전체를 검증·readback합니다. LLM은 호출하지 않습니다.</p></div><div class="page-actions"><button class="btn" data-toast="기본값을 초안에 불러왔습니다. 저장해야 적용됩니다.">기본값 불러오기</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">변경은 초안으로 유지되고, 아래 저장 막대에서 저장할 때 전체를 검증하고 다시 읽어 확인합니다. 저장에 실패하면 이전 값으로 되돌립니다(rollback). LLM은 호출하지 않습니다.</p></div><div class="page-actions"><button class="btn" data-toast="전체 기본값을 초안에 불러왔습니다. 저장해야 적용됩니다. (시안)">전체 기본값</button></div></div>
     <div class="st-layout">
-      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10)</small></button><button role="tab" aria-selected="false" data-subtab="safe"><b>복구 · 안전</b><small>누락 · Cold Start (10)</small></button><button role="tab" aria-selected="false" data-subtab="adv"><b>고급 검색</b><small>BM25 · 그래프 (12)</small></button></div>
+      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe"><b>복구 · 안전</b><small>누락 · Cold Start (10)</small></button><button role="tab" aria-selected="false" data-subtab="adv"><b>고급 검색</b><small>BM25 · 그래프 (11+테스트)</small></button></div>
       <div class="stack">
-        <div class="search"><i data-i="search" data-size="sm"></i><input class="input" placeholder="설정 이름이나 설명으로 찾기" aria-label="설정 검색"></div>
-        <div class="card is-active" data-subpanel="basic" data-group="st">
-          <div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-          <div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div>
-          <div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px"><option>자동</option><option>본문 뒤</option><option>지정 닫는 태그 앞</option></select></div>
-          <div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 따르는 것을 권장합니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px"><option>대화 원문 자동</option><option>한국어</option><option>English</option><option>日本語</option></select></div>
-        </div>
-        <div class="card" data-subpanel="pick" data-group="st">
-          <div class="setting"><div><div class="setting__name">관련성 · 최신성 비중</div><div class="setting__desc">두 값은 합계로 자동 정규화됩니다.</div></div><div style="width:250px" class="range"><div class="range__row"><span>관련성 <b id="r1">70</b></span><span>최신성 <b id="r2">30</b></span></div><input type="range" min="0" max="100" value="70" data-out="r1" aria-label="관련성 비중"></div></div>
-          <div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-        </div>
-        <div class="card" data-subpanel="safe" data-group="st"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div>
-          <div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">복구 화면의 표시와 같은 값입니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-          <div class="setting"><div><div class="setting__name">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></div><div class="setting__desc">시작 전 확인 대화상자가 항상 표시됩니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div></div>
-        <div class="card" data-subpanel="adv" data-group="st"><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
-          <div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" data-toast="보조 모델 응답 83ms">테스트</button></div></div>
+        <div class="search"><i data-i="search" data-size="sm"></i><input class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
+        <div class="card is-active" data-subpanel="basic" data-group="st"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-toast="기본 동작 섹션을 기본값으로 초안에 불러왔습니다. 저장해야 적용됩니다. (시안)">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">auto이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 wrapper일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">source면 완료된 대화 원문 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
+        <div class="card" data-subpanel="pick" data-group="st"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-toast="기억 선택 섹션을 기본값으로 초안에 불러왔습니다. 저장해야 적용됩니다. (시안)">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
+        <div class="card" data-subpanel="safe" data-group="st"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-toast="복구 · 안전 섹션을 기본값으로 초안에 불러왔습니다. 저장해야 적용됩니다. (시안)">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">복구 화면의 표시와 같은 값입니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></div><div class="setting__desc">시작 전 확인 대화상자가 항상 표시됩니다.</div><span class="argtag">hayaku_background_auto_repair</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></span></label></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음"><option>1</option><option>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="adv" data-group="st"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-toast="고급 검색 섹션을 기본값으로 초안에 불러왔습니다. 저장해야 적용됩니다. (시안)">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 구절 최대 수</div><div class="setting__desc">요청당 최대 3</div><span class="argtag">hayaku_raw_recall_max_items</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="원문 구절 최대 수"></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">원문 최소 점수</div><div class="setting__desc">0.0–1.0. 비우면 0.16</div><span class="argtag">hayaku_raw_recall_min_score</span></div><input class="input" type="number" value="0.16" style="width:100px" aria-label="원문 최소 점수"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" data-toast="보조 모델 응답 83ms (시안)">테스트</button></div></div>
       </div>
     </div>
   </section>
@@ -239,41 +340,92 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
       <div class="list"><div class="row"><i data-i="check" style="color:var(--ok)"></i><div><div class="row__title">패킷 저장 · T147</div><div class="row__meta mono">commit_readback_ok</div></div><span class="hint">23:41:08</span></div><div class="row"><i data-i="alert" style="color:var(--warn)"></i><div><div class="row__title">복구 보류 · T132</div><div class="row__meta mono">awaiting_confirmation</div></div><span class="hint">23:37:40</span></div><div class="row"><i data-i="check" style="color:var(--ok)"></i><div><div class="row__title">화면 열림</div><div class="row__meta mono">gui_open · scope=hashed</div></div><span class="hint">23:36:11</span></div></div></div>
   </section>
 
-  </div></main>
+  </div>
+  <footer class="savebar" id="savebar-hy" hidden><div class="savebar__copy"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div><div class="cluster"><button class="btn" data-revert disabled>변경 취소</button><button class="btn btn--primary" data-save disabled>저장</button></div></footer>
+  </main>
   <nav class="tabbar" aria-label="HAYAKU 하단 메뉴"></nav>
 
   <!-- Cold Start 확인 -->
   <div class="overlay" id="dlg-cold" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dc-t">
     <div class="eyebrow" style="color:var(--warn-ink)">Other Ax Cold Start</div><h2 id="dc-t">기존 패킷이 있습니다. 그래도 Cold Start 할까요?</h2>
     <p>완료된 U+A를 최대 5턴씩 한 번의 Other Ax 호출로 묶고, 결과는 기존과 같은 턴별 패킷으로 저장합니다.</p>
-    <div class="note note--warn">기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가됩니다. Provider 비용이 발생할 수 있습니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-repair">Cold Start 실행</button></div></div></div>
+    <dl class="cost-table"><dt>대상 턴</dt><dd>완료 U+A 147턴</dd><dt>묶음</dt><dd>30묶음</dd><dt>예상 기본 호출</dt><dd>30회</dd><dt>추가 복구 허용량</dt><dd>묶음마다 설정에 따라 최대 +1회</dd></dl>
+    <div class="note note--warn" style="margin-top:10px">기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가됩니다. Provider 비용이 발생할 수 있습니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-cold">Cold Start 실행</button></div></div></div>
 
-  <!-- 실패 기록 삭제 (위험: 상단 색띠 + 되돌릴 수 없음 명시) -->
+  <!-- 누락 복구 / 직접 재분석 / 실패 후보 AI 재분석 확인 -->
+  <div class="overlay" id="dlg-miss" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dm-t">
+    <div class="eyebrow" style="color:var(--warn-ink)">Other Ax</div><h2 id="dm-t"><span data-fill="title">T132 누락 복구</span>을(를) 시작할까요?</h2>
+    <dl class="cost-table"><dt>작업 종류</dt><dd data-fill="kind">누락 복구</dd><dt>대상</dt><dd data-fill="target">T132 (1턴)</dd><dt>예상 기본 호출</dt><dd>1회</dd><dt>추가 복구 허용량</dt><dd>설정에 따라 최대 +1회</dd></dl>
+    <div class="note note--warn" style="margin-top:10px">Provider 비용이 발생할 수 있습니다. 성공했을 때만 원장에 기록하고 다시 읽어 확인합니다. 중단해도 이미 전송된 요청은 처리 중일 수 있습니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-repair">시작</button></div></div></div>
+  <div class="overlay" id="dlg-reanalyze" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dra-t">
+    <div class="eyebrow" style="color:var(--warn-ink)">Other Ax</div><h2 id="dra-t"><span data-fill="title">T132 AI 다시 분석</span>을(를) 시작할까요?</h2>
+    <dl class="cost-table"><dt>작업 종류</dt><dd data-fill="kind">실패 후보 AI 재분석</dd><dt>대상</dt><dd data-fill="target">T132 · 실패 후보 수리</dd><dt>예상 기본 호출</dt><dd>1회</dd></dl>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-repair">시작</button></div></div></div>
+
+  <!-- 백그라운드 자동 복구 확인 (실행 전 항상 표시) -->
+  <div class="overlay" id="dlg-bg" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="db-t">
+    <div class="eyebrow" style="color:var(--warn-ink)">Background auto repair</div><h2 id="db-t">내구성 있는 복구 기록 1건이 있습니다</h2>
+    <p>Other Ax 복구를 1회 실행할까요? 이 확인은 실행 전에 매번 표시됩니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus data-toast="저널에 유지했습니다. (시안)">아니요 · 저널에 유지</button><button class="btn btn--primary" data-close data-run-job="job-repair" data-ctx='{"title":"T132 백그라운드 복구","target":"T132 (저널)","kind":"백그라운드 자동 복구"}'>예 · 자동 복구 시작</button></div></div></div>
+
+  <!-- 실패 기록 삭제 -->
   <div class="overlay" id="dlg-delete" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dd-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Failed recovery record</div><h2 id="dd-t">선택한 2개 문제의 실패 기록 3개를 삭제할까요?</h2>
+    <div class="eyebrow" style="color:var(--danger-ink)">Failed recovery record</div><h2 id="dd-t">선택한 실패 기록을 삭제할까요?</h2>
     <p>실패 복구 목록의 분석 결과·진단·승격 미리보기만 삭제합니다.</p>
     <div class="note"><b>남는 것</b> Recovery Journal 원문과 복구 부채는 그대로라 수동·자동 복구를 다시 시도할 수 있습니다.<br><b>사라지는 것</b> 삭제한 실패 기록 자체는 되돌릴 수 없습니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="실패 기록 3개를 삭제하고 readback으로 확인했습니다.">기록 삭제</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="실패 기록을 삭제하고 readback으로 확인했습니다. (시안)">기록 삭제</button></div></div></div>
 
+  <!-- 고아 데이터 정리 (입력 확인 필수) -->
   <div class="overlay" id="dlg-orphan" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="do-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Permanent cleanup</div><h2 id="do-t">고아 데이터 2개를 영구 삭제할까요?</h2>
-    <p>검증된 롤백 고아 레코드 2개(4,812자)를 삭제합니다. 활성 세계선·상속·영구·보호 데이터는 유지됩니다.</p>
-    <div class="field" style="margin-top:12px"><label for="orph-in">계속하려면 “정리”를 입력하세요</label><input id="orph-in" class="input" placeholder="정리" autocomplete="off"></div>
-    <div class="dialog__actions"><button class="btn" data-close>취소</button><button class="btn btn--danger-solid" data-close data-toast="고아 레코드 2개를 삭제했습니다.">영구 삭제 (2)</button></div></div></div>
+    <p>미리보기에서 확인한 검증된 롤백 고아 레코드 2개(4,812자)를 삭제합니다. 삭제 직전에 owner를 다시 검증하며, 활성 세계선·상속·영구·보호 데이터는 유지됩니다.</p>
+    <div class="field" style="margin-top:12px"><label for="orph-in">계속하려면 “정리”를 입력하세요</label><input id="orph-in" class="input" placeholder="정리" autocomplete="off" data-typed="정리" data-typed-target="btn-orph"></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-orph" disabled data-close data-toast="고아 레코드 2개를 삭제했습니다. (시안)">영구 삭제 (2)</button></div></div></div>
 
+  <!-- 재생성 시작 (승인 → 분석·검증 → 후보 비교 → 사용자 결정) -->
   <div class="overlay" id="dlg-regen" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dr-t">
-    <div class="eyebrow">Other Ax targeted regeneration</div><h2 id="dr-t">이 패킷을 다시 분석해 교체할까요?</h2><p>대상 T147 · current_snapshot · 기존 레코드 1개</p>
-    <div class="note">현재 원문에서 다시 검증한 뒤 분석합니다. 새 패킷이 모두 검증된 경우에만 기존 레코드를 한 번의 트랜잭션으로 교체하고, 이전 패킷은 다시 채택할 수 있게 보존합니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-repair">재생성</button></div></div></div>
+    <div class="eyebrow">Other Ax targeted regeneration</div><h2 id="dr-t">이 패킷의 재생성 후보를 만들까요?</h2><p>대상 <b data-fill="target">T147 · current_snapshot</b></p>
+    <div class="steps" style="margin:10px 0"><div class="step is-active"><span class="step__no">1</span><b>생성 승인</b></div><div class="step"><span class="step__no">2</span><b>분석·검증</b></div><div class="step"><span class="step__no">3</span><b>후보 비교</b></div><div class="step"><span class="step__no">4</span><b>내가 결정</b></div></div>
+    <div class="note">분석과 검증이 끝나도 <b>기존 패킷은 아직 교체되지 않습니다.</b> 후보를 기존 패킷과 비교한 뒤 직접 고릅니다. 이전 패킷은 다시 채택할 수 있게 보존됩니다. Provider 비용이 발생할 수 있습니다(기본 1회).</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-regen">후보 만들기</button></div></div></div>
 
-  <!-- 작업 오버레이: 불투명 대화상자 + 명도만 낮춘 배경, 최소화 가능 -->
-  <div class="overlay" id="job-repair" aria-hidden="true" data-job-labels="대상 턴을 현재 원문과 대조하는 중|Other Ax에 분석을 요청하는 중|결과를 형식·원문과 검증하는 중|원장에 기록하고 다시 읽는 중|T132 패킷을 복구하고 readback으로 확인했습니다.">
+  <!-- 후보 비교와 사용자 결정 -->
+  <div class="overlay" id="dlg-compare" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dcmp-t">
+    <div class="eyebrow">Choose</div><h2 id="dcmp-t">기존 패킷과 재생성 후보를 비교하세요</h2>
+    <div class="cmp"><div><b>기존 패킷 (revision 2)</b>은색 열쇠와 북쪽 문의 조건을 현재 장면에 결속. 열쇠 반환 약속 <del>유지</del></div><div><b>재생성 후보 (검증 통과)</b>은색 열쇠와 북쪽 문의 조건을 현재 장면에 결속. 열쇠 반환 약속 <ins>유지 + 월식 조건 추가</ins></div></div>
+    <p class="hint" style="margin-top:10px">채택에 실패하면 이 선택 화면으로 돌아와 다시 고를 수 있습니다. 채택 후에도 이전 패킷을 다시 채택할 수 있습니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-toast="나중에 결정합니다. 후보는 보류 상태로 남습니다. (시안)">나중에 결정</button><button class="btn" data-close data-toast="기존 패킷을 유지했습니다. (시안)">기존 패킷 유지</button><button class="btn btn--primary" data-close data-toast="재생성 후보를 채택하고 readback으로 확인했습니다. (시안)">재생성 후보 채택</button></div></div></div>
+  <div class="overlay" id="dlg-readopt" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dro-t">
+    <div class="eyebrow">Re-adopt</div><h2 id="dro-t">이전 패킷(revision 1)을 다시 채택할까요?</h2><p>현재 패킷이 이전 패킷으로 바뀝니다. 현재 패킷도 보존되어 다시 채택할 수 있습니다.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="이전 패킷을 다시 채택했습니다. (시안)">다시 채택</button></div></div></div>
+
+  <!-- 작업: 누락 복구 / 재분석 / 실패 수리 (대상은 ctx로 채움) -->
+  <div class="overlay" id="job-repair" aria-hidden="true" data-inherit-ctx data-job-labels="대상 턴을 현재 원문과 대조하는 중|Other Ax에 분석을 요청하는 중|결과를 형식·원문과 검증하는 중|원장에 기록하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t">
-      <div class="split"><div><div class="eyebrow">Hayaku recovery job</div><h2 id="jr-t">T132 복구</h2></div><span class="badge badge--info">호출 1회 한도</span></div>
+      <div class="split"><div><div class="eyebrow" data-fill="kind">누락 복구</div><h2 id="jr-t" data-fill="title">T132 복구</h2></div><span class="badge badge--info">기본 1회 · 추가 복구 허용 시 최대 +1회</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>작업을 준비합니다.</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>대조</b></div><div class="step"><span class="step__no">2</span><b>분석</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div><div class="step"><span class="step__no">4</span><b>기록</b></div></div>
+      <div class="list" data-job-result hidden style="margin-top:12px"><div class="res-row"><b>기억 저장</b><span class="badge badge--ok">완료</span></div><div class="res-row"><b>완전 패킷</b><span class="badge badge--warn">부분 저장</span><small>결속 검증이 보류되어 완전 패킷 복구로 보지 않습니다. (표본)</small></div><div class="res-row"><b>실제 호출 수</b><span>2회</span><small>기본 1회 + 추가 복구 1회</small></div></div>
       <div class="dialog__actions"><button class="btn" data-close>최소화</button><button class="btn btn--danger" data-job-cancel data-close>작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <!-- 작업: Cold Start -->
+  <div class="overlay" id="job-cold" aria-hidden="true" data-job-labels="완료된 U+A를 5턴씩 묶는 중|Other Ax에 묶음을 요청하는 중 (묶음마다 반복)|결과를 턴별 패킷으로 검증하는 중|과거 기록으로 원장에 추가하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jc-t">
+      <div class="split"><div><div class="eyebrow">Cold Start</div><h2 id="jc-t">Cold Start 진행</h2></div><span class="badge badge--info">30묶음 · 기본 30회</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>작업을 준비합니다.</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>묶음</b></div><div class="step"><span class="step__no">2</span><b>분석</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div><div class="step"><span class="step__no">4</span><b>기록</b></div></div>
+      <div class="list" data-job-result hidden style="margin-top:12px"><div class="res-row"><b>저장된 패킷</b><span class="badge badge--ok">27턴</span></div><div class="res-row"><b>보류</b><span class="badge badge--warn">3턴</span><small>형식 오류로 실패 후보 목록에 추가됨 (표본)</small></div><div class="res-row"><b>실제 호출 수</b><span>31회</span><small>기본 30회 + 추가 복구 1회</small></div></div>
+      <div class="dialog__actions"><button class="btn" data-close>최소화</button><button class="btn btn--danger" data-job-cancel data-close>작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <!-- 작업: 재생성 (후보 비교 단계에서 멈춤) -->
+  <div class="overlay" id="job-regen" aria-hidden="true" data-job-labels="현재 원문과 대상 패킷을 다시 검증하는 중|Other Ax에 재분석을 요청하는 중|후보를 형식·원문과 검증하는 중|후보가 준비됐습니다. 기존 패킷은 아직 교체되지 않았습니다.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jg-t">
+      <div class="split"><div><div class="eyebrow">Regeneration</div><h2 id="jg-t">재생성 후보를 만드는 중</h2></div><span class="badge badge--info">기본 1회</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>작업을 준비합니다.</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>재검증</b></div><div class="step"><span class="step__no">2</span><b>분석</b></div><div class="step"><span class="step__no">3</span><b>후보 검증</b></div></div>
+      <div class="dialog__actions"><button class="btn" data-close>최소화</button><button class="btn btn--danger" data-job-cancel data-close>작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden data-then-open="dlg-compare">후보 비교하기</button></div></div></div>
 
   <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
   <div class="toasts" aria-live="polite"></div>
@@ -293,7 +445,9 @@ function drawRoute(){
 }
 document.addEventListener('suite:ready',drawRoute);
 document.addEventListener('click',function(e){if(e.target.closest('[data-scenario]'))setTimeout(drawRoute,0);});
-document.querySelectorAll('.seg [data-val]').forEach(function(b){b.addEventListener('click',function(){document.getElementById('pk-list').style.maxHeight=b.dataset.val==='world'?'120px':'520px';});});
+document.getElementById('pk-view').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;document.getElementById('pk-list').classList.toggle('is-world',b.dataset.val==='world');});
+document.addEventListener('suite:page',function(e){document.getElementById('savebar-hy').hidden=e.detail!=='settings';});
+document.addEventListener('input',function(e){var t=e.target;if(t.dataset&&t.dataset.typed){var b=document.getElementById(t.dataset.typedTarget);if(b)b.disabled=(t.value.trim()!==t.dataset.typed);}});
 </script>
 </body>
 </html>

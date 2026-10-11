@@ -115,8 +115,23 @@
 
   /* ---- 오버레이 ---- */
   var lastFocus = null;
-  function openOv(id) {
+  function resetOverlay(ov) {
+    /* 위험 확인창은 열 때마다 입력 문구와 실행 버튼 상태를 초기화한다 (감사 B04) */
+    $$('[data-typed]', ov).forEach(function (i) {
+      i.value = '';
+      var b = document.getElementById(i.dataset.typedTarget); if (b) b.disabled = true;
+    });
+    $$('.confirm-inline.is-open', ov).forEach(function (c) { c.classList.remove('is-open'); });
+  }
+  function fillCtx(ov, ctx) {
+    if (!ctx) return;
+    $$('[data-fill]', ov).forEach(function (el) { var k = el.dataset.fill; if (ctx[k] !== undefined) el.textContent = ctx[k]; });
+  }
+  var lastCtx = null;
+  function openOv(id, ctx) {
     var ov = document.getElementById(id); if (!ov) return;
+    if (ctx) lastCtx = ctx;
+    resetOverlay(ov); fillCtx(ov, ctx);
     lastFocus = document.activeElement; ov.classList.add('is-open'); ov.setAttribute('aria-hidden', 'false');
     var f = ov.querySelector('[data-autofocus]') || ov.querySelector('button,input,select,textarea'); if (f) setTimeout(function () { f.focus(); }, 0);
   }
@@ -126,13 +141,46 @@
   }
   window.suiteOpen = openOv; window.suiteClose = function (id) { closeOv(document.getElementById(id)); };
 
-  /* ---- 입력 변경 → 저장 바 ---- */
+  /* ---- 입력 변경 → 저장 바 (baseline / draft 구분, 되돌리기는 실제 값 복원) ---- */
   var dirty = new Set();
-  function markDirty(el) {
-    var st = el.closest('.setting'), cd = el.closest('.card');
-    var key = el.dataset.dirtyKey || el.id || el.name || (st && st.querySelector('.setting__name') && st.querySelector('.setting__name').textContent) || (cd && cd.querySelector('.card__title') && cd.querySelector('.card__title').textContent) || 'x';
-    dirty.add(key); renderSave();
+  var baseline = new Map();
+  function trackedControls() {
+    var out = [];
+    $$('.page[data-track] input, .page[data-track] select, .page[data-track] textarea, .drawer input, .drawer select, .drawer textarea').forEach(function (el) {
+      if (el.closest('.savebar') || el.closest('.search') || el.hasAttribute('data-typed') || el.hasAttribute('data-no-track') || el.type === 'file') return;
+      out.push(el);
+    });
+    $$('.choices[data-dirty], .seg[data-dirty], .mode-switch[data-dirty]').forEach(function (el) { out.push(el); });
+    return out;
   }
+  function readVal(el) {
+    if (el.matches('.choices')) return $$('.choice', el).map(function (c) { return c.classList.contains('is-on') ? '1' : '0'; }).join('');
+    if (el.matches('.seg, .mode-switch')) return $$('button', el).map(function (c) { return c.getAttribute('aria-pressed') === 'true' ? '1' : '0'; }).join('');
+    if (el.type === 'checkbox' || el.type === 'radio') return el.checked ? '1' : '0';
+    return el.value;
+  }
+  function writeVal(el, v) {
+    if (el.matches('.choices')) { $$('.choice', el).forEach(function (c, i) { c.classList.toggle('is-on', v.charAt(i) === '1'); }); return; }
+    if (el.matches('.seg, .mode-switch')) {
+      $$('button', el).forEach(function (c, i) { c.setAttribute('aria-pressed', String(v.charAt(i) === '1')); });
+      el.dispatchEvent(new CustomEvent('suite:restore', { bubbles: true }));
+      if (el.dataset.target) { var on = $$('button', el).filter(function (c) { return c.getAttribute('aria-pressed') === 'true'; })[0]; $$('[data-seg-panel="' + el.dataset.target + '"]').forEach(function (p) { p.hidden = !on || p.dataset.val !== on.dataset.val; }); }
+      return;
+    }
+    if (el.type === 'checkbox' || el.type === 'radio') el.checked = v === '1'; else el.value = v;
+    if (el.dataset.out) { var o = document.getElementById(el.dataset.out); if (o) o.textContent = el.value + (el.dataset.unit || ''); }
+  }
+  function snapshot() { baseline = new Map(); trackedControls().forEach(function (el) { baseline.set(el, readVal(el)); }); dirty.clear(); }
+  function recompute() {
+    dirty.clear();
+    trackedControls().forEach(function (el, i) {
+      if (!baseline.has(el)) baseline.set(el, readVal(el));
+      if (baseline.get(el) !== readVal(el)) dirty.add(el.id || el.name || ('c' + i));
+    });
+    renderSave();
+  }
+  function markDirty() { recompute(); }
+  function revertAll() { baseline.forEach(function (v, el) { writeVal(el, v); }); recompute(); }
   function renderSave() {
     $$('.savebar').forEach(function (bar) {
       var n = dirty.size; bar.classList.toggle('is-dirty', n > 0);
@@ -142,6 +190,43 @@
       $$('[data-save], [data-revert]', bar).forEach(function (btn) { btn.disabled = n === 0; });
     });
   }
+  window.suiteMarkDirty = markDirty;
+
+  /* ---- 접근성: 보이는 설명을 입력 컨트롤에 프로그램상 연결 (감사 B09) ---- */
+  var uid = 0;
+  function autoLabel() {
+    $$('.field').forEach(function (f) {
+      var lab = f.querySelector(':scope > label'); if (!lab || lab.htmlFor) return;
+      var c = f.querySelector(':scope > input:not([type=hidden]), :scope > select, :scope > textarea'); if (!c) return;
+      if (!c.id) c.id = 'auto-f' + (++uid);
+      lab.htmlFor = c.id;
+    });
+    $$('.setting').forEach(function (row) {
+      var nm = row.querySelector('.setting__name'); if (!nm) return;
+      if (!nm.id) nm.id = 'auto-s' + (++uid);
+      $$('input,select,textarea', row).forEach(function (c) {
+        if (c.type === 'hidden' || c.hasAttribute('aria-label') || c.hasAttribute('aria-labelledby')) return;
+        if (c.labels && c.labels.length && c.labels[0].textContent.replace(/\s+/g, '').length && !c.labels[0].classList.contains('switch')) return;
+        c.setAttribute('aria-labelledby', nm.id);
+      });
+    });
+    $$('input,select,textarea').forEach(function (c) {
+      if (c.type === 'hidden' || c.hasAttribute('aria-label') || c.hasAttribute('aria-labelledby')) return;
+      var named = c.labels && c.labels.length && c.labels[0].textContent.replace(/\s+/g, '').length && !c.labels[0].classList.contains('switch');
+      if (named) return;
+      var wrap = c.closest('label.row, label.check');
+      var txt = wrap ? (wrap.querySelector('.row__title, b') || wrap).textContent : (c.getAttribute('placeholder') || '');
+      if (!txt) { var card = c.closest('.card'); var t = card && card.querySelector('.card__title'); txt = t ? t.textContent : ''; }
+      if (txt) c.setAttribute('aria-label', txt.trim());
+    });
+  }
+
+  /* ---- 서브탭 프로그램 전환 ---- */
+  function activateSubtab(pageId, name) {
+    var pg = $('.page[data-page="' + pageId + '"]'); if (!pg) return;
+    var tab = $('[data-subtab="' + name + '"]', pg); if (tab) tab.click();
+  }
+  window.suiteSubtab = activateSubtab;
 
   function init() {
     sprite(); hydrateIcons(document); buildTabbar();
@@ -150,12 +235,22 @@
     document.addEventListener('click', function (e) {
       var t = e.target;
       var go = t.closest('[data-go]');
-      if (go) { var ov = go.closest('.overlay'); if (ov) closeOv(ov); goPage(go.dataset.go); var m = $('.menu.is-open'); if (m) m.classList.remove('is-open'); return; }
+      if (go) { var ov = go.closest('.overlay'); if (ov) closeOv(ov); goPage(go.dataset.go); if (go.dataset.goSub) activateSubtab(go.dataset.go, go.dataset.goSub); if (go.dataset.toast) toast(go.dataset.toast); var m = $('.menu.is-open'); if (m) m.classList.remove('is-open'); return; }
       if (t.closest('[data-more]')) { openOv('sheet-more'); return; }
       var op = t.closest('[data-open]');
-      if (op) { openOv(op.dataset.open); return; }
+      if (op) { var ctx = null; if (op.dataset.ctx) { try { ctx = JSON.parse(op.dataset.ctx); } catch (er) {} } openOv(op.dataset.open, ctx); return; }
       var cl = t.closest('[data-close]');
-      if (cl) { closeOv(cl.closest('.overlay')); var rj = cl.closest('[data-run-job]'); if (rj) runJob(rj.dataset.runJob); return; }
+      if (cl) {
+        /* 닫기 + (중단 | 토스트 | 작업 시작)을 한 버튼에서 모두 수행 (감사 B06·B08) */
+        var cov = cl.closest('.overlay');
+        if (cl.hasAttribute('data-job-cancel') && cov) cancelJob(cov);
+        closeOv(cov);
+        if (cl.dataset.toast) toast(cl.dataset.toast);
+        if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen);
+        if (cl.dataset.thenGo) goPage(cl.dataset.thenGo);
+        var rj = cl.closest('[data-run-job]'); if (rj) runJob(rj.dataset.runJob, rj.dataset.ctx ? safeJson(rj.dataset.ctx) : null);
+        return;
+      }
       if (t.classList && t.classList.contains('overlay') && !t.dataset.sticky) { closeOv(t); return; }
       var mt = t.closest('[data-menu]');
       if (mt) { var menu = mt.closest('.menu'); var was = menu.classList.contains('is-open'); $$('.menu.is-open').forEach(function (x) { x.classList.remove('is-open'); }); if (!was) menu.classList.add('is-open'); return; }
@@ -185,24 +280,24 @@
         return;
       }
       var rowSel = t.closest('[data-select-row]');
-      if (rowSel) { var lst = rowSel.parentElement; $$('[data-select-row]', lst).forEach(function (r) { r.classList.toggle('is-on', r === rowSel); if (r === rowSel) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); }); var tg = rowSel.dataset.selectRow; if (tg) { $$('[data-detail]').forEach(function (d) { d.hidden = d.dataset.detail !== tg; }); } return; }
+      if (rowSel) { var lst = rowSel.parentElement; $$('[data-select-row]', lst).forEach(function (r) { r.classList.toggle('is-on', r === rowSel); if (r === rowSel) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); }); var tg = rowSel.dataset.selectRow; if (tg) { var droot = rowSel.closest('[data-detail-root]') || rowSel.closest('.overlay') || rowSel.closest('.page') || document; $$('[data-detail]', droot).forEach(function (d) { var show = d.dataset.detail === tg; d.hidden = !show; d.classList.toggle('is-on', show); }); } return; }
       var sv = t.closest('[data-save]');
-      if (sv) { dirty.clear(); renderSave(); toast(sv.dataset.save || '저장하고 다시 읽어 확인했습니다.'); return; }
+      if (sv) { snapshot(); renderSave(); toast(sv.dataset.save || '저장하고 다시 읽어 확인했습니다. (시안)'); return; }
       var rv = t.closest('[data-revert]');
-      if (rv) { dirty.clear(); renderSave(); toast('저장된 값으로 되돌렸습니다.'); return; }
+      if (rv) { revertAll(); toast('저장된 값으로 되돌렸습니다.'); return; }
       var ts = t.closest('[data-toast]');
       if (ts) { toast(ts.dataset.toast); $$('.menu.is-open').forEach(function (x) { x.classList.remove('is-open'); }); return; }
-      var sc = t.closest('[data-scenario]');
-      if (sc) { document.documentElement.dataset.scenario = sc.dataset.scenario; $$('[data-scenario]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === sc)); }); return; }
-      var dv = t.closest('[data-device]');
-      if (dv) { var fr = $('.frame'); fr.dataset.device = dv.dataset.device; $$('[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === dv)); }); return; }
+      var sc = t.closest('button[data-scenario]');
+      if (sc) { document.documentElement.dataset.scenario = sc.dataset.scenario; $$('button[data-scenario]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === sc)); }); return; }
+      var dv = t.closest('button[data-device]');
+      if (dv) { var fr = $('.frame'); fr.dataset.device = dv.dataset.device; $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === dv)); }); return; }
       var job = t.closest('[data-run-job]');
-      if (job) { runJob(job.dataset.runJob); return; }
+      if (job) { runJob(job.dataset.runJob, job.dataset.ctx ? safeJson(job.dataset.ctx) : null); return; }
     });
     document.addEventListener('input', function (e) {
       var el = e.target;
       if (el.closest('.savebar')) return;
-      if (el.matches('input,select,textarea') && el.closest('.page[data-track]')) markDirty(el);
+      if (el.matches('input,select,textarea')) recompute();
       var out = el.dataset.out; if (out) { var o = document.getElementById(out); if (o) o.textContent = el.value + (el.dataset.unit || ''); }
     });
     document.addEventListener('keydown', function (e) {
@@ -221,29 +316,53 @@
         tabs[i].focus(); tabs[i].click(); e.preventDefault();
       }
     });
-    renderSave();
+    var pb = $('.proto-bar'); if (pb && !$('.proto-note', pb)) { var pn = document.createElement('span'); pn.className = 'proto-note'; pn.textContent = '표본 데이터 · 저장/삭제/진행은 시연용'; pb.appendChild(pn); }
+    autoLabel(); snapshot(); renderSave();
     var h = (location.hash || '').replace('#', '');
     var qs = new URLSearchParams(location.search);
-    if (qs.get('device')) { var fr = $('.frame'); if (fr) { fr.dataset.device = qs.get('device'); $$('[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.device === qs.get('device'))); }); } }
+    if (qs.get('device')) { var fr = $('.frame'); if (fr) { fr.dataset.device = qs.get('device'); $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.device === qs.get('device'))); }); } }
     if (h) goPage(h, { silent: true });
     else { var first = $('.page.is-active'); if (first) goPage(first.dataset.page, { silent: true }); }
     if (qs.get('open')) openOv(qs.get('open'));
+    if (qs.get('sub')) { var sp = (qs.get('sub') || '').split(':'); if (sp.length === 2) activateSubtab(sp[0], sp[1]); }
     document.dispatchEvent(new CustomEvent('suite:ready'));
   }
 
   /* ---- 작업 시뮬레이션 (진행 표시 시안) ---- */
-  function runJob(id) {
+  function safeJson(t) { try { return JSON.parse(t); } catch (e) { return null; } }
+  function cancelJob(ov) {
+    if (!ov || !ov._t) return;
+    clearInterval(ov._t); ov._t = null; ov.dataset.state = 'cancelled';
+    var msg = ov.querySelector('[data-job-msg]'); if (msg) msg.textContent = '중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.';
+    toast('중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.');
+  }
+  function runJob(id, ctx) {
     var ov = document.getElementById(id); if (!ov) return;
-    openOv(id);
+    if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
+    resetOverlay(ov); openOv(id, ctx);
+    $$('[data-job-result]', ov).forEach(function (r) { r.hidden = true; });
     var bar = ov.querySelector('.progress>i'); var steps = $$('.step', ov); var msg = ov.querySelector('[data-job-msg]');
     var done = ov.querySelector('[data-job-done]'); var cancel = ov.querySelector('[data-job-cancel]');
-    var labels = (ov.dataset.jobLabels || '').split('|'); var i = 0;
+    var labels = (ov.dataset.jobLabels || '').split('|');
+    var total = steps.length || Math.max(labels.length - 1, 1); var i = 0;
+    ov.dataset.state = 'running';
     steps.forEach(function (s) { s.classList.remove('is-done', 'is-active'); }); if (done) done.hidden = true; if (cancel) cancel.hidden = false;
+    if (bar) bar.style.setProperty('--v', '0%');
     clearInterval(ov._t);
     ov._t = setInterval(function () {
       if (i > 0 && steps[i - 1]) { steps[i - 1].classList.remove('is-active'); steps[i - 1].classList.add('is-done'); }
-      if (i >= steps.length) { clearInterval(ov._t); if (bar) bar.style.setProperty('--v', '100%'); if (msg) msg.textContent = labels[labels.length - 1] || '완료했습니다.'; if (done) done.hidden = false; if (cancel) cancel.hidden = true; return; }
-      steps[i].classList.add('is-active'); if (bar) bar.style.setProperty('--v', Math.round((i + 0.5) / steps.length * 100) + '%'); if (msg && labels[i]) msg.textContent = labels[i]; i++;
+      if (i >= total) {
+        clearInterval(ov._t); ov._t = null; ov.dataset.state = 'done';
+        if (bar) bar.style.setProperty('--v', '100%');
+        var fin = labels[labels.length - 1] || '완료했습니다.';
+        if (msg) msg.textContent = fin; if (done) done.hidden = false; if (cancel) cancel.hidden = true;
+        $$('[data-job-result]', ov).forEach(function (r) { r.hidden = false; });
+        if (!ov.classList.contains('is-open')) toast(fin);
+        return;
+      }
+      if (steps[i]) steps[i].classList.add('is-active');
+      if (bar) bar.style.setProperty('--v', Math.round((i + 0.5) / total * 100) + '%');
+      if (msg && labels[i]) msg.textContent = labels[i]; i++;
     }, 1100);
   }
 
