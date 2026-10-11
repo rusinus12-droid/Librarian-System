@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const create=require('../tools/recall_keyword_features.cjs');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 const core=create();
 const expectedBlock=`const RecallKeywordFeatures = (${create.toString()})();`;
 for(const file of ['HAYAKU_Locator_Continuity.js','Flashback_Memory.js'])assert.ok(fs.readFileSync(path.join(__dirname,'../plugins',file),'utf8').includes(expectedBlock),'Standalone owner embeds identical reviewed helper');
@@ -31,7 +31,7 @@ const typed=(name,id,aliases=[])=>({statusDataParsed:{characters:[{name,id,alias
 (async()=>{
 const h=await createHayakuRuntime({autoRepair:false,arguments:{memory_suite_server_mode:'plugin_only'}}),f=await createFixture();
 try{
- const ht=h.hayaku._test,ft=f.api._test,sel=f.api._selectionTest,cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',topK:1,mmrEnabled:false,currentSceneTailEnabled:false,heuristicRecall:true};
+ const ht=h.hayaku._test,ft=f.api._test,sel=f.api._selectionTest,cfg={...await f.api.loadSettings(),...modelSettings,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,mmrEnabled:false,currentSceneTailEnabled:false,heuristicRecall:true};
  const store=ht.emptyStore();store.entity.characters=[{id:'nicolo',publicRef:'nicolo',name:'니콜로'},{id:'nicole',publicRef:'nicole',name:'니콜'},{id:'rin',publicRef:'rin',name:'린'},{id:'alice',publicRef:'alice',name:'Alice',aliases:['A+B']}];
  const sig=q=>ht.buildRetrievalQuerySignature(store,q,h.hayaku.settings());
  assert.deepEqual(Array.from(sig('니콜로 어디에 있어?').mentionedEntities),['nicolo']);
@@ -48,6 +48,7 @@ try{
   const a=ft.buildDiscriminativeRecallAnchors(sel.extractRecallAnchors('민수의 약속 장소는?'),records);
   assert.equal(a.entities.size,0,'Raw nouns do not become verified identities');
   const arms=await ft.generateRecallCandidateArms({records,queryText:'민수의 약속 장소는?',queryAnchors:a,settings:cfg});
+  assert.ok(Object.values(arms).every(rows=>rows.length===0),'Raw records without comparable model vectors cannot enter any recall arm');
   assert.ok(!arms.forced.some(x=>x.reasons.includes('entity_focused')));
   const plan=sel.selectFlashbackEvidencePlan({queryText:'민수의 약속 장소는?',scopeKey:'scope-one',records:records.map(r=>({record:r,score:r.id==='target'?.4:.9,components:r.id==='other'?{currentSceneTail:1,exactArm:1}:{exactArm:1}}))},cfg,2000);
   assert.equal(plan.items[0].record.id,'target');assert.ok(plan.text.includes('성문'));
@@ -73,10 +74,35 @@ try{
  const summary=ft.buildRecallShardSummary([target,other],0);
  const route=ft.selectRecallShardIndexes({scopeKey:'scope-one',shardCount:5,shardIndexVersion:4,shardSummaries:Array.from({length:5},(_,i)=>({...summary,shardIndex:i}))},'민수의 약속 장소는?',[],'hash','fact',{...cfg,recallFullScanThreshold:1});
  assert.equal(route.fullScan,true);assert.equal(route.indexes.length,5,'Legacy index cannot hide a shard');
- const typedArms=await ft.generateRecallCandidateArms({records:[typedRecord,other],queryText:'은빛 늑대가 어디에 있어?',queryAnchors:a,settings:cfg});
+ // Candidate admission now requires real configured-model readiness. Preserve
+ // alias retrieval with actual ingested records and a query adapter result.
+ f.currentChat.message=[
+  {role:'user',chatId:'alias-u1',data:'민수의 위치를 기록해.'},{role:'assistant',chatId:'alias-a1',data:typedRecord.text},
+  {role:'user',chatId:'alias-u2',data:'아리아의 약속을 기록해.'},{role:'assistant',chatId:'alias-a2',data:other.text}
+ ];f.currentChat.messages=f.currentChat.message;
+ await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
+ const scope=await f.api.resolveCurrentScope(),stored=(await ft.loadScopeRecords(scope.scopeKey)).records;
+ const persistedBefore=JSON.stringify(stored);
+ const readyTyped=structuredClone(stored.find(row=>row.sourceType==='response'&&row.text.includes(typedRecord.text)));
+ const readyOther=structuredClone(stored.find(row=>row.sourceType==='response'&&row.text.includes(other.text)));
+ assert.ok(readyTyped&&readyOther,'Both current source records were durably ingested');
+ readyTyped.metadata={...readyTyped.metadata,...typed('민수','minsu',['은빛 늑대','Min-su'])};
+ const query=await ft.getCachedQueryEmbedding('은빛 늑대가 어디에 있어?',cfg);
+ const request={records:[readyTyped,readyOther],queryText:'은빛 늑대가 어디에 있어?',queryAnchors:a,queryVector:query.vector,settings:{...cfg,contextualRecall:false},
+  context:{queryProvider:readyTyped.provider,queryModel:readyTyped.model,queryProfileId:readyTyped.embeddingProfileId}};
+ // The non-contextual mode retains lexical arms after model admission.
+ const typedArms=await ft.generateRecallCandidateArms(request);
+ const contextualArms=await ft.generateRecallCandidateArms({...request,settings:{...cfg,contextualRecall:true}});
+ assert.ok(contextualArms.dense.some(x=>x.record.id===readyTyped.id),'Default contextual mode still admits the comparable model record through the dense arm');
+ assert.equal(contextualArms.exact.length,0,'Contextual semantic mode does not manufacture a separate lexical fallback');
  assert.ok(!typedArms.forced.some(x=>x.reasons.includes('entity_focused')),'Partial local metadata cannot certify an alias globally');
- assert.ok(typedArms.exact.some(x=>x.record.id==='typed'),'Unverified aliases retain ordinary retrieval');
- assert.ok(!typedArms.forced.some(x=>x.record.id==='other'&&x.reasons.includes('entity_focused')));
+ assert.ok(typedArms.exact.some(x=>x.record.id===readyTyped.id),'Unverified aliases retain ordinary retrieval among model-ready records');
+ assert.ok(!typedArms.forced.some(x=>x.record.id===readyOther.id&&x.reasons.includes('entity_focused')));
+ for(const rejected of [{...readyTyped,text:readyTyped.text+' changed after embedding'},{...readyTyped,provider:'hash',embeddingProvider:'hash'}]){
+  const arms=await ft.generateRecallCandidateArms({...request,records:[rejected]});
+  assert.ok(Object.values(arms).every(rows=>rows.length===0),'An alias cannot bypass stale-source or legacy-model admission');
+ }
+ assert.equal(JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records),persistedBefore,'Alias candidate preparation preserves persisted source and model vectors');
  assert.equal(h.llmCalls.length,0);
  console.log('recall_keyword_features_runtime_test: PASS');
 }finally{await h.dispose();await f.dispose();}
