@@ -108,6 +108,9 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # Actual six-plugin pinned release build and all artifact/negative controls: 126.662s.
+    # Bound aggregate execution at 180s; existing build/minifier deadlines are unchanged.
+    'test_surface_strip_test.cjs': 180,
     # Preserved five-scenario local Persona dialog: standalone 135.109s,
     # unchanged case deadlines; 180s bounds aggregate scheduling overhead.
     'retrace_dialog_lifecycle_gui_test.cjs': 180,
