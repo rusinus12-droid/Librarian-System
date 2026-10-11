@@ -1,17 +1,16 @@
 'use strict';
 
 // Drive callbacks registered by the unchanged plugin against a real DOM and an
-// isolated real server. Exposed helpers only inspect state/read owner data;
+// physical local snapshot. Exposed helpers only inspect state/read owner data;
 // neither producer, backup, transport, nor restore implementation is replaced.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { DatabaseSync } = require('node:sqlite');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
-const { createMemorySuiteServer } = require('../server/server.cjs');
+const { createSnapshotBridge } = require('./fixtures/lia_legacy_recovery_snapshot_fixture.cjs');
 
 const ASSETS = 'liaPersonaVisualAssetStoreV1';
 const VAULT = 'dynamicPersonaLorebookGeneratorResultVault';
@@ -65,7 +64,16 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
   const modelCalls = [];
   const fixture = await createFixture('official', {
     snapshot: diskRows ? options.snapshot : undefined,
-    transformSource: expose,
+    transformSource: source => {
+      let audited=expose(source);
+      if(options.legacySnapshotFile){
+        const marker='const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorageBridge);';
+        assert.equal(audited.split(marker).length,2,'one legacy recovery transport seam');
+        const methods=['serverBinding','serverIntegrity','serverKeys','serverGet'];
+        audited=audited.replace(marker,'const LiaLegacyServerRecovery = createLiaLegacyServerRecovery({...MemorySuiteStorageBridge,'+methods.map(name=>name+':(...args)=>globalThis.__legacyReadTransport.'+name+'(...args)').join(',')+'});');
+      }
+      return audited;
+    },
     configureApi(api, seed) {
       if (diskRows) { seed.values.clear(); for (const row of diskRows) seed.values.set(...row); }
       api.getArgument = async key => args[String(key)] ?? '';
@@ -78,7 +86,7 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
         async keys() { return [...localRows.keys()]; }
       };
       api.getLocalPluginStorage = async () => api.safeLocalStorage;
-      api.nativeFetch = async (request, init) => fetch(request, init);
+      api.nativeFetch = async () => { throw Error('local-only storage must never request server'); };
       api.registerSetting = async (_name, callback) => { callbacks.setting = callback; return { id: 'lia-setting' }; };
       api.registerButton = async (_descriptor, callback) => { callbacks.button = callback; return { id: 'lia-button' }; };
       api.saveAsset = async bytes => {
@@ -111,12 +119,14 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
   assert.equal(typeof callbacks.button, 'function', 'actual menu callback was registered');
   const audit = fixture.runtime.restoreFlowAudit;
   assert.ok(audit, 'read-only owner audit hook installed');
+  const transport=options.legacySnapshotFile?createSnapshotBridge(audit.bridge,options.legacySnapshotFile):null;
+  if(transport)fixture.context.__legacyReadTransport=transport.api;
   async function open() {
     await callbacks.setting();
     await waitFor(() => dom.window.document.getElementById('dpg-asset-manual-upload'), 'registered GUI rendered');
     return dom.window.document;
   }
-  return { ...fixture, audit, callbacks, dom, domErrors, localRows, modelCalls, args, open,
+  return { ...fixture, audit, callbacks, dom, domErrors, localRows, modelCalls, args, open, transport,
     async close() { await fixture.dispose(); dom.window.close(); } };
 }
 
@@ -137,35 +147,6 @@ async function manualUpload(env, bytes, expectedTone = 'ok') {
   return status.textContent;
 }
 
-async function serverPanel(env) {
-  const document = env.dom.window.document;
-  const tab = document.querySelector('[data-workspace-tab="server"]');
-  assert.ok(tab, 'actual server route exists');
-  tab.click();
-  return await waitFor(() => {
-    const container = document.getElementById('liaMemorySuiteServerConnectionPanel');
-    return container?.querySelector('[data-restore]')?.onclick ? container : false;
-  }, 'actual mounted server actions');
-}
-
-async function runPanelJob(env, selector, requestedMode) {
-  const panel = await serverPanel(env);
-  if (requestedMode) {
-    const radio = panel.querySelector(`input[value="${requestedMode}"]`);
-    assert.ok(radio, 'requested operational mode is offered');
-    radio.checked = true;
-    radio.dispatchEvent(new env.dom.window.Event('change', { bubbles: true }));
-  }
-  const button = panel.querySelector(selector);
-  assert.equal(typeof button?.onclick, 'function', `mounted handler ${selector}`);
-  await button.onclick();
-  const job = await env.audit.bridge.waitForSyncJob('', 30000);
-  assert.ok(job, 'actual job exists');
-  await waitFor(() => panel.querySelector('[data-job-result]')?.textContent?.includes(
-    job.status === 'completed' ? '완료 결과' : '실패 결과'), 'GUI terminal result');
-  return { job, displayed: panel.querySelector('[data-job-result]').textContent };
-}
-
 function immutableRows(values, backupId) {
   return [...values].filter(([key]) => key.startsWith(`${BLOBS}${backupId}::`)).sort(([a], [b]) => a.localeCompare(b));
 }
@@ -182,35 +163,17 @@ function diskSnapshot(env, directory, label) {
   // Recreate host storage from physical bytes, never retain a VM cache object.
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
-function physicalRows(filePath, expected) {
-  const database = new DatabaseSync(filePath, { readOnly: true });
-  try {
-    assert.equal(database.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
-    const rows = database.prepare('SELECT space,key,value_json,deleted,revision FROM kv').all();
-    const evidence = [];
-    for (const [key, value] of expected) {
-      const found = rows.filter(row => row.key === key && row.deleted === 0 && JSON.parse(row.value_json) === value);
-      assert.equal(found.length, 1, `independent SQLite durable exact bytes:${key}`);
-      evidence.push({ key, space: found[0].space, revision: found[0].revision,
-        chars: value.length, sha256: sha(value) });
-    }
-    return evidence;
-  } finally { database.close(); }
-}
-
 (async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lia-public-restore-flow-'));
   const hostAssets = fileAssets(path.join(dataDir, 'mock-host-assets'));
-  const evidence = { schema: 'lia.public-asset-server-restore-flow.v1',
+  const evidence = { schema: 'lia.public-asset-local-restart-flow.v2',
     hostBoundary: 'Windows Node VM + JSDOM registered callbacks; not native Risu/browser acceptance', cases: [] };
   const image = markerPng('LIA public producer preserved image marker '.repeat(12000));
   const replacement = markerPng('rejected replacement marker');
   const body = 'LIA public vault body marker: original persona draft survives server restore and realm restart.';
-  let server, env;
+  let env;
   try {
-    server = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
-    let address = await server.listen();
-    env = await createRealm(`http://127.0.0.1:${address.port}`, null, hostAssets);
+    env = await createRealm('', null, hostAssets);
     await env.open();
     const result = env.dom.window.document.getElementById('dpg-llm-result');
     assert.ok(result, 'actual generated-result editor exists');
@@ -246,61 +209,34 @@ function physicalRows(filePath, expected) {
     evidence.cases.push({ name: 'public-upload-dropped-manifest', displayedError: true,
       originalMetadataUnchanged: true, immutableHistoryUnchanged: true, partialChunksRemoved: true });
 
-    const transition = await runPanelJob(env, '[data-apply]', 'server_only');
-    assert.equal(transition.job.status, 'completed', transition.job.error || transition.displayed);
-    assert.equal(await env.audit.bridge.getMode(), 'server_only');
+    // Current replacement: the registered legacy preview/import callbacks read
+    // a physical preexisting response snapshot and use the unchanged local
+    // publisher. Never manufacture a retired writable LIA SQLite namespace.
+    await assert.rejects(() => env.audit.bridge.setMode('server_only'),error => error.code === 'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
     const durable = [[ASSETS, assetRaw], [VAULT, vaultRaw], ...priorBackup];
-    const dbPath = server.repositories.lia.filePath;
-    server.repositories.lia.checkpoint();
-    evidence.sqliteBeforeRestart = physicalRows(dbPath, durable);
-    const { snapshot: restartSnapshot, localRows: persistedLocalRows } = diskSnapshot(env, dataDir, 'before-server-restart');
-    assert.equal(env.modelCalls.length, 0, 'producer realm never called a model');
-    assert.deepEqual(env.domErrors, [], 'producer GUI had no DOM/runtime errors');
-    await env.close(); env = null;
-    await server.close(); server = null;
-    evidence.sqliteAfterServerClose = physicalRows(dbPath, durable);
-
-    server = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
-    address = await server.listen();
-    const missingPayload = restartSnapshot.values.filter(([key]) => !key.startsWith(`${BLOBS}${entry.backupId}::`));
-    env = await createRealm(`http://127.0.0.1:${address.port}`, missingPayload, hostAssets,
-      { snapshot: restartSnapshot, localRows: new Map(persistedLocalRows) });
-    assert.equal(await env.audit.bridge.getMode(), 'server_only', 'fresh realm retained server authority');
-    await env.open();
-    // A physically dropped host write must reject the public restore job, roll
-    // every prior row back, and leave server authority/immutable history intact.
-    const beforeFailure = new Map(durable.map(([key]) => [key, env.values.get(key)]));
-    assert.equal(beforeFailure.get(ASSETS), assetRaw, 'original local metadata exists before failed restore');
-    assert.equal(beforeFailure.get(VAULT), vaultRaw, 'original local body exists before failed restore');
-    env.api.pluginStorage.setItem = async (key, value) => {
-      if (key === priorBackup[0][0]) return true;
-      env.values.set(String(key), value); return true;
-    };
-    const failed = await runPanelJob(env, '[data-restore]');
-    assert.equal(failed.job.status, 'failed', 'dropped physical restore write is visible as failure');
-    assert.equal(await env.audit.bridge.getMode(), 'server_only');
-    for (const [key, value] of beforeFailure) assert.equal(env.values.get(key), value, `restore rollback:${key}`);
-    assert.deepEqual(physicalRows(dbPath, durable), evidence.sqliteBeforeRestart, 'failure did not mutate authoritative server rows');
-    evidence.cases.push({ name: 'public-restore-dropped-write', displayedFailure: true,
-      localRollbackVerified: true, serverAuthorityRetained: true, serverRowsUnchanged: true });
-
-    env.api.pluginStorage.setItem = async (key, value) => { env.values.set(String(key), value); return true; };
-    const restored = await runPanelJob(env, '[data-restore]');
-    assert.equal(restored.job.status, 'completed', restored.job.error || restored.displayed);
-    assertRows(env.values, durable, 'public restore exact local physical rows');
-    assert.equal(await env.audit.bridge.getRecoveryState(await env.audit.bridge.getCurrentScope()), null,
-      'verified retry cleared durable recovery lock');
-    const pluginOnly = await runPanelJob(env, '[data-apply]', 'plugin_only');
-    assert.equal(pluginOnly.job.status, 'completed', pluginOnly.job.error || pluginOnly.displayed);
-    assert.equal(await env.audit.bridge.getMode(), 'plugin_only');
-    const { snapshot: restoredSnapshot, localRows: persistedRestoredLocalRows } = diskSnapshot(env, dataDir, 'after-public-restore');
-    assert.equal(env.modelCalls.length, 0, 'transport/restore realm never called a model');
-    assert.deepEqual(env.domErrors, [], 'transport/restore GUI had no DOM/runtime errors');
-    await env.close(); env = null;
-    // Fresh runtime has no asset cache and the native host files are missing.
-    hostAssets.clear();
-    env = await createRealm(`http://127.0.0.1:${address.port}`, restoredSnapshot.values, hostAssets,
-      { snapshot: restoredSnapshot, localRows: new Map(persistedRestoredLocalRows) });
+    const legacyFile=path.join(dataDir,'preexisting-legacy-response.json');fs.writeFileSync(legacyFile,JSON.stringify(durable));const legacyBefore=fs.readFileSync(legacyFile,'utf8');
+    const {snapshot:restartSnapshot,localRows:persistedLocalRows}=diskSnapshot(env,dataDir,'before-local-restart');
+    assert.equal(env.modelCalls.length,0);assert.deepEqual(env.domErrors,[]);await env.close();env=null;
+    const missing=restartSnapshot.values.filter(([key])=>!key.startsWith(`${BLOBS}${entry.backupId}::`));
+    env=await createRealm('',missing,hostAssets,{snapshot:restartSnapshot,localRows:new Map(persistedLocalRows),legacySnapshotFile:legacyFile});await env.open();
+    const serverTab=env.dom.window.document.querySelector('[data-workspace-tab="server"]');assert(serverTab);serverTab.click();
+    const panel=await waitFor(()=>env.dom.window.document.getElementById('liaMemorySuiteServerConnectionPanel')?.querySelector('[data-lia-recovery-preview]'),'actual legacy recovery GUI');
+    const status=panel.parentElement.querySelector('[data-lia-recovery-status]');
+    const publish=panel.parentElement.querySelector('[data-lia-recovery-publish]');
+    const preview=async()=>{panel.click();await waitFor(()=>!panel.disabled,'registered read-only preview');assert.match(status.textContent,/검증/);assert.equal(publish.disabled,false);};
+    const runPublish=async()=>{publish.click();await waitFor(()=>!panel.disabled,'registered local publication');return status.textContent;};
+    const beforeFailure=new Map(durable.map(([key])=>[key,env.values.get(key)]));const write=env.api.pluginStorage.setItem;
+    await preview();for(const [key,value]of beforeFailure)assert.equal(env.values.get(key),value,'preview never writes local owner');
+    env.api.pluginStorage.setItem=async(key,value)=>key===priorBackup.at(-1)[0]?true:write(key,value);
+    assert.match(await runPublish(),/가져오기 중단/);for(const [key,value]of beforeFailure)assert.equal(env.values.get(key),value,`failed import rollback:${key}`);
+    assert.equal(fs.readFileSync(legacyFile,'utf8'),legacyBefore,'failed import preserves physical legacy source');
+    env.api.pluginStorage.setItem=write;await preview();assert.match(await runPublish(),/저장하고 다시 확인/);assertRows(env.values,durable,'registered local import exact physical bytes');
+    assert(env.transport.calls.every(route=>route.startsWith('GET ')));assert.equal(fs.readFileSync(legacyFile,'utf8'),legacyBefore);
+    evidence.cases.push({name:'registered-legacy-preview-import-failure-retry',previewReadOnly:true,droppedManifestRejected:true,rollbackExact:true,retrySucceeded:true,physicalLegacySourceUnchanged:true,serverWrites:0});
+    const {snapshot:restoredSnapshot,localRows:persistedRestoredLocalRows}=diskSnapshot(env,dataDir,'after-registered-local-import');
+    assert.equal(env.modelCalls.length,0);assert.deepEqual(env.domErrors,[]);await env.close();env=null;hostAssets.clear();
+    env=await createRealm('',restoredSnapshot.values,hostAssets,{snapshot:restoredSnapshot,localRows:new Map(persistedRestoredLocalRows)});
+    assertRows(env.values,durable,'physical local restart retained exact imported owner bytes');
     const reloadedVault = await env.audit.readStoredResultVault();
     assert.ok(reloadedVault.some(item => item.personaPrompt === body), 'fresh owner reader returned actual vault body');
     const reloadedAssets = await env.audit.readPersonaVisualAssetStore();
@@ -324,7 +260,7 @@ function physicalRows(filePath, expected) {
       'native host restored asset exact physical bytes');
     assert.equal(env.modelCalls.length, 0, 'no model API was called');
     assert.deepEqual(env.domErrors, [], 'registered GUI had no DOM/runtime errors');
-    evidence.cases.push({ name: 'public-restore-retry-and-fresh-reader', restoredRows: durable.length,
+    evidence.cases.push({ name: 'physical-local-restart-and-native-backup-recovery', restoredRows: durable.length,
       ownerBodyExact: true, ownerImageExact: true, nativeAssetRebuilt: true,
       immutableHistoryUnchanged: true, registeredGuiRestoredVaultVisible: true, modelCalls: 0 });
     evidence.result = 'PASS';
@@ -332,7 +268,6 @@ function physicalRows(filePath, expected) {
     process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
   } finally {
     if (env) await env.close();
-    if (server) await server.close();
     // This path was created by mkdtemp above; no original repository DATA used.
     assert.equal(path.dirname(path.resolve(dataDir)), path.resolve(os.tmpdir()));
     fs.rmSync(dataDir, { recursive: true, force: true });
