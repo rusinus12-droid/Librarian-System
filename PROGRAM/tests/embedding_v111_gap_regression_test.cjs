@@ -86,18 +86,25 @@ async function check(id,title,fn){try{results.push({id,title,...await fn()});}ca
   await check('A9','Flashback unknown physical completion must retain pending state until settlement',async()=>{
    let physicallySettled=false;let finish;
    const physical=new Promise(resolve=>{finish=()=>{physicallySettled=true;resolve(response(payload(1)));};});
-   f.host.nativeFetch=async()=>physical;
-   const ledger=C.createLedger({maxRequests:2,deadlineAt:Date.now()+60});
-   let error;try{await ft.createEmbeddingProviderAdapter({...fc,embeddingModel:'pending-fixture'}).embedTexts(['pending-input'],{purpose:'document',cacheMode:'bypass',operationLedger:ledger,deadlineAt:Date.now()+50});}catch(e){error=e.message;}
+   // Start cancellation only after the controlled physical wire is entered.
+   // A wall-clock deadline before fixture setup can expire without submission
+   // under load and therefore cannot exercise unknown physical completion.
+   const controller=new AbortController();let entered;const wireEntered=new Promise(resolve=>{entered=resolve;});
+   f.host.nativeFetch=async()=>{entered();return physical;};
+   const ledger=C.createLedger({maxRequests:2,signal:controller.signal});
+   const pending=ft.createEmbeddingProviderAdapter({...fc,embeddingModel:'pending-fixture'}).embedTexts(['pending-input'],{purpose:'document',cacheMode:'bypass',operationLedger:ledger,signal:controller.signal});
+   await wireEntered;controller.abort();
+   let error;try{await pending;}catch(e){error=e.message;}
    const operation=ledger.snapshot(),activeRequests=f.audit.Runtime.embeddingActiveRequests.size;
    const state={status:!physicallySettled&&operation.pendingRequests===0?'CONFIRMED_GAP':'PROTECTED',physicallySettled,activeRequests,operation,error};
    finish();await physical;await new Promise(resolve=>setTimeout(resolve,10));
    state.afterLate=ledger.snapshot();state.activeAfterLate=f.audit.Runtime.embeddingActiveRequests.size;
    return state;
   });
-  await check('A10','Flashback missing-sidecar recovery must survive heuristic OFF reranking',async()=>{
+  await check('A10','Flashback missing sidecar refuses candidates in both heuristic modes until model restoration',async()=>{
    f.host.nativeFetch=async(_url,init)=>response(payload(JSON.parse(init.body).input.length));
    const c=ft.normalizeSettings({...fc,embeddingModel:'recall-fixture',fallbackHashEmbedding:true,heuristicRecall:true,minScore:0,similarityThreshold:0,currentSceneTailEnabled:false,entityFocusedRecallEnabled:false});
+   await f.api.saveSettings(c);
    const scope=await f.api.resolveCurrentScope(false);
    const record={id:'audit-recall-record',hash:'audit-recall-record',type:'response',sourceType:'response',text:'Alice hid the sapphire compass in the cedar chest.',title:'sapphire compass',tags:['sapphire','compass'],provider:'openai_compat',model:c.embeddingModel,embeddingProfileId:ft.embeddingProfileId(c,3),dim:3,vector:[1,0,0]};
    await ft.saveAllRecords([record],c,scope);
@@ -112,14 +119,20 @@ async function check(id,title,fn){try{results.push({id,title,...await fn()});}ca
    const on=await f.api.recallRecords(query,c,scope);
    const off=await f.api.recallRecords(query,{...c,heuristicRecall:false},scope);
    assert.ok(before.records.length>0,'Positive control must recall remote vector before sidecar removal');
-   return {status:on.records.length>0&&off.records.length===0?'CONFIRMED_GAP':'INCONCLUSIVE',beforeMissing:before.records.length,missingHeuristicOn:on.records.length,missingHeuristicOff:off.records.length,offCandidates:off.candidates,offRrfUnion:off.rrfUnionCount,rawPreserved:(await ft.loadScopeRecords(scope.scopeKey)).records[0]?.text===record.text};
+   const rawPreserved=(await ft.loadScopeRecords(scope.scopeKey)).records[0]?.text===record.text;
+   assert.equal(on.records.length,0,'missing model sidecar cannot authorize heuristic candidates');
+   assert.equal(off.records.length,0,'heuristic OFF cannot synthesize an alternate vector');
+   const replacement=await ft.createEmbeddingProviderAdapter(c).embedTexts([record.text],{purpose:'document',cacheMode:'bypass'});
+   await ft.saveAllRecords([{...record,vector:Array.from(replacement.vectors[0])}],c,scope);
+   const restored=await f.api.recallRecords(query,{...c,heuristicRecall:false},scope);
+   return {status:'PROTECTED',afterModelRestoration:restored.records.length,beforeMissing:before.records.length,missingHeuristicOn:on.records.length,missingHeuristicOff:off.records.length,offCandidates:off.candidates,offRrfUnion:off.rrfUnionCount,rawPreserved};
   });
  } finally {if(l)await l.cleanup();if(f)await f.cleanup();}
  /* Results are asserted below; no product runtime data is written by this fixture. */
  for(const result of results){
   assert.notEqual(result.status,'HARNESS_ERROR',result.error);
   if(result.id==='A8-Flashback')continue; // normalization prevents this fixture from reaching its byte gate
-  if(result.id==='A10'){assert.equal(result.beforeMissing,1);assert.equal(result.missingHeuristicOn,1);assert.equal(result.missingHeuristicOff,1);assert.equal(result.rawPreserved,true);continue;}
+  if(result.id==='A10'){assert.equal(result.beforeMissing,1);assert.equal(result.missingHeuristicOn,0);assert.equal(result.missingHeuristicOff,0);assert.equal(result.afterModelRestoration,1);assert.equal(result.rawPreserved,true);continue;}
   assert.equal(result.status,'PROTECTED',JSON.stringify(result));
   if(result.id.startsWith('A1-')){assert.equal(result.physicalRequests,1);assert.equal(result.accepted,false);}
   if(result.id.startsWith('A3-')){assert.equal(result.physicalRequests,1);assert.match(result.error,/truncat/i);}

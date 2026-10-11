@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
+const {extractStorageSdk,expectedStorageSdk}=require('../tools/lib/sdk_variants.cjs');
 const read = name => fs.readFileSync(path.join(root, 'plugins', name), 'utf8');
 const cases = [
   ['Flashback_Memory.js', releaseVersion('flashback'), 'flashback'],
@@ -26,7 +27,8 @@ for (const [name, version, namespaceMarker] of cases) {
     `${name} version declaration must be within the first 512 bytes (offset=${versionByteOffset})`);
   assert.match(text, new RegExp(`^//@version ${version.replace(/\./g, '\\.')}\\s*$`, 'm'), `${name} version`);
   assert.ok(text.includes(`PLUGIN_VERSION = '${version}'`) || text.includes(`PLUGIN_VERSION = "${version}"`), `${name} internal version`);
-  assert.equal((text.match(releasePattern("LIBRARIAN SYSTEM STORAGE SDK v{storage}", "g")) || []).length, 1, `${name} canonical SDK count`);
+  assert.equal((text.match(/LIBRARIAN SYSTEM STORAGE SDK v/g)||[]).length,1,`${name} exactly one declared SDK variant`);
+  assert.equal(extractStorageSdk(text,name),expectedStorageSdk(root,name,text),`${name} reviewed canonical or preserved SDK variant`);
   if (name === 'RETRACE.js') {
     assert.equal((text.match(/^\/\/@arg memory_suite_server_mode /gm) || []).length, 0, releaseText('RE:TRACE {retrace} has no own storage-mode arg'));
     assert.ok(text.includes('participation-aware and read-only'), releaseText('RE:TRACE {retrace} uses the dynamic read-only owner gate'));

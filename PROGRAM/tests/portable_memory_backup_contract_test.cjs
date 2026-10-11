@@ -43,7 +43,7 @@ for (const [id, file] of Object.entries(files)) {
       source.indexOf('LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Libra END')
     );
     assert(/const SHARED_SETTINGS_HUB_SECTIONS = Object\.freeze\(\[[^\]]*'recovery'[^\]]*\]\);/.test(source), 'LIBRA exposes Recovery in the unified Settings Hub');
-    assert(source.includes("if (requested === 'recovery' || requested === 'memory_restore') return { pageId: 'settings', settingsHubSection: 'recovery' };"), 'LIBRA routes Memory Restore deep links into the Recovery settings section');
+    assert(/if\s*\(\['recovery','memory_restore'\]\.includes\(requested\)\)\s*return\s*\{pageId:'settings',settingsHubSection:'recovery'\}/.test(source), 'LIBRA routes Memory Restore deep links into the Recovery settings section');
     assert(source.includes("Gui.settingsHubSection === 'recovery' ? buildLibraRecoveryPanel()"), 'LIBRA renders the Recovery panel from the unified Settings Hub');
     assert(source.includes("portableBackupHost: 'libra'"), 'LIBRA renders an owner-scoped portable-memory host');
     assert(source.includes('현재 채팅의 영구 기억과 복원에 필요한 관련 데이터를 JSON 파일로 내려받습니다'), 'LIBRA explains the JSON backup and restore purpose');

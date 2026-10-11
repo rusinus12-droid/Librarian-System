@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const core=require('../tools/recall_keyword_features.cjs')();
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
 assert.equal(core.mode("What is Minsu's next appointment location?"),'explicit');
 assert.equal(core.mode('Next?'),'referential');
@@ -20,7 +20,7 @@ for(const cap of [160,260,280,480]){
 const rec=(id,text,turn=1)=>({id,scopeKey:'test',sourceType:'response',text,turnIndex:turn,pairIndex:turn,responseTurnIndex:turn,sourceHash:id});
 (async()=>{const f=await createFixture(),h=await createHayakuRuntime({autoRepair:false,arguments:{memory_suite_server_mode:'plugin_only'}});try{
  const sel=f.api._selectionTest,ft=f.api._test,ht=h.hayaku._test;
- const cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',topK:1,heuristicRecall:true,mmrEnabled:false,currentSceneTailEnabled:false};
+ const cfg={...await f.api.loadSettings(),...modelSettings,topK:1,heuristicRecall:true,mmrEnabled:false,currentSceneTailEnabled:false};
  const store=ht.emptyStore();store.entity.characters=names.map(r=>({id:r.entityId,publicRef:r.entityId,name:r.normalized}));
  assert.deepEqual(Array.from(ht.buildRetrievalQuerySignature(store,'Mary Jane 어디에 있어?',h.hayaku.settings()).mentionedEntities),['mary-jane']);
  assert.ok(ht.buildRetrievalQuerySignature(store,long,h.hayaku.settings()).tokens.includes('수정구슬'));
@@ -50,7 +50,7 @@ const rec=(id,text,turn=1)=>({id,scopeKey:'test',sourceType:'response',text,turn
  const np=core.compile('니콜로는 어디에 있어?',{entries:[{entityId:'nicolo',normalized:'니콜로'}],binding:{scope:'test',catalogComplete:true}});
  const na=ft.buildDiscriminativeRecallAnchors(sel.extractRecallAnchors('니콜로는 어디에 있어?',[],np),[nicolo]);
  assert.equal(ft.collectEntityFocusedCandidates(na,[{record:nicolo,score:.8,components:{}}],{...cfg,entityFocusedRecallEnabled:true,entityFocusedPerAnchor:2,entityFocusedMaxTotal:4})[0].record.id,'nicolo');
- // Public ingest/recall and the real hook, using a mock host and local hash embeddings.
+ // Public ingest/recall and the real hook, using a mock host and actual configured-model adapter.
  f.currentChat.message=[{role:'user',chatId:'u1',data:'Record Minsu.'},{role:'assistant',chatId:'a1',data:target.text},{role:'user',chatId:'u2',data:'Record Aria.'},{role:'assistant',chatId:'a2',data:other.text}];f.currentChat.messages=f.currentChat.message;
  await f.api.saveSettings({...cfg,embeddingEnabled:true,structuredStateEnabled:false,autoEpisodeIndex:false});
  await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});

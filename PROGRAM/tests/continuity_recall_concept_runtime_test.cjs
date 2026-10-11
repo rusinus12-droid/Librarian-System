@@ -7,7 +7,10 @@ const c=vm.createContext({ensureArray:v=>Array.isArray(v)?v:[],text:v=>String(v?
 vm.runInContext(part(H,'  const viewerContinuityModel =','  const viewerRenderContinuityLine =')+'globalThis.model=viewerContinuityModel;',c);
 const ledger={enabled:true,records:[{id:'old',targetPairIndex:1,recordState:'inactive'},{id:'live',targetPairIndex:1,recordState:'active'},{id:'third',targetPairIndex:3,recordState:'active'}]};
 let m=c.model(ledger);assert.equal(m.verified,false);assert.equal(m.missing,0,'gaps in loaded data must not invent missing turns');assert.equal(m.rows.length,2);assert.equal(m.rows[0].recordId,'live','active record wins over audit variant');
-m=c.model(ledger,{rows:[{turn:1,state:'covered'},{turn:2,state:'missing'},{turn:3,state:'source_edit_pending'}]});assert.equal(m.missing,1);assert.equal(m.pending,1);assert.equal(m.rows[2].state,'pending','edited source not represented as covered or missing');
+// Current source edits unbind the actual ledger record; coverage does not
+// grant pending authority merely through an obsolete source_edit_pending label.
+const editedLedger={...ledger,records:ledger.records.map(r=>r.id==='third'?{...r,recordState:'unbound'}:r)};
+m=c.model(editedLedger,{rows:[{turn:1,state:'covered'},{turn:2,state:'missing'},{turn:3,state:'unverified'}]});assert.equal(m.missing,1);assert.equal(m.pending,1);assert.equal(m.rows[2].state,'pending','edited source not represented as covered or missing');
 assert.equal(c.model({enabled:false,records:ledger.records}).unavailable,true);
 const rows=Array.from({length:100},(_,i)=>({turn:i+1,state:'missing'}));m=c.model({enabled:true,records:[]},{rows});assert.equal(m.rows.length,24);assert.equal(m.rows[23].turn,100);assert.equal(m.previousEnd,76);m=c.model({enabled:true,records:[]},{rows},76);assert.equal(m.rows[0].turn,53);assert.equal(m.nextEnd,100);
 assert.equal(c.model(ledger,{rows:[{turn:null,state:'missing'},{turn:NaN,state:'missing'},{turn:2,state:'missing'}]}).rows.length,1);

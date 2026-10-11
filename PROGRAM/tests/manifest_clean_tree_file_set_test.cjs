@@ -29,9 +29,11 @@ const { spawnSync } = require('node:child_process');
 const { extractArchive } = require('../tools/lib/archive_extract.cjs');
 
 const PROGRAM = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(PROGRAM, '..', '..');
+const locatedRoot=spawnSync('git',['rev-parse','--show-toplevel'],{cwd:PROGRAM,encoding:'utf8'});
+assert.equal(locatedRoot.status,0,'actual checkout Git root must be available');
+const REPO_ROOT=locatedRoot.stdout.trim();
 const MANIFEST = path.join(PROGRAM, 'program-manifest.json');
-const RELATIVE_PROGRAM = path.join('Librarian-System', 'PROGRAM');
+const RELATIVE_PROGRAM=path.relative(REPO_ROOT,PROGRAM);
 // The whole 5 MB plugin set is read by the generator, so the default 1 MB buffer would truncate it.
 const MAX_BUFFER = 64 * 1024 * 1024;
 

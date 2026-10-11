@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {createHayakuRuntime,createValidPacket,hiddenPacketMessage}=require('./fixtures/hayaku_runtime_harness.cjs');
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 (async()=>{
  const summary='Alice placed the brass key inside the royal archive.';
  const f=await createFixture({arguments:{hook_recall_timeout_ms:'10000'}});
@@ -11,7 +11,7 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
  ]});
  try{
   f.currentChat.message=[{role:'user',chatId:'u1',data:'Where does Alice put the key?'},{role:'assistant',chatId:'a1',data:summary}];f.currentChat.messages=f.currentChat.message;
-  const settings={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false};
+  const settings={...await f.api.loadSettings(),...modelSettings,embeddingEnabled:true,autoEpisodeIndex:false};
   await f.api.saveSettings(settings);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
   const scope=await f.api.resolveCurrentScope();
   const storedBefore=JSON.stringify((await f.api._test.loadScopeRecords(scope.scopeKey)).records);
@@ -22,7 +22,7 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
   assert.equal(state.lastRecall.delivery.stage,'returned_to_hook');
   assert.equal(state.lastRecall.delivery.delivered,state.lastRecall.selected.length);
   assert.equal(JSON.stringify((await f.api._test.loadScopeRecords(scope.scopeKey)).records),storedBefore,'Recall leaves canonical records unchanged');
-  const preview=await f.api.recallRecords('Where is the brass key Alice placed?',{topK:1});
+  const preview=await f.api.recallRecords('Where is the brass key Alice placed?',{...settings,topK:1});
   assert.ok(preview.records.length<=1);
   assert.equal((await f.api.debugState()).lastRecall.delivery.delivered,state.lastRecall.delivery.delivered,'API preview does not publish hook feedback');
   // Hold a real manifest read in the normal preparation, then transfer authority
@@ -36,14 +36,15 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
   await Promise.race([entered,new Promise((_,reject)=>setTimeout(()=>reject(Error('Manifest interception did not run')),1500))]);
   token.branch++;
   releaseRead();f.pluginStorage.getItem=originalGet;
-  const emergency=await f.api._test.emergencySparseRecall('Where is the brass key?',settings,scope,{currentPairIndex:1});
-  assert.ok(emergency?.emergencySparse);
-  const ep=f.api._test.planFlashbackEvidenceBudget(emergency,settings,1500);
-  assert.ok(ep.text.length<=1500&&ep.selectionPlan.items.length<=2,'Emergency retains its physical cap and item count');
-  assert.ok(f.api._selectionTest.publishFlashbackRecallDelivery(emergency,ep.selectionPlan,token,token.branch,settings));
+  const successor=await f.api._selectionTest.prepareFlashbackRecall('Where is the brass key?',settings,scope);
+  const plan=f.api._selectionTest.selectFlashbackEvidencePlan(successor,settings,1500);
+  assert.ok(plan.text.length<=1500&&plan.items.length<=settings.topK,'Current model selection retains its physical budget');
+  assert.equal(f.api._test.emergencySparseRecall,undefined,'unconfigured sparse fallback is retired');
   const late=await observed;
   assert.equal(late.error?.code,'FLASHBACK_RECALL_EXPIRED','Real late preparation cannot become a result after branch transfer');
-  assert.equal((await f.api.debugState()).lastRecall.delivery.delivered,ep.selectionPlan.items.length);
+  const returned=await f.api._selectionTest.beforeRequest(messages,'model');
+  assert.ok(JSON.stringify(returned).includes('royal archive'),'current successor actually returns stored model-ready evidence');
+  assert.equal((await f.api.debugState()).lastRecall.delivery.stage,'returned_to_hook');
   const hs=await h.hayaku._test.currentChatScope();
   await h.hayaku._test.reconcileObservedChatTopology(hs,h.hayaku._test.authoritativeChatSnapshot(hs.chatMessages,hs),'selection-hook-fixture');
   const hout=await h.hayaku._test.handleBeforeRequest(messages,'model');

@@ -1,8 +1,17 @@
 'use strict';
-const {assert,createLibraVmHarness,instrument}=require('./fixtures/libra_consumer_test_support.cjs');
+const assert=require('node:assert/strict');
+const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 const fs=require('node:fs');
 let passed=0;const checks=[];const pass=n=>{passed++;checks.push(n);console.log('PASS '+n);};
-const exposure=s=>instrument(s).replace('const callLLMWithPreset = async','const callLLMWithPreset = globalThis.__generationGateway = async');
+// Expose only the current gateway and its settings loader; retired SGA/Input
+// Writer internals are unrelated to these physical-call and cancellation checks.
+const exposure=source=>{
+ for(const [marker,replacement] of [
+  ['const loadSettings = async','const loadSettings = globalThis.__gatewaySettings = async'],
+  ['const callLLMWithPreset = async','const callLLMWithPreset = globalThis.__generationGateway = async']
+ ]){assert.equal(source.split(marker).length,2,'current gateway marker must be unique');source=source.replace(marker,replacement);}
+ return source;
+};
 async function fixture(fn, responder, hostResponder){
  const wires=[],host=[];
  const h=await createLibraVmHarness({enable_gui:'false'}, {
@@ -12,7 +21,7 @@ async function fixture(fn, responder, hostResponder){
  try{
  const conf=await h.api.getLibraProviderConfig();
  const preset={provider:'custom',url:'https://test.invalid/v1/chat/completions',model:'model',key:'fixture-only',max_tokens:4096,timeout_ms:5000,stream:false,request_format:'chat_completions',prompt_cache:'off'};
- const settings={...(await h.api.consumerTestInternals().loadSettings({force:true})),defaultPresetName:'gateway-fixture',presets:{...conf.providerPresets,'gateway-fixture':preset},stagePresetNames:{...conf.stagePresetNames,input_assist:'gateway-fixture'}};
+ const settings={...(await h.context.__gatewaySettings({force:true})),defaultPresetName:'gateway-fixture',presets:{...conf.providerPresets,'gateway-fixture':preset},stagePresetNames:{...conf.stagePresetNames,input_assist:'gateway-fixture'}};
  const call=(options={})=>h.context.__generationGateway(settings,'input_assist','Return the requested artifact.','Immutable source.',{taskKind:'connection_probe',maxTokens:256,...options});
  await fn({h,settings,preset,wires,host,call});
  }finally{await h.cleanup();}

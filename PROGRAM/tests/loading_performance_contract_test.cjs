@@ -23,7 +23,7 @@ for (const sdkName of ['MemorySuiteStorageClient.source.js', 'MemorySuiteStorage
   assert.match(sdk, /if \(previousScopeId !== String\(scope\.scopeId \|\| ''\)\) state\.scopeRouting\.routeCache\.clear\(\);/);
   assert.match(sdk, /if \(registry\?\.legacyGlobalModeImported === true && !hasServerScope\) return;/);
   assert.doesNotMatch(sdk, /scheduleDiagnosticsRefresh\(1200, \{ limit: 250 \}\);/);
-  assert.match(sdk, /const startupDiagnosticsEnabled = options\.startupDiagnostics !== false;/);
+  assert.match(sdk, sdkName.includes('.libra.') ? /const startupDiagnosticsEnabled = options\.startupDiagnostics !== false;/ : /const startupDiagnosticsEnabled = !localOnlyOwner && !managerOnly && options\.startupDiagnostics !== false;/);
   assert.match(sdk, /if \(startupDiagnosticsEnabled\) \{/);
 }
 

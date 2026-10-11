@@ -31,8 +31,12 @@ for(const role of ['relation','state','event','temporal'])assert.equal(fields[ro
 const declared={...record,metadata:{recallFields:{event:'declared_event',temporal:['declared_time']}}};
 assert(t.sparseProjectionForRecord(declared).fields.event.includes('declared_event'));assert.notEqual(t.sparseProjectionForRecord(record).key,t.sparseProjectionForRecord(declared).key);cases++;
 }finally{await h.dispose();await f.dispose();}
-for(const reverse of [false,true]){const f=await createFixture();try{
-const cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,currentSceneTailEnabled:false,heuristicRecall:true,mmrEnabled:false};
+// Use configured model vectors through the real adapter. Retired hash vectors
+// cannot authorize current recall; this offline provider preserves the ranking
+// and order-independence positive controls.
+const fixtureVector=text=>String(text).includes('수정구슬')?[1,0,0]:String(text).includes('망토')?[0,1,0]:[0,0,1];
+for(const reverse of [false,true]){const f=await createFixture({nativeFetch:async(_url,init)=>{const body=JSON.parse(init.body);return new Response(JSON.stringify({data:body.input.map((text,index)=>({index,embedding:fixtureVector(text)}))}),{status:200});}});try{
+const cfg={...await f.api.loadSettings(),embeddingProvider:'openai_compat',embeddingUrl:'https://fixture.invalid/v1',embeddingModel:'consistency-fixture',embeddingDimensions:3,embeddingKey:'fixture-only',embeddingEnabled:true,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,currentSceneTailEnabled:false,heuristicRecall:true,mmrEnabled:false};
 const bodies=['수정구슬은 지하 금고에 보관되어 있다.','붉은 망토는 성문에 걸려 있다.'];if(reverse)bodies.reverse();
 f.currentChat.message=bodies.flatMap((data,i)=>[{role:'user',chatId:'u'+i,data:'기록해.'},{role:'assistant',chatId:'a'+i,data}]);f.currentChat.messages=f.currentChat.message;
 await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});

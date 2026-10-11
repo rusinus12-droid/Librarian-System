@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
+const {extractStorageSdk,expectedStorageSdk}=require('../tools/lib/sdk_variants.cjs');
 const sources = [
   path.join(root, 'sdk', 'MemorySuiteStorageClient.source.js'),
   path.join(root, 'sdk', 'MemorySuiteStorageClient.libra.source.js')
@@ -40,7 +41,7 @@ const embedded = [
 ];
 for (const [plugin, sdk] of embedded) {
   const pluginText = fs.readFileSync(path.join(root, 'plugins', plugin), 'utf8');
-  const sdkText = fs.readFileSync(path.join(root, 'sdk', sdk), 'utf8').trim();
+  const sdkText = expectedStorageSdk(root,plugin,pluginText);
   assert.equal(pluginText.split(sdkText).length - 1, 1, `${plugin} embedded SDK is exact`);
 }
 

@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const {assert,createLibraVmHarness,instrument}=require('./fixtures/libra_consumer_test_support.cjs');
+const assert=require('node:assert/strict');
+const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 const C=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteExecutionContract.source.js'),'utf8')+';MemorySuiteExecutionContract',{URL,TextEncoder,TextDecoder,setTimeout,clearTimeout});
 const sse=rows=>rows.map(x=>'data: '+(typeof x==='string'?x:JSON.stringify(x))+'\r\n\r\n').join('');
 const fixtures={
@@ -23,9 +24,9 @@ const response=(str,size)=>{const bytes=new TextEncoder().encode(str);let i=0;re
  const refusal=await C.receiveGenerationStream(response(sse([{choices:[{delta:{refusal:'no'},finish_reason:'content_filter'}]},'[DONE]']),1),'chat');assert.equal(C.completion(refusal).state,'refusal');count++;
  const wires=[];let streaming=false,changeSource=false;
  const h=await createLibraVmHarness({enable_gui:'false'},{async nativeFetch(url,init){const body=JSON.parse(init.body);wires.push(body);if(streaming)return response(fixtures.chat,1);return new Response(JSON.stringify({choices:[{message:{content:wires.length===1?'partial':'{"ok":true}'},finish_reason:wires.length===1?'length':'stop'}],usage:{prompt_tokens:11,completion_tokens:wires.length===1?65536:10,total_tokens:wires.length===1?65547:21}}));}},
- {transformSource:src=>instrument(src).replace('const callLLMWithPreset = async','const callLLMWithPreset = globalThis.__gateway = async').replace('const callMemoryProvider = async','const callMemoryProvider = globalThis.__memoryProvider = async').replace('const createCanonicalProviderBudget = (','const createCanonicalProviderBudget = globalThis.__budget = (')});
+ {transformSource:src=>src.replace('const loadSettings = async','const loadSettings = globalThis.__streamSettings = async').replace('const callLLMWithPreset = async','const callLLMWithPreset = globalThis.__gateway = async').replace('const callMemoryProvider = async','const callMemoryProvider = globalThis.__memoryProvider = async').replace('const createCanonicalProviderBudget = (','const createCanonicalProviderBudget = globalThis.__budget = (')});
  try{
-   const settings=await h.api.consumerTestInternals().loadSettings({force:true});
+   const settings=await h.context.__streamSettings({force:true});
    const preset={provider:'custom',url:'https://test.invalid/v1/chat/completions',model:'fixture',key:'fixture',max_tokens:98304,timeout_ms:5000,stream:false,request_format:'chat_completions',prompt_cache:'off'};
    Object.assign(settings,{generationPolicy:{version:1,enabled:true,extraCalls:1,streaming:false},defaultPresetName:'remaining',presets:{...settings.presets,remaining:preset},stagePresetNames:{...settings.stagePresetNames,librarian:'remaining',input_assist:'remaining'}});
    const call=()=>h.context.__memoryProvider('librarian','system','unchanged source',{maxTokens:65536,taskSettingsSnapshot:settings,providerBudget:h.context.__budget(['librarian'],{},Date.now(),{generationPolicy:settings.generationPolicy}),validateRecoverySource:async()=>!changeSource});

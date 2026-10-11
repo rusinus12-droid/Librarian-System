@@ -146,7 +146,7 @@ async function main() {
     const registryStore = memoryStore();
     const seedLocal = memoryStore({ 'local:only':{ vector:[9,8,7] } });
     const seedBridge = createBridge({
-      namespace:'lia', pluginId:'lia_persona_linker', pluginVersion:'0.26.47', managementButton:false,
+      namespace:'flashback', pluginId:'flashback_memory', pluginVersion:'1.0.101', managementButton:false,
       pluginPrefixes:['plugin:none:'], localPrefixes:['local:'], migrationDelayMs:100000,
       currentScopeProvider:async()=>localScope
     });
@@ -156,7 +156,7 @@ async function main() {
     await seedBridge.dispose();
 
     const missingAdapterBridge = createBridge({
-      namespace:'lia', pluginId:'lia_persona_linker', pluginVersion:'0.26.47', managementButton:false,
+      namespace:'flashback', pluginId:'flashback_memory', pluginVersion:'1.0.101', managementButton:false,
       pluginPrefixes:['plugin:none:'], localPrefixes:['local:'], migrationDelayMs:100000,
       currentScopeProvider:async()=>localScope
     });
