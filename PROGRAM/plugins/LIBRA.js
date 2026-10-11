@@ -67250,7 +67250,7 @@ ${string(queryBundle?.sceneText || '')}`;
           if (!persist) throw stateCorrectionFailure('STATE_REPLAY_V3_DRY_RUN_UNSUPPORTED');
           const beforePipelineBoundary=await loadStateReplayBoundaryFingerprint({context:liveContext,pairs:livePairs,worldlineId:activeId});
           if (string(beforePipelineBoundary)!==string(requiredBoundaryFingerprint||boundaryFingerprint)) throw stateCorrectionFailure('STATE_REPLAY_BOUNDARY_CHANGED');
-          const rebuilt=await rebuildStateFromCanonicalChain({
+          const rebuilt=await rebuildStateFromCanonicalChainUnlocked({
             context:liveContext,manifest:liveManifest,fromStart:1,cutoffTurn:Number.isFinite(effectiveCutoff)?effectiveCutoff:null,
             worldlineId:activeId,reason,signal:null
           });
