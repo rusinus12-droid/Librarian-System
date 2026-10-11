@@ -4025,9 +4025,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // A first scope publication must not certify the initial default endpoint
     // as a fresh connection cache. Read URL alone to preserve scoped mode and
     // any legacy transient mode; forcing readConfig would reimport global mode.
-    const url = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
-    if (state.config.url !== url) resetBootstrapCache();
-    state.config = { ...state.config, at: Date.now(), mode: target, url };
+    if (target === MODE_PLUGIN_ONLY) {
+      state.config = { ...state.config, at: 0, mode: target };
+    } else {
+      const url = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
+      if (state.config.url !== url) resetBootstrapCache();
+      state.config = { ...state.config, at: Date.now(), mode: target, url };
+    }
     // Entering plugin-only is a hard network boundary.  Do not immediately
     // reconnect merely to publish the route registry that disabled the server.
     // A later explicit connection/sync action can publish it if requested.
