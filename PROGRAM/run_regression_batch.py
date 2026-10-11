@@ -116,7 +116,7 @@ TEST_TIMEOUT_SECONDS = {
     'flashback_raw_cow_append_runtime_test.cjs': 180,
     # Current raw-first 31-ready / failed-vector / explicit-retry / rebuild matrix
     # completes naturally in 89.180s; preserve internal action deadlines.
-    'flashback_singleturn_regression_test.cjs': 120,
+    'flashback_single_turn_maintenance_runtime_test.cjs': 120,
     # Three-mode descriptor/tamper matrix: 55.77s isolated, 66.07s in this runner.
     # Preserve the default60 timeout evidence and case deadlines; margin is 36%.
     'libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs': 90,
