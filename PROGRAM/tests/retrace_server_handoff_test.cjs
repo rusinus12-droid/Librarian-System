@@ -221,8 +221,13 @@ async function liveServerNamespaceRead() {
   }
 }
 
-staticContracts();
-liveServerNamespaceRead().catch(error => {
+async function main() {
+  staticContracts();
+  await liveServerNamespaceRead();
+  await require('./fixtures/storage_sdk_initial_scope_url.cjs').verifyInitialScopeUrl({ allControls: true });
+}
+
+if (require.main === module) main().catch(error => {
   diagnostic({event:'root-error',error:diagnosticError(error)});
   process.stderr.write(`retrace_server_handoff_test: FAIL\n${error.stack || error}\n`);
   process.exitCode = 1;
