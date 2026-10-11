@@ -44,30 +44,26 @@ const custom = between('const buildSharedCustomShellPanel =', 'const executionRe
 assert.match(custom, /migrateCustomWorkshopSelection\(\)/);
 assert.match(custom, /buildSharedAgentShellPanel\(\)/);
 const agents = between('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =');
-for (const label of ['고급 프롬프트 설정', '추가 작성 지시 · OOC']) assert.ok(agents.includes(label));
+assert.match(agents,/buildMemoryPromptStudioDisclosure\(/);
+assert.match(agents,/buildMemoryPipelinePanel\(\)/);
 assert.doesNotMatch(custom, /이번 턴 적용 결과|id: 'injection'|buildLibraSgaPanel|buildPromptInjectionPanel/,
   'Custom is prompt authoring only and does not duplicate execution results');
 
 const logs = between('const buildSharedExecutionLogsPanel =', 'const buildGeneralSettingsPanel =');
 assert.match(logs, /buildLibraSectionLayout\(definitions, Gui\.executionLogSection/);
-for (const id of ['memory', 'state', 'draft', 'recall', 'input_writer', 'embedding', 'rebuild']) {
+for (const id of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) {
   assert.ok(logs.includes(`id: '${id}'`), `missing execution category: ${id}`);
 }
 
 const settings = between('const buildSharedSettingsShellPanel =', 'const renderActiveTab =');
 assert.match(settings, /buildLibraSectionLayout\(definitions, Gui\.settingsHubSection/);
-for (const id of ['input_writer', 'references', 'memory', 'state', 'server', 'recovery', 'transfer', 'general']) {
+for (const id of ['references', 'memory', 'state', 'server', 'recovery', 'transfer', 'general']) {
   assert.ok(settings.includes(`id: '${id}'`), `missing settings category: ${id}`);
 }
 
-const gradia = between('const buildGradiaDraftWorkspacePanel =', 'const buildDraftWorkspacePanel =');
-assert.match(gradia, /buildLibraSectionLayout\(definitions, Gui\.gradiaDraftSection/,
-  'the five-page GRADIA draft workspace uses the category rail');
-
-assert.match(source, /SHARED_CUSTOM_HUB_SECTIONS = Object\.freeze\(\['memory', 'state', 'active_draft', 'ooc'\]\)/);
-assert.match(source, /requested === 'gradia_prompt_results'[\s\S]*pageId: 'logs', executionLogSection: 'draft'/,
-  'legacy deep links now open the authoritative result owner');
-assert.match(source, /Gui\.customHubSection === 'injection'[\s\S]*Gui\.executionLogSection = 'draft'[\s\S]*Gui\.sharedSidebarSection = 'logs'/,
-  'an already-open removed Custom result tab migrates to Execution Log');
+// Embedded GRADIA category rails retired; retained Memory prompt disclosure is lazy.
+const memoryPrompts=between('const buildMemoryPromptStudioDisclosure =','const buildSharedAgentShellPanel =');
+assert.match(memoryPrompts,/guiLazyDetails/);
+assert.match(memoryPrompts,/allowedDomains: \['memory'\]/);
 
 process.stdout.write('libra_secondary_navigation_rail_contract_test: PASS\n');

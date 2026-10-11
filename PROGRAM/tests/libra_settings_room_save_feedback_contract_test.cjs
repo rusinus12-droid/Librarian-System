@@ -26,7 +26,7 @@ check('settings room save has an explicit feedback lifecycle', () => {
   assert.match(save, /if \(Gui\.settingsRoomSaving === true\) return false/);
   assert.match(save, /Gui\.settingsRoomSaveStatus = '설정 저장 중…'/);
   assert.match(save, /if \(await saveGuiState\(\) !== true\) throw new Error\('settings_save_not_confirmed'\)/);
-  assert.match(save, /Gui\.settingsRoomSaveStatus = '설정을 저장했습니다\.'/);
+  assert.match(save, /Gui\.settingsRoomSaveStatus = Gui\.dirty \? '설정을 저장했습니다\. 이후 변경한 내용은 아직 저장되지 않았습니다\.' : '설정을 저장했습니다\.'/);
   assert.match(save, /await renderSettingsGui\(\)/);
   assert.match(save, /guiSetStatus\(/);
   assert.match(save, /catch \(error\)[\s\S]*Gui\.settingsRoomSaveError = true[\s\S]*return false/);

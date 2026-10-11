@@ -31,31 +31,14 @@ assert.deepEqual(Array.from(context.registry, page => page.label), [
   '기억', '인물', '관계', '세계', '내러티브', '에이전트 작업대', 'AI 연결', '임베딩 연결', '실행 기록', '설정'
 ]);
 
-const navigation = between('const resolveSharedNavigationTarget =', 'const GUI_FAMILY_HUB_STATE_KEYS =');
-assert.match(navigation, /const sharedNavigate = sectionValue =>/);
+const navigation = between('const resolveSharedNavigationTarget =', 'const normalizeBookPage =');
+assert.match(source, /const sharedNavigate = sectionValue =>/);
 assert.match(navigation, /Gui\.sharedSidebarSection = pageId;[\s\S]*Gui\.sidebarSection = pageId;/);
-for (const [legacy, target] of [
-  ['memories', "pageId: 'memory'"],
-  ['continuity_state', "pageId: 'world'"],
-  ['memory_pipeline', "pageId: 'pipeline'"],
-  ['gradia_pipeline', "gradiaDraftSection: 'stages'"],
-  ['gradia_input', "settingsHubSection: 'input_writer'"],
-  ['prompt_studio', "pageId: 'custom'"],
-  ['story_arc_direction', "libraDraftSection: 'direction'"],
-  ['providers', "pageId: 'ai'"],
-  ['embedding', "pageId: 'embedding'"],
-  ['runs', "pageId: 'logs'"],
-  ['server', "settingsHubSection: 'server'"],
-  ['memory_restore', "settingsHubSection: 'recovery'"]
-]) {
-  assert.ok(navigation.includes(legacy) && navigation.includes(target), `missing legacy route: ${legacy}`);
-}
-
 const routeContext = {
   Object,
   Array,
   String,
-  LIBRA_MEMORY_PIPELINE_STAGES: ['ariadne', 'character_ito', 'world_ito', 'plot_ito'],
+  LIBRA_MEMORY_PIPELINE_STAGES: ['librarian'],
   LIBRA_REFERENCE_HUB_SECTIONS: ['modules', 'character_lore_exclusions', 'response_materials'],
   LIBRA_CONNECTION_HUB_SECTIONS: ['providers', 'embedding'],
   GRADIA_STAGE_ALIAS_MAP: { sga_shadow: 'sga_shadow' }
@@ -68,20 +51,24 @@ for (const [input, expected] of [
   ['memories', { pageId: 'memory', memoryHubSection: 'manage' }],
   ['continuity_state', { pageId: 'world' }],
   ['agent_plot_ito', { pageId: 'agents', agentHubSection: 'memory', memoryPipelineStage: 'librarian' }],
-  ['gradia_results', { pageId: 'pipeline', pipelineHubSection: 'response_generation', gradiaDraftSection: 'results' }],
-  ['input_writer', { pageId: 'settings', settingsHubSection: 'input_writer' }],
-  ['story_arc_direction', { pageId: 'pipeline', pipelineHubSection: 'response_generation', libraDraftSection: 'direction' }],
+  ['gradia_results', { pageId: 'memory', memoryHubSection: 'read' }],
+  ['input_writer', { pageId: 'memory', memoryHubSection: 'read' }],
+  ['story_arc_direction', { pageId: 'narrative', narrativeHubSection: 'direction' }],
   ['providers', { pageId: 'ai' }],
   ['debug', { pageId: 'settings', settingsHubSection: 'general', generalSettingsSection: 'debug' }]
 ]) assert.deepEqual(JSON.parse(JSON.stringify(routeContext.resolveShared(input))), expected, `route mismatch: ${input}`);
 assert.deepEqual(JSON.parse(JSON.stringify(routeContext.resolveShared('unknown-page'))),
   { pageId: 'memory', memoryHubSection: 'read' }, 'unknown routes must enter the Canonical Reader');
 
-const familyKeys = between('const GUI_FAMILY_HUB_STATE_KEYS =', 'const guiFamilyHubDefaults =');
-for (const commonKey of [
-  'memoryHubSection', 'memoryPipelineStage', 'storyArcHubSection',
-  'referenceHubSection', 'connectionHubSection', 'settingsHubSection', 'sharedSidebarSection'
-]) assert.doesNotMatch(familyKeys, new RegExp(`['"]${commonKey}['"]`), `${commonKey} must remain common across families`);
+// The response-family state cache retired. Common navigation must retain draft state.
+const navigationGui={dirty:true,state:{retained:'unsaved'}};
+routeContext.Gui=navigationGui;
+vm.runInContext(between('const normalizeHubChoice =','const resolveSharedNavigationTarget ='),routeContext);
+routeContext.normalizePromptInjectionSection=v=>v;
+routeContext.LIBRA_SETTINGS_HUB_SECTIONS=['memory_settings','debug'];
+vm.runInContext('this.apply=applySharedNavigationTarget;',routeContext);
+const draft=navigationGui.state;
+for(const id of ['memory','world','server','recall']){routeContext.apply(routeContext.resolveShared(id));assert.equal(navigationGui.state,draft);assert.equal(navigationGui.dirty,true);}
 
 const mobile = between('const BOOK_MOBILE_ITEMS =', 'const GUI_SCROLL_SELECTORS =');
 assert.match(mobile, /BOOK_SIDEBAR_PAGE_REGISTRY\.filter/);
@@ -89,35 +76,8 @@ assert.match(mobile, /Gui\.bookPage/);
 assert.doesNotMatch(mobile, /buildGradiaMobileNavigation/);
 
 require('./helpers/libra_active_book_routes.cjs')(source);
-const unread = between('const routeUnreadGradiaResult =', 'const acknowledgeRenderedGradiaResult =');
-assert.match(unread, /sharedSidebarSection = 'pipeline'/);
-assert.match(unread, /pipelineHubSection = 'response_generation'/);
-assert.match(unread, /gradiaDraftSection = 'results'/);
-assert.doesNotMatch(unread, /gradiaPageId = 'gradia_results'/);
-
-const switcher = between('const activateResponseFamilyFromHeader =', 'const GRADIA_STAGE_ALIAS_MAP =');
-assert.match(switcher, /migrateLegacyGuiNavigationState\(\)/);
-assert.match(switcher, /Gui\.sharedSidebarSection = SHARED_SIDEBAR_SECTIONS\.includes/);
-assert.doesNotMatch(switcher, /Gui\.gradiaSidebarSection\s*=/);
-assert.doesNotMatch(switcher, /Gui\.libraSidebarSection\s*=/);
-
-const render = between('async function renderSettingsGuiOnce()', 'const hideSettingsGui =');
-const headerSelection = render.match(/const selectResponseFamilyFromHeader = (async nextFamily => \{[\s\S]*?\n    \});/);
-assert.ok(headerSelection, 'header family selection remains available');
-const headerState = { bookFamilyMenuOpen: true, invalidations: new Set() };
-let activation;
-const selectHeaderFamily = vm.runInNewContext(`(${headerSelection[1]})`, {
-  Gui: headerState,
-  activateResponseFamilyFromHeader: family => {
-    activation = { family, menuOpen: headerState.bookFamilyMenuOpen, headerInvalidated: headerState.invalidations.has('header') };
-  }
-});
-void selectHeaderFamily('gradia');
-assert.deepEqual(activation, { family: 'gradia', menuOpen: false, headerInvalidated: true },
-  'header selection closes and invalidates the menu before activating the requested family');
-
-assert.match(source, /settingsHubSection: 'input_writer',[\s\S]*generalSettingsSection: 'memory_settings'/,
-  'fresh GUI state opens Settings on Input Writer configuration without changing the legacy general-settings fallback');
+// Removed embedded GRADIA result routing/header switcher has no current executor.
+assert.match(source,/const normalizeResponseFamily = \(\) => 'libra'/);
 const general = between('const buildGeneralSettingsPanel =', 'const buildSharedSettingsShellPanel =');
 // The diagnostic section was consolidated behind a dispatcher (§34.2), so buildDebugTab() is no longer
 // called directly here. What must still hold is that the general panel OFFERS the diagnostics and that

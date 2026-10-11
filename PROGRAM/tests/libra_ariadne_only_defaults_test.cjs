@@ -106,13 +106,7 @@ const runPlugin = async initialObjects => {
   assert.equal(fresh.runtime.settings.enableCharacterAide, false, 'fresh Character ito is disabled');
   assert.equal(fresh.runtime.settings.enableWorldAide, false, 'fresh World ito is disabled');
   assert.equal(fresh.runtime.settings.enablePlotAide, false, 'fresh Plot ito is disabled');
-  assert.deepEqual(fresh.responseModes.legacyPlanner, { responseFamily: 'libra', libraResponseMode: 'planner', gradiaWritingMode: 'rp', inputWriterMode: 'rp', injectionMode: 'planner' }, 'legacy Planner migrates to LIBRA / Planner');
-  assert.deepEqual(fresh.responseModes.legacyClassic, { responseFamily: 'libra', libraResponseMode: 'classic', gradiaWritingMode: 'rp', inputWriterMode: 'rp', injectionMode: 'classic' }, 'legacy Classic migrates to LIBRA / Classic');
-  assert.deepEqual(fresh.responseModes.legacySgaNovel, { responseFamily: 'gradia', libraResponseMode: 'classic', gradiaWritingMode: 'author', inputWriterMode: 'author', injectionMode: 'sga' }, 'legacy SGA author mode migrates to GRADIA / Novel while retaining the current inactive LIBRA default');
-  assert.equal(fresh.responseModes.rememberedGradiaRp.injectionMode, 'sga', 'GRADIA always uses the compatibility SGA execution route');
-  assert.equal(fresh.responseModes.rememberedGradiaRp.libraResponseMode, 'classic', 'inactive LIBRA submode is retained while GRADIA is active');
-  assert.equal(fresh.responseModes.rememberedLibraClassic.injectionMode, 'classic', 'LIBRA family restores its remembered Classic route');
-  assert.equal(fresh.responseModes.rememberedLibraClassic.gradiaWritingMode, 'author', 'inactive GRADIA writing mode is retained while LIBRA is active');
+  for(const [label,mode]of Object.entries(fresh.responseModes)) assert.deepEqual(mode,{responseFamily:'libra',libraResponseMode:'classic',injectionMode:'classic'},label+' cannot activate retired response executors');
   const freshSlots = fresh.readObject(AGENT_SLOTS_KEY).slots;
   assert.equal(freshSlots.ariadne.enabled, true, 'fresh storage persists Ariadne ON');
   for (const stageId of CORE_ITO_IDS) assert.equal(freshSlots[stageId].enabled, false, `fresh storage persists ${stageId} OFF`);
@@ -123,9 +117,9 @@ const runPlugin = async initialObjects => {
     [AGENT_SLOTS_KEY]: slotRecord(false),
     [RUNTIME_SETTINGS_KEY]: { version: 3, settings: { injection_mode: 'sga', input_writer_mode: 'author' } }
   });
-  assert.equal(legacySga.runtime.settings.responseFamily, 'gradia', 'stored legacy SGA loads as the GRADIA family');
-  assert.equal(legacySga.runtime.settings.gradiaWritingMode, 'author', 'stored legacy author mode loads as GRADIA Novel');
-  assert.equal(legacySga.runtime.settings.injectionMode, 'sga', 'stored legacy SGA retains the internal execution route');
+  assert.equal(legacySga.runtime.settings.responseFamily, 'libra', 'stored legacy SGA loads as the GRADIA family');
+  assert.equal(legacySga.runtime.settings.gradiaWritingMode, undefined, 'stored legacy author mode loads as GRADIA Novel');
+  assert.equal(legacySga.runtime.settings.injectionMode, 'classic', 'stored legacy SGA retains the internal execution route');
 
   const explicitFamilies = await runPlugin({
     [MIGRATION_KEY]: completeMarker({}),
@@ -134,7 +128,7 @@ const runPlugin = async initialObjects => {
     [RUNTIME_SETTINGS_KEY]: { version: 3, settings: { response_family: 'libra', libra_response_mode: 'classic', gradia_writing_mode: 'author', injection_mode: 'sga' } }
   });
   assert.equal(explicitFamilies.runtime.settings.injectionMode, 'classic', 'explicit LIBRA family overrides the compatibility SGA route');
-  assert.equal(explicitFamilies.runtime.settings.gradiaWritingMode, 'author', 'inactive GRADIA Novel choice remains loaded');
+  assert.equal(explicitFamilies.runtime.settings.gradiaWritingMode, undefined, 'inactive GRADIA Novel choice remains loaded');
 
   const explicitOn = await runPlugin({
     [MIGRATION_KEY]: completeMarker({}),
@@ -166,10 +160,10 @@ const runPlugin = async initialObjects => {
   const sharedRouterStart = source.indexOf('const resolveSharedNavigationTarget =');
   const sharedRouterEnd = source.indexOf('const applySharedNavigationTarget =', sharedRouterStart);
   const sharedRouter = source.slice(sharedRouterStart, sharedRouterEnd);
-  assert.ok(sharedRouter.includes("if (requested.startsWith('agent_'))"), 'shared GUI router accepts legacy stage-detail deep links');
-  assert.ok(sharedRouter.includes("return { pageId: 'agents', agentHubSection: 'memory', memoryPipelineStage: stageId };"), 'stage-detail deep links land in Agents > Memory');
+  assert.match(sharedRouter,/requested\.startsWith\('agent_'\)/);
+  assert.match(sharedRouter,/memoryPipelineStage:LIBRA_MEMORY_PIPELINE_STAGES\.includes\(stage\)\?stage:LIBRARIAN_STAGE_ID/,'retired stage links redirect to Librarian');
   const memoryPipelineStart = source.indexOf('const buildMemoryPipelineWorkspacePanel =');
-  const memoryPipelineEnd = source.indexOf('const buildLibraDraftWorkspacePanel =', memoryPipelineStart);
+  const memoryPipelineEnd = source.indexOf('const buildSharedPipelineShellPanel =', memoryPipelineStart);
   const memoryPipeline = source.slice(memoryPipelineStart, memoryPipelineEnd);
   assert.ok(source.includes('const LIBRA_MEMORY_PIPELINE_STAGES = Object.freeze([LIBRARIAN_STAGE_ID])'), 'new memory execution exposes only Librarian; old slots above remain preserved');
   assert.ok(memoryPipeline.includes('buildLibrarianAnalyzerPanel(false, true)'), 'Pipeline > Memory generation opens the selected stage detail directly');

@@ -112,20 +112,20 @@ const boot = async (store = new Map(), argumentSeed = {}) => {
   const freshConfig = await fresh.api.getLibraProviderConfig();
   assert.equal(freshConfig.responseFamily, 'libra');
   assert.equal(freshConfig.libraResponseMode, 'classic');
-  assert.equal(freshConfig.gradiaWritingMode, 'rp');
-  assert.equal(freshConfig.inputWriterMode, 'rp');
+  assert.equal(freshConfig.gradiaWritingMode, undefined);
+  assert.equal(freshConfig.inputWriterMode, undefined);
   const freshEnvelope = readJson(freshStore, KEYS.runtime);
   assert.equal(freshEnvelope.schema, 'libra.runtime_settings_store.v4');
   assert.equal(freshEnvelope.version, 4);
   assert.equal(freshEnvelope.settings.settings_schema_version, 1);
   assert.equal(freshEnvelope.settings.response_family, 'libra');
   assert.equal(freshEnvelope.settings.libra_response_mode, 'classic');
-  assert.equal(freshEnvelope.settings.gradia_writing_mode, 'rp');
-  assert.equal(freshEnvelope.settings.input_writer_mode, 'rp');
+  assert.equal(freshEnvelope.settings.gradia_writing_mode, undefined);
+  assert.equal(freshEnvelope.settings.input_writer_mode, undefined);
   assert.equal(readJson(freshStore, KEYS.migration).settingsSchemaVersion, 1);
   await fresh.cleanup();
 
-  // A legacy one-field install keeps historical behavior only for the one-time migration.
+  // Legacy response selections normalize to Classic; unrelated persisted settings survive migration.
   const legacyStore = new Map([
     [KEYS.migration, raw(completeMarker({ settingsSchemaVersion: 0 }))],
     [KEYS.referenceBudget, raw({ version: 3, source: 'test' })],
@@ -139,17 +139,17 @@ const boot = async (store = new Map(), argumentSeed = {}) => {
   ]);
   const legacy = await boot(legacyStore);
   const legacyConfig = await legacy.api.getLibraProviderConfig();
-  assert.equal(legacyConfig.responseFamily, 'gradia');
-  assert.equal(legacyConfig.gradiaWritingMode, 'author', 'legacy shared field initializes GRADIA once');
-  assert.equal(legacyConfig.inputWriterMode, 'author', 'legacy shared field initializes Input Writer once');
+  assert.equal(legacyConfig.responseFamily, 'libra');
+  assert.equal(legacyConfig.gradiaWritingMode, undefined, 'retired GRADIA setting is absent from the active configuration');
+  assert.equal(legacyConfig.inputWriterMode, undefined, 'retired Input Writer setting is absent from the active configuration');
   const migratedLegacy = (await legacy.api.debugReadRuntimeSettings()).settings;
   assert.equal(migratedLegacy.live_context_enabled, 'false');
-  assert.equal(migratedLegacy.planner_preset, '', 'explicit empty preset binding is preserved');
+  assert.equal(migratedLegacy.planner_preset, undefined, 'retired Planner binding is absent from current settings');
   assert.equal(migratedLegacy.response_lore_start_count, '3');
   assert.equal(migratedLegacy.settings_schema_version, 1);
   await legacy.cleanup();
 
-  // Both mode-local fields remain independent and survive a full plugin reload.
+  // Retired mode fields are omitted from current settings; unrelated settings survive reload.
   const independentStore = new Map([
     [KEYS.migration, raw(completeMarker({ settingsSchemaVersion: 0 }))],
     [KEYS.referenceBudget, raw({ version: 3, source: 'test' })],
@@ -176,12 +176,12 @@ const boot = async (store = new Map(), argumentSeed = {}) => {
       inputWriterMode: firstConfig.inputWriterMode,
       injectionMode: firstConfig.injectionMode
     }),
-    { responseFamily: 'libra', libraResponseMode: 'classic', gradiaWritingMode: 'author', inputWriterMode: 'rp', injectionMode: 'classic' }
+    { responseFamily: 'libra', libraResponseMode: 'classic', injectionMode: 'classic' }
   );
   const firstRead = await firstBoot.api.debugReadRuntimeSettings();
   assert.equal(firstRead.settings.live_context_enabled, 'false');
   assert.equal(firstRead.settings.risuai_aux_allow_plugins, 'false');
-  assert.equal(firstRead.settings.planner_preset, '');
+  assert.equal(firstRead.settings.planner_preset, undefined);
   assert.equal(firstRead.settings.selected_module_lore_ids, '["module-a","module-b"]');
   assert.equal(firstRead.settings.excluded_character_lore_ids, '["char-lore-x"]');
 
@@ -199,28 +199,28 @@ const boot = async (store = new Map(), argumentSeed = {}) => {
       inputWriterMode: switched.inputWriterMode,
       injectionMode: switched.injectionMode
     }),
-    { responseFamily: 'gradia', libraResponseMode: 'classic', gradiaWritingMode: 'rp', inputWriterMode: 'author', injectionMode: 'sga' }
+    { responseFamily: 'libra', libraResponseMode: 'classic', injectionMode: 'classic' }
   );
   const switchedStored = (await firstBoot.api.debugReadRuntimeSettings()).settings;
-  assert.equal(switchedStored.gradia_writing_mode, 'rp');
-  assert.equal(switchedStored.input_writer_mode, 'author');
+  assert.equal(switchedStored.gradia_writing_mode, undefined);
+  assert.equal(switchedStored.input_writer_mode, undefined);
   assert.equal(switchedStored.libra_response_mode, 'classic');
   assert.equal(switchedStored.live_context_enabled, 'false', 'saving modes does not replace an explicit non-default setting');
   await firstBoot.cleanup();
 
   const reloaded = await boot(independentStore);
   const reloadConfig = await reloaded.api.getLibraProviderConfig();
-  assert.equal(reloadConfig.responseFamily, 'gradia');
+  assert.equal(reloadConfig.responseFamily, 'libra');
   assert.equal(reloadConfig.libraResponseMode, 'classic');
-  assert.equal(reloadConfig.gradiaWritingMode, 'rp');
-  assert.equal(reloadConfig.inputWriterMode, 'author');
-  assert.equal(reloadConfig.injectionMode, 'sga');
+  assert.equal(reloadConfig.gradiaWritingMode, undefined);
+  assert.equal(reloadConfig.inputWriterMode, undefined);
+  assert.equal(reloadConfig.injectionMode, 'classic');
 
   const backToLibra = await reloaded.api.saveLibraProviderConfig({ responseFamily: 'libra' });
   assert.equal(backToLibra.responseFamily, 'libra');
   assert.equal(backToLibra.libraResponseMode, 'classic', 'LIBRA restores its mode-local Classic selection');
-  assert.equal(backToLibra.gradiaWritingMode, 'rp', 'inactive GRADIA selection remains remembered');
-  assert.equal(backToLibra.inputWriterMode, 'author', 'Input Writer selection remains independent');
+  assert.equal(backToLibra.gradiaWritingMode, undefined, 'retired GRADIA selection has no public execution authority');
+  assert.equal(backToLibra.inputWriterMode, undefined, 'retired Input Writer selection has no public execution authority');
   assert.equal(backToLibra.injectionMode, 'classic');
   await reloaded.cleanup();
 
