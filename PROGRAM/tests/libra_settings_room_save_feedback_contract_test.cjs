@@ -26,7 +26,21 @@ check('settings room save has an explicit feedback lifecycle', () => {
   assert.match(save, /if \(Gui\.settingsRoomSaving === true\) return false/);
   assert.match(save, /Gui\.settingsRoomSaveStatus = '설정 저장 중…'/);
   assert.match(save, /if \(await saveGuiState\(\) !== true\) throw new Error\('settings_save_not_confirmed'\)/);
-  assert.match(save, /Gui\.settingsRoomSaveStatus = '설정을 저장했습니다\.'/);
+  // A concurrent edit can leave the form dirty after the saved snapshot commits.
+  // In that case a plain success message would falsely imply that the later edit
+  // was persisted. Require both the clean and dirty success branches.
+  assert.match(save,
+    /Gui\.settingsRoomSaveStatus = Gui\.dirty \? '설정을 저장했습니다\. 이후 변경한 내용은 아직 저장되지 않았습니다\.' : '설정을 저장했습니다\.'/,
+    'save feedback must distinguish a persisted snapshot from edits made during the save');
+  assert.match(save,
+    /guiSetStatus\(Gui\.dirty \? Gui\.settingsRoomSaveStatus : '설정을 저장했습니다\. 다음 대화부터 적용됩니다\.', false, true\)/,
+    'the visible status must not report all edits saved when the form remains dirty');
+  assert.match(save, /Gui\.settingsRoomSaveError = false/,
+    'successful persistence clears previous save errors');
+  assert.match(save, /rollbackStatus === 'failed'/,
+    'failed rollback needs its own warning instead of reporting a successful save');
+  assert.match(save, /Gui\.dirty = true/,
+    'failed persistence retains the dirty draft for retry');
   assert.match(save, /await renderSettingsGui\(\)/);
   assert.match(save, /guiSetStatus\(/);
   assert.match(save, /catch \(error\)[\s\S]*Gui\.settingsRoomSaveError = true[\s\S]*return false/);

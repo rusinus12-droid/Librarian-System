@@ -108,6 +108,12 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # Flashback raw COW is a 29-case durability/fault-injection suite: all 29 passed
+    # in 91.35s on an isolated Linux/Node 22 baseline, exceeding the previous
+    # 60s *file* budget. This 120s cap is only the suite envelope; keep every
+    # individual integrity assertion, refusal check and in-test deadline intact.
+    # Preserve the prior 60s timeout as historical evidence, not a product PASS.
+    'flashback_raw_cow_append_runtime_test.cjs': 120,
     # Functional 3-source x 3-destination portable matrix; default60 timeout retained as prior evidence.
     'libra_phase_d_portable_nine_pairs_test.cjs': 180,
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
