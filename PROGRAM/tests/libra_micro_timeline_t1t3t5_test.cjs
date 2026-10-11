@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
+const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
 
 const PROMISE = '도서관 전체는 정숙 구역';
 const DELAY = '준호가 지호에게서 열쇠를 받아 들었다';
@@ -39,7 +40,8 @@ const sourceClaim = (input, value) => {
       const { f } = fx;
       const fullMessages = f.chat.message;
       const canonical = artifact();
-      canonical.facts.find(fact => fact.tempFactId === 'f13').values.thread.summary = FULFILL;
+      const conclusion=canonical.facts.find(fact => fact.tempFactId === 'f13');
+      conclusion.values.thread.summary=FULFILL;conclusion.text=FULFILL+'.';
       f.control.artifact = canonical;
       f.control.onCall = async args => {
         const messages = args[0].messages;
@@ -75,13 +77,12 @@ const sourceClaim = (input, value) => {
         `${mode}: the T3 Micro survives the Canonical commit`);
 
       // T2/T4 have receipts but no Micro body: the frontier must not count them as completed Micros.
-      await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'planner' });
-      const prompts = [];
-      f.control.onCall = async args => {
-        prompts.push(args[0].messages.map(row => String(row.content || '')).join('\n'));
-        return { type: 'success', result: 'BRIEF' };
-      };
-      await f.control.hooks.beforeRequest([{ role: 'user', content: `${FULFILL} 내용으로 정리해줘.` }], 'model');
+      await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
+      const beforeCalls=f.control.calls.length;
+      f.control.onCall=()=>{throw Error('actual Classic must consume durable evidence without generation');};
+      const scope=await f.r.api.getHostLineageStatus();
+      const synthesis=await actualClassicPacket(f,`${FULFILL} 내용으로 정리해줘.`,scope.scopeKey);
+      assert.equal(f.control.calls.length,beforeCalls);
       const viewer = f.r.api.getLastMemoryRecallViewer();
       const frontier = viewer?.microFrontier;
       assert.ok(frontier, `${mode}: the delivery exposes the Micro frontier`);
@@ -91,7 +92,7 @@ const sourceClaim = (input, value) => {
             evidenceAuthority: row.evidenceAuthority, injected: row.injected, plannerUsed: row.plannerUsed,
             classicUsed: row.classicUsed, sgaUsed: row.sgaUsed,
             text: String(row.selectedText || '').slice(0, 60) })),
-          prompts: prompts.map(p => p.length)
+          deliveredBlockLength:synthesis.actualClassic.block.length
         }, null, 1));
       }
       const microTurns = (viewer.rows || []).filter(row => row.kind === 'micro')
@@ -122,38 +123,39 @@ const sourceClaim = (input, value) => {
         && Number(row.memory?.turnRange?.start) === 3),
       `${mode}: a T3 scene query selects the T3 Micro span`);
 
-      // The same source-backed claim must not be duplicated across the memory material that reaches the
-      // model. NOTE: two measurement mistakes were corrected here - (1) an earlier version looped over
-      // rows with `injected === true`, but on the Planner path no row carries that flag, so the loop body
-      // never ran and asserted nothing; (2) counting raw prompt occurrences counts the user's own query
-      // text. Occurrences in the user message are therefore subtracted explicitly.
-      const plannerInput = prompts.join('\n');
-      for (const claim of [PROMISE, DELAY, FULFILL]) {
-        const total = plannerInput.split(claim).length - 1;
-        const fromUserInput = [PROMISE, DELAY, FULFILL].includes(claim)
-          ? (plannerInput.match(new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
-          : 0;
-        assert.ok(total - fromUserInput <= 1,
-          `${mode}: "${claim}" reaches the final model input at most once as memory material (got ${total})`);
-      }
-      assert.ok(viewer.rows?.some(row => row.kind === 'micro' && row.plannerUsed === true),
-        `${mode}: the Planner consumes the durable Micro rows for this query`);
+      // Count only the actual returned memory block, excluding the user's query.
+      const deliveredInput=synthesis.actualClassic.block;
+      assert.equal(deliveredInput.split(FULFILL).length-1,1,`${mode}: canonical conclusion actually reaches the returned recall block exactly once`);
+      for(const claim of [PROMISE,DELAY,FULFILL])assert.ok(deliveredInput.split(claim).length-1<=1,
+        `${mode}: each exact source claim occurs at most once in delivered memory material`);
+      assert.ok(viewer.rows?.some(row=>row.kind==='micro'&&row.classicUsed===true&&row.injected===true),
+        `${mode}: actual Classic consumes a durable Micro row`);
 
-      // The T3 scene query must select the Micro row bound to its own turn. Asserted on row SELECTION,
-      // not on row text: the row's selectedText can be empty when the recall budget trims it, while the
-      // row is still the evidence the consumer reads (measured: turn 3 selected with empty text).
-      const t3Prompts = [];
-      f.control.onCall = async args => {
-        t3Prompts.push(args[0].messages.map(row => String(row.content || '')).join('\n'));
-        return { type: 'success', result: 'BRIEF' };
-      };
-      await f.control.hooks.beforeRequest([{ role: 'user', content: `${DELAY} 장면을 이어줘.` }], 'model');
+      // Bind T3 selection and text to the returned Classic prompt.
+      const t3Packet=await actualClassicPacket(f,`${DELAY} 장면을 이어줘.`,scope.scopeKey);
+      assert.equal(f.control.calls.length,beforeCalls);
+      assert.equal(t3Packet.actualClassic.block.split(DELAY).length-1,1,`${mode}: exact T3 evidence actually reaches the returned prompt once`);
       const t3Viewer = f.r.api.getLastMemoryRecallViewer();
       const t3Micro = Array.from(t3Viewer?.rows || [])
         .find(row => row.kind === 'micro' && Number(row.turnRange?.start) === 3);
       assert.ok(t3Micro,
         `${mode}: a T3 scene query selects the Micro row bound to turn 3 (got ${JSON.stringify(
           Array.from(t3Viewer?.rows || []).map(row => [row.kind, row.turnRange?.start]))})`);
+      if(t3Micro.classicUsed){
+        assert.equal(t3Micro.injected,true);assert.ok(t3Micro.selectedText.includes(DELAY));
+      }else{
+        assert.equal(t3Micro.deduplicatedClaims,1,`${mode}: exactly the overlapping source claim is deduplicated`);
+        assert.equal(t3Micro.selectedText,'');assert.equal(t3Micro.injected,false);
+        const deliveredCanonical=t3Packet.actualClassic.deliveredRows.filter(row=>row.kind==='canonical'&&row.selectedText.includes(DELAY));
+        assert.equal(deliveredCanonical.length,1,`${mode}: one delivered canonical row owns the overlapping T3 claim`);
+        const ref=t3Packet.actualClassic.context.canonicalRefs.find(row=>row.memoryId===deliveredCanonical[0].memoryId);
+        assert.ok(ref?.key);
+        const raw=mode==='plugin_only'?fx.local.get(ref.key):fx.storedRows().find(row=>row.key===ref.key)?.raw;
+        assert.equal(typeof raw,'string');const memory=JSON.parse(raw);
+        assert.ok(memory.canonicalArtifact.facts.some(fact=>fact.text.includes(DELAY)
+          &&fact.evidenceSpans.some(span=>span.ref==='t3-a'&&span.quote.includes(DELAY))),
+          `${mode}: deduplication is backed by the same exact T3 assistant source in the sealed canonical record`);
+      }
       assert.equal(t3Micro.evidenceAuthority, 'source_verified_candidate',
         `${mode}: the T3 row is the source-verified Micro candidate, not a Canonical row`);
       console.log(`PASS T1/T3/T5 promise-delay-fulfillment timeline in ${mode}`);
