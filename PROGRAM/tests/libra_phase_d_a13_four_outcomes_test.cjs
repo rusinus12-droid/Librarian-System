@@ -4,6 +4,7 @@
 // the deployed canonical pipeline in each storage mode. History is read back via
 // the public API and passed to the shipped production detail renderer.
 const assert = require('node:assert/strict');
+const {actualClassicPacket,deliveredClosureRows,assertNoForbiddenClosure}=require('./fixtures/libra_actual_classic_request.cjs');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -384,14 +385,15 @@ const runBranch = async (mode, outcome) => {
         assert.equal(finalThread?.resolution || '', '', 'obstacle Recall does not invent a terminal reason');
       }
     });
-    const writer = await f.r.api.prepareInputWriterEvidence(query);
-    const writerRows = packetRows(writer);
+    const scope = await f.r.api.getHostLineageStatus();
+    const writer = await actualClassicPacket(f,query,scope.scopeKey);
+    const writerRows = packetRows(writer).filter(row => writer.actualClassic.block.includes(row.text));
     const writerOutcome = writerRows.find(row => row.text?.includes(expected.source));
-    recordCheck(`${mode}/${outcome.id} final Input Writer`, () => {
-      assert.ok(writer.evidencePacket, 'public Input Writer exposes its final evidence packet');
-      assert.ok(writerOutcome, 'Input Writer includes the exact source-backed outcome');
+    recordCheck(`${mode}/${outcome.id} final actual Classic`, () => {
+      assert.ok(writer.evidencePacket, 'public actual Classic exposes its final evidence packet');
+      assert.ok(writerOutcome, 'actual Classic includes the exact source-backed outcome');
       assert.ok(Number(writerOutcome.turnRange?.start || 0) <= 6 && Number(writerOutcome.turnRange?.end || 0) >= 6,
-        'Input Writer retains outcome evidence time T6');
+        'actual Classic retains outcome evidence time T6');
     });
 
     const gui = guiContext().buildWorldManagerHistoryDetailView(history, 'narrative');
