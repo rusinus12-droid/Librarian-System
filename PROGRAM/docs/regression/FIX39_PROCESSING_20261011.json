@@ -13,12 +13,12 @@
     "PASS_SKIP": 1,
     "TIMEOUT": 1
   },
-  "reviewedCodeCommit": "a752329f465868c4ed5568d07ec6b9943c90bf75",
-  "currentLibraSha256": "4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753",
+  "reviewedCodeCommit": "6890ea2",
+  "currentLibraSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
   "rootCount": 39,
   "allOriginal39PathsAccounted": true,
   "enumeratedRootCount": 1138,
-  "qualification": "PENDING final actual artifacts and common-source official full1138 run",
+  "qualification": "PENDING fresh actual artifacts and isolated-heavy common-source official full1138 run",
   "domainReceipts": [
     {
       "domain": "runtime",
@@ -82,6 +82,13 @@
         916
       ],
       "kind": "suite skip classification distinguishes top-level test reports from nested expected product refusals"
+    },
+    {
+      "rootOrdinal": 661,
+      "kind": "Private immutable physical-body snapshot captured at read; unchanged digest promoted only by actual response consumers. Eager-hash TIMEOUT and bounded RED/GREEN/A-B evidence preserved; new full-root qualification remains pending.",
+      "receipt": "fix39-20261011/source-lazy-proof-results.json",
+      "receiptSha256": "09da27dea7a7bd6346e4a2e4e18fc9bbfedaff6a03a1fd0d34f59ce1cd3bf191",
+      "snapshotLifetimeLimit": "WeakMap follows hydrated object lifetime; nonconsumed cache objects retain extra serialized body until GC; proof promotion discards snapshot. No strong registry or externally trusted flag."
     }
   ],
   "genuineExternalEvidenceRoots": [
@@ -1099,7 +1106,7 @@
       "domain": "source",
       "previousOfficialStatus": "FAIL",
       "previousOfficialTestSha256": "0b0dd5e34a6c38a370468a2f27f1b4768abc2267f4a2bd89b20d829cb3f7888c",
-      "currentTestSha256": "9fb14d006d717a841440e59b1f3c90bd0c0caef520b9c3c07f89a657148102b5",
+      "currentTestSha256": "5f1be884dcce7940b941934856e49267c14dfd03dd637695278695df3b8eda5a",
       "cause": "Current real production bugs: immutable canonical physical bodies were not final consumed proofs; closure-only proofs lost by diagnostics projection; final memory policy/mode could drift during physical body read; boundary settings await unbounded; superseded recall/boundary owner could publish old diagnostics. Also retired automatic task-receipt assertions replaced by explicit physical successor map.",
       "assertionMap": [
         {
@@ -1202,7 +1209,13 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "previousIntegratedTestSha256": "9fb14d006d717a841440e59b1f3c90bd0c0caef520b9c3c07f89a657148102b5",
+      "additionalFocusedQualification": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-lazy-proof-results.json",
+        "sha256": "09da27dea7a7bd6346e4a2e4e18fc9bbfedaff6a03a1fd0d34f59ce1cd3bf191",
+        "scope": "Whole current root retains prior21controls and adds private snapshot mutation/digest/archive/performance controls; prior author receipt describes predecessor test/source, final common result will bind the strengthened current test."
+      }
     },
     {
       "rootOrdinal": 766,
@@ -1462,8 +1475,16 @@
       "previousOfficialTestSha256": "bb6f397eb32bcde4602a17c3fc9c20dafb1fcbe63807439058d2837cae076098",
       "currentTestSha256": "ba1a70f9dc7e51cf6ddbdd2a6b18923260e7f9dcdb35a3edae6e6e2e36dedad1",
       "cause": "Old fixture used retired hash configuration with no query vector. Current admission requires actual configured model vectors; contextual recall uses dense candidates while explicit noncontextual mode retains exact lexical arm.",
-      "assertionMap": [],
-      "historicalEquivalenceLimitations": [],
+      "assertionMap": [
+        "All original keyword/unicode/identity/ambiguity/scene/sparsecache/budget/index obligations retained",
+        "Positive configured adapter+durable response record+actual query adapter for exact arm with contextualRecall=false",
+        "Default contextual mode positive dense admission; exact fallback absent",
+        "Raw/unready, changed source, legacyhash cannot enter any candidate arm",
+        "Stored source/receipt/vector bytes unchanged by alias preparation"
+      ],
+      "historicalEquivalenceLimitations": [
+        "Hash-only candidate retrieval was removed by current model-only product contract; no hash fallback equivalence claimed."
+      ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/integration-results.json",
       "authorReceiptSha256": "f169016f67a93ca103c5919b5bd5469f4030cd765135565f1af3a541377993f2"
@@ -1678,5 +1699,17 @@
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
       "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
     }
-  ]
+  ],
+  "supersededInitialFinalCampaign": {
+    "sourceCommit": "d69fe9c8adcb5c77bbf97d33d441394bc6277970",
+    "status": "INTERRUPTED_AFTER_NEW_FAILURES",
+    "failureRoots": [
+      156,
+      661,
+      662
+    ],
+    "receipt": "/workspace/librarian-regression/fix39-20261011/initial-campaign-interruption/receipt.json",
+    "receiptSha256": "1877191799bf8ce958a5fc9dc342a7d69684fc36ea56ca8566f9275f4a2b9890",
+    "limit": "Partial execution; no full1138 outcome or all-PASS claim."
+  }
 }

@@ -559,8 +559,9 @@ function assertOldRows(baseline, rows) {
 // Prior queue-recovery candidate: de627d1b971635fe8eb1c233e73550ab965f13759a0ef4afbe74898a3b096a69.
 // Prior dispatch-only candidate: d2a16b862dafad18e0f8dd14f6ac5356173dcaca222ae8d484190ca765f659b6.
 // Historical product pin ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180 remains in the frozen baseline receipts.
+// Prior eager-body-proof candidate LIBRA: 4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753; current lazy snapshot proof remains privately verified.
 const SOURCE_HASHES = Object.freeze({
-  "PROGRAM/plugins/LIBRA.js": "4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753",
+  "PROGRAM/plugins/LIBRA.js": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
   "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd",
   "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52",
   "PROGRAM/tests/fixtures/libra_vm_harness.cjs": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100",
