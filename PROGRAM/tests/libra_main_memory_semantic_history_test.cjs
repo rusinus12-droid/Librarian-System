@@ -323,18 +323,20 @@ const runMode = async mode => {
       && boundaries.some(item => item.scope?.targetRef === entityId(head, '준호'));
     assert.equal(observation.emptySelectorFailsClosed, true,
       `${mode}: empty clear selector never deletes the whole collection`);
-    const recallPreflight=await f.r.api.prepareInputWriterEvidence('민아의 지호·준호 편지 열람 경계는 지금 어떻게 적용되는가?');
-    const packetState=recallPreflight?.evidencePacket?.continuity_state;
+    const recallPreflight=await f.r.api.getResponseContext({currentInput:'민아의 지호·준호 편지 열람 경계는 지금 어떻게 적용되는가?'});
+    assert.equal((await f.r.api.validateResponseContext(recallPreflight)).current,true,
+      `${mode}: public State context is bound to the current durable Head`);
+    const packetState=recallPreflight.values.currentHead;
     const packetMina=packetState?.characters?.find(row=>row.name==='민아');
-    observation.inputWriterPacketUsesExactCurrentHead=packetMina?.state?.boundaries?.length===1
+    observation.responseContextUsesExactCurrentHead=packetMina?.state?.boundaries?.length===1
       &&packetMina.state.boundaries[0].scope?.targetRef===entityId(head,'준호')
       &&packetMina.state.boundaries[0].scope?.when==='내일';
-    assert.equal(observation.inputWriterPacketUsesExactCurrentHead,true,
-      `${mode}: actual Input Writer packet reads the Head after exact removal and preserves the scoped sibling`);
-    observation.inputWriterPacketKeepsEmptySelectorPending=packetState?.unifiedApplied?.pending?.some(row=>row.fact==='c_empty_clear'
+    assert.equal(observation.responseContextUsesExactCurrentHead,true,
+      `${mode}: sealed public State context reads the Head after exact removal and preserves the scoped sibling`);
+    observation.responseContextKeepsEmptySelectorPending=packetState?.unifiedApplied?.pending?.some(row=>row.fact==='c_empty_clear'
       &&row.reason==='memory_record_quarantined')===true;
-    assert.equal(observation.inputWriterPacketKeepsEmptySelectorPending,true,
-      `${mode}: invalid empty selector remains explicitly pending in the Recall consumer's current State`);
+    assert.equal(observation.responseContextKeepsEmptySelectorPending,true,
+      `${mode}: invalid empty selector remains explicitly pending in the public current State context`);
 
     const correctionRow=head.characters.find(row=>row.name==='민아');
     const changedBoundary=clone(correctionRow.state.boundaries[0]);
