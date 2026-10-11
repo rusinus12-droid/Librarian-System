@@ -1,7 +1,7 @@
 'use strict';
 
-// Root 85 source-fixture observer. Shared modules and artifact evaluations stay
-// untouched. This first revision deliberately retains every original 200ms wait.
+// Root 85 owns startup producers only at its source-fixture baseline boundary.
+// Shared modules, artifact evaluations and artifact restart waits stay intact.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,8 +18,9 @@ const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const clock = () => Number(process.hrtime.bigint()) / 1e6;
 const events = [];
 let nextContext = 0, nextPromise = 0, dropped = 0, configuredControl = null;
+let defaultControls = null;
 const emit = (kind, data = {}) => {
-  if (!configuredControl || (data.context && configuredControl.context && data.context !== configuredControl.context)) return;
+  if (!configuredControl || configuredControl.finished || (data.context && configuredControl.context && data.context !== configuredControl.context)) return;
   if (events.length === 512) { dropped++; return; }
   events.push({ kind, atMs: clock(), ...data });
 };
@@ -78,12 +79,17 @@ function observeProduct(source) {
   result = replaceOnce(result, '      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));',
     `      globalThis.${key}.invoke(callback);\n    }, Math.max(0, Number(delayMs || 0) || 0));`);
   result = replaceOnce(result, '  globalThis.__FlashbackMemory = publicApi;',
-    `  globalThis.${key}.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers });\n  globalThis.__FlashbackMemory = publicApi;`);
+    `  globalThis.${key}.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers, scheduleTimer, withDeadline });\n  globalThis.__FlashbackMemory = publicApi;`);
   result = replaceOnce(result, '  const autoMigratePlugin = !localOnlyOwner',
     `  globalThis.${key}.captureSdk({ timers: lifecycle.timers, clear: clearLifecycleTimeout });\n  const autoMigratePlugin = !localOnlyOwner`);
   result = replaceOnce(result, 'void refreshHostRuntimeInfo();', `void globalThis.${key}.promise('startup.runtime_info',refreshHostRuntimeInfo());`);
   result = replaceOnce(result, "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
     `globalThis.${key}.promise('startup.ui',registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error)));`);
+  result = replaceOnce(result, '    Runtime.scheduledTimers.add(id);',
+    `    Runtime.scheduledTimers.add(id);\n    globalThis.${key}.timerRegistered('runtime',id,fn,ms);`);
+  const storageEnd = result.indexOf('// BEGIN MEMORY SUITE SEARCH');
+  result = replaceOnce(result.slice(0, storageEnd), '    lifecycle.timers.add(timer);',
+    `    lifecycle.timers.add(timer);\n    globalThis.${key}.timerRegistered('sdk',timer,callback,delayMs);`) + result.slice(storageEnd);
   acorn.parse(result, { ecmaVersion: 'latest' });
   const transformed = { source: result, sourceSha256: hash, observedSha256: digest(result), callsites, expressionCount: expressions.size };
   assert(sourceCache.size < 8, 'bounded fixture source variants');
@@ -93,7 +99,7 @@ function observeProduct(source) {
 
 function createState(sandbox) {
   const id = ++nextContext, pending = new Map(), labels = new WeakMap();
-  const state = { id, sandbox, pending, runtime: null, sdk: null, startup: null, control: null, boundary: null };
+  const state = { id, sandbox, pending, runtime: null, sdk: null, startup: null, control: null, boundary: null, closed: new Set() };
   const promise = (kind, value) => {
     if (!value || typeof value.then !== 'function') return value;
     if ([...pending.values()].some(row => row.value === value)) return value;
@@ -112,6 +118,13 @@ function createState(sandbox) {
       assert(label, 'registered actual scheduled callback');
       emit('callback.entered', { context: id, label });
       return origin.run({ state, label }, () => promise('scheduled.return', Reflect.apply(callback, undefined, [])));
+    },
+    timerRegistered(family, handle, callback, delayMs) {
+      emit('timer.registered', { context: id, family, label: labels.get(callback), delayMs });
+      if (state.closed.has(family)) {
+        clearOwnedHandle(state, family, handle);
+        emit('timer.cancelled_during_drain', { context: id, family, label: labels.get(callback), delayMs });
+      }
     },
     captureRuntime(value) {
       assert(!state.runtime);
@@ -208,11 +221,14 @@ function installControl(state, control) {
     const sdk = caller?.state === state && caller.label === 'scheduleLifecycleTimeout:9675';
     if (control.entered || !(control.kind === 'native' ? native : sdk)) return value;
     control.entered = true;
+    control.enteredAtMs = clock();
+    control.resolveEntered();
     control.label = caller.label;
     emit('control.actual_host_read_entered', { context: state.id, label: caller.label, method: 'getCharacter', promise: !!value?.then });
     const gate = new Promise(resolve => { control.release = () => { control.released = true; resolve(); }; });
     control.gate = gate;
     control.safetyTimer = setTimeout(() => {
+      control.releaseReason = 'safety';
       emit('control.safety_release', { context: state.id });
       control.release();
     }, 2000);
@@ -220,9 +236,23 @@ function installControl(state, control) {
   };
 }
 
-function boundary(context, value) {
+function clearOwnedHandle(state, family, handle) {
+  if (family === 'sdk') state.sdk.clear(handle);
+  else {
+    state.sandbox.clearTimeout(handle);
+    state.runtime.Runtime.scheduledTimers.delete(handle);
+  }
+}
+
+function clearOwnedProducers(state) {
+  state.runtime.clearScheduledTimers();
+  if (state.closed.has('sdk')) for (const handle of [...state.sdk.timers]) state.sdk.clear(handle);
+}
+
+async function boundary(context, ownership, failureCleanup) {
   const state = contexts.get(context);
   assert(state?.runtime, 'source readiness boundary has actual runtime capture');
+  assert(['reporting', 'owner'].includes(ownership));
   state.boundary = { enteredAtMs: clock() };
   emit('boundary.entered', pendingSnapshot(state));
   const control = state.control;
@@ -231,24 +261,71 @@ function boundary(context, value) {
     // able to await this same genuine callback without deadlocking the release.
     control.releaseTimer = setTimeout(() => {
       emit('control.independent_release', { context: state.id, entered: !!control.entered });
+      control.releaseReason = 'boundary';
+      control.releasedAtMs = clock();
       control.release?.();
       if (control.safetyTimer) clearTimeout(control.safetyTimer);
     }, 350);
   }
-  value.then(() => {
+  let deadline;
+  try {
+    await Promise.race([(async () => {
+      // A mandatory control observes the actual registered producer entering;
+      // it never invokes a callback itself or accepts an unexercised seam.
+      if (control) await control.enteredPromise;
+      if (control) {
+        assert.equal(control.released, undefined, 'real callback acknowledgement remains held when producer admission closes');
+        assert.equal(control.releaseReason, undefined, 'independent release has not preceded actual callback admission');
+        assert([...state.pending.values()].some(row => row.label === control.label), 'actual full selected callback is pending at the close boundary');
+        control.closedAtMs = clock();
+      }
+      state.closed.add('runtime');
+      if (ownership === 'reporting') state.closed.add('sdk');
+      clearOwnedProducers(state);
+      if (control?.default) {
+        await assert.rejects(state.runtime.withDeadline(new Promise(() => {}), 5, 'root85 owned-drain deadline control'),
+          error => error?.code === 'FLASHBACK_DEADLINE');
+        control.directDeadlineFired = true;
+        emit('control.direct_deadline_fired', { context: state.id });
+      }
+      const settled = new Set();
+      if (state.startup) await state.startup;
+      for (;;) {
+        clearOwnedProducers(state);
+        const next = [...issuedPromises(state).promises].filter(value => !settled.has(value));
+        if (!next.length) break;
+        await Promise.all(next);
+        next.forEach(value => settled.add(value));
+      }
+      clearOwnedProducers(state);
+    })(), new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('Timed out waiting for owned startup writers to settle')), 15000); })]);
     state.boundary.returnedAtMs = clock();
-    emit('boundary.original_wait_finished', pendingSnapshot(state));
-  }, () => {});
-  return value;
+    emit('boundary.issued_work_settled', pendingSnapshot(state));
+  } catch (error) {
+    releaseControl(control);
+    clearOwnedProducers(state);
+    await failureCleanup();
+    throw error;
+  } finally { clearTimeout(deadline); }
+}
+
+function reopen(context) {
+  const state = contexts.get(context);
+  assert(state?.closed.has('runtime'), 'owned producer admission closes before reopening');
+  state.closed.clear();
+  state.reopened = true;
+  emit('boundary.producers_reopened', { context: state.id });
 }
 
 function fixtureSource(source, name) {
   if (name === 'archive_reporting_fixture.cjs') {
     source = replaceOnce(source, '  await new Promise(resolve=>setTimeout(resolve,200));\n  for(const t of activeTimeouts)',
-      '  await __root085Boundary(context,new Promise(resolve=>setTimeout(resolve,200)));\n  for(const t of activeTimeouts)');
+      `  await __root085Boundary(context,'reporting',async()=>{for(const h of unloadHandlers.splice(0))await h().catch(()=>{});for(const t of activeTimeouts)clearTimeout(t);activeTimeouts.clear();for(const t of activeIntervals)clearInterval(t);activeIntervals.clear();});\n  for(const t of activeTimeouts)`);
+    source = replaceOnce(source, '  let requests=0;', '  __root085Reopen(context);\n  let requests=0;');
   } else if (name === 'archive_owner_fixture.cjs') {
     source = replaceOnce(source, '    await new Promise(resolve => setTimeout(resolve, 200));',
-      '    await (h.audit ? __root085Boundary(h.context,new Promise(resolve => setTimeout(resolve, 200))) : new Promise(resolve => setTimeout(resolve, 200)));');
+      "    await (h.audit ? __root085Boundary(h.context,'owner',()=>h.cleanup()) : new Promise(resolve => setTimeout(resolve, 200)));");
+    source = replaceOnce(source, '      h.audit.clearScheduledTimers();', '      h.audit.clearScheduledTimers();\n      __root085Reopen(h.context);');
   }
   return source;
 }
@@ -265,6 +342,7 @@ function loadLocal(filename) {
   child.require = request => {
     if (request === 'node:vm') return facade;
     if (request === './root085-private-boundary') return boundary;
+    if (request === './root085-private-reopen') return reopen;
     if (request.startsWith('./') && ownedFiles.has(path.basename(request))) return loadLocal(path.resolve(__dirname, request));
     return ordinaryRequire(request);
   };
@@ -272,23 +350,60 @@ function loadLocal(filename) {
   const original = fs.readFileSync(filename, 'utf8');
   const copied = fixtureSource(original, name);
   child._compile(replaceOnce(copied, "'use strict';",
-    "'use strict';\nconst __root085Boundary=require('./root085-private-boundary');"), filename);
+    "'use strict';\nconst __root085Boundary=require('./root085-private-boundary');\nconst __root085Reopen=require('./root085-private-reopen');"), filename);
   return child.exports;
 }
 
+function configureControl(kind, isDefault = false) {
+  assert(['native', 'sdk'].includes(kind));
+  assert(!configuredControl || configuredControl.finished, 'prior mandatory control must finish');
+  configuredControl = { kind, default: isDefault };
+  configuredControl.enteredPromise = new Promise(resolve => { configuredControl.resolveEntered = resolve; });
+}
+
+function releaseControl(control) {
+  control?.release?.();
+  if (control?.releaseTimer) clearTimeout(control.releaseTimer);
+  if (control?.safetyTimer) clearTimeout(control.safetyTimer);
+}
+
+const reporting = loadLocal(path.join(__dirname, 'archive_reporting_fixture.cjs'));
 module.exports = {
-  ...loadLocal(path.join(__dirname, 'archive_reporting_fixture.cjs')),
+  ...reporting,
   ...loadLocal(path.join(__dirname, 'archive_owner_fixture.cjs')),
+  async createArchiveReportingFixture(...args) {
+    if (defaultControls?.length) configureControl(defaultControls.shift(), true);
+    const f = await reporting.createArchiveReportingFixture(...args);
+    const state = contexts.get(f.context), control = state.control;
+    if (control?.default) {
+      try {
+        assert(control.entered && control.released && state.reopened, 'mandatory real startup tail is delivered, released and drained before actions');
+        assert.equal(control.releaseReason, 'boundary', 'mandatory control uses independent release, not safety timeout');
+        assert.equal([...state.pending.values()].some(row => row.label === control.label), false, 'whole actual controlled callback has settled');
+        await state.runtime.withDeadline(new Promise(resolve => {
+          state.runtime.scheduleTimer(state.observer.label('fixture.reopened_admission', resolve), 0);
+        }), 15000, 'root85 reopened producer admission');
+        control.reopenedTimerDelivered = true;
+        f.assertMapSubsetUnchanged(f.protectedArchive, f.pluginStorage.values, 'startup control preserves archived source bytes');
+        f.assertMapSubsetUnchanged(f.archiveVectors, f.safeLocalStorage.values, 'startup control preserves archived vector bytes');
+        console.log(`PASS root85 ${control.kind} actual issued-tail readiness, direct deadline and reopened producer admission`);
+        console.log('ROOT085_DEFAULT_READINESS_CONTROL', JSON.stringify({ kind: control.kind, callback: control.label,
+          sourceSha256: state.source.sourceSha256, enteredAtMs: control.enteredAtMs, closedAtMs: control.closedAtMs,
+          releasedAtMs: control.releasedAtMs, readyAtMs: state.boundary.returnedAtMs,
+          directDeadlineFired: control.directDeadlineFired, reopenedTimerDelivered: control.reopenedTimerDelivered,
+          preservedArchiveBytes: true, preservedVectorBytes: true }));
+      } catch (error) { await f.dispose(); throw error; }
+      finally { control.finished = true; releaseControl(control); }
+    }
+    return f;
+  },
+  enableDefaultControls() { assert.equal(defaultControls, null); defaultControls = ['native', 'sdk']; },
   observeProduct, fixtureSource,
-  configureControl(kind) { assert(['native', 'sdk'].includes(kind)); assert(!configuredControl); configuredControl = { kind }; },
+  configureControl,
   stateFor: context => contexts.get(context),
   report: () => ({ events, dropped, contexts: nextContext }),
   pendingSnapshot,
   issuedPromises,
   waitControlRelease: () => configuredControl?.gate || Promise.resolve(),
-  releaseControl() {
-    configuredControl?.release?.();
-    if (configuredControl?.releaseTimer) clearTimeout(configuredControl.releaseTimer);
-    if (configuredControl?.safetyTimer) clearTimeout(configuredControl.safetyTimer);
-  }
+  releaseControl: () => releaseControl(configuredControl)
 };
