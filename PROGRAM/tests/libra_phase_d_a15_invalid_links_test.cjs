@@ -161,8 +161,17 @@ const parse = value => {
     const childChat = branch(parentChat, 5, 'a15-target');
     const state = { current: parentChat, chats: [parentChat, siblingChat, childChat], character: null };
     state.character = { id: 'unified-char', chaId: 'unified-char', name: 'A15 fixture', chatPage: 0, chats: state.chats };
-    const server = await serverFixture({ mode, snapshot: { chat: parentChat }, host: makeHost(state) });
+    const server = await serverFixture({ mode, snapshot: { chat: parentChat }, host: makeHost(state),
+      transformSource: source => source.replace('  const RisuCompat = (() => {',
+        '  globalThis.__A15_STORAGE_ROUTE__ = MemorySuiteStorageBridge;\n  const RisuCompat = (() => {') });
     let f = server.f;
+    const pinActiveRoute = async lineage => {
+      const scope = { scopeKey: lineage.scopeKey, scopeId: lineage.scopeKey,
+        characterId: state.character.id, chatId: state.current.id };
+      await f.r.context.__A15_STORAGE_ROUTE__.setScopeMode(scope, mode);
+      assert.equal((await f.r.context.__A15_STORAGE_ROUTE__.getScopeMode(scope)).mode, mode,
+        `${mode}: source-backed scope is explicitly routed before canonical/copy publication`);
+    };
     const admissionRows = [];
     const providerRows = [];
     f.control.onCall = args => {
@@ -229,6 +238,7 @@ const parse = value => {
       return result;
     };
     try {
+      await pinActiveRoute(await f.r.api.getHostLineageStatus());
       const t1Batch = pairs(1, textFor(parents));
       const t1Artifact = artifactFor(parents, 1, t1Batch);
       const t1Prepared = f.r.api.debugPrepareUnifiedMemoryArtifact?.(t1Artifact, t1Batch);
@@ -256,6 +266,7 @@ const parse = value => {
       const siblingLineage = await f.r.api.getHostLineageStatus();
       assert.equal(siblingLineage.status, 'verified', `${mode}: native sibling prefix is verified`);
       assert.equal(siblingLineage.commonPrefixPairs, 5);
+      await pinActiveRoute(siblingLineage);
       const siblingCopy = await f.r.api.debugNativeChatCopy({ force: true });
       assert.equal(siblingCopy.result?.ok, true, `${mode}: sibling inherited parent canonical memory`);
       appendPairs(siblingChat, siblingOutcome, 6);
@@ -270,6 +281,7 @@ const parse = value => {
       const childLineage = await f.r.api.getHostLineageStatus();
       assert.equal(childLineage.status, 'verified', `${mode}: target branch prefix is verified`);
       assert.equal(childLineage.commonPrefixPairs, 5);
+      await pinActiveRoute(childLineage);
       const childCopy = await f.r.api.debugNativeChatCopy({ force: true });
       assert.equal(childCopy.result?.ok, true, `${mode}: child inherited parent canonical memory`);
       appendPairs(childChat, mixed, 6);
