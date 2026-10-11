@@ -15,7 +15,7 @@ const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
       'validateAndBindNarrativePatchEvidence',
       'callNarrativeDeltaProvider',
       'narrativeStatePromptBlock',
-      'plannerNarrativeDirectionPromptBlock',
+      'narrativeDirectionPromptBlock',
       'getStoryArc',
       'rebuildStoryArc',
       'setStoryArcDestination',
