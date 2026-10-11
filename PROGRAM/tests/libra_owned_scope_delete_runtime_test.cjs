@@ -3,16 +3,22 @@ const assert=require('node:assert/strict');const {serverFixture}=require('./fixt
 const {createMemorySuiteServer}=require('../server/server.cjs');
 const exposeBridge=source=>source.replace('  const RisuCompat = (() => {',
  '  globalThis.__deleteScopeBridge = MemorySuiteStorageBridge;\n  const RisuCompat = (() => {');
-(async()=>{for(const mode of ['server_only','mirror']){const s=await serverFixture({mode,transformSource:exposeBridge});try{
+const MODES=process.env.LIBRA_SCOPE_DELETE_MODE?[process.env.LIBRA_SCOPE_DELETE_MODE]:['server_only','mirror'];
+(async()=>{for(const mode of MODES){const s=await serverFixture({mode,transformSource:exposeBridge});try{
+ const lineage=await s.f.r.api.getHostLineageStatus();
+ const activeScope={scopeKey:lineage.scopeKey,scopeId:lineage.scopeKey,characterId:s.f.character.id,chatId:s.f.chat.id};
+ await s.f.r.context.__deleteScopeBridge.setScopeMode(activeScope,mode);
+ assert.equal((await s.f.r.context.__deleteScopeBridge.getScopeMode(activeScope)).mode,mode,'active owner route is explicit before unrelated routing');
  const otherScope={scopeId:'unrelated-live-scope',scopeKey:'unrelated-live-scope',characterId:'other',chatId:'live'};
  await s.f.r.context.__deleteScopeBridge.setScopeMode(otherScope,'server_only');
  const liveModeBefore=(await s.f.r.context.__deleteScopeBridge.getScopeMode(otherScope)).mode;
  assert.equal(liveModeBefore,'server_only');
- await s.f.run();await s.f.r.api.retryPendingUnifiedVectors();
+ const initial=await s.f.run();assert.equal(initial.completed,1,JSON.stringify(initial));await s.f.r.api.retryPendingUnifiedVectors();
+ const scopeKey=(await s.f.r.api.getHostLineageStatus()).scopeKey;assert.ok(scopeKey);
  const db=s.app.repositories.libra.database;
  const before=s.storedRows();assert.ok(before.length>0);
- const owned=before.find(row=>row.key.startsWith('libra:v1:scope:seventh-server-scope:'));
- assert.ok(owned,'the test has an owner row for rollback injection');
+ const owned=before.find(row=>row.key.startsWith(`libra:v1:scope:${scopeKey}:`));
+ assert.ok(owned,'the explicitly routed owner has a physical server row for rollback injection');
  const original=db.prepare('SELECT space,key,value_json,deleted,revision,digest FROM kv WHERE key=?').get(owned.key);
  const failedOperationId='injected_scope_fence_failure_'+mode;
  db.exec("CREATE TRIGGER fail_owner_fence BEFORE INSERT ON libra_deleted_owner_scopes BEGIN SELECT RAISE(ABORT, 'injected_scope_fence_failure'); END");
@@ -20,7 +26,7 @@ const exposeBridge=source=>source.replace('  const RisuCompat = (() => {',
   assert.throws(()=>s.app.repositories.libra.applyConditionalBatch([{kind:'remove',space:original.space,key:original.key,
    expectedRevision:original.revision,expectedDigest:original.digest,expectedExists:true,expectedTombstone:false}],{
    maintenance:true,operationId:failedOperationId,
-   ownedScopeDeletion:{scopeId:'fault-scope-'+mode,scopeKey:'seventh-server-scope',backupId:'fault-backup'}
+   ownedScopeDeletion:{scopeId:'fault-scope-'+mode,scopeKey,backupId:'fault-backup'}
   }),/injected_scope_fence_failure/);
  }finally{db.exec('DROP TRIGGER fail_owner_fence');}
  const rolledBack=db.prepare('SELECT space,key,value_json,deleted,revision,digest FROM kv WHERE key=?').get(owned.key);
@@ -30,9 +36,9 @@ const exposeBridge=source=>source.replace('  const RisuCompat = (() => {',
  const otherKey='libra:v1:scope:unrelated-chat:manifest';
  await s.mutate(otherKey,{preserve:true});
  const preserved=db.prepare('SELECT * FROM kv WHERE key=?').get(otherKey);
- const pendingPlan=await s.f.r.context.__deleteScopeBridge.planOwnedScopeDeletion('seventh-server-scope');
- const siblingKey='libra:v1:scope:seventh-server-scope:child:manifest';
- await s.mutate(siblingKey,{schema:'libra.manifest.v1',scopeKey:'seventh-server-scope:child',preserve:true});
+ const pendingPlan=await s.f.r.context.__deleteScopeBridge.planOwnedScopeDeletion(scopeKey);
+ const siblingKey=`libra:v1:scope:${scopeKey}:child:manifest`;
+ await s.mutate(siblingKey,{schema:'libra.manifest.v1',scopeKey:scopeKey+':child',preserve:true});
  const siblingBefore=db.prepare('SELECT * FROM kv WHERE key=?').get(siblingKey);
  assert.equal(siblingBefore?.deleted,0,'the sibling scope is live before deletion');
  await assert.rejects(()=>s.f.r.context.__deleteScopeBridge.executeOwnedScopeDeletion(pendingPlan),
@@ -45,28 +51,28 @@ const exposeBridge=source=>source.replace('  const RisuCompat = (() => {',
  // Remove only this injected sibling fixture before exercising the ordinary
  // successful deletion path; a real sibling scope is never removed by LIBRA.
  db.prepare('DELETE FROM kv WHERE key=?').run(siblingKey);
- const siblingMicroKey='libra:v1:scope:seventh-server-scope:child:micro-memory:main:e0:t1:r1:a1';
- await s.mutate(siblingMicroKey,{schema:'libra.micro_memory.v1',scopeKey:'seventh-server-scope:child'});
+ const siblingMicroKey=`libra:v1:scope:${scopeKey}:child:micro-memory:main:e0:t1:r1:a1`;
+ await s.mutate(siblingMicroKey,{schema:'libra.micro_memory.v1',scopeKey:scopeKey+':child'});
  const siblingMicroBefore=db.prepare('SELECT * FROM kv WHERE key=?').get(siblingMicroKey);
  await assert.rejects(()=>s.f.r.api.deleteLibraScope(),/owner_scope_delete_overlapping_scope/);
  assert.deepEqual(db.prepare('SELECT * FROM kv WHERE key=?').get(siblingMicroKey),siblingMicroBefore,
   `${mode}: a source-bound sibling row remains safe before its manifest exists`);
  db.prepare('DELETE FROM kv WHERE key=?').run(siblingMicroKey);
- const unownedKey='libra:v1:scope:seventh-server-scope:child:opaque-record:r1';
+ const unownedKey=`libra:v1:scope:${scopeKey}:child:opaque-record:r1`;
  await s.mutate(unownedKey,{schema:'future.owner_record.v1',value:'unknown owner'});
  const unownedBefore=db.prepare('SELECT * FROM kv WHERE key=?').get(unownedKey);
  await assert.rejects(()=>s.f.r.api.deleteLibraScope(),/owner_scope_delete_owner_unverified/);
  assert.deepEqual(db.prepare('SELECT * FROM kv WHERE key=?').get(unownedKey),unownedBefore,
   `${mode}: an unmarked row cannot be assigned to the parent by prefix alone`);
  db.prepare('DELETE FROM kv WHERE key=?').run(unownedKey);
- const orphanArchiveKey='libra:v1:scope:seventh-server-scope:micro-handoff-archive:orphan';
+ const orphanArchiveKey=`libra:v1:scope:${scopeKey}:micro-handoff-archive:orphan`;
  await s.mutate(orphanArchiveKey,{schema:'libra.micro_handoff_archive.v1',sourceScopeKey:'source',archiveDigest:'orphan'});
  const orphanBefore=db.prepare('SELECT * FROM kv WHERE key=?').get(orphanArchiveKey);
  await assert.rejects(()=>s.f.r.api.deleteLibraScope(),/owner_scope_delete_owner_unverified/);
  assert.deepEqual(db.prepare('SELECT * FROM kv WHERE key=?').get(orphanArchiveKey),orphanBefore,
   `${mode}: an archive without a target-manifest reference is not a proven owner row`);
  db.prepare('DELETE FROM kv WHERE key=?').run(orphanArchiveKey);
- await s.mutate(siblingKey,{schema:'libra.manifest.v1',scopeKey:'seventh-server-scope:child'});
+ await s.mutate(siblingKey,{schema:'libra.manifest.v1',scopeKey:scopeKey+':child'});
  await s.mutate(siblingKey,null,'remove');
  assert.equal(db.prepare('SELECT deleted FROM kv WHERE key=?').get(siblingKey)?.deleted,1,
   `${mode}: the sibling key is a tombstone before parent deletion`);
