@@ -7045,6 +7045,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!matchesRoute('plugin', String(key || ''))) throw new Error('HEALTH_STORAGE_KEY_UNVERIFIED');
       return {mode:MODE_PLUGIN_ONLY, raw:await plugin.getItem(String(key || '')), binding:JSON.stringify([scope.scopeId,'local_only',readOnlyAuthorityEpoch,dataBinding.generation])};
     }
+    if (managerOnly) {
+      // A manager does not initialize owner mode rows. Only its own physical
+      // legacy metadata for the currently selected host scope is health input.
+      if ((readOptions.space || 'plugin') !== 'plugin' || !matchesRoute('plugin', String(key || ''))) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+      const current = normalizeScopeDescriptor(currentScopeProvider ? await currentScopeProvider({namespace,pluginId,force:true}) : null);
+      if (!current.scopeId || scope.scopeId !== current.scopeId || scope.scopeKey !== current.scopeKey) throw Error('HEALTH_SCOPE_UNVERIFIED');
+      const route = resolveKeyScopeProvider ? await resolveKeyScopeProvider({key:String(key || ''),space:'plugin',currentScope:current,registry:{entries:{}}}) : null;
+      if (route?.kind !== 'scope' || route.scopeId !== current.scopeId) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+    }
     const device = await rawDeviceStorage({ strict: true });
     const pluginRaw = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
     const deviceRaw = typeof device?.getItem === 'function' ? await device.getItem(SCOPE_ROUTING_LOCAL_KEY) : null;
@@ -7065,7 +7074,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registry = mergeScopeRegistries(null, pluginRaw, deviceRaw);
     const stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
     if (isRemovedScopeRow(stored)) throw new Error('HEALTH_SCOPE_REMOVED');
-    if (!registry.legacyGlobalModeImported && !stored && !global) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
+    if (!registry.legacyGlobalModeImported && !stored && !global && !managerOnly) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
     if (state.scopeRouting.transientModes.has(scope.scopeId) || stored?.origin === 'transition_pending') throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
     // Even an old or malformed reset decision is not permission to inspect a
     // retained local copy as current authority. Existing reset UI owns it.
@@ -7084,7 +7093,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(typeof store?.getItem!=='function')throw new Error('HEALTH_STORAGE_UNAVAILABLE');
       raw=await store.getItem(logicalKey);
     }else raw=await ownerLegacyRead(space,logicalKey);
-    return { mode, raw, binding: JSON.stringify([scope.scopeId, stored || null, global || null, dataBinding.generation]) };
+    return { mode, raw, binding: JSON.stringify(managerOnly ? [scope.scopeId, 'manager_only', stored || null, global || null, readOnlyAuthorityEpoch, dataBinding.generation] : [scope.scopeId, stored || null, global || null, dataBinding.generation]) };
   };
   // Read-only server snapshot. Deliberately bypass request(), bootstrap(),
   // readConfig/readScopeMode(), routed getters, and all reconciliation paths.
