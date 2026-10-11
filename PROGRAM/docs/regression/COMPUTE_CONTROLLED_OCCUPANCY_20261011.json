@@ -1,47 +1,173 @@
 {
-  "status": "REVIEWED_CANDIDATE_PENDING_RUNTIME",
+  "status": "PASS_CONTROLLED_OCCUPANCY_CURRENT_CONTRACT",
   "base": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
-  "clone": "isolated ordinary clone from efcb288",
+  "testedCodeCommit": "d2092eeeb7a6f8a53f94ebe11ad419adb767d87f",
   "roots": [
     50,
     51
   ],
-  "edits": "Two owned tests plus two NEW dedicated fixtures only. Existing default compute_product_load_fixture, production registry/worker/pool/scheduler/plane/server unchanged. Existing computeWorkerPath seam selects wrapper that imports actual production worker and wraps registry executeOperation only to wait on actualworker-entry barrier then call captured genuine product kernel.",
-  "gateModel": {
-    "identity": "Each actual Worker observer verifies telemetry.workerIndex ==actual slot.index and threadId ==actual Worker.threadId. Every owned worker ready acknowledgement observed, distinctthreadcount exactlyconfiguredpool. Entry telemetry carries actual production incoming message jobId under isolated controlledJobId telemetry field and is matched to real publicHTTPadmitted IDs; duplicatejobs/duplicateactiveworker forbidden.",
-    "bounds": "Worker Atomics.wait deadline max5000ms per entry; coordinator armed globalsetupdeadline5000ms before publicsubmissions and same deadline applies submission/status/entrywaits. No change to product deadline30s/default or interactive3000ms. Public admission/entrysetup releases immediately when conditions meet.",
-    "flood": "Actual8Flashback HTTPjobs admitted while2distinctworker entries held; actual HTTPstatuses assert2running+queued; actualHayinteractive HTTPjob with3000msdeadline must returnqueued, release immediately. Unchanged scheduler choosesactualnextslot and queue<1000ms.",
-    "matrix": "Actual12jobs (4each3survivingkernels), all1/2/4/8cells. Gate requires distinctactualworkerentries >=min(4,width) and actualpool.activeCount >=floor. Allownedwidthworkers observedready. Serialdispatch mutation cannot reachmin4 becauseblockedfirstentry preventssecondentry.",
-    "report": "gatePeak, readyPeak, distinctReadyThreads, actualentryjob/thread/slot/time, separatelyobservedgateWaitMs perentry. Native startedAt/workerMs/queueMs/totalMs remain original production values and INCLUDE wait, no subtraction. observedThroughputFactor renamed controlledWallRatioNotThroughput.",
-    "limitation": "Controlled physical worker occupancy test, not unguarded simultaneous productkernel CPU execution4 or generalized throughput benchmark."
+  "scope": "Two compute load tests and two dedicated test fixtures. Production compute code and the default shared load fixture remain unchanged.",
+  "cause": "The original tests assumed transient worker occupancy would survive independent HTTP submission and polling. The scheduler dispatches each admitted request immediately, and short kernels can finish before the assumed overlap window. These paths were unchanged from the passing 6f1d292 baseline.",
+  "controlledSetup": {
+    "workerIdentity": "Observe every owned Worker, matching slot index and actual threadId. Bind controlledJobId telemetry to actual public HTTP-admitted job IDs; observer frames contain no production jobId.",
+    "boundMs": 5000,
+    "release": "Release immediately after required real submissions and physical worker entries are established; for the flood, first admit the real interactive job behind both occupied workers.",
+    "timing": "Retain native queueMs, workerMs, totalMs, and startedAt, including coordinator waits. Report gate waits separately; no subtraction or invented timestamps.",
+    "unchangedConstraints": "Interactive deadline 3000ms and queue below 1000ms; matrix widths 1/2/4/8 with physical floor min(4,width); 12 actual jobs, four per surviving owner; every result matches the local kernel; RSS delta below 512MiB; canonical SQLite/WAL digests unchanged; LIA ownership remains denied."
+  },
+  "officialResults": {
+    "50": {
+      "status": "PASS",
+      "exit": 0,
+      "durationSeconds": 4.32,
+      "officialIndex": 50,
+      "inventoryCount": 1138,
+      "command": "python PROGRAM/run_regression_batch.py --match compute_product_flood_latency_test.cjs",
+      "testSHA256": "736b7c75250bcff2e406834e10be65a46ffbfafe0bd44b158aadda18267c85a4",
+      "logs": {
+        "full": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/logs/050-compute_product_flood_latency_test.cjs.log",
+          "sha256": "e9c329ea6a163b14c7f607fd04158e28d3b113537f273cc604115d9bad6b9071"
+        },
+        "stdout": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/stdout.txt",
+          "sha256": "98a615f61d0500f8f853990dd2aec114914a978529ac74fafc901a89defd447f"
+        },
+        "summary": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/run.txt",
+          "sha256": "6ae202ad46df16d2c524d6f5a9903a3ae272be8df75b3e67be50bb397f5153d1"
+        }
+      },
+      "observations": {
+        "floodJobs": 8,
+        "interactiveQueueMs": 107,
+        "interactiveLeadMs": 67,
+        "boundedSoakJobs": 24,
+        "soakConcurrency": {
+          "peakJobs": 2,
+          "peakNamespaces": 2
+        },
+        "rssPeakDeltaMiB": 378.73,
+        "gatePeak": 2,
+        "readyPeak": 2
+      }
+    },
+    "51": {
+      "status": "PASS",
+      "exit": 0,
+      "durationSeconds": 9.49,
+      "officialIndex": 51,
+      "inventoryCount": 1138,
+      "command": "python PROGRAM/run_regression_batch.py --match compute_product_worker_matrix_test.cjs",
+      "testSHA256": "84ea76cdb11737f571d5dfddfcb4454d4b4f3dabfba85bb0a0be4e48b336c763",
+      "logs": {
+        "full": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/logs/051-compute_product_worker_matrix_test.cjs.log",
+          "sha256": "8818aad9157f4fc76ada925ed6c89c994cb7dfad72f89e1a43db300dbaa49e02"
+        },
+        "stdout": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/stdout.txt",
+          "sha256": "befc49a2351ed6caa846339418d911610f10238f3f1fd7186c9c88eb833512ba"
+        },
+        "summary": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/run.txt",
+          "sha256": "e47b0054c1f66d47678886000728838b9e36e412537619c806e2fe291dfc3058"
+        }
+      },
+      "observations": [
+        {
+          "workers": 1,
+          "jobs": 12,
+          "nativePeakJobs": 1,
+          "gatePeak": 1,
+          "readyPeak": 1,
+          "gateWaitMs": [
+            304
+          ],
+          "rssPeakDeltaMiB": 276.61
+        },
+        {
+          "workers": 2,
+          "jobs": 12,
+          "nativePeakJobs": 2,
+          "gatePeak": 2,
+          "readyPeak": 2,
+          "gateWaitMs": [
+            324,
+            288
+          ],
+          "rssPeakDeltaMiB": 266.84
+        },
+        {
+          "workers": 4,
+          "jobs": 12,
+          "nativePeakJobs": 4,
+          "gatePeak": 4,
+          "readyPeak": 4,
+          "gateWaitMs": [
+            499,
+            312,
+            252,
+            182
+          ],
+          "rssPeakDeltaMiB": 332.61
+        },
+        {
+          "workers": 8,
+          "jobs": 12,
+          "nativePeakJobs": 8,
+          "gatePeak": 8,
+          "readyPeak": 8,
+          "gateWaitMs": [
+            251,
+            192,
+            155,
+            130,
+            134,
+            103,
+            107,
+            79
+          ],
+          "rssPeakDeltaMiB": 424.53
+        }
+      ]
+    }
+  },
+  "negativeControls": {
+    "serial-dispatch": {
+      "status": "FAIL_EXPECTED",
+      "exit": 1,
+      "command": "timeout 30s node --require .../serial-dispatch-preload.cjs PROGRAM/tests/compute_product_worker_matrix_test.cjs --cell 4",
+      "reason": "CONTROLLED_PRODUCT_GATE_SETUP_TIMEOUT:physical entry floor",
+      "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/negative/serial-dispatch.log",
+      "sha256": "425bc967d98cfb784d190b4852f0ec31876a83e04f29b7eadbd5b4e103b79374",
+      "mutation": "Externalpreload changes onlyWorkerPool.dispatch slotselection toindex0; configured4workers stillphysicallyready. RealHTTPproductjobs and originalkernels unchanged; floor4 cannotbereached."
+    },
+    "telemetry-collision": {
+      "status": "FAIL_EXPECTED",
+      "exit": 1,
+      "command": "timeout 60s node --require .../telemetry-collision-preload.cjs PROGRAM/tests/compute_product_flood_latency_test.cjs",
+      "reason": "observer frames cannot settle production jobs",
+      "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/negative/telemetry-collision.log",
+      "sha256": "231b608163394993af3540f5e91eab3cea0223b63c2a54016d32bda333e9b083",
+      "mutation": "Externalwrappercopy adds productionprotocoljobId ONLY tocontrolledtelemetry; parentobserver rejects it. ActualproductincomingIDs and kernel unchanged. Provesprotocolguard prevents observerframes settlingjobs."
+    }
+  },
+  "initialCandidateFailure": {
+    "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50/logs/050-compute_product_flood_latency_test.cjs.log",
+    "sha256": "3e3550641be33d9a79c9ecda9cc515ea4a71a02e6f50e145db8b57e8ff017aff",
+    "exit": 1,
+    "durationSeconds": 0.21,
+    "cause": "MessagePort.prependListener undefined, poolstartupfailed; staticreview missedNodeAPI. Runtime typeofcheck confirmedundefined vs onfunction. Fixed .on registeredbefore actualproductionworker require in d2092ee. Originalfailure retained."
   },
   "assertionMap": {
-    "flood2workersplusqueued": "Originalstatuses unchanged plus genuine threadentryfloor2 and actualinteractivequeued",
-    "interactiveQueueDeadline": "Originaldeadline3000ms/queue<1000ms/localparity/nextavailablepriority/backgrounddrainlead retained",
-    "realFloodAndSoak": "Original8Flashback+24soak retained; everyresult now compareslocalkernel, no fakejobs",
-    "matrixWidthsFloor": "Original1/2/4/8cells and nativeinterval>=min4 retained, genuine distinctentrygate>=min4 added",
-    "matrix12LocalParity": "12realpublicHTTPsubmissions, exactly4perspec, everyactualresultlocalparity (strengthened fromfirstperspec)",
-    "rssBudget": "Originaldelta<512MiB retained percell and flood/soak",
-    "canonicalBytes": "OriginalSQLite/WALdigests unchanged",
-    "retiredOwner": "DefaultcreateProductSpecs unchanged including LIA403deny",
-    "enumeration": "Onlynewfixtures belowfixtures/: tracked direct cjs count unchanged 1178; officialrunner inventory1138 from baseline logs. No direct rootadded."
+    "flood": "Eight real Flashback HTTP jobs, two distinct occupied worker threads plus queued backlog, actual interactive Hayaku job receives next available lane slot, completes before flood drains, and matches local output.",
+    "soak": "Original ungated 24-job soak still runs and verifies two concurrent jobs and namespaces; every result matches local output.",
+    "matrix": "All original 1/2/4/8 cells run 12 actual product jobs, four per owner. Both native intervals and separate genuine worker-entry telemetry reach the original floor, while all owned workers are observed ready.",
+    "budgetAndIntegrity": "Original RSS and canonical immutability checks remain unchanged. No original deadlines or worker floors increased or lowered.",
+    "protocol": "Collision mutation fails the observer frame protocol guard; serialized dispatch with four owned ready workers fails the required physical entry floor."
   },
-  "staticVerification": {
-    "nodeCheckAll4": "PASS",
-    "gitDiffCheck": "PASS",
-    "productionOrDefaultSharedFixtureDiff": "EMPTY",
-    "runtime": "NOT RUN as parentrequested while normalcampaigns running"
-  },
-  "pending": [
-    "Official50then51 sequential MAX1",
-    "Actual4worker serializeddispatch mutation must fail genuine physicalfloor",
-    "Telemetrycollision negative must fail actualjob protocol guard"
-  ],
-  "historicalEquivalenceLimitations": "Floor remains min4 but native worker time intervals now include explicit testcontrolledwait. It proves real worker-thread slot occupancy and actualschedulerqueuefairness with product kernels/localparity; does not reproduce a naturallyoccurring4kernel CPUoverlap claim. Failed baseline sourceunchanged as documented in compute50-51-static-diagnosis.json.",
-  "risks": "No runtimevalidation yet. Globalsetup5000ms could failclosed during extremelyslowHTTPadmission. Synthetic configurationcontrolmessages are observed by wrapper and productionworker emits invalid-message reply withoutjobId; pool ignores unmatchedjobId during startupconfig and no actualjob is fabricated. Gates are atomicallyreleased in testfinally; listenercleanup before actualapp.close.",
-  "protocolReviewFix": {
-    "issue": "Initialobserverframes used matching production jobId with unknown event. WorkerPool._onMessage would settleactualjob asfailure. Review rejected before runtime, nofailedruntime generated.",
-    "correction": "Allcontrolledentry/exittelemetry now uses controlledJobId field ONLY with NOjobId. Productionpool ignores unmatched emptyprotocoljobId; observerassertsabsenceofjobId, binds controlledJobId to realHTTPadmittedIDs. Realworker started/success/errorprotocol untouched.",
-    "status": "STATICFIXED, syntax/diffcheckPASS; NO runtime yet"
-  }
+  "historicalEquivalenceLimitations": "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes167-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun.",
+  "preparationPredecessor": "Static preparation is retained separately in compute50-51-results-prepared.json. This document records the later executed evidence.",
+  "pending": []
 }
