@@ -282,3 +282,8 @@ details.fold>.fold__body{padding:16px}
   .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}
   .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}
 }
+
+/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */
+.nav-item.is-unsaved .nav-text::after{content:" ●";color:var(--warn,#c9822a);font-size:11px}
+.tabbar [data-go].is-unsaved::after{content:"●";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}
+.tabbar [data-go]{position:relative}

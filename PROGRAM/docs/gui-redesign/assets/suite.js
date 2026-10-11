@@ -62,6 +62,7 @@
       el.outerHTML = '<svg class="' + cls + '" aria-hidden="true"><use href="#i-' + el.dataset.i + '"/></svg>';
     });
   }
+  window.suiteIcons = function (root) { hydrateIcons(root); };
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
@@ -139,6 +140,7 @@
       var v = c[k] !== undefined ? String(c[k]) : el.dataset.fillDefault;
       if (isField) el.value = v; else el.textContent = v;
     });
+    $$('[data-ro]', root).forEach(function (el) { el.readOnly = !!(c.variant && el.dataset.ro.split(/\s+/).indexOf(c.variant) > -1); });
     $$('[data-variant]', root).forEach(function (el) {
       var list = el.dataset.variant.split(/\s+/);
       el.hidden = c.variant ? list.indexOf(c.variant) < 0 : list.indexOf('default') < 0;
@@ -163,8 +165,23 @@
   window.suiteOpen = openOv; window.suiteClose = function (id) { closeOv(document.getElementById(id)); };
 
   /* ---- 입력 변경 → 저장 바 (baseline / draft 구분, 되돌리기는 실제 값 복원) ---- */
-  var dirty = new Set();
+  /* 변경 추적은 "저장 범위(scope)" 단위로 한다.
+     - 한 화면 = 한 범위 (data-track-group이 같으면 여러 화면이 한 범위를 공유: 예) GRADIA 전체, Flashback 연결+설정)
+     - 서랍(drawer)은 자기 id가 범위
+     - 요소에 data-scope가 있으면 그 값
+     다른 범위의 저장·되돌리기·기준값 갱신은 이 범위의 미저장 변경을 건드리지 않는다. */
   var baseline = new Map();
+  var dirtyBy = {};
+  function scopeOf(el) {
+    if (el.dataset && el.dataset.scope) return el.dataset.scope;
+    var dr = el.closest('.drawer'); if (dr) { var o = dr.closest('.overlay'); return o ? o.id : 'drawer'; }
+    var pg = el.closest('.page'); if (pg) return pg.dataset.trackGroup || pg.dataset.page || 'x';
+    return '*';
+  }
+  function activeScope(bar) {
+    var ov = bar && bar.closest('.overlay'); if (ov) return ov.id;
+    var pg = $('.page.is-active'); return pg ? (pg.dataset.trackGroup || pg.dataset.page) : '*';
+  }
   function trackedControls() {
     var out = [];
     $$('.page[data-track] input, .page[data-track] select, .page[data-track] textarea, .drawer input, .drawer select, .drawer textarea').forEach(function (el) {
@@ -191,28 +208,102 @@
     if (el.type === 'checkbox' || el.type === 'radio') el.checked = v === '1'; else el.value = v;
     if (el.dataset.out) { var o = document.getElementById(el.dataset.out); if (o) o.textContent = el.value + (el.dataset.unit || ''); }
   }
-  function snapshot() { baseline = new Map(); trackedControls().forEach(function (el) { baseline.set(el, readVal(el)); }); dirty.clear(); }
+  /* 기준값(저장된 값) 다시 잡기. scope를 주면 그 범위만, 생략하면 전체 */
+  function snapshot(scope) {
+    trackedControls().forEach(function (el) { if (!scope || scopeOf(el) === scope) baseline.set(el, readVal(el)); });
+    recompute();
+  }
   function recompute() {
-    dirty.clear();
-    trackedControls().forEach(function (el, i) {
+    dirtyBy = {}; var seen = {};
+    trackedControls().forEach(function (el) {
       if (!baseline.has(el)) baseline.set(el, readVal(el));
-      if (baseline.get(el) !== readVal(el)) dirty.add(el.id || el.name || ('c' + i));
+      if (baseline.get(el) !== readVal(el)) {
+        var sc = scopeOf(el);
+        /* 같은 값을 여러 칸이 공유하면(data-dirty-key) 한 개 변경으로 센다 */
+        if (el.dataset.dirtyKey) { var k = sc + '|' + el.dataset.dirtyKey; if (seen[k]) return; seen[k] = 1; }
+        dirtyBy[sc] = (dirtyBy[sc] || 0) + 1;
+      }
     });
     renderSave();
   }
   function markDirty() { recompute(); }
-  function revertAll() { baseline.forEach(function (v, el) { writeVal(el, v); }); recompute(); }
+  function revertScope(scope) {
+    trackedControls().forEach(function (el) { if (scopeOf(el) === scope && baseline.has(el)) writeVal(el, baseline.get(el)); });
+    recompute();
+  }
   function renderSave() {
     $$('.savebar').forEach(function (bar) {
-      var n = dirty.size; bar.classList.toggle('is-dirty', n > 0);
+      var n = dirtyBy[activeScope(bar)] || 0; bar.classList.toggle('is-dirty', n > 0);
       var b = bar.querySelector('[data-save-title]'), d = bar.querySelector('[data-save-desc]');
       if (b) b.textContent = n ? n + '개 변경이 저장되지 않았습니다' : '모든 변경이 저장되어 있습니다';
       if (d) d.textContent = n ? '저장하면 다음 요청부터 적용됩니다. 저장 전에는 어떤 값도 바뀌지 않습니다.' : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
       $$('[data-save], [data-revert]', bar).forEach(function (btn) { btn.disabled = n === 0; });
     });
+    /* 다른 화면에 저장하지 않은 변경이 있으면 메뉴에 표시 */
+    var curSc = activeScope();
+    $$('.nav-item[data-go], .tabbar [data-go]').forEach(function (it) {
+      var pg = $('.page[data-page="' + it.dataset.go + '"]'); var sc = pg ? (pg.dataset.trackGroup || pg.dataset.page) : null;
+      var un = !!(sc && sc !== curSc && dirtyBy[sc]); it.classList.toggle('is-unsaved', un);
+      if (un) it.setAttribute('data-unsaved', '저장하지 않은 변경 ' + dirtyBy[sc] + '개'); if (un) it.setAttribute('title', '저장하지 않은 변경 ' + dirtyBy[sc] + '개'); else it.removeAttribute('data-unsaved');
+    });
   }
+  /* 같은 설정이 두 곳에 있을 때(data-sync="키"): 한 값으로 움직인다.
+     - 입력: 상대 칸에 즉시 복사
+     - 저장: 같은 값을 가진 상대 칸의 기준값도 함께 갱신(상대 범위의 다른 미저장 변경은 건드리지 않음)
+     - 되돌리기: 되돌린 값을 상대 칸에도 복사 */
+  function syncPeers(el) {
+    var k = el.dataset.sync; if (!k) return;
+    $$('[data-sync="' + k + '"]').forEach(function (o) {
+      if (o === el) return;
+      if (el.type === 'checkbox') o.checked = el.checked; else o.value = el.value;
+    });
+  }
+  function rebasePeers(scope) {
+    trackedControls().forEach(function (el) {
+      if (scopeOf(el) !== scope || !el.dataset.sync) return;
+      $$('[data-sync="' + el.dataset.sync + '"]').forEach(function (o) { if (o !== el) baseline.set(o, readVal(o)); });
+    });
+  }
+  function copyRevertedToPeers(scope) {
+    trackedControls().forEach(function (el) { if (scopeOf(el) === scope && el.dataset.sync) syncPeers(el); });
+    recompute();
+  }
+  /* ---- 프리셋 ↔ 세부 값: 한 데이터 ----
+     컨테이너: data-preset-group="이름", 각 선택지: data-preset='{"키":"값"}'
+     세부 입력: data-preset-field="이름" data-preset-key="키"
+     표시: data-preset-label="이름" (선택지 이름 또는 '직접 조정')
+     - 프리셋을 고르면 세부 값이 바뀌고, 세부 값을 직접 바꾸면 프리셋 선택이 풀려 '직접 조정'이 된다.
+     - 둘은 하나의 변경(data-dirty-key)으로 센다. */
+  function presetFields(name) { return $$('[data-preset-field="' + name + '"]'); }
+  function presetApply(g) {
+    var on = $$('.choice', g).filter(function (c) { return c.classList.contains('is-on'); })[0]; if (!on || !on.dataset.preset) return;
+    var v = safeJson(on.dataset.preset) || {};
+    presetFields(g.dataset.presetGroup).forEach(function (f) { var k = f.dataset.presetKey; if (v[k] !== undefined) f.value = v[k]; });
+    presetMatch(g); /* 선택 표시와 '현재: …' 라벨을 세부 값에서 다시 계산 */
+  }
+  function presetMatch(g) {
+    var name = g.dataset.presetGroup, cs = $$('.choice', g), hit = -1;
+    cs.forEach(function (c, i) {
+      if (!c.dataset.preset) return; var v = safeJson(c.dataset.preset) || {};
+      if (presetFields(name).every(function (f) { return String(v[f.dataset.presetKey]) === String(f.value); })) hit = i;
+    });
+    cs.forEach(function (c, i) { c.classList.toggle('is-on', i === hit); });
+    $$('[data-preset-label="' + name + '"]').forEach(function (l) { l.textContent = hit < 0 ? '직접 조정' : (cs[hit].querySelector('b') || cs[hit]).textContent; });
+  }
+  function presetSyncAll() { $$('[data-preset-group]').forEach(presetMatch); }
+  function presetInit() {
+    $$('[data-preset-group]').forEach(function (g) {
+      var k = 'preset:' + g.dataset.presetGroup; g.dataset.dirtyKey = k; g.setAttribute('data-dirty', '');
+      presetFields(g.dataset.presetGroup).forEach(function (f) { f.dataset.dirtyKey = k; });
+    });
+    presetSyncAll();
+  }
+  /* 저장된 값(기준값)과 현재 값 조회 — 다른 화면의 읽기 전용 표시가 '저장된 값'을 따르게 할 때 사용 */
+  window.suiteSaved = function (el) { return baseline.has(el) ? baseline.get(el) : readVal(el); };
+  window.suiteIsDirtyEl = function (el) { return baseline.has(el) && baseline.get(el) !== readVal(el); };
   window.suiteMarkDirty = markDirty;
-  window.suiteSnapshot = function () { snapshot(); renderSave(); };
+  window.suiteSnapshot = function (scope) { snapshot(scope); };
+  window.suiteDirty = function (scope) { return dirtyBy[scope || activeScope()] || 0; };
 
   /* ---- 접근성: 보이는 설명을 입력 컨트롤에 프로그램상 연결 (감사 B09) ---- */
   var uid = 0;
@@ -243,6 +334,7 @@
     });
   }
 
+  window.suiteAutoLabel = autoLabel;
   /* ---- 서브탭 프로그램 전환 ---- */
   function activateSubtab(pageId, name) {
     var pg = $('.page[data-page="' + pageId + '"]'); if (!pg) return;
@@ -267,6 +359,7 @@
         var cov = cl.closest('.overlay');
         if (cl.hasAttribute('data-job-cancel') && cov) cancelJob(cov);
         closeOv(cov);
+        if (cl.dataset.ctx) lastCtx = safeJson(cl.dataset.ctx) || lastCtx;
         if (cl.dataset.toast) toast(cl.dataset.toast);
         var nctx = cl.dataset.ctx ? safeJson(cl.dataset.ctx) : (cov && cov._ctx) || null;
         if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen, nctx);
@@ -299,17 +392,18 @@
         var single = ch.parentElement.dataset.multi === undefined;
         if (single) $$('.choice', ch.parentElement).forEach(function (c) { c.classList.toggle('is-on', c === ch); });
         else ch.classList.toggle('is-on');
+        if (ch.parentElement.dataset.presetGroup) presetApply(ch.parentElement);
         if (ch.parentElement.dataset.dirty !== undefined) markDirty(ch.parentElement);
         return;
       }
       var rowSel = t.closest('[data-select-row]');
       if (rowSel) { var lst = rowSel.parentElement; $$('[data-select-row]', lst).forEach(function (r) { r.classList.toggle('is-on', r === rowSel); if (r === rowSel) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); }); var tg = rowSel.dataset.selectRow; if (tg) { var droot = rowSel.closest('[data-detail-root]') || rowSel.closest('.overlay') || rowSel.closest('.page') || document; $$('[data-detail]', droot).forEach(function (d) { var show = d.dataset.detail === tg; d.hidden = !show; d.classList.toggle('is-on', show); }); } return; }
       var sv = t.closest('[data-save]');
-      if (sv) { snapshot(); renderSave(); toast(sv.dataset.save || '저장하고 다시 읽어 확인했습니다. (시안)'); return; }
+      if (sv) { if (sv.disabled) return; var ssc = activeScope(sv.closest('.savebar')); rebasePeers(ssc); snapshot(ssc); /* 기준값을 먼저 갱신한 뒤 알린다: 수신자가 '미저장 변경 없음' 상태를 보게 한다 */ document.dispatchEvent(new CustomEvent('suite:save', { detail: { scope: ssc } })); toast(sv.dataset.save || '저장하고 다시 읽어 확인했습니다. (시안)'); return; }
       var rv = t.closest('[data-revert]');
-      if (rv) { revertAll(); toast('저장된 값으로 되돌렸습니다.'); return; }
+      if (rv) { if (rv.disabled) return; var rsc = activeScope(rv.closest('.savebar')); revertScope(rsc); presetSyncAll(); copyRevertedToPeers(rsc); document.dispatchEvent(new CustomEvent('suite:revert', { detail: { scope: rsc } })); toast('저장된 값으로 되돌렸습니다.'); return; }
       var ts = t.closest('[data-toast]');
-      if (ts) { toast(ts.dataset.toast); $$('.menu.is-open').forEach(function (x) { x.classList.remove('is-open'); }); return; }
+      if (ts) { if (ts.dataset.ctx) lastCtx = safeJson(ts.dataset.ctx) || lastCtx; toast(ts.dataset.toast); $$('.menu.is-open').forEach(function (x) { x.classList.remove('is-open'); }); return; }
       var sc = t.closest('button[data-scenario]');
       if (sc) { document.documentElement.dataset.scenario = sc.dataset.scenario; $$('button[data-scenario]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === sc)); }); return; }
       var dv = t.closest('button[data-device]');
@@ -320,7 +414,7 @@
     document.addEventListener('input', function (e) {
       var el = e.target;
       if (el.closest('.savebar')) return;
-      if (el.matches('input,select,textarea')) recompute();
+      if (el.matches('input,select,textarea')) { if (el.dataset.sync) syncPeers(el); if (el.dataset.presetField) { var pg = $('[data-preset-group="' + el.dataset.presetField + '"]'); if (pg) presetMatch(pg); } recompute(); }
       var out = el.dataset.out; if (out) { var o = document.getElementById(out); if (o) o.textContent = el.value + (el.dataset.unit || ''); }
     });
     document.addEventListener('keydown', function (e) {
@@ -340,7 +434,8 @@
       }
     });
     var pb = $('.proto-bar'); if (pb && !$('.proto-note', pb)) { var pn = document.createElement('span'); pn.className = 'proto-note'; pn.textContent = '표본 데이터 · 저장/삭제/진행은 시연용'; pb.appendChild(pn); }
-    autoLabel(); snapshot(); renderSave();
+    document.addEventListener('suite:page', renderSave);
+    presetInit(); autoLabel(); snapshot(); renderSave();
     var h = (location.hash || '').replace('#', '');
     var qs = new URLSearchParams(location.search);
     if (qs.get('device')) { var fr = $('.frame'); if (fr) { fr.dataset.device = qs.get('device'); $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.device === qs.get('device'))); }); } }
@@ -382,6 +477,7 @@
         var fin = labels[labels.length - 1] || '완료했습니다.';
         if (msg) msg.textContent = fin; dones.forEach(function (d) { d.hidden = false; }); cancels.forEach(function (c) { c.hidden = true; });
         $$('[data-job-result]', ov).forEach(function (r) { r.hidden = false; }); fillCtx(ov, ov._ctx);
+        document.dispatchEvent(new CustomEvent('suite:jobdone', { detail: { id: id, ctx: ov._ctx || null } }));
         if (!ov.classList.contains('is-open')) toast(fin);
         return;
       }

@@ -327,16 +327,16 @@
       </div>
       <div class="stack">
         <div data-subpanel="mem" data-group="set" class="is-active"><div class="stack">
-          <div class="card"><div class="card__head"><div><h2 class="card__title">성능 프리셋</h2><p class="card__desc">검색 후보 수·증거 문턱·발췌 깊이·리콜 예산을 한 번에 맞춥니다.</p></div><span class="badge badge--info">현재: 적당한</span></div>
-            <div class="choices" data-dirty><button class="choice"><b>가벼운</b><span>빠르고 적게 불러옵니다.</span><div class="preset-meter"><i class="on"></i><i></i><i></i></div></button><button class="choice is-on"><b>적당한</b><span>대부분의 채팅에 권장합니다.</span><div class="preset-meter"><i class="on"></i><i class="on"></i><i></i></div></button><button class="choice"><b>무거운</b><span>더 많이, 더 깊게 찾습니다.</span><div class="preset-meter"><i class="on"></i><i class="on"></i><i class="on"></i></div></button></div></div>
+          <div class="card"><div class="card__head"><div><h2 class="card__title">성능 프리셋</h2><p class="card__desc">검색 후보 수·증거 문턱·발췌 깊이·리콜 예산을 한 번에 맞춥니다.</p></div><span class="badge badge--info">현재: <span data-preset-label="perf">적당한</span></span></div>
+            <div class="choices" data-preset-group="perf"><button class="choice" data-preset='{"max": "6", "rerank": "24", "dense": "0.50", "sparse": "0.25"}'><b>가벼운</b><span>빠르고 적게 불러옵니다.</span><div class="preset-meter"><i class="on"></i><i></i><i></i></div></button><button class="choice is-on" data-preset='{"max": "12", "rerank": "48", "dense": "0.42", "sparse": "0.18"}'><b>적당한</b><span>대부분의 채팅에 권장합니다.</span><div class="preset-meter"><i class="on"></i><i class="on"></i><i></i></div></button><button class="choice" data-preset='{"max": "24", "rerank": "96", "dense": "0.35", "sparse": "0.12"}'><b>무거운</b><span>더 많이, 더 깊게 찾습니다.</span><div class="preset-meter"><i class="on"></i><i class="on"></i><i class="on"></i></div></button></div></div>
           <div class="card"><h2 class="card__title" style="margin-bottom:6px">최근 대화</h2>
-            <div class="setting"><div><div class="setting__name">최근 대화 원문 사용</div><div class="setting__desc">응답 요청에 최근 대화를 직접 함께 전달합니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">최근 대화 원문 사용</span></label></div>
-            <div class="setting"><div><div class="setting__name">최근 대화 최대 턴</div><div class="setting__desc">1턴은 사용자 입력과 AI 응답 한 쌍입니다.</div></div><input class="input" type="number" value="8" style="width:96px"></div>
+            <div class="setting"><div><div class="setting__name">최근 대화 원문 사용</div><div class="setting__desc">응답 요청에 최근 대화를 직접 함께 전달합니다.</div></div><label class="switch"><input type="checkbox" checked data-sync="recent_use"><span class="switch__track"></span><span class="sr-only">최근 대화 원문 사용</span></label></div>
+            <div class="setting"><div><div class="setting__name">최근 대화 최대 턴</div><div class="setting__desc">1턴은 사용자 입력과 AI 응답 한 쌍입니다.</div></div><input class="input" type="number" value="8" style="width:96px" data-sync="recent_turns"></div>
             <div class="setting"><div><div class="setting__name">사서 모드에도 최근 대화 직접 주입</div><div class="setting__desc">끄면 저장된 기억만 전달합니다.</div></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">사서 모드 최근 대화 직접 주입</span></label></div></div>
           <div class="card"><div class="card__head"><div><h2 class="card__title">분석기 · 지침 (Prompt Studio)</h2><p class="card__desc">기억을 분석하는 지침을 보고 고칩니다. 기본값으로 되돌릴 수 있습니다.</p></div><button class="btn btn--sm" data-open="dlg-prompt">Prompt Studio 열기</button></div></div>
           <details class="fold"><summary>세부 리콜 · 작동 값 <span class="hint">전문가용 · 프리셋 변경 시 덮어씁니다</span></summary><div class="fold__body grid g2">
-            <div class="field"><label>최대 리콜 메모리 수</label><input class="input" type="number" value="12"></div><div class="field"><label>후보 재랭킹 한도</label><input class="input" type="number" value="48"></div>
-            <div class="field"><label>Dense 증거 문턱</label><input class="input" type="number" step=".01" value="0.42"></div><div class="field"><label>Sparse 증거 문턱</label><input class="input" type="number" step=".01" value="0.18"></div></div></details>
+            <div class="field"><label>최대 리콜 메모리 수</label><input class="input" type="number" value="12" data-preset-field="perf" data-preset-key="max"></div><div class="field"><label>후보 재랭킹 한도</label><input class="input" type="number" value="48" data-preset-field="perf" data-preset-key="rerank"></div>
+            <div class="field"><label>Dense 증거 문턱</label><input class="input" type="number" step=".01" value="0.42" data-preset-field="perf" data-preset-key="dense"></div><div class="field"><label>Sparse 증거 문턱</label><input class="input" type="number" step=".01" value="0.18" data-preset-field="perf" data-preset-key="sparse"></div></div></details>
         </div></div>
 
         <div data-subpanel="ai" data-group="set"><div class="stack">
@@ -395,8 +395,8 @@
       <div class="drawer__body page" style="display:block" data-track>
         <div class="tabs" role="tablist" data-subtabs="q"><button class="tab" role="tab" aria-selected="true" data-subtab="resp">응답</button><button class="tab" role="tab" aria-selected="false" data-subtab="mem">기억</button></div>
         <div data-subpanel="resp" data-group="q" class="is-active stack">
-          <label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="switch__text"><b>최근 대화 원문 사용</b><small>응답에 최근 대화를 직접 전달합니다.</small></span></label>
-          <div class="field"><label>최근 대화 최대 턴</label><input class="input" type="number" value="8"></div>
+          <label class="switch"><input type="checkbox" checked data-sync="recent_use"><span class="switch__track"></span><span class="switch__text"><b>최근 대화 원문 사용</b><small>응답에 최근 대화를 직접 전달합니다.</small></span></label>
+          <div class="field"><label>최근 대화 최대 턴</label><input class="input" type="number" value="8" data-sync="recent_turns"></div>
           <label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="switch__text"><b>통합 로어 검색 · 작가노트</b><small>로어와 작가노트를 함께 검색합니다.</small></span></label>
         </div>
         <div data-subpanel="mem" data-group="q" class="stack">
@@ -482,8 +482,8 @@
   </div>
 
   <!-- 비교 후 정본 승격 / 비활성 버전 삭제 -->
-  <div class="overlay" id="dlg-promote" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dpm-t"><div class="eyebrow">Compare</div><h2 id="dpm-t"><span data-fill="mem">M-25</span> · <span data-fill="ver">v2</span>를 정본으로 올릴까요?</h2><div class="grid g2"><div class="note"><b>현재 정본 v3</b>열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달 전까지 열리지 않는다.</div><div class="note"><b>후보 <span data-fill="ver">v2</span></b><span data-fill="vtext">열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.</span></div></div><p class="hint">올리면 후보가 새 정본이 되고, 이전 정본은 비활성 버전으로 남습니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="{mem} {ver}를 정본으로 올리고 다시 읽어 확인했습니다. 이전 정본 v3은 비활성 버전으로 남습니다. (시안)">정본으로 올리기</button></div></div></div>
-  <div class="overlay" id="dlg-del-version" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ddv-t"><div class="eyebrow" style="color:var(--danger-ink)">Delete inactive version</div><h2 id="ddv-t"><span data-fill="mem">M-25</span> · 비활성 버전 <span data-fill="ver">v2</span>와 벡터·상태 delta를 삭제할까요?</h2><div class="note note--danger"><b>되돌릴 수 없습니다.</b> 현재 정본은 바뀌지 않습니다.</div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{mem} {ver}를 삭제했습니다. 현재 정본은 그대로입니다. (시안)">삭제</button></div></div></div>
+  <div class="overlay" id="dlg-promote" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dpm-t"><div class="eyebrow">Compare</div><h2 id="dpm-t"><span data-fill="mem">M-25</span> · 후보 <span data-fill="ver">v2</span> — 정본으로 올릴까요?</h2><div class="grid g2"><div class="note"><b>현재 정본 v3</b>열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달 전까지 열리지 않는다.</div><div class="note"><b>후보 <span data-fill="ver">v2</span></b><span data-fill="vtext">열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.</span></div></div><p class="hint">올리면 후보가 새 정본이 되고, 이전 정본은 비활성 버전으로 남습니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="{mem} {ver} 정본 승격: 다시 읽어 확인했습니다. 이전 정본 v3은 비활성 버전으로 남습니다. (시안)">정본으로 올리기</button></div></div></div>
+  <div class="overlay" id="dlg-del-version" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ddv-t"><div class="eyebrow" style="color:var(--danger-ink)">Delete inactive version</div><h2 id="ddv-t"><span data-fill="mem">M-25</span> · 비활성 버전 <span data-fill="ver">v2</span> — 이 버전과 벡터·상태 delta를 삭제할까요?</h2><div class="note note--danger"><b>되돌릴 수 없습니다.</b> 현재 정본은 바뀌지 않습니다.</div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{mem} {ver} 삭제 완료. 현재 정본은 그대로입니다. (시안)">삭제</button></div></div></div>
 
   <!-- 교정 / 병합·분리 / 보류 근거 / 교정 생명주기 / 여백 초기화 -->
   <div class="overlay" id="dlg-correct" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dco-t"><div class="eyebrow">Correction</div><h2 id="dco-t">교정 · <span data-fill="target">M-25 · 북쪽 정원의 기록실</span></h2><p class="muted" style="font-size:13px">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class="field"><label for="co-in">교정 내용</label><textarea class="textarea" id="co-in" rows="3" data-no-track data-fill="text">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)">교정 기록</button></div></div></div>
@@ -588,7 +588,14 @@ document.addEventListener('click',function(e){
     document.getElementById('seg-none').addEventListener('click',function(){rows.forEach(function(r){r.querySelector('input').checked=false;});sync();});
     sync();
   });
-  document.addEventListener('click',function(e){var o=e.target.closest('[data-open="dlg-range"]');if(o&&o.dataset.ctx){try{var c=JSON.parse(o.dataset.ctx);if(c.preselect){setTimeout(function(){sel.value=c.preselect;sync();if(c.seg){rows.forEach(function(r){var cb=r.querySelector('input');if(r.querySelector('b').textContent===c.seg&&!cb.disabled)cb.checked=true;});sync();}},0);}}catch(er){}}});
+  /* 대화상자는 열 때마다 처음 상태로: 이전에 체크한 구간·작업 종류가 남지 않는다.
+     카드에서 들어오면(ctx.seg) 그 구간만, 그 밖의 진입은 선택 없이 시작 */
+  document.addEventListener('suite:open',function(e){
+    if(e.detail.id!=='dlg-range')return;var c=e.detail.ctx||{};
+    rows.forEach(function(r){r.querySelector('input').checked=false;});
+    sel.value=c.preselect||'miss';sync();
+    if(c.seg){rows.forEach(function(r){var cb=r.querySelector('input');if(r.querySelector('b').textContent===c.seg&&!cb.disabled)cb.checked=true;});sync();}
+  });
 })();
 </script>
 </body>

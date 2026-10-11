@@ -73,7 +73,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 <div class="proto-bar">
   <a href="index.html">← 시안 목록</a><b>LIA · 내 페르소나</b>
   <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
-  <span class="grp"><span>열기</span><button data-open="sheet-bind">연결 시트</button><button data-run-job="job-gen">Persona 생성</button><button data-run-job="job-emo">감정 묶음</button><button data-open="sheet-del-vault">보관함 삭제</button></span>
+  <span class="grp"><span>열기</span><button data-open="sheet-bind">연결 시트</button><button data-run-job="job-gen">Persona 생성</button><button data-run-job="job-emo">감정 묶음</button></span>
 </div>
 <div class="stage"><div class="frame" data-device="desktop">
 <div class="app">
@@ -90,7 +90,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   <nav class="sidebar" aria-label="LIA 메뉴">
     <button class="nav-item" data-go="mine" data-short="내 페르소나"><i data-i="user"></i><span class="nav-text">내 페르소나</span></button>
     <button class="nav-item" data-go="make" data-short="만들기"><i data-i="spark"></i><span class="nav-text">만들기</span></button>
-    <button class="nav-item" data-go="shelf" data-short="보관함"><i data-i="shelf"></i><span class="nav-text">보관함</span><span class="count">4</span></button>
+    <button class="nav-item" data-go="shelf" data-short="보관함"><i data-i="shelf"></i><span class="nav-text">보관함</span><span class="count" id="nav-shelf-n">4</span></button>
     <button class="nav-item" data-go="settings" data-short="설정"><i data-i="sliders"></i><span class="nav-text">설정</span></button>
     <div class="side-foot"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>
   </nav>
@@ -101,11 +101,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   <section class="page is-active" data-page="mine">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Now</div><h1 class="page-title">내 페르소나</h1><p class="page-desc">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>
     <div class="stack">
-      <div class="pocket">
-        <div class="avatar">세</div>
-        <div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">세라 하운</h2><p>원본: RisuAI Persona ‘세라 하운’ · Live: 이 채팅 소유 복사본</p></div>
-        <div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit" data-ctx='{"pid": "sera"}'><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button></div>
-      </div>
+      <div class="pocket" id="pocket"></div>
 
       <div class="card card--tight">
         <div class="card__head"><div><h2 class="card__title">다음 갱신 범위</h2><p class="card__desc">자동으로 바뀌지 않습니다. 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 직접 눌러서 한 번에 분석·반영합니다.</p></div><span class="badge badge--warn">3 / 5쌍</span></div>
@@ -116,12 +112,8 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       <div class="note"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>
 
       <div>
-        <div class="section-title"><h2>선택할 수 있는 Persona</h2></div>
-        <div class="stack stack--sm">
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm">세</div><div><b>세라 하운 <span class="muted" style="font-weight:500">원본</span></b><small>이 채팅에 연결 · 방금 갱신</small></div><div class="pcard__side"><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></div></button>
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live <span class="muted" style="font-weight:500">Live Persona</span></b><small>‘바닷가 마을’ 채팅이 관리 중</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="lock" data-size="sm"></i>다른 채팅 관리 · 직접 연결 불가</span></div></button>
-          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손 <span class="muted" style="font-weight:500">원본</span></b><small>어느 채팅에도 연결되지 않음</small></div><div class="pcard__side"><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></div></button>
-        </div>
+        <div class="section-title"><h2>선택할 수 있는 Persona <span class="muted" style="font-weight:500">(RisuAI Persona로 채택한 것)</span></h2></div>
+        <div class="stack stack--sm" id="mine-list"></div>
         <div class="legend" style="margin-top:10px"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>
       </div>
     </div>
@@ -140,9 +132,9 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 
       <div class="card">
         <div class="mode-panel is-on" data-detail="classic"><div class="stack stack--sm">
-          <div class="field"><label>Source Persona</label><select class="select" data-no-track><option>세라 하운 (RisuAI Persona)</option><option>이름 없는 길손</option></select><span class="hint">성격·외모·배경의 출발점이 되는 기존 페르소나입니다.</span></div>
+          <div class="field"><label>Source Persona</label><select class="select" id="src-sel" data-no-track></select><span class="hint" id="src-hint">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>
           <p class="muted" style="margin:0;font-size:13px">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>
-          <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen" data-ctx='{"pid": "sera2", "name": "세라 하운 · 북쪽 정원판", "mode": "클래식 생성"}'><i data-i="spark"></i>Persona 만들기</button></div></div></div>
+          <div class="cluster"><button class="btn btn--primary" id="mk-classic" data-run-job="job-gen"><i data-i="spark"></i><span>Persona 만들기</span></button></div></div></div>
         <div class="mode-panel" data-detail="random"><div class="stack stack--sm">
           <p class="muted" style="margin:0;font-size:13px">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>
           <div class="field"><label>컨셉 (선택)</label><textarea class="textarea" rows="2" data-no-track placeholder="예) 북쪽 항구 도시의 약재상 견습생"></textarea></div>
@@ -153,7 +145,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
           <div class="cluster"><button class="btn btn--primary" data-run-job="job-cand" data-ctx='{"variant": "character", "mode": "등장인물 추출"}'><i data-i="users"></i>등장인물 후보 찾기</button></div></div></div>
         <div class="mode-panel" data-detail="conversation"><div class="stack stack--sm">
           <div class="kv-line"><dl class="kv"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>
-          <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen" data-ctx='{"pid": "conv", "name": "대화에서 추출한 Persona", "mode": "대화에서 추출"}'><i data-i="chat"></i>대화에서 추출</button></div></div></div>
+          <div class="cluster"><button class="btn btn--primary" id="mk-conv" data-run-job="job-gen"><i data-i="chat"></i>대화에서 추출</button></div></div></div>
       </div>
 
       <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">사용할 자료 · 세계관 분석 (고급)</summary>
@@ -170,15 +162,11 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 
   <!-- ===== 3. 보관함 ===== -->
   <section class="page" data-page="shelf">
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Vault</div><h1 class="page-title">보관함</h1><p class="page-desc">생성 직후 자동 보관된 결과 4개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Vault</div><h1 class="page-title">보관함</h1><p class="page-desc">생성 직후 자동 보관된 결과 <b id="shelf-n">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>
     <div class="stack">
       <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·특징으로 찾기" aria-label="보관함 검색"></div>
-      <div class="list">
-        <button class="row" data-go="edit" data-ctx='{"pid": "sera"}'><div class="avatar avatar--sm">세</div><div><div class="row__title">세라 하운 <span class="badge badge--ok">채택됨</span></div><div class="row__meta">클래식 · v3 · 수정 방금</div></div><i class="ic faint" data-i="arrow"></i></button>
-        <button class="row" data-go="edit" data-ctx='{"pid": "kael"}'><div class="avatar avatar--sm avatar--c">카</div><div><div class="row__title">카엘 로웬 <span class="badge badge--warn">초안</span></div><div class="row__meta">랜덤 신규 · v1 · 아직 채택 전</div></div><i class="ic faint" data-i="arrow"></i></button>
-        <button class="row" data-go="edit" data-ctx='{"pid": "lionel"}'><div class="avatar avatar--sm avatar--d">리</div><div><div class="row__title">리오넬 <span class="badge badge--warn">초안</span></div><div class="row__meta">등장인물 추출 · v1</div></div><i class="ic faint" data-i="arrow"></i></button>
-        <button class="row" data-go="edit" data-ctx='{"pid": "wanderer"}'><div class="avatar avatar--sm avatar--n">?</div><div><div class="row__title">이름 없는 길손</div><div class="row__meta">대화에서 추출 · v2</div></div><i class="ic faint" data-i="arrow"></i></button>
-      </div>
+      <div class="list" id="shelf-list"></div>
+      <div class="empty" id="shelf-empty" hidden><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>
       <div class="note"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>
       <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class="muted" style="margin:2px 0 8px">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class="btn btn--sm" data-go="recover">이전 자료 복구</button></div></div>
     </div>
@@ -211,7 +199,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   </section>
 
   <!-- ===== 서브: 편집 ===== -->
-  <section class="page" data-page="edit" data-track>
+  <section class="page" data-page="edit" data-track id="edit-root">
     <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Edit · <span data-fill="ver">v3</span> · <span data-fill="mode">클래식 생성</span></div><h1 class="page-title" data-fill="name">세라 하운</h1><p class="page-desc">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill="statusText">채택됨 · 이 채팅에 연결됨</b></p></div></div>
     <div class="tabs" role="tablist" data-subtabs="ed"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="all">전체 23개 항목</button><button class="tab" role="tab" aria-selected="false" data-subtab="rev">검토</button><button class="tab" role="tab" aria-selected="false" data-subtab="ver">버전·기록</button><button class="tab" role="tab" aria-selected="false" data-subtab="out">채택·연결·삭제</button></div>
@@ -219,42 +207,42 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       <div data-subpanel="sum" data-group="ed" class="is-active"><div class="stack">
         <div class="card"><div class="card__head"><div><h2 class="card__title">장기 Persona 요약</h2><p class="card__desc">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>
           <div class="stack stack--sm">
-            <div class="field"><label>이름</label><input class="input" data-pf="name" value="세라 하운"></div>
-            <div class="field"><label>역할/직업</label><input class="input" data-pf="role" value="왕실 기록실 사서"></div>
-            <div class="field"><label>성격</label><textarea class="textarea" rows="2" data-pf="personality">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>
-            <div class="field"><label>말투</label><textarea class="textarea" rows="2" data-pf="speech">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
+            <div class="field"><label>이름</label><input class="input" data-key="name" value="세라 하운"></div>
+            <div class="field"><label>역할/직업</label><input class="input" data-key="role" value="왕실 기록실 사서"></div>
+            <div class="field"><label>성격</label><textarea class="textarea" rows="2" data-key="personality">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>
+            <div class="field"><label>말투</label><textarea class="textarea" rows="2" data-key="speech">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
           </div></div>
         <div class="card card--flat"><div class="card__head"><div><h2 class="card__title">현재 상태 (일시적)</h2><p class="card__desc">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>
           <dl class="kv" data-variant="default bound"><dt>현재 위치</dt><dd>북쪽 정원</dd><dt>소지</dt><dd>은색 열쇠</dd></dl><p class="muted" data-variant="unbound" hidden style="margin:0;font-size:13px">이 Persona는 이 채팅에 연결된 Live Persona가 없어 일시적 현재 상태가 없습니다.</p></div>
       </div></div>
 
       <div data-subpanel="all" data-group="ed"><div class="stack">
-        <div class="seg" role="group" aria-label="보기 언어" data-dirty><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
+        <div class="seg" id="ed-lang" role="group" aria-label="보기 언어" data-dirty><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
         <p class="hint">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>
         <div class="card card--tight">
-<div class="fld"><div class="fld__head"><label for="f-name">이름</label><code class="fld__key">name</code></div><input class="input" id="f-name" value="세라 하운"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="이름 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘이름’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-gender">성별</label><code class="fld__key">gender</code></div><input class="input" id="f-gender" value="여성"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="성별 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘성별’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-age">나이</label><code class="fld__key">age</code></div><input class="input" id="f-age" value="29세"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="나이 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘나이’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-speciesRace">종족</label><code class="fld__key">speciesRace</code></div><input class="input" id="f-speciesRace" value="인간"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="종족 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘종족’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-origin">출신</label><code class="fld__key">origin</code></div><input class="input" id="f-origin" value="북쪽 도서 도시 ‘하운’"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="출신 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘출신’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-role">역할/직업</label><code class="fld__key">role</code></div><input class="input" id="f-role" value="왕실 기록실 사서"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="역할/직업 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘역할/직업’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-appearance">외모</label><code class="fld__key">appearance</code></div><input class="input" id="f-appearance" value="짙은 회색 외투, 은색 열쇠"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="외모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘외모’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-personality">성격</label><code class="fld__key">personality</code></div><input class="input" id="f-personality" value="신중하지만 약속을 가볍게 여기지 않는다"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="성격 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘성격’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-visibleSide">겉으로 보이는 면</label><code class="fld__key">visibleSide</code></div><input class="input" id="f-visibleSide" value="차분하고 예의 바름"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="겉으로 보이는 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘겉으로 보이는 면’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-hiddenSide">숨은 면</label><code class="fld__key">hiddenSide</code></div><input class="input" id="f-hiddenSide" value="기록되지 않은 일에 대한 집착"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="숨은 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘숨은 면’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-internalContradiction">내적 모순</label><code class="fld__key">internalContradiction</code></div><input class="input" id="f-internalContradiction" value="비밀을 지키려다 진실을 외면한다"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="내적 모순 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘내적 모순’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-background">배경</label><code class="fld__key">background</code></div><input class="input" id="f-background" value="기록실에서 자라 외부와 거리를 둠"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="배경 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘배경’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-speech">말투</label><code class="fld__key">speech</code></div><input class="input" id="f-speech" value="짧고 낮은 어조"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="말투 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘말투’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-motivation">동기/욕망</label><code class="fld__key">motivation</code></div><input class="input" id="f-motivation" value="사라진 기록의 행방을 찾는 것"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="동기/욕망 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘동기/욕망’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-relationshipStyle">관계 방식</label><code class="fld__key">relationshipStyle</code></div><input class="input" id="f-relationshipStyle" value="거리를 두되 한번 믿으면 끝까지"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="관계 방식 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘관계 방식’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-relationshipToCharacter">{{char}}와의 접점</label><code class="fld__key">relationshipToCharacter</code></div><input class="input" id="f-relationshipToCharacter" value="열쇠를 맡긴 첫 의뢰인"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="{{char}}와의 접점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘{{char}}와의 접점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-preferences">선호/취향</label><code class="fld__key">preferences</code></div><input class="input" id="f-preferences" value="오래된 종이 냄새, 식은 차"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="선호/취향 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘선호/취향’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-conflictRepair">갈등/회복</label><code class="fld__key">conflictRepair</code></div><input class="input" id="f-conflictRepair" value="말수가 줄었다가 사실부터 정리해 사과"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="갈등/회복 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘갈등/회복’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-skills">기술/강점</label><code class="fld__key">skills</code></div><input class="input" id="f-skills" value="고문서 판독, 암기"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="기술/강점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘기술/강점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-limitations">한계/약점</label><code class="fld__key">limitations</code></div><input class="input" id="f-limitations" value="몸싸움에 약함"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="한계/약점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘한계/약점’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-knowledgeBoundary">지식 경계</label><code class="fld__key">knowledgeBoundary</code></div><input class="input" id="f-knowledgeBoundary" value="왕실 외부 소식은 소문 수준"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="지식 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘지식 경계’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-boundaries">RP 경계</label><code class="fld__key">boundaries</code></div><input class="input" id="f-boundaries" value="직접 묘사하지 않을 수위 설정은 보관 결과 기준"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="RP 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘RP 경계’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
-<div class="fld"><div class="fld__head"><label for="f-worldFitNotes">세계관 적합 메모</label><code class="fld__key">worldFitNotes</code></div><input class="input" id="f-worldFitNotes" value="보름달 전 개방 금지 규칙을 인지"><div class="fld__act"><label class="check"><input type="checkbox" aria-label="세계관 적합 메모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-toast="‘세계관 적합 메모’ 항목만 다시 만들었습니다. 잠긴 항목은 건드리지 않습니다. (시안)"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-name">이름</label><code class="fld__key">name</code></div><input class="input" id="f-name" data-key="name" value="세라 하운"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="name" aria-label="이름 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="name"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-gender">성별</label><code class="fld__key">gender</code></div><input class="input" id="f-gender" data-key="gender" value="여성"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="gender" aria-label="성별 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="gender"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-age">나이</label><code class="fld__key">age</code></div><input class="input" id="f-age" data-key="age" value="29세"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="age" aria-label="나이 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="age"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-speciesRace">종족</label><code class="fld__key">speciesRace</code></div><input class="input" id="f-speciesRace" data-key="speciesRace" value="인간"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="speciesRace" aria-label="종족 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="speciesRace"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-origin">출신</label><code class="fld__key">origin</code></div><input class="input" id="f-origin" data-key="origin" value="북쪽 도서 도시 ‘하운’"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="origin" aria-label="출신 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="origin"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-role">역할/직업</label><code class="fld__key">role</code></div><input class="input" id="f-role" data-key="role" value="왕실 기록실 사서"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="role" aria-label="역할/직업 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="role"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-appearance">외모</label><code class="fld__key">appearance</code></div><input class="input" id="f-appearance" data-key="appearance" value="짙은 회색 외투, 은색 열쇠"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="appearance" aria-label="외모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="appearance"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-personality">성격</label><code class="fld__key">personality</code></div><input class="input" id="f-personality" data-key="personality" value="신중하지만 약속을 가볍게 여기지 않는다"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="personality" aria-label="성격 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="personality"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-visibleSide">겉으로 보이는 면</label><code class="fld__key">visibleSide</code></div><input class="input" id="f-visibleSide" data-key="visibleSide" value="차분하고 예의 바름"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="visibleSide" aria-label="겉으로 보이는 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="visibleSide"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-hiddenSide">숨은 면</label><code class="fld__key">hiddenSide</code></div><input class="input" id="f-hiddenSide" data-key="hiddenSide" value="기록되지 않은 일에 대한 집착"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="hiddenSide" aria-label="숨은 면 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="hiddenSide"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-internalContradiction">내적 모순</label><code class="fld__key">internalContradiction</code></div><input class="input" id="f-internalContradiction" data-key="internalContradiction" value="비밀을 지키려다 진실을 외면한다"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="internalContradiction" aria-label="내적 모순 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="internalContradiction"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-background">배경</label><code class="fld__key">background</code></div><input class="input" id="f-background" data-key="background" value="기록실에서 자라 외부와 거리를 둠"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="background" aria-label="배경 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="background"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-speech">말투</label><code class="fld__key">speech</code></div><input class="input" id="f-speech" data-key="speech" value="짧고 낮은 어조"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="speech" aria-label="말투 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="speech"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-motivation">동기/욕망</label><code class="fld__key">motivation</code></div><input class="input" id="f-motivation" data-key="motivation" value="사라진 기록의 행방을 찾는 것"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="motivation" aria-label="동기/욕망 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="motivation"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-relationshipStyle">관계 방식</label><code class="fld__key">relationshipStyle</code></div><input class="input" id="f-relationshipStyle" data-key="relationshipStyle" value="거리를 두되 한번 믿으면 끝까지"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="relationshipStyle" aria-label="관계 방식 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="relationshipStyle"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-relationshipToCharacter">{{char}}와의 접점</label><code class="fld__key">relationshipToCharacter</code></div><input class="input" id="f-relationshipToCharacter" data-key="relationshipToCharacter" value="열쇠를 맡긴 첫 의뢰인"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="relationshipToCharacter" aria-label="{{char}}와의 접점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="relationshipToCharacter"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-preferences">선호/취향</label><code class="fld__key">preferences</code></div><input class="input" id="f-preferences" data-key="preferences" value="오래된 종이 냄새, 식은 차"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="preferences" aria-label="선호/취향 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="preferences"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-conflictRepair">갈등/회복</label><code class="fld__key">conflictRepair</code></div><input class="input" id="f-conflictRepair" data-key="conflictRepair" value="말수가 줄었다가 사실부터 정리해 사과"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="conflictRepair" aria-label="갈등/회복 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="conflictRepair"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-skills">기술/강점</label><code class="fld__key">skills</code></div><input class="input" id="f-skills" data-key="skills" value="고문서 판독, 암기"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="skills" aria-label="기술/강점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="skills"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-limitations">한계/약점</label><code class="fld__key">limitations</code></div><input class="input" id="f-limitations" data-key="limitations" value="몸싸움에 약함"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="limitations" aria-label="한계/약점 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="limitations"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-knowledgeBoundary">지식 경계</label><code class="fld__key">knowledgeBoundary</code></div><input class="input" id="f-knowledgeBoundary" data-key="knowledgeBoundary" value="왕실 외부 소식은 소문 수준"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="knowledgeBoundary" aria-label="지식 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="knowledgeBoundary"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-boundaries">RP 경계</label><code class="fld__key">boundaries</code></div><input class="input" id="f-boundaries" data-key="boundaries" value="직접 묘사하지 않을 수위 설정은 보관 결과 기준"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="boundaries" aria-label="RP 경계 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="boundaries"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
+<div class="fld"><div class="fld__head"><label for="f-worldFitNotes">세계관 적합 메모</label><code class="fld__key">worldFitNotes</code></div><input class="input" id="f-worldFitNotes" data-key="worldFitNotes" value="보름달 전 개방 금지 규칙을 인지"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="worldFitNotes" aria-label="세계관 적합 메모 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="worldFitNotes"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
         </div>
       </div></div>
 
@@ -266,7 +254,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
           <div class="diff-row"><b>숨은 면</b><div><del>모든 선택에서 기록을 우선한다</del> <ins>기록에 대한 집착이 크지만 최종 선택은 상황에 맡긴다</ins></div></div>
           <div class="cluster" style="margin-top:10px"><button class="btn btn--primary" data-toast="수정을 초안에 적용했습니다. (시안)">초안에 적용</button><button class="btn" data-toast="수정 제안을 무시했습니다. (시안)">무시</button></div></div>
         <div class="card"><div class="card__head"><div><h2 class="card__title">밀도 변환</h2><p class="card__desc">RisuAI Persona로 채택할 때 길이를 선택합니다.</p></div></div>
-          <div class="choices" data-dirty><button class="choice"><b>Full</b><span>전체 항목</span></button><button class="choice is-on"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class="choice"><b>Compact</b><span>짧게 압축</span></button></div></div>
+          <div class="choices" id="ed-density" data-dirty><button class="choice"><b>Full</b><span>전체 항목</span></button><button class="choice is-on"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class="choice"><b>Compact</b><span>짧게 압축</span></button></div></div>
       </div></div>
 
       <div data-subpanel="ver" data-group="ed"><div class="stack">
@@ -282,9 +270,10 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
         <div class="target-card"><h3>① LIA 보관함 <small>‘<span data-fill="name">세라 하운</span>’ · 자동 보관됨</small></h3><p class="muted" style="margin:0;font-size:13px">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>
           <div class="cluster"><button class="btn btn--sm btn--danger" id="btn-del-vault" data-open="sheet-del-vault">보관함에서 삭제…</button></div></div>
         <div class="target-card"><h3>② RisuAI Persona로 채택 <small data-fill="adoptText">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>
-          <div class="field"><label>채택할 내용</label><div class="seg" role="group" aria-label="채택본"><button aria-pressed="true">원문</button><button aria-pressed="false">번역본</button></div></div>
-          <div class="choices"><button class="choice is-on"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class="choice"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>
-          <div class="note"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다.</div>
+          <div class="field"><label>채택할 내용</label><div class="seg" id="ad-lang" role="group" aria-label="채택본"><button aria-pressed="true">원문</button><button aria-pressed="false">번역본</button></div></div>
+          <div class="choices" id="ad-mode"><button class="choice is-on"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class="choice"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>
+          <div class="note"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>을 기준으로 합니다.</div>
+          <p class="hint" id="hint-adopt" hidden style="color:var(--danger-ink)">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>
           <div class="cluster"><button class="btn btn--primary" id="btn-adopt" data-toast="‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)">채택하기</button><button class="btn btn--sm btn--danger" id="btn-del-persona" data-open="sheet-del-persona">생성한 Persona 정리…</button></div><p class="hint" id="hint-del-persona" hidden>아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden></div></div>
         <div class="target-card"><h3>③ 현재 채팅에 연결 <small data-fill="bindText">이 채팅에 연결됨</small></h3><p class="muted" style="margin:0;font-size:13px">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>
           <div class="cluster"><button class="btn" id="btn-bind" data-open="sheet-bind"><i data-i="link"></i>이 채팅에 연결…</button><button class="btn btn--sm btn--danger" id="btn-unbind" data-open="sheet-unbind">연결 해제…</button></div><p class="hint" id="hint-bind" hidden>RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>
@@ -324,7 +313,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
     <div class="steps" style="margin-bottom:16px"><div class="step is-done"><span class="step__no">✓</span><b>Neutral 생성</b></div><div class="step is-done"><span class="step__no">✓</span><b>기준 확정</b></div><div class="step is-active"><span class="step__no">3</span><b>감정 묶음</b></div></div>
     <div class="stack">
       <div class="card"><div class="card__head"><div><h2 class="card__title">대상</h2><p class="card__desc">기본값은 현재 Source Persona입니다. 다른 Persona를 골라 그 Persona 전용 에셋을 만들 수 있습니다.</p></div></div>
-        <div class="field"><label>에셋 타겟 Persona</label><select class="select"><option>자동 (현재 Source Persona) · 세라 하운</option><option>이름 없는 길손</option></select></div>
+        <div class="field"><label>에셋 타겟 Persona</label><select class="select" id="asset-target" data-no-track></select></div>
         <dl class="kv" style="margin-top:10px"><dt>저장 상태</dt><dd>9개 저장됨 · Neutral Master 있음</dd><dt>대상 요약</dt><dd>짙은 회색 외투, 은색 열쇠를 쥔 29세 여성</dd></dl></div>
       <div class="card lock-card"><div class="card__head"><div><h2 class="card__title">Visual Generation Lock</h2><p class="card__desc">기준은 <b>프롬프트와 생성 조건(Lock)</b>입니다. 확정 뒤에는 감정별로 바뀌지 않습니다.</p></div><span class="badge badge--ok">확정됨</span></div>
         <dl class="kv"><dt>생성 조건</dt><dd>seed 482913 · 832×1216 · sampler 표본</dd><dt>구도</dt><dd>표준 감정 에셋 · 상반신</dd><dt>구형 Lock</dt><dd>해당 없음 — 이전 형식의 Lock이 남아 있으면 이곳에 ‘구형’으로 표시됩니다.</dd><dt>배경 규칙</dt><dd>순백색 고정 · Positive/Negative 양쪽에서 강제 · 투명/장면 배경 사용 안 함</dd></dl>
@@ -387,31 +376,27 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   <div class="overlay overlay--bottom" id="sheet-bind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sb-t">
     <div class="eyebrow">Connect</div><h2 id="sb-t" style="margin:2px 0 4px;font:800 19px var(--font-display)">이 채팅에서 쓸 Persona</h2>
     <p class="muted" style="margin:0 0 12px;font-size:13px">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>
-    <div class="stack stack--sm" data-detail-root>
-      <button class="big-choice is-on" data-select-row="a" data-bind-name="세라 하운" data-bind-current="1"><div class="avatar avatar--sm">세</div><div><b>세라 하운 (원본)</b><span>✓ 지금 이 채팅에 연결됨</span></div><span class="pick">선택</span></button>
-      <button class="big-choice" data-select-row="c" data-bind-name="이름 없는 길손"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손 (원본)</b><span>＋ 연결 안 됨</span></div><span class="pick">선택</span></button>
-      <div class="big-choice" aria-disabled="true" style="opacity:.7;cursor:not-allowed"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live (‘바닷가 마을’ 관리)</b><span>🔒 다른 채팅에서 관리 중인 Live Persona는 이 채팅에 직접 연결할 수 없습니다. 원본 Persona를 선택하세요.</span></div><span class="pick">불가</span></div>
-    </div>
+    <div class="stack stack--sm" data-detail-root id="bind-list"></div>
     <p class="hint" style="margin-top:10px">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>
-    <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" id="btn-bind-go" data-close data-toast="이 채팅의 연결을 바꿨습니다. (시안)">연결하기</button></div><p class="hint" id="bind-hint" style="margin:6px 0 0">이미 이 채팅에 연결된 Persona입니다.</p><div hidden></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" id="btn-bind-go" data-close data-act="bind-go" data-toast="‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)">연결하기</button></div><p class="hint" id="bind-hint" style="margin:6px 0 0" hidden></p><div hidden></div></div></div>
 
   <!-- 연결 해제 -->
   <div class="overlay overlay--bottom" id="sheet-unbind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="su-t">
     <div class="eyebrow">Unlink</div><h2 id="su-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이 채팅에서 ‘<span data-fill="name">세라 하운</span>’ 연결을 해제할까요?</h2>
     <div class="note"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger" data-close data-toast="‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)">연결 해제</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger" data-close data-act="unbind" data-toast="‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)">연결 해제</button></div></div></div>
 
   <!-- 보관함 항목 삭제 -->
   <div class="overlay overlay--bottom" id="sheet-del-vault" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdv-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Delete vault item</div><h2 id="sdv-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">보관함에서 ‘<span data-fill="name">카엘 로웬</span>’을 삭제할까요?</h2>
-    <p class="muted" style="margin:0 0 8px;font-size:13px">삭제 대상: <span data-fill="ver">v1</span> 포함 버전 <span data-fill="verCount">1</span>개 · <span data-fill="mode">랜덤 신규 생성</span></p><div class="note note--danger"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="‘{name}’ 보관함 항목을 삭제했습니다. (시안)" data-then-go="shelf">보관함에서 삭제</button></div></div></div>
+    <div class="eyebrow" style="color:var(--danger-ink)">Delete vault item</div><h2 id="sdv-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">보관함의 ‘<span data-fill="name">카엘 로웬</span>’ 항목을 삭제할까요?</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:13px">삭제 대상: 최신 <span data-fill="ver">v1</span> 포함 버전 <span data-fill="verCount">1</span>개 · <span data-fill="mode">랜덤 신규 생성</span> · <span data-fill="adoptNote">채택 전</span></p><div class="note note--danger"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-vault" data-toast="‘{name}’ 보관함 항목을 삭제했습니다. 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. (시안)" data-then-go="shelf">보관함에서 삭제</button></div></div></div>
 
   <!-- 생성 Persona 정리 -->
   <div class="overlay overlay--bottom" id="sheet-del-persona" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdp-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Clean up Persona</div><h2 id="sdp-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">LIA가 만든 RisuAI Persona ‘<span data-fill="name">세라 하운</span>’을 정리할까요?</h2>
+    <div class="eyebrow" style="color:var(--danger-ink)">Clean up Persona</div><h2 id="sdp-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">LIA가 만든 RisuAI Persona ‘<span data-fill="name">세라 하운</span>’ 항목을 정리할까요?</h2>
     <div class="note note--danger"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. 보관함 항목은 그대로 남으며, 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="RisuAI Persona ‘{name}’을 정리했습니다. 보관함 항목은 남아 있습니다. (시안)">Persona 정리</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-persona" data-toast="RisuAI Persona ‘{name}’ 항목을 정리했습니다. 보관함 항목은 남아 있습니다. (시안)">Persona 정리</button></div></div></div>
 
   <!-- 이전 바인딩 복원 -->
   <div class="overlay overlay--bottom" id="sheet-restore" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sr-t">
@@ -500,72 +485,213 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 </div></div></div>
 <script src="assets/suite.js"></script>
 <script>
+/* =====================================================================
+   LIA 시안의 상태 모델 — 선택·편집·저장·채택·연결이 모두 아래 한 저장소(P, BOUND)를 읽고 쓴다.
+   - P[id].f        : 저장된 Persona 값 (23개 항목)
+   - 화면 입력칸     : 편집 중인 값(초안). 저장 전에는 P를 바꾸지 않는다
+   - P[id].adopted* : RisuAI Persona로 채택한 버전·이름 (보관함 이름과 별개)
+   - BOUND          : 이 채팅에 연결된 Persona (한 채팅에 하나)
+   - P[id].inVault  : 보관함에 있는지 (보관함 삭제 ≠ Persona 삭제)
+   ===================================================================== */
 document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='edit'||e.detail==='assets');});
-/* ---- 표본 Persona: 편집 화면·확인 시트·결과가 같은 대상을 쓰도록 한 곳에서 관리 ---- */
-var PERSONAS={
- sera:{name:'세라 하운',mode:'클래식 생성',vers:['v3 · 수정 방금 · 수동 편집','v2 · 어제 · 항목 재생성(성격)','v1 · 3일 전 · 클래식 생성'],adopted:true,bound:true,
-   f:{gender:'여성',age:'29세',speciesRace:'인간',origin:'북쪽 도서 도시 ‘하운’',role:'왕실 기록실 사서',appearance:'짙은 회색 외투, 은색 열쇠',personality:'신중하지만 약속을 가볍게 여기지 않는다.',speech:'짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.',motivation:'사라진 기록의 행방을 찾는 것',relationshipToCharacter:'열쇠를 맡긴 첫 의뢰인'}},
- kael:{name:'카엘 로웬',mode:'랜덤 신규 생성',vers:['v1 · 지난주 · 랜덤 신규 생성'],adopted:false,bound:false,
-   f:{gender:'남성',age:'34세',role:'떠돌이 지도 제작자',appearance:'햇볕에 그을린 얼굴, 접힌 양피지 지도',personality:'호기심이 많고 약속에 느슨하다.',speech:'말이 빠르고 농담이 잦다.',motivation:'아직 그려지지 않은 땅을 찾는 것'}},
- lionel:{name:'리오넬',mode:'등장인물 추출',vers:['v1 · 2주 전 · 등장인물 추출'],adopted:false,bound:false,
-   f:{role:'왕실 근위대 부관',personality:'규칙을 우선하지만 부하를 아낀다.',speech:'격식체'}},
- wanderer:{name:'이름 없는 길손',mode:'대화에서 추출',vers:['v2 · 한 달 전 · 수동 편집','v1 · 한 달 전 · 대화에서 추출'],adopted:true,bound:false,
-   f:{role:'정체를 밝히지 않는 여행자',personality:'대답을 미루고 상대를 먼저 관찰한다.',speech:'질문으로 답한다.'}}
-};
-function newDraft(c){return {name:c.name,mode:c.mode,vers:['v1 · 방금 · '+c.mode],adopted:false,bound:false,f:{}};}
-var cur='sera';
+var META=[{"k": "name", "l": "이름", "v": "세라 하운"}, {"k": "gender", "l": "성별", "v": "여성"}, {"k": "age", "l": "나이", "v": "29세"}, {"k": "speciesRace", "l": "종족", "v": "인간"}, {"k": "origin", "l": "출신", "v": "북쪽 도서 도시 ‘하운’"}, {"k": "role", "l": "역할/직업", "v": "왕실 기록실 사서"}, {"k": "appearance", "l": "외모", "v": "짙은 회색 외투, 은색 열쇠"}, {"k": "personality", "l": "성격", "v": "신중하지만 약속을 가볍게 여기지 않는다"}, {"k": "visibleSide", "l": "겉으로 보이는 면", "v": "차분하고 예의 바름"}, {"k": "hiddenSide", "l": "숨은 면", "v": "기록되지 않은 일에 대한 집착"}, {"k": "internalContradiction", "l": "내적 모순", "v": "비밀을 지키려다 진실을 외면한다"}, {"k": "background", "l": "배경", "v": "기록실에서 자라 외부와 거리를 둠"}, {"k": "speech", "l": "말투", "v": "짧고 낮은 어조"}, {"k": "motivation", "l": "동기/욕망", "v": "사라진 기록의 행방을 찾는 것"}, {"k": "relationshipStyle", "l": "관계 방식", "v": "거리를 두되 한번 믿으면 끝까지"}, {"k": "relationshipToCharacter", "l": "{{char}}와의 접점", "v": "열쇠를 맡긴 첫 의뢰인"}, {"k": "preferences", "l": "선호/취향", "v": "오래된 종이 냄새, 식은 차"}, {"k": "conflictRepair", "l": "갈등/회복", "v": "말수가 줄었다가 사실부터 정리해 사과"}, {"k": "skills", "l": "기술/강점", "v": "고문서 판독, 암기"}, {"k": "limitations", "l": "한계/약점", "v": "몸싸움에 약함"}, {"k": "knowledgeBoundary", "l": "지식 경계", "v": "왕실 외부 소식은 소문 수준"}, {"k": "boundaries", "l": "RP 경계", "v": "직접 묘사하지 않을 수위 설정은 보관 결과 기준"}, {"k": "worldFitNotes", "l": "세계관 적합 메모", "v": "보름달 전 개방 금지 규칙을 인지"}];
+var COLORS=['b','c','d','n'];
+var P={},ORDER=[],BOUND=null,cur=null,SEQ=0;
 function $id(i){return document.getElementById(i);}
+function clone(o){return JSON.parse(JSON.stringify(o));}
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function cx(o){return " data-ctx='"+JSON.stringify(o).replace(/'/g,'&#39;')+"'";}
 function setCtx(el,o){if(el)el.setAttribute('data-ctx',JSON.stringify(o));}
-function applyPersona(pid,c){
-  if(!PERSONAS[pid])PERSONAS[pid]=newDraft(c||{name:'새 Persona',mode:'생성'});
-  cur=pid;var p=PERSONAS[pid];var page=document.querySelector('[data-page=edit]');
-  var info={name:p.name,mode:p.mode,ver:p.vers[0].split(' · ')[0],verCount:String(p.vers.length),
-    statusText:(p.adopted?'채택됨':'아직 채택 전 (보관함 초안)')+' · '+(p.bound?'이 채팅에 연결됨':'이 채팅에 연결 안 됨'),
-    adoptText:p.adopted?'채택됨 · RisuAI Persona ‘'+p.name+'’':'아직 채택 전 · 여기서 비로소 Persona가 만들어집니다',
-    bindText:p.bound?'이 채팅에 연결됨':(p.adopted?'이 채팅에 연결 안 됨':'채택 후 연결 가능'),
-    variant:p.bound?'bound':'unbound'};
-  window.suiteFill(page,info);
-  page.querySelectorAll('[data-pf]').forEach(function(el){var k=el.dataset.pf;el.value=k==='name'?p.name:(p.f[k]||'');});
-  page.querySelectorAll('input[id^="f-"]').forEach(function(el){var k=el.id.slice(2);el.value=k==='name'?p.name:(p.f[k]||'');el.placeholder='비어 있음';});
+function ver(p){return p.vers[0];}
+function fillF(f){var o={};META.forEach(function(m){o[m.k]=(f&&f[m.k])||'';});return o;}
+function mk(id,mode,color,f,vers,adopted,adoptedVer,adoptedName){
+  var p={id:id,mode:mode,color:color,f:fillF(f),locks:{},ui:{},vers:vers,adopted:!!adopted,adoptedVer:adoptedVer||null,adoptedName:adoptedName||null,inVault:true,draft:null};
+  p.vers[0].f=clone(p.f);return p;}
+function seed(){
+  var sf={};META.forEach(function(m){sf[m.k]=m.v;});
+  P.sera=mk('sera','클래식 생성','',sf,[{n:3,when:'방금',note:'수동 편집 · 항목 2개 변경'},{n:2,when:'어제',note:'항목 재생성 (성격)'},{n:1,when:'3일 전',note:'클래식 생성 · 원본: 세라 하운'}],true,3,'세라 하운');
+  P.kael=mk('kael','랜덤 신규 생성','c',{name:'카엘 로웬',gender:'남성',age:'34세',role:'떠돌이 지도 제작자',appearance:'햇볕에 그을린 얼굴, 접힌 양피지 지도',personality:'호기심이 많고 약속에 느슨하다.',speech:'말이 빠르고 농담이 잦다.',motivation:'아직 그려지지 않은 땅을 찾는 것'},[{n:1,when:'지난주',note:'랜덤 신규 생성'}],false);
+  P.lionel=mk('lionel','등장인물 추출','d',{name:'리오넬',role:'왕실 근위대 부관',personality:'규칙을 우선하지만 부하를 아낀다.',speech:'격식체'},[{n:1,when:'2주 전',note:'등장인물 추출'}],false);
+  P.wanderer=mk('wanderer','대화에서 추출','n',{name:'이름 없는 길손',role:'정체를 밝히지 않는 여행자',personality:'대답을 미루고 상대를 먼저 관찰한다.',speech:'질문으로 답한다.'},[{n:2,when:'한 달 전',note:'수동 편집'},{n:1,when:'한 달 전',note:'대화에서 추출'}],true,2,'이름 없는 길손');
+  ORDER=['sera','kael','lionel','wanderer'];BOUND='sera';
+}
+var CANDF={
+  mira:{role:'약재상 견습생',age:'17세',personality:'손끝이 빠르고 겁이 많다.',appearance:'약초 얼룩이 밴 앞치마',speech:'존댓말, 말끝을 흐린다.'},
+  tobi:{role:'순회 서기',age:'41세',personality:'기록에 집착하고 소문을 믿지 않는다.',speech:'사무적인 어조'},
+  har:{role:'은퇴한 등대지기',age:'63세',personality:'과묵하고 날씨를 잘 읽는다.',speech:'낮고 느린 어조'},
+  rowen:{role:'정원사',personality:'경계심이 많지만 약속은 지킨다.',appearance:'이끼 낀 장갑',speech:'짧은 문장'},
+  archivist:{role:'왕실 기록관',personality:'(직접 근거 적음)',speech:'격식체'}};
+function mkpid(){return 'g'+(++SEQ);}
+function av(p,name,sm){return '<div class="avatar'+(sm?' avatar--sm':'')+(p.color?' avatar--'+p.color:'')+'">'+esc((name||p.f.name||'?').charAt(0))+'</div>';}
+function risuList(){return ORDER.map(function(i){return P[i];}).filter(function(p){return p&&p.adopted;});}
+
+/* ---------- 목록 렌더링: 모두 P에서 ---------- */
+function renderMine(){
+  var b=BOUND&&P[BOUND];var pk=$id('pocket');
+  if(b){var stale=b.adoptedVer!==ver(b).n;
+    pk.innerHTML=av(b,b.adoptedName)+'<div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">'+esc(b.adoptedName)+'</h2><p>원본: RisuAI Persona ‘'+esc(b.adoptedName)+'’ (v'+b.adoptedVer+') · Live: 이 채팅 소유 복사본'+(stale&&b.inVault?' · 보관함에는 더 새로운 v'+ver(b).n+'가 있습니다':'')+'</p></div>'
+    +'<div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit"'+cx({pid:b.id})+(b.inVault?'':' disabled title="보관함에서 삭제되어 편집할 수 없습니다"')+'><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button></div>';
+  }else{
+    pk.innerHTML='<div class="avatar avatar--n">?</div><div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span><h2 style="margin-top:6px">연결된 Persona 없음</h2><p>RisuAI 기본 Persona가 그대로 적용되고 있습니다. LIA는 기본 Persona 선택을 바꾸지 않습니다.</p></div><div class="pocket__act"><button class="btn btn--primary" data-open="sheet-bind"><i data-i="link"></i>Persona 연결…</button><button class="btn" data-go="make"><i data-i="spark"></i>새로 만들기</button></div>';}
+  var list=risuList();var h='';
+  list.forEach(function(p){var on=BOUND===p.id;
+    h+='<button class="pcard" data-open="sheet-bind"'+cx({bindTo:p.id})+'>'+av(p,p.adoptedName,true)+'<div><b>'+esc(p.adoptedName)+' <span class="muted" style="font-weight:500">원본</span></b><small>채택 v'+p.adoptedVer+(on?' · 이 채팅에 연결':' · 어느 채팅에도 연결되지 않음')+'</small></div><div class="pcard__side"><span class="bind '+(on?'bind--here"><i data-i="check" data-size="sm"></i>이 채팅':'bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨')+'</span></div></button>';});
+  h+='<div class="pcard" aria-disabled="true" style="opacity:.8"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live <span class="muted" style="font-weight:500">Live Persona</span></b><small>‘바닷가 마을’ 채팅이 관리 중</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="lock" data-size="sm"></i>다른 채팅 관리 · 직접 연결 불가</span></div></div>';
+  if(!list.length)h='<div class="empty"><b>채택한 Persona가 없습니다</b><span>보관함의 Persona를 RisuAI Persona로 채택하면 이곳에서 연결할 수 있습니다.</span></div>'+h;
+  $id('mine-list').innerHTML=h;window.suiteIcons($id('pocket'));window.suiteIcons($id('mine-list'));
+}
+function renderShelf(){
+  var items=ORDER.map(function(i){return P[i];}).filter(function(p){return p&&p.inVault;});var h='';
+  items.forEach(function(p){var v=ver(p),stale=p.adopted&&p.adoptedVer!==v.n;
+    var badge=p.adopted?(stale?'<span class="badge badge--warn">채택 v'+p.adoptedVer+' · 수정본 미반영</span>':'<span class="badge badge--ok">채택됨</span>'):'<span class="badge badge--warn">초안</span>';
+    h+='<button class="row" data-go="edit"'+cx({pid:p.id})+'>'+av(p,p.f.name,true)+'<div><div class="row__title">'+esc(p.f.name)+' '+badge+'</div><div class="row__meta">'+esc(p.mode)+' · v'+v.n+' · 수정 '+esc(v.when)+(BOUND===p.id?' · 이 채팅에 연결':'')+'</div></div><i class="ic faint" data-i="arrow"></i></button>';});
+  $id('shelf-list').innerHTML=h;$id('shelf-empty').hidden=items.length>0;$id('shelf-n').textContent=items.length;$id('nav-shelf-n').textContent=items.length;
+  window.suiteIcons($id('shelf-list'));
+}
+function renderSources(){
+  var sel=$id('src-sel'),keep=sel.value,list=risuList();
+  sel.innerHTML=list.map(function(p){return '<option value="'+p.id+'">'+esc(p.adoptedName)+' (RisuAI Persona)</option>';}).join('');
+  if(keep&&P[keep]&&P[keep].adopted)sel.value=keep;
+  var has=list.length>0;$id('mk-classic').disabled=!has;
+  $id('src-hint').textContent=has?'성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.':'출발점이 될 RisuAI Persona가 없습니다. 먼저 Persona를 채택하세요.';
+}
+function renderAssetTarget(){
+  var sel=$id('asset-target'),keep=sel.value,list=risuList(),b=BOUND&&P[BOUND];
+  sel.innerHTML='<option value="">자동 (현재 Source Persona) · '+esc(b?b.adoptedName:'연결 없음')+'</option>'+list.map(function(p){return '<option value="'+p.id+'">'+esc(p.adoptedName)+'</option>';}).join('');
+  if(keep&&P[keep])sel.value=keep;
+}
+
+/* ---------- 편집 화면 ---------- */
+function idx(el){if(!el)return 0;var bs=[].slice.call(el.children);for(var i=0;i<bs.length;i++){if(bs[i].getAttribute('aria-pressed')==='true'||bs[i].classList.contains('is-on'))return i;}return 0;}
+function setIdx(el,i){if(!el)return;[].slice.call(el.children).forEach(function(b,k){if(el.classList.contains('seg'))b.setAttribute('aria-pressed',String(k===i));else b.classList.toggle('is-on',k===i);});}
+function populate(p){
+  var root=$id('edit-root');
+  root.querySelectorAll('[data-key]').forEach(function(el){el.value=p.f[el.dataset.key]||'';});
+  root.querySelectorAll('[data-lock]').forEach(function(el){el.checked=!!p.locks[el.dataset.lock];});
+  setIdx($id('ed-lang'),p.ui.lang||0);setIdx($id('ed-density'),p.ui.density==null?1:p.ui.density);
+  setIdx($id('ad-lang'),p.ui.adLang||0);setIdx($id('ad-mode'),p.ui.adMode||0);
+}
+function readDraft(){var f={},locks={};META.forEach(function(m){var el=$id('f-'+m.k);f[m.k]=el?el.value:'';var c=document.querySelector('[data-lock="'+m.k+'"]');locks[m.k]=!!(c&&c.checked);});
+  return {f:f,locks:locks,lang:idx($id('ed-lang')),density:idx($id('ed-density'))};}
+function writeDraft(d){META.forEach(function(m){document.querySelectorAll('[data-key="'+m.k+'"]').forEach(function(el){el.value=d.f[m.k]||'';});var c=document.querySelector('[data-lock="'+m.k+'"]');if(c)c.checked=!!d.locks[m.k];});setIdx($id('ed-lang'),d.lang);setIdx($id('ed-density'),d.density);}
+function editInfo(p){var v=ver(p),stale=p.adopted&&p.adoptedVer!==v.n;
+  return {pid:p.id,name:p.f.name,mode:p.mode,ver:'v'+v.n,verCount:String(p.vers.length),
+    statusText:(p.adopted?'채택됨 · v'+p.adoptedVer+(stale?' (수정본 v'+v.n+' 미반영)':''):'아직 채택 전 (보관함 초안)')+' · '+(BOUND===p.id?'이 채팅에 연결됨':'이 채팅에 연결 안 됨'),
+    adoptText:p.adopted?'채택됨 · RisuAI Persona ‘'+p.adoptedName+'’ (v'+p.adoptedVer+')':'아직 채택 전 · 여기서 비로소 Persona가 만들어집니다',
+    bindText:BOUND===p.id?'이 채팅에 연결됨':(p.adopted?'이 채팅에 연결 안 됨':'채택 후 연결 가능'),
+    adoptNote:p.adopted?'채택한 RisuAI Persona ‘'+p.adoptedName+'’ 항목은 그대로 남음':'채택 전이라 RisuAI Persona 영향 없음',
+    variant:BOUND===p.id?'bound':'unbound'};}
+function diffLabels(a,b){return META.filter(function(m){return (a[m.k]||'')!==(b[m.k]||'');}).map(function(m){return m.l;});}
+function renderEdit(){
+  var p=cur&&P[cur];if(!p)return;var info=editInfo(p);
+  window.suiteFill($id('edit-root'),info);
   var vl=$id('ver-list');vl.innerHTML='';
   p.vers.forEach(function(v,i){var d=document.createElement('div');d.className='ver';
-    d.innerHTML='<span class="badge'+(i===0?' badge--ok':'')+'">'+(i===0?'현재':v.split(' · ')[0])+'</span><div><b></b><small></small></div><button class="btn btn--sm"></button>';
-    d.querySelector('b').textContent=v.split(' · ').slice(0,2).join(' · ');d.querySelector('small').textContent=v.split(' · ').slice(2).join(' · ');
-    var b=d.querySelector('button');b.textContent=i===0?'열기':'비교';b.setAttribute('data-toast','‘'+p.name+'’ '+v.split(' · ')[0]+(i===0?'를 열었습니다.':'와 현재 버전을 비교합니다.')+' (시안)');vl.appendChild(d);});
+    d.innerHTML='<span class="badge'+(i===0?' badge--ok':'')+'">'+(i===0?'현재':'v'+v.n)+'</span><div><b></b><small></small></div><button class="btn btn--sm"></button>';
+    d.querySelector('b').textContent='v'+v.n+' · '+v.when;d.querySelector('small').textContent=v.note;
+    var b=d.querySelector('button');b.textContent=i===0?'열기':'비교';
+    var msg;if(i===0)msg='‘'+p.f.name+'’ v'+v.n+'를 열었습니다. (시안)';
+    else if(v.f){var dl=diffLabels(v.f,p.vers[0].f);msg='‘'+p.f.name+'’ v'+v.n+' ↔ v'+p.vers[0].n+': '+(dl.length?'바뀐 항목 '+dl.slice(0,4).join(', ')+(dl.length>4?' 외 '+(dl.length-4)+'개':''):'항목 값 차이 없음')+' (시안)';}
+    else msg='‘'+p.f.name+'’ v'+v.n+'는 항목별 기록만 남아 있어 전체 비교는 제공하지 않습니다. (시안)';
+    b.setAttribute('data-toast',msg);vl.appendChild(d);});
   setCtx($id('btn-del-vault'),info);
-  var dp=$id('btn-del-persona');dp.disabled=!p.adopted;$id('hint-del-persona').hidden=p.adopted;setCtx(dp,info);
-  $id('btn-adopt').textContent=p.adopted?'채택본 다시 저장':'채택하기';setCtx($id('btn-adopt'),info);
-  var bb=$id('btn-bind');bb.disabled=!p.adopted||p.bound;$id('hint-bind').hidden=p.adopted;setCtx(bb,{bindTo:p.name});
-  var ub=$id('btn-unbind');ub.disabled=!p.bound;setCtx(ub,info);
-  window.suiteSnapshot&&window.suiteSnapshot();
+  setCtx($id('btn-del-persona'),{pid:p.id,name:p.adoptedName||p.f.name});
+  setCtx($id('btn-unbind'),{pid:p.id,name:p.adoptedName||p.f.name});
+  setCtx($id('btn-bind'),{bindTo:p.id});
+  setCtx($id('btn-adopt'),{name:p.f.name});
+  refreshActions();
 }
-document.addEventListener('suite:ctx',function(e){if(e.detail.page==='edit'&&e.detail.ctx&&e.detail.ctx.pid)applyPersona(e.detail.ctx.pid,e.detail.ctx);});
-/* 채택하기 → 표본 상태 갱신 */
-document.addEventListener('click',function(e){if(e.target.closest('#btn-adopt')){PERSONAS[cur].adopted=true;setTimeout(function(){applyPersona(cur);},0);}});
-/* ---- 연결 시트: 선택한 Persona가 버튼·결과에 ---- */
-function syncBind(){var on=document.querySelector('#sheet-bind [data-bind-name].is-on');var go=$id('btn-bind-go');if(!on)return;
-  var isCur=on.dataset.bindCurrent==='1';go.disabled=isCur;$id('bind-hint').hidden=!isCur;
-  go.setAttribute('data-toast','‘'+on.dataset.bindName+'’을(를) 이 채팅에 연결했습니다. 다른 채팅의 연결은 그대로입니다. (시안)');}
-document.addEventListener('suite:open',function(e){
-  if(e.detail.id==='sheet-bind'){var want=e.detail.ctx&&e.detail.ctx.bindTo;
-    if(want){var t=document.querySelector('#sheet-bind [data-bind-name="'+want+'"]');if(t)t.click();}
-    syncBind();}
-  if(e.detail.id==='dlg-cand'){syncCand();}
+function refreshActions(){
+  var p=cur&&P[cur];if(!p)return;var dirty=window.suiteDirty('edit')>0,v=ver(p),stale=!p.adopted||p.adoptedVer!==v.n;
+  var ad=$id('btn-adopt');ad.disabled=dirty||!stale;ad.textContent=!p.adopted?'채택하기':(stale?'v'+v.n+' 수정본으로 채택본 갱신':'채택됨 (최신)');
+  $id('hint-adopt').hidden=!dirty;
+  $id('btn-del-persona').disabled=!p.adopted;$id('hint-del-persona').hidden=p.adopted;
+  $id('btn-bind').disabled=!p.adopted||BOUND===p.id;$id('hint-bind').hidden=p.adopted;
+  $id('btn-unbind').disabled=BOUND!==p.id;
+}
+function applyPersona(pid){
+  var p=P[pid];if(!p)return;
+  if(cur===pid){renderEdit();return;}                 /* 같은 Persona를 다시 열면 편집 중인 값을 그대로 둔다 */
+  if(cur&&P[cur])P[cur].draft=window.suiteDirty('edit')>0?readDraft():null;  /* 떠나는 Persona의 미저장 편집은 보관 */
+  cur=pid;populate(p);window.suiteSnapshot('edit');   /* 기준값 = 저장된 값, 범위는 '편집'만 */
+  if(p.draft){writeDraft(p.draft);}
+  window.suiteMarkDirty();renderEdit();
+}
+function clearEdit(){cur=null;populate({f:fillF({}),locks:{},ui:{}});window.suiteSnapshot('edit');}
+function renderAll(){renderMine();renderShelf();renderSources();renderAssetTarget();renderEdit();}
+
+/* ---------- 저장 / 되돌리기 (편집 범위) ---------- */
+document.addEventListener('suite:save',function(e){
+  if(e.detail.scope!=='edit')return;var p=cur&&P[cur];if(!p)return;
+  var d=readDraft(),ch=diffLabels(p.f,d.f),lockCh=META.some(function(m){return !!p.locks[m.k]!==!!d.locks[m.k];});
+  if(ch.length||lockCh){p.vers.unshift({n:ver(p).n+1,when:'방금',note:'수동 편집'+(ch.length?' · 항목 '+ch.length+'개 변경'+(ch.length<=3?' ('+ch.join(', ')+')':''):' · 잠금 변경'),f:clone(d.f)});}
+  p.f=d.f;p.locks=d.locks;p.ui.lang=d.lang;p.ui.density=d.density;p.draft=null;
+  ORDER=[p.id].concat(ORDER.filter(function(i){return i!==p.id;}));
+  renderAll();
 });
-/* ---- 후보 선택: 고른 후보가 생성 작업·편집 화면까지 ---- */
+document.addEventListener('suite:revert',function(e){if(e.detail.scope!=='edit')return;var p=cur&&P[cur];if(p)p.draft=null;renderEdit();});
+/* 입력: 같은 항목(요약·전체)은 한 값으로 */
+document.addEventListener('input',function(e){var el=e.target,k=el.dataset&&el.dataset.key;
+  if(k)document.querySelectorAll('[data-key="'+k+'"]').forEach(function(o){if(o!==el)o.value=el.value;});
+  if(el.closest&&el.closest('#edit-root'))setTimeout(refreshActions,0);});
+document.addEventListener('click',function(e){
+  if(e.target.closest('#edit-root'))setTimeout(refreshActions,0);
+  var rg=e.target.closest('[data-regen]');
+  if(rg){var k=rg.dataset.regen,m=META.filter(function(x){return x.k===k;})[0],lock=document.querySelector('[data-lock="'+k+'"]');
+    if(lock&&lock.checked){window.suiteToast('‘'+m.l+'’ 항목은 잠겨 있어 다시 만들지 않았습니다. (시안)');return;}
+    var nv=m.l+' (다시 만든 표본 '+(++SEQ)+')';document.querySelectorAll('[data-key="'+k+'"]').forEach(function(o){o.value=nv;});window.suiteMarkDirty();window.suiteToast('‘'+m.l+'’ 항목만 다시 만들었습니다. 저장해야 반영됩니다. (시안)');setTimeout(refreshActions,0);}
+},false);
+
+/* ---------- 채택 · 연결 · 삭제 ---------- */
+document.addEventListener('click',function(e){
+  if(e.target.closest('#btn-adopt')){var b=$id('btn-adopt');if(b.disabled)return;var p=P[cur];
+    p.adopted=true;p.adoptedVer=ver(p).n;p.adoptedName=p.f.name;p.ui.adLang=idx($id('ad-lang'));p.ui.adMode=idx($id('ad-mode'));renderAll();return;}
+  var b2=e.target.closest('[data-act]');if(!b2||b2.disabled)return;
+  var ov=b2.closest('.overlay'),c=(ov&&ov._ctx)||{},act=b2.dataset.act,p2=P[c.pid];
+  if(act==='bind-go'){var on=$id('bind-list').querySelector('.is-on[data-pid]');if(on)BOUND=on.dataset.pid;}
+  if(act==='unbind'&&BOUND===c.pid)BOUND=null;
+  if(act==='del-persona'&&p2){p2.adopted=false;p2.adoptedVer=null;p2.adoptedName=null;if(BOUND===p2.id)BOUND=null;if(!p2.inVault){delete P[p2.id];ORDER=ORDER.filter(function(i){return i!==p2.id;});}}
+  if(act==='del-vault'&&p2){p2.inVault=false;p2.draft=null;if(!p2.adopted){delete P[p2.id];ORDER=ORDER.filter(function(i){return i!==p2.id;});}if(cur===p2.id)clearEdit();}
+  renderAll();
+});
+/* 연결 시트: 목록은 채택한 Persona에서 만든다 */
+function renderBindList(want){
+  var list=risuList(),h='';
+  list.forEach(function(p){h+='<button class="big-choice'+(p.id===want?' is-on':'')+'" data-select-row="'+p.id+'" data-pid="'+p.id+'">'+av(p,p.adoptedName,true)+'<div><b>'+esc(p.adoptedName)+' (원본)</b><span>'+(BOUND===p.id?'✓ 지금 이 채팅에 연결됨':'＋ 연결 안 됨')+' · 채택 v'+p.adoptedVer+'</span></div><span class="pick">선택</span></button>';});
+  h+='<div class="big-choice" aria-disabled="true" style="opacity:.7;cursor:not-allowed"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live (‘바닷가 마을’ 관리)</b><span>🔒 다른 채팅에서 관리 중인 Live Persona는 이 채팅에 직접 연결할 수 없습니다. 원본 Persona를 선택하세요.</span></div><span class="pick">불가</span></div>';
+  if(!list.length)h='<div class="empty"><b>연결할 수 있는 Persona가 없습니다</b><span>먼저 보관함의 Persona를 RisuAI Persona로 채택하세요.</span></div>'+h;
+  $id('bind-list').innerHTML=h;
+}
+function syncBind(){var on=$id('bind-list').querySelector('.is-on[data-pid]'),go=$id('btn-bind-go'),hint=$id('bind-hint');
+  if(!on){go.disabled=true;hint.hidden=true;return;}
+  var pid=on.dataset.pid,same=BOUND===pid;go.disabled=same;
+  hint.hidden=false;hint.textContent=same?'이미 이 채팅에 연결된 Persona입니다.':(BOUND?'현재 연결된 ‘'+P[BOUND].adoptedName+'’ 연결은 해제됩니다. 한 채팅에는 하나만 연결됩니다.':'연결하면 이 채팅에서 이 Persona가 쓰입니다.');
+  setCtx(go,{name:P[pid].adoptedName,pid:pid});}
+/* ---------- 만들기: 입력 → 생성 작업 → 보관함 → 편집 화면이 같은 데이터 ---------- */
 function syncCand(){var grp=[].slice.call(document.querySelectorAll('#dlg-cand [data-detail-root]')).find(function(g){return !g.hidden;});
-  var on=grp&&grp.querySelector('[data-cand].is-on');var go=$id('btn-cand-go');if(!on){go.disabled=true;return;}go.disabled=false;
-  var c=JSON.parse(on.dataset.cand);setCtx(go,c);go.textContent='‘'+c.name+'’ 상세 생성';}
-document.addEventListener('click',function(e){
-  if(e.target.closest('#sheet-bind [data-bind-name]'))setTimeout(syncBind,0);
+  var on=grp&&grp.querySelector('[data-cand].is-on'),go=$id('btn-cand-go');if(!on){go.disabled=true;return;}go.disabled=false;
+  var c=JSON.parse(on.dataset.cand);go.dataset.cand=on.dataset.cand;go.textContent='‘'+c.name+'’ 상세 생성';}
+document.addEventListener('click',function(e){          /* 캡처: 실행 순간의 선택을 대상으로 확정 */
+  var t;
+  if(e.target.closest('#mk-classic')){var src=P[$id('src-sel').value];if(!src)return;
+    var f=Object.assign(clone(src.f),{name:src.adoptedName+' · 이 세계판',worldFitNotes:'이 세계의 규칙에 맞게 재해석함 (표본)'});
+    setCtx($id('mk-classic'),{pid:mkpid(),name:f.name,mode:'클래식 생성',source:src.adoptedName,f:f});}
+  if(e.target.closest('#mk-conv'))setCtx($id('mk-conv'),{pid:mkpid(),name:'대화에서 추출한 Persona',mode:'대화에서 추출',f:{role:'정체를 밝히지 않는 여행자',personality:'사용자 메시지에서 드러난 신중함',speech:'질문으로 답한다.'}});
+  if(e.target.closest('#btn-cand-go')){syncCand();var go=$id('btn-cand-go');if(!go.dataset.cand)return;var c=JSON.parse(go.dataset.cand);c.f=CANDF[c.pid];c.pid=mkpid();setCtx(go,c);}
+  if(e.target.closest('#sheet-bind [data-select-row]'))setTimeout(syncBind,0);
   if(e.target.closest('#dlg-cand [data-cand]'))setTimeout(syncCand,0);
-});
-/* 실행 버튼을 누르는 순간(캡처 단계, 다른 처리보다 먼저) 현재 선택을 다시 읽어 대상 확정 */
-document.addEventListener('click',function(e){
-  if(e.target.closest('#btn-cand-go'))syncCand();
-  if(e.target.closest('#btn-bind-go'))syncBind();
 },true);
-document.addEventListener('suite:ready',function(){applyPersona('sera');});
+document.addEventListener('suite:jobdone',function(e){
+  if(e.detail.id!=='job-gen'||!e.detail.ctx||!e.detail.ctx.pid)return;var c=e.detail.ctx;
+  if(!P[c.pid]){var f=fillF(c.f);f.name=c.name;P[c.pid]=mk(c.pid,c.mode,COLORS[SEQ%4],f,[{n:1,when:'방금',note:c.mode+(c.source?' · 원본: '+c.source:'')}],false);ORDER.unshift(c.pid);}
+  renderAll();
+});
+document.addEventListener('suite:ctx',function(e){if(e.detail.page==='edit'&&e.detail.ctx&&e.detail.ctx.pid)applyPersona(e.detail.ctx.pid);});
+document.addEventListener('suite:open',function(e){
+  if(e.detail.id==='sheet-bind'){renderBindList((e.detail.ctx&&e.detail.ctx.bindTo)||BOUND);syncBind();}
+  if(e.detail.id==='dlg-cand')syncCand();
+});
+document.addEventListener('suite:ready',function(){document.querySelectorAll('[data-key]').forEach(function(el){el.dataset.dirtyKey='f:'+el.dataset.key;});document.querySelectorAll('[data-lock]').forEach(function(el){el.dataset.dirtyKey='l:'+el.dataset.lock;});seed();applyPersona('sera');renderAll();});
 </script>
 </body>
 </html>

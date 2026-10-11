@@ -90,7 +90,7 @@
     <div class="nav-label">설정 및 진단</div>
     <button class="nav-item" data-go="log" data-short="기록"><i data-i="log"></i><span class="nav-text">현상 기록</span><span class="count">4</span></button>
     <button class="nav-item" data-go="settings" data-short="설정"><i data-i="sliders"></i><span class="nav-text">리콜 설정</span></button>
-    <div class="side-foot"><b>text-embedding-3-small</b><span>openai · 1,536차원 · 연결됨</span></div>
+    <div class="side-foot"><b id="foot-model">text-embedding-3-small</b><span id="foot-meta">openai · 1,536차원 · 연결됨</span></div>
   </nav>
 
   <main class="main"><div class="page-body">
@@ -180,14 +180,14 @@
   </section>
 
   <!-- ===== 임베딩 · 서버 ===== -->
-  <section class="page" data-page="connect" data-track>
+  <section class="page" data-page="connect" data-track data-track-group="fb">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div><div class="page-actions"><button class="btn" data-toast="모든 설정을 기본값으로 화면에 채웠습니다. 저장해야 적용됩니다. (시안)">기본값 불러오기</button></div></div>
     <div class="tabs" role="tablist" data-subtabs="c"><button class="tab" role="tab" aria-selected="true" data-subtab="emb">임베딩</button><button class="tab" role="tab" aria-selected="false" data-subtab="mig">이전 · 검증</button><button class="tab" role="tab" aria-selected="false" data-subtab="srv">서버</button></div>
     <div data-subpanel="emb" data-group="c" class="is-active"><div class="stack">
-      <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge badge--ok">연결 확인됨</span></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge badge--ok" id="emb-badge">연결 확인됨</span></div>
         <label class="switch" style="margin-bottom:12px"><input type="checkbox" checked><span class="switch__track"></span><span class="switch__text"><b>임베딩 사용</b><small>끄면 새 벡터를 만들지 않습니다. 원문 보관은 계속됩니다.</small></span></label>
-        <div class="grid g2"><div class="field"><label>Provider</label><select class="select"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option><option>custom HTTP</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" value="text-embedding-3-small"><button class="btn btn--sm" data-toast="Ollama 모델을 검색했습니다. (시안)">Ollama 모델 검색</button></div></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장된 키가 있습니다 (표시하지 않음)"><span class="hint">입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다. 비워두면 유지합니다.</span></div></div>
-        <div class="cluster" style="margin-top:14px"><button class="btn" data-toast="임베딩 테스트 성공: 1536차원 · 83ms (시안)">임베딩 테스트</button><button class="btn btn--ghost" data-open="dlg-key-del">키 삭제…</button></div>
+        <div class="grid g2"><div class="field"><label>Provider</label><select class="select" id="emb-provider"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option><option>custom HTTP</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" id="emb-model" value="text-embedding-3-small"><button class="btn btn--sm" data-toast="Ollama 모델을 검색했습니다. (시안)">Ollama 모델 검색</button></div></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장된 키가 있습니다 (표시하지 않음)"><span class="hint">입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다. 비워두면 유지합니다.</span></div></div>
+        <div class="cluster" style="margin-top:14px"><button class="btn" id="btn-emb-test">임베딩 테스트</button><button class="btn btn--ghost" data-open="dlg-key-del">키 삭제…</button></div>
         <details class="fold" style="margin-top:14px"><summary>고급 연결 설정 <span class="hint">요청 · 쿼리/문서 · Custom HTTP</span></summary><div class="fold__body"><div class="grid g2">
           <div class="field"><label>정확한 Endpoint (선택)</label><input class="input"></div><div class="field"><label>벡터 차원 (0=자동)</label><input class="input" type="number" value="0"></div>
           <div class="field"><label>요청 제한시간(ms)</label><input class="input" type="number" value="30000"></div><div class="field"><label>배치 크기</label><input class="input" type="number" value="16"></div>
@@ -225,12 +225,12 @@
   </section>
 
   <!-- ===== 리콜 설정 ===== -->
-  <section class="page" data-page="settings" data-track>
+  <section class="page" data-page="settings" data-track data-track-group="fb">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recall settings</div><h1 class="page-title">리콜 설정</h1><p class="page-desc">프리셋으로 시작하고, 필요한 값만 세부 조정합니다. 임베딩 설정과 같은 저장 바를 사용합니다.</p></div></div>
     <div class="stack">
-      <div class="card"><div class="card__head"><div><h2 class="card__title">리콜 품질 프리셋</h2><p class="card__desc">4개 값(Top K · 최소 점수 · 후보 수 · 주입 글자)을 한 번에 조절합니다.</p></div></div><div class="choices" data-dirty><button class="choice"><b>가볍게</b><span>Top 6 · 빠름</span></button><button class="choice is-on"><b>균형</b><span>Top 10 · 권장</span><small>기본값</small></button><button class="choice"><b>깊게</b><span>Top 20 · 느림</span></button></div></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">리콜 품질 프리셋</h2><p class="card__desc">4개 값(Top K · 최소 점수 · 후보 수 · 주입 글자)을 한 번에 조절합니다. 현재: <b data-preset-label="recall">균형</b></p></div></div><div class="choices" data-preset-group="recall"><button class="choice" data-preset='{"topk": "6", "min": "0.45"}'><b>가볍게</b><span>Top 6 · 빠름</span></button><button class="choice is-on" data-preset='{"topk": "10", "min": "0.35"}'><b>균형</b><span>Top 10 · 권장</span><small>기본값</small></button><button class="choice" data-preset='{"topk": "20", "min": "0.25"}'><b>깊게</b><span>Top 20 · 느림</span></button></div></div>
       <div class="card"><h2 class="card__title">기억 경로</h2><div class="setting"><div><div class="setting__name">응답 자동 캡처</div><div class="setting__desc">영구 저장 원천은 유저 입력 + AI 최종 응답 턴으로 고정됩니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div><div class="setting"><div><div class="setting__name">증거 게이트</div><div class="setting__desc">근거가 약한 기억은 주입하지 않습니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div></div>
-      <details class="fold"><summary>세부 값 <span class="hint">Top K · 최소 점수 · 후보 수 · 시간 제한 외 7개</span></summary><div class="fold__body grid g2"><div class="field"><label>Top K</label><input class="input" type="number" value="10"><span class="hint">최종 선택할 기억의 최대 개수</span></div><div class="field"><label>최소 점수</label><input class="input" type="number" step=".01" value="0.35"></div></div></details>
+      <details class="fold"><summary>세부 값 <span class="hint">Top K · 최소 점수 · 후보 수 · 시간 제한 외 7개</span></summary><div class="fold__body grid g2"><div class="field"><label>Top K</label><input class="input" type="number" value="10" data-preset-field="recall" data-preset-key="topk"><span class="hint">최종 선택할 기억의 최대 개수</span></div><div class="field"><label>최소 점수</label><input class="input" type="number" step=".01" value="0.35" data-preset-field="recall" data-preset-key="min"></div></div></details>
       <details class="fold"><summary>ARG 및 설정 출처 <span class="badge">감사용</span></summary><div class="fold__body"><p class="muted" style="margin-top:0">우선순위: 기본값 &lt; GUI 저장값 &lt; 명시적 ARG. ARG가 있으면 해당 컨트롤은 잠기고 이유가 표시됩니다.</p><div class="cluster"><span class="badge">선언 74</span><span class="badge badge--warn">ARG 2</span><span class="badge badge--info">저장 18</span><span class="badge">기본 54</span></div></div></details>
     </div>
   </section>
@@ -311,6 +311,23 @@ document.addEventListener('click',function(e){
   var px=e.target.closest('[data-proxy]');if(px){syncScopes();var t=$id(px.dataset.proxy);window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
 });
 document.addEventListener('suite:ready',function(){syncScopes();syncCand();});
+/* 임베딩 설정 상태는 하나의 데이터로 본다.
+   - 저장된 값(Provider·모델)  : suiteSaved()  → 사이드바 푸터·카드 배지가 이 값을 보여준다
+   - 테스트에 성공한 조합      : TESTED        → '임베딩 테스트'는 화면에 입력된 값을 시험하고 이 집합에 더한다
+   저장된 조합이 TESTED에 없으면 '연결 테스트 필요'로 표시한다. */
+var TESTED=null;
+function dimOf(m){return /large/.test(m)?'3,072':/small|ada/.test(m)?'1,536':'';}
+function syncFoot(){var pv=$id('emb-provider'),md=$id('emb-model');if(!pv||!md)return;var sp=window.suiteSaved(pv),sm=window.suiteSaved(md);
+  if(!TESTED){TESTED={};TESTED[sp+'|'+sm]=1;}var ok=!!TESTED[sp+'|'+sm],dirty=window.suiteIsDirtyEl(pv)||window.suiteIsDirtyEl(md),dm=dimOf(sm);
+  $id('foot-model').textContent=sm;
+  $id('foot-meta').textContent=(ok?sp+(dm?' · '+dm+'차원':'')+' · 연결됨':sp+' · 설정 변경됨 · 연결 테스트 필요')+(dirty?' · 저장 전 변경 있음':'');
+  var bd=$id('emb-badge');if(bd){bd.textContent=ok?'연결 확인됨':'연결 테스트 필요';bd.className='badge '+(ok?'badge--ok':'badge--warn');}}
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('#btn-emb-test');if(!t)return;
+  var pv=$id('emb-provider'),md=$id('emb-model'),dm=dimOf(md.value);syncFoot();TESTED[pv.value+'|'+md.value]=1;
+  window.suiteToast('임베딩 테스트 성공: '+pv.value+' · '+md.value+(dm?' · '+dm+'차원':'')+' · 83ms (시안, 저장 전 값도 시험합니다)');syncFoot();});
+['input','change','click'].forEach(function(ev){document.addEventListener(ev,function(e){if(e.target.closest&&e.target.closest('[data-page=connect]'))setTimeout(syncFoot,0);});});
+document.addEventListener('suite:save',function(){setTimeout(syncFoot,0);});document.addEventListener('suite:revert',function(){setTimeout(syncFoot,0);});
+document.addEventListener('suite:ready',syncFoot);
 /* 승인 체크 후에만 점검·복구 시작 가능 */
 document.addEventListener('change',function(e){if(e.target.id==='consent')document.getElementById('btn-maint').disabled=!e.target.checked;});
 /* 필름 스트립: 해당 프레임을 열고 이동 */
