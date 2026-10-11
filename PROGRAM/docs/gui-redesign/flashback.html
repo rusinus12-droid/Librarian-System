@@ -64,7 +64,7 @@
 <div class="proto-bar">
   <a href="index.html">← 시안 목록</a><b>Flashback · 기억 현상실</b>
   <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
-  <span class="grp"><span>열기</span><button data-open="dlg-del-scope">스코프 삭제</button><button data-open="dlg-restore">복원 확인</button><button data-run-job="job-maint">유지보수 실행</button></span>
+  <span class="grp"><span>열기</span><button data-proxy="sc-del">스코프 삭제</button><button data-open="dlg-restore">복원 확인</button><button data-run-job="job-maint">유지보수 실행</button></span>
 </div>
 <div class="stage"><div class="frame" data-device="desktop">
 <div class="app">
@@ -139,18 +139,19 @@
       <div class="list"><button class="row is-on" data-select-row="a"><span class="row__icon">1.1K</span><div><div class="row__title">응답 원문</div><div class="row__meta">최신순</div></div></button><button class="row" data-select-row="b"><span class="row__icon">98</span><div><div class="row__title">에피소드</div></div></button><button class="row" data-select-row="c"><span class="row__icon">48</span><div><div class="row__title">상태 변화</div></div></button></div>
       <div class="stack stack--sm"><div class="cluster"><div class="search grow"><i data-i="search" data-size="sm"></i><input class="input" placeholder="원문 검색..." aria-label="원문 검색"></div><select class="select" style="width:auto" aria-label="정렬"><option>최신순</option><option>오래된 순</option><option>긴 원문 우선</option></select></div>
         <article class="card card--tight"><div class="split"><b>T147 · 응답 #842</b><span class="fb-state badge badge--ok">영구 기록 보호</span></div><p class="muted" style="margin:8px 0">은색 열쇠와 북쪽 문의 조건…</p><div class="cluster"><button class="btn btn--sm" data-toast="원문을 펼쳤습니다. (시안)">원문 펼치기</button><button class="btn btn--sm btn--danger" disabled>삭제 후보에 추가</button></div><p class="why-d" style="display:block">영구 기록은 삭제 후보에 추가할 수 없습니다. 삭제 후보 버튼과 실제 삭제 양쪽에서 보호됩니다.</p></article>
-        <article class="card card--tight"><div class="split"><b>T146 · 응답 #841</b><span class="badge">chunk 2/2 · 1536d</span></div><p class="muted" style="margin:8px 0">누락 복구된 장면 변화…</p><div class="cluster"><button class="btn btn--sm" data-toast="원문을 펼쳤습니다. (시안)">원문 펼치기</button><button class="btn btn--sm btn--danger" data-toast="삭제 후보에 추가했습니다. 아직 삭제되지 않았습니다. (시안)">삭제 후보에 추가</button></div></article>
-        <div class="toolbar-lite card card--flat"><div class="split"><span>삭제 후보 <b>1</b>개</span><div class="cluster"><button class="btn btn--sm" data-toast="후보를 비웠습니다. (시안)">후보 비우기</button><button class="btn btn--sm btn--danger" data-open="dlg-del-items">선택 삭제 적용…</button></div></div><p class="hint" style="margin:6px 0 0">후보에 추가해도 삭제되지 않습니다. 최종 승인을 거쳐야 삭제됩니다.</p></div></div></div></div>
+        <article class="card card--tight"><div class="split"><b>T146 · 응답 #841</b><span class="badge">chunk 2/2 · 1536d</span></div><p class="muted" style="margin:8px 0">누락 복구된 장면 변화…</p><div class="cluster"><button class="btn btn--sm" data-toast="원문을 펼쳤습니다. (시안)">원문 펼치기</button><button class="btn btn--sm btn--danger" data-cand-item="T146 · 응답 #841 (chunk 2/2)">삭제 후보에 추가</button></div></article>
+        <div class="toolbar-lite card card--flat"><div class="split"><span>삭제 후보 <b id="cand-n">0</b>개 <span class="hint" id="cand-names"></span></span><div class="cluster"><button class="btn btn--sm" id="cand-clear" disabled>후보 비우기</button><button class="btn btn--sm btn--danger" id="cand-apply" disabled data-open="dlg-del-items">선택 삭제 적용…</button></div></div><p class="hint" style="margin:6px 0 0">후보에 추가해도 삭제되지 않습니다. 최종 승인을 거쳐야 삭제됩니다.</p></div></div></div></div>
     <div data-subpanel="wl" data-group="v"><div class="stack">
       <div class="card"><div class="card__head"><div><h2 class="card__title">현재 세계선 · 채팅 분기</h2><p class="card__desc">RisuAI 분기 근거와 저장된 턴 연속성</p></div><span class="badge badge--ok">공통 원문 검증됨</span></div><dl class="kv"><dt>현재 채팅</dt><dd>에피소드 42 · chat_a91</dd><dt>부모 채팅</dt><dd>에피소드 41 · chat_61d</dd><dt>분기 메시지</dt><dd>msg_0412</dd><dt>검증된 공통 원문</dt><dd>128 U+A턴 · 256개 메시지</dd></dl></div>
       <div class="card"><div class="card__head"><div><h2 class="card__title">턴 연속성</h2><p class="card__desc">제외된 응답과 벗어난 턴은 삭제하지 않고 아래에 접어 둡니다.</p></div><span class="badge">147개 노드</span></div><div class="grid g4" style="margin-bottom:12px"><div class="note"><b class="num">141</b><br>현재 대화에 연결됨</div><div class="note"><b class="num">0</b><br>격리 · 확인 필요</div><div class="note"><b class="num">4</b><br>선택 안 된 응답</div><div class="note"><b class="num">2</b><br>벗어난 턴</div></div><details class="fold"><summary>현재 대화에서 제외된 기록 · 6개</summary><div class="fold__body hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 현재 리콜에는 사용되지 않습니다.</div></details></div></div></div>
     <div data-subpanel="scopes" data-group="v"><div class="stack">
       <div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다.</div>
-      <div class="cluster"><select class="select" style="width:auto" aria-label="저장소 분류"><option>기억 저장소</option><option>정리 후보</option><option>고아 기억</option><option>전체</option></select><div class="search grow"><i data-i="search" data-size="sm"></i><input class="input" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button class="btn btn--danger" data-open="dlg-del-scope"><i data-i="trash" data-size="sm"></i>선택 삭제 (1)…</button></div>
+      <div class="cluster"><select class="select" style="width:auto" aria-label="저장소 분류"><option>기억 저장소</option><option>정리 후보</option><option>고아 기억</option><option>전체</option></select><div class="search grow"><i data-i="search" data-size="sm"></i><input class="input" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button class="btn btn--danger" id="sc-del" data-open="dlg-del-scope"><i data-i="trash" data-size="sm"></i><span>선택 삭제 (1)…</span></button></div>
       <div class="table-wrap"><table class="table scopes"><thead><tr><th></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>업데이트</th><th></th></tr></thead><tbody>
         <tr class="is-cur"><td><input type="checkbox" disabled aria-label="현재 스코프는 선택할 수 없음"></td><td><b>아스텔 / 에피소드 42</b> <span class="badge badge--info">현재</span></td><td class="num">38.6K</td><td class="num">1,248</td><td>3분 전</td><td></td></tr>
-        <tr><td><input type="checkbox" checked aria-label="선택"></td><td><b>아스텔 / 에피소드 40</b> <span class="badge badge--warn">고아 후보</span></td><td class="num">12.1K</td><td class="num">402</td><td>2주 전</td><td></td></tr>
-        <tr><td><input type="checkbox" aria-label="선택"></td><td>아스텔 / 에피소드 41 <span class="badge">승계 조상</span></td><td class="num">35.0K</td><td class="num">1,130</td><td>5일 전</td><td></td></tr></tbody></table></div></div></div>
+        <tr><td><input type="checkbox" class="sc-sel" checked aria-label="아스텔 / 에피소드 40 선택" data-name="아스텔 / 에피소드 40" data-meta="고아 후보 · 마지막 저장 2주 전" data-chunks="402"></td><td><b>아스텔 / 에피소드 40</b> <span class="badge badge--warn">고아 후보</span></td><td class="num">12.1K</td><td class="num">402</td><td>2주 전</td><td></td></tr>
+        <tr><td><input type="checkbox" class="sc-sel" aria-label="시험용 채팅 선택" data-name="시험용 채팅" data-meta="고아 후보 · 마지막 저장 한 달 전" data-chunks="18"></td><td><b>시험용 채팅</b> <span class="badge badge--warn">고아 후보</span></td><td class="num">0.6K</td><td class="num">18</td><td>한 달 전</td><td></td></tr>
+        <tr><td><input type="checkbox" disabled aria-label="아스텔 / 에피소드 41 선택 불가 (승계 조상)"></td><td>아스텔 / 에피소드 41 <span class="badge">승계 조상</span><div class="hint" style="color:var(--danger-ink)">현재 채팅이 이어받은 조상이라 선택할 수 없습니다.</div></td><td class="num">35.0K</td><td class="num">1,130</td><td>5일 전</td><td></td></tr></tbody></table></div></div></div>
   </section>
 
   <!-- ===== 기억 관리 ===== -->
@@ -241,10 +242,10 @@
 
   <!-- 스코프 삭제: 현행의 이질적인 남색 대화상자를 테마 토큰으로 통일, 위험 스타일 + 영향 요약 -->
   <div class="overlay" id="dlg-del-scope" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ds-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="ds-t">스코프 1개의 기억 402개를 삭제할까요?</h2>
-    <p><b>아스텔 / 에피소드 40</b> — 고아 후보 · 마지막 저장 2주 전</p>
+    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="ds-t">스코프 <span data-fill="cnt">1</span>개의 기억 <span data-fill="chunks">402</span>개를 삭제할까요?</h2>
+    <p><b data-fill="name">아스텔 / 에피소드 40</b> — <span data-fill="meta">고아 후보 · 마지막 저장 2주 전</span></p>
     <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 이 채팅의 저장 원문·벡터·아카이브가 삭제됩니다. 다른 스코프가 참조 중이면 삭제가 차단됩니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="스코프를 삭제하고 목록을 다시 읽었습니다.">삭제</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{name} 스코프를 삭제하고 목록을 다시 읽었습니다. (시안)">삭제</button></div></div></div>
   <div class="overlay" id="dlg-restore" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dr-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="dr-t">복원 — 백업 파일 검사 후 가능한 방식만 선택할 수 있습니다</h2>
     <div class="steps" style="margin:8px 0 12px"><div class="step is-done"><span class="step__no">✓</span><b>파일 무결성</b></div><div class="step is-done"><span class="step__no">✓</span><b>현재 대상 비교</b></div><div class="step is-active"><span class="step__no">3</span><b>방식 선택</b></div><div class="step"><span class="step__no">4</span><b>영향 확인</b></div></div>
@@ -257,9 +258,9 @@
     <div class="note note--danger" style="margin-top:12px"><b>백업 파일에는 대화 원문과 비공개 기억이 들어 있습니다.</b> 오류가 발생하면 복원 전 저장소로 자동 롤백하며, 저장 후 다시 읽어 확인합니다.</div>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-run-job="job-restore">현재 기억을 교체하고 복원</button></div></div></div>
   <div class="overlay" id="dlg-del-items" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="di-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Final approval</div><h2 id="di-t">삭제 후보 1개를 삭제할까요?</h2><p>T146 · 응답 #841 (chunk 2/2). 영구 기록으로 보호된 항목은 포함되어 있지 않습니다.</p>
+    <div class="eyebrow" style="color:var(--danger-ink)">Final approval</div><h2 id="di-t">삭제 후보 <span data-fill="cnt">1</span>개를 삭제할까요?</h2><p><span data-fill="names">T146 · 응답 #841 (chunk 2/2)</span>. 영구 기록으로 보호된 항목은 후보에 들어갈 수 없어 포함되어 있지 않습니다.</p>
     <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 삭제 직전에 선택 항목을 다시 확인합니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="선택한 항목을 삭제했습니다. (시안)">선택 삭제 적용</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{names} 삭제를 적용했습니다. (시안)" id="cand-done">선택 삭제 적용</button></div></div></div>
   <div class="overlay" id="dlg-key-del" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dk-t">
     <div class="eyebrow" style="color:var(--danger-ink)">API key</div><h2 id="dk-t">저장된 임베딩 API 키를 삭제할까요?</h2><p>설정·동기화 백업·로컬에 보관된 키가 지워집니다. 새 벡터를 만들려면 키를 다시 입력해야 합니다. (비워두면 유지, 새 값을 입력하면 교체, 이 버튼은 삭제)</p>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="키를 삭제했습니다. (시안)">키 삭제</button></div></div></div>
@@ -290,6 +291,26 @@
 <script src="assets/suite.js"></script>
 <script>
 document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='connect');});
+function $id(i){return document.getElementById(i);}
+/* 스코프 선택 = 삭제 확인창 */
+function syncScopes(){var on=[].slice.call(document.querySelectorAll('.sc-sel:checked'));var b=$id('sc-del');
+  b.disabled=on.length===0;b.querySelector('span').textContent='선택 삭제 ('+on.length+')…';
+  var chunks=on.reduce(function(a,c){return a+(+c.dataset.chunks);},0);
+  b.setAttribute('data-ctx',JSON.stringify({cnt:String(on.length),chunks:chunks.toLocaleString('ko-KR'),name:on.map(function(c){return c.dataset.name;}).join(' · '),meta:on.length===1?on[0].dataset.meta:'선택 '+on.length+'개'}));}
+/* 삭제 후보 목록 */
+var CAND=[];
+function syncCand(){$id('cand-n').textContent=CAND.length;$id('cand-names').textContent=CAND.length?'('+CAND.join(', ')+')':'';
+  $id('cand-clear').disabled=$id('cand-apply').disabled=CAND.length===0;
+  $id('cand-apply').setAttribute('data-ctx',JSON.stringify({cnt:String(CAND.length),names:CAND.join(', ')}));
+  document.querySelectorAll('[data-cand-item]').forEach(function(b){var on=CAND.indexOf(b.dataset.candItem)>=0;b.textContent=on?'후보에서 빼기':'삭제 후보에 추가';});}
+document.addEventListener('change',function(e){if(e.target.classList&&e.target.classList.contains('sc-sel'))syncScopes();});
+document.addEventListener('click',function(e){
+  var c=e.target.closest('[data-cand-item]');if(c){var k=c.dataset.candItem,i=CAND.indexOf(k);if(i<0)CAND.push(k);else CAND.splice(i,1);syncCand();window.suiteToast(i<0?'삭제 후보에 추가했습니다. 아직 삭제되지 않았습니다. (시안)':'후보에서 뺐습니다. (시안)');}
+  if(e.target.closest('#cand-clear')){CAND=[];syncCand();window.suiteToast('후보를 비웠습니다. (시안)');}
+  if(e.target.closest('#cand-done')){setTimeout(function(){CAND=[];syncCand();},0);}
+  var px=e.target.closest('[data-proxy]');if(px){syncScopes();var t=$id(px.dataset.proxy);window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
+});
+document.addEventListener('suite:ready',function(){syncScopes();syncCand();});
 /* 승인 체크 후에만 점검·복구 시작 가능 */
 document.addEventListener('change',function(e){if(e.target.id==='consent')document.getElementById('btn-maint').disabled=!e.target.checked;});
 /* 필름 스트립: 해당 프레임을 열고 이동 */

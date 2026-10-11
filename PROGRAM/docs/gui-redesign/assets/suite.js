@@ -68,6 +68,7 @@
   /* ---- 토스트 ---- */
   function toast(msg) {
     var box = $('.toasts'); if (!box) return;
+    msg = String(msg).replace(/\{(\w+)\}/g, function (m, k) { return lastCtx && lastCtx[k] !== undefined ? lastCtx[k] : m; });
     var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status');
     t.innerHTML = '<svg class="ic ic--sm"><use href="#i-check"/></svg><span></span>'; t.lastChild.textContent = msg;
     box.appendChild(t); setTimeout(function () { t.remove(); }, 3200);
@@ -77,7 +78,7 @@
   /* ---- 페이지 전환 (사이드바 / 하단 탭바 공용) ---- */
   function goPage(id, opts) {
     var pages = $$('.page'); var found = false;
-    pages.forEach(function (p) { var on = p.dataset.page === id; p.classList.toggle('is-active', on); if (on) found = true; });
+    pages.forEach(function (p) { var on = p.dataset.page === id; p.classList.toggle('is-active', on); if (on) { found = true; if (opts && opts.ctx) { lastCtx = opts.ctx; fillCtx(p, opts.ctx); document.dispatchEvent(new CustomEvent('suite:ctx', { detail: { page: id, ctx: opts.ctx } })); } } });
     if (!found) return;
     $$('[data-go]').forEach(function (b) {
       if (!(b.classList.contains('nav-item') || b.closest('.tabbar'))) return;
@@ -87,7 +88,7 @@
     if (!opts || !opts.silent) { try { history.replaceState(null, '', '#' + id); } catch (e) {} }
     document.dispatchEvent(new CustomEvent('suite:page', { detail: id }));
   }
-  window.suiteGo = goPage;
+  window.suiteGo = goPage; window.suiteFill = function (root, ctx) { fillCtx(root, ctx); };
 
   /* 사이드바 항목으로부터 모바일 탭바를 자동 구성 (최대 4 + 더보기) */
   function buildTabbar() {
@@ -123,17 +124,37 @@
     });
     $$('.confirm-inline.is-open', ov).forEach(function (c) { c.classList.remove('is-open'); });
   }
-  function fillCtx(ov, ctx) {
-    if (!ctx) return;
-    $$('[data-fill]', ov).forEach(function (el) { var k = el.dataset.fill; if (ctx[k] !== undefined) el.textContent = ctx[k]; });
+  /* ---- 대상 컨텍스트: 선택 → 확인 → 실행 → 결과가 같은 대상을 가리키게 한다 ----
+     data-fill="key"      : 텍스트(입력·선택은 값)를 ctx[key]로 채움. ctx에 key가 없으면 원래 값으로 되돌림(이전 대상 잔존 방지)
+     data-variant="a b"   : ctx.variant가 목록에 있을 때만 보임. "default"는 ctx.variant가 없을 때 보임
+     data-ctx='{...}'     : 버튼이 여는 창/작업/페이지에 넘길 대상
+     data-inherit-ctx     : 컨텍스트 없이 열리면 직전 대상(lastCtx)을 이어받음
+     토스트 문구의 {key}  : 현재 대상 값으로 치환 */
+  function fillCtx(root, ctx) {
+    var c = ctx || {};
+    $$('[data-fill]', root).forEach(function (el) {
+      var k = el.dataset.fill;
+      var isField = el.matches('input,select,textarea');
+      if (el.dataset.fillDefault === undefined) el.dataset.fillDefault = isField ? el.value : el.textContent;
+      var v = c[k] !== undefined ? String(c[k]) : el.dataset.fillDefault;
+      if (isField) el.value = v; else el.textContent = v;
+    });
+    $$('[data-variant]', root).forEach(function (el) {
+      var list = el.dataset.variant.split(/\s+/);
+      el.hidden = c.variant ? list.indexOf(c.variant) < 0 : list.indexOf('default') < 0;
+    });
   }
   var lastCtx = null;
+  window.suiteCtx = function () { return lastCtx; };
   function openOv(id, ctx) {
     var ov = document.getElementById(id); if (!ov) return;
+    if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
     if (ctx) lastCtx = ctx;
+    ov._ctx = ctx || null;
     resetOverlay(ov); fillCtx(ov, ctx);
     lastFocus = document.activeElement; ov.classList.add('is-open'); ov.setAttribute('aria-hidden', 'false');
     var f = ov.querySelector('[data-autofocus]') || ov.querySelector('button,input,select,textarea'); if (f) setTimeout(function () { f.focus(); }, 0);
+    document.dispatchEvent(new CustomEvent('suite:open', { detail: { id: id, ctx: ctx || null } }));
   }
   function closeOv(ov) {
     if (!ov) return; ov.classList.remove('is-open'); ov.setAttribute('aria-hidden', 'true');
@@ -191,6 +212,7 @@
     });
   }
   window.suiteMarkDirty = markDirty;
+  window.suiteSnapshot = function () { snapshot(); renderSave(); };
 
   /* ---- 접근성: 보이는 설명을 입력 컨트롤에 프로그램상 연결 (감사 B09) ---- */
   var uid = 0;
@@ -235,7 +257,7 @@
     document.addEventListener('click', function (e) {
       var t = e.target;
       var go = t.closest('[data-go]');
-      if (go) { var ov = go.closest('.overlay'); if (ov) closeOv(ov); goPage(go.dataset.go); if (go.dataset.goSub) activateSubtab(go.dataset.go, go.dataset.goSub); if (go.dataset.toast) toast(go.dataset.toast); var m = $('.menu.is-open'); if (m) m.classList.remove('is-open'); return; }
+      if (go) { var ov = go.closest('.overlay'); if (ov) closeOv(ov); goPage(go.dataset.go, go.dataset.ctx ? { ctx: safeJson(go.dataset.ctx) } : null); if (go.dataset.goSub) activateSubtab(go.dataset.go, go.dataset.goSub); if (go.dataset.toast) toast(go.dataset.toast); var m = $('.menu.is-open'); if (m) m.classList.remove('is-open'); return; }
       if (t.closest('[data-more]')) { openOv('sheet-more'); return; }
       var op = t.closest('[data-open]');
       if (op) { var ctx = null; if (op.dataset.ctx) { try { ctx = JSON.parse(op.dataset.ctx); } catch (er) {} } openOv(op.dataset.open, ctx); return; }
@@ -246,8 +268,9 @@
         if (cl.hasAttribute('data-job-cancel') && cov) cancelJob(cov);
         closeOv(cov);
         if (cl.dataset.toast) toast(cl.dataset.toast);
-        if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen);
-        if (cl.dataset.thenGo) goPage(cl.dataset.thenGo);
+        var nctx = cl.dataset.ctx ? safeJson(cl.dataset.ctx) : (cov && cov._ctx) || null;
+        if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen, nctx);
+        if (cl.dataset.thenGo) goPage(cl.dataset.thenGo, nctx ? { ctx: nctx } : null);
         var rj = cl.closest('[data-run-job]'); if (rj) runJob(rj.dataset.runJob, rj.dataset.ctx ? safeJson(rj.dataset.ctx) : null);
         return;
       }
@@ -292,7 +315,7 @@
       var dv = t.closest('button[data-device]');
       if (dv) { var fr = $('.frame'); fr.dataset.device = dv.dataset.device; $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === dv)); }); return; }
       var job = t.closest('[data-run-job]');
-      if (job) { runJob(job.dataset.runJob, job.dataset.ctx ? safeJson(job.dataset.ctx) : null); return; }
+      if (job) { if (job.disabled) return; runJob(job.dataset.runJob, job.dataset.ctx ? safeJson(job.dataset.ctx) : null); return; }
     });
     document.addEventListener('input', function (e) {
       var el = e.target;
@@ -341,12 +364,14 @@
     if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
     resetOverlay(ov); openOv(id, ctx);
     $$('[data-job-result]', ov).forEach(function (r) { r.hidden = true; });
-    var bar = ov.querySelector('.progress>i'); var steps = $$('.step', ov); var msg = ov.querySelector('[data-job-msg]');
-    var done = ov.querySelector('[data-job-done]'); var cancel = ov.querySelector('[data-job-cancel]');
-    var labels = (ov.dataset.jobLabels || '').split('|');
+    var bar = ov.querySelector('.progress>i');
+    var steps = $$('.step', ov).filter(function (st) { return !st.closest('[hidden]'); });
+    var msg = ov.querySelector('[data-job-msg]');
+    var dones = $$('[data-job-done]', ov); var cancels = $$('[data-job-cancel]', ov);
+    var labels = ((ctx && ctx.labels) || ov.dataset.jobLabels || '').split('|');
     var total = steps.length || Math.max(labels.length - 1, 1); var i = 0;
     ov.dataset.state = 'running';
-    steps.forEach(function (s) { s.classList.remove('is-done', 'is-active'); }); if (done) done.hidden = true; if (cancel) cancel.hidden = false;
+    steps.forEach(function (s) { s.classList.remove('is-done', 'is-active'); }); dones.forEach(function (d) { d.hidden = true; }); cancels.forEach(function (c) { c.hidden = false; });
     if (bar) bar.style.setProperty('--v', '0%');
     clearInterval(ov._t);
     ov._t = setInterval(function () {
@@ -355,8 +380,8 @@
         clearInterval(ov._t); ov._t = null; ov.dataset.state = 'done';
         if (bar) bar.style.setProperty('--v', '100%');
         var fin = labels[labels.length - 1] || '완료했습니다.';
-        if (msg) msg.textContent = fin; if (done) done.hidden = false; if (cancel) cancel.hidden = true;
-        $$('[data-job-result]', ov).forEach(function (r) { r.hidden = false; });
+        if (msg) msg.textContent = fin; dones.forEach(function (d) { d.hidden = false; }); cancels.forEach(function (c) { c.hidden = true; });
+        $$('[data-job-result]', ov).forEach(function (r) { r.hidden = false; }); fillCtx(ov, ov._ctx);
         if (!ov.classList.contains('is-open')) toast(fin);
         return;
       }
