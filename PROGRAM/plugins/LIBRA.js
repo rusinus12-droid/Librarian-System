@@ -79245,9 +79245,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       { id: 'server', label: '서버 · 저장' }, { id: 'recovery', label: '백업 · 복구' },
       { id: 'transfer', label: '데이터 이동' }, { id: 'general', label: '일반 · 진단' }
     ];
-    const family = activeGuiResponseFamily();
-    const panel = Gui.settingsHubSection === 'memory' ? buildInputAssistSettingsPanel({ family })
-      : Gui.settingsHubSection === 'references' ? buildLibraReferenceHubPanel()
+    const panel = Gui.settingsHubSection === 'references' ? buildLibraReferenceHubPanel()
         : Gui.settingsHubSection === 'memory' ? buildLibraMemorySettingsPanel()
           : Gui.settingsHubSection === 'server' ? buildLibraServerConnectionPanel()
             : Gui.settingsHubSection === 'recovery' ? buildLibraRecoveryPanel()
