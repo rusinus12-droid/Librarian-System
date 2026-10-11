@@ -49,7 +49,7 @@ async function caseRun(name,fn,opts={}){const r=await createHayakuRuntime({autoR
   eq(c.sourceFingerprint,c0.sourceFingerprint);eq(c.coveredTurns,[1]);eq(c.sourceEditPendingTurns,[]);eq(r.llmCalls.length,0);eq(r.chat.message[1].data,original+'\n'+tag);
   r.chat.message[1].data=original+'\n'+tag.replace('abc','def').replace('1234','5678');await observe(r);c=await coverage(r);eq(c.sourceFingerprint,c0.sourceFingerprint);eq(c.missingTurns,[]);
   const after=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===before.hash);eq(after.recordState,'active');eq(after.ownerTurnNodeId,before.ownerTurnNodeId);
-  r.chat.message[1].data=original+'\n<lb-xnai>Alice left the workshop.</lb-xnai>';await observe(r);c=await coverage(r);eq(c.sourceEditPendingTurns,[],'substantive prose is not ignored');eq(r.llmCalls.length,0);
+  r.chat.message[1].data=original+'\n<lb-xnai>Alice left the workshop.</lb-xnai>';await observe(r);c=await coverage(r);ok(c.sourceFingerprint!==c0.sourceFingerprint,'substantive non-image prose changes the actual current source fingerprint, unlike both image-only controls');eq(c.sourceEditPendingTurns,[],'changed source does not enroll retired automatic tasks');eq(r.llmCalls.length,0);
  });
  await caseRun('selection staleness rejected before model calls',async r=>{
   r.setMessages(messages([3]));const c=await coverage(r);r.chat.message[5].data='Alice cancelled workshop task 3.';
