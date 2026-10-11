@@ -1,131 +1,26 @@
 'use strict';
-
-const assert = require('node:assert/strict');
-const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
-
-const ordered = (value, needles, label) => {
-  let cursor = -1;
-  for (const needle of needles) {
-    const next = value.indexOf(needle, cursor + 1);
-    assert.ok(next > cursor, `${label}: missing or out-of-order marker ${needle}`);
-    cursor = next;
-  }
-};
-
-const canonicalRow = (marker, memoryId, revision, turn) => ({
-  memoryId,
-  revision,
-  turnRange: { start: turn, end: turn },
-  selectedText: marker,
-  text: marker
-});
-
-const packetFor = authority => ({
-  terminal_scene: 'IW_TERMINAL_SCENE',
-  live_tail_prompt: 'IW_LIVE_TAIL',
-  continuity_state_prompt: 'IW_STATE_HEAD',
-  narrative_prompt: 'IW_NARRATIVE_STATE',
-  narrative_direction_prompt: 'IW_NARRATIVE_DIRECTION',
-  continuity_state_authority: authority,
-  canonical_priority: {
-    schema: 'libra.planner_canonical_priority.v1',
-    stateCurrent: authority.current === true,
-    statePending: authority.pending === true,
-    newerThanState: {
-      memory: [canonicalRow('IW_CANONICAL_NEWER', 'mem-newer', 3, 30)],
-      entity: [], world: [], narrative: []
-    },
-    historicalAtOrBeforeState: {
-      memory: [canonicalRow('IW_CANONICAL_HISTORICAL', 'mem-old', 1, 10)],
-      entity: [], world: [], narrative: []
-    }
-  },
-  layers: { memory: [], entity: [], world: [], narrative: [] },
-  author_note_prompt: 'IW_AUTHOR_NOTE',
-  lore_prompt: 'IW_CREATIVE_LORE',
-  story_arc_prompt: 'IW_STORY_ARC',
-  bootstrap_reference_prompt: 'IW_BOOTSTRAP_REFERENCE'
-});
-
-(async () => {
-  const llmCalls = [];
-  const validChoices = JSON.stringify({
-    schema: 'libra.input_writer_choices.v1', ok: true, mode: 'rp',
-    choices: [
-      { id: 'A', title: 'A', summary: 'first', perspective: '', input: 'candidate-a' },
-      { id: 'B', title: 'B', summary: 'second', perspective: '', input: 'candidate-b' },
-      { id: 'C', title: 'C', summary: 'third', perspective: '', input: 'candidate-c' }
-    ]
-  });
-  const harness = await createLibraVmHarness({ enable_gui: 'false' }, {
-    async runLLMModel(options) {
-      llmCalls.push(structuredClone(options));
-      return { type: 'success', result: validChoices };
-    }
-  });
-  try {
-    const beforeStorage = JSON.stringify([...harness.values.entries()]);
-    const currentPreflight = {
-      originalInput: 'IW_COMPOSER_INPUT',
-      settings: { inputWriterMode: 'rp' },
-      evidencePacket: packetFor({
-        authority: 'current', current: true, pending: false,
-        pendingDomains: [], sourceMode: 'exact_manifest'
-      })
-    };
-    const current = await harness.api.debugBuildInputWriterPrompts(currentPreflight);
-    assert.equal(current.mode, 'rp');
-    ordered(current.user, [
-      'IW_COMPOSER_INPUT',
-      'IW_TERMINAL_SCENE',
-      'IW_CANONICAL_NEWER',
-      'IW_STATE_HEAD',
-      'IW_NARRATIVE_STATE',
-      'IW_CANONICAL_HISTORICAL',
-      'IW_NARRATIVE_DIRECTION',
-      'IW_CREATIVE_LORE'
-    ], 'Input Writer factual authority');
-
-    const currentStateOffset = current.user.indexOf('IW_STATE_HEAD');
-    const currentStateHeading = current.user.slice(Math.max(0, currentStateOffset - 260), currentStateOffset);
-    assert.match(currentStateHeading, /CURRENT[\s_-]*STATE|현재[\s_-]*상태/i,
-      'an exact current Head must be visibly labelled as current');
-    assert.doesNotMatch(currentStateHeading, /NON[-_ ]?AUTHORITATIVE|LAST[-_ ]?KNOWN|PENDING|미확정|비권위/i,
-      'an exact current Head must not be labelled as pending/last-known');
-
-    const pending = await harness.api.debugBuildInputWriterPrompts({
-      originalInput: 'IW_COMPOSER_INPUT',
-      settings: { inputWriterMode: 'author' },
-      evidencePacket: packetFor({
-        authority: 'last_known_pending', current: false, pending: true,
-        pendingDomains: ['world'], sourceMode: 'partial_domain_head'
-      })
-    });
-    const pendingStateOffset = pending.user.indexOf('IW_STATE_HEAD');
-    assert.ok(pendingStateOffset >= 0, 'pending/partial State remains available as explicitly downgraded context');
-    const pendingStateHeading = pending.user.slice(Math.max(0, pendingStateOffset - 320), pendingStateOffset);
-    assert.match(pendingStateHeading, /NON[-_ ]?AUTHORITATIVE|LAST[-_ ]?KNOWN|PENDING|미확정|비권위/i,
-      'pending/partial Head must be visibly downgraded before provider delivery');
-
-    assert.equal(JSON.stringify([...harness.values.entries()]), beforeStorage,
-      'prompt compilation must not mutate durable plugin storage');
-
-    const generated = await harness.api.debugGenerateInputWriterChoices(currentPreflight);
-    assert.equal(generated.ok, true);
-    assert.equal(llmCalls.length, 1, 'one generation performs one physical provider call');
-    const providerMessages = llmCalls[0].messages || [];
-    assert.deepEqual(Array.from(providerMessages, message => message.role), ['system', 'user']);
-    const providerUser = String(providerMessages.find(message => message.role === 'user')?.content || '');
-    ordered(providerUser, [
-      'IW_COMPOSER_INPUT', 'IW_TERMINAL_SCENE',
-      'IW_CANONICAL_NEWER', 'IW_STATE_HEAD', 'IW_NARRATIVE_STATE',
-      'IW_CANONICAL_HISTORICAL', 'IW_NARRATIVE_DIRECTION', 'IW_CREATIVE_LORE'
-    ], 'physical provider payload authority');
-  } finally {
-    await harness.cleanup();
-  }
-  process.stdout.write('libra_input_writer_phase06_authority_runtime_test: PASS\n');
-})().catch(error => {
-  process.stderr.write(`${error?.stack || error}\n`);
-  process.exitCode = 1;
-});
+// The Writer prompt/provider is retired. Retain canonical-vs-State priority and
+// verify the actual Classic route delivers only validated canonical evidence.
+const assert=require('node:assert/strict');
+const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
+(async()=>{
+ const f=await fixture();try{
+  const row=(id,start)=>({memoryId:id,revision:1,sourceDigest:'digest-'+id,sessionEpoch:0,turnRange:{start,end:start+4},text:id});
+  const old=row('HISTORICAL',1),newer=row('NEWER',11),layers={memory:[old,newer],entity:[],world:[],narrative:[]};
+  const saved=JSON.stringify(layers),api=f.r.api;
+  const current=api.debugRecallCanonicalPriorityPartition(layers,{current:true,pending:false,authority:'current',boundaryEvidence:old});
+  assert.equal(current.stateCurrent,true);assert.equal(current.statePending,false);
+  assert.deepEqual(Array.from(current.newerThanState.memory,x=>x.memoryId),['NEWER']);assert.deepEqual(Array.from(current.historicalAtOrBeforeState.memory,x=>x.memoryId),['HISTORICAL']);
+  const pending=api.debugRecallCanonicalPriorityPartition(layers,{current:false,pending:true,pendingDomains:['world'],authority:'last_known_pending'});
+  assert.equal(pending.stateCurrent,false);assert.equal(pending.statePending,true);assert.equal(pending.newerCount,2);assert.equal(pending.historicalCount,0);assert.deepEqual(Array.from(pending.pendingDomains),['world']);assert.equal(JSON.stringify(layers),saved);
+  assert.equal((await f.run()).completed,1);const ref=f.getManifest().memories['1'],before=f.r.values.get(ref.key),head=f.getRecords('libra.continuity_state.v2')[0],headBefore=f.r.values.get(head.key),calls=f.control.calls.length;
+  const packet=await actualClassicPacket(f,'민아 지호 신뢰 은빛 열쇠',f.getManifest().scopeKey);
+  assert(packet.actualClassic.deliveredRows.some(x=>x.memoryId===ref.memoryId&&x.revision===ref.revision));
+  assert.match(packet.actualClassic.block,/current user input and latest visible scene state outrank older recalled state/);
+  assert.doesNotMatch(packet.actualClassic.block,/CURRENT STATE HEAD|continuity_state_prompt|cs_rel_|ce_/);
+  assert.equal(f.r.values.get(ref.key),before);assert.equal(f.r.values.get(head.key),headBefore);assert.equal(f.control.calls.length,calls);
+  const stale=structuredClone(packet.actualClassic.context);stale.values.currentInput='changed';assert.equal((await api.validateResponseContext(stale)).current,false);
+ }finally{await f.r.cleanup();}
+ console.log('libra_input_writer_phase06_authority_runtime_test: PASS (priority and Classic successor; Writer prompt ordering/provider retired)');
+})().catch(e=>{console.error(e);process.exitCode=1;});

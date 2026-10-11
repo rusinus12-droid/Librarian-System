@@ -63,12 +63,12 @@ const SUPPORT = 'archive ledger ribbon continuity story arc support text';
 
 (async () => {
   const source = fs.readFileSync(path.resolve(__dirname, '..', 'plugins', 'LIBRA.js'), 'utf8');
-  const anchor = '      debugApplyDraftPatchOperations: (draftValue, edits = []) =>';
+  const anchor = '      getUnifiedStorageStatus,';
   assert.equal(source.split(anchor).length, 2, 'the debug anchor must be unique');
   const instrumented = source.replace(anchor,
     `      rank: { responseLoreRankRecords, responseLoreAdaptiveSelect, responseLoreIndexRecord, responseLoreLinearScore, responseLoreCorpusBm25f, responseLoreTokenStats, loreJaccardUnique, loreDistinctiveAnchorTokens, LORE_JACCARD_TUNING },\n${anchor}`)
-    .replace('    debugSgaPatchOperations(draft = \'\', edits = [])',
-      '    rank(){ return LibraMemoryCore.rank; },\n    debugSgaPatchOperations(draft = \'\', edits = [])');
+    .replace('    async getUnifiedStorageStatus() {',
+      '    rank(){ return LibraMemoryCore.rank; },\n    async getUnifiedStorageStatus() {');
 
   const harness = await createLibraVmHarness({}, {}, { transformSource: () => instrumented });
   try {
