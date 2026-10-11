@@ -62,6 +62,12 @@ function parseArgs(s) {
   return args;
 }
 const args = parseArgs(src);
+// This offline host owns its native local store; no server capability is implied.
+args.memory_suite_server_mode='plugin_only';
+args.hayaku_enabled='true';
+args.hayaku_native_auto_repair='false';
+args.hayaku_background_auto_repair='false';
+args.hayaku_after_request_auto_repair='false';
 const pluginStorage = makeStorage();
 const safeLocalStorage = makeStorage();
 const localPluginStorage = makeLocalPluginStorage();
@@ -89,7 +95,7 @@ function chatView() { return { id: CHAT_ID, name: liveChat.name, message: liveMe
 let msgSeq = 0;
 function pushMessage(role, data) {
   const id = `msg_${++msgSeq}`;
-  liveMessages.push({ role, data, id, chatId: CHAT_ID });
+  liveMessages.push({ role, data, id, chatId: id });
   return id;
 }
 
@@ -155,9 +161,11 @@ const Risuai = {
   setCharacterToIndex: noop,
   getCurrentCharacterIndex: async () => 0,
   getCurrentChatIndex: async () => 0,
+  getChat: async () => chatView(),
+  getCurrentChat: async () => chatView(),
   getChatFromIndex: async () => chatView(),   // <-- live message array every call
   setChatToIndex: noop,
-  getDatabase: async () => null, setDatabase: noop, setDatabaseLite: noop,
+  getDatabase: async fields => {const db={personas:[],selectedPersona:'',characters:[charView()],plugins:[],maxContext:128000,maxResponse:8192};return Array.isArray(fields)?Object.fromEntries(fields.map(key=>[key,db[key]??null])):db;}, setDatabase: noop, setDatabaseLite: noop,
   getRootDocument: async () => null,
   createMutationObserver: async () => ({ observe: () => {}, disconnect: () => {} }),
   addProvider: noop, registerMCP: noop, unregisterMCP: noop,
@@ -183,13 +191,21 @@ const origErr = installConsoleErrorCapture(record);
 // ---------- packet authoring (valid HAYAKU_STATE_PACKET current_snapshot) ----------
 const PS = 'HAYAKU_STATE_PACKET_START';
 const PE = 'HAYAKU_STATE_PACKET_END';
-function packet(o) {
-  const meta = {
+const {createValidPacket}=require('../tests/fixtures/hayaku_runtime_harness.cjs');
+function packet(o, turn, sourceText) {
+  const base=createValidPacket({turn,subject:'유나',scene:o.scene_id||'scene_main',summary:o.summary});
+  // Native packet content is authored from this turn, not generic fixture facts.
+  base.entity.characters=[{name:'유나',current_state:o.summary}];
+  base.world.location='';base.world.time='';base.world.scene=o.scene_id||'scene_main';
+  base.narrative.current_arc='';base.planner.continuity_locks=[];
+  const meta = {...base.meta,
     schema: 'hayaku_packet_v1', packet_type: 'current_snapshot', packet_schema_rev: 2,
     scene_id: o.scene_id || 'scene_main',
     turn_anchor: o.turn_anchor,
     confidence: 0.92,
     summary_memory: {
+      ...base.meta.summary_memory,
+      directEvidenceSnippets:[sourceText],
       summary: o.summary,
       recallAnchors: o.anchors || [],
       recallAliases: o.aliases || {},
@@ -200,10 +216,10 @@ function packet(o) {
   };
   const p = {
     meta,
-    entity: o.entity || {},
-    world: o.world || {},
-    narrative: o.narrative || {},
-    planner: o.planner || {},
+    entity: {...base.entity,...o.entity},
+    world: {...base.world,...o.world},
+    narrative: {...base.narrative,...o.narrative},
+    planner: {...base.planner,...o.planner},
     importance: { overall: o.importance != null ? o.importance : 0.8, reason: o.reason || ['established continuity outcome'] },
   };
   return `<!-- ${PS} ${JSON.stringify(p)} ${PE} -->`;
@@ -330,14 +346,14 @@ async function run() {
 
   for (let t = 0; t < turns.length; t++) {
     const turn = turns[t];
-    // 1) user speaks -> beforeRequest sees the pending request
+    // 1) host appends the current user before invoking the generation hook.
+    pushMessage('user', turn.user);
     convo.push({ role: 'user', content: turn.user });
     const before = await callBeforeRequest(convo.map(m => ({ ...m })), 'model');
-    // 2) also reflect the user message into the live chat transcript
-    pushMessage('user', turn.user);
+    // 2) The authoritative user source is already present in the live host.
 
     // 3) model produces assistant text WITH the hidden packet appended (what the AI "wrote")
-    const assistantBody = turn.assistant + '\n' + packet(turn.packet);
+    const assistantBody = turn.assistant + '\n' + packet(turn.packet,t+1,turn.assistant);
     // afterRequest sanitizer/repair path sees the raw content
     const afterOut = await callAfterRequest(assistantBody, 'model');
     // 4) commit assistant message into the live transcript (source of truth for capture)
