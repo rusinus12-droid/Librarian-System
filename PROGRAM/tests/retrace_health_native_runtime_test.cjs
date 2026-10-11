@@ -28,6 +28,10 @@ const deferred=()=>{let resolve;return{promise:new Promise(r=>resolve=r),resolve
   const modeTicket=await health.preview();
   f.pluginStorage.values.set('__memory_suite_internal_scope_routes_v1__:retrace',JSON.stringify({schema:'memory-suite.scope-routing.v1',legacyGlobalModeImported:true,entries:{[ownScope.scopeId]:{scopeId:ownScope.scopeId,scopeKey:ownScope.scopeKey,mode:'server_only',origin:'explicit'}}}));
   const remoteRows=JSON.stringify([...f.pluginStorage.values]);assert.equal((await health.repair(modeTicket)).status,'blocked');assert.equal(JSON.stringify([...f.pluginStorage.values]),remoteRows,'remote authority drift never mutates retained rows');assert.equal(writes,0);f.pluginStorage.values.delete('__memory_suite_internal_scope_routes_v1__:retrace');
+  const argumentTicket=await health.preview(),readArgument=f.host.getArgument;
+  f.host.getArgument=async name=>String(name).includes('memory_suite_server_mode')?'server_only':readArgument(name);
+  const legacyRemoteRows=JSON.stringify([...f.pluginStorage.values]);assert.equal((await health.inspect()).known,false);assert.equal((await health.repair(argumentTicket)).status,'blocked');assert.equal(JSON.stringify([...f.pluginStorage.values]),legacyRemoteRows);assert.equal(writes,0,'uninitialized remote legacy argument cannot repair local cache');
+  f.host.getArgument=readArgument;
   const scopeTicket=await health.preview(),chatId=f.chat.id;f.chat.id='foreign-health-scope';assert.equal((await health.repair(scopeTicket)).status,'blocked');f.chat.id=chatId;assert.equal(writes,0);
   const closeTicket=await health.preview();await api.closeUi();assert.equal((await health.repair(closeTicket)).status,'blocked');assert.equal((await health.repair(await health.preview())).status,'cache_unchanged');await f.dispose();assert.equal((await health.preview()).allowed,false);
   assert.equal(f.llmCalls.length,0);console.log('PASS full RETRACE VM: canonical byte preservation, one-use cache repair, handoff/inspection/restore/UI gates, close/unload, model/network traps');
