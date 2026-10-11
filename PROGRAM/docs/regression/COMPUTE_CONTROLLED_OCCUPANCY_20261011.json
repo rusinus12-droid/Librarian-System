@@ -1,0 +1,47 @@
+{
+  "status": "REVIEWED_CANDIDATE_PENDING_RUNTIME",
+  "base": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+  "clone": "isolated ordinary clone from efcb288",
+  "roots": [
+    50,
+    51
+  ],
+  "edits": "Two owned tests plus two NEW dedicated fixtures only. Existing default compute_product_load_fixture, production registry/worker/pool/scheduler/plane/server unchanged. Existing computeWorkerPath seam selects wrapper that imports actual production worker and wraps registry executeOperation only to wait on actualworker-entry barrier then call captured genuine product kernel.",
+  "gateModel": {
+    "identity": "Each actual Worker observer verifies telemetry.workerIndex ==actual slot.index and threadId ==actual Worker.threadId. Every owned worker ready acknowledgement observed, distinctthreadcount exactlyconfiguredpool. Entry telemetry carries actual production incoming message jobId under isolated controlledJobId telemetry field and is matched to real publicHTTPadmitted IDs; duplicatejobs/duplicateactiveworker forbidden.",
+    "bounds": "Worker Atomics.wait deadline max5000ms per entry; coordinator armed globalsetupdeadline5000ms before publicsubmissions and same deadline applies submission/status/entrywaits. No change to product deadline30s/default or interactive3000ms. Public admission/entrysetup releases immediately when conditions meet.",
+    "flood": "Actual8Flashback HTTPjobs admitted while2distinctworker entries held; actual HTTPstatuses assert2running+queued; actualHayinteractive HTTPjob with3000msdeadline must returnqueued, release immediately. Unchanged scheduler choosesactualnextslot and queue<1000ms.",
+    "matrix": "Actual12jobs (4each3survivingkernels), all1/2/4/8cells. Gate requires distinctactualworkerentries >=min(4,width) and actualpool.activeCount >=floor. Allownedwidthworkers observedready. Serialdispatch mutation cannot reachmin4 becauseblockedfirstentry preventssecondentry.",
+    "report": "gatePeak, readyPeak, distinctReadyThreads, actualentryjob/thread/slot/time, separatelyobservedgateWaitMs perentry. Native startedAt/workerMs/queueMs/totalMs remain original production values and INCLUDE wait, no subtraction. observedThroughputFactor renamed controlledWallRatioNotThroughput.",
+    "limitation": "Controlled physical worker occupancy test, not unguarded simultaneous productkernel CPU execution4 or generalized throughput benchmark."
+  },
+  "assertionMap": {
+    "flood2workersplusqueued": "Originalstatuses unchanged plus genuine threadentryfloor2 and actualinteractivequeued",
+    "interactiveQueueDeadline": "Originaldeadline3000ms/queue<1000ms/localparity/nextavailablepriority/backgrounddrainlead retained",
+    "realFloodAndSoak": "Original8Flashback+24soak retained; everyresult now compareslocalkernel, no fakejobs",
+    "matrixWidthsFloor": "Original1/2/4/8cells and nativeinterval>=min4 retained, genuine distinctentrygate>=min4 added",
+    "matrix12LocalParity": "12realpublicHTTPsubmissions, exactly4perspec, everyactualresultlocalparity (strengthened fromfirstperspec)",
+    "rssBudget": "Originaldelta<512MiB retained percell and flood/soak",
+    "canonicalBytes": "OriginalSQLite/WALdigests unchanged",
+    "retiredOwner": "DefaultcreateProductSpecs unchanged including LIA403deny",
+    "enumeration": "Onlynewfixtures belowfixtures/: tracked direct cjs count unchanged 1178; officialrunner inventory1138 from baseline logs. No direct rootadded."
+  },
+  "staticVerification": {
+    "nodeCheckAll4": "PASS",
+    "gitDiffCheck": "PASS",
+    "productionOrDefaultSharedFixtureDiff": "EMPTY",
+    "runtime": "NOT RUN as parentrequested while normalcampaigns running"
+  },
+  "pending": [
+    "Official50then51 sequential MAX1",
+    "Actual4worker serializeddispatch mutation must fail genuine physicalfloor",
+    "Telemetrycollision negative must fail actualjob protocol guard"
+  ],
+  "historicalEquivalenceLimitations": "Floor remains min4 but native worker time intervals now include explicit testcontrolledwait. It proves real worker-thread slot occupancy and actualschedulerqueuefairness with product kernels/localparity; does not reproduce a naturallyoccurring4kernel CPUoverlap claim. Failed baseline sourceunchanged as documented in compute50-51-static-diagnosis.json.",
+  "risks": "No runtimevalidation yet. Globalsetup5000ms could failclosed during extremelyslowHTTPadmission. Synthetic configurationcontrolmessages are observed by wrapper and productionworker emits invalid-message reply withoutjobId; pool ignores unmatchedjobId during startupconfig and no actualjob is fabricated. Gates are atomicallyreleased in testfinally; listenercleanup before actualapp.close.",
+  "protocolReviewFix": {
+    "issue": "Initialobserverframes used matching production jobId with unknown event. WorkerPool._onMessage would settleactualjob asfailure. Review rejected before runtime, nofailedruntime generated.",
+    "correction": "Allcontrolledentry/exittelemetry now uses controlledJobId field ONLY with NOjobId. Productionpool ignores unmatched emptyprotocoljobId; observerassertsabsenceofjobId, binds controlledJobId to realHTTPadmittedIDs. Realworker started/success/errorprotocol untouched.",
+    "status": "STATICFIXED, syntax/diffcheckPASS; NO runtime yet"
+  }
+}

@@ -18,6 +18,7 @@ const {
 
 const COMPUTE_SIGNING_KEY = 'product-flood-latency-signing-key-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const MIB = 1024 * 1024;
+const { workerPath, createProductGate } = require('./fixtures/compute_product_gate_coordinator.cjs');
 
 async function main() {
   const tempRoot = path.resolve(os.tmpdir());
@@ -29,12 +30,14 @@ async function main() {
     dataDir,
     autoBackup: false,
     computeWorkers: 2,
+    computeWorkerPath: workerPath,
     computeSigningKey: COMPUTE_SIGNING_KEY
   });
   const address = await app.listen();
   const base = `http://127.0.0.1:${address.port}`;
-  let sampler = null;
+  let sampler = null, gate = null;
   try {
+    gate = await createProductGate(app, 2);
     const specs = await createProductSpecs(base);
     const byNamespace = Object.fromEntries(specs.map(spec => [spec.identity.namespace, spec]));
     const localResults = executeProductLocals(specs);
@@ -44,6 +47,7 @@ async function main() {
     let rssPeak = rssBaseline;
     sampler = setInterval(() => { rssPeak = Math.max(rssPeak, process.memoryUsage().rss); }, 5);
 
+    gate.arm();
     const floodPending = Array.from({ length: 8 }, (_, index) => submitProductJob(base, byNamespace.flashback, {
       operationId: `product_flood_flashback_${String(index + 1).padStart(4, '0')}`,
       lane: 'background',
@@ -53,18 +57,19 @@ async function main() {
         index: index + 1
       }
     }));
-    const floodSubmissions = await Promise.all(floodPending);
-    const activeStates = await waitForProductLoad(base, floodSubmissions, {
+    const floodSubmissions = await gate.withinSetup(Promise.all(floodPending));
+    await gate.waitForEntries(2, floodSubmissions);
+    const activeStates = await gate.withinSetup(waitForProductLoad(base, floodSubmissions, {
       minRunning: 2,
       requireQueued: true
-    });
+    }));
     const initiallyRunning = new Set(activeStates.filter(item => item.state === 'running').map(item => item.jobId));
     assert.equal(initiallyRunning.size, 2, 'both workers must be occupied by the Flashback flood before interactive submit');
     assert.ok(activeStates.filter(item => item.state === 'queued').length >= 1,
       'the flood must leave at least one queued background job to test lane priority');
 
     const interactiveSubmittedAt = performance.now();
-    const interactiveSubmission = await submitProductJob(base, byNamespace.hayaku, {
+    const interactiveSubmission = await gate.withinSetup(submitProductJob(base, byNamespace.hayaku, {
       operationId: 'product_flood_hayaku_interactive_0001',
       lane: 'interactive',
       deadlineMs: 3000,
@@ -73,7 +78,9 @@ async function main() {
         namespace: 'hayaku',
         flood: 'flashback'
       }
-    });
+    }));
+    assert.equal(interactiveSubmission.job.state, 'queued', 'real public interactive job admitted behind both held workers');
+    gate.release();
     const interactive = await waitProductResult(base, interactiveSubmission, 5000);
     const interactiveWallMs = performance.now() - interactiveSubmittedAt;
     assert.deepEqual(interactive.result.result, localResults.hayaku,
@@ -81,7 +88,10 @@ async function main() {
     assert.ok(interactive.result.timing.queueMs < 1000,
       `interactive queue exceeded the bounded flood gate: ${interactive.result.timing.queueMs}ms`);
 
+    const gateReport = await gate.report();
+    assert.equal(gateReport.gatePeak, 2, 'two distinct physical workers occupied');
     const floodResults = await Promise.all(floodSubmissions.map(item => waitProductResult(base, item)));
+    for (const item of floodResults) assert.deepEqual(item.result.result, localResults.flashback, 'every real Flashback flood job matches local');
     const queuedBackgroundStarts = floodResults
       .filter(item => !initiallyRunning.has(item.job.jobId))
       .filter(item => Number(item.status.startedAt) >= Number(interactive.job.createdAt))
@@ -112,6 +122,7 @@ async function main() {
     const soakResults = await Promise.all(soakSubmissions.map(item => waitProductResult(base, item)));
     const soakWallMs = performance.now() - soakStartedAt;
     assert.equal(soakResults.length, 24);
+    for (const item of soakResults) assert.deepEqual(item.result.result, localResults[item.spec.identity.namespace], 'every real soak job matches local');
     for (const spec of specs) {
       const first = soakResults.find(item => item.spec === spec);
       assert.ok(first);
@@ -135,6 +146,7 @@ async function main() {
     process.stdout.write(`compute_product_flood_latency_test: PASS ${JSON.stringify({
       schema: 'memory-suite.compute.product-flood-latency-report.v1',
       workers: 2,
+      coordinatedOccupancy: gateReport,
       floodNamespace: 'flashback',
       floodJobs: floodResults.length,
       interactiveNamespace: 'hayaku',
@@ -153,6 +165,7 @@ async function main() {
     })}\n`);
   } finally {
     if (sampler) clearInterval(sampler);
+    gate?.close();
     await app.close();
     const resolved = path.resolve(dataDir);
     assert.equal(path.dirname(resolved), tempRoot);
