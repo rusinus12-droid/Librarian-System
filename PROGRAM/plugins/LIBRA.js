@@ -33634,6 +33634,19 @@ function createLibraReadonlySourceContext(owner) {
     // Physical evidence stays private. Cloned public packets carry only an
     // opaque runtime token, never a caller-controlled "already verified" flag.
     const consumedMicroProofsByMemory = new WeakMap();
+    const consumedCanonicalProofsByMemory = new WeakMap();
+    // Embedding publication is derived metadata. Every other canonical field,
+    // including source/evidence identity and rendered text, belongs to the
+    // exact physical body from which this request selected its evidence.
+    const canonicalConsumptionDigest = memory => {
+      if (!memory || typeof memory !== 'object') return digest(memory);
+      const logical = { ...memory }; delete logical.embedding;
+      return digest(stableReferenceJson(logical));
+    };
+    const rememberConsumedCanonical = (memory, proof) => {
+      if (memory) consumedCanonicalProofsByMemory.set(memory, unifiedDeepFreeze(clone(proof)));
+      return memory;
+    };
     const consumedMicroProofsByState = new WeakMap();
     const consumedDataReadSets = new Map();
     const activeMicroConsumptionProof = active => ({
@@ -33719,6 +33732,13 @@ function createLibraReadonlySourceContext(owner) {
         let activeArchiveRefs = null;
         for (const proof of entry.proofs) {
           check();
+          if (proof.kind === 'canonical-memory') {
+            const memory = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
+            if (!memory || canonicalConsumptionDigest(memory) !== proof.recordDigest) {
+              throw consumerContractError('CONSUMER_CANONICAL_BODY_CHANGED');
+            }
+            continue;
+          }
           if (proof.kind === 'micro-state-decision') {
             const decision = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
             if (digest(decision) !== proof.recordDigest) throw consumerContractError('CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED');
@@ -42240,9 +42260,11 @@ function createLibraReadonlySourceContext(owner) {
       if ((ref.memoryId && string(ref.memoryId) !== string(stored.memoryId || stored.id || ''))
         || (Number(ref.revision || 0) > 0 && Number(ref.revision) !== Number(stored.revision || 0))
         || (ref.sourceDigest && string(ref.sourceDigest) !== string(stored.sourceDigest))) return null;
-      if (ref?.archiveShared !== true) return stored;
+      const consumedProof = { kind: 'canonical-memory', recordKey: ref.key,
+        recordDigest: canonicalConsumptionDigest(stored) };
+      if (ref?.archiveShared !== true) return rememberConsumedCanonical(stored, consumedProof);
       const sessionEpoch = Number.isFinite(Number(ref.sessionEpoch)) ? Number(ref.sessionEpoch) : Number(stored.sessionEpoch || -1);
-      return {
+      return rememberConsumedCanonical({
         ...stored,
         sessionEpoch,
         archiveShared: true,
@@ -42250,7 +42272,7 @@ function createLibraReadonlySourceContext(owner) {
         archiveBaseSessionEpoch: Number.isFinite(Number(ref.archiveBaseSessionEpoch))
           ? Number(ref.archiveBaseSessionEpoch)
           : Number(stored.archiveBaseSessionEpoch || stored.sessionEpoch || -1)
-      };
+      }, consumedProof);
     };
     const removeMemoryRecord = async ref => {
       if (!ref?.key || ref?.archiveShared === true) return false;
@@ -61574,6 +61596,10 @@ ${string(queryBundle?.sceneText || '')}`;
           if (memory.kind === 'micro') {
             const proof = consumedMicroProofsByMemory.get(memory);
             if (!proof) throw consumerContractError('CONSUMER_MICRO_PROVENANCE_UNAVAILABLE');
+            consumedMicroProofs.push(proof);
+          } else {
+            const proof = consumedCanonicalProofsByMemory.get(memory);
+            if (!proof) throw consumerContractError('CONSUMER_CANONICAL_PROVENANCE_UNAVAILABLE');
             consumedMicroProofs.push(proof);
           }
           delivery.sourceMemories += 1;
