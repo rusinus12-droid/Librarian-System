@@ -17,7 +17,7 @@ const transformSource=source=>{
       (globalThis.__MICRO_HEAD_READS__ ||= []).push({ phase, headKey });
       return read();
     };
-    globalThis.__MICRO_HEAD_READ_TEST__ = { readActive: (...args) => readActiveMicroMemory(...args) };
+    globalThis.__MICRO_HEAD_READ_TEST__ = { readActive: async (...args) => readActiveMicroMemory((await resolveContext()).scope, ...args) };
 ${seam}`);
 };
 module.exports={transformSource};

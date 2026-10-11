@@ -154,7 +154,7 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
         if (!mutationApplied && key === t2Head.recordKey) { mutationApplied = true; const changedHead = JSON.parse(originalT2Body); changedHead.recallProjection.summary += ' physical-head-mutation'; fx.local.set(t2HeadKey, JSON.stringify(changedHead)); }
         return originalGetItem(key);
       };
-      let refused;try { refused = await f.r.context.__MICRO_HEAD_READ_TEST__.readActive({scopeKey:t2Head.scopeKey}, t2Head.worldlineId, t2Head.sessionEpoch, t2Head.turn); } finally { fx.local.set(t2HeadKey, originalT2Body); }
+      let refused;try { refused = await f.r.context.__MICRO_HEAD_READ_TEST__.readActive(t2Head.worldlineId, t2Head.sessionEpoch, t2Head.turn); } finally { fx.local.set(t2HeadKey, originalT2Body); }
       assert.equal(mutationApplied, true);assert.equal(refused.status, 'stale_source');assert.equal(refused.reason, 'micro_head_changed_during_read');
       const refusalTrace = assertTrace();assert.deepEqual(refusalTrace.map(row => row.phase), ['hydration', 'physical-reread']);
       assert.ok(refusalTrace.every(row => row.headKey === t2HeadKey));
