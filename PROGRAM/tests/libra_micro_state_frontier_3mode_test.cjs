@@ -132,7 +132,7 @@ const sourceClaim = (input, value) => {
         characterId:f.character.id, chatId:f.chat.id};
       // A source-only receipt without a durable planned Micro marker is unknown.
       // Start the explicit, bounded retry before rolling back the State view.
-      const pendingT6 = f.r.api.retryMicroAnalysis({scope,receiptRef:t6.receiptKey,
+      const pendingT6 = f.r.api.resumeNeverStartedMicro({scope,receiptRef:t6.receiptKey,
         revision:t6.receipt.revisionId,digest:t6.receipt.sourceDigest});
       await waitFor(() => releaseT6, 15000);
       assert.equal((await f.r.api.rollbackWorldManagerState({throughTurn: 5})).ok, true);
@@ -161,8 +161,10 @@ const sourceClaim = (input, value) => {
       const beforeReads = JSON.stringify([...fx.local]);
       const beforeServerReads = JSON.stringify(fx.storedRows());
       const rolledResponse = await f.r.api.getResponseContext();
-      const writer = await f.r.api.prepareInputWriterEvidence('Continue at T5.');
-      for (const context of [rolledResponse, writer.evidencePacket.response_context]) {
+      const queryContext = await f.r.api.getResponseContext({currentInput:'Continue at T5.'});
+      for (const context of [rolledResponse, queryContext]) {
+        assert.equal((await f.r.api.validateResponseContext(context)).current, true,
+          `${mode}: rolled-back public context retains its source and State authority`);
         assert.equal(context.cutoffTurn, 5);
         assert.equal(context.values.currentHead.throughTurn, 5);
         assert.equal(context.values.currentHead.narrative.summary, observations.get(5));
@@ -170,7 +172,6 @@ const sourceClaim = (input, value) => {
           .every(row => row.turn == null || row.turn <= 5),
         `${mode}: a hidden future turn must not downgrade current State authority`);
       }
-      assert.equal((await f.r.api.debugValidateInputWriterDeliverySnapshot(writer.deliverySnapshot)).ok, true);
       assert.equal(JSON.stringify([...fx.local]), beforeReads, `${mode}: cutoff response reads leave local bytes unchanged`);
       assert.equal(JSON.stringify(fx.storedRows()), beforeServerReads, `${mode}: cutoff response reads leave server bytes unchanged`);
 
