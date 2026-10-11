@@ -436,9 +436,15 @@ const runMode = async mode => {
       `${mode}: a requested earlier canonical cursor excludes later transitions and corrections`);
     observation.providerCalls = f.control.calls.length;
     observation.embeddingStatusAfterHistory=String(memoryRows(snapshot).at(-1)?.value?.embedding?.status||'');
-    for(let attempt=0;attempt<100&&['pending','retry_pending'].includes(String(memoryRows(snapshot).at(-1)?.value?.embedding?.status||''));attempt++)
-      await new Promise(resolve=>setTimeout(resolve,20));
+    // History can finish before the queued derived-vector metadata write. Join
+    // the actual owner queue before comparing durable state and replay bytes.
+    assert.ok(['pending', 'disabled'].includes(observation.embeddingStatusAfterHistory),
+      `${mode}: pre-barrier history sees only pending or disabled derived metadata`);
+    const drained = await f.r.api.retryPendingUnifiedVectors();
+    assert.equal(drained.ok, true, `${mode}: derived owner queue drained: ${JSON.stringify(drained)}`);
     observation.embeddingStatusAfterBackgroundSettle=String(memoryRows(snapshot).at(-1)?.value?.embedding?.status||'');
+    assert.ok(memoryRows(snapshot).every(row => row.value.embedding?.status === 'disabled'),
+      `${mode}: all canonical rows are settled with embedding disabled before replay`);
     const canonicalBeforeReplay = JSON.stringify(memoryRows(snapshot).map(row => [row.key,storedJsonFieldBytes(row.raw, 'canonicalArtifact')]));
     assert.ok(memoryRows(snapshot).length>=4&&memoryRows(snapshot).every(row=>typeof row.raw==='string'&&row.raw.length>0),
       `${mode}: canonical byte snapshot is non-empty before cold replay`);
@@ -464,6 +470,8 @@ const runMode = async mode => {
       return [{key:before.key,fields,embeddingBefore:before.value?.embedding||null,embeddingAfter:after.value?.embedding||null}];
     });
     observation.fullMemoryWrapperBytesUnchanged=observation.memoryWrapperByteChanges.length===0;
+    assert.equal(observation.fullMemoryWrapperBytesUnchanged, true,
+      `${mode}: settled full memory wrapper bytes survive cold replay`);
     observation.coldReplayPreservesCanonical = canonicalAfterReplay === canonicalBeforeReplay;
     assert.equal(observation.coldReplayPreservesCanonical, true,
       `${mode}: cold replay and cache removal preserve exact embedded canonicalArtifact JSON bytes`);
@@ -484,7 +492,8 @@ const runMode = async mode => {
 (async () => {
   const results = {};
   for (const mode of MODES) results[mode] = await runMode(mode);
-  const project = ({ mode, ...rest }) => rest;
+  // Timing observations are retained in the report, not semantic parity data.
+  const project = ({ mode, embeddingStatusAfterHistory, ...rest }) => rest;
   if (MODES.length > 1) {
     assert.deepEqual(project(results.mirror), project(results.plugin_only), 'mirror matches plugin_only');
     assert.deepEqual(project(results.server_only), project(results.plugin_only), 'server_only matches plugin_only');

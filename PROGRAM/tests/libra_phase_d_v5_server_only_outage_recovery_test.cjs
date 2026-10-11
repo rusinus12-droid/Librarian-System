@@ -164,6 +164,13 @@ const runMode = async mode => {
     assert.ok(Array.isArray(firstMina?.state?.boundaries) && firstMina.state.boundaries.length > 0, `${mode}: control batch projects the boundary`);
     const firstThread = firstHead.narrative?.threads?.find(thread => thread.summary === '오늘 열쇠 반환 약속');
     assert.equal(firstThread?.status, 'open', `${mode}: control batch preserves the open v5 thread`);
+    // The canonical run schedules derived embedding metadata on the owner
+    // queue. Drain that preceding work before installing the network fault;
+    // an already-sent T5 request is not a successor write during the outage.
+    const drained = await f.r.api.retryPendingUnifiedVectors();
+    assert.equal(drained.ok, true, `${mode}: pre-outage owner queue drained: ${JSON.stringify(drained)}`);
+    assert.equal(snapshot.getMemory(1)?.embedding?.status, 'disabled');
+    assert.equal(snapshot.getManifest()?.memories?.['1']?.embeddingStatus, 'disabled');
     const providerCallsBeforeOutage = f.control.calls.length;
     fiveMore(f);
     appendProfileEvidence(f.chat, 't9-a');

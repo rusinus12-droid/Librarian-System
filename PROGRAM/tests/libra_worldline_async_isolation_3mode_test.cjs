@@ -203,8 +203,34 @@ const worldlineScopeSnapshot = value => ({
       assert.ok(w0Initial, `${mode}: W0 canonical must be readable from its selected authority`);
       await waitFor(() => canonical(fixture, worlds.w0.id, w0Initial.sourceName)?.memory?.embedding?.status === 'ready', 20000);
 
+      if (mode === 'mirror') {
+        // A preexisting mirror owner is readable, but a native branch must not
+        // create a new operational mirror route. Verify that boundary, then
+        // explicitly finish the transition to the already-populated server.
+        const bridge = fixture.f.r.context.__WORLDLINE_STORAGE_ROUTE__;
+        const owner = await fixture.f.r.api.getHostLineageStatus();
+        const parentScope = { scopeKey: owner.scopeKey, scopeId: owner.scopeKey,
+          characterId: worlds.char.id, chatId: worlds.w0.id };
+        await assert.rejects(() => bridge.setScopeMode(parentScope, 'mirror'),
+          error => error.code === 'MEMORY_SUITE_MIRROR_TRANSITION_ONLY');
+        const parentBefore = parentByteSnapshot(canonical(fixture, worlds.w0.id, 'server'));
+        const callsBefore = fixture.f.control.calls.length;
+        worlds.select(worlds.child);
+        const blocked = await fixture.f.r.api.runManualColdStart();
+        assert.equal(blocked.state, 'failed');
+        assert.match(blocked.error, /memory_suite_mirror_is_transition_only/);
+        assert.equal(fixture.f.control.calls.length, callsBefore, 'new mirror branch is rejected before a provider call');
+        assert.equal(canonical(fixture, worlds.child.id, 'server'), null);
+        assert.equal(canonical(fixture, worlds.child.id, 'local'), null);
+        assert.deepEqual(parentByteSnapshot(canonical(fixture, worlds.w0.id, 'server')), parentBefore);
+        worlds.select(worlds.w0);
+        await bridge.setScopeMode(parentScope, 'server_only');
+        assert.equal((await bridge.getScopeMode(parentScope, true)).mode, 'server_only');
+        report.mirrorTransition = { newMirrorBranchRejected: true, providerCallsWhileBlocked: 0,
+          parentCanonicalBytesPreserved: true, operationalModeAfterTransition: 'server_only' };
+        fixture.mode = 'server_only';
+      }
       worlds.select(worlds.child);
-      if (mode === 'mirror') await bindCurrentOwnerRoute(worlds.child);
       fixture.f.control.artifact = withPlacement(artifact(), placements.W1);
       const w1Run = await fixture.f.r.api.runManualColdStart();
       assert.equal(w1Run.completed, 1, `${mode}: W1 canonical creation: ${JSON.stringify(w1Run)}`);
@@ -386,11 +412,10 @@ const worldlineScopeSnapshot = value => ({
         assert.equal(serverCalls.length, 0, `plugin_only performs zero Librarian server calls: ${JSON.stringify(serverCalls)}`);
         assert.ok(parentRows.local.every(Boolean), 'plugin_only canonical records live in local plugin storage');
       } else if (mode === 'mirror') {
-        assert.ok(parentRows.server.every(Boolean) && parentRows.local.every(Boolean), 'mirror replicates both W0 and W1 canonical records');
-        for (const chatId of [worlds.w0.id, worlds.child.id]) {
-          assert.equal(canonical(fixture, chatId, 'server').memoryRow.raw, canonical(fixture, chatId, 'local').memoryRow.raw,
-            `${mode}: mirrored canonical payload matches for ${chatId}`);
-        }
+        assert.ok(parentRows.server.every(Boolean), 'completed mirror transition uses server authority for both worlds');
+        assert.deepEqual(parentRows.local, [true, false], 'historical W0 mirror bytes remain, with no new local W1 fallback');
+        assert.equal(canonical(fixture, worlds.w0.id, 'server').memoryRow.raw,
+          canonical(fixture, worlds.w0.id, 'local').memoryRow.raw, 'historical mirrored W0 canonical bytes remain equal');
       } else {
         assert.ok(parentRows.server.every(Boolean), 'server_only keeps both canonical records on the server');
         assert.deepEqual(parentRows.local, [false, false], 'server_only has no local canonical fallback');

@@ -7,7 +7,21 @@ const MODES=process.env.LIBRA_SCOPE_DELETE_MODE?[process.env.LIBRA_SCOPE_DELETE_
 (async()=>{for(const mode of MODES){const s=await serverFixture({mode,transformSource:exposeBridge});try{
  const lineage=await s.f.r.api.getHostLineageStatus();
  const activeScope={scopeKey:lineage.scopeKey,scopeId:lineage.scopeKey,characterId:s.f.character.id,chatId:s.f.chat.id};
- await s.f.r.context.__deleteScopeBridge.setScopeMode(activeScope,mode);
+ if(mode==='mirror'){
+  const bridge=s.f.r.context.__deleteScopeBridge;
+  await assert.rejects(()=>bridge.setScopeMode(activeScope,'mirror'),
+   error=>error.code==='MEMORY_SUITE_MIRROR_TRANSITION_ONLY');
+  // Historical persisted mirror routes still need safe owner deletion. Seed
+  // that old route, then exercise the shipped read/deletion path unchanged.
+  const routingKey='__memory_suite_internal_scope_routes_v1__:libra';
+  const prior=JSON.parse(s.local.get(routingKey)||'{}');
+  const storedScope=(await bridge.getScopeMode(activeScope)).scope;
+  s.local.set(routingKey,JSON.stringify({schema:'memory-suite.scope-routing.v1',version:1,
+   namespace:'libra',defaultMode:'plugin_only',legacyGlobalModeImported:true,
+   entries:{...(prior.entries||{}),[activeScope.scopeId]:{...storedScope,mode:'mirror',
+    origin:'legacy_mirror_fixture',updatedAt:Date.now(),source:'historical_owner_deletion_fixture'}}}));
+  assert.equal((await bridge.getScopeMode(activeScope,true)).mode,'mirror');
+ }else await s.f.r.context.__deleteScopeBridge.setScopeMode(activeScope,mode);
  assert.equal((await s.f.r.context.__deleteScopeBridge.getScopeMode(activeScope)).mode,mode,'active owner route is explicit before unrelated routing');
  const otherScope={scopeId:'unrelated-live-scope',scopeKey:'unrelated-live-scope',characterId:'other',chatId:'live'};
  await s.f.r.context.__deleteScopeBridge.setScopeMode(otherScope,'server_only');
