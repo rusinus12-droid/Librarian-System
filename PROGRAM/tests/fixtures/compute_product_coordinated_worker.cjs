@@ -8,7 +8,8 @@ const execute = registry.executeOperation;
 // Telemetry deliberately has NO protocol jobId: production WorkerPool ignores
 // unmatched frames. The coordinator binds controlledJobId to actual HTTP jobs.
 let gate = null, workerIndex = -1, currentJob = null;
-parentPort.prependListener('message', message => {
+// Register before requiring the production worker, preserving listener order.
+parentPort.on('message', message => {
   if (message?.controlledProductGate) {
     gate = new Int32Array(message.buffer); workerIndex = message.workerIndex;
     parentPort.postMessage({ event: 'controlledGateReady', workerIndex, threadId });
