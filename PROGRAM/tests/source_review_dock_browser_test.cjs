@@ -10,12 +10,15 @@ const program = path.resolve(__dirname, '..');
 const out = path.resolve(process.argv[2] || process.env.SOURCE_REVIEW_TEST_ARTIFACTS || path.join(os.tmpdir(), 'source-review-history-browser'));
 fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(out, 'chrome-'));
+// Chromium's Unix singleton socket must fit sun_path even when the
+// campaign TMPDIR is a deeply nested evidence directory.
+const socketTmp=fs.mkdtempSync(path.join(process.platform==='win32'?os.tmpdir():'/tmp','ms-chrome-'));
 const stderrFile=path.join(profile,'chromium.stderr.log');
 fs.mkdirSync(path.join(profile,'config'),{recursive:true});fs.mkdirSync(path.join(profile,'cache'),{recursive:true});
 const chrome = spawn(resolveChromeExecutable(), [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--disable-dev-shm-usage',
   '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'
-], { windowsHide: true, env:{...process.env,XDG_CONFIG_HOME:path.join(profile,'config'),XDG_CACHE_HOME:path.join(profile,'cache')},stdio:['ignore','ignore',fs.openSync(stderrFile,'a')] });
+], { windowsHide: true, env:{...process.env,TMPDIR:socketTmp,XDG_CONFIG_HOME:path.join(profile,'config'),XDG_CACHE_HOME:path.join(profile,'cache')},stdio:['ignore','ignore',fs.openSync(stderrFile,'a')] });
 let chromeExit = null;
 chrome.on('error',error=>{chromeExit={error:error.message}});
 chrome.on('exit', (code, signal) => { chromeExit = { code, signal }; });
