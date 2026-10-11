@@ -33644,9 +33644,26 @@ function createLibraReadonlySourceContext(owner) {
       const logical = { ...memory }; delete logical.embedding;
       return digest(stableReferenceJson(logical));
     };
-    const rememberConsumedCanonical = (memory, proof) => {
-      if (memory) consumedCanonicalProofsByMemory.set(memory, unifiedDeepFreeze(clone(proof)));
+    const captureCanonicalBodySnapshot = memory => {
+      if (!memory || typeof memory !== 'object') return JSON.stringify(memory);
+      const logical = { ...memory }; delete logical.embedding;
+      return JSON.stringify(logical);
+    };
+    const rememberConsumedCanonical = (memory, recordKey, bodySnapshot) => {
+      // The immutable physical JSON is captured before any logical archive
+      // overlay or caller mutation. Non-response readers need no stable digest.
+      if (memory) consumedCanonicalProofsByMemory.set(memory, unifiedDeepFreeze({ recordKey: clone(recordKey), bodySnapshot }));
       return memory;
+    };
+    const getConsumedCanonicalProof = memory => {
+      const entry = consumedCanonicalProofsByMemory.get(memory);
+      if (!entry || entry.kind === 'canonical-memory') return entry;
+      const proof = unifiedDeepFreeze({ kind: 'canonical-memory', recordKey: entry.recordKey,
+        recordDigest: canonicalConsumptionDigest(JSON.parse(entry.bodySnapshot)) });
+      // Promotion releases the snapshot. Unconsumed snapshots have only their
+      // returned memory's WeakMap lifetime; no strong registry retains them.
+      consumedCanonicalProofsByMemory.set(memory, proof);
+      return proof;
     };
     const consumedMicroProofsByState = new WeakMap();
     const consumedDataReadSets = new Map();
@@ -42270,9 +42287,8 @@ function createLibraReadonlySourceContext(owner) {
       if ((ref.memoryId && string(ref.memoryId) !== string(stored.memoryId || stored.id || ''))
         || (Number(ref.revision || 0) > 0 && Number(ref.revision) !== Number(stored.revision || 0))
         || (ref.sourceDigest && string(ref.sourceDigest) !== string(stored.sourceDigest))) return null;
-      const consumedProof = { kind: 'canonical-memory', recordKey: ref.key,
-        recordDigest: canonicalConsumptionDigest(stored) };
-      if (ref?.archiveShared !== true) return rememberConsumedCanonical(stored, consumedProof);
+      const bodySnapshot = captureCanonicalBodySnapshot(stored);
+      if (ref?.archiveShared !== true) return rememberConsumedCanonical(stored, ref.key, bodySnapshot);
       const sessionEpoch = Number.isFinite(Number(ref.sessionEpoch)) ? Number(ref.sessionEpoch) : Number(stored.sessionEpoch || -1);
       return rememberConsumedCanonical({
         ...stored,
@@ -42282,7 +42298,7 @@ function createLibraReadonlySourceContext(owner) {
         archiveBaseSessionEpoch: Number.isFinite(Number(ref.archiveBaseSessionEpoch))
           ? Number(ref.archiveBaseSessionEpoch)
           : Number(stored.archiveBaseSessionEpoch || stored.sessionEpoch || -1)
-      }, consumedProof);
+      }, ref.key, bodySnapshot);
     };
     const removeMemoryRecord = async ref => {
       if (!ref?.key || ref?.archiveShared === true) return false;
@@ -60493,7 +60509,7 @@ ${string(queryBundle?.sceneText || '')}`;
             head: null,
             readFact: async ref => {
               const memory = await loadMemoryRef(ref);
-              const proof = consumedCanonicalProofsByMemory.get(memory);
+              const proof = getConsumedCanonicalProof(memory);
               if (proof) recallClosureProofsByKey.set(string(ref.key), proof);
               return memory;
             },
@@ -61626,7 +61642,7 @@ ${string(queryBundle?.sceneText || '')}`;
             if (!proof) throw consumerContractError('CONSUMER_MICRO_PROVENANCE_UNAVAILABLE');
             consumedMicroProofs.push(proof);
           } else {
-            const proof = consumedCanonicalProofsByMemory.get(memory);
+            const proof = getConsumedCanonicalProof(memory);
             if (!proof) throw consumerContractError('CONSUMER_CANONICAL_PROVENANCE_UNAVAILABLE');
             consumedMicroProofs.push(proof);
           }
