@@ -271,7 +271,8 @@ function loadLocal(filename) {
   localModules.set(filename, child);
   const original = fs.readFileSync(filename, 'utf8');
   const copied = fixtureSource(original, name);
-  child._compile("const __root085Boundary=require('./root085-private-boundary');\n" + copied, filename);
+  child._compile(replaceOnce(copied, "'use strict';",
+    "'use strict';\nconst __root085Boundary=require('./root085-private-boundary');"), filename);
   return child.exports;
 }
 
