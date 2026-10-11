@@ -14,9 +14,8 @@ const restoreCode=between('  const restoreBackup = async ', '\n  const ',source)
 // The next declaration after restoreBackup is independently checked below.
 assert(restoreCode.includes('maintenanceMode = false;')&&restoreCode.includes('migrationMetadataReceipt'));
 const recoveryCode=between('function restoreJournalPath(', '\nfunction createRecoveryQuarantine(');
-const restoreSelectionCode=between('function restoreComponentSelection(', '\nfunction componentCurrentFingerprint(');
-const restoreComponentSchemaDeclarations=source.match(/^const RESTORE_COMPONENT_JOURNAL_SCHEMA = .+;$/gm);
-assert.equal(restoreComponentSchemaDeclarations?.length,1,'one current component journal schema declaration');
+// The retained legacy restore engine uses the transaction journal below.
+// Removed component-journal selection was never exercised by these scenarios.
 const mode=process.argv[2]||'maintenance';
 const dir=process.env.LIB_RESTORE_FIXTURE || fs.mkdtempSync(path.join(require('node:os').tmpdir(),'lib-restore-'));
 if(mode!=='recover'){assert(!fs.existsSync(path.join(dir,'config')),'Fresh fixture only; do not overwrite prior evidence');fs.mkdirSync(path.join(dir,'config'),{recursive:true});fs.mkdirSync(path.join(dir,'migrations'));fs.mkdirSync(path.join(dir,'stores'));fs.mkdirSync(path.join(dir,'backup'));}
@@ -39,7 +38,7 @@ vm.createContext(context);
 const metadataModule={exports:{}};
 vm.runInNewContext(fs.readFileSync(path.join(sourceRoot,'server/core/migration_metadata.cjs'),'utf8'),{module:metadataModule,require:name=>{if(name==='node:fs')return fs;if(name==='node:path')return path;if(name==='../portable/migration_data_policy.cjs')return {allowlistedConfig:x=>x};throw Error('IMPORT_FORBIDDEN:'+name);},process:{pid:process.pid},Buffer});
 Object.assign(context,metadataModule.exports);
-vm.runInContext(restoreComponentSchemaDeclarations[0]+'\n'+repoCode+'\n'+verifyCode+'\n'+recoveryCode+'\n'+restoreSelectionCode,context);
+vm.runInContext(repoCode+'\n'+verifyCode+'\n'+recoveryCode,context);
 const configFile=path.join(dir,'config','server-config.json');
 const before={schema:'memory-suite.server-config.v1',host:'127.0.0.1',port:47630,autoBackup:true,computeEnabled:true,computeWorkers:1};
 if(mode==='recover'){

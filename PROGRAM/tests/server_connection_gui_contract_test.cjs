@@ -7,17 +7,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMemorySuiteServer } = require('../server/server.cjs');
+const { extractStorageSdk, expectedStorageSdk } = require('../tools/lib/sdk_variants.cjs');
 
 const root = path.resolve(__dirname, '..');
 const sdkPath = path.join(root, 'sdk', 'MemorySuiteStorageClient.source.js');
 const sdkText = fs.readFileSync(sdkPath, 'utf8').trim();
-const libraSdkText = fs.readFileSync(path.join(root, 'sdk', 'MemorySuiteStorageClient.libra.source.js'), 'utf8').trim();
 const pluginDir = path.join(root, 'plugins');
 const plugins = [
   ['Flashback_Memory.js', 'data-tab="server"', 'flashbackMemorySuiteServerConnectionPanel'],
   ['HAYAKU_Locator_Continuity.js', 'data-hayaku-viewer-tab="server"', 'hayakuMemorySuiteServerConnectionPanel'],
-  ['LIBRA.js', "settingsHubSection: 'server'", 'libraMemorySuiteServerConnectionPanel'],
-  ['LIA_Persona_Linker.js', '["server", "저장·서버"]', 'liaMemorySuiteServerConnectionPanel'],
+  ['LIBRA.js', "{ id: 'server', label: '서버 · 저장' }", 'libraMemorySuiteServerConnectionPanel'],
+  ['LIA_Persona_Linker.js', '["server", "저장·이전 자료 복구"]', 'liaMemorySuiteServerConnectionPanel'],
   ['RETRACE.js', 'data-tab="serverconnection"', 'retraceMemorySuiteServerConnectionPanel']
 ];
 
@@ -42,18 +42,22 @@ for (const forbidden of ['memory_suite_bootstrap_key_required', 'data-mscx-key',
 
 for (const [file, navMarker, hostMarker] of plugins) {
   const text = fs.readFileSync(path.join(pluginDir, file), 'utf8');
-  const expectedSdk = file === 'LIBRA.js' ? libraSdkText : sdkText;
+  const expectedSdk = expectedStorageSdk(root, file, text);
   assert.ok(text.includes(navMarker), `${file} side navigation`);
   assert.ok(text.includes(hostMarker), `${file} connection host`);
   if (file === 'RETRACE.js') {
     assert.ok(text.includes('refreshMemorySuiteOwnerStorageDashboard'), `${file} owner storage dashboard`);
     assert.ok(text.includes('RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다.'), `${file} read-only control-plane contract`);
     assert.ok(!text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} must not expose its own storage-mode panel in RE:TRACE 1.9.77`);
+  } else if (file === 'LIA_Persona_Linker.js') {
+    assert.ok(text.includes('mountLiaServerConnectionPanel'), `${file} local recovery panel mount`);
+    assert.ok(!text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} local owner has no mode-changing panel`);
   } else {
     assert.ok(text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} panel mount`);
   }
-  assert.equal((text.match(releasePattern("LIBRARIAN SYSTEM STORAGE SDK v{storage}", "g")) || []).length, 1, `${file} embedded SDK count`);
-  assert.ok(text.includes(expectedSdk), `${file} embedded SDK exact sync`);
+  // extractStorageSdk requires exactly one marker/block; expectedStorageSdk
+  // verifies preserved consumer hashes as well as canonical active variants.
+  assert.equal(extractStorageSdk(text, file), expectedSdk, `${file} embedded SDK exact designated variant`);
 }
 
 function memoryStore(entries = {}) {
@@ -67,7 +71,45 @@ function memoryStore(entries = {}) {
   };
 }
 
+async function verifyLiaRecoveryPanel() {
+  const text = fs.readFileSync(path.join(pluginDir, 'LIA_Persona_Linker.js'), 'utf8');
+  const start = text.indexOf('function mountLiaServerConnectionPanel()');
+  const end = text.indexOf('function activateTab(', start);
+  assert(start >= 0 && end > start, 'LIA recovery panel extraction');
+  const button = disabled => ({ disabled, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } });
+  const preview = button(false), publish = button(true), status = { textContent: '' };
+  const nodes = { '[data-lia-recovery-preview]': preview, '[data-lia-recovery-publish]': publish, '[data-lia-recovery-status]': status };
+  const root = { innerHTML: '', querySelector(selector) { return nodes[selector]; } };
+  let previews = 0, publishes = 0, clears = 0;
+  let receipt = { records: 2, imageChunks: 1, conflicts: ['different-local-value'], unsupportedServerRecords: [], retainedServerTombstones: 1, unindexedShards: 1 };
+  const recovery = {
+    clear() { clears++; },
+    async preview() { previews++; return receipt; },
+    async publish(selected) { assert.equal(selected, receipt); publishes++; return { restored: 2 }; }
+  };
+  const mount = new Function('document', 'LiaLegacyServerRecovery', 'pluginUnloaded', `${text.slice(start, end)}; return mountLiaServerConnectionPanel;`)(
+    { getElementById(id) { return id === 'liaMemorySuiteServerConnectionPanel' ? root : null; } }, recovery, false
+  );
+  assert.equal(mount(), true);
+  assert.equal(clears, 1);
+  assert.equal(previews, 0, 'opening LIA storage performs no automatic server read');
+  assert.equal(publishes, 0, 'opening LIA storage performs no automatic import');
+  assert(root.innerHTML.includes('LIA 로컬 저장'));
+  await preview.handlers.click();
+  assert.equal(publish.disabled, true, 'conflicting local data blocks publication');
+  await publish.handlers.click();
+  assert.equal(publishes, 0);
+  receipt = { ...receipt, conflicts: [] };
+  await preview.handlers.click();
+  assert.equal(publish.disabled, false, 'verified conflict-free preview enables explicit publication');
+  await publish.handlers.click();
+  assert.equal(publishes, 1);
+  assert.equal(publish.disabled, true, 'publication consumes the preview');
+  assert(status.textContent.includes('서버 자료는 그대로 유지됩니다'));
+}
+
 async function main() {
+  await verifyLiaRecoveryPanel();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-suite-connection-gui-'));
   const app = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
   const address = await app.listen();
@@ -84,8 +126,10 @@ async function main() {
     };
     const createBridge = new Function(`${sdkText}\nreturn createMemorySuiteStorageBridge;`)();
     const legacy = memoryStore({ 'gui:test:a': { n: 1 } });
+    // The generic connection/mode workflow uses an active storage owner.
+    // LIA local recovery is exercised above; LIBRA retains its own SDK variant.
     const bridge = createBridge({
-      namespace: 'libra', pluginId: 'libra', pluginVersion: '1.0.98',
+      namespace: 'hayaku', pluginId: 'hayaku', pluginVersion: '1.0.98',
       pluginPrefixes: ['gui:test:'], managementButton: false, migrationDelayMs: 100000,
       currentScopeProvider: async () => ({ scopeId: 'gui-scope-a', scopeKey: 'gui-scope-a', label: 'GUI Scope A' })
     });
@@ -101,7 +145,7 @@ async function main() {
     assert.equal(configured.ok, true);
     assert.equal(configured.to.mode, 'server_only');
     assert.equal(configured.to.url, baseUrl);
-    assert.equal(args.memory_suite_server_mode, 'plugin_only', 'scope mode must not be stored as a global ARG');
+    assert.equal(args.memory_suite_server_mode, '', 'scope mode must leave the untouched global ARG unchanged');
     assert.equal(args.memory_suite_server_url, baseUrl);
 
     await assert.rejects(
@@ -130,11 +174,11 @@ async function main() {
     conflictingApp = createMemorySuiteServer({ host:'127.0.0.1', port:0, dataDir:conflictingDataDir, autoBackup:false });
     const conflictingAddress = await conflictingApp.listen();
     const conflictingUrl = `http://127.0.0.1:${conflictingAddress.port}`;
-    const bootstrap = await (await fetch(`${conflictingUrl}/bootstrap`, { headers:{ 'X-Memory-Suite-Plugin':'libra', 'X-Memory-Suite-Plugin-Version':'1.0.98' } })).json();
+    const bootstrap = await (await fetch(`${conflictingUrl}/bootstrap`, { headers:{ 'X-Memory-Suite-Plugin':'hayaku', 'X-Memory-Suite-Plugin-Version':'1.0.98' } })).json();
     const seeded = await (await fetch(`${conflictingUrl}/v1/kv/set`, {
       method:'POST',
-      headers:{ Authorization:`Bearer ${bootstrap.token}`, 'X-Memory-Suite-Plugin':'libra', 'X-Memory-Suite-Plugin-Version':'1.0.98', 'Content-Type':'application/json' },
-      body:JSON.stringify({ namespace:'libra', space:'plugin', key:'gui:test:a', value:{ n:999 }, operationId:'connection_url_rollback_conflict_seed' })
+      headers:{ Authorization:`Bearer ${bootstrap.token}`, 'X-Memory-Suite-Plugin':'hayaku', 'X-Memory-Suite-Plugin-Version':'1.0.98', 'Content-Type':'application/json' },
+      body:JSON.stringify({ namespace:'hayaku', space:'plugin', key:'gui:test:a', value:{ n:999 }, operationId:'connection_url_rollback_conflict_seed' })
     })).json();
     assert.equal(seeded.ok, true);
     await assert.rejects(
