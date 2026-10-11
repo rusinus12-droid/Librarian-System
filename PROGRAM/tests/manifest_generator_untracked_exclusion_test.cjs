@@ -31,8 +31,10 @@ const { spawnSync } = require('node:child_process');
 const { extractArchive } = require('../tools/lib/archive_extract.cjs');
 
 const PROGRAM = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(PROGRAM, '..', '..');
-const RELATIVE_PROGRAM = 'Librarian-System/PROGRAM';
+const locatedRoot=spawnSync('git',['rev-parse','--show-toplevel'],{cwd:PROGRAM,encoding:'utf8'});
+assert.equal(locatedRoot.status,0,'actual checkout Git root must be available');
+const REPO_ROOT=locatedRoot.stdout.trim();
+const RELATIVE_PROGRAM=path.relative(REPO_ROOT,PROGRAM).split(path.sep).join('/');
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 const git = (cwd, args) => {
@@ -58,7 +60,7 @@ const buildSandbox = () => {
   fs.writeFileSync(archiveFile, archived.stdout);
   const extracted = extractArchive(archiveFile, temp, { maxBuffer: MAX_BUFFER });
   if (!extracted.ok) throw new Error(`archive extraction failed (${extracted.reason}) with ${extracted.binary}: ${extracted.stderr}`);
-  const sandbox = path.join(temp, 'Librarian-System', 'PROGRAM');
+  const sandbox=path.join(temp,RELATIVE_PROGRAM);
   if (!fs.existsSync(sandbox)) throw new Error('the archive did not contain Librarian-System/PROGRAM');
   // The generator under test is the WORKING TREE version, so the current fix is what runs.
   fs.copyFileSync(path.join(PROGRAM, 'tools', 'update_manifest.cjs'), path.join(sandbox, 'tools', 'update_manifest.cjs'));
@@ -99,10 +101,10 @@ try {
   // ── self-test: disable the filter in the sandbox generator and require the probes to APPEAR ────────
   const generator = path.join(sandbox, 'tools', 'update_manifest.cjs');
   const generatorSource = fs.readFileSync(generator, 'utf8');
-  const site = '      && !isManifestUntrackedInRepository(path.relative(root, full))) rows.push(full);';
+  const site = '      && !isManifestUntrackedInRepository(path.relative(root, full))';
   assert.strictEqual(generatorSource.split(site).length - 1, 1,
     'the filter call site must exist exactly once in the generator');
-  fs.writeFileSync(generator, generatorSource.replace(site, '      ) rows.push(full);'));
+  fs.writeFileSync(generator, generatorSource.replace(site, ''));
   const withoutFix = regenerate(sandbox);
   const selfTestDetected = withoutFix.includes('docs/__untracked_probe__.md')
     && withoutFix.includes('docs/__stale_original__ 2.md');

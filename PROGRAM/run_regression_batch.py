@@ -108,6 +108,9 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # Preserved five-scenario local Persona dialog: standalone 135.109s,
+    # unchanged case deadlines; 180s bounds aggregate scheduling overhead.
+    'retrace_dialog_lifecycle_gui_test.cjs': 180,
     # All 29 raw-COW cases complete in 71.71s on restored A11. Preserve case
     # deadlines and the earlier default60 timeout; allow bounded file overhead.
     'flashback_raw_cow_append_runtime_test.cjs': 110,

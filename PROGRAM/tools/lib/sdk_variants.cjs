@@ -3,6 +3,8 @@
 // a consumer's preserved SDK with the newer active-writer runtime.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const preservedConsumerSha256='93711f7bb78faaf46d18bda64da7108710b37b0865a44a67fbbd2e831fb004bb';
+// Reviewed manager-only health delta; local-only consumers retain their pin.
+const managerOnlyConsumerSha256='8a74a8a9045f1821c238e1e14652fc44b4efb44c63ca13bfca5aa7c78b434cf4';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
 const gradiaReadOnlyConsumerSha256='9283ad5d929b7a49bee3455b8f75438eebac8fea2ab41a17e39ac811eead9bd6';
 const STORAGE_VARIANTS=Object.freeze({
@@ -10,7 +12,7 @@ const STORAGE_VARIANTS=Object.freeze({
  'HAYAKU_Locator_Continuity.js':Object.freeze({variant:'core3-standard-hayaku',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:true}),
  'LIBRA.js':Object.freeze({variant:'libra-control-plane-preroute',source:'sdk/MemorySuiteStorageClient.libra.source.js',embedsCompute:true}),
  'LIA_Persona_Linker.js':Object.freeze({variant:'preserved-local-only',embeddedSha256:preservedConsumerSha256,embedsCompute:true}),
- 'RETRACE.js':Object.freeze({variant:'preserved-manager-only',embeddedSha256:preservedConsumerSha256,embedsCompute:false}),
+ 'RETRACE.js':Object.freeze({variant:'preserved-manager-only',embeddedSha256:managerOnlyConsumerSha256,embedsCompute:false}),
  'GRADIA.js':Object.freeze({variant:'preserved-readonly-three-owner',embeddedSha256:gradiaReadOnlyConsumerSha256,embedsCompute:false})
 });
 const storagePattern=()=>/\/\* LIBRARIAN SYSTEM STORAGE SDK v[^\r\n]+[\s\S]*?\r?\n  return bridge;\r?\n\r?\n};/g;

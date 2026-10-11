@@ -7487,6 +7487,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!matchesRoute('plugin', String(key || ''))) throw new Error('HEALTH_STORAGE_KEY_UNVERIFIED');
       return {mode:MODE_PLUGIN_ONLY, raw:await plugin.getItem(String(key || '')), binding:JSON.stringify([scope.scopeId,'local_only',readOnlyAuthorityEpoch,dataBinding.generation])};
     }
+    if (managerOnly) {
+      // A manager does not initialize owner mode rows. Only its own physical
+      // legacy metadata for the currently selected host scope is health input.
+      if ((readOptions.space || 'plugin') !== 'plugin' || !matchesRoute('plugin', String(key || ''))) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+      const current = normalizeScopeDescriptor(currentScopeProvider ? await currentScopeProvider({namespace,pluginId,force:true}) : null);
+      if (!current.scopeId || scope.scopeId !== current.scopeId || scope.scopeKey !== current.scopeKey) throw Error('HEALTH_SCOPE_UNVERIFIED');
+      const route = resolveKeyScopeProvider ? await resolveKeyScopeProvider({key:String(key || ''),space:'plugin',currentScope:current,registry:{entries:{}}}) : null;
+      if (route?.kind !== 'scope' || route.scopeId !== current.scopeId) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+    }
     const device = await rawDeviceStorage({ strict: true });
     const pluginRaw = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
     const deviceRaw = typeof device?.getItem === 'function' ? await device.getItem(SCOPE_ROUTING_LOCAL_KEY) : null;
@@ -7511,7 +7520,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Prove its fresh local default observationally; never default failed or
     // unknown argument reads to local authority, or initialize a registry here.
     let freshLocalAuthority = null;
-    if (!registry.legacyGlobalModeImported && !stored && !global) {
+    if (!registry.legacyGlobalModeImported && !stored && !global && !managerOnly) {
       if (!globalModeEnabled) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
       for (const value of [pluginRaw, deviceRaw]) if (value != null && value !== '') {
         const parsed = typeof value === 'string' ? JSON.parse(value) : value;
@@ -7574,7 +7583,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const reset = await plugin.getItem(resetChoiceKey);
     if (reset != null && reset !== '') throw new Error('HEALTH_RESET_REVIEW_REQUIRED');
     const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-    const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    let mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    // A retained manager host argument must not certify a remote copy as local.
+    if (managerOnly && !registry.legacyGlobalModeImported && !stored && !global) mode = String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
     if (!VALID_MODES.has(mode) || mode !== MODE_PLUGIN_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
     const space=readOptions.space||'plugin';
     if(!['plugin','local'].includes(space))throw new Error('HEALTH_STORAGE_SPACE_INVALID');
@@ -7587,7 +7598,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       raw=await store.getItem(logicalKey);
     }else raw=await ownerLegacyRead(space,logicalKey);
     if (freshLocalAuthority) await freshLocalAuthority.assertCurrent();
-    return { mode, raw, binding: JSON.stringify([scope.scopeId, stored || null, global || null, dataBinding.generation, ...(freshLocalAuthority ? ['fresh_local',freshLocalAuthority.witness] : [])]) };
+    return { mode, raw, binding: JSON.stringify(managerOnly ? [scope.scopeId, 'manager_only', stored || null, global || null, readOnlyAuthorityEpoch, dataBinding.generation] : [scope.scopeId, stored || null, global || null, dataBinding.generation, ...(freshLocalAuthority ? ['fresh_local',freshLocalAuthority.witness] : [])]) };
   };
   // Read-only server snapshot. Deliberately bypass request(), bootstrap(),
   // readConfig/readScopeMode(), routed getters, and all reconciliation paths.

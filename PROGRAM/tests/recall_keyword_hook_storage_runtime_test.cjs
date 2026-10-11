@@ -35,11 +35,15 @@ const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recal
    // Each reader observes physical bytes independently. Current C0 projection
    // caching cannot borrow a different request's physical read authority.
    const manifest=await ft.loadScopeManifest(scope.scopeKey);ft.invalidateRecallShardCache(scope.scopeKey);
-   let physicalReads=0;const stores=[f.pluginStorage,f.host.safeLocalStorage];const reads=stores.map(store=>store.getItem.bind(store));
-   stores.forEach((store,i)=>{store.getItem=async key=>{physicalReads++;return reads[i](key);};});
+   const physicalReads=new Map();const stores=[f.pluginStorage,f.host.safeLocalStorage];const reads=stores.map(store=>store.getItem.bind(store));
+   stores.forEach((store,i)=>{store.getItem=async key=>{const id=i+'::'+String(key);physicalReads.set(id,(physicalReads.get(id)||0)+1);return reads[i](key);};});
    const [left,right]=await Promise.all([ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest}),ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest})]);
    assert.equal(left.records.length,right.records.length);assert.notEqual(left.records,right.records);
-   assert.ok(physicalReads>=2,'Distinct readers retain independent physical observations');
+   const canonicalReads=[...physicalReads].filter(([key])=>key.includes(':records:commit:'+manifest.commitId+':shard:'));
+   assert.equal(canonicalReads.length,manifest.shardCount,'Every selected canonical shard was physically observed');
+   assert.ok(canonicalReads.every(([,count])=>count===2),'Each reader independently observes every canonical shard');
+   const vectorReads=[...physicalReads].filter(([key])=>key.includes(':local-vector-shard:v1:'));
+   assert.ok(vectorReads.length>0&&vectorReads.every(([,count])=>count===2),'Model sidecars retain per-reader physical observations');
    stores.forEach((store,i)=>{store.getItem=reads[i];});
   }finally{await f.dispose();}
  }
