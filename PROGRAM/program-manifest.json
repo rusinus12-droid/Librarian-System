@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T10:55:01.262Z",
+  "generatedAt": "2026-10-11T13:01:19.336Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2316,12 +2316,12 @@
       "bytes": 9032
     },
     "docs/regression/FIX39_PROCESSING_20261011.json": {
-      "sha256": "81ae9c94e50243c395223ff90bac248300483ebba04bc6be8cc4ceb07292f856",
-      "bytes": 843050
+      "sha256": "23bd2820054eb5842d12dcd97fadb6828e89893502a3e396882e95c206b7b817",
+      "bytes": 3578053
     },
     "docs/regression/FIX39_PROCESSING_20261011.md": {
-      "sha256": "855b196e56eb2bdeb5488be13a1ab8abb808d535c0ec5e25077a3b5c9fa48c0a",
-      "bytes": 7391
+      "sha256": "a379016193203142260f79cb6f8ce78d22dc05b49261fdffaed2fc775957abcd",
+      "bytes": 8272
     },
     "docs/regression/fix39-20261011/contracts-assertion-map.json": {
       "sha256": "c7a6ca7e53beedfdff4200f2bdd6e2bd7cac42d5b227c645974dacff0b7f81df",
@@ -4030,6 +4030,10 @@
     "tests/fixtures/portable_historical_inventory_fixture.cjs": {
       "sha256": "5cdf1ebc7b150afb670d68f46026a87d92772157f95e61ce2c545aad403a1d2f",
       "bytes": 3944
+    },
+    "tests/fixtures/portable_native_cleanup_readiness.cjs": {
+      "sha256": "705420a344e09e962adedba49461673da0649f8dd132249d75a358596c67f6df",
+      "bytes": 1754
     },
     "tests/fixtures/portable_retrace_browser.py": {
       "sha256": "f8eaaf90b0e2dcdd5737d8b06110e96f436d24fd4060a8fbe898baf987a07ecc",
@@ -6760,8 +6764,8 @@
       "bytes": 11258
     },
     "tests/libra_portable_pending_queue_runtime_test.cjs": {
-      "sha256": "2171c35a0ccf0aea2128b57992517ffe3a8b449cfcaababbf5caa1a856465e5d",
-      "bytes": 5459
+      "sha256": "9b66bdc97cef47cc696492286d0a3b1f82a30ebf4a59ac640813e860c70a9084",
+      "bytes": 5639
     },
     "tests/libra_portable_scheduled_audit_exclusion_test.cjs": {
       "sha256": "6a43e806cf6b6cf734adc39ebcddf026b7507aecd54a2d92e7133d0d37c90247",
