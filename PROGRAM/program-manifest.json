@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-10T23:03:06.767Z",
+  "generatedAt": "2026-10-11T00:36:10.057Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2303,6 +2303,10 @@
       "sha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da",
       "bytes": 19143
     },
+    "docs/regression/REFERENCE-EVIDENCE-FOLLOWUP-20261011.json": {
+      "sha256": "1cd36b0b9fed39a03d448056358210fa6530fbdb84285e7dc6dff6b439f91502",
+      "bytes": 19365
+    },
     "docs/regression/REGRESSION-CONTINUATION-20261011.json": {
       "sha256": "019544dbc9804a4321987c44dee26e8aa492aeb3e1579f5114c8d0f0f9f3f456",
       "bytes": 48041
@@ -3168,8 +3172,8 @@
       "bytes": 668
     },
     "tests/authority_route_lifecycle_basic.test.cjs": {
-      "sha256": "2743a668f41c109a59f7bd774a862af3a7ddd930c5059b501715fbc4177e063e",
-      "bytes": 16702
+      "sha256": "38ddfe11f133c6ff94e313f56cb4b76634900bd6371e04080adb20e138b8b2f0",
+      "bytes": 18683
     },
     "tests/authority_server_writer_inventory.test.cjs": {
       "sha256": "25937956d02cfbbeca2d859f0d16afbe4a2eff7dc0b9d37c5d94819314dff3b5",
@@ -6196,12 +6200,12 @@
       "bytes": 37323
     },
     "tests/libra_main_memory_thread_lifecycle_e2e_test.cjs": {
-      "sha256": "70ef832e828e27291e8968f7660f98693e5ed7a77763b79262efef455358efaa",
-      "bytes": 11990
+      "sha256": "7355f2b3b19bd17655f20499655c432c7578e8d837ce4dffe43bc546c01d6979",
+      "bytes": 12131
     },
     "tests/libra_main_memory_thread_lifecycle_transfer_test.cjs": {
-      "sha256": "29ef65292325834b3b513032d39f189a74bece2ae405897e269c3202c2007f4b",
-      "bytes": 25052
+      "sha256": "63dfbfeacd3343ee5fa0e3ccae0891c0ab6beea089b23902236fe7cf2ce5f947",
+      "bytes": 25919
     },
     "tests/libra_main_memory_transfer_bundle_matrix_test.cjs": {
       "sha256": "c50c2abb57c1836c8861cd8b8467c1d0944ad9f71e97d93f2cab58abd41792b1",

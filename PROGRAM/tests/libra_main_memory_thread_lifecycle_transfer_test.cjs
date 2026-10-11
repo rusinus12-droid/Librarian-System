@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const { lineageFixture } = require('./fixtures/libra_unified_lineage_fixture.cjs');
 const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
+const { actualClassicPacket, deliveredClosureRows } = require('./fixtures/libra_actual_classic_request.cjs');
 
 const sourceRows = [
   ['민아는 지호에게 은빛 열쇠를 건넸다.', '오늘 열쇠 반환을 약속했다.'],
@@ -148,9 +149,10 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     const branchRecall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(branchRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
       'the keyless target resolves in the native child prefix');
-    const branchPacket = await f.r.api.prepareInputWriterEvidence(query);
-    assert.ok((branchPacket?.evidencePacket?.layers?.memory || []).some(row => row.closure === true && row.text === acceptedFactText),
-      'native branch packet carries the actual later lifecycle outcome');
+    const branchPacket = await actualClassicPacket(f, query, activeManifest.scopeKey);
+    assert.equal(deliveredClosureRows(branchPacket).filter(row => row.memoryId === parentSecond.memoryId
+      && row.revision === parentSecond.revision && row.text === acceptedFactText).length, 1,
+      'native branch delivers the exact later lifecycle outcome in the sealed Classic request');
     const history = await f.r.api.getWorldManagerHistoryDetail({ memoryId: parentSecond.memoryId, revision: parentSecond.revision });
     assert.equal(history.provenance?.domains?.narrative?.canonicalAssertions?.[0]?.values?.thread?.resolution, 'fulfilled');
 
@@ -204,9 +206,17 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     const handoffRecall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(handoffRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
       'the keyless target resolves in the adopted session prefix');
-    const handoffPacket = await f.r.api.prepareInputWriterEvidence(query);
-    assert.ok((handoffPacket?.evidencePacket?.layers?.memory || []).some(row => row.closure === true && row.text === acceptedFactText),
-      'handoff packet retains the actual accepted lifecycle outcome');
+    const handoffOutcome = activeRefs.find(ref => Number(ref.sessionEpoch) === -1
+      && ref.turnRange?.start === 6 && ref.turnRange?.end === 10);
+    assert.ok(handoffOutcome, 'the active handoff manifest identifies the inherited outcome');
+    assert.equal(handoffOutcome.sourceDigest, parentSecond.sourceDigest,
+      'the archive identity remains bound to the original completed source batch');
+    const handoffPacket = await actualClassicPacket(f, query, activeManifest.scopeKey);
+    assert.equal(deliveredClosureRows(handoffPacket).filter(row => row.memoryId === handoffOutcome.memoryId
+      && row.memoryKey === handoffOutcome.key && row.revision === handoffOutcome.revision
+      && row.sourceDigest === handoffOutcome.sourceDigest && row.sessionEpoch === -1
+      && row.text === acceptedFactText).length, 1,
+      'handoff delivers the exact archived lifecycle outcome in the sealed Classic request');
     const inheritedMicroQuery = sourceMicroT2.value.claims[0].evidence.exactQuote;
     const widerSettings = await f.r.api.getLibraMemorySettings();
     await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
@@ -274,10 +284,10 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
       'the old high-turn inherited fact is selected by its own anchor');
     assert.equal(oldEpochRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
       'epoch-0 turn 1 is a forward successor of epoch -1 turn 10');
-    const oldEpochPacket = await f.r.api.prepareInputWriterEvidence(oldEpochQuery);
-    assert.ok((oldEpochPacket?.evidencePacket?.layers?.memory || []).some(row => row.closure === true
-      && row.memoryId === localRef.memoryId && row.text === reopenArtifact.facts[0].text),
-      'the actual Input Writer packet adds the later-epoch reopen despite its smaller turn number');
+    const oldEpochPacket = await actualClassicPacket(f, oldEpochQuery, localManifest.scopeKey);
+    assert.equal(deliveredClosureRows(oldEpochPacket).filter(row => row.memoryId === localRef.memoryId
+      && row.revision === localRef.revision && row.text === reopenArtifact.facts[0].text).length, 1,
+      'the sealed Classic request delivers the later-epoch reopen despite its smaller turn number');
 
     const newEpochQuery = '이번 회차에 다시 열린 은빛 열쇠 반환 약속';
     const newEpochRecall = await f.r.api.previewUnifiedMemoryRecall(newEpochQuery);
