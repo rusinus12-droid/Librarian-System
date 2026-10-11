@@ -44,16 +44,26 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
     const originalGetItem = fx.backend.getItem;
     let headReads = 0;
     let headReadKeys = [];
+    let recordReadKeys = [];
     fx.backend.getItem = async key => {
       if (String(key).includes(':micro-memory-head:')) {
         headReads += 1;
         headReadKeys.push(String(key));
       }
+      if (String(key).includes(':micro-memory:')) recordReadKeys.push(String(key));
       return originalGetItem(key);
     };
     const trace = () => Array.from(f.r.context.__MICRO_HEAD_READS__ || [], row => ({...row}));
-    const resetTrace = () => { headReads = 0; headReadKeys = []; f.r.context.__MICRO_HEAD_READS__ = []; };
+    const resetTrace = () => { headReads = 0; headReadKeys = []; recordReadKeys = []; f.r.context.__MICRO_HEAD_READS__ = []; };
     const assertTrace = () => { const rows = trace(); assert.equal(rows.length, headReads, 'every actual backend head read has an observed phase'); assert.deepEqual(rows.map(row => row.headKey).sort(), [...headReadKeys].sort()); return rows; };
+    const publicSelected = recall => Array.from(recall.memories || []).filter(row => row.memory?.kind === 'micro').map(row => ({memoryId:row.memory.memoryId, turn:row.memory.turnRange?.start}));
+    const assertPairedHeads = rows => {
+      const hydration = rows.filter(row => row.phase === 'hydration'), rereads = rows.filter(row => row.phase === 'physical-reread');
+      assert.deepEqual(hydration.map(row => row.headKey).sort(), rereads.map(row => row.headKey).sort(), 'each hydrated physical head has exactly one matching final reread');
+      const identities = hydration.map(row => { const head = JSON.parse(fx.local.get(row.headKey)); return {headKey:row.headKey,recordKey:head.recordKey,analysisRevisionId:head.analysisRevisionId,turn:head.turn}; });
+      assert.deepEqual(identities.map(row => row.recordKey).sort(), [...recordReadKeys].sort(), 'hydrated identities match actual physical record reads');
+      return identities;
+    };
     const selectedTurn = (recall, turn) => Array.from(recall.memories || [])
       .some(row => row.memory?.kind === 'micro' && row.memory?.turnRange?.start === turn);
     try {
@@ -84,13 +94,17 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
       assert.equal(selectedTurn(changed, 2), true,
         'a newly published T2 enters Recall without restarting or a full head scan');
       const changedTrace = assertTrace();
+      const changedHydrated = assertPairedHeads(changedTrace), changedPublicSelected = publicSelected(changed);
+      console.log('OBSERVE actual T2 incremental head reads', JSON.stringify({headReads, changedTrace, changedHydrated, changedPublicSelected}));
       assert.ok(changedTrace.filter(row => row.phase === 'catalog').length <= 1, 'incremental catalog reads only new T2');
       assert.ok(changedTrace.filter(row => row.phase === 'catalog').every(row => row.headKey.endsWith(':t2')));
       assert.ok(changedTrace.filter(row => row.phase === 'hydration').length >= 1);
       assert.equal(changedTrace.filter(row => row.phase === 'physical-reread').length, changedTrace.filter(row => row.phase === 'hydration').length);
-      assert.ok(changedTrace.filter(row => row.phase !== 'catalog').every(row => row.headKey.endsWith(':t2')), 'only selected T2 is physically hydrated and rechecked');
-      assert.ok(headReads <= 3,
-        `incremental Recall should read new T2 and selected hydration only: ${headReads} ${headReadKeys.join(', ')}`);
+      assert.deepEqual(changedHydrated.map(row => row.turn).sort(), [1,2], 'incremental shortlist hydrates the two actually published records');
+      const finalRereads = changedTrace.filter(row => row.phase === 'physical-reread').length;
+      assert.equal(finalRereads, 2);
+      assert.ok(headReads - finalRereads <= 3, 'original catalog plus hydration bound remains3 after accounting only proven final rereads');
+      assert.equal(headReads, 5, 'one new T2 catalog read plus paired physical reads for each of two shortlisted records');
 
       // Synthetic catalog pressure only: these extra heads are never source
       // evidence. T1/T2 above are genuinely published and hydrated.
@@ -125,8 +139,9 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
 
       const longWarmTrace = assertTrace();
       assert.equal(longWarmTrace.filter(row => row.phase === 'catalog').length, 0, 'warm64-turn catalog performs no head scan');
-      assert.deepEqual(longWarmTrace.map(row => row.phase), ['hydration', 'physical-reread']);
-      assert.ok(longWarmTrace.every(row => row.headKey.endsWith(':t2')));
+      const longWarmHydrated = assertPairedHeads(longWarmTrace), longWarmPublicSelected = publicSelected(longWarm);
+      assert.deepEqual(longWarmHydrated.map(row => row.turn).sort(), [1,2]);
+      assert.equal(headReads, 4, 'warm catalog only hydrates and physically rereads two shortlisted published records');
       const warmHeadReads = headReads;
 
       // Mutate the actual selected physical head during its record await. The
@@ -135,6 +150,7 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
       resetTrace();let mutationApplied = false;
       fx.backend.getItem = async key => {
         if (String(key).includes(':micro-memory-head:')) { headReads++; headReadKeys.push(String(key)); }
+        if (String(key).includes(':micro-memory:')) recordReadKeys.push(String(key));
         if (!mutationApplied && key === t2Head.recordKey) { mutationApplied = true; const changedHead = JSON.parse(originalT2Body); changedHead.recallProjection.summary += ' physical-head-mutation'; fx.local.set(t2HeadKey, JSON.stringify(changedHead)); }
         return originalGetItem(key);
       };
@@ -144,7 +160,7 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
       assert.ok(refusalTrace.every(row => row.headKey === t2HeadKey));
       assert.equal(fs.readFileSync(sourcePath, 'utf8'), originalSource, 'production source bytes unchanged');
       console.log('PASS incremental Micro Recall head reads',
-        JSON.stringify({syntheticTurns: 64, firstTrace, coldHeadReads, warmHeadReads, steadyTrace, changedTrace, coldCatalogReads:coldTrace.filter(row => row.phase === 'catalog').length, longWarmTrace, physicalHeadMutationRefused:refused.reason}));
+        JSON.stringify({syntheticTurns: 64, firstTrace, coldHeadReads, warmHeadReads, steadyTrace, changedTrace, changedHydrated, changedPublicSelected, coldCatalogReads:coldTrace.filter(row => row.phase === 'catalog').length, longWarmTrace, longWarmHydrated, longWarmPublicSelected, physicalHeadMutationRefused:refused.reason}));
     } finally { fx.backend.getItem = originalGetItem; }
   } finally { await fx.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

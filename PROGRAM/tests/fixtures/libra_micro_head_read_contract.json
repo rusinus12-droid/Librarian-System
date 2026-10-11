@@ -5,13 +5,31 @@
   "historicalFailure": "qualified-run-1/logs/625-libra_micro_recall_incremental_head_index_test.cjs.log: old steady headReads<=1 sees2",
   "cause": "readActiveMicroMemory now physically reads initial head and rereads same head after awaited record/work/source reads. This required protection adds a selected-head read, not another catalog scan.",
   "assertionMap": [
-    {"original": "Actually publish source-bound T1 and T2, then recall both", "current": "Producer inputs, exact quotes, publication listener, publication waits and selected turn checks unchanged"},
-    {"original": "Steady T1 reads at most1 head", "current": "Exactly2 same selected T1 physical reads, traced hydration then physical-reread, zero catalog phase", "equivalenceGap": "Intentional final physical protection requires second selected read"},
-    {"original": "New T2 incremental reads<=3", "current": "Original<=3 bound retained pending actual trace; catalog phase at most1 and onlyT2, paired hydration/reread onlyT2", "equivalenceGap": "No blind cap increase; runtime trace may expose additional selected candidates and requires explicit review"},
-    {"original": "64-turn cold catalog probes>=60; warm reads<quarter cold", "current": "Both original bounds retained; warm exactly hydration/reread ofT2 with no catalog scan"},
-    {"original": "Missing physical head mutation guard case", "current": "During genuine T2 record await, replace actual persisted head body; actual readActiveMicroMemory must return stale_source/micro_head_changed_during_read; restore physical head in finally"}
+    {
+      "original": "Actually publish source-bound T1 and T2, then recall both",
+      "current": "Producer inputs, exact quotes, publication listener, publication waits and selected turn checks unchanged"
+    },
+    {
+      "original": "Steady T1 reads at most1 head",
+      "current": "Exactly2 same selected T1 physical reads, traced hydration then physical-reread, zero catalog phase",
+      "equivalenceGap": "Intentional final physical protection requires second selected read"
+    },
+    {
+      "original": "New T2 incremental reads<=3",
+      "current": "Original catalog+hydration<=3 preserved after subtracting exactly2 proven per-head physical rereads; actual total5. Actual two shortlisted published record IDs traced and paired with backend physical record reads, public selected IDs recorded separately.",
+      "equivalenceGap": "Two additional final rereads required by intentional guard, not catalog scans or arbitrary cap widening"
+    },
+    {
+      "original": "64-turn cold catalog probes>=60; warm reads<quarter cold",
+      "current": "Both original bounds retained; warm4 reads = paired hydration/reread for actually shortlisted T1/T2, no catalog phase; physical record IDs and public selected IDs separately recorded"
+    },
+    {
+      "original": "Missing physical head mutation guard case",
+      "current": "During genuine T2 record await, replace actual persisted head body; actual readActiveMicroMemory must return stale_source/micro_head_changed_during_read; restore physical head in finally"
+    }
   ],
   "observer": "Generated isolated source wraps the three actual getVerifiedJson head await sites; observes keys/phases without changing await order, bytes or values; observed reads must match actual backend head-read count and keys.",
   "preservedBoundaries": "Synthetic heads only exercise catalog scale. Positive evidence still comes from actual producer/source receipts. Production file byte equality asserted. No shared harness or production edits.",
-  "qualification": "Static syntax/observer compilation only. Runtime blocked until parent authorizes after normal campaign completion."
+  "qualification": "Static syntax/observer compilation only. Runtime blocked until parent authorizes after normal campaign completion.",
+  "actualDiagnosticFailure": "cache-625-trace-logs/625-libra_micro_recall_incremental_head_index_test.cjs.log: actual5 reads = catalogT2 + hydrationT2,T1 + rereadT2,T1; firstcandidate onlyT2 assumption failed and is preserved"
 }
