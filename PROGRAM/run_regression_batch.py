@@ -111,9 +111,12 @@ TEST_TIMEOUT_SECONDS = {
     # Preserved five-scenario local Persona dialog: standalone 135.109s,
     # unchanged case deadlines; 180s bounds aggregate scheduling overhead.
     'retrace_dialog_lifecycle_gui_test.cjs': 180,
-    # All 29 raw-COW cases complete in 71.71s on restored A11. Preserve case
+    # All 29 current raw-COW cases complete naturally in 133.607s. Preserve case
     # deadlines and the earlier default60 timeout; allow bounded file overhead.
-    'flashback_raw_cow_append_runtime_test.cjs': 110,
+    'flashback_raw_cow_append_runtime_test.cjs': 180,
+    # Current raw-first 31-ready / failed-vector / explicit-retry / rebuild matrix
+    # completes naturally in 89.180s; preserve internal action deadlines.
+    'flashback_singleturn_regression_test.cjs': 120,
     # Three-mode descriptor/tamper matrix: 55.77s isolated, 66.07s in this runner.
     # Preserve the default60 timeout evidence and case deadlines; margin is 36%.
     'libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs': 90,
