@@ -47,8 +47,11 @@ assert.match(source, /async getWorldManagerNarrative\(\)/);
 assert.match(source, /async addWorldManagerNarrativeCorrection/);
 assert.match(source, /async rebuildWorldManagerNarrative/);
 
-const planner = between('const plannerSystemPrompt = async', 'const runTurnPlanner = async');
-assert.doesNotMatch(planner, /applyVerifiedStateObservation|updateContinuityStateAfterCommit|storage\.setJson\([^)]*continuityState/,
-  'Planner may consume current Narrative but never mutate it');
+const response = between('const getUnifiedResponseContext=async', 'let latestRecallPublicationOwner =');
+assert.match(response,/loadContinuityStateForResponse/,'public context reads the current durable State');
+assert.match(response,/narrative_state:__libraCompletionUnwrapNarrative\(head\)/,'public context carries Current Narrative');
+assert.match(response,/attachUnifiedResponseContext/,'the supplied State is sealed as a request-local context');
+assert.doesNotMatch(response, /applyVerifiedStateObservation|updateContinuityStateAfterCommit|storage\.setJson\([^)]*continuityState/,
+  'read-only public Narrative consumption never mutates Current State');
 
 console.log('libra_world_manager_narrative_v1_contract_test: PASS');
