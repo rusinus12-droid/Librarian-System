@@ -110,8 +110,9 @@ const summary=[];
    }
   }
  }finally{armed='';releaseRead?.();fs.writeFileSync(path.join(evidence,'summary.json'),JSON.stringify({summary,evidence},null,2));await snapshot.cleanup();}
+ const lazyProof=await require('./fixtures/libra_lazy_canonical_proof.cjs').verifyLazyCanonicalProof();
  const publication=await require('./fixtures/libra_selected_publication_owner.cjs').verifyPublicationOwner();
  const closure=await require('./fixtures/libra_selected_closure_readset.cjs').verifyClosureReadset();
  const archive=await require('./fixtures/libra_selected_archive_successor.cjs').verifyArchiveRecall();
- console.log(JSON.stringify({test:'libra_source_edit_settled_admission_runtime',passed:summary.length,archive,closure,publication,evidence}));
+ console.log(JSON.stringify({test:'libra_source_edit_settled_admission_runtime',passed:summary.length,archive,closure,publication,lazyProof,evidence}));
 })().catch(e=>{console.error(e);process.exitCode=1;});
