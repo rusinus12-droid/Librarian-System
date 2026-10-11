@@ -27,6 +27,11 @@ const unifiedEngineVersionSource = source.match(/const UNIFIED_ENGINE_VERSION\s*
 assert.ok(unifiedEngineVersionSource, 'production unified engine discriminator exists');
 const unifiedArtifactSchemaSource = sourceSection('const UNIFIED_ARTIFACT_SCHEMA =', 'const UNIFIED_PATCH_SCHEMA =');
 
+// The transaction records real completed-turn revision provenance. Load the
+// deployed dependency even for an empty fixture batch, rather than a test copy.
+const completedTurnRevisionSource = sourceSection('    const completedTurnRevisionId =', '    const completedTurnSourceRow =');
+const microRefreshSource = sourceSection('    const refreshInheritedMicroStateAfterBasisWrite =', '    const rebuildCurrentStateForWorldline =');
+
 const supportSource = sourceSection(
   'const stateCorrectionDefaultStore =',
   'const rebuildCurrentStateForWorldlineUnlocked ='
@@ -487,6 +492,10 @@ function buildHarness({ records = [], hooks: hookValues = {}, rebuild = null, ac
     __libraNarrativeApplyPatch: (current, patch) => ({ ...clone(asObject(current)), ...clone(patch) }),
     resolveContext: async () => ({ scope: clone(SCOPE), chat: [] }),
     buildPairs: () => [],
+    // This legacy transaction fixture has no inherited Micro graph. Its explicit
+    // failure seam proves derived admission failure cannot undo the committed
+    // correction; production refresh handles that result observationally.
+    admitInheritedMicroStateClaims: async () => { throw Error('FIXTURE_INHERITED_MICRO_NOT_BOUND'); },
     loadManifest: async () => {
       stats.manifestLoads += 1;
       if (hooks.boundaryConflictOnSecondManifestLoad && stats.manifestLoads === 2) {
@@ -546,7 +555,7 @@ function buildHarness({ records = [], hooks: hookValues = {}, rebuild = null, ac
   const evaluatedSource = actualReplay
     ? `${unifiedArtifactSchemaSource}\n${supportSource}\n${replaySource}\n${exportsExpression}`
     : `${unifiedEngineVersionSource}\n${supportSource}\n${transactionSource}\n${exportsExpression}`;
-  vm.runInContext(evaluatedSource, context, { filename: pluginPath });
+  vm.runInContext(completedTurnRevisionSource + "\n" + (actualReplay ? "" : microRefreshSource) + "\n" + evaluatedSource, context, { filename: pluginPath });
 
   return { ...context.__testExports, raw, storage, state, stats, hooks };
 }
@@ -722,6 +731,9 @@ async function testSuccessfulAppendIsAtomicAndUsesActiveNonMainWorldline() {
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.activeMicroStateAdmission.status, 'ready');
+  assert.equal(result.inheritedMicroStateAdmission.status, 'pending_reconciliation');
+  assert.equal(result.inheritedMicroStateAdmission.reason, 'FIXTURE_INHERITED_MICRO_NOT_BOUND');
   assert.equal(harness.stats.replayCalls, 1);
   assert.equal(harness.stats.enqueueCalls, 1);
   assert.equal(harness.stats.idleChecks, 1);
