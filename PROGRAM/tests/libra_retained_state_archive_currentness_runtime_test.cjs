@@ -7,7 +7,7 @@ const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const expose=source=>{
  const anchor='      getUnifiedStorageStatus,';assert(source.includes(anchor));
  return source.replace(anchor,`      retirementCurrentContext: () => Runtime.lastResponseContext,
-      retirementConsumedProbe: token => ({count:consumedDataReadSets.get(token)?.proofs.length||0,verify:options=>assertConsumedDataCurrent(token,options)}),
+      retirementConsumedProbe: token => ({count:consumedDataReadSets.get(token)?.proofs.length||0,proofs:clone(consumedDataReadSets.get(token)?.proofs||[]),verify:options=>assertConsumedDataCurrent(token,options)}),
       retirementResealContext: value => {value.contextDigest=digest(unifiedResponseContextBody(value));return value;},
       `+anchor).replace('    async getUnifiedStorageStatus() {',`    retirementCurrentContext: () => LibraMemoryCore.retirementCurrentContext(),
     retirementConsumedProbe: token => LibraMemoryCore.retirementConsumedProbe(token),
@@ -150,7 +150,26 @@ test('inherited consumed Micro context rejects deletion of its physical archive'
 }));
 test('two inherited consumed Micro identities retain separate proofs and one physical archive read',()=>withMicro(async f=>{
  const {prepared,micro,archive}=await prepareInherited(f,true),used=[...new Set(micro.map(row=>row.analysisRevisionId))];assert.equal(used.length,2);
- const probe=f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken);assert.equal(probe.count,2);
+ const probe=f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken);
+ // Selected Canonical bodies now retain their own physical currentness proof.
+ // Count the two inherited Micro identities by their actual archive records,
+ // rather than treating the complete mixed read set as Micro-only.
+ const proofs=Array.from(probe.proofs);
+ const microProofs=proofs.filter(proof=>proof.archiveKey===archive.key&&proof.headKey&&proof.receiptKey);
+ assert.equal(microProofs.length,2,'two separate inherited Micro proofs');
+ assert.equal(new Set(microProofs.map(proof=>proof.recordKey)).size,2,'distinct physical Micro identities');
+ const archivedIds=microProofs.map(proof=>{
+  const record=archive.value.records.find(row=>row.key===proof.recordKey&&row.value.schema==='libra.micro_memory.v1');
+  assert(record,'each Micro proof binds a physical archived Micro record');return record.value.analysisRevisionId;
+ });
+ assert.deepEqual(archivedIds.sort(),used.slice().sort(),'both selected Micro identities have separate proofs');
+ const canonicalProofs=proofs.filter(proof=>proof.kind==='canonical-memory');
+ assert.equal(canonicalProofs.length,1,'selected Canonical body also retains its physical proof');
+ const canonical=JSON.parse(f.r.values.get(canonicalProofs[0].recordKey));
+ assert.equal(canonical.schema,'libra.canonical_memory.v1');
+ assert(Object.values(prepared.evidencePacket.layers).flat().some(row=>row.kind==='canonical'&&row.memoryId===canonical.memoryId&&row.revision===canonical.revision),
+  'additional proof belongs to the actually selected Canonical identity');
+ assert.equal(probe.count,microProofs.length+canonicalProofs.length,'no unclassified consumed proofs');
  const storage=f.r.context.risuai.pluginStorage,get=storage.getItem;let reads=0;storage.getItem=async key=>{if(key===archive.key)reads++;return get(key);};
  try{await probe.verify();}finally{storage.getItem=get;}assert.equal(reads,1);
  const changed=JSON.parse(f.r.values.get(archive.key)),first=changed.records.find(row=>row.value.schema==='libra.micro_memory.v1'&&row.value.analysisRevisionId===used[0]);assert(first);first.value.claims[0].text='changed physical archived claim';f.r.values.set(archive.key,JSON.stringify(changed));await assert.rejects(probe.verify(),/MICRO.*ARCHIVE/);
