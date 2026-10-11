@@ -57,6 +57,10 @@ async function measureMode(mode) {
     });
 
     const api = fixture.api;
+    const { syntheticFetch, configure } = require('./helpers/unload_recall_contract_fixture.cjs');
+    fixture.host.nativeFetch = (url, options) => syntheticFetch(url, options, fetch);
+    await configure(fixture, 'configured');
+    const modelSettings = await api.loadSettings();
     assert.ok(api, `${mode}: the plugin exposes its API`);
     const test = api._test;
     assert.ok(test, `${mode}: the plugin exposes its test surface`);
@@ -87,7 +91,7 @@ async function measureMode(mode) {
       sourceType: 'response', sourceId: 'parity-source', sourceHash: 'parity-hash',
       title: 'Parity', text: longBody
     }];
-    const built = await Promise.resolve(test.buildRecordsFromSources(sources)).catch(error => ({ __error: String(error?.message || error) }));
+    const built = await Promise.resolve(test.buildRecordsFromSources(sources, modelSettings)).catch(error => ({ __error: String(error?.message || error) }));
     const builtRecords = Array.isArray(built) ? built : (Array.isArray(built?.records) ? built.records : null);
     assert.ok(builtRecords && builtRecords.length > 0,
       `${mode}: buildRecordsFromSources must produce records — ${JSON.stringify(built)?.slice(0, 160)}`);
@@ -130,7 +134,7 @@ async function measureMode(mode) {
 
     // --- EMBEDDING-GENERATION ----------------------------------------------------------------
     need('embedTexts');
-    const embedded = await Promise.resolve(test.embedTexts(['parity probe text'])).catch(error => ({ __error: String(error?.message || error) }));
+    const embedded = await Promise.resolve(test.embedTexts(['parity probe text'], modelSettings)).catch(error => ({ __error: String(error?.message || error) }));
     assert.ok(embedded !== undefined && !embedded?.__error,
       `${mode}: embedTexts must be callable — ${JSON.stringify(embedded)?.slice(0, 160)}`);
     features.EMBEDDING = { ok: true };
@@ -159,7 +163,7 @@ async function measureMode(mode) {
     need('generateRecallCandidateArms');
     need('resolveRecallLane');
     const arms = await Promise.resolve(test.generateRecallCandidateArms({
-      records: builtRecords, queryText: 'Alice archive ribbon', queryAnchors: { entities: new Map(), surfaceAnchors: [] }, settings: {}
+      records: builtRecords, queryText: 'Alice archive ribbon', queryVector: [1,0,0], queryProvider:'openai_compat', queryModel:'unload-synthetic-v1', queryAnchors: { entities: new Map(), surfaceAnchors: [] }, settings: modelSettings
     })).catch(error => ({ __error: String(error?.message || error) }));
     assert.ok(arms !== undefined && !arms?.__error,
       `${mode}: generateRecallCandidateArms must produce arms — ${JSON.stringify(arms)?.slice(0, 160)}`);
@@ -174,8 +178,8 @@ async function measureMode(mode) {
     const armCandidates = armKeys.flatMap(k => (Array.isArray(arms[k]) ? arms[k] : []));
     assert.ok(armCandidates.length > 0,
       `${mode}: the recall arms must carry candidates for a query that matches the seeded records (got ${armCandidates.length} across arms ${JSON.stringify(armCounts)})`);
-    assert.ok(armCounts.sparse > 0,
-      `${mode}: the lexical (sparse) arm must find the seeded record — a corpus that matches the query cannot yield an empty sparse arm (${JSON.stringify(armCounts)})`);
+    assert.ok(armCounts.dense > 0, `${mode}: comparable model vectors produce positive recall candidates`);
+    for (const arm of ['hashRecovery','sparse','exact']) assert.equal(armCounts[arm], 0, `${mode}: model recall cannot downgrade to ${arm}`);
     features.RECALL = { arms: armKeys.length, candidates: armCandidates.length, sparse: armCounts.sparse };
     need('applyRecallTemporalHardGate');
     need('resolveRecallLane');

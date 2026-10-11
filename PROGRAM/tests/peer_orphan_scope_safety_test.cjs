@@ -61,8 +61,62 @@ for (const marker of [
   'persona_proof_write readback mismatch', 'prepareVerifiedLiaMetadataShellDeletion',
   'LIA metadata shell changed during owner verification', "'empty_index_shell'"
 ]) assert.ok(lia.includes(marker), `LIA orphan safety marker: ${marker}`);
-assert.doesNotMatch(lia.slice(lia.indexOf('async function writeSplitLivePersonaStoreRaw'), lia.indexOf('async function migrateLegacyLivePersonaStore')), /catch \(_\) \{\}/,
-  'split binding writes must not swallow shard deletion failures');
+// Parsing a sibling shard may catch malformed JSON to refuse the handoff. The
+// deletion contract is exercised directly instead of banning every empty catch.
+function liaRange(start, end) {
+  const a = lia.indexOf(start), b = lia.indexOf(end, a);
+  assert(a >= 0 && b > a, `LIA extraction ${start}`);
+  return lia.slice(a, b);
+}
+const splitWriteSource = liaRange('async function writeSplitLivePersonaStoreRaw', 'async function migrateLegacyLivePersonaStore');
+const deletionSource = liaRange('async function removePluginStorageItemChecked', 'async function writeSplitLivePersonaStoreRaw');
+const checkedWriteSource = liaRange('function storageWriteExplicitlyFailed', 'async function setLiaDurableItemVerified');
+const readIndexSource = liaRange('async function readLivePersonaIndex', 'function storageWriteExplicitlyFailed');
+const writeSplit = new Function('normalizeLivePersonaStore', 'normalizeLivePersonaBinding', 'livePersonaScopeStorageKey', 'hashText', `
+  const LIVE_PERSONA_INDEX_SCHEMA = 'test.index';
+  const LIVE_PERSONA_INDEX_STORAGE_KEY = 'test.index';
+  let cachedLivePersonaStore = null, cachedLivePersonaStoreComplete = false;
+  ${readIndexSource} ${checkedWriteSource} ${deletionSource} ${splitWriteSource}
+  return writeSplitLivePersonaStoreRaw;
+`)(value => value, value => value, key => `shard:${key}`, value => `digest:${value}`);
+
+async function checkedShardDeletion() {
+  // Only normalization/key identity are supplied. Actual shipped checked I/O,
+  // index handling and split-write rollback run against this physical map.
+  for (const failure of ['explicit_false', 'readback_mismatch', 'deleted_then_false']) {
+    const bytes = JSON.stringify({ scopeKey: 'a', livePersonaId: 'private-a' });
+    const index = { schema: 'test.index', entries: { a: { storageKey: 'shard:a', digest: `digest:${bytes}` } } };
+    const indexBytes = JSON.stringify(index);
+    const values = new Map([['shard:a', bytes], ['test.index', indexBytes]]);
+    let injected = false;
+    const storage = {
+      async getItem(key) { return values.get(key) ?? null; },
+      async setItem(key, value) { values.set(key, value); return true; },
+      async removeItem(key) {
+        if (key === 'shard:a' && !injected) {
+          injected = true;
+          if (failure === 'deleted_then_false') values.delete(key);
+          return failure === 'readback_mismatch' ? true : false;
+        }
+        values.delete(key); return true;
+      }
+    };
+    await assert.rejects(writeSplit(storage, { bindings: {} }, index), /live_persona_removed_shard_delete (failed|readback mismatch)/);
+    assert(injected, `${failure} reaches checked shard removal`);
+    assert.equal(values.get('shard:a'), bytes, `${failure} restores exact shard bytes`);
+    assert.equal(values.get('test.index'), indexBytes, `${failure} leaves index intact`);
+  }
+  const values = new Map([['shard:a', 'private'], ['test.index', 'old-index']]);
+  const storage = {
+    async getItem(key) { return values.get(key) ?? null; },
+    async setItem(key, value) { values.set(key, value); return true; },
+    async removeItem(key) { values.delete(key); return true; }
+  };
+  const result = await writeSplit(storage, { bindings: {} }, { entries: { a: { storageKey: 'shard:a' } } });
+  assert.equal(values.size, 0, 'successful checked deletion removes shard and empty index');
+  assert.deepEqual(result.index.entries, {});
+}
+
 
 for (const marker of [
   'HAYAKU_SCOPE_RECORD_PREFIXES', "kind: 'registry_only_shell'", "'empty_ledger_shell'", "'metadata_only_ledger'", "'ledger_missing'",
@@ -73,4 +127,4 @@ for (const marker of [
 assert.match(retrace, /metadataShellVerified: scope\.descriptor\?\.metadataShellVerified === true/);
 assert.match(retrace, /'shared_archive', 'metadata_only_ledger', 'ledger_missing', 'manifest_missing'/);
 
-process.stdout.write('peer_orphan_scope_safety_test: PASS\n');
+checkedShardDeletion().then(() => process.stdout.write('peer_orphan_scope_safety_test: PASS\n')).catch(error => { console.error(error); process.exitCode = 1; });

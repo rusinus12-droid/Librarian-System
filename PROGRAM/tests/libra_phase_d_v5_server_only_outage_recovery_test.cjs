@@ -4,6 +4,7 @@
 // successor run can publish anything. There is no hidden local State
 // authority; after reconnect a fresh public run restores State/History/Recall.
 const assert = require('node:assert/strict');
+const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
 const crypto = require('node:crypto');
 const { serverFixture, fiveMore } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
@@ -163,6 +164,13 @@ const runMode = async mode => {
     assert.ok(Array.isArray(firstMina?.state?.boundaries) && firstMina.state.boundaries.length > 0, `${mode}: control batch projects the boundary`);
     const firstThread = firstHead.narrative?.threads?.find(thread => thread.summary === '오늘 열쇠 반환 약속');
     assert.equal(firstThread?.status, 'open', `${mode}: control batch preserves the open v5 thread`);
+    // The canonical run schedules derived embedding metadata on the owner
+    // queue. Drain that preceding work before installing the network fault;
+    // an already-sent T5 request is not a successor write during the outage.
+    const drained = await f.r.api.retryPendingUnifiedVectors();
+    assert.equal(drained.ok, true, `${mode}: pre-outage owner queue drained: ${JSON.stringify(drained)}`);
+    assert.equal(snapshot.getMemory(1)?.embedding?.status, 'disabled');
+    assert.equal(snapshot.getManifest()?.memories?.['1']?.embeddingStatus, 'disabled');
     const providerCallsBeforeOutage = f.control.calls.length;
     fiveMore(f);
     appendProfileEvidence(f.chat, 't9-a');
@@ -256,10 +264,11 @@ const runMode = async mode => {
     const recallText = JSON.stringify(recall);
     assert.match(recallText, /민트차를 좋아한다/, `${mode}: v5 preference is readable through Recall`);
     assert.match(recallText, /이행되었다|반환/, `${mode}: v5 linked thread is readable through Recall`);
-    const packet = await reconnected.f.r.api.prepareInputWriterEvidence('민아 민트차 열쇠 반환 약속');
-    const packetText = JSON.stringify(packet?.evidencePacket || {});
-    assert.match(packetText, /민트차를 좋아한다/, `${mode}: Input Writer packet carries the structured profile`);
-    assert.match(packetText, /이행되었다/, `${mode}: Input Writer packet carries the accepted resolved lifecycle`);
+    const scope=await reconnected.f.r.api.getHostLineageStatus();
+    const packet=await actualClassicPacket(reconnected.f,'민아 민트차 열쇠 반환 약속',scope.scopeKey);
+    const packetText=packet.actualClassic.block;
+    assert.match(packetText, /민트차를 좋아한다/, `${mode}: actual delivered Classic block carries the structured profile`);
+    assert.match(packetText, /이행되었다/, `${mode}: actual delivered Classic block carries the accepted resolved lifecycle`);
 
     observation.providerCalls = reconnected.f.control.calls.length;
     observation.additionalProviderCallsDuringOutage = f.control.calls.length - providerCallsBeforeOutage;

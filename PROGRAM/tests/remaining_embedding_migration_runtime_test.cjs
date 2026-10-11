@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const {createFlashback}=require('./fixtures/embedding_contract_harness.cjs');
-const {createLibraVmHarness,instrument,hostData}=require('./fixtures/libra_consumer_test_support.cjs');
+const {createLibraVmHarness,hostData}=require('./fixtures/libra_consumer_test_support.cjs');
 const C=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteExecutionContract.source.js'),'utf8')+';MemorySuiteExecutionContract',{URL,TextEncoder,TextDecoder,setTimeout,clearTimeout});
 const descriptor=(model,extra={})=>C.embeddingDescriptor({provider:'voyageai',model,dimensions:256,endpoint:'https://api.voyageai.com/v1/embeddings',...extra});
 (async()=>{
@@ -28,7 +28,7 @@ const descriptor=(model,extra={})=>C.embeddingDescriptor({provider:'voyageai',mo
    await assert.rejects(()=>f.api.applyVerifiedEmbeddingMigration(preview),/MIGRATION_PREVIEW_STALE/);count++;
  }finally{await f.cleanup();}
  const data=hostData();
- const h=await createLibraVmHarness({enable_gui:'false'},data.host,{transformSource:s=>instrument(s).replace('const storage = Object.freeze({','const storage = globalThis.__remainingStorage = Object.freeze({').replace('const previewVerifiedEmbeddingMigration = async','const previewVerifiedEmbeddingMigration = globalThis.__remainingPreview = async').replace('const resolveContext = async','const resolveContext = globalThis.__remainingContext = async').replace('const loadEmbeddingSettings = async','const loadEmbeddingSettings = globalThis.__remainingConfig = async')});
+ const h=await createLibraVmHarness({enable_gui:'false'},data.host,{transformSource:s=>s.replace('const storage = Object.freeze({','const storage = globalThis.__remainingStorage = Object.freeze({').replace('const previewVerifiedEmbeddingMigration = async','const previewVerifiedEmbeddingMigration = globalThis.__remainingPreview = async').replace('const resolveContext = async','const resolveContext = globalThis.__remainingContext = async').replace('const loadEmbeddingSettings = async','const loadEmbeddingSettings = globalThis.__remainingConfig = async')});
  try{
    const scope=(await h.context.__remainingContext()).scope;
    await h.api.saveEmbeddingSettings({enabled:true,provider:'voyageai',model:'voyage-4',url:'https://api.voyageai.com/v1/embeddings',dimensions:256,normalizeVectors:false});

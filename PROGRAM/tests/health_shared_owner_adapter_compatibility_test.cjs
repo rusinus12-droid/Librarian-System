@@ -17,7 +17,7 @@ const extract = (source, begin, end) => {
   return source.slice(source.indexOf(begin), source.indexOf(end) + end.length);
 };
 const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
-function fixture(owner) {
+function fixture(owner, options = {}) {
   const source = fs.readFileSync(path.join(root, 'plugins', products[owner]), 'utf8');
   const sdk = extract(source, '/* MEMORY SUITE HEALTH RECOVERY v1.0.0', '/* END MEMORY SUITE HEALTH RECOVERY */');
   const adapter = extract(source, `/* ${owner} HEALTH ADAPTER BEGIN */`, `/* ${owner} HEALTH ADAPTER END */`);
@@ -66,11 +66,27 @@ function fixture(owner) {
     invalidateMessageRevisionCache: (scopeKey, options) => { assert.equal(options.all, true); cache.delete(scopeKey); },
     getLibraSourceEdits: () => sourceEdits, libraSourceEdits: sourceEdits,
     getHayakuSourceEdits: () => sourceEdits, hayakuSourceEdits: sourceEdits,
+    selectHayakuReanalysisRanges: keys => sourceEdits.previewSelected(keys),
+    runHayakuSelectedReanalysis: proof => sourceEdits.applySelected(proof),
+    hayakuReanalysisLifetime: 0,
     fetch: () => { throw Error('TEST_EXTERNAL_NETWORK_FORBIDDEN'); }
   });
   const prefix = owner === 'LIBRA' ? 'libra' : 'hayaku';
   vm.runInContext(sdk + '\n' + adapter + `\nglobalThis.product = { health: ${prefix}HealthRecovery, router: get${owner === 'LIBRA' ? 'Libra' : 'Hayaku'}RecoveryActions() };`, context);
-  return { sdk, ...context.product, control, chat, character, scope, cache, state, Runtime, Memory };
+  const productRouter = context.product.router;
+  if (options.sharedReanalysis) {
+    // Positive selection/private-proof/cancellation checks belong to the shared
+    // SDK's optional adapter contract. Current product health routers expose
+    // only derived-cache repair; explicit source reanalysis has its own API.
+    context.__selectedAdapter = sourceEdits;
+    context.product.router = vm.runInContext(`MemorySuiteHealthRecovery.createOrchestrator({
+      derivedCache: {preview:()=>${prefix}HealthRecovery.preview(),apply:ticket=>${prefix}HealthRecovery.repair(ticket),clear:()=>${prefix}HealthRecovery.clear()},
+      reanalysis: {preview:keys=>__selectedAdapter.previewSelected(keys),apply:proof=>__selectedAdapter.applySelected(proof),clear:()=>__selectedAdapter.cancelSelected()}
+    })`,context);
+    const health = context.product.health;
+    context.product.health = {...health,preview:()=>context.product.router.preview('refresh_derived_cache'),repair:ticket=>context.product.router.apply(ticket),clear:()=>context.product.router.clear()};
+  }
+  return { sdk, ...context.product, productRouter, control, chat, character, scope, cache, state, Runtime, Memory };
 }
 
 for (const owner of Object.keys(products)) {
@@ -119,8 +135,23 @@ for (const owner of Object.keys(products)) {
     assert.equal(result.reason, 'stale_or_unknown_ticket');
     assert.equal(f.control.reads, 0); assert.equal(f.control.clears, 0); assert.equal(f.control.previews, 0); assert.equal(f.control.applies, 0);
   });
-  test(`${owner}: explicit reanalysis retains selection and private proof routing, single flight and ticket consumption`, async () => {
-    const f = fixture(owner), selected = ['1'];
+  if(owner==='LIBRA') test(`${owner}: product health router refuses retired reanalysis dispatch without effects`, async () => {
+    const f=fixture(owner), before=f.control.raw;
+    const ticket=await f.router.preview('explicit_reanalysis',['1']);
+    assert.equal(ticket.allowed,false);assert.equal(ticket.reason,'unsupported_repair_action');
+    assert.equal((await f.router.apply({allowed:true,actionKind:'explicit_reanalysis'})).reason,'stale_or_unknown_ticket');
+    assert.equal(f.control.previews,0);assert.equal(f.control.applies,0);assert.equal(f.control.clears,0);assert.equal(f.control.raw,before);
+  });
+  if(owner==='HAYAKU') test('HAYAKU: product health router dispatches current selected-range adapter',async()=>{
+    const f=fixture(owner),selected=['1'],before=f.control.raw;
+    const ticket=await f.router.preview('explicit_reanalysis',selected);
+    assert.equal(ticket.allowed,true);assert.equal(f.control.selected,selected);assert.equal(f.control.applies,0);
+    assert.equal(JSON.stringify(ticket).includes('private-proof'),false);
+    assert.equal(await f.router.apply(ticket),f.control.returned);assert.equal(f.control.applies,1);
+    assert.equal((await f.router.apply(ticket)).reason,'stale_or_unknown_ticket');assert.equal(f.control.raw,before);
+  });
+  test(`${owner} shared SDK: explicit reanalysis retains selection and private proof routing, single flight and ticket consumption`, async () => {
+    const f = fixture(owner, { sharedReanalysis: true }), selected = ['1'];
     f.control.gate = gate();
     const ticket = await f.router.preview('explicit_reanalysis', selected);
     assert.equal(f.control.selected, selected); assert.equal(f.control.applies, 0); assert.equal(f.control.clears, 0);
@@ -131,8 +162,8 @@ for (const owner of Object.keys(products)) {
     f.control.gate.release(); assert.equal(await first, f.control.returned);
     assert.equal((await f.router.apply(ticket)).reason, 'stale_or_unknown_ticket'); assert.equal(f.control.applies, 1);
   });
-  test(`${owner}: ongoing explicit reanalysis excludes cache and retains lock across owner clear`, async () => {
-    const f = fixture(owner), cache = await f.health.preview(); f.control.gate = gate();
+  test(`${owner} shared SDK: ongoing explicit reanalysis excludes cache and retains lock across owner clear`, async () => {
+    const f = fixture(owner, { sharedReanalysis: true }), cache = await f.health.preview(); f.control.gate = gate();
     const ticket = await f.router.preview('explicit_reanalysis', ['1']), work = f.router.apply(ticket);
     await Promise.resolve();
     assert.equal((await f.health.repair(cache)).reason, 'operation_in_progress');
@@ -141,15 +172,15 @@ for (const owner of Object.keys(products)) {
     f.control.gate.release(); assert.equal((await work).status, 'uncertain');
     assert.equal(f.router.isBusy(), false); assert.equal(f.control.clears, 0); assert.equal(f.control.applies, 1);
   });
-  test(`${owner}: clear before explicit dispatch cancels without calling the owner pipeline`, async () => {
-    const f = fixture(owner), ticket = await f.router.preview('explicit_reanalysis', ['1']);
+  test(`${owner} shared SDK: clear before explicit dispatch cancels without calling the owner pipeline`, async () => {
+    const f = fixture(owner, { sharedReanalysis: true }), ticket = await f.router.preview('explicit_reanalysis', ['1']);
     const work = f.router.apply(ticket); f.health.clear();
     assert.equal((await work).reason, 'owner_view_changed');
     assert.equal(f.control.applies, 0); assert.equal(f.control.cancels, 1);
   });
   for (const result of [{ ok: true, status: 'verified', committed: true }, { ok: false, status: 'blocked', writeIssued: false }, { ok: false, status: 'uncertain', reason: 'owner_uncertain' }]) {
-    test(`${owner}: explicit ${result.committed ? 'committed' : result.status} outcome still survives view invalidation`, async () => {
-      const f = fixture(owner); f.control.gate = gate(); f.control.returned = result;
+    test(`${owner} shared SDK: explicit ${result.committed ? 'committed' : result.status} outcome still survives view invalidation`, async () => {
+      const f = fixture(owner, { sharedReanalysis: true }); f.control.gate = gate(); f.control.returned = result;
       const ticket = await f.router.preview('explicit_reanalysis', ['1']), work = f.router.apply(ticket);
       await Promise.resolve(); f.health.clear(); f.control.gate.release();
       assert.equal(await work, result); assert.equal(f.control.applies, 1);

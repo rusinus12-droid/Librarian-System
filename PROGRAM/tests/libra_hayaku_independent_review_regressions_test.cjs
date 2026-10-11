@@ -18,13 +18,9 @@
 // Each case below FAILS on the pre-fix revision and passes now. Measured against 690ed0c:
 //   node review_artifacts/prompt_fix_independent_review_20260920/independent_probes.cjs
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { fixture } = require(path.resolve(__dirname, 'fixtures', 'libra_unified_runtime_fixture.cjs'));
 const H = require(path.resolve(__dirname, 'fixtures', 'hayaku_runtime_harness.cjs'));
-
-const PROGRAM = path.resolve(__dirname, '..');
 
 // ── R1 ────────────────────────────────────────────────────────────────────────────────────────
 const sentence = 'Alice waited by the door. Bob waited by the gate.';
@@ -90,65 +86,56 @@ const repairWith = async raw => {
   assert.notEqual(brokenSibling.repaired, true,
     `a BROKEN leading fragment must not let the whole answer count as complete (${JSON.stringify(brokenSibling)})`);
 
-  // ── R2 / R3 through the shipped SGA parser ────────────────────────────────────────────────
-  // The accessor must be reachable from BOTH surfaces: the core object and the public `f.r.api`
-  // wrapper (the same pair the reviewer's probe wires). Injecting only the core leaves api.reviewParse
-  // undefined — a mistake this suite made on its first run.
-  const instrument = source => {
-    const coreAnchor = '      debugNormalizeSgaPatchResult: ';
-    const publicAnchor = "    debugSgaPatchOperations(draft = '', edits = [])";
-    for (const [name, value] of [['core', coreAnchor], ['public', publicAnchor]]) {
-      if (source.split(value).length !== 2) throw new Error(`the ${name} anchor must be unique`);
-    }
-    return source
-      .replace(coreAnchor,
-        '      reviewParse: value => parseStrictSgaArtifactJson(value, {schema: SGA_LENGTH_CORRECTION_SCHEMA, required:["schema","ok","draft"]}),\n' + coreAnchor)
-      .replace(publicAnchor,
-        '    reviewParse(value) { return LibraMemoryCore.reviewParse(value); },\n' + publicAnchor);
-  };
-  const f = await fixture({ transformSource: instrument });
+  // R2/R3 survive in the shipped canonical parser's same syntax-repair ladder.
+  // SGA and its ok/draft schema were removed; exercise the public accessor,
+  // not a source transform that recreates a retired parser or bypasses validation.
+  const f = await fixture();
   try {
-    const parse = f.r.api.reviewParse;
+    const parse = f.r.api.debugParseCanonicalArtifact;
     assert.equal(typeof parse, 'function', 'the parser accessor must be present');
 
     const BODY = 'True North / None / False / a,}';
 
     // R2: a single-quoted body must survive byte-for-byte.
-    const single = parse("{'schema':'libra.sga_length_correction.v2','ok':true,'draft':'" + BODY + "'}");
+    const single = parse("{'schema':'libra.canonical_artifact.v4','ok':true,'draft':'" + BODY + "'}");
     report.libra.single_quoted_body = { draft: single.draft, preserved: single.draft === BODY };
     assert.equal(single.draft, BODY,
       `a single-quoted body must not be rewritten (got "${single.draft}")`);
 
     // The same body in the double-quoted spelling, with the trailing comma the model adds.
-    const dq = '{"schema":"libra.sga_length_correction.v2","ok":true,"draft":"' + BODY + '",}';
+    const dq = '{"schema":"libra.canonical_artifact.v4","ok":true,"draft":"' + BODY + '",}';
     const doubled = parse(dq);
     report.libra.double_quoted_body = { draft: doubled.draft, preserved: doubled.draft === BODY };
     assert.equal(doubled.draft, BODY,
       `a double-quoted body must not be rewritten (got "${doubled.draft}")`);
 
     // Apostrophes inside a double-quoted body must also stay put.
-    const apos = parse('{schema:"libra.sga_length_correction.v2",ok:true,draft:"He said \'True\' and \'False\'."}');
+    const apos = parse('{schema:"libra.canonical_artifact.v4",ok:true,draft:"He said \'True\' and \'False\'."}');
     report.libra.apostrophes_in_body = { draft: apos.draft };
     assert.equal(apos.draft, "He said 'True' and 'False'.",
       `apostrophes inside a body must survive (got "${apos.draft}")`);
 
     // R3: a duplicate written in smart quotes must be REJECTED, not collapsed to its last value.
     let smartRejection = '';
-    try { parse('{“schema”:“libra.sga_length_correction.v2”,“ok”:false,“ok”:true,“draft”:“finished”}'); }
+    try { parse('{“schema”:“libra.canonical_artifact.v4”,“ok”:false,“ok”:true,“draft”:“finished”}'); }
     catch (error) { smartRejection = String(error?.message || error); }
     report.libra.smart_quote_duplicate = { rejection: smartRejection };
     assert.match(smartRejection, /duplicate_key/,
       `a smart-quoted duplicate must be rejected (got "${smartRejection}")`);
 
     // Controls: the repair must not have been weakened.
-    const clean = parse('{"schema":"libra.sga_length_correction.v2","ok":true,"draft":"x"}');
+    const clean = parse('{"schema":"libra.canonical_artifact.v4","ok":true,"draft":"x"}');
     report.libra.control_clean = { ok: clean.ok === true };
     assert.equal(clean.ok, true, 'a clean artifact must still be accepted');
-    let okFalse = '';
-    try { parse('{"schema":"libra.sga_length_correction.v2","ok":false,"draft":"x"}'); }
-    catch (error) { okFalse = String(error?.message || error); }
-    report.libra.control_ok_false = { rejection: okFalse };
-    assert.notEqual(okFalse, '', 'ok:false must still be rejected');
+    assert.throws(() => parse('{"schema":"libra.canonical_artifact.v4","ok":false,"ok":true}'),
+      /duplicate_key/, 'plain duplicate keys remain forbidden');
+    assert.throws(() => parse('{} {}'), /json_invalid|not_one_json_object|duplicate_key/,
+      'multiple JSON roots cannot be merged into one artifact');
+    assert.equal((await f.run()).completed, 1, 'the surviving full canonical admission accepts grounded artifacts');
+    const invalid = f.r.api.debugValidateCanonicalArtifact({schema:'retired.sga',ok:false,draft:'x'}, []);
+    assert.ok(invalid.issues?.length || invalid.length || invalid.ok === false,
+      'an obsolete response shape cannot become a canonical artifact');
+    report.libra.canonical_admission = {groundedAccepted:true, obsoleteShapeRejected:true};
   } finally {
     await f.r.cleanup();
   }

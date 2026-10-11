@@ -54,9 +54,9 @@ async function main() {
     });
     const proxy = bridge.createPluginStorageProxy(legacy);
 
-    // Every new scope defaults independently to plugin-only. The legacy ARG is reset.
+    // Every new scope defaults independently to plugin-only. The global-mode owner leaves the legacy ARG untouched.
     assert.equal(await bridge.getMode(), 'plugin_only');
-    assert.equal(args.memory_suite_server_mode, 'plugin_only');
+    assert.equal(args.memory_suite_server_mode, '', 'reading a default scope does not rewrite the legacy ARG');
     currentScope = scopeB;
     assert.equal(await bridge.getMode(), 'plugin_only');
     currentScope = scopeA;
@@ -64,7 +64,10 @@ async function main() {
     // Scope A enters mirror; scope B remains local-only and is not uploaded.
     const mirrorA = await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,legacy);
     assert.equal(mirrorA.to, 'mirror');
-    assert.equal(args.memory_suite_server_mode, 'plugin_only', 'ARG is only a legacy import slot');
+    assert.equal(args.memory_suite_server_mode, '', 'scope registry changes do not rewrite the legacy ARG');
+    assert.equal((await bridge.getScopeMode(scopeA)).migrationRequired, true, 'seeded mirror remains transition compatibility');
+    assert.equal(bridge.getStorageModeContract().mirrorSelectable, false);
+    await assert.rejects(() => bridge.setMode('mirror'), /mirror_is_transition_only/);
     await proxy.setItem('scope:a:key:mirror', { both: true });
     assert.deepEqual(legacy.map.get('scope:a:key:mirror'), { both: true });
     const conn = await bridge.bootstrap();

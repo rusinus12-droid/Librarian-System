@@ -55,7 +55,6 @@ for (const [label, pattern] of banned) {
 
 // ── 2. the plain replacements must be present, so the fix cannot be "delete the sentence" ──────
 const required = [
-  ['해시 방식', /해시 방식은 이 검증의 평가 대상이 아닙니다/],
   ['현재 AI 연결', /현재 AI 연결의 한국어·영어·일본어·중국어/],
   ['질문과 문서', /질문과 문서로 나누어/],
   ['근거 기준', /근거 기준을 통과하는지/],

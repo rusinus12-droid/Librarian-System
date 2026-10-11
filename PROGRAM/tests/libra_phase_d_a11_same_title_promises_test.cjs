@@ -5,6 +5,7 @@
 // request-local alias path, then a separate negative run proposes the other
 // recipient's alias and must leave both original obligations open.
 const assert = require('node:assert/strict');
+const {actualClassicPacket,deliveredClosureRows,assertNoForbiddenClosure}=require('./fixtures/libra_actual_classic_request.cjs');
 const crypto = require('node:crypto');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const {countCalls,classifyCall} = require('./fixtures/libra_provider_call_kinds.cjs');
@@ -303,14 +304,15 @@ const runPositive = async mode => {
     const recallClosure = recall.diagnostics?.recallContinuityClosure;
     assert.ok((recallClosure?.facts || []).some(row => row.memoryId === deliveryMemory.memoryId), `${mode} Recall verifies the accepted fulfillment as linked evidence`);
     assert.ok(['current', 'last-known'].includes(recallClosure?.currentness), `${mode} Recall reports observed lifecycle currentness`);
-    const writer = await f.r.api.prepareInputWriterEvidence(query);
-    const rows = packetRows(writer);
-    assert.ok(writer.evidencePacket, `${mode} Input Writer exposes its final evidence packet`);
+    const scope = await f.r.api.getHostLineageStatus();
+    const writer = await actualClassicPacket(f,query,scope.scopeKey);
+    const rows = deliveredClosureRows(writer);
+    assert.ok(writer.evidencePacket, `${mode} actual Classic exposes its final evidence packet`);
     assert.ok(rows.some(row => row.text?.includes('지호는 민아에게 푸른 편지를 전달했다.')),
-      `${mode} Input Writer carries the source-backed delivered-letter evidence`);
+      `${mode} actual Classic carries the source-backed delivered-letter evidence`);
     assert.ok(rows.some(row => row.text?.includes('지호는 민아에게 푸른 편지를 전달했다.')
       && Number(row.turnRange?.start || 0) <= 6 && Number(row.turnRange?.end || 0) >= 6),
-      `${mode} Input Writer packet preserves the delivery's canonical evidence time`);
+      `${mode} actual Classic packet preserves the delivery's canonical evidence time`);
 
     if (mode === 'server_only') {
       const deliveryKey = manifestForChat(server, 'unified-chat').memories?.['6']?.key;
@@ -328,7 +330,7 @@ const runPositive = async mode => {
       mode, openingThreads: initial.before.length, candidateCount: initial.promptRows[1].length,
       resolvedLifecycleId: delivery.lifecycleId, remainingOpenLifecycleId: after[0].lifecycleId,
       history: { mina: eventsForMina.map(event => event.type), junho: eventsForJunho.map(event => event.type) },
-      recallCurrentness: recallClosure.currentness, inputWriterCutoff: writer.evidencePacket.temporal_scope.sourceEvidenceCutoffTurn
+      recallCurrentness: recallClosure.currentness, classicCutoff: writer.evidencePacket.temporal_scope.sourceEvidenceCutoffTurn
     };
   } finally {
     await server.cleanup();
@@ -373,10 +375,12 @@ const runWrongTargetNegative = async mode => {
     const recall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.ok(!(recall.diagnostics?.recallContinuityClosure?.facts || []).some(row => row.memoryId === attemptMemory.memoryId),
       `${mode} Recall does not authorize the wrong-target event as a lifecycle closure`);
-    const writer = await f.r.api.prepareInputWriterEvidence(query);
-    const wrongClosureRows = packetRows(writer).filter(row => row.closure === true
+    const scope = await f.r.api.getHostLineageStatus();
+    const writer = await actualClassicPacket(f,query,scope.scopeKey);
+    assertNoForbiddenClosure(writer,['지호는 민아에게 푸른 편지를 전달했다.']);
+    const wrongClosureRows = deliveredClosureRows(writer).filter(row => row.closure === true
       && row.text?.includes('지호는 민아에게 푸른 편지를 전달했다.'));
-    assert.equal(wrongClosureRows.length, 0, `${mode} Input Writer does not present the wrong-target attempt as fulfillment`);
+    assert.equal(wrongClosureRows.length, 0, `${mode} actual Classic does not present the wrong-target attempt as fulfillment`);
 
     if (mode === 'server_only') {
       assert.equal(server.getMemory(6)?.canonicalArtifact?.facts?.find(row => row.tempFactId === 'delivery_for_mina')?.values?.thread?.linkPendingReason,

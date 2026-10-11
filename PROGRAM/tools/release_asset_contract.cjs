@@ -112,7 +112,6 @@ function buildUpdateManifest(programDir) {
       lia: metadata.plugins.lia.version,
       retrace: metadata.plugins.retrace.version,
       gradia: metadata.plugins.gradia.version,
-      wm: metadata.plugins.wm.version,
       storageSdk: metadata.storageSdkVersion,
       computeSdk: metadata.computeSdkVersion
     },

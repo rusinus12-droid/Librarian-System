@@ -1,9 +1,9 @@
-﻿'use strict';
-// Tasks 13-16: storage-mode parity audit for all four owners.
+'use strict';
+// Role-aware storage parity: three server owners and the local-only LIA owner.
 //
 // Every authoritative owner feature ultimately routes durable reads/writes
 // through the shared storage authority. This audit executes that authority for
-// each owner namespace across plugin_only / mirror / server_only and records the
+// each admitted owner mode plus core legacy-mirror compatibility and records the
 // observations the support matrix depends on:
 //   - plugin_only makes zero Librarian backend requests for owner data
 //   - mirror keeps local and server authoritative rows in agreement
@@ -22,7 +22,7 @@ let passed=0;const ok=(label,condition)=>{assert.ok(condition,label);passed+=1;}
 const OWNERS=Object.freeze([
   { namespace:'flashback', variant:'standard', key:'vector_rag_memory:parity.canonical' },
   { namespace:'hayaku',    variant:'standard', key:'hayaku.v2.parity.canonical' },
-  { namespace:'lia',       variant:'standard', key:'lia.parity.canonical' },
+  { namespace:'lia', storagePolicy:'local_only', variant:'standard', key:'lia.parity.canonical' },
   { namespace:'libra',     variant:'libra',    key:'libra:v1:parity.canonical' }
 ]);
 const MODES=Object.freeze(['plugin_only','mirror','server_only']);
@@ -39,13 +39,13 @@ async function withServer(fn){
 
 (async()=>{
  for(const owner of OWNERS){
-  for(const mode of MODES){
+  for(const mode of owner.storagePolicy==='local_only'?['plugin_only']:MODES){
    await withServer(async url=>{
     const store=createInstrumentedStore();
     const backend=createBackendRequestCounter(fetch);
     let current=scope('child');
     const handle=buildBridge({
-      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
     });
@@ -54,6 +54,17 @@ async function withServer(fn){
       bridge.createPluginStorageProxy(store);
       if(mode==='mirror') await require('./helpers/legacy_mirror_fixture.cjs').seedLegacyMirrorFixture(bridge,store,scope('child')); else await bridge.setScopeMode(scope('child'),mode);
 
+      if(mode==='mirror'){
+        ok(`${owner.namespace}: legacy mirror requires migration`,(await bridge.getScopeMode(scope('child'))).migrationRequired===true);
+        ok(`${owner.namespace}: mirror cannot be selected`,bridge.getStorageModeContract().mirrorSelectable===false);
+        await assert.rejects(()=>bridge.setScopeMode(scope('child'),'mirror'),/mirror_is_transition_only/);
+      }
+      if(owner.storagePolicy==='local_only'){
+        const before=[...store.values];
+        for(const rejected of ['server_only','mirror']) await assert.rejects(()=>bridge.setScopeMode(scope('child'),rejected),/LOCAL_ONLY_OWNER_POLICY/);
+        assert.deepEqual([...store.values],before,'local-only refusals do not alter registry or data');
+        ok('lia: fixed owner policy is explicit',(await bridge.getScopeMode(scope('child'))).modeOrigin==='owner_policy');
+      }
       const writesBefore=store.counters.writes;
       const proxy=bridge.createPluginStorageProxy(store);
       await proxy.setItem(KEY,JSON.stringify({owner:owner.namespace,mode,v:1}));
@@ -82,7 +93,7 @@ async function withServer(fn){
       // Reload: a fresh bridge over the same store must return the same authority.
       await bridge.dispose?.();
       const reloaded=buildBridge({
-        namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+        namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
         resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
         url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
       });
@@ -106,7 +117,7 @@ async function withServer(fn){
     const backend=createBackendRequestCounter(fetch);
     let current=scope('child');
     const handle=buildBridge({
-      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
     });
@@ -117,7 +128,7 @@ async function withServer(fn){
       ok(`${owner.namespace}: explicit plugin_only recorded`,before.explicit===true);
       await bridge.dispose?.();
       const reloaded=buildBridge({
-        namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+        namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
         resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
         url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
       });
@@ -129,22 +140,24 @@ async function withServer(fn){
   });
  }
 
- // Native-branch parent read-only + sibling isolation through the shared authority.
+ // Native-branch parent read-only + sibling isolation. The former three-mode
+ // loop never applied its label; these are the actual parent/child modes.
  for(const owner of OWNERS){
-  for(const mode of MODES){
+  {
+   const mode=owner.storagePolicy==='local_only'?'local parent/local child':'server parent/local child';
    await withServer(async url=>{
     const store=createInstrumentedStore();
     const backend=createBackendRequestCounter(fetch);
     let current=scope('child');
     const handle=buildBridge({
-      namespace:owner.namespace,owner:owner.namespace,store,currentScope:()=>current,
+      namespace:owner.namespace,owner:owner.namespace,storagePolicy:owner.storagePolicy,store,currentScope:()=>current,
       resolveKeyScope:async({key,currentScope})=>({kind:'scope',...(String(key||'').includes('parity.parent.')?scope('parent'):(currentScope||{})),scopedContainer:true}),
       url,fetchImpl:backend.fetch,pluginPrefixes:['parity.']
     });
     const bridge=handle.bridge;
     try{
       bridge.createPluginStorageProxy(store);
-      await bridge.setScopeMode(scope('parent'),'server_only');
+      await bridge.setScopeMode(scope('parent'),owner.storagePolicy==='local_only'?'plugin_only':'server_only');
       await bridge.createPluginStorageProxy(store); // re-register after mode change
       const parentProxy=bridge.createPluginStorageProxy(store);
       current=scope('parent');

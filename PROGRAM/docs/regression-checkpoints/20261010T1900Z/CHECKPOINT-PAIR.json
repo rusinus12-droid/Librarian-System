@@ -1,0 +1,20 @@
+{
+  "schema": "lib.checkpoint.paired-artifacts.v1",
+  "checkpointId": "20261010T1900Z",
+  "sourceCaptureStartedUtc": "2026-10-10T20:05:14.982518+00:00",
+  "sourceCaptureFinishedUtc": "2026-10-10T20:05:15.852916+00:00",
+  "evidenceCutoffUtc": "2026-10-10T19:59:31.691218+00:00",
+  "sourceCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+  "sourceOriginalFiles": 1911,
+  "sourceOriginalTreeSha256": "b76eb8e5f6d870695d915c79c9425d64db4b7363c6525d1b5c1d2821e77a8274",
+  "sourceUnchangedDuringCapture": true,
+  "sourceStillMatchesOriginalInventoryAtComposition": true,
+  "privateSidecar": {
+    "filename": "Librarian-System-Regression-Evidence-20261010T195931Z.zip",
+    "bytes": 198423883,
+    "sha256": "8b4df62f30349b63431548d2a49a221b10a6c8e723280a6828868c049d377d88",
+    "purpose": "Reconstruct selected raw verification evidence only; not needed for development-source resume. Never publish its bytes to public GitHub."
+  },
+  "coverageBoundary": "Terminal-evidence cutoff and actual source capture interval are separate. No result after the fixed evidence cutoff is implied included.",
+  "sourceReconstruction": "RESTORE-SOURCE.py verifies ACTIVE-SOURCE-MANIFEST.json and SOURCE-PRESERVATION-MAP.json into a new separate destination; no prior checkpoint required."
+}

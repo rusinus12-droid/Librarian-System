@@ -1,9 +1,0 @@
-'use strict';
-const test=require('node:test'),assert=require('node:assert/strict');
-const {fixture,hook,plain,base}=require('./wm-native-cache-support.cjs');
-const {exactRaw,CAP}=require(base+'/tools/libra_owned_hydration_cap_support.cjs');
-for(const scenario of ['threeMiB','chunked','overHydrationCap'])test('large actual native hook preserves physical and per-stage work: '+scenario,async()=>{
- const results=[];
- for(const config of [undefined,{enabled:false}]){const f=await fixture({config}),raw=exactRaw({scope:f.scope},JSON.parse(f.raw).entries,scenario==='overHydrationCap'?CAP+1:3*1024*1024);if(scenario==='chunked')await f.native.compat.pluginStorage.setItem(f.key,raw);else f.r.store.set(f.key,raw);f.physical.length=0;f.counts.total=0;f.counts.freezeVisits=0;f.counts.stages={};const out=await hook(f),state=f.r.context.__REFRESH_OBS__;assert.match(JSON.stringify(out),/Historical reference;/);assert.ok(state.targetPhysical>=state.targetReads);if(scenario==='chunked')assert.ok(state.targetPhysical>state.targetReads);results.push({out:plain(out),parses:f.counts.total,freezeVisits:f.counts.freezeVisits,stages:plain(f.counts.stages),physical:f.physical.map(({key,bytes})=>({kind:key===f.key?'root':'chunk',bytes})),targetReads:state.targetReads,targetPhysical:state.targetPhysical,targetFull:state.targetFull,targetParses:state.targetParses,targetChecksums:state.targetChecksums});if(config===undefined){assert.ok(f.cache.stats().budgetFallbacks>0);assert.equal(f.cache.stats().requestOwners,0);assert.equal(f.cache.stats().requestBorrows,0);assert.equal(f.cache.stats().core.entries,0);}}
- assert.deepEqual(results[0],results[1]);console.log('WM_NATIVE_LARGE_COUNTS '+JSON.stringify({scenario,...results[0],out:undefined,physicalCalls:results[0].physical.length,physicalBytes:results[0].physical.reduce((n,x)=>n+x.bytes,0),physical:undefined}));
-});

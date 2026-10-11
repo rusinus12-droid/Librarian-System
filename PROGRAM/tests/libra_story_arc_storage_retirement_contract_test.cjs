@@ -59,8 +59,8 @@ assert.match(rebuildRegion, /rebuildCurrentStateForWorldline/,
   'deprecated rebuild adapter must delegate to Current State rebuild');
 assert.match(rebuildRegion, /storyArcCompatibilityProjection/,
   'deprecated rebuild adapter must return a Current Narrative projection');
-assert.match(rebuildRegion, /setPlannerNarrativeDirection/,
-  'legacy destination seed must migrate into Planner Narrative Direction');
+assert.match(rebuildRegion, /setNarrativeDirection/,
+  'legacy destination seed must migrate into Narrative Direction');
 assert.doesNotMatch(rebuildRegion, /loadStoryArc|saveStoryArc|deriveStoryArcFromCanonicalHistory|refineStoryArcWithDirector|storyArcEnabled|key\.storyArc/,
   'deprecated rebuild adapter still revives legacy Story Arc authority');
 
@@ -68,10 +68,10 @@ const directionRegion = between(
   'const setStoryArcDestination = async',
   'const storyArcPromptBlock ='
 );
-assert.match(directionRegion, /setPlannerNarrativeDirection/,
-  'legacy destination setter must delegate to Planner Narrative Direction');
-assert.match(directionRegion, /clearPlannerNarrativeDirection/,
-  'legacy clear action must delegate to Planner Narrative Direction');
+assert.match(directionRegion, /setNarrativeDirection/,
+  'legacy destination setter must delegate to Narrative Direction');
+assert.match(directionRegion, /clearNarrativeDirection/,
+  'legacy clear action must delegate to Narrative Direction');
 assert.doesNotMatch(directionRegion, /saveStoryArc|storage\.|key\.storyArc/,
   'legacy destination compatibility actions still write Story Arc storage');
 
@@ -119,17 +119,10 @@ assert.match(migrationRegion, /legacy_preserved_current_narrative_kept/,
 assert.doesNotMatch(migrationRegion, /removeItem|removePluginStorage|story-arc[^\n]*=\s*null/,
   'migration must leave legacy source data untouched');
 
-const sgaRegion = between(
-  'const sgaNarrativeRunMeta =',
-  'const sgaMaterialLoreStageId ='
-);
-assert.match(sgaRegion, /storyArcProjectionValue/,
-  'GRADIA compatibility readers must accept the Current Narrative projection');
-assert.doesNotMatch(sgaRegion, /story_arc\?\.schema === STORY_ARC_SCHEMA/,
-  'GRADIA still requires the retired legacy Story Arc schema');
-assert.doesNotMatch(sgaRegion, /Do not replay resolved thread/,
-  'GRADIA compatibility locks must not resurrect resolved Story Arc history');
-
+const responseProjection = between('const ensureStoryArcForResponse = async', 'const setStoryArcDestination = async');
+assert.match(responseProjection,/__libraCompletionGetNarrative/,'compatibility response reads Current Narrative');
+assert.match(responseProjection,/__libraCompletionNarrativeProjection/,'compatibility response derives its read-only projection');
+assert.doesNotMatch(responseProjection,/loadStoryArc|saveStoryArc|storage\.setJson/,'response projection never resurrects legacy storage authority');
 
 const mainPublicApi = between(
   'const publicApi = Object.freeze({',
@@ -141,7 +134,7 @@ for (const name of [
   'validateAndBindNarrativePatchEvidence',
   'callNarrativeDeltaProvider',
   'narrativeStatePromptBlock',
-  'plannerNarrativeDirectionPromptBlock'
+  'narrativeDirectionPromptBlock'
 ]) assert.match(mainPublicApi, new RegExp(name), `${name} must be declared on the frozen main public API`);
 
 const publicCompatibility = between(
@@ -152,8 +145,8 @@ assert.match(publicCompatibility, /Object\.isExtensible\(api\)/,
   'compatibility installer must not mutate the frozen main public API');
 assert.match(publicCompatibility, /api\.getStoryArc\s*=\s*async/);
 assert.match(publicCompatibility, /api\.rebuildStoryArc\s*=\s*async[\s\S]*rebuildWorldManagerNarrative/);
-assert.match(publicCompatibility, /api\.setStoryArcDestination\s*=\s*async[\s\S]*setPlannerNarrativeDirection/);
-assert.match(publicCompatibility, /api\.clearStoryArc\s*=\s*async[\s\S]*clearPlannerNarrativeDirection/);
+assert.match(publicCompatibility, /api\.setStoryArcDestination\s*=\s*async[\s\S]*setNarrativeDirection/);
+assert.match(publicCompatibility, /api\.clearStoryArc\s*=\s*async[\s\S]*clearNarrativeDirection/);
 assert.doesNotMatch(publicCompatibility, /saveStoryArc|story-arc:/,
   'public compatibility API must not restore legacy persistence');
 

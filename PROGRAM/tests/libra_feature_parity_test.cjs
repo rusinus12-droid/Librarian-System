@@ -11,11 +11,9 @@
 //
 // Features and their real entry points:
 //   LIBRA-DUAL-WORLDLINE           getWorldManagerRuntimeMeta / setWorldManagerWorldline
-//   LIBRA-PLANNER-RESPONSE-CONTEXT getLastTurnPlanner / getPlannerNarrativeDirection /
-//                                  plannerNarrativeDirectionPromptBlock
-//   LIBRA-GRADIA-SGA               getLastSgaRun / getLastSgaFinalization / debugStoreSgaDraftCheckpoint
-//   LIBRA-INPUT-WRITER             prepareInputWriterEvidence / getLastInputWriter /
-//                                  debugValidateInputWriterDeliverySnapshot
+//   LIBRA-NARRATIVE-DIRECTION      getNarrativeDirection / narrativeDirectionPromptBlock
+// Retired embedded Planner, SGA and Input Writer executors are asserted absent below.
+// Standalone GRADIA is a separate plugin and is not inferred as equivalent coverage.
 //   LIBRA-RAG-LORE-CBS             debugUnifiedLoreMaterial / getLastResponseLore
 //   LIBRA-WORLD-ADDITIONAL-RETIRED previewLegacyMemoryRebuild / getLegacyMemoryRebuildEvidence
 //   LIBRA-STORY-NARRATIVE-COMPAT   getStoryArc / rebuildStoryArc / migrateStoryArcToNarrativeIfNeeded
@@ -37,29 +35,15 @@ const FEATURES = {
       return { reachable: true, keys: meta && typeof meta === 'object' ? Object.keys(meta).slice(0, 5) : null };
     }
   },
-  PLANNER: {
-    entry: 'getLastTurnPlanner',
+  NARRATIVE: {
+    entry: 'getNarrativeDirection',
+    also: ['narrativeDirectionPromptBlock'],
     call: async api => {
-      const planner = await api.getLastTurnPlanner();
-      const direction = await api.getPlannerNarrativeDirection();
-      const block = await api.plannerNarrativeDirectionPromptBlock();
-      return { plannerReadable: planner !== undefined, directionReadable: direction !== undefined, blockProduced: block !== undefined };
-    }
-  },
-  GRADIA: {
-    entry: 'getLastSgaRun',
-    call: async api => {
-      const run = await api.getLastSgaRun();
-      const finalization = await api.getLastSgaFinalization();
-      return { runReadable: run !== undefined, finalizationReadable: finalization !== undefined };
-    }
-  },
-  INPUT_WRITER: {
-    entry: 'prepareInputWriterEvidence',
-    call: async api => {
-      const last = await api.getLastInputWriter();
-      const validated = await api.debugValidateInputWriterDeliverySnapshot();
-      return { lastReadable: last !== undefined, validationReachable: validated !== undefined };
+      const direction = await api.getNarrativeDirection();
+      assert.ok(direction !== undefined, 'retained narrative direction is readable');
+      const block = await api.narrativeDirectionPromptBlock(direction);
+      assert.equal(typeof block, 'string', 'formatter consumes the actual current direction');
+      return { directionReadable: true, blockProduced: true };
     }
   },
   LORE_CBS: {
@@ -134,6 +118,12 @@ async function measureMode(mode) {
   try {
     await s.f.run();
     const api = s.f.r.api;
+
+    for (const removed of ['getLastTurnPlanner', 'getPlannerNarrativeDirection',
+      'plannerNarrativeDirectionPromptBlock', 'getLastSgaRun', 'getLastSgaFinalization',
+      'prepareInputWriterEvidence', 'getLastInputWriter', 'debugValidateInputWriterDeliverySnapshot']) {
+      assert.equal(typeof api[removed], 'undefined', `${mode}: retired embedded executor surface ${removed} stays absent`);
+    }
 
     const features = {};
     for (const [name, spec] of Object.entries(FEATURES)) {

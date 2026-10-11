@@ -120,6 +120,8 @@ class FakeElement {
     this.children.push(child);
     return child;
   }
+  prepend(...children) { for (const child of children.reverse()) { if (child.parentNode) child.remove(); child.parentNode=this; this.children.unshift(child); } }
+  replaceChildren(...children) { for (const child of [...this.children]) child.remove(); this.append(...children); }
   append(...children) { for (const child of children) this.appendChild(child); }
   remove() {
     if (!this.parentNode) return;

@@ -57,6 +57,18 @@ test('registered LIBRA recall failure stays fail-open without a zero receipt',as
  await withEmptyLibra(transform,(_f,r)=>{assert.equal(r.lastMemoryInjectionMeta.failOpen,true);assert.equal(r.lastMemoryInjectionMeta.sourceTurnAccounting,undefined);assert.equal(r.lastMemoryRecallViewer.sourceTurnAccounting,undefined);assert.equal(r.lastClassicInjectionMeta,null);});
 });
 test('registered LIBRA changed-scope boundary rejection never publishes an empty zero receipt',async()=>{
- const transform=source=>{const anchor='        if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);\n\n        const responseContext=attachUnifiedResponseContext';assert.equal(source.split(anchor).length,2);return source.replace(anchor,"        context.chat.id=context.chat.chatId='controlled-late-scope-change';\n"+anchor);};
- await withEmptyLibra(transform,(_f,r)=>{assert.equal(r.lastMemoryInjectionMeta.failOpen,true);assert.equal(r.lastMemoryInjectionMeta.sourceTurnAccounting,undefined);assert.equal(r.lastMemoryRecallViewer.sourceTurnAccounting,undefined);assert.equal(r.lastClassicInjectionMeta,null);});
+ // Observe the current owner-protected seam immediately before the real
+ // boundary validation. Mutate the host chat itself; retain both product guards.
+ const transform=source=>{
+  const anchor='        if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);\n        if (requestOwner !== latestRecallPublicationOwner) return messages;';
+  assert.equal(source.split(anchor).length,2,'exactly one current pre-publication boundary seam');
+  return source.replace(anchor,
+   "        globalThis.__SOURCE_TURN_LATE_SCOPE_OBSERVED__=(globalThis.__SOURCE_TURN_LATE_SCOPE_OBSERVED__||0)+1;\n"+
+   "        context.chat.id=context.chat.chatId='controlled-late-scope-change';\n"+anchor);
+ };
+ await withEmptyLibra(transform,(f,r)=>{
+  assert.equal(f.r.context.__SOURCE_TURN_LATE_SCOPE_OBSERVED__,1,'late physical-scope observer reached exactly once');
+  assert.equal(f.chat.id,'controlled-late-scope-change');assert.equal(f.chat.chatId,'controlled-late-scope-change');
+  assert.equal(r.lastMemoryInjectionMeta.failOpen,true);assert.equal(r.lastMemoryInjectionMeta.sourceTurnAccounting,undefined);assert.equal(r.lastMemoryRecallViewer.sourceTurnAccounting,undefined);assert.equal(r.lastClassicInjectionMeta,null);
+ });
 });

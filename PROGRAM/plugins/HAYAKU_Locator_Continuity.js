@@ -374,7 +374,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
 /* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
 //@allowed-ipc flashback_hayaku_bridge
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/hayaku_locator_continuity/main/hayaku_locator_continuity.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 //@arg hayaku_enabled string true|false
 //@arg hayaku_mode string auto|balanced|fast|deep
 //@arg hayaku_prompt_mode string auto|balanced|full
@@ -7038,7 +7038,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (saved.entries[scope.scopeId]?.mode !== target) throw Object.assign(new Error('memory_suite_mode_readback_mismatch'),{code:'MEMORY_SUITE_MODE_READBACK_MISMATCH'});
     await publishPreparedServerMode(serverPublication);
     state.scopeRouting.transientModes.delete(scope.scopeId);
-    state.config = { ...state.config, at: Date.now(), mode: target };
+    // A first scope publication must not certify the initial default endpoint
+    // as a fresh connection cache. Read URL alone to preserve scoped mode and
+    // any legacy transient mode; forcing readConfig would reimport global mode.
+    if (target === MODE_PLUGIN_ONLY) {
+      state.config = { ...state.config, at: 0, mode: target };
+    } else {
+      const url = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
+      if (state.config.url !== url) resetBootstrapCache();
+      state.config = { ...state.config, at: Date.now(), mode: target, url };
+    }
     // Entering plugin-only is a hard network boundary.  Do not immediately
     // reconnect merely to publish the route registry that disabled the server.
     // A later explicit connection/sync action can publish it if requested.
@@ -7664,7 +7673,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registry = await loadScopeRegistry(false, false);
     // The global entry counts: if the user made the whole install server-backed, a shared record must
     // still be mirrored even when no individual chat scope has been touched yet.
-    return Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+    if (Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) return true;
+    // Scoped reads already admit an unconsumed legacy global argument. Shared
+    // owner infrastructure must use that same fallback, without overriding a
+    // published global choice or importing/publishing any new mode here.
+    return globalModeEnabled && !registry.legacyGlobalModeImported && !liveGlobalRow(registry)
+      && normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) !== MODE_PLUGIN_ONLY;
   };
 
   const normalizeRouteDescriptor = async (rawValue, space, key, currentScope) => {
@@ -9607,7 +9621,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (localOnlyOwner) return;
     await loadPersistedSyncJob();
     const job = getSyncJob();
-    if (job?.kind === 'connection_config' && !syncJobTerminal(job.status) && job.scopeId === scope.scopeId) {
+    // An aggregate migration owns every scope, including scopes discovered
+    // after it paused. Per-scope connection changes retain their own boundary.
+    if (job && !syncJobTerminal(job.status) && (job.kind === 'global_mode' || (job.kind === 'connection_config' && job.scopeId === scope.scopeId))) {
       const error = transitionBusyError();
       error.transition = {scopeId:job.scopeId,fromMode:job.sourceMode,toMode:job.targetMode,phase:job.phase,jobId:job.jobId};
       throw error;
@@ -10496,6 +10512,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!matchesRoute('plugin', String(key || ''))) throw new Error('HEALTH_STORAGE_KEY_UNVERIFIED');
       return {mode:MODE_PLUGIN_ONLY, raw:await plugin.getItem(String(key || '')), binding:JSON.stringify([scope.scopeId,'local_only',readOnlyAuthorityEpoch,dataBinding.generation])};
     }
+    if (managerOnly) {
+      // A manager does not initialize owner mode rows. Only its own physical
+      // legacy metadata for the currently selected host scope is health input.
+      if ((readOptions.space || 'plugin') !== 'plugin' || !matchesRoute('plugin', String(key || ''))) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+      const current = normalizeScopeDescriptor(currentScopeProvider ? await currentScopeProvider({namespace,pluginId,force:true}) : null);
+      if (!current.scopeId || scope.scopeId !== current.scopeId || scope.scopeKey !== current.scopeKey) throw Error('HEALTH_SCOPE_UNVERIFIED');
+      const route = resolveKeyScopeProvider ? await resolveKeyScopeProvider({key:String(key || ''),space:'plugin',currentScope:current,registry:{entries:{}}}) : null;
+      if (route?.kind !== 'scope' || route.scopeId !== current.scopeId) throw Error('HEALTH_STORAGE_KEY_UNVERIFIED');
+    }
     const device = await rawDeviceStorage({ strict: true });
     const pluginRaw = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
     const deviceRaw = typeof device?.getItem === 'function' ? await device.getItem(SCOPE_ROUTING_LOCAL_KEY) : null;
@@ -10520,7 +10545,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Prove its fresh local default observationally; never default failed or
     // unknown argument reads to local authority, or initialize a registry here.
     let freshLocalAuthority = null;
-    if (!registry.legacyGlobalModeImported && !stored && !global) {
+    if (!registry.legacyGlobalModeImported && !stored && !global && !managerOnly) {
       if (!globalModeEnabled) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
       for (const value of [pluginRaw, deviceRaw]) if (value != null && value !== '') {
         const parsed = typeof value === 'string' ? JSON.parse(value) : value;
@@ -10583,7 +10608,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const reset = await plugin.getItem(resetChoiceKey);
     if (reset != null && reset !== '') throw new Error('HEALTH_RESET_REVIEW_REQUIRED');
     const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-    const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    let mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    // A retained manager host argument must not certify a remote copy as local.
+    if (managerOnly && !registry.legacyGlobalModeImported && !stored && !global) mode = String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
     if (!VALID_MODES.has(mode) || mode !== MODE_PLUGIN_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
     const space=readOptions.space||'plugin';
     if(!['plugin','local'].includes(space))throw new Error('HEALTH_STORAGE_SPACE_INVALID');
@@ -10596,7 +10623,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       raw=await store.getItem(logicalKey);
     }else raw=await ownerLegacyRead(space,logicalKey);
     if (freshLocalAuthority) await freshLocalAuthority.assertCurrent();
-    return { mode, raw, binding: JSON.stringify([scope.scopeId, stored || null, global || null, dataBinding.generation, ...(freshLocalAuthority ? ['fresh_local',freshLocalAuthority.witness] : [])]) };
+    return { mode, raw, binding: JSON.stringify(managerOnly ? [scope.scopeId, 'manager_only', stored || null, global || null, readOnlyAuthorityEpoch, dataBinding.generation] : [scope.scopeId, stored || null, global || null, dataBinding.generation, ...(freshLocalAuthority ? ['fresh_local',freshLocalAuthority.witness] : [])]) };
   };
   // Read-only server snapshot. Deliberately bypass request(), bootstrap(),
   // readConfig/readScopeMode(), routed getters, and all reconciliation paths.
@@ -11086,7 +11113,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');
@@ -49206,7 +49233,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };

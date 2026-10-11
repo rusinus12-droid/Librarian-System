@@ -5,7 +5,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.resolve(__dirname, '..', 'plugins', 'Flashback_Memory.js'), 'utf8');
+const productSource = fs.readFileSync(path.resolve(__dirname, '..', 'plugins', 'Flashback_Memory.js'), 'utf8');
+// Historical immutable overlays remain readable. Expose only the shipped
+// physical snapshot writer for legacy fixture construction, never an old worker.
+const fixtureMarker='_test: { maintenanceResultText,';
+assert.equal(productSource.split(fixtureMarker).length,2);
+const source=productSource.replace(fixtureMarker,'_test: { waitForFlashbackWritersIdle: async()=>{ do { await Promise.allSettled([...sharedScopeWriteLocks.values(),...Runtime.externalRetirementInFlight.values(),...Runtime.scopeRegistryRetryTasks,...Runtime.deferredScopeStorageTasks.values()]); await MemorySuiteStorageBridge.whenFlashbackWritersIdle(); } while(sharedScopeWriteLocks.size||Runtime.externalRetirementInFlight.size||Runtime.scopeRegistryRetryTasks.size||Runtime.deferredScopeStorageTasks.size); }, fixtureOwnerSnapshot:()=>({writers:flashbackOwnerWriters,lease:flashbackOwnerLease?{kind:flashbackOwnerLease.kind,ended:flashbackOwnerLease.ended,holds:flashbackOwnerLease.holds.size}:null,locks:sharedScopeWriteLocks.size}), persistFlashbackReembeddedArchiveSnapshot, commitFlashbackReembeddedArchiveRef, maintenanceResultText,');
 const waitFor = async (predicate, label, timeoutMs = 15000) => {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -38,12 +43,14 @@ const chats = [
   { id: 'portable-source-chat', chatId: 'portable-source-chat', name: 'Source worldline', message: transcript(), bindedPersona: '' },
   { id: 'portable-migration-chat', chatId: 'portable-migration-chat', name: 'New empty migration chat', message: [], bindedPersona: '' },
   { id: 'portable-copy-chat', chatId: 'portable-copy-chat', name: 'Copied worldline', message: [], bindedPersona: '' },
-  { id: 'portable-collision-chat', chatId: 'portable-collision-chat', name: 'Occupied target', message: [], bindedPersona: '' }
+  { id: 'portable-collision-chat', chatId: 'portable-collision-chat', name: 'Occupied target', message: [], bindedPersona: '' },
+  { id: 'portable-explicit-repair-chat', chatId: 'portable-explicit-repair-chat', name: 'Explicit archive repair owner', message: [], bindedPersona: '' }
 ];
 for (const chat of chats) chat.messages = chat.message;
 const character = { id: 'portable-cross-character', chaId: 'portable-cross-character', name: 'Portable Character', chats };
 let currentChatIndex = 0;
 const unloadHandlers = [];
+let providerRequests=0;
 const host = {
   pluginStorage,
   safeLocalStorage,
@@ -58,6 +65,7 @@ const host = {
   async getArg(name) { return this.getArgument(name); },
   async setArgument() { return true; },
   async nativeFetch(url, init = {}) {
+    providerRequests++;
     assert.equal(String(url), 'https://portable-fixture.invalid/v1/embeddings', 'no external transport is permitted');
     const request = JSON.parse(init.body);
     const dimensions = Number(request.dimensions || 4);
@@ -332,12 +340,53 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   const plan96 = await flashback.inspectMemoryMaintenance({ settings: settings96, scope: migrationScope, ensureStorage: false });
   assert.equal(plan96.localRecordsNeedingEmbedding, 0, 'archive-only migration has no local vectors to repair');
   assert.ok(plan96.archiveRecordsNeedingEmbedding >= 2, 'maintenance inspection includes archive vector profile mismatches');
-  const fullReembed = await flashback.reembedAllRecords({ settings: settings96, scope: migrationScope });
-  if (!(fullReembed.archiveReembedded >= 2)) console.error('ARCHIVE_REEMBED_RESULT', JSON.stringify(fullReembed));
-  assert.equal(fullReembed.localReembedded, 0, 'full archive re-embedding does not materialize active local rows');
-  assert.ok(fullReembed.archiveReembedded >= 2, 'full re-embedding durably updates archive memories');
-  assert.equal(fullReembed.reembedded, fullReembed.archiveReembedded, 'success count reflects durable archive writes');
-  assert.equal(fullReembed.archiveRefUpdated, true);
+  await flashback.saveSettings(settings96);
+  const oldWorkersCalls=providerRequests;
+  const unsupportedFull=await flashback.reembedAllRecords({settings:settings96,scope:migrationScope});
+  assert.equal(unsupportedFull.archiveReembedded,0);
+  assert.equal(unsupportedFull.archiveCoverage.execution,'unsupported');
+  assert.equal(providerRequests,oldWorkersCalls,'unsupported full archive worker issues no document request');
+  // Use a separate disposable native owner for the current public repair.
+  // Its completed head and evidence remain untouched by legacy fixture setup.
+  currentChatIndex=4;const publicRepairScope=await flashback.resolveCurrentScope(true);
+  const publicEmpty=await flashback._test.saveAllRecords([],settings96,publicRepairScope);
+  await flashback._test.saveScopeManifest({...publicEmpty.manifest,archiveRef:originalArchiveRef,copyAdoptedComplete:true,copyAdoptionMode:'shared_archive'},publicRepairScope);
+  const explicit=await flashback.archiveRecovery.preview();assert.equal(explicit.allowed,true,JSON.stringify(explicit));
+  assert.equal(explicit.selectedGroups,1);assert.equal(explicit.excludedGroups,1,'episode index is not an explicit response group');
+  const explicitCalls=providerRequests;
+  const repaired=await flashback.archiveRecovery.repair(explicit.ticket);
+  assert.equal(repaired.status,'verified',JSON.stringify(repaired));assert.equal(repaired.archiveReembedded,1);
+  assert.equal(providerRequests,explicitCalls+1,'one selected group uses exactly one actual document wire');
+  assert.equal(repaired.coverage.wholeArchive,'not_established');assert.ok(repaired.remainingGroups>0);
+  const explicitHead=await flashback._test.loadScopeManifest(publicRepairScope.scopeKey);
+  assert.equal(explicitHead.count,0);
+  const explicitRows=await flashback._test.loadFlashbackArchiveChain(explicitHead.archiveRef);
+  assert.equal(explicitRows.recordsList.filter(row=>row.embeddingReceipt?.status==='ready'&&row.vector.length===96).length,1);
+  assertMapSubsetUnchanged(originalArchivePhysicalBefore,pluginStorage.values,'explicit repair preserves original archive bytes');
+  console.log('PASS explicit one-group archive repair, exclusions and truthful partial coverage');
+  const publicLayer=await flashback._test.loadScopeManifest(explicitHead.archiveRef.archiveScopeKey);
+  const publicOwnerPrefix=`vector_rag_memory:scope:${publicRepairScope.storageHash}:`,publicLayerPrefix=`vector_rag_memory:scope:${publicLayer.storageHash}:`;
+  const publicCompletedPhysical=cloneMap(new Map([...pluginStorage.values].filter(([key])=>key.startsWith(publicOwnerPrefix)||key.startsWith(publicLayerPrefix))));
+  const publicCompletedVectors=cloneMap(new Map([...safeLocalStorage.values].filter(([key])=>key.includes(`:${publicLayer.storageHash}:`))));
+  currentChatIndex=1;assert.equal((await flashback.resolveCurrentScope(true)).scopeKey,migrationScope.scopeKey);
+  const historicalRows=await flashback._test.loadFlashbackArchiveChain(originalArchiveRef);
+  // Produce a valid historical full overlay with real controlled provider
+  // vectors. This is fixture setup for reader/export compatibility, not a claim
+  // that a retired full/progressive/automatic worker executed it.
+  const legacySnapshot=async(ref,rows,cfg,ids)=>{
+    const chosen=new Set(ids), selected=rows.filter(row=>chosen.has(flashback._test.flashbackArchiveRecordIdentity(row)));
+    const vectors=await flashback._test.embedTexts(selected.map(row=>row.text),cfg);
+    const patches=new Map(selected.map((row,i)=>[flashback._test.flashbackArchiveRecordIdentity(row),{...row,
+      vector:vectors[i],dim:vectors[i].length,provider:cfg.embeddingProvider,model:cfg.embeddingModel,
+      embeddingProvider:cfg.embeddingProvider,embeddingModel:cfg.embeddingModel,embeddingDimensions:vectors[i].length,
+      embeddingProfileId:vectors.flashbackEmbeddingProfileId,embeddingDescriptor:vectors[i].flashbackEmbeddingDescriptor,
+      embeddingProvenance:vectors[i].flashbackEmbeddingProvenance,embeddingReceipt:undefined,embeddingWork:undefined}]));
+    const next=rows.map(row=>patches.get(flashback._test.flashbackArchiveRecordIdentity(row))||row);
+    const snapshot=await flashback._test.persistFlashbackReembeddedArchiveSnapshot(ref,next,migrationScope,cfg,{changedMemberIds:ids,reason:'historical_overlay_fixture'});
+    await flashback._test.commitFlashbackReembeddedArchiveRef(migrationScope,ref,snapshot);
+    return {localReembedded:0,archiveReembedded:selected.length,reembedded:selected.length,archiveRefUpdated:true};
+  };
+  const fullReembed=await legacySnapshot(originalArchiveRef,historicalRows.recordsList,settings96,historicalRows.recordsList.map(flashback._test.flashbackArchiveRecordIdentity));
   const afterFullManifest = await flashback._test.loadScopeManifest(migrationScope.scopeKey);
   assert.equal(afterFullManifest.count, 0, 'archive re-embedding keeps the active target layer empty');
   assert.notEqual(afterFullManifest.archiveRef.archiveId, originalArchiveRef.archiveId, 'current chat swaps to a new immutable archive snapshot');
@@ -355,17 +404,17 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   assert.ok(afterFullEmbeddingRecords.every(record => record.vector.length === 96 && record.embeddingProvider === 'openai'));
   assertMapSubsetUnchanged(originalArchivePhysicalBefore, pluginStorage.values, 'shared source archive remains immutable after full re-embedding');
 
-  console.log('PASS full archive reembedding preserves immutable source');
+  console.log('PASS historical full overlay reader preserves immutable source');
   const fullArchiveManifest = await flashback._test.loadScopeManifest(afterFullManifest.archiveRef.archiveScopeKey);
   const fullArchivePrefix = `vector_rag_memory:scope:${fullArchiveManifest.storageHash}:`;
   const fullArchivePhysicalBefore = cloneMap(new Map(Array.from(pluginStorage.values).filter(([key]) => String(key).startsWith(fullArchivePrefix))));
   const settings64 = flashback._test.normalizeSettings({ ...settings96, embeddingDimensions: 64 });
-  const progressive = await flashback.progressivelyReembedRecords(migrationScope, settings64, {
-    maxRecords: 1,
-    maxChars: 500000,
-    maxRequests: 1,
-    retryOnConcurrent: false
-  });
+  await flashback.saveSettings(settings64);
+  const unsupportedProgressive=await flashback.progressivelyReembedRecords(migrationScope,settings64,{maxRecords:1,maxRequests:1});
+  assert.equal(unsupportedProgressive.reembedded,0,'progressive route processes local pending groups only');
+  assert.equal(unsupportedProgressive.physicalRequests,0);
+  assert.equal((await flashback._test.loadScopeManifest(migrationScope.scopeKey)).archiveRef.archiveId,afterFullManifest.archiveRef.archiveId,'local progressive route never swaps an archive reference');
+  const progressive=await legacySnapshot(afterFullManifest.archiveRef,afterFullArchive.recordsList,settings64,[flashback._test.flashbackArchiveRecordIdentity(afterFullResponses[0])]);
   assert.equal(progressive.localReembedded, 0);
   assert.equal(progressive.archiveReembedded, 1, 'progressive archive success count is durably committed');
   assert.equal(progressive.reembedded, 1);
@@ -387,13 +436,14 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   assert.equal(afterProgressiveSummary.records, afterProgressiveArchive.recordsList.length, 'vector overlays do not double-count archive statistics');
   assertMapSubsetUnchanged(fullArchivePhysicalBefore, pluginStorage.values, 'previous re-embedded archive remains immutable after progressive replacement');
 
-  console.log('PASS progressive archive reembedding preserves unselected vectors');
+  console.log('PASS historical partial overlay preserves unselected vectors');
   const plan64 = await flashback.inspectMemoryMaintenance({ settings: settings64, scope: migrationScope, ensureStorage: false });
   assert.equal(plan64.archiveEpisodeRecords, 1, 'maintenance inventory includes archived episode indexes');
   assert.equal(plan64.archiveRecordsNeedingEmbedding, afterProgressiveEmbeddingRecords.length - 1, 'maintenance reports only the remaining archive vector mismatches');
-  const automatic = await flashback.runMemoryMaintenance('auto', { preflight: plan64 });
-  assert.equal(automatic.healthy, true, 'automatic maintenance completes the remaining archive vector repair');
-  assert.equal(automatic.operation.archive.archiveRefUpdated, true);
+  const beforeAutoCalls=providerRequests;
+  await assert.rejects(()=>flashback.runMemoryMaintenance('auto',{preflight:plan64}),error=>error.code==='FLASHBACK_ARCHIVE_REPAIR_UNSUPPORTED');
+  assert.equal(providerRequests,beforeAutoCalls,'automatic archive refusal precedes the document wire');
+  await legacySnapshot(afterProgressiveManifest.archiveRef,afterProgressiveArchive.recordsList,settings64,afterProgressiveEmbeddingRecords.filter(row=>row.vector.length!==64).map(flashback._test.flashbackArchiveRecordIdentity));
   const afterAutomaticManifest = await flashback._test.loadScopeManifest(migrationScope.scopeKey);
   const afterAutomaticArchive = await flashback._test.loadFlashbackArchiveChain(afterAutomaticManifest.archiveRef);
   const afterAutomaticResponses = afterAutomaticArchive.recordsList.filter(record => record.sourceType === 'response' && !record.autoEpisode);
@@ -402,13 +452,13 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   assert.equal(afterAutomaticEmbeddingRecords.find(record => record.sourceType === 'episode_index')?.vector.length, 64, 'automatic maintenance re-embeds archived episode indexes');
   assert.equal(afterAutomaticManifest.count, 0, 'automatic archive repair never copies archive rows into active storage');
 
-  console.log('PASS automatic archive vector repair keeps active layer empty');
+  console.log('PASS automatic refusal and historical overlay compaction keep active layer empty');
   const routedQuery = 'bulk archive route probe 0350 cobalt compass token 0350';
   const routedTargetId = 'bulk-archive-probe-0350';
   const routedTarget = afterAutomaticEmbeddingRecords.find(record => flashback._test.flashbackArchiveRecordIdentity(record) === routedTargetId);
   assert.ok(routedTarget, 'large archive fixture contains the routed overlay target');
   const routedHeadManifest = await flashback._test.loadScopeManifest(afterAutomaticManifest.archiveRef.archiveScopeKey);
-  assert.ok(routedHeadManifest.shardCount > 8, 'automatic partial overlay is large enough to use routed shard selection');
+  assert.ok(routedHeadManifest.shardCount > 8, 'historical overlay fixture is large enough to use routed shard selection');
   let routedTargetShard = -1;
   for (let index = 0; index < routedHeadManifest.shardCount; index += 1) {
     const shardKey = `vector_rag_memory:scope:${routedHeadManifest.storageHash}:records:commit:${routedHeadManifest.commitId}:shard:${String(index).padStart(4, '0')}`;
@@ -480,6 +530,9 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   assert.equal(recallArchiveEmbeddingRecords.length, afterAutomaticEmbeddingRecords.length, 'recall exposes every logical archive memory once');
   assert.ok(recallArchiveEmbeddingRecords.every(record => record.vector.length === 64), 'recall uses the newest archive overlay vectors');
 
+  await flashback._test.retireExternalRecordsForScope(migrationScope.scopeKey);
+  await flashback._test.waitForFlashbackWritersIdle();
+  assert.deepEqual(JSON.parse(JSON.stringify(flashback._test.fixtureOwnerSnapshot())),{writers:0,lease:null,locks:0},'all actual private owner tails settled before portable admission');
   const overlayEnvelope = await portable.exportCurrentScope();
   assert.equal(overlayEnvelope.source.scopeKey, migrationScope.scopeKey, 'portable export remains bound to the migrated target scope');
   const exportedKeys = new Set(overlayEnvelope.records.map(record => String(record.key)));
@@ -498,6 +551,8 @@ const assertMapSubsetUnchanged = (before, after, label) => {
   const overlayInspection = await portable.inspectRestoreOptions(overlayEnvelope);
   assert.equal(overlayInspection.modes.same_chat_replace.allowed, true, 'portable validation accepts the immutable archive overlay chain');
 
+  assertMapSubsetUnchanged(publicCompletedPhysical,pluginStorage.values,'completed public archive owner and evidence stay immutable during historical fixture operations');
+  assertMapSubsetUnchanged(publicCompletedVectors,safeLocalStorage.values,'completed public archive candidate sidecars stay immutable');
   console.log('PASS portable archive chain export and validation');
   chats[3].message = [{ role: 'user', data: 'Existing target activity', chatId: 'occupied-user' }];
   chats[3].messages = chats[3].message;

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { before, after, test } = require('node:test');
 const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
-const { hostData, evidence, choices } = require('./fixtures/libra_consumer_test_support.cjs');
+const { hostData } = require('./fixtures/libra_consumer_test_support.cjs');
 
 // The real outer-scope functions are exercised in the complete plugin VM.
 // Do not inject the memory-core's private asObject/asArray into that scope.
@@ -29,7 +29,7 @@ before(async () => {
       calls.push(structuredClone(options));
       return { type: 'success', result: JSON.stringify(providerReply), finish_reason: 'stop' };
     }
-  }, { transformSource: expose });
+  }, { transformSource: source => require('./fixtures/libra_retained_contract_probe.cjs').expose(expose(source)) });
   internals = harness.context.__LIBRA_RECOVERY_L02__();
 });
 after(async () => { if (harness) await harness.cleanup(); });
@@ -91,17 +91,19 @@ test('CBS freshness inventory pins live host metadata independently of receipt r
   }
 });
 
-test('native character lore without a receipt-source contract remains available to Input Writer', async () => {
-  const originalLore = data.character.globalLore;
-  try {
-    data.character.globalLore = [{ id: 'native-rule-without-receipt', key: 'door', comment: 'Native door rule',
-      content: 'NATIVE_LORE_WITHOUT_RECEIPT: the library closes at sunset.', alwaysActive: true, mode: 'normal' }];
-    const beforeCalls = calls.length;
-    const prepared = await harness.api.prepareInputWriterEvidence('Ask when the library closes.');
-    assert.match(prepared.evidencePacket.lore_prompt, /NATIVE_LORE_WITHOUT_RECEIPT/);
-    assert.equal(calls.length, beforeCalls, 'native reference preparation makes no model call');
-    assert.equal((await harness.api.debugValidateInputWriterDeliverySnapshot(prepared.deliverySnapshot)).current, true);
-  } finally { data.character.globalLore = originalLore; }
+// Native lore remains available through the shared snapshot. The Writer
+// preparation API itself is retired; no receipt is invented for native lore.
+test('native character lore without a receipt-source contract remains readable and freshness-checked', async () => {
+ const originalLore=data.character.globalLore;
+ try {
+  data.character.globalLore=[{id:'native-rule-without-receipt',key:'door',comment:'Native door rule',content:'NATIVE_LORE_WITHOUT_RECEIPT: the library closes at sunset.',alwaysActive:true,mode:'normal'}];
+  const beforeCalls=calls.length,initial=await harness.api.retainedContractProbe();
+  assert(initial.snapshot.activeLore.some(x=>x.content.includes('NATIVE_LORE_WITHOUT_RECEIPT')));
+  const entry=initial.snapshot.consumerSourceInventory.lore.find(x=>x.id.includes('native-rule-without-receipt'));assert(entry);
+  const p=await harness.api.retainedContractProbe({lore_material:{stages:{shared:{promptBlock:'NATIVE_LORE_WITHOUT_RECEIPT',selectedItems:[{id:entry.id}]}}}});
+  assert.equal(await p.verify(),true);data.character.globalLore[0].content+=' changed';
+  await assert.rejects(p.verify(),/CONSUMER_REFERENCE_CHANGED/);assert.equal(calls.length,beforeCalls);
+ }finally{data.character.globalLore=originalLore;}
 });
 
 const openText = 'The copper door opens only for the river keeper.';
@@ -152,38 +154,6 @@ test('CBS bounded variants do not authorize excluded removable host blocks', () 
   assert.equal(result.selectedCount, 0);
 });
 
-test('Input Writer polish completes with one choice and reports one completed choice', async () => {
-  providerReply = choices('rp');
-  providerReply.choices = [providerReply.choices[0]];
-  const beforeCalls = calls.length;
-  const result = await harness.api.debugGenerateInputWriterChoices({
-    originalInput: 'Ask why the door is closed.', settings: { inputWriterMode: 'rp' },
-    writerOptions: { task: 'polish' }, evidencePacket: evidence()
-  });
-  assert.equal(result.ok, true, result.reason);
-  assert.equal(result.choiceTarget, 1);
-  assert.equal(result.choices.length, 1);
-  assert.equal(calls.length - beforeCalls, 1);
-  const status = harness.api.getPipelineWorkStatus();
-  assert.match(status.message, /1개/);
-  assert.doesNotMatch(status.message, /3개/);
-});
-
-test('Input Writer alternatives with two accepted choices remain visibly 2/3 partial', async () => {
-  providerReply = choices('rp');
-  providerReply.choices = providerReply.choices.slice(0, 2);
-  const result = await harness.api.debugGenerateInputWriterChoices({ originalInput: 'Ask about the door.', settings: { inputWriterMode: 'rp' }, evidencePacket: evidence() });
-  assert.equal(result.ok, false);
-  assert.equal(result.partial, true);
-  assert.equal(result.choiceTarget, 3);
-  assert.match(harness.api.getPipelineWorkStatus().message, /2\/3개/);
-});
-
-test('Input Writer zero-choice output is rejected without invented replacement choices', async () => {
-  providerReply = choices('rp');
-  providerReply.choices = [];
-  const result = await harness.api.debugGenerateInputWriterChoices({ originalInput: 'Ask about the door.', settings: { inputWriterMode: 'rp' }, evidencePacket: evidence() });
-  assert.equal(result.ok, false);
-  assert.equal(result.usable, false);
-  assert.equal(result.choices.length, 0);
-});
+// Genuinely retired: Writer polish 1/1, alternatives 2/3, and zero-choice
+// candidate UI contracts have no current executor. The ten receipt/CBS cases
+// above remain substantive positive/negative runtime coverage.

@@ -39,7 +39,7 @@ const readyForRecall = async (fixture, mode, fact) => {
     assert.equal(identity(after.records), identity(before.records), 'embedding cannot change source identity or raw text');
     assert.ok(after.records.every(row => row.vector.length === 3 && row.embeddingReceipt?.status === 'ready'),
       `configured recall requires actual validated provider output and source-bound ready receipts: ${JSON.stringify({ confirmation, queueResult,
-        sourceEditStatus: api.getSourceEditSyncStatus(), rows: after.records.map(row => ({ authority: row.metadata?.captureAuthority,
+        rows: after.records.map(row => ({ authority: row.metadata?.captureAuthority,
           work: row.embeddingWork, receipt: row.embeddingReceipt, vector: row.vector })) })}`);
     for (const row of after.records) {
       const prior = before.records.find(item => item.id === row.id);

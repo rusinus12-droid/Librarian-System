@@ -36,9 +36,10 @@ assert.ok(retrace.includes('liaPersonaRequestProofV1'), 'LIA proof store must pa
 assert.ok(retrace.includes('liaPersonaLinkerLivePersonaSyncV1'), 'LIA legacy live-binding store must participate in scoped rewrites');
 assert.ok(retrace.includes("if (scope?.pinned === true) return '사용자가 보존 상태로 고정한 스코프입니다.'"));
 assert.deepEqual((retrace.match(/const MEMORY_SUITE_SCOPE_NAMESPACES = Object\.freeze\(\[([^\]]+)\]\)/) || [])[1]?.replace(/\s+/g, ''), "'flashback','hayaku','libra','lia','retrace'", 'scope manager uses exactly the five active namespaces');
-for (const forbidden of ['scopeManagerScanGradia', 'requestGradiaIpc', 'readGradiaSource', 'includeGradia', 'gradiaSessionHandoff', 'serial_gradation_agents_for_rp']) {
+for (const forbidden of ['scopeManagerScanGradia', 'requestGradiaIpc', 'readGradiaSource', 'includeGradia', 'gradiaSessionHandoff']) {
   assert.ok(!retrace.includes(forbidden), `retired GRADIA compatibility removed: ${forbidden}`);
 }
+assert.ok(!retrace.slice(retrace.indexOf('const PLUGIN_NAME =')).includes('serial_gradation_agents_for_rp'), 'RE:TRACE owner body never adopts GRADIA; embedded read-only SDK principal remains valid');
 for (const marker of [
   'scope-pin.v1', 'scope_delete_pinned_scope_blocked', 'scope_delete_referenced_ancestor',
   'scope_delete_plugin_only_mode_proof_required', 'scope_delete_shared_members_require_set_rewrite',

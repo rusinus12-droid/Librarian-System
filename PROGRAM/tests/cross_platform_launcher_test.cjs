@@ -116,8 +116,11 @@ async function main() {
     assert.notEqual(offlineStatus.status, 0, 'offline status must fail without preparing DATA');
     assert.deepEqual(fs.readFileSync(layoutPath), layoutBeforeReadOnlyCommands, 'offline status must remain read-only');
 
-    for (const namespace of ['flashback', 'hayaku', 'libra', 'lia', 'retrace']) {
+    for (const namespace of ['flashback', 'hayaku', 'libra']) {
       assert.ok(fs.existsSync(path.join(dataDir, 'stores', namespace, `${namespace}.sqlite`)), `${namespace} SQLite remains in portable DATA`);
+    }
+    for (const namespace of ['lia', 'retrace']) {
+      assert.equal(fs.existsSync(path.join(dataDir, 'stores', namespace, `${namespace}.sqlite`)), false, `${namespace} fresh live SQLite must remain absent`);
     }
     process.stdout.write('cross_platform_launcher_test: PASS\n');
   } finally {

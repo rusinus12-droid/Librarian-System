@@ -1,0 +1,36 @@
+{
+  "schema": "libra.micro_head_read_contract.v1",
+  "root": 625,
+  "baseCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+  "historicalFailure": "qualified-run-1/logs/625-libra_micro_recall_incremental_head_index_test.cjs.log: old steady headReads<=1 sees2",
+  "cause": "readActiveMicroMemory now physically reads initial head and rereads same head after awaited record/work/source reads. This required protection adds a selected-head read, not another catalog scan.",
+  "assertionMap": [
+    {
+      "original": "Actually publish source-bound T1 and T2, then recall both",
+      "current": "Producer inputs, exact quotes, publication listener, publication waits and selected turn checks unchanged"
+    },
+    {
+      "original": "Steady T1 reads at most1 head",
+      "current": "Exactly2 same selected T1 physical reads, traced hydration then physical-reread, zero catalog phase",
+      "equivalenceGap": "Intentional final physical protection requires second selected read"
+    },
+    {
+      "original": "New T2 incremental reads<=3",
+      "current": "Original catalog+hydration<=3 preserved after subtracting exactly2 proven per-head physical rereads; actual total5. Actual two shortlisted published record IDs traced and paired with backend physical record reads, public selected IDs recorded separately.",
+      "equivalenceGap": "Two additional final rereads required by intentional guard, not catalog scans or arbitrary cap widening"
+    },
+    {
+      "original": "64-turn cold catalog probes>=60; warm reads<quarter cold",
+      "current": "Both original bounds retained; actual64-turn warm2 reads = paired hydration/reread onlyT2, no catalog phase; physical record IDs and public selected IDs separately recorded"
+    },
+    {
+      "original": "Missing physical head mutation guard case",
+      "current": "During genuine T2 record await, replace actual persisted head body; actual readActiveMicroMemory must return stale_source/micro_head_changed_during_read; restore physical head in finally"
+    }
+  ],
+  "observer": "Generated isolated source wraps the three actual getVerifiedJson head await sites; observes keys/phases without changing await order, bytes or values; observed reads must match actual backend head-read count and keys.",
+  "preservedBoundaries": "Synthetic heads only exercise catalog scale. Positive evidence still comes from actual producer/source receipts. Production file byte equality asserted. No shared harness or production edits.",
+  "qualification": "Actual official root625 PASS1.48s on final committed test; cold64/warm2 headreads, incremental5 mapped catalog1+hydration2+finalreread2, publicselectedT2 vs hydratedT1/T2 recorded, actual physicalT2head mutation refused stale_source/micro_head_changed_during_read. External cache-625-results.json binds exact source/test/log SHA. Original campaign FAIL and all corrective failures preserved.",
+  "actualDiagnosticFailure": "cache-625-trace-logs/625-libra_micro_recall_incremental_head_index_test.cjs.log: actual5 reads = catalogT2 + hydrationT2,T1 + rereadT2,T1; firstcandidate onlyT2 assumption failed and is preserved",
+  "warmDiagnostic": "cache-625-final-logs retainedFAIL: guessed warmT1/T2 assertion observes onlyT2, independently distinct from incremental two-candidate hydration"
+}

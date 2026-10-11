@@ -1,0 +1,261 @@
+{
+  "schema": "fix39.source-current-contract-map.v1",
+  "baseline": "567630fda7df236e14e3feb4873e52366232b509",
+  "retiredGlobalContracts": [
+    "Automatic source-edit detector/task controller",
+    "Automatic source consent/exception journal",
+    "Automatic policy epoch reanalysis",
+    "Retired SGA response parser/schema"
+  ],
+  "qualification": "Current shipped public selected actions and registered request hooks; synthetic RisuAI/provider boundaries. Real HTTP/SQLite and physical mirror reads for admission and response-variant roots. These are successor contracts, not evidence that retired automatic task machinery still exists.",
+  "roots": {
+    "288": {
+      "maps": [
+        {
+          "original": "29 physical-write/readback mutation cases and 8 admission/concurrency cases",
+          "current": "All original cases retained. Inline acknowledgement and the original pending request still fail closed after whole-host drift; fresh request retains a physically saved same-slot canonical choice until explicit replacement."
+        },
+        {
+          "original": "Body drift at ledger write/readback requires next request automatically use live changed text",
+          "current": "Distinguish pre-head live-source discovery from post-head approved canonical preservation. Added full public preview/apply, exact single paid call, spent-preview refusal, new current recall, and deletion exclusion."
+        },
+        {
+          "original": "Default AUTO admission initializes owner journal",
+          "current": "Default first admission commits and recalls with full raw-read proof and zero model calls while journal remains absent; fresh durable posting index remains valid."
+        },
+        {
+          "original": "Persisted preference epoch establishes effective policy drift",
+          "current": "Mutate actual effective ignoredTags/externalRulesVersion at held read and before fresh admission; no fabricated storage-mode change stands in for policy drift."
+        },
+        {
+          "original": "getSourceEditSyncStatus reports policy epoch",
+          "current": "Public getSourceEditRules plus persisted rule bytes prove actual policy; saving preserves old tracking metadata without reenrollment."
+        },
+        {
+          "original": "Posting routing.validationRawReads10 used as proxy for whole-host writer certificate in every held persistence case",
+          "current": "Observe existing successful private verifyHayakuReadset before persistence; exact full host transcript10assistant pairs plus literal authority required. Posting-admitted cases still require rawReads/Sources10; optional40ms binding timeout must scan/build10 complete with index noncurrent/nondurable. Effective-settings control delays actual URL argument read65ms to deterministically exercise legitimate fallback; settings drift still refuses writer/delivery."
+        }
+      ],
+      "limits": [
+        "No assertion that the removed source journal/automatic epoch controller operates",
+        "Small synthetic corpus; not a scalability/performance qualification",
+        "Optional posting index availability is separate from full writer readset verification. Delayed host argument is controlled latency; no posting budget growth, forged certificate, replacement predicate or extra awaited proof seam."
+      ]
+    },
+    "526": {
+      "maps": [
+        {
+          "original": "Complete and single-truncated HAYAKU envelopes accepted; valid/broken leading siblings refused",
+          "current": "Unchanged four real repairNow provider cases."
+        },
+        {
+          "original": "Retired SGA parser preserves single/double-quoted string bytes, apostrophes, and rejects smart duplicate keys",
+          "current": "Same retained shared syntax repair/duplicate scanner through public debugParseCanonicalArtifact; exact body and smart/plain duplicate refusal."
+        },
+        {
+          "original": "SGA schema ok:false is rejected",
+          "current": "Real canonical admission accepts grounded canonical artifact; current canonical schema validator rejects obsolete SGA-shaped artifact. Multiple JSON roots are rejected."
+        }
+      ],
+      "limits": [
+        "SGA ok:false response semantics were removed; canonical schema validation is a successor, not identical SGA behavior"
+      ]
+    },
+    "730": {
+      "maps": [
+        {
+          "original": "Ten actual five-turn batches including41-45; three storage authorities; A→B→A response change; no extra calls/failedBatches; durability on reload",
+          "current": "All retained with full deployed branch audit and public canonical reader; all thirty canonical creation calls remain real fixture-provider calls."
+        },
+        {
+          "original": "preservedSourceEdits awaiting_consent task",
+          "current": "preservedSourceOwnership from full native slot audit proves approved canonical preservation; no removed consent API is required."
+        },
+        {
+          "original": "Mode-specific local/server placement and equal verdict",
+          "current": "Retained physical local/server assertions and verdict equality; added real source-pair deletion invalidating41-45 and incomplete46-50 without paid work."
+        }
+      ],
+      "limits": [
+        "No retired consent task is fabricated; exact current same-slot approved choice remains authoritative"
+      ]
+    },
+    "760": {
+      "maps": [
+        {
+          "original": "Automatically applied changedT6 task and persisted exception suppress dependent suffix while prefix survives",
+          "current": "Three real committed batches; explicit middle-only selection spends exactly one call, replaces real request authority, preserves immutable prefix/suffix and every old body. Unselected approved records remain usable under current selection contract."
+        },
+        {
+          "original": "8s automatic request preparation returns while provider held; later branch edit rejects delayed task",
+          "current": "Public selected job held at actual provider; live source/scope drift refuses activation with exactly one paid call and immutable previous canonical. Current final read deadline suppression is exercised in763."
+        },
+        {
+          "original": "Newer automatic request generation retires older source task and can start fresh one",
+          "current": "Overlapping explicit action is refused as busy without a second paid call; stale first action rejected; fresh explicit action succeeds once. Final response-request publication ownership is separately tested and fixed in763."
+        },
+        {
+          "original": "Deferred work cannot report success after invalidation",
+          "current": "Added public job cancellation during provider await; returned job is cancelled, canonical unchanged, no retry/helper calls."
+        }
+      ],
+      "limits": [
+        "Exception-driven suffix suppression no longer has an automatic equivalent",
+        "The retired8s source-processing budget is not claimed; current final-read deadline tested separately"
+      ]
+    },
+    "762": {
+      "maps": [
+        {
+          "original": "SourceTags, unwrapTags, ignoredTags each automatically rebuild exactly once",
+          "current": "Each saved policy causes zero automatic calls and preserves approved canonical; explicit selected rebuild calls once and consumes exact projected text excluding outside translation."
+        },
+        {
+          "original": "Original/current raw digest equality and projection_policy_changed task metadata",
+          "current": "Host transcript bytes remain identical; each selected digest/revision changes with actual projection; previous canonical/evidence stays immutable. New evidence stores exact projection consumed by provider."
+        },
+        {
+          "original": "Same projection epoch change costs zero calls",
+          "current": "Additional absent unwrap rule keeps selected source digest and canonical bytes unchanged with zero calls."
+        },
+        {
+          "original": "Missing prior evidence can rebuild without fabricating originalRawDigest/text",
+          "current": "Run complete three-policy sequence both with present and deleted original evidence; deleted original stays absent and no comparison/journal is invented."
+        }
+      ],
+      "limits": [
+        "No old policy epoch/task taxonomy remains active",
+        "Canonical source evidence is normalized projection; raw host immutability is separately asserted"
+      ]
+    },
+    "763": {
+      "maps": [
+        {
+          "originalCases": [
+            "same_task"
+          ],
+          "current": "One explicit replacement completed before request; exact current physical body delivered in actual Classic request, response context validates, old bytes preserved."
+        },
+        {
+          "originalCases": [
+            "source_changed",
+            "scope_changed",
+            "provider_changed",
+            "new_request",
+            "policy_changed",
+            "mode_changed",
+            "data_binding_changed"
+          ],
+          "current": "Mutate real current source/scope/provider/public recall policy/public storage mode/actual wire DATA identity or complete a newer actual request at final delivery seam. Zero paid recall calls; no stale Classic delivery."
+        },
+        {
+          "originalCases": [
+            "corrupt_body",
+            "missing_body",
+            "body_changed_after_hydration",
+            "body_changed_after_final_readback"
+          ],
+          "current": "Mutate/remove both actual mirror copies at observed current hydration/final-authority boundary; existing physical checker must reread and refuse exact changed/missing body."
+        },
+        {
+          "originalCases": [
+            "exception_changed"
+          ],
+          "current": "Real source-pair deletion removes source authority at final seam. Automatic exception journal is retired; user cancellation is separately covered in760."
+        },
+        {
+          "originalCases": [
+            "missing_receipt"
+          ],
+          "current": "Remove actual canonical sourceEvidenceRef binding from both physical body copies; final logical-body readset refuses changed proof locator."
+        },
+        {
+          "originalCases": [
+            "manifest_scope_after_authority"
+          ],
+          "current": "Change actual durable manifest scope after final response-boundary check; final physical canonical readset refuses foreign manifest."
+        },
+        {
+          "originalCases": [
+            "handoff_budget_spent"
+          ],
+          "current": "Hold actual final local physical read beyond existing1.5s consumed-data window; current request returns no Classic, release losing read and prove diagnostics/messages/calls unchanged."
+        },
+        {
+          "originalCases": [
+            "derived_metadata_overlap"
+          ],
+          "current": "Mutate both durable embedding fields after real local sample before server sample; logical body otherwise identical, current physical verified read refuses mixed mirror samples."
+        },
+        {
+          "originalCases": [],
+          "current": "Added settled embedding-only positive: both physical copies changed before read, complete logical body unchanged, legitimate delivery remains current."
+        },
+        {
+          "originalCases": [],
+          "current": "Added public export/import predecessor archive positive: actual archiveShared physical body differs logical loader overlay; inherited Classic delivery and context validation succeed without calls."
+        },
+        {
+          "originalCases": [
+            "policy_changed",
+            "mode_changed"
+          ],
+          "current": "Additional actual public policy and storage-mode changes occur after local physical body sample in final verification; privately captured boundary rechecked after physical reads under same1.5s deadline; stale Classic suppressed with zero calls."
+        },
+        {
+          "originalCases": [
+            "handoff_budget_spent"
+          ],
+          "current": "Additional actual settings write is held during final physical read; boundary policy read waits real write tail but request deadline wins. Release then cannot change returned messages, delivery diagnostics or spend calls."
+        },
+        {
+          "originalCases": [
+            "new_request"
+          ],
+          "current": "Actual nested newer positive request during awaited pre-publication boundary and observed recall completion; older continuation cannot overwrite newer recall snapshot or delivery viewer or inject old request augmentation. Owner tested again after final physical awaits."
+        },
+        {
+          "originalCases": [],
+          "current": "Real two-batch accepted canonical thread successor delivered only through continuity closure (selectedMemories1, closureInjectedFacts1); mutate actual successor physical body after final boundary and stale entire Classic is suppressed. Private loader proofs propagate through original recall result WeakMap without trusting cloned diagnostics."
+        }
+      ],
+      "limits": [
+        "No retired automatic APPLIED task, request-local refresh receipt, exception journal or10s+30s source-preparation protocol is fabricated",
+        "missing_receipt is now an immutable canonical evidence locator mutation, not an equivalent automatic task receipt",
+        "Timeout asserts actual current1.5s physical revalidation budget, not retired automatic request budget",
+        "Physical storage is real HTTP/SQLite; host and provider are fixture boundaries",
+        "Readset binds all up-to40 packet-admitted closure facts; renderer-omitted facts still influence budget/currentness disclosure and sealed packet. Mutation may suppress otherwise deliverable text; final-text-only proof minimality not claimed.",
+        "Deadline races do not cancel underlying host/storage reads. Late policy reread uses pure settings snapshot without mutating memory settings cache; no late delivery publication is allowed.",
+        "Observation seams await controlled host callbacks only; no production proof, deadline, decision or provider response is replaced."
+      ]
+    },
+    "766": {
+      "maps": [
+        {
+          "original": "New canonical pins exact fiveU+A and automatic replacement stores fresh evidence",
+          "current": "Public selected replacement writes exact five current source pairs, advances revision/digest once, keeps prior canonical and evidence bytes immutable, adds one Canonical call; ordinary request and preview add zero."
+        },
+        {
+          "original": "Missing/corrupt previous raw cannot seed automatic diff",
+          "current": "Missing/corrupt bytes cause no automatic paid call or invented comparison; explicit action builds from actual live source, preserves missing/tampered old evidence as-is, never copies forged text into new evidence."
+        },
+        {
+          "original": "Evidence persistence failure blocks old canonical request-local fallback",
+          "current": "Actual source-evidence write refusal makes explicit replacement fail and cannot activate a new ref; approved prior canonical bytes/ref remain unchanged under current same-slot preservation."
+        },
+        {
+          "original": "Illustration-only append is not source edit",
+          "current": "BeforeRequest spends no calls; actual public selected digest and canonical bytes remain unchanged."
+        },
+        {
+          "original": "Source legitimacy boundaries",
+          "current": "Added real pair deletion: incomplete range disappears from reader, stale selection fails before paid work, old immutable body survives."
+        }
+      ],
+      "limits": [
+        "Current same-slot policy preserves approved canonical despite unavailable prior raw; no automatic diff claim",
+        "Failed explicit replacement does not imply retired request-local source exception suppression"
+      ]
+    }
+  }
+}

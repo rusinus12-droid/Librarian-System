@@ -30,8 +30,7 @@ function main() {
     libra: 'LIBRA.js',
     lia: 'LIA_Persona_Linker.js',
     retrace: 'RETRACE.js',
-    gradia: 'GRADIA.js',
-    wm: 'LIBRA_World_Manager.js'
+    gradia: 'GRADIA.js'
   };
   const pluginSources = Object.fromEntries(Object.entries(pluginFiles).map(([owner, file]) => [owner, readProgram(`plugins/${file}`)]));
   const pluginVersions = Object.fromEntries(Object.entries(pluginSources).map(([owner, source]) => {

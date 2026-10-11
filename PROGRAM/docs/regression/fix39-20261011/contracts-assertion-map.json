@@ -1,0 +1,454 @@
+{
+  "schema": "librarian.fix39.contracts-assertion-map.v1",
+  "rows": [
+    {
+      "rootOrdinal": 485,
+      "path": "PROGRAM/tests/libra_consumer_reference_material_v2_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "33329b4d0f8bb3644d175aa39d0f6e13d479fe5952a67c40659f64f497144666",
+      "assertionMapping": [
+        {
+          "originalLines": "4-12",
+          "originalObligation": "Selected native lore is delivered and reread; mutation invalidates; zero generation",
+          "currentAssertion": "Real loadRisuContextSnapshot inventory plus consumption-declared selected lore ID; unchanged gate passes and actual host lore edit rejects. Shared helper fixture asserts zero calls/writes/removals.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "13-17",
+          "originalObligation": "Bound Persona selection invalidates consumed bootstrap",
+          "currentAssertion": "Actual bound Persona inventory entry verified, selection switch rejected.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "18-20",
+          "originalObligation": "Empty enabled author note becoming nonempty invalidates",
+          "currentAssertion": "Physical empty author note remains dependency; nonempty mutation rejected.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "21-26",
+          "originalObligation": "CBS-resolved note pins actually bound Persona data",
+          "currentAssertion": "Actual snapshot note resolves to Persona name; Persona name mutation rejects same shared gate.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "27-31",
+          "originalObligation": "Input Writer mode policy invalidates delivery",
+          "currentAssertion": "Retained default preset policy changes invalidate shared settings digest; Writer mode and delivery envelope have no successor.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Input Writer mode policy invalidates delivery"
+      ]
+    },
+    {
+      "rootOrdinal": 486,
+      "path": "PROGRAM/tests/libra_consumer_transport_v2_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "9596a44ac402c1ce3c1868b67dfc31b76d4bb42ae81eb8e3cba15e0f55331e85",
+      "assertionMapping": [
+        {
+          "originalLines": "5-26",
+          "originalObligation": "Direct reasoning-only/default or explicit budget, 401, truncation: one call, exact token counts, no role-changing retry",
+          "currentAssertion": "Same callConsumerGeneration/callLLMWithPreset machinery invoked through shipped private translateInputAssistReviewText; all four negatives retained, successful translation added.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "27-36",
+          "originalObligation": "OtherAx logical cancellation, physical owner, duplicate blocking, late usage/discard",
+          "currentAssertion": "Retained translation operation drives real host promise; prompt returns on cancel, duplicate rejects, pending state and late accounting match original.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "all Writer dispatch sites",
+          "originalObligation": "Writer choices/operation group",
+          "currentAssertion": "No current Writer generation executor; transport contract is tested in the retained translator, not Writer equivalence.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Writer choices/operation group"
+      ]
+    },
+    {
+      "rootOrdinal": 531,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_authority_runtime_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "65e54b55b14ee36ff4aec8aae325a8a12c1d1a3a8e5e51135539ba11599c924d",
+      "assertionMapping": [
+        {
+          "originalLines": "75-86",
+          "originalObligation": "Writer factual prompt priority input/terminal/new canonical/State/narrative/old canonical/direction/lore",
+          "currentAssertion": "Production canonical-priority partition verifies newer/historical split; actual Classic hook delivers current canonical revision with user/latest-scene precedence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "88-108",
+          "originalObligation": "Current Head label and pending/non-authoritative label",
+          "currentAssertion": "Current/pending authority flags and conservative all-newer partition verified. Classic does not inject raw derived State; Writer-specific prompt headings absent.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "110-111",
+          "originalObligation": "Prompt compilation does not mutate durable storage",
+          "currentAssertion": "Actual Classic request leaves canonical and Head bytes unchanged; root532 checks all-key no-write authority reads.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "113-125",
+          "originalObligation": "Exactly one Writer provider call with system/user roles and ordered fields",
+          "currentAssertion": "Writer provider generation was removed. Actual Classic path proves zero extra response calls and rejects tampered response context. No one-call Writer equivalence.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Writer factual prompt priority input/terminal/new canonical/State/narrative/old canonical/direction/lore",
+        "Current Head label and pending/non-authoritative label",
+        "Exactly one Writer provider call with system/user roles and ordered fields"
+      ]
+    },
+    {
+      "rootOrdinal": 532,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_no_mutation_runtime_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "2e5dce8348489df15be32a511647f1650fb82866c25a29942a80e66e6f94f4b7",
+      "assertionMapping": [
+        {
+          "originalLines": "9-22",
+          "originalObligation": "Writer avoids reconcile/Story Arc migration and separates narrative State/direction",
+          "currentAssertion": "Public getResponseContext is current read-only authority interface; full runtime all-key no-write and no-remove checks, not removed source helpers.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "67-105",
+          "originalObligation": "No auto input hook; stable timestamp-advanced authority; scope/worldline/revision/manifest/seal",
+          "currentAssertion": "No input script registration; real committed memory seals same scope/worldline/canonical revision/boundary/context digest across advanced VM clock.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "107-129",
+          "originalObligation": "Missing persisted timestamp remains absent; actual timestamp edits invalidate; unchanged stored timestamp remains current",
+          "currentAssertion": "Identical missing/changed timestamp sequence on actual continuity-state record; no normalization writes.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "130-136",
+          "originalObligation": "New complete pair invalidates and all operations write/remove no durable keys",
+          "currentAssertion": "Real transcript append invalidates public context; zero writes/removals/provider calls plus explicit tampered-seal rejection.",
+          "classification": "retained_successor"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Writer avoids reconcile/Story Arc migration and separates narrative State/direction"
+      ]
+    },
+    {
+      "rootOrdinal": 533,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_post_adoption_p1_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "8b62edcd5b6aebd8616153d0b04bcc6d38e3bd03e9d0f70aebc2e528924309fd",
+      "assertionMapping": [
+        {
+          "originalLines": "136-170",
+          "originalObligation": "Regeneration modal returns form data; abort safe; shared Narrative Direction read",
+          "currentAssertion": "Composer/choice modal and its regeneration form have no current LIBRA executor. Current memory candidates are a separate lifecycle, not Writer UI equivalence.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "172-194",
+          "originalObligation": "Request-local recall carries nonpersistence through catalog construction",
+          "currentAssertion": "Test-only access drives actual buildQueryBundle/recall with requestLocalReadOnly and persistRecallCatalog false, a real generated canonical ref, nonempty matching recall and zero all-key writes/removals/calls.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "196-281",
+          "originalObligation": "Delivery validates, prepares, revalidates then physically sends; late staleness, unavailable API and synchronous rejection",
+          "currentAssertion": "Physical send coordinator removed. Retained memory candidate remains inactive at preview, supports keep/adopt, performs no provider call during adopt, delivers new revision through actual Classic, rejects source change before adoption.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "283-289",
+          "originalObligation": "Delivery picker uses public host API, no DOM edits",
+          "currentAssertion": "Removed Writer delivery picker; no recreated host-send/clipboard/DOM compatibility API.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "291-363",
+          "originalObligation": "Real canonical ref reaches catalog without durable mutation",
+          "currentAssertion": "Runtime-generated verified v4 canonical ref recalled via shipped request-local recall; memory ID presence and zero durable writes/removals verified.",
+          "classification": "retained_successor"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Regeneration modal returns form data; abort safe; shared Narrative Direction read",
+        "Delivery validates, prepares, revalidates then physically sends; late staleness, unavailable API and synchronous rejection",
+        "Delivery picker uses public host API, no DOM edits"
+      ]
+    },
+    {
+      "rootOrdinal": 535,
+      "path": "PROGRAM/tests/libra_json_repair_content_and_duplicate_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "f810d665cc12a989a53762777846ce91f063db0d870c9fd896337c9769c2d3fa",
+      "assertionMapping": [
+        {
+          "originalLines": "100-174;286-302",
+          "originalObligation": "String body preservation, duplicate spellings, non-vacuous controls, closure completion vs truncation",
+          "currentAssertion": "All original rows0-3 retained (26 cases): shipped helper extraction preserves body, flags duplicates, accepts complete closure, rejects truncated tails.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "176-220;303-306",
+          "originalObligation": "SGA parser itself scans repaired duplicates, accepts valid controls",
+          "currentAssertion": "Current debugParseCanonicalArtifact invokes shipped Canonical parser: duplicate errors for double/bare/single/smart/encoded keys; nonduplicate nested/bare/single/smart controls accepted. SGA schema/stage validation is retired.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "222-283;307-323",
+          "originalObligation": "Smart literal braces/apostrophes and escaped ASCII quote contents survive SGA closure",
+          "currentAssertion": "All six original smart-quote inputs now run through both shared relaxedJsonParse and actual Canonical parser; exact expected draft retained.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "189-197",
+          "originalObligation": "SGA missing final brace after primitive accepted, including duplicate path",
+          "currentAssertion": "Retired SGA primitive-tail framing is not restored. Current typed/Canonical parser rejection is checked explicitly; nested complete tail closure remains accepted.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "SGA parser itself scans repaired duplicates, accepts valid controls",
+        "SGA missing final brace after primitive accepted, including duplicate path"
+      ]
+    },
+    {
+      "rootOrdinal": 678,
+      "path": "PROGRAM/tests/libra_pipeline_draft_workspace_rc2_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "7d90ebcf16c86edb7e9aec6aeffd9b7b5de26bd86287ce348077874b0c388777",
+      "assertionMapping": [
+        {
+          "originalLines": "75-88",
+          "originalObligation": "Memory workspace family neutral; common shell isolates optional draft families",
+          "currentAssertion": "Shipped memory shell/renderers execute with GUI state; routes normalize to memory and actual analyzer called false,true. No persistence or eager prompt builds. Draft family branch was removed.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "90-139",
+          "originalObligation": "LIBRA draft/GRADIA five tabs, writing/placement/length/language/call modes",
+          "currentAssertion": "All embedded draft engines/settings were removed; no equivalent behavior claimed.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "141-157",
+          "originalObligation": "Common shell revert; dirty interactions",
+          "currentAssertion": "Actual revert helper rejects while save pending, reloads persisted settings/basis, clears cache, renders, clears dirty; shell preserves existing unsaved state. Retired length/language handlers not restored.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "158-167",
+          "originalObligation": "Legacy writing keys read/save compatibility",
+          "currentAssertion": "Retired stage keys intentionally stripped from current settings; no active writing-mode compatibility contract.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "169-181",
+          "originalObligation": "Active Book routes, sidebar/main shell, hidden dashboard chrome",
+          "currentAssertion": "Original active-route helper and sidebar/main/no dashboard/hidden CSS assertions retained.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "183-196",
+          "originalObligation": "Optional external GRADIA execution baseline comparison",
+          "currentAssertion": "Removed execution declarations have no current comparison target; no historical baseline fabricated.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Memory workspace family neutral; common shell isolates optional draft families",
+        "LIBRA draft/GRADIA five tabs, writing/placement/length/language/call modes",
+        "Common shell revert; dirty interactions",
+        "Legacy writing keys read/save compatibility",
+        "Optional external GRADIA execution baseline comparison"
+      ]
+    },
+    {
+      "rootOrdinal": 691,
+      "path": "PROGRAM/tests/libra_protected_product_transfer_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "e3b80dac7d54dfaa3a9ddd5dc698884c34bf259cdc95eb26f16232bdd4aa0638",
+      "assertionMapping": [
+        {
+          "originalLines": "25-51;154-194",
+          "originalObligation": "Planner lossless full normalized plan and metadata beyond preferred cap",
+          "currentAssertion": "Planner product and transfer diagnostics removed. Shipped Classic renderer preserves oversized first selected evidence byte-for-byte, includes fitting unit, omits over-budget later unit wholly. No full-plan equivalence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "53-55;196-260",
+          "originalObligation": "SGA byte-identical draft, analysis exclusion, locks, full-product metadata, draft-only normalization",
+          "currentAssertion": "SGA product/locks/transfer diagnostics removed. Current Classic renderer rejects inclusion of raw State/private analysis fields; real beforeRequest delivers whole selected canonical text. No SGA draft/lock equivalence.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Planner lossless full normalized plan and metadata beyond preferred cap",
+        "SGA byte-identical draft, analysis exclusion, locks, full-product metadata, draft-only normalization"
+      ]
+    },
+    {
+      "rootOrdinal": 701,
+      "path": "PROGRAM/tests/libra_rank_equivalence_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "551374af155610938010465e48376fd35a9350fd45196401746e5733e3bedde5",
+      "assertionMapping": [
+        {
+          "originalLines": "all",
+          "originalObligation": "600-record linear four-component formulas, original BM25F constants/fields, deterministic finite ranking, bounded caches",
+          "currentAssertion": "Only two obsolete instrumentation anchors changed to stable current getUnifiedStorageStatus exports. Every original numeric and cache assertion unchanged.",
+          "classification": "preserved"
+        }
+      ],
+      "historicalEquivalence": true,
+      "retiredGaps": []
+    },
+    {
+      "rootOrdinal": 716,
+      "path": "PROGRAM/tests/libra_receipt_cbs_inputwriter_recovery_runtime_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "f2d64690cf843ff9566b5ee01be6729bb859917f606c44ba250da09cd134f6d7",
+      "assertionMapping": [
+        {
+          "originalLines": "37-92;118-153",
+          "originalObligation": "Receipt-only/empty/ordinary dialogue, live metadata, CBS identity and bounded/ambiguous/excluded host proof",
+          "currentAssertion": "All nine original non-Writer receipt/CBS cases unchanged.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "94-109",
+          "originalObligation": "Native nonreceipt lore available, no model, delivery current",
+          "currentAssertion": "Real snapshot active lore and physical inventory checked; declared consumption shared read-set validates and rejects actual mutation with no model. No Writer preparation equivalence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "155-189",
+          "originalObligation": "Polish one choice, alternatives2/3 visible partial, zero choices rejected",
+          "currentAssertion": "Three Input Writer generation/UI count cases genuinely retired without current executor; no replacement-choice fabrication.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Native nonreceipt lore available, no model, delivery current",
+        "Polish one choice, alternatives2/3 visible partial, zero choices rejected"
+      ]
+    },
+    {
+      "rootOrdinal": 729,
+      "path": "PROGRAM/tests/libra_response_readset_v2_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "66003e3465e0d65ce8b9af71dc5f9fd491d669139f25d23c88f99f88522647b4",
+      "assertionMapping": [
+        {
+          "originalLines": "4",
+          "originalObligation": "Note reread, unused description ignored, no writes/models",
+          "currentAssertion": "Actual shared read-set with real snapshot accepts unchanged/unused-description edit and rejects note mutation; fixture enforces zero writes/removals/models.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "5",
+          "originalObligation": "Consumed description invalidates",
+          "currentAssertion": "Actual shared entry read rejects physical consumed-definition change.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "6",
+          "originalObligation": "Reference mutation during actual Writer provider generation rejects adoption",
+          "currentAssertion": "Shared validator rejects mutation inside an awaited physical host read, proving its race fence. Writer-generation adoption race has no current executor.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "7",
+          "originalObligation": "Homonym aliases, relation and owner/holder projection no mutation",
+          "currentAssertion": "Same shipped projection preserves distinct refs, both relation ends and ownership, unchanged source Head.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "8",
+          "originalObligation": "Readset tamper rejected by Writer delivery seal",
+          "currentAssertion": "Shared read-set digest tamper rejected directly; Writer delivery envelope removed.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Reference mutation during actual Writer provider generation rejects adoption",
+        "Readset tamper rejected by Writer delivery seal"
+      ]
+    },
+    {
+      "rootOrdinal": 816,
+      "path": "PROGRAM/tests/libra_world_manager_shared_snapshot_rc2_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "0cb4a4fdc30607faaeed755c83be4c2824ae1c42d742aeffa5623f8e6656ce63",
+      "assertionMapping": [
+        {
+          "originalLines": "all except32-33",
+          "originalObligation": "Shared synchronous in-memory frozen snapshot, no mutation/background fetch, memory/log ownership, active routes, rendering projections",
+          "currentAssertion": "All original static and actual frozen-snapshot renderer assertions retained.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "32-33",
+          "originalObligation": "Seven receipt kinds including input_writer",
+          "currentAssertion": "Six retained receipt kinds asserted; only Input Writer log category removed.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Seven receipt kinds including input_writer"
+      ]
+    },
+    {
+      "rootOrdinal": 822,
+      "path": "PROGRAM/tests/libra_writing_mode_live_work_ui_contract_test.cjs",
+      "originalCommit": "567630fda7df236e14e3feb4873e52366232b509",
+      "originalTestSha256": "defd160d4f9d9f4883cc08130dd98238bf58dce45b7106665879a784b8202b9c",
+      "assertionMapping": [
+        {
+          "originalLines": "9-12",
+          "originalObligation": "Four-column tabs and exact count",
+          "currentAssertion": "Original CSS assertion retained; actual tab builder verifies exact cols4, tablist/label, selected state/focus, selected click no-op and new click feedback/render.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "14-48",
+          "originalObligation": "Compact Writer three dialogs, Novel authorship/AIDE contracts, independent modes, family selector",
+          "currentAssertion": "Writer, Planner and embedded GRADIA engines/UI removed; no authored text/dialog/mode successor.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "50-73",
+          "originalObligation": "Writer/Planner live status and SGA stage progress",
+          "currentAssertion": "Actual shared pipeline work functions begin/report/finish current librarian stage; successful result, stale generation rejection and current failure status verified. Draft-specific stage ownership is retired.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalence": false,
+      "retiredGaps": [
+        "Compact Writer three dialogs, Novel authorship/AIDE contracts, independent modes, family selector",
+        "Writer/Planner live status and SGA stage progress"
+      ]
+    }
+  ]
+}

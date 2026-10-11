@@ -52,7 +52,7 @@ const narrativeHarness = scopeKey => {
     // vm 컨텍스트에서 globalThis는 샌드박스 전역이므로, 플러그인의 `globalThis.__LIBRA__`는
     // 컨텍스트 객체의 __LIBRA__ 프로퍼티로 해석된다.
     __LIBRA__: {
-      getPlannerNarrativeDirection: async ({ scopeKey: requested }) => ({
+      getNarrativeDirection: async ({ scopeKey: requested }) => ({
         schema: 'libra.narrative_direction.v1', scopeKey: requested, revision: 1, goal: '테스트 목표',
         completionConditions: [], doNotForce: [], softPreferences: [], locked: false, source: 'test', updatedAt: 1
       })

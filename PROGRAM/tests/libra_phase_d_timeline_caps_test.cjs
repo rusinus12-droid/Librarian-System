@@ -3,6 +3,7 @@
 // Phase D4 semantic timeline caps. This is a real canonical chain built through
 // LIBRA's deployed fixture API; the provider is deterministic and local.
 const assert = require('node:assert/strict');
+const timelineCapsReasonValues = require('./fixtures/timeline_caps_reason_values.cjs');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const { sourceRows } = require('./fixtures/unified_vertical_source.json');
@@ -132,7 +133,7 @@ const runMode = async mode => {
     const result = {
       mode, canonicalRefs: timeline.availableCanonicalRefs, scannedCanonicalRefs: timeline.scannedCanonicalRefs,
       eventCount: timeline.events.length, maxCanonicalRefs: timeline.maxCanonicalRefs,
-      maxEvents: 256, partial: timeline.partial, reasons: timeline.reasons, storageMode: actualMode.mode,
+      maxEvents: 256, partial: timeline.partial, reasons: timelineCapsReasonValues(timeline.reasons), storageMode: actualMode.mode,
       backend: mode === 'plugin_only' ? 'plugin_local' : mode === 'mirror' ? 'server_and_local' : 'server_only'
     };
     console.log(JSON.stringify({ record: 'timeline_caps_mode_complete', ...result, elapsedMs: Date.now() - modeStarted }));

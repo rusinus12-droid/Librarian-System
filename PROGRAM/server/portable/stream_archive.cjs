@@ -44,13 +44,6 @@ async function exportArchive({backupDir,archivePath,onProgress=()=>{}}) {
   validateArchiveReferences(manifest,files.map(f=>({name:root+'/'+f.name})),root);
   refs=new Map(Object.values(manifest.stores).map(v=>[v.file,v]));if(manifest.scopeCatalog)refs.set(manifest.scopeCatalog.file,manifest.scopeCatalog);
   allowed=new Set(['manifest.json',...refs.keys()]);
- }else if(manifest.schema==='memory-suite.backup-bundle.v2'){
-  const bundle=require('./backup_bundle_v2.cjs');bundle.validateBundle(manifest);
-  const l=manifest.components.legacy.manifest;validateArchiveReferences(l,files.map(f=>({name:root+'/'+f.name})),root);
-  if(manifest.coverage.wm==='unsupported')fail('wm_component_unsupported');
-  refs=new Map(Object.values(l.stores).map(v=>[v.file,v]));if(l.scopeCatalog)refs.set(l.scopeCatalog.file,l.scopeCatalog);
-  if(manifest.components.wm){if(refs.has(manifest.components.wm.file))fail('wm_component_file_alias');refs.set(manifest.components.wm.file,manifest.components.wm);if(!require('../wm/backup.cjs').verifyWmBackupComponent(manifest.components.wm,source).ok)fail('wm_component_invalid');}
-  allowed=new Set(['manifest.json',...refs.keys()]);
  }else if(manifest.schema==='librarian.portable-migration.v1'){
   root='Librarian-Migration-Backup';
   if(!Array.isArray(manifest.members)||!manifest.members.length||manifest.members.length>LIMITS.maxEntries-1)fail('migration_members');

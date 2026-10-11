@@ -54,7 +54,7 @@ assert.ok(overviewSlice.includes('refreshMemorySuiteOwnerStorageDashboard()'), '
 assert.ok(overviewSlice.includes('inspectCompatibilitySuite(preview, { timeoutMs: 3200 })'), 'overview uses the canonical compatibility suite');
 assert.ok(!overviewSlice.includes('includeServerData: true'), 'overview never triggers the full server inventory scan');
 
-assert.ok(source.includes("MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'wm'])"), 'all five storage owners remain in the real dashboard');
+assert.ok(source.includes("MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia'])"), 'all four memory storage owners remain in the real dashboard');
 assert.ok(source.includes('RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다.'), 'read-only storage ownership boundary remains visible');
 assert.ok(!source.includes('data-tab="lia"'), 'LIA content viewer is not invented');
 assert.ok(!source.includes('data-tab="provider"'), 'retired provider UI remains absent');

@@ -31,8 +31,8 @@ const SERVER_BACKED = ['mirror', 'server_only'];
 // transformSource (the plugin file on disk is not modified), with the anchors asserted unique so a
 // plugin edit that moves them fails loudly here instead of silently testing nothing.
 const instrument = source => {
-  const coreAnchor = '      debugNormalizeSgaPatchResult: ';
-  const publicAnchor = "    debugSgaPatchOperations(draft = '', edits = [])";
+  const coreAnchor = '      debugReadActiveCompletedTurnReceipt: async turnValue => {';
+  const publicAnchor = "    debugBuildPairs(chat = {}, cacheKey = '')";
   for (const [name, value] of [['core', coreAnchor], ['public', publicAnchor]]) {
     if (source.split(value).length !== 2) throw new Error(`the ${name} anchor must be unique`);
   }

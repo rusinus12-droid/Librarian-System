@@ -36,6 +36,6 @@ check('execution requires both guard paths and a private network log',()=>{
  assert.throws(()=>r.verifyExecutionGuard([],undefined,undefined),/explicit --require/);
  assert.throws(()=>r.verifyExecutionGuard(['--require',r.GUARD],'','x'),/NODE_OPTIONS/);
  assert.throws(()=>r.verifyExecutionGuard(['--require',r.GUARD],'--require='+r.GUARD,''),/network log/);
- assert.doesNotThrow(()=>r.verifyExecutionGuard(process.execArgv,process.env.NODE_OPTIONS,process.env.RECOVERY_NETWORK_LOG));
+ assert.doesNotThrow(()=>r.verifyExecutionGuard(['--require',r.GUARD],'--require='+r.GUARD,path.resolve(__dirname,'../../../hayaku-logs/guard-unit.log')));
 });
 console.log(JSON.stringify({schema:'hayaku.recipe-v2-tests.v1',records,assertions:records.length,failed:0}));

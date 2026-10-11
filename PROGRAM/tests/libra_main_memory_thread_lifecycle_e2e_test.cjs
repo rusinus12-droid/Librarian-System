@@ -4,6 +4,7 @@
 // aliases from the prompt; it never receives or invents persistent identifiers.
 const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+const { actualClassicPacket, deliveredClosureRows } = require('./fixtures/libra_actual_classic_request.cjs');
 
 const {countCalls,classifyCall} = require('./fixtures/libra_provider_call_kinds.cjs');
 const rows = [];
@@ -148,10 +149,13 @@ const threadArtifact = ({ turn, threadEntityName, summary, status, link, resolut
     assert.equal(recall.memories[0].memory.memoryId, first.memoryId, 'the selected memory is the original open promise');
     assert.equal(JSON.stringify(recall.memories.map(row => row.excerpt || row.text || '')).includes(closureFactText), false,
       'the selected memory does not already contain the later outcome');
-    const preflight = await f.r.api.prepareInputWriterEvidence(recallQuery);
-    const packetText = JSON.stringify(preflight?.evidencePacket?.layers || {});
-    assert.ok(packetText.includes(closureFactText),
-      `an accepted v5 successor reaches the actual Input Writer packet after both entity name and thread summary change (closure: ${JSON.stringify(recall?.diagnostics?.recallContinuityClosure)}, packet: ${JSON.stringify(preflight?.evidencePacket?.layers?.memory?.map(row => ({ text: row.text, closure: row.closure, memoryId: row.memoryId })))})`);
+    const packet = await actualClassicPacket(f, recallQuery, f.getManifest().scopeKey);
+    const delivered = deliveredClosureRows(packet).filter(row => row.memoryId === second.memoryId
+      && row.revision === second.revision && row.text === closureFactText);
+    assert.equal(delivered.length, 1,
+      'the accepted v5 successor reaches the sealed, returned Classic request after entity and summary changes');
+    assert.equal((packet.actualClassic.block.match(/\[LIBRA CLASSIC RECALL/g) || []).length, 1,
+      'the actual request carries one Classic block');
     assert.equal(recall?.diagnostics?.recallContinuityClosure?.currentness, 'current',
       'the selected lifecycle chain reports its currentness');
 
@@ -191,7 +195,7 @@ const threadArtifact = ({ turn, threadEntityName, summary, status, link, resolut
       lifecycleStatus: [prior.linkStatus, closure.linkStatus], historyResolution: 'fulfilled',
       semanticTimeline: semanticThreadEvents.map(event=>event.type),
       coldReplay: 'v5 canonical bytes and fulfilled History retained without a model call',
-      boundary: 'controlled existing-provider prompt through canonical storage, State and History'
+      boundary: 'controlled provider prompt through canonical storage, State, sealed actual Classic delivery and History'
     }));
   } finally {
     await f.r.cleanup();

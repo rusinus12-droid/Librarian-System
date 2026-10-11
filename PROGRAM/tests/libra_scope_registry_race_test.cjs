@@ -32,11 +32,16 @@ const REGISTRY_KEY = 'libra:v1:scope-registry:v1';
 const startMarker = 'const scopeRegistryIdentity =';
 // End marker just past markNativeCopySuppressed (the second registry writer), so
 // both unlocked read-modify-write sites are inside the evaluated slice.
-const endMarker = 'const nativeCopyChatListSnapshot = async context =>';
+const endMarker = 'const contextId =';
 const start = source.indexOf(startMarker);
 const end = source.indexOf(endMarker, start);
 assert.ok(start >= 0 && end > start, 'scope registry slice markers must exist');
-const slice = source.slice(start, end);
+const suppressStart = source.indexOf('const markNativeCopySuppressed = async');
+const suppressEnd = source.indexOf('const nativeCopyChatListSnapshot = async context =>', suppressStart);
+assert.ok(suppressStart > end && suppressEnd > suppressStart, 'the second registry writer remains present');
+// Extract both real writers with their shared tail. The region between them now
+// initializes the full read-only response owner and is unrelated to this race.
+const slice = source.slice(start, end) + source.slice(suppressStart, suppressEnd);
 
 const values = new Map();
 let registryReads = 0;
@@ -91,6 +96,8 @@ const storage = {
     try { return JSON.parse(String(raw)); } catch (_) { return fallback; }
   },
   async setJson(key, value) { return await rawStore.setItem(key, JSON.stringify(value)); },
+  async setVerifiedJson(key, value) { return await rawStore.setItem(key, JSON.stringify(value)); },
+  async getVerifiedJson(key, _scope, fallback) { return await this.getJson(key, fallback); },
   async keys() { return await rawStore.keys(); },
   async remove(key) { return await rawStore.removeItem(key); }
 };
@@ -106,6 +113,7 @@ const state = { disposed: false };
 const context = vm.createContext({
   storage, nowIso, string, asObject, LIBRAError, PREFIX, key, state,
   stableDraftHash: value => `h${String(value).length}`,
+  digest: value => require('node:crypto').createHash('sha256').update(JSON.stringify(value)).digest('hex'),
   console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
   setTimeout, clearTimeout, Promise, Set, Map, JSON, Object, Array, Number, Math, Error
 });

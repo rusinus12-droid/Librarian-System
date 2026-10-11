@@ -14,23 +14,19 @@ const sliceBetween = (start, end) => {
   return source.slice(from, to);
 };
 
-assert.match(source, /promptInjectionSection:\s*'sga'/, 'SGA remains the default current-turn GRADIA result page');
-assert.match(source, /PROMPT_INJECTION_SECTION_IDS\s*=\s*Object\.freeze\(\['sga', 'planner', 'recall'\]\)/,
-  'legacy current-turn result IDs keep a stable alias set');
-
+const vm = require('node:vm');
 const resolver = sliceBetween('const resolveSharedNavigationTarget =', 'const applySharedNavigationTarget =');
-assert.match(resolver, /requested === 'recall'.*pageId: 'logs', executionLogSection: 'recall'/s,
-  'legacy recall routes land on the execution-owned Recall log');
-assert.match(resolver, /\['prompt_injection', 'planner', 'sga'\]\.includes\(requested\).*pageId: 'memory', memoryHubSection: 'context'/s,
-  'remaining legacy result routes retain their shared Memory evidence context compatibility');
-assert.match(resolver, /requested === 'prompt'.*requested === 'prompt_studio'.*pageId: 'custom', customHubSection: 'active_draft'/s,
-  'legacy prompt settings routes land in the active draft custom workspace');
-assert.match(resolver, /requested === 'prompt_studio_ooc'.*pageId: 'custom', customHubSection: 'ooc'/s,
-  'legacy OOC routes land in Custom > OOC Builder');
-assert.match(resolver, /requested === 'gradia_prompt_results'.*pageId: 'logs', executionLogSection: 'draft'/s,
-  'GRADIA prompt-result routes land in the authoritative draft execution log');
+const context = {SHARED_SIDEBAR_SECTIONS:['memory','characters','relationships','world','narrative','pipeline','ai','embedding','logs','settings','custom','agents'],
+LIBRA_MEMORY_PIPELINE_STAGES:['librarian'],RETIRED_MEMORY_STAGE_IDS:['ariadne'],LIBRARIAN_STAGE_ID:'librarian',LIBRA_REFERENCE_HUB_SECTIONS:['modules','character_lore_exclusions','response_materials']};
+vm.createContext(context);vm.runInContext(resolver+'\nthis.resolve=resolveSharedNavigationTarget;',context);
+const resolve=v=>JSON.parse(JSON.stringify(context.resolve(v)));
+assert.deepEqual(resolve('recall'),{pageId:'logs',executionLogSection:'recall'});
+for(const alias of ['prompt','prompt_studio','prompt_studio_ooc','user_intent_ooc'])
+ assert.deepEqual(resolve(alias),{pageId:'custom',customHubSection:'memory'},alias+' retains lazy memory editing');
+for(const retired of ['prompt_injection','planner','sga','gradia_prompt_results'])
+ assert.deepEqual(resolve(retired),{pageId:'memory',memoryHubSection:'read'},retired+' safely returns to the supported reader');
 
-const navigation = sliceBetween('const applySharedNavigationTarget =', 'const GUI_FAMILY_HUB_STATE_KEYS =');
+const navigation = sliceBetween('const applySharedNavigationTarget =', 'const normalizeBookPage =');
 assert.match(navigation, /Gui\.sharedSidebarSection = pageId/,
   'shared navigation updates the selected top-level sidebar page');
 assert.match(navigation, /Gui\.customHubSection = normalizeHubChoice/,
@@ -41,14 +37,12 @@ assert.match(source, /const libraGuiNavigate = \(section, _tab = 'flow'\) => \{\
   'the LIBRA compatibility navigator delegates to the shared router');
 
 const custom = sliceBetween('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =');
-assert.match(custom, /고급 프롬프트 설정/);
-assert.match(custom, /buildLibraPromptStudioPanel\(\{family,allowedDomains:\[promptDomain\]\}\)/);
-assert.doesNotMatch(custom, /이번 턴 적용 결과|id: 'injection'/,
-  'Custom must not duplicate results owned by Execution Log');
-assert.match(custom, /Gui\.agentHubSection==='draft'.*renderPromptStudioOocBuilder/s,
-  'the draft workbench owns the OOC builder');
-assert.match(custom, /buildLibraHubTabs\(definitions, Gui\.agentHubSection/,
-  'the workbench uses the shared accessible tabs');
+assert.match(custom, /buildMemoryPipelinePanel\(\)/);
+assert.match(custom, /buildMemoryPromptStudioDisclosure\(/);
+assert.doesNotMatch(custom, /이번 턴 적용 결과|id: 'injection'|renderPromptStudioOocBuilder/);
+const disclosure = sliceBetween('const buildMemoryPromptStudioDisclosure =','const buildSharedAgentShellPanel =');
+assert.match(disclosure,/guiLazyDetails/);
+assert.match(disclosure,/buildLibraPromptStudioPanel\(\{ allowedDomains: \['memory'\] \}\)/);
 
 const promptPanel = sliceBetween('const buildLibraHubTabs =', 'const buildLibraSectionLayout =');
 assert.match(promptPanel, /role: 'tablist'/, 'current-turn result selectors remain accessible tabs');

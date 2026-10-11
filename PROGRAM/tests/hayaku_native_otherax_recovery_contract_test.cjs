@@ -37,11 +37,11 @@ requireText(retrace, releaseText("const PLUGIN_VERSION = '{retrace}';"), 'RE:TRA
 // Long-chat optimization must be exact and per-message rather than a sampled
 // transcript probe. Existing hashes and durable ledger schema stay unchanged.
 requireText(hayaku, 'const messageRevisionProjection = (message, index = -1, scopeKeyInput = \'\', options = {}) => {', 'message revision cache');
-requireText(hayaku, 'const exactChatRevisionObservation = scope => {', 'exact observer gate');
+requireText(hayaku, 'const authoritativeChatSnapshot =', 'exact owner snapshot');
 requireText(hayaku, 'const invalidateMessageRevisionCache = (scopeKeyInput = \'\', options = {}) => {', 'targeted cache invalidation');
-requireText(hayaku, 'finalizeMessageRevisionScopeObservation(scope?.key || \'\', seenKeys);', 'rollback pruning');
-requireText(hayaku, 'const revisionObservation = exactChatRevisionObservation(scope);', 'worldline fast gate');
-requireText(hayaku, "reason: 'observer_exact_revision_unchanged'", 'unchanged observer short circuit');
+requireText(hayaku, 'finalizeMessageRevisionScopeObservation(scope?.key || \'\', seenRevisionKeys);', 'rollback pruning');
+requireText(hayaku, 'const topologyHash = compact(turnTopologySnapshotHash(snapshot), 96);', 'exact topology gate');
+requireText(hayaku, "reason: 'topology_unchanged'", 'unchanged topology short circuit');
 requireText(hayaku, "const STORAGE_LEDGER_VERSION = 'hayaku_storage_ledger_v2';", 'ledger format invariant');
 requireText(hayaku, "const stableHash64 = (value = '') => {", 'stableHash64 invariant');
 forbidText(hayaku, 'worldlineObserverTextProbe', 'sampled observer fingerprint is retired');
@@ -183,7 +183,7 @@ for (const retired of [
 ]) forbidText(retrace, retired, `RE:TRACE HAYAKU analysis executor retired: ${retired}`);
 requireText(retrace, 'probeLiveHayakuOwner', 'RE:TRACE authenticated HAYAKU owner probe remains');
 requireText(retrace, 'readPendingColdStartCapsule', 'RE:TRACE legacy cold-start capsule reader remains');
-requireText(retrace, 'only HAYAKU may adopt or mutate its ledger', 'RE:TRACE legacy capsule viewer remains passive');
+requireText(retrace, 'HAYAKU exclusively owns Cold Start, missing-turn repair, targeted regeneration, Other Ax calls, worldline validation, and durable adoption.', 'RE:TRACE legacy capsule viewer remains passive');
 requireText(retrace, 'purgeLegacyProviderCredentials', 'RE:TRACE exact-key legacy credential purge remains');
 requireText(retrace, 'performPendingNextSessionHandoff', 'RE:TRACE handoff remains present');
 requireText(retrace, 'sourceMutationAllowed: false', 'source-immutable handoff remains present');

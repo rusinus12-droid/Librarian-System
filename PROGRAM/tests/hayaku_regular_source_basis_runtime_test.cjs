@@ -27,19 +27,19 @@ async function scenario(changeDuringGeneration=false){
   let ledger=await t.loadStorageLedger(c.scope),record=ledger.records.find(r=>r.targetPairIndex===2);
   assert.equal(record.sourceRevisionOrigin,'regular_request');assert(record.sourceRevisionBasis);
   let units=(await t.hayakuSourceEditSnapshot(c.scope,c.snapshot,ledger)).units;
-  assert.equal(units.find(u=>u.key==='1').changed,true);
-  assert.equal(units.find(u=>u.key==='2').changed,changeDuringGeneration,'only packets generated from the current prefix are exempt');
+  assert.ok(units.find(u=>u.key==='1').sourceDigest);
+  assert.equal(units.find(u=>u.key==='2').basis===record.sourceRevisionBasis,!changeDuringGeneration,'regular capture retains its generation-time prefix basis');
   if(!changeDuringGeneration){
    await t.reconcileObservedChatTopology(c.scope,c.snapshot,'basis_commit',{prompt:false});
-   ledger=await t.loadStorageLedger(c.scope);record=ledger.records.find(r=>r.targetPairIndex===2&&r.recordState==='active');assert(record,JSON.stringify({records:ledger.records.map(r=>({turn:r.targetPairIndex,state:r.recordState,reason:r.divergenceReason,basis:r.sourceRevisionBasis})),status:h.hayaku.getSourceEditSyncStatus()}));
+   ledger=await t.loadStorageLedger(c.scope);record=ledger.records.find(r=>r.targetPairIndex===2&&r.recordState==='active');assert(record,JSON.stringify({records:ledger.records.map(r=>({turn:r.targetPairIndex,state:r.recordState,reason:r.divergenceReason,basis:r.sourceRevisionBasis})),units}));
    const basis=record.sourceRevisionBasis;
    h.chat.message[3].data=body+'\n<!-- other plugin bookkeeping -->\n<lb-xnai>{{inlay::illustration}}</lb-xnai>';
    c=await current();assert.equal(c.snapshot.conversationPairs.at(-1).assistantVisibleHash,pair.assistantVisibleHash);
    await t.reconcileObservedChatTopology(c.scope,c.snapshot,'basis_metadata',{prompt:false});
    ledger=await t.loadStorageLedger(c.scope);record=ledger.records.find(r=>r.targetPairIndex===2&&r.recordState==='active');assert.equal(record.sourceRevisionBasis,basis);
-   units=(await t.hayakuSourceEditSnapshot(c.scope,c.snapshot,ledger)).units;assert.equal(units.find(u=>u.key==='2').changed,false);
+   units=(await t.hayakuSourceEditSnapshot(c.scope,c.snapshot,ledger)).units;assert.equal(units.find(u=>u.key==='2').basis,basis);
    h.chat.message[1].data=hiddenPacketMessage('Alice locked the door.',p1);
-   c=await current();units=(await t.hayakuSourceEditSnapshot(c.scope,c.snapshot,ledger)).units;assert.equal(units.find(u=>u.key==='2').changed,true,'later real changes still invalidate the old basis');
+   c=await current();units=(await t.hayakuSourceEditSnapshot(c.scope,c.snapshot,ledger)).units;assert.notEqual(units.find(u=>u.key==='2').basis,basis,'later real changes diverge from the immutable generation basis');
   }
   assert.equal(h.llmCalls.length,0);
  }finally{await h.dispose();}

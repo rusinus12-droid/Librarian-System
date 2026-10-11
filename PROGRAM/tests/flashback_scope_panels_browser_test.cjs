@@ -7,10 +7,15 @@ const {resolveChromeExecutable}=require('./fixtures/browser_resolver.cjs');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const out=process.env.MEMORY_PATCH_BROWSER_OUTPUT||path.join(os.tmpdir(),'flashback-scope-panels-evidence');fs.mkdirSync(out,{recursive:true});
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'flashback-browser-'));
-const child=spawn(resolveChromeExecutable(),['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:'ignore'});
+// Chromium's singleton Unix socket must fit sun_path even when evidence TMPDIR is long.
+const socketTmp=fs.mkdtempSync(path.join(process.platform==='win32'?os.tmpdir():'/tmp','fb-chrome-'));
+const stderrFile=path.join(out,'chromium.stderr.log'),stderrFd=fs.openSync(stderrFile,'a');
+const child=spawn(resolveChromeExecutable(),['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--disable-dev-shm-usage','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{env:{...process.env,TMPDIR:socketTmp,XDG_CONFIG_HOME:path.join(profile,'config'),XDG_CACHE_HOME:path.join(profile,'cache')},stdio:['ignore','ignore',stderrFd]});
+fs.closeSync(stderrFd);
+let childExit;child.on('error',error=>{childExit={error:error.message};});child.on('exit',(code,signal)=>{childExit={code,signal};});
 let ws;const watchdog=setTimeout(()=>{child.kill('SIGKILL');console.error('Flashback browser timeout');process.exit(1);},90000);
 (async()=>{
- let port;for(let n=0;n<100;n++){try{port=fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];break;}catch{}await pause(100);}assert.ok(port,'Chromium starts');
+ let port;for(let n=0;n<100;n++){try{port=fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0];break;}catch{}if(childExit)break;await pause(100);}assert.ok(port,'Chromium starts: '+JSON.stringify(childExit||{})+'; stderr='+stderrFile);
  const pages=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();ws=new WebSocket(pages.find(x=>x.type==='page').webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));
  let seq=0;const pending=new Map();ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}});
  const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
@@ -72,4 +77,4 @@ let ws;const watchdog=setTimeout(()=>{child.kill('SIGKILL');console.error('Flash
  assert.equal(await ev(`document.querySelectorAll('[data-portable-backup-host="flashback_memory"]').length`),1);
  console.log('PASS real Chromium: independent panels, selectable pending rows, batch empty cleanup with confirmation and preserved memories; screenshots '+out);
  await ev('Promise.all(unloads.map(fn=>fn()))');await call('Browser.close');
-})().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{clearTimeout(watchdog);ws?.close();child.kill();await pause(200);fs.rmSync(profile,{recursive:true,force:true});});
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{clearTimeout(watchdog);ws?.close();child.kill();await pause(200);fs.rmSync(profile,{recursive:true,force:true,maxRetries:20,retryDelay:100});fs.rmSync(socketTmp,{recursive:true,force:true,maxRetries:20,retryDelay:100});});

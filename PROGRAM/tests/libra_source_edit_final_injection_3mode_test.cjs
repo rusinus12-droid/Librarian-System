@@ -1,9 +1,12 @@
 'use strict';
-// The public beforeRequest that sees a source edit must deliver the replacement
-// canonical, not the still retained previous revision, in every storage mode.
+// An explicit selected-source replacement must reach the real Classic request
+// in all storage modes, with physical identity and publication boundaries intact.
 const assert = require('node:assert/strict');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+const { actualClassicPacket } = require('./fixtures/libra_actual_classic_request.cjs');
+const { countCalls } = require('./fixtures/libra_provider_call_kinds.cjs');
+const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
 
 const MODES = ['plugin_only', 'mirror', 'server_only'];
 const QUERY = '민아의 은빛 열쇠를 지금 누가 갖고 있어?';
@@ -25,11 +28,8 @@ const removeDurable = async (snapshot, mode, key) => {
   if (mode !== 'server_only') snapshot.local.delete(key);
   if (mode !== 'plugin_only') await snapshot.mutate(key, null, 'remove');
 };
-const injection = (messages, failureDiagnostic = null) => {
+const injection = messages => {
   const blocks = messages.filter(message => String(message?.content || '').includes('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]'));
-  if (blocks.length !== 1 && failureDiagnostic) {
-    process.stderr.write(`source_edit_recall_failure ${JSON.stringify(failureDiagnostic)}\n`);
-  }
   assert.equal(blocks.length, 1, 'one Classic recall block reaches the model request');
   return String(blocks[0].content);
 };
@@ -47,11 +47,20 @@ const editedArtifact = () => {
   return next;
 };
 
-const delaySourceEditTaskSettlement = source => {
-  const anchor = 'sourceEditBasis:task.basis,sourceEditValidate:assertCurrent,maxBatches:1});\n          await assertCurrent();';
-  assert.ok(source.includes(anchor), 'test-only unsettled-task delay anchor exists after the real source-edit scan');
-  return source.replace(anchor,
-    'sourceEditBasis:task.basis,sourceEditValidate:assertCurrent,maxBatches:1});\n          await new Promise(resolve=>setTimeout(resolve,12000));\n          await assertCurrent();');
+const selectReplacement = async f => {
+  const calls = countCalls(f.control);
+  const selection = await f.r.api.listCanonicalBatchRanges();
+  const ranges = selection.ranges.filter(row => row.startTurn === 1);
+  assert.equal(ranges.length, 1, 'one exact saved five-turn range is selected');
+  assert.equal(ranges[0].status, 'saved');
+  assert.deepEqual(countCalls(f.control), calls, 'range inspection is model-free');
+  return { scopeKey: selection.scopeKey, mode: 'source_edit', ranges };
+};
+const classic = async (f, scopeKey) => {
+  const packet = await actualClassicPacket(f, QUERY, scopeKey);
+  assert.equal(packet.actualClassic.block.split('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]').length - 1, 1,
+    'exactly one Classic block reaches this request');
+  return packet;
 };
 
 async function check(mode) {
@@ -61,101 +70,51 @@ async function check(mode) {
     const f = snapshot.f;
     await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
     assert.equal((await f.run()).completed, 1, `${mode}: initial canonical commits`);
+    // Settle the initial derived-vector acknowledgement before pinning exact
+    // canonical bytes; replacement must preserve that durable preimage.
+    await f.r.api.retryPendingUnifiedVectors();
     const oldRef = manifestOf(snapshot, mode).memories['1'];
     const oldBytes = rawOf(snapshot, mode, oldRef.key);
     const initial = injection(await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model'));
     assert.match(initial, /지호가 열쇠를 민아에게 반환했다\./, `${mode}: control delivers the original fact`);
 
-    // Keep the same message identity while changing both the source and the
-    // fixed analysis result. beforeRequest itself performs automatic repair.
+    // A same-slot edit retains the approved analysis until the explicit
+    // selection succeeds. Requests and range inspection do no analysis.
     f.chat.message[9].data = EDITED_SOURCE;
     f.control.artifact = editedArtifact();
+    const callsBefore = countCalls(f.control);
+    const selection = await selectReplacement(f);
+    const approved = await classic(f, selection.scopeKey);
+    assert.match(approved.actualClassic.block, /지호가 열쇠를 민아에게 반환했다\./,
+      `${mode}: request retains the approved same-slot canonical before replacement`);
+    assert.equal(manifestOf(snapshot, mode).memories['1'].key, oldRef.key);
+    assert.equal(rawOf(snapshot, mode, oldRef.key), oldBytes);
+    assert.deepEqual(countCalls(f.control), callsBefore, `${mode}: observing an edit adds no provider call`);
+
+    const result = await f.r.api.startSelectedCanonicalBatches(selection);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.job.completed, 1);
+    assert.equal(result.job.failed, 0);
+    assert.equal(countCalls(f.control).canonical, callsBefore.canonical + 1,
+      `${mode}: only the selected replacement adds one Canonical call`);
     const firstPostEditRequestStartedAt = performance.now();
-    const afterMessages = await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model');
+    const packet = await classic(f, selection.scopeKey);
     const firstPostEditRequestElapsedMs = Math.round(performance.now() - firstPostEditRequestStartedAt);
+    const after = packet.actualClassic.block;
     const currentRef = manifestOf(snapshot, mode).memories['1'];
     const activeBodyRaw = currentRef?.key ? rawOf(snapshot, mode, currentRef.key) : null;
     const activeBody = activeBodyRaw ? parse(activeBodyRaw) : null;
-    const sourceEditStatusAfterFirstRequest = f.r.api.getSourceEditSyncStatus();
-    const runtime = f.r.api.getRuntime();
-    const failureDiagnostic = {
-      mode,
-      phase: 'post-source-edit-beforeRequest',
-      elapsedMs: firstPostEditRequestElapsedMs,
-      elapsedPreparation: runtime.lastSourceEditPreparation || null,
-      sourceEditTaskState: sourceEditStatusAfterFirstRequest,
-      returnedMessages: afterMessages.map(message => ({
-        role: String(message?.role || ''), keys: Object.keys(message || {}).sort(),
-        chars: String(message?.content || '').length,
-        hasClassicRecall: String(message?.content || '').includes('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]')
-      })),
-      injectionMode: runtime.lastInjectionMode || null,
-      activeRef: currentRef ? {
-        memoryId: currentRef.memoryId, revision: currentRef.revision, key: currentRef.key,
-        sourceDigest: currentRef.sourceDigest, artifactDigest: currentRef.artifactDigest,
-        sourceEditBasis: currentRef.sourceEditBasis || ''
-      } : null,
-      activeBodyReadback: activeBody ? {
-        memoryId: activeBody.memoryId, revision: activeBody.revision,
-        sourceDigest: activeBody.sourceDigest, artifactDigest: activeBody.artifactDigest,
-        rawChars: activeBodyRaw.length,
-        identityMatchesRef: activeBody.memoryId === currentRef?.memoryId
-          && activeBody.revision === currentRef?.revision
-          && activeBody.sourceDigest === currentRef?.sourceDigest
-          && activeBody.artifactDigest === currentRef?.artifactDigest
-      } : { present: false, rawChars: 0 },
-      priorBodyBytesPreserved: rawOf(snapshot, mode, oldRef.key) === oldBytes,
-      recallViewer: f.r.api.getLastMemoryRecallViewer(),
-      recallResult: f.r.api.getLastMemoryRecall(),
-      recallRuntime: runtime.lastRecallRuntime || null,
-      sourceEditPreparation: runtime.lastSourceEditPreparation || null
-    };
-    if (afterMessages.filter(message => String(message?.content || '').includes('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]')).length !== 1) {
-      const settleStartedAt = performance.now();
-      let settledStatus = f.r.api.getSourceEditSyncStatus();
-      while (settledStatus.running && performance.now() - settleStartedAt < 15000) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        settledStatus = f.r.api.getSourceEditSyncStatus();
-      }
-      const followupStartedAt = performance.now();
-      const followupMessages = await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model');
-      const followupManifest = manifestOf(snapshot, mode);
-      const followupRef = followupManifest?.memories?.['1'];
-      const followupBodyRaw = followupRef?.key ? rawOf(snapshot, mode, followupRef.key) : null;
-      const followupBody = followupBodyRaw ? parse(followupBodyRaw) : null;
-      process.stderr.write(`source_edit_recall_followup ${JSON.stringify({
-        mode,
-        settleWaitMs: Math.round(performance.now() - settleStartedAt),
-        followupRequestMs: Math.round(performance.now() - followupStartedAt),
-        taskStatus: settledStatus,
-        activeRef: followupRef ? {
-          memoryId: followupRef.memoryId, revision: followupRef.revision, key: followupRef.key,
-          sourceDigest: followupRef.sourceDigest, artifactDigest: followupRef.artifactDigest,
-          sourceEditBasis: followupRef.sourceEditBasis || ''
-        } : null,
-        activeBodyReadback: followupBody ? {
-          memoryId: followupBody.memoryId, revision: followupBody.revision,
-          sourceDigest: followupBody.sourceDigest, artifactDigest: followupBody.artifactDigest,
-          identityMatchesRef: followupBody.memoryId === followupRef?.memoryId
-            && followupBody.revision === followupRef?.revision
-            && followupBody.sourceDigest === followupRef?.sourceDigest
-            && followupBody.artifactDigest === followupRef?.artifactDigest
-        } : { present: false },
-        priorBodyBytesPreserved: rawOf(snapshot, mode, oldRef.key) === oldBytes,
-        classicBlocks: followupMessages.filter(message => String(message?.content || '').includes('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]'))
-          .map(message => String(message.content).slice(0, 1800)),
-        recallViewer: f.r.api.getLastMemoryRecallViewer()
-      })}\n`);
-    }
-    const after = injection(afterMessages, failureDiagnostic);
+    const sealedRefs = Array.from(packet.actualClassic.context.canonicalRefs || []);
+    assert.equal(sealedRefs.filter(ref => ref.key === currentRef.key
+      && ref.memoryId === currentRef.memoryId && ref.revision === currentRef.revision
+      && ref.sourceDigest === currentRef.sourceDigest && ref.artifactDigest === currentRef.artifactDigest).length, 1,
+      `${mode}: this request seals the exact durable replacement identity`);
     assert.ok(currentRef.revision > oldRef.revision, `${mode}: source edit commits a new revision`);
     assert.ok(activeBody, `${mode}: the active canonical body is physically readable`);
     assert.equal(activeBody.memoryId, currentRef.memoryId, `${mode}: durable body identity matches the active ref`);
     assert.equal(activeBody.revision, currentRef.revision, `${mode}: durable body revision matches the active ref`);
     assert.equal(activeBody.sourceDigest, currentRef.sourceDigest, `${mode}: durable body source digest matches the active ref`);
     assert.equal(activeBody.artifactDigest, currentRef.artifactDigest, `${mode}: durable body artifact digest matches the active ref`);
-    assert.equal(sourceEditStatusAfterFirstRequest.tasks.find(task => Number(task.start) === 1)?.state, 'applied',
-      `${mode}: source edit is settled before Recall reaches the request`);
     assert.equal(rawOf(snapshot, mode, oldRef.key), oldBytes, `${mode}: prior canonical bytes are immutable`);
     assert.match(after, /지호는 은빛 열쇠를 아직 반환하지 않았다\./, `${mode}: final injection uses replacement`);
     assert.ok(!after.includes(OLD_FACT), `${mode}: final injection omits superseded original text`);
@@ -240,81 +199,98 @@ async function check(mode) {
     if (mode === 'plugin_only') assert.equal(snapshot.requests.length, 0, 'plugin_only remains offline after reload and corruption checks');
     if (mode === 'server_only') assert.equal([...snapshot.local.keys()].some(key => key.includes(':memory:') || key.endsWith(':manifest')), false, 'server_only never persists a local canonical substitute');
     return { mode, oldRevision: oldRef.revision, currentRevision: currentRef.revision,
-      firstPostEditRequestElapsedMs, sourceEditStateAfterRequest: sourceEditStatusAfterFirstRequest.tasks.find(task => Number(task.start) === 1)?.state,
+      firstPostEditRequestElapsedMs, replacementJobState: result.job.state,
       activeBodyIdentityReadback: true, staleCatalogHydratedCurrent: true,
       corruptedBodyVariantsRejected: 7, finalBlock: after };
   } finally { await snapshot.cleanup(); }
 }
 
-async function checkUnsettledTimeoutSuppression() {
-  const mode = 'mirror';
-  const snapshot = await serverFixture({ mode, transformSource: delaySourceEditTaskSettlement });
+// Hold the real mirror write acknowledgement after the new body is durable, before
+// the active manifest can publish it. This tests publication, without a retired
+// automatic tracker or a delay injected into production source.
+async function checkPendingPublication() {
+  const snapshot = await serverFixture({ mode: 'mirror' });
+  const originalSet = snapshot.backend.setItem;
+  let release, work;
+  const gate = new Promise(resolve => { release = resolve; });
   try {
     const f = snapshot.f;
     await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
-    assert.equal((await f.run()).completed, 1, 'timeout control: initial canonical commits');
-    const oldRef = manifestOf(snapshot, mode).memories['1'];
-    const oldBytes = rawOf(snapshot, mode, oldRef.key);
-    assert.match(injection(await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model')),
-      /지호가 열쇠를 민아에게 반환했다\./, 'timeout control: old canonical works before the edit');
-
+    assert.equal((await f.run()).completed, 1);
+    await f.r.api.retryPendingUnifiedVectors();
+    const oldRef = manifestOf(snapshot, 'mirror').memories['1'];
+    const oldBytes = rawOf(snapshot, 'mirror', oldRef.key);
     f.chat.message[9].data = EDITED_SOURCE;
     f.control.artifact = editedArtifact();
-    const startedAt = performance.now();
-    const timedMessages = await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model');
-    const timedElapsedMs = Math.round(performance.now() - startedAt);
-    const timedBlocks = timedMessages.filter(message => String(message?.content || '').includes('[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]'));
-    const pendingStatus = f.r.api.getSourceEditSyncStatus();
-    const pendingRef = manifestOf(snapshot, mode).memories['1'];
-    const pendingBodyRaw = rawOf(snapshot, mode, pendingRef.key);
-    const pendingBody = parse(pendingBodyRaw);
+    const selection = await selectReplacement(f);
+    let pendingBody = null;
+    snapshot.backend.setItem = async (key, raw) => {
+      const written = await originalSet(key, raw);
+      let value;
+      try { value = JSON.parse(raw); } catch { return written; }
+      if (pendingBody || value?.schema !== 'libra.canonical_memory.v1'
+        || value.status !== 'candidate' || value.revision <= oldRef.revision) return written;
+      pendingBody = snapshot.storedRows().find(row => row.key === key);
+      assert.ok(pendingBody, 'replacement body is physically durable before its acknowledgement');
+      await gate;
+      return written;
+    };
+    work = f.r.api.startSelectedCanonicalBatches(selection);
+    await waitFor(() => pendingBody, 15000);
+    assert.equal((await f.r.api.getCanonicalJobStatus()).state, 'running');
+    assert.equal(snapshot.getManifest().memories['1'].key, oldRef.key,
+      'an unacknowledged replacement cannot publish its active manifest ref');
+    assert.ok(pendingBody.value.text.includes(NEW_FACT), 'the withheld durable body contains the replacement');
+    const pendingInput = [{ role: 'user', content: QUERY }];
+    const callsBeforeRequest = countCalls(f.control);
+    const pendingOutput = await f.control.hooks.beforeRequest(pendingInput, 'model');
+    assert.equal(pendingOutput, pendingInput, 'the bounded request returns unchanged while publication is unsettled');
+    assert.equal(pendingOutput.some(row => String(row.content).includes('[LIBRA CLASSIC RECALL')), false,
+      'a physically present unactivated replacement cannot reach the request');
+    assert.equal(pendingOutput.some(row => String(row.content).includes(OLD_FACT)), false,
+      'unsettled publication does not inject prior canonical as a fallback');
     const pendingRecall = f.r.api.getLastMemoryRecallViewer();
-    assert.equal(timedBlocks.length, 0, 'unsettled source-edit timeout injects no Classic evidence');
-    assert.ok(timedMessages.every(message => !String(message?.content || '').includes(OLD_FACT)),
-      'unsettled source-edit timeout never falls back to the superseded canonical');
-    assert.equal(pendingStatus.tasks.find(task => Number(task.start) === 1)?.state, 'running',
-      'source-edit task remains unsettled beyond the bounded request window');
-    assert.ok(pendingRef.revision > oldRef.revision, 'timeout control already has a newer active manifest revision');
-    assert.equal(pendingBody.memoryId, pendingRef.memoryId, 'pending replacement body is durably read back by memory identity');
-    assert.equal(pendingBody.revision, pendingRef.revision, 'pending replacement body is durably read back by revision');
-    assert.equal(pendingBody.sourceDigest, pendingRef.sourceDigest, 'pending replacement body is durably read back by source digest');
-    assert.equal(pendingBody.artifactDigest, pendingRef.artifactDigest, 'pending replacement body is durably read back by artifact digest');
-    assert.equal(pendingRecall.injectedMemories, 0, 'unsettled replacement remains suppressed until the task applies');
-    assert.equal(rawOf(snapshot, mode, oldRef.key), oldBytes, 'timeout control preserves prior canonical bytes');
-    process.stderr.write(`source_edit_timeout_suppression ${JSON.stringify({
-      mode, timedElapsedMs, timeoutBudgetMs: 10000,
-      pendingTaskState: pendingStatus.tasks.find(task => Number(task.start) === 1)?.state,
-      pendingRevision: pendingRef.revision, pendingBodyIdentityReadback: true,
-      pendingRecallInjected: pendingRecall.injectedMemories, timedBlocks: timedBlocks.length,
-      oldBodyBytesPreserved: rawOf(snapshot, mode, oldRef.key) === oldBytes
-    })}\n`);
-
-    const settleStartedAt = performance.now();
-    let applied = f.r.api.getSourceEditSyncStatus();
-    while (applied.running && performance.now() - settleStartedAt < 15000) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      applied = f.r.api.getSourceEditSyncStatus();
+    assert.equal(pendingRecall.failOpen, true);
+    assert.equal(pendingRecall.injectedMemories, 0);
+    assert.ok(['LIBRA_RECALL_DEADLINE', 'LIBRA_RECALL_STEP_TIMEOUT'].includes(pendingRecall.errorCode),
+      `suppression must be the bounded pending-publication guard: ${JSON.stringify(pendingRecall)}`);
+    assert.equal(pendingRecall.timeoutPhase, 'before_branch_reconcile',
+      'the held scope publication queue causes suppression, not an unrelated storage failure');
+    assert.deepEqual(countCalls(f.control), callsBeforeRequest, 'pending request adds no provider work');
+    assert.equal((await f.r.api.getCanonicalJobStatus()).state, 'running');
+    assert.equal(snapshot.getManifest().memories['1'].key, oldRef.key);
+    assert.equal(rawOf(snapshot, 'mirror', oldRef.key), oldBytes);
+    release();
+    const result = await work;
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const ref = snapshot.getManifest().memories['1'];
+    assert.equal(ref.key, pendingBody.key);
+    const body = snapshot.getMemory();
+    for (const field of ['memoryId', 'revision', 'sourceDigest', 'artifactDigest']) {
+      assert.equal(body[field], ref[field], `published body binds ${field}`);
     }
-    assert.equal(applied.tasks.find(task => Number(task.start) === 1)?.state, 'applied',
-      'the delayed source-edit task eventually reaches applied');
-    const followup = await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model');
-    const followupBlock = injection(followup);
-    assert.match(followupBlock, /지호는 은빛 열쇠를 아직 반환하지 않았다\./,
-      'settled task injects its durable replacement on the next request');
-    assert.ok(!followupBlock.includes(OLD_FACT), 'settled task never revives the old fact');
-    assert.equal(rawOf(snapshot, mode, oldRef.key), oldBytes, 'settled timeout control still preserves the old body');
-    return { mode, timedElapsedMs, timeoutBudgetMs: 10000, pendingTaskState: 'running',
-      pendingRevision: pendingRef.revision, pendingBodyIdentityReadback: true,
-      pendingRecallInjected: pendingRecall.injectedMemories, timedBlocks: timedBlocks.length,
-      settleWaitMs: Math.round(performance.now() - settleStartedAt), appliedState: 'applied',
-      followupDeliveredReplacement: true, oldBodyBytesPreserved: true };
-  } finally { await snapshot.cleanup(); }
+    const applied = await classic(f, selection.scopeKey);
+    assert.match(applied.actualClassic.block, /지호는 은빛 열쇠를 아직 반환하지 않았다\./);
+    assert.equal(applied.actualClassic.block.includes(OLD_FACT), false,
+      'the next request uses the committed replacement without reviving the old fact');
+    assert.equal(rawOf(snapshot, 'mirror', oldRef.key), oldBytes);
+    return { mode: 'mirror', durableUnpublishedBodyExcluded: true,
+      approvedRefRetainedBeforePublication: true, pendingRecallInjected: pendingRecall.injectedMemories,
+      pendingRecallErrorCode: pendingRecall.errorCode, pendingRecallTimeoutPhase: pendingRecall.timeoutPhase,
+      publishedRevision: ref.revision,
+      replacementDeliveredAfterPublication: true, priorBodyBytesPreserved: true };
+  } finally {
+    release();
+    if (work) await work.catch(() => {});
+    snapshot.backend.setItem = originalSet;
+    await snapshot.cleanup();
+  }
 }
 
 (async () => {
   const observations = [];
   for (const mode of MODES) observations.push(await check(mode));
   for (const row of observations.slice(1)) assert.equal(row.finalBlock, observations[0].finalBlock, `${row.mode}: final injected evidence matches plugin_only`);
-  const timeoutSuppression = await checkUnsettledTimeoutSuppression();
-  process.stdout.write(JSON.stringify({ test: 'libra_source_edit_final_injection_3mode', observations: observations.map(({ finalBlock, ...row }) => ({ ...row, finalBlockChars: finalBlock.length })), timeoutSuppression }) + '\n');
+  const pendingPublication = await checkPendingPublication();
+  process.stdout.write(JSON.stringify({ test: 'libra_source_edit_final_injection_3mode', observations: observations.map(({ finalBlock, ...row }) => ({ ...row, finalBlockChars: finalBlock.length })), pendingPublication }) + '\n');
 })().catch(error => { process.stderr.write(String(error.stack || error) + '\n'); process.exitCode = 1; });

@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto'),cp=require('node:child_process');
 const {test}=require('node:test');
 const program=path.resolve(__dirname,'..'),tool=path.join(program,'tools/update_manifest.cjs');
-const fixtureFiles=['program-manifest.json','VERSION.txt','plugins/Flashback_Memory.js','plugins/HAYAKU_Locator_Continuity.js','plugins/LIBRA.js','plugins/LIA_Persona_Linker.js','plugins/RETRACE.js','plugins/GRADIA.js','plugins/LIBRA_World_Manager.js','sdk/MemorySuiteStorageClient.source.js','sdk/MemorySuiteStorageClient.libra.source.js','sdk/MemorySuiteComputeClient.source.js','sdk/MemorySuiteExecutionContract.source.js'];
+const fixtureFiles=['program-manifest.json','VERSION.txt','plugins/Flashback_Memory.js','plugins/HAYAKU_Locator_Continuity.js','plugins/LIBRA.js','plugins/LIA_Persona_Linker.js','plugins/RETRACE.js','plugins/GRADIA.js','sdk/MemorySuiteStorageClient.source.js','sdk/MemorySuiteStorageClient.libra.source.js','sdk/MemorySuiteComputeClient.source.js','sdk/MemorySuiteExecutionContract.source.js'];
 function fixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'manifest-model-only-'));for(const rel of fixtureFiles){const dest=path.join(root,rel);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(path.join(program,rel),dest);}return root;}
 function run(root){return cp.spawnSync(process.execPath,[tool],{cwd:root,encoding:'utf8',env:{...process.env,LIBRARIAN_PROGRAM_ROOT:root}});}
 test('manifest generation accepts model-only Flashback and removes the obsolete hash-vector pilot',()=>{

@@ -68,26 +68,9 @@ const dupBlock = blockOf('canonicalJsonHasDuplicateKeys');
 const dupSrc = `${dupBlock}\n({ canonicalJsonHasDuplicateKeys });`;
 const { canonicalJsonHasDuplicateKeys } = vm.runInNewContext(dupSrc, { JSON, String, Set, Math, RegExp, Number });
 
-// §2 must be judged through the PRODUCT's own parser, not by re-assembling the ladder here. Measured: a
-// re-assembly that called the sandbox's `closeUnbalancedJsonObject` directly kept passing when the
-// product's own closure branch was disabled, because it never exercised the product's wiring. The parser
-// and everything it calls are extracted verbatim instead.
-// The parser calls a handful of small shared helpers; each is listed explicitly so a missing one fails
-// loudly at extraction time instead of surfacing later as `is not defined` (measured: that turned two of
-// the control cases into false rejections).
-const sgaDeps = ['string', 'compact', 'isPlainObject', 'asArray', 'sgaArtifactStrings',
-  ...helperNames.filter(n => n !== 'text')];
-const sgaSrc = [
-  `const SGA_ARTIFACT_MAX_CHARS = ${1_000_000};`,
-  textBlock,
-  dupBlock,
-  sgaDeps.map(blockOf).join('\n'),
-  blockOf('SGA_ARTIFACT_META_LEAK_PATTERN'),
-  blockOf('closeOpenJsonDelimiters'),
-  blockOf('parseStrictSgaArtifactJson'),
-  '({ parseStrictSgaArtifactJson });'
-].join('\n');
-const { parseStrictSgaArtifactJson } = vm.runInNewContext(sgaSrc, { JSON, String, Set, Math, RegExp, Number });
+// The embedded SGA parser was removed. Retain helper closure coverage and
+// exercise the current Canonical parser's own repair/duplicate wiring below.
+const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 
 const firstParsable = variants => {
   for (const v of variants) {
@@ -169,61 +152,9 @@ rows.push({
   })
 });
 
-// ── §2 (COMBINED_REVIEW_20260922): the duplicate re-scan must walk the SAME ladder ────────────────
-//
-// `parseStrictSgaArtifactJson` accepts a repaired answer and then re-scans for duplicate keys, but that
-// re-scan only ran the jsonRepairCandidates ladder — not the closure branch that actually produced the
-// accepted value. A smart-quoted duplicate plus an unclosed brace therefore slipped through the scanner
-// and parsed as `{ok:true,meta:{}}`. The closure variants are now part of the ladder that gets scanned.
-// The documents below must differ ONLY in the duplicate-key property. The parser also enforces schema and
-// stage, so `expectRejected` is read as "rejected for a duplicate" and any OTHER error (schema mismatch,
-// missing member) is treated as an incomplete control, not as detection.
-const SGA_SCHEMA = 'libra.sga_character_aide.v1';
-const SGA_STAGE = 'sga_character_aide';
-const sgaDoc = fields => `{${fields}}`;
-const duplicateThroughLadder = [
-  // The reviewer's EXACT counterexample. It carries no `schema`/`stage`, so the schema-based contract
-  // would reject it before the duplicate path is reached and the case would prove nothing; it is judged
-  // with an empty contract instead. Measured: at cd9238e this document was ACCEPTED as `{ok:true,meta:{}}`,
-  // and it is rejected only because the closure repair's variant is now part of the duplicate re-scan —
-  // removing that variant from the ladder makes the acceptance come back.
-  { label: 'REVIEWER §2 counterexample (smart quotes, unclosed, no schema)', raw: '{“ok”:false,“ok”:true,"meta":{}', expectRejected: true, contract: {} },
-  { label: 'CONTROL plain duplicate', raw: sgaDoc('"schema":"libra.sga_character_aide.v1","stage":"sga_character_aide","ok":false,"ok":true'), expectRejected: true },
-  { label: 'CONTROL distinct keys', raw: sgaDoc('"schema":"libra.sga_character_aide.v1","stage":"sga_character_aide","ok":true'), expectRejected: false },
-  { label: 'smart-quoted duplicate + unclosed', raw: '{“schema”:“libra.sga_character_aide.v1”,“stage”:“sga_character_aide”,“ok”:false,“ok”:true', expectRejected: true },
-  { label: 'bare duplicate + unclosed', raw: '{schema:"libra.sga_character_aide.v1",stage:"sga_character_aide",ok:false,ok:true', expectRejected: true },
-  { label: 'single-quoted duplicate + unclosed', raw: "{'schema':'libra.sga_character_aide.v1','stage':'sga_character_aide','ok':false,'ok':true", expectRejected: true },
-  { label: 'CONTROL complete unclosed answer', raw: '{"schema":"libra.sga_character_aide.v1","stage":"sga_character_aide","ok":true', expectRejected: false }
-];
-rows.push({
-  check: 'the product SGA parser refuses a duplicate key reached through the closure repair',
-  cases: duplicateThroughLadder.map(c => {
-    // Call the product parser exactly as the product does. A duplicate must surface as the product's own
-    // error, so a disabled closure branch — which parses the same document WITHOUT the duplicate being
-    // visible to the scanner — shows up here as an accepted value instead.
-    let accepted = null;
-    let error = '';
-    try {
-      accepted = parseStrictSgaArtifactJson(c.raw, c.contract || {
-        schema: SGA_SCHEMA, stage: SGA_STAGE,
-        allowed: ['schema', 'stage', 'ok'], required: ['schema', 'stage', 'ok']
-      });
-    } catch (thrown) { error = String(thrown?.message || thrown); }
-    // A duplicate rejection is the product's own `sga_artifact_duplicate_key`. Anything else means the
-    // document never reached the duplicate scan, so it is NOT counted as detection.
-    const duplicateRejected = error.startsWith('sga_artifact_duplicate_key');
-    const otherRejection = accepted === null && !duplicateRejected;
-    return {
-      label: c.label, accepted: accepted !== null, error,
-      duplicateRejected, otherRejection,
-      rejected: duplicateRejected,
-      expected: c.expectRejected, ok: duplicateRejected === c.expectRejected
-    };
-  })
-});
 
-// A smart-quoted artifact has exactly the same closure contract as an ASCII-quoted one.
-// In particular, a literal brace in its draft is content, not a structural delimiter.
+for(const row of rows)for(const c of row.cases || []) assert.equal(c.ok ?? c.preserved,true,JSON.stringify(c));
+assert.equal(rows[1].result.preserved,true);
 const smartQuoteClosureCases = [
   {
     label: 'smart-quoted complete draft with literal closing brace and one missing outer brace',
@@ -241,22 +172,6 @@ const smartQuoteClosureCases = [
     expectedDraft: 'literal } brace'
   }
 ];
-rows.push({
-  check: 'smart-quoted SGA closure preserves literal braces and typographic apostrophes',
-  cases: smartQuoteClosureCases.map(c => {
-    try {
-      const parsed = parseStrictSgaArtifactJson(c.raw, {
-        schema: SGA_SCHEMA, stage: SGA_STAGE,
-        allowed: ['schema', 'stage', 'ok', 'draft', 'meta'],
-        required: ['schema', 'stage', 'ok', 'draft', 'meta']
-      });
-      return { label: c.label, accepted: true, draft: parsed.draft, expectedDraft: c.expectedDraft, error: '' };
-    } catch (error) {
-      return { label: c.label, accepted: false, draft: '', expectedDraft: c.expectedDraft, error: String(error?.message || error) };
-    }
-  })
-});
-
 const smartEscapedQuoteSgaCases = [
   {
     label: 'smart double quotes preserve escaped ASCII quotes with a missing outer brace',
@@ -274,54 +189,29 @@ const smartEscapedQuoteSgaCases = [
     expectedDraft: 'ascii "quote" preserved'
   }
 ];
-rows.push({
-  check: 'smart-quoted SGA parser accepts escaped ASCII quote bodies without false duplicates',
-  cases: smartEscapedQuoteSgaCases.map(c => {
-    try {
-      const parsed = parseStrictSgaArtifactJson(c.raw, {
-        schema: SGA_SCHEMA, stage: SGA_STAGE,
-        allowed: ['schema', 'stage', 'ok', 'draft', 'meta'],
-        required: ['schema', 'stage', 'ok', 'draft', 'meta']
-      });
-      return { label: c.label, accepted: true, draft: parsed.draft, expectedDraft: c.expectedDraft, error: '' };
-    } catch (error) {
-      return { label: c.label, accepted: false, draft: '', expectedDraft: c.expectedDraft, error: String(error?.message || error) };
-    }
-  })
-});
-
-console.log(JSON.stringify({ rows }, null, 1));
-
-// ── Assertions ──────────────────────────────────────────────────────────────────────────
-for (const c of rows[0].cases) {
-  assert.equal(c.preserved, true,
-    `repair must not rewrite the string body: "${c.text}" became "${c.repaired}"`);
-}
-assert.equal(rows[1].result.preserved, true,
-  `the SGA draft body must survive repair (got "${rows[1].result.draft}")`);
-for (const c of rows[2].cases) {
-  assert.equal(c.ok, true,
-    `${c.label}: duplicate detection returned ${c.detected}, expected ${c.expected}`);
-}
-for (const c of rows[3].cases) {
-  assert.equal(c.ok, true,
-    `closure repair: "${c.label}" parsed=${c.parsed}, expected ${c.expected}`);
-}
-for (const c of rows[4].cases) {
-  assert.equal(c.ok, true,
-    `duplicate re-scan: "${c.label}" rejected=${c.rejected}, expected ${c.expected}`);
-}
-for (const c of rows[5].cases) {
-  assert.equal(c.accepted, true,
-    `smart-quote closure: "${c.label}" rejected: ${c.error}`);
-  assert.equal(c.draft, c.expectedDraft,
-    `smart-quote closure: "${c.label}" rewrote draft content`);
-}
-for (const c of rows[6].cases) {
-  assert.equal(c.accepted, true,
-    `smart escaped quote: "${c.label}" rejected: ${c.error}`);
-  assert.equal(c.draft, c.expectedDraft,
-    `smart escaped quote: "${c.label}" rewrote draft content`);
-}
-
-process.stdout.write('libra_json_repair_content_and_duplicate_test: PASS\n');
+(async()=>{
+ const h=await createLibraVmHarness({enable_gui:'false'});
+ try {
+  const parse=value=>h.api.debugParseCanonicalArtifact(value);
+  for(const c of [...smartQuoteClosureCases,...smartEscapedQuoteSgaCases]){
+   assert.equal(relaxedJsonParse(c.raw).draft,c.expectedDraft,c.label+' shared closure');
+   assert.equal(parse(c.raw).draft,c.expectedDraft,c.label+' current Canonical parser');
+  }
+  for(const body of bodies.concat(['literal } brace','don’t close } this string','ascii "quote" preserved'])){
+   const raw=JSON.stringify({schema:'libra.canonical_artifact.v4',draft:body,meta:{}}).replace(/}$/,',}');
+   assert.equal(parse(raw).draft,body,'current product parser preserves content during syntax repair');
+  }
+  for(const raw of ['{"facts":[],"facts":[1]}','{facts:[],facts:[1]}',"{'facts':[],'facts':[1]}",'{“ok”:false,“ok”:true}', '{"o\\u006b":false,“ok”:true}'])
+   assert.throws(()=>parse(raw),/canonical_artifact_duplicate_key/,'duplicates rejected through current product parser');
+  for(const raw of ['{"a":{"k":1},"b":{"k":2}}','{facts:[],notes:[1]}',"{'facts':[],'notes':[1]}",'{“draft”:“literal } brace”}'])assert.equal(typeof parse(raw),'object');
+  // Canonical framing requires a closing delimiter; nested complete values can
+  // still use the shared repair ladder. This
+  // differs from SGA acceptance of a trailing primitive with no closing brace.
+  assert.equal(parse('{"ok":true,"meta":{}').ok,true);
+  for(const raw of ['{“ok”:false,“ok”:true,"meta":{}','{"ok":true,"body":"CUT','{"ok":true,'])assert.throws(()=>parse(raw),/canonical_artifact_|typed_response_incomplete_object/);
+  assert.throws(()=>parse('[1,2]'),/canonical_artifact_not_one_json_object|typed_response_/);
+  assert.equal(parse('```json\n{"ok":true}\n```').ok,true);
+ }finally{await h.cleanup();}
+ console.log(JSON.stringify({test:'libra_json_repair_content_and_duplicate',helperCases:rows.reduce((n,r)=>n+(r.cases?.length||1),0),canonicalParser:true,retiredGap:'SGA-specific schema/stage and missing-brace parser acceptance'}));
+ console.log('libra_json_repair_content_and_duplicate_test: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});

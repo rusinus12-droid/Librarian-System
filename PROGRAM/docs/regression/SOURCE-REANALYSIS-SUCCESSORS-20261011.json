@@ -1,0 +1,450 @@
+{
+  "schema": "librarian.regression.source_reanalysis.successors.v1",
+  "recordedAtUtc": "2026-10-10T23:03:06.043719+00:00",
+  "branch": "codex/regression-continuation-20261011",
+  "parentCommit": "01d2c816f6c29603f95b03e6f3ae94e7abf1aa5a",
+  "baselinePackageCommit": "70f9d9e9b5ab4e7a203c56eac1ac6bb3d3e5d31d",
+  "baselineCapturedSourceCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+  "supersedesKnownFailuresIn": {
+    "path": "PROGRAM/docs/regression/REGRESSION-CONTINUATION-20261011.json",
+    "sha256": "019544dbc9804a4321987c44dee26e8aa492aeb3e1579f5114c8d0f0f9f3f456"
+  },
+  "immutableCheckpoint": "PROGRAM/docs/regression-checkpoints/20261010T1900Z",
+  "historicalReceiptsAndCapsulePreserved": true,
+  "activeRootCount": 1138,
+  "addedRoots": 0,
+  "newSupportFiles": 0,
+  "previousCorrectedHistoricalRoots": 33,
+  "retainedSuccessorsThisBatch": 3,
+  "cumulativeCorrectedHistoricalRoots": 36,
+  "productionChanged": false,
+  "promptTextChanged": false,
+  "sourcePinsRebased": false,
+  "sourceBindings": [
+    {
+      "path": "PROGRAM/plugins/LIBRA.js",
+      "sha256": "ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js",
+      "sha256": "af3349dbcb14bb59c92792b68ba49965cd599333343a172ecf0de8132ac91517",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "sha256": "df80cca242b4f984079a907863625c84b89713a59f0af7cfde2959b6f1e0cb4f",
+      "unchangedFromParent": true
+    }
+  ],
+  "adoptions": [
+    {
+      "path": "PROGRAM/tests/libra_source_edit_final_injection_3mode_test.cjs",
+      "historicalOriginalOrdinal": 758,
+      "previousSha256": "aed07770df267b8fbbab6ac8ecc570e0d49bd591b064c08a44ecb02ea7b4d1d4",
+      "adoptedSha256": "132415ba1d77eadc3542c489afc5b9d5859306cfebe06ec4b9b0f23de3ac686b",
+      "rootCause": "retired automatic/ticket source-edit API in an unchanged historical test",
+      "currentPublicPath": [
+        "listCanonicalBatchRanges",
+        "startSelectedCanonicalBatches(mode: source_edit)"
+      ],
+      "retainedCoverage": [
+        "plugin_only/mirror/server_only: explicit selection adds exactly one Canonical call; request and range inspection add none",
+        "same-slot approved analysis persists until explicit replacement; replacement request has exactly one block and a validated request-local response seal",
+        "exact physical key/memoryId/revision/sourceDigest/artifactDigest; immutable prior body bytes",
+        "stale catalog hydrates current canonical; all seven original corrupt/missing-body variants per mode exclude retired evidence",
+        "plugin_only remains offline; server_only has no local canonical substitute; final blocks match across modes",
+        "real mirror candidate acknowledgement gate: durable unpublished candidate cannot activate or inject; bounded request returns unchanged at before_branch_reconcile with zero evidence/provider work; release publishes the exact replacement"
+      ],
+      "red": {
+        "currentOrdinal": 761,
+        "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 6.93,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/red/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+          "sha256": "bbab3ebb8f865776d123662423ddfe97771d8efdb1898fd5f7927cc0416df703",
+          "bytes": 284
+        }
+      },
+      "final": {
+        "currentOrdinal": 761,
+        "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 32.64,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/publication-phase-final/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+          "sha256": "3ee005902df4c1a194d3d7303270798d38dae58e3eca3552b1e3f0c5c488d658",
+          "bytes": 1179
+        },
+        "testedSourceSha256": "132415ba1d77eadc3542c489afc5b9d5859306cfebe06ec4b9b0f23de3ac686b"
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_unified_source_edit_v2_test.cjs",
+      "historicalOriginalOrdinal": 798,
+      "previousSha256": "6a18651195939c9becf24f2932bb19061bffabae2e99f2b237443712d46bba66",
+      "adoptedSha256": "e1236288071dbd83d085b815441f7e18a4bd8d7af884b43b1facac85004a648a",
+      "rootCause": "retired automatic/ticket source-edit API in an unchanged historical test",
+      "currentPublicPath": [
+        "listCanonicalBatchRanges",
+        "startSelectedCanonicalBatches(mode: source_edit)"
+      ],
+      "retainedCoverage": [
+        "all five existing scenarios retained: selected replacement, provider failure, source race, two selected historical ranges, post-canonical Head failure and local retry",
+        "previous body/evidence immutability, canonical call counts, failed replacement keeps prior ref/Head, no basis snapshot residue",
+        "both selected provider requests bind their own exact t1/t6 sources and state prefixes through turn 0/5",
+        "Head failure preserves canonical success with warnings; state-only retry adds no Canonical call; existing bounded derived-embedding allowance unchanged"
+      ],
+      "red": {
+        "currentOrdinal": 801,
+        "filename": "libra_unified_source_edit_v2_test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 6.6,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/red/801-libra_unified_source_edit_v2_test.cjs.log",
+          "sha256": "4435efe12323ab027843f36e3d7ba669ce1699c0957a91dab5f907652c4d2d8b",
+          "bytes": 472
+        }
+      },
+      "final": {
+        "currentOrdinal": 801,
+        "filename": "libra_unified_source_edit_v2_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 10.1,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/final/801-libra_unified_source_edit_v2_test.cjs.log",
+          "sha256": "807db41bc9cac5be025c27a52a5ab2330ccaf37a163279041b55430f1c2d2455",
+          "bytes": 488
+        },
+        "testedSourceSha256": "e1236288071dbd83d085b815441f7e18a4bd8d7af884b43b1facac85004a648a"
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_unified_server_writer_v1_test.cjs",
+      "historicalOriginalOrdinal": 797,
+      "previousSha256": "df17cc4b2f5280042d8d19b57757552ab0f18efc5f30ad6ca2bfb06fc8ec6da2",
+      "adoptedSha256": "7a339b2395c554a6854136697b673867f273536010047792e4c873432170cb58",
+      "rootCause": "retired automatic/ticket source-edit API in an unchanged historical test",
+      "currentPublicPath": [
+        "listCanonicalBatchRanges",
+        "startSelectedCanonicalBatches(mode: source_edit)"
+      ],
+      "retainedCoverage": [
+        "all twelve scenarios execute, including unchanged first nine transaction/CAS/ABA/response-loss/restart/correction cases",
+        "source replacement uses public selection; ordinary observation preserves prior ref and makes no Canonical call",
+        "successful replacement preserves old body, exactly one new Canonical call and correct server Head replay",
+        "unchanged rollback view/handoff-boundary and mirror verified-copy scenarios"
+      ],
+      "red": {
+        "currentOrdinal": 800,
+        "filename": "libra_unified_server_writer_v1_test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 45.66,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/red/800-libra_unified_server_writer_v1_test.cjs.log",
+          "sha256": "94c706aa610a1f0feb5d062ae9c8f5432e816fa4337962d1167f601638b65da8",
+          "bytes": 1537
+        }
+      },
+      "final": {
+        "currentOrdinal": 800,
+        "filename": "libra_unified_server_writer_v1_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 43.18,
+        "output": {
+          "path": "/workspace/librarian-regression/source-review-fixes/final/800-libra_unified_server_writer_v1_test.cjs.log",
+          "sha256": "c06010e529db584b19786ec6741beb36fbfd1bcec41fa4612c53e9255c26ca65",
+          "bytes": 2399
+        },
+        "testedSourceSha256": "7a339b2395c554a6854136697b673867f273536010047792e4c873432170cb58"
+      }
+    }
+  ],
+  "intentionalContractMigration": {
+    "automaticTracker": "removed; ordinary same-slot edits retain approved canonical until explicit selection completes",
+    "previewTickets": "removed; range inspection is read-only and explicit selection uses current source with identity/scope guards",
+    "retiredTimeoutCase": "test-only source transform and running tracker are replaced by real durable candidate/publication gate; no timing-performance qualification",
+    "initialDerivedAcknowledgement": "retryPendingUnifiedVectors settles initial embedding before exact byte preimages; byte assertions remain strict"
+  },
+  "verification": {
+    "officialFocusedRun": {
+      "summary": {
+        "path": "/workspace/librarian-regression/source-review-fixes/final-results.txt",
+        "sha256": "ff6ce0b09664b704120f808c1bb40a6290e652dd03988a5d0e0349a9dad614a8",
+        "bytes": 9541
+      },
+      "rows": [
+        {
+          "currentOrdinal": 508,
+          "filename": "libra_explicit_reanalysis_simplification_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 13.55,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/508-libra_explicit_reanalysis_simplification_test.cjs.log",
+            "sha256": "0ed08400fc054e7130cad5499ae69591bfff5a91e613c89507bf21065a9ba806",
+            "bytes": 2084
+          },
+          "testedSourceSha256": "9e1714b8965c52833896c143ee4145a7855f62d49cdfd0644d6e5bb3436122fa"
+        },
+        {
+          "currentOrdinal": 509,
+          "filename": "libra_explicit_reanalysis_socket_matrix_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 10.6,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/509-libra_explicit_reanalysis_socket_matrix_test.cjs.log",
+            "sha256": "3ca8c9e3fe9992d119c3e4dc072a8a07997410e8d8bd7a45beb08ef2fce66d4f",
+            "bytes": 310
+          },
+          "testedSourceSha256": "0ef6ea343a4d7f463ebf9db27474562c4db9d6197118e418d6a5d41f3503a7bd"
+        },
+        {
+          "currentOrdinal": 706,
+          "filename": "libra_reanalysis_artifact_runtime_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 1.12,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/706-libra_reanalysis_artifact_runtime_test.cjs.log",
+            "sha256": "8db4e1e331dc5fd20d9e9901c8b4e37a3283f96da842643f971858f1da309b63",
+            "bytes": 346
+          },
+          "testedSourceSha256": "b0ecb7e60eeebc391ea325c247c33bc8c7f02601f01832fb5423a29ca9c23c7f"
+        },
+        {
+          "currentOrdinal": 761,
+          "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 30.43,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+            "sha256": "717f028b1338dd0427e5230d85840a0a29d78bfba863c417a57388397b99262a",
+            "bytes": 1178
+          },
+          "note": "Latest bytes add exact timeout-phase assertion; targeted phase run below verifies final successor.",
+          "testedSourceSha256": "05fcc68539befca701ca0440736266817ce0f6f30b992059aeae55b53f9f2038"
+        },
+        {
+          "currentOrdinal": 800,
+          "filename": "libra_unified_server_writer_v1_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 43.18,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/800-libra_unified_server_writer_v1_test.cjs.log",
+            "sha256": "c06010e529db584b19786ec6741beb36fbfd1bcec41fa4612c53e9255c26ca65",
+            "bytes": 2399
+          },
+          "testedSourceSha256": "7a339b2395c554a6854136697b673867f273536010047792e4c873432170cb58"
+        },
+        {
+          "currentOrdinal": 801,
+          "filename": "libra_unified_source_edit_v2_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 10.1,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/final/801-libra_unified_source_edit_v2_test.cjs.log",
+            "sha256": "807db41bc9cac5be025c27a52a5ab2330ccaf37a163279041b55430f1c2d2455",
+            "bytes": 488
+          },
+          "testedSourceSha256": "e1236288071dbd83d085b815441f7e18a4bd8d7af884b43b1facac85004a648a"
+        }
+      ]
+    },
+    "latestPublicationPhaseRun": {
+      "summary": {
+        "path": "/workspace/librarian-regression/source-review-fixes/publication-phase-final.txt",
+        "sha256": "fc58b254dad23b6e9f2dcc6f1e8e551ce2f940a3ab92c61b31a6152ec4cb5433",
+        "bytes": 3309
+      },
+      "rows": [
+        {
+          "currentOrdinal": 761,
+          "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+          "status": "PASS",
+          "durationSeconds": 32.64,
+          "output": {
+            "path": "/workspace/librarian-regression/source-review-fixes/publication-phase-final/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+            "sha256": "3ee005902df4c1a194d3d7303270798d38dae58e3eca3552b1e3f0c5c488d658",
+            "bytes": 1179
+          },
+          "testedSourceSha256": "132415ba1d77eadc3542c489afc5b9d5859306cfebe06ec4b9b0f23de3ac686b"
+        }
+      ]
+    },
+    "finalUniqueRoots": 6,
+    "finalPassingUniqueRoots": 6,
+    "nodeTestControls": [
+      {
+        "filename": "libra_explicit_reanalysis_simplification_test.cjs",
+        "casesPassed": 21
+      },
+      {
+        "filename": "libra_explicit_reanalysis_socket_matrix_test.cjs",
+        "casesPassed": 2
+      },
+      {
+        "filename": "libra_reanalysis_artifact_runtime_test.cjs",
+        "casesPassed": 1
+      }
+    ],
+    "sourceReplacementScenariosPassed": 5,
+    "serverWriterScenariosPassed": 12,
+    "threeModeObservations": {
+      "test": "libra_source_edit_final_injection_3mode",
+      "observations": [
+        {
+          "mode": "plugin_only",
+          "oldRevision": 1,
+          "currentRevision": 2,
+          "firstPostEditRequestElapsedMs": 128,
+          "replacementJobState": "completed",
+          "activeBodyIdentityReadback": true,
+          "staleCatalogHydratedCurrent": true,
+          "corruptedBodyVariantsRejected": 7,
+          "finalBlockChars": 1626
+        },
+        {
+          "mode": "mirror",
+          "oldRevision": 1,
+          "currentRevision": 2,
+          "firstPostEditRequestElapsedMs": 671,
+          "replacementJobState": "completed",
+          "activeBodyIdentityReadback": true,
+          "staleCatalogHydratedCurrent": true,
+          "corruptedBodyVariantsRejected": 7,
+          "finalBlockChars": 1626
+        },
+        {
+          "mode": "server_only",
+          "oldRevision": 1,
+          "currentRevision": 2,
+          "firstPostEditRequestElapsedMs": 498,
+          "replacementJobState": "completed",
+          "activeBodyIdentityReadback": true,
+          "staleCatalogHydratedCurrent": true,
+          "corruptedBodyVariantsRejected": 7,
+          "finalBlockChars": 1626
+        }
+      ],
+      "pendingPublication": {
+        "mode": "mirror",
+        "durableUnpublishedBodyExcluded": true,
+        "approvedRefRetainedBeforePublication": true,
+        "pendingRecallInjected": 0,
+        "pendingRecallErrorCode": "LIBRA_RECALL_STEP_TIMEOUT",
+        "pendingRecallTimeoutPhase": "before_branch_reconcile",
+        "publishedRevision": 2,
+        "replacementDeliveredAfterPublication": true,
+        "priorBodyBytesPreserved": true
+      }
+    },
+    "sdkParity": {
+      "path": "/workspace/librarian-regression/source-review-fixes/sdk-parity.log",
+      "sha256": "e294c501be34fb51bb6665c1dfe72b5d7340305ccbf5af2011554fb53b09d670",
+      "bytes": 1355
+    },
+    "sourceReviewParity": {
+      "path": "/workspace/librarian-regression/source-review-fixes/source-review-parity.log",
+      "sha256": "f1c113329d3fcecb6fa27b00024c2daace91193e4be28830ba712bf9808542a6",
+      "bytes": 130
+    }
+  },
+  "intermediateFailuresPreserved": [
+    {
+      "run": {
+        "summary": {
+          "path": "/workspace/librarian-regression/source-review-fixes/green-results.txt",
+          "sha256": "6bff1eacdfa07133435e21db1c938bc85197fda08fd21a53260da47344d837ee",
+          "bytes": 6744
+        },
+        "rows": [
+          {
+            "currentOrdinal": 761,
+            "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+            "status": "FAIL",
+            "durationSeconds": 11.32,
+            "output": {
+              "path": "/workspace/librarian-regression/source-review-fixes/green/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+              "sha256": "ac22f05fa2faab222127130904b322f9b668a47e1221a480309b50dab14c3830",
+              "bytes": 23474
+            }
+          },
+          {
+            "currentOrdinal": 800,
+            "filename": "libra_unified_server_writer_v1_test.cjs",
+            "status": "PASS",
+            "durationSeconds": 54.89,
+            "output": {
+              "path": "/workspace/librarian-regression/source-review-fixes/green/800-libra_unified_server_writer_v1_test.cjs.log",
+              "sha256": "c06010e529db584b19786ec6741beb36fbfd1bcec41fa4612c53e9255c26ca65",
+              "bytes": 2399
+            }
+          },
+          {
+            "currentOrdinal": 801,
+            "filename": "libra_unified_source_edit_v2_test.cjs",
+            "status": "PASS",
+            "durationSeconds": 11.74,
+            "output": {
+              "path": "/workspace/librarian-regression/source-review-fixes/green/801-libra_unified_source_edit_v2_test.cjs.log",
+              "sha256": "807db41bc9cac5be025c27a52a5ab2330ccaf37a163279041b55430f1c2d2455",
+              "bytes": 488
+            }
+          }
+        ]
+      },
+      "reason": "first 3mode attempt pinned bytes before the initial background embedding acknowledgement; writer and v2 passed"
+    },
+    {
+      "run": {
+        "summary": {
+          "path": "/workspace/librarian-regression/source-review-fixes/final-injection-v2.txt",
+          "sha256": "1b5f1edda5f9ed071fe41df89157146f077bea0bc37735c0e738c2ed59be6f5e",
+          "bytes": 2588
+        },
+        "rows": [
+          {
+            "currentOrdinal": 761,
+            "filename": "libra_source_edit_final_injection_3mode_test.cjs",
+            "status": "FAIL",
+            "durationSeconds": 30.94,
+            "output": {
+              "path": "/workspace/librarian-regression/source-review-fixes/final-injection-v2/761-libra_source_edit_final_injection_3mode_test.cjs.log",
+              "sha256": "38f7c4b86ffbb06374da5f7df935d7ba7d392db6020f6501563e6c2976e8cb3d",
+              "bytes": 457
+            }
+          }
+        ]
+      },
+      "reason": "pending-publication probe incorrectly required a complete Classic response context; actual bounded scope reconciliation deliberately returns no augmentation while publication is held"
+    }
+  ],
+  "independentReview": {
+    "agent": "review_source_successors",
+    "result": "no blocking findings",
+    "verified": [
+      "all historical semantic assertions retained or explicitly migrated",
+      "embedding-only initial byte race",
+      "exact one-block delivery",
+      "timeout tied to before_branch_reconcile",
+      "no production edits"
+    ]
+  },
+  "remainingQualification": {
+    "full1138RootCampaignRun": false,
+    "actualRisuAIHostRun": false,
+    "onlineModelOrEmbeddingQualification": false,
+    "releaseOrUpdaterQualified": false,
+    "otherUnrunCampaignFailures": "unknown until remaining inventory is rerun; three previously named failures are resolved by this batch",
+    "prior020And019Limits": {
+      "fullRootCampaignRun": false,
+      "actualRisuAIHostRun": false,
+      "onlineModelOrEmbeddingQualification": false,
+      "releaseOrUpdaterQualified": false,
+      "020Limits": "No actual detail retrieval, 3x3 portable transfer, damaged/future-schema imports or older-reader upgrade. G392 is synthetic only.",
+      "019Limits": "Retired branches use canonical SDK policy variants; preserved embedded runtimes pinned separately. No exhaustive all-table namespace snapshot.",
+      "captureLimits": "Controlled owner/SDK paths and physical readback; no atomic guarantee across arbitrary external writers."
+    },
+    "environment": "deployed public LIBRA APIs; real local HTTP/SQLite for socket cases; synthetic RisuAI host and provider results"
+  }
+}

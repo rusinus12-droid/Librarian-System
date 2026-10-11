@@ -1,0 +1,326 @@
+{
+  "schema": "libra.runtime.current-contract-map.v1",
+  "baseCommit": "567630fda7df236e14e3feb4873e52366232b509",
+  "originalMicroCaseCount": 29,
+  "currentMicroCaseCount": 25,
+  "roots": [
+    {
+      "rootOrdinal": 483,
+      "path": "PROGRAM/tests/libra_consumed_micro_freshness_runtime_test.cjs",
+      "baseTestSha256": "ce5df8c773a3a5bc3d1e35450ba7f1aad6ec958749edc660d1fc574f67ebf5fc",
+      "assertionMap": [
+        {
+          "originalCase": "an unchanged consumed Micro allows Input Writer generation and delivery validation",
+          "currentAssertion": "actual Classic block and cloned ResponseContext validation",
+          "equivalenceGap": "Writer candidate generation/delivery snapshot retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "deleting an already consumed Micro head prevents a new provider submission",
+          "currentAssertion": "issued Classic context rejects deleted head without provider calls",
+          "equivalenceGap": "pre-drafting provider submission retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "same-analysis-ID body tampering during provider wait rejects Input Writer results",
+          "currentAssertion": "body_changed final actual Classic physical read rejects unchanged-ID mutation",
+          "equivalenceGap": "drafting provider-await result retired; current final read crossed",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "same-ID consumed Micro tampering invalidates final Writer insertion before host mutation",
+          "currentAssertion": "body_changed actual final request preserves original host prompt",
+          "equivalenceGap": "Writer insertion host mutation retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "unrelated Micro keys do not invalidate the actually consumed evidence",
+          "currentAssertion": "unrelated unused Micro key preserves context validity",
+          "equivalenceGap": "none for physical provenance",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "final snapshot validation rechecks Micro after supplemental state reads",
+          "currentAssertion": "final record read mutation and late physical head/receipt revalidation",
+          "equivalenceGap": "exact Writer supplemental State-read sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "Planner must not inject a result after the consumed Micro head disappears",
+          "currentAssertion": "head_deleted actual final Classic injection rejected",
+          "equivalenceGap": "Planner provider-await response retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a valid 35-second logical Planner response is not rejected by the old search deadline",
+          "currentAssertion": "unchanged Classic delivers with zero helper provider calls",
+          "equivalenceGap": "35-second Planner provider budget has no current equivalent",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "public layer edits and a verified flag cannot erase private consumed provenance",
+          "currentAssertion": "edited public layers + verified flag + recomputed seal rejected",
+          "equivalenceGap": "none for opaque provenance binding",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "a missing runtime token fails closed instead of trusting public verification fields",
+          "currentAssertion": "missing token + recomputed public digest rejected",
+          "equivalenceGap": "none for runtime provenance",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "a stalled consumed-data read is bounded and starts no model retry",
+          "currentAssertion": "stalled actual final record read bounded; released late read never injects",
+          "equivalenceGap": "no removed drafting retry policy claimed",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "final send preparation cannot outlive a changed consumed Micro",
+          "currentAssertion": "changed Micro during final actual request read leaves host request unchanged",
+          "equivalenceGap": "Writer prepareSend and sendChat retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a changed chat scope rejects a late Input Writer result",
+          "currentAssertion": "scope_changed during final actual record read rejects augmentation",
+          "equivalenceGap": "late Writer result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "inherited archive Micro is checked after provider wait against its physical archive",
+          "currentAssertion": "inherited archive deletion/body mutation rejects issued context",
+          "equivalenceGap": "provider-await drafting sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "two consumed Micro records retain separate proofs with one archive read per validation",
+          "currentAssertion": "two actual inherited Micro identities; two private proofs; exactly one archive read; changed record rejected",
+          "equivalenceGap": "none for physical archive/proof identity",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing an active inherited lineage ref rejects a still-present consumed archive",
+          "currentAssertion": "active inherited ref removed while physical archive remains rejects authority",
+          "equivalenceGap": "none for inherited lineage authority",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "consumer hard deadline still rejects an over-budget logical provider response",
+          "currentAssertion": "bounded 1500ms consumer read exercised by actual request timeout",
+          "equivalenceGap": "Planner over-budget logical provider response retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a same-scope logical worldline switch invalidates the prepared Writer snapshot",
+          "currentAssertion": "same-scope logical worldline switch rejects current ResponseContext",
+          "equivalenceGap": "Writer snapshot retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "state-only Micro body mutation invalidates a provider result even without a recalled Micro row",
+          "currentAssertion": "state-only Micro body mutation rejects read-only context without raw selected Micro",
+          "equivalenceGap": "provider-await result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "state-only admission decision mutation invalidates a provider result",
+          "currentAssertion": "state-only decision deletion rejects issued read-only context",
+          "equivalenceGap": "provider-await result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "an unreferenced admission-record change does not invalidate consumed state",
+          "currentAssertion": "unused admission row removal preserves issued read-only context",
+          "equivalenceGap": "none for consumed State dependency selection",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "inherited state admission is rechecked after provider await",
+          "currentAssertion": "inherited admission superseded after context capture rejects validity",
+          "equivalenceGap": "provider-await drafting sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "GRADIA delivers an unchanged consumed Micro after provider await",
+          "currentAssertion": "actual Classic unchanged evidence is delivered, with zero drafting provider calls",
+          "equivalenceGap": "GRADIA provider generation/sidecars retired; no same executor equivalence",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "GRADIA rejects a changed consumed Micro after provider await",
+          "currentAssertion": "actual Classic final consumed-read body mutation rejects augmentation",
+          "equivalenceGap": "GRADIA provider-await result retired; no same executor equivalence",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a different same-scope token cannot replace the prepared consumed evidence",
+          "currentAssertion": "foreign valid same-scope token with recomputed context seal rejected",
+          "equivalenceGap": "retired Writer evidence packet replaced by current ResponseContext",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a cloned Writer snapshot remains valid but a foreign token with recomputed public digests does not",
+          "currentAssertion": "cloned actual Classic context valid; foreign resealed token rejected",
+          "equivalenceGap": "Writer snapshot identityDigest/sealDigest format retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "response context rejects a foreign token even when its public digest is recomputed",
+          "currentAssertion": "foreign resealed token cannot hide mutated consumed Micro",
+          "equivalenceGap": "none for surviving ResponseContext seal",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing provenance and recomputing the public response context seal cannot regain delivery authority",
+          "currentAssertion": "missing_token/missing_readsets public context reseal rejects runtime authority",
+          "equivalenceGap": "none for ResponseContext",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing provenance and recomputing the public Writer snapshot seal cannot regain delivery authority",
+          "currentAssertion": "missing_token/missing_readsets public context reseal rejects runtime authority",
+          "equivalenceGap": "Writer snapshot format retired",
+          "equivalentOriginalExecutor": false
+        }
+      ],
+      "equivalenceGaps": [
+        "The 29 original contracts are mapped individually; current 25-case successor is not the same 29-case drafting suite.",
+        "No retired Writer insert/send/snapshot, Planner/GRADIA model generation, logical long-provider timing, or exact old supplemental-read executor equivalence.",
+        "Physical reread is bounded ordered validation, not an atomic snapshot against arbitrary future/concurrent changes.",
+        "Risu host and model are controlled fixtures; no live external provider or desktop host qualification."
+      ]
+    },
+    {
+      "rootOrdinal": 515,
+      "path": "PROGRAM/tests/libra_gemma4_artifact_acceptance_test.cjs",
+      "baseTestSha256": "5790bce326ac9fde6166794959c23dfa5f2995e980b08753ffe3c08cccbe5c46",
+      "assertionMap": [
+        {
+          "originalAssertion": "real Gemma4 answer verbatim/fence-stripped commits with source validator negative guard",
+          "currentAssertion": "no genuine /tmp/gemma_libra_result.json; unchanged test explicitly skips captured-model acceptance; source evidence suite still runs",
+          "equivalenceGap": "external model capture cannot be synthesized or substituted"
+        }
+      ],
+      "equivalenceGaps": [
+        "Genuine captured answer unavailable. No claim of external model acceptance or quality."
+      ]
+    },
+    {
+      "rootOrdinal": 579,
+      "path": "PROGRAM/tests/libra_main_memory_semantic_history_test.cjs",
+      "baseTestSha256": "eec2f43bdd3fcfde8dd4ce175e87b5679ecb0e305243bff08ba49077b9cc80a2",
+      "assertionMap": [
+        {
+          "originalAssertion": "three-mode semantic State/history equality",
+          "currentAssertion": "all original semantic parity fields retained; transient pre-drain embedding observation excluded from parity but constrained to pending/disabled"
+        },
+        {
+          "originalAssertion": "canonical source bytes and zero-provider deterministic replay",
+          "currentAssertion": "public owner queue drain plus disabled embedding on EVERY canonical row; exact canonicalArtifact bytes AND full wrapper bytes unchanged; identical timeline and zero provider calls"
+        },
+        {
+          "originalAssertion": "boundary/preference/item-specific evidence and correction semantics",
+          "currentAssertion": "all prior positive/negative semantic checks unchanged"
+        }
+      ],
+      "equivalenceGaps": [
+        "Controlled provider fixtures and loopback SQLite; no live model/host claim."
+      ]
+    },
+    {
+      "rootOrdinal": 645,
+      "path": "PROGRAM/tests/libra_owned_scope_delete_runtime_test.cjs",
+      "baseTestSha256": "9aad67d6059d3df7e76b8f12a420b22ca194fdce2c86c4edce970cd8deb5d156",
+      "assertionMap": [
+        {
+          "originalAssertion": "server_only and mirror owner deletion",
+          "currentAssertion": "server_only operational route plus historical persisted mirror route readback; new mirror setter explicitly rejected"
+        },
+        {
+          "originalAssertion": "failed-fence SQL rollback, CAS, no cross-scope removal",
+          "currentAssertion": "all original rollback/operation/revision/sibling/unowned/orphan archive assertions retained"
+        },
+        {
+          "originalAssertion": "backup, tombstones, replay rejection, unrelated routing and server restart",
+          "currentAssertion": "all original full deletion and durable fence assertions retained"
+        }
+      ],
+      "equivalenceGaps": [
+        "New operational mirror setter remains forbidden; compatible persisted route is fixture-seeded as historical data.",
+        "No actual external Risu or Windows host qualification."
+      ]
+    },
+    {
+      "rootOrdinal": 676,
+      "path": "PROGRAM/tests/libra_phase_d_v5_server_only_outage_recovery_test.cjs",
+      "baseTestSha256": "c95cf2d66ccc5f1bc78b758bcc97189c045b0cbfab197a6661c1d3f7fc53d10a",
+      "assertionMap": [
+        {
+          "originalAssertion": "no server/local raw bytes change while transport down",
+          "currentAssertion": "drain prior T5 derived work before outage; same full key/revision/raw SHA comparisons during actual failed successor; zero provider and no local authority"
+        },
+        {
+          "originalAssertion": "fresh reconnect State/History/Recall/actual response delivery",
+          "currentAssertion": "all original fresh-run T10, v5 canonical, preference/boundary, accepted thread link and actual Classic delivery assertions retained"
+        }
+      ],
+      "equivalenceGaps": [
+        "Outage begins after already committed preceding work drains; it does not claim rollback of requests already sent before transport loss.",
+        "Synthetic v5 extraction and loopback HTTP; no external provider outage claim."
+      ]
+    },
+    {
+      "rootOrdinal": 782,
+      "path": "PROGRAM/tests/libra_three_mode_feature_inspection_test.cjs",
+      "baseTestSha256": "e2c515c1e3334de76c1c85777da0d1ca98b9395f623703d4b5f001478d60e7e2",
+      "assertionMap": [
+        {
+          "originalAssertion": "Classic exact natural language, chronological order, delimiters, authority, empty evidence",
+          "currentAssertion": "real Classic renderer invoked with reversed rows, exact whole excerpts, input precedence, prose/no schema IDs, empty/blank rejection"
+        },
+        {
+          "originalAssertion": "final response model evidence and re-entry safety",
+          "currentAssertion": "registered hook with all three saved choices normalizes to Classic; exact selected canonical text delivered; zero helper calls; same prompt re-entry; all four legacy markers guard duplication; secondary request unchanged"
+        },
+        {
+          "originalAssertion": "Planner/SGA natural-language product, semantic schema-echo/placeholder gates and sidecar controls",
+          "currentAssertion": "removed APIs absent and legacy choices normalize to Classic",
+          "equivalenceGap": "retired brief/draft generation and gates have no current executor equivalent"
+        }
+      ],
+      "equivalenceGaps": [
+        "No Planner/SGA natural-language generation, schema-echo/placeholder gate, draft lock/sidecar or provider output equivalence.",
+        "Classic natural language applies to supplied valid evidence, not a general sanitizer for arbitrary JSON source content."
+      ]
+    },
+    {
+      "rootOrdinal": 819,
+      "path": "PROGRAM/tests/libra_worldline_async_isolation_3mode_test.cjs",
+      "baseTestSha256": "0a91f623a42c04724156dc3f3e98bb772031934e2d4f22ab9d23ccc000e427b2",
+      "assertionMap": [
+        {
+          "originalAssertion": "three storage-mode native W0/W1 creation and isolation",
+          "currentAssertion": "full plugin_only and server_only; historical mirror W0 creation/readback then actual native branch mirror rejection before provider, no child canonical, parent bytes unchanged, explicit server transition, full W0/W1 scenario"
+        },
+        {
+          "originalAssertion": "held W0 physical GET while W1 request succeeds",
+          "currentAssertion": "all exact GET seam, W1 prompt/viewer/injection/scope after late W0, exact parent canonical/evidence/vector and child identity assertions retained"
+        },
+        {
+          "originalAssertion": "cancel W0 provider before its delayed result, preserving W1",
+          "currentAssertion": "all original captured provider request, durable cancel_requested/cancelled job, no W0 successor canonical, W1 final delivered fact/no W0 fact checks retained"
+        },
+        {
+          "originalAssertion": "store authority and semantic parity",
+          "currentAssertion": "plugin_only server calls remain zero; server_only no local canonical; transition scenario retains historical W0 mirror bytes but creates no local W1; all completed scenarios have same semantic facts",
+          "equivalenceGap": "operational mirror native branch writes remain forbidden; transition success is not mirror-write parity"
+        }
+      ],
+      "equivalenceGaps": [
+        "Mirror native branch writes remain retired. Third scenario proves rejection and explicit transition to server_only; does not restore three operational-mode parity.",
+        "Synthetic host and 256D embedding responder; no external provider qualification."
+      ]
+    }
+  ]
+}

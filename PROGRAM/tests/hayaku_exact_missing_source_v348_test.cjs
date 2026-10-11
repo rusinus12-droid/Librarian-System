@@ -29,25 +29,27 @@ async function caseRun(name,fn,opts={}){const r=await createHayakuRuntime({autoR
  await caseRun('real edit holds old packet active without creating missing debt or model calls',async r=>{
   r.setMessages(messages([],1));await observe(r);const before=await r.hayaku.ledger.inspect({includeRecords:true});const original=before.records[0];
   r.chat.message[1].data=r.chat.message[1].data.replace(quote(1),'Alice postponed workshop task 1.');await observe(r);
-  const c=await coverage(r);eq(c.missingTurns,[]);eq(c.sourceEditPendingTurns,[1]);eq(r.llmCalls.length,0);
+  const c=await coverage(r);eq(c.missingTurns,[]);eq(c.sourceEditPendingTurns,[]);eq(r.llmCalls.length,0);
   const old=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===original.hash);eq(old.recordState,'active');eq(old.ownerTurnNodeId,original.ownerTurnNodeId);eq(old.assistantVisibleHash,original.assistantVisibleHash);ok(!old.auditRetained,'not quarantined on observation');
-  const attempt=await r.hayaku.recovery.repairSelected({targetTurns:[1]});ok(!attempt.ok);eq(r.llmCalls.length,0,'missing worker cannot approve a real edit');
+  const attempt=await r.hayaku.recovery.repairSelected({targetTurns:[1]});ok(attempt.ok);eq(attempt.repaired,0);eq(r.llmCalls.length,0,'a covered source edit is not missing-turn work');
   const edited='Alice postponed workshop task 1.';r.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(1,edited))}));
   await r.callBeforeRequest([{role:'user',data:'Continue after the source edit.'}]);
-  eq(r.llmCalls.length,1,'the real beforeRequest path automatically reanalyzes the changed source');
-  eq(r.hayaku.getSourceEditSyncStatus().tasks[0].state,'applied');
+  eq(r.llmCalls.length,0,'ordinary requests do not reanalyze saved source edits');await r.callAfterRequest('');
+  const ticket=await r.hayaku.previewSourceEdits(['1']);ok(ticket.allowed,JSON.stringify(ticket));
+  const applied=await r.hayaku.applySourceEdits(ticket);ok(applied.ok,JSON.stringify(applied));eq(r.llmCalls.length,1);
+  ok(applied.committed);
   const replaced=(await r.hayaku.ledger.inspect({includeRecords:true})).records;
-  eq(replaced.find(x=>x.hash===original.hash).recordState,'superseded','old packet retires only after durable replacement');
+  eq(replaced.find(x=>x.hash===original.hash).recordState,'tombstoned','old packet retires only after durable replacement');
   ok(replaced.some(x=>x.targetPairIndex===1&&x.recordState==='active'&&x.hash!==original.hash),'new source has an active replacement');
  });
  await caseRun('illustration insertion and ID refresh do not alter turn identity, non-image prose does',async r=>{
   r.setMessages(messages([],1));await observe(r);const c0=await coverage(r),before=(await r.hayaku.ledger.inspect({includeRecords:true})).records[0];
   const tag='<lb-xnai id="scene-9" operation="abc" scene="9">{{inlay::1234}}</lb-xnai>';
   const original=r.chat.message[1].data;r.chat.message[1].data=original+'\n'+tag;await observe(r);let c=await coverage(r);
-  eq(c.sourceFingerprint,c0.sourceFingerprint);eq(c.coveredTurns,[1]);eq(c.sourceEditPendingTurns,[]);eq(r.hayaku.getSourceEditSyncStatus().tasks.length,0);eq(r.chat.message[1].data,original+'\n'+tag);
+  eq(c.sourceFingerprint,c0.sourceFingerprint);eq(c.coveredTurns,[1]);eq(c.sourceEditPendingTurns,[]);eq(r.llmCalls.length,0);eq(r.chat.message[1].data,original+'\n'+tag);
   r.chat.message[1].data=original+'\n'+tag.replace('abc','def').replace('1234','5678');await observe(r);c=await coverage(r);eq(c.sourceFingerprint,c0.sourceFingerprint);eq(c.missingTurns,[]);
   const after=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===before.hash);eq(after.recordState,'active');eq(after.ownerTurnNodeId,before.ownerTurnNodeId);
-  r.chat.message[1].data=original+'\n<lb-xnai>Alice left the workshop.</lb-xnai>';await observe(r);c=await coverage(r);eq(c.sourceEditPendingTurns,[1],'substantive prose is not ignored');eq(r.llmCalls.length,0);
+  r.chat.message[1].data=original+'\n<lb-xnai>Alice left the workshop.</lb-xnai>';await observe(r);c=await coverage(r);ok(c.sourceFingerprint!==c0.sourceFingerprint,'substantive non-image prose changes the actual current source fingerprint, unlike both image-only controls');eq(c.sourceEditPendingTurns,[],'changed source does not enroll retired automatic tasks');eq(r.llmCalls.length,0);
  });
  await caseRun('selection staleness rejected before model calls',async r=>{
   r.setMessages(messages([3]));const c=await coverage(r);r.chat.message[5].data='Alice cancelled workshop task 3.';
@@ -61,31 +63,32 @@ async function caseRun(name,fn,opts={}){const r=await createHayakuRuntime({autoR
 
  await caseRun('a real edit in another turn cannot block an unrelated missing repair',async r=>{
   r.setMessages(messages([3]));await observe(r);r.chat.message[1].data=r.chat.message[1].data.replace(quote(1),'Alice postponed workshop task 1.');await observe(r);
-  eq((await coverage(r)).sourceEditPendingTurns,[1,2,4],'dependent existing packets remain separately pending');eq((await coverage(r)).missingTurns,[3]);
+  eq((await coverage(r)).sourceEditPendingTurns,[],'ordinary observation creates no retired source-edit tasks');eq((await coverage(r)).missingTurns,[3]);
   r.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(3))}));
   const result=await r.hayaku.recovery.repairSelected({targetTurns:[3]});ok(result.ok,JSON.stringify(result));eq(r.llmCalls.length,1);
-  const c=await coverage(r);eq(c.missingTurns,[]);eq(c.sourceEditPendingTurns,[1,2,4]);
-  ok((await r.hayaku.ledger.inspect({includeRecords:true})).records.some(x=>x.targetPairIndex===1&&x.recordState==='active'&&!x.auditRetained));
+  const c=await coverage(r);eq(c.missingTurns,[]);eq(c.sourceEditPendingTurns,[]);
+  const retained=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.targetPairIndex===1);ok(retained,'unrelated source record is preserved');ok(retained.raw.includes(quote(1)),'unrelated source packet bytes are not regenerated');
  });
- await caseRun('old packet remains active during automatic analysis; retires only after verified replacement',async r=>{
+ await caseRun('old packet remains active during explicit analysis; retires only after verified replacement',async r=>{
   r.setMessages(messages([],1));await observe(r);const old=(await r.hayaku.ledger.inspect({includeRecords:true})).records[0];
   const q='Alice postponed workshop task 1.';r.chat.message[1].data=r.chat.message[1].data.replace(quote(1),q);await observe(r);
   let release;
   r.setLlmResponder(async()=>{await new Promise(resolve=>release=resolve);return {type:'success',result:JSON.stringify(envelope(1,q))};});
-  const request=r.callBeforeRequest([{role:'user',data:'Continue while the edited source is reconciled.'}]);
-  await waitFor(()=>release,'automatic analysis starts');
-  let row=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===old.hash);eq(row.recordState,'active');ok(!row.auditRetained);eq(r.hayaku.getSourceEditSyncStatus().tasks[0].state,'running');
-  release();await request;eq(r.llmCalls.length,1);
+  const ticket=await r.hayaku.previewSourceEdits(['1']);ok(ticket.allowed);const request=r.hayaku.applySourceEdits(ticket);
+  await waitFor(()=>release,'explicit analysis starts');
+  let row=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===old.hash);eq(row.recordState,'active');ok(!row.auditRetained);eq(r.llmCalls.length,1);
+  release();const result=await request;ok(result.ok,JSON.stringify(result));eq(r.llmCalls.length,1);
   const after=await r.hayaku.ledger.inspect({includeRecords:true});row=after.records.find(x=>x.hash===old.hash);ok(row.recordState!=='active','old is not active after durable replacement');
-  ok(after.records.some(x=>x.targetPairIndex===1&&x.recordState==='active'&&x.hash!==old.hash));eq(r.hayaku.getSourceEditSyncStatus().tasks[0].state,'applied');eq((await coverage(r)).missingTurns,[]);
+  ok(after.records.some(x=>x.targetPairIndex===1&&x.recordState==='active'&&x.hash!==old.hash));eq((await coverage(r)).missingTurns,[]);
  });
- await caseRun('failed automatic reanalysis preserves old packet and reports the provider error',async r=>{
+ await caseRun('failed explicit reanalysis preserves old packet and reports the provider error',async r=>{
   r.setMessages(messages([],1));await observe(r);const old=(await r.hayaku.ledger.inspect({includeRecords:true})).records[0];
   r.chat.message[1].data=r.chat.message[1].data.replace(quote(1),'Alice postponed workshop task 1.');await observe(r);
   r.setLlmResponder(async()=>{throw Error('provider offline');});
   await r.callBeforeRequest([{role:'user',data:'Continue after the edit.'}]);
-  eq(r.llmCalls.length,1);const task=r.hayaku.getSourceEditSyncStatus().tasks[0];eq(task.state,'failed');
-  ok(String(task.error||r.hayaku.getSourceEditSyncStatus().error).includes('provider offline'),'failure is visible with its provider cause');
+  eq(r.llmCalls.length,0);await r.callAfterRequest('');const ticket=await r.hayaku.previewSourceEdits(['1']);ok(ticket.allowed);
+  const result=await r.hayaku.applySourceEdits(ticket);ok(!result.ok);eq(r.llmCalls.length,1);
+  ok(JSON.stringify(result).includes('provider offline'),'failure retains its provider cause');
   const row=(await r.hayaku.ledger.inspect({includeRecords:true})).records.find(x=>x.hash===old.hash);eq(row.recordState,'active');ok(!row.auditRetained);eq((await coverage(r)).missingTurns,[]);
  });
  console.log(JSON.stringify({test:'hayaku_exact_missing_source_v348',passed}));

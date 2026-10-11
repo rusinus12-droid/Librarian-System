@@ -1,8 +1,8 @@
 'use strict';
-const assert=require('node:assert/strict');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const {parent,branch,clone}=require('./fixtures/native_branch_fixture.cjs');
-(async()=>{const f=await createFixture();let passed=0;const ok=(v,m)=>{assert.ok(v,m);passed++;};try{
+(async()=>{const source=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');const seam='const buildUiHtml = async () => {';assert.equal(source.split(seam).length,2);const f=await createFixture({source:source.replace(seam,'globalThis.__selectSourceEditTab309=()=>{Runtime.guiTab="source-edits";};\n  '+seam)});let passed=0;const ok=(v,m)=>{assert.ok(v,m);passed++;};try{
  const t=f.api._test;
  const p=parent('parent-view',8), child=branch(p,5,'child-view');Object.assign(f.currentChat,child);f.character.chats=[f.currentChat,p];
  const scope=t.resolveScopeFromSnapshot({character:f.character,chat:f.currentChat,db:{}});
@@ -19,11 +19,12 @@ const {parent,branch,clone}=require('./fixtures/native_branch_fixture.cjs');
  const html=t.renderFlashbackWorldlineView(view);ok(['현재 대화에 연결됨','격리 · 확인 필요','선택되지 않은 응답 · 리콜 제외','현재 대화에서 벗어난 턴 · 리콜 제외','연결 확인 필요','부모 채팅','검증된 공통 원문'].every(s=>html.includes(s)),'HAYAKU-style lineage plus turn continuity view');
  ok(html.includes('저장된 네이티브 분기 승계 확인 기록 없음'),'prefix proof not presented as completed copy');
  ok(JSON.stringify([...f.pluginStorage.values])===before,'worldline inspection read-only');
- const ui=await t.buildUiHtml();ok(ui.includes('id="tab-worldline"')&&ui.includes('id="panel-worldline"'),'dedicated sidepanel route');
+ f.context.__selectSourceEditTab309();const ui=await t.buildUiHtml();ok(ui.includes('id="tab-worldline"')&&ui.includes('id="panel-worldline"'),'dedicated sidepanel route');
  const overview=ui.slice(ui.indexOf('id="panel-overview"'),ui.indexOf('id="panel-import"'));ok(!overview.includes('원문 수정 동기화')&&!overview.includes('현재 세계선'),'overview no misplaced tools');
  const sourceEdits=ui.slice(ui.indexOf('id="panel-source-edits"'),ui.indexOf('id="panel-restore"'));
- ok(sourceEdits.includes('id="fbSourceTrackingSettings"')&&sourceEdits.includes('완료된 U+A 원문의 수정은 요청 전에 자동으로 감지·반영됩니다.'),'source edits have an automatic before-request panel and shared exception controls');
- ok(!sourceEdits.includes('fbSourceEditReview')&&!sourceEdits.includes('변경 전·후 비교하기'),'source edits no longer ask for manual approval');
+ ok(['fbReanalysisRefresh','fbReanalysisRanges','fbReanalysisRun','fbSourceEditStatus','fbSourceTrackingSettings'].every(id=>sourceEdits.includes(`id="${id}"`))&&sourceEdits.includes('직접 원문 재분석'),'source edits expose explicit range selection, refresh, execution and status');
+ ok(sourceEdits.includes('id="fbReanalysisRun" disabled'),'reanalysis is unavailable before explicit range selection');
+ ok(!ui.includes('완료된 원문 수정은 요청 전에 자동 반영')&&!ui.includes('완료된 U+A 원문의 수정은 요청 전에 자동으로 감지·반영'),'active page does not promise automatic adoption');
  ok((ui.match(/id="fbSourceTrackingSettings"/g)||[]).length===1,'unique source edit exception/history mount point');
  const full=f.pluginStorage.values.get(wk);f.pluginStorage.values.set(wk,'{bad-json');await assert.rejects(()=>t.loadFlashbackWorldlineView(),/형식/);passed++;
  f.pluginStorage.values.set(wk,JSON.stringify({scopeKey:'foreign',nodes}));await assert.rejects(()=>t.loadFlashbackWorldlineView(),/스코프/);passed++;f.pluginStorage.values.set(wk,full);

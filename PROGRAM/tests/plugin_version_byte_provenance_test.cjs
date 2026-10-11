@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { validateProvenance } = require('../tools/plugin_version_provenance.cjs');
+const { validateProvenance, inspectInternalVersion } = require('../tools/plugin_version_provenance.cjs');
 const { PLUGINS, readReleaseMetadata } = require('../tools/release_metadata.cjs');
 
 const root = path.resolve(__dirname, '..');
@@ -12,9 +12,8 @@ const actual = { profile: 'source', packageVersion: metadata.packageVersion, plu
 for (const [owner, [file]] of Object.entries(PLUGINS)) {
   const bytes = fs.readFileSync(path.join(root, 'plugins', file));
   const source = bytes.toString('utf8');
-  const versions = [...source.matchAll(/^\s*const PLUGIN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]\s*;/gm)];
-  assert.equal(versions.length, 1, `${owner}: internal PLUGIN_VERSION count`);
-  assert.equal(versions[0][1], metadata.plugins[owner].version, `${owner}: internal and header versions agree`);
+  const internal = inspectInternalVersion(source,{owner,file});
+  assert.equal(internal.version, metadata.plugins[owner].version, `${owner}: internal and header versions agree`);
   const displayVersion = bytes.subarray(0, 512).toString('utf8').match(/^\/\/@display-name[^\r\n]*?\bv(\d+\.\d+\.\d+)\b/m)?.[1];
   if (displayVersion) assert.equal(displayVersion, metadata.plugins[owner].version, `${owner}: versioned display name agrees`);
   actual.plugins[owner] = {

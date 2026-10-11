@@ -1,30 +1,10 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const {test}=require('node:test');
-const context=vm.createContext({setTimeout,clearTimeout,Date,console});vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceEditConsent.source.js'),'utf8'),context);
-
-test('missing previous raw is rebuilt automatically with uncertainty and no fabricated diff',async()=>{
-  const store=new Map();let prompts=0,calls=0;
-  const controller=context.createMemorySuiteSourceEditConsent({owner:'libra',requestBoundary:true,
-    read:async k=>store.get(k)??null,write:async(k,v)=>{store.set(k,v);return true;},
-    collect:async()=>({scopeKey:'chat',units:[{key:'6',start:6,end:6,digest:'under-new-policy',sourceDigest:'under-new-policy',rawDigest:'raw-current',originalDigest:'under-old-policy',originalRawDigest:'',policyUncertain:true,basis:'b',identity:'pair-6',changed:false,current:false}]}),
-    prompt:async()=>{prompts++;return{decision:'approve',keys:['6']};},execute:async(task,permit)=>{await permit.assertCurrent();calls++;return{ok:true};}});
-  try{
-    await controller.setSourceRules({version:1,sourceTags:[{open:'<original>',close:'</original>'}],ignoredTags:[],unwrapTags:[],controls:[]});
-    await controller.beforeRequest();
-    const task=controller.status().tasks[0],event=controller.status().events[0];
-    assert.equal(calls,1);assert.equal(prompts,0);assert.equal(task.state,'applied');
-    assert.equal(task.changeKind,'projection_policy_changed');assert.equal(task.policyUncertain,true);
-    assert.equal(event.policyUncertain,true);assert.equal('beforeText' in event,false);assert.equal('afterText' in event,false);
-    assert.equal((await controller.review()).reason,'automatic_before_request_only');
-  }finally{controller.dispose();}
-});
-
-test('ordinary failed owner execution reports the exact failure without an approval path',async()=>{
-  const store=new Map();let calls=0,prompts=0;
-  const controller=context.createMemorySuiteSourceEditConsent({owner:'libra',requestBoundary:true,read:async k=>store.get(k)??null,
-    write:async(k,v)=>{store.set(k,v);return true;},collect:async()=>({scopeKey:'chat',units:[{key:'1',start:1,end:1,digest:'new',sourceDigest:'new',originalDigest:'old',basis:'b',identity:'i',changed:true}]}),
-    prompt:async()=>{prompts++;return{decision:'approve',keys:['1']};},execute:async()=>{calls++;return{ok:false,error:'owner_readback_failed'};}});
-  try{await controller.beforeRequest();assert.equal(calls,1);assert.equal(prompts,0);assert.equal(controller.status().tasks[0].state,'failed');assert.match(controller.status().tasks[0].error,/owner_readback_failed/);}
-  finally{controller.dispose();}
-});
+const {test}=require('node:test'),assert=require('node:assert/strict');const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+test('explicit current source selection needs no invented previous raw or consent journal',async()=>{const f=await fixture();try{
+ const raw=JSON.stringify(f.chat.message),inventory=await f.r.api.listCanonicalBatchRanges();assert.equal(inventory.ranges[0].status,'missing');assert.equal(f.control.calls.length,0);
+ const result=await f.r.api.startSelectedCanonicalBatches({scopeKey:inventory.scopeKey,mode:'source_edit',ranges:inventory.ranges});assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.job.completed,1);assert.equal(f.control.calls.length,1);assert.equal(f.getManifest().memories['1'].status,'committed');assert.equal(JSON.stringify(f.chat.message),raw);assert.equal([...f.r.values.keys()].some(k=>k.includes(':source-edit-consent:v1')),false);
+}finally{await f.r.cleanup()}});
+test('failed explicit provider replacement reports failure and preserves prior canonical and Head',async()=>{const f=await fixture();try{
+ assert.equal((await f.run()).completed,1);const old=f.getManifest().memories['1'],bytes=f.r.values.get(old.key),head=JSON.stringify(f.getHead()),calls=f.control.calls.length;f.chat.message[0].data+=' Current source revision.';f.control.modelFails=true;
+ const inventory=await f.r.api.listCanonicalBatchRanges();const result=await f.r.api.startSelectedCanonicalBatches({scopeKey:inventory.scopeKey,mode:'source_edit',ranges:inventory.ranges});assert.equal(result.ok,false);assert.ok(result.reason);assert.ok(result.job.failed>0);assert.equal(f.control.calls.length,calls+1);assert.equal(f.r.values.get(old.key),bytes);assert.equal(f.getManifest().memories['1'].key,old.key);assert.equal(JSON.stringify(f.getHead()),head);
+}finally{await f.r.cleanup()}});

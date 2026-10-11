@@ -59,7 +59,7 @@ function createProviderCounter() {
   return { state, call: async () => { state.calls += 1; return []; } };
 }
 
-function buildBridge({ namespace = 'flashback', owner, store, currentScope, resolveKeyScope, url, fetchImpl, pluginPrefixes }) {
+function buildBridge({ namespace = 'flashback', owner, store, currentScope, resolveKeyScope, url, fetchImpl, pluginPrefixes, storagePolicy }) {
   const source = namespace === 'libra' ? libraSdkText : sdkText;
   const create = new Function(`${source}\nreturn createMemorySuiteStorageBridge`)();
   const previous = globalThis.risuai;
@@ -72,6 +72,7 @@ function buildBridge({ namespace = 'flashback', owner, store, currentScope, reso
   const bridge = create({
     namespace,
     pluginId: owner,
+    storagePolicy,
     pluginVersion: 'harness',
     managementButton: false,
     pluginPrefixes: pluginPrefixes || [`${owner}.`],

@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const core=require('../tools/recall_keyword_features.cjs')();
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
 const entries=[{entityId:'minsu',normalized:'민수',aliases:['선생','별지기']},{entityId:'aria',normalized:'아리아',aliases:['선생']}];
 const plan=core.compile('민수의 약속 장소는?',{entries,binding:{scope:'s',commit:'c',catalogComplete:true}});
@@ -36,7 +36,7 @@ assert.equal(core.compile(owned).rawQuery,raw);const projected=core.prepareInput
 const repeated=Array.from({length:4096},()=>entries[0]);const t=Date.now();assert.equal(core.resolveMentions('민수와 별지기는 민수에게 별지기의 기록을 전달했다.',repeated).length,2);assert.ok(Date.now()-t<1500,'Deduplication must remove quadratic repeated hits');
 const families=core.tokenFamilies('수정구슬',core.documentTokens('수정구슬'));assert.ok(Math.abs([...families.values()].reduce((n,e)=>n+e.weight,0)-1)<1e-9);
 async function runHook(f,cases,queries,metadata=[]){
- const cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,currentSceneTailEnabled:false,heuristicRecall:true,mmrEnabled:false};
+ const cfg={...await f.api.loadSettings(),...modelSettings,contextualRecall:false,embeddingEnabled:true,autoEpisodeIndex:false,structuredStateEnabled:false,topK:1,currentSceneTailEnabled:false,heuristicRecall:true,mmrEnabled:false};
  f.currentChat.message=cases.flatMap((body,i)=>[{role:'user',chatId:'u'+i,data:'기록해.'},{role:'assistant',chatId:'a'+i,data:body}]);f.currentChat.messages=f.currentChat.message;
  await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
  const ft=f.api._test,sel=f.api._selectionTest,scope=await f.api.resolveCurrentScope();

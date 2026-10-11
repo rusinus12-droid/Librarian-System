@@ -48,10 +48,10 @@ assert.match(source, /changedThroughCanonical/);
 assert.match(source, /reviewedThroughTurn/);
 assert.match(source, /changedThroughTurn/);
 assert.match(source, /\[RECENT DIALOGUE CONTEXT — NOT PERSISTED\]/);
-assert.match(source, /current_state: continuityState/);
+assert.match(source, /continuity_state:head,continuity_state_authority:response\?\.authority/,'read-only unified context retains scoped State authority');
 assert.match(source, /const SHARED_MEMORY_HUB_SECTIONS = Object\.freeze\(\['read', 'context', 'manage'\]\)/,
   'Memory is a reader, evidence context, and canonical management workspace');
-assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory', 'state', 'draft', 'recall', 'input_writer', 'embedding', 'rebuild'\]\)/);
+assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory',\s*'state',\s*'draft',\s*'recall',\s*'embedding',\s*'rebuild'\]\)/);
 assert.match(source, /const worldManagerSnapshotView = \(\) => \{[\s\S]*LibraMemoryCore\.peekSnapshot\(\)/);
 for (const builder of ['buildWorldManagerCharactersPanel', 'buildWorldManagerRelationshipsPanel', 'buildWorldManagerWorldPanel', 'buildWorldManagerNarrativePanel']) {
   assert.match(source, new RegExp(`const ${builder} =`));

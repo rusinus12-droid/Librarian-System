@@ -32,7 +32,7 @@ function runPrepare(tempProgram, dataDir) {
   });
 }
 
-function main() {
+function assertPackageRoot(root) {
   // macOS writes .DS_Store into any directory Finder has displayed. It is
   // gitignored, never tracked, and never copied into a release: the builder is an
   // allowlist (shouldCopySourceProgram / shouldCopyUpdater), so these files cannot
@@ -42,15 +42,44 @@ function main() {
   // treated as a bundle entry.
   const OS_METADATA_NAMES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
   const bundleEntries = dir => fs.readdirSync(dir).filter(name => !OS_METADATA_NAMES.has(name)).sort();
-  const rootEntries = bundleEntries(packageRoot);
+  const rootEntries = bundleEntries(root);
   const expectedRootEntries = ['0_설치_안내.txt', 'DATA', 'PROGRAM', 'SHA256SUMS.txt', 'UPDATER', '업데이트.bat', '업데이트.command', '업데이트.sh'];
-  if (fs.existsSync(path.join(packageRoot, 'update-manifest.json'))) expectedRootEntries.push('update-manifest.json');
-  const workspaceMarker = path.join(packageRoot, '.development', 'workspace.json');
+  if (fs.existsSync(path.join(root, 'update-manifest.json'))) expectedRootEntries.push('update-manifest.json');
+  const workspaceMarker = path.join(root, '.development', 'workspace.json');
   if (fs.existsSync(workspaceMarker)) {
     assert.equal(JSON.parse(fs.readFileSync(workspaceMarker)).schema, 'lib.development-workspace.v1');
     expectedRootEntries.push('.development', 'FIRST-README.md');
   }
+  // Release smoke executes against this source checkout before packaging. These
+  // publication inputs are permitted only at a verified Git repository root;
+  // staged bundles keep the exact original release layout.
+  if (fs.existsSync(path.join(root, '.git'))) {
+    const repository = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+    assert.equal(repository.status, 0, 'source metadata requires a real repository');
+    assert.equal(fs.realpathSync(repository.stdout.trim()), fs.realpathSync(root), 'source metadata belongs to this repository root');
+    assert.ok(fs.statSync(path.join(root, 'LICENSE')).isFile(), 'source publication license is present');
+    const provenance = JSON.parse(fs.readFileSync(path.join(root, 'PUBLICATION-PROVENANCE.json'), 'utf8'));
+    assert.equal(provenance.schema, 'librarian.six-plugin-checkpoint-publication.v2');
+    expectedRootEntries.push('.git', 'LICENSE', 'PUBLICATION-PROVENANCE.json');
+  }
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');
+}
+
+function main() {
+  assertPackageRoot(packageRoot);
+  const rootControl = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-root-control-'));
+  try {
+    for (const name of ['0_설치_안내.txt', 'DATA', 'PROGRAM', 'SHA256SUMS.txt', 'UPDATER', '업데이트.bat', '업데이트.command', '업데이트.sh']) {
+      if (['DATA', 'PROGRAM', 'UPDATER'].includes(name)) fs.mkdirSync(path.join(rootControl, name));
+      else fs.writeFileSync(path.join(rootControl, name), '');
+    }
+    assertPackageRoot(rootControl);
+    for (const name of ['unaccounted.bin', 'LICENSE', 'PUBLICATION-PROVENANCE.json', '.git']) {
+      fs.writeFileSync(path.join(rootControl, name), '');
+      assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, `packaged roots reject ${name}`);
+      fs.unlinkSync(path.join(rootControl, name));
+    }
+  } finally { fs.rmSync(rootControl, { recursive: true, force: true }); }
   assert.ok(fs.existsSync(path.join(packageRoot, 'UPDATER', 'updater.cjs')), 'Cross-platform updater engine is packaged at the bundle root.');
 
   const dataDir = path.join(packageRoot, 'DATA');
@@ -59,15 +88,14 @@ function main() {
   assert.ok(programFiles.some(file => /server[\\/]server\.cjs$/i.test(file)));
   assert.ok(programFiles.some(file => /plugins[\\/]LIBRA\.js$/i.test(file)));
   assert.equal(programFiles.some(file => /plugins[\\/]GRADIA\.js$/i.test(file)), true, 'GRADIA is the sixth packaged read-only consumer plugin.');
-  assert.equal(programFiles.filter(file => /plugins[\\/][^\\/]+\.js$/i.test(file)).length, 7, 'Exactly seven declared plugins are packaged.');
+  assert.equal(programFiles.filter(file => /plugins[\\/][^\\/]+\.js$/i.test(file)).length, 6, 'Exactly six declared plugins are packaged.');
   const canonicalPluginNames = [
     'Flashback_Memory.js',
     'HAYAKU_Locator_Continuity.js',
     'LIBRA.js',
     'LIA_Persona_Linker.js',
     'RETRACE.js',
-    'GRADIA.js',
-    'LIBRA_World_Manager.js'
+    'GRADIA.js'
   ];
   assert.deepEqual(
     fs.readdirSync(path.join(programDir, 'plugins')).filter(name => /\.js$/i.test(name)).sort(),

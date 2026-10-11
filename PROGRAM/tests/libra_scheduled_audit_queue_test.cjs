@@ -22,12 +22,18 @@ function expose(source) {
     'const enqueue = globalThis.__enqueueAuditTest = (scopeKey, task, queues = state.queues) => {');
   replace('const task = enqueue(scopeKey, async () => {\n          const liveContext',
     'const task = enqueue(scopeKey, async () => {globalThis.__auditEntered = (globalThis.__auditEntered || 0) + 1;\n          const liveContext');
-  replace("pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          });",
-    "pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          });globalThis.__auditCompleted = (globalThis.__auditCompleted || 0) + 1;");
+  replace("pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          }, scheduledAudit);",
+    "pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          }, scheduledAudit);globalThis.__auditCompleted = (globalThis.__auditCompleted || 0) + 1;");
   replace('state.branchAuditInFlight.set(scopeKey, task);',
     'state.branchAuditInFlight.set(scopeKey, task);globalThis.__auditTask = task;');
   replace("warn('LIBRA background branch audit failed', error);",
     "globalThis.__auditError = String(error?.stack || error);warn('LIBRA background branch audit failed', error);");
+  // Capture the promises launched by the real startup timers. Assignment only
+  // observes them; the production callbacks, delays, queues and writes remain.
+  replace('void LibraMemoryCore.purgeLegacyWorldAdditionalData().catch(',
+    'void (globalThis.__auditStartupCleanupTask = LibraMemoryCore.purgeLegacyWorldAdditionalData()).catch(');
+  replace('void runAutomaticLegacyVectorMigration(options).catch(',
+    'void (globalThis.__auditStartupVectorTask = runAutomaticLegacyVectorMigration(options)).catch(');
   return source;
 }
 function deferred() {
@@ -50,6 +56,35 @@ async function until(predicate, message) {
     await new Promise(resolve => setTimeout(resolve, 5));
   }
 }
+async function settledStartupMaintenance(f, core) {
+  await within((async () => {
+    await until(() => f.r.context.__auditStartupCleanupTask && f.r.context.__auditStartupVectorTask,
+      'actual startup cleanup and vector migration timers launched their tasks');
+    const [cleanup, vector] = await Promise.all([
+      f.r.context.__auditStartupCleanupTask, f.r.context.__auditStartupVectorTask
+    ]);
+    assert.equal(cleanup.schema, 'libra.world_additional_removal.v1');
+    assert.equal(cleanup.done, true); assert.equal(cleanup.ok, true);
+    assert.deepEqual(Array.from(cleanup.errors), []);
+    assert.equal(vector.schema, 'libra.embedding_vector_migration_marker.v1');
+    assert.equal(vector.complete, true); assert.equal(vector.interrupted, false);
+    assert.deepEqual(Array.from(vector.errors), []);
+    const marker = JSON.parse(f.r.values.get('libra:v1:migration:remove-world-additional:v1'));
+    assert.equal(marker.done, true); assert.equal(marker.finishedAt, cleanup.finishedAt,
+      'cleanup completion is physically durable before observation');
+    const vectorMarkers = [...f.r.values.entries()].filter(([key]) => key.startsWith('libra:v1:local-vector-migration:'))
+      .map(([, value]) => typeof value === 'string' ? JSON.parse(value) : value);
+    const vectorMarker = vectorMarkers.find(value => value.complete === true && value.targetSignature === vector.targetSignature
+      && value.finishedAt === vector.finishedAt);
+    assert(vectorMarker, 'actual completed vector marker is physically durable');
+    // Preserve the former whitelist's exact empty-migration payload obligation,
+    // now verified before observation instead of allowing writes under the owner.
+    const { startedAt, finishedAt, ...value } = vectorMarker;
+    assert.ok(Number.isFinite(Date.parse(startedAt)) && Number.isFinite(Date.parse(finishedAt)));
+    assert.deepEqual(JSON.parse(JSON.stringify(value)), {"schema": "libra.embedding_vector_migration_marker.v1", "pluginVersion": "2.3.149", "targetSignature": "ec2917fe:1349", "providerProfileId": "mep_a4ccc727f9674d23", "reason": "embedding_startup_probe", "scanned": 0, "candidates": 0, "migrated": 0, "alreadyCurrent": 0, "missingPayload": 0, "incompatibleSpace": 0, "failures": 0, "bytesPromoted": 0, "complete": true, "errors": [], "interrupted": false}, 'the genuine startup migration has the original exact empty payload');
+    assert.equal(core.state.embeddingMigrationPromise, null, 'migration ownership finished');
+  })(), 'actual startup registration and physical migration tails settled within the original 8 seconds');
+}
 async function prepared() {
   const f = await fixture({ transformSource: expose, args: { state_enabled: true } });
   assert.equal((await f.run()).completed, 1);
@@ -58,6 +93,7 @@ async function prepared() {
   assert.equal(ticket.allowed, true);
   assert.equal((await applySelection(f,ticket)).ok, true);
   const core = f.r.context.__auditCore;
+  await settledStartupMaintenance(f, core);
   await Promise.all([...core.state.queues.values()]);
   for (const [name, timer] of core.state.timers) if (name.startsWith('branch_audit:')) {
     f.r.context.clearTimeout(timer); core.state.timers.delete(name);
@@ -122,16 +158,9 @@ test('direct reconciliation waits for its scope owner even with forged bypass op
     }).then(result => { finished = true; return result; });
     await pauseTick();
     assert.equal(finished, false, 'unrelated owner cannot be treated as reentrancy');
-    // The unchanged startup migration writes this global marker independently
-    // of scope queues (confirmed on base and candidate with its exact call stack).
-    // Every other write, including all canonical/derived scope records, is forbidden.
-    const writes = f.r.storageWrites.slice(before);
-    for (const row of writes.filter(row => row.key === 'libra:v1:local-vector-migration:48b4e542')) {
-      const { startedAt, finishedAt, ...value } = row.value;
-      assert.ok(Number.isFinite(Date.parse(startedAt)) && Number.isFinite(Date.parse(finishedAt)));
-      assert.deepEqual(JSON.parse(JSON.stringify(value)), {"schema": "libra.embedding_vector_migration_marker.v1", "pluginVersion": "2.3.149", "targetSignature": "ec2917fe:1349", "providerProfileId": "mep_a4ccc727f9674d23", "reason": "embedding_startup_probe", "scanned": 0, "candidates": 0, "migrated": 0, "alreadyCurrent": 0, "missingPayload": 0, "incompatibleSpace": 0, "failures": 0, "bytesPromoted": 0, "complete": true, "errors": [], "interrupted": false}, 'only the independently verified empty startup migration marker is allowed');
-    }
-    assert.deepEqual(writes.filter(row => row.key !== 'libra:v1:local-vector-migration:48b4e542'), [],
+    // All real startup maintenance settled before this owner was acquired.
+    // No physical write is exempt from the waiting reconciliation invariant.
+    assert.deepEqual(f.r.storageWrites.slice(before), [],
       'waiting reconciliation has no canonical, derived, or other physical writes');
     f.chat.message[0].chatId = 'replacement-while-waiting';
     held.resolve(); await owner;
@@ -296,3 +325,5 @@ test('scan preflight reconciles rollback under its existing scope owner', async 
     assert.equal(f.control.calls.length, calls);
   } finally { await f.r.cleanup(); }
 });
+
+require('./fixtures/libra_scheduled_audit_supersession.cjs').register({test,prepared,deferred,within,until});

@@ -5,11 +5,11 @@ const part=(a,b)=>{const i=source.indexOf(a),j=source.indexOf(b,i+a.length);asse
 const el=(tag,attrs={},children=[])=>({tag,...attrs,children:children.filter(Boolean)}),flat=n=>[n,...(n.children||[]).flatMap(flat)];
 const renders=[],refreshes=[],settings={retainedDraft:'unsaved edits'};
 const c=vm.createContext({Gui:{bookPage:'memory',settingsHubSection:'input_writer',bookSettingsWorkbenchSection:'settings',dirty:true,state:settings,invalidations:new Set()},
- guiEl:el,queueGuiNavigationRender:()=>renders.push('navigation'),queueGuiRender:()=>{},closeCanonicalRangeDrawer:()=>{},resetCanonicalReaderView:()=>{},activeGuiResponseFamily:()=> 'libra',
+ guiEl:el,queueGuiNavigationRender:()=>renders.push('navigation'),queueGuiRender:()=>{},closeBookQuickSettings:()=>{c.Gui.bookQuickOpen=false;},closeCanonicalRangeDrawer:()=>{},resetCanonicalReaderView:()=>{},activeGuiResponseFamily:()=> 'libra',
  refreshModuleLoreCatalog:()=>{refreshes.push('modules');},refreshCharacterLoreCatalog:()=>{refreshes.push('character_lore_exclusions');},
  normalizePromptInjectionSection:v=>v,LIBRARIAN_STAGE_ID:'librarian',RETIRED_MEMORY_STAGE_IDS:[],GRADIA_STAGE_ALIAS_MAP:{},
  buildBookPage:(e,t,d,children)=>el('main',{text:t},children),buildBookMemoryAdvancedSettings:()=>el('article',{section:'pipeline'}),buildBookSaveBar:()=>el('footer',{dataset:{bookSaveBar:'true'}}),saveGuiState:()=>{throw Error('navigation must not save');},revertGuiStateFromStorage:()=>{throw Error('navigation must not reload');}});
-vm.runInContext(part('const LIBRA_MEMORY_PIPELINE_STAGES =','const GUI_FAMILY_HUB_STATE_KEYS =')+
+vm.runInContext(part('const LIBRA_MEMORY_PIPELINE_STAGES =','const bookNavigate =')+
  part('const migrateCustomWorkshopSelection =','const buildSharedCustomShellPanel =')+
  part('const BOOK_NATIVE_SETTINGS_SECTIONS =','const bookQuickChoiceCard =')+
  part('const BOOK_EXTERNAL_SETTINGS_ITEMS =','const BOOK_MOBILE_ITEMS =')+
@@ -22,7 +22,7 @@ c.items = [
   ['modules','references'],['character_lore_exclusions','references'],['response_materials','references'],
   ['server','server'],['recovery','recovery'],['transfer','transfer'],['state','state'],['logs','logs'],['debug','general']
 ].map(([id,section])=>({id,section,group:'test',label:id}));
-const panels={source_edits:"buildSourceEditConsentPanel",input_writer:'buildInputAssistSettingsPanel',references:'buildLibraReferenceHubPanel',memory:'buildLibraMemorySettingsPanel',state:'buildStateTrackingAvailabilityPanel',server:'buildLibraServerConnectionPanel',ai:'buildLibraProviderPanel',embedding:'buildLibraEmbeddingPanel',recovery:'buildLibraRecoveryPanel',transfer:'buildTransferTab',general:'buildGeneralSettingsPanel',pipeline:'buildSharedPipelineShellPanel',agents:'buildSharedAgentShellPanel',custom:'buildSharedCustomShellPanel',logs:'buildSharedExecutionLogsPanel'};
+const panels={source_edits:"buildAnalysisInputPanel",input_writer:'buildInputAssistSettingsPanel',references:'buildLibraReferenceHubPanel',memory:'buildLibraMemorySettingsPanel',state:'buildStateTrackingAvailabilityPanel',server:'buildLibraServerConnectionPanel',ai:'buildLibraProviderPanel',embedding:'buildLibraEmbeddingPanel',recovery:'buildLibraRecoveryPanel',transfer:'buildTransferTab',general:'buildGeneralSettingsPanel',pipeline:'buildSharedPipelineShellPanel',agents:'buildSharedAgentShellPanel',custom:'buildSharedCustomShellPanel',logs:'buildSharedExecutionLogsPanel'};
 const fixtureItems = c.items;
 for(const[section,name]of Object.entries(panels))c[name]=options=>el('article',{section,options});
 const results=[];

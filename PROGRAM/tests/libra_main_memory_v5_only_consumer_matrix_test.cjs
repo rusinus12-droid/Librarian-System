@@ -4,6 +4,7 @@ const { lineageFixture } = require('./fixtures/libra_unified_lineage_fixture.cjs
 const { fixture, artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const { createRootBoundary } = require('./fixtures/source_edit_root_boundary.cjs');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
+const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
 
 const V5 = 'libra.canonical_artifact.v5';
 const info = value => JSON.stringify(value);
@@ -28,6 +29,8 @@ const open = async () => {
       assert.ok(recall && Array.isArray(recall.memories), 'v5-only recall is readable');
       const migration = await f.r.api.previewUnifiedMemoryTransition();
       assert.equal(migration.legacyRefs?.length, 0, 'v5-only refs never enter the legacy migration path');
+      // The canonical operation returns before optional Micro queue settlement.
+      await waitFor(() => f.r.api.getCaptureBackendState().microQueuedJobs === 0, 15000);
       const portable = await f.r.context.__LIBRAPortableMemoryBackup.exportCurrentScope();
       assert.ok(portable && JSON.stringify(portable).includes(V5), 'portable export carries v5');
       const destination = await lineageFixture();
@@ -80,6 +83,8 @@ const open = async () => {
       await assert.rejects(() => f.r.api.prepareSessionHandoff({transferId:'v5-rollback-rejected'}),
         /UNIFIED_HANDOFF_ROLLBACK_REQUIRES_NATIVE_PREFIX/,
         'v5-only handoff refuses to export a rolled-back view as current');
+      // The canonical operation returns before optional Micro queue settlement.
+      await waitFor(() => f.r.api.getCaptureBackendState().microQueuedJobs === 0, 15000);
       const portable = await f.r.context.__LIBRAPortableMemoryBackup.exportCurrentScope();
       const destination = await lineageFixture();
       try {
@@ -99,6 +104,7 @@ const open = async () => {
       assert.equal((await f.run()).completed, 1);
       const oldRef = f.getManifest().memories['1'];
       const oldBytes = f.r.values.get(oldRef.key);
+      const oldCalls = f.control.calls.length;
       const edited = '서재에서 준호가 열쇠를 지호에게 건넸지만 지호는 민아에게 돌려주지 않았다. 오늘 반환 약속은 아직 이행되지 않았다. 공연 허가를 누가 내주는지는 아직 밝혀지지 않았다.';
       f.chat.message[9].data = edited;
       const replacement = artifact();
@@ -109,7 +115,17 @@ const open = async () => {
       replacement.facts.find(row => row.tempFactId === 'f12').values.thread.status = 'open';
       f.control.artifact = replacement;
       await f.r.sourceEditBoundary();
-      assert.equal(f.getMemory()?.revision, 2, 'v5-only source edit writes a new revision');
+      assert.equal(f.getMemory()?.revision, oldRef.revision, 'passive source edits preserve the approved v5 revision');
+      assert.equal(f.r.values.get(oldRef.key), oldBytes, 'passive edits leave approved bytes unchanged');
+      assert.equal(f.control.calls.length, oldCalls, 'passive request hooks cannot start reanalysis');
+      await waitFor(() => f.r.api.getCaptureBackendState().microQueuedJobs === 0, 15000);
+      const inventory = await f.r.api.listCanonicalBatchRanges();
+      const selection = { scopeKey: inventory.scopeKey, mode: 'source_edit', ranges: inventory.ranges.filter(row => row.startTurn === 1) };
+      assert.equal(selection.ranges.length, 1, 'the explicit operation selects exactly the existing five-turn range');
+      assert.equal(f.control.calls.length, oldCalls, 'listing selectable ranges is model-free');
+      assert.equal((await f.r.api.startSelectedCanonicalBatches(selection)).ok, true, 'explicit selected reanalysis succeeds');
+      assert.equal(f.control.calls.length, oldCalls + 1, 'exactly one explicitly requested canonical call');
+      assert.equal(f.getMemory()?.revision, 2, 'explicit v5-only source edit writes a new revision');
       assert.equal(f.getMemory()?.artifactSchema, V5, 'replacement stays v5');
       assert.equal(f.r.values.get(oldRef.key), oldBytes, 'old v5 bytes remain sealed');
       results.sourceEdit = true;

@@ -17,27 +17,35 @@ assert.match(source, /const loadContinuityStateForResponse = async/);
 assert.match(source, /pruneContinuityStateHeadToRefs\(stored, refs, scope\)/);
 assert.match(source, /canonical_frontier_newer_than_state_head/);
 assert.match(source, /last_known_non_authoritative/);
-assert.match(source, /const plannerCanonicalPriorityPartition =/);
-assert.match(source, /newerThanState/);
-assert.match(source, /historicalAtOrBeforeState/);
-assert.match(source, /FACTUAL AUTHORITY ORDER: recent completed dialogue > committed Canonical evidence newer than the State Head > current\/last-known State Head > older recalled Canonical evidence/);
-assert.match(source, /LAST-KNOWN \/ PENDING \/ NON-AUTHORITATIVE FOR NEWER CANONICAL/);
-assert.match(source, /plannerDetailInstruction\(settings\?\.plannerDetailLevel\)/);
-assert.match(source, /maxTokens: normalizePlannerOutputBudget\(runtimeSettings\?\.plannerOutputBudget\)/);
-assert.match(source, /plannerDetailLevel: normalizePlannerDetailLevel\(runtimeSettings\?\.plannerDetailLevel\)/);
-assert.match(source, /plannerOutputBudget: normalizePlannerOutputBudget\(runtimeSettings\?\.plannerOutputBudget\)/);
-
+// Planner provider authority ordering was retired with embedded response drafting.
+// Classic retains current canonical validation and refuses direct derived-state prose.
 const beforeRequest = sliceBetween('const beforeRequest = async', 'const afterRequest = async');
-assert.match(beforeRequest, /loadContinuityStateForResponse/);
-assert.doesNotMatch(beforeRequest, /narrativeForRoute\s*=\s*await __libraCompletionGetNarrative/, 'response planning must not fall back to an unscoped raw Narrative Head');
-
-const planner = sliceBetween('const runTurnPlanner = async', 'const renderPlannerBlock =');
-assert.doesNotMatch(planner, /saveContinuityState|storage\.setJson\(key\.continuityState|storage\.setItem\([^\n]*continuity-state/, 'Planner must not mutate State Head');
-assert.doesNotMatch(planner, /saveCanonical|commitCanonical|writeCanonical/, 'Planner must not mutate Canonical Memory');
+assert.match(beforeRequest, /buildClassicCanonicalProvenanceRescue/);
+assert.doesNotMatch(beforeRequest, /narrativeForRoute\s*=\s*await __libraCompletionGetNarrative/);
+assert.doesNotMatch(beforeRequest, /runTurnPlanner\(|callSgaProvider\(/);
 
 const classic = sliceBetween('const renderClassicBlock =', 'const libraSafeClassicSourceLabel =');
 assert.doesNotMatch(classic, /continuity_state_prompt|CURRENT STATE HEAD|continuityStatePromptBlock/, 'Classic final injection must not directly inject derived State prose');
 assert.match(source, /buildClassicCanonicalProvenanceRescue[\s\S]{0,1600}requireCurrent: true/);
 assert.match(source, /embeddingSettingsSource = embeddingConfig \? 'bounded_settings_load' : 'unavailable_sparse_fallback'/);
 
-process.stdout.write('libra_classic_planner_authority_contract_test: PASS\n');
+const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
+(async()=>{
+ const f=await fixture();
+ try {
+  assert.equal((await f.run()).completed,1);
+  const ref=f.getManifest().memories['1'];
+  const canonicalBefore=f.r.values.get(ref.key);
+  const headRecord=f.getRecords('libra.continuity_state.v2')[0];
+  const headBefore=f.r.values.get(headRecord.key);
+  const calls=f.control.calls.length;
+  const packet=await actualClassicPacket(f,'민아 지호 신뢰 은빛 열쇠',f.getManifest().scopeKey);
+  assert.ok(packet.actualClassic.deliveredRows.some(row=>row.memoryId===ref.memoryId&&row.revision===ref.revision));
+  assert.doesNotMatch(packet.actualClassic.block,/CURRENT STATE HEAD|continuity_state_prompt|cs_rel_|ce_/);
+  assert.equal(f.control.calls.length,calls,'Classic request performs no extra response provider dispatch');
+  assert.equal(f.r.values.get(ref.key),canonicalBefore,'Classic must not mutate Canonical Memory');
+  assert.equal(f.r.values.get(headRecord.key),headBefore,'Classic must not mutate State Head');
+ } finally {await f.r.cleanup();}
+ process.stdout.write('libra_classic_planner_authority_contract_test: PASS\n');
+})().catch(e=>{console.error(e);process.exitCode=1;});

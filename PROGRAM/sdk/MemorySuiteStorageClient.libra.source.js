@@ -1600,8 +1600,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const legacyWriteVerified = (...args) => withOwnerOperation({kind:'storage_operation',operation:'legacyWriteVerified'}, () => legacyWriteVerifiedImpl(...args));
-  const legacyWriteVerifiedImpl = async (legacy, key, value) => {
+  const legacyWriteVerifiedImpl = async (legacy, key, value, beforeSet = null) => {
     if (!legacy || typeof legacy.setItem !== 'function') return false;
+    if (beforeSet) await beforeSet(legacy, key, value);
     const result = await legacy.setItem(key, value);
     if (result === false) return false;
     if (typeof legacy.getItem === 'function') {
@@ -4622,7 +4623,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const anyServerScopedMode = async () => {
     const registry = await loadScopeRegistry(false, false);
-    return Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+    if (Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) return true;
+    // Scoped reads already admit an unconsumed legacy global argument. Shared
+    // owner infrastructure must use that same fallback, without overriding a
+    // published global choice or importing/publishing any new mode here.
+    return globalModeEnabled && !registry.legacyGlobalModeImported && !liveGlobalRow(registry)
+      && normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) !== MODE_PLUGIN_ONLY;
   };
 
   const normalizeRouteDescriptor = async (rawValue, space, key, currentScope) => {
@@ -4829,13 +4835,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const authoritativeMirrorRoute = route => namespace === 'libra' && route?.kind === 'scope' && route.mode === MODE_MIRROR;
   // The SQLite commit is authoritative. A failed local copy must never trigger
   // another server commit or upload an older local Head on a later read/sync.
-  const mirrorServerRow = async (space, key, route, row) => {
+  const mirrorServerRow = async (space, key, route, row, beforeSet = null) => {
     try {
       const legacy = ownerLegacyForSpace(space);
       if (!legacy) throw new Error('memory_suite_pluginstorage_unavailable');
       const current = await legacyRead(legacy, key);
       const ok = row.exists === true
-        ? await legacyWriteVerified(legacy, key, await routeMergeValue(route, row.value, current))
+        ? await legacyWriteVerified(legacy, key, await routeMergeValue(route, row.value, current), beforeSet)
         : await routeRemoveLocal(route, async () => legacyRead(legacy,key), next => legacyWriteVerified(legacy,key,next), () => legacyRemoveVerified(legacy,key));
       if (!ok) throw new Error('memory_suite_local_mirror_readback_failed');
       return { verified:true, key };
@@ -4846,10 +4852,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
   const scopedGetImpl = async (space, key, legacyGet = null, legacySet = null, legacyRemove = null, operationOptions = {}) => {
+    const captureRepair = operationOptions.completedTurnCaptureRepair;
+    if (captureRepair != null && (namespace !== 'libra' || space !== 'plugin'
+      || typeof captureRepair.expectedServerValue !== 'string' || typeof captureRepair.assertCurrent !== 'function'))
+      throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    if (captureRepair != null) {
+      const prefix = `libra:v1:scope:${operationScope.scopeKey}:source-receipt-capture:`;
+      if (!String(key).startsWith(prefix) || !/^[^:]+:e\d+:t[1-9]\d*:[a-z0-9]+$/i.test(String(key).slice(prefix.length)))
+        throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
+    }
     const currentMode = (await readScopeMode(operationScope, false)).mode;
+    if (captureRepair != null && currentMode !== MODE_MIRROR) throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
+    if (captureRepair != null && (!route.routed || !authoritativeMirrorRoute(route)
+      || route.scopeId !== operationScope.scopeId || operationOptions.readOnlySnapshot === true))
+      throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     if (!route.routed || route.mode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     if (operationOptions.readOnlySnapshot === true && route.mode === MODE_MIRROR) {
       // A read-only source snapshot must never write the parent. Equal values are
@@ -4872,6 +4891,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // writes/removes, so an older delayed read cannot roll the mirror back.
       return await serializeMutation(space,route.remoteKey,async()=>{
         let row = await remoteGet(space, route.remoteKey, { allowPluginOnly:true, scope:route.scope, storageMode:route.mode });
+        if (captureRepair != null) {
+          if (row.exists !== true || row.tombstone === true || row.value !== captureRepair.expectedServerValue)
+            throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+          const beforeSet = async (legacy, logicalKey, value) => {
+            await captureRepair.assertCurrent();
+            if (value !== captureRepair.expectedServerValue) throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+            const currentServer = await remoteGet(space, route.remoteKey, { allowPluginOnly:true, scope:route.scope, storageMode:route.mode });
+            if (currentServer.exists !== true || currentServer.tombstone === true
+              || currentServer.value !== captureRepair.expectedServerValue
+              || currentServer.revision !== row.revision || currentServer.digest !== row.digest)
+              throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+            await captureRepair.assertCurrent();
+            // Run after owner admission, immediately before the physical set.
+            // A late local capture can own additional retired raw variants.
+            const local = await legacy.getItem(logicalKey);
+            if (!isNullishStorageValue(local) && local !== captureRepair.expectedServerValue)
+              throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_LOCAL_CHANGED');
+          };
+          const copied = await mirrorServerRow(space,key,route,row,beforeSet);
+          if (copied.verified !== true) throw new Error(`MEMORY_SUITE_CAPTURE_REPAIR_COPY_FAILED:${copied.error || key}`);
+          return await routeMergeValue(route,row.value,null);
+        }
         if (!row.exists && !row.tombstone) {
           const local = typeof legacyGet === 'function' ? await legacyGet() : null;
           const projected = isNullishStorageValue(local) ? null : await routeProjectValue(route,local);
@@ -6435,7 +6476,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (storageTransition || modeState?.transition || modeState?.migrationRequired) throw transitionBusyError();
     await loadPersistedSyncJob();
     const job = getSyncJob();
-    if (job?.kind === 'connection_config' && !syncJobTerminal(job.status) && job.scopeId === scope.scopeId) {
+    // An aggregate migration owns every scope, including scopes discovered
+    // after it paused. Per-scope connection changes retain their own boundary.
+    if (job && !syncJobTerminal(job.status) && (job.kind === 'global_mode' || (job.kind === 'connection_config' && job.scopeId === scope.scopeId))) {
       const error = transitionBusyError();
       error.transition = {scopeId:job.scopeId,fromMode:job.sourceMode,toMode:job.targetMode,phase:job.phase,jobId:job.jobId};
       throw error;
@@ -7735,7 +7778,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');

@@ -7,8 +7,8 @@ const { test } = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
 const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
+const { createSnapshotBridge } = require('./fixtures/lia_legacy_recovery_snapshot_fixture.cjs');
 const { createMemorySuiteServer } = require('../server/server.cjs');
 
 const ASSETS = 'liaPersonaVisualAssetStoreV1';
@@ -20,7 +20,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
         ensurePersonaVisualAssetAvailable, readPersonaVisualAssetUrl,
         readPersonaVisualAssetStore, writePersonaVisualAssetStore,
         writePersonaVisualAssetBackup, readPersonaVisualAssetBackup,
-        bridge: MemorySuiteStorageBridge,
+        bridge: MemorySuiteStorageBridge, createRecovery:createLiaLegacyServerRecovery,
         readLogs: () => readLogStore(true)
       },
       getLiveSyncCaptureState:`);
@@ -86,22 +86,20 @@ async function launch(baseUrl = '') {
   };
 }
 
-async function withServer(run) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lia-native-restore-server-'));
-  const server = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir: directory, autoBackup: false });
-  let env;
+async function withLegacySnapshot(run) {
+  const env = await launch();
   try {
-    const address = await server.listen();
-    env = await launch(`http://127.0.0.1:${address.port}`);
-    await env.owner.bridge.setMode('server_only');
-    assert.equal(await env.owner.bridge.getMode(), 'server_only');
-    await run(env, server);
-  } finally {
-    if (env) await env.close();
-    await server.close();
-    assert.equal(path.dirname(path.resolve(directory)), path.resolve(os.tmpdir()));
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
+    const file=path.join(env.directory,'existing-legacy-owner-snapshot.json');
+    fs.writeFileSync(file,JSON.stringify(env.rows()));
+    const before=fs.readFileSync(file,'utf8'),transport=createSnapshotBridge(env.owner.bridge,file);
+    const recovery=env.owner.createRecovery(transport.api);
+    const ticket=await recovery.preview();
+    env.restore=async()=>await recovery.publish(ticket);
+    await assert.rejects(()=>env.owner.bridge.setMode('server_only'),error=>error.code==='MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
+    await run(env,{file});
+    assert.equal(fs.readFileSync(file,'utf8'),before,'legacy source physical bytes stay immutable');
+    assert(transport.calls.every(route=>route.startsWith('GET ')),'legacy inspection never mutates remote source');
+  } finally { await env.close(); }
 }
 
 test('native backup recovery publishes only a physically read-back exact image and preserves detached bytes', async () => {
@@ -181,41 +179,36 @@ for (const change of ['new-backup', 'same-backup-new-path', 'same-backup-metadat
   });
 }
 
-test('a completed real server restore fences a delayed native recovery even when restored entry bytes are identical', async () => {
-  await withServer(async (env, server) => {
+test('a completed explicit legacy local recovery fences a delayed native recovery even when restored entry bytes are identical', async () => {
+  await withLegacySnapshot(async (env, server) => {
     const entered = deferred(), release = deferred();
     try {
       const originalSave = env.fixture.api.saveAsset;
       env.fixture.api.saveAsset = async bytes => { entered.resolve(); await release.promise; return originalSave(bytes); };
       const pending = env.recover();
       await entered.promise;
-      const restored = await env.owner.bridge.restorePluginStorage();
-      assert.equal(restored.ok, true);
-      assert.equal(restored.validation.ok, true);
+      const restored = await env.restore();
+      assert.equal(restored.verified, true);
+      assert.equal(restored.serverWrites,0);
       const afterRestore = env.rows();
       const expectedRaw = afterRestore.find(([key]) => key === ASSETS)[1];
       release.resolve();
       await assert.rejects(() => pending, /LIA_ASSET_RECOVERY_STALE/);
-      assert.deepEqual(env.rows(), afterRestore, 'accepted server snapshot remains physically unchanged');
-      server.repositories.lia.checkpoint();
-      const physical = new DatabaseSync(server.repositories.lia.filePath, { readOnly: true });
-      try {
-        assert.equal(physical.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
-        const stored = physical.prepare('SELECT value_json FROM kv WHERE space=? AND key=? AND deleted=0').get('plugin', ASSETS);
-        assert.equal(JSON.parse(stored.value_json), expectedRaw, 'independent SQLite readback retains exact authoritative asset JSON');
-      } finally { physical.close(); }
+      assert.deepEqual(env.rows(), afterRestore, 'accepted legacy local snapshot remains physically unchanged');
+      const stored=new Map(JSON.parse(fs.readFileSync(server.file,'utf8')));
+      assert.equal(stored.get(ASSETS),expectedRaw,'physical legacy source retains exact authoritative asset JSON');
     } finally { release.resolve(); }
   });
 });
 
-test('a completed real server restore invalidates a warmed native preview cache', async () => {
-  await withServer(async env => {
+test('a completed explicit legacy local recovery invalidates a warmed native preview cache', async () => {
+  await withLegacySnapshot(async env => {
     fs.writeFileSync(path.join(env.directory, 'missing.png'), PNG);
     const first = await env.owner.readPersonaVisualAssetUrl(env.entry.assetPath, 'image/png');
     assert.deepEqual(Buffer.from(first.split(',')[1], 'base64'), PNG);
     fs.writeFileSync(path.join(env.directory, 'missing.png'), OTHER_PNG);
-    const restored = await env.owner.bridge.restorePluginStorage();
-    assert.equal(restored.ok, true);
+    const restored = await env.restore();
+    assert.equal(restored.verified, true);
     const fresh = await env.owner.readPersonaVisualAssetUrl(env.entry.assetPath, 'image/png');
     assert.deepEqual(Buffer.from(fresh.split(',')[1], 'base64'), OTHER_PNG, 'next preview reads physical host bytes after restore');
   });
@@ -244,69 +237,50 @@ test('native recovery cannot publish an older metadata read after another writer
   } finally { release.resolve(); await env.close(); }
 });
 
-test('identical real server restore during the metadata read invalidates the native completion', async () => {
-  await withServer(async env => {
-    const entered = deferred(), release = deferred();
+test('explicit legacy recovery drains an old metadata read and fences its native completion', async () => {
+  await withLegacySnapshot(async env => {
+    const entered=deferred(),release=deferred();
     try {
-      const originalRead = env.fixture.api.pluginStorage.getItem;
-      let hold = true;
-      env.fixture.api.pluginStorage.getItem = async key => {
-        const value = await originalRead(key);
-        if (key === ASSETS && hold) { hold = false; entered.resolve(); await release.promise; }
-        return value;
-      };
-      const pending = env.recover();
-      await entered.promise;
-      const restored = await env.owner.bridge.restorePluginStorage();
-      assert.equal(restored.ok, true);
-      const afterRestore = env.rows();
-      release.resolve();
-      await assert.rejects(() => pending, /LIA_ASSET_RECOVERY_STALE/);
-      assert.deepEqual(env.rows(), afterRestore, 'metadata read resumes without changing the completed restore');
-    } finally { release.resolve(); }
+      const read=env.fixture.api.pluginStorage.getItem;let hold=true;
+      env.fixture.api.pluginStorage.getItem=async key=>{const value=await read(key);if(key===ASSETS&&hold){hold=false;entered.resolve();await release.promise;}return value;};
+      const pending=env.recover();const outcome=pending.then(value=>({value}),error=>({error}));await entered.promise;
+      let published=false;const restore=env.restore().then(value=>{published=true;return value;});
+      await new Promise(resolve=>setTimeout(resolve,20));assert.equal(published,false,'local publication drains the captured owner read');
+      release.resolve();const restored=await restore;assert.equal(restored.verified,true);const after=env.rows();
+      const result=await outcome;assert(result.error,'old native result cannot publish');assert(['LIA_ASSET_RECOVERY_STALE','MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS'].includes(result.error.code),String(result.error));
+      assert.deepEqual(env.rows(),after,'resumed old read cannot alter the published snapshot');
+    }finally{release.resolve();}
   });
 });
 
-test('after server restore fences old work, explicit plugin_only recovery ignores a rejected old server binding and makes no network request', async () => {
-  await withServer(async env => {
-    const entered = deferred(), release = deferred();
+test('after explicit legacy recovery fences old work, local recovery has no network dependency', async () => {
+  await withLegacySnapshot(async env => {
+    const entered=deferred(),release=deferred();
     try {
-      const originalSave = env.fixture.api.saveAsset;
-      env.fixture.api.saveAsset = async bytes => { entered.resolve(); await release.promise; return originalSave(bytes); };
-      const pending = env.recover();
-      await entered.promise;
-      assert.equal((await env.owner.bridge.restorePluginStorage()).ok, true);
-      release.resolve();
-      await assert.rejects(() => pending, /LIA_ASSET_RECOVERY_STALE/);
-      env.fixture.api.saveAsset = originalSave;
-
-      // Corrupt one actual server identity envelope at the native transport
-      // seam; production bridge validation records reconnect-required state.
-      const originalFetch = env.fixture.api.nativeFetch;
-      let corruptNext = true;
-      env.fixture.api.nativeFetch = async (url, init) => {
-        const response = await originalFetch(url, init);
-        if (corruptNext && String(url).includes('/v1/kv/get?')) {
-          corruptNext = false;
-          const payload = await response.json();
-          return new Response(JSON.stringify({ ...payload, dataInstanceId: 'rejected-test-identity' }), {
-            status: response.status, headers: { 'Content-Type': 'application/json' }
-          });
-        }
-        return response;
-      };
-      await assert.rejects(() => env.owner.bridge.serverGet('plugin', ASSETS), /MEMORY_SUITE_DATA_INSTANCE_CHANGED/);
-      assert.equal(env.owner.bridge.serverBinding().rejected, true, 'actual bridge rejected the mismatched server identity');
-      await env.owner.bridge.setMode('plugin_only');
-      assert.equal(await env.owner.bridge.getMode(), 'plugin_only');
-      assert.equal(env.owner.bridge.serverBinding().rejected, true, 'old server rejection remains recorded');
-
-      let networkCalls = 0;
-      env.fixture.api.nativeFetch = async () => { networkCalls++; throw new Error('plugin_only_must_not_request_server'); };
-      const recovered = await env.recover();
-      assert.equal(recovered.restored, true);
-      assert.deepEqual(Buffer.from(recovered.bytes), PNG);
-      assert.equal(networkCalls, 0, 'local recovery has no server dependency');
-    } finally { release.resolve(); }
+      const save=env.fixture.api.saveAsset;
+      env.fixture.api.saveAsset=async bytes=>{entered.resolve();await release.promise;return save(bytes);};
+      const pending=env.recover();await entered.promise;
+      assert.equal((await env.restore()).verified,true);release.resolve();
+      await assert.rejects(()=>pending,/LIA_ASSET_RECOVERY_STALE/);
+      env.fixture.api.saveAsset=save;let network=0;
+      env.fixture.api.nativeFetch=async()=>{network++;throw Error('network_forbidden');};
+      const result=await env.recover();assert.equal(result.restored,true);assert.deepEqual(Buffer.from(result.bytes),PNG);assert.equal(network,0);
+    }finally{release.resolve();}
   });
+});
+
+test('a rejected legacy server identity never prevents positive local native recovery', async () => {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'lia-legacy-read-identity-'));
+  const server=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:directory,autoBackup:false});let env;
+  try {
+    const address=await server.listen();env=await launch(`http://127.0.0.1:${address.port}`);
+    for(const name of ['lia','retrace'])assert.equal(fs.existsSync(server.repositories[name].filePath),false,'no retired canonical store manufactured');
+    const fetchNative=env.fixture.api.nativeFetch;let corrupt=true;
+    env.fixture.api.nativeFetch=async(url,init)=>{const response=await fetchNative(url,init);if(corrupt&&String(url).includes('/v1/kv/get?')){corrupt=false;const payload=await response.json();return new Response(JSON.stringify({...payload,dataInstanceId:'rejected-test-identity'}),{status:response.status,headers:{'Content-Type':'application/json'}});}return response;};
+    await assert.rejects(()=>env.owner.bridge.serverGet('plugin',ASSETS),/MEMORY_SUITE_DATA_INSTANCE_CHANGED/);
+    assert.equal(env.owner.bridge.serverBinding().rejected,true,'actual read-only bridge rejects mismatched legacy server identity');
+    let network=0;env.fixture.api.nativeFetch=async()=>{network++;throw Error('local_recovery_network_forbidden');};
+    const result=await env.recover();assert.equal(result.restored,true);assert.deepEqual(Buffer.from(result.bytes),PNG);assert.equal(network,0);
+    assert.equal(env.owner.bridge.serverBinding().rejected,true,'legacy rejection remains recorded');
+  }finally{if(env)await env.close();await server.close();fs.rmSync(directory,{recursive:true,force:true});}
 });

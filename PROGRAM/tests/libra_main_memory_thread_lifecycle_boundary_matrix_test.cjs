@@ -3,6 +3,7 @@
 // The fixture keeps the provider boundary deterministic while exercising normal
 // Canonical -> State -> Recall/History processing for each row.
 const assert = require('node:assert/strict');
+const { actualClassicPacket, deliveredClosureRows, assertNoForbiddenClosure } = require('./fixtures/libra_actual_classic_request.cjs');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const MODES = ['plugin_only', 'mirror', 'server_only'];
 const digest = value => {
@@ -16,6 +17,25 @@ const originDigest = memory => digest(memory?.unifiedOrigin || {
   scopeKey: memory?.scopeKey, memoryId: memory?.memoryId, revision: memory?.revision,
   sourceDigest: memory?.sourceDigest, artifactDigest: memory?.artifactDigest, turnRange: memory?.turnRange
 });
+// Disposable semantic probes must move the server activation descriptor with
+// their resealed manifest. Assert this identity formula against the original
+// product-written descriptor before using it; no production guard is bypassed.
+const serverManifestIdentity = manifest => digest([
+  ...(manifest.inheritedMemories || []), ...Object.values(manifest.memories || {})
+].filter(ref => ref?.status === 'committed' && ref?.key)
+  .sort((left, right) => Number(left.sessionEpoch || 0) - Number(right.sessionEpoch || 0)
+    || Number(left.turnRange?.start || 0) - Number(right.turnRange?.start || 0))
+  .map(ref => ({ cursor: {
+    key: String(ref.key || ''), memoryId: String(ref.memoryId || ''), revision: Number(ref.revision || 0),
+    sourceDigest: String(ref.sourceDigest || ''), manualStateDispositionDigest: String(ref.manualStateDispositionDigest || ''),
+    manualAuthorityHash: String(ref.manualAuthorityHash || ''), artifactSchema: String(ref.artifactSchema || ''),
+    artifactDigest: String(ref.artifactDigest || ''), worldlineId: String(ref.worldlineId || 'main'), logicalWorldlineId: 'main',
+    turnRange: JSON.parse(JSON.stringify(ref.turnRange || {})), sessionEpoch: Number(ref.sessionEpoch || 0),
+    inheritedSessionHistory: ref.inheritedSessionHistory === true || ref.inherited === true,
+    archiveShared: ref.archiveShared === true, archiveId: String(ref.archiveId || ''),
+    archiveCanonicalId: String(ref.archiveCanonicalId || ''), handoffTransferId: String(ref.handoffTransferId || ''),
+    sourceSessionScopeKey: String(ref.sourceSessionScopeKey || ''), nativeCopiedFromScopeKey: String(ref.nativeCopiedFromScopeKey || '')
+  }, sourceEvidenceRef: ref.sourceEvidenceRef || null })));
 
 const people = [
   ['jiho', '지호'], ['mina', '민아'], ['junho', '준호'], ['soyeon', '소연'], ['arin', '아린']
@@ -236,18 +256,31 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
     assert.ok(!closureRows.some(row => pendingTexts.has(row.text)),
       'pending candidate text may remain historical evidence but does not enter accepted closure rows');
     assert.equal(recall?.diagnostics?.recallContinuityClosure?.currentness, 'last-known');
-    const packet = await f.r.api.prepareInputWriterEvidence(query);
+    const packet = await actualClassicPacket(f, query, readManifest().scopeKey);
     const packetClosures = (packet?.evidencePacket?.layers?.memory || []).filter(row => row.closure === true);
     assert.ok(packetClosures.some(row => row.text === successors.find(item => item.id === 'broken').evidence),
       'the actual packet preserves the broken outcome as a closure with its own reason text');
     assert.ok(!packetClosures.some(row => pendingTexts.has(row.text)),
       'the actual packet does not label unaccepted candidate events as lifecycle closures');
+    const actualClosures = deliveredClosureRows(packet);
+    assert.ok(actualClosures.some(row => row.text === successors.find(item => item.id === 'broken').evidence),
+      'the retained broken-outcome positive obligation also reaches actual Classic output');
+    assert.ok(!actualClosures.some(row => pendingTexts.has(row.text)),
+      'pending historical evidence is never relabelled as actually delivered closure');
+    assertNoForbiddenClosure(packet, pendingTexts);
 
     const firstHistory = await f.r.api.getWorldManagerHistoryDetail({ memoryId: readMemory(1).memoryId, revision: readMemory(1).revision });
     assert.ok(firstHistory.provenance?.domains?.narrative?.canonicalAssertions?.length,
       'History remains available for the selected source revision');
 
     const originalManifest = readManifest();
+    const originalActiveRow = mode === 'plugin_only' ? null : server.storedRows()
+      .find(row => row.value?.schema === 'libra.unified_server_active.v1' && row.value.scopeKey === originalManifest.scopeKey);
+    if (mode !== 'plugin_only') {
+      assert.ok(originalActiveRow, `${mode}: the product committed an activation descriptor`);
+      assert.equal(originalActiveRow.value.manifestIdentity, serverManifestIdentity(originalManifest),
+        `${mode}: the disposable fixture reproduces the product's original manifest identity`);
+    }
     const originalMemory = readMemory(6);
     const originalParentMemory = readMemory(1);
     const originalParentRef = JSON.parse(JSON.stringify(originalManifest.memories['1']));
@@ -322,9 +355,12 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
     assert.ok(!unsealedTamperClosure?.facts?.some(row => row.text === originalMemory.canonicalArtifact.facts[0].text),
       `${mode}: an unsealed storage mutation cannot enter the recall closure`);
     assert.equal(unsealedTamperClosure.currentness, 'last-known', `${mode}: the integrity negative control does not claim currentness`);
-    const unsealedTamperPacket = await f.r.api.prepareInputWriterEvidence(query);
+    const unsealedTamperPacket = await actualClassicPacket(f, query, readManifest().scopeKey, { allowEmpty: true });
     assert.ok(!(unsealedTamperPacket?.evidencePacket?.layers?.memory || []).some(row => row.closure === true && row.text === originalMemory.canonicalArtifact.facts[0].text),
       `${mode}: an unsealed storage mutation is not delivered as packet closure`);
+    assert.ok(!deliveredClosureRows(unsealedTamperPacket).some(row => row.text === originalMemory.canonicalArtifact.facts[0].text),
+      `${mode}: unsealed mutation has no actual closure delivery witness`);
+    assertNoForbiddenClosure(unsealedTamperPacket, [originalMemory.canonicalArtifact.facts[0].text]);
     const integrityTamperObserved = {
       caseId: 'unsealed_storage_artifact_edit', reason: 'closure_ref_artifact_digest_mismatch',
       boundary: 'persisted artifact/ref digests updated; original unifiedOriginDigest deliberately retained'
@@ -354,6 +390,7 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
       }]
     ];
     const targetTamperObserved = [];
+    const descriptorNegativeObserved = [];
     for (const [caseId, alter, reason, options = {}] of targetTamperCases) {
       const changedMemory = JSON.parse(JSON.stringify(originalMemory));
       const accepted = changedMemory.canonicalArtifact.facts.find(fact => fact.tempFactId === 'f1');
@@ -374,6 +411,19 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
       await persistRecord(changedMemory.memoryId ? changedManifest.memories['6'].key : '', changedMemory);
       await persistRecord(manifestKey, changedManifest);
       f = await server.restart();
+      if (options.semanticProbe && originalActiveRow) {
+        if (caseId === 'nonexistent_fact') {
+          const rejectedReplay = await f.r.api.rebuildWorldManagerState();
+          assert.equal(rejectedReplay.ok, false, `${mode}: an unsynchronized semantic fixture fails closed`);
+          assert.equal(rejectedReplay.code, 'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH');
+          assert.equal(rejectedReplay.providerCalls, 0);
+          assert.equal(rejectedReplay.storageMutationCommitted, false);
+          descriptorNegativeObserved.push({ code: rejectedReplay.code, storageMutationCommitted: false });
+        }
+        await persistRecord(originalActiveRow.key, { ...originalActiveRow.value,
+          manifestIdentity: serverManifestIdentity(changedManifest) });
+        f = await server.restart();
+      }
       if (!options.skipReplay) {
         const replay = await f.r.api.rebuildWorldManagerState();
         assert.equal(replay.ok, true, `${mode}/${caseId}: a valid but stale target field cold-replays without rewriting canonical data`);
@@ -390,14 +440,20 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
         `${mode}/${caseId}: Recall reports ${reason} (${JSON.stringify(tamperedClosure?.diagnostics)})`);
       assert.ok(!tamperedRows.some(row => row.text === rejectedOutcomeText), `${mode}/${caseId}: rejected target is not a closure row`);
       assert.equal(tamperedClosure.currentness, 'last-known', `${mode}/${caseId}: invalid target proof does not claim currentness`);
-      const tamperedPacket = await f.r.api.prepareInputWriterEvidence(query);
+      const tamperedPacket = await actualClassicPacket(f, query, readManifest().scopeKey, { allowEmpty: true });
       const closurePacketRows = (tamperedPacket?.evidencePacket?.layers?.memory || []).filter(row => row.closure === true);
       assert.ok(!closurePacketRows.some(row => row.text === rejectedOutcomeText), `${mode}/${caseId}: invalid target is not labelled as packet closure`);
+      assert.ok(!deliveredClosureRows(tamperedPacket).some(row => row.text === rejectedOutcomeText),
+        `${mode}/${caseId}: invalid target has no actual closure delivery witness`);
+      assertNoForbiddenClosure(tamperedPacket, [rejectedOutcomeText]);
       targetTamperObserved.push({ caseId, reason, currentness: tamperedClosure.currentness, closureCount: tamperedClosure.diagnostics.closureCount,
         syntheticSemanticProbe: options.semanticProbe === true });
       await persistRecord(originalMemory.memoryId ? originalManifest.memories['6'].key : '', originalMemory);
       await persistRecord(manifestKey, originalManifest);
+      if (options.semanticProbe && originalActiveRow) await persistRecord(originalActiveRow.key, originalActiveRow.value);
       f = await server.restart();
+      if (originalActiveRow) assert.deepEqual(readStored(originalActiveRow.key), originalActiveRow.value,
+        `${mode}/${caseId}: descriptor restoration preserves the original durable authority`);
     }
     console.log(JSON.stringify({
       test: 'libra_main_memory_thread_lifecycle_boundary_matrix', mode, batches: run.completed,
@@ -406,6 +462,7 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
       currentness: recall?.diagnostics?.recallContinuityClosure?.currentness,
       integrityTamperObserved,
       targetTamperObserved,
+      descriptorNegativeObserved,
       syntheticSemanticProbeBoundary: 'targetTamperCases with syntheticSemanticProbe=true are disposable resealed fixtures, not source-approved commits',
       aggregateBudget: { readCount: boundedClosure.diagnostics.readCount, reason: 'thread_target_read_budget' },
       cancellation: { readCount: cancellationReads, currentness: cancelledClosure.currentness },

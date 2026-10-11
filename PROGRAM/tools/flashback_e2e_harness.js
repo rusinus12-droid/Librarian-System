@@ -79,8 +79,14 @@ function makeLocalPluginStorage() {
 
 const src = fs.readFileSync(PLUGIN_PATH, 'utf8');
 const args = parseArgs(src);
-// force local hash mode, gui off, debug on for diagnostics
-args['embedding_provider'] = 'hash';
+// Hash embeddings are migration-only. Exercise the current configured model
+// boundary using a deterministic offline HTTP adapter; real owner retrieval and
+// the original planted-fact assertions remain unchanged.
+args['embedding_provider'] = process.env.FLASHBACK_HARNESS_LEGACY_HASH === '1' ? 'hash' : 'openai_compat';
+args['embedding_model'] = 'offline-harness-vector-v1';
+args['embedding_url'] = 'https://fixture.invalid/v1';
+args['embedding_dimensions'] = 3;
+args['embedding_key'] = 'offline-fixture-key';
 args['mode'] = 'normal';
 args['enable_gui'] = 'false';
 args['debug_log'] = 'false';
@@ -167,9 +173,17 @@ const Risuai = {
   sendPluginChannelMessage: async () => null,
 
   // network BLOCKED + recorded
-  nativeFetch: async (url) => {
+  nativeFetch: async (url, init = {}) => {
     record.network.nativeFetch++; record.network.lastUrls.push(String(url));
-    const e = new Error('network blocked by harness'); e.code = 'HARNESS_NET_BLOCKED'; throw e;
+    if (String(url) !== 'https://fixture.invalid/v1/embeddings') throw new Error('UNEXPECTED_HARNESS_NETWORK_ENDPOINT');
+    if (init.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    const body = JSON.parse(String(init.body || '{}'));
+    if (body.model !== 'offline-harness-vector-v1') throw new Error('UNEXPECTED_HARNESS_MODEL');
+    const inputs = Array.isArray(body.input) ? body.input : [body.input];
+    if (!inputs.length || inputs.some(text => typeof text !== 'string' || !text.trim())) throw new Error('INVALID_HARNESS_EMBEDDING_INPUT');
+    // Uniform vectors intentionally provide no lexical ranking clues. Owner
+    // sparse search, worldline gates and actual prompt delivery choose the facts.
+    return new Response(JSON.stringify({data:inputs.map((_,index)=>({index,embedding:[1,0,0]}))}),{status:200});
   },
   risuFetch: async (url) => {
     record.network.risuFetch++; record.network.lastUrls.push(String(url));

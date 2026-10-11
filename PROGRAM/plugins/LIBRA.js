@@ -423,7 +423,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v1.0.58 ports FLASHBACK-style native chat-copy continuity into LIBRA: copy detection can reuse the immediately previous resolved chat when the host chat list is incomplete, canonical-memory validation uses message-id-independent U+A content identity, cloned current memories are rebound to the copied chat's new message IDs/sourceDigest without re-embedding, and durable readback verifies every copied canonical memory/vector before the copy is marked complete. RE:TRACE handoff remains separate and source-immutable. */
 /* v1.0.57 makes WebRisu credential persistence update-safe by mirroring provider-preset secrets, active LLM/embedding provider secrets, and the hosting token into verified pluginStorage backups while retaining localPluginStorage; active llm_key/embedding_key/hosting-token arguments are also repaired when host argument writes are available, and startup reads reconcile surviving copies back into missing stores without changing provider/model selection. */
 /* v1.0.56 aligns LIBRA with RE:TRACE peer-compatibility v1 and makes next-session preparation strictly source-immutable: shared archives are detached transport layers, prepare no longer annotates source memory refs or source manifest archive metadata, source memory/vector fingerprints are proven unchanged across prepare/adopt, and compatibility is negotiated by stable protocol/features instead of exact plugin versions. v1.0.55 raises the common live-recall step budget from 1,500ms to 20,000ms while preserving v1.0.54 cache-first embedding-settings resolution and fail-soft dense fallback, so transiently slow host/pluginStorage reads get substantially more time without reintroducing whole-recall aborts for embedding-settings timeouts. v1.0.54 makes live recall resilient to slow embedding-settings initialization: recall now uses the already-loaded provider runtime cache first, bounds any cache-miss settings load as a non-fatal dense-retrieval dependency, continues sparse/exact/temporal recall when embedding settings are temporarily unavailable, and distinguishes per-step timeout diagnostics from the true 30-second request deadline. v1.0.53 repairs RE:TRACE next-session interoperability without restoring World Additional: the handoff inspection exposes an archive-metadata-independent canonical state hash, prepare/verify/adopt receipts include deprecated zero-only World Additional counters for older bridge builds, capabilities advertise canonical-memory-only handoff, and handoff verification reads inherited memory/vector records with bounded concurrency for large histories. v1.0.52 hardens long-term-memory integrity and scaling: high-risk unsupported canonical claims trigger one bounded evidence-repair pass and otherwise fall back to the latest evidence-safe stage; branch batch fingerprints are persisted in the manifest so reloads can detect changed historical batches without a full live-path audit; and automatic memory scans process only the new/current, changed, in-flight, recovery, or bounded embedding-retry batches instead of rechecking every existing five-turn memory. v1.0.51 removes avoidable live-input stalls: request-local chat pairs are parsed once and shared across branch/query/recall, branch validation uses change-targeted fast checks with yielded deep audits, native-copy/recovery maintenance leaves the normal live path, input-assist OFF bypasses full settings loading, and legacy recall catalogs are served immediately while v3/256D upgrades rebuild in the background. v1.0.50 hardens embedding correctness end-to-end: provider-aware long-input splitting occurs before per-part query/document formatting, silent truncation is disabled for Vertex/Cohere, Gemini Embedding 2 uses prompt prefixes instead of task_type, Voyage Context separates global from shared section context groups, and the recall catalog uses a 256D hashed sketch rebuilt from existing full vectors without re-embedding. v1.0.49 caps the maximum dynamic recall block at 12,000 characters across normalization, runtime budgeting, and GUI input while retaining v1.0.48 dynamic token budgeting. v1.0.48 removes the fixed recallMaxTokens bottleneck: recall character budget is resolved first from prompt pressure, then an effective token ceiling is derived per request/tier from that character budget and the observed CJK/text mix, with candidate text able to raise the ceiling when its token density is higher. v1.0.47 completes HAYAKU/Flashback current-input compatibility by filtering peer runtime/evidence carriers both as standalone prompt rows and inside rendered current-input wrappers, while keeping the resolver fully local and dependency-free. v1.0.46 makes recall excerpts context-safe: semantic paragraph/list boundaries are preserved, character excerpts retain their identity lead (for example `이유민:`), chronology excerpts retain the event lead, and sentence-radius expansion can no longer cross into a different character/event block. v1.0.45 extends LIBRA's absolute live-recall watchdog from 8 seconds to 30 seconds while preserving the existing per-step and query-embedding timeouts, giving slow RisuAI context/pluginStorage environments enough total time to finish fallback retrieval without weakening individual-operation fail-open guards. v1.0.44 aligns live recall current-input resolution with HAYAKU/Flashback provenance+wrapper rules, rejects prompt/meta rows from legacy fallback, and removes nonessential manifest-stat writes from the bounded request path so a completed recall is never discarded by bookkeeping timeout. v1.0.43 fixes the Home/current-turn recall GUI scope regression by keeping recall-view helpers inside the GUI scope instead of referencing LIBRA memory-core private helpers. v1.0.42 removes World Additional completely from active LIBRA memory creation, storage, recall, handoff, and GUI paths; World ito now records unresolved setting gaps as explicitly unknown/undecided rather than generating future canon proposals. v1.0.41 auto-migrates compatible legacy vectors into portable pluginStorage without re-embedding and lets same-space legacy profile IDs remain dense-recall compatible while migration finishes. v1.0.40 fixes embedding-timeout fallback, unifies embedding-space signatures, makes pluginStorage the durable Float32 vector source of truth, separates exact strong anchors from lexical terms, and adds two-stage catalog-to-hydration recall with intent-aware tail forcing. */
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/LIBRA/refs/heads/main/LIBRA.js
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
 //@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
@@ -3797,7 +3797,7 @@ const MemorySuiteHealthRecovery = (() => {
       code: /^[A-Z0-9_]{1,80}$/.test(String(value?.code || '')) ? value.code : 'OWNER_REVIEW_REQUIRED',
       count: Math.max(0, Math.min(1000000, Number(value?.count) || 0))
     }));
-    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['WM','LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
+    return Object.freeze({ schema: 'memory-suite.health.v1', owner: ['LIBRA','HAYAKU','FLASHBACK','LIA','RETRACE'].includes(input.owner) ? input.owner : 'UNKNOWN',
       readOnly: true, known, complete, status: !known ? 'unknown' : !complete ? 'incomplete' : issues.length ? 'attention' : 'no_detected_issue',
       issues, automaticModelReanalysis: false, automaticPhysicalRepair: false });
   };
@@ -5799,8 +5799,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const legacyWriteVerified = (...args) => withOwnerOperation({kind:'storage_operation',operation:'legacyWriteVerified'}, () => legacyWriteVerifiedImpl(...args));
-  const legacyWriteVerifiedImpl = async (legacy, key, value) => {
+  const legacyWriteVerifiedImpl = async (legacy, key, value, beforeSet = null) => {
     if (!legacy || typeof legacy.setItem !== 'function') return false;
+    if (beforeSet) await beforeSet(legacy, key, value);
     const result = await legacy.setItem(key, value);
     if (result === false) return false;
     if (typeof legacy.getItem === 'function') {
@@ -8821,7 +8822,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const anyServerScopedMode = async () => {
     const registry = await loadScopeRegistry(false, false);
-    return Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+    if (Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) return true;
+    // Scoped reads already admit an unconsumed legacy global argument. Shared
+    // owner infrastructure must use that same fallback, without overriding a
+    // published global choice or importing/publishing any new mode here.
+    return globalModeEnabled && !registry.legacyGlobalModeImported && !liveGlobalRow(registry)
+      && normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) !== MODE_PLUGIN_ONLY;
   };
 
   const normalizeRouteDescriptor = async (rawValue, space, key, currentScope) => {
@@ -9028,13 +9034,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const authoritativeMirrorRoute = route => namespace === 'libra' && route?.kind === 'scope' && route.mode === MODE_MIRROR;
   // The SQLite commit is authoritative. A failed local copy must never trigger
   // another server commit or upload an older local Head on a later read/sync.
-  const mirrorServerRow = async (space, key, route, row) => {
+  const mirrorServerRow = async (space, key, route, row, beforeSet = null) => {
     try {
       const legacy = ownerLegacyForSpace(space);
       if (!legacy) throw new Error('memory_suite_pluginstorage_unavailable');
       const current = await legacyRead(legacy, key);
       const ok = row.exists === true
-        ? await legacyWriteVerified(legacy, key, await routeMergeValue(route, row.value, current))
+        ? await legacyWriteVerified(legacy, key, await routeMergeValue(route, row.value, current), beforeSet)
         : await routeRemoveLocal(route, async () => legacyRead(legacy,key), next => legacyWriteVerified(legacy,key,next), () => legacyRemoveVerified(legacy,key));
       if (!ok) throw new Error('memory_suite_local_mirror_readback_failed');
       return { verified:true, key };
@@ -9045,10 +9051,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
   const scopedGetImpl = async (space, key, legacyGet = null, legacySet = null, legacyRemove = null, operationOptions = {}) => {
+    const captureRepair = operationOptions.completedTurnCaptureRepair;
+    if (captureRepair != null && (namespace !== 'libra' || space !== 'plugin'
+      || typeof captureRepair.expectedServerValue !== 'string' || typeof captureRepair.assertCurrent !== 'function'))
+      throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    if (captureRepair != null) {
+      const prefix = `libra:v1:scope:${operationScope.scopeKey}:source-receipt-capture:`;
+      if (!String(key).startsWith(prefix) || !/^[^:]+:e\d+:t[1-9]\d*:[a-z0-9]+$/i.test(String(key).slice(prefix.length)))
+        throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
+    }
     const currentMode = (await readScopeMode(operationScope, false)).mode;
+    if (captureRepair != null && currentMode !== MODE_MIRROR) throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
+    if (captureRepair != null && (!route.routed || !authoritativeMirrorRoute(route)
+      || route.scopeId !== operationScope.scopeId || operationOptions.readOnlySnapshot === true))
+      throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     if (!route.routed || route.mode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     if (operationOptions.readOnlySnapshot === true && route.mode === MODE_MIRROR) {
       // A read-only source snapshot must never write the parent. Equal values are
@@ -9071,6 +9090,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // writes/removes, so an older delayed read cannot roll the mirror back.
       return await serializeMutation(space,route.remoteKey,async()=>{
         let row = await remoteGet(space, route.remoteKey, { allowPluginOnly:true, scope:route.scope, storageMode:route.mode });
+        if (captureRepair != null) {
+          if (row.exists !== true || row.tombstone === true || row.value !== captureRepair.expectedServerValue)
+            throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+          const beforeSet = async (legacy, logicalKey, value) => {
+            await captureRepair.assertCurrent();
+            if (value !== captureRepair.expectedServerValue) throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+            const currentServer = await remoteGet(space, route.remoteKey, { allowPluginOnly:true, scope:route.scope, storageMode:route.mode });
+            if (currentServer.exists !== true || currentServer.tombstone === true
+              || currentServer.value !== captureRepair.expectedServerValue
+              || currentServer.revision !== row.revision || currentServer.digest !== row.digest)
+              throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_SERVER_CHANGED');
+            await captureRepair.assertCurrent();
+            // Run after owner admission, immediately before the physical set.
+            // A late local capture can own additional retired raw variants.
+            const local = await legacy.getItem(logicalKey);
+            if (!isNullishStorageValue(local) && local !== captureRepair.expectedServerValue)
+              throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_LOCAL_CHANGED');
+          };
+          const copied = await mirrorServerRow(space,key,route,row,beforeSet);
+          if (copied.verified !== true) throw new Error(`MEMORY_SUITE_CAPTURE_REPAIR_COPY_FAILED:${copied.error || key}`);
+          return await routeMergeValue(route,row.value,null);
+        }
         if (!row.exists && !row.tombstone) {
           const local = typeof legacyGet === 'function' ? await legacyGet() : null;
           const projected = isNullishStorageValue(local) ? null : await routeProjectValue(route,local);
@@ -10634,7 +10675,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (storageTransition || modeState?.transition || modeState?.migrationRequired) throw transitionBusyError();
     await loadPersistedSyncJob();
     const job = getSyncJob();
-    if (job?.kind === 'connection_config' && !syncJobTerminal(job.status) && job.scopeId === scope.scopeId) {
+    // An aggregate migration owns every scope, including scopes discovered
+    // after it paused. Per-scope connection changes retain their own boundary.
+    if (job && !syncJobTerminal(job.status) && (job.kind === 'global_mode' || (job.kind === 'connection_config' && job.scopeId === scope.scopeId))) {
       const error = transitionBusyError();
       error.transition = {scopeId:job.scopeId,fromMode:job.sourceMode,toMode:job.targetMode,phase:job.phase,jobId:job.jobId};
       throw error;
@@ -11934,7 +11977,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (await managerRequest('POST','/v1/manager/portable/'+action,body)).result;
     },
     managerControl: async (action, body = {}) => {
-      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute','wm-import'];
+      const allowed=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
       if(!allowed.includes(action))throw new Error('control_action_not_supported');
       const connection=await managerConnection();
       if(connection.capabilities?.['manager-control.v1']!==true)throw new Error('manager_control_server_upgrade_required');
@@ -33591,6 +33634,37 @@ function createLibraReadonlySourceContext(owner) {
     // Physical evidence stays private. Cloned public packets carry only an
     // opaque runtime token, never a caller-controlled "already verified" flag.
     const consumedMicroProofsByMemory = new WeakMap();
+    const consumedCanonicalProofsByMemory = new WeakMap();
+    const consumedClosureProofsByResult = new WeakMap();
+    // Embedding publication is derived metadata. Every other canonical field,
+    // including source/evidence identity and rendered text, belongs to the
+    // exact physical body from which this request selected its evidence.
+    const canonicalConsumptionDigest = memory => {
+      if (!memory || typeof memory !== 'object') return digest(memory);
+      const logical = { ...memory }; delete logical.embedding;
+      return digest(stableReferenceJson(logical));
+    };
+    const captureCanonicalBodySnapshot = memory => {
+      if (!memory || typeof memory !== 'object') return JSON.stringify(memory);
+      const logical = { ...memory }; delete logical.embedding;
+      return JSON.stringify(logical);
+    };
+    const rememberConsumedCanonical = (memory, recordKey, bodySnapshot) => {
+      // The immutable physical JSON is captured before any logical archive
+      // overlay or caller mutation. Non-response readers need no stable digest.
+      if (memory) consumedCanonicalProofsByMemory.set(memory, unifiedDeepFreeze({ recordKey: clone(recordKey), bodySnapshot }));
+      return memory;
+    };
+    const getConsumedCanonicalProof = memory => {
+      const entry = consumedCanonicalProofsByMemory.get(memory);
+      if (!entry || entry.kind === 'canonical-memory') return entry;
+      const proof = unifiedDeepFreeze({ kind: 'canonical-memory', recordKey: entry.recordKey,
+        recordDigest: canonicalConsumptionDigest(JSON.parse(entry.bodySnapshot)) });
+      // Promotion releases the snapshot. Unconsumed snapshots have only their
+      // returned memory's WeakMap lifetime; no strong registry retains them.
+      consumedCanonicalProofsByMemory.set(memory, proof);
+      return proof;
+    };
     const consumedMicroProofsByState = new WeakMap();
     const consumedDataReadSets = new Map();
     const activeMicroConsumptionProof = active => ({
@@ -33674,8 +33748,23 @@ function createLibraReadonlySourceContext(owner) {
         if (entry.receiptReadSet) await assertRecentReceiptReadSetCurrent(entry.receiptReadSet);
         const archives = new Map();
         let activeArchiveRefs = null;
+        let canonicalManifestChecked = false;
         for (const proof of entry.proofs) {
           check();
+          if (proof.kind === 'canonical-memory') {
+            if (!canonicalManifestChecked) {
+              const manifest = await storage.getVerifiedJson(key.manifest(context.scope), context.scope, null);
+              if (!manifest || string(manifest.scopeKey) !== string(context.scope.scopeKey)) {
+                throw consumerContractError('CONSUMER_CANONICAL_MANIFEST_SCOPE_CHANGED');
+              }
+              canonicalManifestChecked = true;
+            }
+            const memory = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
+            if (!memory || canonicalConsumptionDigest(memory) !== proof.recordDigest) {
+              throw consumerContractError('CONSUMER_CANONICAL_BODY_CHANGED');
+            }
+            continue;
+          }
           if (proof.kind === 'micro-state-decision') {
             const decision = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
             if (digest(decision) !== proof.recordDigest) throw consumerContractError('CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED');
@@ -33704,6 +33793,7 @@ function createLibraReadonlySourceContext(owner) {
         const finalContext = await resolveContext();
         if (entry.scope?.scopeKey && finalContext.scope.scopeKey !== entry.scope.scopeKey) throw consumerContractError('CONSUMER_DATA_SCOPE_CHANGED');
         if (entry.receiptReadSet?.worldlineId && hostWorldlineIdForScope(finalContext.scope) !== entry.receiptReadSet.worldlineId) throw consumerContractError('CONSUMER_DATA_WORLDLINE_CHANGED');
+        if (entry.responseBoundary) await assertUnifiedResponseBoundary(entry.responseBoundary, { deadlineAt });
         check();
         return true;
       };
@@ -38136,9 +38226,51 @@ function createLibraReadonlySourceContext(owner) {
       return { ...(root ? {rawSourcePacket:root} : {}), ...(Object.keys(variants).length ? {rawSourceVariants:variants} : {}),
         rawPacketRef:refs.find(ref=>ref.packetDigest===active) || refs[0], rawVariantRefs:refs };
     };
-    const rawCaptureAttachment = async (scope, receipt, receiptKey, packet) => {
+    const readProducerCompletedTurnCapture = async (context, pair, head, beforeWrite) => {
+      const scope = context.scope;
+      const captureKey = key.completedTurnCapture(scope, head.worldlineId, head.sessionEpoch, head.turn, head.revisionId);
+      let mismatch;
+      try { return await storage.getVerifiedJson(captureKey, scope, null); }
+      catch (error) {
+        if (!/^LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:/.test(string(error?.message || ''))) throw error;
+        mismatch = error;
+      }
+      // Only the server-authoritative, missing local mirror is repairable here.
+      // Transport its entire capture, including retired raw variants; never
+      // reconstruct an unknown one-sided record from the current source packet.
+      const claim = { scope, identity: receiptRecoveryIdentity(context, pair),
+        boundary: await captureReceiptRecoveryBoundary(context, pair) };
+      if (claim.boundary.mode !== 'mirror') throw mismatch;
+      const localRaw = await MemorySuiteStorageBridge.ownerLegacyRead('plugin', captureKey);
+      const serverRow = await MemorySuiteStorageBridge.serverGet('plugin', captureKey);
+      if (localRaw !== null && localRaw !== undefined && localRaw !== ''
+        || serverRow?.exists !== true || serverRow?.tombstone === true) throw mismatch;
+      const previous = parseStoredJson(serverRow.value, captureKey, null);
+      if (previous?.schema !== 'libra.completed_turn_capture.v1'
+        || !['scopeKey', 'worldlineId', 'sessionEpoch', 'turn', 'revisionId', 'receiptKey', 'sourceDigest']
+          .every(field => previous[field] === head[field])) throw mismatch;
+      const validate = async () => {
+        if (beforeWrite) await beforeWrite();
+        const current = await validateReceiptRecoveryClaim(claim);
+        if (current.status !== 'current') throw new Error(`LIBRA_CAPTURE_REPAIR_${current.status.toUpperCase()}:${current.reason}`);
+      };
+      await validate();
+      // The SDK serializes the authoritative read/copy with owner writes and
+      // admits it through the normal owner I/O and storage transition guards.
+      await MemorySuiteStorageBridge.get('plugin', captureKey,
+        () => MemorySuiteStorageBridge.ownerLegacyRead('plugin', captureKey), null, null,
+        { scope, completedTurnCaptureRepair: { expectedServerValue: serverRow.value, assertCurrent: validate } });
+      const repaired = await storage.getVerifiedJson(captureKey, scope, null);
+      const repairedBytes = await MemorySuiteStorageBridge.ownerLegacyRead('plugin', captureKey);
+      if (JSON.stringify(repaired) !== JSON.stringify(previous) || repairedBytes !== serverRow.value)
+        throw new Error(`LIBRA_CAPTURE_REPAIR_READBACK_FAILED:${captureKey}`);
+      await validate();
+      return repaired;
+    };
+    const rawCaptureAttachment = async (context, pair, receipt, receiptKey, packet, beforeWrite) => {
+      const scope = context.scope;
       const captureKey=key.completedTurnCapture(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,receipt.revisionId);
-      const previous=await storage.getVerifiedJson(captureKey,scope,null);
+      const previous=await readProducerCompletedTurnCapture(context,pair,{...receipt,receiptKey},beforeWrite);
       const original=receipt.rawSourcePacket || previous?.rawSourcePacket;
       const originalRef=receipt.rawSourcePacket ? receipt.rawPacketRef : previous?.rawVariantRefs?.find(ref=>ref.field==='rawSourcePacket')
         || (previous?.rawPacketRef?.field==='rawSourcePacket' ? previous.rawPacketRef : null);
@@ -38205,7 +38337,7 @@ function createLibraReadonlySourceContext(owner) {
       };
       const rawSourcePacket = await buildCompletedTurnRawPacket(context, pair);
       const rawPacketRef = rawPacketRefFor(receiptKey, 'rawSourcePacket', rawSourcePacket, head);
-      const attachmentFor = receipt => rawCaptureAttachment(scope,receipt,receiptKey,rawSourcePacket);
+      const attachmentFor = receipt => rawCaptureAttachment(context,pair,receipt,receiptKey,rawSourcePacket,options.beforeWrite);
       const receiptMatchesSource = value => value?.schema === 'libra.completed_turn_receipt.v1'
         && string(value.scopeKey) === string(scope.scopeKey)
         && string(value.worldlineId) === worldlineId
@@ -42155,9 +42287,10 @@ function createLibraReadonlySourceContext(owner) {
       if ((ref.memoryId && string(ref.memoryId) !== string(stored.memoryId || stored.id || ''))
         || (Number(ref.revision || 0) > 0 && Number(ref.revision) !== Number(stored.revision || 0))
         || (ref.sourceDigest && string(ref.sourceDigest) !== string(stored.sourceDigest))) return null;
-      if (ref?.archiveShared !== true) return stored;
+      const bodySnapshot = captureCanonicalBodySnapshot(stored);
+      if (ref?.archiveShared !== true) return rememberConsumedCanonical(stored, ref.key, bodySnapshot);
       const sessionEpoch = Number.isFinite(Number(ref.sessionEpoch)) ? Number(ref.sessionEpoch) : Number(stored.sessionEpoch || -1);
-      return {
+      return rememberConsumedCanonical({
         ...stored,
         sessionEpoch,
         archiveShared: true,
@@ -42165,7 +42298,7 @@ function createLibraReadonlySourceContext(owner) {
         archiveBaseSessionEpoch: Number.isFinite(Number(ref.archiveBaseSessionEpoch))
           ? Number(ref.archiveBaseSessionEpoch)
           : Number(stored.archiveBaseSessionEpoch || stored.sessionEpoch || -1)
-      };
+      }, ref.key, bodySnapshot);
     };
     const removeMemoryRecord = async ref => {
       if (!ref?.key || ref?.archiveShared === true) return false;
@@ -43051,12 +43184,23 @@ function createLibraReadonlySourceContext(owner) {
 
     const yieldBranchAudit = () => new Promise(resolve => setTimeout(resolve, 0));
 
+    // Private completion identity follows the existing cache lifetime. A clock
+    // value alone cannot distinguish two successful audits in the same tick.
+    const completedBranchAudits = new WeakMap();
+    const branchAuditInputWitness = (context, pairs, manifest) => JSON.stringify({
+      scope: { scopeKey: string(context?.scope?.scopeKey || ''),
+        characterId: string(context?.scope?.characterId || ''), chatId: string(context?.scope?.chatId || '') },
+      hostWorldline: asObject(manifest?.worldlineMeta),
+      sourceTagKey: memorySuiteSourceTagKey('libra'), pairs
+    });
+
     const scheduleDeepBranchAudit = (context, pairs, delayMs = BRANCH_DEEP_AUDIT_DELAY_MS) => {
       const scope = clone(asObject(context?.scope));
       const scopeKey = string(scope.scopeKey || '');
       if (!scopeKey || state.disposed || state.portableMemoryActiveOperationId || state.branchAuditInFlight.has(scopeKey)) return false;
       const timerKey = `branch_audit:${scopeKey}`;
       if (state.timers.has(timerKey)) return false;
+      const scheduledAudit = { receipt: completedBranchAudits.get(state.branchPairSignatureCache.get(scopeKey)) };
       const timer = setTimeout(() => {
         state.timers.delete(timerKey);
         // Portable admission and enqueue ownership are synchronous. Recheck at
@@ -43068,7 +43212,7 @@ function createLibraReadonlySourceContext(owner) {
           const livePairs = buildPairs(liveContext.chat, liveContext?.scope?.scopeKey || '');
           await reconcileCanonicalBranchBeforeRecallUnlocked(liveContext, {
             pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'
-          });
+          }, scheduledAudit);
           return true;
         }).catch(error => { warn('LIBRA background branch audit failed', error); return false; }).finally(() => {
           state.branchAuditInFlight.delete(scopeKey);
@@ -43117,7 +43261,7 @@ function createLibraReadonlySourceContext(owner) {
 
     // Private body: the scheduled audit and both scan audit sites already own
     // this scope's non-reentrant queue. The public entry below acquires it.
-    const reconcileCanonicalBranchBeforeRecallUnlocked = async (context, options = {}) => {
+    const reconcileCanonicalBranchBeforeRecallUnlocked = async (context, options = {}, scheduledAudit = null) => {
       const pairs = Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, context?.scope?.scopeKey || '');
       const manifest = options.manifest && typeof options.manifest === 'object'
         ? options.manifest
@@ -43132,6 +43276,9 @@ function createLibraReadonlySourceContext(owner) {
       const previousSignatures = cachedSignatures.length ? cachedSignatures : asArray(persistedGuard.batchSignatures);
       const previousStatus = string(previousCache?.status || persistedGuard.status || BRANCH_GUARD_BOOTSTRAP_PENDING);
       const fullAudit = options.full === true;
+      const previousFullAudit = completedBranchAudits.get(previousCache);
+      // Capture what this audit actually examines, before its physical awaits.
+      const auditInput = fullAudit ? branchAuditInputWitness(context, pairs, manifest) : '';
       const startsToCheck = new Set();
       const signatureChangedStarts = changedBranchStarts(previousSignatures, currentBatchSignatures);
 
@@ -43280,8 +43427,14 @@ function createLibraReadonlySourceContext(owner) {
       // newly started or handoff target session before its first complete five-turn batch.
       const hadTrustedBaseline = previousStatus === BRANCH_GUARD_READY;
       const nextStatus = fullAudit || hadTrustedBaseline ? BRANCH_GUARD_READY : BRANCH_GUARD_BOOTSTRAP_PENDING;
+      // Keep all full-audit reads and reconciliation. Only an unchanged audit
+      // superseded since timer registration can avoid a timestamp-only write.
+      const supersededUnchangedAudit = fullAudit && scheduledAudit && previousFullAudit
+        && previousFullAudit !== scheduledAudit.receipt && !changed
+        && previousFullAudit.input === auditInput
+        && Number(persistedGuard.lastFullAuditAt || 0) === previousFullAudit.lastFullAuditAt;
       const lastFullAuditAt = fullAudit
-        ? now
+        ? supersededUnchangedAudit ? Number(persistedGuard.lastFullAuditAt || 0) : now
         : Math.max(Number(previousCache?.lastFullAuditAt || 0), Number(persistedGuard.lastFullAuditAt || 0));
       const nextGuard = normalizeBranchGuard({
         schema: BRANCH_GUARD_SCHEMA,
@@ -43331,14 +43484,20 @@ function createLibraReadonlySourceContext(owner) {
           warn('LIBRA World Manager branch replay failed', error);
         }
       }
-      state.branchPairSignatureCache.set(scopeKey, {
+      const nextCache = {
         batchSignatures: currentBatchSignatures.slice(),
         status: nextGuard.status,
         verifiedStarts: nextGuard.verifiedStarts.slice(),
         observedTurns: pairs.length,
         at: now,
         lastFullAuditAt
-      });
+      };
+      if (fullAudit && !continuityRebuildPending) {
+        completedBranchAudits.set(nextCache, Object.freeze({ input: auditInput, lastFullAuditAt }));
+      } else if (!fullAudit && previousFullAudit) {
+        completedBranchAudits.set(nextCache, previousFullAudit);
+      }
+      state.branchPairSignatureCache.set(scopeKey, nextCache);
       const deepAuditDue = !fullAudit && options.scheduleDeep !== false
         && (nextGuard.status !== BRANCH_GUARD_READY || !lastFullAuditAt || now - lastFullAuditAt >= BRANCH_DEEP_AUDIT_INTERVAL_MS);
       if (deepAuditDue) {
@@ -48225,7 +48384,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           || digest(work) !== head.workDigest)
           return empty('stale_source','micro_publish_attempt_superseded');
       }
-      if (!await activeMicroSource(active.receipt)) return empty('stale_source', 'source_changed_during_micro_read');
+      const finalSource = await activeMicroSource(active.receipt);
+      if (!finalSource || digest(finalSource.receipt) !== digest(active.receipt)
+        || digest(finalSource.head) !== digest(active.head)) {
+        return empty('stale_source', 'source_changed_during_micro_read');
+      }
+      // The record/work/source reads above await physical storage. A head
+      // removed or replaced during those reads cannot authorize the cached
+      // record, even when its source revision and analysis ID still match.
+      let finalHead;
+      try { finalHead = await storage.getVerifiedJson(headKey, scope, null); }
+      catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
+      if (digest(finalHead) !== digest(head)) return empty('stale_source', 'micro_head_changed_during_read');
       return { status: 'verified', reason: '', record, receipt: active.receipt,
         head, recordKey, headKey };
     };
@@ -59859,6 +60029,7 @@ ${string(queryBundle?.sceneText || '')}`;
         recallTokenBudgetMode: string(budgetPlan.tokenBudgetMode || 'dynamic_cjk_v1'),
         at: Date.now()
       };
+      if (guard?.publicationCurrent && !guard.publicationCurrent()) return result;
       state.lastRecall = result;
       state.lastRecallRuntime = recallGuardSnapshot(guard);
       Runtime.lastMemoryRecall = clone(result);
@@ -60310,11 +60481,14 @@ ${string(queryBundle?.sceneText || '')}`;
       // miss or a budget stop is reported as `last-known`/`unknown` rather than as
       // "nothing changed later" (`01` section 11).
       let recallContinuity = null;
+      let recallClosureProofs = [];
+      const recallClosureProofsByKey = new Map();
       try {
         const unresolvedHistoricalAnchor = temporalAnchor.temporalIntent === 'past'
           && Number(temporalAnchor.requestedTurn || 0) > 0 && temporalAnchor.status !== 'resolved';
         if (unresolvedHistoricalAnchor) {
           const anchorReason = temporalAnchor.status === 'ambiguous' ? 'temporal_anchor_ambiguous' : 'temporal_anchor_unavailable';
+          recallClosureProofs = [];
           recallContinuity = {
             schema: 'libra.recall_continuity_closure.v1',
             currentness: 'unknown', closureComplete: false, temporalScope: 'unresolved', asOfTurn: Number(temporalAnchor.requestedTurn || 0), asOfCursor: null,
@@ -60361,6 +60535,8 @@ ${string(queryBundle?.sceneText || '')}`;
             head: null,
             readFact: async ref => {
               const memory = await loadMemoryRef(ref);
+              const proof = getConsumedCanonicalProof(memory);
+              if (proof) recallClosureProofsByKey.set(string(ref.key), proof);
               return memory;
             },
             budget: { maxFacts: RECALL_CLOSURE_MAX_FACTS },
@@ -60389,6 +60565,11 @@ ${string(queryBundle?.sceneText || '')}`;
             if (!fact) return false;
             if (!artifact) return !!fact.tempFactId;
             return !selectedKeys.has(unifiedRecallTransitionKey(artifact, fact, entry?.ref || null, recallContinuityRegistry));
+          });
+          recallClosureProofs = additions.slice(0, 40).map(entry => {
+            const proof = recallClosureProofsByKey.get(string(entry?.ref?.key));
+            if (!proof) throw consumerContractError('CONSUMER_CANONICAL_CLOSURE_PROVENANCE_UNAVAILABLE');
+            return proof;
           });
           recallContinuity = {
             schema: 'libra.recall_continuity_closure.v1',
@@ -60435,7 +60616,7 @@ ${string(queryBundle?.sceneText || '')}`;
             facts: []
         };
       }
-      if (recallContinuity) Runtime.lastRecallContinuityClosure = clone(recallContinuity);
+      if (recallContinuity && (!guard?.publicationCurrent || guard.publicationCurrent())) Runtime.lastRecallContinuityClosure = clone(recallContinuity);
       const reactivatedSelected = selected.find(row => row.latentReactivated === true);
       if (reactivatedSelected) {
         state.lastLatentRecall = {
@@ -60561,6 +60742,8 @@ ${string(queryBundle?.sceneText || '')}`;
         recallTokenBudgetMode: string(budgetPlan.tokenBudgetMode || 'dynamic_cjk_v1'),
         at: Date.now()
       };
+      consumedClosureProofsByResult.set(result, mergeConsumedProofs(recallClosureProofs));
+      if (guard?.publicationCurrent && !guard.publicationCurrent()) return result;
       state.lastRecall = result;
       state.lastRecallRuntime = recallGuardSnapshot(guard);
       Runtime.lastMemoryRecall = clone(result);
@@ -61353,8 +61536,17 @@ ${string(queryBundle?.sceneText || '')}`;
       // provenance, and they do NOT replace the selected row -- the older value stays
       // visible, the later change is simply no longer missing.
       const closure = asObject(result?.diagnostics?.recallContinuityClosure);
-      const closureFacts = closure?.currentness === 'current' && closure?.closureComplete === true
+      // The resolver admits each successor only after its own provenance/link proof.
+      // Incomplete aggregate coverage can coexist with validated historical changes.
+      // Deliver those changes without upgrading the last-known verdict or the
+      // incomplete-coverage warning; an unknown temporal scope still admits none.
+      const closureFacts = ['current', 'last-known'].includes(closure?.currentness)
         ? asArray(closure?.facts) : [];
+      if (closureFacts.some(fact => string(fact?.text))) {
+        const proofs = consumedClosureProofsByResult.get(result);
+        if (!proofs?.length) throw consumerContractError('CONSUMER_CANONICAL_CLOSURE_PROVENANCE_UNAVAILABLE');
+        consumedMicroProofs.push(...proofs);
+      }
       for (const closureFact of closureFacts) {
         const text = string(closureFact?.text || '').trim();
         if (!text) continue;
@@ -61474,6 +61666,10 @@ ${string(queryBundle?.sceneText || '')}`;
           if (memory.kind === 'micro') {
             const proof = consumedMicroProofsByMemory.get(memory);
             if (!proof) throw consumerContractError('CONSUMER_MICRO_PROVENANCE_UNAVAILABLE');
+            consumedMicroProofs.push(proof);
+          } else {
+            const proof = getConsumedCanonicalProof(memory);
+            if (!proof) throw consumerContractError('CONSUMER_CANONICAL_PROVENANCE_UNAVAILABLE');
             consumedMicroProofs.push(proof);
           }
           delivery.sourceMemories += 1;
@@ -62543,6 +62739,7 @@ ${string(queryBundle?.sceneText || '')}`;
       packet.consumer_context=consumerEntityProjection(packet.continuity_state,registry,seed);
       packet.consumer_read_set=readSet;
       packet.consumer_boundary=boundary || await captureUnifiedResponseBoundary(context,settings);
+      bindConsumedResponseBoundary(packet.consumed_data_token, packet.consumer_boundary);
       if(packet.consumer_context.state)packet.continuity_state_prompt=[
         '[WORLD MANAGER CURRENT STATE — REQUEST IDENTITIES / READ ONLY]',
         'Names are display labels, not identity. Use the same request refs across relationships, knowledge, ownership and location. Never emit request refs in visible prose. Non-ready domains are last-known. New input and newer direct facts outrank prior values. No new event is authorized.',
@@ -62564,7 +62761,16 @@ ${string(queryBundle?.sceneText || '')}`;
       return true;
     };
 
-    const captureUnifiedResponseBoundary=async(context,settings=null)=>{
+    const bindConsumedResponseBoundary = (token, boundary) => {
+      const entry = consumedDataReadSets.get(string(token));
+      if (!entry) throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
+      if (entry.responseBoundary && digest(entry.responseBoundary) !== digest(boundary)) throw consumerContractError('CONSUMER_DATA_BINDING_CHANGED');
+      entry.responseBoundary = unifiedDeepFreeze(clone(boundary));
+    };
+    const captureUnifiedResponseBoundary=async(context,settings=null,options={})=>{
+      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);
+      let timer;
+      try {return await Promise.race([(async()=>{
       const scope=context.scope,pairs=buildPairs(context.chat,scope.scopeKey);
       const [manifest,head,registry,meta,migration,direction]=await Promise.all([
         storage.getJson(key.manifest(scope),null),storage.getJson(key.continuityState(scope),null),storage.getJson(key.entityRegistry(scope),null),
@@ -62572,13 +62778,20 @@ ${string(queryBundle?.sceneText || '')}`;
       ]);
       return {scopeKey:scope.scopeKey,sourceDigest:digest(responseTranscriptProjection(pairs)),manifestDigest:unifiedResponseManifestIdentity(manifest),
         headDigest:digest(head),registryDigest:digest(registry),worldlineDigest:digest(meta),migrationDigest:digest(migration),
-        directionDigest:digest(direction),policyDigest:digest(settings||await loadSettings())};
+        directionDigest:digest(direction),policyDigest:digest(settings||await loadSettings({force:options.force===true})),
+        memoryPolicyDigest:await (async()=>{await memorySettingsWriteTail;return (await readMemorySettingsSnapshot()).semanticHash;})(),
+        storageMode:string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode||'')};
+      })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}
+      finally{clearTimeout(timer);}
     };
-    const assertUnifiedResponseBoundary=async(boundary)=>{
+    const assertUnifiedResponseBoundary=async(boundary,options={})=>{
       if(!boundary)return true;
-      const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
-      const current=await captureUnifiedResponseBoundary(context,await loadSettings({force:true}));
-      unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
+      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);let timer;
+      try{return await Promise.race([(async()=>{
+        const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
+        const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
+        unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
+      })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}finally{clearTimeout(timer);}
     };
     const unifiedResponseContextBody=value=>{const copy=clone(value);delete copy.contextDigest;return copy;};
     const consumedPacketValues = packet => ({currentInput:packet.current_input||'',terminalScene:packet.terminal_scene||'',liveTail:clone(packet.live_tail||null),
@@ -62615,6 +62828,7 @@ ${string(queryBundle?.sceneText || '')}`;
         continuity_state:snapshot.values.currentHead,continuity_state_authority:snapshot.values.stateAuthority,narrative_state:snapshot.values.narrative,
         narrative_direction:snapshot.values.narrativeDirection,lore_material:snapshot.values.lore,bootstrap_references:snapshot.values.bootstrap,author_note:snapshot.values.authorNote});
       if (packet.consumed_data_token) {
+        bindConsumedResponseBoundary(packet.consumed_data_token, snapshot.boundary);
         bindConsumedDataIdentity(packet.consumed_data_token, 'context', snapshot.contextDigest);
         bindConsumedDataIdentity(packet.consumed_data_token, 'packet', consumedPacketIdentityDigest(packet));
       }
@@ -62678,6 +62892,7 @@ ${string(queryBundle?.sceneText || '')}`;
         // recall may improve a request, but it must never hold the main model request
         // indefinitely. Every host/storage phase is bounded by one request-local guard.
         guard = createRecallGuard(RECALL_REQUEST_BUDGET_MS);
+        guard.publicationCurrent = () => requestOwner === latestRecallPublicationOwner;
         state.lastRecallRuntime = recallGuardSnapshot(guard);
 
         const settings = await runRecallStep(
@@ -62779,6 +62994,7 @@ ${string(queryBundle?.sceneText || '')}`;
             settings: runtimeSettings, route: injectionMode, boundary: responseBoundary,
             deadlineAt: Date.now() + 1400, publishState: false }), 1500,
           { soft: true, fallback: null, abortOnTimeout: false });
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         let receiptView = recentDialogue || emptyRecentReceiptView(context, responseView.pairs);
         // Only the result selected by this request owns diagnostic publication.
         // Even a timeout callback delayed beyond the inner deadline may retain
@@ -62860,6 +63076,7 @@ ${string(queryBundle?.sceneText || '')}`;
           );
 
         let result = await recall(context, queryBundle, guard);
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         Runtime.lastInjectionMode = injectionMode;
 
 
@@ -62908,6 +63125,7 @@ ${string(queryBundle?.sceneText || '')}`;
         );
 
         if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
 
         const responseContext=attachUnifiedResponseContext(evidencePacket,{scope:context.scope,manifest:requestManifest,view:responseView,
           boundary:responseBoundary,referenceSnapshot:responseMaterialSource?.referenceSourceSnapshot||null,route:injectionMode});
@@ -63102,6 +63320,9 @@ ${string(queryBundle?.sceneText || '')}`;
         // deadline. Unavailable evidence only omits LIBRA augmentation.
         assertConsumedDataIdentity(evidencePacket.consumed_data_token, 'packet', consumedPacketIdentityDigest(evidencePacket));
         await assertConsumedDataCurrent(evidencePacket.consumed_data_token, { useCapturedDeadline: true });
+        // A newer request can finish during the final physical evidence reads.
+        // Only its owner may inject or publish delivery diagnostics afterward.
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         const finalMessages = injectSystemMessage(messages, block, injectionSettings);
         delivery.sourceTurnAccounting = libraFinalSourceTurnAccounting(delivery,block,evidencePacket);
         if(Runtime.lastMemoryRecall?.delivery)Runtime.lastMemoryRecall.delivery.sourceTurnAccounting=clone(delivery.sourceTurnAccounting);
@@ -67161,7 +67382,7 @@ ${string(queryBundle?.sceneText || '')}`;
           if (!persist) throw stateCorrectionFailure('STATE_REPLAY_V3_DRY_RUN_UNSUPPORTED');
           const beforePipelineBoundary=await loadStateReplayBoundaryFingerprint({context:liveContext,pairs:livePairs,worldlineId:activeId});
           if (string(beforePipelineBoundary)!==string(requiredBoundaryFingerprint||boundaryFingerprint)) throw stateCorrectionFailure('STATE_REPLAY_BOUNDARY_CHANGED');
-          const rebuilt=await rebuildStateFromCanonicalChain({
+          const rebuilt=await rebuildStateFromCanonicalChainUnlocked({
             context:liveContext,manifest:liveManifest,fromStart:1,cutoffTurn:Number.isFinite(effectiveCutoff)?effectiveCutoff:null,
             worldlineId:activeId,reason,signal:null
           });
@@ -79156,9 +79377,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       { id: 'server', label: '서버 · 저장' }, { id: 'recovery', label: '백업 · 복구' },
       { id: 'transfer', label: '데이터 이동' }, { id: 'general', label: '일반 · 진단' }
     ];
-    const family = activeGuiResponseFamily();
-    const panel = Gui.settingsHubSection === 'memory' ? buildInputAssistSettingsPanel({ family })
-      : Gui.settingsHubSection === 'references' ? buildLibraReferenceHubPanel()
+    const panel = Gui.settingsHubSection === 'references' ? buildLibraReferenceHubPanel()
         : Gui.settingsHubSection === 'memory' ? buildLibraMemorySettingsPanel()
           : Gui.settingsHubSection === 'server' ? buildLibraServerConnectionPanel()
             : Gui.settingsHubSection === 'recovery' ? buildLibraRecoveryPanel()

@@ -1,0 +1,96 @@
+{
+  "schema": "lib.six-plugin.source-supplement.v3",
+  "privateCutoffManifestSha256": "f215b5f50e569f20a9c5f098fc19824ec6bc4c58a3224dd839259259148abf4b",
+  "files": [
+    {
+      "path": "BROWSER-STATUS.json",
+      "bytes": 9348,
+      "sha256": "8924f585d7be779c44be1d04fedbc99030a383f96205f477e2562c05b6686434"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1497,
+      "sha256": "a80bd1a4ab48b5344ecf281e146feba75c88d2fa54272db4a326e976135c0941"
+    },
+    {
+      "path": "REGRESSION-STATUS.json",
+      "bytes": 43330,
+      "sha256": "e365bd54cc436feccf1b717dae570aee17261e75a8a4a523ddf62f325fce91ed"
+    },
+    {
+      "path": "ROOT-REGRESSION-LEDGER.json",
+      "bytes": 445052,
+      "sha256": "b87d968ddcec8459b30cfadccbfe2f49d1c355db6257b5c5fdd6396b73e4d11f"
+    },
+    {
+      "path": "TEST-NORMALIZATION.json",
+      "bytes": 52415,
+      "sha256": "8d37c20fa3c755e428c0f5214e1feaf66f5e110ca57569c7a0eb314f40c8d21a"
+    },
+    {
+      "path": "TEST-RETIREMENT-AND-ADOPTION.json",
+      "bytes": 13835,
+      "sha256": "258eadb462a170b0cebf411ccba2f06cf75e02ff4fa715f07d94a3befcccf437"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "bytes": 7817,
+      "sha256": "828f8b4951c7889d8b36ee85b81ac993e2d254cb9ddaf888e4afeb36f154f7dd"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/fixtures/libra_actual_classic_request_controls.cjs",
+      "bytes": 9404,
+      "sha256": "48c6e43dde0afb54d0c07ad624ae95d86f017062bf184585807e847aaa6da9b8"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+      "bytes": 16139,
+      "sha256": "c2e4f64814cbb04737ef0b1ffd9477db189f125c5519182a0373ac74eccb6816"
+    },
+    {
+      "path": "test-successors/010-v5/PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "bytes": 33850,
+      "sha256": "5e3042caf4742ed5dd91c9acde342a0f8f4cf957aadec23ec68508b64750653b"
+    },
+    {
+      "path": "test-successors/017/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "bytes": 18202,
+      "sha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0"
+    },
+    {
+      "path": "test-successors/017/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 11816,
+      "sha256": "2fd193fd72c9875117055600bc98d4515ce23fae38a5ecfa8136b81d47659786"
+    },
+    {
+      "path": "test-successors/017-capture-diagnostic/PROGRAM/tests/libra_completed_turn_scope_lifecycle_test.cjs",
+      "bytes": 24887,
+      "sha256": "58bfa3f6e9a46bb08331bebb01d0a7f5073ca81c807756e8ec728fb3e7899886"
+    },
+    {
+      "path": "test-successors/017-raw-diagnostic/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 18911,
+      "sha256": "d144e17158d2ffb8fee56e62d52b2fa23beec920c2f213e8b592741629381f5b"
+    },
+    {
+      "path": "test-successors/019/PROGRAM/tests/storage_mirror_transition_retirement_test.cjs",
+      "bytes": 26303,
+      "sha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3"
+    },
+    {
+      "path": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness.cjs",
+      "bytes": 44423,
+      "sha256": "a8facb299697e4418a04aded03544c81ce12ebfb6d0365726a6d837ae76f7a9e"
+    },
+    {
+      "path": "test-successors/020-v5/PROGRAM/tests/fixtures/libra_568_one_record_witness_controls.cjs",
+      "bytes": 58186,
+      "sha256": "7b847111b0362bc05a365b8d5637b57f74dbe196b03e5b2535ffbc5f5721bcc1"
+    },
+    {
+      "path": "test-successors/020-v5/PROGRAM/tests/libra_main_memory_portable_compatibility_test.cjs",
+      "bytes": 19143,
+      "sha256": "0ae353b1c70528f532449ba914f7f2ebbca309ece703868982c520e61fbc75da"
+    }
+  ]
+}

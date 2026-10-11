@@ -1,0 +1,225 @@
+{
+  "schema": "librarian.test_retirement.v1",
+  "baselineCommit": "2f6c49e69768232f8284163ef25252b987032e83",
+  "originalDefaultRootCount": 1138,
+  "retiredWholeCount": 4,
+  "retainedDefaultRootCount": 1134,
+  "baselineLedgerPreserved": true,
+  "sourceAndProductBehaviorChanged": false,
+  "preimageArchive": {
+    "name": "test-cleanup-preimages.tar.gz",
+    "sha256": "f694e254b90f842f488c17bbabeb3db77b6b9057e67b2762652b85cb1cf8a3a9",
+    "bytes": 233628,
+    "recovery": "Original bytes also remain at baselineCommit. Private checkpoint evidence retains this complete archive; it is not loaded by active runner or source packaging."
+  },
+  "retired": [
+    {
+      "path": "PROGRAM/tests/memory_suite_global_storage_mode_migration_test.cjs",
+      "originalOrdinal": 831,
+      "sha256": "b780d77a4181671bc4a4054a48f13da6b72259a86d7608bcd968e64e5ebb0940",
+      "mode": 384,
+      "reason": "Duplicate wrapper has no independent assertions; default runner already executes the exact same exported run function.",
+      "replacement": [
+        {
+          "path": "PROGRAM/tests/storage_global_allchat_job_test.cjs",
+          "sha256": "aed57d2c9ecf096369e5d19f05d00c26406b4aa719bb350ca22141bc585fd6d3",
+          "coverage": [
+            "L40 public previewGlobalMode exists",
+            "L42 complete discovery and 3 active/inactive scopes",
+            "L43 preview preserves local routing/data bytes",
+            "L45 completeKnownScopes/verifiedScopes=3/failed=[]",
+            "L46 each A/B/C mode server_only and verified retirement of explicit legacy override",
+            "L47 new scope inherits server_only",
+            "L49 A/B physical server database values equal original source",
+            "L50 original local A source retained",
+            "L51 sync job completed",
+            "L55 unavailable host rejects MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE before any local effects"
+          ],
+          "runtimeQualification": "Original environment-blocked result retained; static duplicate equivalence does not imply product PASS."
+        }
+      ],
+      "proofSha256": "2b1f5a3379e7e3d16b1f6fc5ab8d5f10037fca0a494a3be24caa28b26067aa04"
+    },
+    {
+      "path": "PROGRAM/tests/memory_suite_global_storage_mode_panel_mounted_test.cjs",
+      "originalOrdinal": 832,
+      "sha256": "f4f07454a5d0876f78cf6b2db0694c00425af40f4a4103981baeb94e2cf7332e",
+      "mode": 384,
+      "reason": "Duplicate wrapper has no independent assertions; requiring its target runs that target’s top-level assertions once. The same target is already independently discovered by the default root runner.",
+      "replacement": [
+        {
+          "path": "PROGRAM/tests/storage_global_allchat_panel_test.cjs",
+          "sha256": "90a34360cadd1fc14705c7c60c808ba97de4b24fc850e03ed75fc54ca8320256",
+          "coverage": [
+            "L12 no data-scope-perchat control",
+            "L13 global selector exists",
+            "L17 actual mounted public Apply reaches completed sync job",
+            "L18 status displays verified3/3",
+            "L19 scopeA mode is server_only"
+          ],
+          "runtimeQualification": "Original environment-blocked result retained; static duplicate equivalence does not imply product PASS."
+        }
+      ],
+      "proofSha256": "2b1f5a3379e7e3d16b1f6fc5ab8d5f10037fca0a494a3be24caa28b26067aa04"
+    },
+    {
+      "path": "PROGRAM/tests/storage_global_transition_owner_admission_test.cjs",
+      "originalOrdinal": 1098,
+      "sha256": "e15d029e795f90e266ed494c59ac01c4abf7415de79975a7ed56a4eb0db24be5",
+      "mode": 420,
+      "reason": "Duplicate wrapper has no independent assertions; requiring its target runs that target’s top-level assertions once. The same target is already independently discovered by the default root runner.",
+      "replacement": [
+        {
+          "path": "PROGRAM/tests/storage_global_allchat_nested_writer_test.cjs",
+          "sha256": "16fe9b1c038f42bdbb85eca2b28a3ac4b556c6bba82e1e5570396b2b1f682b05",
+          "coverage": [
+            "L5 accepted nested owner I/O prevents global prepare before gate releases",
+            "L5 accepted owner nested I/O resolves ok",
+            "L5 transition resolves ok after drain",
+            "L5 rawlocal A equals ACCEPTED_WRITER",
+            "L5 proxy A equals ACCEPTED_WRITER"
+          ],
+          "runtimeQualification": "Original environment-blocked result retained; static duplicate equivalence does not imply product PASS."
+        }
+      ],
+      "proofSha256": "2b1f5a3379e7e3d16b1f6fc5ab8d5f10037fca0a494a3be24caa28b26067aa04"
+    },
+    {
+      "path": "PROGRAM/tests/hayaku_shared_missing_source_test.cjs",
+      "originalOrdinal": 356,
+      "sha256": "80cfbef9dd13603381254eb6656a9459201cfcb77f00e2105aec93d575b27892",
+      "mode": 384,
+      "reason": "This is the only selected file whose meaningful content is either the removed HAYAKU review adapter/schema or exact preserved evidence coverage. setSourceEditRules itself remains; replacing its accessor only cannot resurrect originalDigest/policyUncertain or loadHayakuSourceReview.",
+      "assertionGroups": [
+        {
+          "id": "baseline_evidence",
+          "assertionLines": [
+            15
+          ],
+          "decision": "exactly_covered_current",
+          "obligation": "Actual owner capture produces immutable source-evidence storage.",
+          "currentProof": [
+            "evidence"
+          ],
+          "replacementCoverage": [
+            "preservation",
+            "routing"
+          ],
+          "gap": "No lost obligation: replacement asserts every admitted packet has an evidence reference, exact source binding/raw, and actual evidence key."
+        },
+        {
+          "id": "old_review_snapshot",
+          "assertionLines": [
+            20
+          ],
+          "decision": "obsolete_removed_schema",
+          "obligation": "The old adapter required originalDigest to be truthy, originalRawDigest to be empty, and policyUncertain to be true. These automatic comparison/review fields do not belong to the current explicit-selection contract.",
+          "currentProof": [
+            "input",
+            "api"
+          ],
+          "replacementCoverage": [
+            "owner"
+          ],
+          "gap": "No current requirement to fabricate old digest metadata in the selection API."
+        },
+        {
+          "id": "missing_old_review_rows",
+          "assertionLines": [
+            22,
+            23,
+            24
+          ],
+          "decision": "obsolete_adapter_with_current_invariant_covered",
+          "obligation": "loadHayakuSourceReview previousUnavailable/beforeText/afterText rows are removed. The still-meaningful invariant that missing old evidence never becomes current text is exactly checked by source_review_evidence_v1_test line12 (available:false and zero writes); owner/scope isolation is lines13-16.",
+          "currentProof": [
+            "api",
+            "evidence"
+          ],
+          "replacementCoverage": [
+            "sdkEvidence"
+          ],
+          "gap": "No requirement to recreate removed UI rows. Keep shared SDK/evidence tests and the current owner source-input/selection tests; do not remove the SDK itself."
+        }
+      ],
+      "replacement": [
+        {
+          "file": "PROGRAM/tests/hayaku_before_request_source_preservation_runtime_test.cjs",
+          "sha256": "31ab71ed4a79ac6a627153bf8ad436439e0381d8f407fedb125fe9fb5bf231b2",
+          "lines": "6-25,28-59",
+          "coverage": "Actual registered beforeRequest captures owner U+A evidence, exact raw carrier and source refs with zero model/network; exact old raw survives restart and append. This replaces baseline evidence-presence assertion in the whole-retirement candidate.",
+          "receiptSha256": "26e9ba00181c40bb9c540edffdb78fd64e255c4c4f92e66c1da437144fcd8795",
+          "state": "completed_pass"
+        },
+        {
+          "file": "PROGRAM/tests/source_evidence_scope_routing_v2_test.cjs",
+          "sha256": "6521ff5e0bf6ba5d4906d3c23aca1e29c6aa164b55ce245a54f48f6da22610ac",
+          "lines": "6-15",
+          "coverage": "Actual HAYAKU owner evidence capture, original-scope routing and restore payload-digest rejection. Does not recreate removed source-review rows.",
+          "receiptSha256": "55ed6d6c3c40684ef76f0247da199a666b90747921c0869101eae688e8a403a4",
+          "state": "completed_pass"
+        },
+        {
+          "file": "PROGRAM/tests/source_review_evidence_v1_test.cjs",
+          "sha256": "87528be432d5c7abb178f40a0654b392d834b74f66479dddc14139afcd10c2fa",
+          "lines": "11-16,20-29",
+          "coverage": "Actual shared evidence SDK directly checks missing previous source available:false with zero writes, foreign owner/scope/identity refusal, old source digest, immutable raw and tamper/write/readback rejection. Identical SDK is embedded in current HAYAKU; no current HAYAKU before/after-review adapter is claimed. The shared SDK fixture configures owner libra for its baseline missing-source case, not a live HAYAKU runtime. Its foreign-owner case creates owner hayaku and confirms that the libra evidence cannot be reused. Equivalence is limited to the identical embedded evidence implementation and this owner-bound primitive; the owner baseline is separately established by actual HAYAKU preservation/routing runs. No removed HAYAKU review adapter or UI coverage is inferred.",
+          "receiptSha256": "c18730712404c064f32897f5662ad38471e032a95e3e603de61cd4794fe17fac",
+          "state": "completed_pass"
+        },
+        {
+          "file": "PROGRAM/tests/shared_explicit_reanalysis_owner_test.cjs",
+          "sha256": "ff9da8dcca85513c9fff275988aef9d84df207a7ef02d215d08c0cbc75f7fd89",
+          "lines": "5-34,37-79,105-118,120-172",
+          "coverage": "Actual HAYAKU public selected apply, no tracker reads/writes, source-input/no-journal guard, ignore corrupt legacy journal, no automatic calls/debt on same-ID edit, failure/late-change predecessor retention, immutable evidence and owner isolation. Does not assert every old review result, one-use ticket replay after completion, or failed selected action across restart.",
+          "receiptSha256": "5ca0633c9c4722e1858d62cb42ec7ef7b52bdac19b0ffc694e7ebfd1fd54b14c",
+          "state": "completed_pass"
+        }
+      ],
+      "proofSha256": "82d764691441a36145c1e0ee2b0cca23abb36f4244d366ca933cc7cdefeb659a"
+    }
+  ],
+  "correctedRetainedTests": [
+    {
+      "path": "PROGRAM/tests/flashback_multilingual_probe_wording_test.cjs",
+      "beforeSha256": "72e041057c5442bbbfb930e80439f7e1c3819d5cc6187ae4f3a15aa04de78d28",
+      "afterSha256": "5942c3d8438a9541c48ddab196440be7924902e991141a00bafe458ae7999f98",
+      "reason": "The removed hash provider is no longer an eligible multilingual-probe mode; requiring its explanatory sentence would restore obsolete UI. All current model-only wording, state, threshold and button assertions remain byte-identical.",
+      "verificationReceiptSha256": "f4d1c89d5eefe37f5a661b7b7721cb39cc297c6be18f06f80b48bace738f4f09",
+      "verificationManifestSha256": "8c186a26a5ae82c3139bbef6d410946201aeb0b047e1d32099c2f3c3c825bec0",
+      "result": "PASS",
+      "coverage": "Remaining required five wording items, six forbidden vocabulary checks, labels/status/control marker, not_applicable branch, gate/freshness checks and four action buttons unchanged. Existing model-only source contracts remain in original inventory."
+    },
+    {
+      "path": "PROGRAM/tests/hayaku_disposed_topology_runtime_test.cjs",
+      "beforeSha256": "d4c0f5cac46e9cc6c5dd50f06955d9a876b9d5358c984ea0f593292544463887",
+      "afterSha256": "1b51d816bee927dae186208822723f7a80ef5d89389c91eff808c2908620a85c",
+      "reason": "current-await-test-fixture-repair",
+      "verificationReceiptSha256": "82eb10166736ff379ab5eb35aa311557a48734c4faa3b6b49be2e0a6ac77bb38",
+      "verificationManifestSha256": "413164baf4ae80b1bd1eed4707660e4ef5e61d2972a586ba4adc2c82352a2d80",
+      "result": "PASS",
+      "coverage": "Current unload/owner/scope/ledger async boundaries. No claim for cold ready read, consumed-evidence write transaction or actual host."
+    },
+    {
+      "path": "PROGRAM/tests/libra_narrative_direction_loop_and_general_headers_test.cjs",
+      "beforeSha256": "fe5bf5e713a7daa43d48c100cf5b9984c363c13dca01e6b9cc5fc5c487b19090",
+      "afterSha256": "77a911c75ee7c89cab6c1509198f4fa3f4bd0c249f9c53be8dbbd07c226f401c",
+      "reason": "Use retained getNarrativeDirection fixture API; all original assertion lines unchanged.",
+      "verificationReceiptSha256": "921929e4b83605b56050f50b91ea10e6d0311a3f7e9e2b49985640450e3d29c2",
+      "verificationManifestSha256": "05eb55ab3de0c65582fbd1e334fdb816eb300f6ddab46583cb70ed7938736cc7",
+      "result": "PASS",
+      "coverage": "18 unchanged assertion lines; synthetic VM consumer rendering."
+    },
+    {
+      "path": "PROGRAM/tests/libra_narrative_direction_render_path_test.cjs",
+      "beforeSha256": "b8c64e43a27eb4ab93a950a46e46378ea7fe6af17cb01b1f461e47766477c17d",
+      "afterSha256": "7839d533e0b899c76536f1ec6d896341f76687b057626650fe0f1ce29ed21238",
+      "reason": "Use retained getNarrativeDirection fixture API; all original assertion lines unchanged.",
+      "verificationReceiptSha256": "bd2dd2830566c67ee48123da5193509360edbb177a0963911a9933b7bceacca8",
+      "verificationManifestSha256": "05eb55ab3de0c65582fbd1e334fdb816eb300f6ddab46583cb70ed7938736cc7",
+      "result": "PASS",
+      "coverage": "9 unchanged assertion lines; synthetic VM consumer rendering."
+    }
+  ],
+  "qualification": "Four corrected tests have source-bound focused PASS receipts. Retirement is coverage-based and does not erase the original failing or blocked receipts. Full current product and actual-host qualification is not inferred."
+}

@@ -8,8 +8,7 @@ const PLUGINS = Object.freeze({
   libra: ['LIBRA.js', 'LIBRA', 'libra'],
   lia: ['LIA_Persona_Linker.js', 'LIA Persona Linker', 'lia_persona_linker'],
   retrace: ['RETRACE.js', 'RE:TRACE', 'flashback_hayaku_bridge'],
-  gradia: ['GRADIA.js', 'GRADIA', 'serial_gradation_agents_for_rp'],
-  wm: ['LIBRA_World_Manager.js','LIBRA World Manager','libra_world_manager']
+  gradia: ['GRADIA.js', 'GRADIA', 'serial_gradation_agents_for_rp']
 });
 const GUIDES = ['0_설치_안내.txt', 'PROGRAM/처음_읽어주세요.txt', 'PROGRAM/PACKAGE_CONTENTS.txt'];
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');

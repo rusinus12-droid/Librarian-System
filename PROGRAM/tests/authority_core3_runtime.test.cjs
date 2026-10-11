@@ -20,7 +20,7 @@ function request(app,url,body={},extra={}){
 const fresh=(key,value)=>({kind:'set',space:'plugin',key,value,expectedRevision:0,expectedDigest:'',expectedExists:false,expectedTombstone:false});
 function current(repo,key,kind='remove'){const row=repo.get('plugin',key);return {kind,space:'plugin',key,expectedRevision:row.revision,expectedDigest:row.digest,expectedExists:row.exists,expectedTombstone:row.tombstone};}
 function receipt(f,n,id){return f.control.readOperation({generation:f.control.readWitness().generation,namespace:n,operationId:id});}
-function noAncillary(f){for(const p of ['stores/lia','stores/retrace','stores/wm','runtime','logs','backups','migrations','runtime-token.txt','config/compute-signing-key.txt','data-layout.json'])assert.equal(fs.existsSync(path.join(f.dataDir,p)),false,p);}
+function noAncillary(f){for(const p of ['stores/lia','stores/retrace','stores/unknown-owner','runtime','logs','backups','migrations','runtime-token.txt','config/compute-signing-key.txt','data-layout.json'])assert.equal(fs.existsSync(path.join(f.dataDir,p)),false,p);}
 
 test('qualified core3 normal constructor opens a usable no-listen runtime without ancillary enrollment',async t=>{
  const f=prepared(t),initial=f.control.readInitialQualification(),app=appFor(t,f);
@@ -74,12 +74,12 @@ test('Flashback writer acquire renew write release use normal handler and real f
  assert.equal((await request(app,'/v1/kv/set',{...body,operationId:'fenced-http-valid',fence}).result).status,200);assert.equal((await command({action:'release',epoch:fence.epoch})).status,200);
  const rows=app.repositories.flashback.database.prepare('SELECT receipt_json FROM authority_write_receipts').all().map(x=>JSON.parse(x.receipt_json));assert.equal(rows.filter(x=>x.operationClass==='fence').length,3);noAncillary(f);
 });
-test('unsupported routes fail before body, manager recovery, native proof, filesystem or WM work',async t=>{
+test('unsupported routes fail before body, manager recovery, native proof, filesystem work',async t=>{
  const f=prepared(t),app=appFor(t,f),before=f.control.readWitness().controlSequence;
- for(const route of ['/v1/admin/backups/create','/v1/admin/backups/import','/v1/admin/backups/export','/v1/admin/restore/plan','/v1/admin/restore','/v1/manager/reset/plan','/v1/manager/reset/execute','/v1/manager/control/backup-create','/v1/manager/portable/import-begin','/v1/manager/scopes/index','/v1/manager/scope-pin','/v1/manager/scope-delete/plan','/v1/manager/scope-delete/execute','/v1/owner/scope-delete/plan','/v1/owner/scope-delete/execute','/v1/admin/libra/native-archive-repair/execute','/v1/flashback/physical-repair/reserve','/v1/wm/dataset/open','/v1/compute/bootstrap','/v1/compute/execute','/v1/libra/read-session/capture','/v1/libra/read-session/current','/v1/unknown-writer']){
+ for(const route of ['/v1/admin/backups/create','/v1/admin/backups/import','/v1/admin/backups/export','/v1/admin/restore/plan','/v1/admin/restore','/v1/manager/reset/plan','/v1/manager/reset/execute','/v1/manager/control/backup-create','/v1/manager/portable/import-begin','/v1/manager/scopes/index','/v1/manager/scope-pin','/v1/manager/scope-delete/plan','/v1/manager/scope-delete/execute','/v1/owner/scope-delete/plan','/v1/owner/scope-delete/execute','/v1/admin/libra/native-archive-repair/execute','/v1/flashback/physical-repair/reserve','/v1/compute/bootstrap','/v1/compute/execute','/v1/libra/read-session/capture','/v1/libra/read-session/current','/v1/unknown-writer']){
   const result=await request(app,route,{allWriterOwnership:true,mode:'server_only'}).result;assert.equal(result.status,503,route);assert.equal(result.reads,0,route);
  }
- await assert.rejects(app.createBackup(),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);await assert.rejects(app.restoreBackup('none'),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);await assert.rejects(app.managerControl.handle('backup-create'),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);assert.equal(app.wmService,null);assert.equal(f.control.readWitness().controlSequence,before);noAncillary(f);
+ await assert.rejects(app.createBackup(),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);await assert.rejects(app.restoreBackup('none'),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);await assert.rejects(app.managerControl.handle('backup-create'),/AUTHORITY_LIFECYCLE_UNAVAILABLE/);assert.equal(f.control.readWitness().controlSequence,before);noAncillary(f);
 });
 test('bootstrap advertises bounded capability coverage and never native corpus or lifecycle authority',async t=>{
  const f=prepared(t),app=appFor(t,f);
@@ -98,13 +98,13 @@ test('reopen keeps qualification and durable operation replay; legacy default st
  const second=appFor(t,f);assert.deepEqual(second.repositories.libra.mutate(input),result);assert.deepEqual(f.control.readInitialQualification(),initial);noAncillary(f);
 });
 
-test('existing retired stores stay readable and immutable without requiring WM or retired enrollment',async t=>{
+test('existing retired stores stay readable and immutable without requiring extra or retired enrollment',async t=>{
  const f=core3Fixture(t);
  for(const n of ['lia','retrace']){const file=path.join(f.dataDir,'stores',n,n+'.sqlite');fs.mkdirSync(path.dirname(file),{recursive:true});const db=new DatabaseSync(file);try{db.exec("CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE kv(space TEXT NOT NULL,key TEXT NOT NULL,value_json TEXT,deleted INTEGER NOT NULL DEFAULT 0,revision INTEGER NOT NULL,digest TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(space,key));CREATE TABLE operations(operation_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,response_json TEXT NOT NULL,created_at INTEGER NOT NULL);PRAGMA user_version=1;");db.prepare('INSERT INTO kv VALUES(?,?,?,0,1,?,0)').run('plugin','retained',JSON.stringify(n),'a'.repeat(64));}finally{db.close();}}
  f.initialize();f.bind();f.qualify();const app=appFor(t,f);
  for(const n of ['lia','retrace']){const repo=app.repositories[n];assert.equal(repo.ephemeral,false);assert.equal(repo.get('plugin','retained').value,n);assert.throws(()=>repo.applyConditionalBatch([current(repo,'retained')],{maintenance:true,operationId:'retired-delete'}),/read_only/);assert.throws(()=>repo.maintainReceipts(),/read_only/);assert.throws(()=>repo.database.exec('DROP TABLE kv'),/readonly|read-only/i);}
  await app.close();for(const n of ['lia','retrace']){const db=new DatabaseSync(path.join(f.dataDir,'stores',n,n+'.sqlite'),{readOnly:true});try{assert.equal(db.prepare('SELECT value_json FROM kv').get().value_json,JSON.stringify(n));assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name GLOB 'authority_*'").get().n,0);}finally{db.close();}}
- assert.equal(fs.existsSync(path.join(f.dataDir,'stores','wm')),false);
+ assert.equal(fs.existsSync(path.join(f.dataDir,'stores','unknown-owner')),false);
 });
 test('changed receipt, missing owner and restore journal all refuse without startup repair',async t=>{
  for(const kind of ['receipt','owner','restore']){
@@ -123,9 +123,9 @@ test('unprepared legacy default remains usable and does not select core3 from ca
  assert.equal(app.authorityRuntime,undefined);assert.equal(fs.existsSync(f.markerPath),false);const result=await request(app,'/v1/kv/set',{namespace:'libra',space:'plugin',key:'libra:legacy-check',value:1,operationId:'legacy-default-write'}).result;assert.equal(result.status,200);assert.equal(app.repositories.libra.database.prepare('PRAGMA user_version').get().user_version,1);
  for(const n of ['lia','retrace'])assert.equal(fs.existsSync(path.join(f.dataDir,'stores',n)),false);
 });
-test('core3 bootstrap refuses excluded WM and strong GRADIA consumers rather than minting unusable capabilities',async t=>{
+test('core3 bootstrap refuses unknown plugins and strong GRADIA consumers rather than minting unusable capabilities',async t=>{
  const f=prepared(t),app=appFor(t,f);
- for(const plugin of ['libra_world_manager','serial_gradation_agents_for_rp']){const r=await request(app,'/bootstrap',{}, {method:'GET',headers:{'x-memory-suite-plugin':plugin}}).result;assert.equal(r.status,503,plugin);assert.equal(r.body.token,undefined);}
+ for(const [plugin,status] of [['unknown-plugin',403],['serial_gradation_agents_for_rp',503]]){const r=await request(app,'/bootstrap',{}, {method:'GET',headers:{'x-memory-suite-plugin':plugin}}).result;assert.equal(r.status,status,plugin);assert.equal(r.body.token,undefined);}
 });
 
 for(const authorityEvidence of ['prepared','orphan'])test(`invalid physical reset and ${authorityEvidence} authority evidence both remain fail-closed`,t=>{

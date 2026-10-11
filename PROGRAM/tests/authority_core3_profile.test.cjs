@@ -4,7 +4,7 @@ const {DatabaseSync}=require('node:sqlite');
 const C=require('../server/authority/contracts.cjs'),Core=require('../server/authority/control-store.cjs'),O=require('../server/authority/owner-store.cjs');
 const {core3Fixture,OWNERS,PROFILE}=require('./fixtures/authority_core3_fixture.cjs');
 function serverInternals(){const Module=require('node:module'),file=require.resolve('../server/server.cjs'),m=new Module(file,module);m.filename=file;m.paths=Module._nodeModulePaths(path.dirname(file));m._compile(fs.readFileSync(file,'utf8')+'\nmodule.exports.createRepository=createRepository;\n',file);return m.exports;}
-const missingRetired=f=>{for(const n of ['lia','retrace','wm'])assert.equal(fs.existsSync(path.join(f.dataDir,'stores',n)),false,n+' must not be created');};
+const missingRetired=f=>{for(const n of ['lia','retrace','unknown-owner'])assert.equal(fs.existsSync(path.join(f.dataDir,'stores',n)),false,n+' must not be created');};
 test('explicit core3 preparation and genuine qualification need only three physical owners',t=>{
  const f=core3Fixture(t),before=OWNERS.map(n=>f.databases[n].prepare('SELECT * FROM kv').all());f.initialize();f.bind();
  assert.equal(f.control.readWitness().contract,'memory-suite.server-authority.v2');assert.equal(f.control.readWitness().authorityProfile,PROFILE);
@@ -24,11 +24,11 @@ test('profile selection cannot silently convert legacy defaults, markers or rece
  assert.throws(()=>Core.readActivationState({dataDir:f.dataDir}),{code:'AUTHORITY_QUARANTINED'});fs.writeFileSync(f.markerPath,bytes);
  const db=new DatabaseSync(f.controlPath);try{db.prepare('UPDATE lifecycle_operations SET journal_json=?').run(C.canonical({...receipt,contract:'memory-suite.initial-owner-qualification.v1'}));assert.throws(()=>f.control.readInitialQualification(),{code:'AUTHORITY_QUARANTINED'});}finally{db.close();}missingRetired(f);
 });
-test('core3 rejects retired and WM writes before resolving owners or creating a repository',t=>{
+test('core3 rejects retired and unknown-owner writes before resolving owners or creating a repository',t=>{
  const f=core3Fixture(t);f.initialize();f.bind();f.qualify();let resolutions=0;
  const coordinator=require('../server/authority/coordinator.cjs').createAuthorityCoordinator({control:f.control,resolveOwnerStore:n=>{resolutions++;return f.owners[n];}});
  const server=serverInternals();
- for(const namespace of ['lia','retrace','wm']){
+ for(const namespace of ['lia','retrace','unknown-owner']){
   const op={generation:f.control.readWitness().generation,namespace,operationId:'blocked-'+namespace,fingerprint:'a'.repeat(64),operationClass:'kv'};
   assert.throws(()=>coordinator.runMutation(op,()=>assert.fail('body must not run')));assert.throws(()=>f.control.publishIntent(op));
   assert.throws(()=>server.createRepository(f.dataDir,namespace,()=>false,f.control));

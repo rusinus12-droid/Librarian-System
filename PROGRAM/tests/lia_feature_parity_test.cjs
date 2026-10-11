@@ -1,26 +1,9 @@
 'use strict';
-// LIA storage-mode parity — Tasks 43-45 of
-// Librarian-System-0.3.61-STORAGE-MODE-CONTINUATION-PLAN.md.
-//
-// The plan names a repro per LIA feature, and those repros run against the fixture default
-// `memory_suite_server_mode: 'plugin_only'` with a nativeFetch that throws ('fixture offline'),
-// so the mirror and server_only legs were never executed. This drives LIA's own runtime surface
-// against a real HTTP/SQLite server in all three modes.
-//
-// LIA exposes its reachable entry points on `runtime` (the plugin module) rather than a `_test`
-// object. The live-sync surface used here is the same one the existing contract test drives:
-//   getLiveSyncCaptureState -> debugCaptureLiveSyncBatch -> debugVerifyLiveSyncBatch
-//
-// Features exercised (Tasks 43-45):
-//   LIA-LIVE-REFRESH        getLiveSyncCaptureState / debugScheduleLiveSync / debugProcessChatOutput
-//   LIA-LIVE-CHECKPOINT     debugCaptureLiveSyncBatch (the batch the checkpoint is built from)
-//   LIA-SOURCE-REVALIDATE   debugVerifyLiveSyncBatch (revision supersession)
-//   LIA-SAME-CHAT-RECOVERY  readLivePersonaBindingByScopeKey equivalent: the fixture's binding state
-//   LIA-SESSION-HANDOFF     the handoff archive/receipt surface reachable from the runtime
-//   LIA-PERSONA-BIND        writeLivePersonaBinding equivalent: the persisted binding row
-//   LIA-PERSONA-RESTORE     restoreOriginalLivePersona equivalent: originalSnapshot readback
-//   LIA-UI-PERSONA-OPS      the persona panel data layer
-//   LIA-DIAG-INSPECT        buildDebugExportSnapshot equivalent: the runtime debug snapshot surface
+// LIA historical argument parity under the current local-only owner contract.
+// Keep the original three argument inputs and feature observations. The retired
+// remote projection assertions are replaced by local durable binding readback
+// and network refusal; actual manual persona mutation is covered by the release
+// artifact root, while asset restart/recovery remains a separate positive root.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -61,11 +44,7 @@ async function measureMode(mode) {
         };
         // This fixture hard-codes `nativeFetch() { throw new Error('fixture offline') }`; the
         // options.nativeFetch is not consulted, so the replacement happens here.
-        api.nativeFetch = async (target, init) => {
-          const headers = new Headers(init?.headers);
-          headers.set('Connection', 'close');
-          return fetch(target, { ...init, headers });
-        };
+        api.nativeFetch = async () => { throw Error('local-only owner must never request server storage'); };
       },
       arguments: { memory_suite_server_mode: mode, memory_suite_server_url: url },
       // The fixture's nativeFetch throws ('fixture offline') unless one is supplied, which in
@@ -87,19 +66,12 @@ async function measureMode(mode) {
       chatId: fixture.liveChat?.chatId || 'lia-chat', aliases: [scopeKey], label: scopeKey
     };
     // Historical mirror arguments remain readable without selecting a retired endpoint.
-    if (mode !== 'mirror') await bridge.setScopeMode(scopeDescriptor, mode);
+    if (mode === 'plugin_only') await bridge.setScopeMode(scopeDescriptor, mode);
+    else await assert.rejects(() => bridge.setScopeMode(scopeDescriptor, mode),
+      error => error.code === 'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
     const confirmed = await bridge.getScopeMode(scopeDescriptor);
-    assert.equal(confirmed.mode, mode, `${mode}: the scope really runs in the requested mode`);
-    // server_only must not be served from a stale local owner row.
-    if (mode === 'server_only') {
-      for (const key of [...fixture.values.keys()]) {
-        if (key === 'liaPersonaLinkerLivePersonaIndexV2'
-          || String(key).startsWith('liaPersonaLinkerLivePersonaScopeV2::')) {
-          fixture.values.delete(key);
-        }
-      }
-    }
-
+    assert.equal(confirmed.mode, 'plugin_only', `${mode}: owner policy remains local`);
+    assert.equal(confirmed.storagePolicy, 'local_only');
     const features = {};
     const need = name => assert.equal(typeof runtime[name], 'function',
       `${mode}: ${name} must be reachable on the runtime surface (got ${typeof runtime[name]})`);
@@ -243,13 +215,10 @@ async function measureMode(mode) {
       `${row.mode}: the diagnostics surface must be present in every mode`);
   }
 
-  // Storage authority per mode.
-  const plugin = results.find(row => row.mode === 'plugin_only');
-  const mirror = results.find(row => row.mode === 'mirror');
-  const server = results.find(row => row.mode === 'server_only');
-  assert.equal(plugin.serverRows, 0, `plugin_only must write no owner rows to a server (got ${plugin.serverRows})`);
-  assert.ok(server.serverRows > 0, `server_only must project the owner rows to the server (got ${server.serverRows})`);
-  assert.ok(mirror.serverRows > 0, `mirror must project to the server as well as locally (got ${mirror.serverRows})`);
+  for (const row of results) {
+    assert.equal(row.serverRows, 0, `${row.mode}: no canonical owner row is projected remotely`);
+    assert.ok(row.localOwnerKeys > 0, `${row.mode}: real owner binding remains locally readable`);
+  }
 
   process.stdout.write('lia_feature_parity_test: PASS\n');
 })().catch(error => {

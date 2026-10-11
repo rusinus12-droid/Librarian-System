@@ -1,67 +1,46 @@
 'use strict';
-// LIBRA Task48(a) — scope-lock serialization test for the canonical regeneration path.
-//
-// THE DEFECT (libra, not flashback)
-//   saveManifest (35229):
-//       manifest.updatedAt = nowIso();
-//       await storage.setJson(key.manifest(scope), manifest);
-//   is a WHOLE-DOCUMENT overwrite: no merge, no CAS. setJson ->
-//   fencedMemoryStorageSet only bumps a fence revision, so every writer proceeds
-//   and the last writer wins wholesale. `processBatch` commits the manifest from
-//   seven such sites; `scan()` always ran it holding
-//   `enqueue(context.scope.scopeKey)` (block 45967-46224 covering the call at
-//   46143), but the regeneration path called it with no lock at all — so two
-//   same-scope writers could read the manifest at the same revision and the later
-//   commit silently reverted the earlier one's independent fields
-//   (inFlight, stats, failedBatches, branchGuard, ...).
-//
-// THE FIX: wrap regenerateCanonicalMemory in the same per-scope enqueue.
-//
-// HOW THIS TEST MEASURES IT (and why it is not vacuous)
-//   `enqueue` serializes per scope key: a task queued for a key runs only after the
-//   previous task for that key settles. The test observes that property directly by
-//   recording the ENTRY and EXIT timestamps of storage reads whose key is the scope
-//   manifest, taken from inside the plugin's own storage boundary:
-//     - the regeneration is launched first and its manifest read is held open
-//       (storage.getItem for the manifest key is delayed) while it holds the lock;
-//     - a second same-scope operation (scanMemoryNow) is launched shortly after.
-//   Post-fix the second operation cannot enter its own manifest read until the
-//   regeneration's lock section finishes -> no overlap.
-//   Pre-fix both run concurrently -> the two manifest-read windows overlap.
-//
-//   Non-vacuity: the test asserts the regeneration really opened a manifest read
-//   (regenerationManifestReads >= 1) AND that a concurrent operation was actually
-//   attempted, so it cannot pass by doing nothing. It also asserts the competing
-//   operation made progress, so it cannot pass by deadlocking.
-//
-// RED: LIBRA_REGENERATE_RACE_PLUGIN_SOURCE=<pre-fix LIBRA.js> makes this FAIL.
+// Current-contract regression: regeneration and derived-vector retry serialize on
+// the same owner queue. saveManifest additionally performs a read-basis CAS.
+// Observe only reads made inside the actual writer lock; context/preflight reads
+// are not writers. The operation identity follows async continuations, never a
+// mutable global tag. Hold the first real regeneration read until the competing
+// retry has queued, then hold its provider to exercise the scan busy guard.
+// LIBRA_REGENERATE_RACE_PLUGIN_SOURCE supports an external mutation control.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 
 const targetPath = process.env.LIBRA_REGENERATE_RACE_PLUGIN_SOURCE
   ? path.resolve(process.env.LIBRA_REGENERATE_RACE_PLUGIN_SOURCE)
   : path.resolve(__dirname, '..', 'plugins', 'LIBRA.js');
-const source = fs.readFileSync(targetPath, 'utf8');
-
-const READ_HOLD_MS = Number(process.env.LIBRA_REGEN_RACE_READ_HOLD_MS || 200);
-const OFFSET_MS = Number(process.env.LIBRA_REGEN_RACE_OFFSET_MS || 50);
+const { AsyncLocalStorage } = require('node:async_hooks');
+const operation = new AsyncLocalStorage(), lock = new AsyncLocalStorage();
+const queueRows = [], lockWindows = [];
+const originalSource = fs.readFileSync(targetPath, 'utf8');
+const marker = 'const next = previous.catch(() => null).then(task).finally(() => {';
+assert.equal(originalSource.split(marker).length, 2, 'one observable owner queue');
+const source = originalSource.replace(marker,
+  'globalThis.__QUEUE_OBSERVE__(scopeKey); const next = previous.catch(() => null).then(() => globalThis.__LOCK_OBSERVE__(scopeKey, task)).finally(() => {');
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const readRelease = deferred(), providerRelease = deferred();
+let heldRead = false, holdProvider = false, providerHeldSeen = false;
 
 const values = new Map();
 let manifestKey = null;
 
 // Every manifest read window, tagged by which operation was holding it.
 const readWindows = [];
-let currentTag = 'idle';
+
 const storage = {
   async getItem(key) {
     const k = String(key);
     const isManifest = manifestKey && k === manifestKey;
     if (!isManifest) return values.has(k) ? values.get(k) : null;
-    const record = { tag: currentTag, enter: Date.now(), exit: 0 };
+    const record = { tag: operation.getStore() || 'background', scope: lock.getStore() || '', enter: performance.now(), exit: 0 };
     readWindows.push(record);
-    // Hold the read open so a competing writer has a real chance to interleave.
-    await new Promise(resolve => setTimeout(resolve, READ_HOLD_MS));
-    record.exit = Date.now();
+    if (record.tag === 'regeneration' && !heldRead) {
+      heldRead = true; await readRelease.promise;
+    }
+    record.exit = performance.now();
     return values.has(k) ? values.get(k) : null;
   },
   async setItem(key, value) { values.set(String(key), value); return true; },
@@ -71,8 +50,8 @@ const storage = {
 
 const chat = { id: 'regen-lock-chat', chatId: 'regen-lock-chat', name: 'Regen Lock', message: [], bindedPersona: '' };
 for (let turn = 1; turn <= 12; turn += 1) {
-  chat.message.push({ role: 'user', data: `User ${turn}`, chatId: `u-${turn}` });
-  chat.message.push({ role: 'assistant', data: `Assistant ${turn}`, chatId: `a-${turn}` });
+  chat.message.push({ role: 'user', data: `User ${turn}`, chatId: `t${turn}-u` });
+  chat.message.push({ role: 'assistant', data: `Alice signed agreement ${turn}.`, chatId: `t${turn}-a` });
 }
 chat.messages = chat.message;
 const character = { id: 'regen-lock-character', name: 'Regen Lock', chatPage: 0, chats: [chat] };
@@ -84,13 +63,18 @@ const host = {
     const key = String(name);
     if (key.includes('memory_suite_server_mode')) return 'plugin_only';
     if (key.includes('enable_gui')) return 'false';
-    if (key.includes('enable_character_ito')) return 'true';
-    if (key.includes('enable_plot_ito')) return 'true';
+    if (key.includes('enable_character_ito')) return 'false';
+    if (key.includes('enable_plot_ito')) return 'false';
     return '';
   },
   async getArg(name) { return this.getArgument(name); },
   async setArgument() { return true; },
-  async runLLMModel() { throw new Error('synthetic provider failure'); },
+  async runLLMModel(options) {
+    if (holdProvider && operation.getStore() === 'regeneration') { providerHeldSeen = true; await providerRelease.promise; }
+    const second = JSON.stringify(options).includes('[t6-u]');
+    const turn = second ? 6 : 1;
+    return { type: 'success', result: JSON.stringify(require('./fixtures/librarian_event_fixture.cjs')(`Alice signed agreement ${turn}.`, `t${turn}-a`)) };
+  },
   async nativeFetch() { throw new Error('runtime test has no server'); },
   async onUnload(handler) { unloadHandlers.push(handler); return true; },
   async registerSetting() { return true; }, async unregisterSetting() { return true; },
@@ -120,6 +104,11 @@ const trackedClearInterval = t => { activeIntervals.delete(t); clearInterval(t);
 
 const context = vm.createContext({
   risuai: host,
+  __QUEUE_OBSERVE__: scopeKey => queueRows.push({ scopeKey, tag: operation.getStore() || 'background' }),
+  __LOCK_OBSERVE__: (scopeKey, task) => lock.run(scopeKey, async () => {
+    const row = { scopeKey, tag: operation.getStore() || 'background', enter: performance.now(), exit: 0 }; lockWindows.push(row);
+    try { return await task(); } finally { row.exit = performance.now(); }
+  }),
   console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
   setTimeout: trackedSetTimeout, clearTimeout: trackedClearTimeout,
   setInterval: trackedSetInterval, clearInterval: trackedClearInterval,
@@ -145,59 +134,43 @@ const overlaps = (a, b) => a.enter < b.exit && b.enter < a.exit;
   const api = await waitFor(() => context.__LIBRA__);
   await api.getLibraProviderConfig();
 
-  currentTag = 'setup';
-  await api.startManualCanonicalScan();
-  manifestKey = Array.from(values.keys()).find(k => k.endsWith(':manifest'));
+  const settings = await api.getLibraMemorySettings();
+  await api.saveLibraMemorySettings({ ...settings, enableCharacterAide: false, enableWorldAide: false, enablePlotAide: false, stateTrackingEnabled: false });
+  const setup = await api.runManualColdStart();
+  assert.equal(setup.completed, 2, JSON.stringify(setup));
+  await api.retryPendingUnifiedVectors();
+  manifestKey = Array.from(values.keys()).find(k => k.startsWith('libra') && k.endsWith(':manifest'));
   assert.ok(manifestKey, 'scope manifest created');
-  const scopePrefix = manifestKey.slice(0, -':manifest'.length);
   const manifest0 = JSON.parse(values.get(manifestKey));
-
-  const inventory = await api.listCanonicalBatchRanges();
-  const range = inventory.ranges.find(row => row.startTurn === 6);
-  assert.ok(range, 'canonical batch range at turn 6');
-  const pairs = api.debugBuildPairs(chat);
-  const memoryKey = `${scopePrefix}:memory:6:r1`;
-  values.set(memoryKey, JSON.stringify({
-    schema: 'libra.canonical_memory.v1', memoryId: 'mem_000006', scopeKey: manifest0.scopeKey,
-    branchId: range.sourceDigest, turnRange: { start: 6, end: 10 },
-    sourcePairs: pairs.slice(5, 10).map(p => ({ turn: p.turn, userChatId: p.user.chatId, assistantChatId: p.assistant.chatId })),
-    sourceDigest: range.sourceDigest, revision: 1, status: 'committed',
-    text: 'ORIGINAL', summary: 'Original', recallKeys: [], importance: 0.5,
-    sections: {}, anchors: {}, retrieval: { version: 'libra.retrieval_projection.v2' },
-    embedding: { status: 'disabled', projectionVersion: 'libra.retrieval_projection.v2' },
-    canonicalArtifact: { schema: 'stale' }, artifactValidation: { ok: true },
-    renderValidation: { ok: true, contentHash: 'stale' }, promptProvenance: { provider: 'stale' },
-    pipeline: { stages: ['stale'] },
-    runId: 'regen-lock-run', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-  }));
-  const seeded = JSON.parse(values.get(manifestKey));
-  seeded.memories['6'] = {
-    memoryId: 'mem_000006', key: memoryKey, revision: 1, sourceDigest: range.sourceDigest,
-    status: 'committed', turnRange: { start: 6, end: 10 }, summary: 'Original',
-    embeddingStatus: 'disabled', sessionEpoch: 0, inheritedSessionHistory: false,
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), history: []
-  };
-  seeded.inFlight = null;
-  values.set(manifestKey, JSON.stringify(seeded));
+  const ref = manifest0.memories['6'];
+  assert.equal(ref.status, 'committed', 'T6 canonical really committed');
+  const canonicalBytes = values.get(ref.key), sourceBytes = JSON.stringify(chat);
+  const canonicalRefs = JSON.stringify(manifest0.memories);
+  holdProvider = true;
 
   // --- the race ---
   readWindows.length = 0;
-  currentTag = 'regeneration';
-  const regeneration = api.regenerateCanonicalMemory({ startTurn: 6, memoryId: 'mem_000006', revision: 1 })
-    .then(r => ({ ok: true, state: r?.state }))
-    .catch(e => ({ ok: false, error: String(e && (e.message || e)) }));
-
-  await new Promise(resolve => setTimeout(resolve, OFFSET_MS));
-  currentTag = 'competing';
-  const competing = api.scanMemoryNow()
-    .then(() => ({ ok: true }))
-    .catch(e => ({ ok: false, error: String(e && (e.message || e)) }));
-
+  const regeneration = operation.run('regeneration', () => api.regenerateCanonicalMemory({ startTurn: 6, memoryId: ref.memoryId, revision: ref.revision }));
+  await waitFor(() => heldRead);
+  const competing = operation.run('competing', () => api.retryPendingUnifiedVectors());
+  await waitFor(() => queueRows.some(row => row.tag === 'competing' && row.scopeKey === manifest0.scopeKey));
+  // Capture queue entry before releasing the held read. This asserts actual queue
+  // contention without relying on scheduling offsets or arbitrary read delays.
+  assert.equal(lockWindows.some(row => row.tag === 'competing'), false, 'retry waits for regeneration owner lock');
+  readRelease.resolve();
+  await waitFor(() => providerHeldSeen);
+  await assert.rejects(api.scanMemoryNow(), /canonical_job_busy/, 'scan refuses while regeneration provider is held');
+  providerRelease.resolve();
   const [regenResult, competingResult] = await Promise.all([regeneration, competing]);
-  currentTag = 'idle';
+  assert.equal(regenResult.state, 'awaiting_choice', JSON.stringify(regenResult));
+  const scan = await api.scanMemoryNow();
+  assert.ok(['completed', 'completed_with_warnings'].includes(scan.state), JSON.stringify(scan));
+  assert.equal(values.get(ref.key), canonicalBytes, 'candidate generation and retry preserve active canonical bytes');
+  assert.equal(JSON.stringify(chat), sourceBytes, 'source unchanged');
+  assert.equal(JSON.stringify(JSON.parse(values.get(manifestKey)).memories), canonicalRefs, 'canonical refs and derived vector metadata preserved');
 
-  const regenReads = readWindows.filter(w => w.tag === 'regeneration');
-  const competingReads = readWindows.filter(w => w.tag === 'competing');
+  const regenReads = readWindows.filter(w => w.tag === 'regeneration' && w.scope === manifest0.scopeKey);
+  const competingReads = readWindows.filter(w => w.tag === 'competing' && w.scope === manifest0.scopeKey);
   let overlapPairs = 0;
   for (const a of regenReads) for (const b of competingReads) if (overlaps(a, b)) overlapPairs += 1;
 
@@ -206,10 +179,9 @@ const overlaps = (a, b) => a.enter < b.exit && b.enter < a.exit;
     regenerationManifestReads: regenReads.length,
     competingManifestReads: competingReads.length,
     overlappingReadWindows: overlapPairs,
-    regenerationState: regenResult.ok ? regenResult.state : regenResult.error,
+    regenerationState: regenResult.state,
     competingCompleted: competingResult.ok,
-    readHoldMs: READ_HOLD_MS,
-    offsetMs: OFFSET_MS
+    scanAfterRelease: scan.state
   };
   console.log(JSON.stringify(report, null, 1));
 

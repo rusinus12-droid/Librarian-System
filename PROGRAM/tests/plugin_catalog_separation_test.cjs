@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const P=process.env.REGRESSION_PROGRAM||path.resolve(__dirname,'..');
+const metadata=require(path.join(P,'tools/release_metadata.cjs'));
+const builder=require(path.join(P,'tools/build_plugins.cjs'));
+const distribution=require(path.join(P,'tools/build_distribution.cjs'));
+const owners=['flashback','gradia','hayaku','lia','libra','retrace'];
+test('release and build inventories contain exactly the six retained plugins',()=>{assert.deepEqual(Object.keys(metadata.PLUGINS).sort(),owners);assert.deepEqual(Object.keys(builder.PLUGINS).sort(),owners);assert.deepEqual([...builder.TARGETS].sort(),owners);});
+test('removed plugin is rejected before assembly or output',async()=>{assert.equal(Object.hasOwn(builder.PLUGINS,'wm'),false,'removed owner must have no target');await assert.rejects(builder.buildPlugins({only:'wm',profile:'source',programDir:P,outDir:path.join(process.env.TMPDIR||'/tmp','removed-wm-build')}),/unknown_plugin:wm/);});
+test('both package profiles exclude removed source and runtime artifacts',()=>{for(const file of ['plugins/LIBRA_World_Manager.js','wm/src/parts/00-plugin-shell-and-args.js','sdk/WmStorageContracts.source.js','sdk/WmHandoffReceipt.source.js','server/wm/store.cjs']){assert.equal(distribution.shouldCopySourceProgram(file),false,file);assert.equal(distribution.shouldCopyRuntimeProgram(file),false,file);}});
+test('all retained plugin identities remain admitted by both profiles',()=>{for(const [name] of Object.values(metadata.PLUGINS)){if(name==='LIBRA_World_Manager.js')continue;assert.equal(distribution.shouldCopySourceProgram('plugins/'+name),true,name);assert.equal(distribution.shouldCopyRuntimeProgram('plugins/'+name),true,name);}});
+test('shared SDK and portable runtime dependencies remain packaged',()=>{for(const file of ['sdk/MemorySuiteStorageClient.source.js','sdk/MemorySuiteComputeClient.source.js','server/server.cjs','server/portable/stream_archive.cjs'])assert.equal(distribution.shouldCopyRuntimeProgram(file),true,file);});

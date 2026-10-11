@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module'),crypto=require('node:crypto');
-const BASE=process.env.LIB_BASE_PROGRAM||'/workspace/scratch/d09f18a13aaa/memory-ooc-entry-candidate-20261005T1407Z/LIB/PROGRAM';
 const PROGRAM=path.resolve(__dirname,'../..');
+const BASE=process.env.LIB_BASE_PROGRAM||PROGRAM;
 function loadServer(){const file=path.join(PROGRAM,'server/server.cjs'),m=new Module(file,module);m.filename=file;m.paths=Module._nodeModulePaths(path.dirname(file));const original=m.require.bind(m);m.require=id=>{if(id==='node:worker_threads'){const w=require(id);return {...w,Worker:class extends w.Worker{constructor(file,opts){super(fs.existsSync(file)?file:path.join(BASE,'server',path.basename(file)),opts);const hook=globalThis.__repairBackupWorkerHook;if(hook)this.prependListener('message',hook)}}};}if(id.startsWith('.')){const target=path.resolve(path.dirname(file),id);if(!fs.existsSync(target))return require(path.resolve(BASE,'server',id));}return original(id)};m._compile(fs.readFileSync(file,'utf8'),file);return m.exports;}
 const hash=s=>{let h=0x811c9dc5;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),0x01000193);return(h>>>0).toString(36)};
 const digest=v=>crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');

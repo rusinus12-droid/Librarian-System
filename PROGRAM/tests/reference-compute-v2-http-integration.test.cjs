@@ -19,10 +19,12 @@ const marker='retired_'+crypto.randomBytes(12).toString('hex');
  try {
   assert.equal(ref.disabled,true);assert.equal(await ref.tryHandle({url:'/v1/compute/reference-v2/query'},new Proxy({},{set(){throw Error('retired handler wrote response');}})),false);cases.push('retired module is inert; no response interception');
   const health=await request('/health');assert.equal(health.data.compute.enabled,false);cases.push('normal Compute disabled flag intact');
-  const denied=await request('/v1/kv/get?namespace=lia&space=plugin&key='+encodeURIComponent(marker));assert.equal(denied.status,403);cases.push('normal KV remains authenticated');
+  const denied=await request('/v1/kv/get?namespace=hayaku&space=plugin&key='+encodeURIComponent(marker));assert.equal(denied.status,403);cases.push('normal KV remains authenticated');
   const auth={Authorization:`Bearer ${app.token}`,'X-Memory-Suite-Admin':'1'};
+  // Seed an active owner: retired LIA writes are correctly refused with403.
+  // Query/clear must preserve both private records regardless of route retirement.
   for(const suffix of ['','-other-scope']){
-   const saved=await request('/v1/kv/set',{namespace:'lia',space:'plugin',key:marker+suffix,operationId:marker+suffix,value:{packet_schema_rev:2,id:'private'+suffix,summary:'non-disclosure fixture'},expectedRevision:0},auth);assert.equal(saved.status,200);
+   const saved=await request('/v1/kv/set',{namespace:'hayaku',space:'plugin',key:marker+suffix,operationId:marker+suffix,value:{packet_schema_rev:2,id:'private'+suffix,summary:'non-disclosure fixture'},expectedRevision:0},auth);assert.equal(saved.status,200);
   }
   for(const credentials of [{},auth])for(const endpoint of ['query','clear','status']){
    const r=await request('/v1/compute/reference-v2/'+endpoint,endpoint==='status'?undefined:{kind:'hayaku',scopeId:marker,query:'non-disclosure fixture'},credentials);
@@ -32,7 +34,7 @@ const marker='retired_'+crypto.randomBytes(12).toString('hex');
   process.env.LIBRARIAN_TOKEN=marker;
   const alternate=await request('/v1/compute/reference-v2/query',{kind:'hayaku',scopeId:marker,query:'non-disclosure fixture'},{Authorization:`Bearer ${marker}`});
   assert([403,404].includes(alternate.status));cases.push('alternate legacy token does not enable a bypass');
-  for(const suffix of ['','-other-scope']){const r=await request('/v1/kv/get?namespace=lia&space=plugin&key='+encodeURIComponent(marker+suffix),undefined,auth);assert.equal(r.status,200);assert(JSON.stringify(r.data).includes('non-disclosure fixture'));}
+  for(const suffix of ['','-other-scope']){const r=await request('/v1/kv/get?namespace=hayaku&space=plugin&key='+encodeURIComponent(marker+suffix),undefined,auth);assert.equal(r.status,200);assert(JSON.stringify(r.data).includes('non-disclosure fixture'));}
   cases.push('owner data and other-scope data unchanged after retired clear/query');
   assert.equal(http.createServer,createServerBefore);cases.push('HTTP routing remains unmodified');
   console.log(JSON.stringify({test:'reference-compute-v2-http-integration',passed:cases.length,cases}));

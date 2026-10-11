@@ -19,8 +19,8 @@ const between = (source, start, end) => {
 };
 
 // RisuAI 2026.8.240 official committed-output listener must be the preferred
-// capture source in all four output-sensitive plugins.
-for (const [name, source] of [['LIBRA', libra], ['HAYAKU', hayaku], ['Flashback', flashback], ['LIA', lia]]) {
+// capture source in the three automatic output-sensitive plugins.
+for (const [name, source] of [['LIBRA', libra], ['HAYAKU', hayaku], ['Flashback', flashback]]) {
   assert.match(source, /addRisuChatListener/,
     `${name}: official RisuAI chat output listener is present`);
   assert.match(source, /messageIndex\s*<\s*0/,
@@ -40,7 +40,7 @@ assert.match(libraRegister, /addRisuScriptHandler\('output', handler\)/,
   'LIBRA retains one fallback detector for pre-2026.8.240 hosts');
 
 const hayakuAdapter = between(hayaku, 'const addChatOutputListener = async handler => {', 'const removeChatOutputListener = async () => {');
-assert.match(hayakuAdapter, /Promise\.resolve\(\)\.then\(\(\) => handler\(event\)\)/);
+assert.match(hayakuAdapter, /Promise\.resolve\(\)\.then\(\(\) => handler\(event,\{observedAt,pairWitness\}\)\)/);
 assert.match(hayakuAdapter, /await current\.addRisuChatListener\('output', wrapped\)/);
 
 const flashbackRegister = between(flashback, 'const registerCaptureBackendOnce = async', 'const afterRequest = async');
@@ -53,17 +53,6 @@ assert.match(flashbackRegister, /addRisuScriptHandler\('output', processLegacySc
   'Flashback keeps a script-output legacy backend');
 assert.match(flashbackRegister, /FLASHBACK_CAPTURE_BACKENDS\.AFTER_REQUEST_RECONCILE/,
   'Flashback keeps afterRequest live-chat reconciliation as final fallback');
-
-const liaRegister = between(lia, 'async function registerLiveSyncCaptureBackend() {', 'async function unregisterUiRegistration');
-assert.match(liaRegister, /Promise\.resolve\(\)\.then\(\(\) => processLiveSyncChatOutputEvent\(event\)\)/,
-  'LIA official listener only enqueues the event adapter');
-assert.match(liaRegister, /await api\.addRisuChatListener\("output", liveSyncOutputListener\)/);
-assert.match(liaRegister, /addRisuScriptHandler\("output", liveSyncLegacyOutputHandler\)/,
-  'LIA preserves a script-output compatibility backend');
-assert.match(liaRegister, /LIVE_SYNC_CAPTURE_BACKENDS\.AFTER_REQUEST_RECONCILE/,
-  'LIA preserves afterRequest live-chat reconciliation for hosts with no output API');
-assert.match(liaRegister, /liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.CHAT_OUTPUT_V3;[\s\S]*?return true;[\s\S]*?if \(typeof api\.addRisuScriptHandler/,
-  'LIA returns after official registration instead of co-registering legacy output');
 
 // LIBRA: one logical U+A is revisioned across auto-continue. Five-turn work may
 // start from a committed revision, but commit must re-check the exact original
@@ -83,7 +72,7 @@ assert.match(libra, /captureSource \|\| ''\) === 'risu_chat_output'[\s\S]*?refre
 // The exact-identity finalized binding monitor runs after durable capture, so
 // a completed response becomes active without requiring another user request.
 assert.match(hayaku, /captureSource === 'risu_chat_output' \? 4/);
-const hayakuCapture = between(hayaku, 'const processRisuChatOutputEvent = async eventValue => {', 'const install = async');
+const hayakuCapture = between(hayaku, 'const processRisuChatOutputEvent = async (eventValue,observation={}) => {', 'const install = async');
 assert.match(hayakuCapture, /chatOutputTurnRevisions\.get\(logicalKey\)/);
 assert.match(hayakuCapture, /persistCapturedPackets\(pending, candidate\.packets, 'risu_chat_output'/);
 assert.match(hayakuCapture, /scheduleFinalizedBindingMonitor\(pending,[\s\S]*?packetGroupComplete:/);
@@ -106,28 +95,20 @@ assert.match(flashbackAfter, /if \(Runtime\.captureBackend !== FLASHBACK_CAPTURE
   'afterRequest only captures when the selected fallback backend owns capture');
 
 
-// LIA: exact output slots are revision-upserted. Five-turn Persona analysis is
-// source-checked after the provider call and again inside the serialized Persona
-// mutation lock. A newer revision arriving in flight must be requeued, not lost.
-const liaCapture = between(lia, 'function processLiveSyncChatOutputEvent(eventValue = {}) {', 'function renderLivePersonaPrompt(binding) {');
-assert.match(liaCapture, /messageIndex\) \|\| messageIndex < 0/);
-assert.match(liaCapture, /liveSyncOutputTurnRevisions\.get\(turnKey\)/);
-assert.match(liaCapture, /revision = Math\.max\(0, Number\(previous\?\.revision \|\| 0\) \|\| 0\) \+ 1/);
-assert.match(liaCapture, /output_revision_arrived_in_flight/);
-assert.match(lia, /const sourceRevision = livePersonaBatchRevisionSnapshot\(runtimeCtx, batch, options\.outputCapture \|\| null\)/);
-assert.match(lia, /const precommit = await verifyLivePersonaBatchStillCurrent\(sourceRevision\)/);
-assert.match(lia, /const commitGuard = async \(\) => await verifyLivePersonaBatchStillCurrent\(sourceRevision\)/);
-assert.match(lia, /in_flight_revision_requeue/);
-assert.match(lia, /LIVE_SYNC_SOURCE_SUPERSEDED_CODE/);
-assert.match(lia, /handlePersonaEmotionAssetAfterRequest/,
-  'LIA Emotion Asset afterRequest post-processing remains present');
-const liaAfter = between(lia, 'async function initializePersonaProofExperience(', 'const PersonaSelectionManager = Object.freeze(');
-assert.match(liaAfter, /liveSyncCaptureBackend === LIVE_SYNC_CAPTURE_BACKENDS\.AFTER_REQUEST_RECONCILE/,
-  'LIA afterRequest triggers capture only when that fallback backend owns capture');
-assert.doesNotMatch(lia, /LIVE_SYNC_POLL_MS|liveSyncTimer/,
-  'LIA does not restore unconditional idle polling');
-
-
+// LiA is manual-only. Its actual selected five-pair action must still guard
+// source revisions and serialized Persona mutation; no output listener starts
+// automatic Persona work. The independent emotion-asset after hook remains.
+const liaCaptureRegistration=between(lia,'async function registerLiveSyncCaptureBackend() {','async function unregisterUiRegistration(');
+assert.match(liaCaptureRegistration,/liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.NONE/);
+assert.match(liaCaptureRegistration,/liveSyncCaptureFallbackReason = "manual_only"/);
+assert.doesNotMatch(liaCaptureRegistration,/addRisuChatListener|addRisuScriptHandler/);
+const liaManual=between(lia,'async function runManualLivePersonaAnalysis(expectedCtx = null) {','\n  function ');
+assert.match(liaManual,/livePersonaBatchRevisionSnapshot\(runtimeCtx, batch\)/);
+assert.match(liaManual,/verifyLivePersonaBatchStillCurrent\(sourceRevision\)/);
+assert.match(liaManual,/commitGuard: guard, commitSelectionGuard, commitFence/);
+assert.match(liaManual,/LIVE_SYNC_SOURCE_SUPERSEDED_CODE/);
+assert.match(lia,/handlePersonaEmotionAssetAfterRequest/);
+assert.doesNotMatch(lia,/LIVE_SYNC_POLL_MS|liveSyncTimer/);
 
 // Unload/hot-reload must detach the new listener so reinstall cannot double capture.
 assert.match(libra, /removeRisuChatListener/);

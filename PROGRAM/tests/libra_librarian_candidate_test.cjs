@@ -1,7 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),{fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
-// Micro runs its own provider job once per completed U+A; count the two kinds separately.
+// Manual cold start/regeneration consumes existing completed pairs; it does not invoke
+// the separate completion-capture Micro producer. Count both provider kinds explicitly.
 const {countCalls}=require('./fixtures/libra_provider_call_kinds.cjs');
+const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
 const results=[];async function test(name,fn){await fn();results.push(name);console.log('PASS '+name);}
 (async()=>{
  await test('explicit v4 regeneration is one new call, candidate stays inactive, adoption replays locally even with old Observer off',async()=>{
@@ -9,13 +11,13 @@ const results=[];async function test(name,fn){await fn();results.push(name);cons
    assert.equal((await f.run()).completed,1);const original=f.getMemory(),ref=f.getManifest().memories['1'],raw=f.r.values.get(ref.key),originalEvidence=JSON.parse(raw).sourceEvidenceRef,evidenceBytes=f.r.values.get(originalEvidence.key);
    f.control.artifact.facts.find(x=>x.tempFactId==='f10').text='민아는 지호를 분명히 신뢰한다고 말했다.';
    const job=await f.r.api.regenerateCanonicalMemory({memoryId:original.memoryId,revision:original.revision,startTurn:1});
-   assert.equal(job.state,'awaiting_choice',JSON.stringify(job));assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,5);assert.equal(f.getMemory().revision,1);assert.equal(f.r.values.get(ref.key),raw);
+   assert.equal(job.state,'awaiting_choice',JSON.stringify(job));assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,0);assert.equal(f.getMemory().revision,1);assert.equal(f.r.values.get(ref.key),raw);
    const adopted=await f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'adopt'});
-   assert.ok(['completed','completed_with_warnings'].includes(adopted.state),JSON.stringify(adopted));assert.equal(f.getMemory().revision,2);assert.equal(f.getHead().status,'ready',JSON.stringify(adopted));assert.equal(f.getHead().unifiedApplied.revision,2);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,5);
+   assert.ok(['completed','completed_with_warnings'].includes(adopted.state),JSON.stringify(adopted));assert.equal(f.getMemory().revision,2);assert.equal(f.getHead().status,'ready',JSON.stringify(adopted));assert.equal(f.getHead().unifiedApplied.revision,2);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,0);
    const retainedOriginal=JSON.parse(f.r.values.get(ref.key)),originalPayload=JSON.parse(raw);assert.equal(retainedOriginal.revision,originalPayload.revision);assert.equal(retainedOriginal.artifactDigest,originalPayload.artifactDigest);
    assert.deepEqual(retainedOriginal.canonicalArtifact,originalPayload.canonicalArtifact);assert.deepEqual(retainedOriginal.turnRange,originalPayload.turnRange);
    assert.deepEqual(retainedOriginal.sourceEvidenceRef,originalEvidence);assert.equal(retainedOriginal.sourceEvidenceRef.payloadDigest,originalEvidence.payloadDigest);assert.equal(f.r.values.get(originalEvidence.key),evidenceBytes);
-   const recall=await f.r.api.previewUnifiedMemoryRecall('민아 지호 신뢰');assert.ok(recall.memories.some(x=>x.memory.revision===2));
+   const recall=await actualClassicPacket(f,'민아 지호 신뢰',f.getManifest().scopeKey);assert.ok(recall.actualClassic.deliveredRows.some(x=>x.revision===2));
   }finally{await f.r.cleanup();}
  });
  await test('embedding-only manifest drift survives candidate adoption and fresh storage readback',async()=>{
@@ -68,10 +70,10 @@ const results=[];async function test(name,fn){await fn();results.push(name);cons
   }finally{await f.r.cleanup();}
  });
  await test('candidate rejected by user preserves old canonical and never adds a reviewer call',async()=>{
-  const f=await fixture();try{await f.run();const original=f.getMemory();const job=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(job.state,'awaiting_choice',JSON.stringify(job));await f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'keep'});assert.equal(f.getMemory().artifactDigest,original.artifactDigest);assert.equal(f.getMemory().revision,original.revision);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,5);}finally{await f.r.cleanup();}
+  const f=await fixture();try{await f.run();const original=f.getMemory();const job=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(job.state,'awaiting_choice',JSON.stringify(job));await f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'keep'});assert.equal(f.getMemory().artifactDigest,original.artifactDigest);assert.equal(f.getMemory().revision,original.revision);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,0);}finally{await f.r.cleanup();}
  });
  await test('changed source after preview rejects adoption and keeps prior active revision',async()=>{
-  const f=await fixture();try{await f.run();const job=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(job.state,'awaiting_choice');f.chat.message[1].data+=' 실제 변경';await assert.rejects(()=>f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'adopt'}),/source|precondition/i);assert.equal(f.getMemory().revision,1);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,5);}finally{await f.r.cleanup();}
+  const f=await fixture();try{await f.run();const job=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(job.state,'awaiting_choice');f.chat.message[1].data+=' 실제 변경';await assert.rejects(()=>f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'adopt'}),/source|precondition/i);assert.equal(f.getMemory().revision,1);assert.equal(countCalls(f.control).canonical,2);assert.equal(countCalls(f.control).micro,0);}finally{await f.r.cleanup();}
  });
  console.log(JSON.stringify({test:'libra_librarian_candidate',passed:results.length,results,boundary:'actual deployed JS; controlled host/model'}));
 })().catch(e=>{console.error(e);process.exitCode=1;});

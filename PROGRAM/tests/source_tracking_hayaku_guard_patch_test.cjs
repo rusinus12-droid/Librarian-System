@@ -19,30 +19,26 @@ function envelope(quote,turn=1){
     {role:'user',id:'u2',chatId:'u2',data:'What happens next?'},{role:'assistant',id:'a2',chatId:'a2',data:hiddenPacketMessage('Alice waited outside.',second)}
   ]});
   try{
-    const t=runtime.hayaku._test,scope=await t.currentChatScope(),edits=t.getHayakuSourceEdits();
+    const t=runtime.hayaku._test,scope=await t.currentChatScope();
     await t.reconcileObservedChatTopology(scope,t.authoritativeChatSnapshot(scope.chatMessages,scope),'source_edit_exception_initial');
     assert.ok((await runtime.hayaku.ledger.inspect({includeRecords:true})).records.length,'initial packet records are durable');
     runtime.chat.message[1].data=hiddenPacketMessage(NEW,first);
     const editedScope=await t.currentChatScope();await t.reconcileObservedChatTopology(editedScope,t.authoritativeChatSnapshot(editedScope.chatMessages,editedScope),'source_edit_exception_changed');
     runtime.setLlmResponder(async(_call,n)=>({type:'success',result:JSON.stringify(n===1?envelope(NEW):envelope('Alice waited outside.',2))}));
-    await t.handleBeforeRequest([{role:'user',content:'Continue with the edit.'}],'model');
-    assert.equal(runtime.llmCalls.length,2,'the direct edit and affected suffix are automatically reconciled');
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks.every(task=>task.state==='applied'),true);
-
-    const task=edits.status().tasks.find(row=>row.key==='1'),event=edits.status().events.find(row=>row.key==='1');
-    const oldHash=task.oldPacketHashes[0];assert.ok(oldHash);
-    await edits.setException(scope.key,'1',task.revisionId,true);
-    const callsBeforeGuard=runtime.llmCalls.length;
-    assert.equal(edits.canWrite(scope.key,'1',task.sourceDigest),false);
-    assert.equal(edits.rejectsPacket(scope.key,'1',oldHash),true,'exception blocks the stale carrier even after replacement');
-    await assert.rejects(()=>runtime.hayaku.recovery.regenerateTurns({targetTurns:[1],allowMissing:true}),/SOURCE_EDIT_CONSENT_REQUIRED/);
-    assert.equal(runtime.llmCalls.length,callsBeforeGuard,'the recovery path cannot bypass the exception');
-
-    await edits.deleteEvent(scope.key,event.id);
-    assert.equal(edits.status().events.some(row=>row.id===event.id),false);
-    assert.equal(edits.status().tasks.find(row=>row.key==='1').excluded,true,'event deletion does not clear the exception');
-    assert.equal(edits.canWrite(scope.key,'1',task.sourceDigest),false);
-    assert.equal((await runtime.hayaku.reviewSourceEdits()).reason,'automatic_before_request_only');
+    await runtime.callBeforeRequest([{role:'user',content:'Continue with the edit.'}],'model');await runtime.callAfterRequest('', 'model');
+    assert.equal(runtime.llmCalls.length,0,'ordinary request never analyzes a source edit');
+    const inventory=await runtime.hayaku.listReanalysisRanges(),calls=runtime.llmCalls.length;
+    for(const invalid of [{...inventory,ranges:[]},{...inventory,ranges:[inventory.ranges[0],inventory.ranges[0]]},{...inventory,scopeKey:'wrong'},{...inventory,topology:'wrong'},{...inventory,ranges:[{...inventory.ranges[0],identity:'wrong'}]},{...inventory,ranges:Array.from({length:129},()=>inventory.ranges[0])}]){
+      const result=await runtime.hayaku.reanalyzeSelectedRanges(invalid);assert.equal(result.ok,false,JSON.stringify(result));assert.equal(runtime.llmCalls.length,calls,'invalid scope/topology/selection cannot dispatch a provider');
+    }
+    const oldLedger=await runtime.hayaku.ledger.inspect({includeRecords:true}),unselected=oldLedger.records.filter(r=>r.targetPairIndex===2&&r.recordState==='active').map(r=>({id:r.recordId,raw:r.raw}));
+    assert.ok(unselected.length,'a durable unselected suffix exists');
+    const result=await runtime.hayaku.reanalyzeSelectedRanges({...inventory,ranges:inventory.ranges.filter(r=>r.key==='1')});
+    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(runtime.llmCalls.length,1,'one selected turn makes one existing provider call');
+    const finalLedger=await runtime.hayaku.ledger.inspect({includeRecords:true}),active=finalLedger.records.filter(r=>r.recordState==='active');
+    assert.ok(active.some(r=>Number(r.targetPairIndex)===1&&JSON.stringify(r).includes(NEW)),'selected replacement becomes durable');
+    for(const old of unselected)assert.ok(active.some(r=>r.recordId===old.id&&r.raw===old.raw),'unselected suffix stays byte-identical and active');
+    assert.equal(runtime.chat.message[1].data,hiddenPacketMessage(NEW,first));assert.equal((await runtime.hayaku.reviewSourceEdits()).reason,'explicit_selection_required');
     console.log(JSON.stringify({test:'source_tracking_hayaku_guard_patch',passed:9}));
   }finally{await runtime.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

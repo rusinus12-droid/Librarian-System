@@ -149,9 +149,8 @@ const assertLockedCompilation = (compiled, domain, owner) => {
   assert.equal(rawEnvelope.semanticHash, saved.semanticHash);
 
   assertLockedCompilation(await api.debugCompileMemoryPrompt('ariadne'), 'memory', 'Memory');
-  assertLockedCompilation(await api.debugCompilePlannerPrompt(), 'planner', 'Planner');
-  assertLockedCompilation(await api.debugCompileSgaPrompt('sga_shadow'), 'sga', 'GRADIA Draft');
-  assertLockedCompilation(await api.debugCompileInputWriterPrompt('rp'), 'input_writer', 'Input Writer');
+  // Embedded response compilers retired; Memory and State runtime locks remain live.
+  for(const removed of ['debugCompilePlannerPrompt','debugCompileSgaPrompt','debugCompileInputWriterPrompt']) assert.equal(typeof api[removed],'undefined',removed+' cannot reintroduce a retired dispatch');
 
   for (const stageId of ['state_entity_admission', 'state_character_observer', 'state_character_verifier']) {
     const compiled = api.debugCompileStatePromptOverride(stageId, { customPrompt: malicious });

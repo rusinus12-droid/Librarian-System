@@ -3,7 +3,9 @@ const test=require('node:test'),assert=require('node:assert/strict'),crypto=requ
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const {JSDOM}=require('jsdom');
+const {observeNativeCleanup,settleNativeCleanup}=require('./fixtures/portable_native_cleanup_readiness.cjs');
 const expose=source=>{
+ source=observeNativeCleanup(source);
  const anchor='      getUnifiedStorageStatus,';assert.equal(source.split(anchor).length,2);
  source=source.replace(anchor,'      portableQueueProbe: () => ({canonical:state.queues.size,receipt:state.receiptQueues.size,micro:state.microQueues.size}),\n'+anchor);
  const api='    async getUnifiedStorageStatus() {';assert.equal(source.split(api).length,2);
@@ -25,6 +27,7 @@ const assertEmptyMarker=value=>{
 test('portable export rejects an actual held Micro transaction, then exports its settled source without losing bytes',async()=>{
  let listener,release,started=false,input,dom;const f=await fixture({transformSource:expose,host:{addRisuChatListener:async(_kind,handler)=>{listener=handler;return true;}}});
  try{
+  await settleNativeCleanup(f);
   assert.equal((await f.run()).completed,1);
   f.chat.message.push({role:'user',chatId:'t6-u',data:'정문을 확인한다.'},{role:'assistant',chatId:'t6-a',data:'도서관 정문이 열렸다.'});
   f.control.onCall=async args=>{input=JSON.parse(args[0].messages[1].content);started=true;await new Promise(r=>{release=r;});return{type:'success',result:JSON.stringify({schema:'libra.micro_producer_envelope.v1',personCandidates:{spans:[],relations:[]},micro:{schema:'libra.micro_memory.v1',...input.binding,claims:[]}})};};

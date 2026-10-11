@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const core=require('../tools/recall_keyword_features.cjs')();
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
 const request='민수의 약속은 언제고 그의 약속 장소는?';
 const quoted=Array.from({length:40},(_,i)=>`> "참고인용${i}"`).join('\n')+'\n질문: '+request;
@@ -70,7 +70,7 @@ const rec=(id,text,index=0,vector=[],metadata={})=>({id,text,scopeKey:'test',sou
  const store=ht.emptyStore();store.entity.characters=[{id:'minsu',publicRef:'minsu',name:'민수'},{id:'other',publicRef:'other',name:'참고인용0'}];
  const hs=ht.buildRetrievalQuerySignature(store,quoted,h.hayaku.settings());assert.equal(hs.rawQuery,quoted,'HAYAKU preserves the full input instead of guessing its intent');assert.deepEqual(Array.from(hs.conceptTokens),[]);assert.ok(hs.tokens.length>0);
  f.currentChat.message=[{role:'user',chatId:'u1',data:'민수의 약속을 기록해.'},{role:'assistant',chatId:'a1',data:target.text}];f.currentChat.messages=f.currentChat.message;
- await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
+ await f.api.saveSettings({...cfg,...modelSettings});await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
  const scope=await f.api.resolveCurrentScope(),stored=JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records);
  for(const input of [request,quoted,long]){
   const messages=[{role:'system',content:'질문에 답해.'},{role:'user',content:input}];

@@ -66,7 +66,7 @@ assert.doesNotMatch(evidence, /storage\.set|saveManifest|LibraProviderBridge|cal
 
 const receipts = between('const normalizeExecutionReceiptStatus =', 'const normalizeWorldManagerCorrectionDomain =');
 for (const status of ['complete', 'partial', 'pending', 'not_required', 'skipped', 'stale', 'failed']) assert.match(receipts, new RegExp(`'${status}'`));
-for (const kind of ['memory', 'state', 'draft', 'recall', 'input_writer', 'embedding', 'rebuild']) assert.match(receipts, new RegExp(`'${kind}'`));
+for (const kind of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) assert.match(receipts, new RegExp(`'${kind}'`));
 assert.match(receipts, /sessionOnly:true/);
 assert.match(receipts, /durable:true/);
 assert.doesNotMatch(receipts, /storage\.set|saveManifest|LibraProviderBridge|callTask/);
@@ -93,14 +93,14 @@ assert.match(executionLogGui, /buildExecutionReceiptPanel\(Gui\.executionLogSect
   'durable recall receipt history remains available beside the current-turn view');
 
 assert.match(source, /const SHARED_MEMORY_HUB_SECTIONS = Object\.freeze\(\['read', 'context', 'manage'\]\)/);
-assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory', 'state', 'draft', 'recall', 'input_writer', 'embedding', 'rebuild'\]\)/);
+assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory',\s*'state',\s*'draft',\s*'recall',\s*'embedding',\s*'rebuild'\]\)/);
 require('./helpers/libra_active_book_routes.cjs')(source);
 
 const references = between('const sealReferenceSourceSnapshot =', 'const formatShadowRisuContext =');
 assert.match(references, /libra\.reference_source_snapshot\.v1|REFERENCE_SOURCE_SNAPSHOT_SCHEMA/);
 assert.match(references, /referenceSnapshotDigest/);
 assert.match(references, /resolveReferenceBodies/);
-assert.match(source, /referenceSourceSnapshotDigest/);
+assert.match(source, /referenceSnapshotDigest/);
 
 const governor = between('const createCanonicalProviderBudget =', 'const canonicalProviderRecoveryPlan =');
 assert.match(governor, /libra\.provider_operation_budget\.v1/);

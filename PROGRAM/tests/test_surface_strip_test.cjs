@@ -30,6 +30,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
+const crypto = require('node:crypto');
+const started = performance.now();
+const checkpoint = phase => console.log(JSON.stringify({ test: 'test_surface_strip', phase, elapsedMs: Math.round(performance.now() - started) }));
 
 const ROOT = path.resolve(__dirname, '..');
 // Use the exact parser resolver shipped by the release builder. A missing parser is an explicit
@@ -152,7 +155,9 @@ const hostNpmCacheRoots = () => {
   assert.equal(measured.LIBRA.bytes, 0, 'LIBRA has no _test surface and must report zero');
   assert.equal(measured.LIA_Persona_Linker.bytes, 0, 'LIA has none either');
 
-  // Run the actual five-plugin release path as well: a source transform that works in isolation is
+  checkpoint('source_transform_controls_complete');
+
+  // Run the actual six-plugin release path as well: a source transform that works in isolation is
   // not enough if the builder cannot launch its minifier or the written artifacts do not read back.
   const buildRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'libra-test-surface-release-build-'));
   const outputDir = process.env.TEST_SURFACE_RELEASE_OUTPUT?path.resolve(process.env.TEST_SURFACE_RELEASE_OUTPUT):path.join(buildRoot,'plugins');
@@ -208,7 +213,6 @@ const hostNpmCacheRoots = () => {
       LOCALAPPDATA: path.join(buildRoot, 'no-pinned-local-appdata'),
       npm_config_cache: noPinnedCache, NPM_CONFIG_CACHE: noPinnedCache };
     delete noPinnedToolchainEnv.NODE_PATH;
-    delete noPinnedToolchainEnv.WM_TOOLCHAIN;
     delete noPinnedToolchainEnv.npm_config_prefix;
     const missingPinned = spawnSync(process.execPath,
       [path.join(ROOT, 'tools', 'build_plugins.cjs'), '--out', prerequisiteOut],
@@ -218,9 +222,9 @@ const hostNpmCacheRoots = () => {
       /terser_5\.51\.2_required; available=/,
       'missing pinned Terser failure must name the exact prerequisite and discovered versions');
     const missingReport = JSON.parse(fs.readFileSync(path.join(prerequisiteOut, 'ultralight-build-report.json'), 'utf8'));
-    assert.equal(missingReport.rows.length, 7, 'the failed prerequisite must report all seven plugins');
+    assert.equal(missingReport.rows.length, 6, 'the failed prerequisite must report all six plugins');
     assert.ok(missingReport.rows.every(row => row.wrote === false
-      && (row.plugin==='wm'?/WM_PINNED_TOOLCHAIN_REQUIRED/:/terser_5\.51\.2_required/).test(row.refused || '')),
+      && /terser_5\.51\.2_required/.test(row.refused || '')),
     'no plugin may be written when the measured minifier is absent');
 
     // A second isolated child proves a missing parser is not treated as an empty/no-op strip.
@@ -245,15 +249,17 @@ console.log('release_test_surface_acorn_unavailable');`;
     assert.match(noParser.stdout, /release_test_surface_acorn_unavailable/,
       'the parser absence probe reads back the product error code');
 
+    checkpoint('missing_toolchain_controls_complete');
     const buildRun = spawnSync(process.execPath,
       [path.join(ROOT, 'tools', 'build_plugins.cjs'), '--profile','release','--out', outputDir],
       { cwd: ROOT, encoding: 'utf8', timeout: 180000, maxBuffer: 1 << 28, windowsHide: true });
     assert.equal(buildRun.error, undefined,
       `the release builder and minifier must launch successfully: ${buildRun.error?.message || ''}`);
-    if(process.env.TEST_SURFACE_EXECUTION_RECEIPT)fs.writeFileSync(process.env.TEST_SURFACE_EXECUTION_RECEIPT,JSON.stringify({command:[process.execPath,path.join(ROOT,'tools/build_plugins.cjs'),'--profile','release','--out',outputDir],cwd:ROOT,environment:{NODE_PATH:process.env.NODE_PATH,WM_TOOLCHAIN:process.env.WM_TOOLCHAIN,NODE_OPTIONS:process.env.NODE_OPTIONS},exit:buildRun.status,stdout:buildRun.stdout,stderr:buildRun.stderr,error:buildRun.error?.message||null},null,2)+'\n');
+    if(process.env.TEST_SURFACE_EXECUTION_RECEIPT)fs.writeFileSync(process.env.TEST_SURFACE_EXECUTION_RECEIPT,JSON.stringify({command:[process.execPath,path.join(ROOT,'tools/build_plugins.cjs'),'--profile','release','--out',outputDir],cwd:ROOT,environment:{NODE_PATH:process.env.NODE_PATH,NODE_OPTIONS:process.env.NODE_OPTIONS},exit:buildRun.status,stdout:buildRun.stdout,stderr:buildRun.stderr,error:buildRun.error?.message||null},null,2)+'\n');
+    checkpoint('actual_release_build_complete');
     const releaseReport = JSON.parse(fs.readFileSync(path.join(outputDir, 'ultralight-build-report.json'), 'utf8'));
     assert.deepEqual(releaseReport.rows.map(row => row.plugin).sort(),
-      ['flashback','gradia','hayaku','lia','libra','retrace','wm'],'the actual builder emits all seven plugins');
+      ['flashback','gradia','hayaku','lia','libra','retrace'],'the actual builder emits all six plugins');
     const releaseArtifacts = await Promise.all(releaseReport.rows.map(async row => {
       assert.equal(row.wrote, true, `${row.plugin} must be written by the release build`);
       const file = path.join(outputDir, path.basename(row.file));
@@ -295,6 +301,8 @@ console.log('release_test_surface_acorn_unavailable');`;
       }
       return { plugin: row.plugin, bytes: Buffer.byteLength(artifact), testSurfaceBlocksRemoved: row.testSurfaceBlocksRemoved,
         testSurfaceBytesRemoved: row.testSurfaceBytesRemoved, directivesKept: row.directivesKept,
+        sourceSha256: crypto.createHash('sha256').update(source).digest('hex'),
+        artifactSha256: crypto.createHash('sha256').update(artifact).digest('hex'),
         executable: true, withinFloor: row.withinFloor, overFloorBy: row.overFloorBy };
     }));
     assert.ok(releaseArtifacts.find(row => row.plugin === 'hayaku').testSurfaceBytesRemoved > 10000);
@@ -308,7 +316,7 @@ console.log('release_test_surface_acorn_unavailable');`;
     process.stdout.write(JSON.stringify({ releaseBuildReadback: {
       exitCode: buildRun.status, terserVersion: terserMetadata.version,
       options: 'defaults=true,unsafe=false,drop_console=true,passes=3; toplevel=true,properties=false',
-      allSevenArtifactsParsed: true, testSurfacesRemoved: true, floorFailures, artifacts: releaseArtifacts
+      allSixArtifactsParsed: true, testSurfacesRemoved: true, floorFailures, artifacts: releaseArtifacts
     } }, null, 1) + '\n');
   } finally {
     fs.rmSync(buildRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

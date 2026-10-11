@@ -6,6 +6,7 @@
 // durable State/History/Recall surfaces recover. This is intentionally a
 // narrow semantic fixture; the older v4 fault matrix remains separate.
 const assert = require('node:assert/strict');
+const { readActualCanonicalDelivery } = require('./fixtures/libra_actual_canonical_delivery.cjs');
 const { serverFixture, fiveMore } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { fixture, artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 
@@ -289,10 +290,10 @@ const runMode = async mode => {
     const recallText = JSON.stringify(recall);
     assert.match(recallText, /민트차를 좋아한다/, `${mode}: v5 preference is readable through Recall`);
     assert.match(recallText, /이행되었다|반환/, `${mode}: v5 linked thread is readable through Recall`);
-    const packet = await f.r.api.prepareInputWriterEvidence('민아 민트차 열쇠 반환 약속');
-    const packetText = JSON.stringify(packet?.evidencePacket || {});
-    assert.match(packetText, /민트차를 좋아한다/, `${mode}: Input Writer packet carries the structured profile`);
-    assert.match(packetText, /이행되었다/, `${mode}: Input Writer packet carries the accepted resolved lifecycle`);
+    const packet = await readActualCanonicalDelivery(snapshot, '민아 민트차 열쇠 반환 약속', { expectedMemory: memory });
+    const packetText = packet.canonicalText;
+    assert.match(packetText, /민트차를 좋아한다/, `${mode}: Classic delivered canonical evidence carries the structured profile`);
+    assert.match(packetText, /이행되었다/, `${mode}: Classic delivered canonical evidence carries the accepted resolved lifecycle`);
 
     observation.providerCalls = f.control.calls.length;
     observation.injectionObserved = fault.observation.injected;
@@ -337,6 +338,6 @@ const runMode = async mode => {
     test: 'libra_phase_d_v5_correction_race_recovery',
     passed: MODES.length,
     results,
-    boundary: 'synthetic provider artifact; a second LIBRA runtime calls the public addWorldManagerCorrection API at the real State batch boundary; the durable correction journal and corrected Head are read back before stale candidate retry, and v5 preference/History/Recall/Input Writer remain readable'
+    boundary: 'synthetic provider artifact; a second LIBRA runtime calls the public addWorldManagerCorrection API at the real State batch boundary; the durable correction journal and corrected Head are read back before stale candidate retry, and v5 preference/History/Recall/Classic consumer remain readable'
   }));
 })().catch(error => { console.error(error); process.exitCode = 1; });

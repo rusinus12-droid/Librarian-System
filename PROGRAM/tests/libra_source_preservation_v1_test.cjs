@@ -1,7 +1,7 @@
 'use strict';
 // Full shipped LIBRA in the repository VM harness. Synthetic, non-sensitive U+A.
-// This preserves the original preservation cases under automatic beforeRequest
-// reconciliation: no source-edit popup, immutable old revisions, and fail-closed
+// This preserves the original cases under explicit selected source replacement:
+// model-free request observation, immutable old revisions, and fail-closed
 // handling when the replacement cannot be safely committed.
 const assert=require('node:assert/strict');
 const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
@@ -37,30 +37,34 @@ const results=[];
 async function scenario(name,fn){const f=await fixture();try{await fn(f);results.push({name,ok:true});}finally{await f.r.cleanup();}}
 async function sourceEdit(f,value='Alice did not sign the office agreement.'){
  f.chat.message[1].data=value;
- const legacy=await f.r.api.reviewSourceEdits();
- assert.equal(legacy.reason,'automatic_before_request_only','legacy review API cannot open a consent popup');
- assert.equal(await f.root.ready(),false);
+ const calls=f.control.calls;
  await f.r.sourceEditBoundary();
- assert.equal(await f.root.ready(),false,'automatic repair must not open a confirmation dialog');
+ assert.equal(await f.root.ready(),false,'request observation must not open a confirmation dialog');
+ assert.equal(f.control.calls,calls,'request observation adds no analysis');
+ assert.equal(f.getManifest().memories['1'].key,f.oldRef.key,'same-slot edit keeps the approved canonical before explicit selection');
+ const selection=await f.r.api.listCanonicalBatchRanges();
+ const ranges=selection.ranges.filter(row=>row.startTurn===1);
+ assert.equal(ranges.length,1);assert.equal(ranges[0].status,'saved');
+ return f.r.api.startSelectedCanonicalBatches({scopeKey:selection.scopeKey,mode:'source_edit',ranges});
 }
 
 (async()=>{
- await scenario('before_request_automatically_replaces_source_and_keeps_old_revision',async f=>{
-  await sourceEdit(f);
+ await scenario('explicit_selected_source_replacement_keeps_old_revision',async f=>{
+  const result=await sourceEdit(f);
   const ref=f.getManifest().memories['1'],memory=JSON.parse(f.r.values.get(ref.key));
   assert.equal(ref.status,'committed');assert.ok(ref.revision>f.oldRef.revision);
   assert.ok(memory.text.includes('did not sign'));assert.notEqual(ref.sourceDigest,f.oldRef.sourceDigest);
   assert.equal(f.r.values.get(f.oldRef.key),f.oldBytes,'replacement retains the byte-identical prior revision');
-  assert.equal(f.control.calls,f.initialCalls+1,'beforeRequest runs exactly one replacement analysis');
-  assert.equal(f.r.api.getSourceEditSyncStatus().tasks[0].state,'applied');
+  assert.equal(f.control.calls,f.initialCalls+1,'explicit selection runs exactly one replacement analysis');
+  assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.job.completed,1);
  });
 
  await scenario('provider_failure_keeps_the_old_canonical_and_bytes',async f=>{
-  f.control.modelFails=true;await sourceEdit(f);
+  f.control.modelFails=true;const result=await sourceEdit(f);
   assert.equal(f.getManifest().memories['1'].key,f.oldRef.key);
   assert.equal(f.getManifest().memories['1'].status,'committed');
   assert.equal(f.r.values.get(f.oldRef.key),f.oldBytes);
-  assert.equal(f.r.api.getSourceEditSyncStatus().tasks[0].state,'failed');
+  assert.equal(result.ok,false,JSON.stringify(result));assert.equal(result.job.failed,1);
  });
 
  await scenario('candidate_write_failure_never_retires_the_original',async f=>{
@@ -69,12 +73,12 @@ async function sourceEdit(f,value='Alice did not sign the office agreement.'){
    if(String(key).includes(':memory:1:r')&&String(key)!==f.oldRef.key){dropped++;return true;}
    return originalSet.call(this,key,value);
   };
-  try{await sourceEdit(f);}finally{storage.setItem=originalSet;}
+  let result;try{result=await sourceEdit(f);}finally{storage.setItem=originalSet;}
   assert.ok(dropped>0,'candidate persistence failure must be exercised');
   assert.equal(f.getManifest().memories['1'].key,f.oldRef.key);
   assert.equal(f.getManifest().memories['1'].status,'committed');
   assert.equal(f.r.values.get(f.oldRef.key),f.oldBytes);
-  assert.equal(f.r.api.getSourceEditSyncStatus().tasks[0].state,'failed');
+  assert.equal(result.ok,false,JSON.stringify(result));assert.equal(result.job.failed,1);
  });
 
  await scenario('source_changed_during_provider_wait_cannot_commit_stale_result',async f=>{
@@ -84,11 +88,11 @@ async function sourceEdit(f,value='Alice did not sign the office agreement.'){
    f.chat.message[1].data='Alice signed, then withdrew the agreement.';
    return {type:'success',result:JSON.stringify(result)};
   };
-  await sourceEdit(f,'Alice did not sign the office agreement.');
+  const result=await sourceEdit(f,'Alice did not sign the office agreement.');
   assert.equal(f.getManifest().memories['1'].key,f.oldRef.key);
   assert.equal(f.getManifest().memories['1'].status,'committed');
   assert.equal(f.r.values.get(f.oldRef.key),f.oldBytes);
-  assert.equal(f.r.api.getSourceEditSyncStatus().tasks[0].state,'failed');
+  assert.equal(result.ok,false,JSON.stringify(result));assert.equal(result.job.failed,1);
   assert.notEqual(f.chat.message[1].data,previous);
  });
 

@@ -48,6 +48,7 @@ function readJson(file, fallback = null) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; }
 }
 
+
 async function copyIdentityAndEndpoint(sourceData, dataNext) {
   const tokenSource = path.join(sourceData, 'runtime-token.txt');
   if (!fs.existsSync(tokenSource)) throw new Error('migration_runtime_token_missing');
@@ -94,6 +95,7 @@ async function buildMigratedDataNext({ rootDir, receipt, logger = () => {} }) {
   const dataNext = path.join(updateRoot, 'DATA.next');
   assertDirectory(program, 'migration_source_program_missing');
   assertDirectory(data, 'migration_source_data_missing');
+
 
   const before = await hashManifest(data);
   const operationId = `migration-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
@@ -413,6 +415,7 @@ async function applyMigrationRequiredUnlocked({ rootDir, receipt, logger = () =>
     journal.flags.migrationBuilt = true;
     journal = await writeJournal(journalPath, journal, { phase: 'migration_built', nextDataIdentity, flags: journal.flags, migrationReceipt: { archiveSha256: built.archiveSha256 || null, importedBackupId: built.importedBackupId || null, targetDatabaseSchemaVersion: built.targetDatabaseSchemaVersion || null } });
     triggerFailpoint('after_migration_data_next', failpointEnv);
+
 
     logger('[3/9] 기존 PROGRAM 보관');
     journal = await writeJournal(journalPath, journal, { phase: 'intent_program_old_rename' });

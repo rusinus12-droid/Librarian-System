@@ -252,15 +252,13 @@ async function runMode(mode) {
       rowCount: Array.isArray(gate?.rows) ? gate.rows.length : null,
       owners: Array.isArray(gate?.rows) ? gate.rows.map(row => ({ owner: row.owner, installed: row.installed, mode: row.mode })) : []
     };
-    // Four legacy IPC peers above remain covered; the current readiness inventory also
-    // includes WM. This fixture does not load WM, so its row must stay absent/nonparticipating.
-    assert.deepEqual(Array.from(handoff.storageGate.owners,row=>row.owner),['flashback','hayaku','libra','lia','wm'],'current five-owner readiness inventory');
-    const wmRow=gate.rows.find(row=>row.owner==='wm');assert.equal(wmRow.installed,false);assert.equal(wmRow.connected,false);assert.equal(wmRow.supported,false);
+    // The readiness inventory is the same four ordinary memory IPC peers.
+    assert.deepEqual(Array.from(handoff.storageGate.owners,row=>row.owner),['flashback','hayaku','libra','lia'],'four-owner readiness inventory');
 
     // The gate's contract, read from `memorySuiteOwnerStorageGateFromRows` in the plugin: it judges
     // the owners that are INSTALLED AND ANSWERING. An owner that is not installed is not a blocking
     // condition — `continueToNextSession` words the requirement as "the storage gate of the installed,
-    // responding owners" — so readiness is a claim about the participants, not about all five inventory rows.
+    // responding owners" — so readiness is a claim about the participants, not about all four inventory rows.
     // What must hold is that readiness AGREES with the participants it reports.
     const rows = Array.isArray(gate?.rows) ? gate.rows : [];
     const participants = rows.filter(row => row.connected === true && row.supported === true);

@@ -8,7 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { createMemorySuiteServer } = require('../server/server.cjs');
 const transport = require('./helpers/inprocess-review-transport.cjs');
-const { createStore, createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs');
+const { createStore, createHayakuRuntime, waitFor } = require('./fixtures/hayaku_runtime_harness.cjs');
 const PROGRAM = path.resolve(__dirname, '..');
 const EVIDENCE = 'hayaku.v2.recovery_evidence_';
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -44,6 +44,9 @@ async function fixture(run) {
         return baseFetch(url, init);
       }, arguments:{memory_suite_server_mode:'plugin_only',memory_suite_server_url:'http://127.0.0.1:47631'},
       llmResponder:async () => { throw new Error('MODEL_CALL_FORBIDDEN'); } });
+    await waitFor(()=>runtime.host.unloadHandlers.length>0,'HAYAKU installation before storage migration');
+    const storage=runtime.hayaku._test.storageBridgeForMigrationTest;
+    if((await storage.getScopeMode()).mode!=='plugin_only')await waitFor(()=>storage.status().state==='scope_routes_hydrated','scheduled SDK registry hydration finishes before migration');
     return runtime;
   };
   const serverRows = () => new Map(app.repositories.hayaku.database.prepare("SELECT key,value_json FROM kv WHERE space='plugin' AND deleted=0").all().map(row => [row.key,JSON.parse(row.value_json)]));
@@ -177,16 +180,17 @@ test('manifest read failure cannot fall back and bind foreign evidence to curren
   assert.equal((await bridge(f).getScopeMode(scope)).mode,'plugin_only');
   for(const key of foreign.keys)assert(!f.serverRows().has(key),'no foreign evidence transmitted');
   refused=0;
-  const failed=await bridge(f).setGlobalMode('server_only');
-  assert.equal(failed.failed.length,1,'global migration reports incomplete scope');
-  assert.equal(failed.failed[0].reason,'MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE');
+  await assert.rejects(()=>bridge(f).setGlobalMode('server_only'),/MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE/,'incomplete global discovery rejects before authority migration');
+  for(const key of foreign.keys)assert(!f.serverRows().has(key),'rejected global discovery cannot transmit foreign evidence');
   assert.equal((await bridge(f).getScopeMode(scope)).mode,'plugin_only','failed scope preserves source authority');
   f.hostStore.getItem=read;
   const inventory=await bridge(f).inspectNativeBranchTargetLocalData(scope);
   for(const key of foreign.keys)assert(!inventory.keys.some(row=>row.key===key));
   const retried=await bridge(f).setGlobalMode('server_only');assert.equal(retried.failed.length,0);
   assert.equal((await bridge(f).getScopeMode(scope)).mode,'server_only');
-  for(const key of foreign.keys)assert(!f.serverRows().has(key));
+  exact(f.serverRows(),foreign);
+  const current=await f.runtime.hayaku._test.loadRecoveryVault(scope.scopeKey,{force:true});
+  assert(!current.records.some(row=>row.scopeKey==='foreign-scope'||row.recordId==='other-debt'),'global per-scope migration cannot bind a foreign record to the current consumer');
 }));
 
 test('global follower transition preserves evidence in both directions and repeated target',()=>fixture(async f=>{

@@ -11,8 +11,9 @@ assert.ok(source.includes("const inspectTransition = async (options = {}) =>"), 
 assert.ok(source.includes("options?.includeServerData === true"), 'server inventory is opt-in');
 assert.ok(source.includes("reason: 'server_probe_deferred'"), 'first paint has a deferred-server state');
 assert.ok(source.includes("await inspectTransition({ includeServerData: true })"), 'the committed handoff path can still request server evidence');
-assert.ok(source.includes("if (await retraceMemorySuiteMode() === 'plugin_only') return localValue;"), 'peer storage reads stay local in plugin-only mode');
-assert.ok(source.includes("await MemorySuiteStorageBridge.bootstrap(false)"), 'peer namespace inventory uses one server preflight');
+assert.ok(source.includes("if (namespace === 'lia') return 'plugin_only';"), 'LIA peer mode is local-only');
+assert.ok(source.includes("await MemorySuiteStorageBridge.bootstrap(false, true)"), 'peer namespace inventory uses one server preflight');
+assert.ok(source.includes("await memorySuitePeerStorageMode(namespace) === 'plugin_only'"), 'each peer owner mode gates its own server read');
 assert.ok(source.includes('peerAvailability[namespace] === false'), 'absent peer owners are excluded from server inventory');
 assert.ok(source.includes('${formatNumber((suite.peers || []).length)}개 플러그인 호환성'), 'compatibility title uses the rendered peer count');
 assert.ok(!source.includes('6개 플러그인 호환성'), 'stale six-plugin title is removed');

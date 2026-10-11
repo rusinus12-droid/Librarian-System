@@ -22,7 +22,7 @@ async function main() {
   const address = await app.listen();
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const previous = globalThis.risuai;
-  const args = { memory_suite_server_mode:'mirror', memory_suite_server_url:baseUrl };
+  const args = { memory_suite_server_mode:'plugin_only', memory_suite_server_url:baseUrl };
   const A = { scopeId:'scope:alpha', scopeKey:'scope:alpha', label:'Alpha' };
   const B = { scopeId:'scope:beta', scopeKey:'scope:beta', label:'Beta' };
   const C = { scopeId:'scope:gamma', scopeKey:'scope:gamma', label:'Gamma' };
@@ -36,6 +36,10 @@ async function main() {
     const sdkText = fs.readFileSync(path.join(__dirname, '..', 'sdk', 'MemorySuiteStorageClient.source.js'), 'utf8');
     const createBridge = new Function(`${sdkText}\nreturn createMemorySuiteStorageBridge;`)();
     const legacy = memoryStore({
+      '__memory_suite_internal_scope_routes_v1__:hayaku': {
+        schema:'memory-suite.scope-routing.v1', namespace:'hayaku', legacyGlobalModeImported:true,
+        entries:{ [A.scopeId]:{ ...A, mode:'mirror', origin:'user_explicit', updatedAt:1 } }
+      },
       'scoped:container': { version:1, scopes:{ [A.scopeId]:{ value:'A-local' }, [B.scopeId]:{ value:'B-local' } } },
       'scope:a:record': { value:'a-record' },
       'scope:b:record': { value:'b-record' },
@@ -58,7 +62,7 @@ async function main() {
       }
     });
     const bridge = createBridge({
-      namespace:'lia', pluginId:'lia_persona_linker', pluginVersion:'0.26.39', managementButton:false,
+      namespace:'hayaku', pluginId:'hayaku_locator_continuity', pluginVersion:'test', managementButton:false,
       pluginKeys:['scoped:container','shared:meta'], pluginPrefixes:['scope:'], migrationDelayMs:100000,
       currentScopeProvider:async()=>current,
       resolveKeyScope:async({key,currentScope})=>{
@@ -71,7 +75,8 @@ async function main() {
     });
     const proxy = bridge.createPluginStorageProxy(legacy);
 
-    // 0.2.6's global mode is imported once into the active scope only.
+    // An explicit synthetic historical mirror row remains readable on an active
+    // owner. New choices use the two operational modes; legacy import is global now.
     assert.equal(await bridge.getMode(), 'mirror');
     assert.equal(args.memory_suite_server_mode, 'plugin_only');
     current = B;
@@ -79,6 +84,7 @@ async function main() {
     current = C;
     assert.equal(await bridge.getMode(), 'plugin_only');
     current = A;
+    await assert.rejects(bridge.setScopeMode(C, 'mirror'), /MIRROR|mirror/);
 
     // Alpha's scoped container is projected into a separate opaque server record.
     await proxy.setItem('scoped:container', legacy.map.get('scoped:container'));
@@ -110,7 +116,7 @@ async function main() {
     assert.deepEqual(legacy.map.get('shared:meta'), { scopes:[A.scopeId, B.scopeId] }, 'shared infrastructure must never be deleted by one scope');
 
     // The routing registry itself is retained outside current-scope payload deletion.
-    const registryKey = '__memory_suite_internal_scope_routes_v1__:lia';
+    const registryKey = '__memory_suite_internal_scope_routes_v1__:hayaku';
     assert.equal(legacy.map.has(registryKey), true);
     current = A;
     assert.equal(await bridge.getMode(), 'mirror');
@@ -126,6 +132,27 @@ async function main() {
     current = C;
     assert.deepEqual(await proxy.getItem('scoped:container'), { version:1, scopes:{ [C.scopeId]:{ value:'C-local' } } });
     assert.ok((await proxy.keys()).includes('scoped:container'), 'foreign-scope tombstone must not leak into current scope enumeration');
+
+    // The generic routing contract survives on an active owner. LIA's former
+    // server writer remains retired; local scope data must survive refusal.
+    const retiredLocal = memoryStore({ 'lia:scope:record': { keep: 'local' } });
+    const retired = createBridge({ namespace:'lia', pluginId:'lia_persona_linker', pluginVersion:'test',
+      managementButton:false, storagePolicy:'local_only', pluginPrefixes:['lia:scope:'], autoMigratePlugin:false,
+      currentScopeProvider:async()=>C, resolveKeyScope:async()=>({kind:'scope', ...C}) });
+    const retiredProxy = retired.createPluginStorageProxy(retiredLocal);
+    await retired.setScopeMode(C, 'plugin_only');
+    assert.deepEqual(await retiredProxy.getItem('lia:scope:record'), { keep:'local' });
+    await assert.rejects(retired.setScopeMode(C, 'server_only'), /LOCAL_ONLY_OWNER_POLICY/);
+    const connection = await fetch(baseUrl+'/bootstrap', {headers:{'X-Memory-Suite-Plugin':'lia_persona_linker'}}).then(r=>r.json());
+    const denied = await fetch(baseUrl + '/v1/kv/set', { method:'POST',
+      headers:{Authorization:'Bearer '+connection.token, 'Content-Type':'application/json', 'X-Memory-Suite-Plugin':'lia_persona_linker'},
+      body:JSON.stringify({namespace:'lia', space:'plugin', key:'lia:scope:record', value:{forbidden:true}, operationId:'scope-routing-retired-0001'}) });
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).error, 'namespace_write_forbidden:lia');
+    assert.deepEqual(retiredLocal.map.get('lia:scope:record'), { keep:'local' });
+    assert.equal(app.repositories.lia.get('plugin', 'lia:scope:record').exists, false);
+    assert.equal(app.repositories.lia.legacyReadOnly, true);
+    assert.equal(fs.existsSync(app.repositories.lia.filePath), false, 'routing must not provision a retired store');
 
     process.stdout.write('scope_routing_test: PASS\n');
   } finally {

@@ -1,9 +1,0 @@
-'use strict';
-module.exports = source => {
- const replace = (before, after, label) => { if(source.split(before).length !== 2) throw Error(label); source = source.replace(before, after); };
- replace('LibraDataStorage.save(freshChar, freshChat, libraLore, { reanalysisBaselineToken: opts.reanalysisBaselineToken });', 'LibraDataStorage.save(freshChar, freshChat, libraLore, { ...opts, reanalysisBaselineToken: opts.reanalysisBaselineToken, expectedSource: opts.expectedSource });', 'factory_save_options_seam_changed');
- // The pinned factory owns baseline-token threading. Extend its exact maintenance
- // transform to the later extension saves; never infer authority from a global slot.
- replace("  part.source=replaceOne(part.source,\"        return finishMaintenanceLog({ status: 'done', turn: turnForMaintenance });\"","  part.source=replaceOne(part.source,\"expectedSource: source?.sourceToken, operation: 'normal', reason\\n\",\"expectedSource: source?.sourceToken, operation: 'normal', reason, reanalysisBaselineToken: record.reanalysisBaselineToken\\n\",part.file+':owner-extension-phase');\n  part.source=replaceOne(part.source,\"expectedSource: source?.sourceToken, operation: 'normal', reason: 'turn-extension-committed-packet'\",\"expectedSource: source?.sourceToken, operation: 'normal', reason: 'turn-extension-committed-packet', reanalysisBaselineToken: record.reanalysisBaselineToken\",part.file+':owner-extension-commit');\n  part.source=replaceOne(part.source,\"operation: 'normal', reason: 'turn-extension-pending-outcome'\",\"operation: 'normal', reason: 'turn-extension-pending-outcome', reanalysisBaselineToken: record.reanalysisBaselineToken\",part.file+':owner-extension-pending');\n  part.source=replaceOne(part.source,\"        return finishMaintenanceLog({ status: 'done', turn: turnForMaintenance });\"", 'factory_extension_owner_seam_changed');
- return source;
-};

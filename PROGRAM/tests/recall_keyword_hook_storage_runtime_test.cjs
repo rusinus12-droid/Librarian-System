@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recall_model_runtime_fixture.cjs');
 (async()=>{
  for(const reverse of [false,true]){
   const f=await createFixture();
@@ -8,7 +8,7 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
    const pairs=[['민수의 약속을 기록해.','민수는 성문에서 만나기로 약속했다.'],['아리아의 약속을 기록해.','아리아의 약속 시간은 내일이다.']];
    if(reverse)pairs.reverse();
    f.currentChat.message=pairs.flatMap((pair,i)=>[{role:'user',chatId:'u'+i,data:pair[0]},{role:'assistant',chatId:'a'+i,data:pair[1]}]);f.currentChat.messages=f.currentChat.message;
-   const cfg={...await f.api.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false,topK:1,currentSceneTailEnabled:false,structuredStateEnabled:false,mmrEnabled:false};
+   const cfg={...await f.api.loadSettings(),...modelSettings,embeddingEnabled:true,autoEpisodeIndex:false,topK:1,currentSceneTailEnabled:false,structuredStateEnabled:false,mmrEnabled:false};
    await f.api.saveSettings(cfg);await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
    const scope=await f.api.resolveCurrentScope(),ft=f.api._test;
    const storedBefore=JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records);
@@ -32,12 +32,19 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
    assert.ok(dense.dense.length>0,'Semantic candidates survive without exact lexical matches');
    assert.equal(JSON.stringify(records.map(r=>r.vector)),beforeVectors);
    assert.equal(JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records),storedBefore,'Recall preserves stored originals and vectors');
-   // Two readers of the same immutable commit share I/O but retain separate
-   // result containers; completed reads still populate the normal shard cache.
+   // Each reader observes physical bytes independently. Current C0 projection
+   // caching cannot borrow a different request's physical read authority.
    const manifest=await ft.loadScopeManifest(scope.scopeKey);ft.invalidateRecallShardCache(scope.scopeKey);
+   const physicalReads=new Map();const stores=[f.pluginStorage,f.host.safeLocalStorage];const reads=stores.map(store=>store.getItem.bind(store));
+   stores.forEach((store,i)=>{store.getItem=async key=>{const id=i+'::'+String(key);physicalReads.set(id,(physicalReads.get(id)||0)+1);return reads[i](key);};});
    const [left,right]=await Promise.all([ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest}),ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest})]);
    assert.equal(left.records.length,right.records.length);assert.notEqual(left.records,right.records);
-   assert.ok((left.performance?.coalescedReads||0)+(right.performance?.coalescedReads||0)>0,'Commit-bound concurrent reads are coalesced');
+   const canonicalReads=[...physicalReads].filter(([key])=>key.includes(':records:commit:'+manifest.commitId+':shard:'));
+   assert.equal(canonicalReads.length,manifest.shardCount,'Every selected canonical shard was physically observed');
+   assert.ok(canonicalReads.every(([,count])=>count===2),'Each reader independently observes every canonical shard');
+   const vectorReads=[...physicalReads].filter(([key])=>key.includes(':local-vector-shard:v1:'));
+   assert.ok(vectorReads.length>0&&vectorReads.every(([,count])=>count===2),'Model sidecars retain per-reader physical observations');
+   stores.forEach((store,i)=>{store.getItem=reads[i];});
   }finally{await f.dispose();}
  }
  console.log('recall_keyword_hook_storage_runtime_test: PASS');

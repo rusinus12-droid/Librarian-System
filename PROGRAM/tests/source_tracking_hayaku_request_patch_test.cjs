@@ -31,24 +31,26 @@ function envelope(quote){
       return{type:'success',result:JSON.stringify(envelope(EDIT_TWO))};
     });
 
-    const firstRequest=runtime.callBeforeRequest([{role:'user',content:'Continue after edit one.'}],'model');
-    await waitFor(()=>runtime.llmCalls.length===1,'first automatic source analysis');await firstStarted;
+    const firstSelection=await runtime.hayaku.listReanalysisRanges();const firstRequest=runtime.hayaku.reanalyzeSelectedRanges(firstSelection);
+    await waitFor(()=>runtime.llmCalls.length===1,'first selected source analysis');await firstStarted;
     runtime.chat.message[1].data=hiddenPacketMessage(EDIT_TWO,packet);
     const secondRequest=runtime.callBeforeRequest([{role:'user',content:'Continue after edit two.'}],'model');
     releaseFirst({type:'success',result:JSON.stringify(envelope(EDIT_ONE))});
-    await firstRequest;await secondRequest;
-    await waitFor(()=>runtime.hayaku.getSourceEditSyncStatus().tasks.some(task=>task.state==='applied'),'latest automatic source replacement');
+    const refused=await firstRequest;assert.equal(refused.ok,false,JSON.stringify(refused));await secondRequest;await runtime.callAfterRequest('', 'model');assert.equal(runtime.llmCalls.length,1,'another request cannot retry stale work automatically');const latestSelection=await runtime.hayaku.listReanalysisRanges();const replacement=await runtime.hayaku.reanalyzeSelectedRanges(latestSelection);assert.equal(replacement.ok,true,JSON.stringify(replacement));
 
-    assert.equal(runtime.llmCalls.length,2,'stale result is rejected and the new request reanalyzes the current source');
-    assert.equal(await root.ready(),false,'neither automatic request creates a consent dialog');
-    const status=runtime.hayaku.getSourceEditSyncStatus(),task=status.tasks.find(row=>row.key==='1');
-    assert.equal(task.state,'applied');
-    const latest=await t.hayakuSourceEditSnapshot(await t.currentChatScope());
-    assert.equal(task.sourceDigest,latest.units.find(unit=>unit.key==='1').sourceDigest);
+    assert.equal(runtime.llmCalls.length,2,'stale result is rejected and the new selected action reanalyzes the current source');
+    assert.equal(await root.ready(),false,'neither selected action creates a consent dialog');
+    const status=runtime.hayaku.getReanalysisStatus();assert.equal(status.lastResult.ok,true);
     const active=(await runtime.hayaku.ledger.inspect({includeRecords:true})).records.filter(record=>record.recordState==='active');
     assert.ok(active.some(record=>JSON.stringify(record).includes(EDIT_TWO)),'the latest source result is durably active');
     assert.equal(active.some(record=>JSON.stringify(record).includes(EDIT_ONE)),false,'the stale model result was never adopted');
     assert.equal(runtime.chat.message[1].data,hiddenPacketMessage(EDIT_TWO,packet),'source chat is not rewritten by analysis');
+    let cancelStarted,cancelRelease;const cancelEntered=new Promise(r=>cancelStarted=r),cancelGate=new Promise(r=>cancelRelease=r);
+    runtime.setLlmResponder(async()=>{cancelStarted();await cancelGate;return{type:'success',result:JSON.stringify(envelope(EDIT_TWO))}});
+    const cancelledWork=runtime.hayaku.reanalyzeSelectedRanges(await runtime.hayaku.listReanalysisRanges());await cancelEntered;
+    runtime.hayaku.clearSourceEditPreview();cancelRelease();const cancelled=await cancelledWork;assert.equal(cancelled.ok,false);assert.match(cancelled.reason,/CANCELLED/);
+    const afterCancel=(await runtime.hayaku.ledger.inspect({includeRecords:true})).records.filter(record=>record.recordState==='active');
+    for(const prior of active)assert.ok(afterCancel.some(record=>record.recordId===prior.recordId&&record.raw===prior.raw),'cancelled analysis preserves every prior active packet');
     console.log(JSON.stringify({test:'source_tracking_hayaku_request_patch',passed:8}));
   }finally{await runtime.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

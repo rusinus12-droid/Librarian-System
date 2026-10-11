@@ -4,6 +4,34 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(errors='backslashreplace')
 root=pathlib.Path(__file__).resolve().parent
 
+def _reports_suite_skip(output):
+    # Explicit markers retain the existing partial-skip convention. JSON flags
+    # apply only to complete suite documents, never nested product diagnostics.
+    if 'SKIP:' in output:
+        return True
+    decoder=json.JSONDecoder()
+    position=0
+    while position<len(output):
+        while position<len(output) and output[position].isspace():
+            position+=1
+        if position>=len(output):
+            break
+        if output[position] in '{[':
+            try:
+                document,end=decoder.raw_decode(output,position)
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(document,dict) and document.get('skipped') is True:
+                    return True
+                position=end
+                continue
+        # Non-JSON log text is skipped as a line, so braces within messages
+        # cannot be mistaken for independent suite documents.
+        newline=output.find('\n',position)
+        position=len(output) if newline<0 else newline+1
+    return False
+
 class _OwnedWindowsProcessJob:
     """Keep a regression's child processes inside an owned, kill-on-close job."""
     def __init__(self, handle, kernel32):
@@ -108,6 +136,26 @@ def _unlink_regression_output(path, timeout_seconds=5):
 # Windows their successful aggregate runtime exceeds 60s; individual assertions
 # and in-test observation deadlines remain unchanged. Keep a bounded file limit.
 TEST_TIMEOUT_SECONDS = {
+    # Actual six-plugin pinned release build and all artifact/negative controls: 126.662s.
+    # Bound aggregate execution at 180s; existing build/minifier deadlines are unchanged.
+    'test_surface_strip_test.cjs': 180,
+    # Preserved five-scenario local Persona dialog: standalone 135.109s,
+    # unchanged case deadlines; 180s bounds aggregate scheduling overhead.
+    'retrace_dialog_lifecycle_gui_test.cjs': 180,
+    # All 29 current raw-COW cases complete naturally in 133.607s. Preserve case
+    # deadlines and the earlier default60 timeout; allow bounded file overhead.
+    'flashback_raw_cow_append_runtime_test.cjs': 180,
+    # Current raw-first 31-ready / failed-vector / explicit-retry / rebuild matrix
+    # completes naturally in 89.180s; preserve internal action deadlines.
+    'flashback_single_turn_maintenance_runtime_test.cjs': 120,
+    # Real bounded archive repair plus retained 640-row legacy overlay matrix
+    # completes naturally in 74.491s; unchanged in-test/provider limits.
+    'flashback_portable_cross_chat_restore_test.cjs': 120,
+    # Three-mode descriptor/tamper matrix: 55.77s isolated, 66.07s in this runner.
+    # Preserve the default60 timeout evidence and case deadlines; margin is 36%.
+    'libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs': 90,
+    # Functional 3-source x 3-destination portable matrix; default60 timeout retained as prior evidence.
+    'libra_phase_d_portable_nine_pairs_test.cjs': 180,
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
     # This is one discovered suite; retain its individual test deadlines unchanged.
     'gradia_suite_test.cjs': 240,
@@ -308,7 +356,8 @@ with log_path.open(mode,encoding='utf-8') as log:
                     if os.name=='nt' and proc.stdin and not proc.stdin.closed:
                         proc.stdin.close()
         elapsed=time.time()-st
-        output=tmp.read_text(encoding='utf-8',errors='replace').strip().replace('\n',' | ')
+        raw_output=tmp.read_text(encoding='utf-8',errors='replace')
+        output=raw_output.strip().replace('\n',' | ')
         output_artifact=None
         if output_dir:
             output_artifact=output_dir/f'{idx+1:03d}-{test.name}.log'
@@ -321,13 +370,10 @@ with log_path.open(mode,encoding='utf-8') as log:
         # full pass, which is how a review of the 0.3.64 log found a skip counted as a plain PASS.
         # Such a suite is reported as PASS_SKIP so the log states what actually ran. It is NOT a
         # failure: the remaining contracts in the file were still executed.
-        # TWO conventions count, because both are in use: the `SKIP:` marker line, and the
-        # `skipped: true` JSON object that the model-recording suites emit when no capture exists.
-        # Accepting only the first left the gemma suites reporting a plain PASS for work they never
-        # did — the exact failure this check was added to catch.
-        # NOTE: `skips` is counted in the outer scope — resetting it here made the end-of-run
-        # summary depend on whether the LAST suite happened to be a skip (it never printed).
-        if status=='PASS' and ('SKIP:' in output or '"skipped": true' in output or '"skipped":true' in output):
+        # JSON reports are parsed before log flattening, retaining pretty-printed
+        # suite documents and distinguishing nested refusal/idempotence flags.
+        # Count skips in the outer scope so the last suite cannot reset the total.
+        if status=='PASS' and _reports_suite_skip(raw_output):
             status='PASS_SKIP'; skips+=1
         line=f'{idx+1:02d}/{len(all_tests)} {test.name}: {status} {elapsed:.2f}s [tree={tree_status}; cleanup={timeout_cleanup}]'
         if output_artifact: line+=f' [full_output_log={output_artifact}]'

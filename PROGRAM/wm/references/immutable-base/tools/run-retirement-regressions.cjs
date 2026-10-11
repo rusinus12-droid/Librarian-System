@@ -1,6 +1,0 @@
-"use strict";
-const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
-const names=['drift_detection','drift_stale_recall','worldline_cutoff','turn_worldline','worldline_prompt','worldline_view','worldline_rp_filter','world_rule_worldline','worldline_status_vocab','reroll_memory','branch_fork_cutoff','branch_binding','storage_scope_parity','persona_scope_admission','before_request_generation','reset_generation','canonical_late_invalidation','canonical_read_ownership','validation_source_receipts','pending_ownership'];
-const root=path.resolve(__dirname,'..'),rows=[];
-for(const name of names){const file='libra_'+name+'_test.cjs',started=Date.now(),fd=fs.openSync(path.join(root,'evidence/regression-'+name+'.log'),'w'),r=spawnSync(process.execPath,['--expose-gc',path.join(__dirname,file)],{cwd:root,stdio:['ignore',fd,fd],timeout:300000,env:{...process.env,WM_PENDING_PHASE:'retirement-full'}});fs.closeSync(fd);const row={name,status:r.status,signal:r.signal,error:r.error?.message||'',elapsedMs:Date.now()-started};rows.push(row);console.log(JSON.stringify(row));fs.writeFileSync(path.join(root,'evidence/regressions.json'),JSON.stringify(rows,null,2));}
-process.exitCode=rows.some(x=>x.status!==0)?1:0;

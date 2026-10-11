@@ -73,19 +73,35 @@ test('route publication holds all real owner locks and corruption never becomes 
 
 for(const namespace of ['libra','hayaku','flashback'])test(namespace+': actual SDK mode setter reaches genuine semantic authority; ordinary diagnostic stays unqualified',async t=>{
  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),f=observationFixture(t),app=appFor(t,f);
- const scope={scopeId:'scope-a',scopeKey:'scopeA',chatId:'chatA'},key='__memory_suite_internal_scope_routes_v1__:'+namespace;
+ const scope={scopeId:'scope-a',scopeKey:'scopeA',characterId:'characterA',chatId:'chatA'},key='__memory_suite_internal_scope_routes_v1__:'+namespace;
  const values=new Map([[key,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace,legacyGlobalModeImported:true,entries:{'scope-a':{...scope,mode:'server_only',origin:'inherited',updatedAt:1}}})]]),args=new Map([['memory_suite_server_mode','server_only'],['memory_suite_server_url','http://127.0.0.1:47630']]);
  const store={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{values.set(k,v);return true;},removeItem:async k=>values.delete(k),keys:async()=>[...values.keys()]};
  let loseTransitionReply=false;
  const calls=[],host={pluginStorage:store,getLocalPluginStorage:async()=>store,getArgument:async n=>args.get(n)||'',setArgument:async(n,v)=>{args.set(n,v);return true;},nativeFetch:async(url,init={})=>{const u=new URL(url),headers=Object.fromEntries(Object.entries(init.headers||{}).map(([k,v])=>[k.toLowerCase(),v]));calls.push(u.pathname);const result=await request(app,u.pathname+u.search,init.body?JSON.parse(init.body):{},headers,init.method||'GET');if(loseTransitionReply&&u.pathname==='/v1/authority/route/transition'){loseTransitionReply=false;throw Error('SIMULATED_RESPONSE_LOSS');}return new Response(JSON.stringify(result.body),{status:result.status,headers:{'content-type':'application/json'}});}};
+ // Global publication requires the host catalog and owner discovery. The
+ // Core3 fixture's literal seed belongs to this one synthetic HAYAKU chat.
+ host.getDatabase=async()=>({characters:[{id:'characterA',chats:[{id:'chatA'}]}]});
+ const discoverGlobalScopes=async({hostScopes,records})=>{
+  assert.equal(JSON.stringify(hostScopes.map(row=>[row.characterId,row.chatId])),JSON.stringify([['characterA','chatA']]));
+  for(const row of records){assert.equal(row.logicalKey,'seed');assert.equal(row.space,'plugin');assert.equal(row.value,'hayaku');}
+  return {scopes:[scope],records:records.map(row=>({...row,classification:'scope',scopeId:scope.scopeId})),blockers:[],completeKnownScopes:true};
+ };
  const context=vm.createContext({risuai:host,console:{log(){},warn(){},error(){},info(){}},setTimeout,clearTimeout,queueMicrotask,AbortController,URL,TextEncoder,TextDecoder,crypto:globalThis.crypto,performance,Response,Headers});
  const sdk=namespace==='libra'?'MemorySuiteStorageClient.libra.source.js':'MemorySuiteStorageClient.source.js';vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk',sdk),'utf8')+'\nglobalThis.create=createMemorySuiteStorageBridge;',context);
- const bridge=context.create({namespace,pluginId:namespace,pluginVersion:'basic',managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,currentScopeProvider:async()=>scope});bridge.createPluginStorageProxy(store);t.after(()=>bridge.dispose());
+ const bridge=context.create({namespace,pluginId:namespace,pluginVersion:'basic',managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,currentScopeProvider:async()=>scope,...(namespace==='hayaku'?{discoverGlobalScopes,pluginKeys:['seed'],resolveKeyScope:async({key})=>key==='seed'?{kind:'scope',...scope}:null}:{})});bridge.createPluginStorageProxy(store);t.after(()=>bridge.dispose());
  await bridge.serverGet('plugin','seed');await bridge.setScopeMode(scope,'server_only');
  assert(calls.includes('/v1/authority/route/transition'),'actual SDK setter must call real authority transition');
  const view=await bridge.inspectServerModeAuthority(scope);assert.equal(view.status,'observed');assert.equal(view.route.modeEpoch,1);assert.equal(view.nativeAuthority,'unavailable');
  const diagnostic=await bridge.inspectModePublication();assert.equal(diagnostic.semanticModeEpoch,null);assert.equal(diagnostic.authorityQualified,false);
  if(namespace==='hayaku'){
+  const catalog=host.getDatabase,before=[...values.entries()],beforeCalls=calls.length;
+  delete host.getDatabase;
+  await assert.rejects(()=>bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');
+  assert.deepEqual([...values.entries()],before,'missing host catalog cannot publish local routes or jobs');
+  assert.equal(calls.length,beforeCalls,'incomplete discovery stops before server transitions');
+  host.getDatabase=catalog;
+  const preview=await bridge.previewGlobalMode('server_only');
+  assert.equal(preview.completeKnownScopes,true,JSON.stringify(preview));assert.equal(preview.discoveredScopes,1);
   loseTransitionReply=true;
   let outcome;try{outcome=await bridge.setGlobalMode('server_only');}catch(error){assert.equal(error.code,'SERVER_MODE_OPERATION_INDETERMINATE');}
   const pending=[...values.keys()].filter(k=>k.startsWith('__memory_suite_internal_server_route_v1__'));
@@ -96,6 +112,10 @@ for(const namespace of ['libra','hayaku','flashback'])test(namespace+': actual S
    assert.equal(values.has(pending[0]),false);
    const replay=await call(app,h,'route/status',{operationId:journal.body.operationId});assert.deepEqual(replay.body.result,status.body.result);
   }else assert(outcome,'the same-operation status read must have recovered the lost ACK');
+  assert.equal(loseTransitionReply,false,'ACK-loss injection reached the actual authority transition');
+  const global=await call(app,await owner(app,f,'hayaku'),'route/read',{scopeId:'__memory_suite_global__',scopeKey:'__memory_suite_global__'});
+  assert.equal(global.status,200);assert.equal(global.body.result.route.mode,'server_only');
+  assert.equal(global.body.result.route.modeEpoch,1,'ACK recovery does not replace the committed global operation');
  }
  const before=C.canonical(f.control.readRoutes());await bridge.setServerUrl('http://127.0.0.1:47630');assert.equal(C.canonical(f.control.readRoutes()),before,'connection URL publication must not manufacture semantic route transitions');
  if(namespace==='libra'){

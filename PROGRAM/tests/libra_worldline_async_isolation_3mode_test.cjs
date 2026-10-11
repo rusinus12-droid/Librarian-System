@@ -6,7 +6,10 @@ const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const source = require('./fixtures/unified_vertical_source.json');
 const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
 
-const MODES = ['plugin_only', 'mirror', 'server_only'];
+const MODES = process.env.LIBRA_WORLDLINE_MODES
+  ? JSON.parse(process.env.LIBRA_WORLDLINE_MODES) : ['plugin_only', 'mirror', 'server_only'];
+assert.ok(Array.isArray(MODES) && MODES.length > 0 && new Set(MODES).size === MODES.length
+  && MODES.every(mode => ['plugin_only', 'mirror', 'server_only'].includes(mode)), 'explicit diagnostic modes are valid');
 const EMBEDDING = {
   enabled: true, provider: 'openai', url: 'https://synthetic.invalid/v1/embeddings',
   model: 'text-embedding-3-small', key: 'fixture-only', dimensions: 256, maxRetries: 0
@@ -159,12 +162,40 @@ const worldlineScopeSnapshot = value => ({
   const reports = {};
   for (const mode of MODES) {
     const worlds = makeWorlds();
-    const fixture = await serverFixture({ mode, host: worlds.host });
+    const fixture = await serverFixture({ mode, host: worlds.host,
+      transformSource: source => source.replace('  const RisuCompat = (() => {',
+        '  globalThis.__WORLDLINE_STORAGE_ROUTE__ = MemorySuiteStorageBridge;\n  const RisuCompat = (() => {') });
     const report = { mode, worldline: {}, positive: {}, barrier: {}, stores: {} };
     try {
       fixture.mode = mode;
       fixture.hooks.externalFetch = async (_url, init) => embeddingResponse(init);
       await fixture.f.r.api.saveEmbeddingSettings(EMBEDDING);
+      const bindCurrentOwnerRoute = async chat => {
+        const owner = await fixture.f.r.api.getHostLineageStatus();
+        const scope = { scopeKey: owner.scopeKey, scopeId: owner.scopeKey,
+          characterId: worlds.char.id, chatId: chat.id };
+        const bridge = fixture.f.r.context.__WORLDLINE_STORAGE_ROUTE__;
+        if (mode === 'mirror') {
+          // Historical third-mode coverage reads a preexisting route. Mirror is
+          // transition-only today; this fixture never invokes its retired setter.
+          const routingKey = '__memory_suite_internal_scope_routes_v1__:libra';
+          const prior = decode(fixture.local.get(routingKey)) || {};
+          const storedScope = (await bridge.getScopeMode(scope)).scope;
+          const registry = { schema: 'memory-suite.scope-routing.v1', version: 1,
+            namespace: 'libra', defaultMode: 'plugin_only', legacyGlobalModeImported: true,
+            entries: { ...(prior.entries || {}), [scope.scopeId]: { ...storedScope,
+              mode: 'mirror', origin: 'legacy_mirror_fixture', updatedAt: Date.now(),
+              source: 'preexisting_mirror_compatibility_read_fixture' } } };
+          fixture.local.set(routingKey, JSON.stringify(registry));
+          assert.equal(JSON.parse(fixture.local.get(routingKey)).entries[scope.scopeId].mode, 'mirror');
+        } else await bridge.setScopeMode(scope, mode);
+        const readback = await bridge.getScopeMode(scope, true);
+        assert.equal(readback.mode, mode, `${mode}: exact owner route before native branch work`);
+        assert.equal(readback.explicit, true, `${mode}: branch inherits a stored owner route`);
+        assert.equal((await bridge.resolveScopeByAlias(chat.id, { tryServer: false })).scopeKey, owner.scopeKey,
+          `${mode}: real local route registry resolves the exact chat alias`);
+      };
+      await bindCurrentOwnerRoute(worlds.w0);
       fixture.f.control.artifact = withPlacement(artifact(), placements.W0);
       const w0Run = await fixture.f.r.api.runManualColdStart();
       assert.equal(w0Run.completed, 1, `${mode}: W0 canonical creation: ${JSON.stringify(w0Run)}`);
@@ -172,6 +203,33 @@ const worldlineScopeSnapshot = value => ({
       assert.ok(w0Initial, `${mode}: W0 canonical must be readable from its selected authority`);
       await waitFor(() => canonical(fixture, worlds.w0.id, w0Initial.sourceName)?.memory?.embedding?.status === 'ready', 20000);
 
+      if (mode === 'mirror') {
+        // A preexisting mirror owner is readable, but a native branch must not
+        // create a new operational mirror route. Verify that boundary, then
+        // explicitly finish the transition to the already-populated server.
+        const bridge = fixture.f.r.context.__WORLDLINE_STORAGE_ROUTE__;
+        const owner = await fixture.f.r.api.getHostLineageStatus();
+        const parentScope = { scopeKey: owner.scopeKey, scopeId: owner.scopeKey,
+          characterId: worlds.char.id, chatId: worlds.w0.id };
+        await assert.rejects(() => bridge.setScopeMode(parentScope, 'mirror'),
+          error => error.code === 'MEMORY_SUITE_MIRROR_TRANSITION_ONLY');
+        const parentBefore = parentByteSnapshot(canonical(fixture, worlds.w0.id, 'server'));
+        const callsBefore = fixture.f.control.calls.length;
+        worlds.select(worlds.child);
+        const blocked = await fixture.f.r.api.runManualColdStart();
+        assert.equal(blocked.state, 'failed');
+        assert.match(blocked.error, /memory_suite_mirror_is_transition_only/);
+        assert.equal(fixture.f.control.calls.length, callsBefore, 'new mirror branch is rejected before a provider call');
+        assert.equal(canonical(fixture, worlds.child.id, 'server'), null);
+        assert.equal(canonical(fixture, worlds.child.id, 'local'), null);
+        assert.deepEqual(parentByteSnapshot(canonical(fixture, worlds.w0.id, 'server')), parentBefore);
+        worlds.select(worlds.w0);
+        await bridge.setScopeMode(parentScope, 'server_only');
+        assert.equal((await bridge.getScopeMode(parentScope, true)).mode, 'server_only');
+        report.mirrorTransition = { newMirrorBranchRejected: true, providerCallsWhileBlocked: 0,
+          parentCanonicalBytesPreserved: true, operationalModeAfterTransition: 'server_only' };
+        fixture.mode = 'server_only';
+      }
       worlds.select(worlds.child);
       fixture.f.control.artifact = withPlacement(artifact(), placements.W1);
       const w1Run = await fixture.f.r.api.runManualColdStart();
@@ -351,14 +409,13 @@ const worldlineScopeSnapshot = value => ({
       ]));
       report.stores = { serverCalls: serverCalls.length, parentAndChildCanonicalInServerAndLocal: parentRows };
       if (mode === 'plugin_only') {
-        assert.equal(serverCalls.length, 0, 'plugin_only performs zero Librarian server calls');
+        assert.equal(serverCalls.length, 0, `plugin_only performs zero Librarian server calls: ${JSON.stringify(serverCalls)}`);
         assert.ok(parentRows.local.every(Boolean), 'plugin_only canonical records live in local plugin storage');
       } else if (mode === 'mirror') {
-        assert.ok(parentRows.server.every(Boolean) && parentRows.local.every(Boolean), 'mirror replicates both W0 and W1 canonical records');
-        for (const chatId of [worlds.w0.id, worlds.child.id]) {
-          assert.equal(canonical(fixture, chatId, 'server').memoryRow.raw, canonical(fixture, chatId, 'local').memoryRow.raw,
-            `${mode}: mirrored canonical payload matches for ${chatId}`);
-        }
+        assert.ok(parentRows.server.every(Boolean), 'completed mirror transition uses server authority for both worlds');
+        assert.deepEqual(parentRows.local, [true, false], 'historical W0 mirror bytes remain, with no new local W1 fallback');
+        assert.equal(canonical(fixture, worlds.w0.id, 'server').memoryRow.raw,
+          canonical(fixture, worlds.w0.id, 'local').memoryRow.raw, 'historical mirrored W0 canonical bytes remain equal');
       } else {
         assert.ok(parentRows.server.every(Boolean), 'server_only keeps both canonical records on the server');
         assert.deepEqual(parentRows.local, [false, false], 'server_only has no local canonical fallback');
@@ -375,8 +432,8 @@ const worldlineScopeSnapshot = value => ({
     afterLateFact: reports[mode].afterLate.freshW1Fact,
     afterCancelFact: reports[mode].cancellation.postCancelW1Fact
   });
-  assert.deepEqual(semanticProjection('mirror'), semanticProjection('plugin_only'), 'plugin_only and mirror preserve the same worldline facts and injection meaning');
-  assert.deepEqual(semanticProjection('server_only'), semanticProjection('plugin_only'), 'server_only preserves the same worldline facts and injection meaning');
+  for (const mode of MODES.slice(1)) assert.deepEqual(semanticProjection(mode), semanticProjection(MODES[0]),
+    `${mode} and ${MODES[0]} preserve the same worldline facts and injection meaning`);
   console.log(JSON.stringify({ test: 'libra_worldline_async_isolation_3mode', modes: reports, embeddingResponder: 'fixed synthetic 256D', host: 'synthetic RisuAI fixture; registered beforeRequest callback' }, null, 2));
   console.log('libra_worldline_async_isolation_3mode_test: PASS');
 })().catch(error => {

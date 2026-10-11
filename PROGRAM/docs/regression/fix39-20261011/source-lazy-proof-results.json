@@ -1,0 +1,169 @@
+{
+  "status": "FOCUSED_VERIFIED_FULL_CAMPAIGN_PENDING",
+  "productCommit": "79974f9185bf2ee88b195fa1c75a9a8498a9d041",
+  "testCommit": "6126b3c15bb32a8ffd9b5cadeb086af3481ae6de",
+  "product": {
+    "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/plugins/LIBRA.js",
+    "sha256": "80f6f81500396cbf86bf659ce3aba75f93df67619e473ed56c0e3234d958d695",
+    "bytes": 5782510
+  },
+  "productionScope": "Only canonical private capture/promotion and two genuine private proof consumers. Existing final physical checker, deadlines, policy/mode boundary, owner guards, packet-admitted closure proofs unchanged.",
+  "fixtures": [
+    {
+      "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/fixtures/libra_lazy_canonical_proof.cjs",
+      "sha256": "28f28da52c82fb6aa6d1dff424d323c3ebe60f928ed46d8205a18e3f3f0c59ef",
+      "bytes": 5832
+    },
+    {
+      "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/fixtures/libra_lazy_canonical_loader_benchmark.cjs",
+      "sha256": "3f8498e25f74704ded6e25eb727511e34ce5e9e76510f7e77791a07c5a428785",
+      "bytes": 4310
+    }
+  ],
+  "red": {
+    "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-proof-red.txt",
+    "sha256": "23e58eb5dbaf125adc31461093bfaac638651f67fb07a4edd54b6c9c44976389",
+    "bytes": 420
+  },
+  "green": {
+    "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-proof-green.txt",
+    "sha256": "1309faf0eb6c48e6368a62e4da403edee871645ac32fbe0fbbd8f31079e96100",
+    "bytes": 253
+  },
+  "officialFocused": [
+    {
+      "root": 474,
+      "status": "PASS",
+      "test": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/libra_classic_partial_closure_delivery_test.cjs",
+        "sha256": "273122520c384fbc7058f2cd9870b09809e8fab26b8353374926416280eb3d17",
+        "bytes": 8519
+      },
+      "log": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-official-focus/474-libra_classic_partial_closure_delivery_test.cjs.log",
+        "sha256": "e6404921c16945f642270a613c37fc0ddf7c80c2ac768b8676e8787aa5ea2968",
+        "bytes": 539
+      }
+    },
+    {
+      "root": 695,
+      "status": "PASS",
+      "test": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/libra_q04_classic_closure_consumer_test.cjs",
+        "sha256": "0a7f1dd01e03aff929a63c9372d7b2df723bf3c9d4eea66b6772eebbafba4ff1",
+        "bytes": 9543
+      },
+      "log": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-official-focus/695-libra_q04_classic_closure_consumer_test.cjs.log",
+        "sha256": "b995b06dea3f4546ec811610eaced1d24a8c194cad88a573fcc1aec4043616dc",
+        "bytes": 763
+      }
+    },
+    {
+      "root": 697,
+      "status": "PASS",
+      "test": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/libra_q04_inherited_closure_test.cjs",
+        "sha256": "de49069b786353287e3ef2d63d70a1463b8c7562f27dfee47b7cbc9c03626180",
+        "bytes": 2064
+      },
+      "log": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-official-focus/697-libra_q04_inherited_closure_test.cjs.log",
+        "sha256": "bb09128f895e15038ce80e3d5bf37e53090c9c4a0284efce4beb37c49aad1802",
+        "bytes": 94
+      }
+    },
+    {
+      "root": 763,
+      "status": "PASS",
+      "test": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source/PROGRAM/tests/libra_source_edit_settled_admission_runtime_test.cjs",
+        "sha256": "5f1be884dcce7940b941934856e49267c14dfd03dd637695278695df3b8eda5a",
+        "bytes": 15179
+      },
+      "log": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-official-focus/763-libra_source_edit_settled_admission_runtime_test.cjs.log",
+        "sha256": "ab17bb067d4838e5d03e7222c2faa9b6ef541fc3be23ff6d9e0c639e18322047",
+        "bytes": 1258
+      }
+    }
+  ],
+  "benchmark": {
+    "diagnostic": true,
+    "sourceSHA256": "80f6f81500396cbf86bf659ce3aba75f93df67619e473ed56c0e3234d958d695",
+    "physicalRecords": 1,
+    "bodyBytes": 28653,
+    "rounds": [
+      {
+        "round": 0,
+        "arm": "lazy",
+        "loads": 30,
+        "elapsedMs": 14.421933999999965
+      },
+      {
+        "round": 0,
+        "arm": "eager",
+        "loads": 30,
+        "elapsedMs": 103.02185399999985
+      },
+      {
+        "round": 1,
+        "arm": "eager",
+        "loads": 30,
+        "elapsedMs": 231.9977530000001
+      },
+      {
+        "round": 1,
+        "arm": "lazy",
+        "loads": 30,
+        "elapsedMs": 12.179867000000058
+      },
+      {
+        "round": 2,
+        "arm": "lazy",
+        "loads": 30,
+        "elapsedMs": 10.662001000000146
+      },
+      {
+        "round": 2,
+        "arm": "eager",
+        "loads": 30,
+        "elapsedMs": 105.42531099999997
+      }
+    ],
+    "summary": {
+      "lazy": {
+        "loads": 90,
+        "totalMs": 37.26380200000017
+      },
+      "eager": {
+        "loads": 90,
+        "totalMs": 440.4449179999999
+      }
+    },
+    "eagerOverLazyRatio": 11.819645188110378,
+    "genuinePrivateProofParity": true,
+    "retainedObjects": 30,
+    "retainedSnapshotChars": 589590,
+    "snapshotCharsAfterPromotion": 0,
+    "limits": "Local fixture-generated persisted JSON; alternating bounded actual loader calls. Eager arm restores prior genuine proof capture for diagnostic comparison only. Timing is observational under concurrent CPU load. Snapshot chars measure string length, not process heap. Unconsumed strings live with returned objects via WeakMap; promotion drops strings, object GC drops entries; no strong registry."
+  },
+  "benchmarkLog": {
+    "path": "/workspace/librarian-regression/fix39-20261011/source-logs/lazy-loader-ab-green.json",
+    "sha256": "28f1881aa6fb5271400c1012f2cc701c5c99ab6199d181663c7539907f1a5830",
+    "bytes": 1228
+  },
+  "historicalFailure": {
+    "path": "/workspace/librarian-regression/fix39-20261011/final-run-3/logs/661-libra_phase_d_candidate_context_scale_synthetic_test.cjs.log",
+    "sha256": "49056d8927c7e2835a85646dd786cc46dda33da98172e12b4c84421a43a4629b",
+    "bytes": 38446
+  },
+  "limits": [
+    "Focused roots are actual unfiltered official roots, but full661 and all1138 are not qualified by these results. Parent owns new frozen full campaign.",
+    "Initial frozen root661 TIMEOUT500.42 preserved; same test previously PASS284.92. Eager loader hashing identified with bounded diagnostic A/B; timing ratio is observational, no wall-clock pass threshold.",
+    "Snapshot captures actual parsed physical body before logical archive overlay, omitting only top-level embedding. Stable digest algorithm unchanged; lazy promotion parses immutable captured JSON, hashes once, replaces snapshot entry with frozen private proof.",
+    "All up-to40 packet-admitted closure facts remain conservatively bound, including renderer-budget-omitted facts. No final-text-only minimality claim.",
+    "WeakMap has no strong registry. Every live unconsumed returned memory can retain one JSON string until memory GC or promotion; persistent candidate caches extend that lifetime. Thirty live unconsumed objects retain589590 chars in benchmark, approximately1.18MB if UTF16 storage, not measured process heap. Whole10k cache peak remains a full-run risk to observe.",
+    "Nonresponse loader no stable digest; genuine packet/closure consumers perform original digest and final physical read remains deadline-bound. Timeout does not cancel underlying physical work."
+  ]
+}

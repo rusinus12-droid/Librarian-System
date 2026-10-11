@@ -1,0 +1,431 @@
+{
+  "schema": "lib.reference-evidence-followup.v1",
+  "recordedAtUtc": "2026-10-11T00:36:07.926937+00:00",
+  "parentCommit": "6f1d292f021be10a797e7861281cea453d4ae1bb",
+  "branch": "codex/regression-continuation-20261011",
+  "baselineCapturedSourceCommit": "aff403fe04ea417d9121ca52330c44ba0681343b",
+  "historicalResultsPreserved": true,
+  "referenceInput": {
+    "archiveFilename": "LIB-Regression-20261010-Reference-Markdown.zip",
+    "archiveSha256": "bdb028e8c828e3c0e1a4f1db528083452f3eb3593d3c9c113221b8a2c7bfebc8",
+    "archiveCrcVerified": true,
+    "type": "Three Markdown reference/index documents, not the original private raw evidence bundle.",
+    "files": [
+      {
+        "path": "/workspace/librarian-regression/reference-20261010T195931Z/LIB-Regression-20261010T195931Z-All-1138-Tests.md",
+        "sha256": "46b2697de589fec01a044f5aa31fb3d3b92773d7c39c5e941f135694960c3ade",
+        "bytes": 164614
+      },
+      {
+        "path": "/workspace/librarian-regression/reference-20261010T195931Z/LIB-Regression-20261010T195931Z-Open-280.md",
+        "sha256": "6f86db1d8874ccea81ff9e36287208258adab9c2f1afda6c469d70941cb75e05",
+        "bytes": 35435
+      },
+      {
+        "path": "/workspace/librarian-regression/reference-20261010T195931Z/LIB-Regression-20261010T195931Z-Review.md",
+        "sha256": "4fe36f2de603be00c0436d1bbd9f8e4f357e414ce43d62ad61458b91bdc7b3db",
+        "bytes": 18026
+      }
+    ],
+    "audit": {
+      "path": "/workspace/librarian-regression/reference-20261010T195931Z/REFERENCE-AUDIT.json",
+      "sha256": "548d783842f778909ab727a723a7cf8e12d4c1c12cc3f31af39ae0092c043f67",
+      "bytes": 5700
+    },
+    "originalRows": 1138,
+    "activeAtHistoricalCutoff": 1134,
+    "historicalOpenCounts": {
+      "FAIL": 193,
+      "BLOCKED_GUARD_REVIEW": 84,
+      "TIMEOUT": 3
+    }
+  },
+  "activeRootCount": 1138,
+  "addedRoots": 0,
+  "previousCorrectedHistoricalRoots": 36,
+  "retainedSuccessorsThisBatch": 3,
+  "cumulativeCorrectedHistoricalRoots": 39,
+  "productionChanged": false,
+  "promptTextChanged": false,
+  "sharedFixturesChanged": false,
+  "runnerTimeoutsChanged": false,
+  "sourceBindings": [
+    {
+      "path": "PROGRAM/plugins/LIBRA.js",
+      "sha256": "ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+      "sha256": "5fdee683c17555036e093b206d5eef622a1033a3e340a700e4389f380587fccf",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js",
+      "sha256": "af3349dbcb14bb59c92792b68ba49965cd599333343a172ecf0de8132ac91517",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/server/server.cjs",
+      "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/tests/fixtures/libra_actual_classic_request.cjs",
+      "sha256": "df80cca242b4f984079a907863625c84b89713a59f0af7cfde2959b6f1e0cb4f",
+      "unchangedFromParent": true
+    },
+    {
+      "path": "PROGRAM/run_regression_batch.py",
+      "sha256": "8241551d49588ebfe4ed313a779b59032c7ae313546ee57c32ea576eaab661f8",
+      "unchangedFromParent": true
+    }
+  ],
+  "productSourceVerification": {
+    "baseCommit": "6f1d292f021be10a797e7861281cea453d4ae1bb",
+    "trackedPluginSdkFilesVerifiedUnchanged": 39,
+    "changed": []
+  },
+  "adoptions": [
+    {
+      "path": "PROGRAM/tests/authority_route_lifecycle_basic.test.cjs",
+      "historicalOriginalOrdinal": 21,
+      "historicalPhase1Status": "FAIL",
+      "previousSha256": "2743a668f41c109a59f7bd774a862af3a7ddd930c5059b501715fbc4177e063e",
+      "adoptedSha256": "38ddfe11f133c6ff94e313f56cb4b76634900bd6371e04080adb20e138b8b2f0",
+      "rootCause": "The Core3 SDK fixture omitted required global host catalog and owner classification for its literal seed, so the old ACK-loss injection was unreachable.",
+      "retainedCoverage": [
+        "All ten original Authority cases retained: CAS, reopen, capture/currentness, DATA/owner refusal, route locks/corruption, SDK setters, closure, ABA and ACK loss.",
+        "Missing host catalog now proves no local route/job writes and no server transition.",
+        "Exact synthetic seed key/value classification and complete one-chat preview; lost ACK injection reached; original operation status/replay retained; resulting global route epoch exactly one."
+      ],
+      "red": {
+        "ordinal": 22,
+        "total": 1138,
+        "path": "PROGRAM/tests/authority_route_lifecycle_basic.test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 4.99,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/red/logs/022-authority_route_lifecycle_basic.test.cjs.log",
+          "sha256": "996974f62c7acc8b6dcf57ef39148ca06521c1201ee2067ec24704f20667401a",
+          "bytes": 2222
+        }
+      },
+      "final": {
+        "ordinal": 22,
+        "total": 1138,
+        "path": "PROGRAM/tests/authority_route_lifecycle_basic.test.cjs",
+        "status": "PASS",
+        "durationSeconds": 8.19,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/022-authority_route_lifecycle_basic.test.cjs.log",
+          "sha256": "01e383c0e33927464b7e0efbd2682c4554d3df94f4174388cba97e0f1e914a2b",
+          "bytes": 1299
+        }
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_e2e_test.cjs",
+      "historicalOriginalOrdinal": 580,
+      "historicalPhase1Status": "FAIL",
+      "previousSha256": "70ef832e828e27291e8968f7660f98693e5ed7a77763b79262efef455358efaa",
+      "adoptedSha256": "7355f2b3b19bd17655f20499655c432c7578e8d837ce4dffe43bc546c01d6979",
+      "rootCause": "The test called the retired Input Writer preflight API instead of the retained actual Classic beforeRequest consumer.",
+      "retainedCoverage": [
+        "Provider request-local aliases and forged persistent ID refusal retained.",
+        "Original open promise selection excludes outcome; exactly one accepted successor reaches the returned Classic block through validated request seal and exact physical canonical refs.",
+        "State/History lifecycle and cursor/evidence order, retained source artifacts, zero-provider cold replay and exact canonical bytes retained."
+      ],
+      "red": {
+        "ordinal": 583,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_e2e_test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 1.02,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/red/logs/583-libra_main_memory_thread_lifecycle_e2e_test.cjs.log",
+          "sha256": "8472fff7335e20799fe1483ca9e28e034b518c6a8782d9e61cff521ecbbf266c",
+          "bytes": 211
+        }
+      },
+      "final": {
+        "ordinal": 583,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_e2e_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 7.9,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/583-libra_main_memory_thread_lifecycle_e2e_test.cjs.log",
+          "sha256": "c8df63d4211a26df98b53daa23bb053ae115893bbd58074aedace8b495e996a8",
+          "bytes": 436
+        }
+      }
+    },
+    {
+      "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_transfer_test.cjs",
+      "historicalOriginalOrdinal": 581,
+      "historicalPhase1Status": "FAIL",
+      "previousSha256": "29ef65292325834b3b513032d39f189a74bece2ae405897e269c3202c2007f4b",
+      "adoptedSha256": "63dfbfeacd3343ee5fa0e3ccae0891c0ab6beea089b23902236fe7cf2ce5f947",
+      "rootCause": "The test called the retired Input Writer preflight API; transferred memories acquire arc_* archive identities that the actual request must bind.",
+      "retainedCoverage": [
+        "Native child, first handoff and forward epoch successor each reach actual returned Classic requests with validated seals and exact closure identity.",
+        "Handoff outcome binds active archive key/ID/revision/source digest/session epoch -1 and original source digest/text.",
+        "All original Micro archive digest tamper/refusal/retry, source deletion, second handoff, byte-preserving zero-provider replay and backward epoch exclusion assertions retained."
+      ],
+      "red": {
+        "ordinal": 584,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_transfer_test.cjs",
+        "status": "FAIL",
+        "durationSeconds": 2.09,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/red/logs/584-libra_main_memory_thread_lifecycle_transfer_test.cjs.log",
+          "sha256": "f1c3817614fab98ff96700aca75f84b1f44c36c70c0daa588496263f48d5e2ae",
+          "bytes": 216
+        }
+      },
+      "final": {
+        "ordinal": 584,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_transfer_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 12.34,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/584-libra_main_memory_thread_lifecycle_transfer_test.cjs.log",
+          "sha256": "714519265ada3bbeae99cc6f055ae5152c51af72973d49a074c683da7a8ecb67",
+          "bytes": 502
+        }
+      }
+    }
+  ],
+  "verification": {
+    "runtime": {
+      "node": "24.19.0",
+      "python": "3.12.14",
+      "environment": "cloud Linux; controlled VM host and local/in-process server fixtures; no external model"
+    },
+    "officialRunner": "PROGRAM/run_regression_batch.py",
+    "finalSelectedPatterns": [
+      "authority_libra_source_closure.test.cjs",
+      "authority_libra_source_proof.test.cjs",
+      "authority_route_lifecycle_basic.test.cjs",
+      "libra_main_memory_recall_successor_delivery_test.cjs",
+      "libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+      "libra_main_memory_thread_lifecycle_e2e_test.cjs",
+      "libra_main_memory_thread_lifecycle_transfer_test.cjs",
+      "storage_global_allchat_faults_test.cjs",
+      "storage_global_allchat_job_test.cjs",
+      "storage_global_handoff_transition_test.cjs"
+    ],
+    "environmentVariables": {
+      "NODE_PATH": "/workspace/librarian-cloud/toolchain/node_modules",
+      "WM_TOOLCHAIN": "/workspace/librarian-cloud/toolchain/node_modules",
+      "MEMORY_SUITE_REGRESSION_LOG": "/workspace/librarian-regression/reference-continuation-20261011/final/summary.txt",
+      "MEMORY_SUITE_REGRESSION_OUTPUT_DIR": "/workspace/librarian-regression/reference-continuation-20261011/final/logs"
+    },
+    "redSummary": {
+      "path": "/workspace/librarian-regression/reference-continuation-20261011/red/summary.txt",
+      "sha256": "0dd93ebe8294ad5c467a17586b6f56f1f2e78a9c4edb55d0fde2c9574e877a3c",
+      "bytes": 5012
+    },
+    "finalSummary": {
+      "path": "/workspace/librarian-regression/reference-continuation-20261011/final/summary.txt",
+      "sha256": "9bb70f2e250fc0b138ae7b6251a834db97e70605f1751d2d440f6be99365ba2c",
+      "bytes": 17294
+    },
+    "uniquePassingRoots": 10,
+    "results": [
+      {
+        "ordinal": 12,
+        "total": 1138,
+        "path": "PROGRAM/tests/authority_libra_source_closure.test.cjs",
+        "status": "PASS",
+        "durationSeconds": 3.16,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/012-authority_libra_source_closure.test.cjs.log",
+          "sha256": "a181bb92a3c6cb1b0d3a320d1e474447621b897a4376ac9fe8b90e7ad3ef1017",
+          "bytes": 1204
+        }
+      },
+      {
+        "ordinal": 13,
+        "total": 1138,
+        "path": "PROGRAM/tests/authority_libra_source_proof.test.cjs",
+        "status": "PASS",
+        "durationSeconds": 3.42,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/013-authority_libra_source_proof.test.cjs.log",
+          "sha256": "07b7df25a1da1b2b3ea29933a602e3530780687df312b3764ff080493f397506",
+          "bytes": 1269
+        }
+      },
+      {
+        "ordinal": 22,
+        "total": 1138,
+        "path": "PROGRAM/tests/authority_route_lifecycle_basic.test.cjs",
+        "status": "PASS",
+        "durationSeconds": 8.19,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/022-authority_route_lifecycle_basic.test.cjs.log",
+          "sha256": "01e383c0e33927464b7e0efbd2682c4554d3df94f4174388cba97e0f1e914a2b",
+          "bytes": 1299
+        }
+      },
+      {
+        "ordinal": 574,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_recall_successor_delivery_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 34.73,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/574-libra_main_memory_recall_successor_delivery_test.cjs.log",
+          "sha256": "4747b8c8ee402f9076887c78694088361b6110b8e534dc9108f00cb8a8708d77",
+          "bytes": 4721
+        }
+      },
+      {
+        "ordinal": 582,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 75.12,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/582-libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs.log",
+          "sha256": "94ab4340b1e7965204d1dd52cf3b323b0dfc2daaff4ea160791b7c1a6893aea3",
+          "bytes": 7467
+        }
+      },
+      {
+        "ordinal": 583,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_e2e_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 7.9,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/583-libra_main_memory_thread_lifecycle_e2e_test.cjs.log",
+          "sha256": "c8df63d4211a26df98b53daa23bb053ae115893bbd58074aedace8b495e996a8",
+          "bytes": 436
+        }
+      },
+      {
+        "ordinal": 584,
+        "total": 1138,
+        "path": "PROGRAM/tests/libra_main_memory_thread_lifecycle_transfer_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 12.34,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/584-libra_main_memory_thread_lifecycle_transfer_test.cjs.log",
+          "sha256": "714519265ada3bbeae99cc6f055ae5152c51af72973d49a074c683da7a8ecb67",
+          "bytes": 502
+        }
+      },
+      {
+        "ordinal": 1090,
+        "total": 1138,
+        "path": "PROGRAM/tests/storage_global_allchat_faults_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 3.59,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/1090-storage_global_allchat_faults_test.cjs.log",
+          "sha256": "b82f29253d0f34f096c5b9a061791fb763174ca6f73c855c325080be5a2ce6c3",
+          "bytes": 4225
+        }
+      },
+      {
+        "ordinal": 1091,
+        "total": 1138,
+        "path": "PROGRAM/tests/storage_global_allchat_job_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 0.52,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/1091-storage_global_allchat_job_test.cjs.log",
+          "sha256": "4b266bb2d3a49d7c68d0715c588ba07b871c6a1e40cd8aa2a2a5f0c1c7d6fa62",
+          "bytes": 343
+        }
+      },
+      {
+        "ordinal": 1098,
+        "total": 1138,
+        "path": "PROGRAM/tests/storage_global_handoff_transition_test.cjs",
+        "status": "PASS",
+        "durationSeconds": 2.34,
+        "output": {
+          "path": "/workspace/librarian-regression/reference-continuation-20261011/final/logs/1098-storage_global_handoff_transition_test.cjs.log",
+          "sha256": "44c58d341b2ab330577e45edd39ca13c50b04d641d9eb5354875fa3b06f3ac76",
+          "bytes": 1938
+        }
+      }
+    ],
+    "intermediateFailuresPreserved": [
+      "/workspace/librarian-regression/reference-continuation-20261011/green-1",
+      "/workspace/librarian-regression/reference-continuation-20261011/green-2"
+    ]
+  },
+  "independentReview": {
+    "reviewer": "/root/review_reference_followup",
+    "blockingFindings": [],
+    "materialDeclinedJudgments": [],
+    "receipt": {
+      "path": "/workspace/librarian-regression/reference-continuation-20261011/independent-review.json",
+      "sha256": "83d61d4c3c81b411ed5b6f4bf33a0b2d115a3e953edced82807746cba9bcc682",
+      "bytes": 1043
+    },
+    "diffSha256": "26ca5bf6fc0caa4c4b802e31c99aa996a2ddc9680840bc254286a688c757c857"
+  },
+  "ongoingFullCampaign": {
+    "sourceCommit": "6f1d292f021be10a797e7861281cea453d4ae1bb",
+    "stateAtReceipt": {
+      "schema": "librarian.full_regression.progress.v1",
+      "sourceCommit": "6f1d292f021be10a797e7861281cea453d4ae1bb",
+      "driverPid": 12262,
+      "status": "RUNNING",
+      "total": 1138,
+      "completed": 666,
+      "remaining": 472,
+      "counts": {
+        "PASS": 571,
+        "FAIL": 90,
+        "PASS_SKIP": 4,
+        "TIMEOUT": 1
+      },
+      "current": {
+        "ordinal": 667,
+        "path": "PROGRAM/tests/libra_phase_d_timeline_caps_test.cjs",
+        "sha256": "08e2d2a15904ba320ce39e49509ca5f0fd02dec9d0f62933ac2d512e360dbb3f"
+      },
+      "startedAtUtc": "2026-10-10T23:08:58.331837+00:00",
+      "updatedAtUtc": "2026-10-11T00:28:27.607110+00:00",
+      "runDirectory": "/workspace/librarian-regression/full-6f1d292-20261010T230857Z",
+      "lastResult": {
+        "ordinal": 666,
+        "path": "PROGRAM/tests/libra_phase_d_response_boundary_identity_test.cjs",
+        "sha256": "46e07e0e38e3d87711744fc5e8e6cb207a0facd80808b2b2a5c13287a2de869a",
+        "status": "PASS",
+        "durationSeconds": 1.02,
+        "runnerExitCode": 0,
+        "summary": "/workspace/librarian-regression/full-6f1d292-20261010T230857Z/summaries/0666.txt",
+        "console": "/workspace/librarian-regression/full-6f1d292-20261010T230857Z/summaries/0666.console.txt",
+        "completedAtUtc": "2026-10-11T00:28:27.576156+00:00",
+        "fullOutputLog": "/workspace/librarian-regression/full-6f1d292-20261010T230857Z/logs/666-libra_phase_d_response_boundary_identity_test.cjs.log",
+        "fullOutputSha256": "9a79e13802b87f907fbdeb8a27c8ac3c9d729923e71bb3ca1163ad7c9febf6c1"
+      },
+      "activeCommand": [
+        "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+        "PROGRAM/run_regression_batch.py",
+        "666",
+        "667"
+      ],
+      "activeRunnerPid": 30850
+    },
+    "qualification": "This separate campaign remains pinned to its original commit; its original failures are not overwritten or relabelled by targeted follow-up results."
+  },
+  "remainingQualification": {
+    "fullRegressionsOnAdoptedSourceCompleted": false,
+    "actualRisuAIHostRun": false,
+    "windowsRun": false,
+    "liveModelRun": false,
+    "releaseQualified": false,
+    "otherFullCampaignFailures": "Retain separately for root-cause investigation; this batch resolves only the three named selected root failures."
+  }
+}

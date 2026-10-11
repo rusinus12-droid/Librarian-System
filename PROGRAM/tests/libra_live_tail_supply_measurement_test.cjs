@@ -21,6 +21,45 @@ const assert = require('node:assert/strict');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
 
+
+// Same-request evidence is taken from the real hook and its current response
+// context/viewer. A selected viewer row alone is not a delivery witness.
+async function readClassicDelivery(f, query, expectedLiveTail) {
+  await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
+  const scopeKey = (await f.r.api.getHostLineageStatus()).scopeKey;
+  const previous = f.r.api.getLastResponseContext();
+  let providerCalls = 0;
+  f.control.onCall = async () => { providerCalls++; return { type: 'error', result: 'unexpected provider call during Classic recall' }; };
+  const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: query }], 'model');
+  const context = f.r.api.getLastResponseContext();
+  const viewer = f.r.api.getLastMemoryRecallViewer();
+  assert.ok(scopeKey && context?.requestId);
+  assert.notEqual(context.requestId, previous?.requestId, 'witness belongs to this new request');
+  assert.equal(context.route, 'classic');
+  assert.equal(context.scopeKey, scopeKey);
+  assert.equal(context.values?.currentInput, query);
+  assert.equal(viewer?.scopeKey, scopeKey);
+  assert.equal(viewer?.queryText, query);
+  assert.equal(viewer?.responseContextRequestId, context.requestId);
+  assert.equal(viewer?.responseContextDigest, context.contextDigest);
+  const validity = await f.r.api.validateResponseContext(context);
+  assert.equal(validity.ok, true, JSON.stringify(validity));
+  assert.equal(validity.current, true);
+  assert.equal(providerCalls, 0, 'current Classic retrieval has no retired Planner provider call');
+  const injected = messages.filter(row => row.role === 'system' && String(row.content || '').includes('[LIBRA CLASSIC RECALL'));
+  assert.ok(injected.length > 0, 'actual outbound messages carry Classic recall');
+  const block = injected.map(row => String(row.content || '')).join('\n');
+  const microRows = Array.from(viewer.rows || []).filter(row => row.kind === 'micro' && row.classicUsed === true && row.injected === true);
+  assert.ok(microRows.length > 0, 'durable Micro is delivered, not merely selected');
+  for (const row of microRows) {
+    const exact = String(row.selectedText || row.text || '');
+    assert.ok(exact.length > 0 && block.includes(exact), 'whole selected Micro text reaches the actual block');
+  }
+  assert.equal(viewer.liveTailInjected === true, expectedLiveTail);
+  return { delivered: messages.map(row => String(row.content || '')).join('\n'), block,
+    microUsed: microRows.length > 0, providerCalls, requestId: context.requestId, contextDigest: context.contextDigest };
+}
+
 const DETAIL = '도서관 전체는 정숙 구역';
 const QUERY = '도서관의 정숙 규칙을 고려해서 이어줘.';
 const DIALOGUE_MARK = '[RECENT DIALOGUE';
@@ -65,22 +104,9 @@ const measure = async (mode, combo) => {
     await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 15000);
     const microStatus = (await f.r.api.debugReadActiveMicroMemory(1)).status;
 
-    const read = async route => {
-      await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: route });
-      let providerInput = '';
-      f.control.onCall = async args => {
-        providerInput = args[0].messages.map(row => String(row.content || '')).join('\n');
-        return { type: 'success', result: route === 'planner' ? 'BRIEF' : 'REPLY' };
-      };
-      const delivered = await f.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model');
-      return {
-        delivered: delivered.map(row => String(row.content || '')).join('\n'),
-        providerInput
-      };
-    };
-    const classic = await read('classic');
-    const planner = await read('planner');
-    return { microStatus, classic, planner };
+    const classic = await readClassicDelivery(f, QUERY,
+      combo.liveContext === 'true' && combo.classicOptIn === 'true');
+    return { microStatus, classic };
   } finally {
     try { await fx.cleanup(); } catch { /* fixture already closed */ }
   }
@@ -128,12 +154,8 @@ const combos = [
     assert.ok(!measured.classic_only.classic.delivered.includes(DIALOGUE_MARK),
       `${mode}: classic_live_tail_enabled alone does not put dialogue in the Classic block`);
 
-    // (4) The Planner receives the same raw turn text through the live-context layer, so the planner
-    // path loses it too if Live Tail is removed.
-    assert.match(measured.both_on.planner.providerInput, /\[USER chatId=[^\]]+\]/,
-      `${mode}: the Planner provider input carries the completed user turn through Live Tail`);
-    assert.ok(!measured.both_off.planner.providerInput.includes('chatId=t1-u'),
-      `${mode}: with Live Tail off the Planner no longer receives that raw turn`);
+    // Retired Planner-provider assertions are not a second current delivery route.
+    // Every 2x2 arm above already proves same-request Classic/Micro delivery.
 
     console.log(JSON.stringify({
       test: 'libra_live_tail_supply_measurement',

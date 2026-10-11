@@ -6,6 +6,7 @@ const createReset = require('../server/core/namespace-reset.cjs');
 const { readDataInstanceIdentity } = require('../server/core/data-instance-identity.cjs');
 const { spawnSync } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
+const { seedHistoricalInventory, assertRetiredReadOnly } = require('./fixtures/portable_historical_inventory_fixture.cjs');
 const currentOwners = process.env.RESET_PHYSICAL_CURRENT_OWNERS === '1';
 const namespaces = currentOwners ? [...require('../server/authority/contracts.cjs').CORE3_OWNERS] : ['flashback','hayaku','libra','lia','retrace'];
 const schema = 'memory-suite.namespace-reset-job.v2';
@@ -20,9 +21,14 @@ const call = async (url, route, body, token) => {
   return { status:response.status, data:await response.json() };
 };
 async function prepare(dataDir) {
+  // Existing retired rows remain part of reset preservation. Seed them offline;
+  // no live retired writer may be enabled just to construct the test inventory.
+  const historical = namespaces.includes('lia') ? await seedHistoricalInventory(dataDir,
+    Object.fromEntries(['lia','retrace'].map(namespace => [namespace,[{space:'plugin',key:'physical-reset-preserve',value:{namespace}}]]))) : null;
   const app = createMemorySuiteServer({ host:'127.0.0.1',port:0,dataDir,autoBackup:false });
   try {
-    for (const namespace of namespaces) app.repositories[namespace].mutate({ kind:'set',space:'plugin',key:'physical-reset-preserve',value:{namespace},operationId:namespace+'_physical_fixture_000000',expectedRevision:0 });
+    if (historical) assertRetiredReadOnly(app, historical, {sourceUnchanged:true});
+    for (const namespace of namespaces.filter(name => !['lia','retrace'].includes(name))) app.repositories[namespace].mutate({ kind:'set',space:'plugin',key:'physical-reset-preserve',value:{namespace},operationId:namespace+'_physical_fixture_000000',expectedRevision:0 });
     fs.writeFileSync(path.join(dataDir,'config','scope-catalog.json'),JSON.stringify({schema:'memory-suite.scope-catalog.v1',namespaces:Object.fromEntries(namespaces.map(ns=>[ns,{fixture:true}]))})+'\n');
     await app.listen();
   } finally { await app.close(); }
@@ -72,8 +78,8 @@ async function historyNegative(root,name,history) {
   const dataDir=path.join(root,name),pin=await prepare(dataDir),state=pending(dataDir,pin);state.history=history;
   fs.writeFileSync(path.join(dataDir,'config','namespace-reset.json'),JSON.stringify(state)+'\n');
   const beforeStores=storeCounts(dataDir),before=tree(dataDir);
-  const guard=process.env.RESET_PHYSICAL_GUARD || 'C:/Users/rusin/Desktop/LIB/LIB/work/recovery-20261002/no-model-network.cjs';
-  if(process.env.RESET_PHYSICAL_GUARD)assert.equal(hash(fs.readFileSync(guard)),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','exact current inherited A4 guard');
+  const guard=process.env.RESET_PHYSICAL_GUARD || path.join(__dirname,'fixtures','authority_no_network.cjs');
+  assert.equal(hash(fs.readFileSync(guard)),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','exact current inherited A4 guard');
   const adapter=process.env.RESET_PHYSICAL_ADAPTER || '';
   if(adapter)assert.equal(hash(fs.readFileSync(adapter)),'8f21bb71f788c7ccff39912b5fb3ab274996e8b09068118eb254593bdf1d937b','exact owned handler adapter');
   assert.ok(process.env.NODE_OPTIONS?.includes(guard));assert.ok(process.execArgv.includes(guard));

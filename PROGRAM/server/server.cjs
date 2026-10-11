@@ -9,9 +9,6 @@ const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { Worker } = require('node:worker_threads');
 const { createComputePlane } = require('./compute/compute_plane.cjs');
-const { createWmService } = require('./wm/service.cjs');
-const { handleWmRequest, wmPrincipalForPluginId } = require('./wm/http.cjs');
-const WM_BACKUP_MUTATION_ROUTES = new Set(["manual/begin", "manual/chunk", "manual/seal", "manual/activate", "manual/write", "history/begin", "history/renew", "history/stage", "snapshot/initialize", "snapshot/prepare", "snapshot/publish", "snapshot/companion", "inventory/put", "dataset/fence", "dataset/activate", "migration/begin", "migration/chunk", "migration/verify", "migration/materialize", "handoff/begin", "handoff/chunk", "handoff/verifyStage", "handoff/materialize", "handoff/complete", "handoff/abort", "handoff/rollback"].map(action => '/v1/wm/' + action));
 const { publicError: publicComputeError } = require('./compute/contracts.cjs');
 const { validateStoredHostLineage } = require('./core/host-lineage-metadata.cjs');
 const { createFlashbackWriterFence } = require('./core/flashback-writer-fence.cjs');
@@ -19,9 +16,6 @@ const gradiaReadSession = require('./core/gradia-libra-read-session.cjs');
 const gradiaOwnerReadSessions = Object.freeze({libra:gradiaReadSession,
   hayaku:require('./core/gradia-hayaku-read-session.cjs'),flashback:require('./core/gradia-flashback-read-session.cjs')});
 const { exportBackupArchive, importBackupArchive } = require('./portable/backup_archive.cjs');
-const BackupBundle = require('./portable/backup_bundle_v2.cjs');
-const WmBackup = require('./wm/backup.cjs');
-const RESTORE_COMPONENT_JOURNAL_SCHEMA = 'memory-suite.restore-transaction.v2';
 const { planMigrationMetadataInstall, applyMigrationMetadataPlan, installMigrationMetadata, verifyAuxiliary, rollbackMigrationMetadata } = require('./core/migration_metadata.cjs');
 const { ensureDataInstanceIdentity, readDataInstanceIdentity } = require('./core/data-instance-identity.cjs');
 const authorityContracts = require('./authority/contracts.cjs');
@@ -75,8 +69,8 @@ const NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'retrac
 // Compatibility inventory is deliberately unchanged; only these owners create new live stores.
 const ACTIVE_STORAGE_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra']);
 const LEGACY_STORAGE_NAMESPACES = Object.freeze(['lia', 'retrace']);
-// Explicit service inventory; WM never joins legacy KV repositories or portable v1 owners.
-const SUPPORTED_STORAGE_OWNERS = Object.freeze([...ACTIVE_STORAGE_NAMESPACES, 'wm']);
+// Only active storage owners are included in the service inventory.
+const SUPPORTED_STORAGE_OWNERS = ACTIVE_STORAGE_NAMESPACES;
 const SPACES = new Set(['plugin', 'local']);
 const REQUIRED_CAPABILITIES = Object.freeze([
   'kv.v1',
@@ -237,17 +231,13 @@ const OPTIONAL_COMPUTE_CAPABILITIES = Object.freeze([
 
 function namespaceForPluginId(value) {
   const plugin = String(value || '').trim().toLowerCase();
-  return plugin === 'libra_world_manager' ? 'wm' : PLUGIN_NAMESPACE_MAP[plugin] || '';
+  return PLUGIN_NAMESPACE_MAP[plugin] || '';
 }
 
 const GRADIA_READ_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
 function principalForPluginId(value, gradiaReadOwners) {
   const pluginId = String(value || '').trim().toLowerCase();
   if (!pluginId || pluginId.length > 120) return null;
-  if (wmPrincipalForPluginId(pluginId)) return {
-    kind:'plugin', pluginId, namespace:'wm', roles:['wm_owner'],
-    readNamespaces:['wm'], writeNamespaces:['wm']
-  };
   if (pluginId === gradiaReadSession.PLUGIN_ID) {
     const requested = gradiaReadOwners === undefined ? ['libra'] : gradiaReadOwners;
     if (!Array.isArray(requested) || !requested.length || requested.length > GRADIA_READ_OWNERS.length
@@ -792,8 +782,8 @@ function listBackupsFromDisk(backupDir) {
       if (!fs.existsSync(manifestPath)) continue;
       try {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-        if (!manifest || !['memory-suite.backup.v1',BackupBundle.SCHEMA].includes(manifest.schema)) continue;
-        rows.push(BackupBundle.viewBackup(manifest,dir));
+        if (!manifest || manifest.schema !== 'memory-suite.backup.v1') continue;
+        rows.push({...manifest,path:dir,coverage:{legacyOwners:Object.keys(manifest.stores||{})}});
       } catch (_) {}
     }
   }
@@ -801,7 +791,6 @@ function listBackupsFromDisk(backupDir) {
 }
 
 function scrubBackupFromDisk(backup, requestedNamespaces = NAMESPACES) {
-  if(backup?.schema===BackupBundle.SCHEMA)return BackupBundle.verifyBundle(backup,{verifyLegacy:scrubBackupFromDisk,namespaces:requestedNamespaces.filter(ns=>ns!=='wm')});
   const namespaces = [...new Set((Array.isArray(requestedNamespaces) ? requestedNamespaces : [requestedNamespaces]).map(validateNamespace))];
   const stores = {};
   let ok = true;
@@ -876,13 +865,6 @@ function recoverInterruptedRestore(dataDir) {
   const filePath = restoreJournalPath(dataDir);
   if (!fs.existsSync(filePath)) return { recovered: false, reason: 'no_journal' };
   const journal = readJsonFile(filePath, null);
-  if(journal?.schema===RESTORE_COMPONENT_JOURNAL_SCHEMA){
-    if(!Array.isArray(journal.items)||!['COMMITTED','PREPARED','INSTALLED','VERIFIED'].includes(journal.phase))throw new Error('restore_components_journal_invalid');
-    // A mixed-owner crash never activates a partly restored installation.
-    // Retain staging, originals and evidence for explicit recovery; no automatic rollback/delete.
-    if(journal.phase!=='COMMITTED')return {recovered:false,requiresRecovery:true,reason:'restore_components_recovery_required',transactionId:journal.id};
-    return {recovered:true,action:'component_restore_committed',transactionId:journal.id,wmAdmission:'recovery_required',sourcePreserved:true};
-  }
   if (!journal || journal.schema !== RESTORE_JOURNAL_SCHEMA || !Array.isArray(journal.items)) {
     const invalidPath = `${filePath}.invalid-${Date.now()}`;
     try { fs.renameSync(filePath, invalidPath); } catch (_) {}
@@ -1009,59 +991,10 @@ function findBackupById(backupDir, backupId) {
   return listBackupsFromDisk(backupDir).find(item => item.id === String(backupId || '')) || null;
 }
 
-// C3 selection never changes the legacy five-namespace validator or migration SDK.
-function restoreComponentSelection(value){return [...new Set((Array.isArray(value)?value:[value]).map(ns=>ns==='wm'?'wm':validateNamespace(ns)))];}
-function componentCurrentFingerprint({dataDir,namespaces,wmService}){
- const legacy=[];for(const ns of namespaces.filter(ns=>ns!=='wm')){const file=namespaceDbPath(dataDir,ns);if(!fs.existsSync(file)){legacy.push([ns,'absent']);continue;}const db=new DatabaseSync(file,{readOnly:true});try{const hash=crypto.createHash('sha256');for(const {name} of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").iterate()){hash.update(name+'\n');const quoted='"'+name.replace(/"/g,'""')+'"';for(const row of db.prepare('SELECT * FROM '+quoted+' ORDER BY rowid').iterate())hash.update(WmBackup.stable(row)+'\n');}legacy.push([ns,hash.digest('hex')]);}finally{db.close();}}
- const wmPath=path.join(dataDir,'stores','wm','wm.sqlite');let wm;
- if(wmService)wm=wmService.backupFingerprint();else {if(!fs.existsSync(wmPath))throw new Error('wm_restore_current_store_required');const db=new DatabaseSync(wmPath,{readOnly:true});try{const hash=crypto.createHash('sha256');for(const table of ['metadata','heads','inventory_items','operations','generations'])for(const row of db.prepare('SELECT * FROM '+table+' ORDER BY rowid').iterate()){if(table==='metadata'&&(row.key.startsWith('pin_')||row.key.startsWith('used:')))continue;hash.update(WmBackup.stable(row)+'\n');}wm=hash.digest('hex');}finally{db.close();}}
- return sha256Text(WmBackup.stable({target:path.resolve(dataDir),namespaces,legacy,wm,catalog:readScopeCatalogFromDisk(dataDir).catalog,epochs:readJsonFile(path.join(dataDir,'config','namespace-reset.json'),null)?.epochs||{}}));
-}
-function planWmComponentRestore({dataDir,backupDir,backup,namespaces,mode,wmService,wmRestoreEnabled}){
- if(fs.existsSync(path.join(dataDir,'config','wm-import-selection.json')))throw new Error('wm_import_selected_same_store_restore_unsupported');
- if(backup.schema!==BackupBundle.SCHEMA||backup.coverage.wm!=='included'||!backup.components.wm)throw new Error('wm_backup_absent_or_unsupported');
- if(wmService?!wmService.backupCapabilities().restoreEnabled:!wmRestoreEnabled)throw new Error('wm_restore_provider_unqualified');
- const scrub=scrubBackupFromDisk(backup,namespaces);if(!scrub.ok)throw new Error('backup_scrub_failed');
- const currentPath=path.join(dataDir,'stores','wm','wm.sqlite');let expectedStoreIdentity;
- if(wmService){const state=wmService.status();if(!state.available||!state.initialized)throw new Error('wm_restore_current_store_required');expectedStoreIdentity=state.dataset.identity;}
- else {if(!fs.existsSync(currentPath))throw new Error('wm_restore_current_store_required');const db=new DatabaseSync(currentPath,{readOnly:true});try{const creation=JSON.parse(db.prepare("SELECT value FROM metadata WHERE key='identity'").get()?.value||'null');expectedStoreIdentity=Object.fromEntries(['authorityId','storeId','datasetId','backendId'].map(k=>[k,creation?.[k]]));}finally{db.close();}}
- if(!['authorityId','storeId','datasetId','backendId'].every(k=>expectedStoreIdentity[k]===backup.components.wm.sourceStoreIdentity[k]))throw new Error('wm_restore_cross_physical_identity_unsupported');
- const selectedBackupBytes=namespaces.reduce((sum,ns)=>sum+Number(ns==='wm'?backup.components.wm.bytes:backup.stores?.[ns]?.bytes||0),0),selectedCurrentBytes=namespaces.reduce((sum,ns)=>{try{return sum+fs.statSync(ns==='wm'?currentPath:namespaceDbPath(dataDir,ns)).size;}catch{return sum;}},0),workingBytes=selectedBackupBytes+selectedCurrentBytes;
- let availableBytes=null;try{const volume=fs.statfsSync(dataDir);availableBytes=Number(volume.bavail)*Number(volume.bsize);}catch{}if(availableBytes!==null&&availableBytes<workingBytes+64*1024*1024)throw new Error('restore_insufficient_space');
- const planId='components-'+crypto.randomUUID(),plan={schema:'memory-suite.restore-plan.v2',mode,recoveryMode:mode!=='online',target:path.resolve(dataDir),planId,operationId:'restore-'+crypto.randomUUID(),backupId:backup.id,backupCreatedAt:backup.createdAt,namespaces,expectedStoreIdentity,expectedCurrentFingerprint:componentCurrentFingerprint({dataDir,namespaces,wmService}),backupManifestDigest:WmBackup.hashFile(path.join(backup.path,'manifest.json')),confirmation:'RESTORE '+planId,coverage:backup.coverage,wm:{included:true,admission:'recovery_required',oldAuthorityReusable:false,domains:scrub.wm.domains},scrub,estimated:{selectedCurrentBytes,selectedBackupBytes,workingBytes,availableBytes,spaceLikelySufficient:availableBytes===null?null:availableBytes>=workingBytes+64*1024*1024},expiresAt:Date.now()+120000};
- WmBackup.atomicJson(path.join(dataDir,'migrations','component-restore-plans',planId+'.json'),plan);return plan;
-}
-function verifyWmRestoreAdmission({dataDir,backup,namespaces,componentPlan,confirmation,expectedCurrentFingerprint,wmService}){
- if(fs.existsSync(path.join(dataDir,'config','wm-import-selection.json')))throw new Error('wm_import_selected_same_store_restore_unsupported');
- if(!componentPlan||!/^components-[a-f0-9-]{36}$/.test(componentPlan.planId||''))throw new Error('restore_component_plan_required');const stored=readJsonFile(path.join(dataDir,'migrations','component-restore-plans',componentPlan.planId+'.json'),null);
- if(!stored||WmBackup.stable(stored)!==WmBackup.stable(componentPlan)||stored.target!==path.resolve(dataDir)||stored.backupId!==backup.id||WmBackup.stable(stored.namespaces)!==WmBackup.stable(namespaces)||Date.now()>=stored.expiresAt||confirmation!==stored.confirmation||expectedCurrentFingerprint!==stored.expectedCurrentFingerprint)throw new Error('restore_component_confirmation_mismatch');
- const previous=readJsonFile(restoreJournalPath(dataDir),null);if(previous?.schema===RESTORE_COMPONENT_JOURNAL_SCHEMA&&previous.phase!=='COMMITTED')throw new Error('restore_components_recovery_required');
- if(WmBackup.hashFile(path.join(backup.path,'manifest.json'))!==stored.backupManifestDigest||componentCurrentFingerprint({dataDir,namespaces,wmService})!==stored.expectedCurrentFingerprint)throw new Error('restore_component_plan_changed');const scrub=scrubBackupFromDisk(backup,namespaces);if(!scrub.ok)throw new Error('backup_scrub_failed');return stored;
-}
-function restoreWmComponentFiles({dataDir,backupDir,backupId,namespaces,componentPlan,confirmation,expectedCurrentFingerprint,mode,wmService,beforeInstall=()=>{},afterInstall=()=>{},preRestoreBackupId=null}){
- const backup=findBackupById(backupDir,backupId);if(!backup)throw new Error('backup_not_found');const prior=readJsonFile(restoreJournalPath(dataDir),null);if(prior?.schema===RESTORE_COMPONENT_JOURNAL_SCHEMA&&prior.phase==='COMMITTED'&&prior.id===componentPlan?.planId){const saved=readJsonFile(path.join(dataDir,'migrations','component-restore-plans',prior.id+'.json'),null);if(saved&&WmBackup.stable(saved)===WmBackup.stable(componentPlan)&&confirmation===saved.confirmation&&expectedCurrentFingerprint===saved.expectedCurrentFingerprint&&backupId===saved.backupId&&WmBackup.stable(namespaces)===WmBackup.stable(saved.namespaces)&&prior.receipt)return {ok:true,result:prior.receipt};throw new Error('restore_component_retry_identity_mismatch');}const plan=verifyWmRestoreAdmission({dataDir,backup,namespaces,componentPlan,confirmation,expectedCurrentFingerprint,wmService});
- const nonce=plan.planId,attempt=crypto.randomUUID(),items=[];for(const ns of namespaces.filter(ns=>ns!=='wm')){const meta=backup.stores[ns],currentPath=namespaceDbPath(dataDir,ns),sourcePath=WmBackup.resolveFile(backup.path,meta.file),tempPath=currentPath+'.restore-stage-'+nonce+'-'+attempt,rollbackPath=currentPath+'.restore-preserved-'+nonce;if(fs.existsSync(tempPath)||fs.existsSync(rollbackPath))throw new Error('restore_component_stage_exists');fs.mkdirSync(path.dirname(currentPath),{recursive:true});fs.copyFileSync(sourcePath,tempPath,fs.constants.COPYFILE_EXCL);fsyncFile(tempPath);if(sha256File(tempPath)!==meta.sha256||!verifyBackupDatabase(tempPath).ok)throw new Error('restore_component_stage_invalid');items.push({namespace:ns,currentPath,tempPath,rollbackPath,hadCurrent:fs.existsSync(currentPath),stagedSha256:meta.sha256});}
- const wmPath=path.join(dataDir,'stores','wm','wm.sqlite'),wmStage=WmBackup.stageWmRestoreFile({component:backup.components.wm,backupRoot:backup.path,stagePath:wmPath+'.restore-stage-'+nonce+'-'+attempt,expectedStoreIdentity:plan.expectedStoreIdentity,operationId:plan.operationId,planId:plan.planId});items.push({namespace:'wm',currentPath:wmPath,tempPath:wmStage.stagePath,rollbackPath:wmPath+'.restore-preserved-'+nonce,hadCurrent:true,stagedSha256:wmStage.sha256});
- let catalog=null;const legacyNamespaces=namespaces.filter(ns=>ns!=='wm');if(legacyNamespaces.length&&backup.scopeCatalog?.file){const backupCatalog=readJsonFile(WmBackup.resolveFile(backup.path,backup.scopeCatalog.file),null);if(!validScopeCatalog(backupCatalog))throw new Error('restore_component_catalog_invalid');const current=readScopeCatalogFromDisk(dataDir).catalog,next={schema:'memory-suite.scope-catalog.v1',updatedAt:now(),namespaces:{...current.namespaces}};for(const ns of legacyNamespaces)next.namespaces[ns]=backupCatalog.namespaces[ns]||[];const currentPath=path.join(dataDir,'config','scope-catalog.json'),tempPath=currentPath+'.restore-stage-'+nonce+'-'+attempt,rollbackPath=currentPath+'.restore-preserved-'+nonce;WmBackup.atomicJson(tempPath,next);catalog={namespace:'scope-catalog',currentPath,tempPath,rollbackPath,hadCurrent:fs.existsSync(currentPath),stagedSha256:sha256File(tempPath)};}
- // The exact target, complete component set and closure are rechecked after all
- // staging I/O. Any staging failure leaves every current owner untouched.
- verifyWmRestoreAdmission({dataDir,backup,namespaces,componentPlan:plan,confirmation,expectedCurrentFingerprint,wmService});
- const journal={schema:RESTORE_COMPONENT_JOURNAL_SCHEMA,id:nonce,operationId:plan.operationId,phase:'PREPARED',mode,backupId:backup.id,namespaces,createdAt:new Date().toISOString(),preRestoreBackupId,items,catalog,sourcePreserved:true,previousStoresPreserved:true,wmAdmission:'recovery_required'};writeRestoreJournal(dataDir,journal);
- beforeInstall();
- const targets=catalog?[...items,catalog]:items;
- for(const item of targets){if(fs.existsSync(item.rollbackPath))throw new Error('restore_preserved_path_exists');if(item.hadCurrent)durableRename(item.currentPath,item.rollbackPath);for(const suffix of ['-wal','-shm'])if(fs.existsSync(item.currentPath+suffix))durableRename(item.currentPath+suffix,item.rollbackPath+suffix);durableRename(item.tempPath,item.currentPath);}
- writeRestoreJournal(dataDir,{...journal,phase:'INSTALLED',installedAt:new Date().toISOString()});
- const stores={};for(const item of items){if(item.namespace==='wm'){const readback=WmBackup.inspectWmBackupFile(item.currentPath,{restored:true});if(readback.inventoryDigest!==backup.components.wm.inventoryDigest||readback.admission?.state!=='recovery_required')throw new Error('restore_wm_readback_failed');stores.wm={ok:true,inventoryDigest:readback.inventoryDigest,domains:readback.domains,incarnation:readback.admission.incarnation,admission:'recovery_required',historicalAuthority:false};}else{stores[item.namespace]=verifyBackupDatabase(item.currentPath);if(!stores[item.namespace].ok)throw new Error('restore_legacy_readback_failed');}}
- writeRestoreJournal(dataDir,{...journal,phase:'VERIFIED',verifiedAt:new Date().toISOString()});afterInstall();
- const receipt={schema:'memory-suite.restore.receipt.v2',operationId:plan.operationId,planId:plan.planId,backupId:backup.id,namespaces,restoredAt:new Date().toISOString(),preRestoreBackupId,coverage:backup.coverage,stores,sourcePreserved:true,previousStoresPreserved:true,reconnectRequired:true,recoveryMode:mode!=='online',wmAdmission:'recovery_required',historicalAuthority:false};
- writeRestoreJournal(dataDir,{...journal,phase:'COMMITTED',committedAt:new Date().toISOString(),receipt});WmBackup.atomicJson(path.join(dataDir,'migrations','component-restore-receipts',nonce+'.json'),receipt);return {ok:true,result:receipt};
-}
-
-function planOfflineRestore({ dataDir, backupDir = path.join(dataDir, 'backups'), backupId, namespaces = NAMESPACES, mode = 'offline-recovery',wmService=null,wmRestoreEnabled=false }) {
+function planOfflineRestore({ dataDir, backupDir = path.join(dataDir, 'backups'), backupId, namespaces = NAMESPACES, mode = 'offline-recovery' }) {
   const backup = findBackupById(backupDir, backupId);
   if (!backup) throw Object.assign(new Error('backup_not_found'), { statusCode: 404 });
-  const targetNamespaces = restoreComponentSelection(namespaces);
-  if(targetNamespaces.includes('wm'))return planWmComponentRestore({dataDir,backupDir,backup,namespaces:targetNamespaces,mode,wmService,wmRestoreEnabled});
+  const targetNamespaces = [...new Set((Array.isArray(namespaces) ? namespaces : [namespaces]).map(validateNamespace))];
   if (!targetNamespaces.length) throw Object.assign(new Error('restore_namespace_required'), { statusCode: 400 });
   const scrub = scrubBackupFromDisk(backup, targetNamespaces);
   if (!scrub.ok) {
@@ -1107,15 +1040,9 @@ function planOfflineRestore({ dataDir, backupDir = path.join(dataDir, 'backups')
   };
 }
 
-function restoreBackupOffline({ dataDir, backupDir = path.join(dataDir, 'backups'), backupId, namespaces = NAMESPACES, reason = 'recovery-safe-mode',componentPlan=null,confirmation='',expectedCurrentFingerprint='',wmRestoreEnabled=false }) {
-  if(restoreComponentSelection(namespaces).includes('wm')){if(!wmRestoreEnabled)throw new Error('wm_restore_provider_unqualified');return restoreWmComponentFiles({dataDir,backupDir,backupId,namespaces:restoreComponentSelection(namespaces),componentPlan,confirmation,expectedCurrentFingerprint,mode:'offline-recovery',beforeInstall:()=>{
-    const selected=restoreComponentSelection(namespaces).filter(ns=>ns!=='wm');if(!selected.length)return;
-    const state=require('./core/namespace-reset.cjs').preflightPhysicalAdmission(dataDir,NAMESPACES)||{epochs:{},pending:null};if(state.pending)throw new Error('namespace_reset_in_progress');state.epochs=state.epochs||{};
-    for(const ns of selected){const epoch=state.epochs[ns]||0;if(!Number.isSafeInteger(epoch)||epoch<0||epoch===Number.MAX_SAFE_INTEGER)throw new Error('namespace_reset_epoch_invalid');state.epochs[ns]=epoch+1;}
-    WmBackup.atomicJson(path.join(dataDir,'config','namespace-reset.json'),state);
-  }});}
+function restoreBackupOffline({ dataDir, backupDir = path.join(dataDir, 'backups'), backupId, namespaces = NAMESPACES, reason = 'recovery-safe-mode' }) {
   fs.mkdirSync(path.join(dataDir, 'migrations'), { recursive: true });
-  const recovery=recoverInterruptedRestore(dataDir);if(recovery.requiresRecovery)throw new Error("restore_components_recovery_required");
+  recoverInterruptedRestore(dataDir);
   const restorePlan = planOfflineRestore({ dataDir, backupDir, backupId, namespaces });
   const backup = findBackupById(backupDir, restorePlan.backupId);
   const targetNamespaces = restorePlan.namespaces;
@@ -1462,7 +1389,6 @@ function namespaceDbPath(dataDir, namespace) {
 
 function validateNamespace(value) {
   const namespace = String(value || '').trim().toLowerCase();
-  if (namespace === 'wm') throw Object.assign(new Error('wm_generic_namespace_forbidden'), { statusCode:403 });
   if (!NAMESPACES.includes(namespace)) {
     throw Object.assign(new Error('invalid_namespace'), { statusCode: 400 });
   }
@@ -2317,7 +2243,7 @@ function createMemorySuiteServer(options = {}) {
     // Selection grants no authority. Stored profile/receipt/locks are checked
     // independently; this constructor branch has no qualified live transport.
     if (options.autoBackup !== false || options.computeEnabled !== false || options.portableSettingsFromData === true
-      || options.wmBackupRestoreEnabled === true || options.computeSigningKey !== undefined) {
+      || options.computeSigningKey !== undefined) {
       throw Object.assign(new Error('AUTHORITY_RUNTIME_OPTIONS_UNSUPPORTED'), {code:'AUTHORITY_RUNTIME_OPTIONS_UNSUPPORTED',statusCode:503});
     }
     authorityRuntime = openCore3ServerRuntime({dataDir,authorityProfile:options.authorityProfile});
@@ -2412,23 +2338,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     ? authorityRuntime.createRepositories((namespace,control,repositoryOptions) => createRepository(dataDir,namespace,()=>maintenanceMode === true,control,repositoryOptions))
     : Object.create(null);
   if (!authorityRuntime) for (const namespace of NAMESPACES) repositories[namespace] = createRepository(dataDir, namespace, () => maintenanceMode === true);
-  // Creation identity is bound to the existing physical DATA identity. It is not a credential.
-  // Restored/copied DATA must use the later explicit fresh-identity restore admission.
-  const wmIdentitySeed = sha256Text('wm.server-identity.v1:' + dataInstanceId);
-  const {createWmImportControl,resolveWmImportSelection}=require('./wm/import_control.cjs');
-  const wmImportSelection=authorityRuntime ? null : resolveWmImportSelection({dataDir,dataInstanceId,restoreEnabled:options.wmBackupRestoreEnabled===true});
-  const wmService = authorityRuntime ? null : createWmService({
-    databasePath:wmImportSelection?.databasePath,
-    dataDir,
-    serverIdentity:wmImportSelection?.serverIdentity || options.wmServerIdentity || {
-      authorityId:'wm-authority-' + wmIdentitySeed.slice(0,32),
-      storeId:'wm-store-' + wmIdentitySeed.slice(0,32),
-      datasetId:'wm-dataset-' + wmIdentitySeed.slice(0,32),
-      backendId:'wm-server-' + wmIdentitySeed.slice(0,32),
-      routeGeneration:'wm-route-initial',writerEpoch:'wm-epoch-initial'
-    },
-    clock:options.wmClock || Date.now,limits:options.wmLimits || {},backupRestoreEnabled:options.wmBackupRestoreEnabled===true&&!wmImportSelection
-  });
   const diagnosticJournal = createDiagnosticJournal(dataDir,{memoryOnly:!!authorityRuntime});
 
   const startedAt = now();
@@ -2489,7 +2398,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const isManagerRequest = principal => hasRole(principal, 'manager');
   const assertNamespaceAccess = (principal, namespace, access = 'read') => {
     const allowed = access === 'write' ? principal?.writeNamespaces : principal?.readNamespaces;
-    if (namespace === 'wm' || (access === 'write' && LEGACY_STORAGE_NAMESPACES.includes(namespace)) || !Array.isArray(allowed) || !allowed.includes(namespace)) {
+    if ((access === 'write' && LEGACY_STORAGE_NAMESPACES.includes(namespace)) || !Array.isArray(allowed) || !allowed.includes(namespace)) {
       const error = new Error(`namespace_${access}_forbidden:${namespace}`);
       error.statusCode = 403;
       throw error;
@@ -2537,7 +2446,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       if (weekly.size < AUTO_BACKUP_WEEKLY_KEEP && !weekly.has(weekKey)) { weekly.add(weekKey); keep.add(item.id); }
     }
     for (const item of auto) {
-      if (keep.has(item.id)||item.schema===BackupBundle.SCHEMA) continue;
+      if (keep.has(item.id)) continue;
       try { fs.rmSync(item.path, { recursive: true, force: true }); } catch (_) {}
     }
   };
@@ -2632,11 +2541,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           stores
         };
         assertBackupRepairAuthority();
-        const wmStatus=wmService.status(),wmExists=wmStatus.initialized===true||fs.existsSync(path.join(dataDir,'stores','wm','wm.sqlite'))||fs.existsSync(path.join(dataDir,'config','wm-import-selection.json'));
-        if(wmExists){
-          const component=wmStatus.available&&wmStatus.initialized?wmService.captureBackup({backupId:id,outputDir:targetDir}):null;
-          manifest=BackupBundle.wrapBackup(manifest,component,{wmCoverage:component?'included':'unsupported'});
-        }
         atomicWrite(path.join(targetDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
         if (normalizedKind === 'auto') {
           lastSuccessfulAutoBackupAt = createdAtMs;
@@ -2674,7 +2578,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     const backup = listBackups().find(item => item.id === String(backupId || ''));
     if (!backup) throw Object.assign(new Error('backup_not_found'), { statusCode: 404 });
     const archivePath = path.join(backupArchiveExportRoot(), backup.id + '.zip');
-    const result = BackupBundle.exportBackupBundle({ backupDir: backup.path, archivePath, rootName: backup.id });
+    const result = exportBackupArchive({ backupDir: backup.path, archivePath, rootName: backup.id });
     return {
       schema: 'memory-suite.backup-export.v1',
       backupId: backup.id,
@@ -2688,7 +2592,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const importBackupArchiveFromPath = archivePath => {
     if (maintenanceMode) throw Object.assign(new Error('maintenance_in_progress'), { statusCode: 409 });
     const backupIdExists = candidate => listBackups().some(item => item.id === candidate);
-    const imported = BackupBundle.importBackupBundle({
+    const imported = importBackupArchive({
       archivePath: String(archivePath || ''),
       backupRootManual: backupRoot('manual'),
       backupIdExists,
@@ -2698,7 +2602,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       schema: 'memory-suite.backup-import.v1',
       backupId: imported.backupId,
       importedFromId: imported.manifest.importedFromId || '',
-      coverage:BackupBundle.coverageOf(imported.manifest),
+      coverage:{legacyOwners:Object.keys(imported.manifest.stores||{})},
       verified: imported.verified,
       // The imported backup is now a normal backupId; restore it via the
       // standard /v1/admin/restore engine (epoch + journal + rollback apply).
@@ -2754,26 +2658,12 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     };
   };
 
-  const restoreBackup = async (backupId, requestedNamespaces = NAMESPACES,restoreOptions={}) => {
+  const restoreBackup = async (backupId, requestedNamespaces = NAMESPACES) => {
     assertLegacyAuthorityUnavailable({dataDir});
     if (maintenanceMode) throw Object.assign(new Error('maintenance_in_progress'), { statusCode: 409 });
     const backup = listBackups().find(item => item.id === String(backupId || ''));
     if (!backup) throw Object.assign(new Error('backup_not_found'), { statusCode: 404 });
-    const namespaces = restoreComponentSelection(requestedNamespaces);
-    if(namespaces.includes('wm')){
-      if(!wmService.backupCapabilities().restoreEnabled)throw new Error('wm_restore_provider_unqualified');
-      const componentPlan=restoreOptions.componentPlan;
-      if(!componentPlan||componentPlan.backupId!==backup.id)throw new Error('wm_restore_confirmed_plan_required');
-      // Preflight and bind the exact current fingerprint before automatic pre-backup or fences.
-      verifyWmRestoreAdmission({dataDir,backup,namespaces,componentPlan,confirmation:restoreOptions.confirmation,expectedCurrentFingerprint:restoreOptions.expectedCurrentFingerprint,wmService});
-      maintenanceMode=true;
-      try{
-        const preRestore=await createBackup('manual',`pre-restore-${backup.id}`);
-        return restoreWmComponentFiles({dataDir,backupDir,backupId,namespaces,componentPlan,confirmation:restoreOptions.confirmation,expectedCurrentFingerprint:restoreOptions.expectedCurrentFingerprint,mode:'online',wmService,
-          beforeInstall:()=>{if(namespaces.some(ns=>ns!=='wm'))namespaceReset.advanceEpochs(namespaces.filter(ns=>ns!=='wm'));wmService.fenceForBackupRestore({operationId:componentPlan.operationId,planId:componentPlan.planId});for(const ns of namespaces.filter(ns=>ns!=='wm')){repositories[ns].close();delete repositories[ns];}wmService.suspendForBackupRestore();},
-          afterInstall:()=>{for(const ns of namespaces.filter(ns=>ns!=='wm'))repositories[ns]=createRepository(dataDir,ns,()=>maintenanceMode===true);wmService.resumeAfterBackupRestore();},preRestoreBackupId:preRestore.result.id});
-      } finally {const j=readJsonFile(restoreJournalPath(dataDir),null);if(!j||j.schema!==RESTORE_COMPONENT_JOURNAL_SCHEMA||j.phase==='COMMITTED')maintenanceMode=false;}
-    }
+    const namespaces = [...new Set((Array.isArray(requestedNamespaces) ? requestedNamespaces : [requestedNamespaces]).map(validateNamespace))];
     if (!namespaces.length) throw Object.assign(new Error('restore_namespace_required'), { statusCode: 400 });
 
     let restoreRequiresRecovery = false;
@@ -3464,16 +3354,14 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     getRepository: () => repositories[owner], dataInstanceId, epochs: () => namespaceReset.epochs(),
     canRead: () => !maintenanceMode && !namespaceReset.active()
   })]));
-  const wmImportControl=authorityRuntime ? null : createWmImportControl({dataDir,dataInstanceId,restoreEnabled:options.wmBackupRestoreEnabled===true,listBackups,service:wmService,canStart:()=>!maintenanceMode&&!namespaceReset.active(),selection:wmImportSelection});
   const managerControl=authorityRuntime ? Object.freeze({handle:async()=>authorityRuntime.unavailable()}) : require('./core/manager-control.cjs')({
-    wmImportControl,
     dataDir,canStart:()=>!maintenanceMode&&!namespaceReset.active(),
-    status:()=>({checkedAt:now(),version:SERVER_VERSION,dataInstanceId,dataPath:dataDir,uptimeMs:now()-startedAt,maintenanceMode,clients:Array.from(clients.values()),lastBackup:listBackups()[0]?.createdAt||null,stores:integrityAll(),resetEpochs:namespaceReset.epochs(),legacyNamespaces:NAMESPACES,supportedStorageOwners:SUPPORTED_STORAGE_OWNERS,wm:wmService.status(),wmBackup:wmService.backupCapabilities(),wmImport:wmImportControl.summary(),backupCoverage:listBackups()[0]?.coverage||{wm:'absent'},lastVerifiedWmRestore:(()=>{const root=path.join(dataDir,'migrations','component-restore-receipts');if(!fs.existsSync(root))return null;const rows=fs.readdirSync(root).filter(n=>n.endsWith('.json')).map(n=>readJsonFile(path.join(root,n),null)).filter(Boolean).sort((a,b)=>String(b.restoredAt).localeCompare(String(a.restoredAt)));return rows[0]?.stores?.wm||null;})()}),
+    status:()=>({checkedAt:now(),version:SERVER_VERSION,dataInstanceId,dataPath:dataDir,uptimeMs:now()-startedAt,maintenanceMode,clients:Array.from(clients.values()),lastBackup:listBackups()[0]?.createdAt||null,stores:integrityAll(),resetEpochs:namespaceReset.epochs(),legacyNamespaces:NAMESPACES,supportedStorageOwners:SUPPORTED_STORAGE_OWNERS,backupCoverage:listBackups()[0]?.coverage||{legacyOwners:[]}}),
     listBackups,createBackup:()=>createBackup('manual','RETRACE'),scrubBackups,
-    planRestore:(backupId,namespaces)=>planOfflineRestore({dataDir,backupDir,backupId,namespaces,mode:'online',wmService}),
+    planRestore:(backupId,namespaces)=>planOfflineRestore({dataDir,backupDir,backupId,namespaces,mode:'online'}),
     restore:restoreBackup,
     advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces),
-    fingerprint:namespaces=>JSON.stringify({dataInstanceId,epochs:namespaceReset.epochs(),stores:namespaces.filter(ns=>ns!=='wm').map(ns=>[ns,namespaceContentFingerprint(ns)]),catalog:namespaces.filter(ns=>ns!=='wm').map(ns=>[ns,readScopeCatalogFromDisk(dataDir).catalog?.namespaces?.[ns]||[]]),wm:namespaces.includes('wm')?wmService.backupFingerprint():null}),
+    fingerprint:namespaces=>JSON.stringify({dataInstanceId,epochs:namespaceReset.epochs(),stores:namespaces.map(ns=>[ns,namespaceContentFingerprint(ns)]),catalog:namespaces.map(ns=>[ns,readScopeCatalogFromDisk(dataDir).catalog?.namespaces?.[ns]||[]])}),
     extraHistory:()=>{
       const rows=listBackups().map(b=>({id:'backup-'+b.id,action:'backup-create',status:'complete',finishedAt:Date.parse(b.createdAt)||0,backupId:b.id,namespaces:Object.keys(b.stores||{})}));const migrationDir=path.join(dataDir,'migrations');
       for(const name of fs.readdirSync(migrationDir).filter(n=>/^(scope-delete-|recovery-restore-|restore-crash-recovery-).*\.json$/.test(n)).sort().slice(-100)){
@@ -3533,7 +3421,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           namespaces: NAMESPACES,
           legacyNamespaces:NAMESPACES,
           supportedStorageOwners:authorityRuntime ? ACTIVE_STORAGE_NAMESPACES : SUPPORTED_STORAGE_OWNERS,
-          wm:authorityRuntime ? {available:false,reason:'separate_owner_not_enrolled'} : wmService.status(),
           ...(authorityRuntime ? {authorityRuntime:authorityRuntime.status()} : {}),
           storageModeContract:authorityRuntime ? null : {schema:'memory-suite.storage-mode-contract.v2', operationalModes:['plugin_only','server_only'], transitionPhase:'mirror', mirrorSelectable:false, legacyMirrorReadable:true},
           securityGate: 'loopback_scoped_capability_token',
@@ -3556,7 +3443,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         if (!bootstrapPrincipal) {
           return sendJson(request, response, 403, { ok: false, error: 'bootstrap_official_plugin_id_required' });
         }
-        if (authorityRuntime && (bootstrapPrincipal.namespace === 'wm' || bootstrapPrincipal.pluginId === gradiaReadSession.PLUGIN_ID)) authorityRuntime.unavailable();
+        if (authorityRuntime && bootstrapPrincipal.pluginId === gradiaReadSession.PLUGIN_ID) authorityRuntime.unavailable();
         rememberClient(request, bootstrapPrincipal);
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : port;
@@ -3588,9 +3475,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           },
           namespaces: NAMESPACES,
           ...(authorityRuntime ? {authorityRuntime:authorityRuntime.status()} : {}),
-          capabilities: Object.fromEntries((authorityRuntime ? authorityRuntime.capabilities : bootstrapPrincipal.namespace === 'wm' ? [
-            'wm.storage.v1','wm.snapshot-authority.v1','wm.inventory.v1'
-          ] : [
+          capabilities: Object.fromEntries((authorityRuntime ? authorityRuntime.capabilities : [
             'storage-mode-contract.v2',
             'data-instance-binding.v1',
             'flashback-scope-health.v1',
@@ -3605,7 +3490,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
       if (request.method === 'POST' && url.pathname === '/v1/compute/bootstrap') {
         const bootstrapPrincipal = principalForPluginId(request.headers['x-memory-suite-plugin']);
-        if (bootstrapPrincipal?.namespace === 'wm') return sendJson(request,response,403,{ok:false,error:'wm_compute_forbidden'});
         if (bootstrapPrincipal?.pluginId === gradiaReadSession.PLUGIN_ID) return sendJson(request, response, 403, { ok: false, error: 'gradia_readonly_route_forbidden' });
         if (!computeConfigured || computeConfigurationError) {
           return sendJson(request, response, 503, publicComputeError(Object.assign(new Error(
@@ -3684,25 +3568,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 403, { ok: false, error: 'gradia_readonly_route_forbidden' });
       }
       rememberClient(request, principal);
-      if (url.pathname.startsWith('/v1/wm/')) {
-        if (maintenanceMode || namespaceReset.active()) return sendJson(request,response,503,{ok:false,error:'server_maintenance_in_progress'});
-        const wmPrincipal = principal.namespace === 'wm' && principal.roles.includes('wm_owner')
-          ? wmPrincipalForPluginId(principal.pluginId) : principal;
-        // Reject before reading a body for legacy principals and manager mutations.
-        const wmAllowed = wmPrincipal?.role === 'wm_owner'
-          || (isManagerRequest(principal) && url.pathname === '/v1/wm/dataset/status');
-        if (!wmAllowed) return sendJson(request,response,403,{ok:false,error:'wm_capability_forbidden'});
-        const body = request.method === 'POST'
-          ? await readBody(request, wmService.capabilities().limits.maxBodyBytes, 'wm_encoded_body_limit') : {};
-        const result = handleWmRequest({method:request.method,path:url.pathname,body,principal:wmPrincipal,service:wmService});
-        // Only successful durable WM actions join the same dirty/change-settled
-        // backup policy as ordinary KV writes. Reads and ephemeral pins do not.
-        if (result.statusCode >= 200 && result.statusCode < 300 && result.body?.ok === true
-            && WM_BACKUP_MUTATION_ROUTES.has(url.pathname)) scheduleChangeSettledBackup();
-        return sendJson(request,response,result.statusCode,result.body);
-      }
-      // WM capabilities are storage-only and cannot enter legacy/admin/manager/compute routers.
-      if (principal.namespace === 'wm') return sendJson(request,response,403,{ok:false,error:'wm_route_forbidden'});
       if(url.pathname.startsWith('/v1/manager/portable/')){
         if(!isManagerRequest(principal))return sendJson(request,response,403,{ok:false,error:'retrace_manager_capability_required'});
         if(request.method!=='POST')return sendJson(request,response,405,{ok:false,error:'method_not_allowed'});
@@ -4087,14 +3952,14 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
         const body = await readBody(request);
-        return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'online',wmService }) });
+        return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'online' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/integrity') {
         return sendJson(request, response, 200, { ok: true, result: integrityAll() });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
         const body = await readBody(request);
-        const result = await restoreBackup(body.backupId, body.namespaces || NAMESPACES,{componentPlan:body.componentPlan,confirmation:body.confirmation,expectedCurrentFingerprint:body.expectedCurrentFingerprint});
+        const result = await restoreBackup(body.backupId, body.namespaces || NAMESPACES);
         return sendJson(request, response, 200, result);
       }
       if (request.method === 'POST' && url.pathname === '/v1/shutdown') {
@@ -4127,7 +3992,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   if (authorityRuntime) server.listen = () => authorityRuntime.unavailable('AUTHORITY_HOST_PROFILE_UNQUALIFIED');
 
   const closeDatabases = () => {
-    wmService?.close();
     for (const namespace of NAMESPACES) {
       try { repositories[namespace]?.close(); } catch (_) {}
     }
@@ -4162,7 +4026,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       if (!server.listening) { if (authorityRuntime) server.emit('close'); return resolve(); }
       server.close(() => resolve());
     });
-    wmService?.close();
   };
 
   server.on('close', () => {
@@ -4205,7 +4068,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     restoreBackup,
     diagnosticJournal,
     managerControl,
-    wmService,
     computePlane,
     computeSigningKeyPath: computeSigning.keyPath,
     listen: () => new Promise((resolve, reject) => {
@@ -4283,11 +4145,11 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore/plan') {
         const body = await readBody(request);
-        return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'recovery-safe-mode',wmRestoreEnabled:options.wmBackupRestoreEnabled===true }) });
+        return sendJson(request, response, 200, { ok: true, result: planOfflineRestore({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, mode: 'recovery-safe-mode' }) });
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/restore') {
         const body = await readBody(request);
-        const result = restoreBackupOffline({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, reason: 'recovery-safe-mode',componentPlan:body.componentPlan,confirmation:body.confirmation,expectedCurrentFingerprint:body.expectedCurrentFingerprint,wmRestoreEnabled:options.wmBackupRestoreEnabled===true });
+        const result = restoreBackupOffline({ dataDir, backupDir, backupId: body.backupId, namespaces: body.namespaces || NAMESPACES, reason: 'recovery-safe-mode' });
         return sendJson(request, response, 200, result);
       }
       if (request.method === 'POST' && url.pathname === '/v1/shutdown') {
@@ -4302,8 +4164,8 @@ function createRecoverySafeModeServer(options = {}, startupError = null) {
   return {
     server, token, dataDir, backupDir, recoveryMode: true, startupError,
     listBackups: () => listBackupsFromDisk(backupDir),
-    restorePlan: (backupId, namespaces) => planOfflineRestore({ dataDir, backupDir, backupId, namespaces, mode: 'recovery-safe-mode',wmRestoreEnabled:options.wmBackupRestoreEnabled===true }),
-    restoreBackup: (backupId, namespaces,restoreOptions={}) => restoreBackupOffline({ dataDir, backupDir, backupId, namespaces, reason: 'recovery-safe-mode',...restoreOptions,wmRestoreEnabled:options.wmBackupRestoreEnabled===true }),
+    restorePlan: (backupId, namespaces) => planOfflineRestore({ dataDir, backupDir, backupId, namespaces, mode: 'recovery-safe-mode' }),
+    restoreBackup: (backupId, namespaces) => restoreBackupOffline({ dataDir, backupDir, backupId, namespaces, reason: 'recovery-safe-mode' }),
     listen: () => new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, host, () => { server.off('error', reject); resolve(server.address()); });

@@ -15,7 +15,11 @@ for (const name of sdkFiles) {
   const source = fs.readFileSync(path.join(program, 'sdk', name), 'utf8');
   assert.ok(source.startsWith('/* LIBRARIAN SYSTEM STORAGE SDK v'+JSON.parse(fs.readFileSync(path.join(program,'program-manifest.json'),'utf8')).storageSdkVersion));
   assert.match(source, /const controller = typeof AbortController === 'function' \? new AbortController\(\) : null;/);
-  assert.match(source, /withTimeout\(fetchApi\(url, requestInit\), label, timeoutMs, abort\)/);
+  // Current transport keeps physical fetch/body drain admitted independently
+  // of the caller deadline; runtime disposal below verifies AbortSignal delivery.
+  assert.match(source, /fetchApi\(url, requestInit\)/);
+  assert.match(source, /withTimeout\(responseReady, label, timeoutMs, abort\)/);
+  assert.match(source, /withTimeout\(physical, `\$\{label\} response`, timeoutMs, abort\)/);
   assert.match(source, /sharedBootstrapFailures\.set\(circuitUrl,/);
   assert.match(source, /responsePreview = compact\(raw, 200\)/);
   assert.match(source, /if \(state\.warned\.size >= 256\)/);

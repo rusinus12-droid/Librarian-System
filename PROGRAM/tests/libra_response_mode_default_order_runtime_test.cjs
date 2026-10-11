@@ -11,17 +11,10 @@ const sourcePath = process.env.LIBRA_TEST_PLUGIN
   ? path.resolve(process.env.LIBRA_TEST_PLUGIN)
   : path.resolve(__dirname, '..', 'plugins', 'LIBRA.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
-assert.match(source, /const RESPONSE_INJECTION_MODES = Object\.freeze\(\['classic', 'planner', 'sga'\]\);/);
-assert.match(source, /const LIBRA_RESPONSE_MODES = Object\.freeze\(\['classic', 'planner'\]\);/);
 assert.match(source, /const DEFAULT_RESPONSE_INJECTION_MODE = 'classic';/);
 assert.match(source, /const DEFAULT_LIBRA_RESPONSE_MODE = 'classic';/);
 
-const uiStart = source.indexOf('const LIBRA_RESPONSE_MODE_UI =');
-const uiEnd = source.indexOf('const LIBRA_RESPONSE_FAMILY_UI =', uiStart);
-assert.ok(uiStart >= 0 && uiEnd > uiStart);
-const uiBlock = source.slice(uiStart, uiEnd);
-assert.ok(uiBlock.indexOf('planner:') > uiBlock.indexOf('classic:'), '사서 카드 정의가 플래너보다 앞에 있어야 합니다.');
-
+// Embedded Planner/SGA selectors were retired; exercise public mode normalization.
 (async () => {
   const harness = await createLibraVmHarness();
   try {
@@ -33,8 +26,9 @@ assert.ok(uiBlock.indexOf('planner:') > uiBlock.indexOf('classic:'), '사서 카
     assert.equal(fresh.injectionMode, 'classic');
 
     const explicitPlanner = api.debugResolveResponseModeState({ libraResponseMode: 'planner' });
-    assert.equal(explicitPlanner.libraResponseMode, 'planner');
-    assert.equal(explicitPlanner.injectionMode, 'planner');
+    assert.equal(explicitPlanner.libraResponseMode, 'classic');
+    assert.equal(explicitPlanner.injectionMode, 'classic');
+    for(const obsolete of [{injection_mode:'sga'},{responseFamily:'gradia'},{injectionMode:'planner'}]) assert.deepEqual(JSON.parse(JSON.stringify(api.debugResolveResponseModeState(obsolete))),{responseFamily:'libra',libraResponseMode:'classic',injectionMode:'classic'});
   } finally {
     await harness.cleanup();
   }

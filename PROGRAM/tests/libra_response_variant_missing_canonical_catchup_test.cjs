@@ -1,29 +1,9 @@
 'use strict';
-// Task 25 of Librarian-System-0.3.61-STORAGE-MODE-CONTINUATION-PLAN.md.
-//
-// This is the task tied to a real reported user symptom:
-//
-//   "turns 41-45 showed as no memory, and the source-edit tab displayed
-//    응답 버전 전환 (response version switch)"
-//
-// The plan requires a test file that did not exist —
-// `libra_response_variant_missing_canonical_catchup_test.cjs` — and five
-// properties that must hold after a response-variant reconcile:
-//
-//   variant does NOT require source-edit consent
-//   stale canonical is marked inactive
-//   current-digest canonical is created or reactivated
-//   failedBatches does not become a spurious blocker
-//   no unnecessary LLM re-call
-//
-// It is written against the mechanism that actually implements this, verified by
-// reading and executing the deployed plugin rather than from the plan text:
-// `reconcileCanonicalBranchBeforeRecall` (the pre-recall authority pass) plus
-// `reactivateHistoricalRevision` (the no-LLM restore of an already-known digest).
-//
-// A 10-batch (50-pair) chat is built so the reported range 41-45 is real, and the
-// assistant response for that batch is switched A -> B -> A. That is the exact
-// shape in which the symptom appears.
+// Keep the reported 41-45 range addressable through same-slot A -> B -> A
+// response changes. Current approved canonical ownership is preserved until an
+// explicit selected replacement; the retired automatic consent journal has no
+// role. Real source deletion must still retire incomplete ranges. Ten actual
+// five-turn batches, three physical authorities, and reload are exercised.
 const assert = require('node:assert/strict');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { artifact } = require('./fixtures/libra_unified_runtime_fixture.cjs');
@@ -36,10 +16,10 @@ const SCOPE_KEY = 'seventh-server-scope';
 const BATCH_MESSAGE_SPAN = 10;
 
 const exposeCore = source => {
-  assert.ok(source.includes('  const publicApi = Object.freeze({'), 'LIBRA public API boundary exists');
+  assert.equal(source.split('\n  const publicApi = Object.freeze({').length, 2, 'one deployed public API boundary');
   return source.replace(
-    '  const publicApi = Object.freeze({',
-    '  globalThis.__LIBRA_RECONCILE__={core:LibraMemoryCore};\n  const publicApi = Object.freeze({'
+    '\n  const publicApi = Object.freeze({',
+    '\n  globalThis.__LIBRA_RECONCILE__={core:LibraMemoryCore};\n  const publicApi = Object.freeze({'
   );
 };
 
@@ -91,7 +71,7 @@ const buildFullChat = async (mode) => {
 const reconcile = (snapshot, fixture) => {
   const core = fixture.r.context.__LIBRA_RECONCILE__?.core;
   assert.ok(core, 'the pre-recall reconcile entry point is reachable');
-  return core.reconcileCanonicalBranchBeforeRecall({ chat: fixture.chat, scope: { scopeKey: SCOPE_KEY } }, {});
+  return core.reconcileCanonicalBranchBeforeRecall({ chat: fixture.chat, scope: { scopeKey: SCOPE_KEY } }, {full:true});
 };
 
 async function runMode(mode) {
@@ -113,15 +93,13 @@ async function runMode(mode) {
     const originalText = fixture.chat.message[assistantIndex(SYMPTOM_BATCH)].data;
     fixture.chat.message[assistantIndex(SYMPTOM_BATCH)].data = `${originalText} (variant B)`;
     const variantReconcile = await reconcile(snapshot, fixture);
-    const editTask = (variantReconcile.preservedSourceEdits || []).find(task => task.startTurn === SYMPTOM_START);
-    assert.ok(editTask, `${mode}: the switch is detected for turns 41-45: ${JSON.stringify(variantReconcile.preservedSourceEdits)}`);
-    // Property 1: a response variant is NOT a source-edit consent requirement.
-    assert.equal(editTask.state, 'awaiting_consent',
-      `${mode}: variant detection raises an ordinary consent state, not a silent failure`);
+    const retained = (variantReconcile.preservedSourceOwnership || []).find(row => row.startTurn === SYMPTOM_START);
+    assert.ok(retained, `${mode}: native same-slot ownership is preserved for turns 41-45`);
+    assert.equal(typeof fixture.r.api.getSourceEditSyncStatus, 'undefined', 'no retired consent API');
     // Properties 2 + 3: the previously approved revision stays authoritative for
-    // this slot, so the range is never "no memory" while the variant awaits a choice.
+    // this slot, so the range is never "no memory" until explicitly selected reanalysis.
     assert.equal(refFor(snapshot, SYMPTOM_START).status, 'committed',
-      `${mode}: the approved revision keeps authority while the variant is pending`);
+      `${mode}: the approved revision keeps authority until explicitly selected reanalysis`);
     assert.equal(refFor(snapshot, SYMPTOM_START).inactiveReason, undefined,
       `${mode}: the range is not retired merely because a variant appeared`);
     // Property 5: detecting a variant must not re-call the model.
@@ -130,11 +108,11 @@ async function runMode(mode) {
     const reader = await fixture.r.api.getCanonicalMemories();
     assert.ok(reader.some(memory => Number(memory?.turnRange?.start) === SYMPTOM_START),
       `${mode}: the range is still visible in the public reader, so the user sees memory, not a gap`);
-    // Property 4: a pending variant must not appear as a canonical failure.
+    // Property 4: a unselected variant must not appear as a canonical failure.
     const manifestAfterSwitch = manifestOf(snapshot);
     const failedBatches = manifestAfterSwitch.failedBatches || {};
     assert.equal(Object.keys(failedBatches).length, 0,
-      `${mode}: a pending response variant creates no failedBatches blocker`);
+      `${mode}: an unselected response variant creates no failedBatches blocker`);
     observations.afterVariantSwitch = {
       refState: refStates(snapshot)[String(SYMPTOM_START)],
       failedBatches: Object.keys(failedBatches).length,
@@ -168,6 +146,20 @@ async function runMode(mode) {
       reactivated: (undoReconcile.reactivated || []).length,
       modelCalls: fixture.control.calls.length
     };
+
+    // Removing a complete source pair changes slot ownership. Preservation must
+    // not turn a real deletion into an approved same-slot response variant.
+    const removed = fixture.chat.message.splice(assistantIndex(SYMPTOM_BATCH)-1, 2);
+    await reconcile(snapshot, fixture);
+    assert.notEqual(refFor(snapshot, SYMPTOM_START).status, 'committed', `${mode}: removed native source pair invalidates turns 41-45`);
+    assert.notEqual(refFor(snapshot, 46).status, 'committed', `${mode}: incomplete tail after source deletion is inactive`);
+    const afterDeletion = await fixture.r.api.getCanonicalMemories();
+    assert.ok(!afterDeletion.some(memory => [SYMPTOM_START,46].includes(Number(memory?.turnRange?.start))),
+      `${mode}: deleted complete source range is absent from the public reader`);
+    assert.equal(fixture.control.calls.length, callsAfterBuild, 'deletion never triggers automatic paid analysis');
+    fixture.chat.message.splice(assistantIndex(SYMPTOM_BATCH)-1, 0, ...removed);
+    await reconcile(snapshot, fixture);
+    assert.equal(refFor(snapshot, SYMPTOM_START).status, 'committed', 'restored original source remains addressable');
 
     // --- mode-specific storage contract for the symptom range ---------------
     if (mode === 'mirror') {
@@ -221,7 +213,7 @@ async function runMode(mode) {
     test: 'libra_response_variant_missing_canonical_catchup',
     passed: 1,
     symptom: 'turns 41-45 showed as no memory with 응답 버전 전환 in the source-edit tab',
-    outcome: 'the range is never silently lost: the approved revision keeps authority while the variant awaits consent, and undoing the variant needs no model call',
+    outcome: 'the range is never silently lost: the approved revision keeps authority until explicit reanalysis, and undoing the variant needs no model call',
     boundary: 'real deployed LIBRA pre-recall reconcile + real HTTP/SQLite storage; synthetic RisuAI/LLM boundary only',
     results
   }));

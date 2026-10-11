@@ -14,10 +14,10 @@ function envelope(quote){const p=createValidPacket({turn:1,subject:'Alice',scene
   const before=await runtime.hayaku.ledger.inspect({includeRecords:true});assert.ok(before.records.length,'initial owner record persisted');
   runtime.chat.message[1].data=hiddenPacketMessage(NEW,packet);
 
-  assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks.length,0,'background observation does not journal edits');
+  assert.equal(runtime.hayaku.getReanalysisStatus().running,false);assert.equal(typeof runtime.hayaku.getSourceEditSyncStatus,'undefined','automatic source journals are retired');
   runtime.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(NEW))}));
   await runtime.callBeforeRequest([{role:'user',content:'Continue.'}],'model');
-  assert.equal(await root.ready(),false,'automatic source edit opens no dialog');
+  assert.equal(await root.ready(),false,'request source observation opens no dialog');
   assert.equal(runtime.llmCalls.length,0,'source edit inspection never calls Other Ax');
   await runtime.callAfterRequest('', 'model');
   const ticket=await runtime.hayaku.previewSourceEdits(['1']);assert.equal(ticket.allowed,true,JSON.stringify(ticket));
@@ -26,9 +26,9 @@ function envelope(quote){const p=createValidPacket({turn:1,subject:'Alice',scene
   assert.equal(runtime.llmCalls.length,1,'explicit apply reuses one existing Other Ax call');
   assert.equal((await runtime.hayaku.applySourceEdits(ticket)).status,'blocked');
   const after=await runtime.hayaku.ledger.inspect({includeRecords:true});const active=after.records.filter(r=>r.recordState==='active');
-  assert.ok(active.some(r=>r.body?.includes(NEW)||r.raw?.includes(NEW)||JSON.stringify(r).includes(NEW)),JSON.stringify({status:runtime.hayaku.getSourceEditSyncStatus(),records:after.records.map(r=>({state:r.recordState,raw:r.raw,body:r.body,reason:r.divergenceReason}))}));
+  assert.ok(active.some(r=>r.body?.includes(NEW)||r.raw?.includes(NEW)||JSON.stringify(r).includes(NEW)),JSON.stringify({status:runtime.hayaku.getReanalysisStatus(),records:after.records.map(r=>({state:r.recordState,raw:r.raw,body:r.body,reason:r.divergenceReason}))}));
   assert.equal(runtime.chat.message[1].data,hiddenPacketMessage(NEW,packet),'visible/source chat not rewritten');
-  assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks[0].state,'applied');
+  assert.equal(runtime.hayaku.getReanalysisStatus().lastResult.ok,true);assert.equal(runtime.hayaku.getReanalysisStatus().error,'');
   console.log(JSON.stringify({test:'source_edit_hayaku_runtime',passed:5}));
  }finally{await runtime.dispose();}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -39,9 +39,16 @@ for (const [relative, version, bridgeName, scopeNeedle] of integrations) {
   assert.match(source, /getScopeExecutionPolicy\(/);
   assert.ok(source.includes(scopeNeedle), `${relative} seals its concrete owner scope before Compute`);
   require('./fixtures/current_ui_compute_contracts.cjs').checkComputeMode(source, bridgeName, {flashback: relative.endsWith('Flashback_Memory.js')});
-  assert.match(source, /computeBridge:/, `${relative} mounts Compute inside the Storage panel`);
+  if (relative === 'plugins/LIA_Persona_Linker.js') {
+    // LIA retired the general server panel; its owner remains local-only with scoped Compute.
+    require('./fixtures/lia_local_compute_owner_contract.cjs').checkLiaLocalComputeOwner(source);
+  } else {
+    assert.match(source, /computeBridge:/, `${relative} mounts Compute inside the Storage panel`);
+  }
   assert.doesNotMatch(source, new RegExp(`${bridgeName}\\.mountSettingsPanel`));
 }
+
+require('./fixtures/lia_local_compute_owner_contract_controls.cjs').runControls();
 
 console.log('storage-compute integrated scope policy contract test: PASS');
 

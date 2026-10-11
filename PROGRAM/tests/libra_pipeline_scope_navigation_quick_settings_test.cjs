@@ -43,12 +43,8 @@ assert.match(source, /const finalizeMemoryPromptProvenance = \(compiled, effecti
   'memory prompt provenance must use outer-scope helpers');
 const coreStart = source.indexOf('const LibraMemoryCore = (() =>');
 assert.ok(coreStart > 0, 'memory core boundary exists');
-const outerRuntime = source.slice(0, coreStart);
-for (const leakedHelper of ['asArray(', 'clone(', 'string(']) {
-  assert.equal((outerRuntime.match(new RegExp(leakedHelper.replace('(', '\\('), 'g')) || []).length, 0,
-    `outer runtime must not call memory-core-private ${leakedHelper}`);
-}
-
+// Source-wide literal scans falsely counted the accounting helper's local `string`.
+// Execute the actual outer-scope provenance compiler with only its public dependencies.
 const provenanceContext = {
   safeClone: value => JSON.parse(JSON.stringify(value)),
   PROMPT_PROFILE_DEFAULT_NAME: 'default',
@@ -94,34 +90,10 @@ const exerciseStages = async stages => {
 };
 
 const run = async () => {
-  await exerciseStages(['ariadne', 'character_ito', 'world_ito', 'plot_ito']);
-  await exerciseStages(['sga_shadow', 'sga_character_aide', 'sga_world_aide', 'sga_plot_aide']);
-
-  const stageOrderContext = {
-    SGA_SHADOW_STAGE_ID: 'sga_shadow',
-    SGA_CHARACTER_AIDE_STAGE_ID: 'sga_character_aide',
-    SGA_WORLD_AIDE_STAGE_ID: 'sga_world_aide',
-    SGA_PLOT_AIDE_STAGE_ID: 'sga_plot_aide',
-    normalizeSgaAideExecutionOrder: value => Array.isArray(value) ? value : []
-  };
-  vm.createContext(stageOrderContext);
-  vm.runInContext(`${extractConst('sgaEnabledStageOrder')}\nthis.enabledOrder = sgaEnabledStageOrder;`, stageOrderContext);
-  assert.deepEqual(Array.from(stageOrderContext.enabledOrder({ enableSgaShadow: false })), [],
-    'disabled SHADOW must execute no hidden GRADIA provider stage');
-  assert.deepEqual(Array.from(stageOrderContext.enabledOrder({
-    enableSgaShadow: true,
-    enableSgaCharacterAide: true,
-    enableSgaWorldAide: true,
-    enableSgaPlotAide: true,
-    sgaAideStageOrder: ['sga_plot_aide', 'sga_world_aide', 'sga_character_aide']
-  })), ['sga_shadow', 'sga_plot_aide', 'sga_world_aide', 'sga_character_aide']);
-
-  assert.match(source, /if \(settings\?\.enableSgaShadow === false\) return \[\];/,
-    'disabled SHADOW must remove the entire GRADIA stage plan');
-  assert.match(source, /skipReason: 'sga_shadow_disabled'/,
-    'disabled SHADOW must produce an explicit pass-through record');
-  assert.match(source, /enable_sga_shadow/,
-    'SHADOW enable state must be persisted');
+  await exerciseStages(['librarian']);
+  const previousCalls=progressContext.calls.length;
+  assert.equal(await progressContext.report('librarian','analysis',99),false,'stale operation progress must not repaint the current operation');
+  assert.equal(progressContext.calls.length,previousCalls);
 
   require('./helpers/libra_active_book_routes.cjs')(source);
   for (const route of ['memory', 'characters', 'relationships', 'world', 'narrative', 'pipeline', 'ai', 'embedding', 'logs', 'settings']) {
@@ -137,11 +109,11 @@ const run = async () => {
     'the shared sidebar must not restore the retired dashboard Home');
   assert.doesNotMatch(sharedSidebarRegistry, /id: 'convenience'/,
     'Input Writer configuration must not consume a top-level page');
-  assert.match(source, /requested === 'home' \|\| requested === 'overview'.*pageId: 'memory'.*memoryHubSection: 'read'/,
+  assert.match(source, /\['home','overview'\]\.includes\(requested\).*pageId:'memory'.*memoryHubSection:'read'/,
     'legacy Home navigation must land on the Memory reader workspace');
-  assert.match(source, /requested === 'continuity_state' \|\| requested === 'world_manager'.*pageId: 'world'/,
+  assert.match(source, /\['continuity_state','world_manager'\]\.includes\(requested\).*pageId:'world'/,
     'legacy continuity-state navigation must land on the actual World workspace');
-  assert.match(source, /requested === 'memory_pipeline'.*pageId: 'pipeline'.*pipelineHubSection: 'memory_pipeline'/,
+  assert.match(source, /requested==='memory_pipeline'.*pageId:'pipeline'.*pipelineHubSection:'memory_pipeline'/,
     'legacy memory-pipeline navigation must land on the shared pipeline page');
   const navigationRender = (source.match(/const queueGuiNavigationRender = \(\) => \{[\s\S]*?\n  \};/) || [''])[0];
   assert.match(navigationRender, /Gui\.invalidations\.add\('body'\)/,

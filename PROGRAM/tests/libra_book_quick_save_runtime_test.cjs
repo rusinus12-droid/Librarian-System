@@ -25,11 +25,11 @@ class Element {
   const app=new Element('div');app.appendChild(t.buildBookQuickSettingsDrawer());
   const tabs=flat(app).filter(node=>node.className.split(' ').includes('libra-book-drawer-tab'));
   assert.equal(t.Gui.bookQuickSection,'response');
-  assert.deepEqual(tabs.map(node=>node.textContent),['응답','인풋','기억']);
-  assert.equal(tabs.length,3);
+  assert.deepEqual(tabs.map(node=>node.textContent),['응답','기억']);
+  assert.equal(tabs.length,2);
   assert.equal(flat(app).some(node=>node.dataset?.bookTechnicalQuick),false);
   assert.equal(flat(app).some(node=>['AI 연결','임베딩','서버'].includes(node.textContent)),false);
-  tests.push('Quick Settings exposes only response, Input Writer and memory-agent controls');
+  tests.push('Quick Settings exposes only Classic response and memory-agent controls');
   t.bookOpenQuickSettings('embedding');
   assert.equal(t.Gui.bookQuickOpen,true);assert.equal(t.Gui.bookQuickSection,'response');
   t.bookOpenQuickSettings('server');

@@ -1,7 +1,9 @@
 'use strict';
 // 2026-10-09 current-owner fixture: three active kernels, four rounds (12 jobs);
 // historical four-owner assertions are retired, LIA denial is checked by the fixture.
-// Worker widths, physical overlap floor and original RSS limits remain unchanged.
+// Worker widths, physical occupancy floor and original RSS limits remain unchanged.
+// Bounded setup coordinates real worker entries. Native timings include gate wait;
+// this is controlled physical occupancy, not unguarded CPU overlap or throughput.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -22,6 +24,7 @@ const {
 
 const COMPUTE_SIGNING_KEY = 'product-worker-matrix-signing-key-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const MIB = 1024 * 1024;
+const { workerPath, createProductGate } = require('./fixtures/compute_product_gate_coordinator.cjs');
 
 async function runMatrixCell(workerCount) {
   const tempRoot = path.resolve(os.tmpdir());
@@ -30,7 +33,7 @@ async function runMatrixCell(workerCount) {
   const rssBaseline = process.memoryUsage().rss;
   let rssPeak = rssBaseline;
   let sampler = null;
-  let app = null;
+  let app = null, gate = null;
   try {
     sampler = setInterval(() => { rssPeak = Math.max(rssPeak, process.memoryUsage().rss); }, 5);
     app = createMemorySuiteServer({
@@ -39,11 +42,13 @@ async function runMatrixCell(workerCount) {
       dataDir,
       autoBackup: false,
       computeWorkers: workerCount,
+      computeWorkerPath: workerPath,
       computeSigningKey: COMPUTE_SIGNING_KEY
     });
     const address = await app.listen();
     const base = `http://127.0.0.1:${address.port}`;
     assert.equal(app.computePlane.poolSize, workerCount);
+    gate = await createProductGate(app, workerCount);
     const specs = await createProductSpecs(base);
     const localStartedAt = performance.now();
     const localResults = executeProductLocals(specs);
@@ -51,6 +56,7 @@ async function runMatrixCell(workerCount) {
     const canonicalBefore = Object.fromEntries(Object.entries(app.repositories)
       .map(([namespace, repository]) => [namespace, repositoryDigest(repository.filePath)]));
     const startedAt = performance.now();
+    gate.arm();
     const pending = [];
     for (let round = 1; round <= 4; round += 1) {
       for (const spec of specs) {
@@ -65,9 +71,17 @@ async function runMatrixCell(workerCount) {
         }));
       }
     }
-    const submissions = await Promise.all(pending);
+    const submissions = await gate.withinSetup(Promise.all(pending));
+    await gate.waitForEntries(Math.min(4, workerCount), submissions);
+    gate.release();
     const results = await Promise.all(submissions.map(item => waitProductResult(base, item)));
     assert.equal(results.length, 12);
+    for (const item of results) assert.deepEqual(item.result.result, localResults[item.spec.identity.namespace],
+      'every actual product job matches its unchanged local kernel');
+    for (const spec of specs) assert.equal(results.filter(item => item.spec === spec).length, 4, 'four actual jobs per surviving owner');
+    const gateReport = await gate.report();
+    assert.ok(gateReport.gatePeak >= Math.min(4, workerCount), 'distinct actual worker entry floor');
+    assert.ok(gateReport.gatePeak <= workerCount, 'held physical workers respect pool width');
     const wallMs = performance.now() - startedAt;
     clearInterval(sampler);
     sampler = null;
@@ -80,12 +94,8 @@ async function runMatrixCell(workerCount) {
         `${spec.identity.namespace} worker=${workerCount} result differs from local`);
     }
     const concurrency = peakProductConcurrency(results);
-    // The pool must fill (peakJobs) - that is the physical proof of parallelism and it is stable
-    // across runs. `peakNamespaces` is NOT stable: the hayaku kernel is a 256-row sparse-RRF
-    // ranking that the registry itself caps at 256 rows (compute_hayaku_rrf_rows_invalid) and it
-    // completes in ~1.16 ms, so it can finish before the fourth namespace is even dispatched.
-    // Measured over 10 runs at worker=4: peakJobs=4 every time, peakNamespaces 3 (7 times) or
-    // 4 (3 times). Asserting equality there asserted a race, not a product property.
+    // These genuine native job intervals include the explicitly reported gate
+    // wait. The separate thread-entry proof establishes controlled slot occupancy.
     assert.ok(concurrency.peakJobs >= Math.min(4, workerCount),
       `worker=${workerCount} did not reach the expected physical overlap: ${JSON.stringify(concurrency)}`);
     assert.ok(concurrency.peakJobs <= workerCount,
@@ -104,10 +114,11 @@ async function runMatrixCell(workerCount) {
       workers: workerCount,
       jobs: results.length,
       ...concurrency,
+      coordinatedOccupancy: gateReport,
       localSerialMs: Number(localSerialMs.toFixed(2)),
       serialEquivalentMs: Number((localSerialMs * 4).toFixed(2)),
       wallMs: Number(wallMs.toFixed(2)),
-      observedThroughputFactor: Number(((localSerialMs * 4) / wallMs).toFixed(3)),
+      controlledWallRatioNotThroughput: Number(((localSerialMs * 4) / wallMs).toFixed(3)),
       rssBaselineMiB: Number((rssBaseline / MIB).toFixed(2)),
       rssPeakMiB: Number((rssPeak / MIB).toFixed(2)),
       rssPeakDeltaMiB: Number((rssPeakDeltaBytes / MIB).toFixed(2)),
@@ -115,6 +126,7 @@ async function runMatrixCell(workerCount) {
     };
   } finally {
     if (sampler) clearInterval(sampler);
+    gate?.close();
     await app?.close();
     const resolved = path.resolve(dataDir);
     assert.equal(path.dirname(resolved), tempRoot);
@@ -142,11 +154,8 @@ async function main() {
     if (!line) throw new Error(`matrix_cell_output_missing:${workerCount}`);
     matrix.push(JSON.parse(line.slice('compute_product_worker_matrix_cell: '.length)));
   }
-  // peakJobs is the stable, meaningful column (see the per-cell note above). Measured over 6 runs
-  // per cell: workers=1 -> 1, workers=2 -> 2, workers=4 -> 4, workers=8 -> 6-7 (only 12 jobs are
-  // submitted, and they do not all reach the queue inside one window, so an 8-wide pool is not
-  // fully used by this fixture). What the product must guarantee - and what is asserted - is that
-  // the pool reaches the namespace count it can serve and never exceeds its configured width.
+  // Preserve the original physical floor using bounded controlled entries of
+  // actual product jobs. No claim of unguarded kernel CPU overlap or throughput.
   const expectedPeakJobs = { 1: 1, 2: 2, 4: 4 };
   for (const item of matrix) {
     const floor = expectedPeakJobs[item.workers] ?? Math.min(4, item.workers);

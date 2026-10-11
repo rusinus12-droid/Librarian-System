@@ -10,6 +10,7 @@ const store=values=>({values:new Map(values),async getItem(k){return this.values
  const results=[];
  for(const kind of ['Full','Min']){
   const source=fs.readFileSync(path.join(ARTIFACTS,kind,'plugins/Flashback_Memory.js'),'utf8'),rows=new Map();
+  if(kind==='Full')assert.equal(sha(source),sha(fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'))),'Full is the exact shipped source build');
   for(const space of ['plugin','local'])for(const [key,value]of data[space])rows.set(space+'\n'+key,{space,key,value,exists:true,tombstone:false,revision:1,digest:sha(JSON.stringify(value)),valueBytes:Buffer.byteLength(JSON.stringify(value)),updatedAt:1});
   const repository={database:{exec(){}},list:(space,prefix,{limit})=>{const found=[...rows.values()].filter(r=>r.space===space&&r.key.startsWith(prefix)).sort((a,b)=>a.key.localeCompare(b.key));return{records:found.slice(0,limit).map(({value,exists,...r})=>r),page:{hasMore:found.length>limit}}},get:(space,key)=>rows.get(space+'\n'+key)||{exists:false,tombstone:false,value:null,revision:0,digest:'',updatedAt:0}};
   const snapshot=snapshotFactory({getRepository:()=>repository,dataInstanceId:id,epochs:()=>({flashback:0}),canRead:()=>true});
@@ -27,7 +28,7 @@ const store=values=>({values:new Map(values),async getItem(k){return this.values
   };
   const f=await createFixture({pauseScheduledTimers:true,source,pluginStorage:plugin,safeLocalStorage:local,chat,arguments:{memory_suite_server_url:url},nativeFetch});
   try{
-   assert.equal(f.api._test,undefined,'actual release has no test exports');await f.api.loadSettings(true);await new Promise(r=>setTimeout(r,150));assert(bootstrapCalls>0,'normal product setup establishes a certified connection');
+   if(kind==='Min')assert.equal(f.api._test,undefined,'actual Min release has no test exports');else assert.equal(typeof f.api._test,'object','Full preserves the readable developer surface');await f.api.loadSettings(true);await new Promise(r=>setTimeout(r,150));assert(bootstrapCalls>0,'normal product setup establishes a certified connection');
    for(const s of [plugin,local]){const get=s.getItem.bind(s);s.getItem=async key=>{if(String(key).includes('embedding_secret')){credentialReads++;throw Error('credential_read_forbidden')}if(key==='vector_rag_memory:settings:v2'){assert.equal(s,plugin);hostGlobalSettingsReads++;return get(key)}if(String(key).startsWith('vector_rag_memory:scope:')||String(key).startsWith('vector_rag_memory:local-vector-shard:')){retainedReads++;throw Error('retained_copy_forbidden')}return get(key)};s.setItem=s.removeItem=async()=>{writes++;throw Error('inspection_write_forbidden')}}
  const originalGetArgument=f.host.getArgument.bind(f.host);f.host.getArgument=async key=>{if(key==='embedding_key'){credentialReads++;throw Error('credential_argument_forbidden')}return originalGetArgument(key)};
    f.host.setArg=f.host.setArgument=async()=>{writes++;throw Error('argument_write_forbidden')};inspecting=true;const before=bootstrapCalls;

@@ -1,12 +1,24 @@
 'use strict';
 // Pure, locally issued budget evidence. This is not owner authentication and is
-// not embedded into GRADIA runtime. Content is bounded; framing is an estimate.
+// embedded into GRADIA runtime. Content is bounded; framing is an estimate.
 function createGradiaEvidenceBudget({ digest }) {
   if (typeof digest !== 'function') throw new TypeError('GRADIA_V2_BUDGET_DIGEST_REQUIRED');
   const MODEL = 'gpt-4o-mini-2024-07-18';
   const ROUTE = 'https://api.openai.com/v1/chat/completions';
   const MAX_CONTEXT = 128000;
   const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
+  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
+  // Exact production wrappers for successful four/eight-stage profiles only.
+  // Schema, names, descriptions and serialization changes require requalification.
+  const STRUCTURED_SCHEMA_PINS = Object.freeze({
+    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
+    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
+    "gradia_aide_character_patch": "d0409eb67068aed48f356aed804d72076a9b530706b53f65718805ed4a29551a",
+    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
+    "gradia_aide_world_patch": "9ff7f71db44fdf932dc43137b050fee47d96cb5a7b936b7c1932aa05b4cb6c1d",
+    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
+    "gradia_aide_plot_patch": "d8438ca82453dedf811892912788d68b2daf7dd1d2322389f969ed782f09571c"
+});
   const issued = new WeakMap();
   const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
   const integer = (value, positive = false) => Number.isSafeInteger(value)
@@ -64,7 +76,7 @@ function createGradiaEvidenceBudget({ digest }) {
     // Actual builder serialization round-trips exactly. This rejects duplicate
     // keys, whitespace and alternate encodings instead of interpreting ambiguity.
     if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options'], 'token_accounting_unavailable');
+    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
     if (value.model !== MODEL || typeof value.stream !== 'boolean'
       || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
       || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
@@ -85,7 +97,18 @@ function createGradiaEvidenceBudget({ digest }) {
       content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
       content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
     }
-    return { body, content, output };
+    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
+    if (Object.hasOwn(value, 'response_format')) {
+      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
+      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
+      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
+        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
+        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
+      structuredName = schema.name;
+      structuredSerialized = JSON.stringify(value.response_format);
+      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
+    }
+    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
   }
   function sameBase(base, final, evidence) {
     const left = base.body, right = final.body;
@@ -115,16 +138,26 @@ function createGradiaEvidenceBudget({ digest }) {
       if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
       const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
       if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
-      const framing = Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0);
+      let structuredSchemaSha256 = null;
+      if (final.structuredBytes) {
+        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
+        catch (_) { stop('payload_hash_unavailable'); }
+        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
+      }
+      // The raw envelope already charges the schema once. Reserve its complete
+      // UTF-8 wrapper again for structured framing; this remains a conservative
+      // engineering estimate, not a provider tokenizer or server-internals proof.
+      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
       const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
       const fits = add(add(allowance, final.output), margin) <= context.limit;
       const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
         requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
-        contextSourceIdentity: context.identity, meterId: PROFILE, meterVersion: 1,
+        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
         meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
         framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
         safetyMargin: margin, selectedContentTokenBound: selectedContent,
-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance };
+        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
+        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
       // Only already captured primitives survive the await; caller mutations cannot
       // replace the body or envelope. The adapter owns cancellation/generation.
       const body = input.finalBody;

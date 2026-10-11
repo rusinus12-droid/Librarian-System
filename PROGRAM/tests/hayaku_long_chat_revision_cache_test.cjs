@@ -16,8 +16,8 @@ const version=source.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1];
 assert.ok(version);
 assert.ok(source.includes(`const PLUGIN_VERSION = '${version}';`), 'header and runtime versions agree');
 assert.match(source, /const messageRevisionProjection = \(message, index = -1, scopeKeyInput = '', options = \{\}\) =>/);
-assert.match(source, /const exactChatRevisionObservation = scope =>/);
-assert.match(source, /reason: 'observer_exact_revision_unchanged'/);
+assert.match(source, /const authoritativeChatSnapshot =/);
+assert.match(source, /reason: 'topology_unchanged'/);
 assert.doesNotMatch(source, /const worldlineObserverTextProbe = value =>/, 'sampled text probes must not be used for authoritative topology changes');
 assert.match(source, /invalidateMessageRevisionCache\(liveScope\.key, \{[\s\S]{0,300}indices: \[messageIndex\]/, 'output revision invalidates only the committed message cache entry');
 
@@ -53,17 +53,17 @@ for (let turn = 1; turn <= 3; turn += 1) {
     assert.equal(afterSecond.misses, afterFirst.misses, 'unchanged snapshot performs no new message computation');
     assert.ok(afterSecond.hits >= afterFirst.hits + 12, 'history and descriptor passes reuse all message revisions');
 
-    const unchangedRevisionA = hayaku._test.exactChatRevisionObservation(scope);
-    const unchangedRevisionB = hayaku._test.exactChatRevisionObservation(scope);
-    assert.equal(unchangedRevisionA.signature, unchangedRevisionB.signature, 'exact observation is stable for unchanged chat');
+    const unchangedRevisionA = hayaku._test.authoritativeChatSnapshot(scope.chatMessages, scope);
+    const unchangedRevisionB = hayaku._test.authoritativeChatSnapshot(scope.chatMessages, scope);
+    assert.equal(unchangedRevisionA.chatSnapshotHash, unchangedRevisionB.chatSnapshotHash, 'exact observation is stable for unchanged chat');
 
     const editedPacket = createValidPacket({ turn: 2, subject: 'Actor-2', scene: 'Room-2-edited', summary: 'Actor-2 changed the established outcome.' });
     chat.message[3].data = hiddenPacketMessage('Assistant outcome 2 was edited.', editedPacket);
     chat.messages = chat.message;
 
     const editedScope = await hayaku._test.currentChatScope();
-    const editedRevision = hayaku._test.exactChatRevisionObservation(editedScope);
-    assert.notEqual(editedRevision.signature, unchangedRevisionB.signature, 'same message ID with changed body produces a new exact revision');
+    const editedRevision = hayaku._test.authoritativeChatSnapshot(editedScope.chatMessages, editedScope);
+    assert.notEqual(editedRevision.chatSnapshotHash, unchangedRevisionB.chatSnapshotHash, 'same message ID with changed body produces a new exact revision');
     const edited = hayaku._test.authoritativeChatSnapshot(editedScope.chatMessages, editedScope);
     assert.equal(edited.conversationPairCount, 3);
     const afterEdit = hayaku.lastDebug().messageRevisionCache.stats;

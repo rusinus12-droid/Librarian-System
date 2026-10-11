@@ -1,117 +1,94 @@
 'use strict';
-// The old stacking-context contract depended on a manual consent overlay and
-// floating dock. Automatic beforeRequest reconciliation must leave the host GUI
-// intact; this CJS DOM harness exercises the actual history renderer directly.
-const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-
-class Element {
-  constructor(tagName, ownerDocument) {
-    this.tagName = tagName.toLowerCase(); this.ownerDocument = ownerDocument; this.children = [];
-    this.attributes = new Map(); this.dataset = {}; this.style = {}; this.value = ''; this.textContent = '';
-    this.disabled = false; this.isConnected = true; this.parent = null;
-  }
-  append(...nodes) { for (const node of nodes) { node.parent = this; node.isConnected = this.isConnected; this.children.push(node); } }
-  prepend(...nodes) { for (const node of nodes.reverse()) { node.parent = this; node.isConnected = this.isConnected; this.children.unshift(node); } }
-  insertBefore(node, reference) { const index = this.children.indexOf(reference); node.parent = this; node.isConnected = this.isConnected; this.children.splice(index < 0 ? this.children.length : index, 0, node); }
-  replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
-  remove() { if (this.parent) this.parent.children = this.parent.children.filter(node => node !== this); this.isConnected = false; }
-  setAttribute(key, value) { this.attributes.set(key, String(value)); }
-  getAttribute(key) { return this.attributes.get(key) ?? null; }
-  walk() { return this.children.flatMap(child => [child, ...child.walk()]); }
-  matches(selector) {
-    if (selector === '[data-source-tracking-controls]') return !!this.dataset.sourceTrackingControls;
-    return selector.split(',').map(value => value.trim()).some(value => {
-      if (value.startsWith('.')) return String(this.className || '').split(/\s+/).includes(value.slice(1));
-      if (value.startsWith('[') && value.endsWith(']')) return this.getAttribute(value.slice(1, -1)) !== null;
-      return value === this.tagName;
-    });
-  }
-  querySelector(selector) { return this.walk().find(node => node.matches(selector)) || null; }
-  querySelectorAll(selector) { return this.walk().filter(node => node.matches(selector)); }
-  focus() {}
-}
+const os = require('node:os');
+const { spawn } = require('node:child_process');
+const assert = require('node:assert/strict');
+const { resolveChromeExecutable } = require('./fixtures/browser_resolver.cjs');
 
 const program = path.resolve(__dirname, '..');
-const context = vm.createContext({ setTimeout, clearTimeout, Date, console });
-vm.runInContext(fs.readFileSync(path.join(program, 'sdk/MemorySuiteSourceEditConsent.source.js'), 'utf8'), context);
+const out = path.resolve(process.argv[2] || process.env.SOURCE_REVIEW_TEST_ARTIFACTS || path.join(os.tmpdir(), 'source-review-history-browser'));
+fs.mkdirSync(out, { recursive: true });
+const profile = fs.mkdtempSync(path.join(out, 'chrome-'));
+// Chromium's Unix singleton socket must fit sun_path even when the
+// campaign TMPDIR is a deeply nested evidence directory.
+const socketTmp=fs.mkdtempSync(path.join(process.platform==='win32'?os.tmpdir():'/tmp','ms-chrome-'));
+const stderrFile=path.join(profile,'chromium.stderr.log');
+fs.mkdirSync(path.join(profile,'config'),{recursive:true});fs.mkdirSync(path.join(profile,'cache'),{recursive:true});
+const chrome = spawn(resolveChromeExecutable(), [
+  '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--disable-dev-shm-usage',
+  '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'
+], { windowsHide: true, env:{...process.env,TMPDIR:socketTmp,XDG_CONFIG_HOME:path.join(profile,'config'),XDG_CACHE_HOME:path.join(profile,'cache')},stdio:['ignore','ignore',fs.openSync(stderrFile,'a')] });
+let chromeExit = null;
+chrome.on('error',error=>{chromeExit={error:error.message}});
+chrome.on('exit', (code, signal) => { chromeExit = { code, signal }; });
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+let ws;
+const watchdog = setTimeout(() => { console.error('Browser test timed out'); chrome.kill(); process.exit(1); }, 45000);
 
 (async () => {
-  let assertions = 0;
-  for (const owner of ['libra', 'hayaku', 'flashback']) {
-    const doc = { createElement: tag => new Element(tag, doc) };
-    const root = new Element('main', doc), storage = new Map();
-    let units = [
-      { key: '1', start: 1, end: 1, label: 'T1', identity: owner + '-pair-1', digest: 'new-1', sourceDigest: 'new-1', originalDigest: 'old-1', basis: 'basis-1', changed: true, current: false },
-      { key: '2', start: 2, end: 2, label: 'T2', identity: owner + '-pair-2', digest: 'new-2', sourceDigest: 'new-2', originalDigest: 'old-2', basis: 'basis-2', changed: true, current: false }
-    ];
-    let promptCalls = 0, rootDocumentCalls = 0, executions = 0;
-    const host = { activeElement: { id: 'send' }, visible: true, overlays: [] };
-    const controller = context.createMemorySuiteSourceEditConsent({
-      owner, requestBoundary: true, externalObserver: true,
-      read: async key => storage.get(key) ?? null,
-      write: async (key, value) => { storage.set(key, value); return true; },
-      collect: async () => ({ scopeKey: owner + '-chat', units: units.map(unit => ({ ...unit })), completedTurnIds: ['u1'] }),
-      api: () => ({ getRootDocument: async () => { rootDocumentCalls += 1; return host; } }),
-      prompt: async () => { promptCalls += 1; throw new Error('automatic work must not prompt'); },
-      loadReview: async tasks => ({ rows: tasks.map(task => task.key === '1'
-        ? { key: '1', previousUnavailable: false, beforeText: 'old '+owner+' <img src=x onerror="window.xss=1">', afterText: 'new '+owner+' <img src=x onerror="window.xss=2">' }
-        : { key: '2', previousUnavailable: true, afterText: 'current '+owner+' <script>window.xss=3</script>' }) }),
-      execute: async (task, permit) => { await permit.assertCurrent(); executions += 1; units = units.map(unit => unit.key === task.key ? { ...unit, changed: false, current: true } : unit); return { ok: true }; }
-    });
-
-    try {
-      await controller.beforeRequest();
-      controller.mountControls(root);
-      await Promise.resolve(); await Promise.resolve();
-      const controls = root.querySelector('[data-source-tracking-controls]');
-      assert.ok(controls, owner + ' gets inline history in its own settings surface');
-      assert.equal(controls.dataset.sourceTrackingControls, owner);
-      assert.equal(root.querySelectorAll('.ms-source-event').length, 2);
-      assert.equal(root.querySelector('[data-source-edit-dialog]'), null);
-      assert.equal(promptCalls, 0); assert.equal(rootDocumentCalls, 0); assert.equal(executions, 2);
-      assert.equal(host.activeElement.id, 'send'); assert.deepEqual(host.overlays, []);
-      assertions += 9;
-
-      const buttons = () => controls.querySelectorAll('button');
-      assert.equal(controls.querySelectorAll('pre').length, 0, 'source material is fetched only after a compare click');
-      const compare = buttons().find(button => button.textContent === '원문 비교');
-      await compare.onclick();
-      const output = controls.querySelector('pre');
-      assert.ok(output.textContent.includes('old '+owner+' <img src=x onerror="window.xss=1">'));
-      assert.ok(output.textContent.includes('new '+owner+' <img src=x onerror="window.xss=2">'));
-      assert.equal(output.querySelectorAll('img,script').length, 0, 'raw evidence is literal text, not executable markup');
-      assertions += 4;
-
-      const missing = root.querySelectorAll('.ms-source-event').find(item => item.querySelector('strong').textContent.startsWith('T2'));
-      await missing.querySelectorAll('button').find(button => button.textContent === '원문 비교').onclick();
-      const missingText = missing.querySelector('pre').textContent;
-      assert.ok(missingText.includes('이전 전체 원문 없음'));
-      assert.ok(missingText.includes('current '+owner+' <script>window.xss=3</script>'));
-      assert.equal(missingText.includes('old '+owner), false, 'missing historical text is never reconstructed');
-      assert.equal(missing.querySelector('pre').querySelectorAll('script,img').length, 0);
-      assertions += 5;
-
-      const exception = buttons().find(button => button.textContent === '예외 지정');
-      await exception.onclick();
-      assert.equal(controller.status().tasks[0].excluded, true, 'exception applies to this owner task revision');
-      const missingAfterRerender = root.querySelectorAll('.ms-source-event').find(item => item.querySelector('strong').textContent.startsWith('T2'));
-      const remove = missingAfterRerender.querySelectorAll('button').find(button => button.textContent === '내역 삭제');
-      await remove.onclick();
-      assert.equal(controller.status().events.length, 1, 'deleting history removes only the selected visible event');
-      assert.equal(controller.status().tasks.length, 2, 'the applied receipt remains after history deletion');
-      assert.equal(controller.status().tasks[0].excluded, true, 'history deletion preserves its exception');
-      assert.equal(controller.status().tasks.find(task => task.key === '2').state, 'applied');
-      assertions += 4;
-
-      const manual = await controller.review();
-      assert.equal(manual.reason, 'automatic_before_request_only');
-      assert.equal(promptCalls, 0); assert.equal(rootDocumentCalls, 0);
-      assertions += 3;
-    } finally { controller.dispose(); }
+  let port;
+  for (let i = 0; i < 120; i += 1) {
+    try { port = fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; break; } catch (_) {}
+    if (chromeExit) break;
+    await pause(100);
   }
-  console.log(JSON.stringify({ test: 'source_review_manual_stacking_context', result: 'pass', owners: ['libra', 'hayaku', 'flashback'], assertions,
-    contract: 'request-boundary work and inline history do not create a blocking overlay or floating dock' }));
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  if (!port && chromeExit) {
+    console.log(JSON.stringify({ test: 'source_review_dock_browser', result: 'NOT_RUN', reason: 'Chrome exited before exposing DevTools', chromeExit, stderrFile }));
+    process.exitCode = 77;
+    return;
+  }
+  assert.ok(port, 'Chrome DevTools endpoint starts');
+  const pages = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
+  ws = new WebSocket(pages.find(page => page.type === 'page').webSocketDebuggerUrl);
+  await new Promise(resolve => ws.addEventListener('open', resolve, { once: true }));
+  let sequence = 0;
+  const pending = new Map();
+  ws.addEventListener('message', event => {
+    const message = JSON.parse(event.data);
+    if (!message.id || !pending.has(message.id)) return;
+    const result = pending.get(message.id);
+    pending.delete(message.id);
+    message.error ? result.reject(new Error(JSON.stringify(message.error))) : result.resolve(message.result);
+  });
+  const call = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    pending.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async expression => {
+    const response = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
+    return response.result.value;
+  };
+
+
+  await call('Emulation.setDeviceMetricsOverride', { width: 380, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.body.innerHTML='<main id="host"><button id="hostButton">채팅 계속하기</button><div id="settings"></div></main>';document.body.style='margin:0;padding:16px;font:16px system-ui;background:#eef2f4;color:#243442';document.getElementById('host').style='transform:translateZ(0);isolation:isolate;position:relative;z-index:1;max-width:100%';document.getElementById('hostButton').focus();window.xss=0;`);
+  await evaluate(fs.readFileSync(path.join(program,'sdk/MemorySuiteSourceInput.libra.source.js'),'utf8'));
+  for(const owner of ['libra','hayaku','flashback']){
+    await evaluate(`(async()=>{
+      document.getElementById('settings').replaceChildren();window.reads=0;window.writes=0;
+      window.raw='Alice <draft>signed.</draft> <img src=x onerror="window.xss=1"><script>window.xss=2</script>';
+      window.stored=JSON.stringify({sourceRules:{version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]}});
+      window.policy=createMemorySuiteSourceInputPolicy({owner:${JSON.stringify(owner)},read:async()=>stored,write:async body=>{writes++;stored=body;return true},readSample:async()=>{reads++;return{text:raw,label:'T32'}}});
+      policy.mountControls(document.getElementById('settings'));await policy.ready();await Promise.resolve();policy.mountControls(document.getElementById('settings'));
+    })()`);
+    const initial=await evaluate(`({owner:document.querySelector('[data-source-input-controls]')?.dataset.sourceInputControls,count:document.querySelectorAll('[data-source-input-controls]').length,reads,writes,focus:document.activeElement.id,history:document.querySelectorAll('.ms-source-event').length,dialog:!!document.querySelector('#memorySuiteSourceReview'),dock:!!document.querySelector('[x-memory-suite-source-review-dock]'),hidden:document.querySelector('[data-source-input-output]').hidden})`);
+    assert.equal(initial.owner,owner);assert.equal(initial.count,1,'mount is idempotent');assert.equal(initial.reads,0,'opening settings does not observe source');assert.equal(initial.writes,0);assert.equal(initial.focus,'hostButton');assert.equal(initial.history,0);assert.equal(initial.dialog,false);assert.equal(initial.dock,false);assert.equal(initial.hidden,true);
+    await evaluate(`document.querySelector('[data-source-input-preview]').onclick()`);
+    const viewed=await evaluate(`({text:document.querySelector('[data-source-input-output]').textContent,raw,reads,writes,executable:document.querySelector('[data-source-input-output]').querySelectorAll('img,script').length,xss,stored})`);
+    assert.equal(viewed.text,viewed.raw,'raw preview is exact literal text');assert.equal(viewed.reads,1);assert.equal(viewed.writes,0);assert.equal(viewed.executable,0);assert.equal(viewed.xss,0);assert.equal(viewed.stored.includes('Alice'),false,'preview source is not persisted');
+    await evaluate(`(()=>{const input=document.querySelector('[data-rule-value]');input.value='draft';input.oninput();return true})()`);
+    await evaluate('new Promise(resolve=>setTimeout(resolve,25))');
+    const draft=await evaluate(`({text:document.querySelector('[data-source-input-output]').textContent,reads,writes,apply:document.querySelector('[data-source-input-apply]').disabled,status:document.querySelector('[data-source-input-preview-status]').textContent})`);
+    assert.equal(draft.text.includes('signed.'),false);assert.ok(draft.text.includes('<img'));assert.equal(draft.reads,1,'warm draft preview uses only the explicitly selected sample');assert.equal(draft.writes,0);assert.equal(draft.apply,false);assert.ok(draft.status.includes('아직 적용하지 않은 규칙'));
+    await evaluate(`document.querySelector('[data-source-input-apply]').onclick()`);
+    const saved=await evaluate(`({rules:JSON.parse(stored).sourceRules,writes,raw,executable:document.querySelectorAll('#settings img,#settings script').length,xss,scroll:document.documentElement.scrollWidth,width:window.innerWidth})`);
+    assert.deepEqual(saved.rules.ignoredTags,['draft']);assert.equal(saved.writes,1);assert.equal(saved.raw,viewed.raw);assert.equal(saved.executable,0);assert.equal(saved.xss,0);assert.ok(saved.scroll<=saved.width,'inline source controls fit viewport');
+    await evaluate(`policy.dispose();document.getElementById('hostButton').focus()`);
+  }
+  console.log(JSON.stringify({test:'source_review_manual_stacking_context_browser_test',result:'pass',browser:'Chromium',owners:3,viewport:380,contract:'explicit local source input preview, durable owner rules, literal markup, inline host surface',artifacts:out}));
+  await call('Browser.close');
+})().catch(error=>{console.error(error);process.exitCode=1})
+ .finally(()=>{clearTimeout(watchdog);ws?.close();chrome.kill()});

@@ -15,14 +15,13 @@ function envelope(quote,turn=1){const p=createValidPacket({turn,subject:'Alice',
     const editedScope=await t.currentChatScope();await t.reconcileObservedChatTopology(editedScope,t.authoritativeChatSnapshot(editedScope.chatMessages,editedScope),'source_edit_test');
     runtime.setLlmResponder(async(_call,n)=>({type:'success',result:JSON.stringify(n===1?envelope(NEW):envelope('Alice waited outside.',2))}));
     await t.handleBeforeRequest([{role:'user',content:'Continue.'}],'model');
-    assert.equal(runtime.llmCalls.length,2,'the direct edit and affected suffix are rebuilt before the new request');
-    assert.equal(await root.ready(),false,'automatic reconciliation creates no dialog');
-    const status=runtime.hayaku.getSourceEditSyncStatus();assert.deepEqual(Array.from(status.tasks,task=>task.state),['applied','applied']);
-    assert.equal(status.tasks[0].changeKind,'source_changed');assert.equal(status.tasks[1].changeKind,'dependency_affected');
+    assert.equal(runtime.llmCalls.length,0,'requests never dispatch source reanalysis');await runtime.callAfterRequest('', 'model');const inventory=await runtime.hayaku.listReanalysisRanges();assert.deepEqual(Array.from(inventory.ranges,r=>r.key),['1','2']);const selected=await runtime.hayaku.reanalyzeSelectedRanges(inventory);assert.equal(selected.ok,true,JSON.stringify(selected));assert.equal(runtime.llmCalls.length,2,'only explicitly selected direct and suffix units are rebuilt');
+    assert.equal(await root.ready(),false,'selected owner reanalysis creates no dialog');
+    const status=runtime.hayaku.getReanalysisStatus();assert.equal(status.lastResult.ok,true);assert.deepEqual(Array.from(selected.targetTurns),[1,2]);
     const after=await runtime.hayaku.ledger.inspect({includeRecords:true}),active=after.records.filter(r=>r.recordState==='active');
     assert.ok(active.some(r=>r.body?.includes(NEW)||r.raw?.includes(NEW)||JSON.stringify(r).includes(NEW)),'replacement packet was adopted');
     assert.equal(runtime.chat.message[1].data,hiddenPacketMessage(NEW,packet),'source chat remains unchanged');
-    assert.equal((await runtime.hayaku.reviewSourceEdits()).reason,'automatic_before_request_only','the old manual entry point cannot prompt');
+    assert.equal((await runtime.hayaku.reviewSourceEdits()).reason,'explicit_selection_required','the old manual entry point cannot prompt');
     assert.equal(runtime.llmCalls.length,2);
     console.log(JSON.stringify({test:'source_edit_hayaku_dependency',passed:8}));
   }finally{await runtime.dispose();}

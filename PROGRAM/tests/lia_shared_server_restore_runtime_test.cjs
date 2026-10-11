@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const nodeCrypto = require('node:crypto');
-const { createMemorySuiteServer } = require('../server/server.cjs');
+const { createSnapshotBridge } = require('./fixtures/lia_legacy_recovery_snapshot_fixture.cjs');
 
 const PLUGIN_PATH = path.join(__dirname, '..', 'plugins', 'LIA_Persona_Linker.js');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -74,7 +74,7 @@ function createHost(baseUrl, suffix) {
     async getArgument(name) { return args[String(name)] ?? ''; },
     async getArg(name) { return await host.getArgument(name); },
     async setArgument(name, value) { args[String(name)] = String(value); return true; },
-    async nativeFetch(url, init) { return await fetch(url, init); },
+    async nativeFetch() { throw Error('unexpected_network'); },
     async addPluginChannelListener(channel, handler) { return addListener(channel, handler); },
     async removePluginChannelListener(channel, handler) { return removeListener(channel, handler); },
     async removePluginChannelHandler(channel, handler) { return removeListener(channel, handler); },
@@ -192,16 +192,14 @@ function exposeSource(source) {
     PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY,
     PERSONA_VISUAL_ASSET_BACKUP_PREFIX,
     PERSONA_BINDING_MANAGER_VERSION,
-    hashText
+    hashText, createRecovery:createLiaLegacyServerRecovery, readStoredResultVault, readPersonaVisualAssetBackup
   }`;
   return `${source.slice(0,index)}\n;globalThis.__LIA_TEST_BRIDGE = MemorySuiteStorageBridge; globalThis.__LIA_TEST_HELPERS = ${helpers};\n${source.slice(index)}`;
 }
 
 async function launch(suffix) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `lia-shared-restore-${suffix}-`));
-  const server = createMemorySuiteServer({ host:'127.0.0.1', port:0, dataDir, autoBackup:false });
-  const address = await server.listen();
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const baseUrl = '';
   const hostBundle = createHost(baseUrl, suffix);
   const vmBundle = createContext(hostBundle.host);
   const source = exposeSource(fs.readFileSync(PLUGIN_PATH, 'utf8'));
@@ -213,13 +211,12 @@ async function launch(suffix) {
     try { return await bridge.getCurrentScope(); } catch (_) { return null; }
   }, `${suffix}:scope`);
   return {
-    server, dataDir, bridge, helpers, scope, ...hostBundle, ...vmBundle,
+    dataDir, bridge, helpers, scope, ...hostBundle, ...vmBundle,
     async close() {
       for (const handler of hostBundle.unloadHandlers.slice().reverse()) {
         try { await handler(); } catch (_) {}
       }
       vmBundle.cleanup();
-      await server.close();
       fs.rmSync(dataDir, {recursive:true,force:true});
     }
   };
@@ -293,117 +290,59 @@ function sharedFixture(env) {
   return { rows, shardKey, backupId, backupManifestKey, backupChunkKey, base64 };
 }
 
-async function seedServerOnly(env, fixture, includeScope) {
-  const h = env.helpers;
-  for (const [key, value] of fixture.rows) {
-    if (!includeScope && [h.LIVE_PERSONA_INDEX_STORAGE_KEY, fixture.shardKey, h.PERSONA_PROOF_STORAGE_KEY].includes(key)) continue;
-    await env.pluginStorage.setItem(key, value);
-  }
-  await env.bridge.setMode('server_only');
-  assert.equal(await env.bridge.getMode(), 'server_only');
+function legacySnapshot(env, fixture, includeScope=true) {
+  const h=env.helpers,entries=[...fixture.rows].filter(([key])=>includeScope||![h.LIVE_PERSONA_INDEX_STORAGE_KEY,fixture.shardKey,h.PERSONA_PROOF_STORAGE_KEY].includes(key));
+  const file=path.join(env.dataDir,'preexisting-legacy-owner-response.json');fs.writeFileSync(file,JSON.stringify(entries));
+  const transport=createSnapshotBridge(env.bridge,file),recovery=h.createRecovery(transport.api);
+  return {file,entries,recovery,transport};
 }
-
-async function removeFixtureLocals(env, fixture, includeScope) {
-  const h = env.helpers;
-  for (const key of fixture.rows.keys()) {
-    if (!includeScope && [h.LIVE_PERSONA_INDEX_STORAGE_KEY, fixture.shardKey, h.PERSONA_PROOF_STORAGE_KEY].includes(key)) continue;
-    await env.pluginStorage.removeItem(key);
-  }
-}
-
 async function currentScopeAndSharedRestoreCase() {
-  const env = await launch('full');
+  const env=await launch('full');
   try {
-    const fixture = sharedFixture(env);
-    await seedServerOnly(env, fixture, true);
-    await removeFixtureLocals(env, fixture, true);
-    const restored = await env.bridge.restorePluginStorage();
-    assert.equal(restored.ok, true);
-    assert.equal(restored.validation?.ok, true);
-    assert.ok(Number(restored.validation?.metrics?.sharedStores || 0) >= 5);
-    assert.equal(Number(restored.validation?.metrics?.visualAssetBackupManifests || 0), 1);
-    assert.equal(Number(restored.validation?.metrics?.visualAssetBackupChunks || 0), 1);
-    for (const [key, value] of fixture.rows) {
-      assert.equal(await env.pluginStorage.getItem(key), value, `full restore physical readback: ${key}`);
-    }
-    await env.bridge.setMode('plugin_only');
-    assert.equal(await env.bridge.getMode(), 'plugin_only');
-    const proxy = env.bridge.createPluginStorageProxy(env.pluginStorage);
-    assert.equal(await proxy.getItem(env.helpers.RESULT_VAULT_STORAGE_KEY), fixture.rows.get(env.helpers.RESULT_VAULT_STORAGE_KEY));
-    return { restored:restored.restored, dependencies:restored.dependencyCandidateCount, metrics:restored.validation.metrics };
-  } finally { await env.close(); }
+    const fixture=sharedFixture(env),snapshot=legacySnapshot(env,fixture),before=fs.readFileSync(snapshot.file,'utf8');
+    const preview=await snapshot.recovery.preview();assert.equal(preview.validated,true);assert.equal(preview.conflicts.length,0);
+    assert(fixture.rows.size>=10);for(const [key] of fixture.rows)assert.equal(await env.pluginStorage.getItem(key),null,'preview never publishes');
+    const restored=await snapshot.recovery.publish(preview);assert.equal(restored.verified,true);assert.equal(restored.serverWrites,0);assert.equal(restored.serverDeletes,0);
+    for(const [key,value] of fixture.rows)assert.equal(await env.pluginStorage.getItem(key),value,`explicit local publication exact physical bytes: ${key}`);
+    const vault=await env.helpers.readStoredResultVault();assert(vault.some(row=>row.personaPrompt.includes('Archivist')),'actual owner reader sees restored body');
+    assert.equal((await env.helpers.readPersonaVisualAssetBackup(fixture.backupId)).bytes.length,16,'actual owner reader validates restored image backup');
+    assert.equal(fs.readFileSync(snapshot.file,'utf8'),before,'source bytes immutable');assert(snapshot.transport.calls.every(route=>route.startsWith('GET ')));
+    await assert.rejects(()=>snapshot.recovery.publish(preview),/LIA_RECOVERY_PREVIEW_STALE/);
+    return {restored:restored.restored,sourceUnchanged:true,readOnlyPreview:true,actualOwnerReadback:true};
+  }finally{await env.close();}
 }
-
 async function sharedOnlyAndFailureCase() {
-  const env = await launch('shared-only');
+  const env=await launch('shared-only');
   try {
-    const h = env.helpers;
-    const fixture = sharedFixture(env);
-    await seedServerOnly(env, fixture, false);
-    await removeFixtureLocals(env, fixture, false);
-    const restored = await env.bridge.restorePluginStorage();
-    assert.equal(restored.ok, true, 'shared-only restore succeeds');
-    assert.equal(restored.scopeCandidateCount, 0, 'no current-scope payload is required');
-    assert.ok(restored.dependencyCandidateCount >= 7, 'shared durable rows are explicit restore dependencies');
-    for (const [key, value] of fixture.rows) {
-      if ([h.LIVE_PERSONA_INDEX_STORAGE_KEY, fixture.shardKey, h.PERSONA_PROOF_STORAGE_KEY].includes(key)) continue;
-      assert.equal(await env.pluginStorage.getItem(key), value, `shared-only physical readback: ${key}`);
-    }
-
-    const proxy = env.bridge.createPluginStorageProxy(env.pluginStorage);
-    // Authoritative shared tombstones must remove stale browser data.
-    await proxy.removeItem(h.RESULT_VAULT_STORAGE_KEY);
-    await env.pluginStorage.setItem(h.RESULT_VAULT_STORAGE_KEY, JSON.stringify({version:1,items:[{id:'stale',personaPrompt:'stale'}]}));
-    const tombstoneRestore = await env.bridge.restorePluginStorage();
-    assert.equal(tombstoneRestore.ok, true);
-    assert.equal(await env.pluginStorage.getItem(h.RESULT_VAULT_STORAGE_KEY), null, 'shared tombstone removed stale local value');
-    assert.ok(Number(tombstoneRestore.validation?.metrics?.sharedTombstones || 0) >= 1);
-
-    // Corrupt a server backup chunk. Restore must fail closed and roll local rows back.
-    await proxy.setItem(fixture.backupChunkKey, '!!!!');
-    for (const [key] of fixture.rows) {
-      if ([h.LIVE_PERSONA_INDEX_STORAGE_KEY, fixture.shardKey, h.PERSONA_PROOF_STORAGE_KEY,h.RESULT_VAULT_STORAGE_KEY].includes(key)) continue;
-      await env.pluginStorage.removeItem(key);
-    }
-    let failure = null;
-    try { await env.bridge.restorePluginStorage(); } catch (error) { failure = error; }
-    assert.ok(failure, 'corrupt shared backup is rejected');
-    assert.equal(failure.code, 'MEMORY_SUITE_RESTORE_SEMANTIC_VALIDATION_FAILED');
-    assert.equal(await env.bridge.getMode(), 'server_only');
-    assert.ok(await env.bridge.getRecoveryState(env.scope), 'recovery_required lock persisted');
-    assert.equal(await env.pluginStorage.getItem(fixture.backupChunkKey), null, 'failed restore rolled corrupt chunk back to absence');
-
-    await proxy.setItem(fixture.backupChunkKey, fixture.base64);
-    const retry = await env.bridge.restorePluginStorage();
-    assert.equal(retry.ok, true);
-    assert.equal(await env.pluginStorage.getItem(fixture.backupChunkKey), fixture.base64);
-    assert.equal(await env.bridge.getRecoveryState(env.scope), null, 'verified retry clears recovery lock');
-
-    return {
-      restored:restored.restored,
-      scopeCandidates:restored.scopeCandidateCount,
-      dependencies:restored.dependencyCandidateCount,
-      tombstoneRemoved:true,
-      corruptRejected:true,
-      retrySucceeded:true
-    };
-  } finally { await env.close(); }
+    const fixture=sharedFixture(env),snapshot=legacySnapshot(env,fixture,false);
+    let preview=await snapshot.recovery.preview();assert.equal(preview.scopeCount,1);assert.equal(preview.conflicts.length,0);
+    const originalWrite=env.pluginStorage.setItem,dropKey=fixture.backupChunkKey;
+    const before=[...env.pluginStorage.map];env.pluginStorage.setItem=async(key,value)=>key===dropKey?true:originalWrite(key,value);
+    await assert.rejects(()=>snapshot.recovery.publish(preview),/LIA_RECOVERY_LOCAL_READBACK_FAILED|memory_suite_pluginstorage_readback_mismatch/);
+    assert.deepEqual([...env.pluginStorage.map],before,'failed publication rolls preceding rows back and leaves dropped row absent');
+    env.pluginStorage.setItem=originalWrite;preview=await snapshot.recovery.preview();const restored=await snapshot.recovery.publish(preview);assert.equal(restored.verified,true);
+    for(const [key,value] of snapshot.entries)assert.equal(await env.pluginStorage.getItem(key),value,`shared-only restore: ${key}`);
+    // The current explicit importer retains remote deletion marks; it does not
+    // delete a current local result because a historical server marked it gone.
+    const vaultKey=env.helpers.RESULT_VAULT_STORAGE_KEY,vaultBefore=env.pluginStorage.map.get(vaultKey);
+    fs.writeFileSync(snapshot.file,JSON.stringify({records:snapshot.entries.filter(([key])=>key!==vaultKey),tombstones:[vaultKey]}));
+    preview=await snapshot.recovery.preview();assert.equal(preview.retainedServerTombstones,1);assert.equal((await snapshot.recovery.publish(preview)).verified,true);assert.equal(env.pluginStorage.map.get(vaultKey),vaultBefore,'historical server tombstone never deletes current local body');
+    fs.writeFileSync(snapshot.file,JSON.stringify(snapshot.entries));
+    const local=[...env.pluginStorage.map];const corrupted=snapshot.entries.map(([key,value])=>[key,key===dropKey?'!!!!':value]);fs.writeFileSync(snapshot.file,JSON.stringify(corrupted));
+    await assert.rejects(()=>snapshot.recovery.preview(),/LIA_RECOVERY_VALIDATION_FAILED/);assert.deepEqual([...env.pluginStorage.map],local,'corrupt source never changes the restored local owner');
+    fs.writeFileSync(snapshot.file,JSON.stringify(snapshot.entries));
+    const key=env.helpers.RESULT_VAULT_STORAGE_KEY;env.pluginStorage.map.set(key,JSON.stringify({version:1,items:[{id:'local-current',personaPrompt:'Current local persona'}]}));
+    preview=await snapshot.recovery.preview();assert(preview.conflicts.length>0);await assert.rejects(()=>snapshot.recovery.publish(preview),/LIA_RECOVERY_LOCAL_CONFLICT/);assert.match(env.pluginStorage.map.get(key),/Current local persona/,'legacy source never overwrites newer local body');
+    return {restored:restored.restored,droppedWriteRejected:true,rollbackExact:true,retrySucceeded:true,corruptRejected:true,currentLocalConflictPreserved:true,historicalTombstoneRetained:true};
+  }finally{await env.close();}
 }
-
-
 async function emptySnapshotCase() {
-  const env = await launch('empty');
+  const env=await launch('empty');
   try {
-    await env.bridge.setMode('server_only');
-    assert.equal(await env.bridge.getMode(), 'server_only');
-    let failure = null;
-    try { await env.bridge.restorePluginStorage(); } catch (error) { failure = error; }
-    assert.ok(failure, 'a truly empty server snapshot is rejected');
-    assert.equal(failure.code, 'MEMORY_SUITE_RESTORE_SEMANTIC_VALIDATION_FAILED');
-    assert.ok(await env.bridge.getRecoveryState(env.scope), 'empty restore persists recovery_required');
-    assert.equal(await env.bridge.getMode(), 'server_only');
-    return { rejected:true, code:failure.code };
-  } finally { await env.close(); }
+    const snapshot=legacySnapshot(env,{rows:new Map()});const before=[...env.pluginStorage.map];
+    await assert.rejects(()=>snapshot.recovery.preview(),/LIA_RECOVERY_SNAPSHOT_EMPTY/);assert.deepEqual([...env.pluginStorage.map],before);
+    return {rejected:true,code:'LIA_RECOVERY_SNAPSHOT_EMPTY'};
+  }finally{await env.close();}
 }
 
 (async () => {
@@ -411,7 +350,7 @@ async function emptySnapshotCase() {
   const sharedOnly = await sharedOnlyAndFailureCase();
   const empty = await emptySnapshotCase();
   process.stdout.write(`${JSON.stringify({
-    schema:'lia.shared-server-restore.runtime-test.v1',
+    schema:'lia.explicit-legacy-local-recovery.runtime-test.v2',
     pluginVersion:fs.readFileSync(PLUGIN_PATH,'utf8').match(/const PLUGIN_VERSION = ["']([^"']+)/)[1],
     full,
     sharedOnly,

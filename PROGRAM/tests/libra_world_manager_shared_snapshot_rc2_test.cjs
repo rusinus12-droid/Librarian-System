@@ -30,8 +30,8 @@ assert.doesNotMatch(memory, /id: 'runs', label: '실행 기록'/,
   'Memory stays content-focused; execution history belongs to the separate Logs page');
 assert.doesNotMatch(memory, /continuity_state|memoryPipelineStage|buildAgentsTab/);
 
-assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory', 'state', 'draft', 'recall', 'input_writer', 'embedding', 'rebuild'\]\)/,
-  'Logs must keep all seven execution receipt kinds in a dedicated hub');
+assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory','state','draft','recall','embedding','rebuild'\]\)/,
+  'Logs retain all six receipt kinds; Input Writer receipts were retired');
 
 const overlay = between('const worldManagerSnapshotView =', 'const buildSharedPipelineShellPanel =');
 const snapshotGetter = between('const worldManagerSnapshotView =', 'const worldManagerDomainCopy =');

@@ -1,29 +1,52 @@
 'use strict';
-// Task 9 (plan line 337): which consumer's recent-dialogue block actually comes from Live Tail.
-//
-// The T1 and T5/T6 gates measure the Classic block. This one asks the same question of the Planner, and
-// the answer is the opposite of what the first draft assumed:
-//   - the Planner's '[RECENT DIALOGUE — COMPLETED TURNS]' block comes from the evidence packet
-//     (enforcePlannerEvidenceProfile), so it is present with Live Tail ON and OFF;
-//   - Live Tail's only contribution to the Planner input is the per-turn markers ('[TURN n]',
-//     '[chatId=…]'), measured at 34 chars.
-// By contrast the SGA Shadow prompt reads `evidencePacket.terminal_scene` directly, and that field IS
-// filled from the Live Tail transcript when available (buildRecallEvidencePacket). So the Live Tail
-// dependency lives in the SGA/GRADIA consumer path, not the Planner's dialogue block - and this file
-// records the measurement that separates them.
-//
-// Two dead ends are kept here on purpose, because both produced green-looking runs on empty data:
-//   1. an earlier version drove debugUnifiedLoreMaterial, which builds a different structure
-//      (buildUnifiedResponseLoreMaterial) and never receives a live tail - measured liveTailAvailable
-//      false in BOTH arms;
-//   2. the next version asserted the Planner dialogue was Live-Tail-only and FAILED, because the
-//      dialogue arrives through the evidence packet regardless.
-// Reading the real provider input is what made both visible.
+// Retained current-consumer contract: Live Tail changes the explicitly enabled
+// recent dialogue, while durable Micro must reach actual Classic output in both arms.
+// Historical Planner-provider marker/delta expectations are retired with that
+// executor. The filename remains stable for the original regression inventory.
 //
 // Run: node tests/libra_live_tail_planner_dialogue_source_test.cjs
 const assert = require('node:assert/strict');
 const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs');
 const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
+
+
+// Same-request evidence is taken from the real hook and its current response
+// context/viewer. A selected viewer row alone is not a delivery witness.
+async function readClassicDelivery(f, query, expectedLiveTail) {
+  await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
+  const scopeKey = (await f.r.api.getHostLineageStatus()).scopeKey;
+  const previous = f.r.api.getLastResponseContext();
+  let providerCalls = 0;
+  f.control.onCall = async () => { providerCalls++; return { type: 'error', result: 'unexpected provider call during Classic recall' }; };
+  const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: query }], 'model');
+  const context = f.r.api.getLastResponseContext();
+  const viewer = f.r.api.getLastMemoryRecallViewer();
+  assert.ok(scopeKey && context?.requestId);
+  assert.notEqual(context.requestId, previous?.requestId, 'witness belongs to this new request');
+  assert.equal(context.route, 'classic');
+  assert.equal(context.scopeKey, scopeKey);
+  assert.equal(context.values?.currentInput, query);
+  assert.equal(viewer?.scopeKey, scopeKey);
+  assert.equal(viewer?.queryText, query);
+  assert.equal(viewer?.responseContextRequestId, context.requestId);
+  assert.equal(viewer?.responseContextDigest, context.contextDigest);
+  const validity = await f.r.api.validateResponseContext(context);
+  assert.equal(validity.ok, true, JSON.stringify(validity));
+  assert.equal(validity.current, true);
+  assert.equal(providerCalls, 0, 'current Classic retrieval has no retired Planner provider call');
+  const injected = messages.filter(row => row.role === 'system' && String(row.content || '').includes('[LIBRA CLASSIC RECALL'));
+  assert.ok(injected.length > 0, 'actual outbound messages carry Classic recall');
+  const block = injected.map(row => String(row.content || '')).join('\n');
+  const microRows = Array.from(viewer.rows || []).filter(row => row.kind === 'micro' && row.classicUsed === true && row.injected === true);
+  assert.ok(microRows.length > 0, 'durable Micro is delivered, not merely selected');
+  for (const row of microRows) {
+    const exact = String(row.selectedText || row.text || '');
+    assert.ok(exact.length > 0 && block.includes(exact), 'whole selected Micro text reaches the actual block');
+  }
+  assert.equal(viewer.liveTailInjected === true, expectedLiveTail);
+  return { delivered: messages.map(row => String(row.content || '')).join('\n'), block,
+    microUsed: microRows.length > 0, providerCalls, requestId: context.requestId, contextDigest: context.contextDigest };
+}
 
 const DETAIL = '도서관 전체는 정숙 구역';
 // The fixture's own scene text and the Live Tail transcript are different strings, so finding this
@@ -65,26 +88,16 @@ const runArm = async (mode, liveOn) => {
     listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 1 });
     await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 15000);
 
-    // The Planner path reads the evidence packet, so its provider input is where the scene anchor the
-    // SGA/GRADIA stages share becomes observable.
-    await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'planner' });
-    let providerInput = '';
-    f.control.onCall = async args => {
-      providerInput = args[0].messages.map(row => String(row.content || '')).join('\n');
-      return { type: 'success', result: 'BRIEF' };
-    };
-    const delivered = await f.control.hooks.beforeRequest([
-      { role: 'user', content: '도서관의 정숙 규칙을 고려해서 이어줘.' }
-    ], 'model');
-    const viewer = f.r.api.getLastMemoryRecallViewer();
+    const delivery = await readClassicDelivery(f, '도서관의 정숙 규칙을 고려해서 이어줘.', liveOn);
     return {
-      providerInput,
-      inputChars: providerInput.length,
-      hasDialogueUser: providerInput.includes(DIALOGUE_USER),
-      hasDialogueAssistant: providerInput.includes(DIALOGUE_ASSISTANT),
-      hasRecentDialogueMarker: providerInput.includes('RECENT DIALOGUE'),
-      microUsed: Array.from(viewer?.rows || []).some(row => row.kind === 'micro'),
-      deliveredChars: delivered.map(row => String(row.content || '')).join('\n').length
+      hasDialogueUser: delivery.block.includes(DIALOGUE_USER),
+      hasDialogueAssistant: delivery.block.includes(DIALOGUE_ASSISTANT),
+      hasRecentDialogueMarker: delivery.block.includes('RECENT DIALOGUE'),
+      microUsed: delivery.microUsed,
+      deliveredChars: delivery.delivered.length,
+      requestId: delivery.requestId,
+      contextDigest: delivery.contextDigest,
+      providerCalls: delivery.providerCalls
     };
   } finally {
     try { await fx.cleanup(); } catch { /* fixture already closed */ }
@@ -107,20 +120,13 @@ const runArm = async (mode, liveOn) => {
   for (const mode of Object.keys(measured)) {
     const { on, off } = measured[mode];
 
-    // (1) MEASURED: the Planner input carries the recent dialogue in BOTH arms - the Planner's
-    // '[RECENT DIALOGUE — COMPLETED TURNS]' block comes from the evidence packet, not from Live Tail.
-    // Only the per-turn '[TURN n]' / '[chatId=…]' markers are added when Live Tail is on (measured 34
-    // chars). An earlier version of this file asserted the dialogue was Live-Tail-only for the Planner
-    // and FAILED, which is why the Planner is not the consumer this gate judges.
-    assert.ok(on.hasDialogueUser && off.hasDialogueUser,
-      `${mode}: the Planner receives the recent dialogue with and without Live Tail`);
-
-    // (2) Live Tail's contribution to the Planner is the ownership markers only, and it is small.
-    const plannerGain = on.inputChars - off.inputChars;
-    assert.ok(plannerGain > 0 && plannerGain < 200,
-      `${mode}: Live Tail adds only the turn/chatId markers to the Planner input (measured ${plannerGain} chars)`);
-    assert.ok(on.hasRecentDialogueMarker,
-      `${mode}: the Planner dialogue block is present on the Live Tail arm`);
+    // Current Classic raw dialogue is supplied only by explicitly enabled Live Tail.
+    assert.equal(on.hasDialogueUser, true, `${mode}: enabled Classic receives the actual recent user turn`);
+    assert.equal(on.hasDialogueAssistant, true, `${mode}: enabled Classic receives the actual recent assistant turn`);
+    assert.equal(on.hasRecentDialogueMarker, true, `${mode}: enabled dialogue has its ownership-bearing section`);
+    assert.equal(off.hasDialogueUser, false, `${mode}: disabled Live Tail does not smuggle the raw user turn into Micro`);
+    assert.equal(off.hasRecentDialogueMarker, false, `${mode}: disabled Live Tail has no recent-dialogue section`);
+    assert.equal(on.providerCalls + off.providerCalls, 0);
 
     // (3) The memory read set is independent of Live Tail: the durable Micro reaches the consumer in
     // both arms, so what changes is the recent-dialogue framing, not the recalled evidence.

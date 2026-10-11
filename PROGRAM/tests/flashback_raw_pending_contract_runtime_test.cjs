@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { test } = require('node:test');
 const { createFlashback } = require('./fixtures/embedding_contract_harness.cjs');
+const { createFlashback: createManualPortableFixture } = require('./fixtures/raw_pending_portable_fixture.cjs');
 const PROGRAM = path.resolve(__dirname, '..');
 const USER = 'I check the old brass key.';
 const REPLY = 'The brass key opens the north library cabinet. A blue ribbon remains tied to its handle.';
@@ -16,7 +17,7 @@ const SOURCE = {
 const clone = value => JSON.parse(JSON.stringify(value));
 
 async function withRuntime(run, options = {}) {
-  const h = await createFlashback(PROGRAM, options);
+  const h = await (options.manualPortableFixture ? createManualPortableFixture : createFlashback)(PROGRAM, options);
   try {
     const scope = await h.api.resolveCurrentScope(false);
     const cfg = h.api._test.normalizeSettings({ embeddingEnabled: false, enableGui: false });
@@ -388,6 +389,7 @@ test('portable chat copy rebinds pending work ownership and preserves the origin
     const original = clone((await h.api._test.loadScopeRecords(scope.scopeKey)).records[0]);
     const portable = h.context.__FlashbackPortableMemoryBackup;
     const backup = await portable.exportCurrentScope();
+    await h.closeNativeCopyObserver();
     const target = { id: 'raw-copy-target', chatId: 'raw-copy-target', name: 'Copy', message: clone(chat.message) };
     target.messages = target.message;
     character.chats.push(target); character.chatPage = 1;
@@ -405,5 +407,8 @@ test('portable chat copy rebinds pending work ownership and preserves the origin
     const sourceAgain = (await h.api._test.loadScopeRecords(scope.scopeKey)).records[0];
     assert.deepEqual(clone(sourceAgain.embeddingWork), original.embeddingWork);
     assert.equal(h.networkCalls.length, 0);
-  });
+  }, { manualPortableFixture: true });
 });
+
+require('./fixtures/raw_pending_159_observer_control.cjs').registerObserverControls();
+require('./fixtures/raw_pending_159_readiness_control.cjs').registerReadinessControl();

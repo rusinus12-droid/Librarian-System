@@ -23,8 +23,10 @@ async function run() {
       ['lia','lia_persona_linker'], ['retrace','flashback_hayaku_bridge']]) {
       const variant = namespace === 'libra' ? 'MemorySuiteStorageClient.libra.source.js'
         : 'MemorySuiteStorageClient.source.js';
-      const create = new Function(fs.readFileSync(path.join(__dirname, '..', 'sdk', variant), 'utf8')
-        + '\nreturn createMemorySuiteStorageBridge')();
+      const program=path.join(__dirname,'..');
+      const preservedFile=namespace==='lia'?'LIA_Persona_Linker.js':namespace==='retrace'?'RETRACE.js':null;
+      const source=preservedFile ? require('../tools/lib/sdk_variants.cjs').expectedStorageSdk(program,preservedFile,fs.readFileSync(path.join(program,'plugins',preservedFile),'utf8')) : fs.readFileSync(path.join(program,'sdk',variant),'utf8');
+      const create = new Function(source + '\nreturn createMemorySuiteStorageBridge')();
       const scope = { scopeId:namespace+'-drain', scopeKey:namespace+'-drain', chatId:namespace+'-drain' };
       const key = namespace === 'flashback' ? 'vector_rag_memory:scope:drain:accepted'
         : namespace+'.drain.memory';
@@ -38,6 +40,29 @@ async function run() {
         managementButton:false, startupDiagnostics:false, autoMigratePlugin:false, autoMigrateLocal:false,
         pluginPrefixes:[namespace+'.', 'vector_rag_memory:'], currentScopeProvider:async () => scope,
         resolveKeyScope:async () => ({ kind:'scope', scope }) };
+      if(namespace==='lia'||namespace==='retrace') {
+        // Retired owners no longer admit remote writer cutovers. Keep actual
+        // accepted local/manager operations and prove refusal cannot lose them.
+        const policy=namespace==='lia'?'local_only':'manager_only';
+        const bridge=create({...options,storagePolicy:policy,...(namespace==='retrace'?{scopeRouting:false}:{})});
+        const entered=deferred(),release=deferred();
+        const beforeRemote=app.repositories[namespace].database.prepare('SELECT * FROM kv ORDER BY space,key').all();
+        try {
+          const read=store.getItem;store.getItem=async k=>{if(k===key){entered.resolve();await release.promise;}return read(k);};
+          const proxy=namespace==='lia'?bridge.createPluginStorageProxy(store):null;
+          const accepted=namespace==='lia'?proxy.getItem(key):bridge.readLegacyValue('plugin',key,scope);
+          await entered.promise;
+          if(namespace==='lia') await assert.rejects(()=>bridge.setMode('server_only'),e=>e.code==='MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
+          else { assert.equal(typeof bridge.setMode,'undefined');assert.equal(typeof bridge.createPluginStorageProxy,'undefined'); }
+          assert.deepEqual(values.get(key),{n:1});
+          release.resolve();assert.deepEqual(await accepted,{n:1});
+          if(proxy){await proxy.setItem(key,{n:2});assert.deepEqual(await proxy.getItem(key),{n:2});}
+          assert.deepEqual(app.repositories[namespace].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),beforeRemote);
+          assert.equal(await bridge.getMode(),'plugin_only');passed++;
+          console.log('PASS '+namespace+' accepted current operation survives remote writer refusal; no retired cutover supported');
+        } finally {release.resolve();await bridge.dispose();}
+        continue;
+      }
       let bridge = create(options);
       const proxy = bridge.createPluginStorageProxy(store);
       const entered = deferred(), release = deferred(), lateEntered = deferred(), releaseLate = deferred();
