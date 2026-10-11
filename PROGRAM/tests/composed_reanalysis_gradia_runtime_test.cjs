@@ -8,38 +8,43 @@ require.cache[serverPath].exports={...actual,createMemorySuiteServer};
 const {serverFixture}=require('./fixtures/libra_server_runtime_fixture.cjs');
 require.cache[serverPath].exports=actual;
 const {load}=require('./gradia/host.cjs');
+const {createReadBoundaryDiagnostic}=require('./fixtures/composed_read_boundary_diagnostic.cjs');
 const acorn=require('acorn'),sha=v=>crypto.createHash('sha256').update(v).digest('hex'),plain=v=>JSON.parse(JSON.stringify(v));
 function captureConsumer(source){
  const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;
  function walk(n){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression'&&source.slice(n.start,n.end).includes('gradia.lib-server-read-consumer.v1')&&(!target||n.end-n.start<target.end-target.start))target=n;for(const value of Object.values(n))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);}walk(ast);assert.ok(target,'real consumer factory found');
  return source.slice(0,target.start)+'(globalThis.__testCreateLibReadConsumer='+source.slice(target.start,target.end)+')'+source.slice(target.end);
 }
-async function reader(t,fx){
+async function reader(t,fx,diagnostic){
  const m=fx.getManifest(),scope={scopeKey:m.scopeKey,characterId:m.characterId,chatId:m.chatId};
  const values=new Map(),store={getItem:async k=>values.get(k)??null,setItem:async()=>{throw Error('READONLY_SDK_WRITE_FORBIDDEN')},removeItem:async()=>{throw Error('READONLY_SDK_WRITE_FORBIDDEN')}};
  values.set('__memory_suite_internal_scope_routes_v1__:libra',JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',version:1,legacyGlobalModeImported:true,entries:{[scope.scopeKey]:{scopeId:scope.scopeKey,scopeKey:scope.scopeKey,mode:'server_only',origin:'user_explicit',updatedAt:1}}}));
  const readerRequests=[];
  const host={getArgument:async name=>name.includes('url')?fx.url:undefined,pluginStorage:store,getLocalPluginStorage:async()=>store,nativeFetch:async(url,init)=>{readerRequests.push({url,method:init.method,principal:init.headers?.['X-Memory-Suite-Plugin']});return mockFetch(url,init);}};
- const context=vm.createContext({console,URL,Response,TextEncoder,TextDecoder,AbortController,setTimeout,clearTimeout,RisuAI:host});
- vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteStorageClient.source.js'),'utf8')+';globalThis.factory=createMemorySuiteStorageBridge',context);
+ const context=vm.createContext({console,URL,Response,TextEncoder,TextDecoder,AbortController,setTimeout,clearTimeout,RisuAI:host,__composedReadDiagnostic:diagnostic.observe});
+ vm.runInContext(diagnostic.sdkSource(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteStorageClient.source.js'),'utf8'))+';globalThis.factory=createMemorySuiteStorageBridge',context);
  const bridge=context.factory({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',managementButton:false,startupDiagnostics:false});t.after(()=>bridge.dispose());
  const accepted=await bridge.bootstrap();assert.equal(accepted.dataIdentityCertified,true);assert.equal(accepted.capabilities['libra-read-session.v1'],true);
- const g=await load({testGlobals:{crypto:crypto.webcrypto},transformSource:captureConsumer});
+ const g=await load({testGlobals:{crypto:crypto.webcrypto,__composedReadDiagnostic:diagnostic.observe},transformSource:source=>captureConsumer(diagnostic.consumerSource(source))});
  const client=bridge.createLibraReadOnlyClient(),binding={client,scope,maxCorpusBytes:4194304};
  const bound=g.plugin.bindLibReadOnlyClient(client,{scope});assert.equal(bound.liveConnectionVerified,false,'binding is not certification');
  const consumer=g.createLibReadConsumer({getBinding:()=>binding,assertNativeScope:async()=>true,digest:async v=>sha(v)});
  return {consumer,g,scope,bridge,readerRequests};
 }
 test('composed producer replacement reaches GRA; tag-only host edits preserve evidence and replacement retires old read',async t=>{
+ const diagnostic=createReadBoundaryDiagnostic();
  const fx=await serverFixture({mode:'server_only'}),f=fx.f;t.after(()=>fx.cleanup());
  console.log('COMPOSED_RUNTIME_LOAD '+JSON.stringify({libraPath:process.env.LIBRA_TEST_PLUGIN||'source',libraSha256:sha(f.r.source),graPath:process.env.GRADIA_FILE||'source'}));
  await f.r.api.setSourceEditRules({version:1,ignoredTags:['decoration'],unwrapTags:[],sourceTags:[],controls:[]});
- assert.equal((await f.run()).completed,1);await f.r.api.retryPendingUnifiedVectors();
+ assert.equal((await f.run()).completed,1);const vectorDrain=await f.r.api.retryPendingUnifiedVectors();
  const old=plain(fx.getManifest().memories['1']),oldRaw=fx.storedRows().find(r=>r.key===old.key).raw,oldText=fx.getMemory().text;
- const {consumer,g,readerRequests}=await reader(t,fx);
+ const {consumer,g,readerRequests}=await reader(t,fx,diagnostic);
  const db=fx.app.repositories.libra.database,rows=()=>db.prepare('SELECT * FROM kv ORDER BY key').all(),ops=()=>db.prepare('SELECT COUNT(*) n FROM operations').get().n;
  const before=rows(),beforeOps=ops(),start=readerRequests.length;
- const priorSession=await consumer.beginRead({requestId:'before-explicit-reanalysis'});
+ const restoreMetadataObserver=diagnostic.observeRepository(fx.app.repositories.libra);let priorSession;
+ try{priorSession=await consumer.beginRead({requestId:'before-explicit-reanalysis'});}
+ catch(error){console.log('COMPOSED_READ_BOUNDARY_DIAGNOSTIC '+JSON.stringify(diagnostic.report(error,{libraSource:f.r.source,vectorDrain})));throw error;}
+ finally{restoreMetadataObserver();}
  const evidence=await priorSession.getEvidence();assert.equal(evidence.items.length,1);assert.equal(evidence.items[0].content,oldText);assert.equal(priorSession.selection.corpusBytes,Buffer.byteLength(oldText));
  await priorSession.bindDraft('DRAFT_USING_OLD_CANONICAL');assert.equal(await priorSession.finalizeDraft(),'DRAFT_USING_OLD_CANONICAL');
  assert.deepEqual(rows(),before);assert.equal(ops(),beforeOps);assert.ok(readerRequests.slice(start).every(r=>r.principal==='serial_gradation_agents_for_rp' && r.method==='POST' && (r.url.endsWith('/capture')||r.url.endsWith('/current'))),JSON.stringify(readerRequests.slice(start)));assert.equal(readerRequests.slice(start).filter(r=>r.url.endsWith('/capture')).length,1);
