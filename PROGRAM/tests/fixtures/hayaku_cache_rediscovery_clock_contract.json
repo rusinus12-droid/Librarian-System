@@ -1,0 +1,54 @@
+{
+  "schema": "hayaku.cache_rediscovery.clock_contract.v1",
+  "root": 246,
+  "originalFailure": {
+    "receipt": "/tmp/libq39-1/rediscovery-131576-1791699141490.json",
+    "fullFactSuccess": 45,
+    "positiveRequests": 46,
+    "miss": {
+      "phase": "diverse-queries-revisit-scope",
+      "scope": "alternating-scope-2",
+      "turn": 471
+    },
+    "routingScanned": 275,
+    "routingPending": 325,
+    "sourceSha256": "2d75740ce91a548650fff70afb1982c789eb818ab29a16c39e88d9fead9715f3",
+    "originalTestSha256": "e3a2c3af76c818410e2652daf422104d0428e1bd8836df3ff1ca57eac38e28ec"
+  },
+  "assertionMap": [
+    {
+      "original": "All46 first-query facts after actual eviction, novel queries and alternating/revisited scopes",
+      "current": "Same46 queries, same frozen600-source corpus, same first-request selection, held semantic clock during preparation",
+      "equivalenceGap": "No claim all600 temporary postings finish within150ms of real elapsed time on a loaded machine"
+    },
+    {
+      "original": "64 projections,48 candidates,16 rendered entries,12000 evidence chars and bounded cache/hints",
+      "current": "Existing assertions unchanged for all semantic cases; new advancing-clock case also checks64 projections and work-budget accounting",
+      "equivalenceGap": "None for the retained count/size bounds"
+    },
+    {
+      "original": "Evicted source rediscovery, scope churn, source edit/deletion, unchanged original source bytes, zero model/fetch calls",
+      "current": "Same scenarios and assertions unchanged",
+      "equivalenceGap": "None for semantic outcomes; source is loaded through an explicit isolated clock/cache observer"
+    },
+    {
+      "original": "Implicit assumption complete temporary routing in every cold request",
+      "current": "One deterministic advancing-clock case forces partial routing and asserts scanned/pending accounting, incomplete/noncurrent/nondurable index and absent unrouted turn471 fact",
+      "equivalenceGap": "Explicit bounded-work partial outcome replaces unsupported universal real-time completeness"
+    }
+  ],
+  "productionBoundsUnchanged": {
+    "bindingTimeoutMs": 40,
+    "temporaryPostingBuildMs": 150,
+    "postingScopes": 4,
+    "projectionSourcesPerRequest": 64
+  },
+  "clockIsolation": "Only generated observer source in a disposable test VM changes now(); released in finally. Shared harness, original production source, real host timers and storage are unchanged. Held now() also holds related timestamps during preparation; semantic-only, not real performance.",
+  "qualification": "Static preparation only; runtime checks deferred until parent authorizes after active normal campaign shards finish. Original failed receipt remains preserved.",
+  "mutationControl": {
+    "mutation": "only temporary posting cap150ms->600ms; legacy fallback cap unchanged",
+    "assertion": "fresh-scope scanned<=floor(150/10)=15; each missing-source gate advances now by10ms",
+    "static": "mutant observer compiles; --run explicitly required for actual later mutation refusal",
+    "helper": "fixtures/hayaku_cache_rediscovery_cap_mutation.cjs"
+  }
+}
