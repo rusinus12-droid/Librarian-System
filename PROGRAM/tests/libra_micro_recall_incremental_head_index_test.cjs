@@ -140,8 +140,8 @@ const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
       const longWarmTrace = assertTrace();
       assert.equal(longWarmTrace.filter(row => row.phase === 'catalog').length, 0, 'warm64-turn catalog performs no head scan');
       const longWarmHydrated = assertPairedHeads(longWarmTrace), longWarmPublicSelected = publicSelected(longWarm);
-      assert.deepEqual(longWarmHydrated.map(row => row.turn).sort(), [1,2]);
-      assert.equal(headReads, 4, 'warm catalog only hydrates and physically rereads two shortlisted published records');
+      assert.deepEqual(longWarmHydrated.map(row => row.turn).sort(), [2]);
+      assert.equal(headReads, 2, 'warm64-turn catalog only hydrates and physically rereads actual shortlisted T2');
       const warmHeadReads = headReads;
 
       // Mutate the actual selected physical head during its record await. The
