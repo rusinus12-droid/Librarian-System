@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RE:TRACE GUI 재설계 시안 · 인계소</title>
+<link rel="stylesheet" href="assets/suite.css">
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+/* RE:TRACE 전용: "인계소" — 다음 세션으로 무엇이 넘어가는지, 서버에 무엇이 남아 있는지를 한 흐름으로 */
+.relay{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
+.relay__node{position:relative;padding:14px 16px;border-left:1px solid var(--border)}
+.relay__node:first-child{border-left:0}
+.relay__node::after{content:"";position:absolute;right:-6px;top:50%;margin-top:-6px;border-left:7px solid var(--border2);border-top:6px solid transparent;border-bottom:6px solid transparent;z-index:1}
+.relay__node:last-child::after{display:none}
+.relay__node b{display:block;font-size:13.5px}.relay__node small{display:block;font-size:12px;color:var(--text3);margin-top:2px}
+.relay__node .badge{margin-top:8px}
+.owner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface)}
+.owner:first-child{border-top:0}
+.owner b{font-size:13.5px}.owner small{grid-column:1;font-size:12px;color:var(--text3)}
+.owner .role{font:700 11.5px var(--font-mono);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:2px 7px;align-self:start;background:var(--surface2)}
+.scope-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-left:5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}
+.scope-card.k-active{border-left-color:var(--ok)}
+.scope-card.k-ancestor{border-left-color:var(--accent)}
+.scope-card.k-orphan{border-left-color:var(--warn)}
+.scope-card.k-unknown{border-left-color:var(--danger)}
+.scope-card.k-pair{border-left-color:#6a3fa0}
+.scope-card b{font-size:14px}.scope-card small{display:block;font-size:12.5px;color:var(--text3);margin-top:2px}
+.kinds{display:flex;flex-wrap:wrap;gap:8px}
+.kind{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border2);border-radius:99px;background:var(--surface);font:650 12.5px var(--font-sans);color:var(--text2)}
+.kind[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.kind .n{font-variant-numeric:tabular-nums;opacity:.85}
+.check-item{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface)}
+.check-item:first-child{border-top:0}
+.check-item .dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;border:2px solid var(--border2);color:var(--text3)}
+.check-item.ok .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.check-item.warn .dot{background:var(--warn-soft);border-color:var(--warn);color:var(--warn-ink)}
+.check-item.bad .dot{background:var(--danger);border-color:var(--danger);color:#fff}
+.check-item b{font-size:13.5px}.check-item small{display:block;font-size:12.5px;color:var(--text3)}
+.danger-zone{border:1px solid var(--danger-line);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
+.danger-zone__head{padding:12px 16px;background:var(--danger-soft);color:var(--danger-ink);font-weight:800;font-size:13px;border-bottom:1px solid var(--danger-line)}
+.danger-zone .setting{padding:14px 16px}
+.typed{margin-top:12px}
+.typed .input{font-family:var(--font-mono)}
+.mono{font-family:var(--font-mono);font-size:12px;color:var(--text2)}
+@container app (max-width:900px){.relay{grid-template-columns:1fr 1fr}.relay__node:nth-child(3){border-left:0}.relay__node:nth-child(n+3){border-top:1px solid var(--border)}.relay__node:nth-child(2)::after{display:none}}
+@container app (max-width:640px){.relay{grid-template-columns:1fr}.relay__node{border-left:0;border-top:1px solid var(--border)}.relay__node:first-child{border-top:0}.relay__node::after{display:none}.scope-card{grid-template-columns:1fr}}
+</style>
+</head>
+<body class="t-retrace">
+<div class="proto-bar">
+  <a href="index.html">← 시안 목록</a><b>RE:TRACE · 인계소</b>
+  <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
+  <span class="grp"><span>열기</span><button data-open="dlg-del">사본 정리</button><button data-open="dlg-reset">전체 초기화</button><button data-run-job="job-clean">정리 진행</button></span>
+</div>
+<div class="stage"><div class="frame" data-device="desktop">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><div class="brand__mark"><i data-i="route" data-size="lg"></i></div><div><div class="brand__name">RE:TRACE</div><div class="brand__ver">인계소 · v2.3.0</div></div></div>
+    <div class="scope"><b>아스텔</b><span>›</span><span>에피소드 42</span></div>
+    <div class="grow"></div>
+    <span class="health health--warn" title="정리할 사본이 있습니다"><i></i>정리할 사본 3개</span>
+    <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
+      <div class="menu__panel"><button data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button><button data-toast="진단 정보를 복사했습니다."><i data-i="log"></i>진단 정보 복사</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
+  </header>
+
+  <nav class="sidebar" aria-label="RE:TRACE 메뉴">
+    <div class="nav-label">현황</div>
+    <button class="nav-item" data-go="overview" data-short="개요"><i data-i="home"></i><span class="nav-text">개요</span></button>
+    <button class="nav-item" data-go="next" data-short="다음 세션"><i data-i="route"></i><span class="nav-text">다음 세션</span></button>
+    <div class="nav-label">서버 데이터</div>
+    <button class="nav-item" data-go="server" data-short="서버 관리"><i data-i="server"></i><span class="nav-text">서버 관리</span><span class="count">3</span></button>
+    <div class="nav-label">점검</div>
+    <button class="nav-item" data-go="diag" data-short="진단"><i data-i="shield"></i><span class="nav-text">진단</span></button>
+    <div class="side-foot"><b>보관 소유자 5곳</b><span>쓰기 3 · 읽기 1 · 기기 전용 1</span></div>
+  </nav>
+
+  <main class="main"><div class="page-body">
+
+  <!-- ===== 1. 개요 ===== -->
+  <section class="page is-active" data-page="overview">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Overview</div><h1 class="page-title">인계 현황</h1><p class="page-desc">다음 세션으로 이어질 기억이 어디에 저장되어 있고, 서버에 무엇이 남아 있는지 한눈에 봅니다.</p></div><div class="page-actions"><button class="btn" data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button></div></div>
+    <div class="stack">
+      <div class="relay" aria-label="인계 흐름">
+        <div class="relay__node"><b>1 · 기록</b><small>플러그인이 각자 저장</small><span class="badge badge--ok">정상</span></div>
+        <div class="relay__node"><b>2 · 서버 보관</b><small>사본 12개 · 3개 정리 후보</small><span class="badge badge--warn">정리 필요</span></div>
+        <div class="relay__node"><b>3 · 호환 확인</b><small>다음 세션 읽기 가능 여부</small><span class="badge badge--ok">호환</span></div>
+        <div class="relay__node"><b>4 · 인계</b><small>새 세션이 이어 읽음</small><span class="badge badge--info">대기</span></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat__label">서버 사본</div><div class="stat__value">12</div><div class="stat__meta">활성 1 · 조상 4 · 기타 7</div></div>
+        <div class="stat"><div class="stat__label">정리 후보</div><div class="stat__value">3</div><div class="stat__meta">고아 2 · 확인 불가 1</div></div>
+        <div class="stat"><div class="stat__label">마지막 백업</div><div class="stat__value" style="font-size:22px">어제</div><div class="stat__meta">21:40 · 41MB</div></div>
+        <div class="stat"><div class="stat__label">디스크 사용</div><div class="stat__value">128<span style="font-size:15px">MB</span></div><div class="stat__meta">한도 2GB</div></div>
+      </div>
+
+      <div class="card card--tight">
+        <div class="card__head"><div><h2 class="card__title">저장 소유자</h2><p class="card__desc">각 플러그인이 맡은 역할입니다. RE:TRACE는 직접 쓰지 않고 관리만 합니다.</p></div></div>
+        <div class="list">
+          <div class="owner"><b>LIBRA</b><span class="role">writer</span><small>기억 서가 · 인물 · 세계 · 서사</small></div>
+          <div class="owner"><b>HAYAKU</b><span class="role">writer</span><small>연속성 패킷 · 세계선</small></div>
+          <div class="owner"><b>Flashback</b><span class="role">writer</span><small>응답 원문 · 임베딩 · 필름</small></div>
+          <div class="owner"><b>GRADIA</b><span class="role">reader</span><small>LIBRA 자료를 읽기 전용으로 사용</small></div>
+          <div class="owner"><b>LIA</b><span class="role">local_only</span><small>페르소나는 이 기기에만 저장</small></div>
+          <div class="owner"><b>RE:TRACE <span class="badge" style="margin-left:6px">레거시 보존 슬롯</span></b><span class="role">manager_only</span><small>직접 저장하지 않습니다. 예전 자료만 읽기 전용으로 보관합니다.</small></div>
+        </div>
+      </div>
+      <div class="banner banner--warn"><span class="banner__icon"><i data-i="alert"></i></span><div><b>정리할 사본 3개가 있습니다.</b><p class="muted" style="margin:2px 0 8px">고아 후보 2개와 확인 불가 1개. 지우기 전에 목록을 먼저 확인하세요.</p><button class="btn btn--sm btn--primary" data-go="server">사본 정리로 이동</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 2. 다음 세션 ===== -->
+  <section class="page" data-page="next">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Next session</div><h1 class="page-title">다음 세션 준비</h1><p class="page-desc">새 세션에서 이어 읽으려면 아래 순서대로 확인하세요. 위에서부터 하나씩 통과합니다.</p></div></div>
+    <div class="stack">
+      <div class="steps"><div class="step is-done"><span class="step__no">✓</span><b>저장 확인</b></div><div class="step is-done"><span class="step__no">✓</span><b>호환 확인</b></div><div class="step is-active"><span class="step__no">3</span><b>백업</b></div><div class="step"><span class="step__no">4</span><b>세션 전환</b></div></div>
+      <div class="list">
+        <div class="check-item ok"><span class="dot">✓</span><div><b>LIBRA · HAYAKU · Flashback 저장 완료</b><small>마지막 저장 3분 전</small></div><span class="badge badge--ok">통과</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>호환성</b><small>현재 버전으로 다음 세션을 읽을 수 있습니다.</small></div><span class="badge badge--ok">통과</span></div>
+        <div class="check-item warn"><span class="dot">!</span><div><b>최신 백업</b><small>마지막 백업 어제 21:40 — 오늘 변경분이 포함되지 않았습니다.</small></div><button class="btn btn--sm btn--primary" data-go="server" data-toast="백업·복원 탭으로 이동">지금 백업</button></div>
+        <div class="check-item"><span class="dot">4</span><div><b>세션 전환</b><small>위 항목이 모두 통과되면 새 세션을 시작해도 안전합니다.</small></div><span class="badge">대기</span></div>
+      </div>
+      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">호환성 자세히 보기</summary>
+        <dl class="kv" style="margin-top:10px"><dt>저장 형식</dt><dd>v5 (현재) · v4 읽기 가능</dd><dt>소유자 계약</dt><dd class="mono">owner-ipc v3 · fail-closed</dd><dt>다음 세션 읽기</dt><dd>가능 (경고 0)</dd></dl></details>
+    </div>
+  </section>
+
+  <!-- ===== 3. 서버 관리 ===== -->
+  <section class="page" data-page="server">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Server data</div><h1 class="page-title">서버 관리</h1><p class="page-desc">서버에 남은 사본을 확인하고, 필요 없는 것만 정리합니다. 백업과 복원도 여기서 합니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="sv"><button class="tab" role="tab" aria-selected="true" data-subtab="glance">한눈에</button><button class="tab" role="tab" aria-selected="false" data-subtab="clean">사본 정리 <span class="count">3</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="backup">백업 · 복원</button><button class="tab" role="tab" aria-selected="false" data-subtab="hist">이력</button></div>
+    <div class="stack">
+      <!-- 한눈에 -->
+      <div data-subpanel="glance" data-group="sv" class="is-active"><div class="stack">
+        <div class="stats">
+          <div class="stat"><div class="stat__label">활성</div><div class="stat__value">1</div><div class="stat__meta">지금 쓰는 채팅</div></div>
+          <div class="stat"><div class="stat__label">승계 조상</div><div class="stat__value">4</div><div class="stat__meta">이어받은 이전 채팅</div></div>
+          <div class="stat"><div class="stat__label">고아 후보</div><div class="stat__value">2</div><div class="stat__meta">연결된 채팅 없음</div></div>
+          <div class="stat"><div class="stat__label">확인 불가</div><div class="stat__value">1</div><div class="stat__meta">읽을 수 없음</div></div>
+        </div>
+        <p class="lead" style="font-size:13px;color:var(--text2);margin:0">‘정리’는 고아 후보와 확인 불가 사본만 대상으로 합니다. 활성·승계 조상은 지울 수 없습니다.</p>
+        <button class="btn btn--primary" data-subtab-go="clean" style="justify-self:start">사본 정리로 가기</button>
+      </div></div>
+
+      <!-- 사본 정리 -->
+      <div data-subpanel="clean" data-group="sv"><div class="stack">
+        <div class="kinds" role="group" aria-label="종류 필터"><button class="kind" aria-pressed="true">전체 <span class="n">12</span></button><button class="kind" aria-pressed="false">활성 <span class="n">1</span></button><button class="kind" aria-pressed="false">승계 조상 <span class="n">4</span></button><button class="kind" aria-pressed="false">고아 후보 <span class="n">2</span></button><button class="kind" aria-pressed="false">확인 불가 <span class="n">1</span></button><button class="kind" aria-pressed="false">복구 페어링 <span class="n">4</span></button></div>
+        <div class="stack stack--sm">
+          <div class="scope-card k-active"><div><b>아스텔 / 에피소드 42</b><small>활성 · 마지막 저장 3분 전 · 기억 1,248개</small></div><span class="badge badge--ok">활성 · 삭제 불가</span></div>
+          <div class="scope-card k-ancestor"><div><b>아스텔 / 에피소드 41</b><small>승계 조상 · 에피소드 42가 이어받음</small></div><span class="badge badge--info">조상 · 삭제 불가</span></div>
+          <div class="scope-card k-orphan"><div><b>아스텔 / 에피소드 40</b><small>고아 후보 · 연결된 채팅 없음 · 2주 전 · 402개</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
+          <div class="scope-card k-orphan"><div><b>시험용 채팅</b><small>고아 후보 · 연결된 채팅 없음 · 한 달 전 · 18개</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
+          <div class="scope-card k-unknown"><div><b>알 수 없는 사본 (7f3a…)</b><small>확인 불가 · 형식을 읽을 수 없습니다. 삭제 증명이 필요합니다.</small></div><button class="btn btn--sm btn--danger" data-open="dlg-del">정리…</button></div>
+          <div class="scope-card k-pair"><div><b>복구 페어링 4쌍</b><small>복사된 채팅과 원본의 연결 기록. 복구에만 사용되며 정리 대상이 아닙니다.</small></div><button class="btn btn--sm" data-toast="페어링 목록 (시안)">보기</button></div>
+        </div>
+        <p class="hint">삭제 전에 서버가 대상을 다시 확인합니다(삭제 증명). 다른 사본이 참조 중이면 삭제가 차단됩니다.</p>
+      </div></div>
+
+      <!-- 백업·복원 -->
+      <div data-subpanel="backup" data-group="sv"><div class="stack">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">백업</h2><p class="card__desc">현재 서버 데이터 전체를 하나의 파일로 저장합니다.</p></div><span class="badge">마지막 어제 21:40</span></div>
+          <div class="cluster"><button class="btn btn--primary" data-run-job="job-clean"><i data-i="download"></i>지금 백업</button><button class="btn" data-toast="백업 목록 (시안)">백업 목록</button></div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">복원</h2><p class="card__desc">백업 파일을 선택하면 먼저 어떻게 달라지는지 보여드립니다.</p></div></div>
+          <div class="cluster"><button class="btn" data-toast="파일을 선택하세요 (시안)"><i data-i="upload"></i>백업 파일 선택</button></div></div>
+        <div class="danger-zone"><div class="danger-zone__head">위험 구역</div>
+          <div class="setting"><div><div class="setting__name">서버 데이터 전체 초기화</div><div class="setting__desc">모든 사본과 설정을 지웁니다. 먼저 자동으로 백업이 만들어집니다.</div></div><button class="btn btn--danger" data-open="dlg-reset">초기화…</button></div></div>
+      </div></div>
+
+      <!-- 이력 -->
+      <div data-subpanel="hist" data-group="sv"><div class="list">
+        <div class="owner"><b>백업 생성</b><span class="role">어제 21:40</span><small>41MB · 사본 12개 포함</small></div>
+        <div class="owner"><b>사본 정리</b><span class="role">3일 전</span><small>‘아스텔 / 에피소드 38’ 삭제 · 증명 확인됨</small></div>
+        <div class="owner"><b>복원</b><span class="role">지난주</span><small>백업 05-12에서 복원 · 안전 백업 먼저 생성</small></div>
+        <div class="owner"><b>호환성 경고 해소</b><span class="role">지난주</span><small>저장 형식 v4 → v5 이행</small></div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ===== 4. 진단 ===== -->
+  <section class="page" data-page="diag">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Diagnostics</div><h1 class="page-title">진단</h1><p class="page-desc">읽기 전용 점검입니다. 아무것도 바꾸지 않습니다.</p></div><div class="page-actions"><button class="btn btn--primary" data-toast="점검을 마쳤습니다. 이상 없음."><i data-i="shield"></i>지금 점검</button></div></div>
+    <div class="stack">
+      <div class="list">
+        <div class="check-item ok"><span class="dot">✓</span><div><b>서버 연결</b><small>응답 42ms</small></div><span class="badge badge--ok">정상</span></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>소유자 계약 (owner-ipc)</b><small>LIBRA · HAYAKU · Flashback 응답</small></div><span class="badge badge--ok">정상</span></div>
+        <div class="check-item warn"><span class="dot">!</span><div><b>사본 정리 후보</b><small>3개 — 서버 관리에서 확인</small></div><button class="btn btn--sm" data-go="server">이동</button></div>
+        <div class="check-item ok"><span class="dot">✓</span><div><b>삭제 증명 경로</b><small>fail-closed 동작 확인</small></div><span class="badge badge--ok">정상</span></div>
+      </div>
+      <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">진단 원문 (고급)</summary><pre class="mono" style="margin:10px 0 0;white-space:pre-wrap">owner-ipc: ok libra=3.1 hayaku=3.0 flashback=1.0.101
+retrace-slot: legacy manager_only
+scopes: active=1 ancestor=4 orphan=2 unknown=1</pre></details>
+    </div>
+  </section>
+
+  </div></main>
+
+  <nav class="tabbar" aria-label="RE:TRACE 하단 메뉴"></nav>
+
+  <!-- 사본 정리: 삭제 확인(타이핑) -->
+  <div class="overlay" id="dlg-del" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dd-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="dd-t">사본 1개(기억 402개)를 정리할까요?</h2>
+    <p><b>아스텔 / 에피소드 40</b> — 고아 후보 · 마지막 저장 2주 전</p>
+    <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 서버가 삭제 전에 대상을 다시 확인하며, 다른 사본이 참조 중이면 차단됩니다.</div>
+    <div class="typed field"><label for="t-del">계속하려면 <b>정리</b> 라고 입력하세요</label><input class="input" id="t-del" autocomplete="off" data-typed="정리" data-typed-target="btn-del"></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-del" disabled data-close data-run-job="job-clean">정리 실행</button></div></div></div>
+
+  <!-- 전체 초기화 -->
+  <div class="overlay" id="dlg-reset" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dr-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Reset all</div><h2 id="dr-t">서버 데이터를 모두 초기화할까요?</h2>
+    <div class="note note--danger"><b>모든 사본과 설정이 지워집니다.</b> 실행 직전에 자동 백업이 만들어지며, 그 백업이 실패하면 초기화는 시작되지 않습니다.</div>
+    <div class="typed field"><label for="t-reset">계속하려면 <b>초기화</b> 라고 입력하세요</label><input class="input" id="t-reset" autocomplete="off" data-typed="초기화" data-typed-target="btn-reset"></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-reset" disabled data-close data-toast="안전 백업을 만든 뒤 초기화했습니다.">초기화 실행</button></div></div></div>
+
+  <!-- 작업 진행 -->
+  <div class="overlay" id="job-clean" aria-hidden="true" data-job-labels="대상을 다시 확인하는 중|안전 백업을 만드는 중|서버에서 삭제하는 중|삭제 결과를 검증하는 중|완료했습니다. 목록을 다시 읽었습니다.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jc-t"><div class="split"><div><div class="eyebrow">Working</div><h2 id="jc-t">작업을 진행하고 있습니다</h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>확인</b></div><div class="step"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>실행</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중지 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+
+  <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
+  <div class="toasts" aria-live="polite"></div>
+</div></div></div>
+<script src="assets/suite.js"></script>
+<script>
+/* 확인 문구 입력 시에만 위험 버튼 활성화 */
+document.addEventListener('input',function(e){var t=e.target;if(t.dataset&&t.dataset.typed){var b=document.getElementById(t.dataset.typedTarget);if(b)b.disabled=(t.value.trim()!==t.dataset.typed);}});
+/* '사본 정리로 가기' → 같은 페이지의 서브탭 전환 */
+document.addEventListener('click',function(e){var g=e.target.closest('[data-subtab-go]');if(g){var tab=document.querySelector('[data-subtabs="sv"] [data-subtab="'+g.dataset.subtabGo+'"]');if(tab)tab.click();}var k=e.target.closest('.kind');if(k){var grp=k.parentElement;grp.querySelectorAll('.kind').forEach(function(x){x.setAttribute('aria-pressed',String(x===k));});}});
+</script>
+</body>
+</html>

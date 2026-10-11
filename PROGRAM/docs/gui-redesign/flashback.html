@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flashback GUI 재설계 시안 · 기억 현상실</title>
+<link rel="stylesheet" href="assets/suite.css">
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */
+.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}
+.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}
+.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}
+.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}
+.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}
+.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}
+.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}
+.frame-card>summary{list-style:none;cursor:pointer;display:block}
+.frame-card>summary::-webkit-details-marker{display:none}
+.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}
+.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}
+.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}
+.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}
+.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}
+.frame-card__more{color:var(--accent-ink);font-size:12px}
+.frame-card__more::after{content:"기억 펼치기 ↗"}.frame-card[open] .frame-card__more::after{content:"기억 접기 −"}
+.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}
+.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}
+.meter meter{width:100%;height:12px;accent-color:var(--accent)}
+.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}
+.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}
+.film a:hover{background:#76594b}
+.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}
+.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}
+.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}
+.work+.work{margin-top:10px}
+.scopes tr.is-cur td{background:var(--accent-soft)}
+.tbl-act{display:flex;gap:6px;justify-content:flex-end}
+.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}
+.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}
+.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}
+@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}
+</style>
+</head>
+<body class="t-flashback">
+<div class="proto-bar">
+  <a href="index.html">← 시안 목록</a><b>Flashback · 기억 현상실</b>
+  <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
+  <span class="grp"><span>열기</span><button data-open="dlg-del-scope">스코프 삭제</button><button data-open="dlg-restore">복원 확인</button><button data-run-job="job-maint">유지보수 실행</button></span>
+</div>
+<div class="stage"><div class="frame" data-device="desktop">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v1.0.101</div></div></div>
+    <div class="scope"><b>아스텔</b><span>›</span><span>에피소드 42 · 밤의 정원</span><span class="badge badge--ok">ON</span></div>
+    <div class="grow"></div>
+    <!-- 상태 표시는 상단 칩 하나. 사이드바 박스·배너·정적 '리콜 활성' 점은 제거 -->
+    <span class="health health--ok" title="저장 상태 점검 결과"><i></i>저장 정상 · 1,248개</span>
+    <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
+      <div class="menu__panel"><button data-toast="새로고침했습니다."><i data-i="refresh"></i>새로고침</button><button data-toast="디버그 로그를 내보냈습니다."><i data-i="download"></i>디버그 로그 내보내기</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
+  </header>
+
+  <nav class="sidebar" aria-label="Flashback 메뉴">
+    <div class="nav-label">상태</div>
+    <button class="nav-item" data-go="lab" data-short="현상실"><i data-i="eye"></i><span class="nav-text">기억 현상실</span></button>
+    <div class="nav-label">기억</div>
+    <button class="nav-item" data-go="vault" data-short="보관함"><i data-i="film"></i><span class="nav-text">필름 보관함</span><span class="count">8</span></button>
+    <button class="nav-item" data-go="care" data-short="관리"><i data-i="wrench"></i><span class="nav-text">기억 관리</span></button>
+    <div class="nav-label">연결</div>
+    <button class="nav-item" data-go="connect" data-short="연결"><i data-i="link"></i><span class="nav-text">임베딩 · 서버</span></button>
+    <div class="nav-label">설정 및 진단</div>
+    <button class="nav-item" data-go="log" data-short="기록"><i data-i="log"></i><span class="nav-text">현상 기록</span><span class="count">4</span></button>
+    <button class="nav-item" data-go="settings" data-short="설정"><i data-i="sliders"></i><span class="nav-text">리콜 설정</span></button>
+    <div class="side-foot"><b>text-embedding-3-small</b><span>openai · 1,536차원 · 연결됨</span></div>
+  </nav>
+
+  <main class="main"><div class="page-body">
+
+  <!-- ===== 기억 현상실 ===== -->
+  <section class="page is-active" data-page="lab">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory recall lab</div><h1 class="page-title">기억 현상실</h1><p class="page-desc">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" data-go="care"><i data-i="shield" data-size="sm"></i>상태만 진단</button></div></div>
+    <div class="stack stack--lg">
+      <!-- 가장 중요한 정보(이번 턴 리콜)를 맨 위에 -->
+      <section>
+        <div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div>
+          <p class="lab__q">“정원에서 받은 은색 열쇠와 오래된 약속”</p>
+          <div class="lab__meta">18초 전 · 후보 36개 → 선택 6개 → 실제 주입 4개 (2,184자)</div>
+          <div class="lab__chips"><span class="badge">저장 1,248</span><span class="badge">후보 36</span><span class="badge">선택 6</span><span class="badge" style="background:#287052;border-color:#287052">주입 4</span><span class="badge">제외(예산) 2</span></div></div>
+        <div class="frames">
+          <details class="frame-card" id="f0"><summary><div class="frame-card__img fc1">아스텔은 오래된 온실 앞에서 열쇠를 건네며 다음 보름달에 다시 만나자고 말했다.</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME 01 · response</div><div class="frame-card__title">은색 열쇠를 건넨 날</div></div><span class="frame-card__score" title="검색 점수">0.918</span></div><span class="frame-card__more"></span></summary>
+            <div class="frame-card__detail"><div class="meter"><span>FOCUS · 벡터 유사도 0.874</span><meter min="-1" max="1" value="0.874"></meter></div><b>기억 내용</b><p>아스텔은 오래된 온실 앞에서 열쇠를 건네며 다음 보름달에 다시 만나자고 말했다. 로웬은 대답 없이 열쇠를 받았다.</p><details class="fold" style="margin-top:12px"><summary>출처 및 검색 점수</summary><div class="fold__body"><dl class="kv"><dt>출처</dt><dd>현재 채팅 · response</dd><dt>턴 범위</dt><dd>T116–T117</dd><dt>구성 점수</dt><dd class="mono">anchor 0.62 · bm25 0.41 · stable +0.012</dd></dl></div></details></div></details>
+          <details class="frame-card"><summary><div class="frame-card__img fc2">폐쇄된 북쪽 정원은 왕실 기록실로 통하는 비밀 통로와 연결되어 있었다.</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME 02 · response</div><div class="frame-card__title">정원사와의 약속</div></div><span class="frame-card__score">0.884</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">펼치면 본문과 출처가 표시됩니다.</div></details>
+          <details class="frame-card"><summary><div class="frame-card__img fc3">두 사람은 서로의 정체를 숨긴 채 다시 만날 장소만 확인했다.</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME 03 · episode</div><div class="frame-card__title">보름달 아래의 대화</div></div><span class="frame-card__score">0.821</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">펼치면 본문과 출처가 표시됩니다.</div></details>
+          <details class="frame-card"><summary><div class="frame-card__img fc4">잠금장치에는 은색 문양이 있었고 일반 열쇠로는 열 수 없었다.</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME 04 · response</div><div class="frame-card__title">기록실의 잠금장치</div></div><span class="frame-card__score">0.793</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">펼치면 본문과 출처가 표시됩니다.</div></details>
+        </div>
+        <nav class="film" aria-label="최근 선택 기억 프레임"><a href="#f0">FRAME 01</a><a href="#f0">FRAME 02</a><a href="#f0">FRAME 03</a><a href="#f0">FRAME 04</a><a href="#f0">FRAME 05</a><a href="#f0">FRAME 06</a></nav>
+        <details class="fold" style="margin-top:12px"><summary>검색 과정 · 고급 진단 <span class="hint">개발자용 약어</span></summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">type=scene · time=recent · selected=6 · stored=1,248 · candidates=36 · arms d12/s9/e3/f0/c8/t4 · mix 70/30 · rrf=29 · lane 3/2/1 · 412ms</pre></div></details>
+      </section>
+
+      <div class="stats">
+        <div class="stat"><div class="stat__label"><span>저장 기억</span></div><div class="stat__value">1,248</div><div class="stat__meta">현재 채팅 레코드 · 전체 집계</div></div>
+        <div class="stat"><div class="stat__label"><span>최근 리콜</span><span class="badge badge--ok">주입됨</span></div><div class="stat__value">6 → 4</div><div class="stat__meta">선택 → 실제 주입</div></div>
+        <div class="stat"><div class="stat__label"><span>토큰 추정</span></div><div class="stat__value">38.6K</div><div class="stat__meta">저장된 기억 기준</div></div>
+        <div class="stat"><div class="stat__label"><span>비용 추정</span></div><div class="stat__value">$0.004</div><div class="stat__meta">text-embedding-3-small</div></div>
+      </div>
+      <div class="rec-split">
+        <div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">현재 로드된 범위의 유형별 구성</p></div></div><dl class="kv"><dt>응답 원문</dt><dd>1,102</dd><dt>에피소드</dt><dd>98</dd><dt>상태 변화</dt><dd>48</dd></dl></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc">마지막 캡처 · 3분 전</p></div><button class="btn btn--sm" data-go="log">전체 보기</button></div><dl class="kv"><dt>3분 전</dt><dd>응답 기억 12청크 저장 · readback 완료</dd><dt>4분 전</dt><dd>관련 기억 4개 주입</dd></dl></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 필름 보관함 ===== -->
+  <section class="page" data-page="vault">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="v"><button class="tab" role="tab" aria-selected="true" data-subtab="resp">응답 원문</button><button class="tab" role="tab" aria-selected="false" data-subtab="wl">세계선</button><button class="tab" role="tab" aria-selected="false" data-subtab="scopes">스코프 정리 <span class="count">8</span></button></div>
+    <div data-subpanel="resp" data-group="v" class="is-active"><div class="grid g-side">
+      <div class="list"><button class="row is-on" data-select-row="a"><span class="row__icon">1.1K</span><div><div class="row__title">응답 원문</div><div class="row__meta">최신순</div></div></button><button class="row" data-select-row="b"><span class="row__icon">98</span><div><div class="row__title">에피소드</div></div></button><button class="row" data-select-row="c"><span class="row__icon">48</span><div><div class="row__title">상태 변화</div></div></button></div>
+      <div class="stack stack--sm"><div class="cluster"><div class="search grow"><i data-i="search" data-size="sm"></i><input class="input" placeholder="원문 검색..." aria-label="원문 검색"></div><select class="select" style="width:auto"><option>최신순</option><option>오래된 순</option><option>긴 원문 우선</option></select></div>
+        <article class="card card--tight"><div class="split"><b>T147 · 응답 #842</b><span class="fb-state badge badge--ok">보호됨 · 영구 기록</span></div><p class="muted" style="margin:8px 0">은색 열쇠와 북쪽 문의 조건…</p><div class="cluster"><button class="btn btn--sm">원문 펼치기</button><button class="btn btn--sm btn--danger">삭제 후보에 추가</button></div></article>
+        <article class="card card--tight"><div class="split"><b>T146 · 응답 #841</b><span class="badge">chunk 2/2 · 1536d</span></div><p class="muted" style="margin:8px 0">누락 복구된 장면 변화…</p><div class="cluster"><button class="btn btn--sm">원문 펼치기</button><button class="btn btn--sm btn--danger">삭제 후보에 추가</button></div></article></div></div></div>
+    <div data-subpanel="wl" data-group="v"><div class="stack">
+      <div class="card"><div class="card__head"><div><h2 class="card__title">현재 세계선 · 채팅 분기</h2><p class="card__desc">RisuAI 분기 근거와 저장된 턴 연속성</p></div><span class="badge badge--ok">공통 원문 검증됨</span></div><dl class="kv"><dt>현재 채팅</dt><dd>에피소드 42 · chat_a91</dd><dt>부모 채팅</dt><dd>에피소드 41 · chat_61d</dd><dt>분기 메시지</dt><dd>msg_0412</dd><dt>검증된 공통 원문</dt><dd>128 U+A턴 · 256개 메시지</dd></dl></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">턴 연속성</h2><p class="card__desc">제외된 응답과 벗어난 턴은 삭제하지 않고 아래에 접어 둡니다.</p></div><span class="badge">147개 노드</span></div><div class="grid g4" style="margin-bottom:12px"><div class="note"><b class="num">141</b><br>현재 대화에 연결됨</div><div class="note"><b class="num">0</b><br>격리 · 확인 필요</div><div class="note"><b class="num">4</b><br>선택 안 된 응답</div><div class="note"><b class="num">2</b><br>벗어난 턴</div></div><details class="fold"><summary>현재 대화에서 제외된 기록 · 6개</summary><div class="fold__body hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 현재 리콜에는 사용되지 않습니다.</div></details></div></div></div>
+    <div data-subpanel="scopes" data-group="v"><div class="stack">
+      <div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다.</div>
+      <div class="cluster"><select class="select" style="width:auto" aria-label="저장소 분류"><option>기억 저장소</option><option>정리 후보</option><option>고아 기억</option><option>전체</option></select><div class="search grow"><i data-i="search" data-size="sm"></i><input class="input" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button class="btn btn--danger" data-open="dlg-del-scope"><i data-i="trash" data-size="sm"></i>선택 삭제 (1)…</button></div>
+      <div class="table-wrap"><table class="table scopes"><thead><tr><th></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>업데이트</th><th></th></tr></thead><tbody>
+        <tr class="is-cur"><td><input type="checkbox" disabled aria-label="현재 스코프는 선택할 수 없음"></td><td><b>아스텔 / 에피소드 42</b> <span class="badge badge--info">현재</span></td><td class="num">38.6K</td><td class="num">1,248</td><td>3분 전</td><td></td></tr>
+        <tr><td><input type="checkbox" checked aria-label="선택"></td><td><b>아스텔 / 에피소드 40</b> <span class="badge badge--warn">고아 후보</span></td><td class="num">12.1K</td><td class="num">402</td><td>2주 전</td><td></td></tr>
+        <tr><td><input type="checkbox" aria-label="선택"></td><td>아스텔 / 에피소드 41 <span class="badge">승계 조상</span></td><td class="num">35.0K</td><td class="num">1,130</td><td>5일 전</td><td></td></tr></tbody></table></div></div></div>
+  </section>
+
+  <!-- ===== 기억 관리 ===== -->
+  <section class="page" data-page="care">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 복구 순서로 진행합니다. 진단은 아무것도 바꾸지 않으며, 서버 전용 모드에서는 “사용 불가”로 명시됩니다.</p></div></div>
+    <div class="stack stack--lg">
+      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태만 진단</b><span>읽기 전용 · 저장소 준비 없음</span></div><div class="step"><span class="step__no">2</span><b>결과 확인</b><span>누락·손상·고아</span></div><div class="step"><span class="step__no">3</span><b>복구 선택</b><span>자동 점검·복구 또는 개별</span></div></div>
+        <div class="cluster" style="margin-top:16px"><button class="btn btn--primary" data-toast="진단 완료: 이상 없음 (읽기 전용)"><i data-i="shield" data-size="sm"></i>상태만 진단</button><button class="btn" data-run-job="job-maint"><i data-i="wrench" data-size="sm"></i>자동 점검·복구</button><span class="hint">정상 데이터는 다시 임베딩하지 않고 필요한 항목만 증분 처리합니다.</span></div></div>
+      <div class="work"><span class="work__no">A</span><div><b>유지보수 실행 현황</b><div class="hint">최근 작업의 임베딩 처리 기록 · 아직 실행한 작업이 없습니다.</div></div><span class="badge">대기</span></div>
+      <div class="grid g2">
+        <div class="card"><h2 class="card__title">원문 수정 재분석</h2><p class="card__desc" style="margin-bottom:10px">선택한 구간을 현재 원문으로 다시 저장합니다. 요약 LLM은 호출하지 않습니다.</p><div class="list" style="margin-bottom:12px"><label class="row"><input type="checkbox"><div><div class="row__title">T98–T102</div><div class="row__meta">원문 수정 감지</div></div><span class="badge badge--warn">변경됨</span></label></div><div class="cluster"><button class="btn btn--sm">구간 새로고침</button><button class="btn btn--primary btn--sm" disabled>선택한 구간 재분석</button></div></div>
+        <div class="card"><h2 class="card__title">백업 · 복원 · 이사</h2><p class="card__desc" style="margin-bottom:10px">JSON으로 보관하고, 같은 채팅 복원·새 채팅 이사·복사 채팅 복구 중 선택합니다.</p><div class="cluster"><button class="btn"><i data-i="download" data-size="sm"></i>JSON 백업</button><button class="btn" data-open="dlg-restore"><i data-i="upload" data-size="sm"></i>복원…</button></div></div>
+      </div>
+      <details class="fold"><summary>고급 실행</summary><div class="fold__body grid g2"><div class="field"><label>작업</label><select class="select"><option>누락·변경 턴만 동기화</option><option>현재 채팅에서 전체 재구축</option><option>로컬 미완료 벡터 복구</option></select></div><div class="cluster" style="align-self:end"><button class="btn">선택 작업 실행</button></div></div></details>
+    </div>
+  </section>
+
+  <!-- ===== 임베딩 · 서버 ===== -->
+  <section class="page" data-page="connect" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="c"><button class="tab" role="tab" aria-selected="true" data-subtab="emb">임베딩</button><button class="tab" role="tab" aria-selected="false" data-subtab="srv">서버</button></div>
+    <div data-subpanel="emb" data-group="c" class="is-active"><div class="stack">
+      <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관되며, 검색에는 준비된 벡터만 사용합니다.</p></div><span class="badge badge--ok">연결 확인됨</span></div>
+        <div class="grid g2"><div class="field"><label>Provider</label><select class="select"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option></select></div><div class="field"><label>모델</label><input class="input" value="text-embedding-3-small"></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장된 키가 있습니다 (표시하지 않음)"></div></div>
+        <div class="cluster" style="margin-top:14px"><button class="btn" data-toast="임베딩 테스트 성공: 1536차원 · 83ms">임베딩 테스트</button><button class="btn btn--ghost">키 삭제…</button></div>
+        <details class="fold" style="margin-top:14px"><summary>고급 연결 설정</summary><div class="fold__body grid g2"><div class="field"><label>정확한 Endpoint</label><input class="input"></div><div class="field"><label>벡터 차원 (0=자동)</label><input class="input" type="number" value="0"></div></div></details></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩 작업</h2></div><span class="badge">대기 0 · 실패 0</span></div><div class="cluster"><button class="btn btn--sm">상태 새로고침</button><button class="btn btn--sm" disabled>대기 작업 진행</button></div></div>
+      <details class="fold"><summary>다국어 리콜 검증 · 비용 추정</summary><div class="fold__body stack"><div class="matrix"><div class="h">Query ↓ / Memory →</div><div class="h">ko</div><div class="h">en</div><div class="h">ja</div><div class="h">ko</div><div class="ok-c">0.91</div><div class="ok-c">0.84</div><div class="bad-c">0.52</div><div class="h">en</div><div class="ok-c">0.83</div><div class="ok-c">0.92</div><div class="ok-c">0.79</div></div><span class="hint">같은 공간 이전 미리보기는 이 카드에서 분리해 “유지보수”로 옮겼습니다.</span></div></details></div></div>
+    <div data-subpanel="srv" data-group="c"><div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장 및 연산</h2><p class="card__desc">공용 연결 패널(SDK)을 같은 카드 규격으로 감쌉니다.</p></div><span class="badge">plugin_only</span></div><div class="choices"><button class="choice is-on"><b>플러그인 단독</b><span>서버 요청 없음</span></button><button class="choice"><b>서버 단독</b><span>전체 자료 검증 후 적용</span></button></div></div></div>
+  </section>
+
+  <!-- ===== 현상 기록 ===== -->
+  <section class="page" data-page="log">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">현상 기록</h1><p class="page-desc">현재 실행의 리콜·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.</p></div><div class="page-actions"><button class="btn" data-toast="로그를 비웠습니다.">로그 비우기</button></div></div>
+    <div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" aria-selected="true" data-subtab="a">작업 로그 <span class="count">4</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="b">무시된 오류 <span class="count">1</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="c">경고</button></div>
+    <div data-subpanel="a" data-group="l" class="is-active"><div class="list"><div class="row"><i data-i="check" style="color:var(--ok)"></i><div><div class="row__title">응답 기억을 저장했습니다</div><div class="row__meta mono">capture.commit · 청크 12 · 벡터 12</div></div><span class="hint">3분 전</span></div><div class="row"><i data-i="check" style="color:var(--ok)"></i><div><div class="row__title">관련 기억 4개를 주입했습니다</div><div class="row__meta mono">recall.inject · 2,184자</div></div><span class="hint">4분 전</span></div></div></div>
+    <div data-subpanel="b" data-group="l"><div class="empty"><b>조용히 무시된 오류 1건</b><span>같은 위치가 반복되면 기능이 조용히 실패하고 있다는 신호입니다.</span></div></div>
+    <div data-subpanel="c" data-group="l"><div class="empty"><b>최근 경고가 없습니다</b></div></div>
+  </section>
+
+  <!-- ===== 리콜 설정 ===== -->
+  <section class="page" data-page="settings" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recall settings</div><h1 class="page-title">리콜 설정</h1><p class="page-desc">프리셋으로 시작하고, 필요한 값만 세부 조정합니다. 임베딩 설정과 같은 저장 바를 사용합니다.</p></div></div>
+    <div class="stack">
+      <div class="card"><div class="card__head"><div><h2 class="card__title">리콜 품질 프리셋</h2><p class="card__desc">4개 값(Top K · 최소 점수 · 후보 수 · 주입 글자)을 한 번에 조절합니다.</p></div></div><div class="choices" data-dirty><button class="choice"><b>가볍게</b><span>Top 6 · 빠름</span></button><button class="choice is-on"><b>균형</b><span>Top 10 · 권장</span><small>기본값</small></button><button class="choice"><b>깊게</b><span>Top 20 · 느림</span></button></div></div>
+      <div class="card"><h2 class="card__title">기억 경로</h2><div class="setting"><div><div class="setting__name">응답 자동 캡처</div><div class="setting__desc">영구 저장 원천은 유저 입력 + AI 최종 응답 턴으로 고정됩니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div><div class="setting"><div><div class="setting__name">증거 게이트</div><div class="setting__desc">근거가 약한 기억은 주입하지 않습니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div></div>
+      <details class="fold"><summary>세부 값 <span class="hint">Top K · 최소 점수 · 후보 수 · 시간 제한 외 7개</span></summary><div class="fold__body grid g2"><div class="field"><label>Top K</label><input class="input" type="number" value="10"><span class="hint">최종 선택할 기억의 최대 개수</span></div><div class="field"><label>최소 점수</label><input class="input" type="number" step=".01" value="0.35"></div></div></details>
+      <details class="fold"><summary>ARG 및 설정 출처 <span class="badge">감사용</span></summary><div class="fold__body"><p class="muted" style="margin-top:0">우선순위: 기본값 &lt; GUI 저장값 &lt; 명시적 ARG. ARG가 있으면 해당 컨트롤은 잠기고 이유가 표시됩니다.</p><div class="cluster"><span class="badge">선언 74</span><span class="badge badge--warn">ARG 2</span><span class="badge badge--info">저장 18</span><span class="badge">기본 54</span></div></div></details>
+    </div>
+  </section>
+
+  </div>
+  <footer class="savebar" id="savebar" hidden><div class="savebar__copy"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc></span></div><div class="cluster"><button class="btn" data-revert disabled>되돌리기</button><button class="btn btn--primary" data-save disabled>저장</button></div></footer>
+  </main>
+  <nav class="tabbar" aria-label="Flashback 하단 메뉴"></nav>
+
+  <!-- 스코프 삭제: 현행의 이질적인 남색 대화상자를 테마 토큰으로 통일, 위험 스타일 + 영향 요약 -->
+  <div class="overlay" id="dlg-del-scope" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ds-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="ds-t">스코프 1개의 기억 402개를 삭제할까요?</h2>
+    <p><b>아스텔 / 에피소드 40</b> — 고아 후보 · 마지막 저장 2주 전</p>
+    <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 이 채팅의 저장 원문·벡터·아카이브가 삭제됩니다. 다른 스코프가 참조 중이면 삭제가 차단됩니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="스코프를 삭제하고 목록을 다시 읽었습니다.">삭제</button></div></div></div>
+  <div class="overlay" id="dlg-restore" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dr-t">
+    <div class="eyebrow">Memory restore</div><h2 id="dr-t">복원 방식을 선택하세요</h2>
+    <div class="choices" style="grid-template-columns:1fr"><button class="choice is-on"><b>같은 채팅 복원</b><span>백업 시점으로 현재 기억을 교체합니다.</span></button><button class="choice"><b>새 채팅으로 이사</b><span>과거 아카이브로 연결합니다.</span></button><button class="choice"><b>복사된 채팅 복구</b><span>현재 대화와 검증한 뒤 세계선을 재구성합니다.</span></button></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="복원 전 안전 백업을 만들고 진행합니다.">다음</button></div></div></div>
+  <div class="overlay" id="job-maint" aria-hidden="true" data-job-labels="저장소를 읽기 전용으로 점검하는 중|누락·변경 턴을 찾는 중|필요한 항목만 임베딩하는 중|결과를 다시 읽어 검증하는 중|점검·복구를 마쳤습니다. 이상 없음.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jm-t"><div class="split"><div><div class="eyebrow">Maintenance</div><h2 id="jm-t">자동 점검·복구</h2></div><span class="badge badge--info">체크포인트 재사용</span></div>
+      <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>작업을 준비합니다.</p>
+      <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>점검</b></div><div class="step"><span class="step__no">2</span><b>대조</b></div><div class="step"><span class="step__no">3</span><b>임베딩</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
+      <p class="hint" style="margin-top:12px">중지 요청 후에도 이미 전송된 요청은 처리 중일 수 있습니다.</p>
+      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>유지보수 중지 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
+  <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
+  <div class="toasts" aria-live="polite"></div>
+</div></div></div>
+<script src="assets/suite.js"></script>
+<script>document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='connect');});</script>
+</body>
+</html>

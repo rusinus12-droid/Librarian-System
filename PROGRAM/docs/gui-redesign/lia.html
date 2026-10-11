@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LIA GUI 재설계 시안 · 내 주머니 속 페르소나</title>
+<link rel="stylesheet" href="assets/suite.css">
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+/* LIA 전용: "라일락 주머니" — 모바일 우선, 카드 1열, 큰 터치 영역, 한 화면 한 일 */
+.t-lia .page-body{max-width:760px;margin:0 auto;width:100%}
+.pocket{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;padding:18px;border:1px solid var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft)}
+.avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 24px var(--font-display);border:3px solid #fff}
+.avatar--sm{width:44px;height:44px;font-size:17px;border-width:2px}
+.avatar--b{background:#3d7258}.avatar--c{background:#8a5f17}.avatar--d{background:#ab3453}.avatar--n{background:#6f6580}
+.pocket h2{margin:0;font:800 20px/1.25 var(--font-display);letter-spacing:-.03em}
+.pocket p{margin:3px 0 0;font-size:13px;color:var(--text2)}
+.pocket__act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.pocket__act .btn{flex:1 1 140px}
+/* 연결 상태: 색만으로 구분하지 않도록 아이콘 + 글자를 항상 함께 */
+.bind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface);color:var(--text2)}
+.bind--here{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}
+.bind--other{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}
+.bind--none{border-style:dashed}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--text3)}
+.pcard{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}
+button.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}
+.pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}
+.pcard__side{display:grid;gap:6px;justify-items:end}
+.traits{display:flex;flex-wrap:wrap;gap:6px}
+.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}
+.big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}
+.big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}
+.big-choice .row__icon{width:44px;height:44px;border-radius:50%}
+.emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center}
+.emo .avatar{width:48px;height:48px;font-size:20px}
+.emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}
+.emo .avatar.todo{background:var(--surface3);color:var(--text3)}
+.base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}
+.base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}
+.lead{font-size:13.5px;color:var(--text2);margin:0}
+.back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}
+.turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}
+.jargon{font-size:12px;color:var(--text3)}
+.confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}
+@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}}
+</style>
+</head>
+<body class="t-lia">
+<div class="proto-bar">
+  <a href="index.html">← 시안 목록</a><b>LIA · 내 페르소나</b>
+  <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
+  <span class="grp"><span>열기</span><button data-open="sheet-bind">연결 시트</button><button data-run-job="job-gen">생성 진행</button><button data-open="sheet-del">삭제 확인</button></span>
+</div>
+<div class="stage"><div class="frame" data-device="desktop">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><div class="brand__mark"><i data-i="user" data-size="lg"></i></div><div><div class="brand__name">LIA</div><div class="brand__ver">v1.4.2 · Persona Linker</div></div></div>
+    <div class="scope"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>
+    <div class="grow"></div>
+    <span class="health health--ok" title="이 기기에 저장됩니다"><i></i>이 기기에 저장됨</span>
+    <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
+      <div class="menu__panel"><button data-toast="새로 읽었습니다."><i data-i="refresh"></i>새로 읽기</button><button data-go="recover"><i data-i="db"></i>이전 자료 복구</button><button data-toast="닫기 (시안)"><i data-i="x"></i>닫기</button></div></div>
+  </header>
+
+  <nav class="sidebar" aria-label="LIA 메뉴">
+    <button class="nav-item" data-go="mine" data-short="내 페르소나"><i data-i="user"></i><span class="nav-text">내 페르소나</span></button>
+    <button class="nav-item" data-go="make" data-short="만들기"><i data-i="spark"></i><span class="nav-text">만들기</span></button>
+    <button class="nav-item" data-go="shelf" data-short="보관함"><i data-i="shelf"></i><span class="nav-text">보관함</span><span class="count">6</span></button>
+    <button class="nav-item" data-go="settings" data-short="설정"><i data-i="sliders"></i><span class="nav-text">설정</span></button>
+    <div class="side-foot"><b>용어 도움말</b><span>‘연결’ = 이 채팅에서 쓸 페르소나를 고르는 일</span></div>
+  </nav>
+
+  <main class="main"><div class="page-body">
+
+  <!-- ===== 1. 내 페르소나 ===== -->
+  <section class="page is-active" data-page="mine">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Now</div><h1 class="page-title">내 페르소나</h1><p class="page-desc">이 채팅에서 지금 쓰는 페르소나와, 연결 상태를 한 곳에서 봅니다.</p></div></div>
+    <div class="stack">
+      <div class="pocket">
+        <div class="avatar">세</div>
+        <div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">세라 하운</h2><p>왕실 기록실 사서 · 신중하고 약속을 가볍게 여기지 않음</p></div>
+        <div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit"><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button></div>
+      </div>
+
+      <div class="card card--tight">
+        <div class="card__head"><div><h2 class="card__title">다음 갱신까지</h2><p class="card__desc">자동으로 바뀌지 않습니다. 5턴이 쌓이면 <b>직접 눌러서</b> 반영합니다.</p></div><span class="badge badge--warn">3 / 5턴</span></div>
+        <div class="turns" aria-label="3 / 5턴"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <p class="hint" style="margin-top:8px">마지막 갱신: 어제 21:40 · 성격 1줄, 현재 위치 변경</p>
+      </div>
+
+      <div>
+        <div class="section-title"><h2>이 캐릭터에 연결된 페르소나</h2></div>
+        <div class="stack stack--sm">
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm">세</div><div><b>세라 하운</b><small>이 채팅 · 마지막 사용 방금</small></div><div class="pcard__side"><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></div></button>
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 (여름 이야기)</b><small>다른 채팅 ‘바닷가 마을’에 연결</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="link" data-size="sm"></i>다른 채팅</span></div></button>
+          <button class="pcard" data-open="sheet-bind"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손</b><small>아직 어느 채팅에도 연결되지 않음</small></div><div class="pcard__side"><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></div></button>
+        </div>
+        <div class="legend" style="margin-top:10px"><span>✓ 이 채팅에 연결됨</span><span>↔ 다른 채팅에 연결됨</span><span>＋ 연결 안 됨</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 2. 만들기 ===== -->
+  <section class="page" data-page="make">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Create</div><h1 class="page-title">새 페르소나 만들기</h1><p class="page-desc">어디서 시작할지만 고르면, 나머지는 단계별로 안내합니다.</p></div></div>
+    <div class="steps" style="margin-bottom:18px"><div class="step is-active"><span class="step__no">1</span><b>출발점</b></div><div class="step"><span class="step__no">2</span><b>방향</b></div><div class="step"><span class="step__no">3</span><b>만들기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>
+    <div class="stack">
+      <div class="stack stack--sm" data-single>
+        <button class="big-choice is-on" data-select-row="chat"><span class="row__icon"><i data-i="chat"></i></span><div><b>지금 채팅에서 만들기</b><span>최근 대화를 읽어 말투·관계·현재 상황을 정리합니다. (추천)</span></div></button>
+        <button class="big-choice" data-select-row="char"><span class="row__icon"><i data-i="book"></i></span><div><b>캐릭터 설명에서 만들기</b><span>캐릭터 카드의 설명만 바탕으로 처음 상태를 만듭니다.</span></div></button>
+        <button class="big-choice" data-select-row="free"><span class="row__icon"><i data-i="pen"></i></span><div><b>직접 쓰기</b><span>AI 없이 빈 양식에서 시작합니다.</span></div></button>
+      </div>
+      <div class="field"><label>하고 싶은 방향 (선택)</label><textarea class="textarea" rows="3" placeholder="예) 조금 더 차분하고 말수가 적은 사람으로"></textarea><span class="hint">비워 두면 대화에서 드러난 모습 그대로 정리합니다.</span></div>
+      <div class="note"><b>AI 요청이 1번 사용됩니다.</b> 약 10~20초. 결과는 저장 전에 먼저 보여드립니다.</div>
+      <div class="cluster"><button class="btn btn--primary" data-run-job="job-gen"><i data-i="spark"></i>만들기 시작</button><button class="btn" data-go="mine">취소</button></div>
+    </div>
+  </section>
+
+  <!-- ===== 3. 보관함 ===== -->
+  <section class="page" data-page="shelf">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Shelf</div><h1 class="page-title">보관함</h1><p class="page-desc">만들어 둔 페르소나 6개. 눌러서 연결하거나 편집합니다.</p></div></div>
+    <div class="stack">
+      <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·특징으로 찾기"></div>
+      <div class="list">
+        <button class="row" data-go="edit"><div class="avatar avatar--sm">세</div><div><div class="row__title">세라 하운</div><div class="row__meta">수정 방금 · 감정 6/8</div></div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--b">세</div><div><div class="row__title">세라 (여름 이야기)</div><div class="row__meta">수정 3일 전 · 감정 8/8</div></div><span class="bind bind--other"><i data-i="link" data-size="sm"></i>다른 채팅</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--c">카</div><div><div class="row__title">카엘 로웬</div><div class="row__meta">수정 지난주 · 이미지 없음</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--d">리</div><div><div class="row__title">리오넬</div><div class="row__meta">수정 2주 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--n">?</div><div><div class="row__title">이름 없는 길손</div><div class="row__meta">수정 한 달 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
+        <button class="row" data-go="edit"><div class="avatar avatar--sm avatar--b">미</div><div><div class="row__title">미라</div><div class="row__meta">수정 한 달 전</div></div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span></button>
+      </div>
+      <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class="muted" style="margin:2px 0 8px">이전 서버에 남은 페르소나를 이 기기로 가져올 수 있습니다.</p><button class="btn btn--sm" data-go="recover">이전 자료 복구</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 4. 설정 ===== -->
+  <section class="page" data-page="settings" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">바꾸는 즉시 적용되지 않고, 아래 저장 막대에서 한 번에 저장합니다.</p></div></div>
+    <div class="stack">
+      <div class="card"><div class="card__head"><div><h2 class="card__title">AI 연결</h2><p class="card__desc">페르소나를 만들고 갱신할 때 쓸 모델입니다.</p></div><span class="badge badge--ok">연결됨</span></div>
+        <div class="stack stack--sm">
+          <div class="field"><label>모델</label><select class="select" data-dirty><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select></div>
+          <div class="field"><label>이미지 모델 (선택)</label><select class="select" data-dirty><option>사용 안 함</option><option>stable-diffusion-xl</option></select><span class="hint">끄면 이미지·감정 만들기 메뉴가 숨겨집니다.</span></div>
+        </div></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">갱신 방식</h2><p class="card__desc">대화가 쌓였을 때 페르소나를 어떻게 최신으로 유지할지 정합니다.</p></div></div>
+        <div class="setting"><div><div class="setting__name">알림 띄우기</div><div class="setting__desc">몇 턴마다 ‘갱신할 때가 됐어요’ 알려드립니다. 자동으로 바꾸지는 않습니다.</div></div><label class="switch"><input type="checkbox" checked data-dirty><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
+        <div class="setting"><div><div class="setting__name">알림 간격</div><div class="setting__desc">현재 5턴</div></div><div class="range" style="min-width:160px"><input type="range" min="3" max="15" value="5" data-dirty><div class="range__row"><span>3</span><span>15</span></div></div></div>
+        <div class="setting"><div><div class="setting__name">갱신 전에 미리 보기</div><div class="setting__desc">바뀔 내용을 먼저 보고 직접 승인합니다.</div></div><label class="switch"><input type="checkbox" checked data-dirty><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
+      </div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">저장 위치</h2><p class="card__desc">페르소나는 이 기기에만 저장됩니다. 서버로 보내지 않습니다.</p></div><span class="badge">이 기기 전용</span></div>
+        <div class="cluster"><button class="btn" data-toast="백업 파일을 내보냈습니다."><i data-i="download"></i>백업 내보내기</button><button class="btn" data-toast="파일을 선택하세요 (시안)"><i data-i="upload"></i>가져오기</button><button class="btn" data-go="recover"><i data-i="db"></i>이전 자료 복구</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 서브: 편집 ===== -->
+  <section class="page" data-page="edit" data-track>
+    <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Edit</div><h1 class="page-title">세라 하운 편집</h1></div></div>
+    <div class="stack">
+      <div class="field"><label>이름</label><input class="input" value="세라 하운" data-dirty></div>
+      <div class="field"><label>한 줄 소개</label><input class="input" value="왕실 기록실 사서" data-dirty></div>
+      <div class="field"><label>성격</label><textarea class="textarea" rows="3" data-dirty>신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>
+      <div class="field"><label>말투</label><textarea class="textarea" rows="2" data-dirty>짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
+      <div class="field"><label>현재 상황</label><textarea class="textarea" rows="2" data-dirty>북쪽 정원 · 은색 열쇠 소지</textarea><span class="hint">‘수동 갱신’을 하면 대화 내용에 맞게 이 칸이 제안됩니다.</span></div>
+      <div class="card card--flat"><div class="split"><div><b>이 페르소나 삭제</b><p class="muted" style="margin:2px 0 0;font-size:12.5px">연결된 채팅에서는 연결이 풀립니다.</p></div><button class="btn btn--danger" data-toggle="confirm-del">삭제…</button></div>
+        <div class="confirm-inline" id="confirm-del"><div class="note note--danger"><b>정말 삭제할까요?</b> 되돌릴 수 없습니다. 백업을 먼저 내보내는 것을 권장합니다.</div><div class="cluster" style="margin-top:10px"><button class="btn" data-toggle="confirm-del">취소</button><button class="btn btn--danger-solid" data-toast="삭제했습니다." data-go="shelf">삭제</button></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 서브: 수동 갱신 ===== -->
+  <section class="page" data-page="update">
+    <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Manual update</div><h1 class="page-title">수동 갱신</h1><p class="page-desc">최근 5턴의 대화를 바탕으로 바뀐 점을 제안합니다. 승인한 것만 반영됩니다.</p></div></div>
+    <div class="stack">
+      <div class="steps"><div class="step is-done"><span class="step__no">✓</span><b>대화 읽기</b></div><div class="step is-active"><span class="step__no">2</span><b>변경 제안</b></div><div class="step"><span class="step__no">3</span><b>반영</b></div></div>
+      <div class="list">
+        <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">현재 위치</div><div class="row__meta">북쪽 정원 → <b>기록실 입구</b></div></div></label>
+        <label class="row"><input type="checkbox" checked style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">성격</div><div class="row__meta">+ “비밀을 지키는 일에는 예외를 두지 않는다”</div></div></label>
+        <label class="row"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--accent)"><div><div class="row__title">말투</div><div class="row__meta">변화 감지 약함 · 기본 해제</div></div></label>
+      </div>
+      <div class="cluster"><button class="btn btn--primary" data-toast="선택한 2건을 반영했습니다." data-go="mine">선택한 2건 반영</button><button class="btn" data-go="mine">나중에</button></div>
+    </div>
+  </section>
+
+  <!-- ===== 서브: 이미지·감정 ===== -->
+  <section class="page" data-page="assets">
+    <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Image &amp; emotions</div><h1 class="page-title">이미지 · 감정</h1><p class="page-desc">기준 얼굴을 먼저 정하고, 그 얼굴로 감정 이미지를 만듭니다.</p></div></div>
+    <div class="steps" style="margin-bottom:16px"><div class="step is-done"><span class="step__no">✓</span><b>기본 이미지</b></div><div class="step is-done"><span class="step__no">✓</span><b>기준 확정</b></div><div class="step is-active"><span class="step__no">3</span><b>감정 묶음</b></div></div>
+    <div class="stack">
+      <div class="card"><div class="base-frame"><div class="avatar">세</div><div><span class="badge badge--ok">기준 확정됨</span><h2 class="card__title" style="margin-top:6px">기준 얼굴</h2><p class="card__desc">이 얼굴을 바탕으로 감정 이미지가 만들어집니다. 바꾸면 감정 이미지를 다시 만들어야 합니다.</p><button class="btn btn--sm" style="margin-top:8px" data-toast="기준을 다시 정하려면 확인이 필요합니다 (시안)">기준 다시 정하기</button></div></div></div>
+      <div><div class="section-title"><h2>감정 이미지 <span class="muted" style="font-weight:500">6 / 8</span></h2></div>
+        <div class="emo-grid">
+          <div class="emo is-done"><div class="avatar">😐</div>기본<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-done"><div class="avatar avatar--b">😊</div>기쁨<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-done"><div class="avatar avatar--d">😠</div>분노<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-done"><div class="avatar avatar--n">😢</div>슬픔<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-done"><div class="avatar avatar--c">😲</div>놀람<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-done"><div class="avatar avatar--b">😳</div>부끄러움<br><span class="muted">✓ 완료</span></div>
+          <div class="emo is-todo"><div class="avatar todo">?</div>두려움<br>— 아직</div>
+          <div class="emo is-todo"><div class="avatar todo">?</div>혐오<br>— 아직</div>
+        </div></div>
+      <button class="btn btn--primary" data-run-job="job-gen"><i data-i="spark"></i>남은 2개 만들기</button>
+    </div>
+  </section>
+
+  <!-- ===== 서브: 이전 자료 복구 ===== -->
+  <section class="page" data-page="recover">
+    <button class="back" data-go="settings"><i data-i="back" data-size="sm"></i>설정</button>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recovery</div><h1 class="page-title">이전 자료 복구</h1><p class="page-desc">예전 서버에 저장했던 페르소나를 이 기기로 가져옵니다. 현재 자료는 지워지지 않습니다.</p></div></div>
+    <div class="stack">
+      <div class="banner banner--warn"><span class="banner__icon"><i data-i="alert"></i></span><div><b>서버 주소가 필요합니다.</b><p class="muted" style="margin:2px 0 0">예전에 쓰던 LIA 서버 주소를 입력하면 가져올 수 있는 목록을 보여드립니다.</p></div></div>
+      <div class="field"><label>이전 서버 주소</label><input class="input" placeholder="https://"></div>
+      <div class="cluster"><button class="btn btn--primary" data-toast="목록을 읽는 중… (시안)">목록 읽기</button><button class="btn" data-go="settings">취소</button></div>
+      <p class="jargon">읽기만 하며, 서버의 자료는 바꾸지 않습니다.</p>
+    </div>
+  </section>
+
+  </div>
+  <footer class="savebar" id="savebar" hidden>
+    <div class="savebar__copy"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>
+    <div class="cluster"><button class="btn" data-revert disabled>변경 취소</button><button class="btn btn--primary" data-save disabled>저장</button></div>
+  </footer>
+  </main>
+
+  <nav class="tabbar" aria-label="LIA 하단 메뉴"></nav>
+
+  <!-- 연결 바텀 시트 -->
+  <div class="overlay overlay--bottom" id="sheet-bind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sb-t">
+    <div class="eyebrow">Connect</div><h2 id="sb-t" style="margin:2px 0 4px;font:800 19px var(--font-display)">이 채팅에서 쓸 페르소나</h2>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">‘세라 · 북쪽 정원’ 채팅에 연결합니다. 한 채팅에는 하나만 연결됩니다.</p>
+    <div class="stack stack--sm" data-single>
+      <button class="big-choice is-on" data-select-row="a"><div class="avatar avatar--sm">세</div><div><b>세라 하운</b><span>✓ 지금 이 채팅에 연결됨</span></div></button>
+      <button class="big-choice" data-select-row="b"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 (여름 이야기)</b><span>↔ ‘바닷가 마을’에 연결됨 · 옮기면 그쪽은 풀립니다</span></div></button>
+      <button class="big-choice" data-select-row="c"><div class="avatar avatar--sm avatar--n">?</div><div><b>이름 없는 길손</b><span>＋ 연결 안 됨</span></div></button>
+    </div>
+    <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" data-close data-toast="이 채팅에 연결했습니다.">연결하기</button></div></div></div>
+
+  <!-- 삭제 바텀 시트(네이티브 confirm 대체) -->
+  <div class="overlay overlay--bottom" id="sheet-del" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sd-t">
+    <div class="eyebrow" style="color:var(--danger-ink)">Delete</div><h2 id="sd-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘이름 없는 길손’을 삭제할까요?</h2>
+    <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 연결된 채팅이 없어 다른 곳에는 영향이 없습니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="삭제했습니다.">삭제</button></div></div></div>
+
+  <!-- 생성 진행 -->
+  <div class="overlay" id="job-gen" aria-hidden="true" data-job-labels="대화를 읽는 중|특징과 관계를 정리하는 중|AI에게 요청을 보내는 중|결과를 확인하는 중|완료했어요. 저장 전에 내용을 확인해 보세요.">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jg-t"><div class="eyebrow">Working</div><h2 id="jg-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">페르소나를 만들고 있어요</h2>
+      <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
+      <p class="hint">화면을 닫아도 작업은 이어집니다. 실패하면 다시 시도할 수 있어요.</p>
+      <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-go="edit">확인하러 가기</button></div></div></div>
+
+  <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
+  <div class="toasts" aria-live="polite"></div>
+</div></div></div>
+<script src="assets/suite.js"></script>
+<script>
+document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='edit');});
+document.addEventListener('click',function(e){var t=e.target.closest('[data-toggle]');if(t){var el=document.getElementById(t.dataset.toggle);if(el)el.classList.toggle('is-open');}});
+</script>
+</body>
+</html>

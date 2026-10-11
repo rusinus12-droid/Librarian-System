@@ -1,0 +1,108 @@
+/* =====================================================================
+   플러그인별 테마 — 같은 컴포넌트, 다른 정체성
+   "복제해야 하는 것은 색이 아니라 구조" (모바일 GPU 가이드 §7)
+   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정
+   ===================================================================== */
+
+/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */
+.t-libra{
+  --page-bg:#cfd3cb;
+  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;
+  --border:#d9d0ba; --border2:#bdb298;
+  --text:#27261f; --text2:#55523f; --text3:#6b6752;
+  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;
+  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;
+  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;
+  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;
+  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;
+  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;
+  --font-display:"Noto Serif KR","Nanum Myeongjo",Georgia,serif;
+  --scrim:rgba(14,18,16,.66);
+}
+.t-libra .eyebrow{color:var(--accent)}
+.t-libra .page-title{font-weight:700}
+
+/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */
+.t-hayaku{
+  --page-bg:#cdd5d8;
+  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;
+  --border:#cfdbe0; --border2:#a9bcc4;
+  --text:#14303c; --text2:#43606c; --text3:#5a7480;
+  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;
+  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;
+  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;
+  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;
+  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;
+  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;
+  --scrim:rgba(7,16,22,.68);
+}
+.t-hayaku .brand__name{letter-spacing:.04em}
+
+/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */
+.t-flashback{
+  --page-bg:#cfc9bd;
+  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;
+  --border:#d6d0c4; --border2:#b6ad9d;
+  --text:#302b28; --text2:#62594f; --text3:#71685d;
+  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;
+  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;
+  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;
+  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;
+  --top-bg:#faf8f2;
+  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;
+  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;
+  --font-display:var(--font-sans);
+  --scrim:rgba(10,8,6,.64);
+}
+.t-flashback .eyebrow{letter-spacing:.17em}
+
+/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */
+.t-gradia{
+  --page-bg:#0a0c11;
+  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;
+  --border:#2a3446; --border2:#3b475e;
+  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;
+  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;
+  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;
+  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;
+  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;
+  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;
+  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;
+  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;
+  --scrim:rgba(2,4,8,.76);
+  color-scheme:dark;
+}
+.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}
+.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}
+
+/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */
+.t-lia{
+  --page-bg:#e6e3ec;
+  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;
+  --border:#ebe6f0; --border2:#cfc4dc;
+  --text:#292731; --text2:#554b62; --text3:#6f6580;
+  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;
+  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;
+  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;
+  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;
+  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;
+  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;
+  --scrim:rgba(38,26,56,.56);
+  --r-sm:12px; --r-md:18px; --r-lg:26px;
+}
+.t-lia .page-title{font-size:25px;letter-spacing:-.04em}
+
+/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */
+.t-retrace{
+  --page-bg:#c9d0dc;
+  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;
+  --border:#d3dae6; --border2:#a9b5c9;
+  --text:#18202f; --text2:#46526a; --text3:#5c6881;
+  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;
+  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;
+  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;
+  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;
+  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;
+  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;
+  --scrim:rgba(8,12,22,.7);
+}

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GRADIA GUI 재설계 시안 · 계조 파이프라인</title>
+<link rel="stylesheet" href="assets/suite.css">
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */
+.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}
+.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}
+.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}
+.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}
+.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}
+html[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}
+.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@container app (max-width:640px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ladder{display:grid;gap:0}
+.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}
+.node:hover{background:var(--surface2)}
+.node.is-on{background:var(--surface2);border-color:var(--border2)}
+.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}
+.node:not(:last-child)::after{content:"";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}
+.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}
+.node.is-off{opacity:.55}
+.node--io .node__dot{border-radius:9px}
+.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}
+.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}
+.mini__arrow{color:var(--text3)}
+.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}
+.q-step:first-child{border-top:0;padding-top:4px}
+.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}
+.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}
+.q-step .choices{grid-column:2}
+.stage-detail{display:none}.stage-detail.is-on{display:block}
+.prompt{min-height:170px}
+.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}
+.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.lib{display:grid;gap:10px}
+.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}
+.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}
+.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}
+@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}
+</style>
+</head>
+<body class="t-gradia">
+<div class="proto-bar">
+  <a href="index.html">← 시안 목록</a><b>GRADIA · 계조 파이프라인</b>
+  <span class="grp"><span>폭</span><button data-device="desktop" aria-pressed="true">데스크톱</button><button data-device="tablet" aria-pressed="false">태블릿</button><button data-device="mobile" aria-pressed="false">모바일</button></span>
+  <span class="grp"><span>열기</span><button data-open="dlg-reset">초기화 확인</button><button data-open="dlg-reco">추천값 적용</button><button data-open="dlg-close">닫기 확인</button></span>
+</div>
+<div class="stage"><div class="frame" data-device="desktop">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><div class="brand__mark"><i data-i="layers" data-size="lg"></i></div><div><div class="brand__name">GRADIA</div><div class="brand__ver">v0.25.83 · <span id="modeLabel">소설 모드</span></div></div></div>
+    <div class="mode-switch" role="group" aria-label="작성 모드"><button data-mode="novel" aria-pressed="true">소설</button><button data-mode="rp" aria-pressed="false">RP</button></div>
+    <div class="grow"></div>
+    <span class="health health--ok hide-narrow"><i></i>훅 활성 · 대기 중</span>
+    <button class="btn" data-open="dlg-close">닫기</button>
+  </header>
+
+  <nav class="sidebar" aria-label="GRADIA 메뉴">
+    <div class="nav-label">시작</div>
+    <button class="nav-item" data-go="home" data-short="홈"><i data-i="home"></i><span class="nav-text">개요 · 빠른 설정</span></button>
+    <button class="nav-item" data-go="results" data-short="결과"><i data-i="log"></i><span class="nav-text">실행 결과</span></button>
+    <div class="nav-label">제작</div>
+    <button class="nav-item" data-go="pipeline" data-short="파이프라인"><i data-i="layers"></i><span class="nav-text" id="navPipe">초안 파이프라인</span></button>
+    <button class="nav-item" data-go="sources" data-short="자료"><i data-i="book"></i><span class="nav-text">자료 · Skill</span></button>
+    <div class="nav-label">시스템</div>
+    <button class="nav-item" data-go="providers" data-short="AI 연결"><i data-i="cpu"></i><span class="nav-text">AI 연결과 모델</span><span class="count">3/4</span></button>
+    <button class="nav-item" data-go="manage" data-short="관리"><i data-i="wrench"></i><span class="nav-text">관리 · 진단</span></button>
+    <div class="side-foot"><b>다음 요청 예상</b><span>내부 4회 + 메인 1회</span></div>
+  </nav>
+
+  <main class="main">
+    <div class="ribbon"><i data-i="lock" data-size="sm"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>
+    <div class="page-body">
+
+  <!-- ===== 홈 ===== -->
+  <section class="page is-active" data-page="home" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Overview</div><h1 class="page-title">핵심 다섯 가지만 먼저</h1><p class="page-desc">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class="page-actions"><button class="btn" data-open="dlg-reco">추천값 보기…</button></div></div>
+    <div class="stack stack--lg">
+      <div class="card"><div class="card__head"><div><h2 class="card__title">현재 처리 흐름</h2><p class="card__desc">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class="badge badge--ok">대기 중</span></div>
+        <div class="mini"><button class="mini__step s0" data-go="pipeline">인풋 관리자 · 사용 안 함</button><span class="mini__arrow">→</span><button class="mini__step s1" data-go="pipeline">SHADOW ACT</button><span class="mini__arrow">→</span><button class="mini__step s2" data-go="pipeline">인물 AIDE</button><span class="mini__arrow">→</span><button class="mini__step s3" data-go="pipeline">세계관 AIDE</button><span class="mini__arrow">→</span><button class="mini__step s4" data-go="pipeline">플롯 AIDE</button><span class="mini__arrow">→</span><button class="mini__step s5" data-go="pipeline">메인 응답</button></div>
+        <div class="grid g4" style="margin-top:16px"><div class="note"><b>경량</b><br>파이프라인</div><div class="note"><b>균형</b><br>속도와 품질</div><div class="note"><b>표준</b><br>목표 분량</div><div class="note"><b>3 / 4</b><br>AI 연결 완료</div></div></div>
+
+      <div class="card">
+        <div class="q-step"><span class="q-step__no">1</span><div><h3 data-novel="인풋 관리자" data-rp="행동 선택지">인풋 관리자</h3><p data-novel="전송 전 입력을 장면에 맞게 다듬을지 정합니다." data-rp="직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다.">전송 전 입력을 장면에 맞게 다듬을지 정합니다.</p></div>
+          <div class="choices" data-dirty><button class="choice is-on"><b data-novel="사용 안 함" data-rp="직접 입력">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class="choice"><b data-novel="사용" data-rp="행동 3가지 제안">사용</b><span data-novel="세부 방식은 ‘파이프라인’에서 바꿉니다." data-rp="NPC 반응·성공·결과는 미리 정하지 않습니다.">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>
+        <div class="q-step"><span class="q-step__no">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>
+          <div class="choices" data-dirty><button class="choice is-on"><span class="tag-rec">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class="choice"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>
+        <div class="q-step"><span class="q-step__no">3</span><div><h3>속도와 품질</h3><p>최근 문맥과 분석 깊이를 단계별로 함께 조정합니다.</p></div>
+          <div class="choices" data-dirty><button class="choice"><b>빠름</b><span>최근 4턴 · 얕은 분석</span></button><button class="choice is-on"><span class="tag-rec">추천</span><b>균형</b><span>최근 8턴</span></button><button class="choice"><b>품질</b><span>최근 16턴 · 깊은 분석</span></button></div></div>
+        <div class="q-step"><span class="q-step__no">4</span><div><h3>목표 초안 분량</h3><p data-novel="SHADOW ACT가 작성할 분량입니다." data-rp="RP에서는 분량이 유저 행동을 추가할 권한이 되지 않습니다.">SHADOW ACT가 작성할 분량입니다.</p></div>
+          <div class="choices choices--4" data-dirty><button class="choice"><b>짧게</b><span>~600자</span></button><button class="choice is-on"><span class="tag-rec">추천</span><b>표준</b><span>~1,200자</span></button><button class="choice"><b>길게</b><span>~2,000자</span></button><button class="choice"><b>아주 길게</b><span>~3,200자</span></button></div></div>
+        <div class="q-step"><span class="q-step__no">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>
+          <div class="choices" data-dirty><button class="choice is-on"><b>한국어</b><span>Korean</span></button><button class="choice"><b>English</b><span>English</span></button><button class="choice"><b>日本語</b><span>Japanese</span></button></div></div>
+      </div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">최근 실행</h2></div><button class="btn btn--sm" data-go="results">전체 보기</button></div><div class="list"><div class="row"><i data-i="check" style="color:var(--ok)"></i><div><div class="row__title">SHADOW ACT</div><div class="row__meta">성공 · 6.2초</div></div><span class="hint">방금</span></div><div class="row"><i data-i="alert" style="color:var(--warn)"></i><div><div class="row__title">세계관 AIDE</div><div class="row__meta">폴백 사용 · 응답 시간 초과</div></div><span class="hint">방금</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 파이프라인 ===== -->
+  <section class="page" data-page="pipeline" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Serial pipeline</div><h1 class="page-title" data-novel="초안 파이프라인" data-rp="RP 반응 파이프라인">초안 파이프라인</h1><p class="page-desc" data-novel="인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다." data-rp="NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>
+    <div class="grid g-side g-side--a">
+      <div class="card card--tight">
+        <div class="ladder" id="ladder">
+          <button class="node node--io s0" data-select-row="inp"><span class="node__dot">I</span><span><b data-novel="인풋 관리자" data-rp="행동 선택지">인풋 관리자</b><small>사용 안 함</small></span><span class="badge">꺼짐</span></button>
+          <button class="node s1 is-on" data-select-row="shadow"><span class="node__dot">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span class="badge badge--ok">성공 6.2s</span></button>
+          <button class="node s2" data-select-row="char"><span class="node__dot">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span class="badge badge--ok">성공</span></button>
+          <button class="node s3" data-select-row="world"><span class="node__dot">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span class="badge badge--warn">폴백</span></button>
+          <button class="node s4" data-select-row="plot"><span class="node__dot">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span class="badge">사용</span></button>
+          <button class="node node--io s5" data-select-row="main"><span class="node__dot">M</span><span><b data-novel="메인 응답" data-rp="RP 최종 응답">메인 응답</b><small>초안 전달 · 마무리</small></span><span class="badge badge--info">출력</span></button>
+        </div>
+        <div class="cluster" style="margin-top:10px;padding-top:12px;border-top:1px solid var(--border)"><span class="hint">AIDE 순서</span><button class="btn btn--sm" data-toast="인물 AIDE를 위로 이동했습니다.">↑ 위로</button><button class="btn btn--sm" data-toast="아래로 이동했습니다.">↓ 아래로</button></div>
+      </div>
+
+      <div>
+        <div class="stage-detail is-on" data-detail="shadow"><div class="card">
+          <div class="card__head"><div><span class="badge-stage s1"><i></i>1단계</span><h2 class="card__title" style="font-size:19px;margin-top:6px">SHADOW ACT</h2><p class="card__desc">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class="cluster"><span class="badge badge--ok">성공 · 6.2초</span><button class="btn btn--sm" data-go="results">실행 결과</button></div></div>
+          <div class="tabs" role="tablist" data-subtabs="sh"><button class="tab" role="tab" aria-selected="true" data-subtab="run">실행</button><button class="tab" role="tab" aria-selected="false" data-subtab="ref">참고 자료</button><button class="tab" role="tab" aria-selected="false" data-subtab="ins">창작 지침</button></div>
+          <div data-subpanel="run" data-group="sh" class="is-active"><div class="stack">
+            <label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="switch__text"><b>이 단계 사용</b><small>SHADOW ACT는 끌 수 없습니다 (첫 단계 고정).</small></span></label>
+            <div class="grid g2"><div class="field"><label>AI 프리셋</label><select class="select"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class="hint">연결이 없으면 “프리셋 확인” 표시</span></div><div class="field"><label>첫 초안 방식</label><select class="select"><option>Classic</option><option>Input-inclusive</option><option>Author-directed</option></select></div></div>
+            <div class="note"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>
+            <details class="fold"><summary>세부 한도 <span class="hint">최근 8턴 · 최대 대기 60초</span></summary><div class="fold__body grid g3"><div class="field"><label>참고 상한(자)</label><input class="input" type="number" value="12000"></div><div class="field"><label>최근 대화 수</label><input class="input" type="number" value="8"></div><div class="field"><label>대기 시간(초)</label><input class="input" type="number" value="60"></div></div></details></div></div>
+          <div data-subpanel="ref" data-group="sh"><div class="stack"><p class="muted" style="margin:0">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class="grid g2"><label class="check"><input type="checkbox" checked><span><b>작가의 노트</b><br><small class="hint">현재 입력 다음 권위로 읽습니다.</small></span></label><label class="check"><input type="checkbox" checked><span><b>페르소나</b></span></label><label class="check"><input type="checkbox" checked><span><b>캐릭터 설명</b></span></label><label class="check"><input type="checkbox" checked><span><b>캐릭터 로어북</b></span></label><label class="check"><input type="checkbox"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>
+          <div data-subpanel="ins" data-group="sh"><div class="stack"><div class="split"><div><b>사용자 창작 지침</b><div class="hint">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class="btn btn--primary btn--sm" data-open="dlg-ooc"><i data-i="spark" data-size="sm"></i>OOC 대화로 작성</button></div><textarea class="textarea prompt" aria-label="창작 지침">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class="hint">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class="btn btn--ghost btn--sm">전체 보기</button></div><details class="fold"><summary>내장 프롬프트 미리보기</summary><div class="fold__body"><pre class="json mono hint" style="margin:0;white-space:pre-wrap;max-height:140px;overflow:auto">You are SHADOW ACT, the first stage…</pre></div></details></div></div>
+        </div></div>
+        <div class="stage-detail" data-detail="inp"><div class="card"><span class="badge-stage s0"><i></i>입력 단계</span><h2 class="card__title" style="font-size:19px;margin:6px 0">인풋 관리자</h2><p class="muted">직전 장면의 종결부를 기준으로 전송 전 입력을 다듬습니다. 현재 <b>사용 안 함</b>입니다.</p><div class="choices"><button class="choice is-on"><b>사용 안 함</b></button><button class="choice"><b>유저 시점</b></button><button class="choice"><b>NPC 시점</b></button><button class="choice"><b>무작위</b></button></div></div></div>
+        <div class="stage-detail" data-detail="char"><div class="card"><span class="badge-stage s2"><i></i>2단계</span><h2 class="card__title" style="font-size:19px;margin:6px 0">인물 AIDE</h2><p class="muted">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다. 설정 항목은 SHADOW ACT와 같은 구성입니다.</p></div></div>
+        <div class="stage-detail" data-detail="world"><div class="card"><span class="badge-stage s3"><i></i>3단계</span><h2 class="card__title" style="font-size:19px;margin:6px 0">세계관 AIDE</h2><div class="banner banner--warn" style="margin:10px 0"><div class="banner__icon"><i data-i="alert"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다.</span></div><button class="btn btn--sm">대기 시간 조정</button></div></div></div>
+        <div class="stage-detail" data-detail="plot"><div class="card"><span class="badge-stage s4"><i></i>4단계</span><h2 class="card__title" style="font-size:19px;margin:6px 0">플롯 AIDE</h2><p class="muted">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p></div></div>
+        <div class="stage-detail" data-detail="main"><div class="card"><span class="badge-stage s5"><i></i>출력</span><h2 class="card__title" style="font-size:19px;margin:6px 0">초안을 어떻게 넘길까요?</h2><div class="stack"><div class="field"><label>정보 전달</label><div class="choices"><button class="choice is-on"><b>초안 + 기본 지시</b><span>분석은 전달하지 않습니다.</span></button><button class="choice"><b>초안 + 분석</b><span>단계 분석까지 함께 전달합니다.</span></button></div></div><div class="field"><label>응답 마무리</label><div class="choices"><button class="choice is-on"><b>초안 기반 마무리</b></button><button class="choice"><b>Risu 엔진 보존</b></button></div></div><details class="fold"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class="fold__body"><div class="setting"><div><div class="setting__name">성인 장면 지침</div><div class="setting__desc">Skill과 분리된 표현 정책입니다.</div></div><select class="select" style="width:150px"><option>꺼짐</option><option>soft</option><option>direct</option></select></div></div></details></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 자료 · Skill ===== -->
+  <section class="page" data-page="sources" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">References</div><h1 class="page-title">자료 · Skill</h1><p class="page-desc">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>
+    <div class="stack">
+      <div class="card card--accent"><div class="card__head"><div><h2 class="card__title">LIB 기억 읽기</h2><p class="card__desc">LIBRA · HAYAKU · Flashback의 현재 채팅 서버 기억을 읽습니다. 쓰기 권한은 없습니다.</p></div><span class="health health--ok"><i></i>연결됨 · 3개 생산자</span></div>
+        <div class="grid g2"><div class="field"><label>서버 URL</label><input class="input mono" value="http://127.0.0.1:8787"></div><dl class="kv" style="align-self:end"><dt>활성 읽기</dt><dd>LIBRA · HAYAKU · Flashback</dd><dt>코퍼스</dt><dd>128개 / 1.4 MiB (한도 4 MiB)</dd></dl></div>
+        <div class="cluster" style="margin-top:12px"><button class="btn btn--primary" data-toast="읽기 전용으로 연결했습니다.">읽기 전용 연결</button><button class="btn">연결 해제</button><button class="btn">현재 기억 연결 확인</button></div>
+        <div class="note" style="margin-top:12px">모델 호환: 기억을 포함한 생성은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18의 검증된 텍스트 조합만 지원합니다. 채팅이 바뀌면 다시 연결하세요.</div></div>
+      <div class="tabs" role="tablist" data-subtabs="src"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="char">캐릭터 로어</button><button class="tab" role="tab" aria-selected="false" data-subtab="mod">모듈 로어</button><button class="tab" role="tab" aria-selected="false" data-subtab="skill">Skill</button></div>
+      <div data-subpanel="sum" data-group="src" class="is-active"><div class="choices"><button class="choice is-on"><b>캐릭터</b><span>12 / 14 사용</span><small>캐릭터 로어북</small></button><button class="choice is-on"><b>모듈</b><span>2개 모듈 · 33 / 41 로어 사용</span></button><button class="choice is-on"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>
+      <div data-subpanel="char" data-group="src"><div class="lib"><label class="row"><input type="checkbox" checked><div><div class="row__title">로웬 — 정원사</div><div class="row__meta">키: 로웬, 정원사</div></div><span class="badge badge--ok">사용</span></label><label class="row"><input type="checkbox"><div><div class="row__title">왕실 기록실의 규칙</div><div class="row__meta">제외됨</div></div><span class="badge badge--danger">제외</span></label></div></div>
+      <div data-subpanel="mod" data-group="src"><div class="empty"><b>활성 모듈 2개</b><span>로어가 있는 모듈만 표시합니다.</span></div></div>
+      <div data-subpanel="skill" data-group="src"><div class="card"><div class="setting"><div><div class="setting__name">Skill 자동 선택</div><div class="setting__desc">단계마다 어울리는 작법 Skill을 로컬에서 고릅니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div><div class="setting"><div><div class="setting__name">단계당 최대 Skill 수</div></div><input class="input" type="number" value="2" style="width:90px"></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 실행 결과 ===== -->
+  <section class="page" data-page="results">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Run results</div><h1 class="page-title">단계별 실행 결과</h1><p class="page-desc">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>
+    <div class="stack"><div class="tabs" role="tablist" data-subtabs="rs"><button class="tab" role="tab" aria-selected="true" data-subtab="s">SHADOW ACT</button><button class="tab" role="tab" aria-selected="false" data-subtab="c">인물</button><button class="tab" role="tab" aria-selected="false" data-subtab="w">세계관 <span class="count">폴백</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="p">플롯</button></div>
+      <div data-subpanel="s" data-group="rs" class="is-active"><div class="grid g2"><div class="card"><h3 class="section-title">초안</h3><p style="margin:0;line-height:1.9">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class="card"><h3 class="section-title">참고한 자료</h3><dl class="kv"><dt>로어</dt><dd>8개 (강제 2)</dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>
+      <div data-subpanel="c" data-group="rs"><div class="empty"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>
+      <div data-subpanel="w" data-group="rs"><div class="banner banner--warn"><div class="banner__icon"><i data-i="alert"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>
+      <div data-subpanel="p" data-group="rs"><div class="empty"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>
+  </section>
+
+  <!-- ===== AI 연결 ===== -->
+  <section class="page" data-page="providers" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Providers</div><h1 class="page-title">AI 연결과 모델</h1><p class="page-desc">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class="page-actions"><button class="btn"><i data-i="plus" data-size="sm"></i>추가</button><button class="btn">복제</button></div></div>
+    <div class="grid g-side g-side--b">
+      <div class="list"><button class="row is-on" data-select-row="p1"><span class="row__icon">C</span><div><div class="row__title">claude-sonnet · 작성용</div><div class="row__meta">SHADOW · 인물</div></div><span class="badge badge--ok">완료</span></button><button class="row" data-select-row="p2"><span class="row__icon">G</span><div><div class="row__title">gpt-4.1 · 범용</div><div class="row__meta">세계관 · 플롯</div></div><span class="badge badge--ok">완료</span></button><button class="row" data-select-row="p3"><span class="row__icon">O</span><div><div class="row__title">ollama · 로컬</div><div class="row__meta">미사용</div></div><span class="badge badge--warn">키 필요</span></button></div>
+      <div class="card"><div class="card__head"><div><h2 class="card__title">claude-sonnet · 작성용</h2><p class="card__desc">API 키는 백업에 포함되지 않습니다.</p></div><button class="btn btn--sm" data-toast="연결 테스트 성공">연결 테스트</button></div><div class="grid g2"><div class="field"><label>Provider</label><select class="select"><option>Claude / Anthropic</option></select></div><div class="field"><label>모델</label><input class="input" value="claude-sonnet-4"></div><div class="field"><label>Endpoint URL</label><input class="input" placeholder="기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장됨 (표시하지 않음)"></div></div><details class="fold" style="margin-top:14px"><summary>추론 · 서비스 등급 <span class="hint">고급</span></summary><div class="fold__body hint">Reasoning preset, service tier, Vertex credential…</div></details></div>
+    </div>
+  </section>
+
+  <!-- ===== 관리 ===== -->
+  <section class="page" data-page="manage" data-track>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Management</div><h1 class="page-title">관리 · 진단</h1><p class="page-desc">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>
+    <div class="tabs" role="tablist" data-subtabs="mg"><button class="tab" role="tab" aria-selected="true" data-subtab="io">가져오기 · 내보내기</button><button class="tab" role="tab" aria-selected="false" data-subtab="adv">전문가 설정</button><button class="tab" role="tab" aria-selected="false" data-subtab="dbg">디버그</button><button class="tab" role="tab" aria-selected="false" data-subtab="rst">초기화</button></div>
+    <div data-subpanel="io" data-group="mg" class="is-active"><div class="grid g2">
+      <div class="card"><h2 class="card__title">내보내기</h2><p class="card__desc" style="margin-bottom:10px">API 키와 인증 토큰은 항상 제외됩니다.</p><div class="seg" data-dirty-no><button aria-pressed="true">실행 흐름만</button><button aria-pressed="false">전체 설정</button></div><p class="hint" style="margin:10px 0">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class="cluster"><button class="btn btn--primary" data-toast="gradia-flow-2026-10-11.json 저장"><i data-i="download" data-size="sm"></i>JSON 파일로 저장</button><button class="btn">클립보드로 복사</button></div></div>
+      <div class="card"><h2 class="card__title">가져오기</h2><p class="card__desc" style="margin-bottom:10px">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class="cluster"><button class="btn"><i data-i="upload" data-size="sm"></i>파일 열기</button><button class="btn" data-toast="변경 내용을 계산했습니다.">붙여넣기 검사</button></div>
+        <div class="note" style="margin-top:12px"><div class="diff"><span class="h">항목</span><span class="h">현재</span><span class="h">가져올 값</span><span>파이프라인 무게</span><span>경량</span><span class="to">중량</span><span>목표 분량</span><span>표준</span><span class="to">길게</span></div></div>
+        <div class="cluster" style="margin-top:12px"><button class="btn">교체해서 가져오기</button><button class="btn">병합해서 가져오기</button></div><p class="hint" style="margin:8px 0 0">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>
+    <div data-subpanel="adv" data-group="mg"><div class="card"><div class="note note--warn" style="margin-bottom:8px">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div><div class="setting"><div><div class="setting__name">최종 전달 최대 글자</div><div class="setting__desc">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class="input" type="number" value="9000" style="width:120px"></div></div></div>
+    <div data-subpanel="dbg" data-group="mg"><div class="card"><div class="cluster"><button class="btn">디버그 JSON 복사</button><button class="btn">파일로 저장</button></div></div></div>
+    <div data-subpanel="rst" data-group="mg"><div class="card" style="border-color:var(--danger-line)"><h2 class="card__title" style="color:var(--danger-ink)">위험 구역</h2><p class="card__desc" style="margin-bottom:12px">현행에서는 확인 없이 즉시 실행되던 두 동작입니다. 모두 확인 대화상자를 거칩니다.</p><div class="cluster"><button class="btn btn--danger" data-open="dlg-reset">GUI 설정 초기화 (키 유지)…</button><button class="btn btn--danger" data-open="dlg-reset-all">모든 설정과 키 초기화…</button></div></div></div>
+  </section>
+
+  </div>
+  <!-- 저장 바: 모든 화면 공통 하단 고정 -->
+  <footer class="savebar" id="savebar"><div class="savebar__copy"><b data-save-title></b><span data-save-desc></span></div><div class="cluster"><button class="btn" data-revert disabled>변경 취소</button><button class="btn btn--primary" data-save disabled>저장</button></div></footer>
+  </main>
+
+
+  <nav class="tabbar" aria-label="GRADIA 하단 메뉴"></nav>
+
+  <div class="overlay" id="dlg-reset" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="r1"><div class="eyebrow" style="color:var(--danger-ink)">Reset</div><h2 id="r1">GUI 설정을 초기화할까요?</h2><p>저장된 GUI 설정을 지우고 //@arg 값과 내장 기본값으로 돌아갑니다. 이 기기의 비밀 키는 유지됩니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="GUI 설정을 초기화했습니다. 키는 유지했습니다.">초기화</button></div></div></div>
+  <div class="overlay" id="dlg-reset-all" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="r2"><div class="eyebrow" style="color:var(--danger-ink)">Reset everything</div><h2 id="r2">모든 설정과 비밀 키를 지울까요?</h2><p>프로바이더 프리셋, 단계 설정, 지침과 API 키가 모두 사라지며 되돌릴 수 없습니다. 먼저 ‘전체 설정’을 내보내 두는 것을 권장합니다.</p><div class="field"><label for="rr">계속하려면 “초기화”를 입력하세요</label><input id="rr" class="input" autocomplete="off" placeholder="초기화"></div><div class="dialog__actions"><button class="btn" data-close>취소</button><button class="btn btn--danger-solid" data-close data-toast="모든 설정과 키를 초기화했습니다.">모두 초기화</button></div></div></div>
+  <div class="overlay" id="dlg-reco" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="r3"><div class="eyebrow">Recommended</div><h2 id="r3">추천 설정을 적용할까요?</h2><p>현재 값 → 추천값입니다. 적용 후에도 저장해야 확정됩니다.</p><div class="note"><div class="diff"><span class="h">항목</span><span class="h">현재</span><span class="h">추천</span><span>속도와 품질</span><span>직접 조정</span><span class="to">균형</span><span>SHADOW · 최근 문맥 턴</span><span>6</span><span class="to">8</span><span>세계관 AIDE · 대기 시간</span><span>30초</span><span class="to">60초</span></div></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="추천값을 초안에 적용했습니다. 저장해야 확정됩니다.">추천값 적용</button></div></div></div>
+  <div class="overlay" id="dlg-close" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="r4"><h2 id="r4">저장하지 않은 변경이 있습니다</h2><p>닫기 전에 변경을 저장하거나 취소할 수 있습니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>계속 편집</button><button class="btn btn--danger" data-close>변경 버리고 닫기</button><button class="btn btn--primary" data-close data-toast="저장하고 닫습니다.">저장 후 닫기</button></div></div></div>
+  <div class="overlay" id="dlg-ooc" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="r5"><div class="eyebrow">Creative direction OOC</div><h2 id="r5">SHADOW ACT 지침을 대화로 작성</h2><p>대화가 끝난 뒤 ‘지침 생성’을 누르면 이 단계의 창작 지침이 위 입력란에 채워집니다.</p><div class="note" style="min-height:110px"><b>AI</b> 어떤 분위기로 쓰고 싶으세요?<br><b>나</b> 대사는 줄이고 침묵으로 긴장을 쌓아줘.</div><div class="field" style="margin-top:12px"><input class="input" placeholder="메시지 입력…" aria-label="OOC 메시지"></div><div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" data-close data-toast="지침 초안을 입력란에 채웠습니다.">지침 생성</button></div></div></div>
+  <div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div></div>
+  <div class="toasts" aria-live="polite"></div>
+</div></div></div>
+<script src="assets/suite.js"></script>
+<script>
+/* 소설/RP 모드: 라벨 교체 + 리본 */
+function setMode(m){
+  document.documentElement.dataset.writing=m;
+  document.querySelectorAll('.mode-switch button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.mode===m));});
+  document.getElementById('modeLabel').textContent=m==='rp'?'RP 모드 · 유저 행동 불가침':'소설 모드';
+  document.getElementById('navPipe').textContent=m==='rp'?'RP 반응 파이프라인':'초안 파이프라인';
+  document.querySelectorAll('[data-novel]').forEach(function(el){el.textContent=m==='rp'?el.dataset.rp||el.dataset.novel:el.dataset.novel;});
+}
+document.querySelector('.mode-switch').addEventListener('click',function(e){var b=e.target.closest('button');if(b){setMode(b.dataset.mode);window.suiteToast&&suiteToast((b.dataset.mode==='rp'?'RP':'소설')+' 모드로 전환했습니다. 저장해야 확정됩니다.');}});
+/* 저장 바는 이 플러그인에서 전역 하단 고정 */
+document.addEventListener('suite:ready',function(){var q=new URLSearchParams(location.search);if(q.get('mode'))setMode(q.get('mode'));});
+</script>
+</body>
+</html>
