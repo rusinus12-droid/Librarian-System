@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T09:13:52.085Z",
+  "generatedAt": "2026-10-11T10:06:00.078Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2368,7 +2368,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "78c5778e241e6ed9e400322ccdeae6bdf043f8c31cca0142dad25c53ffaeb3a5",
+      "sha256": "82f098ef270fa3d13f4147e2ece69c0001a21d9e1018711dff2326dde46ebdd3",
       "bytes": 11842
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
