@@ -43184,12 +43184,23 @@ function createLibraReadonlySourceContext(owner) {
 
     const yieldBranchAudit = () => new Promise(resolve => setTimeout(resolve, 0));
 
+    // Private completion identity follows the existing cache lifetime. A clock
+    // value alone cannot distinguish two successful audits in the same tick.
+    const completedBranchAudits = new WeakMap();
+    const branchAuditInputWitness = (context, pairs, manifest) => JSON.stringify({
+      scope: { scopeKey: string(context?.scope?.scopeKey || ''),
+        characterId: string(context?.scope?.characterId || ''), chatId: string(context?.scope?.chatId || '') },
+      hostWorldline: asObject(manifest?.worldlineMeta),
+      sourceTagKey: memorySuiteSourceTagKey('libra'), pairs
+    });
+
     const scheduleDeepBranchAudit = (context, pairs, delayMs = BRANCH_DEEP_AUDIT_DELAY_MS) => {
       const scope = clone(asObject(context?.scope));
       const scopeKey = string(scope.scopeKey || '');
       if (!scopeKey || state.disposed || state.portableMemoryActiveOperationId || state.branchAuditInFlight.has(scopeKey)) return false;
       const timerKey = `branch_audit:${scopeKey}`;
       if (state.timers.has(timerKey)) return false;
+      const scheduledAudit = { receipt: completedBranchAudits.get(state.branchPairSignatureCache.get(scopeKey)) };
       const timer = setTimeout(() => {
         state.timers.delete(timerKey);
         // Portable admission and enqueue ownership are synchronous. Recheck at
@@ -43201,7 +43212,7 @@ function createLibraReadonlySourceContext(owner) {
           const livePairs = buildPairs(liveContext.chat, liveContext?.scope?.scopeKey || '');
           await reconcileCanonicalBranchBeforeRecallUnlocked(liveContext, {
             pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'
-          });
+          }, scheduledAudit);
           return true;
         }).catch(error => { warn('LIBRA background branch audit failed', error); return false; }).finally(() => {
           state.branchAuditInFlight.delete(scopeKey);
@@ -43250,7 +43261,7 @@ function createLibraReadonlySourceContext(owner) {
 
     // Private body: the scheduled audit and both scan audit sites already own
     // this scope's non-reentrant queue. The public entry below acquires it.
-    const reconcileCanonicalBranchBeforeRecallUnlocked = async (context, options = {}) => {
+    const reconcileCanonicalBranchBeforeRecallUnlocked = async (context, options = {}, scheduledAudit = null) => {
       const pairs = Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, context?.scope?.scopeKey || '');
       const manifest = options.manifest && typeof options.manifest === 'object'
         ? options.manifest
@@ -43265,6 +43276,9 @@ function createLibraReadonlySourceContext(owner) {
       const previousSignatures = cachedSignatures.length ? cachedSignatures : asArray(persistedGuard.batchSignatures);
       const previousStatus = string(previousCache?.status || persistedGuard.status || BRANCH_GUARD_BOOTSTRAP_PENDING);
       const fullAudit = options.full === true;
+      const previousFullAudit = completedBranchAudits.get(previousCache);
+      // Capture what this audit actually examines, before its physical awaits.
+      const auditInput = fullAudit ? branchAuditInputWitness(context, pairs, manifest) : '';
       const startsToCheck = new Set();
       const signatureChangedStarts = changedBranchStarts(previousSignatures, currentBatchSignatures);
 
@@ -43413,8 +43427,14 @@ function createLibraReadonlySourceContext(owner) {
       // newly started or handoff target session before its first complete five-turn batch.
       const hadTrustedBaseline = previousStatus === BRANCH_GUARD_READY;
       const nextStatus = fullAudit || hadTrustedBaseline ? BRANCH_GUARD_READY : BRANCH_GUARD_BOOTSTRAP_PENDING;
+      // Keep all full-audit reads and reconciliation. Only an unchanged audit
+      // superseded since timer registration can avoid a timestamp-only write.
+      const supersededUnchangedAudit = fullAudit && scheduledAudit && previousFullAudit
+        && previousFullAudit !== scheduledAudit.receipt && !changed
+        && previousFullAudit.input === auditInput
+        && Number(persistedGuard.lastFullAuditAt || 0) === previousFullAudit.lastFullAuditAt;
       const lastFullAuditAt = fullAudit
-        ? now
+        ? supersededUnchangedAudit ? Number(persistedGuard.lastFullAuditAt || 0) : now
         : Math.max(Number(previousCache?.lastFullAuditAt || 0), Number(persistedGuard.lastFullAuditAt || 0));
       const nextGuard = normalizeBranchGuard({
         schema: BRANCH_GUARD_SCHEMA,
@@ -43464,14 +43484,20 @@ function createLibraReadonlySourceContext(owner) {
           warn('LIBRA World Manager branch replay failed', error);
         }
       }
-      state.branchPairSignatureCache.set(scopeKey, {
+      const nextCache = {
         batchSignatures: currentBatchSignatures.slice(),
         status: nextGuard.status,
         verifiedStarts: nextGuard.verifiedStarts.slice(),
         observedTurns: pairs.length,
         at: now,
         lastFullAuditAt
-      });
+      };
+      if (fullAudit && !continuityRebuildPending) {
+        completedBranchAudits.set(nextCache, Object.freeze({ input: auditInput, lastFullAuditAt }));
+      } else if (!fullAudit && previousFullAudit) {
+        completedBranchAudits.set(nextCache, previousFullAudit);
+      }
+      state.branchPairSignatureCache.set(scopeKey, nextCache);
       const deepAuditDue = !fullAudit && options.scheduleDeep !== false
         && (nextGuard.status !== BRANCH_GUARD_READY || !lastFullAuditAt || now - lastFullAuditAt >= BRANCH_DEEP_AUDIT_INTERVAL_MS);
       if (deepAuditDue) {
