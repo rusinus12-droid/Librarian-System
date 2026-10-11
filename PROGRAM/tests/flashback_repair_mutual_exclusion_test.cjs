@@ -1,13 +1,52 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const source=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
-const common=fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteHealthRecovery.source.js'),'utf8');
-function setup(){let release,entered;const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r),Runtime={maintenanceActiveOperationId:'',inAfter:false,finalizedCaptureInFlight:new Set(),recallShardCache:new Map()};let sourceCalls=0,authorityGate=null,journalCalls=0;
- const c=vm.createContext({AbortController,Promise,Map,Set,Object,Date,Math,Runtime,Error,maintenanceJournalAdmissions:new Map(),createMaintenanceLocalJournalAdmission:async()=>{if(authorityGate)await authorityGate;return{write:async()=>{}}},physicalRepairUnresolved:()=>false,normalizeChoice:(m,a,d)=>a.includes(m)?m:d,stableHash:()=> 'hash',renderMaintenanceExecution(){},persistMaintenanceJournal:async()=>{journalCalls++;entered();await gate;throw Error('fixture_stop_after_first_await')},getFlashbackSourceEdits:()=>({previewSelected:async()=>Runtime.maintenanceActiveOperationId?{allowed:false}:{allowed:true},applySelected:async()=>{sourceCalls++;await gate;return{ok:true}},cancelSelected(){}}),loadRisuCaptureSnapshot:async()=>({chat:{id:'chat',message:[]}}),resolveScopeFromSnapshot:()=>({available:true,scopeKey:'scope'}),keyHash:()=> 'h',scopeKeys:{manifest:()=> 'manifest'},MemorySuiteStorageBridge:{inspectLocalHealthSnapshot:async()=>{if(authorityGate)await authorityGate;return {mode:'plugin_only',binding:'route',raw:JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',scopeKey:'scope'})}}},invalidateRecallShardCache(){}});
- const a=source.indexOf('  const flashbackHealthSnapshot ='),b=source.indexOf('  const getFlashbackSourceEdits =',a),x=source.indexOf("  const runMemoryMaintenance = async (mode = 'auto'"),y=source.indexOf('    try {\n    await persistMaintenanceJournal',x);
- vm.runInContext(common+'\n'+source.slice(a,b)+'\n'+source.slice(x,y)+'await persistMaintenanceJournal({});};globalThis.api={health:flashbackHealthRecovery,router:getFlashbackRecoveryActions(),physical:runMemoryMaintenance};',c);
- return{...c.api,Runtime,started,release,sourceCalls:()=>sourceCalls,journalCalls:()=>journalCalls,setAuthorityGate:value=>authorityGate=value};}
-test('physical latch blocks cache preview before its first awaited journal finishes',async()=>{const f=setup();const work=f.physical('sync');await f.started;try{assert(f.Runtime.maintenanceActiveOperationId);assert.equal((await f.health.preview()).allowed,false)}finally{f.release();await assert.rejects(work,/fixture_stop/)}});
-test('shared router action blocks physical start at its synchronous latch',async()=>{const f=setup(),ticket=await f.router.preview('explicit_reanalysis',['1']);const running=f.router.apply(ticket);let error;const physical=f.physical('sync').catch(e=>{error=e});await new Promise(r=>setTimeout(r,0));try{assert.match(error?.message||'',/FLASHBACK_REPAIR_ACTION_BUSY/);assert.equal(f.Runtime.maintenanceActiveOperationId,'')}finally{f.release();await physical;await running}assert.equal(f.sourceCalls(),1)});
-
-test('concurrent maintenance cannot both cross awaited local authority gate',async()=>{const f=setup();let release;f.setAuthorityGate(new Promise(r=>release=r));const a=f.physical('sync').catch(e=>e),b=f.physical('sync').catch(e=>e);await new Promise(r=>setTimeout(r,0));release();await f.started;await new Promise(r=>setTimeout(r,0));try{assert.equal(f.journalCalls(),1,'only one operation reaches a journal write')}finally{f.release();await Promise.all([a,b])}});
+// Run the complete shipped owner, rather than slicing at a retired controller.
+// Fault hooks pause only external journal/admission boundaries; real owner
+// latches, router, authority checks and lifecycle remain unchanged.
+const {test}=require('node:test');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
+const original=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
+const journalMarker='const persistMaintenanceJournal = async (patch = {}) => {';
+const authorityMarker='const createMaintenanceLocalJournalAdmission = async scope => {';
+assert.equal(original.split(journalMarker).length,2);
+assert.equal(original.split(authorityMarker).length,2);
+const source=original.replace(journalMarker,journalMarker+" if (patch.stage==='preflight' && globalThis.__journalStop) await globalThis.__journalStop(patch);")
+ .replace(authorityMarker,authorityMarker+' if(globalThis.__authorityGate) await globalThis.__authorityGate;');
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}};
+async function setup(){
+ const f=await createFixture({source,chat:{message:[{role:'user',chatId:'u1',data:'Where is the key?'},{role:'assistant',chatId:'a1',data:'The brass key is under the blue lamp.'}]}});
+ await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
+ return f;
+}
+test('physical latch blocks cache preview before its first awaited journal finishes',async()=>{
+ const f=await setup(),entered=deferred(),release=deferred();
+ try{
+  await f.api.healthRecovery.preview();
+  f.context.__journalStop=async()=>{entered.resolve();await release.promise;throw Error('fixture_stop_after_first_await')};
+  const work=f.api.runMemoryMaintenance('sync');const observed=work.catch(e=>e);
+  await entered.promise;
+  assert.equal((await f.api.healthRecovery.preview()).allowed,false);
+  release.resolve();assert.match((await observed).message,/fixture_stop/);
+ }finally{release.resolve();await f.dispose()}
+});
+test('shared router action blocks physical start at its synchronous latch',async()=>{
+ const f=await setup();
+ try{
+  const ticket=await f.api.previewSourceEdits(['1']);assert.equal(ticket.allowed,true);
+  const running=f.api.applySourceEdits(ticket);
+  await assert.rejects(()=>f.api.runMemoryMaintenance('sync'),/FLASHBACK_REPAIR_ACTION_BUSY/);
+  const result=await running;assert.equal(result.ok,true,JSON.stringify(result));
+ }finally{await f.dispose()}
+});
+test('concurrent maintenance cannot both cross awaited local authority gate',async()=>{
+ const f=await setup(),authority=deferred(),entered=deferred(),release=deferred();let journalCalls=0;
+ try{
+  f.context.__authorityGate=authority.promise;
+  f.context.__journalStop=async()=>{journalCalls++;entered.resolve();await release.promise;throw Error('fixture_stop_after_first_await')};
+  const a=f.api.runMemoryMaintenance('sync').catch(e=>e),b=f.api.runMemoryMaintenance('sync').catch(e=>e);
+  authority.resolve();await entered.promise;
+  await new Promise(r=>setTimeout(r,20));assert.equal(journalCalls,1);
+  release.resolve();const outcomes=await Promise.all([a,b]);
+  assert.equal(outcomes.filter(e=>/FLASHBACK_MAINTENANCE_BUSY/.test(e.message)).length,1);
+ }finally{authority.resolve();release.resolve();await f.dispose()}
+});

@@ -21,7 +21,7 @@ async function mixedStore(version){
   let requests=0;
   f.host.nativeFetch=async(url,init)=>{
    requests++;const body=JSON.parse(init.body),inputs=Array.isArray(body.input)?body.input:[body.input];
-   return new Response(JSON.stringify({data:inputs.map((x,index)=>({index,embedding:String(x).includes(irrelevant)?[0,1,0]:[1,0,0]}))}),{status:200});
+   return new Response(JSON.stringify({data:inputs.map((x,index)=>({index,embedding:(String(x).includes(irrelevant)||String(x).includes('WEATHER_FIXTURE_QUERY'))?[0,1,0]:[1,0,0]}))}),{status:200});
   };
   f.currentChat.message=[{role:'user',chatId:'u1',data:'A key was moved.'},{role:'assistant',chatId:'a1',data:target},
    {role:'user',chatId:'u2',data:'Describe the weather.'},{role:'assistant',chatId:'a2',data:irrelevant}];
@@ -30,13 +30,22 @@ async function mixedStore(version){
   const scope=await f.api.resolveCurrentScope(),loaded=(await t.loadScopeRecords(scope.scopeKey)).records;
   assert.equal(loaded.filter(r=>r.text.includes(target)).length,1);
   const mixed=loaded.map(r=>r.text.includes(target)?{...r,provider:'hash',model:`hash-${cfg.hashDimensions}`,dim:cfg.hashDimensions,
-   vector:t.hashEmbedding(r.text,cfg.hashDimensions),embeddingProfileId:''}:r);
+   vector:Array.from({length:cfg.hashDimensions},(_,i)=>i===0?1:0),embeddingProfileId:''}:r);
   await t.saveAllRecords(mixed,cfg,scope);
   const stored=(await t.loadScopeRecords(scope.scopeKey)).records,before=JSON.stringify(stored);
   assert.ok(requests>0&&stored.some(r=>r.provider==='openai_compat')&&stored.some(r=>r.provider==='hash'),'Exercise an actual mixed vector store');
   const query='Where did Alice leave the brass key?';
   const options={currentUser:query,currentPairIndex:4};
   const raw=await sel.prepareFlashbackRecall(query,cfg,scope,options),plan=sel.selectFlashbackEvidencePlan(raw,cfg,3000);
+  assert.equal(JSON.stringify((await t.loadScopeRecords(scope.scopeKey)).records),before);
+  // The mixed store must also retain positive model recall through the actual
+  // hook; exclusion alone must never make an empty engine look correct.
+  const weatherQuery='WEATHER_FIXTURE_QUERY What happened to the empty boats?';
+  f.currentChat.message.push({role:'user',chatId:'u3',data:weatherQuery});
+  await t.beforeRequest([{role:'user',chatId:'u3',content:weatherQuery}],'model');
+  const delivered=await t.beforeRequest([{role:'user',chatId:'u4',content:weatherQuery}],'model');
+  assert.ok(delivered.some(message=>String(message.content||'').includes(irrelevant)),'actual beforeRequest delivers the comparable remote source');
+  assert.ok(!delivered.some(message=>String(message.content||'').includes(target)),'actual beforeRequest excludes preserved legacy hash source');
   assert.equal(JSON.stringify((await t.loadScopeRecords(scope.scopeKey)).records),before);
   return {version,sourceHash:sha(file),stored:stored.map(r=>({id:r.id,provider:r.provider,isTarget:r.text.includes(target)})),
    loaded:raw.loadedTotal,arms:plain(raw.diagnostics?.candidateArms),selected:plan.items.map(i=>i.record.id),targetDelivered:plan.text.includes(target),
@@ -45,7 +54,8 @@ async function mixedStore(version){
 }
 (async()=>{
  results.push({case:'mixed_hash_remote_store',...(await mixedStore('current'))});
- assert.equal(results[0].targetDelivered,true,'Hash-first committed memory remains discoverable beside an unrelated remote vector');
+ assert.equal(results[0].targetDelivered,false,'Legacy hash vectors are preserved but excluded from model-only recall');
+ assert.equal(results[0].targetStillStored,true,'Model-only filtering never deletes immutable legacy source');
  const f=await createFixture();
  try{
   const t=f.api._test,sel=f.api._selectionTest;
@@ -55,7 +65,7 @@ async function mixedStore(version){
   const query='Where did Alice leave the brass key?';
   const rows=Array.from({length:10},(_,i)=>({id:`hash-${i}`,sourceHash:`src-${i}`,sourceType:'response',scopeKey:'fixture',lifecycleStatus:'active',
    text:i===8?'Alice left the brass key inside the blue cabinet.':`Harbor inventory batch ${i} contained ropes and timber.`,
-   responseTurnIndex:i+1,pairIndex:i+1,provider:'hash',model:'hash-512',vector:t.hashEmbedding(i===8?'Alice left the brass key inside the blue cabinet.':`harbor timber ${i}`,512)}));
+   responseTurnIndex:i+1,pairIndex:i+1,provider:'hash',model:'hash-512',vector:Array.from({length:512},(_,j)=>j===0?1:0)}));
   const summaries=rows.map((r,i)=>t.buildRecallShardSummary([r],i,cfg));
   const manifest={scopeKey:'fixture',shardCount:10,shardIndexVersion:8,shardSummaries:summaries,responseTurnMax:10};
   const route=t.selectRecallShardIndexes(manifest,query,[1,0,0],'openai_compat','fact',cfg,'engine-audit');

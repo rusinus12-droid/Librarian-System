@@ -267,7 +267,7 @@ async function client(base = url) {
       } finally { gate.resolve(); await pending; fault = null; }
       const retried = await capture(two);
       assert.equal(retried.captured, 1, JSON.stringify(retried));
-      assert.equal((await two.api.getSourceEditSyncStatus()).error,'','a normal retry rereads and validates a transient journal rejection before allowing capture');
+      assert.equal(two.api.getReanalysisStatus().error,'','capture retry must not leave an explicit reanalysis error');
       const captureScope = await two.api.resolveCurrentScope();
       const after = rawTexts((await two.api._test.loadScopeRecords(captureScope.scopeKey)).records);
       assert.ok(after.some(t => t.includes('COMMIT_TURN_2')));

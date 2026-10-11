@@ -24,6 +24,7 @@ const path = require('node:path');
 const PROGRAM = path.resolve(__dirname, '..');
 const { createFixture } = require(path.join(PROGRAM, 'tests', 'fixtures', 'flashback_native_runtime_fixture.cjs'));
 
+const { syntheticFetch, configure, readyForRecall } = require('./helpers/unload_recall_contract_fixture.cjs');
 const results = [];
 const check = (name, fn) => { try { fn(); results.push({ name, ok: true }); } catch (e) { results.push({ name, ok: false, error: String(e.message).slice(0, 400) }); } };
 const plain = value => JSON.parse(JSON.stringify(value ?? null));
@@ -88,11 +89,13 @@ const captureOnce = async (fixture, mode, { userText, replyText }) => {
 
     try {
       const api = fixture.api;
-      const cfg = { ...await api.loadSettings(), embeddingProvider: 'hash', embeddingModel: 'hash-v1', embeddingEnabled: true, captureAfterRequest: true };
-      await api.saveSettings(cfg);
+      fixture.host.nativeFetch = (url, init) => syntheticFetch(url, init);
+      await configure(fixture, 'configured');
+      const cfg = await api.loadSettings();
       await api.ingestLiveChatColdStart({ scope: 'current', canonical: true });
       const capture = await captureOnce(fixture, mode, { userText: SEED_USER, replyText: SEED_REPLY });
       captureInfo = { result: plain(capture) };
+      await readyForRecall(fixture, 'configured', SEED_PHRASE);
       chat = plain(fixture.currentChat);
       character = plain(fixture.character);
     } finally {
@@ -105,8 +108,9 @@ const captureOnce = async (fixture, mode, { userText, replyText }) => {
       const api = fixture.api;
       const t = api._test;
       const sel = api._selectionTest;
-      const cfg = { ...await api.loadSettings(), embeddingProvider: 'hash', embeddingModel: 'hash-v1', embeddingEnabled: true, captureAfterRequest: true };
-      await api.saveSettings(cfg);
+      fixture.host.nativeFetch = (url, init) => syntheticFetch(url, init);
+      await configure(fixture, 'configured');
+      const cfg = await api.loadSettings();
       const scope = await api.resolveCurrentScope();
 
       const stored = await t.loadScopeRecords(scope.scopeKey);

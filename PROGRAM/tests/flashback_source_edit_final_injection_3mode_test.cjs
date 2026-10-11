@@ -7,6 +7,7 @@ const path = require('node:path');
 const { createMemorySuiteServer } = require('../server/server.cjs');
 const { createFixture } = require('./fixtures/flashback_native_runtime_fixture.cjs');
 
+const { syntheticFetch, configure, readyForRecall } = require('./helpers/unload_recall_contract_fixture.cjs');
 const MODES = ['plugin_only', 'mirror', 'server_only'];
 const USER = 'I check the gauge and step back.';
 const OLD_REPLY = 'The needle holds at the red mark and the spare valve hangs on the north wall hook.';
@@ -17,7 +18,7 @@ const OLD_LOCATION = 'north wall hook';
 const NEW_LOCATION = 'east cabinet';
 const QUERY = 'What color did the needle show, and where is the spare valve now?';
 const SETTINGS = {
-  embeddingProvider: 'hash', embeddingModel: 'hash-v1', embeddingEnabled: true,
+  embeddingProvider: 'openai_compat', embeddingModel: 'unload-synthetic-v1', embeddingUrl: 'https://unload-fixture.invalid/v1', embeddingDimensions: 3, embeddingMaxRetries: 0, embeddingAutoProcess: false, embeddingEnabled: true,
   captureAfterRequest: true, episodeIndexEnabled: false, hookRecallTimeoutMs: 5000,
   maxInjectionChars: 4000
 };
@@ -60,7 +61,7 @@ async function checkMode(mode) {
           } catch (_) {}
         }
         networkCalls.push(call);
-        const response = await fetch(url, options);
+        const response = await syntheticFetch(url, options, fetch);
         if (!response.ok) call.error = await response.clone().text();
         call.status = response.status;
         return response;
@@ -82,6 +83,7 @@ async function checkMode(mode) {
       const state = api.getCaptureBackendState();
       return state.registered && state.backend === 'chat_output_v3' ? state : null;
     }, `${mode} registered Risu output listener`);
+    await configure(fixture, 'configured');
     await api.saveSettings({ ...await api.loadSettings(), ...SETTINGS });
     await api.ingestLiveChatColdStart({ scope: 'current', canonical: true });
     await sel.beforeRequest([{ role: 'user', chatId: 'u1', content: USER }], 'model');
@@ -105,7 +107,9 @@ async function checkMode(mode) {
       const rows = await t.loadScopeRecords(scope.scopeKey);
       return (rows?.records || []).some(record => String(record.text || '').includes(OLD_FACT)) ? rows : null;
     }, `${mode} durable initial capture`);
-    const initialRecord = initial.records.find(record => String(record.text || '').includes(OLD_FACT));
+    await readyForRecall(fixture, 'configured', OLD_FACT);
+    const readyInitial = await t.loadScopeRecords(scope.scopeKey);
+    const initialRecord = readyInitial.records.find(record => String(record.text || '').includes(OLD_FACT));
     assert.ok(initialRecord, `${mode}: durable readback contains the original fact`);
     const originalRaw = JSON.stringify(initialRecord);
     const captureRuntimeAfterPersist = t.pendingCaptureRuntimeSnapshot?.() || {};
@@ -127,6 +131,7 @@ async function checkMode(mode) {
     const freshApi = fixture.api;
     const freshTest = freshApi._test;
     const freshSelection = freshApi._selectionTest;
+    await configure(fixture, 'configured');
     await freshApi.saveSettings({ ...await freshApi.loadSettings(), ...SETTINGS });
     const freshScope = await freshApi.resolveCurrentScope();
     assert.equal(freshScope.scopeKey, scope.scopeKey, `${mode}: restart resolves the same character/chat scope`);
@@ -145,6 +150,9 @@ async function checkMode(mode) {
 
     // The first request reconciles the output event with the live turn worldline. The next request
     // reaches the same real beforeRequest path after that durable synchronization has completed.
+    await readyForRecall(fixture, 'configured', OLD_FACT);
+    fixture.currentChat.message.push({role:'user',chatId:'u8',data:QUERY});
+    fixture.currentChat.messages=fixture.currentChat.message;
     const writerBeforeFirstRequest = writerSnapshot(app);
     const firstFreshMessages = await freshSelection.beforeRequest([{ role: 'user', chatId: 'u8', content: QUERY }], 'model');
     const writerAfterFirstRequest = writerSnapshot(app);
@@ -164,13 +172,19 @@ async function checkMode(mode) {
     }
     assert.ok(firstFreshInjection.includes(OLD_FACT), `${mode}: first fresh-runtime request injects the canonical fact immediately after successful unload drain`);
 
-    // Edit the assistant body without changing either message identity. Default source-edit policy is auto.
+    // Explicit reanalysis is available only after the model request completes.
+    await freshSelection.afterRequest('The gauge reading is acknowledged.', 'model');
+    // Edit the stored turn without changing either native message identity.
     fixture.currentChat.message[1].data = NEW_REPLY;
     fixture.currentChat.messages = fixture.currentChat.message;
+    const ticket = await freshApi.previewSourceEdits(['1']);
+    assert.equal(ticket.allowed, true, `${mode}: exact current turn is available for explicit replacement: ${JSON.stringify(ticket)}`);
+    const applied = await freshApi.applySourceEdits(ticket);
+    assert.equal(applied.ok, true, JSON.stringify(applied));
+    assert.equal(applied.rawSaved, true);
+    assert.equal(applied.remoteEmbeddingQueued, false, 'raw reanalysis cannot dispatch embedding itself');
+    await readyForRecall(fixture, 'configured', NEW_FACT);
     const editedMessages = await freshSelection.beforeRequest([{ role: 'user', chatId: 'u10', content: QUERY }], 'model');
-    const applied = await waitFor(async () => freshApi.getSourceEditSyncStatus().tasks
-      .find(task => task.key === '1' && task.state === 'applied'), `${mode} automatic source revision`);
-    assert.ok(applied, `${mode}: auto policy applies the edited source pair`);
     const afterEdit = await freshTest.loadScopeRecords(freshScope.scopeKey);
     const editedRecord = afterEdit.records.find(record => String(record.text || '').includes(NEW_FACT));
     assert.ok(editedRecord, `${mode}: durable active records contain the edited fact`);
@@ -207,7 +221,7 @@ async function checkMode(mode) {
     const localHasCurrent = localValues.some(value => value.includes(NEW_FACT));
     const localKeys = [...storage.values.keys()].map(String);
     if (mode === 'plugin_only') {
-      assert.equal(networkCalls.length, 0, 'plugin_only uses no related storage server calls');
+      assert.equal(networkCalls.filter(call => new URL(call.url).hostname === '127.0.0.1').length, 0, 'plugin_only uses no storage server calls');
       assert.equal(serverRows.length, 0, 'plugin_only writes no Flashback server rows');
       assert.ok(localHasCurrent, 'plugin_only keeps the active canonical locally');
     } else if (mode === 'mirror') {
