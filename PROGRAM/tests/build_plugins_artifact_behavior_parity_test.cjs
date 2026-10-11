@@ -106,9 +106,27 @@ async function exercise(dir, [owner,file,globalName], options={}) {
   }
 }
 module.exports={exercise,libraTerminalStatus};
+// This exact preserved release predates the reviewed removal of WM physical
+// import controls. Permit only that recorded retirement, keeping all remaining
+// runtime values, hooks, API keys, registrations and controls byte-for-byte equal.
+function expectedCurrentSurface(before, after) {
+  if (before.owner !== 'retrace' || before.sha256 !== 'caae655870f5274f68a787650175a682a7e377099e09f89fbab766ce66b72db6') return before;
+  const expected=plain(before);
+  const retired={
+    buttons:['선택 백업 가져오기 준비','같은 작업 상태 확인','확인 후 새 저장소 가져오기','같은 ID 중단 복구','확인 후 복구 대상으로 채택'],
+    headings:['WM 백업 · 새 물리 저장소 가져오기'],
+    ids:['wmHandoffSelection','wmHandoffPreview','serverControlWmImport','serverControlWmImportOperations','serverControlWmImportStatus','serverControlWmRestoreStatus']
+  };
+  for(const [kind,values] of Object.entries(retired)) for(const value of values) {
+    assert.equal(expected.portal[kind].filter(item=>item===value).length,1,`pinned control contains retired ${kind}: ${value}`);
+    assert.equal(after.portal[kind].includes(value),false,`candidate does not restore retired ${kind}: ${value}`);
+    expected.portal[kind]=expected.portal[kind].filter(item=>item!==value);
+  }
+  return expected;
+}
 if(require.main===module)(async()=>{
   assert.ok(prior && candidate, 'explicit preserved control and candidate artifact directories are required');
   const results=[];
-  for(const row of rows){const before=await exercise(prior,row),after=await exercise(candidate,row);const {sha256:oldSha,...expected}=before;const {sha256:newSha,...actual}=after;assert.deepEqual(actual,expected,`${row[0]} actual hook, portal, registration and storage behavior parity`);results.push({owner:row[0],controlSHA256:oldSha,artifactSHA256:newSha,hooks:Object.keys(after.hookResults),portalControls:after.portal.buttons.length,storageKeys:after.storageKeys.length,modelCalls:after.modelCalls,networkCalls:after.networkCalls});console.log(JSON.stringify({owner:row[0],result:'PASS',...results.at(-1)}));}
+  for(const row of rows){const before=await exercise(prior,row),after=await exercise(candidate,row);const {sha256:oldSha,...expected}=expectedCurrentSurface(before,after);const {sha256:newSha,...actual}=after;assert.deepEqual(actual,expected,`${row[0]} actual hook, portal, registration and storage behavior parity`);results.push({owner:row[0],controlSHA256:oldSha,artifactSHA256:newSha,hooks:Object.keys(after.hookResults),portalControls:after.portal.buttons.length,storageKeys:after.storageKeys.length,modelCalls:after.modelCalls,networkCalls:after.networkCalls});console.log(JSON.stringify({owner:row[0],result:'PASS',...results.at(-1)}));}
   console.log(JSON.stringify({test:'build_plugins_artifact_behavior_parity',passed:results.length,results}));
 })().catch(error=>{console.error(error);process.exitCode=1;});
