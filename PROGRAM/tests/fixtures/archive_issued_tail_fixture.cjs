@@ -8,7 +8,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const Module = require('node:module');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const acorn = require('acorn');
+const sourcePlans = require('./archive_issued_tail_plans.json');
+assert.equal(sourcePlans.schema, 'root085.source-observer-plans.v1');
+assert.equal(sourcePlans.offsetUnit, 'javascript-utf16-code-unit');
+assert.equal(sourcePlans.plans.length, 3);
 const crypto = require('node:crypto');
 const key = '__root085IssuedStartupObserver';
 const origin = new AsyncLocalStorage();
@@ -24,15 +27,6 @@ const emit = (kind, data = {}) => {
   if (events.length === 512) { dropped++; return; }
   events.push({ kind, atMs: clock(), ...data });
 };
-const walk = (node, visit) => {
-  if (!node || typeof node !== 'object') return;
-  visit(node);
-  for (const [name, value] of Object.entries(node)) {
-    if (name === 'loc') continue;
-    if (Array.isArray(value)) value.forEach(item => walk(item, visit));
-    else if (value && typeof value === 'object') walk(value, visit);
-  }
-};
 const replaceOnce = (source, before, after) => {
   assert.equal(source.split(before).length - 1, 1, 'unique source observer seam');
   return source.replace(before, after);
@@ -41,57 +35,32 @@ const replaceOnce = (source, before, after) => {
 function observeProduct(source) {
   const hash = digest(source);
   if (sourceCache.has(hash)) return sourceCache.get(hash);
-  const tree = acorn.parse(source, { ecmaVersion: 'latest', locations: true });
-  const edits = [], expressions = new Map(), callsites = [];
-  const searchBoundary = source.indexOf('// BEGIN MEMORY SUITE SEARCH');
-  const wrap = (node, prefix) => edits.push({ start: node.start, end: node.end, prefix, suffix: ')' });
-  walk(tree, node => {
-    if (node.type !== 'CallExpression') return;
-    const family = node.callee.name;
-    if (family !== 'scheduleTimer' && !(family === 'scheduleLifecycleTimeout' && node.start < searchBoundary)) return;
-    const callback = node.arguments[0];
-    const label = `${family}:${node.loc.start.line}`;
-    callsites.push({ family, label, callbackSha256: digest(source.slice(callback.start, callback.end)) });
-    wrap(callback, `globalThis.${key}.label(${JSON.stringify(label)},`);
-    if (callback.type === 'Identifier') return; // Actual return observed by invoke.
-    walk(callback.body, child => {
-      if (child.type !== 'ExpressionStatement') return;
-      let expression = child.expression;
-      if (expression.type === 'UnaryExpression' && expression.operator === 'void') expression = expression.argument;
-      if (expression.type !== 'CallExpression' && !(expression.type === 'AssignmentExpression' && expression.right.type === 'CallExpression')) return;
-      expressions.set(expression.start, expression);
-    });
-  });
-  assert.equal(callsites.filter(row => row.family === 'scheduleTimer').length, 18);
-  assert.equal(callsites.filter(row => row.family === 'scheduleLifecycleTimeout').length, 14);
-  for (const node of expressions.values()) wrap(node, `globalThis.${key}.promise('scheduled.chain',`);
-  // Balanced insertions preserve all original source text, including nested
-  // callback registrations and detached child chains.
-  const insertions = new Map();
-  const add = (at, text, order) => { const rows = insertions.get(at) || []; rows.push({ text, order }); insertions.set(at, rows); };
-  for (const edit of edits) { add(edit.start, edit.prefix, -edit.end); add(edit.end, edit.suffix, -edit.start); }
-  let result = source;
-  for (const [at, rows] of [...insertions].sort((a, b) => b[0] - a[0])) {
-    result = result.slice(0, at) + rows.sort((a, b) => a.order - b.order).map(row => row.text).join('') + result.slice(at);
+  const plan = sourcePlans.plans.find(row => row.sourceSha256 === hash);
+  assert(plan, 'source observer requires an exact statically verified input');
+  assert.equal(Buffer.byteLength(source), plan.sourceBytes);
+  assert.equal(source.length, plan.sourceCodeUnits, 'source offsets are JavaScript UTF-16 code units');
+  assert.equal(plan.callsites.length, 32);
+  assert.equal(plan.expressionCount, 52);
+  assert.equal(plan.anchors.length, 8);
+  for (const anchor of plan.anchors) {
+    const region = source.slice(0, anchor.regionEnd);
+    assert.equal(region.indexOf(anchor.before), anchor.start, 'complete fixed source anchor');
+    assert.equal(region.indexOf(anchor.before, anchor.start + 1), -1, 'unambiguous fixed source anchor');
   }
-  result = replaceOnce(result, "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
-    `try { globalThis.${key}.invoke(fn); } catch (error) { warn('scheduled timer callback failed', error); }`);
-  result = replaceOnce(result, '      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));',
-    `      globalThis.${key}.invoke(callback);\n    }, Math.max(0, Number(delayMs || 0) || 0));`);
-  result = replaceOnce(result, '  globalThis.__FlashbackMemory = publicApi;',
-    `  globalThis.${key}.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers, scheduleTimer, withDeadline });\n  globalThis.__FlashbackMemory = publicApi;`);
-  result = replaceOnce(result, '  const autoMigratePlugin = !localOnlyOwner',
-    `  globalThis.${key}.captureSdk({ timers: lifecycle.timers, clear: clearLifecycleTimeout });\n  const autoMigratePlugin = !localOnlyOwner`);
-  result = replaceOnce(result, 'void refreshHostRuntimeInfo();', `void globalThis.${key}.promise('startup.runtime_info',refreshHostRuntimeInfo());`);
-  result = replaceOnce(result, "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
-    `globalThis.${key}.promise('startup.ui',registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error)));`);
-  result = replaceOnce(result, '    Runtime.scheduledTimers.add(id);',
-    `    Runtime.scheduledTimers.add(id);\n    globalThis.${key}.timerRegistered('runtime',id,fn,ms);`);
-  const storageEnd = result.indexOf('// BEGIN MEMORY SUITE SEARCH');
-  result = replaceOnce(result.slice(0, storageEnd), '    lifecycle.timers.add(timer);',
-    `    lifecycle.timers.add(timer);\n    globalThis.${key}.timerRegistered('sdk',timer,callback,delayMs);`) + result.slice(storageEnd);
-  acorn.parse(result, { ecmaVersion: 'latest' });
-  const transformed = { source: result, sourceSha256: hash, observedSha256: digest(result), callsites, expressionCount: expressions.size };
+  const chunks = [];
+  let cursor = 0;
+  for (const patch of plan.patches) {
+    assert(Number.isInteger(patch.start) && Number.isInteger(patch.end));
+    assert(patch.start >= cursor && patch.end >= patch.start && patch.end <= source.length, 'ordered nonoverlapping source patches');
+    assert.equal(source.slice(patch.start, patch.end), patch.before, 'exact complete patch input');
+    chunks.push(source.slice(cursor, patch.start), patch.after);
+    cursor = patch.end;
+  }
+  chunks.push(source.slice(cursor));
+  const result = chunks.join('');
+  assert.equal(digest(result), plan.observedSha256, 'byte-exact reviewed AST observer output');
+  const transformed = { source: result, sourceSha256: hash, observedSha256: plan.observedSha256,
+    callsites: plan.callsites, expressionCount: plan.expressionCount };
   assert(sourceCache.size < 8, 'bounded fixture source variants');
   sourceCache.set(hash, transformed);
   return transformed;
