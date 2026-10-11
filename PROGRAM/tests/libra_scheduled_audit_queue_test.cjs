@@ -22,8 +22,8 @@ function expose(source) {
     'const enqueue = globalThis.__enqueueAuditTest = (scopeKey, task, queues = state.queues) => {');
   replace('const task = enqueue(scopeKey, async () => {\n          const liveContext',
     'const task = enqueue(scopeKey, async () => {globalThis.__auditEntered = (globalThis.__auditEntered || 0) + 1;\n          const liveContext');
-  replace("pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          });",
-    "pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          });globalThis.__auditCompleted = (globalThis.__auditCompleted || 0) + 1;");
+  replace("pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          }, scheduledAudit);",
+    "pairs: livePairs, full: true, background: true, scheduleDeep: false, reason: 'background_deep_audit'\n          }, scheduledAudit);globalThis.__auditCompleted = (globalThis.__auditCompleted || 0) + 1;");
   replace('state.branchAuditInFlight.set(scopeKey, task);',
     'state.branchAuditInFlight.set(scopeKey, task);globalThis.__auditTask = task;');
   replace("warn('LIBRA background branch audit failed', error);",
@@ -325,3 +325,5 @@ test('scan preflight reconciles rollback under its existing scope owner', async 
     assert.equal(f.control.calls.length, calls);
   } finally { await f.r.cleanup(); }
 });
+
+require('./fixtures/libra_scheduled_audit_supersession.cjs').register({test,prepared,deferred,within,until});
