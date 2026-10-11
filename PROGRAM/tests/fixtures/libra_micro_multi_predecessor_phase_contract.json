@@ -1,0 +1,989 @@
+{
+  "schema": "libra.micro_multi_predecessor.phase_diagnostic.v1",
+  "status": "STATIC_PREPARED_NOT_RUNTIME_RUN",
+  "originalTestSHA256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+  "preparedTestSHA256": "9e79535b21320ebe2ff35de7284bf2e59b2a8bd58157073c7ac6e0bb916c4981",
+  "markers": [
+    {
+      "originalLine": 11,
+      "label": "L11-await-statement",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 20,
+      "label": "L20-await-statement",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 57,
+      "label": "L57-serverFixture",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 66,
+      "label": "L66-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 68,
+      "label": "L68-bridge.setScopeMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 80,
+      "label": "L80-f.r.api.debugReadActiveMicroMemory",
+      "pollingBudget": true
+    },
+    {
+      "originalLine": 92,
+      "label": "L92-f.r.api.debugReadActiveCompletedTurnReceipt",
+      "pollingBudget": true
+    },
+    {
+      "originalLine": 111,
+      "label": "L111-waitFor",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 112,
+      "label": "L112-f.r.api.debugReadActiveMicroMemory",
+      "pollingBudget": true
+    },
+    {
+      "originalLine": 116,
+      "label": "L116-waitFor",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 117,
+      "label": "L117-waitFor",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 134,
+      "label": "L134-setMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 136,
+      "label": "L136-setMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 138,
+      "label": "L138-f.run",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 139,
+      "label": "L139-produceT6",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 140,
+      "label": "L140-produceT6",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 142,
+      "label": "L142-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 147,
+      "label": "L147-setMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 148,
+      "label": "L148-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 150,
+      "label": "L150-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 156,
+      "label": "L156-f.run",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 157,
+      "label": "L157-produceT6",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 158,
+      "label": "L158-produceT6",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 159,
+      "label": "L159-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 164,
+      "label": "L164-setMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 175,
+      "label": "L175-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 190,
+      "label": "L190-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 192,
+      "label": "L192-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 197,
+      "label": "L197-f.run",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 198,
+      "label": "L198-waitFor",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 201,
+      "label": "L201-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 252,
+      "label": "L252-f.r.api.addWorldManagerCorrection",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 256,
+      "label": "L256-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 264,
+      "label": "L264-f.r.api.setWorldManagerCorrectionStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 266,
+      "label": "L266-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 267,
+      "label": "L267-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 273,
+      "label": "L273-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 275,
+      "label": "L275-f.r.api.deleteLibraScope",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 284,
+      "label": "L284-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 286,
+      "label": "L286-f.r.api.getLibraMemorySettings",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 292,
+      "label": "L292-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 300,
+      "label": "L300-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 305,
+      "label": "L305-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 317,
+      "label": "L317-f.r.api.debugNativeChatCopy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 336,
+      "label": "L336-f.r.api.debugNativeChatCopy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 339,
+      "label": "L339-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 367,
+      "label": "L367-f.r.api.rebuildWorldManagerState",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 370,
+      "label": "L370-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 378,
+      "label": "L378-produceT6",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 379,
+      "label": "L379-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 384,
+      "label": "L384-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 396,
+      "label": "L396-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 415,
+      "label": "L415-retryBusy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 418,
+      "label": "L418-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 423,
+      "label": "L423-f.run",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 433,
+      "label": "L433-bridge.getScopeMode",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 459,
+      "label": "L459-waitFor",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 462,
+      "label": "L462-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 475,
+      "label": "L475-f.r.api.getHostLineageStatus",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 477,
+      "label": "L477-f.r.api.deleteLibraScope",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 480,
+      "label": "L480-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 496,
+      "label": "L496-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 497,
+      "label": "L497-f.r.api.debugNativeChatCopy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 506,
+      "label": "L506-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 526,
+      "label": "L526-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 527,
+      "label": "L527-f.r.api.debugNativeChatCopy",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 551,
+      "label": "L551-fx.url",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 555,
+      "label": "L555-repair",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 558,
+      "label": "L558-repair",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 574,
+      "label": "L574-fx.restart",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 575,
+      "label": "L575-repair",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 592,
+      "label": "L592-f.r.api.debugLoadContinuityStateForResponse",
+      "pollingBudget": false
+    },
+    {
+      "originalLine": 601,
+      "label": "L601-fx.cleanup",
+      "pollingBudget": false
+    }
+  ],
+  "assertions": [
+    {
+      "line": 82,
+      "method": "equal",
+      "source": "assert.equal(previous?.status, 'verified', 'the edited turn has an active predecessor')",
+      "sha256": "9ffa62c441d9caac44f87d5dde70966e6db8d0415e20f7aa8f665a9bde09e103"
+    },
+    {
+      "line": 108,
+      "method": "equal",
+      "source": "assert.equal(typeof listener, 'function')",
+      "sha256": "1bccb3c9dbe836f8c02b233df0fc24a83d5b9be1ba3989abdb2cc188f8779c05"
+    },
+    {
+      "line": 128,
+      "method": "ok",
+      "source": "assert.ok(revisions.length >= 2,\n            `${mode}: edited T6 keeps both immutable Micro revisions`)",
+      "sha256": "b681fa03671c1c47f9c5be0b590cc79ab1082881f6d707b6699a25a1101a7fcb"
+    },
+    {
+      "line": 130,
+      "method": "ok",
+      "source": "assert.ok(revisions.some(row => row.key === previous.recordKey),\n            `${mode}: the prior T6 record remains physically addressable`)",
+      "sha256": "bc796f24ade3cb9753a7b007c3a61db6d15404dd8ce1cb90a229af080c245310"
+    },
+    {
+      "line": 138,
+      "method": "equal",
+      "source": "assert.equal((await f.run()).completed, 1)",
+      "sha256": "198d27907f2998e7c0685a5d54b2c6b32227dad145335a6dba409e57f07f3130"
+    },
+    {
+      "line": 143,
+      "method": "ok",
+      "source": "assert.ok(firstEnvelope.records.filter(row => String(row.key).includes(':micro-memory:')\n        && String(row.key).includes(':t6:')).length >= 2,\n      `${mode}: first export carries active and historical T6 revisions`)",
+      "sha256": "9fece132ff9522d2d382cb63ccc2d8b9047c4f602c75f2b007d423b7ad076531"
+    },
+    {
+      "line": 148,
+      "method": "equal",
+      "source": "assert.equal((await retryBusy(() => portable.importAsPredecessorArchive(firstEnvelope))).ok,\n        true, `${mode}: first predecessor import succeeds`)",
+      "sha256": "798aafe86a27df375d1918455afe01ae5eacbff72da871c32c2be724a549b0b5"
+    },
+    {
+      "line": 156,
+      "method": "equal",
+      "source": "assert.equal((await f.run()).completed, 1, `${mode}: middle chat commits its Canonical`)",
+      "sha256": "b726bac80003ad51dec0a1c9ec9079917c88776aa4fe2da16c1d9d3869f9cfe9"
+    },
+    {
+      "line": 160,
+      "method": "ok",
+      "source": "assert.ok(secondEnvelope.records.filter(row => String(row.key).includes(':micro-memory:')\n        && String(row.key).includes(':t6:')).length >= 2,\n      `${mode}: second export carries active and historical T6 revisions`)",
+      "sha256": "a33f7a3ff0097437e1ad275f80790a2c642505fb0b5dff2630e09b466343f330"
+    },
+    {
+      "line": 175,
+      "method": "rejects",
+      "source": "assert.rejects(() => retryBusy(() =>\n          portable.importAsPredecessorArchive(secondEnvelope)))",
+      "sha256": "12b37d3b06df1224bd8f258584e808a268bb9f79378b28f06323cd17767c5458"
+    },
+    {
+      "line": 178,
+      "method": "equal",
+      "source": "assert.equal(archiveWrites, 2, 'the fault reached the second archive write')",
+      "sha256": "ae0f453062b8c8e2f2cd1411af7e2e8bdcde912ab61d360b75fb88697006f279"
+    },
+    {
+      "line": 179,
+      "method": "equal",
+      "source": "assert.equal([...fx.local.keys()].some(key => key.startsWith(archivePrefix)), false,\n          'failed multi-archive import rolls back both local archive rows')",
+      "sha256": "bbec73d1e042af1efd1ecca440017cb203d84029cf2b2439f05c747698f7451a"
+    },
+    {
+      "line": 181,
+      "method": "equal",
+      "source": "assert.equal(fx.storedRows().some(row => row.key.startsWith(archivePrefix)), false,\n          'failed multi-archive import rolls back both server archive rows')",
+      "sha256": "cb6941e084f9066e10b8da8655e28c6e9835a20f68a74b03d94f007ebd604850"
+    },
+    {
+      "line": 185,
+      "method": "equal",
+      "source": "assert.equal((manifest?.inheritedMicroArchives || []).length, 0,\n          'failed multi-archive import publishes no archive references')",
+      "sha256": "8d557a02c1d1fc0c67e4469465f683a0870f4d512834b343c940bf3aaedf0b6a"
+    },
+    {
+      "line": 187,
+      "method": "equal",
+      "source": "assert.equal((manifest?.portableImports || []).some(row => row.verified && row.durable), false,\n          'failed multi-archive import publishes no success receipt')",
+      "sha256": "7fa757e44c187856a8ef4a70dd7a9ac7228ce6e6da988e91df471a8b9d1f84ef"
+    },
+    {
+      "line": 190,
+      "method": "equal",
+      "source": "assert.equal((await retryBusy(() => portable.importAsPredecessorArchive(secondEnvelope))).ok,\n        true, `${mode}: second predecessor import succeeds`)",
+      "sha256": "9dc3e3446019787b1027eaa341f37ee119455423f7060c9ac4ce9b762f38d5df"
+    },
+    {
+      "line": 197,
+      "method": "equal",
+      "source": "assert.equal((await f.run()).completed, 1, `${mode}: final chat commits its Canonical`)",
+      "sha256": "4130fafeebe7a894558339a68ac743af1af3c949c68d86ed5c93988f5a98ac72"
+    },
+    {
+      "line": 204,
+      "method": "equal",
+      "source": "assert.equal(transitions.length, 2,\n        `${mode}: both predecessor State claims have target-basis decisions`)",
+      "sha256": "41f16d62f6b292947f123b3b382ae11c9a1b3d7370b6386acbaee281b91ac9c1"
+    },
+    {
+      "line": 206,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from(transitions, row => Number(row.sessionEpoch)), [-2, -1],\n        `${mode}: older and newer predecessor epochs remain ordered`)",
+      "sha256": "6f4668e8600f4dfdd0187772580872ee1ce6712b429f990fd4d6c297942684d5"
+    },
+    {
+      "line": 208,
+      "method": "equal",
+      "source": "assert.equal(view.head?.world?.find(row => row.name === '도서관')?.state?.doorStatus,\n        '닫혔다', `${mode}: the newer predecessor event controls current State`)",
+      "sha256": "51fff3901fadc187c01b11232ef3310cc21a9ae5c6596215de1c750972d32daf"
+    },
+    {
+      "line": 210,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from(transitions, row => row.disposition),\n        ['corrected', 'still_current'],\n        `${mode}: an older event remains history after a newer predecessor changes its field`)",
+      "sha256": "24b65e43b3fce591ad233e931ea137286a84d3130521ac00415bd9663edcaca6"
+    },
+    {
+      "line": 213,
+      "method": "ok",
+      "source": "assert.ok(transitions.every(row => row.decisionKey),\n        `${mode}: both transitions cite durable target decisions`)",
+      "sha256": "989a43c567cfa1d7bd514840980168f52e42401f0d9ecb30c9111985892942d4"
+    },
+    {
+      "line": 223,
+      "method": "equal",
+      "source": "assert.equal(decision?.schema, 'libra.inherited_micro_state_admission.v1')",
+      "sha256": "2153534d9254c047e23563f3462cf8d11d9d3a8c7eb0f61ab8c259a9c5d3f5c3"
+    },
+    {
+      "line": 224,
+      "method": "equal",
+      "source": "assert.equal(decision?.status, 'admitted')",
+      "sha256": "362cd4212d2449b85be7eddf22f4f72252fc3466d833bca06a3d1962539f6a28"
+    },
+    {
+      "line": 225,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(\n          fx.storedRows().find(row => row.key === transition.decisionKey)?.value, decision,\n          'mirror keeps each target-basis decision identical on both storage sides')",
+      "sha256": "2cbaaf0a977ca0e9881166e8eee302557a650d4ae29177e9bbe0223804bd2e7d"
+    },
+    {
+      "line": 236,
+      "method": "equal",
+      "source": "assert.equal(finalArchiveRefs.length, 2,\n        `${mode}: both edited predecessors have sealed archives before owner deletion`)",
+      "sha256": "d791cad9aa1fae64cb67dd1a68157326a0b7ee1bf4149229492e860160c16c5e"
+    },
+    {
+      "line": 241,
+      "method": "ok",
+      "source": "assert.ok(localRaw,\n          'mirror keeps a physical local archive before the deletion reset fence')",
+      "sha256": "27caa62e652cc7f08b10bcabb16267462ef63b86bf67394e95887519f493820b"
+    },
+    {
+      "line": 244,
+      "method": "equal",
+      "source": "assert.equal(archive?.archiveDigest, ref.archiveDigest)",
+      "sha256": "ad0792a1072e3a4e2cc5e224639741350ed69510c2c7385aa6b0eb411dbc3746"
+    },
+    {
+      "line": 245,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(JSON.parse(localRaw), remote,\n          'mirror keeps equal physical archive bodies before owner deletion')",
+      "sha256": "12b4f35fd62cdf76a7d1a49a66963a2badd45117a2dfcfa104bfd776fc671042"
+    },
+    {
+      "line": 247,
+      "method": "ok",
+      "source": "assert.ok((archive.records || []).filter(row => row.value?.schema === 'libra.micro_memory.v1'\n          && Number(row.value.turn) === 6).length >= 2,\n        `${mode}: both revisions survive the first predecessor chain`)",
+      "sha256": "e2c22969d9749edbf79a42222ea711b5db365d9298398401f763da65f50406f5"
+    },
+    {
+      "line": 255,
+      "method": "equal",
+      "source": "assert.equal(correction.ok, true, `${mode}: target user correction commits`)",
+      "sha256": "93f9e9254fb9e7680a0943780de5602d5e78b513d504eec741d4a198a0b33a55"
+    },
+    {
+      "line": 257,
+      "method": "equal",
+      "source": "assert.equal(correctedView.head?.world?.find(row => row.id === library.id)\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: the target correction supersedes both predecessor values`)",
+      "sha256": "0b45fede6412e6afb9b6185b67d957a73511777ec8138e21b9fc9cb1f5b453c1"
+    },
+    {
+      "line": 260,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from((correctedView.authority?.microProjection?.transitions || [])\n        .filter(row => row.turn === 6 && row.field === 'doorStatus'), row => row.disposition),\n      ['corrected', 'corrected'],\n      `${mode}: both predecessor decisions explain the target correction`)",
+      "sha256": "555c17c6bf89f44ac53b76d184f9486b15d1dd14a438e6cb50090c65764ef786"
+    },
+    {
+      "line": 264,
+      "method": "equal",
+      "source": "assert.equal((await f.r.api.setWorldManagerCorrectionStatus(\n        correction.correction.correctionId, 'suspended')).ok, true)",
+      "sha256": "cfed5e80238c0962a00edc2b88a10db4f426029ab53598cb120259e07e4aee78"
+    },
+    {
+      "line": 267,
+      "method": "equal",
+      "source": "assert.equal((await f.r.api.debugLoadContinuityStateForResponse()).head?.world\n        ?.find(row => row.name === '도서관')?.state?.doorStatus, '닫혔다',\n      `${mode}: the second predecessor stays current after restart`)",
+      "sha256": "54d759c9fdffbd8aa53d43f42a7a28a2a1f6f4dc05c4f1f1df02a38cf6cefb9f"
+    },
+    {
+      "line": 273,
+      "method": "equal",
+      "source": "assert.equal((await f.r.api.getHostLineageStatus()).scopeKey,\n          scopes[sourceIndex], `${mode}: deletion selects the original source scope`)",
+      "sha256": "0a0cfcb506ed9e817ae9e117d787b3ffa7df70ddf4f49dc7013845a6c80ef802"
+    },
+    {
+      "line": 276,
+      "method": "equal",
+      "source": "assert.equal(deleted === true || deleted?.verified === true, true,\n          `${mode}: source ${sourceIndex} owner deletion is verified`)",
+      "sha256": "7a32af875781c169e5ac9217901286b732c3bbad4bbe777e66e884e13f89be95"
+    },
+    {
+      "line": 279,
+      "method": "equal",
+      "source": "assert.equal(\n          [...fx.local.keys()].some(key => key.startsWith(prefix)), false,\n          `${mode}: source ${sourceIndex} plugin owner rows are gone`)",
+      "sha256": "9945dcc68b8cd25d49c27eed27d8ef80e308eb7f5ee39e3fc98fb18c4c86c647"
+    },
+    {
+      "line": 282,
+      "method": "equal",
+      "source": "assert.equal(fx.storedRows().some(row => row.key.startsWith(prefix)), false,\n          `${mode}: source ${sourceIndex} server owner rows are gone`)",
+      "sha256": "e2ffc0de9082aaa3a8245584d48fdbc659d2d7611b07fc3b827b4dd6d8b8120a"
+    },
+    {
+      "line": 287,
+      "method": "equal",
+      "source": "assert.equal(\n          fx.storedRows().some(row => row.key.startsWith(prefix)), false,\n          `${mode}: restart does not reupload source ${sourceIndex} owner rows`)",
+      "sha256": "490935db0e0f2a914a8321a0b12a74e9edb09cfb13eb9f2d7b7d935b36d879ef"
+    },
+    {
+      "line": 293,
+      "method": "equal",
+      "source": "assert.equal(afterOwnerRemoval.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '닫혔다',\n      `${mode}: the target keeps the latest predecessor State after both source owners are removed`)",
+      "sha256": "d3d24a4dfa6c7998dcc7ce1994f76caf1a3d35a9deb40c9e02fb22da99333a30"
+    },
+    {
+      "line": 296,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from((afterOwnerRemoval.authority?.microProjection?.transitions || [])\n        .filter(row => row.turn === 6 && row.field === 'doorStatus'), row => row.disposition),\n      ['corrected', 'still_current'],\n      `${mode}: the target still cites both predecessor decisions without source owner storage`)",
+      "sha256": "0264870a78609b0f7cd041af2fd744007072fc4d14fd283a71aa5483c3818bb2"
+    },
+    {
+      "line": 320,
+      "method": "equal",
+      "source": "assert.equal(archiveWrites, 2, 'native branch fault reaches the second inherited archive')",
+      "sha256": "748f75216a5d3f4c3a878776a277878d59390ab4e24f00b2e4cd80fef1aa74f6"
+    },
+    {
+      "line": 321,
+      "method": "notEqual",
+      "source": "assert.notEqual(failedCopy?.result?.ok, true,\n          'native branch cannot report success after a partial archive copy')",
+      "sha256": "710245c381e16f2c44308163b38884501dff6ba35c09e8882e4fbf33bf1b7f99"
+    },
+    {
+      "line": 323,
+      "method": "equal",
+      "source": "assert.equal([...fx.local.keys()].some(key => key.startsWith(childArchivePrefix)), false,\n          'failed native branch rolls back local inherited Micro archives')",
+      "sha256": "63eb010ee200c3f5f2e065113ebbe1dd95f2d09b9562f4670f8b504742507552"
+    },
+    {
+      "line": 325,
+      "method": "equal",
+      "source": "assert.equal(fx.storedRows().some(row => row.key.startsWith(childArchivePrefix)), false,\n          'failed native branch rolls back server inherited Micro archives')",
+      "sha256": "401211b5467785b53c6846b405ff8e8fc4c6100ba69189c49de069fbf60e5503"
+    },
+    {
+      "line": 331,
+      "method": "equal",
+      "source": "assert.equal((failedManifest?.inheritedMicroArchives || []).length, 0,\n          'failed native branch publishes no inherited Micro references')",
+      "sha256": "a8cb323193e1d8ac76f5b6a2b1fc694077e440e29f57d111183e3b46d8aa1ed1"
+    },
+    {
+      "line": 333,
+      "method": "notEqual",
+      "source": "assert.notEqual(failedManifest?.nativeChatCopy?.durableVerified, true,\n          'failed native branch publishes no verified copy marker')",
+      "sha256": "6ec2c972622a25301b54120b812c9653d3f7f668456c47aefdb2cc2fdb74578e"
+    },
+    {
+      "line": 337,
+      "method": "equal",
+      "source": "assert.equal(copied.result?.ok, true,\n        `${mode}: verified native branch copies the final target: ${JSON.stringify(copied)}`)",
+      "sha256": "e06ce38cf9546ca4bd9585cdb487c40dd231572d571f1db9e9b4dfaf173c05ef"
+    },
+    {
+      "line": 340,
+      "method": "notEqual",
+      "source": "assert.notEqual(childLineage.worldlineMeta?.worldlineId,\n        parentLineage.worldlineMeta?.worldlineId)",
+      "sha256": "b87f2cd5e60498db08aac56610d4584fa7481ff58827d9b435cda724526d07ae"
+    },
+    {
+      "line": 342,
+      "method": "equal",
+      "source": "assert.equal(childLineage.worldlineMeta?.parentWorldlineId,\n        parentLineage.worldlineMeta?.worldlineId,\n      `${mode}: native branch keeps its distinct host worldline ancestry`)",
+      "sha256": "2706d83d2f296cd7cbe158fdaf0e20ccaffe739b98e94e98b83b9a0ec5c0fba4"
+    },
+    {
+      "line": 349,
+      "method": "equal",
+      "source": "assert.equal(childManifest?.inheritedMicroArchives?.length, 2,\n        `${mode}: native branch retains both inherited Micro archives`)",
+      "sha256": "4d1fe5ffe8ce41eb7df667481632abb67919128405cc2907467854209d7b2fa4"
+    },
+    {
+      "line": 351,
+      "method": "equal",
+      "source": "assert.equal(childManifest?.nativeChatCopy?.expectedInheritedMicroArchives, 2,\n        `${mode}: completion receipt counts inherited Micro archives`)",
+      "sha256": "69e9a7c4e8e48340f055f19dd490f0dd5eae4165f644fccb0f890bc4fb4e87cb"
+    },
+    {
+      "line": 353,
+      "method": "equal",
+      "source": "assert.equal(childManifest?.nativeChatCopy?.verifiedInheritedMicroArchives, 2,\n        `${mode}: completion receipt verifies inherited Micro archives`)",
+      "sha256": "449465c827db49b85eed98aa367432c81c3da79014c0df9195d0a1444cd28dfe"
+    },
+    {
+      "line": 355,
+      "method": "equal",
+      "source": "assert.equal(childManifest?.nativeChatCopy?.expectedInheritedMicroRefsDigest,\n        childManifest?.nativeChatCopy?.verifiedInheritedMicroRefsDigest,\n      `${mode}: completion receipt binds the copied archive references`)",
+      "sha256": "b5dbe7d0e672f6bc0a67c304a792c2d629426684bb3cf1a065002428ea98947a"
+    },
+    {
+      "line": 359,
+      "method": "ok",
+      "source": "assert.ok(ref.archiveKey.startsWith(`libra:v1:scope:${childLineage.scopeKey}:micro-handoff-archive:`),\n          `${mode}: copied archive belongs to the child scope`)",
+      "sha256": "e9f56e96c3a150d1ff650bd8743d92e1ec3784ad6c2e90c34bfab022617f2a84"
+    },
+    {
+      "line": 364,
+      "method": "equal",
+      "source": "assert.equal(archive?.archiveDigest, ref.archiveDigest,\n          `${mode}: copied archive bytes are independently readable`)",
+      "sha256": "f4b85c45c9221f2d75a37afc71bb9835a15f610233dfb218a57243456c9456e3"
+    },
+    {
+      "line": 368,
+      "method": "equal",
+      "source": "assert.equal(rebuilt.ok, true,\n        `${mode}: branch rebuilds its own State basis: ${JSON.stringify(rebuilt)}`)",
+      "sha256": "e668141e8328246532a39654aab11280dfe77b4875c8e99136dd40368e01db81"
+    },
+    {
+      "line": 371,
+      "method": "equal",
+      "source": "assert.equal(branchView.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '닫혔다',\n      `${mode}: branch re-admits the latest inherited Micro on its own basis`)",
+      "sha256": "ca4d590491282d563124316fb190fb93ebef6a7a9724aed4e49192b3b74729d0"
+    },
+    {
+      "line": 374,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from((branchView.authority?.microProjection?.transitions || [])\n        .filter(row => row.turn === 6 && row.field === 'doorStatus'), row => row.disposition),\n      ['corrected', 'still_current'],\n      `${mode}: branch preserves the predecessor order under a new worldline`)",
+      "sha256": "bc8f91b8581d0dc74e97aa8e255a6193f94cb00e500d28a46208fd4cff360516"
+    },
+    {
+      "line": 384,
+      "method": "equal",
+      "source": "assert.equal((await f.r.api.getHostLineageStatus()).scopeKey, descendantScopeKey,\n        `${mode}: second transfer selects its preconfigured destination`)",
+      "sha256": "255c6a52b17c561a63d482993c6703fc5f35a82590e85929b253d38c93a31963"
+    },
+    {
+      "line": 396,
+      "method": "rejects",
+      "source": "assert.rejects(() => retryBusy(() =>\n          f.r.context.__LIBRAPortableMemoryBackup.importAsPredecessorArchive(childEnvelope)))",
+      "sha256": "bce8416eb5d4259ebd86e913c64903b386f20af21b98b713ba5eb12d335e43cc"
+    },
+    {
+      "line": 399,
+      "method": "equal",
+      "source": "assert.equal(archiveWrites, 2,\n          'second transfer fault reaches an inherited archive after the first write')",
+      "sha256": "3603759986fabbab010267bd0b1be8356b0a128b496bc730f4df6cc8b7525581"
+    },
+    {
+      "line": 401,
+      "method": "equal",
+      "source": "assert.equal([...fx.local.keys()].some(key => key.startsWith(descendantArchivePrefix)), false,\n          'failed second transfer removes its local Micro archives')",
+      "sha256": "1329406498ff0959c01784d35c9a8df1d393ebcfe4901c0d1dd21b4c63cf8176"
+    },
+    {
+      "line": 403,
+      "method": "equal",
+      "source": "assert.equal(fx.storedRows().some(row => row.key.startsWith(descendantArchivePrefix)), false,\n          'failed second transfer removes its server Micro archives')",
+      "sha256": "32d8f0ab7ad31ccaeff1f5c4b76bb9599b362b07942fef9335637ef072f9d8e2"
+    },
+    {
+      "line": 409,
+      "method": "equal",
+      "source": "assert.equal((failedManifest?.inheritedMicroArchives || []).length, 0,\n          'failed second transfer publishes no archive refs')",
+      "sha256": "ab88cba1418b73ee6c85add9d08dabbdc90a377fd6e705422a35305fa83ebd2b"
+    },
+    {
+      "line": 411,
+      "method": "equal",
+      "source": "assert.equal((failedManifest?.portableImports || [])\n          .some(row => row.verified === true && row.durable === true), false,\n          'failed second transfer publishes no success receipt')",
+      "sha256": "25011a87ad6a64dc1d4a7939eedd3e0ba5e3733f8fe1e920b5487883abfba7fc"
+    },
+    {
+      "line": 415,
+      "method": "equal",
+      "source": "assert.equal((await retryBusy(() =>\n        f.r.context.__LIBRAPortableMemoryBackup.importAsPredecessorArchive(childEnvelope))).ok,\n      true, `${mode}: branch history can move to a new chat`)",
+      "sha256": "7bd7017412f289ee9b910a118e9935673a6e42dc55d4f0c77115302f8ab3a23f"
+    },
+    {
+      "line": 423,
+      "method": "equal",
+      "source": "assert.equal((await f.run()).completed, 1,\n        `${mode}: descendant commits its own Canonical after branch import`)",
+      "sha256": "d9abfc06628ca6e70cee00af430c6989de764049bd9ecfcd8144101cfd61abed"
+    },
+    {
+      "line": 431,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from(originalArchiveRefs, ref => Number(ref.sessionEpoch)), [-3, -2],\n        `${mode}: second transfer rebases both original predecessor epochs`)",
+      "sha256": "58cbaa32376a1f21b5cd4996ca95209990cd5ee3c73ae90f012416cebb1420b8"
+    },
+    {
+      "line": 435,
+      "method": "equal",
+      "source": "assert.equal(descendantMode?.mode, mode,\n        `${mode}: deleting predecessor scopes preserves the live descendant's storage mode`)",
+      "sha256": "cad9c66e841caf77e9d087c0533980c71c53ea471e05ef33cd97ccd33d0a1965"
+    },
+    {
+      "line": 441,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(remote, archive,\n          `${mode}: re-transferred archive agrees across local and server storage`)",
+      "sha256": "c2619986229bde655bdba3dbbebb5cd42a173e2fed8df8bb23f0007a169ce8e3"
+    },
+    {
+      "line": 443,
+      "method": "equal",
+      "source": "assert.equal(archive?.archiveDigest, ref.archiveDigest,\n          `${mode}: re-transferred archive has its sealed physical body`)",
+      "sha256": "3cf1a59259dfe096c75034a2d8b6ba7c18109ccaa7a6c1418cdf140b24735694"
+    },
+    {
+      "line": 447,
+      "method": "ok",
+      "source": "assert.ok(revisions.length >= 2,\n          `${mode}: re-transfer keeps the old and edited T6 Micro records`)",
+      "sha256": "fc418a15b1a0068ab1da9092a828bbff133e50b2a7d3bcb06039919578c8e7ef"
+    },
+    {
+      "line": 452,
+      "method": "equal",
+      "source": "assert.equal(activeRecord?.claims?.[0]?.stateIntent?.value,\n          ref.sourceScopeKey === scopes[0] ? '열렸다' : '닫혔다',\n          `${mode}: only the edited source revision remains active in the archive`)",
+      "sha256": "705bbc13d93d86b2c6c724dd7ea988603fa1cfefe76d2fcc8d6089cc997d3e35"
+    },
+    {
+      "line": 456,
+      "method": "ok",
+      "source": "assert.ok((descendantManifest?.inheritedMicroArchives || []).some(ref =>\n        ref.sourceScopeKey === childLineage.scopeKey && Number(ref.sessionEpoch) === -1),\n      `${mode}: second transfer retains the child's new-worldline Micro event`)",
+      "sha256": "08b45d18143e847d17397ae368d4bb07440c7a34ab24a6fde6e9176a6359e9ac"
+    },
+    {
+      "line": 463,
+      "method": "equal",
+      "source": "assert.equal(descendantView.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: second transfer re-admits the child's newer worldline change`)",
+      "sha256": "3b72ee55a6b06e2d1c85bcca5a882347bef5117a8ad31ad50c8fa6679fe4ffad"
+    },
+    {
+      "line": 466,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from((descendantView.authority?.microProjection?.transitions || [])\n        .filter(row => row.turn === 6 && row.field === 'doorStatus'), row => row.disposition),\n      ['corrected', 'corrected', 'still_current'],\n      `${mode}: second transfer orders both predecessors before the child's new event`)",
+      "sha256": "575a92b74a8e764becca64ce5fd6d2038f6bb3d7a94db0cf23c5addeac0f7922"
+    },
+    {
+      "line": 475,
+      "method": "equal",
+      "source": "assert.equal((await f.r.api.getHostLineageStatus()).scopeKey, scopeKey,\n          `${mode}: owner deletion selects the copied source scope`)",
+      "sha256": "59cba3805f6ec26fee59d9b2cdec6290d19dae51d920c535651e8e6d58379638"
+    },
+    {
+      "line": 478,
+      "method": "equal",
+      "source": "assert.equal(deleted === true || deleted?.verified === true, true,\n          `${mode}: copied source owner deletion succeeds`)",
+      "sha256": "ef0f535081b65f5c0c6504c38b64f0f50f547e5e286dc3d2d8f10757382b570e"
+    },
+    {
+      "line": 486,
+      "method": "equal",
+      "source": "assert.equal(childStored?.nativeChatCopy?.completenessVersion, 5)",
+      "sha256": "b8cb75a0ec0aa31016a21b87606dc0a90d6b778dc4f119ee0ae77bb4767c95d3"
+    },
+    {
+      "line": 498,
+      "method": "notEqual",
+      "source": "assert.notEqual(damagedCompleteCopy.result?.reason, 'native_copy_already_complete',\n            `${mode}: a v5 completion marker cannot mask a missing inherited archive`)",
+      "sha256": "2100f73cd06c093a35cb115930bbbd11e93fc2d6293d7c70f35d1a65b09ff6ec"
+    },
+    {
+      "line": 500,
+      "method": "notEqual",
+      "source": "assert.notEqual(damagedCompleteCopy.result?.ok, true,\n            `${mode}: a missing archive invalidates native-copy completeness`)",
+      "sha256": "4364336c3886c64dca7526e648fe17f09dc5d0b8b7e58154bc912a2d46a5b4e9"
+    },
+    {
+      "line": 528,
+      "method": "notEqual",
+      "source": "assert.notEqual(oldCopy.result?.ok, true,\n            `${mode}: an old completion marker cannot certify missing-source Micro closure`)",
+      "sha256": "51e72ae570c3341f4bdec9f0a931953724f3992f7208d4d27db0434a0602f116"
+    },
+    {
+      "line": 530,
+      "method": "equal",
+      "source": "assert.equal(oldCopy.result?.reason, 'copy_source_not_found',\n            `${mode}: unavailable source is reported explicitly: ${JSON.stringify(oldCopy)}`)",
+      "sha256": "612a2bd7348cb51a1b3c8b02dd8a674a832652b5ba1d19fde2581671b03b4e89"
+    },
+    {
+      "line": 535,
+      "method": "equal",
+      "source": "assert.equal(after?.nativeChatCopy?.completenessVersion, 4,\n            `${mode}: failed revalidation leaves the old receipt unpromoted`)",
+      "sha256": "2eb01bf4e180fe7e059c872ea48e6bd665fdf97cd8b26cf968bda93177370e28"
+    },
+    {
+      "line": 537,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(after.inheritedMicroArchives, beforeRefs,\n            `${mode}: unavailable source does not rewrite surviving Micro archives`)",
+      "sha256": "206b4ab877a17c8e89663a31b3f75fd3db225e74baef6bc5b906e50db478cd22"
+    },
+    {
+      "line": 539,
+      "method": "equal",
+      "source": "assert.equal(mode === 'plugin_only' ? fx.local.has(missingArchiveKey)\n            : fx.storedRows().some(row => row.key === missingArchiveKey), false,\n          `${mode}: unavailable source does not fabricate the missing archive`)",
+      "sha256": "768dfae9ebfd21ef75ae44a11e4459975ad3a7023f927b4f907fae282e5ee0ff"
+    },
+    {
+      "line": 545,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(remainingArchive, survivingArchive,\n            `${mode}: failed recovery preserves the independently readable archive`)",
+      "sha256": "ef536d1394612b597dfa653f3dd1108aab2921d95ecf05f0bb475663be4e4730"
+    },
+    {
+      "line": 557,
+      "method": "equal",
+      "source": "assert.equal(plan.status,200,`${mode}: selective backup plan: ${JSON.stringify(plan.body)}`)",
+      "sha256": "192d1d46bd16d9ab1c5b3ea614ab781abbcfe6aa7a8d895a5660b85a910342b8"
+    },
+    {
+      "line": 560,
+      "method": "equal",
+      "source": "assert.equal(restored.status,200,`${mode}: selective backup repair: ${JSON.stringify(restored.body)}`)",
+      "sha256": "bd294a12e60d1b092077eee370e8956d509ffeaa23e69f38333bf0803cdf4a01"
+    },
+    {
+      "line": 561,
+      "method": "equal",
+      "source": "assert.equal(restored.body.result?.physicalReadback,true)",
+      "sha256": "70b68fd55159885859e7fc96231464fb9e762dcc3ebbec8973d95763fef2eed2"
+    },
+    {
+      "line": 562,
+      "method": "equal",
+      "source": "assert.equal(restored.body.result?.nativeCopyCompleteness,'pending_revalidation')",
+      "sha256": "7e5b0afacfbd8d665738f7e58498defdeb652fe79c8d7b4d96a39c8d4ec56da4"
+    },
+    {
+      "line": 564,
+      "method": "ok",
+      "source": "assert.ok(sourceBeforeDeletion,`${mode}: deletion backup remains addressable`)",
+      "sha256": "688b0b28833c53cab08b6bc774d928fd4ddcd2855dbdd470b47fe95f0569f5e6"
+    },
+    {
+      "line": 566,
+      "method": "equal",
+      "source": "assert.equal(recovered?.archiveDigest,beforeRefs[0].archiveDigest,\n              `${mode}: only the expected archived body is recovered`)",
+      "sha256": "46e2475e11da2ee07b484a984d094f8f979afda68a2d039b1bea47dcbd9894ff"
+    },
+    {
+      "line": 568,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(fx.storedRows().find(row=>row.key===survivingArchiveKey)?.value,\n              survivingArchive,`${mode}: selective repair preserves the other archive`)",
+      "sha256": "b150d9525f6df68cb8de5460d8efa8e57eae111e0fcd05fd9422757554054ffa"
+    },
+    {
+      "line": 570,
+      "method": "equal",
+      "source": "assert.equal(fx.storedRows().find(row=>row.key===childManifestKey)?.value\n              ?.nativeChatCopy?.completenessVersion,4,\n              `${mode}: restoring bytes does not silently promote the old copy receipt`)",
+      "sha256": "e8cac2d6e1bfe6b3c5f23eb6b3e4fd779ab754e9384ed5d83b75816651438c40"
+    },
+    {
+      "line": 576,
+      "method": "equal",
+      "source": "assert.equal(repairedView.head?.world?.find(row=>row.name==='도서관')\n              ?.state?.doorStatus,'잠겼다',\n              `${mode}: the child's newer event remains current after archive repair`)",
+      "sha256": "b028f0f3315fbf2dedc35b7ccf7c5f96b4a47532704de215fe377ada2d65e174"
+    },
+    {
+      "line": 581,
+      "method": "equal",
+      "source": "assert.equal(repairedTransitions.filter(row=>row.disposition==='still_current').length,1,\n              `${mode}: the child has one current state transition`)",
+      "sha256": "ca62cc28c091812e68e5d19be9901a4f661f95f088590d042dd79fc10cdcb0a8"
+    },
+    {
+      "line": 583,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from(repairedTransitions.filter(row=>Number(row.sessionEpoch)<0)\n              .sort((a,b)=>Number(a.sessionEpoch)-Number(b.sessionEpoch)),\n              row=>[Number(row.sessionEpoch),String(row.disposition)]),\n            [[-2,'corrected'],[-1,'corrected']],\n            `${mode}: both restored predecessor epochs remain visible and corrected`)",
+      "sha256": "ab5a46df84373b03ea3b41595d03ac8495042b5dd1bdf443cea258d621d69af0"
+    },
+    {
+      "line": 593,
+      "method": "equal",
+      "source": "assert.equal(afterSecondOwnerRemoval.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: second transfer survives native parent and child owner deletion`)",
+      "sha256": "08af93cd75ad46d814b8a99512e1c505b14c059aa16ca4e89d1b1de5fbe2dd4a"
+    },
+    {
+      "line": 596,
+      "method": "deepEqual",
+      "source": "assert.deepEqual(Array.from((afterSecondOwnerRemoval.authority?.microProjection?.transitions || [])\n        .filter(row => row.turn === 6 && row.field === 'doorStatus'), row => row.disposition),\n      ['corrected', 'corrected', 'still_current'],\n      `${mode}: second transfer retains its decisions after owner deletion and restart`)",
+      "sha256": "4a5a065331733ce131bd814e93d12473f002090146b96dd5552abe12370c73ed"
+    }
+  ],
+  "markerRemovalRestoresOriginalBytes": true,
+  "limits": "Diagnostic markers add synchronous Date.now/stdout overhead only; no awaits/timers/retries added, existing modes/assertions/poll deadlines/default60s cap unchanged. Labels are compile-time operation names/line numbers; no source payloads logged.512major+64poll frames maximum per root. No latency or synthetic completion claim."
+}
