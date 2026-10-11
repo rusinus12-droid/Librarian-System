@@ -117,6 +117,9 @@ TEST_TIMEOUT_SECONDS = {
     # Current raw-first 31-ready / failed-vector / explicit-retry / rebuild matrix
     # completes naturally in 89.180s; preserve internal action deadlines.
     'flashback_single_turn_maintenance_runtime_test.cjs': 120,
+    # Real bounded archive repair plus retained 640-row legacy overlay matrix
+    # completes naturally in 74.491s; unchanged in-test/provider limits.
+    'flashback_portable_cross_chat_restore_test.cjs': 120,
     # Three-mode descriptor/tamper matrix: 55.77s isolated, 66.07s in this runner.
     # Preserve the default60 timeout evidence and case deadlines; margin is 36%.
     'libra_main_memory_thread_lifecycle_boundary_matrix_test.cjs': 90,
