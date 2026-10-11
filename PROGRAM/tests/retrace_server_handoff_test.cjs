@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMemorySuiteServer } = require('../server/server.cjs');
+const { seedHistoricalInventory, assertRetiredReadOnly } = require('./fixtures/portable_historical_inventory_fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
 const readPlugin = name => fs.readFileSync(path.join(root, 'plugins', name), 'utf8');
@@ -66,6 +67,10 @@ function staticContracts() {
 
 async function liveServerNamespaceRead() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-suite-retrace-handoff-'));
+  const inventory = await seedHistoricalInventory(dataDir, {
+    lia: [{ space: 'plugin', key: 'liaPersonaRequestProofV1:test-scope', value: { canonical: 'lia-server-value' } }],
+    retrace: [{ space: 'plugin', key: 'memory_session_bridge:hayaku_cold_start:test-session', value: { capsule: true } }]
+  });
   const app = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
   const address = await app.listen();
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -97,7 +102,12 @@ async function liveServerNamespaceRead() {
       });
       owner.createPluginStorageProxy(pluginStorage);
       await owner.setScopeMode({ scopeId: 'test-scope', scopeKey: 'test-scope', label: 'Test Scope' }, 'server_only');
-      await owner.set('plugin', row.key, { canonical: `${row.namespace}-server-value` });
+      if (row.namespace === 'lia') {
+        await assert.rejects(owner.set('plugin', row.key, { canonical: 'forbidden-new-value' }), /namespace_write_forbidden:lia/,
+          'LIA historical peer inventory is readable, but the retired owner cannot publish new data');
+      } else {
+        await owner.set('plugin', row.key, { canonical: `${row.namespace}-server-value` });
+      }
 
       // This is the same namespace-bound read-only access pattern RE:TRACE uses for server-only peer inspection.
       const retracePeer = createBridge({
@@ -123,7 +133,7 @@ async function liveServerNamespaceRead() {
     retraceOwn.createPluginStorageProxy(pluginStorage);
     await retraceOwn.setScopeMode({ scopeId: 'test-session', scopeKey: 'test-session', label: 'Test Session' }, 'server_only');
     const ownKey = 'memory_session_bridge:hayaku_cold_start:test-session';
-    await retraceOwn.set('plugin', ownKey, { capsule: true });
+    await assert.rejects(retraceOwn.set('plugin', ownKey, { capsule: 'forbidden-new-value' }), /namespace_write_forbidden:retrace/);
     assert.deepEqual((await retraceOwn.serverGet('plugin', ownKey)).value, { capsule: true });
 
     const connection = await retraceOwn.bootstrap();
@@ -139,7 +149,11 @@ async function liveServerNamespaceRead() {
         key: 'memory_session_bridge:settings:v1', value: { provider: 'local-only' }
       })
     });
-    assert.equal(rejected.status, 400, 'RE:TRACE provider settings must stay out of server DATA');
+    assert.equal(rejected.status, 403, 'retired RE:TRACE rejects all new server writes, including provider settings');
+    assert.equal((await rejected.json()).error, 'namespace_write_forbidden:retrace');
+    await assert.rejects(retraceOwn.serverGet('plugin', 'memory_session_bridge:settings:v1'), /credential_keys_must_remain_in_risuai_local_storage/);
+    assert.equal(app.repositories.retrace.database.prepare('SELECT COUNT(*) AS n FROM kv WHERE key=?').get('memory_session_bridge:settings:v1').n, 0);
+    assertRetiredReadOnly(app, inventory, { sourceUnchanged: true });
 
     process.stdout.write('retrace_server_handoff_test: PASS\n');
   } finally {

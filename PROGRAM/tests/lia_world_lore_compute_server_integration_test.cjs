@@ -12,6 +12,23 @@ const program = path.resolve(__dirname, '..');
 const computeSource = fs.readFileSync(path.join(program, 'sdk', 'MemorySuiteComputeClient.source.js'), 'utf8');
 const { createMemorySuiteComputeBridge } = new Function(`${computeSource}\nreturn { createMemorySuiteComputeBridge };`)();
 const fileDigest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function storageSnapshot(app) {
+  return Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => {
+    const exists = fs.existsSync(repository.filePath);
+    if (!exists) {
+      assert.ok(['lia', 'retrace'].includes(name), 'only retired inventory may be ephemeral');
+      assert.equal(repository.ephemeral, true);
+      assert.equal(repository.legacyReadOnly, true);
+    }
+    return [name, {
+      exists, sha256: exists ? fileDigest(repository.filePath) : null,
+      wal: fs.existsSync(repository.filePath+'-wal') ? fileDigest(repository.filePath+'-wal') : null,
+      kv: repository.database.prepare('SELECT * FROM kv ORDER BY space,key').all(),
+      operations: repository.database.prepare('SELECT * FROM operations ORDER BY operation_id').all(),
+      metadata: repository.database.prepare('SELECT * FROM metadata ORDER BY key').all()
+    }];
+  }));
+}
 
 async function main() {
   const tempRoot = path.resolve(os.tmpdir());
@@ -32,6 +49,8 @@ async function main() {
   };
   const definition = DEFINITIONS['lia.world-lore-rerank.v2'];
   let bridge = null;
+  let activeBridge = null;
+  let liaValidationCalls = 0;
   let localCalls = 0;
   let revision = 1;
   try {
@@ -70,26 +89,59 @@ async function main() {
       mode: 'prefer_server',
       deadlineMs: 3000,
       localReserveMs: 350,
-      validateBinding: binding => binding.revision === revision
+      validateBinding: binding => { liaValidationCalls += 1; return binding.revision === revision; }
     });
-    const before = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
+    const before = storageSnapshot(app);
     const direct = await bridge.execute(request());
-    assert.equal(direct.source, 'server');
-    assert.deepEqual(direct.result, executeOperation(definition.operation, input), 'actual LIA Worker result exactly matches the local kernel');
-    assert.equal(localCalls, 0, 'prefer-server delegates the current LIA request instead of duplicating local work');
+    assert.equal(direct.source, 'local');
+    assert.equal(direct.fallbackReason, 'COMPUTE_OWNER_PLUGIN_REQUIRED', 'retired LIA cannot obtain a server compute capability');
+    assert.deepEqual(direct.result, executeOperation(definition.operation, input), 'denied remote compute still returns the complete deterministic LIA result');
+    assert.deepEqual(direct.result.selected.map(row => row.loreId), ['rule','academy'], 'local fallback retains protected rule and relevant world lore');
+    assert.deepEqual(direct.result.rejected.map(row => row.loreId), ['daily']);
+    assert.equal(direct.result.selected[0].protectionTier, 'hard');
+    assert.equal(localCalls, 1, 'retired remote authority falls back exactly once');
     const staleRequest = request();
     revision = 2;
     const stale = await bridge.execute(staleRequest);
-    assert.equal(stale.source, 'local', 'changed owner binding falls back to the local kernel');
-    assert.equal(localCalls, 1);
-    const after = Object.fromEntries(Object.entries(app.repositories).map(([name, repository]) => [name, fileDigest(repository.filePath)]));
-    assert.deepEqual(after, before, 'LIA Compute never mutates canonical namespace databases');
+    assert.equal(stale.source, 'local', 'a request made before revision change still completes through the local owner; no remote result is admitted');
+    assert.equal(localCalls, 2);
+    assert.deepEqual(stale.result, direct.result);
+    assert.equal(liaValidationCalls, 0, 'identity refusal happens before any remote binding validation');
     assert.ok(networkRoutes.includes('/v1/compute/bootstrap'));
-    assert.ok(networkRoutes.includes('/v1/compute/execute'));
-    assert.equal(networkRoutes.includes('/bootstrap'), false, 'LIA Compute does not call Storage bootstrap');
+    assert.equal(networkRoutes.includes('/v1/compute/execute'), false, 'denied identity never dispatches a worker');
+    // LIA no longer owns server compute. Keep the shared remote result/freshness
+    // obligation on an actual supported owner operation, without impersonating LIA.
+    const activeDefinition = DEFINITIONS['flashback.hash-embedding-batch.v1'];
+    const activeInput = { texts:['world rule academy', 'preserved memory'], dimensions:64 };
+    let activeRevision = 1, activeLocalCalls = 0;
+    const validationHits = [];
+    activeBridge = createMemorySuiteComputeBridge({ namespace:'flashback', pluginId:'flashback_memory',
+      pluginVersion:'test', api, backgroundProbe:false,
+      operations:{ [activeDefinition.operation]:{algorithmFingerprint:activeDefinition.fingerprint,
+        local:input=>{activeLocalCalls += 1;return executeOperation(activeDefinition.operation,input);} } } });
+    const activeRequest = () => ({ operation:activeDefinition.operation,input:activeInput,mode:'prefer_server',
+      binding:{revision:activeRevision},deadlineMs:3000,
+      validateBinding:binding=>{validationHits.push({request:binding.revision,current:activeRevision});return binding.revision===activeRevision;} });
+    const current = await activeBridge.execute(activeRequest());
+    assert.equal(current.source,'server',current.fallbackReason);
+    assert.deepEqual(current.result,executeOperation(activeDefinition.operation,activeInput));
+    assert.equal(activeLocalCalls,0);
+    assert.deepEqual(validationHits,[{request:1,current:1}], 'the real remote result reaches binding admission');
+    const obsolete = activeRequest();activeRevision = 2;
+    const rejected = await activeBridge.execute(obsolete);
+    assert.equal(rejected.source,'local');
+    assert.equal(rejected.fallbackReason,'MEMORY_SUITE_COMPUTE_BINDING_STALE');
+    assert.deepEqual(validationHits,[{request:1,current:1},{request:1,current:2}]);
+    assert.equal(activeLocalCalls,1,'rejected remote result triggers exactly one local computation');
+    assert.deepEqual(rejected.result,current.result);
+    assert.ok(networkRoutes.includes('/v1/compute/execute'), 'active owner performs real worker dispatch');
+    const after = storageSnapshot(app);
+    assert.deepEqual(after, before, 'compute preserves canonical and ephemeral legacy inventory, including absent retired files');
+    assert.equal(networkRoutes.includes('/bootstrap'), false, 'Compute does not call Storage bootstrap');
     process.stdout.write('lia_world_lore_compute_server_integration_test: PASS\n');
   } finally {
     try { await bridge?.dispose?.(); } catch (_) {}
+    try { await activeBridge?.dispose?.(); } catch (_) {}
     await app.close();
     const resolved = path.resolve(dataDir);
     assert.equal(path.dirname(resolved), tempRoot);
