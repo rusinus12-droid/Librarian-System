@@ -11,7 +11,8 @@ assert.equal((host.innerHTML.match(/data-hayaku-line-turn=/g)||[]).length,4,'hom
 assert(host.innerHTML.includes('Memory &lt;12&gt;'),'actual packet summary is escaped');
 assert(!host.innerHTML.includes('data-hayaku-line-turn="8"'),'older records remain in full records view');
 assert(host.innerHTML.includes('data-hayaku-viewer-goto="packets"'),'full records are reachable');
-context.render({scopeKey:'a',rows:[{turn:11,state:'missing'},{turn:12,state:'source_edit_pending'}]});
+viewer.ledger.records.at(-1).recordState='unbound';
+context.render({scopeKey:'a',rows:[{turn:11,state:'missing'},{turn:12,state:'unverified'}]});
 assert(host.innerHTML.includes('data-state="missing"'));assert(host.innerHTML.includes('data-state="pending"'));
 viewer.scope={key:'b'};viewer.ledger={enabled:true,records:[]};context.render();
 assert(!host.innerHTML.includes('data-state="missing"'),'old scope coverage must clear');

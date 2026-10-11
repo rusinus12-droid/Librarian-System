@@ -9,7 +9,7 @@ const {
 
 const SOURCE_TRACKING_KEY = 'hayaku.v2.settings.source-tracking.v1';
 
-const sourceTrackingUnavailableStore = () => {
+const sourceInputUnavailableStore = () => {
   const store = createStore();
   const getItem = store.getItem.bind(store);
   let unavailable = true;
@@ -21,7 +21,7 @@ const sourceTrackingUnavailableStore = () => {
 };
 
 (async () => {
-  const fixture = sourceTrackingUnavailableStore();
+  const fixture = sourceInputUnavailableStore();
   const pluginStorage = fixture.store;
   const runtime = await createHayakuRuntime({ pluginStorage, autoRepair: false });
   try {
@@ -36,12 +36,12 @@ const sourceTrackingUnavailableStore = () => {
       'a source-tracking preference read failure must not prevent committed-output capture registration');
     assert.equal(startup.compat.captureBackendRegistered, true,
       'packet capture must retain one registered backend while source tracking is unavailable');
-    assert.match(startup.sourceTracking.lastError, /SOURCE_TRACKING_READ_UNAVAILABLE/,
+    assert.match(startup.sourceInput.lastError, /SOURCE_INPUT_READ_UNAVAILABLE/,
       'the startup diagnostic must retain the unavailable preference state');
 
     await assert.rejects(
-      () => runtime.hayaku._test.getHayakuSourceEdits().ready(),
-      /SOURCE_TRACKING_READ_UNAVAILABLE/,
+      () => runtime.hayaku._test.getHayakuSourceInput().ready(),
+      /SOURCE_INPUT_READ_UNAVAILABLE/,
       'unread source-tracking preferences must remain unavailable, not become a default authority state'
     );
     assert.equal(pluginStorage.values.has(SOURCE_TRACKING_KEY), false,
@@ -54,7 +54,7 @@ const sourceTrackingUnavailableStore = () => {
       'a source-tracking preference read failure must defer the request without injecting or changing its messages');
     assert.deepEqual([...pluginStorage.values.keys()], storageKeysBeforeDeferredRequest,
       'a deferred request must not publish an authority-changing ledger write');
-    assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.reason, 'source_tracking_preferences_unavailable');
+    assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.reason, 'source_input_preferences_unavailable');
     assert.equal(await runtime.callAfterRequest('An unchanged assistant response.'), 'An unchanged assistant response.',
       'afterRequest must defer packet repair/capture while source-tracking preferences are unavailable');
     const output = await runtime.hayaku._test.processRisuChatOutputEvent({
@@ -64,14 +64,14 @@ const sourceTrackingUnavailableStore = () => {
       chatIndex: 0,
       messageIndex: 0
     });
-    assert.equal(output.reason, 'source_tracking_preferences_unavailable',
+    assert.equal(output.reason, 'source_input_preferences_unavailable',
       'the committed-output capture path must not create a packet while source authority is unavailable');
     assert.deepEqual([...pluginStorage.values.keys()], storageKeysBeforeDeferredRequest,
       'none of the deferred request/output paths may write a ledger while preferences are unreadable');
 
     fixture.recover();
-    await runtime.hayaku._test.getHayakuSourceEdits().ready();
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().mode, 'auto',
+    await runtime.hayaku._test.getHayakuSourceInput().ready();
+    assert.ok(await runtime.hayaku._test.getHayakuSourceInput().ready(),
       'only a later fulfilled missing-key read may establish the default tracking mode');
     await runtime.hayaku.setSourceEditIgnoredTags(['reviewtag']);
     assert.ok(runtime.hayaku.getSourceEditIgnoredTags().includes('reviewtag'),
@@ -81,9 +81,9 @@ const sourceTrackingUnavailableStore = () => {
     await runtime.hayaku.setSourceEditIgnoredTags(['reviewtag', 'after-normal']);
     assert.ok(runtime.hayaku.getSourceEditIgnoredTags().includes('after-normal'),
       'a subsequent normal request/response must preserve the released source-tracking lifecycle');
-    assert.equal(runtime.hayaku.lastDebug().sourceTracking.ready, true,
+    assert.equal(runtime.hayaku.lastDebug().sourceInput.ready, true,
       'a real later request must leave source tracking ready after storage recovery');
-    assert.notEqual(runtime.hayaku.lastDebug().lastBeforeRequest.reason, 'source_tracking_preferences_unavailable',
+    assert.notEqual(runtime.hayaku.lastDebug().lastBeforeRequest.reason, 'source_input_preferences_unavailable',
       'a real later request must resume the normal hook path rather than remain permanently deferred');
 
     process.stdout.write('hayaku_startup_source_tracking_read_failure_runtime_test: PASS\n');

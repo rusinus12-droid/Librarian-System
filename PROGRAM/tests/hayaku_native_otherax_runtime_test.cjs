@@ -297,16 +297,16 @@ const createRuntime = async (argumentOverrides = {}) => {
     const assistant1 = test.messageRevisionProjection(chat.message[1], 1, scopeKey, { diagnostics: true });
     const assistant2 = test.messageRevisionProjection(chat.message[1], 1, scopeKey, { diagnostics: true });
     assert.equal(assistant2, assistant1, 'unchanged Assistant diagnostics are reused');
-    const observation1 = test.exactChatRevisionObservation({ key: scopeKey, chatMessages: chat.message });
-    const observation2 = test.exactChatRevisionObservation({ key: scopeKey, chatMessages: chat.message });
-    assert.equal(observation2.signature, observation1.signature, 'unchanged exact transcript fingerprint is stable');
+    const observation1 = test.authoritativeChatSnapshot(chat.message, { key: scopeKey });
+    const observation2 = test.authoritativeChatSnapshot(chat.message, { key: scopeKey });
+    assert.equal(JSON.stringify(observation2.conversationPairs), JSON.stringify(observation1.conversationPairs), 'unchanged exact transcript fingerprint is stable');
 
     chat.message[1].data = '문이 완전히 열렸다.';
     const assistant3 = test.messageRevisionProjection(chat.message[1], 1, scopeKey, { diagnostics: true });
     assert.notEqual(assistant3, assistant1, 'edited Assistant is recalculated');
     assert.notEqual(assistant3.signature, assistant1.signature, 'edited Assistant gets a new exact signature');
-    const observation3 = test.exactChatRevisionObservation({ key: scopeKey, chatMessages: chat.message });
-    assert.notEqual(observation3.signature, observation1.signature, 'edit changes exact transcript fingerprint');
+    const observation3 = test.authoritativeChatSnapshot(chat.message, { key: scopeKey });
+    assert.notEqual(JSON.stringify(observation3.conversationPairs), JSON.stringify(observation1.conversationPairs), 'edit changes exact transcript fingerprint');
 
     assert.equal(test.invalidateMessageRevisionCache(scopeKey, { indices: [1] }), 1, 'targeted invalidation removes one Assistant');
     const user2 = test.messageRevisionProjection(chat.message[0], 0, scopeKey, { diagnostics: false });
@@ -314,9 +314,9 @@ const createRuntime = async (argumentOverrides = {}) => {
     assert.equal(user2, user1, 'unrelated User cache entry survives targeted invalidation');
     assert.notEqual(assistant4, assistant3, 'targeted Assistant entry is rebuilt');
 
-    test.exactChatRevisionObservation({ key: scopeKey, chatMessages: chat.message });
+    test.authoritativeChatSnapshot(chat.message, { key: scopeKey });
     chat.message = chat.message.slice(0, 2);
-    test.exactChatRevisionObservation({ key: scopeKey, chatMessages: chat.message });
+    test.authoritativeChatSnapshot(chat.message, { key: scopeKey });
     assert.equal(test.invalidateMessageRevisionCache(scopeKey, { indices: [2] }), 0, 'rollback observation prunes removed message cache entries');
 
     assert.deepEqual(Array.from(test.expectedCapturePacketTypes({ recoveryRequired: true })), ['current_snapshot'], 'RP response capture expects current_snapshot only');

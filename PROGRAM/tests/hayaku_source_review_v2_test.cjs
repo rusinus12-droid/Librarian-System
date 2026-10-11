@@ -30,9 +30,15 @@ async function fixture(){
   rt.chat.message[1].data=hiddenPacketMessage(NEW,packet);
   rt.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(NEW))}));
   await rt.callBeforeRequest([{role:'user',content:'Continue after the changed source.'}],'model');
-  const status=rt.hayaku.getSourceEditSyncStatus();
-  const review=await t.loadHayakuSourceReview(status.tasks,scope.key);
-  return {status,review};
+  assert.equal(rt.llmCalls.length,0,'ordinary request never reanalyzes a source edit');
+  await rt.callAfterRequest('');
+  const ticket=await rt.hayaku.previewSourceEdits(['1']);assert.equal(ticket.allowed,true,JSON.stringify(ticket));
+  const result=await rt.hayaku.applySourceEdits(ticket);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.committed,true);
+  const current=await t.currentChatScope(),snapshot=t.authoritativeChatSnapshot(current.chatMessages,current);
+  const unit=t.hayakuReviewUnit(current,snapshot.conversationPairs[0]);
+  const evidence=await t.getHayakuSourceEvidence().get(current.key,unit,{original:false});
+  assert.equal(evidence.available,true);assert.equal(evidence.rows[0].assistantText,NEW);
+  return {result,evidence};
  };
  return {rt,t,scope,before,edit};
 }
@@ -47,38 +53,33 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
   assert.notEqual(raw.rows[0].assistantText,active.raw);
   assert.equal(f.rt.llmCalls.length,0,'observation does not perform analysis');
  });
- await test('beforeRequest automatically reanalyzes and saves the actual source change',async f=>{
-  const {status,review}=await f.edit();
-  assert.equal(f.rt.llmCalls.length,1);
-  assert.equal(status.tasks[0].state,'applied');
-  assert.equal(review.rows.length,1);
-  const row=review.rows[0];
-  assert.equal(row.previousUnavailable,false);assert.equal(row.currentValid,true);
-  assert.match(row.beforeText,/Alice signed/);assert.match(row.afterText,/Alice did not sign/);
-  assert.doesNotMatch(row.beforeText,/hayaku_packet_v1/);assert.match(row.beforeRaw,/hayaku_packet_v1/);
+ await test('explicit reanalysis saves current U+A while prior raw evidence stays immutable',async f=>{
+  const original=f.before.records.find(record=>record.sourceEvidenceRef),bytes=f.rt.pluginStorage.values.get(original.sourceEvidenceRef.key);
+  const {evidence}=await f.edit();assert.equal(f.rt.llmCalls.length,1);
+  assert.match(evidence.rows[0].assistantRaw,/hayaku_packet_v1/);assert.notEqual(evidence.ref.key,original.sourceEvidenceRef.key);
+  assert.equal(f.rt.pluginStorage.values.get(original.sourceEvidenceRef.key),bytes,'old evidence bytes are immutable');
+  const after=(await f.rt.hayaku.ledger.inspect({includeRecords:true})).records;
+  assert(after.some(row=>row.recordState==='active'&&row.sourceEvidenceRef?.key===evidence.ref.key));
  });
- await test('missing prior raw evidence never fabricates old text or a diff',async f=>{
+ await test('missing prior evidence is unavailable and never fabricates previous text',async f=>{
+  const snapshot=f.t.authoritativeChatSnapshot(f.scope.chatMessages,f.scope),unit=f.t.hayakuReviewUnit(f.scope,snapshot.conversationPairs[0]);
   for(const key of [...f.rt.pluginStorage.values.keys()])if(key.startsWith('hayaku.v2.source-evidence.'))f.rt.pluginStorage.values.delete(key);
-  const {status,review}=await f.edit();
-  assert.equal(f.rt.llmCalls.length,1,'current source is still automatically rebuilt');
-  assert.equal(status.tasks[0].state,'applied');
-  assert.equal(status.tasks[0].originalEvidenceUnavailable,true);
-  assert.equal(review.rows[0].previousUnavailable,true);
-  assert.equal(review.rows[0].beforeText,'');
-  assert.match(review.rows[0].afterText,/Alice did not sign/);
+  const old=await f.t.getHayakuSourceEvidence().get(f.scope.key,unit,{original:false});assert.equal(old.available,false);assert.equal(old.rows,undefined);
+  await f.edit();assert.equal(f.rt.llmCalls.length,1,'explicit rebuild independently pins current evidence');
  });
- await test('tampered prior evidence is rejected while current source rebuild remains automatic',async f=>{
-  const key=[...f.rt.pluginStorage.values.keys()].find(item=>item.startsWith('hayaku.v2.source-evidence.'));
-  const raw=JSON.parse(f.rt.pluginStorage.values.get(key));raw.rows[0].userText='forged';
+ await test('tampered prior evidence is rejected and cannot become current-source authority',async f=>{
+  const snapshot=f.t.authoritativeChatSnapshot(f.scope.chatMessages,f.scope),unit=f.t.hayakuReviewUnit(f.scope,snapshot.conversationPairs[0]);
+  const key=f.before.records.find(row=>row.sourceEvidenceRef).sourceEvidenceRef.key,raw=JSON.parse(f.rt.pluginStorage.values.get(key));raw.rows[0].userText='forged';
   f.rt.pluginStorage.values.set(key,JSON.stringify(raw));
-  const {status,review}=await f.edit();
-  assert.equal(f.rt.llmCalls.length,1);assert.equal(status.tasks[0].state,'applied');
-  assert.equal(status.tasks[0].originalEvidenceUnavailable,true);
-  assert.equal(review.rows[0].previousUnavailable,true);assert.equal(review.rows[0].beforeText,'');
-  assert.match(review.rows[0].previousError,/DIGEST_MISMATCH/);
+  await assert.rejects(()=>f.t.getHayakuSourceEvidence().get(f.scope.key,unit,{original:false}),/DIGEST_MISMATCH/);
+  const {evidence}=await f.edit();assert.equal(f.rt.llmCalls.length,1);assert(!JSON.stringify(evidence.rows).includes('forged'));
+  assert.equal(f.rt.pluginStorage.values.get(key),JSON.stringify(raw),'current rebuild never overwrites corrupted prior bytes');
  });
- await test('wrong scope evidence read is rejected without another provider call',async f=>{
-  await assert.rejects(()=>f.t.loadHayakuSourceReview([],f.scope.key+'foreign'),/SCOPE_CHANGED/);
+ await test('wrong-scope selection and evidence lookup never reveal previous source or call provider',async f=>{
+  const snapshot=f.t.authoritativeChatSnapshot(f.scope.chatMessages,f.scope),unit=f.t.hayakuReviewUnit(f.scope,snapshot.conversationPairs[0]);
+  const foreign=await f.t.getHayakuSourceEvidence().get(f.scope.key+'foreign',unit,{original:false});assert.equal(foreign.available,false);assert.equal(foreign.rows,undefined);
+  const inventory=await f.rt.hayaku.listReanalysisRanges();
+  const result=await f.rt.hayaku.reanalyzeSelectedRanges({...inventory,scopeKey:f.scope.key+'foreign'});assert.equal(result.ok,false);assert.match(result.reason,/SCOPE/);
   assert.equal(f.rt.llmCalls.length,0);
  });
  console.log(JSON.stringify({test:'hayaku_source_review_v2',passed:results.length,results,environment:'full deployed HAYAKU + test host storage'}));

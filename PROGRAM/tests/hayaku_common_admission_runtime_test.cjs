@@ -36,13 +36,11 @@ const make=()=>{const p=createValidPacket({turn:1,subject:'Alice',summary:source
   const t=r.hayaku._test,scope=await t.currentChatScope(),snap=t.authoritativeChatSnapshot(scope.chatMessages,scope);
   const lineage=t.issueRequestGenerationIdentity(scope,t.requestLineageFor(scope.chatMessages,snap,scope,{nodes:[]}));
   const pending=t.registerPendingCapture(scope,lineage,'model',snap);
-  const c=t.getHayakuSourceEdits(),set=r.pluginStorage.setItem;
-  r.pluginStorage.setItem=async(k,v)=>String(k).includes('source-edit.')?false:set.call(r.pluginStorage,k,v);
-  try{await c.inspect({scopeKey:scope.key,units:[{key:'99',start:99,end:99,digest:'changed',changed:true}]},{phase:"before",prompt:false})}catch(_){}
   const before=[...r.pluginStorage.values.keys()];
+  r.chat.id=r.chat.chatId='changed-scope';
   assert.equal(await t.repairCurrentPacketInsideAfterRequest(source,'model'),source);
-  assert.equal(pending.afterRequestRepair.outcome,'suspended');assert.equal(pending.afterRequestRepair.attempted,false);assert.equal(pending.afterRequestRepair.physicalCalls,0);
-  assert.equal(pending.inlineRepairFailure,null);
+  assert.equal(r.llmCalls.length,0,'the pending request is bound to its original scope');
+  assert.equal(pending.inlineRepairFailure,undefined);
   await t.repairCurrentPacketInsideAfterRequest(source,'model');assert.equal(r.llmCalls.length,0);
   const added=[...r.pluginStorage.values.keys()].filter(k=>!before.includes(k));assert(!added.some(k=>/candidate|failed-analysis/.test(k)));
   console.log('PASS afterRequest no-call hold: no candidate, failure artifact, retry or response mutation');

@@ -23,41 +23,44 @@ const digestPair=async(runtime)=>{
     assert.ok(initialLedger.records[0]?.sourceEvidenceRef,'current owner record has validated raw source evidence');
     assert.ok(initialLedger.records[0]?.sourceRawDigest,'raw digest was persisted with that evidence');
     const before=(await digestPair(runtime)).source.units[0];
-    assert.ok(before.rawDigest);assert.equal(initialLedger.records[0].sourceRawDigest,before.rawDigest);
+    assert.ok(before.sourceDigest);
     const beforeRows=t.hayakuReviewRows(initial.scope,initial.snapshot.conversationPairs[0]);
     assert.match(beforeRows[0].userText,/Alice signed the agreement/);
 
-    await t.getHayakuSourceEdits().setSourceRules(sourceRules);
+    await t.getHayakuSourceInput().setSourceRules(sourceRules);
     const afterPolicy=(await digestPair(runtime)).source.units[0];
     assert.notEqual(afterPolicy.sourceDigest,before.sourceDigest,'the selected source projection changes when the source-tag rule is saved');
-    assert.equal(afterPolicy.rawDigest,before.rawDigest,'a policy edit leaves the unprojected chat hash unchanged');
-    assert.equal(afterPolicy.originalRawDigest,before.rawDigest,'the prior complete U+A evidence verifies raw identity');
-    assert.equal(afterPolicy.policyUncertain,false);
+    const priorEvidenceBytes=runtime.pluginStorage.values.get(initialLedger.records[0].sourceEvidenceRef.key);
+    assert.ok(priorEvidenceBytes);
+    assert.equal(JSON.parse(priorEvidenceBytes).rows[0].userRaw,runtime.chat.message[0].data,'prior complete U+A stays exact');
     const afterRows=(await digestPair(runtime));
     const selected=t.hayakuReviewRows(afterRows.scope,afterRows.snapshot.conversationPairs[0])[0];
     assert.doesNotMatch(selected.userText,/Translation:/,'the source-tag rule actually excludes text outside its wrapper');
 
     runtime.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(OLD))}));
-    await t.handleBeforeRequest([{role:'user',content:'Continue.'}],'model');t.getHayakuSourceEdits().afterRequest();
-    assert.equal(runtime.llmCalls.length,1,'the new canonical projection is rebuilt automatically');
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks[0].state,'applied');
+    await runtime.callBeforeRequest([{role:'user',content:'Continue.'}],'model');await runtime.callAfterRequest('');
+    assert.equal(runtime.llmCalls.length,0,'projection edits never implicitly invoke reanalysis');
+    const ticket=await runtime.hayaku.previewSourceEdits(['1']);assert.equal(ticket.allowed,true,JSON.stringify(ticket));
+    const rebuilt=await runtime.hayaku.applySourceEdits(ticket);assert.equal(rebuilt.ok,true,JSON.stringify(rebuilt));assert.equal(runtime.llmCalls.length,1);
+    assert.equal(runtime.pluginStorage.values.get(initialLedger.records[0].sourceEvidenceRef.key),priorEvidenceBytes);
 
     runtime.chat.message[0].data='<original>'+OLD+'</original>\nTranslation: unrelated translated wording.';
     const outside=(await digestPair(runtime)).source.units[0];
     assert.equal(outside.sourceDigest,afterPolicy.sourceDigest,'outside edits are ignored by the active source selection');
-    assert.equal(outside.changed,false);
-    assert.notEqual(outside.rawDigest,afterPolicy.rawDigest,'raw tracking still observes excluded text without treating it as a source edit');
-    await t.handleBeforeRequest([{role:'user',content:'Continue.'}],'model');t.getHayakuSourceEdits().afterRequest();
+    const outsideRows=await digestPair(runtime);
+    assert.notEqual(t.hayakuReviewRows(outsideRows.scope,outsideRows.snapshot.conversationPairs[0])[0].userRaw,JSON.parse(priorEvidenceBytes).rows[0].userRaw,'raw capture still observes excluded text');
+    await runtime.callBeforeRequest([{role:'user',content:'Continue.'}],'model');await runtime.callAfterRequest('');
     assert.equal(runtime.llmCalls.length,1,'a source change outside the wrapper makes no model call');
 
     runtime.chat.message[0].data='<original>Alice did not sign the agreement.</original>\nTranslation: unrelated translated wording.';
     const inside=(await digestPair(runtime)).source.units[0];
     assert.notEqual(inside.sourceDigest,outside.sourceDigest,'edits inside the selected wrapper change the canonical source');
-    assert.equal(inside.changed,true);
+
     runtime.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope('Alice did not sign the agreement.'))}));
-    await t.handleBeforeRequest([{role:'user',content:'Continue.'}],'model');
-    assert.equal(runtime.llmCalls.length,2,'an edit inside the selected source is automatically analyzed');
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks.at(-1).state,'applied');
+    await runtime.callBeforeRequest([{role:'user',content:'Continue.'}],'model');await runtime.callAfterRequest('');
+    assert.equal(runtime.llmCalls.length,1,'inside edits require explicit reanalysis too');
+    const next=await runtime.hayaku.previewSourceEdits(['1']);assert.equal(next.allowed,true,JSON.stringify(next));
+    const applied=await runtime.hayaku.applySourceEdits(next);assert.equal(applied.ok,true,JSON.stringify(applied));assert.equal(runtime.llmCalls.length,2);
     console.log(JSON.stringify({test:'hayaku_shared_source_policy',passed:11}));
   }finally{await runtime.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

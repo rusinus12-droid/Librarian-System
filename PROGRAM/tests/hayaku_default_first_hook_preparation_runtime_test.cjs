@@ -1,192 +1,58 @@
 'use strict';
+// registerUnchangedBaseline and automatic source-edit journal enrollment were
+// retired. Exercise the actual replacement: read-only SourceInput readiness,
+// followed by independently guarded admission and publication in the registered
+// request hook. Whole readset/reconciliation coverage also remains in
+// hayaku_inline_ledger_readset_runtime_test.cjs; explicit provider work remains
+// in hayaku_source_review_v2_test.cjs and source_* owner reanalysis suites.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {createHayakuRuntime,createValidPacket,hiddenPacketMessage,waitFor}=require('./fixtures/hayaku_runtime_harness.cjs');
 const {physicalStore,digest}=require('./fixtures/hayaku_inline_physical_store.cjs');
-const {exercise}=require('./build_plugins_artifact_behavior_parity_test.cjs');
+const evidence=process.env.HAYAKU_PREPARATION_EVIDENCE||fs.mkdtempSync(path.join(os.tmpdir(),'LIB-HAYAKU-First-Hook-SourceInput-'));
 const source=process.env.HAYAKU_PREPARATION_SOURCE||path.resolve(__dirname,'../plugins/HAYAKU_Locator_Continuity.js');
-const evidence=process.env.HAYAKU_PREPARATION_EVIDENCE||fs.mkdtempSync(path.join(os.tmpdir(),'LIB-HAYAKU-First-Hook-Prepare-'));
-const sourceSHA=digest(fs.readFileSync(source)),N=10,receipts=[];fs.mkdirSync(evidence,{recursive:true});
-function baselineController(overrides={}){
- const vm=require('node:vm'),code=fs.readFileSync(path.resolve(__dirname,'../sdk/MemorySuiteSourceEditConsent.source.js'),'utf8'),context=vm.createContext({setTimeout,clearTimeout,Date,console});vm.runInContext(code+'\nthis.factory=createMemorySuiteSourceEditConsent;',context);
- const journal={schema:'memory-suite.source-edit-consent.v1',owner:'hayaku',scopeKey:'baseline-unit',tasks:{},events:[],exceptions:{preserved:true},completedTurnSerial:0,seenTurnIds:[],nextEventId:0,sourceRuleEpoch:0,sourceRuleBaseline:{},trackingEpoch:0,trackingBaseline:{preserved:true},revision:4};
- const db=new Map([['baseline-unit',JSON.stringify({...journal,...overrides.journal})]]),writes=[];
- if(overrides.preferences)db.set('__source_tracking_preferences_v1__',JSON.stringify(overrides.preferences));
- const controller=context.factory({owner:'hayaku',requestBoundary:true,unchangedBaselineRegistration:true,read:async key=>db.get(key)??null,write:async(key,value)=>{writes.push({key,value});db.set(key,value);return true;},execute:async()=>{throw Error('PURE_REGISTRATION_CANNOT_EXECUTE');},...overrides.config});
- const unit={key:'1',start:1,end:1,digest:'same-source',sourceDigest:'same-source',originalDigest:'same-source',rawDigest:'same-raw',originalRawDigest:'same-raw',identity:'same-identity',basis:'same-prefix',changed:false,current:true};
- const receipt={schema:'memory-suite.source-baseline-registration.v1',owner:'hayaku',scopeKey:'baseline-unit',trackingEpoch:0,sourceRuleEpoch:0,journal:db.get('baseline-unit'),verify:async()=>true};
- return {controller,db,writes,journal,unit,receipt};
-}
-test('pure SDK registration requires explicit owner opt-in and verification receipt',async()=>{
- for(const [name,config,receiptPatch]of [['unsupported',{unchangedBaselineRegistration:false},{}],['missing verify',{}, {verify:null}],['wrong owner',{}, {owner:'foreign'}]]){const f=baselineController({config});try{assert.equal(typeof f.controller.registerUnchangedBaseline,'function','explicit pure registration API must exist');await assert.rejects(()=>f.controller.registerUnchangedBaseline({scopeKey:'baseline-unit',units:[f.unit]},{...f.receipt,...receiptPatch}),/SOURCE_BASELINE_REGISTRATION_/);assert.equal(f.writes.length,0,name);}finally{f.controller.dispose();}}
-});
-test('pure SDK unchanged registration preserves all semantic fields and never executes work',async()=>{
- const f=baselineController();try{assert.equal(typeof f.controller.registerUnchangedBaseline,'function');const result=await f.controller.registerUnchangedBaseline({scopeKey:'baseline-unit',units:[f.unit]},f.receipt),saved=JSON.parse(f.db.get('baseline-unit'));assert.equal(result.changed,true);assert.equal(result.readbackVerified,true);assert.equal(saved.revision,5);assert.deepEqual(saved.sourceRuleBaseline,{'1':{sourceDigest:f.unit.sourceDigest,rawDigest:f.unit.rawDigest,identity:f.unit.identity,digest:f.unit.digest,basis:f.unit.basis}});for(const field of ['tasks','events','exceptions','completedTurnSerial','seenTurnIds','nextEventId','sourceRuleEpoch','trackingEpoch','trackingBaseline'])assert.deepEqual(saved[field],f.journal[field]);assert.equal(f.writes.length,1);}finally{f.controller.dispose();}
-});
-for(const mutation of ['changed','raw','projection','existing','pending','epoch','tracking','verify','foreign'])test('pure SDK registration refuses '+mutation+' without semantic enrollment',async()=>{
- const overrides=mutation==='pending'?{journal:{tasks:{'1':{state:'awaiting_consent'}}}}:mutation==='existing'?{journal:{sourceRuleBaseline:{'1':{identity:'foreign'}}}}:mutation==='epoch'?{preferences:{mode:'auto',epoch:0,sourceRuleEpoch:1}}:mutation==='tracking'?{preferences:{mode:'auto',epoch:1,sourceRuleEpoch:0}}:{};
- const f=baselineController(overrides);try{assert.equal(typeof f.controller.registerUnchangedBaseline,'function');const unit={...f.unit};if(mutation==='changed')unit.changed=true;if(mutation==='raw')unit.originalRawDigest='foreign';if(mutation==='projection')unit.originalDigest='foreign';if(mutation==='verify')f.receipt.verify=async()=>false;if(mutation==='foreign')f.receipt.journal='foreign';const before=f.db.get('baseline-unit');await assert.rejects(()=>f.controller.registerUnchangedBaseline({scopeKey:'baseline-unit',units:[unit]},f.receipt),/SOURCE_BASELINE_REGISTRATION_/);assert.equal(f.writes.length,0);assert.equal(f.db.get('baseline-unit'),before);}finally{f.controller.dispose();}
-});
-const markers=output=>output.filter(row=>String(row.content||'').includes('[HAYAKU RUNTIME PACKET SHAPE]')).length;
+const sourceSHA=digest(fs.readFileSync(source)),PREFS='hayaku.v2.settings.source-tracking.v1',receipts=[];
+const messages=()=>Array.from({length:3},(_,i)=>{
+ const turn=i+1,summary=turn===1?'Aurora vault contains amethyst calibration spindle FIRST_DEFAULT_OLD.':'Routine entry '+turn+'.';
+ const packet=createValidPacket({turn,subject:'Archivist',scene:'archive',summary});packet.world.world_rules=[{id:'fact-'+turn,summary}];
+ return [{role:'user',chatId:'u'+turn,data:'Archive entry '+turn+'.'},{role:'assistant',chatId:'a'+turn,data:hiddenPacketMessage(summary,packet)}];
+}).flat().concat({role:'system',chatId:'tail',data:'Unselected control tail'});
 const recall=output=>output.filter(row=>row.memo==='hayaku-runtime-context-v3').map(row=>String(row.content||'')).join('\n');
-function assertPureEnrollment(saved,prior,count){
- assert.equal(saved.revision,prior.revision+1);assert.equal(Object.keys(saved.sourceRuleBaseline).length,count);
- for(const [key,row]of Object.entries(saved.sourceRuleBaseline)){assert.match(key,/^\d+$/);assert.equal(row.digest,row.sourceDigest);for(const field of ['sourceDigest','rawDigest','identity','basis'])assert.ok(row[field]);}
- for(const field of ['schema','owner','scopeKey','tasks','events','exceptions','completedTurnSerial','seenTurnIds','nextEventId','sourceRuleEpoch','trackingEpoch','trackingBaseline'])assert.deepEqual(saved[field],prior[field],field);
+async function fixture(name,preferences){
+ const root=path.join(evidence,name),store=await physicalStore(path.join(root,'plugin')),safe=await physicalStore(path.join(root,'device'));
+ if(preferences!==undefined)await store.setItem(PREFS,JSON.stringify(preferences));
+ const rows=messages(),h=await createHayakuRuntime({pluginSourceFile:source,pluginStorage:store,safeLocalStorage:safe,messages:rows,autoRepair:false,afterRequestAutoRepair:false,backgroundAutoRepair:false,failedRecoveryAutomation:'off',arguments:{hayaku_packet_recovery:'false'},llmResponder:async()=>{throw Error('IMPLICIT_MODEL_FORBIDDEN');}});
+ await waitFor(()=>h.host.unloadHandlers.length>0,'complete installation');
+ return {h,store,rows,root};
 }
-test('changed physical source reaches existing semantic task detection without pure enrollment',async()=>{
- const f=await fixture('changed-semantic-entry');f.gate.release();let pending,release;
- try{
-  const input=[{role:'user',content:'What does Aurora vault contain?'}];assert.equal(markers(await f.h.callBeforeRequest(input,'model')),1);assert.equal(markers(await f.h.callBeforeRequest(input,'model')),1);
-  let enter;const entered=new Promise(resolve=>enter=resolve),held=new Promise(resolve=>release=resolve),write=f.store.setItem.bind(f.store);let taskBody;const bodies=[];
-  f.store.setItem=async(key,value)=>{if(String(key).startsWith('hayaku.v2.source-edit.')){const body=JSON.parse(value);bodies.push(body);if(Object.keys(body.tasks||{}).length){taskBody=body;enter();await held;}}return write(key,value);};
-  f.rows[0].data='Changed physical user source requiring existing semantic task handling.';f.h.setMessages(f.rows);pending=f.h.callBeforeRequest(input,'model');
-  let timer;try{await Promise.race([entered,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('EXISTING_SEMANTIC_TASK_GATE_NOT_REACHED')),1500))]);}finally{clearTimeout(timer);}
-  assert.ok(Object.keys(taskBody.tasks).length);assert.equal(bodies.length,1,'changed source must reach semantic task write without a separate pure-enrollment write');assert.ok(Object.keys(bodies[0].tasks).length);
-  save('changed-semantic-entry',{taskBody,models:f.h.llmCalls.length,observation:'Actual registered hook reaches its existing semantic task journal write; unload while that write is held prevents any repair model call.'});
-  await f.h.dispose();release();assert.equal(markers(await pending),0);assert.equal(f.h.llmCalls.length,0);
- }finally{release?.();await pending?.catch(()=>{});await f.h.dispose();}
-});
-for(const mutation of ['missing-raw','corrupt-raw','visible-only-collision','pending-task','source-epoch','tracking-epoch','existing-baseline'])test('physical baseline preparation refuses '+mutation+' without enrollment or old ACK',async()=>{
- const f=await fixture('baseline-'+mutation);f.gate.release();try{
-  const input=[{role:'user',content:'What does Aurora vault contain?'}];assert.equal(markers(await f.h.callBeforeRequest(input,'model')),1);
-  const keys=await f.store.keys(),journalKey=keys.find(key=>key.startsWith('hayaku.v2.source-edit.')),rawKey=keys.find(key=>key.startsWith('hayaku.v2.source-evidence.'));assert.ok(rawKey);
-  const prior=JSON.parse(await f.store.physicalValue(journalKey));
-  if(mutation==='missing-raw')await f.store.removeItem(rawKey);
-  if(mutation==='corrupt-raw')await f.store.setItem(rawKey,'{physical raw corrupted');
-  if(mutation==='visible-only-collision'){const row=f.rows[1],scope={key:(await f.h.hayaku.getHostLineageStatus()).scopeKey},before=f.h.hayaku._test.authoritativeChatSnapshot(f.rows,scope).conversationPairs[0].assistantVisibleHash,rawBefore=digest(row.data),at=row.data.indexOf('{');assert.ok(at>=0);row.data=row.data.slice(0,at)+' '+row.data.slice(at);f.h.setMessages(f.rows);assert.equal(f.h.hayaku._test.authoritativeChatSnapshot(f.rows,scope).conversationPairs[0].assistantVisibleHash,before,'visible projection is identical');assert.notEqual(digest(row.data),rawBefore,'whole literal raw differs');}
-  if(mutation==='pending-task')prior.tasks={'1':{key:'1',state:'awaiting_consent',revisionId:'foreign-pending'}};
-  if(mutation==='source-epoch')prior.sourceRuleEpoch=1;
-  if(mutation==='tracking-epoch')prior.trackingEpoch=1;
-  if(mutation==='existing-baseline')prior.sourceRuleBaseline={'1':{identity:'foreign-baseline'}};
-  if(['pending-task','source-epoch','tracking-epoch','existing-baseline'].includes(mutation))await f.store.setItem(journalKey,JSON.stringify(prior));
-  const beforeJournal=await f.store.physicalValue(journalKey),output=await f.h.callBeforeRequest(input,'model'),afterJournal=await f.store.physicalValue(journalKey),debug=f.h.hayaku.lastDebug();
-  save('baseline-'+mutation,{markers:markers(output),beforeJournalSHA:digest(typeof beforeJournal==='string'?beforeJournal:JSON.stringify(beforeJournal)),afterJournalSHA:digest(typeof afterJournal==='string'?afterJournal:JSON.stringify(afterJournal)),commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,inventory:await f.store.inventory(),models:f.h.llmCalls.length});
-  assert.equal(markers(output),0);assert.equal(afterJournal,beforeJournal,'unverified raw or semantic journal cannot be enrolled');assert.equal(f.h.llmCalls.length,0);
+async function record(f,name,extra={}){
+ const inventory=await f.store.inventory();assert(!inventory.some(row=>row.key.startsWith('hayaku.v2.source-edit.')),'ordinary hooks must never enroll retired journals');assert.equal(f.h.llmCalls.length,0);assert.equal(f.h.fetchCalls.length,0);
+ const receipt={name,sourceSHA,sourceBytesSHA:digest(JSON.stringify(f.h.chat.message)),inventory,modelCalls:f.h.llmCalls.length,...extra};receipts.push(receipt);fs.writeFileSync(path.join(f.root,'receipt.json'),JSON.stringify(receipt,null,2));
+}
+for(const [name,prefs]of [['absent',undefined],['legacy-auto',{mode:'auto',epoch:7,sourceRuleEpoch:9,future:{keep:true}}],['explicit-input',{mode:'off',epoch:7,sourceRuleEpoch:9,ignoredTags:['thoughts'],sourceRules:{version:1,ignoredTags:['thoughts'],sourceTags:[],unwrapTags:[],controls:[]},externalRulesVersion:1,future:{keep:true}}]])test('first registered hook '+name+' preserves source and preferences while delivering durable canonical recall',async()=>{
+ const f=await fixture(name,prefs);try{
+  const before=JSON.stringify(f.rows),preferences=await f.store.getItem(PREFS),policy=f.h.hayaku._test.getHayakuSourceInput();
+  await policy.ready();assert.equal(await f.store.getItem(PREFS),preferences,'readiness is read-only');
+  const input=[{role:'user',content:'What does Aurora vault contain?'}],first=await f.h.callBeforeRequest(input,'model'),debug=f.h.hayaku.lastDebug();
+  assert.equal(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true,'same first request durably admits the actual packet corpus');assert(recall(first).includes('FIRST_DEFAULT_OLD'),'actual final request delivers the eligible rare-query fact');
+  assert.equal(JSON.stringify(f.h.chat.message),before);assert.equal(await f.store.getItem(PREFS),preferences,'first hook preserves opaque legacy preferences');
+  await f.h.callAfterRequest('Unchanged output.','model');const second=await f.h.callBeforeRequest(input,'model');assert(recall(second).includes('FIRST_DEFAULT_OLD'));assert.equal(JSON.stringify(f.h.chat.message),before);assert.equal(await f.store.getItem(PREFS),preferences);
+  await record(f,name,{firstDurable:true,firstDelivery:true,secondDelivery:true,preferenceBytes:preferences});
  }finally{await f.h.dispose();}
 });
-for(const mutation of ['unchanged','body','tail','source-pref','foreign-journal','newer-attempt'])test('physical baseline held write '+mutation+' keeps original authority before frame admission',async()=>{
- const f=await fixture('baseline-held-'+mutation);f.gate.release();let pending,newer,release;
+for(const mutation of ['none','body','tail','input','scope','preferences'])test('first admitted evidence write '+mutation+' retains its original request authority',async()=>{
+ const f=await fixture('held-'+mutation,{mode:'auto',epoch:7,future:{keep:true}});let gate,pending;
  try{
-  const input=[{role:'user',content:'What does Aurora vault contain?'}];assert.equal(markers(await f.h.callBeforeRequest(input,'model')),1);
-  let enter,hit=false;const entered=new Promise(resolve=>enter=resolve),held=new Promise(resolve=>release=resolve),write=f.store.setItem.bind(f.store),read=f.store.getItem.bind(f.store);let journalKey;
-  f.store.setItem=async(key,value)=>{if(!hit&&String(key).startsWith('hayaku.v2.source-edit.')&&Object.keys(JSON.parse(value).sourceRuleBaseline||{}).length===N){hit=true;journalKey=key;enter();await held;}return write(key,value);};
-  pending=f.h.callBeforeRequest(input,'model');let timer;try{await Promise.race([entered,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('BASELINE_GATE_NOT_REACHED')),3000))]);}finally{clearTimeout(timer);}
-  if(mutation==='body'){f.rows[1].data='PREP_SOURCE_NEW visible source';f.h.setMessages(f.rows);}
-  if(mutation==='tail'){f.rows.at(-1).data='Changed unselected baseline tail';f.h.setMessages(f.rows);}
-  if(mutation==='source-pref')await write('hayaku.v2.settings.source-tracking.v1',JSON.stringify({mode:'auto',epoch:1}));
-  if(mutation==='foreign-journal'){let first=true;f.store.getItem=async key=>{if(key===journalKey&&first){first=false;await write(key,JSON.stringify({schema:'foreign-baseline-journal',unrelated:true}));}return read(key);};}
-  if(mutation==='newer-attempt')newer=f.h.callBeforeRequest(input,'model');
-  release();const output=await pending,debug=f.h.hayaku.lastDebug();save('baseline-held-'+mutation,{markers:markers(output),commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,journal:await f.store.physicalValue(journalKey),inventory:await f.store.inventory(),models:f.h.llmCalls.length});
-  assert.equal(markers(output),mutation==='unchanged'?1:0);if(mutation==='unchanged'){assert.equal(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(debug.localRecallSourceIndex?.routing?.validationRawReads,N);}
-  if(newer){assert.equal(markers(await newer),1,'new request can use its own freshly admitted frame after old preparation drains');assert.equal(f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);}
-  assert.equal(f.h.llmCalls.length,0);
- }finally{release?.();await pending?.catch(()=>{});await newer?.catch(()=>{});await f.h.dispose();}
+  const originalPrefs=await f.store.getItem(PREFS),input=[{role:'user',content:'What does Aurora vault contain?'}];gate=f.store.arm('evidence','write');pending=f.h.callBeforeRequest(input,'model');
+  let timer;try{await Promise.race([gate.entered,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('PHYSICAL_GATE_NOT_REACHED')),3000))]);}finally{clearTimeout(timer);}
+  if(mutation==='body'){const packet=createValidPacket({turn:1,subject:'Archivist',summary:'Different current source FIRST_DEFAULT_NEW.'});f.rows[1]={...f.rows[1],data:hiddenPacketMessage('Different current source FIRST_DEFAULT_NEW.',packet)};f.h.setMessages(f.rows);}
+  if(mutation==='tail'){f.rows.at(-1).data='Changed unselected tail';f.h.setMessages(f.rows);}
+  if(mutation==='input')input[0].content='Find a different object.';
+  if(mutation==='scope')f.h.chat.id=f.h.chat.chatId='different-host-scope';
+  if(mutation==='preferences')await f.store.setItem(PREFS,JSON.stringify({mode:'auto',epoch:7,ignoredTags:['changed-policy'],future:{keep:true}}));
+  gate.release();const output=await pending,commit=f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit;
+  if(mutation==='none'){assert.equal(commit?.durable,true);assert(recall(output).includes('FIRST_DEFAULT_OLD'));assert.equal(await f.store.getItem(PREFS),originalPrefs);}
+  else{assert.notEqual(commit?.durable,true,'changed frame never receives a durable acknowledgement');assert(!recall(output).includes('FIRST_DEFAULT_OLD'),'pre-await source cannot publish recall after authority changes');}
+  await record(f,'held-'+mutation,{commit,delivery:recall(output).includes('FIRST_DEFAULT_OLD'),mutation});
+ }finally{gate?.release();await pending?.catch(()=>{});await f.h.dispose();}
 });
-function messages(){const rows=[];for(let turn=1;turn<=N;turn++){const summary=turn===1?'Aurora vault contains amethyst calibration spindle PREP_SOURCE_OLD.':'Archive entry '+turn+' completed.';const p=createValidPacket({turn,summary,subject:'Archivist',scene:'archive'});p.world.world_rules=[{id:'prep-fact-'+turn,summary}];rows.push({role:'user',chatId:'u'+turn,data:'Archive completed entry '+turn+'.'},{role:'assistant',chatId:'a'+turn,data:hiddenPacketMessage(summary,p)});}rows.push({role:'system',chatId:'unselected-tail',data:'Original unselected preparation control tail'});return rows;}
-function save(name,value){receipts.push({name,sourceSHA,...value});fs.writeFileSync(path.join(evidence,name+'.json'),JSON.stringify(receipts.at(-1),null,2));}
-async function journalGate(store,operation){
- let enter,release,hit=false,written=false;const entered=new Promise(resolve=>enter=resolve),held=new Promise(resolve=>release=resolve),get=store.getItem.bind(store),set=store.setItem.bind(store);
- const checkpoint=async(op,key,value)=>{if(hit||op!==operation||!String(key).startsWith('hayaku.v2.source-edit.'))return;hit=true;enter({op,key:String(key),valueSHA:value==null?null:digest(typeof value==='string'?value:JSON.stringify(value))});await held;};
- store.getItem=async key=>{const value=await get(key);if(written)await checkpoint('readback',key,value);return value;};
- store.setItem=async(key,value)=>{await checkpoint('write',key,value);if(store.rejectJournal&&String(key).startsWith('hayaku.v2.source-edit.'))throw Error('CONTROLLED_PREPARATION_JOURNAL_WRITE_FAILURE');const result=await set(key,value);if(String(key).startsWith('hayaku.v2.source-edit.'))written=true;return result;};
- return {entered,release,hit:()=>hit};
-}
-async function enteredGate(gate){let timer;try{return await Promise.race([gate.entered,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('PREPARATION_GATE_NOT_REACHED')),3000))]);}finally{clearTimeout(timer);}}
-async function fixture(name,{off=false,operation='write',bridge=false,arguments:extraArguments={},nativeFetch}={}){
- const root=path.join(evidence,name),store=await physicalStore(path.join(root,'owner')),safe=await physicalStore(path.join(root,'device')),rows=messages();
- if(off)await store.setItem('hayaku.v2.settings.source-tracking.v1',JSON.stringify({mode:'off',epoch:0}));
- let executedSource=source;
- if(bridge){const original=fs.readFileSync(source,'utf8'),anchor='    globalThis.HAYAKU = exposedApi;';assert.equal(original.split(anchor).length,2);executedSource=path.join(root,'observed-bridge-only.js');fs.writeFileSync(executedSource,original.replace(anchor,'    globalThis.__HAYAKU_PREPARATION_STORAGE_BRIDGE__=MemorySuiteStorageBridge;\n    globalThis.__HAYAKU_PREPARATION_SOURCE_CONSENT__=getHayakuSourceEdits();\n'+anchor));}
- const h=await createHayakuRuntime({pluginSourceFile:executedSource,pluginStorage:store,safeLocalStorage:safe,messages:rows,chatId:'prep-main',autoRepair:false,afterRequestAutoRepair:false,backgroundAutoRepair:false,failedRecoveryAutomation:'off',arguments:{hayaku_packet_recovery:'false',...extraArguments},nativeFetch,llmResponder:async()=>{throw Error('FORBIDDEN_MODEL');}});
- await waitFor(()=>h.host.unloadHandlers.length>0,'complete registration');
- let model='prep-model-A';const originalDatabase=h.host.getDatabase;h.host.getDatabase=async fields=>({...await originalDatabase(fields),selectedModel:model,model,maxContext:128000});
- const gate=await journalGate(store,operation);return {root,store,safe,rows,h,gate,setModel:value=>model=value};
-}
-test('untouched artifact parity requires default AUTO first single registered hook contract',async()=>{
- const result=await exercise(path.dirname(source),['hayaku',path.basename(source),'HAYAKU']);save('untouched-first-parity',{markers:markers(result.hookResults.before),sourceExecutedSHA:result.sha256,models:result.modelCalls,transport:result.networkCalls});assert.equal(markers(result.hookResults.before),1);assert.equal(result.modelCalls,0);assert.equal(result.networkCalls,0);
-});
-for(const operation of ['write','readback'])test('default AUTO first hook prepares durable history only before '+operation+' admission',async()=>{
- const f=await fixture('positive-'+operation,{operation}),input=[{role:'user',content:'What does Aurora vault contain?'}];let pending;
- try{assert.equal(f.h.hayaku.getSourceEditSyncStatus().mode,'auto');pending=f.h.callBeforeRequest(input,'model');const gateEvent=await enteredGate(f.gate),keys=await f.store.keys();assert.equal(keys.some(key=>key.startsWith('hayaku.v2.ledger.')),false,'preparation cannot publish a derived canonical ledger');assert.equal(keys.some(key=>key.startsWith('hayaku.v2.source-evidence.')),false,'preparation cannot publish derived source evidence');assert.equal(f.h.hayaku.getSourceEditSyncStatus().tasks.length,0,'history preparation cannot create semantic repair tasks');assert.equal(f.h.llmCalls.length,0);f.gate.release();const output=await pending,debug=f.h.hayaku.lastDebug(),journal=JSON.parse(await f.store.physicalValue(gateEvent.key)),commit=debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit;save('positive-'+operation,{gateEvent,journal,markers:markers(output),old:recall(output).includes('PREP_SOURCE_OLD'),commit,fullRawReads:debug.localRecallSourceIndex?.routing?.validationRawReads,inventory:await f.store.inventory(),models:f.h.llmCalls.length,transport:f.h.fetchCalls.length});assert.equal(markers(output),1);assert.equal(recall(output).includes('PREP_SOURCE_OLD'),true);assert.equal(commit?.durable,true);assert.equal(journal.revision,1);assert.equal(journal.completedTurnSerial,N);assert.deepEqual(journal.tasks,{});assert.deepEqual(journal.events,[]);assert.deepEqual(journal.sourceRuleBaseline,{});assert.deepEqual(journal.trackingBaseline,{});assert.equal(debug.localRecallSourceIndex?.routing?.validationRawReads,N);assert.equal(f.h.llmCalls.length,0);assert.equal(f.h.fetchCalls.length,0);
- }finally{f.gate.release();await pending?.catch(()=>{});await f.h.dispose();}
-});
-const controls=['body','tail','model','argument','settings','source-pref','input','scope','provider','url-argument','DATA','journal-foreign','head-foreign','journal-failure','unload','newer-attempt','host-unavailable','settings-unavailable','metadata-unavailable'];
-for(const mutation of controls)test('held preparation '+mutation+' preserves strict authority and owned cancellation',async()=>{
- const f=await fixture(mutation,{operation:mutation==='journal-foreign'?'readback':'write'}),input=[{role:'user',content:'What does Aurora vault contain?'}];let pending,newer;
- try{pending=f.h.callBeforeRequest(input,'model');const gateEvent=await enteredGate(f.gate);
-  if(mutation==='body'){f.rows[1].data='Aurora vault now contains silver calibration spindle PREP_SOURCE_NEW.';f.h.setMessages(f.rows);}
-  if(mutation==='tail'){f.rows.at(-1).data='Changed unselected preparation control tail';f.h.setMessages(f.rows);}
-  if(mutation==='model')f.setModel('prep-model-B');
-  if(mutation==='argument')f.h.argumentsMap.set('hayaku_mode','deep');
-  if(mutation==='settings'){const applied=await f.h.hayaku.settingsControl.apply({hayaku_mode:'deep'});assert.equal(applied.ok,true);assert.equal(applied.readbackVerified,true);}
-  if(mutation==='source-pref')await f.store.setItem('hayaku.v2.settings.source-tracking.v1',JSON.stringify({mode:'auto',epoch:1}));
-  if(mutation==='input')input[0].content='Where is Borealis shelf?';
-  if(mutation==='scope')f.h.chat.id=f.h.chat.chatId='prep-other';
-  if(mutation==='provider')f.h.host.pluginStorage=await physicalStore(path.join(f.root,'replacement'));
-  if(mutation==='url-argument')f.h.argumentsMap.set('memory_suite_server_url','http://127.0.0.1:39891');
-  if(mutation==='DATA')f.h.character.preparationLiteralControl={databaseAuthority:'changed'};
-  if(mutation==='host-unavailable')for(const method of ['getChat','getCurrentChat','getChatFromIndex','getCharacter','getChar','getCharacterFromIndex','getCurrentCharacterIndex','getCurrentChatIndex','getDatabase'])f.h.host[method]=async()=>{throw Error('CONTROLLED_PREPARATION_HOST_UNAVAILABLE');};
-  if(mutation==='settings-unavailable')f.h.host.getArgument=f.h.host.getArg=async()=>{throw Error('CONTROLLED_PREPARATION_SETTINGS_UNAVAILABLE');};
-  if(mutation==='metadata-unavailable')f.store.rejectMetadataReads=true;
-  if(mutation==='journal-foreign')await f.store.setItem(gateEvent.key,JSON.stringify({schema:'foreign-preserved-journal',unrelated:true}));
-  if(mutation==='head-foreign')await f.store.setItem(gateEvent.key.replace('source-edit.','ledger.'),JSON.stringify({version:'foreign-preserved-head',unrelated:true}));
-  if(mutation==='journal-failure')f.store.rejectJournal=true;
-  if(mutation==='unload')await f.h.dispose();
-  if(mutation==='newer-attempt')newer=f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');
-  f.gate.release();const output=await pending,debug=f.h.hayaku.lastDebug(),commit=debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit;save(mutation,{gateEvent,markers:markers(output),old:recall(output).includes('PREP_SOURCE_OLD'),commit,inventory:await f.store.inventory(),models:f.h.llmCalls.length,transport:f.h.fetchCalls.length});assert.equal(markers(output),0,'cancelled or changed preparation cannot publish the old request contract');assert.equal(recall(output).includes('PREP_SOURCE_OLD'),false);assert.notEqual(commit?.durable,true,'preparation never acknowledges derived old evidence');assert.equal(f.h.llmCalls.length,0);assert.equal(f.h.fetchCalls.length,0);
-  if(newer){const output=await newer;assert.equal(markers(output),1,'fresh newer request must succeed after old preparation drains');assert.equal(f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);}
-  if(['body','scope'].includes(mutation)){const fresh=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');assert.equal(markers(fresh),1,'fresh attempt can establish its own frame');assert.equal(f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);if(mutation==='body')assert.equal(recall(fresh).includes('PREP_SOURCE_OLD'),false);}
-  if(mutation==='journal-failure'){
-   // The unchanged shared SDK deliberately retains failed journal slot errors.
-   // A fresh runtime must recover from the preserved physical store, without
-   // granting the failed runtime a rebased or cached journal certificate.
-   f.store.rejectJournal=false;const beforeRetry=await f.store.inventory(),sameInstance=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model'),afterRetry=await f.store.inventory();assert.equal(markers(sameInstance),0,'unchanged SDK journal error remains fail-closed in the same runtime');assert.deepEqual(afterRetry,beforeRetry,'refused same-instance admission does not rewrite preserved physical data');save('journal-failure-same-instance',{markers:markers(sameInstance),sourceStatus:f.h.hayaku.getSourceEditSyncStatus(),beforeRetry,afterRetry,models:f.h.llmCalls.length,limitation:'unchanged SDK journal error requires supported recovery or fresh runtime; no automatic error reset or journal rebase in this unit'});
-   await f.h.dispose();const next=await createHayakuRuntime({pluginSourceFile:source,pluginStorage:f.store,safeLocalStorage:f.safe,messages:f.rows,chatId:'prep-main',autoRepair:false,afterRequestAutoRepair:false,backgroundAutoRepair:false,failedRecoveryAutomation:'off',arguments:{hayaku_packet_recovery:'false'},llmResponder:async()=>{throw Error('FORBIDDEN_MODEL');}});
-   try{await waitFor(()=>next.host.unloadHandlers.length>0,'fresh failed-journal runtime registration');const output=await next.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');assert.equal(markers(output),1,'fresh runtime first hook can certify preserved physical history');assert.equal(next.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(next.llmCalls.length,0);}finally{await next.dispose();}
-  }
- }finally{f.gate.release();await pending?.catch(()=>{});await newer?.catch(()=>{});await f.h.dispose();}
-});
-test('explicit OFF preserves journal-free first hook fast path',async()=>{const f=await fixture('off',{off:true});try{const output=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');assert.equal(markers(output),1);assert.equal(f.gate.hit(),false);assert.equal((await f.store.keys()).some(key=>key.startsWith('hayaku.v2.source-edit.')),false);assert.equal(f.h.llmCalls.length,0);save('off',{markers:markers(output),inventory:await f.store.inventory(),models:f.h.llmCalls.length});}finally{f.gate.release();await f.h.dispose();}});
-test('unchanged structured physical journal remains literal authority across fresh reads',async()=>{
- const f=await fixture('structured-journal');f.gate.release();try{const input=[{role:'user',content:'What does Aurora vault contain?'}],first=await f.h.callBeforeRequest(input,'model');assert.equal(markers(first),1);const key=(await f.store.keys()).find(key=>key.startsWith('hayaku.v2.source-edit.')),journal=JSON.parse(await f.store.physicalValue(key));await f.store.setItem(key,journal);const next=await f.h.callBeforeRequest(input,'model'),debug=f.h.hayaku.lastDebug();save('structured-journal',{markers:markers(next),journal,commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,fullRawReads:debug.localRecallSourceIndex?.routing?.validationRawReads,models:f.h.llmCalls.length});assert.equal(markers(next),1);assert.equal(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);const saved=JSON.parse(await f.store.physicalValue(key));assertPureEnrollment(saved,journal,N);assert.equal(debug.localRecallSourceIndex?.routing?.validationRawReads,N);assert.equal(f.h.llmCalls.length,0);}finally{await f.h.dispose();}
-});
-test('new completed turn receives history preparation on its same first request without retry',async()=>{
- const f=await fixture('new-completed-turn');f.gate.release();try{const input=[{role:'user',content:'What does Aurora vault contain?'}];assert.equal(markers(await f.h.callBeforeRequest(input,'model')),1);const key=(await f.store.keys()).find(key=>key.startsWith('hayaku.v2.source-edit.')),prior=JSON.parse(await f.store.physicalValue(key)),p=createValidPacket({turn:N+1,summary:'Next archive entry completed.',subject:'Archivist',scene:'archive'});f.rows.splice(f.rows.length-1,0,{role:'user',chatId:'u'+(N+1),data:'Archive next entry.'},{role:'assistant',chatId:'a'+(N+1),data:hiddenPacketMessage(p.meta.summary_memory.summary,p)});f.h.setMessages(f.rows);const output=await f.h.callBeforeRequest(input,'model'),debug=f.h.hayaku.lastDebug(),journal=JSON.parse(await f.store.physicalValue(key));save('new-completed-turn',{markers:markers(output),priorSerial:prior.completedTurnSerial,journal,commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,fullRawReads:debug.localRecallSourceIndex?.routing?.validationRawReads,models:f.h.llmCalls.length});assert.equal(markers(output),1);assert.equal(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(journal.completedTurnSerial,N+1);assert.equal(journal.revision,prior.revision+2);assert.equal(Object.keys(journal.sourceRuleBaseline).length,N);for(const field of ['tasks','events','exceptions','sourceRuleEpoch','trackingEpoch','trackingBaseline','nextEventId'])assert.deepEqual(journal[field],prior[field]);assert.equal(debug.localRecallSourceIndex?.routing?.validationRawReads,N+1);assert.equal(f.h.llmCalls.length,0);}finally{await f.h.dispose();}
-});
-test('deterministic turn expiry prunes only expired cause while semantic journal fields stay exact',async()=>{
- const f=await fixture('history-expiry');f.gate.release();try{const scopeKey=(await f.h.hayaku.getHostLineageStatus()).scopeKey,key='hayaku.v2.source-edit.'+scopeKey,task={key:'999',state:'applied',revisionId:'expiry-control',cause:{boundedExcerpt:'expire only this retained history cause'},result:{ok:true}},journal={schema:'memory-suite.source-edit-consent.v1',owner:'hayaku',scopeKey,tasks:{'999':task},events:[{id:'expiry-control',revisionId:'expiry-control',detectedTurnSerial:0}],exceptions:{preserved:'literal'},completedTurnSerial:0,seenTurnIds:[],nextEventId:1,sourceRuleEpoch:0,sourceRuleBaseline:{preserved:'literal'},trackingEpoch:0,trackingBaseline:{preserved:'literal'},revision:7};await f.store.setItem(key,JSON.stringify(journal));const output=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model'),saved=JSON.parse(await f.store.physicalValue(key)),debug=f.h.hayaku.lastDebug();save('history-expiry',{markers:markers(output),saved,commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,models:f.h.llmCalls.length});assert.equal(markers(output),1);assert.equal(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.deepEqual(saved.events,[]);assert.equal(saved.tasks['999'].cause,undefined);assert.deepEqual(saved.tasks['999'],{key:'999',state:'applied',revisionId:'expiry-control',result:{ok:true}});for(const field of ['exceptions','sourceRuleEpoch','sourceRuleBaseline','trackingEpoch','trackingBaseline','nextEventId'])assert.deepEqual(saved[field],journal[field]);assert.equal(saved.revision,8);assert.equal(saved.completedTurnSerial,N);assert.equal(f.h.llmCalls.length,0);}finally{await f.h.dispose();}
-});
-test('actual SDK configure URL change with identical provider and physical bytes refuses old preparation',async()=>{
- const f=await fixture('actual-configure-url',{bridge:true});let pending;
- try{const bridge=f.h.context.__HAYAKU_PREPARATION_STORAGE_BRIDGE__,before=await bridge.getConnectionSettings({force:true}),provider=f.h.host.pluginStorage;pending=f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');await enteredGate(f.gate);const beforeBytes=await f.store.inventory();
-  f.h.host.nativeFetch=async url=>{const target=new URL(url),body=target.pathname==='/bootstrap'?{ok:true,schema:'memory-suite.storage.bootstrap.v1',token:'preparation-local-opaque-test-token',url:target.origin,protocol:{major:1},namespaces:['hayaku'],capabilities:Object.fromEntries(['kv.v1','keys.v1','revision.v1','digest.v1','idempotency.v1','tombstone.v1','readback.v1','namespace-integrity.v1'].map(key=>[key,true]))}:{ok:true,result:{ok:true,records:0}};return {ok:true,status:200,text:async()=>JSON.stringify(body)};};
-  const changed=await bridge.configureConnection({url:'http://127.0.0.1:39281',mode:'plugin_only'}),after=await bridge.getConnectionSettings({force:true});assert.equal(changed.ok,true);assert.notEqual(after.url,before.url);assert.equal(after.mode,before.mode);assert.equal(f.h.host.pluginStorage,provider);const afterBytes=await f.store.inventory();f.gate.release();const output=await pending;save('actual-configure-url',{beforeURL:before.url,afterURL:after.url,sameProvider:true,beforeBytes,afterBytes,markers:markers(output),models:f.h.llmCalls.length,observation:'Owned evidence copy exposes the unchanged actual SDK bridge only; pristine single-hook test executes exact product bytes.'});assert.equal(markers(output),0);assert.notEqual(f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(f.h.llmCalls.length,0);
- }finally{f.gate.release();await pending?.catch(()=>{});await f.h.dispose();}
-});
-test('concurrent actual non-before inspector journal history cannot become owned preparation proof',async()=>{
- const f=await fixture('external-inspector',{bridge:true});let pending,external;
- try{pending=f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');const entered=await enteredGate(f.gate),originalRead=f.store.getItem.bind(f.store),originalWrite=f.store.setItem.bind(f.store);let ownedReadbackSeen=false,foreignWritten=false;
-  f.store.getItem=async key=>{if(String(key)===entered.key&&!ownedReadbackSeen){const result=await originalRead(key);ownedReadbackSeen=true;return result;}if(String(key)===entered.key&&!foreignWritten)await external;return originalRead(key);};
-  f.store.setItem=async(key,value)=>{const result=await originalWrite(key,value);if(String(key)===entered.key&&JSON.parse(value).seenTurnIds?.includes('external-inspector-turn'))foreignWritten=true;return result;};
-  external=f.h.context.__HAYAKU_PREPARATION_SOURCE_CONSENT__.inspect({scopeKey:entered.key.slice('hayaku.v2.source-edit.'.length),units:[],completedTurnIds:['external-inspector-turn']},{phase:'observer',prompt:false});f.gate.release();await external;const output=await pending,journal=JSON.parse(await f.store.physicalValue(entered.key)),debug=f.h.hayaku.lastDebug();save('external-inspector',{markers:markers(output),journal,commit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,inventory:await f.store.inventory(),models:f.h.llmCalls.length});assert.equal(journal.seenTurnIds.includes('external-inspector-turn'),true,'actual unrelated inspector write remains physically preserved');assert.equal(markers(output),0,'global preparation activity cannot certify another inspector payload');assert.notEqual(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(f.h.llmCalls.length,0);const fresh=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');assert.equal(markers(fresh),1,'refusing an old preparation cannot latch an unrelated writer or a fresh request');assert.equal(f.h.hayaku.lastDebug().lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);
- }finally{f.gate.release();await external?.catch(()=>{});await pending?.catch(()=>{});await f.h.dispose();}
-});
-test('actual supported mode protocol drains prepared write and inherited readback failure stays closed until fresh runtime',async()=>{
- const {createMemorySuiteServer}=require('../server/server.cjs'),app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:path.join(evidence,'mode-server'),autoBackup:false,computeEnabled:false}),address=await app.listen(),url='http://127.0.0.1:'+address.port;let f,pending,cutover;
- try{
-  f=await fixture('actual-mode-drain',{bridge:true,arguments:{memory_suite_server_url:url},nativeFetch:async(target,init)=>fetch(target,init)});
-  const bridge=f.h.context.__HAYAKU_PREPARATION_STORAGE_BRIDGE__;
-  pending=f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model');await enteredGate(f.gate);
-  let complete=false;cutover=bridge.setMode('server_only').then(result=>{complete=true;return result;});
-  await waitFor(()=>bridge.status().transition?.phase==='draining','actual SDK preparation owner write drain');
-  const during=await bridge.getScopeMode();assert.equal(during.mode,'plugin_only');assert.equal(complete,false);
-  f.gate.release();const old=await pending,change=await cutover;assert.equal(change.to,'server_only');assert.equal(bridge.status().transition,null);
-  const fresh=await f.h.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model'),debug=f.h.hayaku.lastDebug(),status=f.h.hayaku.getSourceEditSyncStatus();
-  save('actual-mode-drain',{during:{mode:during.mode,phase:during.transition.phase},completedMode:change.to,oldMarkers:markers(old),freshMarkers:markers(fresh),freshCommit:debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,sourceStatus:status,fullRawReads:debug.localRecallSourceIndex?.routing?.validationRawReads,inventory:await f.store.inventory(),models:f.h.llmCalls.length,localProtocolCalls:f.h.fetchCalls.length,externalNetworkCalls:0,limitation:'Exact be223 baseline also latches SOURCE_EDIT_JOURNAL_UNAVAILABLE after this readback I/O failure; original same-runtime recovery assertion failed and is retained separately.'});
-  assert.equal(markers(old),0);assert.equal(markers(fresh),0,'same-runtime SDK error must remain fail-closed');assert.equal(status.error,'SOURCE_EDIT_JOURNAL_UNAVAILABLE');assert.notEqual(debug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(f.h.llmCalls.length,0);assert.ok(f.h.fetchCalls.length>0);
-  await f.h.dispose();
-  const next=await createHayakuRuntime({pluginSourceFile:source,pluginStorage:f.store,safeLocalStorage:f.safe,messages:f.rows,chatId:'prep-main',autoRepair:false,afterRequestAutoRepair:false,backgroundAutoRepair:false,failedRecoveryAutomation:'off',arguments:{hayaku_packet_recovery:'false',memory_suite_server_url:url},nativeFetch:async(target,init)=>fetch(target,init),llmResponder:async()=>{throw Error('FORBIDDEN_MODEL');}});
-  try{await waitFor(()=>next.host.unloadHandlers.length>0,'fresh post-drain runtime registration');const output=await next.callBeforeRequest([{role:'user',content:'What does Aurora vault contain?'}],'model'),nextDebug=next.hayaku.lastDebug();save('actual-mode-drain-fresh-runtime',{markers:markers(output),commit:nextDebug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit,fullRawReads:nextDebug.localRecallSourceIndex?.routing?.validationRawReads,models:next.llmCalls.length,localProtocolCalls:next.fetchCalls.length,externalNetworkCalls:0});assert.equal(markers(output),1);assert.equal(nextDebug.lastBeforeRequest?.authoritativeLedger?.reconcileCommit?.durable,true);assert.equal(nextDebug.localRecallSourceIndex?.routing?.validationRawReads,N);assert.equal(next.llmCalls.length,0);}finally{await next.dispose();}
- }finally{f?.gate.release();await pending?.catch(()=>{});await cutover?.catch(()=>{});await f?.h.dispose();await app.close();}
-});
-test.after(()=>fs.writeFileSync(path.join(evidence,'summary.json'),JSON.stringify({sourceSHA,N,cases:receipts,actualModelCalls:receipts.reduce((sum,row)=>sum+(row.models||0),0),externalNetworkCalls:receipts.reduce((sum,row)=>sum+(row.transport||0),0)},null,2)));
+test.after(()=>{fs.writeFileSync(path.join(evidence,'summary.json'),JSON.stringify({sourceSHA,evidence,cases:receipts.length,receipts},null,2));console.log(JSON.stringify({sourceSHA,evidence,cases:receipts.length}));});

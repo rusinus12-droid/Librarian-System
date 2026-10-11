@@ -12,27 +12,19 @@ const {createHayakuRuntime,createValidPacket,hiddenPacketMessage}=require('./fix
   await t.reconcileObservedChatTopology(scope,snapshot,'journal_error_fixture',{prompt:false});
   const ledger=await t.loadStorageLedger(scope),record=ledger.records.find(r=>r.targetPairIndex===1);
   assert.ok(record);
-  const consent=t.getHayakuSourceEdits(),originalSet=h.pluginStorage.setItem;
-  h.pluginStorage.setItem=async(key,value)=>String(key).includes('source-edit.')?false:originalSet.call(h.pluginStorage,key,value);
-  const unit={key:'1',start:1,end:1,digest:'fixture',sourceDigest:'fixture',current:true,changed:false,changeKind:'response_variant',oldPacketHashes:[]};
-  try{await consent.inspect({scopeKey:scope.key,units:[unit]},{phase:"before",prompt:false});}catch(_){}
-  const journalError=consent.status().error;
-  assert.match(journalError,/^SOURCE_EDIT_JOURNAL_(WRITE_REJECTED|READBACK_FAILED)$/);
-  assert.equal(consent.canWrite(scope.key,1,'fixture'),false,'failed persistence must not grant write permission');
-  assert.equal(t.hayakuSourceEditRejectsPacket(scope,1,record.hash),false,'settled variant packet remains readable');
-  const filtered=t.filterHayakuEditedSnapshot(snapshot,scope);
-  assert.ok(filtered.conversationPairs[0].packetHashes.includes(record.hash));
-  const worldline=t.reconcileTurnWorldline(ledger.worldline,filtered,scope);
-  const bound=t.bindStorageLedgerToSnapshot({...ledger,worldline},filtered,worldline).ledger;
-  const coverage=t.exactHayakuTurnCoverage(filtered,bound,scope.key);
-  assert.equal(coverage.rows[0].state,'covered');
-  assert.equal(coverage.sourceEditError,journalError);
-  assert.equal(t.viewerContinuityModel(bound,coverage).rows[0].state,'ok');
-  assert.equal(t.filterHayakuSourceEditTransport([{hash:record.hash}],scope).length,1);
-  try{await consent.inspect({scopeKey:scope.key,units:[{...unit,digest:'edited',sourceDigest:'edited',changed:true,current:false,changeKind:'source_changed',oldPacketHashes:[record.hash]}]},{phase:"before",prompt:false});}catch(_){}
-  assert.equal(t.hayakuSourceEditRejectsPacket(scope,1,'unapproved-new-packet'),true);
-  assert.equal(t.hayakuSourceEditRejectsPacket(scope,1,record.hash),false,'preserve old packet while edit awaits consent');
-  assert.equal(h.llmCalls.length,0);
-  console.log('PASS journal write rejection preserves verified packet, binding, coverage and transport; unapproved replacement stays blocked; no model calls');
+  const before=JSON.stringify(ledger.records),oldEvidence=record.sourceEvidenceRef,oldBytes=h.pluginStorage.values.get(oldEvidence.key);
+  h.chat.message[1].data=hiddenPacketMessage('Alice left the office.',createValidPacket({turn:1,subject:'Alice',summary:'Alice is in the office.'}));
+  const ticket=await h.hayaku.previewSourceEdits(['1']);assert.equal(ticket.allowed,true,JSON.stringify(ticket));
+  const originalSet=h.pluginStorage.setItem;
+  h.pluginStorage.setItem=async(key,value)=>String(key).startsWith('hayaku.v2.source-evidence.')?false:originalSet.call(h.pluginStorage,key,value);
+  const result=await h.hayaku.applySourceEdits(ticket);assert.equal(result.ok,false);assert.match(result.reason,/SOURCE_EVIDENCE_(WRITE_REJECTED|READBACK_FAILED)/);
+  assert.equal(h.llmCalls.length,0,'failed evidence persistence cannot grant a model dispatch or publication permit');
+  const after=await t.loadStorageLedger(scope);assert.equal(JSON.stringify(after.records),before,'prior canonical records remain unchanged');
+  assert.equal(h.pluginStorage.values.get(oldEvidence.key),oldBytes,'verified historical source evidence stays byte-identical');
+  const oldUnit=t.hayakuReviewUnit(scope,snapshot.conversationPairs[0]);
+  assert.equal((await t.getHayakuSourceEvidence().get(scope.key,oldUnit,{original:false})).available,true);
+  const coverage=t.exactHayakuTurnCoverage(snapshot,after,scope.key);assert.equal(coverage.rows[0].state,'covered');
+  assert.equal(t.viewerContinuityModel(after,coverage).rows[0].state,'ok');
+  console.log('PASS failed explicit evidence persistence preserves canonical records, prior raw evidence, binding and coverage; no model calls');
  } finally {await h.dispose();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
