@@ -44,7 +44,7 @@ const retryBusy = async action => {
   const modes = process.env.LIBRA_TEST_MODE
     ? [process.env.LIBRA_TEST_MODE] : ['plugin_only', 'server_only'];
   for (const mode of modes) {
-    phase614Mode=mode; note614Phase('mode-lifecycle', 'start');
+    phase614Mode=['plugin_only','server_only','mirror'].includes(mode)?mode:'other'; note614Phase('mode-lifecycle', 'start');
     const sourceRows = prefix => input.sourceRows.map((row, index) => ({
       role: row.role, chatId: `${prefix}-${index}`, data: row.text
     }));

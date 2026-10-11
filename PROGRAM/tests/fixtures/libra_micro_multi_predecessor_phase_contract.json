@@ -2,7 +2,7 @@
   "schema": "libra.micro_multi_predecessor.phase_diagnostic.v1",
   "status": "STATIC_PREPARED_NOT_RUNTIME_RUN",
   "originalTestSHA256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
-  "preparedTestSHA256": "9e79535b21320ebe2ff35de7284bf2e59b2a8bd58157073c7ac6e0bb916c4981",
+  "preparedTestSHA256": "a6848bc15dbcfa1432a44a6fd958bd3278c1004273defe7213c8a84da845c269",
   "markers": [
     {
       "originalLine": 11,
@@ -488,7 +488,7 @@
     {
       "line": 208,
       "method": "equal",
-      "source": "assert.equal(view.head?.world?.find(row => row.name === '도서관')?.state?.doorStatus,\n        '닫혔다', `${mode}: the newer predecessor event controls current State`)",
+      "source": "assert.equal(view.head?.world?.find(row => row.name === '\ub3c4\uc11c\uad00')?.state?.doorStatus,\n        '\ub2eb\ud614\ub2e4', `${mode}: the newer predecessor event controls current State`)",
       "sha256": "51fff3901fadc187c01b11232ef3310cc21a9ae5c6596215de1c750972d32daf"
     },
     {
@@ -560,7 +560,7 @@
     {
       "line": 257,
       "method": "equal",
-      "source": "assert.equal(correctedView.head?.world?.find(row => row.id === library.id)\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: the target correction supersedes both predecessor values`)",
+      "source": "assert.equal(correctedView.head?.world?.find(row => row.id === library.id)\n        ?.state?.doorStatus, '\uc7a0\uacbc\ub2e4',\n      `${mode}: the target correction supersedes both predecessor values`)",
       "sha256": "0b45fede6412e6afb9b6185b67d957a73511777ec8138e21b9fc9cb1f5b453c1"
     },
     {
@@ -578,7 +578,7 @@
     {
       "line": 267,
       "method": "equal",
-      "source": "assert.equal((await f.r.api.debugLoadContinuityStateForResponse()).head?.world\n        ?.find(row => row.name === '도서관')?.state?.doorStatus, '닫혔다',\n      `${mode}: the second predecessor stays current after restart`)",
+      "source": "assert.equal((await f.r.api.debugLoadContinuityStateForResponse()).head?.world\n        ?.find(row => row.name === '\ub3c4\uc11c\uad00')?.state?.doorStatus, '\ub2eb\ud614\ub2e4',\n      `${mode}: the second predecessor stays current after restart`)",
       "sha256": "54d759c9fdffbd8aa53d43f42a7a28a2a1f6f4dc05c4f1f1df02a38cf6cefb9f"
     },
     {
@@ -614,7 +614,7 @@
     {
       "line": 293,
       "method": "equal",
-      "source": "assert.equal(afterOwnerRemoval.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '닫혔다',\n      `${mode}: the target keeps the latest predecessor State after both source owners are removed`)",
+      "source": "assert.equal(afterOwnerRemoval.head?.world?.find(row => row.name === '\ub3c4\uc11c\uad00')\n        ?.state?.doorStatus, '\ub2eb\ud614\ub2e4',\n      `${mode}: the target keeps the latest predecessor State after both source owners are removed`)",
       "sha256": "d3d24a4dfa6c7998dcc7ce1994f76caf1a3d35a9deb40c9e02fb22da99333a30"
     },
     {
@@ -722,7 +722,7 @@
     {
       "line": 371,
       "method": "equal",
-      "source": "assert.equal(branchView.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '닫혔다',\n      `${mode}: branch re-admits the latest inherited Micro on its own basis`)",
+      "source": "assert.equal(branchView.head?.world?.find(row => row.name === '\ub3c4\uc11c\uad00')\n        ?.state?.doorStatus, '\ub2eb\ud614\ub2e4',\n      `${mode}: branch re-admits the latest inherited Micro on its own basis`)",
       "sha256": "ca4d590491282d563124316fb190fb93ebef6a7a9724aed4e49192b3b74729d0"
     },
     {
@@ -818,7 +818,7 @@
     {
       "line": 452,
       "method": "equal",
-      "source": "assert.equal(activeRecord?.claims?.[0]?.stateIntent?.value,\n          ref.sourceScopeKey === scopes[0] ? '열렸다' : '닫혔다',\n          `${mode}: only the edited source revision remains active in the archive`)",
+      "source": "assert.equal(activeRecord?.claims?.[0]?.stateIntent?.value,\n          ref.sourceScopeKey === scopes[0] ? '\uc5f4\ub838\ub2e4' : '\ub2eb\ud614\ub2e4',\n          `${mode}: only the edited source revision remains active in the archive`)",
       "sha256": "705bbc13d93d86b2c6c724dd7ea988603fa1cfefe76d2fcc8d6089cc997d3e35"
     },
     {
@@ -830,7 +830,7 @@
     {
       "line": 463,
       "method": "equal",
-      "source": "assert.equal(descendantView.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: second transfer re-admits the child's newer worldline change`)",
+      "source": "assert.equal(descendantView.head?.world?.find(row => row.name === '\ub3c4\uc11c\uad00')\n        ?.state?.doorStatus, '\uc7a0\uacbc\ub2e4',\n      `${mode}: second transfer re-admits the child's newer worldline change`)",
       "sha256": "3b72ee55a6b06e2d1c85bcca5a882347bef5117a8ad31ad50c8fa6679fe4ffad"
     },
     {
@@ -956,7 +956,7 @@
     {
       "line": 576,
       "method": "equal",
-      "source": "assert.equal(repairedView.head?.world?.find(row=>row.name==='도서관')\n              ?.state?.doorStatus,'잠겼다',\n              `${mode}: the child's newer event remains current after archive repair`)",
+      "source": "assert.equal(repairedView.head?.world?.find(row=>row.name==='\ub3c4\uc11c\uad00')\n              ?.state?.doorStatus,'\uc7a0\uacbc\ub2e4',\n              `${mode}: the child's newer event remains current after archive repair`)",
       "sha256": "b028f0f3315fbf2dedc35b7ccf7c5f96b4a47532704de215fe377ada2d65e174"
     },
     {
@@ -974,7 +974,7 @@
     {
       "line": 593,
       "method": "equal",
-      "source": "assert.equal(afterSecondOwnerRemoval.head?.world?.find(row => row.name === '도서관')\n        ?.state?.doorStatus, '잠겼다',\n      `${mode}: second transfer survives native parent and child owner deletion`)",
+      "source": "assert.equal(afterSecondOwnerRemoval.head?.world?.find(row => row.name === '\ub3c4\uc11c\uad00')\n        ?.state?.doorStatus, '\uc7a0\uacbc\ub2e4',\n      `${mode}: second transfer survives native parent and child owner deletion`)",
       "sha256": "08af93cd75ad46d814b8a99512e1c505b14c059aa16ca4e89d1b1de5fbe2dd4a"
     },
     {
@@ -985,5 +985,11 @@
     }
   ],
   "markerRemovalRestoresOriginalBytes": true,
-  "limits": "Diagnostic markers add synchronous Date.now/stdout overhead only; no awaits/timers/retries added, existing modes/assertions/poll deadlines/default60s cap unchanged. Labels are compile-time operation names/line numbers; no source payloads logged.512major+64poll frames maximum per root. No latency or synthetic completion claim."
+  "limits": "Diagnostic markers add synchronous Date.now/stdout overhead only; no awaits/timers/retries added, existing modes/assertions/poll deadlines/default60s cap unchanged. Labels are compile-time operation names/line numbers; no source payloads logged.512major+64poll frames maximum per root. No latency or synthetic completion claim.",
+  "staticVerification": {
+    "unchangedAwaitCount": 80,
+    "orderedAssertionCallsByteEqual": 102,
+    "modeLabels": "fixed allowed enum plugin_only/server_only/mirror; other values log other",
+    "originalByteReconstruction": "Remove inserted marker statements, helper declaration and two mode lifecycle statements; actual generator validated exact original bytes. Enum sanitization changes only inserted lifecycle statement."
+  }
 }
