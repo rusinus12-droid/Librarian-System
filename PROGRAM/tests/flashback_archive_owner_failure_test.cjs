@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),path=require('node:path');
 const {test}=require('node:test');
-const {createArchiveReportingFixture}=require('./fixtures/archive_reporting_fixture.cjs');
+const {createArchiveReportingFixture,enableDefaultControls}=require('./fixtures/archive_issued_tail_fixture.cjs');
+enableDefaultControls();
 const sourcePath=path.join(__dirname,'../plugins/Flashback_Memory.js');
 const clone=value=>JSON.parse(JSON.stringify(value));
 async function setup(){
@@ -178,7 +179,7 @@ for(const malformed of ['count','dimension','nan','zero'])test(`archive malforme
  }finally{await f.dispose()}
 });
 test('complete multi-chunk archive group exceeding configured provider batch refuses without shrinking it',async()=>{
- const {createArchiveOwnerFixture}=require('./fixtures/archive_owner_fixture.cjs');const f=await createArchiveOwnerFixture();try{
+ const {createArchiveOwnerFixture}=require('./fixtures/archive_issued_tail_fixture.cjs');const f=await createArchiveOwnerFixture();try{
   await f.api.saveSettings({...f.targetSettings,embeddingBatchSize:1});f.startObservation();const preview=await f.archive().preview();assert.equal(preview.allowed,false);assert.match(preview.reason,/batch|budget|capacity/i);assert.equal(f.observation.requests.length,0);assert.equal(f.observation.writes.length,0);
  }finally{await f.dispose()}
 });
@@ -214,7 +215,7 @@ test('local physical host-write tail retains shared owner after logical timeout 
  }finally{release?.();await f.dispose()}
 });
 for(const malformed of ['worldline','completed-journal','completed-history'])test(`archive ${malformed} integrity is validated before admission`,async()=>{
- const {createArchiveOwnerFixture}=require('./fixtures/archive_owner_fixture.cjs');const f=await createArchiveOwnerFixture();try{
+ const {createArchiveOwnerFixture}=require('./fixtures/archive_issued_tail_fixture.cjs');const f=await createArchiveOwnerFixture();try{
   const m=f.physicalManifest(f.scope.scopeKey);
   if(malformed==='worldline')f.pluginStorage.values.set(f.ownerKey.replace('manifest:v2','turn_worldline:v1'),JSON.stringify({version:'flashback_turn_worldline_v1',scopeKey:f.scope.scopeKey,nodes:'CORRUPT',retiredRecords:[]}));
   if(malformed==='completed-journal')f.pluginStorage.values.set(f.ownerKey,JSON.stringify({...m,archiveRepairJournal:{state:'complete',schema:'wrong',operationId:'foreign'}}));
@@ -223,13 +224,13 @@ for(const malformed of ['worldline','completed-journal','completed-history'])tes
  }finally{await f.dispose()}
 });
 test('clear and replacement preview release private proof even while caller retains stale tickets',async()=>{
- const {createArchiveOwnerFixture}=require('./fixtures/archive_owner_fixture.cjs');const f=await createArchiveOwnerFixture();try{
+ const {createArchiveOwnerFixture}=require('./fixtures/archive_issued_tail_fixture.cjs');const f=await createArchiveOwnerFixture();try{
   const first=await f.archive().preview();assert(first.ticket);assert(f.audit.archiveRepairOffers.has(first.ticket));f.archive().clear();assert.equal(f.audit.archiveRepairOffers.has(first.ticket),false,'clear drops private source and credential proof');
   const second=await f.archive().preview(),third=await f.archive().preview();assert(second.ticket&&third.ticket);assert.equal(f.audit.archiveRepairOffers.has(second.ticket),false,'replacement preview drops previous private proof');assert(f.audit.archiveRepairOffers.has(third.ticket));
  }finally{await f.dispose()}
 });
 test('completion history rejects prospective entry 1025 before reservation or provider',async()=>{
- const {createArchiveOwnerFixture,plain}=require('./fixtures/archive_owner_fixture.cjs');const f=await createArchiveOwnerFixture();try{
+ const {createArchiveOwnerFixture,plain}=require('./fixtures/archive_issued_tail_fixture.cjs');const f=await createArchiveOwnerFixture();try{
   const first=await f.archive().preview();assert.equal((await f.archive().repair(first.ticket)).status,'verified');
   const owner=f.physicalManifest(f.scope.scopeKey),receipt=owner.archiveRepairReceipt;
   const history=Array.from({length:1023},(_,i)=>({...plain(receipt),operationId:'previous-operation-'+i,attemptId:'previous-attempt-'+i}));history.push(receipt);assert.equal(history.length,1024);
@@ -265,7 +266,7 @@ test('supported current-scope switch discards archive-only preview lifetime',asy
  }finally{await f.dispose()}
 });
 for(const corrupt of ['members','jobs'])test(`candidate completed receipt ${corrupt} must match actual frozen layer records`,async()=>{
- const {createArchiveOwnerFixture,plain}=require('./fixtures/archive_owner_fixture.cjs');const f=await createArchiveOwnerFixture();try{
+ const {createArchiveOwnerFixture,plain}=require('./fixtures/archive_issued_tail_fixture.cjs');const f=await createArchiveOwnerFixture();try{
   const first=await f.archive().preview();assert.equal((await f.archive().repair(first.ticket)).status,'verified');
   const owner=f.physicalManifest(f.scope.scopeKey),candidate=f.physicalManifest(owner.archiveRef.archiveScopeKey),receipt=plain(candidate.archiveRepairReceipt);
   if(corrupt==='members')receipt.memberIds[0]='foreign-member-id';
@@ -276,7 +277,7 @@ for(const corrupt of ['members','jobs'])test(`candidate completed receipt ${corr
  }finally{await f.dispose()}
 });
 test('short identity hash collision cannot authorize changed exact settings bytes',async()=>{
- const {createArchiveOwnerFixture}=require('./fixtures/archive_owner_fixture.cjs');
+ const {createArchiveOwnerFixture}=require('./fixtures/archive_issued_tail_fixture.cjs');
  const accelerator="authorityBinding:MemorySuiteExecutionContract.hash([beforeHost,[...routes],globalSettingsProof.binding,settingsWitness,argumentWitness,generation,key,credentialStatus])";
  const f=await createArchiveOwnerFixture({transformSource:source=>{assert(source.includes(accelerator));return source.replace(accelerator,"authorityBinding:'forced-collision-accelerator'")}});try{
   const preview=await f.archive().preview();assert(preview.ticket);const key=[...f.pluginStorage.values.keys()].find(k=>k==='vector_rag_memory:settings:v2');assert(key);
