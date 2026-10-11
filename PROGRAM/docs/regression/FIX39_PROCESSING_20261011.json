@@ -1,6 +1,6 @@
 {
   "schema": "librarian.fix39.processing.v1",
-  "recordedAtUtc": "2026-10-11T09:13:51.095709+00:00",
+  "recordedAtUtc": "2026-10-11T10:10:08.490904+00:00",
   "original280CampaignCommit": "567630fda7df236e14e3feb4873e52366232b509",
   "original280Counts": {
     "PASS": 241,
@@ -5372,6 +5372,78 @@
   "finalCandidate": {
     "productionChangesAfterReplay": true,
     "productionChangeScope": "Shared SDK source plus parent-regenerated Flashback/HAYAKU embedded owners; LIBRA private product body remains ae814a56.",
-    "commonSourceQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN"
+    "commonSourceQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+    "currentReleaseProvenanceSynchronized": true,
+    "productChangesAfterFinal4Preflight": false,
+    "sourceMetadataRepairCommit": "a79523cc6ad1b6eb86a1f898807d264241fbb372"
+  },
+  "supersededFinal4HeavyPreflight": {
+    "outcome": {
+      "path": "/workspace/librarian-regression/fix39-20261011/final4-heavy-preflight-outcome.json",
+      "sha256": "025bddecc1b58fb5b4314484568ecc0b639d075b5d33635ba15aeae9bc36e23e"
+    },
+    "originalFailure": {
+      "rootOrdinal": 943,
+      "path": "PROGRAM/tests/remote_update_release_zip_runtime_test.cjs",
+      "sha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
+      "sourceCommit": "2b3190bc597b19fe935676d878ca92408a78188c",
+      "priorFullStatus": "FAIL",
+      "priorFullTestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
+      "historicalReferenceRoot": true,
+      "estimatedSeconds": 120.22,
+      "historicalOrdinal": 942,
+      "prior280Status": "FAIL",
+      "prior280TestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
+      "sequence": 8,
+      "status": "FAIL",
+      "durationSeconds": 99.65,
+      "runnerExitCode": 1,
+      "summary": "/workspace/librarian-regression/fix39-20261011/final4-run-0/summaries/0943.txt",
+      "console": "/workspace/librarian-regression/fix39-20261011/final4-run-0/summaries/0943.console.txt",
+      "completedAtUtc": "2026-10-11T10:02:33.162985+00:00",
+      "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final4-run-0/logs/943-remote_update_release_zip_runtime_test.cjs.log",
+      "fullOutputSha256": "1d92a6cb893539bbbb15d01d0ca1bb59a6386687007ef1311df5a16377cf2987",
+      "shard": 0,
+      "campaignBindingSha256": "1491289b7a714db872be0ba4b618d555cfb50f8f962dd3526cdeba4571e53b17",
+      "summarySha256": "cd1edcadd141ec5eb084982815841ff870a29fea750f30a34d5d8ebf75ddf03d",
+      "consoleSha256": "cd1edcadd141ec5eb084982815841ff870a29fea750f30a34d5d8ebf75ddf03d"
+    },
+    "counts": {
+      "PASS": 8,
+      "FAIL": 1
+    },
+    "executedRootCount": 9,
+    "all1138RootsExecuted": false,
+    "normalRootsExecuted": 0,
+    "sourceCommit": "2b3190bc597b19fe935676d878ca92408a78188c",
+    "catalogRepair": {
+      "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json",
+      "sha256Before": "78c5778e241e6ed9e400322ccdeae6bdf043f8c31cca0142dad25c53ffaeb3a5",
+      "sha256After": "82f098ef270fa3d13f4147e2ece69c0001a21d9e1018711dff2326dde46ebdd3",
+      "backup": {
+        "path": "/workspace/librarian-regression/fix39-20261011/source-provenance-backup-before-final5.json",
+        "sha256": "78c5778e241e6ed9e400322ccdeae6bdf043f8c31cca0142dad25c53ffaeb3a5"
+      },
+      "changedOwners": [
+        "flashback",
+        "hayaku"
+      ],
+      "changedFields": [
+        "sha256",
+        "bytes"
+      ],
+      "productBytesAndVersionsUnchanged": true,
+      "historicalCatalogFieldsUnchanged": true
+    },
+    "focusedVerification": {
+      "path": "/workspace/librarian-regression/fix39-20261011/provenance943-focused/receipt.json",
+      "sha256": "204cd11501af06e5d9af7460292b18492739c5278807f0d23e4c20369889b82c"
+    },
+    "qualification": "PARTIAL_PREFLIGHT_FAILED_CURRENT_CATALOG_METADATA_REPAIRED_FULL_REPLAY_PENDING",
+    "limits": [
+      "Nine roots executed; none of the 1,129 normal roots started. This is not a complete 1,138-root campaign.",
+      "The actual failed root and logs are preserved; later metadata repair does not rebase or replace that result.",
+      "The repair updates current unpublished source rows only; historical release/publication records and DATA are preserved."
+    ]
   }
 }
