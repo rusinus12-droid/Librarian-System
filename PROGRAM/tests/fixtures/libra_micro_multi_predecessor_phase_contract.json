@@ -2,17 +2,17 @@
   "schema": "libra.micro_multi_predecessor.phase_diagnostic.v1",
   "status": "STATIC_PREPARED_NOT_RUNTIME_RUN",
   "originalTestSHA256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
-  "preparedTestSHA256": "a6848bc15dbcfa1432a44a6fd958bd3278c1004273defe7213c8a84da845c269",
+  "preparedTestSHA256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
   "markers": [
     {
       "originalLine": 11,
       "label": "L11-await-statement",
-      "pollingBudget": false
+      "pollingBudget": true
     },
     {
       "originalLine": 20,
       "label": "L20-await-statement",
-      "pollingBudget": false
+      "pollingBudget": true
     },
     {
       "originalLine": 57,
@@ -991,5 +991,6 @@
     "orderedAssertionCallsByteEqual": 102,
     "modeLabels": "fixed allowed enum plugin_only/server_only/mirror; other values log other",
     "originalByteReconstruction": "Remove inserted marker statements, helper declaration and two mode lifecycle statements; actual generator validated exact original bytes. Enum sanitization changes only inserted lifecycle statement."
-  }
+  },
+  "pollingTruncation": "Repeated25ms waitFor and100ms retryBusy delays use64-frame polling budget; polling frames may truncate after64, preserving separate512-frame budget for major awaited stages, cleanup and next mode."
 }

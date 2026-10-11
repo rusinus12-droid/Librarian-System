@@ -22,9 +22,9 @@ const waitFor = async predicate => {
   const until = Date.now() + 20000;
   while (Date.now() < until) {
     if (await predicate()) return;
-    note614Phase("L11-await-statement", 'start', false);
+    note614Phase("L11-await-statement", 'start', true);
     await new Promise(resolve => setTimeout(resolve, 25));
-    note614Phase("L11-await-statement", 'end', false);
+    note614Phase("L11-await-statement", 'end', true);
   }
   throw new Error('timed out waiting for verified T6 Micro State');
 };
@@ -33,9 +33,9 @@ const retryBusy = async action => {
     try { return await action(); }
     catch (error) {
       if (!/BUSY/.test(String(error?.code || error?.message || '')) || attempt === 39) throw error;
-      note614Phase("L20-await-statement", 'start', false);
+      note614Phase("L20-await-statement", 'start', true);
       await new Promise(resolve => setTimeout(resolve, 100));
-      note614Phase("L20-await-statement", 'end', false);
+      note614Phase("L20-await-statement", 'end', true);
     }
   }
 };
