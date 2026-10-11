@@ -1,6 +1,6 @@
 {
   "schema": "librarian.fix39.processing.v1",
-  "recordedAtUtc": "2026-10-11T07:02:34.715341+00:00",
+  "recordedAtUtc": "2026-10-11T09:13:51.095709+00:00",
   "original280CampaignCommit": "567630fda7df236e14e3feb4873e52366232b509",
   "original280Counts": {
     "PASS": 241,
@@ -13,7 +13,7 @@
     "PASS_SKIP": 1,
     "TIMEOUT": 1
   },
-  "reviewedCodeCommit": "537838ecebb83c4ac26ac8c5e7a6d5cf0da7d11c",
+  "reviewedCodeCommit": "7dc4f1876ce740b2b3be20911f071373cfb03986",
   "currentLibraSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
   "rootCount": 39,
   "allOriginal39PathsAccounted": true,
@@ -1597,7 +1597,7 @@
       "domain": "storage",
       "previousOfficialStatus": "FAIL",
       "previousOfficialTestSha256": "87ca7eb35350ddfb9df2887981890bb82bb3f33964c31c810c841420e1fe91d0",
-      "currentTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+      "currentTestSha256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
       "cause": "Original peer setup and RE:TRACE capsule write attempted retired LIA/RETRACE server mutations.",
       "assertionMap": [
         {
@@ -1626,7 +1626,9 @@
       ],
       "externalBlockers": {},
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "preFollowupFourTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+      "laterCorrectionEvidence": "See additionalReplayCampaignCorrections, preserving this row's earlier originalFailure and authored receipt."
     },
     {
       "rootOrdinal": 995,
@@ -2628,7 +2630,7 @@
           "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/983-retrace_server_handoff_test.cjs.log",
           "fullOutputSha256": "5fdc4d61ac6da35403f3c901cea1e1dd94633c9f8176db62ac7e89bfc6a6c6d2"
         },
-        "currentTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+        "currentTestSha256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
         "authorExecutionCommit": "575b307718e3ab794c149a303a0308a6584c1c92",
         "authorReceipt": {
           "path": "/workspace/librarian-regression/fix39-20261011/storage983-diagnostic-candidate.json",
@@ -2681,7 +2683,9 @@
           "Original fetch failure cause remains unknown. The diagnostic rerun passed without a production correction or retry.",
           "All original assertions remain unchanged; sanitized transport diagnostics retain failures if they recur."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": null,
+        "preFollowupFourTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+        "laterCorrectionEvidence": "See additionalReplayCampaignCorrections, preserving this row's earlier originalFailure and authored receipt."
       },
       {
         "rootOrdinal": 1085,
@@ -2748,7 +2752,2626 @@
         "commonSourceResult": null
       }
     ],
-    "qualification": "FOCUSED_VERIFICATION_COMPLETE_FRESH_COMMON_SOURCE_REPLAY_PENDING",
-    "productionChangesAfterPredecessor": false
+    "qualification": "REPLAY_COMPLETED_WITH_ROOT_983_FAILURE_FURTHER_FINAL_CANDIDATE_PENDING",
+    "historicalEightPreparation": {
+      "productionChangesAfterPredecessor": false,
+      "scope": "The eight-candidate preparation before source 017f860; excludes the later shared SDK correction."
+    },
+    "completedReplay": {
+      "outcome": {
+        "path": "/workspace/librarian-regression/fix39-20261011/replay-outcome.json",
+        "sha256": "4f35b6ce3585d7549797c5dca976ed3d937dc28406e9729d6b50da7d96a52adc",
+        "bytes": 2124915
+      },
+      "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+      "counts": {
+        "FAIL": 6,
+        "PASS": 1129,
+        "PASS_SKIP": 2,
+        "TIMEOUT": 1
+      },
+      "rootCount": 1138,
+      "verificationStatus": "VERIFIED_COMPLETE",
+      "allRootsFullyPassed": false,
+      "expectedBlockersOnly": false
+    }
+  },
+  "additionalReplayCampaignCorrections": {
+    "originalCampaign": {
+      "outcome": {
+        "path": "/workspace/librarian-regression/fix39-20261011/replay-outcome.json",
+        "sha256": "4f35b6ce3585d7549797c5dca976ed3d937dc28406e9729d6b50da7d96a52adc",
+        "bytes": 2124915
+      },
+      "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+      "counts": {
+        "FAIL": 6,
+        "PASS": 1129,
+        "PASS_SKIP": 2,
+        "TIMEOUT": 1
+      },
+      "rootCount": 1138,
+      "verificationStatus": "VERIFIED_COMPLETE",
+      "allRootsFullyPassed": false,
+      "expectedBlockersOnly": false
+    },
+    "roots": [
+      {
+        "rootOrdinal": 39,
+        "originalFailure": {
+          "rootOrdinal": 39,
+          "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+          "sha256": "e50d5b5db27632866488e79d050833df8eaab6bf80dede92c56081309a0c57d4",
+          "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+          "priorFullStatus": "PASS",
+          "priorFullTestSha256": "e50d5b5db27632866488e79d050833df8eaab6bf80dede92c56081309a0c57d4",
+          "historicalReferenceRoot": true,
+          "estimatedSeconds": 8.74,
+          "historicalOrdinal": 38,
+          "prior280Status": "PASS",
+          "prior280TestSha256": "e50d5b5db27632866488e79d050833df8eaab6bf80dede92c56081309a0c57d4",
+          "sequence": 100,
+          "status": "FAIL",
+          "durationSeconds": 2.07,
+          "runnerExitCode": 1,
+          "summary": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0039.txt",
+          "console": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0039.console.txt",
+          "completedAtUtc": "2026-10-11T08:26:51.982074+00:00",
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+          "fullOutputSha256": "913d461b0eeda069e43e3efa5c43e31e46abbeafd3933de7ef0867f6fe772ebc",
+          "shard": 1,
+          "campaignBindingSha256": "8e723f0d05a98730408a52e8451ebbba09980de9faa9d493fcb938600d35f5d3",
+          "summarySha256": "3ba87e05346a9ae7be479ee799da472792cd8ee0926b009c3bb633cd76a846f2",
+          "consoleSha256": "3ba87e05346a9ae7be479ee799da472792cd8ee0926b009c3bb633cd76a846f2"
+        },
+        "currentTest": {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+          "sha256": "dc94694ca322cd80663a1f1ec8e8b714a15a110adcea9c0b8c38e54db556c691",
+          "bytes": 8948
+        },
+        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+        "commonSourceResult": null,
+        "sameSourceWholeCampaignQualified": false,
+        "classification": "DIAGNOSTIC_AND_GENUINE_CAS_SENSITIVITY_ONLY_ORIGINAL_NATURAL_CAUSE_UNKNOWN",
+        "authorCommits": [
+          "9a644f81095f308bada1975e89809f072ec6f7f7",
+          "fa0a2b370a4f158a1eaea3bce06126348532e6c3"
+        ],
+        "productionFix": false,
+        "receipts": [
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-receipt.json",
+            "sha256": "cc18989ae9fe569bfa88fad542d90a362c241b178649e904ab0f73b3dfbfc901",
+            "bytes": 7387,
+            "schemaStatus": "UNKNOWN_DIAGNOSTIC_ONLY_RUNTIME_NOT_RUN",
+            "content": {
+              "schema": "librarian.root039.diagnostic-preparation.v1",
+              "rootOrdinal": 39,
+              "status": "UNKNOWN_DIAGNOSTIC_ONLY_RUNTIME_NOT_RUN",
+              "clone": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic",
+              "baseCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "priorQualifiedCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+              "diagnosticCommit": "9a644f81095f308bada1975e89809f072ec6f7f7",
+              "inputComparison": [
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "qualifiedSha256": "e50d5b5db27632866488e79d050833df8eaab6bf80dede92c56081309a0c57d4",
+                  "replaySha256": "e50d5b5db27632866488e79d050833df8eaab6bf80dede92c56081309a0c57d4"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "qualifiedSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+                  "replaySha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "qualifiedSha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+                  "replaySha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "qualifiedSha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381",
+                  "replaySha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs",
+                  "qualifiedSha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd",
+                  "replaySha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs",
+                  "qualifiedSha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52",
+                  "replaySha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/flashback_in_memory_server_fixture.cjs",
+                  "qualifiedSha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e",
+                  "replaySha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e"
+                },
+                {
+                  "path": "PROGRAM/tests/gradia/host.cjs",
+                  "qualifiedSha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f",
+                  "replaySha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "qualifiedSha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b",
+                  "replaySha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_vm_harness.cjs",
+                  "qualifiedSha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100",
+                  "replaySha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/unified_vertical_source.json",
+                  "qualifiedSha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb",
+                  "replaySha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "qualifiedSha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132",
+                  "replaySha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                }
+              ],
+              "files": [
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "dc94694ca322cd80663a1f1ec8e8b714a15a110adcea9c0b8c38e54db556c691"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                }
+              ],
+              "existingLogs": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+                  "sha256": "c7243a685a77d870b9f7d086dc0ada6f7f8290df4503ed8fd8bb4057ff0f5b4f",
+                  "result": "PASS"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+                  "sha256": "913d461b0eeda069e43e3efa5c43e31e46abbeafd3933de7ef0867f6fe772ebc",
+                  "result": "FAIL_LIB_READ_STALE_FIRST_BEGIN_READ"
+                }
+              ],
+              "findings": [
+                "GRADIA line28789 is outer error normalization, not the original refusal branch.",
+                "First beginRead awaits SDK assertCurrent before returning. SDK7725 compares schema,current,scope,evidenceRevision,dataInstanceId,resetEpoch.",
+                "Server current compares capture metadata of manifest and selected canonical memory: exists,tombstone,revision,digest,updatedAt,valueBytes.",
+                "Native fixture scope check is constant true and binding unchanged; other ownership/route/cancel/budget refusals have distinct codes. This server session path does not invoke LIBRA physical consumed-data 1.5s proof.",
+                "Fixture ignores vector-drain result and API becomes visible before all startup tasks finish. Dependency write attribution is unproven. Legacy vector migration writes vector/local marker; default current manifest has no legacy World Additional fields, so neither is established as cause."
+              ],
+              "diagnosticContract": {
+                "existingAssertionsPreserved": 36,
+                "existingAwaitExpressionsPreserved": 21,
+                "sdkObserverCalls": 3,
+                "consumerObserverCalls": 1,
+                "newRuntimeAwaits": 0,
+                "additionalStorageReads": 0,
+                "metadataObservation": "Wrap actual repository.getMetadata, invoke original with same receiver/arguments exactly once, return same value, restore after first beginRead.",
+                "output": "Only first beginRead failure; rethrow same error. Max64events/16capturedeps/4vector results. Hash scope/key/identity, expose numeric metadata/hash and known refusal codes, no credentials/canonical body.",
+                "classification": "No retry, skip, expected-stale acceptance, timeout/cap/mode change, or product source edit. Existing guard branches unchanged. Instrumentation adds synchronous observation work and can perturb race timing; favorable rerun cannot establish a fix."
+              },
+              "staticChecks": [
+                {
+                  "check": "node --check both edited CJS files",
+                  "exitCode": 0
+                },
+                {
+                  "check": "new vm.Script parses transformed SDK and GRADIA; removing four observer calls reproduces original source except whitespace; await-token counts unchanged",
+                  "exitCode": 0
+                },
+                {
+                  "check": "acorn compares all36assertion CallExpression source strings and21AwaitExpression counts before/after",
+                  "exitCode": 0
+                },
+                {
+                  "check": "git diff --cached --check before commit",
+                  "exitCode": 0
+                }
+              ],
+              "preliminaryCheckIssues": [
+                "Initial line-based assertion extraction was overbroad and failed on the retained vector-drain result assignment; replaced by exact AST assertion comparison.",
+                "Node child_process git read reported spawnSync EPERM; static comparison reads frozen replay source directly instead."
+              ],
+              "runtime": {
+                "executed": false,
+                "reason": "Parent requested no extra runtime CPU while two normal campaign shards run.",
+                "result": null
+              },
+              "review": "Requested independent static review; no integration or root pass claim."
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/receipt.json",
+            "sha256": "3155896bdb2941b6e56005599d76c91c4b26bf8f9fd1519229ee9d8e40b4f081",
+            "bytes": 8328,
+            "schemaStatus": "UNRESOLVED_NONREPRODUCTION",
+            "content": {
+              "schema": "librarian.root039.diagnostic-run.v1",
+              "classification": "DIAGNOSTIC_NOT_A_FIX",
+              "rootOrdinal": 39,
+              "repository": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic",
+              "head": "9a644f81095f308bada1975e89809f072ec6f7f7",
+              "cleanBefore": true,
+              "command": [
+                "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                "PROGRAM/run_regression_batch.py",
+                "38",
+                "39"
+              ],
+              "environment": {
+                "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/replay-reingest-evidence",
+                "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min/plugins/LIA_Persona_Linker.js",
+                "MEMORY_SUITE_REGRESSION_LOG": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/run.txt",
+                "MEMORY_SUITE_REGRESSION_OUTPUT_DIR": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/logs",
+                "NODE_PATH": "/workspace/librarian-cloud/toolchain/node_modules:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules",
+                "PATH": "/home/agent/.local/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/override:/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin:/opt/codex/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback",
+                "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+                "RESET_PHYSICAL_CURRENT_OWNERS": "1",
+                "TMPDIR": "/tmp/libr039-diagnostic-1",
+                "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min"
+              },
+              "nodeVersion": "v24.19.0",
+              "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+              "runnerFileCapSeconds": 60,
+              "consumerGuardMs": 30000,
+              "libraPhysicalCapMs": 1500,
+              "physicalCapChanged": false,
+              "physicalCapInvokedByThisReadPath": false,
+              "filesBefore": [
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/run_regression_batch.py",
+                  "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "sha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                },
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "dc94694ca322cd80663a1f1ec8e8b714a15a110adcea9c0b8c38e54db556c691"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/flashback_in_memory_server_fixture.cjs",
+                  "sha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs",
+                  "sha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs",
+                  "sha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_vm_harness.cjs",
+                  "sha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/unified_vertical_source.json",
+                  "sha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb"
+                },
+                {
+                  "path": "PROGRAM/tests/gradia/host.cjs",
+                  "sha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f"
+                }
+              ],
+              "preparationReceipt": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-receipt.json",
+              "preparationSha256": "cc18989ae9fe569bfa88fad542d90a362c241b178649e904ab0f73b3dfbfc901",
+              "startedAtUtc": "2026-10-11T08:45:05.539246+00:00",
+              "runnerExitCode": 0,
+              "elapsedSeconds": 8.45940331699967,
+              "endedAtUtc": "2026-10-11T08:45:13.998914+00:00",
+              "cleanAfter": true,
+              "filesAfter": [
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/run_regression_batch.py",
+                  "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "sha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                },
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "dc94694ca322cd80663a1f1ec8e8b714a15a110adcea9c0b8c38e54db556c691"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/flashback_in_memory_server_fixture.cjs",
+                  "sha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs",
+                  "sha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs",
+                  "sha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_vm_harness.cjs",
+                  "sha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/unified_vertical_source.json",
+                  "sha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb"
+                },
+                {
+                  "path": "PROGRAM/tests/gradia/host.cjs",
+                  "sha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f"
+                }
+              ],
+              "outputs": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/console.txt",
+                  "sha256": "62cd960be6f96e4dc5bb2eef3880d70cbca1a4af2ceb47bce974131455bf6e68"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+                  "sha256": "c04aec2af321a2e1949de588062807610909dd8f58318301f0e826f1f0fcbaeb"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/run.txt",
+                  "sha256": "62cd960be6f96e4dc5bb2eef3880d70cbca1a4af2ceb47bce974131455bf6e68"
+                }
+              ],
+              "diagnosticEmitted": false,
+              "status": "UNRESOLVED_NONREPRODUCTION",
+              "officialResult": {
+                "status": "PASS",
+                "durationSeconds": 8.39,
+                "tests": 1,
+                "pass": 1,
+                "fail": 0,
+                "skip": 0,
+                "nodeDurationMs": 8226.135244,
+                "diagnosticEmitted": false
+              },
+              "conclusion": "The original root039 first-read LIB_READ_STALE remains unexplained. One observed diagnostic PASS is a non-reproduction, not a fix or replacement of the full campaign failure."
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-preparation.json",
+            "sha256": "bacb18079d5a9ce23e49e63c1958baea3cc287e2bd18b73582276fb9aaf2553e",
+            "bytes": 4533,
+            "schemaStatus": "WAITING_RUNTIME_WINDOW_AND_REVIEW",
+            "content": {
+              "schema": "librarian.root039.negative-control-preparation.v1",
+              "classification": "STATIC_ONLY_EXPECTED_ROOT_FAILURE_NOT_INTEGRATION_CANDIDATE",
+              "rootOrdinal": 39,
+              "clone": "/workspace/librarian-regression/fix39-20261011/runtime039-negative",
+              "head": "fa0a2b370a4f158a1eaea3bce06126348532e6c3",
+              "baseDiagnosticCommit": "9a644f81095f308bada1975e89809f072ec6f7f7",
+              "baseProductCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "clean": true,
+              "files": [
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "c063bb1a0c5cf5a10c55a5e5bbb10731684aa1b2d5f4ce086876233696142e13"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_negative.cjs",
+                  "sha256": "bb5fa6c77c5fdffeb52bd40a52b8c455d7493d8e04d6d97a787deeed20d1dc04"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "sha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/run_regression_batch.py",
+                  "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+                }
+              ],
+              "validator": {
+                "path": "/workspace/librarian-regression/fix39-20261011/verify-root039-negative.py",
+                "sha256": "4fe4cfc5326d62e8b480aa480fa36bcb2e43f9e18c61d5871a18041ea4796512",
+                "invocation": "python /workspace/librarian-regression/fix39-20261011/verify-root039-negative.py <negative-run-directory>"
+              },
+              "control": {
+                "mutation": "Existing actual server /v1/kv/batch CAS changes only captured manifest document.updatedAt by1ms after real capture completed; requires prior physical revision/digest equal capture dependency.",
+                "readback": "Actual HTTP getter + actual repository metadata confirms revision+1/digest change; existing canonical raw body unchanged.",
+                "return": "Identical original capture Response; no forged capture/current payload, SDK refusal or catch code.",
+                "assertions": "All36 original root assertions preserved. Initial beginRead remains rejecting to official runner.",
+                "expectedResult": "Official root FAIL_LIB_READ_STALE plus exact observer physical metadata difference and current:false only, with allotherSDKconditionstrue.",
+                "limits": "No cap/mode/guard relaxation. Deliberate negative transport adds awaits for actual mutation/readback and is isolated from positive9a clone."
+              },
+              "runtime": {
+                "executed": false,
+                "reason": "Parent reserves maximum2runtime slots for983+741 until next explicit window."
+              },
+              "producerSettlement": {
+                "provedBySource": [
+                  "processBatch54173-54176 schedules derived vector work before return.",
+                  "scheduleUnifiedDerivedVectors54572-54579 uses setTimeout(0) and void flush; producer does not await its promise.",
+                  "runManagedScan awaits scan/job update and returns; completed1 proves canonical batch completion, not all derived work settlement.",
+                  "public retryPendingUnifiedVectors81797 awaits flushUnifiedDerivedVectors54520 under owner queue; its returned ok/attempted/completed/results are ignored by root39."
+                ],
+                "notProved": "Original failing capture/current writer and exact changed dependency remain unknown. This static possibility does not establish causality.",
+                "barrierDecision": "No barrier or retry added. Only consider a durable settlement barrier after actual outstanding-write and queue/result evidence establishes the missing precondition."
+              },
+              "staticChecks": [
+                "node --check both changedCJS",
+                "acorn preserves all36rootassertion source expressions",
+                "git diff --cached --check",
+                "ast.parse validator"
+              ],
+              "priorPositiveDiagnostic": "/workspace/librarian-regression/fix39-20261011/runtime039-diagnostic-run-1/receipt.json",
+              "status": "WAITING_RUNTIME_WINDOW_AND_REVIEW"
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/receipt.json",
+            "sha256": "3511721bc677b9f75324551cc785bf8cdc857cd744265048a7865e4cc33d1542",
+            "bytes": 11289,
+            "schemaStatus": "DIAGNOSTIC_CONTROL_VALIDATED_ORIGINAL_ROOT_STILL_UNRESOLVED",
+            "content": {
+              "schema": "librarian.root039.negative-control-run.v1",
+              "classification": "DIAGNOSTIC_CONTROL_VALIDATED_ORIGINAL_ROOT_STILL_UNRESOLVED",
+              "rootOrdinal": 39,
+              "repository": "/workspace/librarian-regression/fix39-20261011/runtime039-negative",
+              "head": "fa0a2b370a4f158a1eaea3bce06126348532e6c3",
+              "cleanBefore": true,
+              "command": [
+                "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                "PROGRAM/run_regression_batch.py",
+                "38",
+                "39"
+              ],
+              "environment": {
+                "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/replay-reingest-evidence",
+                "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min/plugins/LIA_Persona_Linker.js",
+                "MEMORY_SUITE_REGRESSION_LOG": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/run.txt",
+                "MEMORY_SUITE_REGRESSION_OUTPUT_DIR": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/logs",
+                "NODE_PATH": "/workspace/librarian-cloud/toolchain/node_modules:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules",
+                "PATH": "/home/agent/.local/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/override:/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin:/opt/codex/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/bin:/opt/codex/runtimes/codex-primary-runtime/dependencies/bin/fallback",
+                "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+                "RESET_PHYSICAL_CURRENT_OWNERS": "1",
+                "TMPDIR": "/tmp/libr039-negative-1",
+                "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min"
+              },
+              "nodeVersion": "v24.19.0",
+              "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+              "runnerFileCapSeconds": 60,
+              "consumerGuardMs": 30000,
+              "libraPhysicalCapMs": 1500,
+              "capsChanged": false,
+              "physicalCapInvokedByThisReadPath": false,
+              "filesBefore": [
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/run_regression_batch.py",
+                  "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "sha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                },
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "c063bb1a0c5cf5a10c55a5e5bbb10731684aa1b2d5f4ce086876233696142e13"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_negative.cjs",
+                  "sha256": "bb5fa6c77c5fdffeb52bd40a52b8c455d7493d8e04d6d97a787deeed20d1dc04"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/flashback_in_memory_server_fixture.cjs",
+                  "sha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs",
+                  "sha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs",
+                  "sha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_vm_harness.cjs",
+                  "sha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/unified_vertical_source.json",
+                  "sha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb"
+                },
+                {
+                  "path": "PROGRAM/tests/gradia/host.cjs",
+                  "sha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f"
+                }
+              ],
+              "preparationReceipt": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-preparation.json",
+              "preparationSha256": "bacb18079d5a9ce23e49e63c1958baea3cc287e2bd18b73582276fb9aaf2553e",
+              "startedAtUtc": "2026-10-11T09:00:33.253723+00:00",
+              "runnerExitCode": 1,
+              "elapsedSeconds": 2.6803080280005815,
+              "endedAtUtc": "2026-10-11T09:00:35.934381+00:00",
+              "cleanAfter": true,
+              "filesAfter": [
+                {
+                  "path": "PROGRAM/plugins/GRADIA.js",
+                  "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284"
+                },
+                {
+                  "path": "PROGRAM/plugins/LIBRA.js",
+                  "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+                },
+                {
+                  "path": "PROGRAM/run_regression_batch.py",
+                  "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+                },
+                {
+                  "path": "PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381"
+                },
+                {
+                  "path": "PROGRAM/server/core/gradia-libra-read-session.cjs",
+                  "sha256": "4da4d2f8a21afb464f8c2fb7d78e0ce29d5f6d2c801a76cc9623f960af2c716b"
+                },
+                {
+                  "path": "PROGRAM/server/server.cjs",
+                  "sha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+                },
+                {
+                  "path": "PROGRAM/tests/composed_reanalysis_gradia_runtime_test.cjs",
+                  "sha256": "c063bb1a0c5cf5a10c55a5e5bbb10731684aa1b2d5f4ce086876233696142e13"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_diagnostic.cjs",
+                  "sha256": "0086ce040737c138d0521ff20690f33a284607522d09126d3d279fc5d9c5262c"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/composed_read_boundary_negative.cjs",
+                  "sha256": "bb5fa6c77c5fdffeb52bd40a52b8c455d7493d8e04d6d97a787deeed20d1dc04"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/flashback_in_memory_server_fixture.cjs",
+                  "sha256": "fc2f256f6eb69ea831c0c35bb2653f9734f6482d1e660314ebf1bb6ab7c8669e"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs",
+                  "sha256": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs",
+                  "sha256": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/libra_vm_harness.cjs",
+                  "sha256": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100"
+                },
+                {
+                  "path": "PROGRAM/tests/fixtures/unified_vertical_source.json",
+                  "sha256": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb"
+                },
+                {
+                  "path": "PROGRAM/tests/gradia/host.cjs",
+                  "sha256": "7b883cbbcce3fb8510f1d35fab4816eabb1508dfd0f3dd7d296a360808faa47f"
+                }
+              ],
+              "outputs": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/assertion-preservation.json",
+                  "sha256": "ad4d7d085bdf5cf6fd6cbed39c8f73af1550819db8590ca3761ce41256e7c7ed"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/console.txt",
+                  "sha256": "e69192fa980d37b789699162a219b7be421a2f8fedee083bdd878b81334ca002"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+                  "sha256": "fa26fa828eccb981bccf762e4116db5774c6d67bf0cb2e3c967789d106bc0e5a"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/negative-control-verification.json",
+                  "sha256": "35c00b193c5695e7c239dbf436b3d0189f9de2962f3ace6c52943ded1c373739"
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/run.txt",
+                  "sha256": "e69192fa980d37b789699162a219b7be421a2f8fedee083bdd878b81334ca002"
+                }
+              ],
+              "officialResult": {
+                "status": "FAIL",
+                "durationSeconds": 2.62,
+                "tests": 1,
+                "pass": 0,
+                "fail": 1,
+                "skip": 0,
+                "nodeDurationMs": 2478.101391,
+                "reason": "LIB_READ_STALE at first beginRead"
+              },
+              "verification": {
+                "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/negative-control-verification.json",
+                "sha256": "35c00b193c5695e7c239dbf436b3d0189f9de2962f3ace6c52943ded1c373739",
+                "exitCode": 0
+              },
+              "actualMutation": {
+                "receipt": {
+                  "schema": "composed.capture-mutation-control.v1",
+                  "hits": 1,
+                  "boundary": "actual_capture_response_before_initial_current",
+                  "keySha256": "a6617cf8e7107cdee821d60cb4f2784e100e67de0fc95160f85753b23b61db1b",
+                  "changedDocumentFields": [
+                    "updatedAt"
+                  ],
+                  "canonicalBytesUnchanged": true,
+                  "conditionalMutationDurable": true,
+                  "before": {
+                    "revision": 8,
+                    "digest": "3ee8e64b4133814abc0058a25c3861ec7f4d2a0f0dc78a251e8df95acba99d15",
+                    "updatedAt": 1791709235257,
+                    "valueBytes": 2232,
+                    "exists": true,
+                    "tombstone": false
+                  },
+                  "after": {
+                    "revision": 9,
+                    "digest": "3eaca95db558713e14eda14a8c50b549fe5afc5fec685374c0f6ccda2c000fa2",
+                    "updatedAt": 1791709235834,
+                    "valueBytes": 2232,
+                    "exists": true,
+                    "tombstone": false
+                  }
+                },
+                "receiptSha256": "c0e22da1c52a1fe0ae890c72a1198e4f7cf949449cd3386ca7ae270de40ddc11",
+                "changedPhysicalMetadata": [
+                  "revision",
+                  "digest",
+                  "updatedAt"
+                ],
+                "unchangedPhysicalMetadata": [
+                  "valueBytes",
+                  "exists",
+                  "tombstone"
+                ],
+                "canonicalPhysicalProof": "Control reads active canonical raw through actual SQLite storedRows before and after admitted CAS and assert.equal exact raw strings; no canonical write in the single-item manifest mutation."
+              },
+              "assertionPreservation": {
+                "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/assertion-preservation.json",
+                "sha256": "ad4d7d085bdf5cf6fd6cbed39c8f73af1550819db8590ca3761ce41256e7c7ed"
+              },
+              "vectorDrainObserved": {
+                "ok": true,
+                "attempted": 1,
+                "completed": 1,
+                "results": [
+                  {
+                    "status": "disabled",
+                    "diagnostic": {
+                      "ok": null,
+                      "reason": null
+                    }
+                  }
+                ]
+              },
+              "conclusion": "Validates observer causal attribution for an intentionally introduced real physical mutation only. Does not establish the writer or changed dependency of original replay root039. No barrier, retry, timeout, product fix, or integration change."
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/negative-control-verification.json",
+            "sha256": "35c00b193c5695e7c239dbf436b3d0189f9de2962f3ace6c52943ded1c373739",
+            "bytes": 1884,
+            "schemaStatus": "DIAGNOSTIC_CONTROL_VALIDATED_ORIGINAL_ROOT_STILL_UNRESOLVED",
+            "content": {
+              "schema": "composed.negative-control-verification.v1",
+              "classification": "DIAGNOSTIC_CONTROL_VALIDATED_ORIGINAL_ROOT_STILL_UNRESOLVED",
+              "officialRootResult": "FAIL",
+              "firstReadRefusal": "LIB_READ_STALE",
+              "actualChangedMetadata": [
+                "revision",
+                "digest",
+                "updatedAt"
+              ],
+              "control": {
+                "schema": "composed.capture-mutation-control.v1",
+                "hits": 1,
+                "boundary": "actual_capture_response_before_initial_current",
+                "keySha256": "a6617cf8e7107cdee821d60cb4f2784e100e67de0fc95160f85753b23b61db1b",
+                "changedDocumentFields": [
+                  "updatedAt"
+                ],
+                "canonicalBytesUnchanged": true,
+                "conditionalMutationDurable": true,
+                "before": {
+                  "revision": 8,
+                  "digest": "3ee8e64b4133814abc0058a25c3861ec7f4d2a0f0dc78a251e8df95acba99d15",
+                  "updatedAt": 1791709235257,
+                  "valueBytes": 2232,
+                  "exists": true,
+                  "tombstone": false
+                },
+                "after": {
+                  "revision": 9,
+                  "digest": "3eaca95db558713e14eda14a8c50b549fe5afc5fec685374c0f6ccda2c000fa2",
+                  "updatedAt": 1791709235834,
+                  "valueBytes": 2232,
+                  "exists": true,
+                  "tombstone": false
+                }
+              },
+              "sourcePins": {
+                "sdkSha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381",
+                "gradiaSha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+                "libraSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc"
+              },
+              "vectorDrainObservation": {
+                "ok": true,
+                "attempted": 1,
+                "completed": 1,
+                "results": [
+                  {
+                    "status": "disabled",
+                    "diagnostic": {
+                      "ok": null,
+                      "reason": null
+                    }
+                  }
+                ]
+              },
+              "log": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+              "logSha256": "fa26fa828eccb981bccf762e4116db5774c6d67bf0cb2e3c967789d106bc0e5a"
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime039-negative-run-1/assertion-preservation.json",
+            "sha256": "ad4d7d085bdf5cf6fd6cbed39c8f73af1550819db8590ca3761ce41256e7c7ed",
+            "bytes": 280,
+            "schemaStatus": null,
+            "content": {
+              "schema": "composed.original-assertions-preserved.v1",
+              "count": 36,
+              "awaitExpressions": 21,
+              "orderedAssertionSourceSha256": "8a076e80d589aac5ccb2817d718da55faa2740d8ffaa77703a2ec920ecdd1571",
+              "negativeRunReachesFirstBeginReadAndFailsBeforeFollowingAssertions": true
+            }
+          }
+        ],
+        "assertionMap": "All36 original assertion calls and21 awaits preserved by AST comparison; negative validator separately verifies actual CAS metadata change revision/digest/updatedAt and LIB_READ_STALE.",
+        "limits": [
+          "Original natural composed-read failure remains unknown; positive diagnostic8.39s did not reproduce it.",
+          "Actual conditional durable mutation changes captured document updatedAt after actual capture before initial current check; canonical bytes unchanged. Expected FAIL proves guard sensitivity, not original cause.",
+          "SDK subsequently changed for983; old-product focused39 evidence is historical, not newcommon-source qualification."
+        ]
+      },
+      {
+        "rootOrdinal": 614,
+        "originalFailure": {
+          "rootOrdinal": 614,
+          "path": "PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+          "sha256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+          "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+          "priorFullStatus": "PASS",
+          "priorFullTestSha256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+          "historicalReferenceRoot": false,
+          "estimatedSeconds": 53.51,
+          "sequence": 6,
+          "status": "TIMEOUT",
+          "durationSeconds": 60.07,
+          "runnerExitCode": 1,
+          "summary": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0614.txt",
+          "console": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0614.console.txt",
+          "completedAtUtc": "2026-10-11T08:00:53.762584+00:00",
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+          "fullOutputSha256": "4352eee49a7692e7fd0984ece3d92216d0be6c6c3fd62879705c5aa30410fdc9",
+          "shard": 1,
+          "campaignBindingSha256": "8e723f0d05a98730408a52e8451ebbba09980de9faa9d493fcb938600d35f5d3",
+          "summarySha256": "56080d1b9da7bcfffa6825f56692a844b97bb8464bd9e35496c4a58f7f90feb3",
+          "consoleSha256": "56080d1b9da7bcfffa6825f56692a844b97bb8464bd9e35496c4a58f7f90feb3"
+        },
+        "currentTest": {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+          "sha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+          "bytes": 48440
+        },
+        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+        "commonSourceResult": null,
+        "sameSourceWholeCampaignQualified": false,
+        "classification": "BOUNDED_DIAGNOSTIC_ONLY_ORIGINAL_NATURAL_TIMEOUT_CAUSE_UNKNOWN",
+        "authorCommits": [
+          "3c907548a37a54a00fe5064575361e259366e203"
+        ],
+        "productionFix": false,
+        "receipts": [
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/diag-614-prepared-results.json",
+            "sha256": "49493665bda9f4717b0e0f553921875f6b035b61d3d533bfb66f4e1f1e8f2048",
+            "bytes": 3201,
+            "schemaStatus": "DIAGNOSTIC_ONLY_STATIC_PREPARED_NOT_RUNTIME_RUN",
+            "content": {
+              "status": "DIAGNOSTIC_ONLY_STATIC_PREPARED_NOT_RUNTIME_RUN",
+              "root": 614,
+              "baseCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "head": "3c907548a37a54a00fe5064575361e259366e203",
+              "originalTimeout": {
+                "path": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                "sha256": "4352eee49a7692e7fd0984ece3d92216d0be6c6c3fd62879705c5aa30410fdc9",
+                "bytes": 50
+              },
+              "originalQualifiedPass": {
+                "path": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                "sha256": "70d3ec1d8735a0043c4294fed530f3275d9beb9c3a4379a0547dfe8103c47dae",
+                "bytes": 100
+              },
+              "originalTest": {
+                "path": "/workspace/librarian-regression/fix39-20261011/qualified-source-1/PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+                "sha256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+                "bytes": 38271
+              },
+              "candidateTest": {
+                "path": "/workspace/librarian-regression/fix39-20261011/diag-614/PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+                "sha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+                "bytes": 48440
+              },
+              "orderedAssertionMap": {
+                "path": "/workspace/librarian-regression/fix39-20261011/diag-614/PROGRAM/tests/fixtures/libra_micro_multi_predecessor_phase_contract.json",
+                "sha256": "e2fa970aa9436612e7ac34bfaa71d913f70c61060b32152bdbe9620d82d1ff9e",
+                "bytes": 41745
+              },
+              "product": {
+                "path": "/workspace/librarian-regression/fix39-20261011/diag-614/PROGRAM/plugins/LIBRA.js",
+                "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+                "bytes": 5783225
+              },
+              "productByteEqualQualifiedEfcb": true,
+              "sharedFixturesByteEqual": true,
+              "staticChecks": {
+                "nodeSyntax": "PASS",
+                "gitDiffCheck": "PASS",
+                "orderedExistingAssertionCallsByteEqual": 102,
+                "existingAwaitCountEqual": 80,
+                "awaitStatementsInstrumented": 73,
+                "originalBytesRestoredAfterRemovingMarkers": true
+              },
+              "runtime": "NOT_RUN_WAITING_PARENT_AUTHORIZATION",
+              "limits": [
+                "No established cause; existing PASSplugin_only precedes cleanup, so timeout cannot distinguish cleanup from next mode init/execution.",
+                "Synchronous fixed-label START/END markers add only Date.now/stdout overhead;80 existing await expressions and102 ordered assertions unchanged, no promise wrappers/timers/retries/deadline increases.",
+                "At most512 major+64 polling/provider frames per whole root; fixed operation/line labels and mode enum only, no source user text or physical bodies.",
+                "Modes preserved plugin_only/server_only default, optional existing explicitmode stays unchanged; default60s official cap and20s poll/40busy-retry bounds unchanged.",
+                "No campaign/driver/artifact/product/sharedfixture changes; candidate is diagnostic-only and not a fix or passing qualification."
+              ],
+              "pollDelayBudgetCorrection": "Both25ms waitFor and100ms retryBusy delays now polling=true. Repeateddelayframes maytruncate at64; separate512majorbudget remains reserved for actual major stages/cleanup/mode transitions."
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-solo/receipt.json",
+            "sha256": "a549e5790287d5e19ee62a769190ed1a553d02de41e3800f57ff9e56cc316a2d",
+            "bytes": 2457,
+            "schemaStatus": "PASS",
+            "content": {
+              "sourceCommit": "3c907548a37a54a00fe5064575361e259366e203",
+              "baseCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "command": [
+                "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                "PROGRAM/run_regression_batch.py",
+                "613",
+                "614"
+              ],
+              "startedAtUtc": "2026-10-11T08:42:47.771238+00:00",
+              "officialCapSeconds": 60,
+              "executionProfile": "solo diagnostic after all three frozen full shards completed",
+              "testSha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+              "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+              "productSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+              "environment": {
+                "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min",
+                "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min/plugins/LIA_Persona_Linker.js",
+                "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+                "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/replay-reingest-evidence",
+                "RESET_PHYSICAL_CURRENT_OWNERS": "1"
+              },
+              "status": "PASS",
+              "limitations": [
+                "Diagnostic-only; a favorable rerun is not a fix or common-source full qualification.",
+                "Original replay TIMEOUT remains preserved; original cause is not established by this rerun alone."
+              ],
+              "runnerExitCode": 0,
+              "completedAtUtc": "2026-10-11T08:43:31.591766+00:00",
+              "durationSeconds": 43.71,
+              "files": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-solo/console.txt",
+                  "sha256": "ab2891c1a968aaa26c009ce4855880ee9fb198d96ced99c908ea21c2506e8a78",
+                  "bytes": 2067
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-solo/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                  "sha256": "26c05c7e226da94342856e1de1214a8717eb05a295811e9d432051927b3f52cd",
+                  "bytes": 46828
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-solo/summary.txt",
+                  "sha256": "ab2891c1a968aaa26c009ce4855880ee9fb198d96ced99c908ea21c2506e8a78",
+                  "bytes": 2067
+                }
+              ]
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/root614-paired-measurement-analysis.json",
+            "sha256": "b245194e26343c45e2285d301efdba5ffd0f2ed1bf8202cc2fe82e59e6e7d7eb",
+            "bytes": 20086,
+            "schemaStatus": null,
+            "content": {
+              "schema": "librarian.root614.paired_measurement_analysis.v1",
+              "preparedAtUtc": "2026-10-11T08:59:47.113587+00:00",
+              "receipt": {
+                "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/receipt.json",
+                "sha256": "d0d86f4683af25c58641097d03b06b9d5a1d490671232f8c769e181846b4d7d3"
+              },
+              "originalTimeoutUnchanged": {
+                "row": {
+                  "rootOrdinal": 614,
+                  "path": "PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+                  "sha256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+                  "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+                  "priorFullStatus": "PASS",
+                  "priorFullTestSha256": "e54e89b2bd95969b72e2b09bb2cc1dcfb830bf266255f926eac295e91b7d4c0e",
+                  "historicalReferenceRoot": false,
+                  "estimatedSeconds": 53.51,
+                  "sequence": 6,
+                  "status": "TIMEOUT",
+                  "durationSeconds": 60.07,
+                  "runnerExitCode": 1,
+                  "summary": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0614.txt",
+                  "console": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0614.console.txt",
+                  "completedAtUtc": "2026-10-11T08:00:53.762584+00:00",
+                  "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                  "fullOutputSha256": "4352eee49a7692e7fd0984ece3d92216d0be6c6c3fd62879705c5aa30410fdc9",
+                  "shard": 1,
+                  "campaignBindingSha256": "8e723f0d05a98730408a52e8451ebbba09980de9faa9d493fcb938600d35f5d3",
+                  "summarySha256": "56080d1b9da7bcfffa6825f56692a844b97bb8464bd9e35496c4a58f7f90feb3",
+                  "consoleSha256": "56080d1b9da7bcfffa6825f56692a844b97bb8464bd9e35496c4a58f7f90feb3"
+                },
+                "startDerivedUtc": "2026-10-11T07:59:53.692584+00:00",
+                "endUtc": "2026-10-11T08:00:53.762584+00:00",
+                "observedBoundary": "Only PASS Micro multi-predecessor State in plugin_only is printed. This is before finally cleanup; original timeout cannot locate cleanup versus next mode initialization/execution."
+              },
+              "uniqueHistoricalOverlapOrdinal": 191,
+              "controlledGapFromObserved191NodeTo614RunnerStartSeconds": 1.000961,
+              "rootNodeKernelStartTickGapSeconds": 1.21,
+              "phases": [
+                {
+                  "root": 191,
+                  "phase": "pair",
+                  "status": "PASS",
+                  "officialDurationSeconds": 46.1,
+                  "capSeconds": 120,
+                  "observedMarginSeconds": 73.9,
+                  "resourceRecordCount": 111,
+                  "rootNodeMetrics": [
+                    {
+                      "pid": 206826,
+                      "startTicks": 3923404,
+                      "samples": 91,
+                      "maxSampledVmRssKb": 274044,
+                      "maxSampledVmHwmKb": 280268,
+                      "observedCpuSeconds": 47.15,
+                      "minorFaultDelta": 141193,
+                      "majorFaultDelta": 0
+                    }
+                  ],
+                  "firstObservedNode": {
+                    "pid": 206826,
+                    "startTicks": 3923404,
+                    "observedAtUtc": "2026-10-11T08:57:06.950329+00:00",
+                    "observedMonotonic": 39234.183841497
+                  },
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/console.txt",
+                      "sha256": "1caa80956630c9d59298ce824ef18dbd32effaa8a53973cb028eb1d8a51f5fe0",
+                      "bytes": 768
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/logs/191-flashback_single_turn_maintenance_runtime_test.cjs.log",
+                      "sha256": "829d4a2e7c68fe8d6ddfc3546f471cc58e747db00059a1cffccc4e660f91da61",
+                      "bytes": 463
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/summary.txt",
+                      "sha256": "1caa80956630c9d59298ce824ef18dbd32effaa8a53973cb028eb1d8a51f5fe0",
+                      "bytes": 768
+                    }
+                  ]
+                },
+                {
+                  "root": 614,
+                  "phase": "pair",
+                  "status": "PASS",
+                  "officialDurationSeconds": 53.6,
+                  "capSeconds": 60,
+                  "observedMarginSeconds": 6.4,
+                  "resourceRecordCount": 101,
+                  "rootNodeMetrics": [
+                    {
+                      "pid": 206841,
+                      "startTicks": 3923525,
+                      "samples": 99,
+                      "maxSampledVmRssKb": 725320,
+                      "maxSampledVmHwmKb": 725320,
+                      "observedCpuSeconds": 49.49,
+                      "minorFaultDelta": 299336,
+                      "majorFaultDelta": 0
+                    }
+                  ],
+                  "firstObservedNode": {
+                    "pid": 206841,
+                    "startTicks": 3923525,
+                    "observedAtUtc": "2026-10-11T08:57:08.507794+00:00",
+                    "observedMonotonic": 39235.741299161
+                  },
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/console.txt",
+                      "sha256": "db609b576c22a95761338b05b797b7ce25cefdec6cd28e6a2f0327e9bcda5a89",
+                      "bytes": 2090
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                      "sha256": "e14cd6f0c6c76650c484b1e124a78cfa8045258766f94718f8038f177ff1da28",
+                      "bytes": 46886
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/summary.txt",
+                      "sha256": "db609b576c22a95761338b05b797b7ce25cefdec6cd28e6a2f0327e9bcda5a89",
+                      "bytes": 2090
+                    }
+                  ],
+                  "diagRecords": 418,
+                  "modes": [
+                    {
+                      "mode": "plugin_only",
+                      "recordCount": 235,
+                      "firstElapsedRootMs": 0,
+                      "lastElapsedRootMs": 12075,
+                      "modeSpanMs": 12075,
+                      "unpairedStartLabels": {
+                        "mode-lifecycle": 1
+                      },
+                      "unpairedEndLabels": {},
+                      "topCompletedStages": [
+                        {
+                          "mode": "plugin_only",
+                          "label": "L415-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 10351,
+                          "elapsedPhaseMs": 1460
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L156-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 2874,
+                          "elapsedPhaseMs": 1044
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L190-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 4554,
+                          "elapsedPhaseMs": 908
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L336-f.r.api.debugNativeChatCopy",
+                          "stage": "end",
+                          "elapsedRootMs": 7688,
+                          "elapsedPhaseMs": 754
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L197-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 5357,
+                          "elapsedPhaseMs": 659
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L423-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 10964,
+                          "elapsedPhaseMs": 528
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L148-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 1756,
+                          "elapsedPhaseMs": 515
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L378-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 8511,
+                          "elapsedPhaseMs": 392
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L138-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 764,
+                          "elapsedPhaseMs": 380
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L379-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 8891,
+                          "elapsedPhaseMs": 380
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L367-f.r.api.rebuildWorldManagerState",
+                          "stage": "end",
+                          "elapsedRootMs": 8069,
+                          "elapsedPhaseMs": 378
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L57-serverFixture",
+                          "stage": "end",
+                          "elapsedRootMs": 376,
+                          "elapsedPhaseMs": 375
+                        }
+                      ]
+                    },
+                    {
+                      "mode": "server_only",
+                      "recordCount": 183,
+                      "firstElapsedRootMs": 12075,
+                      "lastElapsedRootMs": 52881,
+                      "modeSpanMs": 40806,
+                      "unpairedStartLabels": {
+                        "mode-lifecycle": 1
+                      },
+                      "unpairedEndLabels": {},
+                      "topCompletedStages": [
+                        {
+                          "mode": "server_only",
+                          "label": "L423-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 49830,
+                          "elapsedPhaseMs": 3722
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L415-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 45857,
+                          "elapsedPhaseMs": 3445
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L197-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 31399,
+                          "elapsedPhaseMs": 3387
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L156-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 22397,
+                          "elapsedPhaseMs": 3038
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L336-f.r.api.debugNativeChatCopy",
+                          "stage": "end",
+                          "elapsedRootMs": 38933,
+                          "elapsedPhaseMs": 2834
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L190-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 27883,
+                          "elapsedPhaseMs": 2790
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L138-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 14623,
+                          "elapsedPhaseMs": 2320
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L252-f.r.api.addWorldManagerCorrection",
+                          "stage": "end",
+                          "elapsedRootMs": 33839,
+                          "elapsedPhaseMs": 1975
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L378-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 41736,
+                          "elapsedPhaseMs": 1702
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L148-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 19230,
+                          "elapsedPhaseMs": 1574
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L140-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 17354,
+                          "elapsedPhaseMs": 1446
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L157-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 23754,
+                          "elapsedPhaseMs": 1357
+                        }
+                      ]
+                    }
+                  ],
+                  "pendingMajorStages": []
+                },
+                {
+                  "root": 614,
+                  "phase": "solo-after-pair",
+                  "status": "PASS",
+                  "officialDurationSeconds": 52.17,
+                  "capSeconds": 60,
+                  "observedMarginSeconds": 7.83,
+                  "resourceRecordCount": 98,
+                  "rootNodeMetrics": [
+                    {
+                      "pid": 206907,
+                      "startTicks": 3928924,
+                      "samples": 96,
+                      "maxSampledVmRssKb": 915340,
+                      "maxSampledVmHwmKb": 915340,
+                      "observedCpuSeconds": 47.22,
+                      "minorFaultDelta": 332685,
+                      "majorFaultDelta": 0
+                    }
+                  ],
+                  "firstObservedNode": {
+                    "pid": 206907,
+                    "startTicks": 3928924,
+                    "observedAtUtc": "2026-10-11T08:58:02.523607+00:00",
+                    "observedMonotonic": 39289.757142684
+                  },
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/console.txt",
+                      "sha256": "61e5826dd51b35bfa0fa7dbf87c80341f82285c1ec5188320d255b421829cbb3",
+                      "bytes": 2101
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                      "sha256": "af5204e09f9e15e586c051294dd4cecb6f0ad2cb45212791639f8a8206c57458",
+                      "bytes": 46851
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/summary.txt",
+                      "sha256": "61e5826dd51b35bfa0fa7dbf87c80341f82285c1ec5188320d255b421829cbb3",
+                      "bytes": 2101
+                    }
+                  ],
+                  "diagRecords": 418,
+                  "modes": [
+                    {
+                      "mode": "plugin_only",
+                      "recordCount": 235,
+                      "firstElapsedRootMs": 0,
+                      "lastElapsedRootMs": 9973,
+                      "modeSpanMs": 9973,
+                      "unpairedStartLabels": {
+                        "mode-lifecycle": 1
+                      },
+                      "unpairedEndLabels": {},
+                      "topCompletedStages": [
+                        {
+                          "mode": "plugin_only",
+                          "label": "L415-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 8447,
+                          "elapsedPhaseMs": 1019
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L190-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 4082,
+                          "elapsedPhaseMs": 992
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L336-f.r.api.debugNativeChatCopy",
+                          "stage": "end",
+                          "elapsedRootMs": 6669,
+                          "elapsedPhaseMs": 665
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L156-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 2330,
+                          "elapsedPhaseMs": 517
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L148-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 1747,
+                          "elapsedPhaseMs": 489
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L197-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 4673,
+                          "elapsedPhaseMs": 456
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L57-serverFixture",
+                          "stage": "end",
+                          "elapsedRootMs": 408,
+                          "elapsedPhaseMs": 408
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L459-waitFor",
+                          "stage": "end",
+                          "elapsedRootMs": 9238,
+                          "elapsedPhaseMs": 374
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L138-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 783,
+                          "elapsedPhaseMs": 367
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L198-waitFor",
+                          "stage": "end",
+                          "elapsedRootMs": 5034,
+                          "elapsedPhaseMs": 361
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L423-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 8862,
+                          "elapsedPhaseMs": 356
+                        },
+                        {
+                          "mode": "plugin_only",
+                          "label": "L158-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 2894,
+                          "elapsedPhaseMs": 322
+                        }
+                      ]
+                    },
+                    {
+                      "mode": "server_only",
+                      "recordCount": 183,
+                      "firstElapsedRootMs": 9973,
+                      "lastElapsedRootMs": 51425,
+                      "modeSpanMs": 41452,
+                      "unpairedStartLabels": {
+                        "mode-lifecycle": 1
+                      },
+                      "unpairedEndLabels": {},
+                      "topCompletedStages": [
+                        {
+                          "mode": "server_only",
+                          "label": "L423-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 48372,
+                          "elapsedPhaseMs": 4328
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L197-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 30244,
+                          "elapsedPhaseMs": 3767
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L336-f.r.api.debugNativeChatCopy",
+                          "stage": "end",
+                          "elapsedRootMs": 37968,
+                          "elapsedPhaseMs": 3213
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L156-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 20419,
+                          "elapsedPhaseMs": 2930
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L415-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 43920,
+                          "elapsedPhaseMs": 2632
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L190-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 26377,
+                          "elapsedPhaseMs": 2544
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L138-f.run",
+                          "stage": "end",
+                          "elapsedRootMs": 12656,
+                          "elapsedPhaseMs": 2431
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L148-retryBusy",
+                          "stage": "end",
+                          "elapsedRootMs": 17365,
+                          "elapsedPhaseMs": 1993
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L157-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 22161,
+                          "elapsedPhaseMs": 1742
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L378-produceT6",
+                          "stage": "end",
+                          "elapsedRootMs": 40698,
+                          "elapsedPhaseMs": 1721
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L252-f.r.api.addWorldManagerCorrection",
+                          "stage": "end",
+                          "elapsedRootMs": 32360,
+                          "elapsedPhaseMs": 1684
+                        },
+                        {
+                          "mode": "server_only",
+                          "label": "L264-f.r.api.setWorldManagerCorrectionStatus",
+                          "stage": "end",
+                          "elapsedRootMs": 33766,
+                          "elapsedPhaseMs": 1317
+                        }
+                      ]
+                    }
+                  ],
+                  "pendingMajorStages": []
+                }
+              ],
+              "comparisons": {
+                "paired614MinusFollowingSoloSeconds": 1.43,
+                "priorSoloSeconds": 43.71,
+                "paired614MinusPriorSoloSeconds": 9.89,
+                "followingSoloMinusPriorSoloSeconds": 8.46
+              },
+              "limits": [
+                "All three actual roots PASS under120/60caps; the controlled pair did not reproduce original614TIMEOUT.",
+                "No original natural cause established; precedingroot191 overlap is an association, not a proven mechanism.",
+                "Observed counters are sampled owned-process CPU/RSS/HWM/fault values, not a causal memory experiment or proof of host saturation. CPU samples omit pre-first/post-last sample time; RSS shared pages are not unique allocation counts.",
+                "Both614 major operations complete with no pending stage. Lifecycle starts are intentionally structural/unpaired; polling frames remain globally capped64 and may omit repetition counts.",
+                "Paired61453.60s and following solo52.17s differ1.43s; prior separate solo43.71s demonstrates run-to-run timing variation. No admission-rule change is supported as a fix by this single pair.",
+                "Initial observer failure and191PASS39.19/no614 are separately preserved; they are not paired reproduction evidence.",
+                "No integration/fullreplay/admission alteration/productfix performed."
+              ]
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/receipt.json",
+            "sha256": "d0d86f4683af25c58641097d03b06b9d5a1d490671232f8c769e181846b4d7d3",
+            "bytes": 14951,
+            "schemaStatus": "COMPLETED",
+            "content": {
+              "schema": "librarian.root614.pair_and_solo_diagnostic.v1",
+              "status": "COMPLETED",
+              "startedAtUtc": "2026-10-11T08:57:06.669620+00:00",
+              "planPath": "/workspace/librarian-regression/fix39-20261011/root614-paired-measurement-plan-v2.json",
+              "planSha256": "5c11b0bdffaf9648ea42b78c9b9d6e9103ea93cb1cb53b74607c97f4d14cd1fd",
+              "harnessSha256": "82d4728b01649e58ef2cb728db5a14efd361e1c4412480042845f53fd776a63e",
+              "artifactReceipt": "/workspace/librarian-regression/fix39-20261011/artifact-replay-build-receipt.json",
+              "artifactReceiptSha256": "c66a35469e0a54fbfa27710ec2d5bb8c486b592d8aa4f77c5e81cb7e5bc9ea54",
+              "environment": {
+                "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min",
+                "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-replay",
+                "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-replay/Min/plugins/LIA_Persona_Linker.js",
+                "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+                "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/replay-reingest-evidence",
+                "RESET_PHYSICAL_CURRENT_OWNERS": "1"
+              },
+              "sourcePins": [
+                {
+                  "root": 191,
+                  "repository": "/workspace/librarian-regression/fix39-20261011/diag-191-paired",
+                  "head": "017f86021d5e88f05bef86a8130200fc827ddedb",
+                  "clean": true,
+                  "testPath": "/workspace/librarian-regression/fix39-20261011/diag-191-paired/PROGRAM/tests/flashback_single_turn_maintenance_runtime_test.cjs",
+                  "testSha256": "dd173baed6e6855407676c675794de39a9481e8b009e09031bc63d9701809696",
+                  "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+                  "libraProductSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+                  "flashbackProductSha256": "03cdcb46b63ef540e505990815d9bcb02e17afff5c8e1eba28e5949fc8df444d"
+                },
+                {
+                  "root": 614,
+                  "repository": "/workspace/librarian-regression/fix39-20261011/diag-614",
+                  "head": "3c907548a37a54a00fe5064575361e259366e203",
+                  "clean": true,
+                  "testPath": "/workspace/librarian-regression/fix39-20261011/diag-614/PROGRAM/tests/libra_micro_multi_predecessor_state_3mode_test.cjs",
+                  "testSha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+                  "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+                  "libraProductSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+                  "flashbackProductSha256": "03cdcb46b63ef540e505990815d9bcb02e17afff5c8e1eba28e5949fc8df444d"
+                }
+              ],
+              "maxConcurrentRuntimeTests": 2,
+              "historicalTiming": "Original starts derived from completion minus rounded runner durations; current schedule is approximate controlled reconstruction, not exact historical launch replay.",
+              "diagnosticPurpose": "Compare bounded major stages and observed resources for actual191 overlap versus isolated614; neither favorable PASS nor one pair establishes original natural cause.",
+              "phases": [
+                {
+                  "root": 191,
+                  "phase": "pair",
+                  "command": [
+                    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                    "PROGRAM/run_regression_batch.py",
+                    "190",
+                    "191"
+                  ],
+                  "repository": "/workspace/librarian-regression/fix39-20261011/diag-191-paired",
+                  "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+                  "testSha256": "dd173baed6e6855407676c675794de39a9481e8b009e09031bc63d9701809696",
+                  "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+                  "capSeconds": 120,
+                  "runnerPid": 206825,
+                  "processGroupId": 206825,
+                  "startedAtUtc": "2026-10-11T08:57:06.672813+00:00",
+                  "tmpdir": "/tmp/l39-diagnostic614-191-paired-v2-pair-191",
+                  "runDirectory": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191",
+                  "status": "PASS",
+                  "firstObservedNode": {
+                    "pid": 206826,
+                    "startTicks": 3923404,
+                    "observedAtUtc": "2026-10-11T08:57:06.950329+00:00",
+                    "observedMonotonic": 39234.183841497
+                  },
+                  "completedAtUtc": "2026-10-11T08:57:53.428901+00:00",
+                  "runnerExitCode": 0,
+                  "durationSeconds": 46.1,
+                  "diagnostic614": null,
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/console.txt",
+                      "sha256": "1caa80956630c9d59298ce824ef18dbd32effaa8a53973cb028eb1d8a51f5fe0",
+                      "bytes": 768
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/logs/191-flashback_single_turn_maintenance_runtime_test.cjs.log",
+                      "sha256": "829d4a2e7c68fe8d6ddfc3546f471cc58e747db00059a1cffccc4e660f91da61",
+                      "bytes": 463
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-191/summary.txt",
+                      "sha256": "1caa80956630c9d59298ce824ef18dbd32effaa8a53973cb028eb1d8a51f5fe0",
+                      "bytes": 768
+                    }
+                  ]
+                },
+                {
+                  "root": 614,
+                  "phase": "pair",
+                  "command": [
+                    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                    "PROGRAM/run_regression_batch.py",
+                    "613",
+                    "614"
+                  ],
+                  "repository": "/workspace/librarian-regression/fix39-20261011/diag-614",
+                  "sourceCommit": "3c907548a37a54a00fe5064575361e259366e203",
+                  "testSha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+                  "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+                  "capSeconds": 60,
+                  "runnerPid": 206840,
+                  "processGroupId": 206840,
+                  "startedAtUtc": "2026-10-11T08:57:07.951290+00:00",
+                  "tmpdir": "/tmp/l39-diagnostic614-191-paired-v2-pair-614",
+                  "runDirectory": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614",
+                  "status": "PASS",
+                  "firstObservedNode": {
+                    "pid": 206841,
+                    "startTicks": 3923525,
+                    "observedAtUtc": "2026-10-11T08:57:08.507794+00:00",
+                    "observedMonotonic": 39235.741299161
+                  },
+                  "completedAtUtc": "2026-10-11T08:58:01.934399+00:00",
+                  "runnerExitCode": 0,
+                  "durationSeconds": 53.6,
+                  "diagnostic614": {
+                    "recordCount": 418,
+                    "lastRecords": [
+                      {
+                        "mode": "server_only",
+                        "label": "L575-repair",
+                        "stage": "start",
+                        "elapsedRootMs": 52161
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L575-repair",
+                        "stage": "end",
+                        "elapsedRootMs": 52498,
+                        "elapsedPhaseMs": 337
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L475-f.r.api.getHostLineageStatus",
+                        "stage": "start",
+                        "elapsedRootMs": 52499
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L475-f.r.api.getHostLineageStatus",
+                        "stage": "end",
+                        "elapsedRootMs": 52508,
+                        "elapsedPhaseMs": 9
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L477-f.r.api.deleteLibraScope",
+                        "stage": "start",
+                        "elapsedRootMs": 52508
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L477-f.r.api.deleteLibraScope",
+                        "stage": "end",
+                        "elapsedRootMs": 52639,
+                        "elapsedPhaseMs": 131
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L480-fx.restart",
+                        "stage": "start",
+                        "elapsedRootMs": 52639
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L480-fx.restart",
+                        "stage": "end",
+                        "elapsedRootMs": 52752,
+                        "elapsedPhaseMs": 113
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L592-f.r.api.debugLoadContinuityStateForResponse",
+                        "stage": "start",
+                        "elapsedRootMs": 52752
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L592-f.r.api.debugLoadContinuityStateForResponse",
+                        "stage": "end",
+                        "elapsedRootMs": 52868,
+                        "elapsedPhaseMs": 116
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L601-fx.cleanup",
+                        "stage": "start",
+                        "elapsedRootMs": 52868
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L601-fx.cleanup",
+                        "stage": "end",
+                        "elapsedRootMs": 52881,
+                        "elapsedPhaseMs": 13
+                      }
+                    ],
+                    "pendingMajorStages": []
+                  },
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/console.txt",
+                      "sha256": "db609b576c22a95761338b05b797b7ce25cefdec6cd28e6a2f0327e9bcda5a89",
+                      "bytes": 2090
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                      "sha256": "e14cd6f0c6c76650c484b1e124a78cfa8045258766f94718f8038f177ff1da28",
+                      "bytes": 46886
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/pair/root-614/summary.txt",
+                      "sha256": "db609b576c22a95761338b05b797b7ce25cefdec6cd28e6a2f0327e9bcda5a89",
+                      "bytes": 2090
+                    }
+                  ]
+                },
+                {
+                  "root": 614,
+                  "phase": "solo-after-pair",
+                  "command": [
+                    "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python",
+                    "PROGRAM/run_regression_batch.py",
+                    "613",
+                    "614"
+                  ],
+                  "repository": "/workspace/librarian-regression/fix39-20261011/diag-614",
+                  "sourceCommit": "3c907548a37a54a00fe5064575361e259366e203",
+                  "testSha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
+                  "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+                  "capSeconds": 60,
+                  "runnerPid": 206906,
+                  "processGroupId": 206906,
+                  "startedAtUtc": "2026-10-11T08:58:01.940935+00:00",
+                  "tmpdir": "/tmp/l39-diagnostic614-191-paired-v2-solo-after-pair-614",
+                  "runDirectory": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614",
+                  "status": "PASS",
+                  "firstObservedNode": {
+                    "pid": 206907,
+                    "startTicks": 3928924,
+                    "observedAtUtc": "2026-10-11T08:58:02.523607+00:00",
+                    "observedMonotonic": 39289.757142684
+                  },
+                  "completedAtUtc": "2026-10-11T08:58:54.499245+00:00",
+                  "runnerExitCode": 0,
+                  "durationSeconds": 52.17,
+                  "diagnostic614": {
+                    "recordCount": 418,
+                    "lastRecords": [
+                      {
+                        "mode": "server_only",
+                        "label": "L575-repair",
+                        "stage": "start",
+                        "elapsedRootMs": 50742
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L575-repair",
+                        "stage": "end",
+                        "elapsedRootMs": 51041,
+                        "elapsedPhaseMs": 299
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L475-f.r.api.getHostLineageStatus",
+                        "stage": "start",
+                        "elapsedRootMs": 51041
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L475-f.r.api.getHostLineageStatus",
+                        "stage": "end",
+                        "elapsedRootMs": 51049,
+                        "elapsedPhaseMs": 8
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L477-f.r.api.deleteLibraScope",
+                        "stage": "start",
+                        "elapsedRootMs": 51049
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L477-f.r.api.deleteLibraScope",
+                        "stage": "end",
+                        "elapsedRootMs": 51157,
+                        "elapsedPhaseMs": 108
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L480-fx.restart",
+                        "stage": "start",
+                        "elapsedRootMs": 51157
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L480-fx.restart",
+                        "stage": "end",
+                        "elapsedRootMs": 51273,
+                        "elapsedPhaseMs": 116
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L592-f.r.api.debugLoadContinuityStateForResponse",
+                        "stage": "start",
+                        "elapsedRootMs": 51273
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L592-f.r.api.debugLoadContinuityStateForResponse",
+                        "stage": "end",
+                        "elapsedRootMs": 51417,
+                        "elapsedPhaseMs": 144
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L601-fx.cleanup",
+                        "stage": "start",
+                        "elapsedRootMs": 51417
+                      },
+                      {
+                        "mode": "server_only",
+                        "label": "L601-fx.cleanup",
+                        "stage": "end",
+                        "elapsedRootMs": 51425,
+                        "elapsedPhaseMs": 8
+                      }
+                    ],
+                    "pendingMajorStages": []
+                  },
+                  "files": [
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/console.txt",
+                      "sha256": "61e5826dd51b35bfa0fa7dbf87c80341f82285c1ec5188320d255b421829cbb3",
+                      "bytes": 2101
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+                      "sha256": "af5204e09f9e15e586c051294dd4cecb6f0ad2cb45212791639f8a8206c57458",
+                      "bytes": 46851
+                    },
+                    {
+                      "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/solo-after-pair/root-614/summary.txt",
+                      "sha256": "61e5826dd51b35bfa0fa7dbf87c80341f82285c1ec5188320d255b421829cbb3",
+                      "bytes": 2101
+                    }
+                  ]
+                }
+              ],
+              "completedAtUtc": "2026-10-11T08:58:54.501346+00:00",
+              "resources": {
+                "path": "/workspace/librarian-regression/fix39-20261011/diagnostic614-191-paired-v2/resources.jsonl",
+                "sha256": "4ca653fa335a30f156d03015e2c3929669c24836cf70e8daf10684de890f38e2",
+                "bytes": 191745
+              },
+              "limitations": [
+                "Original natural timeout cause is not proven by one controlled pair.",
+                "Per-process RSS/HWM/fault/CPU counters are observations; shared pages must not be naively summed as unique memory.",
+                "Partial DIAG614 polling records cap64 remains intentional; all available major stages preserved."
+              ]
+            }
+          }
+        ],
+        "assertionMap": "102 original ordered assertions and80 awaits unchanged; removing synchronous fixed-label markers restores original bytes;512major+64poll frames capped; polling25/100ms uses separatepoll budget.",
+        "observations": {
+          "soloSeconds": 43.71,
+          "pairedSeconds": 53.6,
+          "followingSoloSeconds": 52.17,
+          "capSeconds": 60
+        },
+        "limits": [
+          "Solo and actual paired191 overlap do not reproduce original60.07s timeout.",
+          "No causal resource explanation established; original log only plugin_only PASS before cleanup/next-mode boundary.",
+          "Serialized execution is operational mitigation, not cause proof or a product fix."
+        ]
+      },
+      {
+        "rootOrdinal": 741,
+        "originalFailure": {
+          "rootOrdinal": 741,
+          "path": "PROGRAM/tests/libra_scheduled_audit_queue_test.cjs",
+          "sha256": "51d4eaa94e5e109b44b6eb4ebcd3d5fe611dd51cea3c40183f16785581510111",
+          "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+          "priorFullStatus": "PASS",
+          "priorFullTestSha256": "51d4eaa94e5e109b44b6eb4ebcd3d5fe611dd51cea3c40183f16785581510111",
+          "historicalReferenceRoot": false,
+          "estimatedSeconds": 9.63,
+          "sequence": 85,
+          "status": "FAIL",
+          "durationSeconds": 8.4,
+          "runnerExitCode": 1,
+          "summary": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0741.txt",
+          "console": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0741.console.txt",
+          "completedAtUtc": "2026-10-11T08:25:03.550105+00:00",
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/741-libra_scheduled_audit_queue_test.cjs.log",
+          "fullOutputSha256": "dc234480927ffb6037c55e564b76ee8f9842c361284678d477642044bc76d47d",
+          "shard": 1,
+          "campaignBindingSha256": "8e723f0d05a98730408a52e8451ebbba09980de9faa9d493fcb938600d35f5d3",
+          "summarySha256": "21ab8b22ffe889e21b0130a13a3adb5925b924fa13cbdb2cf409e1004388b6aa",
+          "consoleSha256": "21ab8b22ffe889e21b0130a13a3adb5925b924fa13cbdb2cf409e1004388b6aa"
+        },
+        "currentTest": {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/tests/libra_scheduled_audit_queue_test.cjs",
+          "sha256": "bf596a45ab2079448732aee8d12c52599cd30812b111c39b6dd7e11607c7c56c",
+          "bytes": 20023
+        },
+        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+        "commonSourceResult": null,
+        "sameSourceWholeCampaignQualified": false,
+        "classification": "VERIFIED_TEST_FIX_ACTUAL_STARTUP_COMPLETION_BARRIER",
+        "authorCommits": [
+          "a0b9ada01564dca5f7053f09703f8b9e10ac2d74",
+          "d307ed464119dcaec004a5e5be2c2546ac9c4458"
+        ],
+        "integrationCommits": [
+          "29a4643",
+          "65554b0"
+        ],
+        "productionFix": false,
+        "receipts": [
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/runtime741-results.json",
+            "sha256": "b73b8d581b0de521d4b25703879c4552ba31f6b37e2d65d2a66d86507aaaeb6d",
+            "bytes": 11185,
+            "schemaStatus": "PASS_TEST_ONLY_ACTUAL_STARTUP_COMPLETION_BARRIER",
+            "content": {
+              "status": "PASS_TEST_ONLY_ACTUAL_STARTUP_COMPLETION_BARRIER",
+              "root": 741,
+              "base": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "clone": "/workspace/librarian-regression/fix39-20261011/runtime741",
+              "testSHA256": "bf596a45ab2079448732aee8d12c52599cd30812b111c39b6dd7e11607c7c56c",
+              "sourceSHA256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+              "originalTestSHA256": "51d4eaa94e5e109b44b6eb4ebcd3d5fe611dd51cea3c40183f16785581510111",
+              "productionAndFixtureUnchangedSinceEfcb": true,
+              "red": {
+                "path": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/741-libra_scheduled_audit_queue_test.cjs.log",
+                "sha256": "dc234480927ffb6037c55e564b76ee8f9842c361284678d477642044bc76d47d",
+                "cases": 9,
+                "pass": 8,
+                "fail": 1,
+                "actual": "Only the late global remove-world-additional completion marker appeared while same-scope owner held; owner reconciliation had not completed."
+              },
+              "cause": "Plugin startup schedules actual purge timer750ms fire-and-forget outsideownerqueue. Purge iterates storagekeys and yields every16, writes completionmarker thenreturns. Vector maintenance independently scheduled1500ms and exposes state.embeddingMigrationPromise. prepared() only awaited scopequeues; no backgroundmigrationcompletion guarantee. Sameprod/test/fixture efcb and017, previousfullPASS timingnot readinesscontract.",
+              "sourcePath": {
+                "actualPurgeScheduled": "LIBRA.js:82968",
+                "actualPurgeCompletionPhysicalWrite": "LIBRA.js:39544",
+                "actualVectorScheduled": "LIBRA.js:37084",
+                "actualVectorCompletionTail": "LIBRA.js:37056"
+              },
+              "change": "Ownedtestonly transforms capture original promises launched by real purge/vector timers without replacing callbacks/delays/queue/work. prepared awaits BOTH genuine registration+completion under oneoriginal8sbound; confirms resultcomplete/noerrors and physicalcompletionmarkers/finishedAt plus embeddingMigrationPromise null. Existing exactvector whitelist removed; blockedowner now forbids ALLphysicalwrites including globalmarkers. No sleeps/forcecompletion/markerseeding/providerstubs/capgrowth.",
+              "assertionMap": {
+                "9Cases": "Everyoriginalcase retained unchanged apart from sharedinitialreadiness and strongercase3zeroALLwrites",
+                "case3Ownership": "Actualheldowner, forgedbypassrefusal, realqueuedreconciliation waits, latestnative topology afterrelease, inactivecanonical+zerohead+queuedrain retained",
+                "physicalZero": "Stronger noexemptkeys: allstoragewrites afterblockingcursor mustbeempty",
+                "readinessNonVacuity": "Realstartuptimerpromise observed, actualtail awaited, durablemarkersmatch exactcompletionfinishedAt, noerrors, migrationownershipnull",
+                "scheduledSuccessor": "Physicalmanifestwritehold+queuedfreshsuccessor+reactivatedcanonical+head5 originalretained",
+                "failureUnloadScopeScan": "Originalreplayfailurepending/recovery, unload/scope-switchqueueownership, heldwriteunload, scanpreflight retained",
+                "originalVectorExceptionPayload": "Formerconditionalwhitelistpayloadcondition movedintoreadiness: physicallydurableactualcompletedvectormarker stillrequires originalvalidstartedAt/finishedAt and exactschema/version/profile/signature/reason/zeroallcounts/noerrors/notinterrupted. Nothingomitted; afterreadiness ALLphysicalwrites forbidden, noexception."
+              },
+              "negativePlan": [
+                "Externalmutation bypasses settleStartupMaintenance while deterministically delaying actualpurge physicaltail toblockedowner observation; originalpreparedassumptionfails zeroALLwrites. Finalcompletionbarrier mustwait actualtail beforeownerteststarts.",
+                "Externalmutation removes only realreconcile ownerenqueue admission; delayedheldowner stillmustfail finishedfalse or physicalzerowrites, preservingrealqueue regressionproof."
+              ],
+              "verification": {
+                "official": {
+                  "index": 741,
+                  "inventoryCount": 1138,
+                  "command": "python PROGRAM/run_regression_batch.py --match libra_scheduled_audit_queue_test.cjs",
+                  "status": "PASS",
+                  "exit": 0,
+                  "durationSeconds": 15.98,
+                  "cases": 9,
+                  "pass": 9,
+                  "fail": 0,
+                  "deadlineSeconds": 60,
+                  "helperDeadlineMs": 8000,
+                  "logs": {
+                    "full": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/green/logs/741-libra_scheduled_audit_queue_test.cjs.log",
+                      "sha256": "b36d3c9cc1765ca4eea7a8b213c9ca74ed32100ad4ab1665b8654897a63dbd18"
+                    },
+                    "stdout": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/green/stdout.txt",
+                      "sha256": "6bce6f6a18e6ee42672550fe642813f3379ecec517061d48ac8e20b32f720295"
+                    },
+                    "summary": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/green/run.txt",
+                      "sha256": "fea57ce896a995ad75b53cc58dea21a7c2a19024fa0b491d85ba330ad6ed4151"
+                    }
+                  }
+                },
+                "controls": {
+                  "held-startup-green": {
+                    "command": "timeout 60s node /workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-green.cjs",
+                    "status": "PASS",
+                    "exit": 0,
+                    "cases": 9,
+                    "pass": 9,
+                    "fail": 0,
+                    "durationSeconds": 16.225333916,
+                    "log": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-green.log",
+                      "sha256": "1fa82f2701f62712b832964b9fe104bb11d46f7c0cc6693ba5508fde969b337e"
+                    },
+                    "fixture": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-green.cjs",
+                      "sha256": "193bb897cb4f7ff24c827e376ae0a7958f6205c331dfbb8e8fe18de1068967dd"
+                    },
+                    "proof": "Actualpurge completionstorage.setJson isheldondeferred beforedurablewrite. Originalreadiness isrunning, cannotsettle andmarkerabsent. Releaseactualtail thenall9originaltestsPASS. Noarbitrarydelay/providerstub/fakewrite."
+                  },
+                  "held-startup-red": {
+                    "command": "timeout 60s node /workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-red.cjs",
+                    "status": "FAIL_EXPECTED",
+                    "exit": 1,
+                    "cases": 9,
+                    "pass": 0,
+                    "fail": 9,
+                    "durationSeconds": 8.327291536,
+                    "log": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-red.log",
+                      "sha256": "069697f269b6ab96d61431ac017d6f5ca63fe1b0760b409d5d276f6372759912"
+                    },
+                    "fixture": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/held-startup-red.cjs",
+                      "sha256": "4185eab45c4c7e5c9a5e551a8386dd88745cb4a6a73f7008e51a24849c480e61"
+                    },
+                    "mutation": "Identicalheldphysicaltail fixture; ONLY prepared readiness invocation replacedPromise.resolve. All9fail exact readiness cannotsettlebeforeactualstartup physicaltail. Releasesactualheldtaskandcleanup onfailure; nohang/deadlinegrowth."
+                  },
+                  "no-reconcile-enqueue": {
+                    "command": "LIBRA_TEST_PLUGIN=.../controls/LIBRA-no-reconcile-enqueue.js python PROGRAM/run_regression_batch.py --match libra_scheduled_audit_queue_test.cjs",
+                    "status": "FAIL_EXPECTED",
+                    "exit": 1,
+                    "durationSeconds": 15.16,
+                    "cases": 9,
+                    "pass": 7,
+                    "fail": 2,
+                    "deadlineSeconds": 60,
+                    "mutation": "ONLY public realreconcileCanonicalBranchBeforeRecall enqueuewrapper changedimmediateasyncIIFE. Alllivecontextguards/privatepipeline/options andeverytestassertionunchanged. Scheduledprivatequeuedowner unaffected.",
+                    "failureReasons": [
+                      "unrelated owner cannot be treated as reentrancy",
+                      "successor waits for the physical tail"
+                    ],
+                    "source": {
+                      "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/controls/LIBRA-no-reconcile-enqueue.js",
+                      "sha256": "5566ed2c539f02ef25fddabdec1be36ad9c349e9b584452b333cec86d74a5fe2"
+                    },
+                    "logs": {
+                      "full": {
+                        "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/no-enqueue/logs/741-libra_scheduled_audit_queue_test.cjs.log",
+                        "sha256": "1c6c9cd958e71d82dd7698b01cb24bcf14e0fb35e55196f3c3473ada685014e5"
+                      },
+                      "stdout": {
+                        "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/no-enqueue/stdout.txt",
+                        "sha256": "ac0594d0dcd5321f0e6b9eae62aacb935c0f26880c2e8724ff98fc0eacc44b3a"
+                      },
+                      "summary": {
+                        "path": "/workspace/librarian-regression/fix39-20261011/runtime741-logs/no-enqueue/run.txt",
+                        "sha256": "2e7f4ecda7cf17179217bdf7de171ed6616d4806673c70a07b1a99d7e800ac39"
+                      }
+                    }
+                  }
+                }
+              },
+              "limits": "This is fixture startupreadiness, not production ownerqueuebug. Actual independentglobalstartupcallbacks retained and settledbeforephysicalzero-write observer. All9originalcases pass; oldvector exactpayload andtimestamps preservedatcompletedmarker readiness, ALLpostowner physicalwrites forbidden. Negativecontrols provephysicaltailwait andscopequeueguards. No unconditionalstartupcompletenessAPI or generalnobackgroundwork claim.",
+              "commit": "a0b9ada01564dca5f7053f09703f8b9e10ac2d74",
+              "commits": [
+                "a0b9ada01564dca5f7053f09703f8b9e10ac2d74",
+                "d307ed464119dcaec004a5e5be2c2546ac9c4458"
+              ],
+              "gitClean": true,
+              "sourceAnchors": {
+                "purgeTimerCallback": {
+                  "line": 82968,
+                  "exact": "void LibraMemoryCore.purgeLegacyWorldAdditionalData().catch(error => warn('LIBRA legacy world-candidate cleanup failed', error));"
+                },
+                "purgePhysicalCompletion": {
+                  "line": 39544,
+                  "exact": "await storage.setJson(WORLD_ADDITIONAL_REMOVAL_MIGRATION_KEY, report);"
+                },
+                "vectorTimerCallback": {
+                  "line": 37084,
+                  "exact": "void runAutomaticLegacyVectorMigration(options).catch(error => {"
+                },
+                "vectorPromiseFinalization": {
+                  "line": 37056,
+                  "exact": "state.embeddingMigrationPromise = task.finally(() => {"
+                }
+              },
+              "observationSemantics": "OnlyassignoriginalinvocationPromise toglobaltestobserverbeforeexisting.catch. Purge/vector functions/options/callback/errorwarn/timerdelays750/1500/queueownership/modes unchanged. No await inserted in productcallbacks. Testhelper awaits actualregistration+bothcompletion underoneoriginal8000ms; no capgrowth or marker filtering fromblockedwriteassertion.",
+              "unknownLimits": [],
+              "runnerSHA256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+              "productionDiffFrom017": "",
+              "runtimeLane": "All4 executions sequential ownMAX1; other039 agent atmost1parallel authorizedparentMAX2 total. Lane nowreleased. No integration/push/manifest/artifact edits.",
+              "environment": "Managed env.sh NODE_PATH; replay artifact bindings; localhostnetworkenabled. Officialgreen FLASHBACK_REINGEST_EVIDENCE bound qualified-reingest-evidence (unused by thisroot); no-enqueue bound replay-reingest-evidence. Controls require only managedenv and localhost fixture, noartifactconsumer. No provider transport.",
+              "preparationPredecessor": "/workspace/librarian-regression/fix39-20261011/runtime741-results-prepared.json"
+            }
+          }
+        ],
+        "assertionMap": {
+          "9Cases": "Everyoriginalcase retained unchanged apart from sharedinitialreadiness and strongercase3zeroALLwrites",
+          "case3Ownership": "Actualheldowner, forgedbypassrefusal, realqueuedreconciliation waits, latestnative topology afterrelease, inactivecanonical+zerohead+queuedrain retained",
+          "physicalZero": "Stronger noexemptkeys: allstoragewrites afterblockingcursor mustbeempty",
+          "readinessNonVacuity": "Realstartuptimerpromise observed, actualtail awaited, durablemarkersmatch exactcompletionfinishedAt, noerrors, migrationownershipnull",
+          "scheduledSuccessor": "Physicalmanifestwritehold+queuedfreshsuccessor+reactivatedcanonical+head5 originalretained",
+          "failureUnloadScopeScan": "Originalreplayfailurepending/recovery, unload/scope-switchqueueownership, heldwriteunload, scanpreflight retained",
+          "originalVectorExceptionPayload": "Formerconditionalwhitelistpayloadcondition movedintoreadiness: physicallydurableactualcompletedvectormarker stillrequires originalvalidstartedAt/finishedAt and exactschema/version/profile/signature/reason/zeroallcounts/noerrors/notinterrupted. Nothingomitted; afterreadiness ALLphysicalwrites forbidden, noexception."
+        },
+        "limits": "This is fixture startupreadiness, not production ownerqueuebug. Actual independentglobalstartupcallbacks retained and settledbeforephysicalzero-write observer. All9originalcases pass; oldvector exactpayload andtimestamps preservedatcompletedmarker readiness, ALLpostowner physicalwrites forbidden. Negativecontrols provephysicaltailwait andscopequeueguards. No unconditionalstartupcompletenessAPI or generalnobackgroundwork claim.",
+        "change": "Wait genuine originally scheduled purge/vector registration and physical completion under original8s readiness bound; preserve all9 cases and strengthen blocked-owner check to zeroALLwrites; held physical startup tail and real reconcile-enqueue mutation controls prove sensitivity."
+      },
+      {
+        "rootOrdinal": 983,
+        "originalFailure": {
+          "rootOrdinal": 983,
+          "path": "PROGRAM/tests/retrace_server_handoff_test.cjs",
+          "sha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+          "sourceCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+          "priorFullStatus": "FAIL",
+          "priorFullTestSha256": "87ca7eb35350ddfb9df2887981890bb82bb3f33964c31c810c841420e1fe91d0",
+          "historicalReferenceRoot": true,
+          "estimatedSeconds": 0.78,
+          "historicalOrdinal": 982,
+          "prior280Status": "FAIL",
+          "prior280TestSha256": "87ca7eb35350ddfb9df2887981890bb82bb3f33964c31c810c841420e1fe91d0",
+          "sequence": 298,
+          "status": "FAIL",
+          "durationSeconds": 0.47,
+          "runnerExitCode": 1,
+          "summary": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0983.txt",
+          "console": "/workspace/librarian-regression/fix39-20261011/replay-run-1/summaries/0983.console.txt",
+          "completedAtUtc": "2026-10-11T08:36:52.788569+00:00",
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/983-retrace_server_handoff_test.cjs.log",
+          "fullOutputSha256": "cc2bbd4c4cb7312dd146f2edd526f17b914db82128fb057352e1dad6a6eb089d",
+          "shard": 1,
+          "campaignBindingSha256": "8e723f0d05a98730408a52e8451ebbba09980de9faa9d493fcb938600d35f5d3",
+          "summarySha256": "b1a4f4ab4a7f2171e4c3390d7651f945970053530c4601389000f649e0031613",
+          "consoleSha256": "b1a4f4ab4a7f2171e4c3390d7651f945970053530c4601389000f649e0031613"
+        },
+        "currentTest": {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/tests/retrace_server_handoff_test.cjs",
+          "sha256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
+          "bytes": 13122
+        },
+        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+        "commonSourceResult": null,
+        "sameSourceWholeCampaignQualified": false,
+        "classification": "VERIFIED_SHARED_SDK_CACHE_PUBLICATION_FIX",
+        "authorCommits": [
+          "1d00f1360192fa6b77b12d77229a61ad1ece0109",
+          "a5f3c5279da92f6aaae1edbbe956fedfb0c3832e",
+          "18bae9c",
+          "f91ae1a",
+          "d92ca4b",
+          "9b9c5109bc16d76e7863c940dd8f5080bbbc9614"
+        ],
+        "productionFix": true,
+        "receipts": [
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-results.json",
+            "sha256": "961a80e9ca63e43debb6dcf07ce5473d2f2f789b5cfb1bc00701b5bb7f5b516e",
+            "bytes": 7007,
+            "schemaStatus": "FOCUSED_SDK_REGRESSION_QUALIFIED_FULL_CAMPAIGN_PENDING",
+            "content": {
+              "status": "FOCUSED_SDK_REGRESSION_QUALIFIED_FULL_CAMPAIGN_PENDING",
+              "baseCommit": "017f86021d5e88f05bef86a8130200fc827ddedb",
+              "candidateCommit": "d92ca4bf9be09710f8da4cc9329721437891b75e",
+              "commits": {
+                "firstRedFixture": "1d00f1360192fa6b77b12d77229a61ad1ece0109",
+                "initialProduct": "a5f3c5279da92f6aaae1edbbe956fedfb0c3832e",
+                "offEdgeFixture": "f91ae1a",
+                "finalProduct": "d92ca4b"
+              },
+              "rootCause": "Cold persistScopedMode made default URL fresh before queued startup URL read; readConfig subsequently reused default endpoint. Actual original replay sequence12 HAY wrong-origin is preserved. Historical older fetch failure cause unknown.",
+              "originalFailure": {
+                "path": "/workspace/librarian-regression/fix39-20261011/replay-run-1/logs/983-retrace_server_handoff_test.cjs.log",
+                "sha256": "cc2bbd4c4cb7312dd146f2edd526f17b914db82128fb057352e1dad6a6eb089d",
+                "bytes": 7837
+              },
+              "firstRED": {
+                "sourceCommit": "1d00f1360192fa6b77b12d77229a61ad1ece0109",
+                "sourceSHA256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381",
+                "exitCode": 1,
+                "actualRequestOrigin": "http://127.0.0.1:47630",
+                "configuredOrigin": "http://127.0.0.1:33141",
+                "failure": "ECONNREFUSED then actual configured-origin assertion"
+              },
+              "offEdgeRED": {
+                "sourceCommit": "a5f3c5279da92f6aaae1edbbe956fedfb0c3832e",
+                "fixtureCommit": "f91ae1a",
+                "failure": "invalid_memory_suite_server_url thrown from persistScopedMode after same-mode plugin_only publication",
+                "incorrectFirstAttemptPreserved": "sdk-983-off-edge-red.txt tested initial server_only transition requiring existing restore; not attributed to new publication defect"
+              },
+              "GREEN": {
+                "fixtureCases": 5,
+                "fixtureExitCode": 0,
+                "officialRoots": [
+                  983,
+                  1003,
+                  1096,
+                  1106
+                ],
+                "officialExitCode": 0,
+                "outerCapsSeconds": {
+                  "983": 60,
+                  "1003": 60,
+                  "1096": 60,
+                  "1106": 60
+                },
+                "root983ActualRequests": 71,
+                "root983ActualOrigins": [
+                  "http://127.0.0.1:34779"
+                ],
+                "root983Original19AssertionsUnchanged": true
+              },
+              "controls": [
+                "cold initial server_only with genuinely held queued0ms startup",
+                "warm genuine forced settings read",
+                "cold plugin_only to server_only preserving raw legacy global argument",
+                "explicit URL publication and bootstrap generation reset",
+                "same-mode plugin_only with invalid raw URL preserves no-network boundary"
+              ],
+              "files": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+                  "sha256": "6f17331ef4579efbd0ff6ad5115d7e882e15f3b07c55781663713497d35da9f4",
+                  "bytes": 553789
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/tests/fixtures/storage_sdk_initial_scope_url.cjs",
+                  "sha256": "b4b8ae51f431c5706587fb239b37e15cce1920073d6ce82a2e6bee4d65ce7b22",
+                  "bytes": 6234
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/tests/retrace_server_handoff_test.cjs",
+                  "sha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+                  "bytes": 12938
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/tests/sdk_reset_bootstrap_sequence_runtime_test.cjs",
+                  "sha256": "b6d402416dd17e2af49461c4ff85ee432a20b09c6d9519a073887fa5434c1154",
+                  "bytes": 21119
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/tests/storage_global_allchat_url_recovery_test.cjs",
+                  "sha256": "6c8eaa5d5266505ad60f7560e101e67a9cc913ee8a103dab8b2dcb6138ee2b93",
+                  "bytes": 4137
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983/PROGRAM/tests/storage_mode_publication_basic.test.cjs",
+                  "sha256": "edf7df0e9787cc4a88a5425e287cc223e3051b05f9e7c6597ce292b9a44bead1",
+                  "bytes": 15794
+                }
+              ],
+              "logs": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-red.txt",
+                  "sha256": "9538642cbe4f8323ba8272f18d085c7111654727c5a713deacdb472b722b4c73",
+                  "bytes": 812
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-green-controls.txt",
+                  "sha256": "4e4f25148ba58d16482bd9153fb26d2a9e1d8559b3ea5fa6d9effe5fd3b8ba71",
+                  "bytes": 4295
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-off-edge-red.txt",
+                  "sha256": "9d4cda3c7901c468e3057fabe9a33d0597764484391fde3bf9235d7e7c6df5c9",
+                  "bytes": 5002
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-off-edge-red-corrected.txt",
+                  "sha256": "bbc175f505dc14a9fd88ef02b77492ff51df41f4cb41cf225693010cafdbccbc",
+                  "bytes": 2613
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-green-final-controls.txt",
+                  "sha256": "cb160d00b93dcef208d47ce6e37077176bc24671ddecf11f7405c3ec67419102",
+                  "bytes": 4252
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official.txt",
+                  "sha256": "c1064a6dfaae5c34407492314820065213f6d998309ffa34e95d5bee58df701a",
+                  "bytes": 9241
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official-final.txt",
+                  "sha256": "39bd6942b7eda286db1888e3fe84078d6946d2f545689c919a0855df527d4b8d",
+                  "bytes": 9265
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official-final-logs/1003-sdk_reset_bootstrap_sequence_runtime_test.cjs.log",
+                  "sha256": "92a50928a55f8c8c10cd1ebf184c5b52099e9bd5f1b77e08087ecaeac1a78006",
+                  "bytes": 2787
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official-final-logs/1096-storage_global_allchat_url_recovery_test.cjs.log",
+                  "sha256": "9bd378812096f4331986062276157ee1bf95e65584bc697e4d9adbf7d4d3a102",
+                  "bytes": 596
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official-final-logs/1106-storage_mode_publication_basic.test.cjs.log",
+                  "sha256": "6e2018bb1b731af9baaf694b69c81b7d6fe28644d9b75dbd4269b658c15b47ce",
+                  "bytes": 2678
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-official-final-logs/983-retrace_server_handoff_test.cjs.log",
+                  "sha256": "f561376e2be8c21cdeeb896ecb794291b774ec6f13ff38cb1fd5b2303ea908fd",
+                  "bytes": 35777
+                }
+              ],
+              "limits": [
+                "Only SDK source changed; embedded copies not regenerated, parent coordination required.",
+                "No transport redirection/retry/filter/cap change. Genuine VM holds startup callback scheduling only; nativeFetch uses original URL and real loopback HTTP.",
+                "Late void registry sync requests may abort at genuine generation reset/dispose; no claim all background physical work completed.",
+                "Four whole roots qualified, not full1138. Existing embedded SDK copy exercised by adjacent test remains prior source until coordinated build."
+              ]
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-wired-prepared-results.json",
+            "sha256": "37f9e2229d8e3a0ae1d93b8774a6be946e3b10dd3d5adb68a683d68591d82321",
+            "bytes": 1686,
+            "schemaStatus": "STATIC_WIRED_OFFICIAL_983_RUNTIME_PENDING",
+            "content": {
+              "status": "STATIC_WIRED_OFFICIAL_983_RUNTIME_PENDING",
+              "baseQualifiedReceipt": "/workspace/librarian-regression/fix39-20261011/sdk-983-results.json",
+              "baseQualifiedReceiptSHA256": "961a80e9ca63e43debb6dcf07ce5473d2f2f789b5cfb1bc00701b5bb7f5b516e",
+              "candidateCommit": "9b9c5109bc16d76e7863c940dd8f5080bbbc9614",
+              "productCommit": "d92ca4b",
+              "sourceSHA256": "6f17331ef4579efbd0ff6ad5115d7e882e15f3b07c55781663713497d35da9f4",
+              "wireTestSHA256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
+              "fixtureSHA256": "b4b8ae51f431c5706587fb239b37e15cce1920073d6ce82a2e6bee4d65ce7b22",
+              "originalPrefixSHA256": "e0ec1a99f7aefdd6887c922281add5f6ed41414e15357a51c152fcc75af587c5",
+              "originalPrefixBytes": 12694,
+              "originalLiveBodyAndAll19AssertionsBytePreserved": true,
+              "staticSyntaxCheck": {
+                "command": "node --check PROGRAM/tests/retrace_server_handoff_test.cjs",
+                "exitCode": 0
+              },
+              "inventoryCount": 1138,
+              "outerCapSeconds": 60,
+              "cases": [
+                "cold_same_server_mode",
+                "warm_same_server_mode",
+                "cold_plugin_to_server",
+                "explicit_url_publication",
+                "plugin_only_invalid_url"
+              ],
+              "execution": "Existing official root main runs staticContracts then unchanged liveServerNamespaceRead then actual fixture allControls; require.main guards import. No runtime for wired candidate while parent owns paired614 slots.",
+              "qualificationLimits": [
+                "Prior official983 PASS at d92ca4b ran unchanged historical body only; five cases were qualified standalone.",
+                "Postwire official983 runtime remains pending; no claim wired candidate passes yet.",
+                "No production change or embedded regeneration in this wiring commit."
+              ]
+            }
+          },
+          {
+            "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-wired-results.json",
+            "sha256": "1856b1ddba34ff986634caf1fb689c0569eacea5bd127545da048287850a871e",
+            "bytes": 2476,
+            "schemaStatus": "POSTWIRE_OFFICIAL_983_QUALIFIED_ALL_FIVE_CONTROLS",
+            "content": {
+              "status": "POSTWIRE_OFFICIAL_983_QUALIFIED_ALL_FIVE_CONTROLS",
+              "preparedReceipt": "/workspace/librarian-regression/fix39-20261011/sdk-983-wired-prepared-results.json",
+              "preparedReceiptSHA256": "37f9e2229d8e3a0ae1d93b8774a6be946e3b10dd3d5adb68a683d68591d82321",
+              "prewireQualificationReceipt": "/workspace/librarian-regression/fix39-20261011/sdk-983-results.json",
+              "prewireQualificationReceiptSHA256": "961a80e9ca63e43debb6dcf07ce5473d2f2f789b5cfb1bc00701b5bb7f5b516e",
+              "candidateCommit": "9b9c5109bc16d76e7863c940dd8f5080bbbc9614",
+              "sourceSHA256": "6f17331ef4579efbd0ff6ad5115d7e882e15f3b07c55781663713497d35da9f4",
+              "wireTestSHA256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
+              "fixtureSHA256": "b4b8ae51f431c5706587fb239b37e15cce1920073d6ce82a2e6bee4d65ce7b22",
+              "official983": {
+                "status": "PASS",
+                "seconds": 0.95,
+                "outerCapSeconds": 60,
+                "inventoryCount": 1138,
+                "exitCode": 0,
+                "historicalBodyActualRequests": 71,
+                "historicalBodyOrigin": "http://127.0.0.1:40783",
+                "fixtureConfiguredOrigin": "http://127.0.0.1:39431",
+                "allControlsCases": 5,
+                "printedConnectionCases": [
+                  "cold_same_server_mode",
+                  "warm_same_server_mode",
+                  "cold_plugin_to_server",
+                  "explicit_url_publication"
+                ],
+                "offCaseExecutionEvidence": "allControls array has fifth plugin_only_invalid_url case; awaited fixture returns only after its assertions and actual bridge disposal, with no catch/skip. Whole root exits0. Offcase has no separate percase print; standalone GREEN final receipt includes fifth observation."
+              },
+              "logs": [
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-postwire-official.txt",
+                  "sha256": "2a35ca828fd5c5f7602a15d9dd6fcee364c19162cfad04283fcaf10d12c731b8",
+                  "bytes": 4077
+                },
+                {
+                  "path": "/workspace/librarian-regression/fix39-20261011/sdk-983-postwire-official-logs/983-retrace_server_handoff_test.cjs.log",
+                  "sha256": "6c47dee4eb3e7d5fd421ea5e4f738bfcc67802e76a0d98ca144dcc99f05b0448",
+                  "bytes": 37292
+                }
+              ],
+              "original19AssertionsBytePreserved": true,
+              "cleanWorktree": true,
+              "limits": [
+                "Embedded SDK copies still not regenerated; parent integration/build required.",
+                "This is focused official983 qualification plus prior same-product1003/1096/1106; no full1138 success claim.",
+                "Preserved prior replay original wrongorigin failure and separate prewire/standalone controls receipts."
+              ]
+            }
+          }
+        ],
+        "assertionMap": "Original12694-byte static/live-body prefix and all19 assertions byte unchanged; existing official983 now additionally awaits five real SDK startup/config controls under same60s cap, inventory1138 unchanged.",
+        "change": "For server targets read/normalize configured URL and invalidate bootstrap generation when URL differs before certifying cache freshness; plugin_only publishes target and at0 without URL read/validation/network connection. Preserve scoped versus legacy global mode, transient mode and explicit URL readback.",
+        "embeddedOwnersRegeneratedByParent": [
+          "PROGRAM/plugins/Flashback_Memory.js",
+          "PROGRAM/plugins/HAYAKU_Locator_Continuity.js"
+        ],
+        "limits": [
+          "Actual cold RED default47630 vs configuredactualorigin proves new replay seq12 cause; historical efcb older fetch failure cause remains unknown.",
+          "Postwire official983 PASS0.95s and same-source adjacent1003/1096/1106 PASS; no fullcandidate1138 result yet.",
+          "Fivecontrolsoffcase is asserted/awaited but no separate officialpercase print; standalone finalGREEN JSON includes fifth observation."
+        ]
+      }
+    ],
+    "candidateSnapshot": {
+      "integrationHEADAtRead": "7dc4f1876ce740b2b3be20911f071373cfb03986",
+      "unstagedAtRead": [],
+      "sourcePins": [
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/sdk/MemorySuiteStorageClient.source.js",
+          "sha256": "6f17331ef4579efbd0ff6ad5115d7e882e15f3b07c55781663713497d35da9f4",
+          "bytes": 553789
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/LIBRA.js",
+          "sha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
+          "bytes": 5783225
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/RETRACE.js",
+          "sha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
+          "bytes": 1160663
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/GRADIA.js",
+          "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+          "bytes": 3035965
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/Flashback_Memory.js",
+          "sha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
+          "bytes": 3294016
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/HAYAKU_Locator_Continuity.js",
+          "sha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
+          "bytes": 3962847
+        },
+        {
+          "path": "/workspace/librarian-regression/fix39-20261011/integration/PROGRAM/plugins/LIA_Persona_Linker.js",
+          "sha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+          "bytes": 1870745
+        }
+      ],
+      "candidateHasProductionChangeAfterReplay": true,
+      "productionChangeScope": "Shared SDK source plus parent-regenerated Flashback/HAYAKU embedded owners; LIBRA private product body remains ae814a56.",
+      "validatedCommonSourceCommit": null
+    },
+    "qualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
+    "commonSourceResult": null,
+    "plannedSerializedHeavyRoots": {
+      "count": 9,
+      "root39And614Included": true,
+      "purpose": "Bound resource overlap for next qualification; mitigation only, no demonstrated natural cause for39/614."
+    },
+    "payloadEvidence": {
+      "path": "/workspace/librarian-regression/fix39-20261011/followup4-report-payload.json",
+      "sha256": "761536caa6e3a06fac29189bbd9d281545913022568744b10bc7f42edacd1631"
+    },
+    "preservation": {
+      "originalEightRows": "Retain prior originalCampaign/originalFailure objects verbatim.",
+      "historical39And280Gaps": "Carry predecessor historical assertion/retired-contract gaps unchanged; no revival or blanket39/full280 PASS claim.",
+      "publication": "No new publish/merge/push claim in this external preparation.",
+      "DATA": "No DATA mutation authorized or performed by this report task; carry parent pre/post DATA preservation evidence.",
+      "completionFieldRecommendation": "Rename old false field to historicalEightPreparation.productionChangesAfterPredecessor or explicitly scope it to efcb-era eight; use finalCandidate.productionChangesAfterReplay=true. Do not claim unchangedproduction for finalcandidate."
+    }
+  },
+  "finalCandidate": {
+    "productionChangesAfterReplay": true,
+    "productionChangeScope": "Shared SDK source plus parent-regenerated Flashback/HAYAKU embedded owners; LIBRA private product body remains ae814a56.",
+    "commonSourceQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN"
   }
 }
