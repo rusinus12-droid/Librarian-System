@@ -1,20 +1,23 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const {createRootBoundary}=require('./fixtures/source_edit_root_boundary.cjs');
-const code=fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceEditConsent.source.js'),'utf8');
-const context=vm.createContext({setTimeout,clearTimeout,console});vm.runInContext(code+';this.factory=createMemorySuiteSourceEditConsent;',context);
-(async()=>{
-  const root=createRootBoundary(),store=new Map();let prompts=0,executions=0;
-  const controller=context.factory({owner:'libra',requestBoundary:true,api:()=>({getRootDocument:async()=>root.root}),
-    read:async k=>store.get(k)??null,write:async(k,v)=>{store.set(k,v);return true;},
-    collect:async()=>({scopeKey:'A',units:[{key:'1',start:1,end:5,digest:'new',sourceDigest:'new',originalDigest:'old',basis:'b',identity:'i',changed:true}]}),
-    prompt:async()=>{prompts++;return{decision:'approve',keys:['1']};},execute:async()=>{executions++;return{ok:false,error:'packet_readback_failed'};}});
-  try{
-    await controller.beforeRequest();
-    assert.equal(prompts,0);assert.equal(executions,1);assert.equal(await root.ready(),false,'automatic processing does not mount SafeElement dialogs');
-    assert.equal(controller.status().tasks[0].state,'failed');assert.match(controller.status().tasks[0].error,/packet_readback_failed/);
-    assert.equal((await controller.review()).reason,'automatic_before_request_only');assert.equal(prompts,0);assert.equal(executions,1);
-    assert.equal(await root.ready(),false);
-    console.log(JSON.stringify({test:'source_edit_safe_dialog',passed:2}));
-  }finally{controller.dispose();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+class Element{
+  constructor(tag,doc){this.tagName=tag.toLowerCase();this.ownerDocument=doc;this.children=[];this.attributes=new Map();this.dataset={};this.style={};this.value='';this.textContent='';this.disabled=false;this.isConnected=true;}
+  append(...nodes){for(const node of nodes){node.parent=this;this.children.push(node);}}
+  prepend(...nodes){for(const node of nodes){node.parent=this;this.children.unshift(node);}}
+  insertBefore(node,reference){const index=this.children.indexOf(reference);node.parent=this;this.children.splice(index<0?this.children.length:index,0,node);}
+  replaceChildren(...nodes){this.children=[];this.append(...nodes);}
+  remove(){if(this.parent)this.parent.children=this.parent.children.filter(node=>node!==this);this.isConnected=false;}
+  setAttribute(key,value){this.attributes.set(key,String(value));}
+  getAttribute(key){return this.attributes.get(key)||null;}
+  querySelector(selector){if(selector==='[data-source-input-controls]')return this.walk().find(node=>node.dataset.sourceInputControls)||null;return null;}
+  querySelectorAll(selector){const names=selector.split(',').map(name=>name.trim());return this.walk().filter(node=>names.includes(node.tagName));}
+  walk(){return this.children.flatMap(child=>[child,...child.walk()]);}
+  focus(){}
+}
+
+test('owner input preview remains local, literal and model-free without host dialogs',async()=>{
+ const c=vm.createContext({setTimeout,clearTimeout});vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceInput.libra.source.js'),'utf8'),c);
+ const doc={createElement:tag=>new Element(tag,doc)},root=new Element('div',doc),raw='Alice <img src=x onerror="globalThis.xss=1"><script>globalThis.xss=2</script>';let reads=0,writes=0,stored=JSON.stringify({sourceRules:{version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]}});
+ const api=c.createMemorySuiteSourceInputPolicy({owner:'libra',read:async()=>stored,write:async body=>{writes++;stored=body;return true},readSample:async()=>{reads++;return{text:raw,label:'T1'}}});
+ try{api.mountControls(root);await api.ready();await Promise.resolve();assert.equal(reads,0,'mounting never reads raw source implicitly');assert.equal(writes,0);const button=root.walk().find(n=>n.dataset.sourceInputPreview!==undefined);assert.ok(button);await button.onclick();const output=root.walk().find(n=>n.dataset.sourceInputOutput!==undefined);assert.equal(output.textContent,raw);assert.equal(output.querySelectorAll('img,script').length,0);assert.equal(reads,1);assert.equal(writes,0);assert.equal(stored.includes('Alice'),false);assert.equal(root.walk().some(n=>n.dataset.sourceEditDialog!==undefined),false)}finally{api.dispose()}
+});

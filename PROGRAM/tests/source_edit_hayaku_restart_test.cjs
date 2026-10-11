@@ -17,7 +17,7 @@ function envelope(quote){const p=createValidPacket({turn:1,subject:'Alice',scene
     await runtime.callBeforeRequest([{role:'user',content:'Continue.'}],'model');await runtime.callAfterRequest('', 'model');
     assert.equal(totalCalls,0,'request detection has no model call');const firstTicket=await runtime.hayaku.previewSourceEdits(['1']);assert.equal(firstTicket.allowed,true);await runtime.hayaku.applySourceEdits(firstTicket);
     assert.equal(totalCalls,1);assert.equal(await root.ready(),false);
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks[0].state,'failed');
+    assert.equal(runtime.hayaku.getReanalysisStatus().error,'no_storable_memory');
     const protectedBeforeRestart=(await runtime.hayaku.ledger.inspect({includeRecords:true})).records.filter(r=>r.recordState==='active');
     assert.ok(protectedBeforeRestart.length,'failed replacement leaves the prior packet active');
     const pluginStorage=runtime.pluginStorage,safeLocalStorage=runtime.safeLocalStorage,editedMessages=runtime.chat.message;
@@ -25,13 +25,13 @@ function envelope(quote){const p=createValidPacket({turn:1,subject:'Alice',scene
 
     runtime=await createHayakuRuntime({autoRepair:false,pluginSourceFile:process.env.HAYAKU_TEST_PLUGIN,pluginStorage,safeLocalStorage,messages:editedMessages});runtime.host.getRootDocument=async()=>root.root;
     await runtime.callBeforeRequest([{role:'user',content:'Restart inspection.'}],'model');await runtime.callAfterRequest('', 'model');
-    assert.equal(runtime.hayaku.getSourceEditSyncStatus().tasks[0].state,'failed','failure receipt survives restart');
+    assert.equal(runtime.hayaku.getReanalysisStatus().lastResult,null,'reanalysis UI status is local to the runtime');assert.ok((await runtime.hayaku.ledger.inspect({includeRecords:true})).records.some(r=>JSON.stringify(r).includes(OLD)),'restart preserves prior durable packet after failure');
     assert.equal(totalCalls,1,'restart inspection does not make an extra model call');
     runtime.setLlmResponder(async()=>{totalCalls++;return{type:'success',result:JSON.stringify(envelope(NEW))};});
     await runtime.callBeforeRequest([{role:'user',content:'Continue again.'}],'model');await runtime.callAfterRequest('', 'model');
     assert.equal(totalCalls,1,'next request never automatically retries failed work');const nextTicket=await runtime.hayaku.previewSourceEdits(['1']);assert.equal(nextTicket.allowed,true);await runtime.hayaku.applySourceEdits(nextTicket);
     assert.equal(totalCalls,2,'new explicit preview/apply retries the failed task');assert.equal(await root.ready(),false);
-    const status=runtime.hayaku.getSourceEditSyncStatus();assert.equal(status.tasks[0].state,'applied');
+    const status=runtime.hayaku.getReanalysisStatus();assert.equal(status.lastResult.ok,true);assert.equal(status.error,'');
     const finalLedger=await runtime.hayaku.ledger.inspect({includeRecords:true}),active=finalLedger.records.filter(r=>r.recordState==='active');
     assert.ok(active.some(r=>r.body?.includes(NEW)||r.raw?.includes(NEW)||JSON.stringify(r).includes(NEW)),'replacement packet became active after readback');
     assert.equal(runtime.chat.message[1].data,hiddenPacketMessage(NEW,packet),'chat source remains unchanged');

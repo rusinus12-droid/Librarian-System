@@ -1,40 +1,16 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const {test}=require('node:test');
-const context=vm.createContext({setTimeout,clearTimeout,Date,console});vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceEditConsent.source.js'),'utf8'),context);
-const clone=x=>JSON.parse(JSON.stringify(x));
-function make(initial){
-  const store=new Map();let snapshot={scopeKey:'chat',units:clone(initial)},calls=0,prompts=0;
-  const c=context.createMemorySuiteSourceEditConsent({owner:'audit',requestBoundary:true,read:async k=>store.get(k)??null,write:async(k,v)=>{store.set(k,v);return true;},
-    collect:async()=>clone(snapshot),prompt:async()=>{prompts++;return{decision:'approve',keys:[]};},execute:async(_t,p)=>{await p.assertCurrent();calls++;return{ok:true};}});
-  return{c,store,set units(value){snapshot.units=clone(value);},get units(){return clone(snapshot.units);},get calls(){return calls;},get prompts(){return prompts;}};
+// Historical root retained; active contract is the embedded owner input policy.
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const code=fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteSourceInput.libra.source.js'),'utf8');
+const plain=value=>JSON.parse(JSON.stringify(value));
+function fixture({owner='libra',initial=null,writeReject=false,readbackBad=false}={}){
+ const context=vm.createContext({setTimeout,clearTimeout,console});vm.runInContext(code,context);
+ let stored=initial,busy=false,reads=0,writes=0;
+ const api=context.createMemorySuiteSourceInputPolicy({owner,read:async()=>{reads++;return readbackBad&&writes?'{}':stored},write:async body=>{writes++;if(writeReject)return false;stored=body;return true},busy:()=>busy});
+ return{api,context,busy:v=>busy=v,get stored(){return stored},counts:()=>({reads,writes}),project:text=>context.memorySuiteCanonicalSource(text,owner)};
 }
-const u=(key,start,{digest,sourceDigest= digest,originalDigest='old-'+key,basis='basis-'+key,identity='id-'+key,changed=true,current=false,changeKind='source_changed'}={})=>({key,start,end:start,digest,sourceDigest,originalDigest,basis,identity,changed,current,changeKind});
+const rules={version:1,ignoredTags:['decoration'],unwrapTags:['wrapper'],sourceTags:['original'],controls:[]};
 
-test('read-only observation invalidates an applied write receipt after dependency change',async()=>{
-  const f=make([u('1',1,{digest:'new',sourceDigest:'new'})]);try{
-    await f.c.beforeRequest();assert.equal(f.c.status().tasks[0].state,'applied');assert.equal(f.c.canWrite('chat','1','new'),true);
-    const changed=u('1',1,{digest:'new',sourceDigest:'new',basis:'basis-changed'});f.units=[changed];
-    await f.c.inspect({scopeKey:'chat',units:f.units});
-    assert.equal(f.c.canWrite('chat','1','new'),false);
-    assert.equal(f.c.status().tasks[0].state,'applied','read-only guard does not mutate the source journal');
-    assert.equal(f.c.status().events.length,1,'read-only guard does not create source-edit history');
-  }finally{f.c.dispose();}
-});
 
-test('OFF then automatic establishes a baseline; later direct and dependent edits reconcile',async()=>{
-  const f=make([u('6',6,{digest:'six',sourceDigest:'six'}),u('11',11,{digest:'eleven',sourceDigest:'eleven',originalDigest:'eleven',changed:false,current:true})]);try{
-    await f.c.setMode('off');await f.c.setMode('auto');await f.c.beforeRequest();assert.equal(f.calls,0);assert.equal(f.c.status().tasks.length,0);
-    f.c.afterRequest();f.units=[u('6',6,{digest:'six-new',sourceDigest:'six-new',basis:'prefix-new'}),u('11',11,{digest:'eleven',sourceDigest:'eleven',originalDigest:'eleven',basis:'prefix-new',changeKind:'dependency_affected'})];
-    await f.c.beforeRequest();assert.deepEqual(Array.from(f.c.status().tasks,task=>task.key),['6','11']);assert.equal(f.calls,2);
-    assert.equal(f.c.status().tasks[1].changeKind,'dependency_affected');
-  }finally{f.c.dispose();}
-});
-
-test('two owner controllers automatically process independently without prompts',async()=>{
-  const a=make([u('1',1,{digest:'a-new',sourceDigest:'a-new'})]),b=make([u('1',1,{digest:'b-new',sourceDigest:'b-new'})]);try{
-    await Promise.all([a.c.beforeRequest(),b.c.beforeRequest()]);
-    assert.equal(a.calls,1);assert.equal(b.calls,1);assert.equal(a.prompts+b.prompts,0);
-    assert.equal(a.c.status().tasks[0].state,'applied');assert.equal(b.c.status().tasks[0].state,'applied');
-  }finally{a.c.dispose();b.c.dispose();}
-});
+test('warm projection uses new explicitly stored rules without source rewrites',async()=>{const f=fixture(),raw='Alice<decoration>UI</decoration>';try{await f.api.setSourceRules({ignoredTags:['decoration']});assert.equal(f.project(raw),'Alice');await f.api.setSourceRules({ignoredTags:[]});assert.equal(f.project(raw),raw);assert.equal(f.stored.includes('Alice'),false);assert.equal('inspect' in f.api,false);assert.equal('canWrite' in f.api,false,'input preferences are not an owner write permit')}finally{f.api.dispose()}});
+test('unselected owner settings cannot change another owner projection',async()=>{const c=vm.createContext({});vm.runInContext(code,c);const db=new Map(),make=owner=>c.createMemorySuiteSourceInputPolicy({owner,read:async()=>db.get(owner),write:async body=>{db.set(owner,body);return true}}),a=make('libra'),b=make('hayaku');try{await a.setSourceRules({ignoredTags:['decoration']});await b.setSourceRules({ignoredTags:[]});const before=db.get('libra');await b.setSourceRules({ignoredTags:['wrapper']});assert.equal(db.get('libra'),before);assert.equal(c.memorySuiteCanonicalSource('A<decoration>B</decoration>','libra'),'A');assert.equal(c.memorySuiteCanonicalSource('A<decoration>B</decoration>','hayaku'),'A<decoration>B</decoration>')}finally{a.dispose();b.dispose()}});

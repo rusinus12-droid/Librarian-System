@@ -157,13 +157,12 @@ const context = vm.createContext({
   assert.ok(before.records.some(r=>r.text.includes('signed the agreement.')),'old raw source exists');
   currentChat.message[1].data='Alice did not sign the agreement.';
   const snapshot=await api._test.flashbackSourceEditSnapshot();
-  assert.ok(snapshot.units[0]?.changed,'the pre-request snapshot identifies the edited turn');
+  assert.ok(snapshot.units[0]?.identity&&snapshot.units[0]?.sourceDigest,'snapshot binds exact current owner source');
   await api._selectionTest.beforeRequest([{role:'user',chatId:'u3',content:'Continue.'}],'model');
   await api._selectionTest.afterRequest('Next response.','model');
-  const status=api.getSourceEditSyncStatus();
-  assert.equal(status.tasks.find(task=>task.key==='1')?.state,'applied','the actual beforeRequest boundary automatically replaces the source');
+  const unchanged=await api._test.loadScopeRecords(scope.scopeKey);assert.equal(unchanged.records.some(r=>r.text.includes('did not sign')),false,'request must not replace source implicitly');const inventory=await api.listReanalysisRanges();const result=await api.reanalyzeSelectedRanges({...inventory,ranges:inventory.ranges.filter(r=>r.key==='1')});assert.equal(result.ok,true,JSON.stringify(result));assert.equal(api.getReanalysisStatus().lastResult.ok,true);
   const after=await api._test.loadScopeRecords(scope.scopeKey);
-  assert.ok(after.records.some(r=>r.text.includes('did not sign the agreement.')),'automatic exact-source replacement was saved');
+  assert.ok(after.records.some(r=>r.text.includes('did not sign the agreement.')),'explicit exact-source replacement was saved');
   assert.equal(currentChat.message[1].data,'Alice did not sign the agreement.','source not rewritten');
   assert.ok(after.records.some(r=>r.text.includes('Alice waited outside.')),'unchanged downstream raw source remains active');
   const gated=api._test.applyRecallHardGates(after.records,{scopeKey:scope.scopeKey});

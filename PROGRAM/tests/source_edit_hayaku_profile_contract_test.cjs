@@ -1,20 +1,3 @@
 'use strict';
-const assert=require('node:assert/strict');
-const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
-
-(async()=>{
-  const runtime=await createHayakuRuntime({messages:[]});
-  try{
-    const api=runtime.hayaku;
-    assert.equal(api.getSourceEditSyncStatus().mode,'auto','HAYAKU starts in automatic source reconciliation mode');
-    const stopped=await api.setSourceEditTrackingMode('off');
-    assert.equal(stopped.mode,'off');
-    const resumed=await api.setSourceEditTrackingMode('auto');
-    assert.equal(resumed.mode,'auto');
-    const manual=await api.reviewSourceEdits();
-    assert.equal(manual.ok,false);
-    assert.equal(manual.reason,'automatic_before_request_only');
-    assert.equal(runtime.llmCalls.length,0,'changing mode and rejecting a manual review do not call a provider');
-    console.log(JSON.stringify({test:'source_edit_hayaku_profile_contract',passed:5}));
-  }finally{await runtime.dispose();}
-})().catch(e=>{console.error(e);process.exitCode=1});
+const assert=require('node:assert/strict');const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
+(async()=>{const r=await createHayakuRuntime({messages:[]});try{const api=r.hayaku;assert.equal(typeof api.setSourceEditTrackingMode,'undefined');assert.equal(typeof api.getSourceEditSyncStatus,'undefined');assert.equal(api.getReanalysisStatus().running,false);const inventory=await api.listReanalysisRanges();assert.equal(inventory.ranges.length,0);assert.equal((await api.reviewSourceEdits()).reason,'explicit_selection_required');assert.equal((await api.previewSourceEdits([])).allowed,false);const result=await api.reanalyzeSelectedRanges(inventory);assert.equal(result.ok,false);assert.equal(r.llmCalls.length,0);console.log('PASS HAYAKU local input policy and empty explicit selection boundary')}finally{await r.dispose()}})().catch(e=>{console.error(e);process.exitCode=1});

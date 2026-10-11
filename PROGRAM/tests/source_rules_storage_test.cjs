@@ -20,9 +20,12 @@ if(mode==='local'){
  mod.createHayakuRuntime=async(...args)=>{const h=await create(...args);await h.hayaku.setSourceEditRules(rules);return h;};
  require('./source_edit_hayaku_runtime_test.cjs');
 }else{
- for(const [child,filter]of [['local',''],['server','approved source edit'],['server','post-canonical SQLite'],['server','mirror unified path'],['flashback',''],['hayaku','']]){
-  const r=cp.spawnSync(process.execPath,[__filename,child],{encoding:'utf8',timeout:120000,env:{...process.env,LIBRA_SERVER_TEST_FILTER:filter}});
-  process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');assert.equal(r.status,0,child+' '+filter+' '+(r.error||''));
- }
- console.log('PASS explicit source rules: LIBRA local/server/rollback/mirror, Flashback durability, HAYAKU source edit');
+ const cases=[['local',''],['server','explicit selected source replacement'],['server','post-canonical SQLite'],['server','mirror unified path'],['flashback',''],['hayaku','']];
+ // Isolated children own their stores/ports and can run concurrently. This keeps
+ // the original six durability paths inside the unchanged official root limit.
+ Promise.all(cases.map(([child,filter])=>new Promise((resolve,reject)=>{
+  const proc=cp.spawn(process.execPath,[__filename,child],{env:{...process.env,LIBRA_SERVER_TEST_FILTER:filter},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';
+  proc.stdout.on('data',chunk=>stdout+=chunk);proc.stderr.on('data',chunk=>stderr+=chunk);proc.on('error',reject);
+  proc.on('close',status=>{process.stdout.write(stdout);process.stderr.write(stderr);try{assert.equal(status,0,child+' '+filter);if(child==='server')assert.match(stdout,/\"passed\":1/,filter+' must execute its selected case');resolve()}catch(error){reject(error)}});
+ }))).then(()=>console.log('PASS explicit input rules: six isolated durability paths')).catch(error=>{console.error(error);process.exitCode=1});
 }

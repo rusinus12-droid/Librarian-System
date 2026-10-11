@@ -10,11 +10,14 @@ const program = path.resolve(__dirname, '..');
 const out = path.resolve(process.argv[2] || process.env.SOURCE_REVIEW_TEST_ARTIFACTS || path.join(os.tmpdir(), 'source-review-history-browser'));
 fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(out, 'chrome-'));
+const stderrFile=path.join(profile,'chromium.stderr.log');
+fs.mkdirSync(path.join(profile,'config'),{recursive:true});fs.mkdirSync(path.join(profile,'cache'),{recursive:true});
 const chrome = spawn(resolveChromeExecutable(), [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--disable-dev-shm-usage',
   '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'
-], { windowsHide: true, stdio: 'ignore' });
+], { windowsHide: true, env:{...process.env,XDG_CONFIG_HOME:path.join(profile,'config'),XDG_CACHE_HOME:path.join(profile,'cache')},stdio:['ignore','ignore',fs.openSync(stderrFile,'a')] });
 let chromeExit = null;
+chrome.on('error',error=>{chromeExit={error:error.message}});
 chrome.on('exit', (code, signal) => { chromeExit = { code, signal }; });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 let ws;
@@ -28,7 +31,7 @@ const watchdog = setTimeout(() => { console.error('Browser test timed out'); chr
     await pause(100);
   }
   if (!port && chromeExit) {
-    console.log(JSON.stringify({ test: 'source_review_dock_browser', result: 'NOT_RUN', reason: 'Chrome exited before exposing DevTools', chromeExit }));
+    console.log(JSON.stringify({ test: 'source_review_dock_browser', result: 'NOT_RUN', reason: 'Chrome exited before exposing DevTools', chromeExit, stderrFile }));
     process.exitCode = 77;
     return;
   }
@@ -56,64 +59,33 @@ const watchdog = setTimeout(() => { console.error('Browser test timed out'); chr
     return response.result.value;
   };
 
+
   await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
-  await evaluate(`document.body.innerHTML='<main><h2>원문 수정 내역 테스트</h2><button id="hostButton">채팅 계속하기</button><div id="settings"></div></main>';document.body.style='margin:0;padding:24px;font:16px system-ui;background:#eef2f4;color:#243442';document.getElementById('hostButton').focus();window.xss=0;`);
-  await call('Runtime.evaluate', {
-    expression: fs.readFileSync(path.join(program, 'sdk/MemorySuiteSourceEditConsent.source.js'), 'utf8'),
-    awaitPromise: true, returnByValue: true
-  });
-  await evaluate(`(async()=>{
-    window.units=[
-      {key:'32',start:32,end:32,label:'T32',identity:'pair-32',digest:'new-32',sourceDigest:'new-32',originalDigest:'old-32',basis:'basis-32',changed:true,current:false},
-      {key:'33',start:33,end:33,label:'T33',identity:'pair-33',digest:'new-33',sourceDigest:'new-33',originalDigest:'old-33',basis:'basis-33',changed:true,current:false}
-    ];window.calls=[];window.prompts=0;window.evidenceReads=[];window.storage=new Map();
-    window.controller=createMemorySuiteSourceEditConsent({owner:'libra',requestBoundary:true,externalObserver:true,preserveUntilReplacement:true,
-      read:async key=>storage.get(key)??null,write:async(key,value)=>{storage.set(key,value);return true;},
-      collect:async()=>({scopeKey:'chat-32',units:units.map(unit=>({...unit})),completedTurnIds:['logical-u32']}),
-      prompt:async()=>{prompts++;throw Error('request-boundary work must not prompt');},
-      execute:async(task,permit)=>{await permit.assertCurrent();calls.push(task.key);units=units.map(unit=>unit.key===task.key?{...unit,changed:false,current:true}:unit);return{ok:true};},
-      loadReview:async(tasks,scopeKey)=>{evidenceReads.push({scopeKey,keys:tasks.map(task=>task.key)});return{scopeKey,rows:tasks.map(task=>task.key==='32'?{key:'32',previousUnavailable:false,beforeText:'old source <img src=x onerror="window.xss=1">',afterText:'new source <img src=x onerror="window.xss=2">'}:{key:'33',previousUnavailable:true,afterText:'current source only <script>window.xss=3</script>'})};}
-    });await controller.beforeRequest();controller.mountControls(document.getElementById('settings'));return true;
-  })()`);
-  await evaluate('new Promise(resolve=>setTimeout(resolve,25))');
-
-  const history = await evaluate(`({owner:document.querySelector('[data-source-tracking-controls]')?.getAttribute('data-source-tracking-controls'),mode:document.querySelector('[data-source-tracking-controls] select')?.value,items:document.querySelectorAll('.ms-source-event').length,focus:document.activeElement.id,calls:window.calls,prompts:window.prompts,modal:!!document.querySelector('#memorySuiteSourceReview'),dock:!!document.querySelector('[x-memory-suite-source-review-dock]')})`);
-  assert.equal(history.owner, 'libra', 'the inline history retains the originating owner');
-  assert.equal(history.mode, 'auto');
-  assert.equal(history.items, 2, 'both detected edits appear in recent history');
-  assert.equal(history.focus, 'hostButton', 'automatic reconciliation leaves host focus alone');
-  assert.deepEqual(history.calls, ['32', '33']);
-  assert.equal(history.prompts, 0);
-  assert.equal(history.modal, false, 'automatic work opens no consent modal');
-  assert.equal(history.dock, false, 'the history stays inside the GUI instead of adding a floating dock');
-  const automaticReads = await evaluate('evidenceReads');
-  assert.deepEqual(automaticReads, [{ scopeKey: 'chat-32', keys: ['32', '33'] }], 'automatic cause detection reads both newly edited turns');
-
-  await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T32'));[...item.querySelectorAll('button')].find(button=>button.textContent==='원문 비교').click();return true})()`);
-  const available = await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T32'));return{body:item.querySelector('pre')?.textContent,images:item.querySelectorAll('img,script').length,xss:window.xss,requests:evidenceReads.slice(${automaticReads.length})}})()`);
-  assert.ok(available.body.includes('old source <img src=x onerror="window.xss=1">'));
-  assert.ok(available.body.includes('new source <img src=x onerror="window.xss=2">'));
-  assert.equal(available.images, 0, 'source markup is rendered as text, never as executable DOM');
-  assert.equal(available.xss, 0);
-  assert.deepEqual(available.requests, [{ scopeKey: 'chat-32', keys: ['32'] }], 'the user-selected compare reads only that owner task');
-
-  await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T33'));[...item.querySelectorAll('button')].find(button=>button.textContent==='원문 비교').click();return true})()`);
-  const missing = await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T33'));return{body:item.querySelector('pre')?.textContent,requests:evidenceReads.slice(${automaticReads.length})}})()`);
-  assert.ok(missing.body.includes('이전 전체 원문 없음'));
-  assert.ok(missing.body.includes('current source only <script>window.xss=3</script>'));
-  assert.equal(missing.body.includes('old source'), false, 'unavailable history never fabricates old text');
-  assert.deepEqual(missing.requests, [{ scopeKey: 'chat-32', keys: ['32'] }, { scopeKey: 'chat-32', keys: ['33'] }], 'each user-selected comparison reads only its selected turn');
-  assert.equal((await evaluate('window.xss')), 0);
-
-  await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T32'));[...item.querySelectorAll('button')].find(button=>button.textContent==='예외 지정').click();return true})()`);
-  assert.equal(await evaluate(`controller.status().tasks.find(task=>task.key==='32').excluded`), true, 'the history exception is attached to the detected revision');
-  await evaluate(`(()=>{const item=[...document.querySelectorAll('.ms-source-event')].find(node=>node.querySelector('strong').textContent.startsWith('T33'));[...item.querySelectorAll('button')].find(button=>button.textContent==='내역 삭제').click();return true})()`);
-  const afterDelete = await evaluate(`({events:controller.status().events.length,taskCount:controller.status().tasks.length,excluded:controller.status().tasks.find(task=>task.key==='32').excluded,secondState:controller.status().tasks.find(task=>task.key==='33').state})`);
-  assert.equal(afterDelete.events, 1, 'deletion removes only the selected visible event');
-  assert.equal(afterDelete.taskCount, 2, 'deleting an event does not delete its reconciliation receipt');
-  assert.equal(afterDelete.excluded, true, 'deleting another event does not remove the exception');
-  assert.equal(afterDelete.secondState, 'applied');
-  console.log(JSON.stringify({ test: 'source_review_dock_browser', result: 'pass', browser: 'Chromium', assertions: 25, artifacts: out }));
+  await evaluate(`document.body.innerHTML='<main id="host"><button id="hostButton">채팅 계속하기</button><div id="settings"></div></main>';document.body.style='margin:0;padding:16px;font:16px system-ui;background:#eef2f4;color:#243442';document.getElementById('host').style='transform:translateZ(0);isolation:isolate;position:relative;z-index:1;max-width:100%';document.getElementById('hostButton').focus();window.xss=0;`);
+  await evaluate(fs.readFileSync(path.join(program,'sdk/MemorySuiteSourceInput.libra.source.js'),'utf8'));
+  for(const owner of ['libra','hayaku','flashback']){
+    await evaluate(`(async()=>{
+      document.getElementById('settings').replaceChildren();window.reads=0;window.writes=0;
+      window.raw='Alice <draft>signed.</draft> <img src=x onerror="window.xss=1"><script>window.xss=2</script>';
+      window.stored=JSON.stringify({sourceRules:{version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]}});
+      window.policy=createMemorySuiteSourceInputPolicy({owner:${JSON.stringify(owner)},read:async()=>stored,write:async body=>{writes++;stored=body;return true},readSample:async()=>{reads++;return{text:raw,label:'T32'}}});
+      policy.mountControls(document.getElementById('settings'));await policy.ready();await Promise.resolve();policy.mountControls(document.getElementById('settings'));
+    })()`);
+    const initial=await evaluate(`({owner:document.querySelector('[data-source-input-controls]')?.dataset.sourceInputControls,count:document.querySelectorAll('[data-source-input-controls]').length,reads,writes,focus:document.activeElement.id,history:document.querySelectorAll('.ms-source-event').length,dialog:!!document.querySelector('#memorySuiteSourceReview'),dock:!!document.querySelector('[x-memory-suite-source-review-dock]'),hidden:document.querySelector('[data-source-input-output]').hidden})`);
+    assert.equal(initial.owner,owner);assert.equal(initial.count,1,'mount is idempotent');assert.equal(initial.reads,0,'opening settings does not observe source');assert.equal(initial.writes,0);assert.equal(initial.focus,'hostButton');assert.equal(initial.history,0);assert.equal(initial.dialog,false);assert.equal(initial.dock,false);assert.equal(initial.hidden,true);
+    await evaluate(`document.querySelector('[data-source-input-preview]').onclick()`);
+    const viewed=await evaluate(`({text:document.querySelector('[data-source-input-output]').textContent,raw,reads,writes,executable:document.querySelector('[data-source-input-output]').querySelectorAll('img,script').length,xss,stored})`);
+    assert.equal(viewed.text,viewed.raw,'raw preview is exact literal text');assert.equal(viewed.reads,1);assert.equal(viewed.writes,0);assert.equal(viewed.executable,0);assert.equal(viewed.xss,0);assert.equal(viewed.stored.includes('Alice'),false,'preview source is not persisted');
+    await evaluate(`(()=>{const input=document.querySelector('[data-rule-value]');input.value='draft';input.oninput();return true})()`);
+    await evaluate('new Promise(resolve=>setTimeout(resolve,25))');
+    const draft=await evaluate(`({text:document.querySelector('[data-source-input-output]').textContent,reads,writes,apply:document.querySelector('[data-source-input-apply]').disabled,status:document.querySelector('[data-source-input-preview-status]').textContent})`);
+    assert.equal(draft.text.includes('signed.'),false);assert.ok(draft.text.includes('<img'));assert.equal(draft.reads,1,'warm draft preview uses only the explicitly selected sample');assert.equal(draft.writes,0);assert.equal(draft.apply,false);assert.ok(draft.status.includes('아직 적용하지 않은 규칙'));
+    await evaluate(`document.querySelector('[data-source-input-apply]').onclick()`);
+    const saved=await evaluate(`({rules:JSON.parse(stored).sourceRules,writes,raw,executable:document.querySelectorAll('#settings img,#settings script').length,xss,scroll:document.documentElement.scrollWidth,width:window.innerWidth})`);
+    assert.deepEqual(saved.rules.ignoredTags,['draft']);assert.equal(saved.writes,1);assert.equal(saved.raw,viewed.raw);assert.equal(saved.executable,0);assert.equal(saved.xss,0);assert.ok(saved.scroll<=saved.width,'inline source controls fit viewport');
+    await evaluate(`policy.dispose();document.getElementById('hostButton').focus()`);
+  }
+  console.log(JSON.stringify({test:'source_review_dock_browser_test',result:'pass',browser:'Chromium',owners:3,viewport:1280,contract:'explicit local source input preview, durable owner rules, literal markup, inline host surface',artifacts:out}));
   await call('Browser.close');
-})().catch(error => { console.error(error); process.exitCode = 1; })
-  .finally(() => { clearTimeout(watchdog); ws?.close(); chrome.kill(); });
+})().catch(error=>{console.error(error);process.exitCode=1})
+ .finally(()=>{clearTimeout(watchdog);ws?.close();chrome.kill()});
