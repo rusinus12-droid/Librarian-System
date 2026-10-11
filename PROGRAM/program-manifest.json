@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T01:32:34.409Z",
+  "generatedAt": "2026-10-11T01:40:10.897Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2128,8 +2128,8 @@
       "bytes": 14427
     },
     "docs/OPEN280_PROCESSING_20261011.json": {
-      "sha256": "11bddc6edcd3c72080d07e9a6464ab9b167d564ece67aec0018d1455b9adb593",
-      "bytes": 203340
+      "sha256": "2374aa3674a048688ec9012f52b424b8f96c1cf9db0e23facf4d66bc48c9fc93",
+      "bytes": 203596
     },
     "docs/OPEN280_PROCESSING_20261011.md": {
       "sha256": "803cea5e84eff624d167d1ed2644b060afcee32a1ff85efc62cfaa1ed58c0b7d",
@@ -7952,8 +7952,8 @@
       "bytes": 5641
     },
     "tests/revision_recovery_20260912_test.cjs": {
-      "sha256": "500be998698a232fdce1856942c33b75f4d51ea4fd6c28fb43d16471f71b21a4",
-      "bytes": 10003
+      "sha256": "dcb8f9cb4cbb8f99b9ba5e7ceba01d93e85d14311eeca60bb4ea1ebd40b3dbda",
+      "bytes": 19109
     },
     "tests/scope_catalog_fallback_test.cjs": {
       "sha256": "f8f0f11e7803c310f579511341d4ef5cb9a1e387f6e98194f13bc36964421b59",

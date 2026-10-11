@@ -3,7 +3,7 @@
   "historicalDenominator": 280,
   "allOriginalPathsAccounted": true,
   "baselineCommit": "fe66d0e06f66b7844408c1b5ffc9ee1319240c5a",
-  "candidateHead": "ccca1dfc4fa2475cdf11038755b286bd4df906cb",
+  "candidateHead": "c3a313b0fabbd6a88f981237c474634e1383d5a8",
   "domainReceipts": [
     {
       "domain": "flashback",
@@ -44,14 +44,14 @@
     {
       "domain": "integration",
       "path": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "sha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "sha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "count": 99
     }
   ],
   "qualification": "PENDING common-source official280 execution; domain assessments are not finalPASS",
   "counts": {
     "BASELINE_PASS": 56,
-    "PROCESSED_UNRESOLVED": 21,
+    "PROCESSED_UNRESOLVED": 18,
     "REVIEWED_CANDIDATE_PENDING_INTEGRATED": 32,
     "PASS": 110,
     "QUALIFIED_EXECUTION": 3,
@@ -68,7 +68,8 @@
     "REVALIDATED_PASS_UNCHANGED": 2,
     "QUALIFIED_MODES_PASS_AGGREGATE_TIMEOUT": 1,
     "QUALIFIED_SERVER_PASS_MIRROR_BLOCKED": 1,
-    "QUALIFIED_CURRENT_MODES_PASS_MIRROR_BLOCKED": 1
+    "QUALIFIED_CURRENT_MODES_PASS_MIRROR_BLOCKED": 1,
+    "REVIEWED_CURRENT_REPLACEMENT_PASS_PENDING_INTEGRATED": 3
   },
   "candidateProductSourceCommit": "4ffabfc",
   "artifactReceipt": {
@@ -181,7 +182,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "756e7c49f6d8761ff96d500dc4b6e5097e983fd004a11107f41d42da51159eef",
       "candidateTestSha256": "756e7c49f6d8761ff96d500dc4b6e5097e983fd004a11107f41d42da51159eef",
       "integratedOfficialRunStatus": "PENDING"
@@ -194,7 +195,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "94d2e76bb6af45bb303b6a5af2ec1ccb914401caa30e4c6e07980f0ae6dbd9e3",
       "candidateTestSha256": "94d2e76bb6af45bb303b6a5af2ec1ccb914401caa30e4c6e07980f0ae6dbd9e3",
       "integratedOfficialRunStatus": "PENDING"
@@ -207,7 +208,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "bb42c7512a03402d793cc4e25cbc5954007f69eba92048ecbf0d8a2559c0686d",
       "candidateTestSha256": "bb42c7512a03402d793cc4e25cbc5954007f69eba92048ecbf0d8a2559c0686d",
       "integratedOfficialRunStatus": "PENDING"
@@ -220,7 +221,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "70f5b6c1940993dff7c014f0d4825f7c2a8781cef07c6408b54130544207377c",
       "candidateTestSha256": "70f5b6c1940993dff7c014f0d4825f7c2a8781cef07c6408b54130544207377c",
       "integratedOfficialRunStatus": "PENDING"
@@ -233,7 +234,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "2cd65050f880868c1b2748f2b4750774970402ea92ad5e31a03c589244ea9bec",
       "candidateTestSha256": "2cd65050f880868c1b2748f2b4750774970402ea92ad5e31a03c589244ea9bec",
       "integratedOfficialRunStatus": "PENDING"
@@ -246,7 +247,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "cc1f3694b3a96cc21f079beb0f6af931fa896745f98448236d363db0e0daff8a",
       "candidateTestSha256": "cc1f3694b3a96cc21f079beb0f6af931fa896745f98448236d363db0e0daff8a",
       "integratedOfficialRunStatus": "PENDING"
@@ -259,7 +260,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "008755f032caf131877479c72f673674f5d7c5b07ba85dcdddbc64703422c74c",
       "candidateTestSha256": "008755f032caf131877479c72f673674f5d7c5b07ba85dcdddbc64703422c74c",
       "integratedOfficialRunStatus": "PENDING"
@@ -272,7 +273,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "d04d3407a7ce2b297541d97faa18b6fd030c0e39ac009a5f82a437bfa313d614",
       "candidateTestSha256": "d04d3407a7ce2b297541d97faa18b6fd030c0e39ac009a5f82a437bfa313d614",
       "integratedOfficialRunStatus": "PENDING"
@@ -285,7 +286,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "1dfe22a64b0c8e8d027cb6fc6a81726e5da4ed596b4dd7e5898018aca06d577a",
       "candidateTestSha256": "1dfe22a64b0c8e8d027cb6fc6a81726e5da4ed596b4dd7e5898018aca06d577a",
       "integratedOfficialRunStatus": "PENDING"
@@ -298,7 +299,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "8bad553ece25c4118822c3cadb8c9f62c6fdff6a4a8e25d56baae41a5936c1c4",
       "candidateTestSha256": "8bad553ece25c4118822c3cadb8c9f62c6fdff6a4a8e25d56baae41a5936c1c4",
       "integratedOfficialRunStatus": "PENDING"
@@ -311,7 +312,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "79d5a8b60ae12e39f46defe6c29d04755b619e20025275caaa67e6632238df86",
       "candidateTestSha256": "79d5a8b60ae12e39f46defe6c29d04755b619e20025275caaa67e6632238df86",
       "integratedOfficialRunStatus": "PENDING"
@@ -324,7 +325,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "4a6a665d0c1db7aa51bd416e9aab05923a414910a24246cf0f8350b6784d72ed",
       "candidateTestSha256": "4a6a665d0c1db7aa51bd416e9aab05923a414910a24246cf0f8350b6784d72ed",
       "integratedOfficialRunStatus": "PENDING"
@@ -337,7 +338,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "8f46a6587c38418ac15489f7fa2737c83097fca7ab61fc8224be073a8343b053",
       "candidateTestSha256": "8f46a6587c38418ac15489f7fa2737c83097fca7ab61fc8224be073a8343b053",
       "integratedOfficialRunStatus": "PENDING"
@@ -350,7 +351,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "a527dab8bd41168a8ea62736c2d7766b0f784b6fd804d639d11b4686d7b216ab",
       "candidateTestSha256": "a527dab8bd41168a8ea62736c2d7766b0f784b6fd804d639d11b4686d7b216ab",
       "integratedOfficialRunStatus": "PENDING"
@@ -363,7 +364,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "fccf00739d6eb28598e9817830210b1daa70e2b70a4bded417794cf063d3aae5",
       "candidateTestSha256": "fccf00739d6eb28598e9817830210b1daa70e2b70a4bded417794cf063d3aae5",
       "integratedOfficialRunStatus": "PENDING"
@@ -376,7 +377,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "a195d5f56fd6ab4fddf593056f1fe9dedf0db38b22b5c4cee002b8aafdb583ee",
       "candidateTestSha256": "a195d5f56fd6ab4fddf593056f1fe9dedf0db38b22b5c4cee002b8aafdb583ee",
       "integratedOfficialRunStatus": "PENDING"
@@ -389,7 +390,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "38ddfe11f133c6ff94e313f56cb4b76634900bd6371e04080adb20e138b8b2f0",
       "candidateTestSha256": "38ddfe11f133c6ff94e313f56cb4b76634900bd6371e04080adb20e138b8b2f0",
       "integratedOfficialRunStatus": "PENDING"
@@ -402,7 +403,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "25937956d02cfbbeca2d859f0d16afbe4a2eff7dc0b9d37c5d94819314dff3b5",
       "candidateTestSha256": "25937956d02cfbbeca2d859f0d16afbe4a2eff7dc0b9d37c5d94819314dff3b5",
       "integratedOfficialRunStatus": "PENDING"
@@ -415,7 +416,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "a88f9eb46abd9cca175ccf68b04a60f8715bd7d5a0c9d3cfa6b8ce454bd8c4b8",
       "candidateTestSha256": "a88f9eb46abd9cca175ccf68b04a60f8715bd7d5a0c9d3cfa6b8ce454bd8c4b8",
       "integratedOfficialRunStatus": "PENDING"
@@ -428,7 +429,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "f68a9976ad3d6c5f8a792f6f1118f449661e673359607220df0cb8f68d383268",
       "candidateTestSha256": "f68a9976ad3d6c5f8a792f6f1118f449661e673359607220df0cb8f68d383268",
       "integratedOfficialRunStatus": "PENDING"
@@ -441,7 +442,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "93c2eb815c0f8e436a8dece6ba6656555d396ec5e6c85618bcc7d009ca9c8d6f",
       "candidateTestSha256": "93c2eb815c0f8e436a8dece6ba6656555d396ec5e6c85618bcc7d009ca9c8d6f",
       "integratedOfficialRunStatus": "PENDING"
@@ -454,7 +455,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "1f3c4a260b2a73053435e520a29cc5ff8dce4ff9571b23dd3c6649c81025e672",
       "candidateTestSha256": "476a6ec138d0abd3b60eabc7634f9dd6cf2396913431560301855fe6e7d628f5",
       "integratedOfficialRunStatus": "PENDING"
@@ -467,7 +468,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "9ec4a7e00a81515b8bb0c52550978b1da8b6e40415df7852b3fba2c5d814ee60",
       "candidateTestSha256": "9ec4a7e00a81515b8bb0c52550978b1da8b6e40415df7852b3fba2c5d814ee60",
       "integratedOfficialRunStatus": "PENDING"
@@ -480,7 +481,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "92d4ee97c629f03040a6bb0eb2744d28dac6abf9dc839351cd28f0b413c74ba7",
       "candidateTestSha256": "92d4ee97c629f03040a6bb0eb2744d28dac6abf9dc839351cd28f0b413c74ba7",
       "integratedOfficialRunStatus": "PENDING"
@@ -506,7 +507,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "94738ce5d08b7c4856683b6e939462f2c32395562e9a5d497a015c978d558193",
       "candidateTestSha256": "94738ce5d08b7c4856683b6e939462f2c32395562e9a5d497a015c978d558193",
       "integratedOfficialRunStatus": "PENDING"
@@ -519,7 +520,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "5ef3f39dc193460c79b2c91a2eb22aa73e1943aad4b19296e9f204fcc0533ab2",
       "candidateTestSha256": "5ef3f39dc193460c79b2c91a2eb22aa73e1943aad4b19296e9f204fcc0533ab2",
       "integratedOfficialRunStatus": "PENDING"
@@ -532,7 +533,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "7be8e16c264185162f2858dcbaeb7a7030499f96bbe2729c5b03f6033dba1d43",
       "candidateTestSha256": "c5e3dc3013e502ceab0368ce045c5d99204c2e57704c22e85e090683e68b66ca",
       "integratedOfficialRunStatus": "PENDING"
@@ -545,7 +546,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "fd58cf8006f0535d374c8757de8fbe3162e08cf8a674e4114547476d0dae7223",
       "candidateTestSha256": "fd58cf8006f0535d374c8757de8fbe3162e08cf8a674e4114547476d0dae7223",
       "integratedOfficialRunStatus": "PENDING"
@@ -558,7 +559,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "08310a5a32ca11d9153639359484394c6b93cd43bb977634b8c8ef505b958106",
       "candidateTestSha256": "08310a5a32ca11d9153639359484394c6b93cd43bb977634b8c8ef505b958106",
       "integratedOfficialRunStatus": "PENDING"
@@ -571,7 +572,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "b3583d13d68735acc8fe575623a5a68e3841eebc4ec67778666676fa37461508",
       "candidateTestSha256": "3ce90d1379a5affc555f7c13a614f61b9fb72b186fb9ee27207156dbd78111c6",
       "integratedOfficialRunStatus": "PENDING"
@@ -584,7 +585,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "be50e25d247f2a5dd12ac03e417ec123f2aac7889f65eb83c8b0057c569faf55",
       "candidateTestSha256": "0c3646ab2c733465449d1afd8a22d34e5931a55ec06ea32a1cd86497c6d11f1d",
       "integratedOfficialRunStatus": "PENDING"
@@ -597,7 +598,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "f986c9a0efc259c49438ac1899bae5f81077d32d1ded6ad3d2adef4f9d4685b8",
       "candidateTestSha256": "f986c9a0efc259c49438ac1899bae5f81077d32d1ded6ad3d2adef4f9d4685b8",
       "integratedOfficialRunStatus": "PENDING"
@@ -610,7 +611,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "837d3d7e8927aa86f979509274f70e8071a093b2115a9f40fbb5ab4c4f585851",
       "candidateTestSha256": "837d3d7e8927aa86f979509274f70e8071a093b2115a9f40fbb5ab4c4f585851",
       "integratedOfficialRunStatus": "PENDING"
@@ -948,7 +949,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "dee6373821ff9419d791588e783e3526e2298f5c1c3926f2412c18c39deab9f5",
       "candidateTestSha256": "95144eb51c0d3ad06c9ccd04a35af82793bb4288c3c25b51d4d0d2a00fcd0463",
       "integratedOfficialRunStatus": "PENDING"
@@ -1000,7 +1001,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "463edfe6f6ab8b0a00b0956f239a740b6c97fd97518184bd01cf6eea9514a08c",
       "candidateTestSha256": "463edfe6f6ab8b0a00b0956f239a740b6c97fd97518184bd01cf6eea9514a08c",
       "integratedOfficialRunStatus": "PENDING"
@@ -1338,7 +1339,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "e3b382a9c8e6c33156b443d9afdb4bcf7aa61c405d82fa4652d4a0d1aab5f0d6",
       "candidateTestSha256": "e3b382a9c8e6c33156b443d9afdb4bcf7aa61c405d82fa4652d4a0d1aab5f0d6",
       "integratedOfficialRunStatus": "PENDING"
@@ -1351,7 +1352,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "de8467e6fc487b76014554c3fd28b107535a19589d21ad61085ab59263365885",
       "candidateTestSha256": "4485cacc68c259f72880f82bb8840e09547e511ea18d926cc0e06c705644c3e2",
       "integratedOfficialRunStatus": "PENDING"
@@ -1364,7 +1365,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "5157cbf931fdd2945d37b893bcb42857d47281296441b519d9572ed6c544f9cd",
       "candidateTestSha256": "5157cbf931fdd2945d37b893bcb42857d47281296441b519d9572ed6c544f9cd",
       "integratedOfficialRunStatus": "PENDING"
@@ -2482,7 +2483,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "624c49d2acc9c158754e8ac767ed374bd28c3a3c18999fd7baca0c8e83436e88",
       "candidateTestSha256": "c540ccef4888fc3d623b359ed846f6e9c2a3fccd3b1dd6237c442df9435071b3",
       "integratedOfficialRunStatus": "PENDING"
@@ -2495,7 +2496,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "039cf35e98c9d44d1c89095fe91e6b6553597844596efada8f060ad9ca529bcc",
       "candidateTestSha256": "039cf35e98c9d44d1c89095fe91e6b6553597844596efada8f060ad9ca529bcc",
       "integratedOfficialRunStatus": "PENDING"
@@ -2508,7 +2509,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "4f5a952625f7e8072e75f34124a5a6f91cea27fc2d0125cc4a22983daf74a2b6",
       "candidateTestSha256": "8e423c4b13c2828a91b4cd436dda837c48cfd7dba33bf7926d3e33b92a5db73e",
       "integratedOfficialRunStatus": "PENDING"
@@ -2521,7 +2522,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "15c1ffda3482622e93b56da3be410aa0b9b07ae0e480608ed767d42704721018",
       "candidateTestSha256": "0a04f318d1ff0194d3ca6d01a6925a09a1d10efd5daa15595fa06fb285d3bd98",
       "integratedOfficialRunStatus": "PENDING"
@@ -2534,7 +2535,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "7eed7aa4092d556eb394beb39e444cfbbaaa4eab3aa801c1d8d60c1af2ce7f39",
       "candidateTestSha256": "7eed7aa4092d556eb394beb39e444cfbbaaa4eab3aa801c1d8d60c1af2ce7f39",
       "integratedOfficialRunStatus": "PENDING"
@@ -2547,7 +2548,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "1bb07aa6cfc653a43cf7fa7f2942c32d1648119fe6d69a99573b790f535ee265",
       "candidateTestSha256": "1bb07aa6cfc653a43cf7fa7f2942c32d1648119fe6d69a99573b790f535ee265",
       "integratedOfficialRunStatus": "PENDING"
@@ -2560,7 +2561,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "530101ccae08d1688b6153874fbef7583d88c5043f0583be15221573d3bfc815",
       "candidateTestSha256": "530101ccae08d1688b6153874fbef7583d88c5043f0583be15221573d3bfc815",
       "integratedOfficialRunStatus": "PENDING"
@@ -2573,7 +2574,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "b50dc8433bdb4a4bf57a78a60354771f6e2c486822383352b38ff0980c15e3de",
       "candidateTestSha256": "b50dc8433bdb4a4bf57a78a60354771f6e2c486822383352b38ff0980c15e3de",
       "integratedOfficialRunStatus": "PENDING"
@@ -2586,7 +2587,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "19d42b5839ee754ca1b35215fff1847ee41862f9a69ff2afdd1bc68c38e42efc",
       "candidateTestSha256": "88e0becd0a9167f9f7dc7bb060e4bacdf7ad77411a093df6049f3fb0118cdc6d",
       "integratedOfficialRunStatus": "PENDING"
@@ -2597,9 +2598,9 @@
       "historicalOrdinal": 871,
       "rootOrdinal": 872,
       "domain": "integration",
-      "processingAssessment": "PROCESSED_UNRESOLVED",
+      "processingAssessment": "REVIEWED_CURRENT_REPLACEMENT_PASS_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "80570d0f643ef6ca1c3b43da3e5ddfcd3063a98d068781eaff0be553357bfd03",
       "candidateTestSha256": "ce77dd7ccf53ff7d2bb7f62a6d7e590836d05f7e179602b21c0fbdbd7c3d4e16",
       "integratedOfficialRunStatus": "PENDING"
@@ -2612,7 +2613,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "2c28236a1c267c9cd1d4af4aa907036c5470da85eecd0bde969a0e75d0650440",
       "candidateTestSha256": "ec05b40a063f1c5fd17e9ac9f4b6c4cb1b18b9abb56f228ece90a236598e9874",
       "integratedOfficialRunStatus": "PENDING"
@@ -2625,7 +2626,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "4724a476b9ff70bba2a93064e367b40af0eee6d263216cde71639d8bf3718130",
       "candidateTestSha256": "551baac4eb53822e008aa70689b17e7bce32cf3d5791da2c3412b4ed9ab51f97",
       "integratedOfficialRunStatus": "PENDING"
@@ -2638,7 +2639,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "431cc9a6969a450e6a1cbaa2ce42745f963b552b3750b1d6da640095b67b5467",
       "candidateTestSha256": "431cc9a6969a450e6a1cbaa2ce42745f963b552b3750b1d6da640095b67b5467",
       "integratedOfficialRunStatus": "PENDING"
@@ -2651,7 +2652,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "53b57b49c07f1a7596898d65ed34a9a62d108db44ac41b49355769d28526bca8",
       "candidateTestSha256": "53b57b49c07f1a7596898d65ed34a9a62d108db44ac41b49355769d28526bca8",
       "integratedOfficialRunStatus": "PENDING"
@@ -2664,7 +2665,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "78f2b351df9b1abdc6dbaf94abdd3b45793b1f3c56c3dd64e1516bc0c05972cd",
       "candidateTestSha256": "f2b8a59ac6ef65575c56942967951bb5c2274a8323d55c02b1476fc721d0fb8f",
       "integratedOfficialRunStatus": "PENDING"
@@ -2677,7 +2678,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "03dc1b696c27c380fe79df01cf5cfb9487a5ae26fe6bf80239fa3bca09ae1042",
       "candidateTestSha256": "03dc1b696c27c380fe79df01cf5cfb9487a5ae26fe6bf80239fa3bca09ae1042",
       "integratedOfficialRunStatus": "PENDING"
@@ -2690,7 +2691,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "d1d13522863e562b10e67f340d0c7183ebf5523ec1965793f47a3dc05df9edcc",
       "candidateTestSha256": "7d9d39cc1ad619b32b315c757efa0bb9680e104931183d202f0a02b76cbc56ae",
       "integratedOfficialRunStatus": "PENDING"
@@ -2703,7 +2704,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "514776d8a9ac9ab6883904600322beeb8f89c421684d6c65fe35a7cd6f4ba9b3",
       "candidateTestSha256": "6ef3c7f8e6d95b9a1a18c54248893ff00fb5fd6b8cfb68f7fc746190fba4ca01",
       "integratedOfficialRunStatus": "PENDING"
@@ -2716,7 +2717,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "9238bb89cf4e222583f6f9977b3a15978ac404fd55c97e4f8c0f9984d364255a",
       "candidateTestSha256": "9238bb89cf4e222583f6f9977b3a15978ac404fd55c97e4f8c0f9984d364255a",
       "integratedOfficialRunStatus": "PENDING"
@@ -2729,7 +2730,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "914226d9ed3e9eb0f61f69aa29494b6bdd651fd6db447250993219f89721496a",
       "candidateTestSha256": "aedbda4cc696012e499e3d375ce83fe8535d331d705333b9b2fe5eaa44701850",
       "integratedOfficialRunStatus": "PENDING"
@@ -2740,9 +2741,9 @@
       "historicalOrdinal": 898,
       "rootOrdinal": 899,
       "domain": "integration",
-      "processingAssessment": "PROCESSED_UNRESOLVED",
+      "processingAssessment": "REVIEWED_CURRENT_REPLACEMENT_PASS_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "cb6a1ffa4e1ac4b492c9dbde97255892e1495c6da29f829f6b4fca39bbbd5088",
       "candidateTestSha256": "e40e44b3f31239bf2c77321ce5aafba90c236d85132d57309c9b27d2d66b7ea9",
       "integratedOfficialRunStatus": "PENDING"
@@ -2755,7 +2756,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "ef8acbcc705bb1f060f9a271090ad778ddb9307ea834aca243078ddcad39e297",
       "candidateTestSha256": "5f22c54733005b407c74c6fbdecb6cc751f929f5fa59d2243fa0fd2956bdea1d",
       "integratedOfficialRunStatus": "PENDING"
@@ -2768,7 +2769,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "bb6f397eb32bcde4602a17c3fc9c20dafb1fcbe63807439058d2837cae076098",
       "candidateTestSha256": "bb6f397eb32bcde4602a17c3fc9c20dafb1fcbe63807439058d2837cae076098",
       "integratedOfficialRunStatus": "PENDING"
@@ -2781,7 +2782,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "14ddcf666a61359a07dcb5067a1b3f9e2cef2e6e049a26536c55953243661312",
       "candidateTestSha256": "8fb7b24cc62903c12108ef05e9049845e7cc25973c708a15fb3d4dcbb8d766ff",
       "integratedOfficialRunStatus": "PENDING"
@@ -2794,7 +2795,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "0e8f0bc91dd9dda9cba14dd3f6eb3a1dbd5e00d05eb2c381cf3ea22b590df054",
       "candidateTestSha256": "130eeadd4095096ede9f39ff63272d424e09b1f2d48f4b695c528091711fee66",
       "integratedOfficialRunStatus": "PENDING"
@@ -2807,7 +2808,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "6b037bec4d85a4a83eba3e6f013457792c80cb35459f3ef820383ee65d6bb85e",
       "candidateTestSha256": "b9ead89d12414c78c5ac7ed588c8662f6665fd60f508a2e4cf3f1f0e97078c03",
       "integratedOfficialRunStatus": "PENDING"
@@ -2820,7 +2821,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "c2900922eb84608a0a8d6491eb0e3e90953381f8f8d11d1fb496d8db54eec587",
       "candidateTestSha256": "7980355f94131cb4d30a6df801ff1ddc763493ce7abf0d91890d279d072f0d39",
       "integratedOfficialRunStatus": "PENDING"
@@ -2833,7 +2834,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "309c8481ad8ff18b48735b05397d38575ab3c5731430a4e1650c87ae7885a425",
       "candidateTestSha256": "309c8481ad8ff18b48735b05397d38575ab3c5731430a4e1650c87ae7885a425",
       "integratedOfficialRunStatus": "PENDING"
@@ -2846,7 +2847,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "52edd68fad350bcd46168332e3b08c9e28e9a9edc86c44b360abdd1796989874",
       "candidateTestSha256": "52edd68fad350bcd46168332e3b08c9e28e9a9edc86c44b360abdd1796989874",
       "integratedOfficialRunStatus": "PENDING"
@@ -2859,7 +2860,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "24c33f38e374a7dcb545a63d35822dfe202eeb87d5fc3bc238fd3d15d1d25be0",
       "candidateTestSha256": "24c33f38e374a7dcb545a63d35822dfe202eeb87d5fc3bc238fd3d15d1d25be0",
       "integratedOfficialRunStatus": "PENDING"
@@ -2872,7 +2873,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "f1f5380e1b40d1c56ac993141125b1414d2c3da91a3baa6b7b92a39c6b3ba7cd",
       "candidateTestSha256": "db11ea659b766315f920665978c51e02f868aba6ea328b0947d8949aca01d492",
       "integratedOfficialRunStatus": "PENDING"
@@ -2885,7 +2886,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "b14e2e0e59004d40ed31ff68ddc892dada2537492ba9a6dddd1960c966ece258",
       "candidateTestSha256": "b14e2e0e59004d40ed31ff68ddc892dada2537492ba9a6dddd1960c966ece258",
       "integratedOfficialRunStatus": "PENDING"
@@ -2898,7 +2899,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "55fc04b89bb3df72fbbf81806496db1ac0e5cff205bd3ab739b18ef2a713e82a",
       "candidateTestSha256": "55fc04b89bb3df72fbbf81806496db1ac0e5cff205bd3ab739b18ef2a713e82a",
       "integratedOfficialRunStatus": "PENDING"
@@ -2911,7 +2912,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "e517ceec4a3d47e88a011f637861e29eed90a261a36d3d8017779cbf0904543a",
       "candidateTestSha256": "37047cb451c13e4cfba6130e3fd0c282648d9f44d0d3c1fec06105349beef4c3",
       "integratedOfficialRunStatus": "PENDING"
@@ -2924,7 +2925,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "0970a0e205a6fdb8ec106981ff25e75287b2a2811f89a957857f17d14f3e2cfa",
       "candidateTestSha256": "f227bec3e2795f37ec9d75ff2be34647cf77727df98be1846306dbef05b74c0d",
       "integratedOfficialRunStatus": "PENDING"
@@ -2937,7 +2938,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "ce85b6ece65d59fd858d2622db2ef084a10a45707e7649ac72ea64824e7163ff",
       "candidateTestSha256": "ce85b6ece65d59fd858d2622db2ef084a10a45707e7649ac72ea64824e7163ff",
       "integratedOfficialRunStatus": "PENDING"
@@ -2950,7 +2951,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
       "candidateTestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
       "integratedOfficialRunStatus": "PENDING"
@@ -2963,7 +2964,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "3654a8987b26e2977e1c15d283d27b0e1123026b3a01a00158929ef3eac523fe",
       "candidateTestSha256": "3654a8987b26e2977e1c15d283d27b0e1123026b3a01a00158929ef3eac523fe",
       "integratedOfficialRunStatus": "PENDING"
@@ -3106,7 +3107,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "b9982af1e135b5aa2474c9915245672c356eedb9f3763b9cc31d90f2acefd12e",
       "candidateTestSha256": "b9982af1e135b5aa2474c9915245672c356eedb9f3763b9cc31d90f2acefd12e",
       "integratedOfficialRunStatus": "PENDING"
@@ -3117,11 +3118,11 @@
       "historicalOrdinal": 991,
       "rootOrdinal": 992,
       "domain": "integration",
-      "processingAssessment": "PROCESSED_UNRESOLVED",
+      "processingAssessment": "REVIEWED_CURRENT_REPLACEMENT_PASS_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "500be998698a232fdce1856942c33b75f4d51ea4fd6c28fb43d16471f71b21a4",
-      "candidateTestSha256": "500be998698a232fdce1856942c33b75f4d51ea4fd6c28fb43d16471f71b21a4",
+      "candidateTestSha256": "dcb8f9cb4cbb8f99b9ba5e7ceba01d93e85d14311eeca60bb4ea1ebd40b3dbda",
       "integratedOfficialRunStatus": "PENDING"
     },
     {
@@ -3132,7 +3133,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "81cc95e0faa082abd7fc785b19dad7a64d48cdc0c1eabefc26801ba231bc3cfa",
       "candidateTestSha256": "81cc95e0faa082abd7fc785b19dad7a64d48cdc0c1eabefc26801ba231bc3cfa",
       "integratedOfficialRunStatus": "PENDING"
@@ -3145,7 +3146,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "8ae66aaf8e88867ff6bf689c30ed8c952d83882caf7bf94c667f49a49e98481e",
       "candidateTestSha256": "b8cf6e3e7f9e2080a7375293119699fc8db47335fcdf7126646f5295a1f1749b",
       "integratedOfficialRunStatus": "PENDING"
@@ -3158,7 +3159,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "797c88dfe66c2e5d50a11db1029587dd1d50f68b792533ff09827fe1e42ac552",
       "candidateTestSha256": "dfc4af9c2da67aae74e87fad518a066f6077c1a88c1e28751d1ec0708837efbe",
       "integratedOfficialRunStatus": "PENDING"
@@ -3171,7 +3172,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "f500b3bfd71b7b786dd37a03e1751ce57af0e7a732d9e98126ccfd4c920247e9",
       "candidateTestSha256": "f500b3bfd71b7b786dd37a03e1751ce57af0e7a732d9e98126ccfd4c920247e9",
       "integratedOfficialRunStatus": "PENDING"
@@ -3184,7 +3185,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "97c3a1b0f0cf749c832f5dc27a695699a621ec718bbc2493610a5da641dcac01",
       "candidateTestSha256": "9781a151fcbc7590eab9adda45cf8c4db24c1d1501e2351f1723d36138774d62",
       "integratedOfficialRunStatus": "PENDING"
@@ -3197,7 +3198,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "8bc6dae10fdebdf3fe1d990d9da80985fdfd03c3c0aa3b7e2611d7fef04b745c",
       "candidateTestSha256": "8bc6dae10fdebdf3fe1d990d9da80985fdfd03c3c0aa3b7e2611d7fef04b745c",
       "integratedOfficialRunStatus": "PENDING"
@@ -3210,7 +3211,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "72a6a54a9acf8e0aa850ede2a4839e00d575bab8224654f57f896489f383037a",
       "candidateTestSha256": "72a6a54a9acf8e0aa850ede2a4839e00d575bab8224654f57f896489f383037a",
       "integratedOfficialRunStatus": "PENDING"
@@ -3223,7 +3224,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "d59fab8be35df0052158a9571a483bf6acbf956ba53f9ee38824ff3644e4c12a",
       "candidateTestSha256": "3993f3607c96526494a701a2b8c5245f1b210610ac1c44108542c9f77425cf83",
       "integratedOfficialRunStatus": "PENDING"
@@ -3236,7 +3237,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "36a1e5e9f0d3edddddf7edf879b6a6c62edb25b7170dcc4fe72ab2d3ca4e8199",
       "candidateTestSha256": "36a1e5e9f0d3edddddf7edf879b6a6c62edb25b7170dcc4fe72ab2d3ca4e8199",
       "integratedOfficialRunStatus": "PENDING"
@@ -3249,7 +3250,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "00b06b2c8123d8f9ff9df3d91f660bf53d1d02a3a23942ce8bea69129bd32fae",
       "candidateTestSha256": "00b06b2c8123d8f9ff9df3d91f660bf53d1d02a3a23942ce8bea69129bd32fae",
       "integratedOfficialRunStatus": "PENDING"
@@ -3262,7 +3263,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "a880c0a1101c8514c3aa8e5676af31cafb917b63495d7ca7c3976e770317187e",
       "candidateTestSha256": "a880c0a1101c8514c3aa8e5676af31cafb917b63495d7ca7c3976e770317187e",
       "integratedOfficialRunStatus": "PENDING"
@@ -3275,7 +3276,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "399466dd827eecbeaa7aeaead4c5571c4aceda1df8285218e29eab12508d2357",
       "candidateTestSha256": "399466dd827eecbeaa7aeaead4c5571c4aceda1df8285218e29eab12508d2357",
       "integratedOfficialRunStatus": "PENDING"
@@ -3288,7 +3289,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "0123feacad00aa1d596da589bd79eea3af894a0a921f5ffdd8b9b21adf722c17",
       "candidateTestSha256": "0123feacad00aa1d596da589bd79eea3af894a0a921f5ffdd8b9b21adf722c17",
       "integratedOfficialRunStatus": "PENDING"
@@ -3301,7 +3302,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "a24aca5d4c0930b3cff8fa7c8e32247ff44dadb894dc2b0385f78c5816c35c44",
       "candidateTestSha256": "a24aca5d4c0930b3cff8fa7c8e32247ff44dadb894dc2b0385f78c5816c35c44",
       "integratedOfficialRunStatus": "PENDING"
@@ -3314,7 +3315,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "ff78c1a7d602ac8bea77eaee3cb8798d478be6f5e72dbb8cdac3e36d216b8752",
       "candidateTestSha256": "ff78c1a7d602ac8bea77eaee3cb8798d478be6f5e72dbb8cdac3e36d216b8752",
       "integratedOfficialRunStatus": "PENDING"
@@ -3743,7 +3744,7 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3",
       "candidateTestSha256": "2f85939b871d8332e296439b27e0809712b343b7940d59eb22151d1652543fb3",
       "integratedOfficialRunStatus": "PENDING"
@@ -3756,7 +3757,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "6c2ef0be1ce660d57b1e6ef74f01210f8ba76d1f46122738e11a20eb6745dec2",
       "candidateTestSha256": "def635de4832fe5993b762dc53dde7a583800ab0329272b05d0d8b866278e40b",
       "integratedOfficialRunStatus": "PENDING"
@@ -3769,7 +3770,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "4a0c850077f90c5974f29e482f9f476744990b63228c0cfdf8e52489a3687bf3",
       "candidateTestSha256": "662b9c1497823c144fc9fd2b4fd0ae828fbc13a67497c7e68a4704ab54306cc4",
       "integratedOfficialRunStatus": "PENDING"
@@ -3782,7 +3783,7 @@
       "domain": "integration",
       "processingAssessment": "REVIEWED_CANDIDATE_PENDING_INTEGRATED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "54866117ae3319cb93f9541b005918a249f1aed52db2474bce7769a3b86b4d07",
       "candidateTestSha256": "033616f04263a9e8831ebe6378bebc8a72f9064460acd3b66bbcc06d4b3b1df9",
       "integratedOfficialRunStatus": "PENDING"
@@ -3795,7 +3796,7 @@
       "domain": "integration",
       "processingAssessment": "PROCESSED_UNRESOLVED",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "534486fe7634ee75841550941f1cc73627a73454666276c6e67ba444b3d2e98a",
       "candidateTestSha256": "534486fe7634ee75841550941f1cc73627a73454666276c6e67ba444b3d2e98a",
       "integratedOfficialRunStatus": "PENDING"
@@ -3808,10 +3809,11 @@
       "domain": "integration",
       "processingAssessment": "BASELINE_PASS",
       "domainReceipt": "/workspace/librarian-regression/open-280-20261011/integration-results.json",
-      "domainReceiptSha256": "301d942c68fdaa96bbcb2050a29ddb1efa5cd8195d388c12d1c046c5ef459bf9",
+      "domainReceiptSha256": "c234b0535b35ba6e5544b1b8e4b022aac9a38aebd92da3bdcf24c1c7632a88d6",
       "originalTestSha256": "f9384852910035d72210eb4de3da365d6468e2757f9358dd86bccd40c2212715",
       "candidateTestSha256": "f9384852910035d72210eb4de3da365d6468e2757f9358dd86bccd40c2212715",
       "integratedOfficialRunStatus": "PENDING"
     }
-  ]
+  ],
+  "additionalReceiptSha256": "ab181ffff0c55b4c92d6403e9ff7379b703639a41709a69d943db1df70864ef9"
 }
