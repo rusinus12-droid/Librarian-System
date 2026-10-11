@@ -33635,6 +33635,7 @@ function createLibraReadonlySourceContext(owner) {
     // opaque runtime token, never a caller-controlled "already verified" flag.
     const consumedMicroProofsByMemory = new WeakMap();
     const consumedCanonicalProofsByMemory = new WeakMap();
+    const consumedClosureProofsByResult = new WeakMap();
     // Embedding publication is derived metadata. Every other canonical field,
     // including source/evidence identity and rendered text, belongs to the
     // exact physical body from which this request selected its evidence.
@@ -33730,9 +33731,17 @@ function createLibraReadonlySourceContext(owner) {
         if (entry.receiptReadSet) await assertRecentReceiptReadSetCurrent(entry.receiptReadSet);
         const archives = new Map();
         let activeArchiveRefs = null;
+        let canonicalManifestChecked = false;
         for (const proof of entry.proofs) {
           check();
           if (proof.kind === 'canonical-memory') {
+            if (!canonicalManifestChecked) {
+              const manifest = await storage.getVerifiedJson(key.manifest(context.scope), context.scope, null);
+              if (!manifest || string(manifest.scopeKey) !== string(context.scope.scopeKey)) {
+                throw consumerContractError('CONSUMER_CANONICAL_MANIFEST_SCOPE_CHANGED');
+              }
+              canonicalManifestChecked = true;
+            }
             const memory = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
             if (!memory || canonicalConsumptionDigest(memory) !== proof.recordDigest) {
               throw consumerContractError('CONSUMER_CANONICAL_BODY_CHANGED');
@@ -33767,6 +33776,7 @@ function createLibraReadonlySourceContext(owner) {
         const finalContext = await resolveContext();
         if (entry.scope?.scopeKey && finalContext.scope.scopeKey !== entry.scope.scopeKey) throw consumerContractError('CONSUMER_DATA_SCOPE_CHANGED');
         if (entry.receiptReadSet?.worldlineId && hostWorldlineIdForScope(finalContext.scope) !== entry.receiptReadSet.worldlineId) throw consumerContractError('CONSUMER_DATA_WORLDLINE_CHANGED');
+        if (entry.responseBoundary) await assertUnifiedResponseBoundary(entry.responseBoundary, { deadlineAt });
         check();
         return true;
       };
@@ -59977,6 +59987,7 @@ ${string(queryBundle?.sceneText || '')}`;
         recallTokenBudgetMode: string(budgetPlan.tokenBudgetMode || 'dynamic_cjk_v1'),
         at: Date.now()
       };
+      if (guard?.publicationCurrent && !guard.publicationCurrent()) return result;
       state.lastRecall = result;
       state.lastRecallRuntime = recallGuardSnapshot(guard);
       Runtime.lastMemoryRecall = clone(result);
@@ -60428,11 +60439,14 @@ ${string(queryBundle?.sceneText || '')}`;
       // miss or a budget stop is reported as `last-known`/`unknown` rather than as
       // "nothing changed later" (`01` section 11).
       let recallContinuity = null;
+      let recallClosureProofs = [];
+      const recallClosureProofsByKey = new Map();
       try {
         const unresolvedHistoricalAnchor = temporalAnchor.temporalIntent === 'past'
           && Number(temporalAnchor.requestedTurn || 0) > 0 && temporalAnchor.status !== 'resolved';
         if (unresolvedHistoricalAnchor) {
           const anchorReason = temporalAnchor.status === 'ambiguous' ? 'temporal_anchor_ambiguous' : 'temporal_anchor_unavailable';
+          recallClosureProofs = [];
           recallContinuity = {
             schema: 'libra.recall_continuity_closure.v1',
             currentness: 'unknown', closureComplete: false, temporalScope: 'unresolved', asOfTurn: Number(temporalAnchor.requestedTurn || 0), asOfCursor: null,
@@ -60479,6 +60493,8 @@ ${string(queryBundle?.sceneText || '')}`;
             head: null,
             readFact: async ref => {
               const memory = await loadMemoryRef(ref);
+              const proof = consumedCanonicalProofsByMemory.get(memory);
+              if (proof) recallClosureProofsByKey.set(string(ref.key), proof);
               return memory;
             },
             budget: { maxFacts: RECALL_CLOSURE_MAX_FACTS },
@@ -60507,6 +60523,11 @@ ${string(queryBundle?.sceneText || '')}`;
             if (!fact) return false;
             if (!artifact) return !!fact.tempFactId;
             return !selectedKeys.has(unifiedRecallTransitionKey(artifact, fact, entry?.ref || null, recallContinuityRegistry));
+          });
+          recallClosureProofs = additions.slice(0, 40).map(entry => {
+            const proof = recallClosureProofsByKey.get(string(entry?.ref?.key));
+            if (!proof) throw consumerContractError('CONSUMER_CANONICAL_CLOSURE_PROVENANCE_UNAVAILABLE');
+            return proof;
           });
           recallContinuity = {
             schema: 'libra.recall_continuity_closure.v1',
@@ -60553,7 +60574,7 @@ ${string(queryBundle?.sceneText || '')}`;
             facts: []
         };
       }
-      if (recallContinuity) Runtime.lastRecallContinuityClosure = clone(recallContinuity);
+      if (recallContinuity && (!guard?.publicationCurrent || guard.publicationCurrent())) Runtime.lastRecallContinuityClosure = clone(recallContinuity);
       const reactivatedSelected = selected.find(row => row.latentReactivated === true);
       if (reactivatedSelected) {
         state.lastLatentRecall = {
@@ -60679,6 +60700,8 @@ ${string(queryBundle?.sceneText || '')}`;
         recallTokenBudgetMode: string(budgetPlan.tokenBudgetMode || 'dynamic_cjk_v1'),
         at: Date.now()
       };
+      consumedClosureProofsByResult.set(result, mergeConsumedProofs(recallClosureProofs));
+      if (guard?.publicationCurrent && !guard.publicationCurrent()) return result;
       state.lastRecall = result;
       state.lastRecallRuntime = recallGuardSnapshot(guard);
       Runtime.lastMemoryRecall = clone(result);
@@ -61477,6 +61500,11 @@ ${string(queryBundle?.sceneText || '')}`;
       // incomplete-coverage warning; an unknown temporal scope still admits none.
       const closureFacts = ['current', 'last-known'].includes(closure?.currentness)
         ? asArray(closure?.facts) : [];
+      if (closureFacts.some(fact => string(fact?.text))) {
+        const proofs = consumedClosureProofsByResult.get(result);
+        if (!proofs?.length) throw consumerContractError('CONSUMER_CANONICAL_CLOSURE_PROVENANCE_UNAVAILABLE');
+        consumedMicroProofs.push(...proofs);
+      }
       for (const closureFact of closureFacts) {
         const text = string(closureFact?.text || '').trim();
         if (!text) continue;
@@ -62669,6 +62697,7 @@ ${string(queryBundle?.sceneText || '')}`;
       packet.consumer_context=consumerEntityProjection(packet.continuity_state,registry,seed);
       packet.consumer_read_set=readSet;
       packet.consumer_boundary=boundary || await captureUnifiedResponseBoundary(context,settings);
+      bindConsumedResponseBoundary(packet.consumed_data_token, packet.consumer_boundary);
       if(packet.consumer_context.state)packet.continuity_state_prompt=[
         '[WORLD MANAGER CURRENT STATE — REQUEST IDENTITIES / READ ONLY]',
         'Names are display labels, not identity. Use the same request refs across relationships, knowledge, ownership and location. Never emit request refs in visible prose. Non-ready domains are last-known. New input and newer direct facts outrank prior values. No new event is authorized.',
@@ -62690,7 +62719,16 @@ ${string(queryBundle?.sceneText || '')}`;
       return true;
     };
 
-    const captureUnifiedResponseBoundary=async(context,settings=null)=>{
+    const bindConsumedResponseBoundary = (token, boundary) => {
+      const entry = consumedDataReadSets.get(string(token));
+      if (!entry) throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
+      if (entry.responseBoundary && digest(entry.responseBoundary) !== digest(boundary)) throw consumerContractError('CONSUMER_DATA_BINDING_CHANGED');
+      entry.responseBoundary = unifiedDeepFreeze(clone(boundary));
+    };
+    const captureUnifiedResponseBoundary=async(context,settings=null,options={})=>{
+      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);
+      let timer;
+      try {return await Promise.race([(async()=>{
       const scope=context.scope,pairs=buildPairs(context.chat,scope.scopeKey);
       const [manifest,head,registry,meta,migration,direction]=await Promise.all([
         storage.getJson(key.manifest(scope),null),storage.getJson(key.continuityState(scope),null),storage.getJson(key.entityRegistry(scope),null),
@@ -62698,13 +62736,20 @@ ${string(queryBundle?.sceneText || '')}`;
       ]);
       return {scopeKey:scope.scopeKey,sourceDigest:digest(responseTranscriptProjection(pairs)),manifestDigest:unifiedResponseManifestIdentity(manifest),
         headDigest:digest(head),registryDigest:digest(registry),worldlineDigest:digest(meta),migrationDigest:digest(migration),
-        directionDigest:digest(direction),policyDigest:digest(settings||await loadSettings())};
+        directionDigest:digest(direction),policyDigest:digest(settings||await loadSettings({force:options.force===true})),
+        memoryPolicyDigest:await (async()=>{await memorySettingsWriteTail;return (await readMemorySettingsSnapshot()).semanticHash;})(),
+        storageMode:string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode||'')};
+      })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}
+      finally{clearTimeout(timer);}
     };
-    const assertUnifiedResponseBoundary=async(boundary)=>{
+    const assertUnifiedResponseBoundary=async(boundary,options={})=>{
       if(!boundary)return true;
-      const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
-      const current=await captureUnifiedResponseBoundary(context,await loadSettings({force:true}));
-      unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
+      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);let timer;
+      try{return await Promise.race([(async()=>{
+        const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
+        const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
+        unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
+      })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}finally{clearTimeout(timer);}
     };
     const unifiedResponseContextBody=value=>{const copy=clone(value);delete copy.contextDigest;return copy;};
     const consumedPacketValues = packet => ({currentInput:packet.current_input||'',terminalScene:packet.terminal_scene||'',liveTail:clone(packet.live_tail||null),
@@ -62741,6 +62786,7 @@ ${string(queryBundle?.sceneText || '')}`;
         continuity_state:snapshot.values.currentHead,continuity_state_authority:snapshot.values.stateAuthority,narrative_state:snapshot.values.narrative,
         narrative_direction:snapshot.values.narrativeDirection,lore_material:snapshot.values.lore,bootstrap_references:snapshot.values.bootstrap,author_note:snapshot.values.authorNote});
       if (packet.consumed_data_token) {
+        bindConsumedResponseBoundary(packet.consumed_data_token, snapshot.boundary);
         bindConsumedDataIdentity(packet.consumed_data_token, 'context', snapshot.contextDigest);
         bindConsumedDataIdentity(packet.consumed_data_token, 'packet', consumedPacketIdentityDigest(packet));
       }
@@ -62804,6 +62850,7 @@ ${string(queryBundle?.sceneText || '')}`;
         // recall may improve a request, but it must never hold the main model request
         // indefinitely. Every host/storage phase is bounded by one request-local guard.
         guard = createRecallGuard(RECALL_REQUEST_BUDGET_MS);
+        guard.publicationCurrent = () => requestOwner === latestRecallPublicationOwner;
         state.lastRecallRuntime = recallGuardSnapshot(guard);
 
         const settings = await runRecallStep(
@@ -62905,6 +62952,7 @@ ${string(queryBundle?.sceneText || '')}`;
             settings: runtimeSettings, route: injectionMode, boundary: responseBoundary,
             deadlineAt: Date.now() + 1400, publishState: false }), 1500,
           { soft: true, fallback: null, abortOnTimeout: false });
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         let receiptView = recentDialogue || emptyRecentReceiptView(context, responseView.pairs);
         // Only the result selected by this request owns diagnostic publication.
         // Even a timeout callback delayed beyond the inner deadline may retain
@@ -62986,6 +63034,7 @@ ${string(queryBundle?.sceneText || '')}`;
           );
 
         let result = await recall(context, queryBundle, guard);
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         Runtime.lastInjectionMode = injectionMode;
 
 
@@ -63034,6 +63083,7 @@ ${string(queryBundle?.sceneText || '')}`;
         );
 
         if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
 
         const responseContext=attachUnifiedResponseContext(evidencePacket,{scope:context.scope,manifest:requestManifest,view:responseView,
           boundary:responseBoundary,referenceSnapshot:responseMaterialSource?.referenceSourceSnapshot||null,route:injectionMode});
@@ -63228,6 +63278,9 @@ ${string(queryBundle?.sceneText || '')}`;
         // deadline. Unavailable evidence only omits LIBRA augmentation.
         assertConsumedDataIdentity(evidencePacket.consumed_data_token, 'packet', consumedPacketIdentityDigest(evidencePacket));
         await assertConsumedDataCurrent(evidencePacket.consumed_data_token, { useCapturedDeadline: true });
+        // A newer request can finish during the final physical evidence reads.
+        // Only its owner may inject or publish delivery diagnostics afterward.
+        if (requestOwner !== latestRecallPublicationOwner) return messages;
         const finalMessages = injectSystemMessage(messages, block, injectionSettings);
         delivery.sourceTurnAccounting = libraFinalSourceTurnAccounting(delivery,block,evidencePacket);
         if(Runtime.lastMemoryRecall?.delivery)Runtime.lastMemoryRecall.delivery.sourceTurnAccounting=clone(delivery.sourceTurnAccounting);
