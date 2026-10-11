@@ -48,7 +48,7 @@
   "mutationControl": {
     "mutation": "only temporary posting cap150ms->600ms; legacy fallback cap unchanged",
     "assertion": "fresh-scope scanned<=floor(150/10)=15; each missing-source gate advances now by10ms",
-    "static": "mutant observer compiles; --run explicitly required for actual later mutation refusal",
+    "static": "Mutant observer compiled; --run verified refusal at the specific scanned <= 15 work-bound assertion after the bounded_paged_source_postings branch assertion passed.",
     "helper": "fixtures/hayaku_cache_rediscovery_cap_mutation.cjs"
   }
 }
