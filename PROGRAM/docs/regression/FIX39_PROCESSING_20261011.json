@@ -1,6 +1,6 @@
 {
   "schema": "librarian.fix39.processing.v1",
-  "recordedAtUtc": "2026-10-11T16:26:29.456259+00:00",
+  "recordedAtUtc": "2026-10-11T18:19:51.238224+00:00",
   "original280CampaignCommit": "567630fda7df236e14e3feb4873e52366232b509",
   "original280Counts": {
     "PASS": 241,
@@ -18,7 +18,7 @@
   "rootCount": 39,
   "allOriginal39PathsAccounted": true,
   "enumeratedRootCount": 1138,
-  "qualification": "PENDING_FRESH_FINAL8_COMMON_SOURCE_FULL_CAMPAIGN",
+  "qualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
   "domainReceipts": [
     {
       "domain": "runtime",
@@ -85,7 +85,7 @@
     },
     {
       "rootOrdinal": 661,
-      "kind": "Private immutable physical-body snapshot captured at read; unchanged digest promoted only by actual response consumers. Eager-hash TIMEOUT and bounded RED/GREEN/A-B evidence preserved; new full-root qualification remains pending.",
+      "kind": "Private immutable physical-body snapshot captured at read; unchanged digest promoted only by actual response consumers. Eager-hash TIMEOUT and bounded RED/GREEN/A-B evidence preserved; Fresh whole-root and full-campaign qualification are now recorded below.",
       "receipt": "fix39-20261011/source-lazy-proof-results.json",
       "receiptSha256": "09da27dea7a7bd6346e4a2e4e18fc9bbfedaff6a03a1fd0d34f59ce1cd3bf191",
       "snapshotLifetimeLimit": "WeakMap follows hydrated object lifetime; nonconsumed cache objects retain extra serialized body until GC; proof promotion discards snapshot. No strong registry or externally trusted flag."
@@ -114,7 +114,15 @@
       "historicalEquivalenceLimitations": [],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
-      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 3.96,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/170-flashback_scope_panels_browser_test.cjs.log",
+        "fullOutputSha256": "abaa20946153d369befbdfcebd37b444893e55eb919f75721277e9ae41983a53"
+      }
     },
     {
       "rootOrdinal": 247,
@@ -140,7 +148,15 @@
         "Missing commit 9ae0719b0b34f6fa69d2d156cfc04614199f7a86 or a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e containing exact source SHA256 55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617. Upstream fetch for both returns not our ref."
       ],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
-      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "FAIL",
+        "durationSeconds": 1.47,
+        "runnerExitCode": 1,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/247-hayaku_canonical_builtin_access_runtime_test.cjs.log",
+        "fullOutputSha256": "72f54c7ef078ddc8908bbffcc93cc99ecafc293c67a42141982355970ea5b77b"
+      }
     },
     {
       "rootOrdinal": 288,
@@ -183,7 +199,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 34.8,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/288-hayaku_inline_ledger_readset_runtime_test.cjs.log",
+        "fullOutputSha256": "f5a3e70201609cc82f16fed9a68323c94ed5948c8f1d80f60086c39500ca7e1b"
+      }
     },
     {
       "rootOrdinal": 425,
@@ -220,7 +244,15 @@
       ],
       "externalBlockers": {},
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.27,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/425-lia_world_lore_compute_server_integration_test.cjs.log",
+        "fullOutputSha256": "9aaace6e212d378cdf1758b7c93cf7d5f938658a575d0cfd8b865f404003817e"
+      }
     },
     {
       "rootOrdinal": 483,
@@ -414,7 +446,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 16.32,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/483-libra_consumed_micro_freshness_runtime_test.cjs.log",
+        "fullOutputSha256": "a1e0eb1799a78239f146be105c0742559012a032cc6b7c0ecdca797343c0748c"
+      }
     },
     {
       "rootOrdinal": 485,
@@ -461,7 +501,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 2.22,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/485-libra_consumer_reference_material_v2_test.cjs.log",
+        "fullOutputSha256": "3323e3f1fc627cd7bf1b6a0ef7b5c3a2492f143e77ee7ebab11f9ab6ba164dde"
+      }
     },
     {
       "rootOrdinal": 486,
@@ -496,7 +544,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.77,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/486-libra_consumer_transport_v2_test.cjs.log",
+        "fullOutputSha256": "db4c416f34a0cd7a058ba47a2ddd6c2fcafe1495db684eb120e66527cb8d70dc"
+      }
     },
     {
       "rootOrdinal": 515,
@@ -520,7 +576,15 @@
         "Missing genuine Gemma4 captured answer"
       ],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS_SKIP",
+        "durationSeconds": 1.07,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/515-libra_gemma4_artifact_acceptance_test.cjs.log",
+        "fullOutputSha256": "4942f378c53c3659675a0bb457838f3569e8ab811388ca3482a57d2bc6c94615"
+      }
     },
     {
       "rootOrdinal": 526,
@@ -549,7 +613,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.62,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/526-libra_hayaku_independent_review_regressions_test.cjs.log",
+        "fullOutputSha256": "9a4090cfe9b2d44c6b6c08c22f9d7fccf1a28726c1f3851ecade31dc0a822a4a"
+      }
     },
     {
       "rootOrdinal": 531,
@@ -592,7 +664,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 6.64,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/531-libra_input_writer_phase06_authority_runtime_test.cjs.log",
+        "fullOutputSha256": "a175a2a0d2c41986c39a834c64a00776674da86dc55daae887a05f55d6df2099"
+      }
     },
     {
       "rootOrdinal": 532,
@@ -633,7 +713,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.02,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/532-libra_input_writer_phase06_no_mutation_runtime_test.cjs.log",
+        "fullOutputSha256": "9ffe32bcf86791dc571f605f8d0eca3570b62e13a669ce3817a5375e168c1da9"
+      }
     },
     {
       "rootOrdinal": 533,
@@ -682,7 +770,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 7.29,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/533-libra_input_writer_phase06_post_adoption_p1_test.cjs.log",
+        "fullOutputSha256": "7c66cee831b129daf044cd933ef737c0ce701a6f1d84c3e3a5da226596ba228c"
+      }
     },
     {
       "rootOrdinal": 535,
@@ -724,7 +820,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.17,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/535-libra_json_repair_content_and_duplicate_test.cjs.log",
+        "fullOutputSha256": "c61c09ef802d846212e436a0430d45db68f74040427e5752a32bfab95e447999"
+      }
     },
     {
       "rootOrdinal": 579,
@@ -753,7 +857,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 38.31,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/579-libra_main_memory_semantic_history_test.cjs.log",
+        "fullOutputSha256": "32afc4343a11b36c455c19a14044bd75d7cc790002bf3412e58398d6e03f287b"
+      }
     },
     {
       "rootOrdinal": 645,
@@ -783,7 +895,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 9.68,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/645-libra_owned_scope_delete_runtime_test.cjs.log",
+        "fullOutputSha256": "2a798dd746fe7f10c7606cf3d736ea3b3f2e9d2bc73ac6b928e2e11cd0e066bf"
+      }
     },
     {
       "rootOrdinal": 676,
@@ -809,7 +929,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 14.56,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/676-libra_phase_d_v5_server_only_outage_recovery_test.cjs.log",
+        "fullOutputSha256": "63e7b7cb52e4a0e1f79c6e6e3f3686444ccdf297986e6b957e41782366262ca8"
+      }
     },
     {
       "rootOrdinal": 678,
@@ -866,7 +994,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.11,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/678-libra_pipeline_draft_workspace_rc2_test.cjs.log",
+        "fullOutputSha256": "c56b78794776b8b3991a73eada0816ae7713321a6e58286cf93d66874a9bb1ab"
+      }
     },
     {
       "rootOrdinal": 691,
@@ -896,7 +1032,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 7.04,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/691-libra_protected_product_transfer_test.cjs.log",
+        "fullOutputSha256": "898d4184db5f5aef3409dec40ecb1ac9ec44a94f392a63a920a8f3bd1a102e02"
+      }
     },
     {
       "rootOrdinal": 701,
@@ -917,7 +1061,15 @@
       "historicalEquivalenceLimitations": [],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.12,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/701-libra_rank_equivalence_test.cjs.log",
+        "fullOutputSha256": "4eb8bba0ad0b4ac35f06c3e6a76286b1a107a23f553d278eb28a76fb38a798e2"
+      }
     },
     {
       "rootOrdinal": 716,
@@ -953,7 +1105,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.07,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/716-libra_receipt_cbs_inputwriter_recovery_runtime_test.cjs.log",
+        "fullOutputSha256": "211b6d3fcdf5314651c1c79077d86e2143e52b842e5311a954eef1f0288b985f"
+      }
     },
     {
       "rootOrdinal": 729,
@@ -1001,7 +1161,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.37,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/729-libra_response_readset_v2_test.cjs.log",
+        "fullOutputSha256": "fc311f71f0a0627564d21670a7fd867ffb0d8e43232a28acea29ef1ed7be49b3"
+      }
     },
     {
       "rootOrdinal": 730,
@@ -1030,7 +1198,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 87.24,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/730-libra_response_variant_missing_canonical_catchup_test.cjs.log",
+        "fullOutputSha256": "6d73f4a6b6de0361315584391ba2f29a1dd6c5462c208be14188080d2ff9b8d6"
+      }
     },
     {
       "rootOrdinal": 760,
@@ -1064,7 +1240,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 8.38,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/760-libra_source_edit_exception_impact_runtime_test.cjs.log",
+        "fullOutputSha256": "5c1fbb2970a1f04d5b66de9766c23bdadb330ffa2a49f356a4a7036efcd165ff"
+      }
     },
     {
       "rootOrdinal": 762,
@@ -1098,7 +1282,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 10.56,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/762-libra_source_edit_policy_epoch_runtime_test.cjs.log",
+        "fullOutputSha256": "84a58bc409b065d95079759719763c94ded569ac5a6c2db91dd7f7a70f196591"
+      }
     },
     {
       "rootOrdinal": 763,
@@ -1215,6 +1407,14 @@
         "path": "/workspace/librarian-regression/fix39-20261011/source-lazy-proof-results.json",
         "sha256": "09da27dea7a7bd6346e4a2e4e18fc9bbfedaff6a03a1fd0d34f59ce1cd3bf191",
         "scope": "Whole current root retains prior21controls and adds private snapshot mutation/digest/archive/performance controls; prior author receipt describes predecessor test/source, final common result will bind the strengthened current test."
+      },
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 29.96,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/763-libra_source_edit_settled_admission_runtime_test.cjs.log",
+        "fullOutputSha256": "fd6bef9b347716cc8c83fbba91d71ed7ffee1eba0fa37b34d51ea57f73c52b56"
       }
     },
     {
@@ -1253,7 +1453,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
-      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 9.0,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/766-libra_source_review_v2_test.cjs.log",
+        "fullOutputSha256": "7743d000126348145f685af5d531e9e1fe19f500c7d1704c07b783894d0d16ec"
+      }
     },
     {
       "rootOrdinal": 782,
@@ -1284,7 +1492,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 7.04,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/782-libra_three_mode_feature_inspection_test.cjs.log",
+        "fullOutputSha256": "d4b2d04e06b455019e8a185cbff4fb148e517a5f181fcf633e91b65a4b8dd837"
+      }
     },
     {
       "rootOrdinal": 816,
@@ -1313,7 +1529,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.11,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/816-libra_world_manager_shared_snapshot_rc2_test.cjs.log",
+        "fullOutputSha256": "a9a6f32f85756a3079f10da7006790fa5d6580d627a78ab50934c240d9f58cff"
+      }
     },
     {
       "rootOrdinal": 819,
@@ -1348,7 +1572,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
-      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 31.82,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/819-libra_worldline_async_isolation_3mode_test.cjs.log",
+        "fullOutputSha256": "7b5f7f908dc7958713651a459fadd759df84576da5616ff54fe20338278602cd"
+      }
     },
     {
       "rootOrdinal": 822,
@@ -1384,7 +1616,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
-      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.07,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/822-libra_writing_mode_live_work_ui_contract_test.cjs.log",
+        "fullOutputSha256": "1db6aefed7e7f9adc6c9302c1306e1cbe6a75346d63cf180207385715b5f03ed"
+      }
     },
     {
       "rootOrdinal": 835,
@@ -1420,7 +1660,15 @@
         "searchSummary": "Exact commit absent in 28 available repositories; no target SHA match among 9 relevant historical blobs or 353 current candidate source files. No allowlisted CANDIDATE_SOURCE_PINS.json found."
       },
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "FAIL",
+        "durationSeconds": 0.06,
+        "runnerExitCode": 1,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/835-namespace_reset_all5_composition_test.cjs.log",
+        "fullOutputSha256": "edc398afe14a34fe2c99e07ab0c67afb8b355aa31f92765fae451646b17bbf36"
+      }
     },
     {
       "rootOrdinal": 836,
@@ -1465,7 +1713,15 @@
         "scope": "No automatic substitute adapter; full test still requires compatible reviewed historical execution context."
       },
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "FAIL",
+        "durationSeconds": 1.33,
+        "runnerExitCode": 1,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/836-namespace_reset_physical_admission_test.cjs.log",
+        "fullOutputSha256": "553bb72416d7f3a3e3965051118562a2dcd8e010ec530dcc9bf81d4ddce6707b"
+      }
     },
     {
       "rootOrdinal": 902,
@@ -1487,7 +1743,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/integration-results.json",
-      "authorReceiptSha256": "f169016f67a93ca103c5919b5bd5469f4030cd765135565f1af3a541377993f2"
+      "authorReceiptSha256": "f169016f67a93ca103c5919b5bd5469f4030cd765135565f1af3a541377993f2",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 1.69,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/902-recall_keyword_features_runtime_test.cjs.log",
+        "fullOutputSha256": "15ea500bb793e0d7a4b9093d4af86ec81d1f9ad1cdc3775738b26f838275edd4"
+      }
     },
     {
       "rootOrdinal": 910,
@@ -1529,7 +1793,15 @@
       ],
       "externalBlockers": {},
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.67,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/910-recovery_main_fallback_test.cjs.log",
+        "fullOutputSha256": "8c2c5e3748d4b174320aadaf92dd378277ed69699db604e6f3592b7defa18959"
+      }
     },
     {
       "rootOrdinal": 912,
@@ -1566,7 +1838,15 @@
       ],
       "externalBlockers": {},
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.31,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/912-recovery_safe_mode_test.cjs.log",
+        "fullOutputSha256": "3a5f74927bf0e16775bcc80a1a2a8e19b8e148ab0e651c2a07197d2f88e4a0a2"
+      }
     },
     {
       "rootOrdinal": 943,
@@ -1589,7 +1869,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
-      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 212.82,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/943-remote_update_release_zip_runtime_test.cjs.log",
+        "fullOutputSha256": "339da0d655725b3701c5de6a2e7452ecef4cad35beba5a2f85a2a405e1f3def2"
+      }
     },
     {
       "rootOrdinal": 983,
@@ -1628,7 +1916,15 @@
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
       "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
       "preFollowupFourTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
-      "laterCorrectionEvidence": "See additionalReplayCampaignCorrections, preserving this row's earlier originalFailure and authored receipt."
+      "laterCorrectionEvidence": "See additionalReplayCampaignCorrections, preserving this row's earlier originalFailure and authored receipt.",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.77,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/983-retrace_server_handoff_test.cjs.log",
+        "fullOutputSha256": "a51cf1d9436172cd036c04194c8203381af1ab20e903abe73882f7187f29561a"
+      }
     },
     {
       "rootOrdinal": 995,
@@ -1675,7 +1971,15 @@
       ],
       "externalBlockers": {},
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
-      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 0.32,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/995-scope_routing_test.cjs.log",
+        "fullOutputSha256": "0f774ca5bab505e7960c091c35243d9c4e4aa2de408d8196b036f70f9dba002d"
+      }
     },
     {
       "rootOrdinal": 1123,
@@ -1699,7 +2003,15 @@
       ],
       "externalBlockers": [],
       "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
-      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199",
+      "commonSourceResult": {
+        "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+        "status": "PASS",
+        "durationSeconds": 90.36,
+        "runnerExitCode": 0,
+        "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/1123-test_surface_strip_test.cjs.log",
+        "fullOutputSha256": "504c66c8fa063ae513cdbcfb34e444ee7ebdc890d40964529b0fa8fdc6c41861"
+      }
     }
   ],
   "supersededInitialFinalCampaign": {
@@ -1844,7 +2156,14 @@
         "limitations": [
           "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes79-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 2.74,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/050-compute_product_flood_latency_test.cjs.log",
+          "fullOutputSha256": "544489abd03370c594e09f3831658baf5a52b223903315d7a3a630c0869094eb"
+        }
       },
       {
         "rootOrdinal": 51,
@@ -2269,7 +2588,14 @@
         "limitations": [
           "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes79-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 6.15,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/051-compute_product_worker_matrix_test.cjs.log",
+          "fullOutputSha256": "e23e36abcba821cc84c591a8807a28a03114d435ff269d94e5c7d5023c4f0e6c"
+        }
       },
       {
         "rootOrdinal": 107,
@@ -2430,7 +2756,14 @@
           "Async operation attribution includes nested descendants; the same exact-one assertion rejects two owned reads. Unrelated reads remain visible in total I/O.",
           "Only this test and its isolated fixture changed. Production and shared fixture bytes are unchanged."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 20.4,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/107-flashback_deferred_finish_cost_runtime_test.cjs.log",
+          "fullOutputSha256": "b0eb4d5d225f6fe17588e07ad648017a1e77f85a0edfd23309a1d146ad63912b"
+        }
       },
       {
         "rootOrdinal": 246,
@@ -2490,7 +2823,14 @@
           "Separate advancingclock13/600 partial actual posting control preserves all production bounds, validates64 work,noncurrent/nondurable and absent unincluded source fact.",
           "Original all1138 campaign remains1125PASS11FAIL2SKIP; this focused corrected root does not relabel original full run."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 21.1,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/246-hayaku_cache_rediscovery_runtime_test.cjs.log",
+          "fullOutputSha256": "9949dce665b41ece032633c1252d113eb294178fdcda202b300484f37702540f"
+        }
       },
       {
         "rootOrdinal": 625,
@@ -2553,7 +2893,14 @@
           "Negative invokes actual Micro reader with actual resolved host scope; physical head changes during actual record await and original guard refuses micro_head_changed_during_read, physical body restored.",
           "Initial test-only observer assumptions and partialscope caller failed; all corrective failures retained. Original all1138 outcome unchanged."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 1.27,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/625-libra_micro_recall_incremental_head_index_test.cjs.log",
+          "fullOutputSha256": "1a09f740f6d22e27feee14bb8a6341f84b5c6d8533ce4e19ecca59038533a433"
+        }
       },
       {
         "rootOrdinal": 735,
@@ -2616,7 +2963,14 @@
         "limitations": [
           "Current physical consumed-proof mixedset schema successor; historical count2 whole registry obsolete because selectedcanonicalbody proof is legitimately added. No production fix or externalprovider evidence; fulloriginal7case behavior retained."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 15.22,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/735-libra_retained_state_archive_currentness_runtime_test.cjs.log",
+          "fullOutputSha256": "c502a6a7ae45b6975f9da4dbf7f17b58fd4bad2dbcea7c438a4defc362b70bc2"
+        }
       },
       {
         "rootOrdinal": 983,
@@ -2683,7 +3037,14 @@
           "Original fetch failure cause remains unknown. The diagnostic rerun passed without a production correction or retry.",
           "All original assertions remain unchanged; sanitized transport diagnostics retain failures if they recur."
         ],
-        "commonSourceResult": null,
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 0.77,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/983-retrace_server_handoff_test.cjs.log",
+          "fullOutputSha256": "a51cf1d9436172cd036c04194c8203381af1ab20e903abe73882f7187f29561a"
+        },
         "preFollowupFourTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
         "laterCorrectionEvidence": "See additionalReplayCampaignCorrections, preserving this row's earlier originalFailure and authored receipt."
       },
@@ -2749,10 +3110,17 @@
         "limitations": [
           "Current late-scope transformation seam includes new ownerguard; original frozenfailure was transformation install failure, not demonstrated production boundary defect. Synthetic physical hostscope change exercises actualboundary; no stub/provider evidence."
         ],
-        "commonSourceResult": null
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 9.8,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/1085-source_turn_registered_runtime_test.cjs.log",
+          "fullOutputSha256": "4dcd19a658fef792e8ac19c8a4706cc95a7ddb6edaf7e5ecb54c5371a70ea94c"
+        }
       }
     ],
-    "qualification": "REPLAY_COMPLETED_WITH_ROOT_983_FAILURE_FURTHER_FINAL_CANDIDATE_PENDING",
+    "qualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
     "historicalEightPreparation": {
       "productionChangesAfterPredecessor": false,
       "scope": "The eight-candidate preparation before source 017f860; excludes the later shared SDK correction."
@@ -2829,9 +3197,16 @@
           "sha256": "1d6b632799b98e0b92c82e172c28f43923328203ddada779863f3e9b1f029c70",
           "bytes": 9605
         },
-        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
-        "commonSourceResult": null,
-        "sameSourceWholeCampaignQualified": false,
+        "finalQualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 9.57,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+          "fullOutputSha256": "339321fc8390af768a2d87ce718102996672add454a2570c946ab976792bd204"
+        },
+        "sameSourceWholeCampaignQualified": true,
         "classification": "DIAGNOSTIC_AND_GENUINE_CAS_SENSITIVITY_ONLY_ORIGINAL_NATURAL_CAUSE_UNKNOWN",
         "authorCommits": [
           "9a644f81095f308bada1975e89809f072ec6f7f7",
@@ -3658,9 +4033,16 @@
           "sha256": "13072ea38ba11103d0997b574402710df51c28ec35f0e1a4f3e361b456d514b2",
           "bytes": 48440
         },
-        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
-        "commonSourceResult": null,
-        "sameSourceWholeCampaignQualified": false,
+        "finalQualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 49.44,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/614-libra_micro_multi_predecessor_state_3mode_test.cjs.log",
+          "fullOutputSha256": "6c47a5432eedca8bdada3e89dfeb45a06503833940589bdd2f5acc8ada7cc3cd"
+        },
+        "sameSourceWholeCampaignQualified": true,
         "classification": "BOUNDED_DIAGNOSTIC_ONLY_ORIGINAL_NATURAL_TIMEOUT_CAUSE_UNKNOWN",
         "authorCommits": [
           "3c907548a37a54a00fe5064575361e259366e203"
@@ -4793,9 +5175,16 @@
           "sha256": "f2af4ca469c2a96d79bab0ac91f52035fb834dcf60ee5c22258c1fdbbdb02bc8",
           "bytes": 20166
         },
-        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
-        "commonSourceResult": null,
-        "sameSourceWholeCampaignQualified": false,
+        "finalQualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 24.79,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-1/logs/741-libra_scheduled_audit_queue_test.cjs.log",
+          "fullOutputSha256": "c2ff38cf4fd6821ae0044aded1927e92df060e48e7918020ff187bfdf56012e6"
+        },
+        "sameSourceWholeCampaignQualified": true,
         "classification": "VERIFIED_TEST_FIX_ACTUAL_STARTUP_COMPLETION_BARRIER",
         "authorCommits": [
           "a0b9ada01564dca5f7053f09703f8b9e10ac2d74",
@@ -5035,9 +5424,16 @@
           "sha256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
           "bytes": 13122
         },
-        "finalQualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
-        "commonSourceResult": null,
-        "sameSourceWholeCampaignQualified": false,
+        "finalQualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
+        "commonSourceResult": {
+          "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+          "status": "PASS",
+          "durationSeconds": 0.77,
+          "runnerExitCode": 0,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-2/logs/983-retrace_server_handoff_test.cjs.log",
+          "fullOutputSha256": "a51cf1d9436172cd036c04194c8203381af1ab20e903abe73882f7187f29561a"
+        },
+        "sameSourceWholeCampaignQualified": true,
         "classification": "VERIFIED_SHARED_SDK_CACHE_PUBLICATION_FIX",
         "authorCommits": [
           "1d00f1360192fa6b77b12d77229a61ad1ece0109",
@@ -5358,10 +5754,22 @@
       ],
       "candidateHasProductionChangeAfterReplay": true,
       "productionChangeScope": "Shared SDK source plus parent-regenerated Flashback/HAYAKU embedded owners; LIBRA private product body remains ae814a56.",
-      "validatedCommonSourceCommit": null
+      "validatedCommonSourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d"
     },
-    "qualification": "PENDING_FRESH_COMMON_SOURCE_FULL_CAMPAIGN",
-    "commonSourceResult": null,
+    "qualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "rootCount": 1138,
+      "counts": {
+        "FAIL": 3,
+        "PASS": 1133,
+        "PASS_SKIP": 2
+      },
+      "outcome": {
+        "path": "/workspace/librarian-regression/fix39-20261011/final8-outcome.json",
+        "sha256": "3685cbde3ea4805211f604caa568f0ff37de723539fe9921100539a9645b7167"
+      }
+    },
     "plannedSerializedHeavyRoots": {
       "count": 9,
       "root39And614Included": true,
@@ -5382,7 +5790,7 @@
   "finalCandidate": {
     "productionChangesAfterReplay": true,
     "productionChangeScope": "Prior shared SDK cache publication correction plus bounded LIBRA scheduled-audit timestamp suppression; physical full audit and currentness guards retained.",
-    "commonSourceQualification": "PENDING_FRESH_FINAL8_COMMON_SOURCE_FULL_CAMPAIGN",
+    "commonSourceQualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS",
     "currentReleaseProvenanceSynchronized": true,
     "productChangesAfterFinal4Preflight": true,
     "sourceMetadataRepairCommit": "a79523cc6ad1b6eb86a1f898807d264241fbb372",
@@ -5390,7 +5798,8 @@
     "productionChangesAfterFinal6": false,
     "postFinal6ChangeScope": "Test-only root684 native cleanup readiness; all six plugin products unchanged.",
     "productionChangesAfterFinal7": false,
-    "postFinal7ChangeScope": "Test-only root85 owned startup readiness and root159 manual portable readiness; all six plugin products unchanged."
+    "postFinal7ChangeScope": "Test-only root85 owned startup readiness and root159 manual portable readiness; all six plugin products unchanged.",
+    "validatedExecutionCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d"
   },
   "supersededFinal4HeavyPreflight": {
     "outcome": {
@@ -5454,12 +5863,21 @@
       "path": "/workspace/librarian-regression/fix39-20261011/provenance943-focused/receipt.json",
       "sha256": "204cd11501af06e5d9af7460292b18492739c5278807f0d23e4c20369889b82c"
     },
-    "qualification": "PARTIAL_PREFLIGHT_FAILED_CURRENT_CATALOG_METADATA_REPAIRED_FULL_REPLAY_PENDING",
+    "qualification": "CURRENT_CATALOG_REPAIR_VERIFIED_IN_FINAL_COMMON_SOURCE",
     "limits": [
       "Nine roots executed; none of the 1,129 normal roots started. This is not a complete 1,138-root campaign.",
       "The actual failed root and logs are preserved; later metadata repair does not rebase or replace that result.",
       "The repair updates current unpublished source rows only; historical release/publication records and DATA are preserved."
-    ]
+    ],
+    "originalQualification": "PARTIAL_PREFLIGHT_FAILED_CURRENT_CATALOG_METADATA_REPAIRED_FULL_REPLAY_PENDING",
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "status": "PASS",
+      "durationSeconds": 212.82,
+      "runnerExitCode": 0,
+      "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/943-remote_update_release_zip_runtime_test.cjs.log",
+      "fullOutputSha256": "339da0d655725b3701c5de6a2e7452ecef4cad35beba5a2f85a2a405e1f3def2"
+    }
   },
   "supersededFinal5PartialPreflight": {
     "payloadEvidence": {
@@ -13748,7 +14166,14 @@
       "Caps and SDK/server guard behavior unchanged. No capture retry or first-read expectation weakening.",
       "Natural final PASS supplies ungated path coverage and is not a retrospective cause proof."
     ],
-    "commonSourceResult": null,
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "status": "PASS",
+      "durationSeconds": 9.57,
+      "runnerExitCode": 0,
+      "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/039-composed_reanalysis_gradia_runtime_test.cjs.log",
+      "fullOutputSha256": "339321fc8390af768a2d87ce718102996672add454a2570c946ab976792bd204"
+    },
     "currentTestBindings": [
       {
         "rootOrdinal": 39,
@@ -13794,7 +14219,8 @@
       "path": "/workspace/librarian-regression/fix39-20261011/final6-root039-correction-payload.json",
       "sha256": "39a8be9b842a3a7aa3f73ca0bff58194391e593afae27d6210966d78273fc83c",
       "bytes": 352660
-    }
+    },
+    "qualification": "COMPLETE_CURRENT_CONTRACT_AVAILABLE_EVIDENCE_WITH_EXTERNAL_BLOCKERS"
   },
   "supersededFinal6CompleteUnqualifiedCampaign": {
     "payloadEvidence": {
@@ -55121,7 +55547,13 @@
         "sha256": "2171c35a0ccf0aea2128b57992517ffe3a8b449cfcaababbf5caa1a856465e5d"
       }
     },
-    "commonSourceResult": null
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "rootOrdinal": 684,
+      "status": "PASS",
+      "testSha256": "9b66bdc97cef47cc696492286d0a3b1f82a30ebf4a59ac640813e860c70a9084",
+      "logSha256": "11fd32efed8692bd6f59a685c56ed80afb15b82849759b35743bed4e9d9f24ce"
+    }
   },
   "currentCandidateProductionChangesAfterFinal6": false,
   "supersededFinal7CompleteUnqualifiedCampaign": {
@@ -94555,7 +94987,13 @@
         "bytes": 31262
       }
     },
-    "commonSourceResult": null
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "rootOrdinal": 85,
+      "status": "PASS",
+      "testSha256": "e8ce96cb03d701d09968e6ff6dd35824f83492ff5ee2655fffb07a0700f27b5e",
+      "logSha256": "7da253f07a3f1709021869e4808216e0152205e13015e4594fea68312fc8334b"
+    }
   },
   "additionalRoot159ManualPortableReadinessCorrection": {
     "payloadEvidence": {
@@ -95522,7 +95960,376 @@
         "bytes": 25520
       }
     },
-    "commonSourceResult": null
+    "commonSourceResult": {
+      "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+      "rootOrdinal": 159,
+      "status": "PASS",
+      "testSha256": "10b2724fdcb77c36066daae86c6858ee1814d66b7ab195a198ef8a0722e051fa",
+      "logSha256": "848d95fd9d4e105291c315a4008f8a5d0099191751d26995a67cfa7f4c9686f7"
+    }
   },
-  "currentCandidateProductionChangesAfterFinal7": false
+  "currentCandidateProductionChangesAfterFinal7": false,
+  "validatedExecutionCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+  "officialFullCounts": {
+    "FAIL": 3,
+    "PASS": 1133,
+    "PASS_SKIP": 2
+  },
+  "officialHistorical280Counts": {
+    "FAIL": 3,
+    "PASS": 276,
+    "PASS_SKIP": 1
+  },
+  "officialPrevious39Counts": {
+    "FAIL": 3,
+    "PASS": 35,
+    "PASS_SKIP": 1
+  },
+  "all1138RootsExecuted": true,
+  "allOriginal280RootsExecuted": true,
+  "allOriginal39RootsExecuted": true,
+  "allRootsFullyPassed": false,
+  "expectedExternalEvidenceOnly": true,
+  "fullOutcome": {
+    "path": "/workspace/librarian-regression/fix39-20261011/final8-outcome.json",
+    "sha256": "3685cbde3ea4805211f604caa568f0ff37de723539fe9921100539a9645b7167"
+  },
+  "actualArtifactReceipt": {
+    "path": "/workspace/librarian-regression/fix39-20261011/artifact-final8-build-receipt.json",
+    "sha256": "69a13227608ff5cb5fd9d94070a35e0a6dfefa3d7929a30265da19ba55fe34f8",
+    "artifacts": [
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "hayaku",
+        "file": "HAYAKU_Locator_Continuity.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/HAYAKU_Locator_Continuity.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/HAYAKU_Locator_Continuity.js",
+        "bytes": 3962847,
+        "sha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
+        "nestedSha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
+        "sourcePluginSha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
+        "sourcePluginBytes": 3962847,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 56,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "flashback",
+        "file": "Flashback_Memory.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/Flashback_Memory.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/Flashback_Memory.js",
+        "bytes": 3294016,
+        "sha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
+        "nestedSha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
+        "sourcePluginSha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
+        "sourcePluginBytes": 3294016,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 89,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "libra",
+        "file": "LIBRA.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/LIBRA.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/LIBRA.js",
+        "bytes": 5785062,
+        "sha256": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
+        "nestedSha256": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
+        "sourcePluginSha256": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
+        "sourcePluginBytes": 5785062,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 83,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "lia",
+        "file": "LIA_Persona_Linker.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/LIA_Persona_Linker.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/LIA_Persona_Linker.js",
+        "bytes": 1870745,
+        "sha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+        "nestedSha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+        "sourcePluginSha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+        "sourcePluginBytes": 1870745,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 9,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "retrace",
+        "file": "RETRACE.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/RETRACE.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/RETRACE.js",
+        "bytes": 1160663,
+        "sha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
+        "nestedSha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
+        "sourcePluginSha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
+        "sourcePluginBytes": 1160663,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 12,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Full",
+        "profile": "source",
+        "plugin": "gradia",
+        "file": "GRADIA.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/GRADIA.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/plugins/GRADIA.js",
+        "bytes": 3035965,
+        "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+        "nestedSha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+        "sourcePluginSha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+        "sourcePluginBytes": 3035965,
+        "minified": false,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 91,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Full/ultralight-build-report.json",
+        "buildReportSha256": "754a572c946de1c263238bbb6866d22cdd22f73dfd4c195e521ead4dfde9282a"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "hayaku",
+        "file": "HAYAKU_Locator_Continuity.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/HAYAKU_Locator_Continuity.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/HAYAKU_Locator_Continuity.js",
+        "bytes": 1955240,
+        "sha256": "3625ce8370dfd7e34bd3364267646a967ad063524a4965887a93e72881954532",
+        "nestedSha256": "3625ce8370dfd7e34bd3364267646a967ad063524a4965887a93e72881954532",
+        "sourcePluginSha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
+        "sourcePluginBytes": 3962847,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 1,
+        "testSurfaceBytesRemoved": 17763,
+        "directivesKept": 56,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "flashback",
+        "file": "Flashback_Memory.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/Flashback_Memory.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/Flashback_Memory.js",
+        "bytes": 1725063,
+        "sha256": "eb075496789f71a9d3e03c540a731c47423dd67f3c83fb3db6c53839ba3dc5e2",
+        "nestedSha256": "eb075496789f71a9d3e03c540a731c47423dd67f3c83fb3db6c53839ba3dc5e2",
+        "sourcePluginSha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
+        "sourcePluginBytes": 3294016,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 116,
+        "testSurfaceBytesRemoved": 15654,
+        "directivesKept": 89,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "libra",
+        "file": "LIBRA.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/LIBRA.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/LIBRA.js",
+        "bytes": 3062351,
+        "sha256": "e5cd9a00fc8d8aba4d675385c1b367f09a74a6a9855d263527db61cba67f3a90",
+        "nestedSha256": "e5cd9a00fc8d8aba4d675385c1b367f09a74a6a9855d263527db61cba67f3a90",
+        "sourcePluginSha256": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
+        "sourcePluginBytes": 5785062,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 83,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "lia",
+        "file": "LIA_Persona_Linker.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/LIA_Persona_Linker.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/LIA_Persona_Linker.js",
+        "bytes": 1080037,
+        "sha256": "3a230b98177e350ba3afe392afb5e4cf81c9de692878003b68ca361fc1e4f819",
+        "nestedSha256": "3a230b98177e350ba3afe392afb5e4cf81c9de692878003b68ca361fc1e4f819",
+        "sourcePluginSha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
+        "sourcePluginBytes": 1870745,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 9,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "retrace",
+        "file": "RETRACE.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/RETRACE.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/RETRACE.js",
+        "bytes": 637835,
+        "sha256": "8d796ff882153c4a8fd6ddb406d339e391f9a186dea6eff13156e3e7e1e2ad0b",
+        "nestedSha256": "8d796ff882153c4a8fd6ddb406d339e391f9a186dea6eff13156e3e7e1e2ad0b",
+        "sourcePluginSha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
+        "sourcePluginBytes": 1160663,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 1,
+        "testSurfaceBytesRemoved": 1940,
+        "directivesKept": 12,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      },
+      {
+        "variant": "Min",
+        "profile": "release",
+        "plugin": "gradia",
+        "file": "GRADIA.js",
+        "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/GRADIA.js",
+        "nestedPath": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/plugins/GRADIA.js",
+        "bytes": 1642350,
+        "sha256": "bc6e3cffc09c274e4ba56eeb4cc654111b0678acb62f08481e26efb1c9d35a5a",
+        "nestedSha256": "bc6e3cffc09c274e4ba56eeb4cc654111b0678acb62f08481e26efb1c9d35a5a",
+        "sourcePluginSha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
+        "sourcePluginBytes": 3035965,
+        "minified": true,
+        "testSurfaceBlocksRemoved": 0,
+        "testSurfaceBytesRemoved": 0,
+        "directivesKept": 91,
+        "buildReport": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+        "buildReportSha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+      }
+    ]
+  },
+  "finalReview": {
+    "path": "/workspace/librarian-regression/fix39-20261011/review-full-runtime-final8.json",
+    "sha256": "f452697a50f8989fd4d050e1e13cffd507a47c05d2da6159865a3d383645acf4"
+  },
+  "fullStatusTransitions": {
+    "FAIL -> FAIL": 3,
+    "FAIL -> PASS": 194,
+    "PASS -> PASS": 931,
+    "PASS_SKIP -> PASS": 3,
+    "PASS_SKIP -> PASS_SKIP": 2,
+    "TIMEOUT -> PASS": 5
+  },
+  "historical280Transitions": {
+    "FAIL -> FAIL": 3,
+    "FAIL -> PASS": 34,
+    "PASS -> PASS": 241,
+    "PASS_SKIP -> PASS_SKIP": 1,
+    "TIMEOUT -> PASS": 1
+  },
+  "previous39Transitions": {
+    "FAIL -> FAIL": 3,
+    "FAIL -> PASS": 34,
+    "PASS_SKIP -> PASS_SKIP": 1,
+    "TIMEOUT -> PASS": 1
+  },
+  "artifactSizeDiagnostics": {
+    "variant": "Min",
+    "reportingOnly": true,
+    "buildReport": {
+      "path": "/workspace/librarian-regression/fix39-20261011/artifacts-final8/Min/ultralight-build-report.json",
+      "sha256": "f2e6ddd4043cf1421da0d82375bceca5aa5e68ef84176e72f974a83f09edd772"
+    },
+    "rows": [
+      {
+        "plugin": "flashback",
+        "file": "plugins/Flashback_Memory.js",
+        "bytes": 1725063,
+        "floor": 1499680,
+        "withinFloor": false,
+        "overFloorBy": 225383
+      },
+      {
+        "plugin": "gradia",
+        "file": "plugins/GRADIA.js",
+        "bytes": 1642350,
+        "floor": 1561115,
+        "withinFloor": false,
+        "overFloorBy": 81235
+      },
+      {
+        "plugin": "hayaku",
+        "file": "plugins/HAYAKU_Locator_Continuity.js",
+        "bytes": 1955240,
+        "floor": 1788914,
+        "withinFloor": false,
+        "overFloorBy": 166326
+      },
+      {
+        "plugin": "lia",
+        "file": "plugins/LIA_Persona_Linker.js",
+        "bytes": 1080037,
+        "floor": 1024058,
+        "withinFloor": false,
+        "overFloorBy": 55979
+      },
+      {
+        "plugin": "libra",
+        "file": "plugins/LIBRA.js",
+        "bytes": 3062351,
+        "floor": 3400888,
+        "withinFloor": true,
+        "overFloorBy": 0
+      },
+      {
+        "plugin": "retrace",
+        "file": "plugins/RETRACE.js",
+        "bytes": 637835,
+        "floor": 609054,
+        "withinFloor": false,
+        "overFloorBy": 28781
+      }
+    ]
+  },
+  "sourceProofMemoryTradeoff": {
+    "sourceCommit": "02f55a3148bd3b5eea077e020b90a9e933e28f5d",
+    "rootOrdinal": 661,
+    "rootStatus": "PASS",
+    "executionTreeValidation": "Immutable committed objects/source/config/artifact/inventory/log pins only; active execution worktrees are not asserted clean.",
+    "durationSeconds": 368.4,
+    "stressCandidateCount": 10000,
+    "sampledMaxHeapUsedBytes": 2379428848,
+    "sampledMaxRssBytes": 3118067712,
+    "log": "/workspace/librarian-regression/fix39-20261011/final8-run-0/logs/661-libra_phase_d_candidate_context_scale_synthetic_test.cjs.log",
+    "logSha256": "166e844570d3e44d77a3e2b2d31263e072d1002e57cb6b99afa4758c610c6e39",
+    "limits": [
+      "Samples from the complete actual root; no continuous or whole-process-tree peak claim.",
+      "Different concurrency and garbage-collection timing prevent causal memory/time comparison with the interrupted predecessor.",
+      "Private unconsumed JSON snapshots follow hydrated object/cache lifetime; promotion removes the string. Extra retention is a real tradeoff."
+    ]
+  },
+  "sourceProofMemoryTradeoffReceipt": {
+    "path": "/workspace/librarian-regression/fix39-20261011/final8-661-memory-samples.json",
+    "sha256": "87603df5c0cd39b1e0763c9355ce48f91d969452469bf83dcaa08965007116d1"
+  }
 }

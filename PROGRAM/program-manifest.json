@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T16:28:30.850Z",
+  "generatedAt": "2026-10-11T18:19:59.007Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2316,16 +2316,20 @@
       "bytes": 9032
     },
     "docs/regression/FIX39_PROCESSING_20261011.json": {
-      "sha256": "2b76605590f0ff2a4ee544e99f5735cb2bb9a01591d6e1e0ef0ee671b0edcb93",
-      "bytes": 6241623
+      "sha256": "e8ccf93ac5a06cf58b4ba7e8833f63f7afa772854abef315700756a8665770a5",
+      "bytes": 6283231
     },
     "docs/regression/FIX39_PROCESSING_20261011.md": {
-      "sha256": "aa57e73db913267c5c3e77b08e31b65c1baaf2c3100e959d250de033c25a6928",
-      "bytes": 8807
+      "sha256": "486a20b57863651790aa051ecebf6b7b50950249204de13f4a155f9f768156ff",
+      "bytes": 11129
     },
     "docs/regression/fix39-20261011/contracts-assertion-map.json": {
       "sha256": "c7a6ca7e53beedfdff4200f2bdd6e2bd7cac42d5b227c645974dacff0b7f81df",
       "bytes": 25223
+    },
+    "docs/regression/fix39-20261011/FINAL_ROOT_RESULTS.json": {
+      "sha256": "afa4609a2a9cfe7d265bf1a4016d7984b73860b4ed8857840f5a3d1b5267fc24",
+      "bytes": 438560
     },
     "docs/regression/fix39-20261011/source-coverage-map.json": {
       "sha256": "35dc6c3756f488d12b18fa0f51afff0a935ea94b37535fcdd07bbc659a730186",
