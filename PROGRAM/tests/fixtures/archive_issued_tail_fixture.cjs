@@ -99,9 +99,9 @@ function createState(sandbox) {
     if ([...pending.values()].some(row => row.value === value)) return value;
     const token = ++nextPromise, label = origin.getStore()?.label || kind;
     pending.set(token, { value, kind, label });
-    emit('promise.started', { context: id, token, kind, label });
-    value.then(() => { pending.delete(token); emit('promise.fulfilled', { context: id, token, kind, label }); },
-      error => { pending.delete(token); emit('promise.rejected', { context: id, token, kind, label, code: String(error?.code || error?.name || 'Error').slice(0, 80) }); });
+    emit('promise.started', { context: id, token, promiseKind: kind, label });
+    value.then(() => { pending.delete(token); emit('promise.fulfilled', { context: id, token, promiseKind: kind, label }); },
+      error => { pending.delete(token); emit('promise.rejected', { context: id, token, promiseKind: kind, label, code: String(error?.code || error?.name || 'Error').slice(0, 80) }); });
     return value;
   };
   state.observer = {
