@@ -167,7 +167,7 @@
     "budgetAndIntegrity": "Original RSS and canonical immutability checks remain unchanged. No original deadlines or worker floors increased or lowered.",
     "protocol": "Collision mutation fails the observer frame protocol guard; serialized dispatch with four owned ready workers fails the required physical entry floor."
   },
-  "historicalEquivalenceLimitations": "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes167-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun.",
+  "historicalEquivalenceLimitations": "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes79-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun.",
   "preparationPredecessor": "Static preparation is retained separately in compute50-51-results-prepared.json. This document records the later executed evidence.",
   "pending": []
 }
