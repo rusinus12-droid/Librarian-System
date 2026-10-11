@@ -9,7 +9,7 @@ function store(){const map=new Map();return{map,getItem:async key=>map.get(key)?
 async function verifyInitialScopeUrl({allControls=false}={}){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'sdk-initial-scope-url-')),app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:directory,autoBackup:false});
  const address=await app.listen(),baseUrl=`http://127.0.0.1:${address.port}`,observations=[];
- const cases=allControls?[{name:'cold_same_server_mode'},{name:'warm_same_server_mode',warm:true},{name:'cold_plugin_to_server',initialMode:'plugin_only'},{name:'explicit_url_publication',explicit:true},{name:'plugin_only_invalid_url',off:true}]:[{name:'cold_same_server_mode'}];
+ const cases=allControls?[{name:'cold_same_server_mode'},{name:'warm_same_server_mode',warm:true},{name:'cold_plugin_to_server',initialMode:'plugin_only'},{name:'explicit_url_publication',explicit:true},{name:'plugin_only_invalid_url',off:true,initialMode:'plugin_only'}]:[{name:'cold_same_server_mode'}];
  try{
   for(const item of cases){
    const pluginStorage=store(),args={memory_suite_server_mode:item.initialMode||'server_only',memory_suite_server_url:item.off?'https://invalid.example':baseUrl},scope={scopeId:item.name,scopeKey:item.name,label:'Controlled initial scope'},held=new Map(),requests=[];let bridge;
