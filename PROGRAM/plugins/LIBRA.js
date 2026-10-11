@@ -48310,7 +48310,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           || digest(work) !== head.workDigest)
           return empty('stale_source','micro_publish_attempt_superseded');
       }
-      if (!await activeMicroSource(active.receipt)) return empty('stale_source', 'source_changed_during_micro_read');
+      const finalSource = await activeMicroSource(active.receipt);
+      if (!finalSource || digest(finalSource.receipt) !== digest(active.receipt)
+        || digest(finalSource.head) !== digest(active.head)) {
+        return empty('stale_source', 'source_changed_during_micro_read');
+      }
+      // The record/work/source reads above await physical storage. A head
+      // removed or replaced during those reads cannot authorize the cached
+      // record, even when its source revision and analysis ID still match.
+      let finalHead;
+      try { finalHead = await storage.getVerifiedJson(headKey, scope, null); }
+      catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
+      if (digest(finalHead) !== digest(head)) return empty('stale_source', 'micro_head_changed_during_read');
       return { status: 'verified', reason: '', record, receipt: active.receipt,
         head, recordKey, headKey };
     };
