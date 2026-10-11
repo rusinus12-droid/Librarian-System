@@ -3815,5 +3815,7 @@
       "integratedOfficialRunStatus": "PENDING"
     }
   ],
-  "additionalReceiptSha256": "ab181ffff0c55b4c92d6403e9ff7379b703639a41709a69d943db1df70864ef9"
+  "additionalReceiptSha256": "ab181ffff0c55b4c92d6403e9ff7379b703639a41709a69d943db1df70864ef9",
+  "recordType": "historical_checkpoint",
+  "supersededBy": "regression/FIX39_PROCESSING_20261011.json"
 }

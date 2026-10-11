@@ -1,0 +1,1682 @@
+{
+  "schema": "librarian.fix39.processing.v1",
+  "recordedAtUtc": "2026-10-11T04:28:48.359892+00:00",
+  "original280CampaignCommit": "567630fda7df236e14e3feb4873e52366232b509",
+  "original280Counts": {
+    "PASS": 241,
+    "FAIL": 37,
+    "TIMEOUT": 1,
+    "PASS_SKIP": 1
+  },
+  "fix39PriorCounts": {
+    "FAIL": 37,
+    "PASS_SKIP": 1,
+    "TIMEOUT": 1
+  },
+  "reviewedCodeCommit": "a752329f465868c4ed5568d07ec6b9943c90bf75",
+  "currentLibraSha256": "4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753",
+  "rootCount": 39,
+  "allOriginal39PathsAccounted": true,
+  "enumeratedRootCount": 1138,
+  "qualification": "PENDING final actual artifacts and common-source official full1138 run",
+  "domainReceipts": [
+    {
+      "domain": "runtime",
+      "path": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "sha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e",
+      "count": 7
+    },
+    {
+      "domain": "contracts",
+      "path": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "sha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed",
+      "count": 13
+    },
+    {
+      "domain": "source",
+      "path": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "sha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958",
+      "count": 7
+    },
+    {
+      "domain": "storage",
+      "path": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "sha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe",
+      "count": 7
+    },
+    {
+      "domain": "build",
+      "path": "/workspace/librarian-regression/fix39-20261011/build-results.json",
+      "sha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199",
+      "count": 4
+    },
+    {
+      "domain": "integration",
+      "path": "/workspace/librarian-regression/fix39-20261011/integration-results.json",
+      "sha256": "f169016f67a93ca103c5919b5bd5469f4030cd765135565f1af3a541377993f2",
+      "count": 1
+    }
+  ],
+  "independentReview": {
+    "path": "/workspace/librarian-regression/fix39-20261011/review-approved-before-full.json",
+    "sha256": "bcc68735ffb390ecda0fa9c7048a2ebf05845881e85832f00bbebd230ede5848"
+  },
+  "additionalFullInventoryCorrections": [
+    {
+      "rootOrdinal": 460,
+      "kind": "test-only admitted canonical-regeneration lock proof; exact remove-enqueue mutation fails"
+    },
+    {
+      "rootOrdinal": 880,
+      "kind": "current release provenance byte binding; historical rows preserved"
+    },
+    {
+      "rootOrdinal": 900,
+      "kind": "verified source checkout layout separated from strict release layout"
+    },
+    {
+      "roots": [
+        98,
+        99,
+        806,
+        916
+      ],
+      "kind": "suite skip classification distinguishes top-level test reports from nested expected product refusals"
+    }
+  ],
+  "genuineExternalEvidenceRoots": [
+    247,
+    280,
+    515,
+    835,
+    836
+  ],
+  "scope": "Linux current-contract qualification. Changed retired-feature successors are not claimed historically equivalent. Missing exact provider/history/adapter evidence remains blocked.",
+  "roots": [
+    {
+      "rootOrdinal": 170,
+      "path": "PROGRAM/tests/flashback_scope_panels_browser_test.cjs",
+      "domain": "build",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "9cb00c7259ddeac39b32b31ff92fc7ac11e4b6d26a32ceba414478a3ba1cbb24",
+      "currentTestSha256": "e8b191c70d88e85964bd2755d045d338be82d270c1d7de84b668723b657bded8",
+      "cause": "Chromium singleton socket uses inherited long TMPDIR and exceeds the Unix socket path limit before DevTools starts.",
+      "assertionMap": [
+        "All original real Chromium DOM/event/panel/selection/cleanup confirmation and retained-memory assertions unchanged."
+      ],
+      "historicalEquivalenceLimitations": [],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+    },
+    {
+      "rootOrdinal": 247,
+      "path": "PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs",
+      "domain": "build",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "838e95416cba02418e224405c9b8527e8b917ac900e9eb00b907054187fc0663",
+      "currentTestSha256": "7a6450cbc667b856435e66d6c55566ea6eb89a7af93065d44d90e3136720ff5a",
+      "cause": "Both original pinned commits are unavailable in all three local repositories and the actual upstream; original loader also assumed a monorepo parent Git root. Shared before-hook prevented all independent current checks.",
+      "assertionMap": [
+        "Original scalar/boundary own/null/array/default differential retained; BLOCKED until genuine pinned source exists.",
+        "Original scalar 96 checks and boundary 27 checks, at most 2 VM Object lookups: preserved and PASS.",
+        "Original canonical packet field/visibility differential retained; BLOCKED.",
+        "Original frozen-marker/helper-count historical differential including automatic edited-carrier adoption retained; BLOCKED.",
+        "Current successor additionally checks exact approved facts in cold/warm, retains approved A0 and rejects passive pasted A1, replaces all markers on foreign scope, reads all 10 raw sources each phase, leaves host messages unchanged, and makes zero LLM/fetch calls.",
+        "Current scalar/boundary controls positively normalize own fields/deduplicate IDs and reject inherited fields, absent fields, and unsupported nonobjects."
+      ],
+      "historicalEquivalenceLimitations": [
+        "Current passive edit policy intentionally preserves previously approved canon instead of auto-adopting pasted replacement carriers. Current successor does not establish historical equivalence.",
+        "Historical helper invocation counts and all packet fields remain unqualified without genuine original control."
+      ],
+      "externalBlockers": [
+        "Missing commit 9ae0719b0b34f6fa69d2d156cfc04614199f7a86 or a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e containing exact source SHA256 55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617. Upstream fetch for both returns not our ref."
+      ],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+    },
+    {
+      "rootOrdinal": 288,
+      "path": "PROGRAM/tests/hayaku_inline_ledger_readset_runtime_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "0c7fff17c40fa513376062dc85af16e4db81db52c464f61cc7352ab344d33d14",
+      "currentTestSha256": "610e3a78d6a7ab8440c3521f6e5c1c6f6382aec080c8b84b010ac16d2b41b8f0",
+      "cause": "Historical root requires removed automatic source journal and treats saved same-slot choice as automatically replaced. Additional correction: optional40ms posting binding timeout can legitimately use lexical fallback, while actual writer whole-host readset still verifies and rejects drift.",
+      "assertionMap": [
+        {
+          "original": "29 physical-write/readback mutation cases and 8 admission/concurrency cases",
+          "current": "All original cases retained. Inline acknowledgement and the original pending request still fail closed after whole-host drift; fresh request retains a physically saved same-slot canonical choice until explicit replacement."
+        },
+        {
+          "original": "Body drift at ledger write/readback requires next request automatically use live changed text",
+          "current": "Distinguish pre-head live-source discovery from post-head approved canonical preservation. Added full public preview/apply, exact single paid call, spent-preview refusal, new current recall, and deletion exclusion."
+        },
+        {
+          "original": "Default AUTO admission initializes owner journal",
+          "current": "Default first admission commits and recalls with full raw-read proof and zero model calls while journal remains absent; fresh durable posting index remains valid."
+        },
+        {
+          "original": "Persisted preference epoch establishes effective policy drift",
+          "current": "Mutate actual effective ignoredTags/externalRulesVersion at held read and before fresh admission; no fabricated storage-mode change stands in for policy drift."
+        },
+        {
+          "original": "getSourceEditSyncStatus reports policy epoch",
+          "current": "Public getSourceEditRules plus persisted rule bytes prove actual policy; saving preserves old tracking metadata without reenrollment."
+        },
+        {
+          "original": "Posting routing.validationRawReads10 used as proxy for whole-host writer certificate in every held persistence case",
+          "current": "Observe existing successful private verifyHayakuReadset before persistence; exact full host transcript10assistant pairs plus literal authority required. Posting-admitted cases still require rawReads/Sources10; optional40ms binding timeout must scan/build10 complete with index noncurrent/nondurable. Effective-settings control delays actual URL argument read65ms to deterministically exercise legitimate fallback; settings drift still refuses writer/delivery."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No assertion that the removed source journal/automatic epoch controller operates",
+        "Small synthetic corpus; not a scalability/performance qualification",
+        "Optional posting index availability is separate from full writer readset verification. Delayed host argument is controlled latency; no posting budget growth, forged certificate, replacement predicate or extra awaited proof seam."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 425,
+      "path": "PROGRAM/tests/lia_world_lore_compute_server_integration_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "aae53257b0df0fb4786f00f7510596bfe176c6b5e3b2955993e14e15e8753c65",
+      "currentTestSha256": "d65083bee9ae726cda2bb41aab90bf287cda0938bda098169b23a99ccde72084",
+      "cause": "The test hashes nonexistent ephemeral retired SQLite paths, then expects retired LIA owner compute capability. Current server correctly rejects that identity with COMPUTE_OWNER_PLUGIN_REQUIRED.",
+      "assertionMap": [
+        {
+          "original": "Canonical database hashes unchanged",
+          "current": "All five DB/WAL presence+SHA and SQL row snapshots unchanged, including ephemeral retired stores",
+          "equivalence": "retained and strengthened"
+        },
+        {
+          "original": "Actual LIA remote result equals local kernel; no duplicate local work",
+          "current": "LIA identity denied; exact local output and one local computation. Separate active-owner real server result equals its kernel with zero local calls",
+          "equivalence": "retired LIA remote behavior replaced; shared transport obligation retained"
+        },
+        {
+          "original": "Changed owner binding rejects stale server result",
+          "current": "LIA validation hit count is explicitly zero under identity denial. Active-owner actual server result invokes validator with {request:1,current:1}; stale request invokes {1,2}, exact MEMORY_SUITE_COMPUTE_BINDING_STALE, one local fallback",
+          "equivalence": "retained shared SDK freshness without false LIA equivalence"
+        },
+        {
+          "original": "Compute bootstrap and execute; no Storage bootstrap",
+          "current": "LIA compute bootstrap observed and no execute under denial; supported owner dispatches real execute; neither invokes /bootstrap",
+          "equivalence": "retained with owner boundary"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Retired LIA remote worker parity is unavailable by current product contract. Active Flashback hash operation qualifies shared deterministic compute transport/freshness, not model recall or LIA remote authorization."
+      ],
+      "externalBlockers": {},
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 483,
+      "path": "PROGRAM/tests/libra_consumed_micro_freshness_runtime_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "ce5df8c773a3a5bc3d1e35450ba7f1aad6ec958749edc660d1fc574f67ebf5fc",
+      "currentTestSha256": "3a030ad98b9eff0cd3152b03fb2b2a409b2daab0b5d711ec763b8bfa3ae074b6",
+      "cause": "Original 29 drafting cases depend on retired Input Writer/Planner/GRADIA. Current successor exposed a real final-read TOCTOU: cached Micro head and receipt stayed trusted after awaited physical reads.",
+      "assertionMap": [
+        {
+          "originalCase": "an unchanged consumed Micro allows Input Writer generation and delivery validation",
+          "currentAssertion": "actual Classic block and cloned ResponseContext validation",
+          "equivalenceGap": "Writer candidate generation/delivery snapshot retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "deleting an already consumed Micro head prevents a new provider submission",
+          "currentAssertion": "issued Classic context rejects deleted head without provider calls",
+          "equivalenceGap": "pre-drafting provider submission retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "same-analysis-ID body tampering during provider wait rejects Input Writer results",
+          "currentAssertion": "body_changed final actual Classic physical read rejects unchanged-ID mutation",
+          "equivalenceGap": "drafting provider-await result retired; current final read crossed",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "same-ID consumed Micro tampering invalidates final Writer insertion before host mutation",
+          "currentAssertion": "body_changed actual final request preserves original host prompt",
+          "equivalenceGap": "Writer insertion host mutation retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "unrelated Micro keys do not invalidate the actually consumed evidence",
+          "currentAssertion": "unrelated unused Micro key preserves context validity",
+          "equivalenceGap": "none for physical provenance",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "final snapshot validation rechecks Micro after supplemental state reads",
+          "currentAssertion": "final record read mutation and late physical head/receipt revalidation",
+          "equivalenceGap": "exact Writer supplemental State-read sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "Planner must not inject a result after the consumed Micro head disappears",
+          "currentAssertion": "head_deleted actual final Classic injection rejected",
+          "equivalenceGap": "Planner provider-await response retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a valid 35-second logical Planner response is not rejected by the old search deadline",
+          "currentAssertion": "unchanged Classic delivers with zero helper provider calls",
+          "equivalenceGap": "35-second Planner provider budget has no current equivalent",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "public layer edits and a verified flag cannot erase private consumed provenance",
+          "currentAssertion": "edited public layers + verified flag + recomputed seal rejected",
+          "equivalenceGap": "none for opaque provenance binding",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "a missing runtime token fails closed instead of trusting public verification fields",
+          "currentAssertion": "missing token + recomputed public digest rejected",
+          "equivalenceGap": "none for runtime provenance",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "a stalled consumed-data read is bounded and starts no model retry",
+          "currentAssertion": "stalled actual final record read bounded; released late read never injects",
+          "equivalenceGap": "no removed drafting retry policy claimed",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "final send preparation cannot outlive a changed consumed Micro",
+          "currentAssertion": "changed Micro during final actual request read leaves host request unchanged",
+          "equivalenceGap": "Writer prepareSend and sendChat retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a changed chat scope rejects a late Input Writer result",
+          "currentAssertion": "scope_changed during final actual record read rejects augmentation",
+          "equivalenceGap": "late Writer result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "inherited archive Micro is checked after provider wait against its physical archive",
+          "currentAssertion": "inherited archive deletion/body mutation rejects issued context",
+          "equivalenceGap": "provider-await drafting sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "two consumed Micro records retain separate proofs with one archive read per validation",
+          "currentAssertion": "two actual inherited Micro identities; two private proofs; exactly one archive read; changed record rejected",
+          "equivalenceGap": "none for physical archive/proof identity",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing an active inherited lineage ref rejects a still-present consumed archive",
+          "currentAssertion": "active inherited ref removed while physical archive remains rejects authority",
+          "equivalenceGap": "none for inherited lineage authority",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "consumer hard deadline still rejects an over-budget logical provider response",
+          "currentAssertion": "bounded 1500ms consumer read exercised by actual request timeout",
+          "equivalenceGap": "Planner over-budget logical provider response retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a same-scope logical worldline switch invalidates the prepared Writer snapshot",
+          "currentAssertion": "same-scope logical worldline switch rejects current ResponseContext",
+          "equivalenceGap": "Writer snapshot retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "state-only Micro body mutation invalidates a provider result even without a recalled Micro row",
+          "currentAssertion": "state-only Micro body mutation rejects read-only context without raw selected Micro",
+          "equivalenceGap": "provider-await result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "state-only admission decision mutation invalidates a provider result",
+          "currentAssertion": "state-only decision deletion rejects issued read-only context",
+          "equivalenceGap": "provider-await result retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "an unreferenced admission-record change does not invalidate consumed state",
+          "currentAssertion": "unused admission row removal preserves issued read-only context",
+          "equivalenceGap": "none for consumed State dependency selection",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "inherited state admission is rechecked after provider await",
+          "currentAssertion": "inherited admission superseded after context capture rejects validity",
+          "equivalenceGap": "provider-await drafting sequence retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "GRADIA delivers an unchanged consumed Micro after provider await",
+          "currentAssertion": "actual Classic unchanged evidence is delivered, with zero drafting provider calls",
+          "equivalenceGap": "GRADIA provider generation/sidecars retired; no same executor equivalence",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "GRADIA rejects a changed consumed Micro after provider await",
+          "currentAssertion": "actual Classic final consumed-read body mutation rejects augmentation",
+          "equivalenceGap": "GRADIA provider-await result retired; no same executor equivalence",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a different same-scope token cannot replace the prepared consumed evidence",
+          "currentAssertion": "foreign valid same-scope token with recomputed context seal rejected",
+          "equivalenceGap": "retired Writer evidence packet replaced by current ResponseContext",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "a cloned Writer snapshot remains valid but a foreign token with recomputed public digests does not",
+          "currentAssertion": "cloned actual Classic context valid; foreign resealed token rejected",
+          "equivalenceGap": "Writer snapshot identityDigest/sealDigest format retired",
+          "equivalentOriginalExecutor": false
+        },
+        {
+          "originalCase": "response context rejects a foreign token even when its public digest is recomputed",
+          "currentAssertion": "foreign resealed token cannot hide mutated consumed Micro",
+          "equivalenceGap": "none for surviving ResponseContext seal",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing provenance and recomputing the public response context seal cannot regain delivery authority",
+          "currentAssertion": "missing_token/missing_readsets public context reseal rejects runtime authority",
+          "equivalenceGap": "none for ResponseContext",
+          "equivalentOriginalExecutor": true
+        },
+        {
+          "originalCase": "removing provenance and recomputing the public Writer snapshot seal cannot regain delivery authority",
+          "currentAssertion": "missing_token/missing_readsets public context reseal rejects runtime authority",
+          "equivalenceGap": "Writer snapshot format retired",
+          "equivalentOriginalExecutor": false
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "The 29 original contracts are mapped individually; current 25-case successor is not the same 29-case drafting suite.",
+        "No retired Writer insert/send/snapshot, Planner/GRADIA model generation, logical long-provider timing, or exact old supplemental-read executor equivalence.",
+        "Physical reread is bounded ordered validation, not an atomic snapshot against arbitrary future/concurrent changes.",
+        "Risu host and model are controlled fixtures; no live external provider or desktop host qualification."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 485,
+      "path": "PROGRAM/tests/libra_consumer_reference_material_v2_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "33329b4d0f8bb3644d175aa39d0f6e13d479fe5952a67c40659f64f497144666",
+      "currentTestSha256": "967bb361ed6044633ec2bc743622d78fd6998bf226a15cf25ccfe47b6e377e9e",
+      "cause": "Removed Writer instrumentation and delivery/preparation APIs; shared reference gate retained.",
+      "assertionMap": [
+        {
+          "originalLines": "4-12",
+          "originalObligation": "Selected native lore is delivered and reread; mutation invalidates; zero generation",
+          "currentAssertion": "Real loadRisuContextSnapshot inventory plus consumption-declared selected lore ID; unchanged gate passes and actual host lore edit rejects. Shared helper fixture asserts zero calls/writes/removals.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "13-17",
+          "originalObligation": "Bound Persona selection invalidates consumed bootstrap",
+          "currentAssertion": "Actual bound Persona inventory entry verified, selection switch rejected.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "18-20",
+          "originalObligation": "Empty enabled author note becoming nonempty invalidates",
+          "currentAssertion": "Physical empty author note remains dependency; nonempty mutation rejected.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "21-26",
+          "originalObligation": "CBS-resolved note pins actually bound Persona data",
+          "currentAssertion": "Actual snapshot note resolves to Persona name; Persona name mutation rejects same shared gate.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "27-31",
+          "originalObligation": "Input Writer mode policy invalidates delivery",
+          "currentAssertion": "Retained default preset policy changes invalidate shared settings digest; Writer mode and delivery envelope have no successor.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Input Writer mode policy invalidates delivery"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 486,
+      "path": "PROGRAM/tests/libra_consumer_transport_v2_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "9596a44ac402c1ce3c1868b67dfc31b76d4bb42ae81eb8e3cba15e0f55331e85",
+      "currentTestSha256": "c1a752600ad7d6373364413d858e2b19d8d305968a5384554053231213bb0592",
+      "cause": "Removed Writer instrumentation/generation; shared transport and translator retained.",
+      "assertionMap": [
+        {
+          "originalLines": "5-26",
+          "originalObligation": "Direct reasoning-only/default or explicit budget, 401, truncation: one call, exact token counts, no role-changing retry",
+          "currentAssertion": "Same callConsumerGeneration/callLLMWithPreset machinery invoked through shipped private translateInputAssistReviewText; all four negatives retained, successful translation added.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "27-36",
+          "originalObligation": "OtherAx logical cancellation, physical owner, duplicate blocking, late usage/discard",
+          "currentAssertion": "Retained translation operation drives real host promise; prompt returns on cancel, duplicate rejects, pending state and late accounting match original.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "all Writer dispatch sites",
+          "originalObligation": "Writer choices/operation group",
+          "currentAssertion": "No current Writer generation executor; transport contract is tested in the retained translator, not Writer equivalence.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Writer choices/operation group"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 515,
+      "path": "PROGRAM/tests/libra_gemma4_artifact_acceptance_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "PASS_SKIP",
+      "previousOfficialTestSha256": "5790bce326ac9fde6166794959c23dfa5f2995e980b08753ffe3c08cccbe5c46",
+      "currentTestSha256": "5790bce326ac9fde6166794959c23dfa5f2995e980b08753ffe3c08cccbe5c46",
+      "cause": "No genuine independent Gemma4 capture and no configured provider credentials/endpoint to acquire the specified artifact.",
+      "assertionMap": [
+        {
+          "originalAssertion": "real Gemma4 answer verbatim/fence-stripped commits with source validator negative guard",
+          "currentAssertion": "no genuine /tmp/gemma_libra_result.json; unchanged test explicitly skips captured-model acceptance; source evidence suite still runs",
+          "equivalenceGap": "external model capture cannot be synthesized or substituted"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Genuine captured answer unavailable. No claim of external model acceptance or quality."
+      ],
+      "externalBlockers": [
+        "Missing genuine Gemma4 captured answer"
+      ],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 526,
+      "path": "PROGRAM/tests/libra_hayaku_independent_review_regressions_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "0be93d91c25bf1f14f091a17632ee65ffc135187a8903c67b6a2d10476c8f012",
+      "currentTestSha256": "804283d7461848913b1f110160d95be3ee1d820d6908bb770d0d1242d84f4243",
+      "cause": "Retired SGA parser entrypoint no longer exists; shared retained syntax repair/duplicate scanner and actual canonical admission provide explicit surviving successor obligations.",
+      "assertionMap": [
+        {
+          "original": "Complete and single-truncated HAYAKU envelopes accepted; valid/broken leading siblings refused",
+          "current": "Unchanged four real repairNow provider cases."
+        },
+        {
+          "original": "Retired SGA parser preserves single/double-quoted string bytes, apostrophes, and rejects smart duplicate keys",
+          "current": "Same retained shared syntax repair/duplicate scanner through public debugParseCanonicalArtifact; exact body and smart/plain duplicate refusal."
+        },
+        {
+          "original": "SGA schema ok:false is rejected",
+          "current": "Real canonical admission accepts grounded canonical artifact; current canonical schema validator rejects obsolete SGA-shaped artifact. Multiple JSON roots are rejected."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "SGA ok:false response semantics were removed; canonical schema validation is a successor, not identical SGA behavior"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 531,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_authority_runtime_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "65e54b55b14ee36ff4aec8aae325a8a12c1d1a3a8e5e51135539ba11599c924d",
+      "currentTestSha256": "17e48ee5927819c4064400729cfd8a0fd9474f478089929bb5fa772fdc20ace3",
+      "cause": "Removed Writer prompt compiler/provider.",
+      "assertionMap": [
+        {
+          "originalLines": "75-86",
+          "originalObligation": "Writer factual prompt priority input/terminal/new canonical/State/narrative/old canonical/direction/lore",
+          "currentAssertion": "Production canonical-priority partition verifies newer/historical split; actual Classic hook delivers current canonical revision with user/latest-scene precedence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "88-108",
+          "originalObligation": "Current Head label and pending/non-authoritative label",
+          "currentAssertion": "Current/pending authority flags and conservative all-newer partition verified. Classic does not inject raw derived State; Writer-specific prompt headings absent.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "110-111",
+          "originalObligation": "Prompt compilation does not mutate durable storage",
+          "currentAssertion": "Actual Classic request leaves canonical and Head bytes unchanged; root532 checks all-key no-write authority reads.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "113-125",
+          "originalObligation": "Exactly one Writer provider call with system/user roles and ordered fields",
+          "currentAssertion": "Writer provider generation was removed. Actual Classic path proves zero extra response calls and rejects tampered response context. No one-call Writer equivalence.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Writer factual prompt priority input/terminal/new canonical/State/narrative/old canonical/direction/lore",
+        "Current Head label and pending/non-authoritative label",
+        "Exactly one Writer provider call with system/user roles and ordered fields"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 532,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_no_mutation_runtime_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "2e5dce8348489df15be32a511647f1650fb82866c25a29942a80e66e6f94f4b7",
+      "currentTestSha256": "dc1786e1eb9e2a86241814d5806b048faa8ddeee669a90ef049bd7c714d34f3c",
+      "cause": "Removed Writer preflight/delivery snapshot; request-local response authority retained.",
+      "assertionMap": [
+        {
+          "originalLines": "9-22",
+          "originalObligation": "Writer avoids reconcile/Story Arc migration and separates narrative State/direction",
+          "currentAssertion": "Public getResponseContext is current read-only authority interface; full runtime all-key no-write and no-remove checks, not removed source helpers.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "67-105",
+          "originalObligation": "No auto input hook; stable timestamp-advanced authority; scope/worldline/revision/manifest/seal",
+          "currentAssertion": "No input script registration; real committed memory seals same scope/worldline/canonical revision/boundary/context digest across advanced VM clock.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "107-129",
+          "originalObligation": "Missing persisted timestamp remains absent; actual timestamp edits invalidate; unchanged stored timestamp remains current",
+          "currentAssertion": "Identical missing/changed timestamp sequence on actual continuity-state record; no normalization writes.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "130-136",
+          "originalObligation": "New complete pair invalidates and all operations write/remove no durable keys",
+          "currentAssertion": "Real transcript append invalidates public context; zero writes/removals/provider calls plus explicit tampered-seal rejection.",
+          "classification": "retained_successor"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Writer avoids reconcile/Story Arc migration and separates narrative State/direction"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 533,
+      "path": "PROGRAM/tests/libra_input_writer_phase06_post_adoption_p1_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "8b62edcd5b6aebd8616153d0b04bcc6d38e3bd03e9d0f70aebc2e528924309fd",
+      "currentTestSha256": "5b8bd711d7a2f961cc9dad8e6edfb0ed5d2470bfe822247693e5ef46475db951",
+      "cause": "Removed Writer composer/choices/send; request-local recall and memory candidate lifecycle retained.",
+      "assertionMap": [
+        {
+          "originalLines": "136-170",
+          "originalObligation": "Regeneration modal returns form data; abort safe; shared Narrative Direction read",
+          "currentAssertion": "Composer/choice modal and its regeneration form have no current LIBRA executor. Current memory candidates are a separate lifecycle, not Writer UI equivalence.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "172-194",
+          "originalObligation": "Request-local recall carries nonpersistence through catalog construction",
+          "currentAssertion": "Test-only access drives actual buildQueryBundle/recall with requestLocalReadOnly and persistRecallCatalog false, a real generated canonical ref, nonempty matching recall and zero all-key writes/removals/calls.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "196-281",
+          "originalObligation": "Delivery validates, prepares, revalidates then physically sends; late staleness, unavailable API and synchronous rejection",
+          "currentAssertion": "Physical send coordinator removed. Retained memory candidate remains inactive at preview, supports keep/adopt, performs no provider call during adopt, delivers new revision through actual Classic, rejects source change before adoption.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "283-289",
+          "originalObligation": "Delivery picker uses public host API, no DOM edits",
+          "currentAssertion": "Removed Writer delivery picker; no recreated host-send/clipboard/DOM compatibility API.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "291-363",
+          "originalObligation": "Real canonical ref reaches catalog without durable mutation",
+          "currentAssertion": "Runtime-generated verified v4 canonical ref recalled via shipped request-local recall; memory ID presence and zero durable writes/removals verified.",
+          "classification": "retained_successor"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Regeneration modal returns form data; abort safe; shared Narrative Direction read",
+        "Delivery validates, prepares, revalidates then physically sends; late staleness, unavailable API and synchronous rejection",
+        "Delivery picker uses public host API, no DOM edits"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 535,
+      "path": "PROGRAM/tests/libra_json_repair_content_and_duplicate_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "f810d665cc12a989a53762777846ce91f063db0d870c9fd896337c9769c2d3fa",
+      "currentTestSha256": "485926dbe58cb06a14bfde699674f802c9a4b0e6d45bbd34d3d3412e17c5dbeb",
+      "cause": "Removed strict SGA artifact parser; shared repair helpers and Canonical parser retained.",
+      "assertionMap": [
+        {
+          "originalLines": "100-174;286-302",
+          "originalObligation": "String body preservation, duplicate spellings, non-vacuous controls, closure completion vs truncation",
+          "currentAssertion": "All original rows0-3 retained (26 cases): shipped helper extraction preserves body, flags duplicates, accepts complete closure, rejects truncated tails.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "176-220;303-306",
+          "originalObligation": "SGA parser itself scans repaired duplicates, accepts valid controls",
+          "currentAssertion": "Current debugParseCanonicalArtifact invokes shipped Canonical parser: duplicate errors for double/bare/single/smart/encoded keys; nonduplicate nested/bare/single/smart controls accepted. SGA schema/stage validation is retired.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "222-283;307-323",
+          "originalObligation": "Smart literal braces/apostrophes and escaped ASCII quote contents survive SGA closure",
+          "currentAssertion": "All six original smart-quote inputs now run through both shared relaxedJsonParse and actual Canonical parser; exact expected draft retained.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "189-197",
+          "originalObligation": "SGA missing final brace after primitive accepted, including duplicate path",
+          "currentAssertion": "Retired SGA primitive-tail framing is not restored. Current typed/Canonical parser rejection is checked explicitly; nested complete tail closure remains accepted.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "SGA parser itself scans repaired duplicates, accepts valid controls",
+        "SGA missing final brace after primitive accepted, including duplicate path"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 579,
+      "path": "PROGRAM/tests/libra_main_memory_semantic_history_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "eec2f43bdd3fcfde8dd4ce175e87b5679ecb0e305243bff08ba49077b9cc80a2",
+      "currentTestSha256": "42ecd0cef7c9485a0ae53db263e7c8e0348a1487c90aab97847b7da59637bf65",
+      "cause": "Parity compared asynchronous pre-barrier embedding status; mirror/server could still be pending while plugin_only had settled. Semantics and canonical bytes agreed.",
+      "assertionMap": [
+        {
+          "originalAssertion": "three-mode semantic State/history equality",
+          "currentAssertion": "all original semantic parity fields retained; transient pre-drain embedding observation excluded from parity but constrained to pending/disabled"
+        },
+        {
+          "originalAssertion": "canonical source bytes and zero-provider deterministic replay",
+          "currentAssertion": "public owner queue drain plus disabled embedding on EVERY canonical row; exact canonicalArtifact bytes AND full wrapper bytes unchanged; identical timeline and zero provider calls"
+        },
+        {
+          "originalAssertion": "boundary/preference/item-specific evidence and correction semantics",
+          "currentAssertion": "all prior positive/negative semantic checks unchanged"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Controlled provider fixtures and loopback SQLite; no live model/host claim."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 645,
+      "path": "PROGRAM/tests/libra_owned_scope_delete_runtime_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "9aad67d6059d3df7e76b8f12a420b22ca194fdce2c86c4edce970cd8deb5d156",
+      "currentTestSha256": "b8af47647435b43a542c1b67c7a3e46990882ea8905d7a83d9cc5ba631861ebf",
+      "cause": "Default second mode invoked forbidden new operational mirror setter before reaching deletion. Historical mirror owner deletion remains supported.",
+      "assertionMap": [
+        {
+          "originalAssertion": "server_only and mirror owner deletion",
+          "currentAssertion": "server_only operational route plus historical persisted mirror route readback; new mirror setter explicitly rejected"
+        },
+        {
+          "originalAssertion": "failed-fence SQL rollback, CAS, no cross-scope removal",
+          "currentAssertion": "all original rollback/operation/revision/sibling/unowned/orphan archive assertions retained"
+        },
+        {
+          "originalAssertion": "backup, tombstones, replay rejection, unrelated routing and server restart",
+          "currentAssertion": "all original full deletion and durable fence assertions retained"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "New operational mirror setter remains forbidden; compatible persisted route is fixture-seeded as historical data.",
+        "No actual external Risu or Windows host qualification."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 676,
+      "path": "PROGRAM/tests/libra_phase_d_v5_server_only_outage_recovery_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "c95cf2d66ccc5f1bc78b758bcc97189c045b0cbfab197a6661c1d3f7fc53d10a",
+      "currentTestSha256": "1ce137d84cf6643ecf1589e6b20f18faa5e47e4a72a3728306dd5f74636d87af",
+      "cause": "Outage injection raced a prior committed T5 derived-vector metadata request; baseline was captured before its manifest revision completed.",
+      "assertionMap": [
+        {
+          "originalAssertion": "no server/local raw bytes change while transport down",
+          "currentAssertion": "drain prior T5 derived work before outage; same full key/revision/raw SHA comparisons during actual failed successor; zero provider and no local authority"
+        },
+        {
+          "originalAssertion": "fresh reconnect State/History/Recall/actual response delivery",
+          "currentAssertion": "all original fresh-run T10, v5 canonical, preference/boundary, accepted thread link and actual Classic delivery assertions retained"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Outage begins after already committed preceding work drains; it does not claim rollback of requests already sent before transport loss.",
+        "Synthetic v5 extraction and loopback HTTP; no external provider outage claim."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 678,
+      "path": "PROGRAM/tests/libra_pipeline_draft_workspace_rc2_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "7d90ebcf16c86edb7e9aec6aeffd9b7b5de26bd86287ce348077874b0c388777",
+      "currentTestSha256": "45ad7d67c9c246b7299ebb7efe271a81d05055ec8d0e7e49c7839d64c8afb462",
+      "cause": "Removed embedded Planner/GRADIA workspaces; current memory workspace and common revert retained.",
+      "assertionMap": [
+        {
+          "originalLines": "75-88",
+          "originalObligation": "Memory workspace family neutral; common shell isolates optional draft families",
+          "currentAssertion": "Shipped memory shell/renderers execute with GUI state; routes normalize to memory and actual analyzer called false,true. No persistence or eager prompt builds. Draft family branch was removed.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "90-139",
+          "originalObligation": "LIBRA draft/GRADIA five tabs, writing/placement/length/language/call modes",
+          "currentAssertion": "All embedded draft engines/settings were removed; no equivalent behavior claimed.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "141-157",
+          "originalObligation": "Common shell revert; dirty interactions",
+          "currentAssertion": "Actual revert helper rejects while save pending, reloads persisted settings/basis, clears cache, renders, clears dirty; shell preserves existing unsaved state. Retired length/language handlers not restored.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "158-167",
+          "originalObligation": "Legacy writing keys read/save compatibility",
+          "currentAssertion": "Retired stage keys intentionally stripped from current settings; no active writing-mode compatibility contract.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "169-181",
+          "originalObligation": "Active Book routes, sidebar/main shell, hidden dashboard chrome",
+          "currentAssertion": "Original active-route helper and sidebar/main/no dashboard/hidden CSS assertions retained.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "183-196",
+          "originalObligation": "Optional external GRADIA execution baseline comparison",
+          "currentAssertion": "Removed execution declarations have no current comparison target; no historical baseline fabricated.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Memory workspace family neutral; common shell isolates optional draft families",
+        "LIBRA draft/GRADIA five tabs, writing/placement/length/language/call modes",
+        "Common shell revert; dirty interactions",
+        "Legacy writing keys read/save compatibility",
+        "Optional external GRADIA execution baseline comparison"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 691,
+      "path": "PROGRAM/tests/libra_protected_product_transfer_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "e3b80dac7d54dfaa3a9ddd5dc698884c34bf259cdc95eb26f16232bdd4aa0638",
+      "currentTestSha256": "d7ab6a5d62cbf50dea49d5ada5f725dfc82e51421e02186c0cdc8ef6ea9a59c0",
+      "cause": "Removed Planner/SGA protected response products; Classic whole evidence transfer retained.",
+      "assertionMap": [
+        {
+          "originalLines": "25-51;154-194",
+          "originalObligation": "Planner lossless full normalized plan and metadata beyond preferred cap",
+          "currentAssertion": "Planner product and transfer diagnostics removed. Shipped Classic renderer preserves oversized first selected evidence byte-for-byte, includes fitting unit, omits over-budget later unit wholly. No full-plan equivalence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "53-55;196-260",
+          "originalObligation": "SGA byte-identical draft, analysis exclusion, locks, full-product metadata, draft-only normalization",
+          "currentAssertion": "SGA product/locks/transfer diagnostics removed. Current Classic renderer rejects inclusion of raw State/private analysis fields; real beforeRequest delivers whole selected canonical text. No SGA draft/lock equivalence.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Planner lossless full normalized plan and metadata beyond preferred cap",
+        "SGA byte-identical draft, analysis exclusion, locks, full-product metadata, draft-only normalization"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 701,
+      "path": "PROGRAM/tests/libra_rank_equivalence_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "551374af155610938010465e48376fd35a9350fd45196401746e5733e3bedde5",
+      "currentTestSha256": "17a88f1671492df42a9676ce8f5dea46dc659847953c04cbaa65e6711fc79229",
+      "cause": "Obsolete instrumentation anchors to removed draft patch exports; ranking formulas unchanged.",
+      "assertionMap": [
+        {
+          "originalLines": "all",
+          "originalObligation": "600-record linear four-component formulas, original BM25F constants/fields, deterministic finite ranking, bounded caches",
+          "currentAssertion": "Only two obsolete instrumentation anchors changed to stable current getUnifiedStorageStatus exports. Every original numeric and cache assertion unchanged.",
+          "classification": "preserved"
+        }
+      ],
+      "historicalEquivalenceLimitations": [],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 716,
+      "path": "PROGRAM/tests/libra_receipt_cbs_inputwriter_recovery_runtime_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "f2d64690cf843ff9566b5ee01be6729bb859917f606c44ba250da09cd134f6d7",
+      "currentTestSha256": "f48778e366a93552d23aea645bceaf3a635fa861483e4ac47bf1c21e163096d5",
+      "cause": "Writer native lore and choice generation APIs removed; receipt/CBS functions retained.",
+      "assertionMap": [
+        {
+          "originalLines": "37-92;118-153",
+          "originalObligation": "Receipt-only/empty/ordinary dialogue, live metadata, CBS identity and bounded/ambiguous/excluded host proof",
+          "currentAssertion": "All nine original non-Writer receipt/CBS cases unchanged.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "94-109",
+          "originalObligation": "Native nonreceipt lore available, no model, delivery current",
+          "currentAssertion": "Real snapshot active lore and physical inventory checked; declared consumption shared read-set validates and rejects actual mutation with no model. No Writer preparation equivalence.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "155-189",
+          "originalObligation": "Polish one choice, alternatives2/3 visible partial, zero choices rejected",
+          "currentAssertion": "Three Input Writer generation/UI count cases genuinely retired without current executor; no replacement-choice fabrication.",
+          "classification": "retired"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Native nonreceipt lore available, no model, delivery current",
+        "Polish one choice, alternatives2/3 visible partial, zero choices rejected"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 729,
+      "path": "PROGRAM/tests/libra_response_readset_v2_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "66003e3465e0d65ce8b9af71dc5f9fd491d669139f25d23c88f99f88522647b4",
+      "currentTestSha256": "8da12cf755303cce937ea147fc4b26b6af33c20e161619c938c579e21cec5269",
+      "cause": "Removed Writer instrumentation/generation; shared read-set validators and projection retained.",
+      "assertionMap": [
+        {
+          "originalLines": "4",
+          "originalObligation": "Note reread, unused description ignored, no writes/models",
+          "currentAssertion": "Actual shared read-set with real snapshot accepts unchanged/unused-description edit and rejects note mutation; fixture enforces zero writes/removals/models.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "5",
+          "originalObligation": "Consumed description invalidates",
+          "currentAssertion": "Actual shared entry read rejects physical consumed-definition change.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "6",
+          "originalObligation": "Reference mutation during actual Writer provider generation rejects adoption",
+          "currentAssertion": "Shared validator rejects mutation inside an awaited physical host read, proving its race fence. Writer-generation adoption race has no current executor.",
+          "classification": "partial_retirement"
+        },
+        {
+          "originalLines": "7",
+          "originalObligation": "Homonym aliases, relation and owner/holder projection no mutation",
+          "currentAssertion": "Same shipped projection preserves distinct refs, both relation ends and ownership, unchanged source Head.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "8",
+          "originalObligation": "Readset tamper rejected by Writer delivery seal",
+          "currentAssertion": "Shared read-set digest tamper rejected directly; Writer delivery envelope removed.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Reference mutation during actual Writer provider generation rejects adoption",
+        "Readset tamper rejected by Writer delivery seal"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 730,
+      "path": "PROGRAM/tests/libra_response_variant_missing_canonical_catchup_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "7ee06565ed527f3c33e3961bf0524ef244a3eb9166628da1192f853121a47807",
+      "currentTestSha256": "3dd491386a01cae6be0f11a4b0e5dc02701066af54eef64b58f5fd0ed4232422",
+      "cause": "Retired consent task expectation conflicts with intended explicit selected replacement and same-slot canonical preservation. Real deletion must still retire incomplete source ranges.",
+      "assertionMap": [
+        {
+          "original": "Ten actual five-turn batches including41-45; three storage authorities; A→B→A response change; no extra calls/failedBatches; durability on reload",
+          "current": "All retained with full deployed branch audit and public canonical reader; all thirty canonical creation calls remain real fixture-provider calls."
+        },
+        {
+          "original": "preservedSourceEdits awaiting_consent task",
+          "current": "preservedSourceOwnership from full native slot audit proves approved canonical preservation; no removed consent API is required."
+        },
+        {
+          "original": "Mode-specific local/server placement and equal verdict",
+          "current": "Retained physical local/server assertions and verdict equality; added real source-pair deletion invalidating41-45 and incomplete46-50 without paid work."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No retired consent task is fabricated; exact current same-slot approved choice remains authoritative"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 760,
+      "path": "PROGRAM/tests/libra_source_edit_exception_impact_runtime_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "e787c5d0005e0e5c05454ab2e5c2cfaab38c0ffb52ae083058fabaaf04252db1",
+      "currentTestSha256": "bf33a82cf78c2ba1235911ad0c62ec2e8e68e8754618aad9b1ca8d40afcf6aaf",
+      "cause": "Automatic source task/exception machinery retired; surviving explicit selected job must enforce actual source/scope/cancel/overlap authority and preserve other immutable canonical records.",
+      "assertionMap": [
+        {
+          "original": "Automatically applied changedT6 task and persisted exception suppress dependent suffix while prefix survives",
+          "current": "Three real committed batches; explicit middle-only selection spends exactly one call, replaces real request authority, preserves immutable prefix/suffix and every old body. Unselected approved records remain usable under current selection contract."
+        },
+        {
+          "original": "8s automatic request preparation returns while provider held; later branch edit rejects delayed task",
+          "current": "Public selected job held at actual provider; live source/scope drift refuses activation with exactly one paid call and immutable previous canonical. Current final read deadline suppression is exercised in763."
+        },
+        {
+          "original": "Newer automatic request generation retires older source task and can start fresh one",
+          "current": "Overlapping explicit action is refused as busy without a second paid call; stale first action rejected; fresh explicit action succeeds once. Final response-request publication ownership is separately tested and fixed in763."
+        },
+        {
+          "original": "Deferred work cannot report success after invalidation",
+          "current": "Added public job cancellation during provider await; returned job is cancelled, canonical unchanged, no retry/helper calls."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Exception-driven suffix suppression no longer has an automatic equivalent",
+        "The retired8s source-processing budget is not claimed; current final-read deadline tested separately"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 762,
+      "path": "PROGRAM/tests/libra_source_edit_policy_epoch_runtime_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "754db51cff43b5b428d26f22d329cb56624bbaa22cafed9518b6ce2210647a5f",
+      "currentTestSha256": "1d98236c97137da95243783d2c66c662ce909107395b7b3504423233300ff913",
+      "cause": "Automatic policy epoch rebuild retired; real saved projection rules preserve approved canonical until selected action, which consumes exact projected text once without fabricated prior raw.",
+      "assertionMap": [
+        {
+          "original": "SourceTags, unwrapTags, ignoredTags each automatically rebuild exactly once",
+          "current": "Each saved policy causes zero automatic calls and preserves approved canonical; explicit selected rebuild calls once and consumes exact projected text excluding outside translation."
+        },
+        {
+          "original": "Original/current raw digest equality and projection_policy_changed task metadata",
+          "current": "Host transcript bytes remain identical; each selected digest/revision changes with actual projection; previous canonical/evidence stays immutable. New evidence stores exact projection consumed by provider."
+        },
+        {
+          "original": "Same projection epoch change costs zero calls",
+          "current": "Additional absent unwrap rule keeps selected source digest and canonical bytes unchanged with zero calls."
+        },
+        {
+          "original": "Missing prior evidence can rebuild without fabricating originalRawDigest/text",
+          "current": "Run complete three-policy sequence both with present and deleted original evidence; deleted original stays absent and no comparison/journal is invented."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No old policy epoch/task taxonomy remains active",
+        "Canonical source evidence is normalized projection; raw host immutability is separately asserted"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 763,
+      "path": "PROGRAM/tests/libra_source_edit_settled_admission_runtime_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "0b0dd5e34a6c38a370468a2f27f1b4768abc2267f4a2bd89b20d829cb3f7888c",
+      "currentTestSha256": "9fb14d006d717a841440e59b1f3c90bd0c0caef520b9c3c07f89a657148102b5",
+      "cause": "Current real production bugs: immutable canonical physical bodies were not final consumed proofs; closure-only proofs lost by diagnostics projection; final memory policy/mode could drift during physical body read; boundary settings await unbounded; superseded recall/boundary owner could publish old diagnostics. Also retired automatic task-receipt assertions replaced by explicit physical successor map.",
+      "assertionMap": [
+        {
+          "originalCases": [
+            "same_task"
+          ],
+          "current": "One explicit replacement completed before request; exact current physical body delivered in actual Classic request, response context validates, old bytes preserved."
+        },
+        {
+          "originalCases": [
+            "source_changed",
+            "scope_changed",
+            "provider_changed",
+            "new_request",
+            "policy_changed",
+            "mode_changed",
+            "data_binding_changed"
+          ],
+          "current": "Mutate real current source/scope/provider/public recall policy/public storage mode/actual wire DATA identity or complete a newer actual request at final delivery seam. Zero paid recall calls; no stale Classic delivery."
+        },
+        {
+          "originalCases": [
+            "corrupt_body",
+            "missing_body",
+            "body_changed_after_hydration",
+            "body_changed_after_final_readback"
+          ],
+          "current": "Mutate/remove both actual mirror copies at observed current hydration/final-authority boundary; existing physical checker must reread and refuse exact changed/missing body."
+        },
+        {
+          "originalCases": [
+            "exception_changed"
+          ],
+          "current": "Real source-pair deletion removes source authority at final seam. Automatic exception journal is retired; user cancellation is separately covered in760."
+        },
+        {
+          "originalCases": [
+            "missing_receipt"
+          ],
+          "current": "Remove actual canonical sourceEvidenceRef binding from both physical body copies; final logical-body readset refuses changed proof locator."
+        },
+        {
+          "originalCases": [
+            "manifest_scope_after_authority"
+          ],
+          "current": "Change actual durable manifest scope after final response-boundary check; final physical canonical readset refuses foreign manifest."
+        },
+        {
+          "originalCases": [
+            "handoff_budget_spent"
+          ],
+          "current": "Hold actual final local physical read beyond existing1.5s consumed-data window; current request returns no Classic, release losing read and prove diagnostics/messages/calls unchanged."
+        },
+        {
+          "originalCases": [
+            "derived_metadata_overlap"
+          ],
+          "current": "Mutate both durable embedding fields after real local sample before server sample; logical body otherwise identical, current physical verified read refuses mixed mirror samples."
+        },
+        {
+          "originalCases": [],
+          "current": "Added settled embedding-only positive: both physical copies changed before read, complete logical body unchanged, legitimate delivery remains current."
+        },
+        {
+          "originalCases": [],
+          "current": "Added public export/import predecessor archive positive: actual archiveShared physical body differs logical loader overlay; inherited Classic delivery and context validation succeed without calls."
+        },
+        {
+          "originalCases": [
+            "policy_changed",
+            "mode_changed"
+          ],
+          "current": "Additional actual public policy and storage-mode changes occur after local physical body sample in final verification; privately captured boundary rechecked after physical reads under same1.5s deadline; stale Classic suppressed with zero calls."
+        },
+        {
+          "originalCases": [
+            "handoff_budget_spent"
+          ],
+          "current": "Additional actual settings write is held during final physical read; boundary policy read waits real write tail but request deadline wins. Release then cannot change returned messages, delivery diagnostics or spend calls."
+        },
+        {
+          "originalCases": [
+            "new_request"
+          ],
+          "current": "Actual nested newer positive request during awaited pre-publication boundary and observed recall completion; older continuation cannot overwrite newer recall snapshot or delivery viewer or inject old request augmentation. Owner tested again after final physical awaits."
+        },
+        {
+          "originalCases": [],
+          "current": "Real two-batch accepted canonical thread successor delivered only through continuity closure (selectedMemories1, closureInjectedFacts1); mutate actual successor physical body after final boundary and stale entire Classic is suppressed. Private loader proofs propagate through original recall result WeakMap without trusting cloned diagnostics."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No retired automatic APPLIED task, request-local refresh receipt, exception journal or10s+30s source-preparation protocol is fabricated",
+        "missing_receipt is now an immutable canonical evidence locator mutation, not an equivalent automatic task receipt",
+        "Timeout asserts actual current1.5s physical revalidation budget, not retired automatic request budget",
+        "Physical storage is real HTTP/SQLite; host and provider are fixture boundaries",
+        "Readset binds all up-to40 packet-admitted closure facts; renderer-omitted facts still influence budget/currentness disclosure and sealed packet. Mutation may suppress otherwise deliverable text; final-text-only proof minimality not claimed.",
+        "Deadline races do not cancel underlying host/storage reads. Late policy reread uses pure settings snapshot without mutating memory settings cache; no late delivery publication is allowed.",
+        "Observation seams await controlled host callbacks only; no production proof, deadline, decision or provider response is replaced."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 766,
+      "path": "PROGRAM/tests/libra_source_review_v2_test.cjs",
+      "domain": "source",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "a44c3cfe86d749c59f000e9fcd8a5b358d32ca7a5eb644219baf42c2a6ab03f5",
+      "currentTestSha256": "8b2e2d416ea82febd0dcd7aabe1cc6eb019d03e0dcd714e502a136cf10b6346b",
+      "cause": "Automatic diff/source task no longer active; current explicit selected replacement must pin actual five-pair source and immutable old evidence, refuse unavailable persistence, and never revive deleted source.",
+      "assertionMap": [
+        {
+          "original": "New canonical pins exact fiveU+A and automatic replacement stores fresh evidence",
+          "current": "Public selected replacement writes exact five current source pairs, advances revision/digest once, keeps prior canonical and evidence bytes immutable, adds one Canonical call; ordinary request and preview add zero."
+        },
+        {
+          "original": "Missing/corrupt previous raw cannot seed automatic diff",
+          "current": "Missing/corrupt bytes cause no automatic paid call or invented comparison; explicit action builds from actual live source, preserves missing/tampered old evidence as-is, never copies forged text into new evidence."
+        },
+        {
+          "original": "Evidence persistence failure blocks old canonical request-local fallback",
+          "current": "Actual source-evidence write refusal makes explicit replacement fail and cannot activate a new ref; approved prior canonical bytes/ref remain unchanged under current same-slot preservation."
+        },
+        {
+          "original": "Illustration-only append is not source edit",
+          "current": "BeforeRequest spends no calls; actual public selected digest and canonical bytes remain unchanged."
+        },
+        {
+          "original": "Source legitimacy boundaries",
+          "current": "Added real pair deletion: incomplete range disappears from reader, stale selection fails before paid work, old immutable body survives."
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Current same-slot policy preserves approved canonical despite unavailable prior raw; no automatic diff claim",
+        "Failed explicit replacement does not imply retired request-local source exception suppression"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/source-results.json",
+      "authorReceiptSha256": "17cea486ca8e8d115d10ab1c65518d2c03c64706c66251e417616dcf6de10958"
+    },
+    {
+      "rootOrdinal": 782,
+      "path": "PROGRAM/tests/libra_three_mode_feature_inspection_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "e2c515c1e3334de76c1c85777da0d1ca98b9395f623703d4b5f001478d60e7e2",
+      "currentTestSha256": "558704dcbc0b3dda741530d739dbb2cd63c97aed0bd59d0e06333e1da7541325",
+      "cause": "Entire old test bootstrapped from removed Planner render/debug anchors; drafting renderer semantics retired.",
+      "assertionMap": [
+        {
+          "originalAssertion": "Classic exact natural language, chronological order, delimiters, authority, empty evidence",
+          "currentAssertion": "real Classic renderer invoked with reversed rows, exact whole excerpts, input precedence, prose/no schema IDs, empty/blank rejection"
+        },
+        {
+          "originalAssertion": "final response model evidence and re-entry safety",
+          "currentAssertion": "registered hook with all three saved choices normalizes to Classic; exact selected canonical text delivered; zero helper calls; same prompt re-entry; all four legacy markers guard duplication; secondary request unchanged"
+        },
+        {
+          "originalAssertion": "Planner/SGA natural-language product, semantic schema-echo/placeholder gates and sidecar controls",
+          "currentAssertion": "removed APIs absent and legacy choices normalize to Classic",
+          "equivalenceGap": "retired brief/draft generation and gates have no current executor equivalent"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No Planner/SGA natural-language generation, schema-echo/placeholder gate, draft lock/sidecar or provider output equivalence.",
+        "Classic natural language applies to supplied valid evidence, not a general sanitizer for arbitrary JSON source content."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 816,
+      "path": "PROGRAM/tests/libra_world_manager_shared_snapshot_rc2_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "0cb4a4fdc30607faaeed755c83be4c2824ae1c42d742aeffa5623f8e6656ce63",
+      "currentTestSha256": "4a016069f507e9579632938729e599f827f7975327f277c1e24d5d8a27b65ec6",
+      "cause": "Obsolete seventh Input Writer log kind; six current kinds and snapshot builders retained.",
+      "assertionMap": [
+        {
+          "originalLines": "all except32-33",
+          "originalObligation": "Shared synchronous in-memory frozen snapshot, no mutation/background fetch, memory/log ownership, active routes, rendering projections",
+          "currentAssertion": "All original static and actual frozen-snapshot renderer assertions retained.",
+          "classification": "preserved"
+        },
+        {
+          "originalLines": "32-33",
+          "originalObligation": "Seven receipt kinds including input_writer",
+          "currentAssertion": "Six retained receipt kinds asserted; only Input Writer log category removed.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Seven receipt kinds including input_writer"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 819,
+      "path": "PROGRAM/tests/libra_worldline_async_isolation_3mode_test.cjs",
+      "domain": "runtime",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "0a91f623a42c04724156dc3f3e98bb772031934e2d4f22ab9d23ccc000e427b2",
+      "currentTestSha256": "eaf390f334b1e1c949bb97ab9cd8c2ddfadd331e37a7d05154776e507e8f28bc",
+      "cause": "New native mirror branch inherits a route that correctly fails MEMORY_SUITE_MIRROR_TRANSITION_ONLY. Previously filtered operational modes never covered this default branch.",
+      "assertionMap": [
+        {
+          "originalAssertion": "three storage-mode native W0/W1 creation and isolation",
+          "currentAssertion": "full plugin_only and server_only; historical mirror W0 creation/readback then actual native branch mirror rejection before provider, no child canonical, parent bytes unchanged, explicit server transition, full W0/W1 scenario"
+        },
+        {
+          "originalAssertion": "held W0 physical GET while W1 request succeeds",
+          "currentAssertion": "all exact GET seam, W1 prompt/viewer/injection/scope after late W0, exact parent canonical/evidence/vector and child identity assertions retained"
+        },
+        {
+          "originalAssertion": "cancel W0 provider before its delayed result, preserving W1",
+          "currentAssertion": "all original captured provider request, durable cancel_requested/cancelled job, no W0 successor canonical, W1 final delivered fact/no W0 fact checks retained"
+        },
+        {
+          "originalAssertion": "store authority and semantic parity",
+          "currentAssertion": "plugin_only server calls remain zero; server_only no local canonical; transition scenario retains historical W0 mirror bytes but creates no local W1; all completed scenarios have same semantic facts",
+          "equivalenceGap": "operational mirror native branch writes remain forbidden; transition success is not mirror-write parity"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Mirror native branch writes remain retired. Third scenario proves rejection and explicit transition to server_only; does not restore three operational-mode parity.",
+        "Synthetic host and 256D embedding responder; no external provider qualification."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/runtime-results.json",
+      "authorReceiptSha256": "2ad8395bb72b44ff47b94eb28b0b8cd2fa117d8aee8b7efc98be256b8ed4174e"
+    },
+    {
+      "rootOrdinal": 822,
+      "path": "PROGRAM/tests/libra_writing_mode_live_work_ui_contract_test.cjs",
+      "domain": "contracts",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "defd160d4f9d9f4883cc08130dd98238bf58dce45b7106665879a784b8202b9c",
+      "currentTestSha256": "600bf47fedc83c0acd2bee9660fe0b4ff10f1c4be1009854eae3c5c17460eba0",
+      "cause": "Removed Writer/Planner/GRADIA writing UI; generic tabs and memory pipeline status retained.",
+      "assertionMap": [
+        {
+          "originalLines": "9-12",
+          "originalObligation": "Four-column tabs and exact count",
+          "currentAssertion": "Original CSS assertion retained; actual tab builder verifies exact cols4, tablist/label, selected state/focus, selected click no-op and new click feedback/render.",
+          "classification": "retained_successor"
+        },
+        {
+          "originalLines": "14-48",
+          "originalObligation": "Compact Writer three dialogs, Novel authorship/AIDE contracts, independent modes, family selector",
+          "currentAssertion": "Writer, Planner and embedded GRADIA engines/UI removed; no authored text/dialog/mode successor.",
+          "classification": "retired"
+        },
+        {
+          "originalLines": "50-73",
+          "originalObligation": "Writer/Planner live status and SGA stage progress",
+          "currentAssertion": "Actual shared pipeline work functions begin/report/finish current librarian stage; successful result, stale generation rejection and current failure status verified. Draft-specific stage ownership is retired.",
+          "classification": "partial_retirement"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Compact Writer three dialogs, Novel authorship/AIDE contracts, independent modes, family selector",
+        "Writer/Planner live status and SGA stage progress"
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/contracts-results.json",
+      "authorReceiptSha256": "f04794755f355d1ae6079005826f366285b147fe86a67778bef8b2b5910cb5ed"
+    },
+    {
+      "rootOrdinal": 835,
+      "path": "PROGRAM/tests/namespace_reset_all5_composition_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "530101ccae08d1688b6153874fbef7583d88c5043f0583be15221573d3bfc815",
+      "currentTestSha256": "530101ccae08d1688b6153874fbef7583d88c5043f0583be15221573d3bfc815",
+      "cause": "Exact immutable 38946c7 source baseline is absent; current RETRACE SHA mismatches the pinned expected artifact before any composition runs.",
+      "assertionMap": [
+        {
+          "original": "Exactly pinned three-source execution",
+          "current": "Pin enforcement remains unchanged and fails before runtime",
+          "equivalence": "BLOCKED"
+        },
+        {
+          "original": "All-five reset composition and negative oracles",
+          "current": "No full composition execution claimed; reset source pins were not regenerated or substituted",
+          "equivalence": "BLOCKED"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "No historical all-five UI/server composition qualification."
+      ],
+      "externalBlockers": {
+        "missingCommit": "38946c7afa0b7db79d864e37f90762035dd776be",
+        "missingSourcePins": {
+          "plugins/RETRACE.js": "366fcfab5c9f1406e67ee4f815414decac57fcaee63383eb217975d62faaf6ad",
+          "server/server.cjs": "330d7d2e274a72dce47fce6af7ae7cfb0208c0be674d6fe0202cdd5472a5f852",
+          "server/core/namespace-reset.cjs": "b1ea65c195f35fc541d955b95b26a6b64f10cae70573c259ffe318e73d08ce68"
+        },
+        "searchReceipt": "/workspace/librarian-regression/fix39-20261011/storage-source-search.json",
+        "searchSummary": "Exact commit absent in 28 available repositories; no target SHA match among 9 relevant historical blobs or 353 current candidate source files. No allowlisted CANDIDATE_SOURCE_PINS.json found."
+      },
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 836,
+      "path": "PROGRAM/tests/namespace_reset_physical_admission_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "b50dc8433bdb4a4bf57a78a60354771f6e2c486822383352b38ff0980c15e3de",
+      "currentTestSha256": "4c1baab43e9e563031628f752bd11d248efccdb29cc111465c17495a5d8c11fc",
+      "cause": "All-five fixture used forbidden live retired writers. Repaired fixture now safely seeds historical LIA/RETRACE inventory offline and reaches the inherited exact guard requirement. The genuine guard exists under a tracked name but blocks parent HTTP/listen; historical handler adapter is absent.",
+      "assertionMap": [
+        {
+          "original": "All-five inventory before physical reset/refusal",
+          "current": "All five stores still contain actual rows; retired two seeded offline and asserted read-only instead of invoking forbidden writers",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Normal producer and 17 invalid physical-pending admission cases preserve every DATA byte",
+          "current": "Default official run reaches inherited-guard assertion after these existing assertions execute",
+          "equivalence": "partial prefix only"
+        },
+        {
+          "original": "Three malformed active histories rejected before data writes under inherited guard",
+          "current": "Supplemental actual --history-child process uses exact guard through NODE_OPTIONS and --require; each exits1 namespace_reset_history_invalid with equal all-five DATA trees",
+          "equivalence": "partial child-only PASS, parent guard context not qualified"
+        },
+        {
+          "original": "Parent inherited guard and optional exact historical adapter; terminal-history no-op cases",
+          "current": "Checks remain unchanged; exact guard alone fails parent Server.listen; no adapter substituted",
+          "equivalence": "full root BLOCKED"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Three standalone guarded child controls are not equivalent to a fully inherited guarded parent run. Terminal legacy no-op suffix does not run under the blocked full harness."
+      ],
+      "externalBlockers": {
+        "guardFound": "PROGRAM/tests/fixtures/authority_no_network.cjs",
+        "guardSha256": "2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3",
+        "unavailableHistoricalAdapterSha256": "8f21bb71f788c7ccff39912b5fb3ab274996e8b09068118eb254593bdf1d937b",
+        "searchReceipt": "/workspace/librarian-regression/fix39-20261011/storage-guard-search.json",
+        "searchSummary": "65,198 unique workspace JS/CJS files hashed (node_modules,.git,.aws,.codex,.cache excluded); exact guard found, exact adapter and named candidate artifacts not found.",
+        "actualGuardParentFailureLog": "/workspace/librarian-regression/fix39-20261011/storage-exactguard-parent.log",
+        "scope": "No automatic substitute adapter; full test still requires compatible reviewed historical execution context."
+      },
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 902,
+      "path": "PROGRAM/tests/recall_keyword_features_runtime_test.cjs",
+      "domain": "integration",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "bb6f397eb32bcde4602a17c3fc9c20dafb1fcbe63807439058d2837cae076098",
+      "currentTestSha256": "ba1a70f9dc7e51cf6ddbdd2a6b18923260e7f9dcdb35a3edae6e6e2e36dedad1",
+      "cause": "Old fixture used retired hash configuration with no query vector. Current admission requires actual configured model vectors; contextual recall uses dense candidates while explicit noncontextual mode retains exact lexical arm.",
+      "assertionMap": [],
+      "historicalEquivalenceLimitations": [],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/integration-results.json",
+      "authorReceiptSha256": "f169016f67a93ca103c5919b5bd5469f4030cd765135565f1af3a541377993f2"
+    },
+    {
+      "rootOrdinal": 910,
+      "path": "PROGRAM/tests/recovery_main_fallback_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "52edd68fad350bcd46168332e3b08c9e28e9a9edc86c44b360abdd1796989874",
+      "currentTestSha256": "b5163b4171c357627f6f29f265eb4c51aa373bee8c95faf8db28c93ac7b3ba5f",
+      "cause": "Whole-file SQLite corruption destroys evidence needed to prove absence of protected authority. AUTHORITY_QUARANTINED is deliberate, not a production startup bug.",
+      "assertionMap": [
+        {
+          "original": "Real normal server creates record and backup",
+          "current": "Actual repository mutation and immutable verified backup from real server remain",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Fully unreadable SQLite triggers safe-mode CLI",
+          "current": "Fully unreadable authority must fail closed; assert exact quarantine and unchanged protected DATA. Separate real data-page integrity failure demonstrates eligible CLI fallback",
+          "equivalence": "tightened current authority precondition"
+        },
+        {
+          "original": "Recovery health says recovery_only",
+          "current": "Actual child server health and integrity startupError checked",
+          "equivalence": "retained"
+        },
+        {
+          "original": "CLI child cleanup",
+          "current": "Owned child close promise installed before polling and awaited in success/finally",
+          "equivalence": "strengthened"
+        },
+        {
+          "original": "Recovery success/data preservation",
+          "current": "Authenticated actual HTTP restore, exact source quarantine digest, unchanged backup tree, reopen normal server and read original data",
+          "equivalence": "additional end-to-end coverage"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Does not authorize recovery for SQLite files whose authority absence cannot be established. No authority guard or production path changed. Linux child/SQLite test only."
+      ],
+      "externalBlockers": {},
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 912,
+      "path": "PROGRAM/tests/recovery_safe_mode_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "24c33f38e374a7dcb545a63d35822dfe202eeb87d5fc3bc238fd3d15d1d25be0",
+      "currentTestSha256": "32e984b291bc5a179436a5e8d8d9ee9364bad902fa2444ff951d4140adbbed1d",
+      "cause": "Old test accepted generic malformed database error and restored totally unreadable authority. Current legacy guard intentionally refuses this case.",
+      "assertionMap": [
+        {
+          "original": "Malformed database startup exception",
+          "current": "Unknown authority checked as exact quarantine; genuinely admitted page corruption checked as eligible actual integrity error",
+          "equivalence": "retained and narrowed by authority safety"
+        },
+        {
+          "original": "Safe-mode health, backup scrub, restore receipt, quarantine ID",
+          "current": "All remain actual operations; additionally verify quarantine file SHA and restartRequired",
+          "equivalence": "retained and strengthened"
+        },
+        {
+          "original": "Normal restart restores original row",
+          "current": "Actual reopened normal server reads {state:backup}",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Authority and admin boundaries",
+          "current": "Unknown-authority constructors preserve protected bytes; denied admin write preserves corrupt DB; normal plugin route blocked503",
+          "equivalence": "new explicit negative coverage"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Full-file corruption stays intentionally unrecoverable through legacy safe mode until authority is separately established."
+      ],
+      "externalBlockers": {},
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 943,
+      "path": "PROGRAM/tests/remote_update_release_zip_runtime_test.cjs",
+      "domain": "build",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
+      "currentTestSha256": "cab5c5c5a2c65c6e48854cc48c2daab6d95972806640d1ee0a4f0391b0d70cf8",
+      "cause": "Default release smoke reached two genuine checks: plugin provenance still described prior bytes, and program_data_layout compared a source checkout to a packaged bundle, rejecting .git/LICENSE/PUBLICATION-PROVENANCE.json.",
+      "assertionMap": [
+        "Original buildDistribution default publication smoke is unchanged and executed; no offline/skip mode used.",
+        "Original actual release ZIP required entries, release identity and update manifest contract unchanged.",
+        "Original candidate extraction, complete per-shipped-file internal checksum equality and substantial archive minimum unchanged.",
+        "Original incorrect outer digest rejects; active DATA bytes and PROGRAM version remain unchanged.",
+        "Nested layout still validates six exact plugin filenames, forbids executable DATA/persistent PROGRAM stores, verifies manifest bytes, tests legacy migration idempotency and rejects future DATA layout without mutation.",
+        "Package-root pollution controls added without admitting unknown source entries."
+      ],
+      "historicalEquivalenceLimitations": [
+        "This verifies the assigned base source plus corrected test/provenance metadata. Parent will rerun against final integrated product fixes."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+    },
+    {
+      "rootOrdinal": 983,
+      "path": "PROGRAM/tests/retrace_server_handoff_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "87ca7eb35350ddfb9df2887981890bb82bb3f33964c31c810c841420e1fe91d0",
+      "currentTestSha256": "cbb1b0363f802c658c8ebc333e7209d92001d7e439f86a3f457643a93777f23e",
+      "cause": "Original peer setup and RE:TRACE capsule write attempted retired LIA/RETRACE server mutations.",
+      "assertionMap": [
+        {
+          "original": "Static four-owner handoff readiness/receipt/source immutability checks",
+          "current": "All original static checks unchanged",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Four owner live writes then peer server reads/integrity",
+          "current": "Three active owner live writes unchanged; retired LIA historical seed followed by rejected overwrite, exact peer readback and integrity",
+          "equivalence": "retained read contract; retired live write replaced"
+        },
+        {
+          "original": "RE:TRACE live capsule write and readback",
+          "current": "Seeded historical capsule is readable; attempted new write rejected",
+          "equivalence": "retired write replaced by preservation/denial"
+        },
+        {
+          "original": "Provider settings write400",
+          "current": "Whole retired namespace rejects403; sensitive read still specifically denied; SQL proves no row was inserted",
+          "equivalence": "current stronger namespace admission plus sensitive-key boundary"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Historical live LIA/RETRACE writers intentionally cannot be qualified. Historical inventory seeding is synthetic test setup, not evidence of an old executable release."
+      ],
+      "externalBlockers": {},
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 995,
+      "path": "PROGRAM/tests/scope_routing_test.cjs",
+      "domain": "storage",
+      "previousOfficialStatus": "FAIL",
+      "previousOfficialTestSha256": "81cc95e0faa082abd7fc785b19dad7a64d48cdc0c1eabefc26801ba231bc3cfa",
+      "currentTestSha256": "c25cbc2ff89883db5f7765839dfa4ef488106b9e5a80d6a1e1d6266c4fcc3a1b",
+      "cause": "Generic routing regression used retired LIA as a live server owner and expected an obsolete per-scope legacy-global import.",
+      "assertionMap": [
+        {
+          "original": "Legacy global mirror imported once into current LIA scope",
+          "current": "Synthetic historical readable alpha mirror row on active owner; beta/gamma remain plugin_only; fresh mirror selection rejected",
+          "equivalence": "old per-scope import retired; historical-read compatibility retained"
+        },
+        {
+          "original": "Scoped container projected to opaque remote keys with no sibling leakage",
+          "current": "Same real server projection and sibling absence/readback assertions on HAYAKU",
+          "equivalence": "retained shared routing algorithm"
+        },
+        {
+          "original": "Beta server-only transition without changing Alpha",
+          "current": "Same actual migration/current-mode/readback assertions",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Beta local deletion preserves Alpha/shared rows and route registry",
+          "current": "Original same scoped deletion/registry assertions on active owner",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Foreign-scope tombstone does not hide plugin-only Gamma container/keys",
+          "current": "Same actual proxy deletion and local read/enumeration assertions",
+          "equivalence": "retained"
+        },
+        {
+          "original": "Retired LIA server writer",
+          "current": "Local-only read survives; mode rejected; correctly authenticated HTTP403 namespace_write_forbidden:lia; SQLite path remains absent",
+          "equivalence": "explicit current boundary"
+        }
+      ],
+      "historicalEquivalenceLimitations": [
+        "Does not claim obsolete LIA live writer or old per-scope global argument import equivalence. Shared scope routing remains tested on a currently active owner; synthetic historical mirror row is compatibility setup."
+      ],
+      "externalBlockers": {},
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/storage-results.json",
+      "authorReceiptSha256": "b9973aac338b01fd19f3bde3a6dd6fe5f96f0c04cb4e229ee7696f05485cf5fe"
+    },
+    {
+      "rootOrdinal": 1123,
+      "path": "PROGRAM/tests/test_surface_strip_test.cjs",
+      "domain": "build",
+      "previousOfficialStatus": "TIMEOUT",
+      "previousOfficialTestSha256": "534486fe7634ee75841550941f1cc73627a73454666276c6e67ba444b3d2e98a",
+      "currentTestSha256": "2d9f44268359e04b4f0fb57903bff004e565e242100004b2f24980434fd18305",
+      "cause": "Default 60-second root cap terminated a healthy actual six-plugin pinned Terser release build. Unchanged complete test naturally passed in 126.662 seconds. Phase diagnostics locate source/negative controls at 4.765/8.951 seconds and release build completion at 76.526 seconds in official GREEN.",
+      "assertionMap": [
+        "All original representative AST property and follow-up-assignment stripping, executable API preservation and bounded-cut checks unchanged.",
+        "Real five owner transform checks remain, including zero removal for LIBRA and LIA.",
+        "Actual six-plugin release builder still uses pinned Terser 5.51.2 and original compression/mangle options.",
+        "Both original fail-closed missing pinned Terser and missing Acorn controls remain; missing minifier writes no plugin.",
+        "All six actual artifacts read back, parse, load, preserve source directives and match report bytes; measured test-surface removal checks unchanged.",
+        "Historical size growth stays visible under the existing reporting-only policy, unchanged by this fix.",
+        "Owned temporary build fixture cleanup assertion remains."
+      ],
+      "historicalEquivalenceLimitations": [
+        "Aggregate cap is based on one unchanged natural 126.662-second pass and the official 79.13-second pass on this managed host; individual inner deadlines remain intact."
+      ],
+      "externalBlockers": [],
+      "authorReceipt": "/workspace/librarian-regression/fix39-20261011/build-results.json",
+      "authorReceiptSha256": "f57819c49405c5558facf90bb9958a571e515d9e47ced26a4941555572602199"
+    }
+  ]
+}

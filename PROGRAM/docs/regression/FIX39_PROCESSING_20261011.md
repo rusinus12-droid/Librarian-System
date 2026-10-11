@@ -1,0 +1,11 @@
+# Regression continuation: remaining 39 roots
+
+The previous official common-source 280-root campaign completed with 241 PASS, 37 FAIL, one TIMEOUT and one PASS_SKIP. Every remaining original path is preserved in `FIX39_PROCESSING_20261011.json`; no filtered mode or partial run qualifies as a root PASS.
+
+Reviewed production corrections revalidate asynchronous Micro head reads and consumed canonical bodies, including continuity-closure dependencies and physical archive bodies before logical overlays. Response admission also binds source, scope, policy and storage mode, uses bounded revalidation, and keeps diagnostic publication and final injection with the current request owner. Derived top-level embedding metadata remains outside the canonical logical-body digest. Admission pins the whole sealed evidence packet, including evidence contributing to omission decisions; it does not claim an atomic host snapshot or only-final-rendered-text currentness.
+
+Current-contract test successors retain real selected-source analysis, delivery, storage rollback/admission and byte preservation. Retired drafting, live-writer and mirror-transition obligations are explicitly mapped to current coverage and historical equivalence gaps. The canonical-regeneration race test now requires an admitted regeneration and an actual competing queued writer; removing only its enqueue fails the same fixture. The runner preserves genuine suite skip reports while avoiding false skips from nested expected refusal/idempotence diagnostics.
+
+Exact external evidence remains required for roots 247, 835 and 836 (historical source/compatible guarded adapter), and 280/515 (independent Gemma captures). Existing missing evidence is neither synthesized nor replaced with current hashes. Current release provenance updates preserve historical publication rows and anomalies. Original clean DATA templates remain byte-identical.
+
+Final qualification is pending newly built Full/Min artifacts for all six plugins and an official replay of all 1,138 roots on one frozen source. The frozen original 280 paths are reported separately from the full denominator. Immutable Linux receipts are retained under `/workspace/librarian-regression/fix39-20261011/`.

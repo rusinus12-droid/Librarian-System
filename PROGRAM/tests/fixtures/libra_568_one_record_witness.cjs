@@ -555,11 +555,12 @@ function assertOldRows(baseline, rows) {
     same(current[0], old, 'strict whole-old-record raw bytes/key/owner/revision after new v5 write');
   }
 }
-// Candidate pin refreshed for reviewed 9df689a dispatch and b31e1a2 queue recovery.
+// Current candidate pin refreshed for reviewed Micro/canonical/response admission fixes; the logical witness is unchanged.
+// Prior queue-recovery candidate: de627d1b971635fe8eb1c233e73550ab965f13759a0ef4afbe74898a3b096a69.
 // Prior dispatch-only candidate: d2a16b862dafad18e0f8dd14f6ac5356173dcaca222ae8d484190ca765f659b6.
 // Historical product pin ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180 remains in the frozen baseline receipts.
 const SOURCE_HASHES = Object.freeze({
-  "PROGRAM/plugins/LIBRA.js": "de627d1b971635fe8eb1c233e73550ab965f13759a0ef4afbe74898a3b096a69",
+  "PROGRAM/plugins/LIBRA.js": "4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753",
   "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd",
   "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52",
   "PROGRAM/tests/fixtures/libra_vm_harness.cjs": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100",
