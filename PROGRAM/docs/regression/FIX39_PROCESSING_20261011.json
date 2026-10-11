@@ -1,6 +1,6 @@
 {
   "schema": "librarian.fix39.processing.v1",
-  "recordedAtUtc": "2026-10-11T04:28:48.359892+00:00",
+  "recordedAtUtc": "2026-10-11T07:02:34.715341+00:00",
   "original280CampaignCommit": "567630fda7df236e14e3feb4873e52366232b509",
   "original280Counts": {
     "PASS": 241,
@@ -13,12 +13,12 @@
     "PASS_SKIP": 1,
     "TIMEOUT": 1
   },
-  "reviewedCodeCommit": "6890ea2",
+  "reviewedCodeCommit": "537838ecebb83c4ac26ac8c5e7a6d5cf0da7d11c",
   "currentLibraSha256": "ae814a56a816f81736b4c9650d18e4b8932c63ef81b54a841167a4dbc78adcdc",
   "rootCount": 39,
   "allOriginal39PathsAccounted": true,
   "enumeratedRootCount": 1138,
-  "qualification": "PENDING fresh actual artifacts and isolated-heavy common-source official full1138 run",
+  "qualification": "INTEGRATED_CURRENT_CONTRACT_PENDING_FRESH_COMMON_SOURCE_REPLAY",
   "domainReceipts": [
     {
       "domain": "runtime",
@@ -1597,7 +1597,7 @@
       "domain": "storage",
       "previousOfficialStatus": "FAIL",
       "previousOfficialTestSha256": "87ca7eb35350ddfb9df2887981890bb82bb3f33964c31c810c841420e1fe91d0",
-      "currentTestSha256": "cbb1b0363f802c658c8ebc333e7209d92001d7e439f86a3f457643a93777f23e",
+      "currentTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
       "cause": "Original peer setup and RE:TRACE capsule write attempted retired LIA/RETRACE server mutations.",
       "assertionMap": [
         {
@@ -1711,5 +1711,1044 @@
     "receipt": "/workspace/librarian-regression/fix39-20261011/initial-campaign-interruption/receipt.json",
     "receiptSha256": "1877191799bf8ce958a5fc9dc342a7d69684fc36ea56ca8566f9275f4a2b9890",
     "limit": "Partial execution; no full1138 outcome or all-PASS claim."
+  },
+  "additionalQualifiedCampaignCorrections": {
+    "originalCampaign": {
+      "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+      "outcomePath": "/workspace/librarian-regression/fix39-20261011/qualified-outcome.json",
+      "outcomeSha256": "ae1d2728510d1a7f2cbbdc347756acc50d089110628c76c36a0d62641353ee4e",
+      "rootCount": 1138,
+      "counts": {
+        "FAIL": 11,
+        "PASS": 1125,
+        "PASS_SKIP": 2
+      },
+      "historical280Counts": {
+        "FAIL": 5,
+        "PASS": 274,
+        "PASS_SKIP": 1
+      },
+      "previous39Counts": {
+        "FAIL": 4,
+        "PASS": 34,
+        "PASS_SKIP": 1
+      },
+      "expectedBlockersOnly": false
+    },
+    "roots": [
+      {
+        "rootOrdinal": 50,
+        "path": "PROGRAM/tests/compute_product_flood_latency_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "a9522a1f98807afbb11d9aa336a3f1a39c36627b5e1da810faee374ad28839bd",
+          "status": "FAIL",
+          "durationSeconds": 6.21,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/050-compute_product_flood_latency_test.cjs.log",
+          "fullOutputSha256": "c518aabdce98c01dfcffbe5053c5fcb57759cf3f05b9cc43ec35b27b8f75021a"
+        },
+        "currentTestSha256": "736b7c75250bcff2e406834e10be65a46ffbfafe0bd44b158aadda18267c85a4",
+        "authorExecutionCommit": "d2092eeeb7a6f8a53f94ebe11ad419adb767d87f",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-results.json",
+          "sha256": "57f688be78249d858c68ea64a5ba3aecc98047893928ab1ad0f8fffb7c6e2f0d"
+        },
+        "focusedVerification": {
+          "status": "PASS",
+          "exit": 0,
+          "durationSeconds": 4.32,
+          "officialIndex": 50,
+          "inventoryCount": 1138,
+          "command": "python PROGRAM/run_regression_batch.py --match compute_product_flood_latency_test.cjs",
+          "deadlinePolicy": "unchanged original runner/root deadline and matrixcell30000ms",
+          "sourceCommit": "d2092eeeb7a6f8a53f94ebe11ad419adb767d87f",
+          "testSHA256": "736b7c75250bcff2e406834e10be65a46ffbfafe0bd44b158aadda18267c85a4",
+          "report": {
+            "schema": "memory-suite.compute.product-flood-latency-report.v1",
+            "workers": 2,
+            "coordinatedOccupancy": {
+              "mode": "controlled_physical_worker_occupancy",
+              "setupBoundMs": 5000,
+              "ownedWorkers": 2,
+              "readyPeak": 2,
+              "distinctReadyThreads": 2,
+              "gatePeak": 2,
+              "releasedAt": 1791701547022,
+              "entries": [
+                {
+                  "event": "controlledGateEntered",
+                  "workerIndex": 0,
+                  "threadId": 1,
+                  "controlledJobId": "cmp_DGzp8eFRHSdYmccClZp2vT9A",
+                  "enteredAt": 1791701546827,
+                  "gateWaitMs": 195
+                },
+                {
+                  "event": "controlledGateEntered",
+                  "workerIndex": 1,
+                  "threadId": 2,
+                  "controlledJobId": "cmp_TMpZPfYuG5MAO0qZ8wv2qTFv",
+                  "enteredAt": 1791701546855,
+                  "gateWaitMs": 167
+                }
+              ],
+              "timingPolicy": "native worker/queue/total timings include coordinator wait; no subtraction",
+              "limitation": "proves controlled physical slot occupancy, not unguarded product kernel CPU overlap or generalized throughput"
+            },
+            "floodNamespace": "flashback",
+            "floodJobs": 8,
+            "interactiveNamespace": "hayaku",
+            "interactiveQueueMs": 107,
+            "interactiveWorkerMs": 6,
+            "interactiveTotalMs": 174,
+            "interactiveWallMs": 321.87,
+            "interactiveLeadMs": 67,
+            "boundedSoakWaves": 8,
+            "boundedSoakJobs": 24,
+            "soakWallMs": 2030.24,
+            "soakConcurrency": {
+              "peakJobs": 2,
+              "peakNamespaces": 2
+            },
+            "rssBaselineMiB": 123.7,
+            "rssPeakMiB": 502.43,
+            "rssPeakDeltaMiB": 378.73
+          },
+          "logs": {
+            "full": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/logs/050-compute_product_flood_latency_test.cjs.log",
+              "sha256": "e9c329ea6a163b14c7f607fd04158e28d3b113537f273cc604115d9bad6b9071"
+            },
+            "stdout": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/stdout.txt",
+              "sha256": "98a615f61d0500f8f853990dd2aec114914a978529ac74fafc901a89defd447f"
+            },
+            "summary": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green50-final/run.txt",
+              "sha256": "6ae202ad46df16d2c524d6f5a9903a3ae272be8df75b3e67be50bb397f5153d1"
+            }
+          }
+        },
+        "assertionMap": {
+          "rssBudget": "Originaldelta<512MiB retained percell and flood/soak",
+          "canonicalBytes": "OriginalSQLite/WALdigests unchanged",
+          "retiredOwner": "DefaultcreateProductSpecs unchanged including LIA403deny",
+          "enumeration": "Onlynewfixtures belowfixtures/: tracked direct cjs count unchanged 1178; officialrunner inventory1138 from baseline logs. No direct rootadded.",
+          "flood2workersplusqueued": "Originalstatuses unchanged plus genuine threadentryfloor2 and actualinteractivequeued",
+          "interactiveQueueDeadline": "Originaldeadline3000ms/queue<1000ms/localparity/nextavailablepriority/backgrounddrainlead retained",
+          "realFloodAndSoak": "Original8Flashback+24soak retained; everyresult now compareslocalkernel, no fakejobs"
+        },
+        "limitations": [
+          "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes79-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 51,
+        "path": "PROGRAM/tests/compute_product_worker_matrix_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "94738ce5d08b7c4856683b6e939462f2c32395562e9a5d497a015c978d558193",
+          "status": "FAIL",
+          "durationSeconds": 7.36,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-2/logs/051-compute_product_worker_matrix_test.cjs.log",
+          "fullOutputSha256": "d7e3744864104726c191d629d5f83e14f00993455c06ac7f5f538585603dbb7c"
+        },
+        "currentTestSha256": "84ea76cdb11737f571d5dfddfcb4454d4b4f3dabfba85bb0a0be4e48b336c763",
+        "authorExecutionCommit": "d2092eeeb7a6f8a53f94ebe11ad419adb767d87f",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-results.json",
+          "sha256": "57f688be78249d858c68ea64a5ba3aecc98047893928ab1ad0f8fffb7c6e2f0d"
+        },
+        "focusedVerification": {
+          "status": "PASS",
+          "exit": 0,
+          "durationSeconds": 9.49,
+          "officialIndex": 51,
+          "inventoryCount": 1138,
+          "command": "python PROGRAM/run_regression_batch.py --match compute_product_worker_matrix_test.cjs",
+          "deadlinePolicy": "unchanged original runner/root deadline and matrixcell30000ms",
+          "sourceCommit": "d2092eeeb7a6f8a53f94ebe11ad419adb767d87f",
+          "testSHA256": "84ea76cdb11737f571d5dfddfcb4454d4b4f3dabfba85bb0a0be4e48b336c763",
+          "report": {
+            "schema": "memory-suite.compute.product-worker-matrix-report.v1",
+            "matrix": [
+              {
+                "workers": 1,
+                "jobs": 12,
+                "peakJobs": 1,
+                "peakNamespaces": 1,
+                "coordinatedOccupancy": {
+                  "mode": "controlled_physical_worker_occupancy",
+                  "setupBoundMs": 5000,
+                  "ownedWorkers": 1,
+                  "readyPeak": 1,
+                  "distinctReadyThreads": 1,
+                  "gatePeak": 1,
+                  "releasedAt": 1791701572616,
+                  "entries": [
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 0,
+                      "threadId": 1,
+                      "controlledJobId": "cmp_ae33q9aaB4OuGY-Mur-Olegg",
+                      "enteredAt": 1791701572312,
+                      "gateWaitMs": 304
+                    }
+                  ],
+                  "timingPolicy": "native worker/queue/total timings include coordinator wait; no subtraction",
+                  "limitation": "proves controlled physical slot occupancy, not unguarded product kernel CPU overlap or generalized throughput"
+                },
+                "localSerialMs": 289.64,
+                "serialEquivalentMs": 1158.56,
+                "wallMs": 2231.23,
+                "controlledWallRatioNotThroughput": 0.519,
+                "rssBaselineMiB": 34.67,
+                "rssPeakMiB": 311.27,
+                "rssPeakDeltaMiB": 276.61,
+                "namespaces": {
+                  "flashback": {
+                    "jobs": 4,
+                    "inputBytes": 1485321,
+                    "resultBytesP95": 472707,
+                    "queueP50Ms": 655,
+                    "queueP95Ms": 1368,
+                    "workerP50Ms": 204,
+                    "workerP95Ms": 279,
+                    "totalP50Ms": 885,
+                    "totalP95Ms": 1661
+                  },
+                  "libra": {
+                    "jobs": 4,
+                    "inputBytes": 1075690,
+                    "resultBytesP95": 8236,
+                    "queueP50Ms": 844,
+                    "queueP95Ms": 1627,
+                    "workerP50Ms": 177,
+                    "workerP95Ms": 224,
+                    "totalP50Ms": 990,
+                    "totalP95Ms": 1804
+                  },
+                  "hayaku": {
+                    "jobs": 4,
+                    "inputBytes": 91894,
+                    "resultBytesP95": 67013,
+                    "queueP50Ms": 633,
+                    "queueP95Ms": 1334,
+                    "workerP50Ms": 6,
+                    "workerP95Ms": 330,
+                    "totalP50Ms": 644,
+                    "totalP95Ms": 1345
+                  }
+                }
+              },
+              {
+                "workers": 2,
+                "jobs": 12,
+                "peakJobs": 2,
+                "peakNamespaces": 2,
+                "coordinatedOccupancy": {
+                  "mode": "controlled_physical_worker_occupancy",
+                  "setupBoundMs": 5000,
+                  "ownedWorkers": 2,
+                  "readyPeak": 2,
+                  "distinctReadyThreads": 2,
+                  "gatePeak": 2,
+                  "releasedAt": 1791701575588,
+                  "entries": [
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 0,
+                      "threadId": 1,
+                      "controlledJobId": "cmp_3N0fJyOPO8EFPCV45wyIyPtg",
+                      "enteredAt": 1791701575264,
+                      "gateWaitMs": 324
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 1,
+                      "threadId": 2,
+                      "controlledJobId": "cmp_k7RnwKZPZPrlDAUSS6KMzSnh",
+                      "enteredAt": 1791701575300,
+                      "gateWaitMs": 288
+                    }
+                  ],
+                  "timingPolicy": "native worker/queue/total timings include coordinator wait; no subtraction",
+                  "limitation": "proves controlled physical slot occupancy, not unguarded product kernel CPU overlap or generalized throughput"
+                },
+                "localSerialMs": 264.31,
+                "serialEquivalentMs": 1057.23,
+                "wallMs": 1154.7,
+                "controlledWallRatioNotThroughput": 0.916,
+                "rssBaselineMiB": 34.67,
+                "rssPeakMiB": 301.51,
+                "rssPeakDeltaMiB": 266.84,
+                "namespaces": {
+                  "flashback": {
+                    "jobs": 4,
+                    "inputBytes": 1485321,
+                    "resultBytesP95": 472707,
+                    "queueP50Ms": 375,
+                    "queueP95Ms": 530,
+                    "workerP50Ms": 73,
+                    "workerP95Ms": 433,
+                    "totalP50Ms": 502,
+                    "totalP95Ms": 736
+                  },
+                  "libra": {
+                    "jobs": 4,
+                    "inputBytes": 1075690,
+                    "resultBytesP95": 8236,
+                    "queueP50Ms": 298,
+                    "queueP95Ms": 409,
+                    "workerP50Ms": 93,
+                    "workerP95Ms": 203,
+                    "totalP50Ms": 455,
+                    "totalP95Ms": 578
+                  },
+                  "hayaku": {
+                    "jobs": 4,
+                    "inputBytes": 91894,
+                    "resultBytesP95": 67013,
+                    "queueP50Ms": 218,
+                    "queueP95Ms": 302,
+                    "workerP50Ms": 2,
+                    "workerP95Ms": 336,
+                    "totalP50Ms": 291,
+                    "totalP95Ms": 341
+                  }
+                }
+              },
+              {
+                "workers": 4,
+                "jobs": 12,
+                "peakJobs": 4,
+                "peakNamespaces": 3,
+                "coordinatedOccupancy": {
+                  "mode": "controlled_physical_worker_occupancy",
+                  "setupBoundMs": 5000,
+                  "ownedWorkers": 4,
+                  "readyPeak": 4,
+                  "distinctReadyThreads": 4,
+                  "gatePeak": 4,
+                  "releasedAt": 1791701577598,
+                  "entries": [
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 0,
+                      "threadId": 1,
+                      "controlledJobId": "cmp_6j0duOYu36NpaQWQEkZHS-Uj",
+                      "enteredAt": 1791701577099,
+                      "gateWaitMs": 499
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 1,
+                      "threadId": 2,
+                      "controlledJobId": "cmp__EWL5GNv_LHAipzcx42TvE21",
+                      "enteredAt": 1791701577287,
+                      "gateWaitMs": 312
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 2,
+                      "threadId": 3,
+                      "controlledJobId": "cmp_khLZmWe7HG52xdOtKjT1mC9y",
+                      "enteredAt": 1791701577347,
+                      "gateWaitMs": 252
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 3,
+                      "threadId": 4,
+                      "controlledJobId": "cmp_LkPXHQEGn4L2dv9I0keXorey",
+                      "enteredAt": 1791701577420,
+                      "gateWaitMs": 182
+                    }
+                  ],
+                  "timingPolicy": "native worker/queue/total timings include coordinator wait; no subtraction",
+                  "limitation": "proves controlled physical slot occupancy, not unguarded product kernel CPU overlap or generalized throughput"
+                },
+                "localSerialMs": 146.43,
+                "serialEquivalentMs": 585.74,
+                "wallMs": 1742.98,
+                "controlledWallRatioNotThroughput": 0.336,
+                "rssBaselineMiB": 34.54,
+                "rssPeakMiB": 367.15,
+                "rssPeakDeltaMiB": 332.61,
+                "namespaces": {
+                  "flashback": {
+                    "jobs": 4,
+                    "inputBytes": 1485321,
+                    "resultBytesP95": 472707,
+                    "queueP50Ms": 6,
+                    "queueP95Ms": 329,
+                    "workerP50Ms": 391,
+                    "workerP95Ms": 1216,
+                    "totalP50Ms": 640,
+                    "totalP95Ms": 1318
+                  },
+                  "libra": {
+                    "jobs": 4,
+                    "inputBytes": 1075690,
+                    "resultBytesP95": 8236,
+                    "queueP50Ms": 143,
+                    "queueP95Ms": 653,
+                    "workerP50Ms": 206,
+                    "workerP95Ms": 796,
+                    "totalP50Ms": 769,
+                    "totalP95Ms": 908
+                  },
+                  "hayaku": {
+                    "jobs": 4,
+                    "inputBytes": 91894,
+                    "resultBytesP95": 67013,
+                    "queueP50Ms": 327,
+                    "queueP95Ms": 540,
+                    "workerP50Ms": 5,
+                    "workerP95Ms": 512,
+                    "totalP50Ms": 372,
+                    "totalP95Ms": 608
+                  }
+                }
+              },
+              {
+                "workers": 8,
+                "jobs": 12,
+                "peakJobs": 8,
+                "peakNamespaces": 3,
+                "coordinatedOccupancy": {
+                  "mode": "controlled_physical_worker_occupancy",
+                  "setupBoundMs": 5000,
+                  "ownedWorkers": 8,
+                  "readyPeak": 8,
+                  "distinctReadyThreads": 8,
+                  "gatePeak": 8,
+                  "releasedAt": 1791701579980,
+                  "entries": [
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 0,
+                      "threadId": 1,
+                      "controlledJobId": "cmp_ZnyZfCi-zFQ4KIGWNt9EmZoj",
+                      "enteredAt": 1791701579730,
+                      "gateWaitMs": 251
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 1,
+                      "threadId": 2,
+                      "controlledJobId": "cmp_wVaslBitqCjT9eHmBRhtbwBp",
+                      "enteredAt": 1791701579798,
+                      "gateWaitMs": 192
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 2,
+                      "threadId": 3,
+                      "controlledJobId": "cmp_vTlQoOxNjzm7R2BQTmP57R7r",
+                      "enteredAt": 1791701579826,
+                      "gateWaitMs": 155
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 3,
+                      "threadId": 4,
+                      "controlledJobId": "cmp_yplYd9Y3XKvK1O2-1AZTnw_a",
+                      "enteredAt": 1791701579851,
+                      "gateWaitMs": 130
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 4,
+                      "threadId": 5,
+                      "controlledJobId": "cmp_4yYvMai1cj-E4oq6qQcGheCm",
+                      "enteredAt": 1791701579852,
+                      "gateWaitMs": 134
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 5,
+                      "threadId": 6,
+                      "controlledJobId": "cmp_FF_xNnE9Lw7i74MiToiAcyM8",
+                      "enteredAt": 1791701579884,
+                      "gateWaitMs": 103
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 6,
+                      "threadId": 7,
+                      "controlledJobId": "cmp_1Y9dAMi0kXSRrKZdsOSITHu_",
+                      "enteredAt": 1791701579879,
+                      "gateWaitMs": 107
+                    },
+                    {
+                      "event": "controlledGateEntered",
+                      "workerIndex": 7,
+                      "threadId": 8,
+                      "controlledJobId": "cmp_HcIeN8o5aNb9Sgtmbj8EB1fK",
+                      "enteredAt": 1791701579910,
+                      "gateWaitMs": 79
+                    }
+                  ],
+                  "timingPolicy": "native worker/queue/total timings include coordinator wait; no subtraction",
+                  "limitation": "proves controlled physical slot occupancy, not unguarded product kernel CPU overlap or generalized throughput"
+                },
+                "localSerialMs": 307.61,
+                "serialEquivalentMs": 1230.46,
+                "wallMs": 1152.95,
+                "controlledWallRatioNotThroughput": 1.067,
+                "rssBaselineMiB": 34.67,
+                "rssPeakMiB": 459.2,
+                "rssPeakDeltaMiB": 424.53,
+                "namespaces": {
+                  "flashback": {
+                    "jobs": 4,
+                    "inputBytes": 1485321,
+                    "resultBytesP95": 472707,
+                    "queueP50Ms": 7,
+                    "queueP95Ms": 12,
+                    "workerP50Ms": 405,
+                    "workerP95Ms": 628,
+                    "totalP50Ms": 607,
+                    "totalP95Ms": 767
+                  },
+                  "libra": {
+                    "jobs": 4,
+                    "inputBytes": 1075690,
+                    "resultBytesP95": 8236,
+                    "queueP50Ms": 37,
+                    "queueP95Ms": 68,
+                    "workerP50Ms": 510,
+                    "workerP95Ms": 671,
+                    "totalP50Ms": 605,
+                    "totalP95Ms": 755
+                  },
+                  "hayaku": {
+                    "jobs": 4,
+                    "inputBytes": 91894,
+                    "resultBytesP95": 67013,
+                    "queueP50Ms": 2,
+                    "queueP95Ms": 87,
+                    "workerP50Ms": 133,
+                    "workerP95Ms": 264,
+                    "totalP50Ms": 139,
+                    "totalP95Ms": 271
+                  }
+                }
+              }
+            ]
+          },
+          "logs": {
+            "full": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/logs/051-compute_product_worker_matrix_test.cjs.log",
+              "sha256": "8818aad9157f4fc76ada925ed6c89c994cb7dfad72f89e1a43db300dbaa49e02"
+            },
+            "stdout": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/stdout.txt",
+              "sha256": "befc49a2351ed6caa846339418d911610f10238f3f1fd7186c9c88eb833512ba"
+            },
+            "summary": {
+              "path": "/workspace/librarian-regression/fix39-20261011/compute50-51-logs/green51/run.txt",
+              "sha256": "e47b0054c1f66d47678886000728838b9e36e412537619c806e2fe291dfc3058"
+            }
+          }
+        },
+        "assertionMap": {
+          "rssBudget": "Originaldelta<512MiB retained percell and flood/soak",
+          "canonicalBytes": "OriginalSQLite/WALdigests unchanged",
+          "retiredOwner": "DefaultcreateProductSpecs unchanged including LIA403deny",
+          "enumeration": "Onlynewfixtures belowfixtures/: tracked direct cjs count unchanged 1178; officialrunner inventory1138 from baseline logs. No direct rootadded.",
+          "matrixWidthsFloor": "Original1/2/4/8cells and nativeinterval>=min4 retained, genuine distinctentrygate>=min4 added",
+          "matrix12LocalParity": "12realpublicHTTPsubmissions, exactly4perspec, everyactualresultlocalparity (strengthened fromfirstperspec)"
+        },
+        "limitations": [
+          "Allrealproductjobs/defaultkernels/localparity, native workerintervalfloor min4, actualdistinctworkerfloor, originaldeadlines/latency/fairness/RSS/SQLite/WAL obligations pass. Gates explicitlycoordinatephysicalslotoccupancy and native workerMs includes79-499mssetupwait. NOT a claim4unguardedproductkernel CPU overlap or generalperformance/throughput. Matrix reportedcontrolledWallRatioNotThroughput; source/tests were alreadyunchanged from6f1 atoriginalfailures. Unchangedungated24jobsoak passed2actualjobs/2namespaces; no transientsoakfailure observed thisrun."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 107,
+        "path": "PROGRAM/tests/flashback_deferred_finish_cost_runtime_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "855066f668f76ecabd5b2e7bcaafb61eb2b1d004545366879bec4b31c9d14642",
+          "status": "FAIL",
+          "durationSeconds": 22.88,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/107-flashback_deferred_finish_cost_runtime_test.cjs.log",
+          "fullOutputSha256": "f15d7d18983cca7837032c695aa1c69ca7a159d690b048ec62526d682415cfde"
+        },
+        "currentTestSha256": "44dd04610fad8a06061cf9f35ae9390ae02fe80a1a4666752712bd3aeefd8d7e",
+        "authorExecutionCommit": "9b5fdcd6fb4f60668b7b43c00ea0dc5eeb6ea936",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/root107-results.json",
+          "sha256": "30328cd2f0907ba15bf2510232cd2218d0927751cce579062eae8f432902af9a"
+        },
+        "focusedVerification": {
+          "phase": "finalCommittedOfficial",
+          "receipt": "/workspace/librarian-regression/fix39-20261011/diagnostic107-final-committed/run-receipt.json",
+          "receiptSha256": "d61b5a8056a05c0abbca31a095e8c3771c7cb931187d255e4dad18cb8f1a7823",
+          "candidateCommit": "9b5fdcd6fb4f60668b7b43c00ea0dc5eeb6ea936",
+          "baseProductCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sourceSha256": "03cdcb46b63ef540e505990815d9bcb02e17afff5c8e1eba28e5949fc8df444d",
+          "testSha256": "44dd04610fad8a06061cf9f35ae9390ae02fe80a1a4666752712bd3aeefd8d7e",
+          "fixtureSha256": "4e3be2c21961df745eda196e3acad43c7572131d306dbb87e732f9d1d0c904b7",
+          "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+          "attributionMode": "FINAL_DEFAULT_SCOPED_EXACT_ONE_REAL_STARTUP_WITH_NESTED_OWNED_NEGATIVE",
+          "argv": [
+            "python",
+            "PROGRAM/run_regression_batch.py",
+            "106",
+            "107"
+          ],
+          "environment": {
+            "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified/Min",
+            "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+            "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+            "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified/Min/plugins/LIA_Persona_Linker.js",
+            "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+            "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/qualified-reingest-evidence",
+            "RESET_PHYSICAL_CURRENT_OWNERS": "1"
+          },
+          "exitCode": 0,
+          "durationSeconds": 21.418899340998905,
+          "evidence": [
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic107-final-committed/console.txt",
+              "sha256": "061060c7f631de6f930cda347ebfa3e5d655b3e4553504aaec7a1a43f94ed209"
+            },
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic107-final-committed/logs/107-flashback_deferred_finish_cost_runtime_test.cjs.log",
+              "sha256": "d2b87116773ce5ae1ed1095e8946a7ef6e061678ca5dbd21cf516ccf3e1f0251"
+            },
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic107-final-committed/summary.txt",
+              "sha256": "061060c7f631de6f930cda347ebfa3e5d655b3e4553504aaec7a1a43f94ed209"
+            }
+          ],
+          "cloneCleanAfterRun": true
+        },
+        "assertionMap": [
+          {
+            "name": "deferred finalized raw acknowledgement checks its physical tail without two redundant full-scope readiness scans",
+            "originalStatus": "FAIL",
+            "currentStatus": "PASS",
+            "mapping": "Exactly1 fresh-tail obligation retained; operation attribution corrected, actual startup outside2 and nested-owned2 strict1 rejection added."
+          },
+          {
+            "name": "registered finalized output persists exact raw provenance, drops duplicate and remains pending after restart",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on profile boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on generation boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on worldline boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on manifest boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on scope boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on owner boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "publication receipt falls back on backend-url boundary change after ACK",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "verified private publication receipt is consumed once and is unavailable in a fresh realm",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "raw-only receipt never certifies nonselected removed page as current corpus or semantic ready",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "raw-only receipt never certifies nonselected altered page as current corpus or semantic ready",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "same owner/backend/manifest after ACK refuses removed selected physical raw page",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "same owner/backend/manifest after ACK refuses altered selected physical raw page",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          },
+          {
+            "name": "a caller supplied publication object cannot bypass physical full-scope readback",
+            "originalStatus": "PASS",
+            "currentStatus": "PASS",
+            "mapping": "Original boundary/tamper/fresh-realm/private-single-use/forged-object assertions retained unchanged."
+          }
+        ],
+        "limitations": [
+          "The exact natural origin of the predecessor failure remains unknown. A controlled real scheduled startup proves global attribution can count two outside reads with one owned tail.",
+          "Async operation attribution includes nested descendants; the same exact-one assertion rejects two owned reads. Unrelated reads remain visible in total I/O.",
+          "Only this test and its isolated fixture changed. Production and shared fixture bytes are unchanged."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 246,
+        "path": "PROGRAM/tests/hayaku_cache_rediscovery_runtime_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "e3a2c3af76c818410e2652daf422104d0428e1bd8836df3ff1ca57eac38e28ec",
+          "status": "FAIL",
+          "durationSeconds": 24.22,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/246-hayaku_cache_rediscovery_runtime_test.cjs.log",
+          "fullOutputSha256": "d596336f2faed53580632148ed3dfad7e55ee47b5d85ffaceb740efd3ad46d72"
+        },
+        "currentTestSha256": "ef7898390afd1b8991d5bdf3bca98c75a6d86f62e3cb4f05257135161d4334db",
+        "authorExecutionCommit": "94585d885c5330675ca3609edb3f34955c05bf35",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/cache-246-results.json",
+          "sha256": "d44ee1f7e68f26e93aedb5a247566e581b2823134a125be2416ce952df128bb3"
+        },
+        "focusedVerification": {
+          "status": "PASS",
+          "durationSeconds": 16.72,
+          "unfilteredWholeRoot": true,
+          "command": "python PROGRAM/run_regression_batch.py --match hayaku_cache_rediscovery_runtime_test.cjs",
+          "timeoutSeconds": 60,
+          "log": {
+            "path": "/workspace/librarian-regression/fix39-20261011/cache-246-official-logs/246-hayaku_cache_rediscovery_runtime_test.cjs.log",
+            "sha256": "f18b118a0418310333f13048b4fd94d27a0ad36c083ef85ee5f9de9506cedbad",
+            "bytes": 163
+          },
+          "environment": "managed /workspace/librarian-cloud/env.sh NODE_PATH; tool local network enabled; source byte-equal efcb; root directly loads local plugin source. Qualified artifacts environment supplied for625 and mutation;246 has no artifact references."
+        },
+        "assertionMap": [
+          {
+            "original": "All46 first-query facts after actual eviction, novel queries and alternating/revisited scopes",
+            "current": "Same46 queries, same frozen600-source corpus, same first-request selection, held semantic clock during preparation",
+            "equivalenceGap": "No claim all600 temporary postings finish within150ms of real elapsed time on a loaded machine"
+          },
+          {
+            "original": "64 projections,48 candidates,16 rendered entries,12000 evidence chars and bounded cache/hints",
+            "current": "Existing assertions unchanged for all semantic cases; new advancing-clock case also checks64 projections and work-budget accounting",
+            "equivalenceGap": "None for the retained count/size bounds"
+          },
+          {
+            "original": "Evicted source rediscovery, scope churn, source edit/deletion, unchanged original source bytes, zero model/fetch calls",
+            "current": "Same scenarios and assertions unchanged",
+            "equivalenceGap": "None for semantic outcomes; source is loaded through an explicit isolated clock/cache observer"
+          },
+          {
+            "original": "Implicit assumption complete temporary routing in every cold request",
+            "current": "One deterministic advancing-clock case forces partial routing and asserts scanned/pending accounting, incomplete/noncurrent/nondurable index and absent unrouted turn471 fact",
+            "equivalenceGap": "Explicit bounded-work partial outcome replaces unsupported universal real-time completeness"
+          }
+        ],
+        "limitations": [
+          "Same46 first-query semantic facts; held now() also holds associated timestamps in that interval, so no actual150ms performance claim.",
+          "Separate advancingclock13/600 partial actual posting control preserves all production bounds, validates64 work,noncurrent/nondurable and absent unincluded source fact.",
+          "Original all1138 campaign remains1125PASS11FAIL2SKIP; this focused corrected root does not relabel original full run."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 625,
+        "path": "PROGRAM/tests/libra_micro_recall_incremental_head_index_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "c512443b53dca28e9e977c36996c03959c7a65339ba15616c6114ec6c6a7c99a",
+          "status": "FAIL",
+          "durationSeconds": 1.27,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/625-libra_micro_recall_incremental_head_index_test.cjs.log",
+          "fullOutputSha256": "31df72dac991118e139884e551d0b2e52dd061d2d30cb8883607dc37f7ae8e61"
+        },
+        "currentTestSha256": "915e7d7dcbad3659eec47021310b882c9ac1bdda581194b869900e37287bf5f6",
+        "authorExecutionCommit": "5e18fae94efde7960530863c3242728d5140e976",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/cache-625-results.json",
+          "sha256": "1ea3ed7cea4771c95a8d0218c6623f6bfacd6cdb0ae881da8fc66491bbb322e6"
+        },
+        "focusedVerification": {
+          "status": "PASS",
+          "durationSeconds": 1.48,
+          "unfilteredWholeRoot": true,
+          "command": "python PROGRAM/run_regression_batch.py --match libra_micro_recall_incremental_head_index_test.cjs",
+          "timeoutSeconds": 60,
+          "log": {
+            "path": "/workspace/librarian-regression/fix39-20261011/cache-625-current-logs/625-libra_micro_recall_incremental_head_index_test.cjs.log",
+            "sha256": "1a09f740f6d22e27feee14bb8a6341f84b5c6d8533ce4e19ecca59038533a433",
+            "bytes": 3833
+          },
+          "environment": "managed /workspace/librarian-cloud/env.sh NODE_PATH; tool local network enabled; source byte-equal efcb; root directly loads local plugin source. Qualified artifacts environment supplied for625 and mutation;246 has no artifact references."
+        },
+        "assertionMap": [
+          {
+            "original": "Actually publish source-bound T1 and T2, then recall both",
+            "current": "Producer inputs, exact quotes, publication listener, publication waits and selected turn checks unchanged"
+          },
+          {
+            "original": "Steady T1 reads at most1 head",
+            "current": "Exactly2 same selected T1 physical reads, traced hydration then physical-reread, zero catalog phase",
+            "equivalenceGap": "Intentional final physical protection requires second selected read"
+          },
+          {
+            "original": "New T2 incremental reads<=3",
+            "current": "Original catalog+hydration<=3 preserved after subtracting exactly2 proven per-head physical rereads; actual total5. Actual two shortlisted published record IDs traced and paired with backend physical record reads, public selected IDs recorded separately.",
+            "equivalenceGap": "Two additional final rereads required by intentional guard, not catalog scans or arbitrary cap widening"
+          },
+          {
+            "original": "64-turn cold catalog probes>=60; warm reads<quarter cold",
+            "current": "Both original bounds retained; actual64-turn warm2 reads = paired hydration/reread onlyT2, no catalog phase; physical record IDs and public selected IDs separately recorded"
+          },
+          {
+            "original": "Missing physical head mutation guard case",
+            "current": "During genuine T2 record await, replace actual persisted head body; actual readActiveMicroMemory must return stale_source/micro_head_changed_during_read; restore physical head in finally"
+          }
+        ],
+        "limitations": [
+          "Original steady<=1 and incremental<=3 included no required final physical rereads. Actual steady2 onlyT1; incremental5=catalog1+hydration2+finalreread2; original catalog+hydration<=3 remains asserted.",
+          "Incremental actualhydratedT1/T2 vs publicselectedT2 recorded separately, not claiming every hydrated candidate becomes delivered text.64turn cold64/warm2 (<quarter) unchanged.",
+          "Negative invokes actual Micro reader with actual resolved host scope; physical head changes during actual record await and original guard refuses micro_head_changed_during_read, physical body restored.",
+          "Initial test-only observer assumptions and partialscope caller failed; all corrective failures retained. Original all1138 outcome unchanged."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 735,
+        "path": "PROGRAM/tests/libra_retained_state_archive_currentness_runtime_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "5e5741a7573870ccdccf5093db062067dc3d19fe82a5fe57144dd96a3ec65736",
+          "status": "FAIL",
+          "durationSeconds": 18.9,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/735-libra_retained_state_archive_currentness_runtime_test.cjs.log",
+          "fullOutputSha256": "25bbfbd935c5a20b69a183e9709c3863eb2e2f4a9618c75fe7be1fbe50211ce0"
+        },
+        "currentTestSha256": "20bcd27835b19fca49343013fd0f10683b33d664bb31d865fa84b12c80aaa025",
+        "authorExecutionCommit": "7cb035b992d61c8d8ab59e0f43a74fbc14dbf7cb",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/runtime735-results.json",
+          "sha256": "2966b822c5d7b9119b0efcd2f763635aaceab8f53df643ef862bd10fe5ce0ce6"
+        },
+        "focusedVerification": {
+          "runnerCommand": "python PROGRAM/run_regression_batch.py --match libra_retained_state_archive_currentness_runtime_test.cjs",
+          "officialIndex": 735,
+          "officialInventoryCount": 1138,
+          "defaultDeadlineSeconds": 60,
+          "exit": 0,
+          "status": "PASS",
+          "cases": 7,
+          "pass": 7,
+          "fail": 0,
+          "durationSeconds": 13.06,
+          "executionConcurrency": 1,
+          "managedEnvironment": "source /workspace/librarian-cloud/env.sh",
+          "qualifiedArtifacts": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+          "localhostNetworkPermission": true,
+          "logs": {
+            "stdout": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime735-logs/green/stdout.txt",
+              "sha256": "976095be539aa3e46f95824df8eb6f1289ae610ac0f03479d1a9199eb1397622"
+            },
+            "summary": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime735-logs/green/run.txt",
+              "sha256": "74eeba42922516907e7952ab6c3a6b1732486e1587da4503cf95260742c5ad12"
+            },
+            "full": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime735-logs/green/logs/735-libra_retained_state_archive_currentness_runtime_test.cjs.log",
+              "sha256": "534ff244817e5cbfe328e96bd706b02f39f0c7115f8fe7e692492f0404f74dfe"
+            }
+          },
+          "runnerSHA256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+        },
+        "assertionMap": {
+          "selectedMicroIdentityCount": "unchanged used.length exactly2",
+          "twoIndependentProofs": "exactly2 archiveKey/headKey/receiptKey proofs with distinct recordKeys; each physical archive Micro record analysisRevisionId matches selected identities",
+          "additionalProof": "exactly1 canonical-memory proof whose recordKey loads actual canonical body selected by memoryId/revision",
+          "noSpuriousProofs": "mixed total equals two classified Micro plus one classified canonical, no unknown proof",
+          "onePhysicalArchiveRead": "unchanged storage.getItem counter around actual probe.verify() ==1",
+          "alteredArchiveRefusal": "unchanged claim mutation assert.rejects /MICRO.*ARCHIVE/",
+          "other6Cases": "unchanged"
+        },
+        "limitations": [
+          "Current physical consumed-proof mixedset schema successor; historical count2 whole registry obsolete because selectedcanonicalbody proof is legitimately added. No production fix or externalprovider evidence; fulloriginal7case behavior retained."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 983,
+        "path": "PROGRAM/tests/retrace_server_handoff_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "cbb1b0363f802c658c8ebc333e7209d92001d7e439f86a3f457643a93777f23e",
+          "status": "FAIL",
+          "durationSeconds": 0.97,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/983-retrace_server_handoff_test.cjs.log",
+          "fullOutputSha256": "5fdc4d61ac6da35403f3c901cea1e1dd94633c9f8176db62ac7e89bfc6a6c6d2"
+        },
+        "currentTestSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+        "authorExecutionCommit": "575b307718e3ab794c149a303a0308a6584c1c92",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/storage983-diagnostic-candidate.json",
+          "sha256": "a95314b75d035afecfd61ee24eef35031e47672f11d2693e494d3e85127f638c"
+        },
+        "focusedVerification": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "serverSha256": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132",
+          "sdkSha256": "931aea6f6e9681c1d757c87985576c3f218ce0da992b89292dad2b0e1ee59381",
+          "testSha256": "8df05c603baf8e1aefdd08b6a14ecc586a3a81c8433de7c26dbe0eb6509cb676",
+          "runnerSha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
+          "argv": [
+            "python",
+            "PROGRAM/run_regression_batch.py",
+            "982",
+            "983"
+          ],
+          "environment": {
+            "ULTRALIGHT_ARTIFACT_DIR": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified/Min",
+            "EXECUTION_PROFILE_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+            "FLASHBACK_SERVER_INSPECTION_ARTIFACTS": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+            "LIA_RELEASE_ARTIFACT": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified/Min/plugins/LIA_Persona_Linker.js",
+            "RELEASE_PARITY_CONTROL_DIR": "/workspace/librarian-cloud/build/Min",
+            "FLASHBACK_REINGEST_EVIDENCE": "/workspace/librarian-regression/fix39-20261011/qualified-reingest-evidence",
+            "RESET_PHYSICAL_CURRENT_OWNERS": "1"
+          },
+          "exitCode": 0,
+          "durationSeconds": 0.6158162689971505,
+          "evidence": [
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic983/console.txt",
+              "sha256": "b206dd895ba34fcfe1009312f21ad5af9b38911581f627b6edbcc3a102ae2e00"
+            },
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic983/logs/983-retrace_server_handoff_test.cjs.log",
+              "sha256": "f7e3b52b013c110a0e4007471e0eb36b9711fbcb282af2905a5a58f2ad7bf15f"
+            },
+            {
+              "path": "/workspace/librarian-regression/fix39-20261011/diagnostic983/summary.txt",
+              "sha256": "b206dd895ba34fcfe1009312f21ad5af9b38911581f627b6edbcc3a102ae2e00"
+            }
+          ]
+        },
+        "assertionMap": [
+          "All existing peer namespace read+integrity assertions preserved.",
+          "Current-owner write assertions preserved.",
+          "RetiredLIA/RETRACE new-write refusal, credential-locality refusal, zero credentialDB rows and immutable seeded historicalinventory assertions preserved."
+        ],
+        "limitations": [
+          "Original fetch failure cause remains unknown. The diagnostic rerun passed without a production correction or retry.",
+          "All original assertions remain unchanged; sanitized transport diagnostics retain failures if they recur."
+        ],
+        "commonSourceResult": null
+      },
+      {
+        "rootOrdinal": 1085,
+        "path": "PROGRAM/tests/source_turn_registered_runtime_test.cjs",
+        "kind": "TEST_ONLY_DIAGNOSTICS_OR_CURRENT_CONTRACT_CORRECTION",
+        "originalFailure": {
+          "sourceCommit": "efcb28867cf580f74ffb7e1b82ec5d01f92d408a",
+          "sha256": "390323270a3a6d0e198483d76b2edd86fcf146a20b69fb50e3cca486c30ace11",
+          "status": "FAIL",
+          "durationSeconds": 9.79,
+          "fullOutputLog": "/workspace/librarian-regression/fix39-20261011/qualified-run-1/logs/1085-source_turn_registered_runtime_test.cjs.log",
+          "fullOutputSha256": "3079a2075a1ee0663f94b5138277fde211d1ae9629f5204bdfffb2faea72ca51"
+        },
+        "currentTestSha256": "a87ee4ecd1e4b37e3ac93250dbaeeea5d3ff964ef90d84f52d5908ab140fb86c",
+        "authorExecutionCommit": "e00705d117896179669f50037891b1bddb332f57",
+        "authorReceipt": {
+          "path": "/workspace/librarian-regression/fix39-20261011/runtime1085-results.json",
+          "sha256": "f42ef42bb2eb87aaca428063bac18476300d58b83d755cca8f29993131c47c49"
+        },
+        "focusedVerification": {
+          "runnerCommand": "python PROGRAM/run_regression_batch.py --match source_turn_registered_runtime_test.cjs",
+          "officialIndex": 1085,
+          "officialInventoryCount": 1138,
+          "defaultDeadlineSeconds": 60,
+          "exit": 0,
+          "status": "PASS",
+          "cases": 7,
+          "pass": 7,
+          "fail": 0,
+          "durationSeconds": 8.65,
+          "executionConcurrency": 1,
+          "managedEnvironment": "source /workspace/librarian-cloud/env.sh",
+          "qualifiedArtifacts": "/workspace/librarian-regression/fix39-20261011/artifacts-qualified",
+          "localhostNetworkPermission": true,
+          "logs": {
+            "stdout": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime1085-logs/green/stdout.txt",
+              "sha256": "f3cd1eb5c1021d56a9f0bcca0ed7611fadb914e177d7578c06ecffcadee959f7"
+            },
+            "summary": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime1085-logs/green/run.txt",
+              "sha256": "ee444b2873351b69b659051cfed9387f70ebce8183f50ae391b2a3571ca348b0"
+            },
+            "full": {
+              "path": "/workspace/librarian-regression/fix39-20261011/runtime1085-logs/green/logs/1085-source_turn_registered_runtime_test.cjs.log",
+              "sha256": "a448c623fe82fc070f024bcf993075643e1f9eff6189d0da2961a4d7a1516689"
+            }
+          },
+          "runnerSHA256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e"
+        },
+        "assertionMap": {
+          "uniqueAnchor": "exactly1 current seam preserves original uniqueness assertion",
+          "realPhysicalScopeMutation": "context.chat id/chatId mutated, independently assert fixture host chat now changed",
+          "observerNonVacuity": "global VM counter exactly1 asserted after actual hook executes",
+          "unchangedInput": "withEmptyLibra unchanged deep equality original output/input",
+          "noProvider": "withEmptyLibra unchanged control.calls.length exactly0",
+          "failOpen": "unchanged lastMemoryInjectionMeta.failOpen true",
+          "noZeroReceipt": "unchanged injection+viewer sourceTurnAccounting undefined and lastClassicInjectionMeta null",
+          "other6Cases": "unchanged"
+        },
+        "limitations": [
+          "Current late-scope transformation seam includes new ownerguard; original frozenfailure was transformation install failure, not demonstrated production boundary defect. Synthetic physical hostscope change exercises actualboundary; no stub/provider evidence."
+        ],
+        "commonSourceResult": null
+      }
+    ],
+    "qualification": "FOCUSED_VERIFICATION_COMPLETE_FRESH_COMMON_SOURCE_REPLAY_PENDING",
+    "productionChangesAfterPredecessor": false
   }
 }
