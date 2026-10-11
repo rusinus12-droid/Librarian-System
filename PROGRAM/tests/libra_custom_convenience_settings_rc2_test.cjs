@@ -71,12 +71,12 @@ const readAllowedDomains = (helperName, options) => {
   return Array.from(context.readPolicy(options || {}));
 };
 
-check('LIBRA Custom Prompt Studio filters to common memory plus Planner', () => {
-  assert.deepEqual(readAllowedDomains('buildLibraPromptStudioPanel', { family: 'libra' }), ['memory', 'planner']);
+check('LIBRA Custom Prompt Studio filters to memory only after embedded Planner retirement', () => {
+  assert.deepEqual(readAllowedDomains('buildLibraPromptStudioPanel', { family: 'libra' }), ['memory']);
 });
 
-check('GRADIA Custom Prompt Studio filters to common memory plus SGA', () => {
-  assert.deepEqual(readAllowedDomains('buildLibraPromptStudioPanel', { family: 'gradia' }), ['memory', 'sga']);
+check('GRADIA Custom Prompt Studio filters to memory only after embedded SGA retirement', () => {
+  assert.deepEqual(readAllowedDomains('buildLibraPromptStudioPanel', { family: 'gradia' }), ['memory']);
 });
 
 check('Prompt Studio import and export honor the visible domain boundary', () => {
@@ -87,12 +87,12 @@ check('Prompt Studio import and export honor the visible domain boundary', () =>
     'all-domain export must be hidden on a filtered Custom or Convenience surface');
 });
 
-check('LIBRA Custom OOC filters to common memory plus Planner', () => {
-  assert.deepEqual(readAllowedDomains('renderPromptStudioOocBuilder', { family: 'libra' }), ['memory', 'planner']);
+check('LIBRA Custom OOC filters to memory only after embedded Planner retirement', () => {
+  assert.deepEqual(readAllowedDomains('renderPromptStudioOocBuilder', { family: 'libra' }), ['memory']);
 });
 
-check('GRADIA Custom OOC filters to common memory plus SGA', () => {
-  assert.deepEqual(readAllowedDomains('renderPromptStudioOocBuilder', { family: 'gradia' }), ['memory', 'sga']);
+check('GRADIA Custom OOC filters to memory only after embedded SGA retirement', () => {
+  assert.deepEqual(readAllowedDomains('renderPromptStudioOocBuilder', { family: 'gradia' }), ['memory']);
 });
 
 check('Custom OOC keeps the selected domain when it is visible in the active family', () => {
@@ -112,8 +112,8 @@ check('Retired workshop delegates to agent settings without changing persistence
     assert.doesNotMatch(extractConst(registry),/id: 'custom'/,registry+' must not expose the removed workshop');
   }
   const agent=extractConst('buildSharedAgentShellPanel');
-  assert.match(agent,/buildLibraPromptStudioPanel/);
-  assert.match(agent,/renderPromptStudioOocBuilder/);
+  assert.match(agent,/buildMemoryPromptStudioDisclosure/);
+  assert.match(extractConst('buildMemoryPromptStudioDisclosure'),/buildLibraPromptStudioPanel/);
   assert.doesNotMatch(agent,/saveGuiState\s*\(|pluginStorage|setItem\s*\(/);
 });
 
@@ -128,7 +128,7 @@ check('Advanced prompts stay lazy, family scoped, and accessible through old wor
       normalizeHubChoice:(v,allowed,fallback)=>allowed.includes(v)?v:fallback,
       activeGuiResponseFamily:()=>family,
       guiEl:node,
-      guiLazyDetails:(attrs,summary,open)=>({...node('details',attrs,[summary]),open}),
+      guiLazyDetails:(attrs,summary,open)=>({...node('details',attrs,[summary]),open,addEventListener(){}}),
       buildLibraHubTabs:()=>node('tabs'),
       buildStateTrackingAvailabilityPanel:()=>node('state'),
       buildSharedSettingsShellPanel:()=>node('settings-state'),
@@ -139,10 +139,10 @@ check('Advanced prompts stay lazy, family scoped, and accessible through old wor
       renderPromptStudioOocBuilder:options=>{calls.push(['ooc',options.family]);return node('ooc');}
     };
     vm.createContext(context);
-    vm.runInContext(extractConst('buildSharedAgentShellPanel')+'\n'+extractConst('migrateCustomWorkshopSelection')+'\n'+extractConst('buildSharedCustomShellPanel')+'\nthis.render=buildSharedCustomShellPanel;',context);
+    vm.runInContext(extractConst('buildMemoryPromptStudioDisclosure')+'\n'+extractConst('buildSharedAgentShellPanel')+'\n'+extractConst('migrateCustomWorkshopSelection')+'\n'+extractConst('buildSharedCustomShellPanel')+'\nthis.render=buildSharedCustomShellPanel;',context);
     const tree=context.render();
     assert.equal(context.Gui.bookSettingsWorkbenchSection,oldSection==='state'?'settings':'pipeline');
-    assert.equal(context.Gui.agentHubSection,oldSection==='memory'?'memory':oldSection==='state'?undefined:'draft');
+    assert.equal(context.Gui.agentHubSection,oldSection==='state'?undefined:'memory');
     assert.equal(calls.length,0,'rendering settings must not eagerly read or overwrite prompts');
     if(oldSection==='state'){
       assert.equal(tree.tag,'settings-state');
@@ -151,10 +151,10 @@ check('Advanced prompts stay lazy, family scoped, and accessible through old wor
     }
     const disclosures=tree.children.filter(n=>n.tag==='details');
     for(const disclosure of disclosures) disclosure.open();
-    const domain=oldSection==='memory'?'memory':family==='gradia'?'sga':'planner';
+    const domain='memory';
     assert.deepEqual(calls[0],['domain',domain]);
-    assert.deepEqual(calls[1],['prompt',{family,allowedDomains:[domain]}]);
-    if(oldSection!=='memory')assert.deepEqual(calls[2],['ooc',family]);
+    assert.deepEqual(calls[1],['prompt',{allowedDomains:[domain]}]);
+    assert.equal(calls.length,2,'legacy draft links must not resurrect embedded OOC drafting');
   }
 });
 
@@ -190,36 +190,24 @@ check('General diagnostics loads analysis history only after disclosure opens', 
   assert.equal(reads, 1, 'opening the body must build exactly the selected section');
 });
 
-check('Settings keeps Input Writer configuration while the composer remains a separate host surface', () => {
-  require('./helpers/libra_active_book_routes.cjs')(source);
-  const settings = extractConst('buildSharedSettingsShellPanel');
-  assert.match(settings, /id: 'input_writer'[\s\S]*buildInputAssistSettingsPanel\(\{ family \}\)/);
-  assert.doesNotMatch(settings, /showLibraInputWriterComposer\s*\(/,
-    'Settings configures Input Writer but does not embed its composing window');
-
-  const inputWriter = extractConst('buildInputAssistSettingsPanel');
-  assert.match(inputWriter, /runtime\.gradiaWritingMode = normalizeChoice\(runtime\.gradiaWritingMode \|\| DEFAULT_INPUT_WRITER_MODE/);
-  assert.match(inputWriter, /runtime\.inputWriterMode = normalizeChoice\(runtime\.inputWriterMode \|\| DEFAULT_INPUT_WRITER_MODE/);
-  assert.doesNotMatch(inputWriter, /runtime\.inputWriterMode = runtime\.gradiaWritingMode|runtime\.gradiaWritingMode = mode/,
-    'Input Writer settings must not overwrite the remembered GRADIA Novel/RP mode');
-  assert.match(inputWriter, /onClick: \(\) => \{ runtime\.inputWriterMode = mode; markGuiDirty\(\);/,
-    'Input Writer mode cards update only the Input Writer-local selection');
-  assert.doesNotMatch(inputWriter, /promptStudioDomain = 'input_writer'[\s\S]*libraGuiNavigate\('prompt_studio'\)/,
-    'Input Writer prompt controls must not escape into the memory-or-active-draft Custom page');
+check('Retired composer remains absent from settings while Book settings remain reachable',()=>{
+ require('./helpers/libra_active_book_routes.cjs')(source);
+ const context={Gui:{settingsHubSection:'memory'},SHARED_SETTINGS_HUB_SECTIONS:['memory'],normalizeHubChoice:(v)=>v,activeGuiResponseFamily:()=> 'libra',buildLibraMemorySettingsPanel:()=>({owner:'memory'}),guiEl:(_tag,_attrs,children)=>({children}),buildLibraSectionLayout:(_defs,_selected,_onChange,_label,panel)=>panel};
+ vm.createContext(context);vm.runInContext(extractConst('buildSharedSettingsShellPanel')+'\nthis.render=buildSharedSettingsShellPanel;',context);
+ assert.equal(context.render().children[0].owner,'memory','shared memory Settings dispatch must reach the retained builder');
 });
 
 check('Settings groups Input Writer, references, memory, storage, recovery, state, and diagnostics', () => {
   const settings = between('const buildSharedSettingsShellPanel =', 'const renderActiveTab =');
-  for (const subsection of ['input_writer', 'references', 'memory', 'server', 'recovery', 'transfer', 'state', 'general']) {
+  for (const subsection of ['references', 'memory', 'server', 'recovery', 'transfer', 'state', 'general']) {
     assert.ok(settings.includes(`id: '${subsection}'`), `missing Settings subsection: ${subsection}`);
   }
   for (const builder of [
-    'buildInputAssistSettingsPanel', 'buildLibraReferenceHubPanel', 'buildLibraMemorySettingsPanel',
+    'buildLibraReferenceHubPanel', 'buildLibraMemorySettingsPanel',
     'buildLibraServerConnectionPanel', 'buildLibraRecoveryPanel', 'buildTransferTab',
     'buildStateTrackingAvailabilityPanel', 'buildGeneralSettingsPanel'
   ]) assert.ok(settings.includes(`${builder}(`), `Settings must reuse ${builder}`);
-  assert.doesNotMatch(settings, /buildLibraProviderPanel|buildLibraEmbeddingPanel/,
-    'AI and embedding connections remain dedicated top-level workspaces');
+  assert.doesNotMatch(settings,/buildLibraProviderPanel|buildLibraEmbeddingPanel/,'connection pages are dispatched by Book native settings');
 
   const general = extractConst('buildGeneralSettingsPanel');
   // §34: the diagnostics builder moved one level down into the consolidated log's dispatcher, so the
@@ -231,7 +219,7 @@ check('Settings groups Input Writer, references, memory, storage, recovery, stat
 
 const buildNavigationHarness = () => {
   const registryBlock = between('const SHARED_SIDEBAR_PAGE_REGISTRY =', 'const normalizeHubChoice =');
-  const navigation = between('const normalizeHubChoice =', 'const GUI_FAMILY_HUB_STATE_KEYS =');
+  const navigation = between('const normalizeHubChoice =', 'const normalizeBookPage =');
   const context = {
     Object,
     Array,
@@ -252,8 +240,8 @@ const buildNavigationHarness = () => {
 };
 
 for (const [route, target] of [
-  ['prompt', { pageId: 'custom', customHubSection: 'active_draft' }],
-  ['gradia_input', { pageId: 'settings', settingsHubSection: 'input_writer' }],
+  ['prompt', { pageId: 'custom', customHubSection: 'memory' }],
+  ['gradia_input', { pageId: 'memory', memoryHubSection: 'read' }],
   ['references', { pageId: 'settings', settingsHubSection: 'references' }],
   ['connections', { pageId: 'ai' }],
   ['server', { pageId: 'settings', settingsHubSection: 'server' }],
@@ -271,7 +259,7 @@ check('Legacy Custom OOC deep link is consumed by the shared Custom shell state'
   context.Gui.customHubSection = 'memory';
   context.apply(context.resolve('prompt_studio_ooc'));
   assert.equal(context.Gui.sharedSidebarSection, 'custom');
-  assert.equal(context.Gui.customHubSection, 'ooc');
+  assert.equal(context.Gui.customHubSection, 'memory');
 });
 
 if (failures.length) {

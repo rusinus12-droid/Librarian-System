@@ -33,47 +33,47 @@ const c = vm.createContext({
   buildStateTrackingAvailabilityPanel: () => marker('local-state'), buildLibraPromptStudioPanel: () => marker('prompts'),
   setSharedCustomPromptDomain: () => {}, renderPromptStudioOocBuilder: () => marker('ooc'),
 });
+// Embedded response drafting was retired; the shared workbench now owns only
+// memory analysis and lazy memory prompt editing. Exercise the shipped builders.
+c.buildLibraClassicPanel = options => el('section', {text:'classic',options});
+c.buildLibraLiveContextSettingsPanel = () => marker('recent-dialogue');
+c.buildMemoryPromptStudioDisclosure = () => marker('lazy-memory-prompts');
+// Embedded response drafting was retired; the shared workbench now owns only
+// memory analysis and lazy memory prompt editing. Exercise the shipped builders.
+c.buildLibraClassicPanel = options => el('section', {text:'classic',options});
+c.buildLibraLiveContextSettingsPanel = () => marker('recent-dialogue');
+c.buildMemoryPromptStudioDisclosure = () => marker('lazy-memory-prompts');
 vm.runInContext(
-  part('const buildAgentQuickSettingsSummary =', 'const buildGradiaDraftWorkspacePanel =') +
-  'const buildDraftWorkspacePanel = () => buildLibraDraftWorkspacePanel(); const buildMemoryPipelinePanel = () => buildMemoryPipelineWorkspacePanel();\n' +
-  part('const buildSharedPipelineShellPanel =', 'const setSharedCustomPromptDomain =') +
-  part('const buildBookQuickLibraResponsePanel =', 'const buildBookQuickGradiaPanel =') +
+  part('const buildAgentQuickSettingsSummary =', 'const buildSharedPipelineShellPanel =') +
+  part('const buildSharedPipelineShellPanel =', 'const buildMemoryPromptStudioDisclosure =') +
+  part('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =') +
+  part('const buildBookQuickLibraResponsePanel =', 'const buildBookQuickMemoryAgentsPanel =') +
   part('const buildBookQuickMemoryAgentsPanel =', 'const saveBookQuickSettings =') +
-  ';Object.assign(globalThis,{buildSharedPipelineShellPanel,buildBookQuickLibraResponsePanel,buildBookQuickMemoryAgentsPanel});', c);
-
-// The first choice is the mode, and switching it exposes only its own policy.
+  ';Object.assign(globalThis,{buildSharedPipelineShellPanel,buildBookQuickLibraResponsePanel,buildBookQuickMemoryAgentsPanel,buildAgentQuickSettingsSummary});', c);
 let nodes = flat(c.buildBookQuickLibraResponsePanel());
-assert.equal(nodes[1].text, '전처리 모드');
-assert.ok(!nodes.some(n => n.text === 'planner-policy' || n.text === 'memory-budget'));
-nodes.find(n => n.text === '플래너 모드').onClick();
-assert.equal(state.runtime.libraResponseMode, 'planner');
-nodes = flat(c.buildBookQuickLibraResponsePanel());
-assert.ok(nodes.some(n => n.text === 'Planner 연결' || n.text === 'Planner AI 프리셋'), 'Planner mode exposes its current connection controls');
-assert.ok(!nodes.some(n => n.text === 'memory-budget'));
+assert.deepEqual(nodes.slice(1).map(n=>n.text), ['classic','recent-dialogue']);
+assert.equal(nodes[1].options.compact,true);
+assert.equal(state.runtime.libraResponseMode,'classic');
+assert.equal(dirtyCalls,0,'rendering response evidence must not change settings');
 nodes = flat(c.buildBookQuickMemoryAgentsPanel());
-assert.ok(nodes.some(n => n.text === '기억 분석 사용'), 'quick memory settings keep the enable toggle');
-assert.ok(nodes.some(n => n.text === '기억 분석 AI'), 'quick memory settings keep the preset selector');
-assert.equal(nodes.filter(n => n.text === 'memory-budget').length, 0, 'the detailed budget remains behind advanced settings');
+assert.ok(nodes.some(n => n.text === '기억 분석 사용'));
+assert.ok(nodes.some(n => n.text === '기억 분석 AI'));
+assert.equal(nodes.filter(n => n.text === 'memory-budget').length,0);
+nodes.find(n => n.text === '기억 분석 사용').onClick();
+assert.equal(state.agents.librarian.enabled,false);
+assert.equal(dirtyCalls,1);
 nodes.find(n => n.text === '기억 분석 고급 설정 →').onClick();
-assert.equal(c.Gui.pipelineHubSection, 'memory_pipeline'); assert.equal(navigated, 'pipeline');
-
-// Both former workspaces now use one tab state and keep the same draft object.
+assert.equal(c.Gui.pipelineHubSection,'memory_pipeline');
+assert.equal(navigated,'pipeline');
 nodes = flat(c.buildSharedPipelineShellPanel());
-assert.ok(nodes.some(n => n.text === 'memory-advanced'));
-assert.ok(!nodes.some(n => n.text === 'duplicate-basic'));
-assert.ok(!nodes.some(n => n.text === '상태 추적'));
-nodes.find(n => n.text === 'LIBRA 응답').onClick();
-assert.equal(c.Gui.pipelineHubSection, 'response_generation');
-nodes = flat(c.buildSharedPipelineShellPanel());
-nodes.find(n => n.text === 'LIBRA 빠른 설정 열기').onClick();
-assert.equal(opened, 'response');
-assert.ok(nodes.some(n => n.text === '고급 프롬프트 설정'));
-assert.ok(nodes.some(n => n.text === '추가 작성 지시 · OOC'));
-assert.equal(c.Gui.state, state); assert.equal(dirtyCalls, 1);
-
-// Memory prompt editing belongs to the single advanced studio; consumer policies
-// must never mount the memory budget in any response family.
-assert.doesNotMatch(part('const buildResponseConsumerPolicyPanel =', 'const libraRecallScoreTone ='), /buildGenerationPolicyPanel\(/);
-assert.match(part('const buildLibrarianAnalyzerPanel =', 'const buildCharacterLoreExclusionPanel ='), /!compactView&&!advancedOnly\?fieldNode\('Librarian 추가 지침'/);
+assert.equal(c.Gui.agentHubSection,'memory');
+assert.equal(c.Gui.pipelineHubSection,'memory_pipeline');
+assert.ok(nodes.some(n=>n.text==='memory-advanced'));
+assert.ok(nodes.some(n=>n.text==='lazy-memory-prompts'));
+assert.ok(!nodes.some(n=>n.text==='duplicate-basic'||n.text==='local-state'||n.text==='results'));
+flat(c.buildAgentQuickSettingsSummary()).find(n=>n.tag==='button').onClick();
+assert.equal(opened,'memory_agents');
+assert.equal(c.Gui.state,state);
+assert.equal(dirtyCalls,1,'workbench navigation must retain the unsaved draft');
 assert.doesNotMatch(part('const BOOK_EXTERNAL_SETTINGS_ITEMS =', 'const bookExternalSettingsActive ='), /에이전트 상세/);
 console.log('libra_agent_workbench_consolidation_runtime: PASS (production UI functions with DOM boundaries; no live RisuAI)');

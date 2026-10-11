@@ -40,15 +40,21 @@ assert.doesNotMatch(source, /type:\s*'authoritative_repair'/, 'retired memory it
 assert.match(source, /maxPhysicalCalls:\s*librarianOnly\s*\?\s*\(explicitRecovery\?2:1\)/);
 assert.match(source, /maxCorrectiveAttemptsPerStage:\s*librarianOnly\s*\?\s*\(explicitRecovery\?1:0\)/);
 
-assert.match(source, /schema:\s*'libra\.sga_provider_budget\.v2'/);
-assert.match(source, /maxInputTokens/);
-assert.match(source, /maxOutputTokens/);
-assert.match(source, /maxReasoningTokens/);
-assert.match(source, /maxTotalTokens/);
-assert.match(source, /retryLedger:\s*\{\}/);
-assert.match(source, /maxCorrectiveAttemptsPerCall:\s*1/);
-assert.match(source, /sga_provider_retry_budget_exhausted/);
-assert.match(source, /defaultInputTokens[\s\S]{0,400}defaultReasoningTokens[\s\S]{0,300}defaultTotalTokens/);
-assert.match(source, /reasoningBudgetCapTokens:\s*reservation\.reasoningBudgetTokens/);
-
-console.log('LIBRA canonical/SGA inference budget and single-repair contract passed');
+// The embedded SGA executor and its independent budget were retired. The retained
+// owner is Librarian; require a real canonical operation and its bounded ledger.
+const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+const {countCalls}=require('./fixtures/libra_provider_call_kinds.cjs');
+(async()=>{
+ const f=await fixture();
+ try{
+  assert.equal((await f.run()).completed,1);
+  assert.deepEqual(countCalls(f.control),{canonical:1,micro:0,other:0,total:1});
+  const receipts=await f.r.api.listExecutionReceipts({kind:'memory'});
+  assert.ok(receipts.items.length>0,'canonical operation has an observable durable receipt');
+  const budget=receipts.items[0].providerBudget;
+  assert.ok(budget,'actual receipt retains its provider budget');
+  assert.equal(budget.totalCalls,1);
+  assert.equal(budget.maxPhysicalCalls,1);
+ }finally{await f.r.cleanup();}
+ console.log('LIBRA canonical inference budget and single-dispatch contract passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

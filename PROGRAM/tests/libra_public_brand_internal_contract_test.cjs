@@ -12,13 +12,13 @@ const source = fs.readFileSync(path.resolve(__dirname, '..', 'plugins', 'LIBRA.j
 assert.match(source, releasePattern("^\\/\\/@display-name LIBRA v{libra}\\s*$", "m"));
 assert.match(source, releasePattern("^\\/\\/@version {libra}\\s*$", "m"));
 assert.ok(source.includes("const PUBLIC_DISPLAY_NAME = 'LIBRA';"));
-assert.ok(source.includes("text: 'LIBRA'"), 'header family selector exposes LIBRA');
-assert.ok(source.includes("selectResponseFamilyFromHeader('libra')"), 'header family selector activates LIBRA mode');
-assert.ok(source.includes("name: 'LIBRA로 인풋 작성하기'"), 'separate Input Writer chat action exposes LIBRA');
+assert.ok(source.includes("text: PUBLIC_DISPLAY_NAME"), 'visible header exposes LIBRA public brand');
+assert.match(source, /const normalizeLibraResponseMode = \(\) => 'classic'/, 'LIBRA owns Classic response injection');
+assert.ok(source.includes("name: `${PUBLIC_DISPLAY_NAME} 설정`"), 'host settings action exposes LIBRA');
 assert.ok(!source.includes("Object.freeze({ id: 'home', label: '홈'"), 'the public sidebar does not expose a dashboard home');
 assert.ok(!source.includes("return page('홈'"), 'the shared public router does not mount the retired home');
 const sharedAgentShell = source.slice(source.indexOf('const buildSharedAgentShellPanel ='), source.indexOf('const buildSharedCustomShellPanel ='));
-assert.match(sharedAgentShell, /const family = activeGuiResponseFamily\(\);[\s\S]{0,360}buildDraftWorkspacePanel\(family\)/, 'the selected public engine still owns only the actual draft workspace');
+assert.match(sharedAgentShell, /agentFamily:'libra',agentHub:'memory'[\s\S]*buildMemoryPipelinePanel\(\)/, 'LIBRA workbench owns the memory analyzer');
 assert.ok(source.includes("displayName:PUBLIC_DISPLAY_NAME"), 'server management display uses public branding');
 
 // Internal compatibility contract must remain LIBRA.
@@ -32,7 +32,7 @@ assert.ok(source.includes("const LIBRA_RETRACE_IPC_RESPONSE_CHANNEL = 'libra_mem
 assert.ok(source.includes("const LIBRA_SESSION_HANDOFF_CONTRACT = 'libra.handoff_immutable_source.v1';"));
 assert.ok(source.includes("globalThis.__LIBRA__ = publicApi"));
 assert.ok(source.includes("const MEMORY_INJECTION_MARKER = '[LIBRA 장기기억 — 관련 기억만 시간순으로 제공됨]';"));
-assert.ok(source.includes("'You are LIBRA SGA SHADOW"), 'model/runtime prompt contract stays LIBRA/SGA');
+assert.match(source, /Response injection: Classic/, 'runtime public contract identifies its current consumer');
 assert.ok(!source.includes("const PLUGIN_NAME = 'ariadne';"));
 assert.ok(!source.includes("namespace:'ariadne'"));
 assert.ok(!source.includes('ariadne_memory_bridge_request_v1'));

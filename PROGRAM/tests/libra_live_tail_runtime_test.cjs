@@ -15,7 +15,7 @@ assert.match(source, /const LIVE_TAIL_SOURCE_MODE = 'sanitized_completed_ua'/);
 assert.match(source, /const liveTailBindingForManifest =/);
 assert.match(source, /const pruneExpiredPendingBoundaryStore =/);
 const beforeRequestSource = source.slice(source.indexOf('const beforeRequest = async (messages, type) =>'), source.indexOf('const afterRequest = async (response, type) =>'));
-assert.ok(beforeRequestSource.indexOf('liveTailAttempt = buildLiveTailContext(') < beforeRequestSource.indexOf('const result = await recall('), 'Live Tail diagnostics are built before retrieval can fail');
+assert.ok(beforeRequestSource.indexOf('liveTailAttempt = receiptView.liveTail') < beforeRequestSource.indexOf('let result = await recall('), 'Live Tail diagnostics are built before retrieval can fail');
 assert.match(beforeRequestSource, /const preservedLiveTail = liveTailDiagnosticSnapshot\(/);
 assert.match(beforeRequestSource, /liveTail: preservedLiveTail/);
 assert.doesNotMatch(beforeRequestSource, /queryBundle\.liveTail\s*=/, 'Live Tail must not become a second recall-query source');
@@ -130,17 +130,12 @@ const baseManifest = (observedTurn, refs = [], guardSuffix = '') => ({
 const turnsOf = tail => Array.from(tail.sourcePairs, row => Number(row.turn));
 
 (async () => {
-  const testSource = source.replace('    debugBuildLiveTailContext(pairs =', `    testRecentPacket(result, query, route, recent) { return LibraMemoryCore.buildRecallEvidencePacket(result, query, route, null, recent); },
-    testSgaRecentPrompt(stage, packet) { return LibraMemoryCore.testSgaRecentPrompt(stage, packet); },
-    debugBuildLiveTailContext(pairs =`).replace('      debugPlannerUserPrompt:', `      testSgaRecentPrompt: (stage, packet) => stage === 'sga_shadow'
-        ? buildSgaShadowPrompts(packet, {}, {}, {})
-        : buildSgaAidePrompts(stage, packet, 'A different draft.', [], {}, {}, {}),
-      debugPlannerUserPrompt:`);
+  const testSource = source;
   vm.runInContext(testSource, context, { filename: 'LIBRA.js' });
   const api = await waitFor(() => context.__LIBRA__?.version === releaseVersion('libra') && typeof context.__LIBRA__?.debugBuildLiveTailContext === 'function' ? context.__LIBRA__ : null);
   assert.equal(api.version, releaseVersion('libra'));
 
-  const settings = { liveContextEnabled: true, liveTailMaxTurns: 4, liveTailMaxChars: 24000 };
+  const settings = { classicLiveTailEnabled:true, liveContextEnabled: true, liveTailMaxTurns: 4, liveTailMaxChars: 24000 };
   const binding = { scopeKey: 'character-a::chat-a', characterId: 'character-a', chatId: 'chat-a', worldlineId: 'branch-a' };
 
   const firstPairs = api.debugBuildPairs(makeChat(4, { carrierTurn: 4, id: 'first-window' }), 'first-window');
@@ -195,29 +190,31 @@ const turnsOf = tail => Array.from(tail.sourcePairs, row => Number(row.turn));
   const pending = api.debugBuildLiveTailContext(pendingPairs, baseManifest(4), settings, 'planner', binding);
   assert.doesNotMatch(pending.transcript, /UNANSWERED_INPUT/);
 
-  const query = { currentText: 'CURRENT_INPUT_ONLY', sceneText: first.transcript };
-  const packet = api.testRecentPacket({ memories: [] }, query, 'planner', first);
-  assert.equal(packet.terminal_scene, first.transcript);
-  assert.equal(packet.live_tail_prompt, '');
-  assert.equal(query.sceneText, first.transcript, 'consumer context must not mutate retrieval query');
-  const plannerPrompt = api.debugPlannerUserPrompt(packet);
-  const writerPrompt = await api.debugBuildInputWriterPrompts({ originalInput: 'CURRENT_INPUT_ONLY', settings: { inputWriterMode: 'rp' }, evidencePacket: packet });
-  for (const [label, prompt] of [['Planner', plannerPrompt], ['Input Writer', writerPrompt.user]]) {
-    assert.equal(prompt.split('Visible assistant 4').length - 1, 1, `${label} receives each recent message exactly once`);
-    assert.equal(prompt.split('CURRENT_INPUT_ONLY').length - 1, 1, `${label} keeps current input separate`);
-    assert.doesNotMatch(prompt, /UNCOMMITTED COMPLETED|\[LIVE TAIL/);
-  }
-  for (const stage of ['sga_shadow', 'sga_character_aide', 'sga_world_aide', 'sga_plot_aide']) {
-    const evidence = api.debugSgaEvidenceForStage(packet, stage);
-    assert.doesNotMatch(JSON.stringify(evidence), /Visible assistant 4/, `${stage} recalled evidence must not duplicate its separate recent-dialogue block`);
-    const prompts = api.testSgaRecentPrompt(stage, packet);
-    assert.equal(prompts.user.split('Visible assistant 4').length - 1, 1, `${stage} receives the recent message exactly once`);
-    const material = api.debugSgaMaterialUsage(stage, packet);
-    assert.doesNotMatch(JSON.stringify(material), /"kind":"live_tail"/, 'usage diagnostics must not show two separate context sources');
-  }
-  const committedPacket = api.testRecentPacket({ memories: [] }, query, 'planner', committed);
-  const pendingPacket = api.testRecentPacket({ memories: [] }, query, 'planner', boundary);
-  assert.equal(committedPacket.terminal_scene, pendingPacket.terminal_scene);
+  // Current consumer delivery is proved through the registered hook, rather than
+  // the retired Planner/Input Writer/SGA prompt compilers.
+  const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+  const f=await fixture({args:{live_context_enabled:'true',classic_live_tail_enabled:'true'}});
+  try {
+    assert.equal((await f.run()).completed,1);
+    const calls=f.control.calls.length;
+    const query='CURRENT_INPUT_ONLY';
+    const messages=await f.control.hooks.beforeRequest([{role:'user',content:query}],'model');
+    const responseContext=f.r.api.getLastResponseContext();
+    const viewer=f.r.api.getLastMemoryRecallViewer();
+    assert.equal(responseContext.route,'classic');
+    assert.equal(responseContext.scopeKey,f.getManifest().scopeKey);
+    assert.equal(responseContext.values.currentInput,query);
+    assert.equal(viewer.responseContextRequestId,responseContext.requestId);
+    assert.equal(viewer.responseContextDigest,responseContext.contextDigest);
+    const valid=await f.r.api.validateResponseContext(responseContext);
+    assert.equal(valid.ok,true,JSON.stringify(valid));assert.equal(valid.current,true);
+    const block=messages.filter(x=>x.role==='system').map(x=>x.content).join('\n');
+    const lastAssistant=f.chat.message.at(-1).data;
+    assert.ok(block.includes(lastAssistant),'actual returned request includes the most recent completed assistant');
+    assert.equal(block.split(lastAssistant).length-1,1,'recent dialogue is not duplicated');
+    assert.equal(viewer.liveTailInjected,true);
+    assert.equal(f.control.calls.length,calls,'Classic has no response-drafting provider dispatch');
+  }finally{await f.r.cleanup();}
 
   const changedGuard = api.debugBuildLiveTailContext(firstPairs, baseManifest(4, [], 'changed'), settings, 'planner', binding);
   assert.notEqual(changedGuard.binding.bindingDigest, first.binding.bindingDigest);
@@ -231,7 +228,7 @@ const turnsOf = tail => Array.from(tail.sourcePairs, row => Number(row.turn));
   assert.deepEqual(turnsOf(oversized), [4]);
   assert.match(oversized.transcript, /LOCAL SAFETY TRUNCATION/);
 
-  assert.equal(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), settings, 'classic', binding), null);
+  assert.equal(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), {...settings,classicLiveTailEnabled:false}, 'classic', binding), null);
   assert.ok(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), { ...settings, classicLiveTailEnabled: true }, 'classic', binding));
 
   const diagnostic = api.debugLiveTailDiagnosticSnapshot(first);

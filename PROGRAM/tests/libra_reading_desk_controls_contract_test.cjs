@@ -29,10 +29,12 @@ assert.match(jobSurface, /if \(!terminal \|\| launchedHere\)/,
 
 const workbench = between('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =');
 assert.doesNotMatch(workbench, /id: 'state'|label: '상태 추적'|buildStateTrackingAvailabilityPanel/);
-assert.match(workbench, /id: 'memory'/);
-assert.match(workbench, /id: 'draft'/);
+assert.match(workbench, /agentHub:'memory'/);
+assert.match(workbench, /buildMemoryPipelinePanel\(\)/);
+assert.match(workbench, /buildMemoryPromptStudioDisclosure\(/);
+assert.doesNotMatch(workbench, /buildDraftWorkspacePanel\(/);
 assert.match(source, /settingsHubSection === 'state' \? buildStateTrackingAvailabilityPanel\('settings'\)/,
   'state tracking remains available in its owning Settings section');
-assert.match(source, /requested === 'state_pipeline' \|\| requested === 'state_tracking'[\s\S]*pageId: 'settings', settingsHubSection: 'state'/);
+assert.match(source, /\['state_pipeline','state_tracking'\]\.includes\(requested\)[\s\S]*pageId:'settings',settingsHubSection:'state'/);
 
 console.log('libra_reading_desk_controls_contract_test: PASS');
