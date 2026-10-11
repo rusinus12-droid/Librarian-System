@@ -162,7 +162,17 @@ const readWork = startTurn => {
     const beforeLaterBoundary = runLlmCalls;
     legacyOutputHandler('turn 15 output');
     await new Promise(resolve=>setTimeout(resolve,400));
-    assert.equal(runLlmCalls,beforeLaterBoundary+1,'the new complete range gets one independent analysis; earlier failed work is not retried');
+    await waitFor(()=>runLlmCalls===beforeLaterBoundary+1);
+    assert.equal(runLlmCalls,beforeLaterBoundary+1,'the newly completed range receives one independent physical analysis');
+    await waitFor(()=>readManifest().failedBatches['11']);
+    const selected=await api.listCanonicalBatchRanges();
+    const currentRange=selected.ranges.filter(row=>row.startTurn===11);
+    assert.equal(currentRange.length,1);assert.equal(currentRange[0].status,'failed');
+    const previousCurrentRun=readManifest().failedBatches['11'].runId;
+    const analyzed=await api.startSelectedCanonicalBatches({scopeKey:selected.scopeKey,mode:'failed',ranges:currentRange});
+    assert.equal(analyzed.failed,1,JSON.stringify(analyzed));
+    assert.equal(runLlmCalls,beforeLaterBoundary+2,'an explicit retry of the current failed range receives one fresh physical budget');
+    assert.notEqual(readManifest().failedBatches['11'].runId,previousCurrentRun);
     manifest=readManifest();assert.equal(manifest.failedBatches['1'].runId,secondRunId,'earlier failure identity remains untouched');
     assert.ok(![...values.keys()].some(k=>k.endsWith(':continuity-state')),'State cannot cross the missing earlier ranges');
     const ranges=await api.listCanonicalBatchRanges();assert.ok(ranges.ranges.some(r=>r.startTurn===11),'the new failed range remains available for an explicit fresh analysis');
