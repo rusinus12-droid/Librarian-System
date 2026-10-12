@@ -110,13 +110,13 @@
   <nav class="sidebar" aria-label="LIBRA 메뉴">
     <div class="nav-label">서고</div>
     <button class="nav-item" data-go="desk" data-short="열람대"><i data-i="lamp"></i><span class="nav-text">현재 열람대</span></button>
-    <button class="nav-item" data-go="memory" data-short="서가"><i data-i="shelf"></i><span class="nav-text">기억 서가</span><span class="count">25</span></button>
+    <button class="nav-item" data-go="memory" data-short="서가"><i data-i="shelf"></i><span class="nav-text">기억 서가</span><span class="count" id="nav-mem-n">25</span></button>
     <button class="nav-item" data-go="people" data-short="인물"><i data-i="users"></i><span class="nav-text">인물 카드함</span></button>
     <button class="nav-item" data-go="world" data-short="세계"><i data-i="globe"></i><span class="nav-text">세계 도감</span></button>
     <button class="nav-item" data-go="story" data-short="서사"><i data-i="timeline"></i><span class="nav-text">서사 연감</span></button>
     <div class="nav-label">관리</div>
     <button class="nav-item" data-go="settings" data-tab="top"><i data-i="gear"></i><span class="nav-text">설정</span></button>
-    <div class="side-foot"><b>사서 모드</b><span>추가 LLM 0회 · 저장된 기억만 사용</span></div>
+    <div class="side-foot"><b>사서 모드</b><span id="foot-delivery">추가 LLM 0회 · 저장된 기억만 사용</span></div>
   </nav>
 
   <main class="main"><div class="page-body">
@@ -128,7 +128,7 @@
 
     <div class="stack">
       <div class="banner banner--ok"><div class="banner__icon"><i data-i="check"></i></div>
-        <div><b>125턴까지 기억이 저장되고 상태에 반영되었습니다.</b><span>126–128턴(3턴)은 5턴이 채워질 때까지 대기 중 · 저장된 기억 25개 · 부분 저장 0 · 반영 대기 0</span></div>
+        <div><b>125턴까지 기억이 저장되고 상태에 반영되었습니다.</b><span>126–128턴(3턴)은 5턴이 채워질 때까지 대기 중 · 저장된 기억 <b id="desk-mem-n">25</b>개 · 부분 저장 0 · 반영 대기 0</span></div>
         <button class="btn btn--sm" data-open="dialog-state">상태 자세히</button></div>
 
       <div class="spread">
@@ -136,14 +136,14 @@
           <div class="eyebrow"><span class="bookmark"></span>Current Scene</div>
           <h2>현재 장면의 기록</h2>
           <p class="lead">아스텔은 북쪽 정원의 기록실 입구에서 은색 열쇠를 꺼내 들었다. 잠금장치의 문양은 열쇠와 정확히 일치했지만, 문 너머에서는 보름달이 뜨기 전에는 열리지 않는다는 정원사의 경고가 아직 유효하다.</p>
-          <div class="facts"><div class="fact"><b>3</b><span>호출된 기억</span></div><div class="fact"><b>5</b><span>관계 영향</span></div><div class="fact"><b>9</b><span>세계 항목</span></div><div class="fact"><b>4</b><span>열린 줄기</span></div></div>
-          <div class="cluster"><button class="linkbtn" data-go="people">인물 5 →</button><button class="linkbtn" data-go="people">관계 5 →</button><button class="linkbtn" data-go="world">세계 9 →</button><button class="linkbtn" data-go="story">열린 줄기 4 →</button></div>
+          <div class="facts"><div class="fact"><b>3</b><span>호출된 기억</span></div><div class="fact"><b>5</b><span>관계 영향</span></div><div class="fact"><b>9</b><span>세계 항목</span></div><div class="fact"><b id="fact-open-n">4</b><span>열린 줄기</span></div></div>
+          <div class="cluster"><button class="linkbtn" data-go="people">인물 <span id="link-people-n">5</span> →</button><button class="linkbtn" data-go="people">관계 5 →</button><button class="linkbtn" data-go="world">세계 9 →</button><button class="linkbtn" data-go="story">열린 줄기 <span id="link-open-n">4</span> →</button></div>
         </article>
         <article class="leaf">
           <div class="eyebrow">Librarian's Notes</div>
           <h2>이번 턴의 사서 주석</h2>
           <div class="anno"><div class="anno__head"><span class="anno__kicker">RECALL</span><button class="linkbtn" data-go="memory">서가에서 보기 →</button></div><h3>이번 리콜 · 정본 기억 3개</h3><p>은색 열쇠를 건넨 날, 정원사와의 약속, 기록실의 잠금장치.</p></div>
-          <div class="anno"><div class="anno__head"><span class="anno__kicker">DELIVERY</span></div><h3>사서 모드 전달</h3><p>3개 정본 근거 · 1,248자를 그대로 전달했습니다. 요약·재가공 없음, 추가 LLM 호출 0회.</p></div>
+          <div class="anno"><div class="anno__head"><span class="anno__kicker">DELIVERY</span></div><h3>사서 모드 전달</h3><p id="desk-delivery">3개 정본 근거 · 1,248자를 그대로 전달했습니다. 요약·재가공 없음, 추가 LLM 호출 0회.</p></div>
           <div class="anno anno--final"><div class="anno__head"><span class="anno__kicker" style="color:var(--ok-ink)">FINAL</span><button class="linkbtn" data-open="drawer-evidence">전달 근거 보기 →</button></div><h3>최종 주입</h3><p>최종 응답 모델에는 선택된 실제 기억 발췌만 전달됩니다.</p></div>
         </article>
       </div>
@@ -155,7 +155,7 @@
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Canonical Archive</div><h1 class="page-title">기억 서가</h1><p class="page-desc">기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.</p></div>
       <div class="page-actions"><div class="seg" id="seg-mode" data-target="mode-x" role="group" aria-label="읽기 관리 모드"><button data-val="read" aria-pressed="true">읽기</button><button data-val="manage" aria-pressed="false">관리</button></div></div></div>
     <div class="stack">
-    <div class="manage-block"><div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>관리 모드에서만 보이는 도구</b><p class="muted" style="margin:2px 0 8px">정본 기억은 일반 병합이나 즉시 삭제를 제공하지 않습니다. 대신 수정용 복사본, 재생성 후보, 버전 비교로 안전하게 고칩니다.</p><div class="cluster"><button class="btn btn--sm btn--primary" data-open="dlg-range">기억 생성 구간 선택</button><button class="btn btn--sm" data-open="drawer-versions">버전 · 실행 기록</button><button class="btn btn--sm" data-go="settings" data-go-sub="adv">복구 · 재구축</button></div></div></div></div>
+    <div class="manage-block"><div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div><b>관리 모드에서만 보이는 도구</b><p class="muted" style="margin:2px 0 8px">정본 기억은 일반 병합이나 즉시 삭제를 제공하지 않습니다. 대신 수정용 복사본, 재생성 후보, 버전 비교로 안전하게 고칩니다.</p><div class="cluster"><button class="btn btn--sm btn--primary" data-open="dlg-range">기억 생성 구간 선택</button><button class="btn btn--sm" id="banner-versions" data-open="drawer-versions">선택한 기억의 버전 · 실행 기록</button><button class="btn btn--sm" data-go="settings" data-go-sub="adv">복구 · 재구축</button></div></div></div></div>
     <div class="grid g-side" id="memory-root" data-detail-root>
       <aside class="rail"><div class="rail__search"><div class="search"><i data-i="search" data-size="sm"></i><input class="input" placeholder="기억 검색 (제목·인물·장소)" aria-label="기억 검색"></div></div>
         <div class="rail__list">
@@ -168,7 +168,7 @@
           <button class="chapter" data-select-row="m21"><small>M-21 · T101–105</small><b>온실 앞의 대화</b><span>장소 · 감정</span></button>
         </div></aside>
       <article class="sheet-page detail-pane" data-detail="m25">
-        <div class="eyebrow">M-25 · TURN 121–125 · 정본 · 근거 7</div>
+        <div class="eyebrow">M-25 · TURN 121–125 · 정본 · 근거 5</div>
         <h2>북쪽 정원의 기록실</h2>
         <p class="deck">열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달이 뜨기 전까지 열리지 않는다.</p>
         <div class="prose"><p>아스텔은 오래된 온실을 지나 북쪽 정원의 끝에 닿았다. 기록실의 문은 이끼로 덮여 있었고, 문고리 아래에는 은색 문양이 새겨진 잠금장치가 있었다. (표본 본문 · M-25)</p></div>
@@ -177,10 +177,10 @@
           <div><h3>연결된 장면</h3><div class="cluster"><button class="chip" data-go="people">아스텔</button><button class="chip" data-go="people">정원사</button><button class="chip" data-go="world">북쪽 정원</button><button class="chip" data-go="world">은색 열쇠</button></div></div>
           <div><h3>이 기억이 바꾼 값</h3><ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2)"><li>기록실 접근: <b>보류 (조건부)</b></li><li>아스텔 → 정원사 신뢰: 상승</li></ul><p class="hint" style="margin:6px 0 0">‘당시 바뀐 값’입니다. 현재 필드의 근거는 근거 서랍에서 따로 봅니다.</p></div>
         </div>
-        <div class="pager"><button class="btn btn--sm" data-toast="← M-24 로 이동합니다. (시안)">← M-24</button><span class="read-only">25개 중 25번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-25 · 북쪽 정원의 기록실", "mem": "M-25", "range": "T121–125", "text": "M-25 ‘북쪽 정원의 기록실’ 교정: ", "src": "M-25 · T121–125", "last": "T125"}'>근거 7개 보기</button></div>
+        <div class="pager"><button class="btn btn--sm" data-pager="m24">← M-24</button><span class="read-only">25개 중 25번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-25 · 북쪽 정원의 기록실", "mem": "M-25", "range": "T121–125", "text": "M-25 ‘북쪽 정원의 기록실’ 교정: ", "src": "M-25 · T121–125", "last": "T125"}'>근거 5개 보기</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="m24" hidden>
-        <div class="eyebrow">M-24 · TURN 116–120 · 정본 · 근거 7</div>
+        <div class="eyebrow">M-24 · TURN 116–120 · 정본 · 근거 5</div>
         <h2>정원사와의 약속</h2>
         <p class="deck">정원사는 보름달이 뜰 때까지 문을 열지 않는다는 조건으로 열쇠를 돌려주기로 했다.</p>
         <div class="prose"><p>아스텔은 오래된 온실을 지나 북쪽 정원의 끝에 닿았다. 기록실의 문은 이끼로 덮여 있었고, 문고리 아래에는 은색 문양이 새겨진 잠금장치가 있었다. (표본 본문 · M-24)</p></div>
@@ -189,10 +189,10 @@
           <div><h3>연결된 장면</h3><div class="cluster"><button class="chip" data-go="people">아스텔</button><button class="chip" data-go="people">정원사</button><button class="chip" data-go="world">북쪽 정원</button><button class="chip" data-go="world">은색 열쇠</button></div></div>
           <div><h3>이 기억이 바꾼 값</h3><ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2)"><li>기록실 접근: <b>보류 (조건부)</b></li><li>아스텔 → 정원사 신뢰: 상승</li></ul><p class="hint" style="margin:6px 0 0">‘당시 바뀐 값’입니다. 현재 필드의 근거는 근거 서랍에서 따로 봅니다.</p></div>
         </div>
-        <div class="pager"><button class="btn btn--sm" data-toast="← M-23 로 이동합니다. (시안)">← M-23</button><span class="read-only">25개 중 24번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-24 · 정원사와의 약속", "mem": "M-24", "range": "T116–120", "text": "M-24 ‘정원사와의 약속’ 교정: ", "src": "M-24 · T116–120", "last": "T120"}'>근거 7개 보기</button></div>
+        <div class="pager"><button class="btn btn--sm" data-pager="m23">← M-23</button><span class="read-only">25개 중 24번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-24 · 정원사와의 약속", "mem": "M-24", "range": "T116–120", "text": "M-24 ‘정원사와의 약속’ 교정: ", "src": "M-24 · T116–120", "last": "T120"}'>근거 5개 보기</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="m23" hidden>
-        <div class="eyebrow">M-23 · TURN 111–115 · 정본 · 근거 7</div>
+        <div class="eyebrow">M-23 · TURN 111–115 · 정본 · 근거 5</div>
         <h2>열쇠를 건넨 날</h2>
         <p class="deck">아스텔이 정원사에게 열쇠를 건네며 신뢰가 한 단계 올랐다.</p>
         <div class="prose"><p>아스텔은 오래된 온실을 지나 북쪽 정원의 끝에 닿았다. 기록실의 문은 이끼로 덮여 있었고, 문고리 아래에는 은색 문양이 새겨진 잠금장치가 있었다. (표본 본문 · M-23)</p></div>
@@ -201,10 +201,10 @@
           <div><h3>연결된 장면</h3><div class="cluster"><button class="chip" data-go="people">아스텔</button><button class="chip" data-go="people">정원사</button><button class="chip" data-go="world">북쪽 정원</button><button class="chip" data-go="world">은색 열쇠</button></div></div>
           <div><h3>이 기억이 바꾼 값</h3><ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2)"><li>기록실 접근: <b>보류 (조건부)</b></li><li>아스텔 → 정원사 신뢰: 상승</li></ul><p class="hint" style="margin:6px 0 0">‘당시 바뀐 값’입니다. 현재 필드의 근거는 근거 서랍에서 따로 봅니다.</p></div>
         </div>
-        <div class="pager"><button class="btn btn--sm" data-toast="← M-22 로 이동합니다. (시안)">← M-22</button><span class="read-only">25개 중 23번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-23 · 열쇠를 건넨 날", "mem": "M-23", "range": "T111–115", "text": "M-23 ‘열쇠를 건넨 날’ 교정: ", "src": "M-23 · T111–115", "last": "T115"}'>근거 7개 보기</button></div>
+        <div class="pager"><button class="btn btn--sm" data-pager="m22">← M-22</button><span class="read-only">25개 중 23번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-23 · 열쇠를 건넨 날", "mem": "M-23", "range": "T111–115", "text": "M-23 ‘열쇠를 건넨 날’ 교정: ", "src": "M-23 · T111–115", "last": "T115"}'>근거 5개 보기</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="m22" hidden>
-        <div class="eyebrow">M-22 · TURN 106–110 · 정본 · 근거 7</div>
+        <div class="eyebrow">M-22 · TURN 106–110 · 정본 · 근거 5</div>
         <h2>왕실 기록실의 소문</h2>
         <p class="deck">왕실 기록실에 대한 소문이 퍼지며 접근이 제한된다는 사실이 드러났다.</p>
         <div class="prose"><p>아스텔은 오래된 온실을 지나 북쪽 정원의 끝에 닿았다. 기록실의 문은 이끼로 덮여 있었고, 문고리 아래에는 은색 문양이 새겨진 잠금장치가 있었다. (표본 본문 · M-22)</p></div>
@@ -213,10 +213,10 @@
           <div><h3>연결된 장면</h3><div class="cluster"><button class="chip" data-go="people">아스텔</button><button class="chip" data-go="people">정원사</button><button class="chip" data-go="world">북쪽 정원</button><button class="chip" data-go="world">은색 열쇠</button></div></div>
           <div><h3>이 기억이 바꾼 값</h3><ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2)"><li>기록실 접근: <b>보류 (조건부)</b></li><li>아스텔 → 정원사 신뢰: 상승</li></ul><p class="hint" style="margin:6px 0 0">‘당시 바뀐 값’입니다. 현재 필드의 근거는 근거 서랍에서 따로 봅니다.</p></div>
         </div>
-        <div class="pager"><button class="btn btn--sm" data-toast="← M-21 로 이동합니다. (시안)">← M-21</button><span class="read-only">25개 중 22번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-22 · 왕실 기록실의 소문", "mem": "M-22", "range": "T106–110", "text": "M-22 ‘왕실 기록실의 소문’ 교정: ", "src": "M-22 · T106–110", "last": "T110"}'>근거 7개 보기</button></div>
+        <div class="pager"><button class="btn btn--sm" data-pager="m21">← M-21</button><span class="read-only">25개 중 22번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-22 · 왕실 기록실의 소문", "mem": "M-22", "range": "T106–110", "text": "M-22 ‘왕실 기록실의 소문’ 교정: ", "src": "M-22 · T106–110", "last": "T110"}'>근거 5개 보기</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="m21" hidden>
-        <div class="eyebrow">M-21 · TURN 101–105 · 정본 · 근거 7</div>
+        <div class="eyebrow">M-21 · TURN 101–105 · 정본 · 근거 5</div>
         <h2>온실 앞의 대화</h2>
         <p class="deck">온실 앞에서 두 사람은 처음으로 서로의 목적을 이야기했다.</p>
         <div class="prose"><p>아스텔은 오래된 온실을 지나 북쪽 정원의 끝에 닿았다. 기록실의 문은 이끼로 덮여 있었고, 문고리 아래에는 은색 문양이 새겨진 잠금장치가 있었다. (표본 본문 · M-21)</p></div>
@@ -225,7 +225,7 @@
           <div><h3>연결된 장면</h3><div class="cluster"><button class="chip" data-go="people">아스텔</button><button class="chip" data-go="people">정원사</button><button class="chip" data-go="world">북쪽 정원</button><button class="chip" data-go="world">은색 열쇠</button></div></div>
           <div><h3>이 기억이 바꾼 값</h3><ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2)"><li>기록실 접근: <b>보류 (조건부)</b></li><li>아스텔 → 정원사 신뢰: 상승</li></ul><p class="hint" style="margin:6px 0 0">‘당시 바뀐 값’입니다. 현재 필드의 근거는 근거 서랍에서 따로 봅니다.</p></div>
         </div>
-        <div class="pager"><button class="btn btn--sm" data-toast="← 처음 로 이동합니다. (시안)">← 처음</button><span class="read-only">25개 중 21번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-21 · 온실 앞의 대화", "mem": "M-21", "range": "T101–105", "text": "M-21 ‘온실 앞의 대화’ 교정: ", "src": "M-21 · T101–105", "last": "T105"}'>근거 7개 보기</button></div>
+        <div class="pager"><button class="btn btn--sm" disabled title="이 회차의 첫 기억입니다">← 이전 없음</button><span class="read-only">25개 중 21번째</span><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "M-21 · 온실 앞의 대화", "mem": "M-21", "range": "T101–105", "text": "M-21 ‘온실 앞의 대화’ 교정: ", "src": "M-21 · T101–105", "last": "T105"}'>근거 5개 보기</button></div>
       </article>
     </div>
     </div>
@@ -292,8 +292,8 @@
   <section class="page" data-page="story" data-track>
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Narrative Almanac</div><h1 class="page-title">서사 연감</h1><p class="page-desc">확인된 사건과 아직 남은 과제를 구분해 목차처럼 읽습니다. 방향 정보는 현재 사실이 아닙니다.</p></div></div>
     <div class="grid g-side g-side--r">
-      <article class="card"><div class="tabs" role="tablist" data-subtabs="s"><button class="tab" role="tab" aria-selected="true" data-subtab="open">남은 이야기 <span class="count">4</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="chron">사건 연대기</button><button class="tab" role="tab" aria-selected="false" data-subtab="flow">흐름 · 전환</button><button class="tab" role="tab" aria-selected="false" data-subtab="motif">반복 소재</button><button class="tab" role="tab" aria-selected="false" data-subtab="mile">관계 이정표</button><button class="tab" role="tab" aria-selected="false" data-subtab="done">마무리된 이야기</button></div>
-        <div data-subpanel="open" data-group="s" class="is-active"><div class="list">
+      <article class="card"><div class="tabs" role="tablist" data-subtabs="s"><button class="tab" role="tab" aria-selected="true" data-subtab="open">남은 이야기 <span class="count" id="story-open-n">4</span></button><button class="tab" role="tab" aria-selected="false" data-subtab="chron">사건 연대기</button><button class="tab" role="tab" aria-selected="false" data-subtab="flow">흐름 · 전환</button><button class="tab" role="tab" aria-selected="false" data-subtab="motif">반복 소재</button><button class="tab" role="tab" aria-selected="false" data-subtab="mile">관계 이정표</button><button class="tab" role="tab" aria-selected="false" data-subtab="done">마무리된 이야기</button></div>
+        <div data-subpanel="open" data-group="s" class="is-active"><div class="list" id="story-open-list">
           <div class="row"><span class="row__icon"><i data-i="flag"></i></span><div><div class="row__title">기록실의 문을 열 시점</div><div class="row__meta">보름달 · 정원사와의 약속 · T116~</div></div><span class="badge badge--warn">열림</span></div>
           <div class="row"><span class="row__icon"><i data-i="flag"></i></span><div><div class="row__title">왕실 기록관의 정체</div><div class="row__meta">정체 미확인 · T106~</div></div><span class="badge badge--warn">열림</span></div></div></div>
         <div data-subpanel="chron" data-group="s"><div class="list"><div class="row"><span class="row__icon">42</span><div><div class="row__title">열쇠를 건넨 날</div><div class="row__meta">T111–115</div></div><span class="badge">확정</span></div></div></div>
@@ -303,14 +303,14 @@
         <div data-subpanel="done" data-group="s"><div class="empty"><b>마무리된 이야기가 아직 없습니다</b><span>열린 줄기가 해결되면 이곳으로 옮겨 적습니다.</span></div></div>
       </article>
       <aside class="card card--accent"><div class="eyebrow">Librarian's Margin</div><h3 class="card__title">사서의 여백</h3><p class="card__desc" style="margin-bottom:10px">원하는 다음 방향을 구조화해 기록합니다. <b>현재 사실과 권위가 다르며</b>, 사실로 저장되지 않고 강제하지도 않습니다.</p>
-        <div class="margin-form">
+        <div class="margin-form" id="margin-form">
           <div class="field"><label>목표</label><textarea class="textarea" rows="2" placeholder="예: 정원사가 열쇠의 출처를 먼저 추궁한다."></textarea></div>
           <div class="field"><label>완료 조건</label><input class="input" placeholder="예: 아스텔이 출처를 밝히거나 거절한다."></div>
           <div class="field"><label>강제하지 말아야 할 전개</label><textarea class="textarea" rows="2" placeholder="예: 문이 열리는 전개"></textarea></div>
           <div class="field"><label>부드러운 선호 (soft preferences)</label><textarea class="textarea" rows="2" placeholder="예: 긴장감은 유지하되 폭력은 피한다."></textarea></div>
           <label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="switch__text"><b>잠금</b><small>잠그면 자동 갱신이 이 방향을 바꾸지 않습니다.</small></span></label>
         </div>
-        <div class="cluster" style="margin-top:10px"><button class="btn btn--primary btn--sm" data-toast="여백에 기록했습니다. (시안)">여백에 기록</button><button class="btn btn--sm btn--danger" data-open="dlg-margin-reset">초기화…</button></div></aside>
+        <p class="hint" id="margin-state" style="margin:10px 0 0">기록된 내용과 같습니다.</p><div class="cluster" style="margin-top:8px"><button class="btn btn--primary btn--sm" id="margin-save" disabled>여백에 기록</button><button class="btn btn--sm" id="margin-revert" disabled>기록된 값으로</button><button class="btn btn--sm btn--danger" id="margin-reset" data-open="dlg-margin-reset">초기화…</button></div></aside>
     </div>
   </section>
 
@@ -341,9 +341,7 @@
 
         <div data-subpanel="ai" data-group="set"><div class="stack">
           <div class="card"><div class="card__head"><div><h2 class="card__title">생성 AI 프리셋</h2><p class="card__desc">기억 분석(Librarian)이 사용할 AI입니다. 키는 이 플러그인 밖에 저장되지 않습니다.</p></div><button class="btn btn--sm" data-toast="새 프리셋을 추가합니다. (시안)"><i data-i="plus" data-size="sm"></i>프리셋 추가</button></div>
-            <div class="list">
-              <div class="row"><span class="row__icon">C</span><div><div class="row__title">Claude Sonnet · 분석용 <span class="badge badge--ok">사용 중</span></div><div class="row__meta">기억 분석 · 연결 확인됨</div></div><div class="cluster"><button class="btn btn--sm" data-toast="연결 테스트 성공 (시안)">테스트</button><button class="btn btn--sm" data-toast="프리셋을 편집합니다. (시안)">편집</button></div></div>
-              <div class="row"><span class="row__icon">G</span><div><div class="row__title">GPT-4.1 mini</div><div class="row__meta">미사용</div></div><div class="cluster"><button class="btn btn--sm" data-toast="사용 프리셋으로 지정했습니다. (시안)">사용</button><button class="btn btn--sm btn--danger" data-toast="프리셋을 삭제했습니다. (시안)">삭제</button></div></div></div></div>
+            <div class="list" id="ai-presets"></div></div>
           <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩</h2><p class="card__desc">검색에 쓰는 벡터입니다. 연결, 작업, 이전, 격리 벡터를 나누어 관리합니다.</p></div><span class="badge badge--ok">연결됨</span></div>
             <div class="grid g2"><div class="field"><label>임베딩 모델</label><select class="select"><option>text-embedding-3-small</option></select></div><div class="field"><label>Endpoint URL</label><input class="input" placeholder="기본값"></div></div>
             <div class="three-status" style="margin-top:12px"><div><b>작업</b>대기 0 · 진행 0 · 실패 0</div><div><b>이전</b>같은 공간 이전 미리보기 가능</div><div><b>격리 벡터</b>0개 (읽기 전용 진단)</div></div>
@@ -357,22 +355,22 @@
         </div></div>
 
         <div data-subpanel="store" data-group="set"><div class="stack">
-          <div class="card"><div class="card__head"><div><h2 class="card__title">서버 연결</h2><p class="card__desc">두 가지를 따로 정합니다: <b>전체 대화의 정본 저장 위치</b>와 <b>Recall BM25F 연산 위치</b>.</p></div><span class="badge">plugin_only</span></div>
-            <div class="grid g2"><div class="field"><label>정본 저장 위치</label><div class="choices"><button class="choice is-on"><b>플러그인 단독</b><span>서버 요청 없음</span></button><button class="choice"><b>서버 단독</b><span>검증 후 전환</span></button></div></div><div class="field"><label>BM25F 연산 위치</label><div class="choices"><button class="choice is-on"><b>로컬</b></button><button class="choice"><b>서버 우선</b></button></div></div></div>
+          <div class="card"><div class="card__head"><div><h2 class="card__title">서버 연결</h2><p class="card__desc">두 가지를 따로 정합니다: <b>전체 대화의 정본 저장 위치</b>와 <b>Recall BM25F 연산 위치</b>.</p></div><span class="badge" id="store-badge">plugin_only</span></div>
+            <div class="grid g2"><div class="field"><label>정본 저장 위치</label><div class="choices" id="store-where" data-dirty><button class="choice is-on"><b>플러그인 단독</b><span>서버 요청 없음</span></button><button class="choice"><b>서버 단독</b><span>검증 후 전환</span></button></div></div><div class="field"><label>BM25F 연산 위치</label><div class="choices" id="store-bm25" data-dirty><button class="choice is-on"><b>로컬</b></button><button class="choice"><b>서버 우선</b></button></div></div></div><p class="hint" id="store-hint" hidden style="margin:8px 0 0"></p>
             <div class="cluster" style="margin-top:12px"><button class="btn" data-toast="서버 연결 설정 패널(공용)을 엽니다. (시안)">서버 연결 설정…</button></div></div>
           <div class="card"><h2 class="card__title">기억 백업 · 복원</h2><p class="card__desc" style="margin-bottom:10px">Portable JSON으로 현재 채팅의 기억을 내보내고, 복원 방식을 선택합니다. 파일에는 대화 원문이 포함됩니다.</p><div class="cluster"><button class="btn" data-toast="기억 JSON을 내보냈습니다. (시안)"><i data-i="download"></i>기억 JSON 백업</button><button class="btn" data-open="dlg-restore-mode"><i data-i="upload"></i>기억 복원…</button></div></div>
           <div class="card"><h2 class="card__title">설정 이동 (별도)</h2><p class="card__desc" style="margin-bottom:10px">설정값만 JSON으로 옮깁니다. <b>기억은 포함되지 않습니다.</b> 키는 내보내지 않습니다.</p><div class="cluster"><button class="btn" data-toast="설정 JSON을 내보냈습니다. (시안)">설정 내보내기</button><button class="btn" data-toast="설정 JSON을 선택하세요 (시안)">설정 가져오기</button></div></div>
         </div></div>
 
         <div data-subpanel="adv" data-group="set"><div class="stack">
-          <div class="three-status"><div><b>정본 저장</b>T125까지 · 25개</div><div><b>현재 상태</b>T125까지 반영</div><div><b>임베딩</b>25개 중 25개 완료</div></div>
+          <div class="three-status"><div><b>정본 저장</b>T125까지 · <span id="adv-mem-n">25</span>개</div><div><b>현재 상태</b>T125까지 반영</div><div><b>임베딩</b>25개 중 25개 완료</div></div>
           <p class="hint">세 가지는 서로 다른 상태입니다. 하나가 정상이어도 나머지가 정상이라는 뜻은 아닙니다.</p>
           <div class="act-card"><div><b>현재 상태 다시 적용</b><small>저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.</small></div><button class="btn btn--sm" data-open="dlg-recover" data-ctx='{"title":"현재 상태 다시 적용","variant":"state","kind":"상태 반영","cost":"모델 호출 0회 (저장된 정본만 사용)","impact":"현재 상태가 정본과 일치하도록 다시 반영됩니다. 정본 기억은 바뀌지 않습니다."}'>실행…</button></div>
           <div class="act-card"><div><b>교정 관리</b><small>적용 중 · 재검토 · 휴면 · 대체 · 삭제. 롤백 뒤에는 휴면되며 다시 적용·보류·수정할 수 있습니다.</small></div><button class="btn btn--sm" data-open="dlg-corr-life">교정 목록 열기</button></div>
           <div class="act-card"><div><b>분기 · 재구축</b><small>분기 감지, 5턴 경계로 rollback, 상태 재구축. 채팅·분기·scope가 바뀌면 이전 기억을 새 범위의 사실로 재사용하지 않습니다.</small></div><button class="btn btn--sm" data-open="dlg-recover" data-ctx='{"title":"5턴 경계로 rollback 후 상태 재구축","variant":"rebuild","kind":"분기 · 재구축","cost":"실행 전 확인창에서 모델 호출 여부와 범위를 다시 표시합니다.","impact":"선택한 5턴 경계 이후의 상태 반영을 되돌리고 다시 만듭니다. 원문 채팅은 바뀌지 않습니다."}'>실행…</button></div>
           <div class="act-card"><div><b>원문 저장 영수증 복구</b><small>저장 영수증을 확인해 누락된 원문 기록을 복구합니다. 모델을 쓰지 않습니다.</small></div><button class="btn btn--sm" data-open="dlg-recover" data-ctx='{"title":"원문 저장 영수증 복구","variant":"receipt","kind":"영수증 복구","cost":"모델 호출 0회","impact":"저장 영수증과 일치하는 원문 기록만 복구합니다."}'>실행…</button></div>
           <div class="act-card"><div><b>Micro 재시도</b><small>모델을 사용합니다. 이전 호출 결과가 불명확하면 <b>중복 비용</b>이 발생할 수 있습니다.</small></div><button class="btn btn--sm btn--danger" data-open="dlg-recover" data-ctx='{"title":"Micro 재시도","variant":"micro","kind":"Micro 재시도 (모델 사용)","cost":"모델 호출 발생 · 이전 호출 결과가 불명확하면 중복 비용 가능","impact":"실패한 Micro 기억 작업을 모델로 다시 처리합니다. 발행 확인(publish_ready)은 별도 상태로 남습니다."}'>실행…</button></div>
-          <div class="setting"><div><div class="setting__name">실행 기록</div><div class="setting__desc">기억 작성 · 상태 추적 · 리콜 · 임베딩 · 재구축</div></div><button class="btn btn--sm" data-open="drawer-versions">열기</button></div>
+          <div class="setting"><div><div class="setting__name">실행 기록</div><div class="setting__desc">기억 작성 · 상태 추적 · 리콜 · 임베딩 · 재구축</div></div><button class="btn btn--sm" data-open="drawer-versions" data-ctx='{"mem":"전체","all":true}'>열기</button></div>
         </div></div>
       </div>
     </div>
@@ -417,33 +415,23 @@
         <div class="chain" aria-label="근거 계보">
           <div><b>① 원문 U+A</b><small><span data-fill="last">T125</span> · 원문 일치</small></div>
           <div><b>② 정본 사실</b><small><span data-fill="mem">M-25</span> · 표본 사실</small></div>
-          <div><b>③ 상태 연결</b><small>기록실 접근 = 보류(조건부)</small></div>
-          <div><b>④ 로컬 적용 영수증</b><small>receipt r-0125 · 적용됨</small></div>
+          <div><b>③ 상태 연결</b><small id="ev-link">기록실 접근 = 보류(조건부)</small></div>
+          <div><b>④ 로컬 적용 영수증</b><small id="ev-receipt">receipt r-0125 · 적용됨</small></div>
           <div><b>⑤ 현재 필드</b><small data-fill="field">아스텔 › 현재 상황</small></div>
         </div>
         <div class="note"><b>현재 근거 ≠ 당시 바뀐 값.</b> 위 계보는 지금 필드를 뒷받침하는 근거입니다. 그 기억이 당시에 바꾼 값은 기억 서가의 ‘이 기억이 바꾼 값’에서 따로 봅니다.</div>
-        <div class="anno"><div class="anno__head"><span class="anno__kicker">T125 · U+A</span><span class="badge badge--ok">원문 일치</span></div><p>“문양과 열쇠의 굴곡은 정확히 겹쳤다. 그러나…”</p></div>
-        <div class="anno"><div class="anno__head"><span class="anno__kicker">T124 · U+A</span><span class="badge badge--ok">원문 일치</span></div><p>“정원사가 남긴 말이 떠올랐다. 보름달이 뜨기 전에는…”</p></div>
-        <div class="anno"><div class="anno__head"><span class="anno__kicker">T123 · U+A</span><span class="badge badge--ok">원문 일치</span></div><p>“이끼로 덮인 문 아래, 은색 문양이 새겨진 잠금장치.”</p></div>
+        <div id="ev-cites" class="stack stack--sm"></div>
       </div>
     </aside>
   </div>
 
   <!-- 버전 · 실행 기록 -->
-  <div class="overlay overlay--right" id="drawer-versions" aria-hidden="true">
+  <div class="overlay overlay--right" id="drawer-versions" data-require="mem" aria-hidden="true">
     <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dv-t">
       <div class="drawer__head"><div><div class="eyebrow">Versions &amp; runs</div><h2 id="dv-t"><span data-fill="mem">M-25</span> 버전 · 실행 기록</h2></div><button class="btn btn--icon btn--ghost" data-close aria-label="닫기"><i data-i="x"></i></button></div>
       <div class="drawer__body stack">
-        <div class="list">
-          <div class="row"><span class="badge badge--ok">정본</span><div><div class="row__title">v3 · 현재 정본</div><div class="row__meta"><span data-fill="range">T121–125</span> · 생성 어제 21:40</div></div></div>
-          <div class="row"><span class="badge">비활성</span><div><div class="row__title">v2 · 재생성 후보</div><div class="row__meta">정본 대비 문장 2곳 차이</div></div><div class="cluster"><button class="btn btn--sm btn--primary" data-open="dlg-promote" data-ver="v2" data-vtext="열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.">비교 후 정본으로 올리기</button><button class="btn btn--sm btn--danger" data-open="dlg-del-version" data-ver="v2">삭제…</button></div></div>
-          <div class="row"><span class="badge">비활성</span><div><div class="row__title">v1 · 초기 생성</div><div class="row__meta">3일 전</div></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-promote" data-ver="v1" data-vtext="아스텔은 열쇠를 꺼내 문양에 맞춰 보았다.">비교 후 정본으로 올리기</button><button class="btn btn--sm btn--danger" data-open="dlg-del-version" data-ver="v1">삭제…</button></div></div>
-        </div>
-        <div><div class="section-title"><h2>실행 기록</h2></div><div class="list">
-          <div class="res-row"><b>기존 기억 재생성 · 후보 생성</b><span class="badge badge--ok">성공</span><small>어제 21:42 · 후보 v2 · 정본은 그대로</small></div>
-          <div class="res-row"><b>누락 구간 생성</b><span class="badge badge--ok">성공</span><small>3일 전 · T121–125</small></div>
-          <div class="res-row"><b>선택 구간 재분석</b><span class="badge badge--warn">실패 → 기존 유지</span><small>4일 전 · 모델 응답 형식 오류. 기존 기억은 바뀌지 않았습니다.</small></div>
-        </div></div>
+        <div class="list" id="ver-rows"></div>
+        <div><div class="section-title"><h2>실행 기록</h2></div><div class="list" id="run-rows"></div></div></div>
       </div>
     </aside>
   </div>
@@ -452,7 +440,7 @@
   <div class="overlay" id="dialog-state" aria-hidden="true">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="ds-t">
       <div class="eyebrow">Memory Status</div><h2 id="ds-t">기억 상태</h2>
-      <dl class="kv"><dt>현재 U+A</dt><dd>128턴</dd><dt>저장된 기억</dt><dd>25개 (정본 · T125까지)</dd><dt>대기</dt><dd>3턴 (T126–128 · 5턴 미만)</dd><dt>상태 반영</dt><dd>T125까지</dd><dt>부분 저장</dt><dd>0개 구간</dd><dt>대기 중 반영</dt><dd>0개 구간</dd></dl>
+      <dl class="kv"><dt>현재 U+A</dt><dd>128턴</dd><dt>저장된 기억</dt><dd><span id="state-mem-n">25</span>개 (정본 · T125까지)</dd><dt>대기</dt><dd>3턴 (T126–128 · 5턴 미만)</dd><dt>상태 반영</dt><dd>T125까지</dd><dt>부분 저장</dt><dd>0개 구간</dd><dt>대기 중 반영</dt><dd>0개 구간</dd></dl>
       <div class="dialog__actions"><button class="btn" data-toast="전체 상태를 읽기 전용으로 확인했습니다. (시안)">전체 상태 확인</button><button class="btn btn--primary" data-close data-autofocus>닫기</button></div>
     </div>
   </div>
@@ -475,51 +463,51 @@
         <label class="segrow" data-kinds="fail"><input type="checkbox" aria-label="T96–100 선택"><div><b>T96–100</b><small>미완료 · 새 분석 가능 (이전 작업 실패)</small></div><span class="badge badge--danger">실패</span></label>
         <label class="segrow" data-kinds="miss"><input type="checkbox" aria-label="T91–95 선택"><div><b>T91–95</b><small>미생성 · 누락 구간</small></div><span class="badge badge--warn">미생성</span></label>
       </div>
-      <div class="cluster" style="margin-bottom:8px"><button class="btn btn--sm" id="seg-all">가능한 구간 전체 선택</button><button class="btn btn--sm" id="seg-none">전체 해제</button></div>
+      <p class="hint" id="regen-one" hidden style="margin:0 0 8px">재생성 후보는 기억 하나씩 만듭니다. 다른 구간을 고르면 이전 선택이 풀립니다.</p><div class="cluster" style="margin-bottom:8px"><button class="btn btn--sm" id="seg-all">가능한 구간 전체 선택</button><button class="btn btn--sm" id="seg-none">전체 해제</button></div>
       <dl class="cost-table"><dt>선택</dt><dd><b id="range-n">0</b>개 구간</dd><dt>예상 모델 호출</dt><dd id="range-calls">0회 (구간당 1회 · 모델 사용량이 발생할 수 있습니다)</dd><dt>선택 결과</dt><dd id="range-effect">누락된 구간의 기억을 새로 저장합니다.</dd></dl>
       <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="range-go" disabled data-close data-run-job="job-memory" data-ctx='{"title":"선택한 구간 생성","kind":"누락 구간 생성"}'>선택한 구간 생성</button></div>
     </div>
   </div>
 
   <!-- 비교 후 정본 승격 / 비활성 버전 삭제 -->
-  <div class="overlay" id="dlg-promote" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dpm-t"><div class="eyebrow">Compare</div><h2 id="dpm-t"><span data-fill="mem">M-25</span> · 후보 <span data-fill="ver">v2</span> — 정본으로 올릴까요?</h2><div class="grid g2"><div class="note"><b>현재 정본 v3</b>열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달 전까지 열리지 않는다.</div><div class="note"><b>후보 <span data-fill="ver">v2</span></b><span data-fill="vtext">열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.</span></div></div><p class="hint">올리면 후보가 새 정본이 되고, 이전 정본은 비활성 버전으로 남습니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="{mem} {ver} 정본 승격: 다시 읽어 확인했습니다. 이전 정본 v3은 비활성 버전으로 남습니다. (시안)">정본으로 올리기</button></div></div></div>
-  <div class="overlay" id="dlg-del-version" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ddv-t"><div class="eyebrow" style="color:var(--danger-ink)">Delete inactive version</div><h2 id="ddv-t"><span data-fill="mem">M-25</span> · 비활성 버전 <span data-fill="ver">v2</span> — 이 버전과 벡터·상태 delta를 삭제할까요?</h2><div class="note note--danger"><b>되돌릴 수 없습니다.</b> 현재 정본은 바뀌지 않습니다.</div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{mem} {ver} 삭제 완료. 현재 정본은 그대로입니다. (시안)">삭제</button></div></div></div>
+  <div class="overlay" id="dlg-promote" data-require="mem ver" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dpm-t"><div class="eyebrow">Compare</div><h2 id="dpm-t"><span data-fill="mem">M-25</span> · 후보 <span data-fill="ver">v2</span> — 정본으로 올릴까요?</h2><div class="grid g2"><div class="note"><b>현재 정본 <span data-fill="curv">v3</span></b><span data-fill="cur">열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달 전까지 열리지 않는다.</span></div><div class="note"><b>후보 <span data-fill="ver">v2</span></b><span data-fill="vtext">열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.</span></div></div><p class="hint">올리면 후보가 새 정본이 되고, 이전 정본은 비활성 버전으로 남습니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-act="ver-promote" data-toast="{mem} {ver} 정본 승격: 다시 읽어 확인했습니다. 이전 정본 {curv} 버전은 비활성으로 남습니다. (시안)">정본으로 올리기</button></div></div></div>
+  <div class="overlay" id="dlg-del-version" data-require="mem ver" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ddv-t"><div class="eyebrow" style="color:var(--danger-ink)">Delete inactive version</div><h2 id="ddv-t"><span data-fill="mem">M-25</span> · 비활성 버전 <span data-fill="ver">v2</span> — 이 버전과 벡터·상태 delta를 삭제할까요?</h2><div class="note note--danger"><b>되돌릴 수 없습니다.</b> 현재 정본은 바뀌지 않습니다.</div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="ver-delete" data-toast="{mem} {ver} 삭제 완료. 현재 정본은 그대로입니다. (시안)">삭제</button></div></div></div>
 
   <!-- 교정 / 병합·분리 / 보류 근거 / 교정 생명주기 / 여백 초기화 -->
-  <div class="overlay" id="dlg-correct" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dco-t"><div class="eyebrow">Correction</div><h2 id="dco-t">교정 · <span data-fill="target">M-25 · 북쪽 정원의 기록실</span></h2><p class="muted" style="font-size:13px">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class="field"><label for="co-in">교정 내용</label><textarea class="textarea" id="co-in" rows="3" data-no-track data-fill="text">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)">교정 기록</button></div></div></div>
-  <div class="overlay" id="dlg-merge" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dmg-t"><div class="eyebrow">Same entity</div><h2 id="dmg-t">같은 항목 병합 · 분리 · <span data-fill="target">인물 · 아스텔</span></h2><p class="muted" style="font-size:13px">인물·세계 항목이 같은 대상인지 지정합니다. 정본 기억 본문을 합치는 기능이 아닙니다.</p><div class="choices"><button class="choice is-on"><b>병합</b><span>두 항목을 같은 대상으로 취급</span></button><button class="choice"><b>분리</b><span>이전에 병합한 항목을 다시 나눔</span></button></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="‘{target}’에 적용하고 readback으로 확인했습니다. (시안)">적용</button></div></div></div>
-  <div class="overlay" id="dlg-pending" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dpd-t"><div class="eyebrow">Pending evidence</div><h2 id="dpd-t">보류 근거 해결</h2><div class="list"><div class="row"><div><div class="row__title">왕실 기록관의 소속</div><div class="row__meta">근거가 충돌해 보류됨 · T106, T118</div></div><button class="btn btn--sm" data-toast="근거를 선택했습니다. (시안)">근거 선택</button></div></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button><button class="btn btn--primary" data-close data-toast="보류를 해결하고 readback으로 확인했습니다. (시안)">해결</button></div></div></div>
-  <div class="overlay" id="dlg-corr-life" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dcl-t"><div class="eyebrow">Corrections</div><h2 id="dcl-t">교정 목록</h2><div class="list"><div class="row"><div><div class="row__title">아스텔 → 정원사: 신뢰 ↑</div><div class="row__meta">상태: <span class="badge badge--ok">적용 중</span></div></div><div class="cluster"><button class="btn btn--sm" data-toast="재검토를 시작합니다. (시안)">재검토</button><button class="btn btn--sm btn--danger" data-toast="교정을 삭제했습니다. (시안)">삭제</button></div></div><div class="row"><div><div class="row__title">기록관 소속 정정</div><div class="row__meta">상태: <span class="badge">휴면</span> · 롤백 뒤 비활성</div></div><div class="cluster"><button class="btn btn--sm" data-toast="다시 적용합니다. (시안)">다시 적용</button><button class="btn btn--sm" data-toast="보류로 전환합니다. (시안)">보류</button><button class="btn btn--sm" data-toast="수정 화면을 엽니다. (시안)">수정</button></div></div></div><div class="dialog__actions"><button class="btn btn--primary" data-close data-autofocus>닫기</button></div></div></div>
-  <div class="overlay" id="dlg-margin-reset" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dmr-t"><div class="eyebrow" style="color:var(--danger-ink)">Reset</div><h2 id="dmr-t">사서의 여백을 초기화할까요?</h2><p>목표·완료 조건·강제하지 말아야 할 전개·부드러운 선호가 모두 지워집니다. 잠금도 해제됩니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="여백을 초기화했습니다. (시안)">초기화</button></div></div></div>
+  <div class="overlay" id="dlg-correct" data-require="target" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dco-t"><div class="eyebrow">Correction</div><h2 id="dco-t">교정 · <span data-fill="target">M-25 · 북쪽 정원의 기록실</span></h2><p class="muted" style="font-size:13px">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class="field"><label for="co-in">교정 내용</label><textarea class="textarea" id="co-in" rows="3" data-no-track data-fill="text" aria-describedby="co-hint">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea><span class="hint" id="co-hint">교정할 내용을 적어야 기록할 수 있습니다.</span></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="co-go" data-close data-act="corr-add" data-toast="‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)">교정 기록</button></div></div></div>
+  <div class="overlay" id="dlg-merge" data-require="target" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dmg-t"><div class="eyebrow">Same entity</div><h2 id="dmg-t">같은 항목 병합 · 분리 · <span data-fill="target">인물 · 아스텔</span></h2><p class="muted" style="font-size:13px">인물·세계 항목이 같은 대상인지 지정합니다. 정본 기억 본문을 합치는 기능이 아닙니다.</p><div class="choices" id="mg-mode"><button class="choice is-on"><b>병합</b><span>두 항목을 같은 대상으로 취급</span></button><button class="choice"><b>분리</b><span>이전에 병합한 항목을 다시 나눔</span></button></div><div class="field" id="mg-partner-f" style="margin-top:10px"><label for="mg-partner">같은 대상으로 볼 항목</label><select class="select" id="mg-partner" data-no-track></select></div><div class="field" id="mg-split-f" hidden style="margin-top:10px"><label for="mg-split">다시 나눌 병합 기록</label><select class="select" id="mg-split" data-no-track></select><span class="hint" id="mg-split-hint"></span></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="mg-go" data-close data-act="merge-apply" data-toast="{mgmsg} readback으로 확인했습니다. (시안)">적용</button></div></div></div>
+  <div class="overlay" id="dlg-pending" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dpd-t"><div class="eyebrow">Pending evidence</div><h2 id="dpd-t">보류 근거 해결 · <span data-fill="person">전체</span></h2><div class="stack stack--sm" id="pend-list"></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button><button class="btn btn--primary" id="pend-go" data-close data-act="pend-resolve" data-toast="‘{ptitle}’ 보류를 선택한 근거({pchoice})로 해결하고 readback으로 확인했습니다. (시안)">해결</button></div></div></div></div>
+  <div class="overlay" id="dlg-corr-life" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dcl-t"><div class="eyebrow">Corrections</div><h2 id="dcl-t">교정 목록</h2><div class="list" id="corr-list"><div class="row"><div><div class="row__title">아스텔 → 정원사: 신뢰 ↑</div><div class="row__meta">상태: <span class="badge badge--ok">적용 중</span></div></div><div class="cluster"><button class="btn btn--sm" data-toast="재검토를 시작합니다. (시안)">재검토</button><button class="btn btn--sm btn--danger" data-toast="교정을 삭제했습니다. (시안)">삭제</button></div></div><div class="row"><div><div class="row__title">기록관 소속 정정</div><div class="row__meta">상태: <span class="badge">휴면</span> · 롤백 뒤 비활성</div></div><div class="cluster"><button class="btn btn--sm" data-toast="다시 적용합니다. (시안)">다시 적용</button><button class="btn btn--sm" data-toast="보류로 전환합니다. (시안)">보류</button><button class="btn btn--sm" data-toast="수정 화면을 엽니다. (시안)">수정</button></div></div></div><div class="dialog__actions"><button class="btn btn--primary" data-close data-autofocus>닫기</button></div></div></div>
+  <div class="overlay" id="dlg-margin-reset" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dmr-t"><div class="eyebrow" style="color:var(--danger-ink)">Reset</div><h2 id="dmr-t">사서의 여백을 초기화할까요?</h2><p>목표·완료 조건·강제하지 말아야 할 전개·부드러운 선호가 모두 지워집니다. 잠금도 해제됩니다. 비운 내용은 ‘여백에 기록’을 눌러야 저장됩니다.</p><div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="margin-reset" data-toast="여백을 비웠습니다. ‘여백에 기록’을 눌러야 저장됩니다. (시안)">초기화</button></div></div></div>
 
   <!-- 복구 확인(대상·비용·영향을 ctx로 채움) -->
-  <div class="overlay" id="dlg-recover" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="drc-t"><div class="eyebrow" data-fill="kind">복구</div><h2 id="drc-t" data-fill="title">작업</h2>
-    <dl class="cost-table"><dt>비용</dt><dd data-fill="cost">-</dd><dt>영향</dt><dd data-fill="impact">-</dd></dl>
+  <div class="overlay" id="dlg-recover" data-require="kind" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="drc-t"><div class="eyebrow" data-fill="kind">복구</div><h2 id="drc-t" data-fill="title">작업</h2>
+    <dl class="cost-table"><dt>비용</dt><dd data-fill="cost">-</dd><dt>영향</dt><dd data-fill="impact">-</dd></dl><div class="field" data-variant="rebuild" hidden style="margin-top:10px"><label for="rb-bound">되돌릴 5턴 경계</label><select class="select" id="rb-bound" data-no-track><option value="T120">T120 이후 (M-25 반영분)</option><option value="T115">T115 이후 (M-24부터)</option><option value="T110">T110 이후 (M-23부터)</option><option value="T105">T105 이후 (M-22부터)</option></select><span class="hint" id="rb-hint">모델 호출 0회 · 저장된 정본 1개를 다시 반영합니다.</span></div>
     <div class="note note--warn" style="margin-top:10px">채팅·분기·scope가 바뀐 경우 이전 기억·근거·작업 상태를 새 범위의 사실로 재사용하지 않습니다. 이전 호출 결과가 불명확하면 중복 비용이 발생할 수 있습니다.</div>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-recover">실행</button></div></div></div>
-  <div class="overlay" id="job-recover" aria-hidden="true" data-inherit-ctx data-job-labels="범위와 대상을 확인하는 중|작업을 실행하는 중|결과를 다시 읽어 확인하는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
+  <div class="overlay" id="job-recover" data-require="kind" aria-hidden="true" data-inherit-ctx data-job-labels="범위와 대상을 확인하는 중|작업을 실행하는 중|결과를 다시 읽어 확인하는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jrc-t"><div class="eyebrow" data-fill="kind">복구</div><h2 id="jrc-t" data-fill="title">작업</h2><div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>확인</b></div><div class="step"><span class="step__no">2</span><b>실행</b></div><div class="step"><span class="step__no">3</span><b>readback</b></div></div>
       <div class="list" data-job-result hidden style="margin-top:12px">
         <div data-variant="default state"><div class="res-row"><b>정본 기억</b><span class="badge">변경 없음</span></div><div class="res-row"><b>현재 상태</b><span class="badge badge--ok">정본 기준으로 다시 반영</span><small>모델 호출 0회 (표본 결과)</small></div></div>
-        <div data-variant="rebuild" hidden><div class="res-row"><b>상태 반영</b><span class="badge badge--ok">T120 경계로 되돌린 뒤 재구축</span></div><div class="res-row"><b>원문 채팅 · 정본 기억</b><span class="badge">변경 없음</span><small>(표본 결과)</small></div></div>
+        <div data-variant="rebuild" hidden><div class="res-row"><b>상태 반영</b><span class="badge badge--ok"><span data-fill="boundary">T120</span> 경계로 되돌린 뒤 재구축</span></div><div class="res-row"><b>원문 채팅 · 정본 기억</b><span class="badge">변경 없음</span><small>(표본 결과)</small></div></div>
         <div data-variant="receipt" hidden><div class="res-row"><b>원문 기록</b><span class="badge badge--ok">영수증과 일치하는 2건 복구</span></div><div class="res-row"><b>모델 호출</b><span>0회</span><small>(표본 결과)</small></div></div>
         <div data-variant="micro" hidden><div class="res-row"><b>Micro 기억</b><span class="badge badge--ok">재처리 저장됨</span></div><div class="res-row"><b>모델 호출</b><span>1회</span><small>이전 호출 결과가 불명확했다면 중복 비용이 있었을 수 있습니다.</small></div><div class="res-row"><b>발행 확인 (publish_ready)</b><span class="badge badge--info">별도 확인 필요</span><small>저장 성공과 발행 확인은 서로 다른 상태입니다. (표본 결과)</small></div></div>
       </div>
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>확인</button></div></div></div>
 
   <!-- 복원 방식 -->
-  <div class="overlay" id="dlg-restore-mode" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="drm-t"><div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="drm-t">기억 복원 방식</h2><p class="muted" style="font-size:13px">백업 파일을 검사한 뒤 가능한 방식만 선택할 수 있습니다. 설정 JSON 복원과는 다른 작업입니다.</p>
+  <div class="overlay" id="dlg-restore-mode" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="drm-t"><div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="drm-t">기억 복원 방식</h2><p class="muted" style="font-size:13px">방식을 고른 뒤 백업 파일을 검사하고, 그 파일로 가능한 방식이 아니면 다음 단계에서 막힙니다. 설정 JSON 복원과는 다른 작업입니다.</p>
     <div class="choices" style="grid-template-columns:1fr"><button class="choice is-on"><b>같은 채팅 교체 복원</b><span>현재 채팅의 기억을 백업 상태로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.</span></button><button class="choice"><b>새 채팅으로 이사</b><span>다른 채팅의 기억을 새 범위로 이사합니다.</span></button><button class="choice"><b>복사 채팅 복원</b><span>복사된 채팅임을 검증한 뒤 현재 범위로 재귀속합니다.</span></button></div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="복원 전 안전 백업을 만들고 진행합니다. (시안)">다음</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="다음 단계(백업 파일 선택·검사)는 이 시안에서 생략했습니다. 아무것도 바뀌지 않았습니다. (시안)">다음</button></div></div></div>
 
   <!-- Prompt Studio / 입력 미리보기 -->
-  <div class="overlay" id="dlg-prompt" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dps-t"><div class="eyebrow">Prompt Studio</div><h2 id="dps-t">분석기 · 지침</h2><div class="field"><label for="ps-an">분석기</label><select class="select" id="ps-an" data-no-track><option>기본 기억 분석기</option></select></div><div class="field" style="margin-top:10px"><label for="ps-in">지침</label><textarea class="textarea" id="ps-in" rows="5" data-no-track>완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button><button class="btn" data-toast="기본값으로 복원했습니다. (시안)">기본값 복원</button><button class="btn btn--primary" data-close data-toast="지침을 저장했습니다. (시안)">저장</button></div></div></div>
+  <div class="overlay" id="dlg-prompt" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dps-t"><div class="eyebrow">Prompt Studio</div><h2 id="dps-t">분석기 · 지침</h2><div class="field"><label for="ps-an">분석기</label><select class="select" id="ps-an" data-no-track><option>기본 기억 분석기</option></select></div><div class="field" style="margin-top:10px"><label for="ps-in">지침</label><textarea class="textarea" id="ps-in" rows="5" data-no-track aria-describedby="ps-state">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class="hint" id="ps-state">저장된 지침입니다.</span></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button><button class="btn" id="ps-default">기본값 채우기</button><button class="btn btn--primary" id="ps-save" data-close data-act="prompt-save" data-toast="지침을 저장했습니다. (시안)">저장</button></div></div></div>
   <div class="overlay" id="dlg-input-preview" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dip-t"><div class="eyebrow">Preview</div><h2 id="dip-t">분석 입력 미리보기</h2><p class="muted" style="font-size:13px">규칙을 적용한 뒤 Librarian이 실제로 읽는 내용입니다. (표본)</p><pre class="mono" style="white-space:pre-wrap;margin:0">[T121] U: 열쇠를 꺼낸다.
 [T121] A: 아스텔은 주머니에서 열쇠를 꺼냈다. …</pre><div class="dialog__actions"><button class="btn btn--primary" data-close data-autofocus>닫기</button></div></div></div>
 
   <!-- 정본 작업 진행 -->
-  <div class="overlay" id="job-memory" aria-hidden="true" data-inherit-ctx data-job-labels="대상 TURN과 구간을 확인하는 중|Librarian이 5턴 구간을 분석하는 중|정본 후보를 검증하는 중|결과를 저장하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
+  <div class="overlay" id="job-memory" data-require="kind" aria-hidden="true" data-inherit-ctx data-job-labels="대상 TURN과 구간을 확인하는 중|Librarian이 5턴 구간을 분석하는 중|정본 후보를 검증하는 중|결과를 저장하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jm-t">
       <div class="split"><div><div class="eyebrow">Canonical Job</div><h2 id="jm-t" data-fill="title">선택한 구간 생성</h2><p class="muted" style="margin:2px 0 0;font-size:12.5px">대상 구간: <b data-fill="target">T91–95</b></p></div><span class="badge badge--info" data-fill="kind">누락 구간 생성</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div>
@@ -549,11 +537,8 @@ document.addEventListener('suite:ready',function(){
   var segs=document.querySelectorAll('.seg[data-target="mode-x"]');
   segs.forEach(function(seg){seg.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;document.querySelectorAll('.page').forEach(function(p){p.dataset.mode=b.dataset.val;});segs.forEach(function(s){s.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',String(x.dataset.val===b.dataset.val));});});});});
 });
-document.addEventListener('suite:page',function(e){document.getElementById('savebar-settings').hidden=(e.detail!=='settings'&&e.detail!=='story');});
-/* 버전 행: 드로어의 대상 기억 + 행의 버전을 비교·삭제 확인창으로 */
-document.addEventListener('click',function(e){var b=e.target.closest('#drawer-versions [data-ver]');if(!b)return;
-  var base=document.getElementById('drawer-versions')._ctx||{};var c={mem:base.mem||'M-25',range:base.range||'T121–125',ver:b.dataset.ver,vtext:b.dataset.vtext||''};
-  b.setAttribute('data-ctx',JSON.stringify(c));},true);
+/* 저장 막대는 설정 화면 전용. 서사 연감의 사서의 여백은 자기 버튼(여백에 기록)으로 저장한다 */
+document.addEventListener('suite:page',function(e){document.getElementById('savebar-settings').hidden=e.detail!=='settings';});
 /* 세계 도감 분류 필터 + 연결 탐색 */
 document.addEventListener('click',function(e){
   var c=e.target.closest('.wchip');
@@ -572,7 +557,7 @@ document.addEventListener('click',function(e){
   var MEMOF={'T121–125':'M-25','T116–120':'M-24','T111–115':'M-23','T106–110':'M-22','T101–105':'M-21'};
   var sel,rows,go;
   function sync(){
-    var k=sel.value,d=KIND[k];
+    var k=sel.value,d=KIND[k];document.getElementById('regen-one').hidden=k!=='regen';document.getElementById('seg-all').disabled=k==='regen';
     rows.forEach(function(r){var ok=(r.dataset.kinds||'').split(' ').indexOf(k)>-1;var cb=r.querySelector('input');if(r.dataset.kinds===''){return;}cb.disabled=!ok;if(!ok)cb.checked=false;r.setAttribute('aria-disabled',String(!ok));r.style.opacity=ok?1:.55;});
     var n=document.querySelectorAll('#seglist input:checked').length;
     document.getElementById('range-n').textContent=n;
@@ -583,7 +568,7 @@ document.addEventListener('click',function(e){
   }
   document.addEventListener('suite:ready',function(){
     sel=document.getElementById('kind-sel');rows=[].slice.call(document.querySelectorAll('#seglist .segrow'));go=document.getElementById('range-go');
-    sel.addEventListener('change',sync);document.getElementById('seglist').addEventListener('change',sync);
+    sel.addEventListener('change',sync);document.getElementById('seglist').addEventListener('change',function(e){if(sel.value==='regen'&&e.target.checked)rows.forEach(function(r){var cb=r.querySelector('input');if(cb!==e.target)cb.checked=false;});sync();});
     document.getElementById('seg-all').addEventListener('click',function(){rows.forEach(function(r){var cb=r.querySelector('input');if(!cb.disabled)cb.checked=true;});sync();});
     document.getElementById('seg-none').addEventListener('click',function(){rows.forEach(function(r){r.querySelector('input').checked=false;});sync();});
     sync();
@@ -596,6 +581,176 @@ document.addEventListener('click',function(e){
     sel.value=c.preselect||'miss';sync();
     if(c.seg){rows.forEach(function(r){var cb=r.querySelector('input');if(r.querySelector('b').textContent===c.seg&&!cb.disabled)cb.checked=true;});sync();}
   });
+})();
+
+/* =====================================================================
+   LIBRA 시안 저장소 — 화면의 수치·목록·확인창·결과가 모두 아래 값을 읽고 쓴다
+   MEM[id]   : 정본 기억 (범위·제목·정본 문장·버전·실행 기록)
+   SEG       : 기억 생성 구간 선택창의 구간 상태
+   PEND      : 보류 근거
+   CORR      : 교정 목록
+   AIP       : 생성 AI 프리셋
+   ===================================================================== */
+(function(){
+function $id(i){return document.getElementById(i);}
+function $$(s,r){return [].slice.call((r||document).querySelectorAll(s));}
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function cx(o){return " data-ctx='"+JSON.stringify(o).replace(/'/g,'&#39;')+"'";}
+var MEM={},ORDER=[],MEMN=25,PROMPT_SAVED='',PROMPT_DEFAULT='완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (기본 지침)';
+var CITE25={'T125':'“문양과 열쇠의 굴곡은 정확히 겹쳤다. 그러나…”','T124':'“정원사가 남긴 말이 떠올랐다. 보름달이 뜨기 전에는…”','T123':'“이끼로 덮인 문 아래, 은색 문양이 새겨진 잠금장치.”'};
+function seed(){
+  $$('#memory-root .detail-pane').forEach(function(a){
+    var m=/(M-\d+) · TURN (\d+)–(\d+)/.exec(a.querySelector('.eyebrow').textContent);if(!m)return;var id=m[1],from=+m[2],to=+m[3];
+    var deck=a.querySelector('.deck').textContent,title=a.querySelector('h2').textContent,li=a.querySelector('.margin-notes li');
+    MEM[id]={id:id,key:a.dataset.detail,from:from,to:to,range:'T'+from+'–'+to,title:title,link:li?li.textContent:'(이 기억이 바꾼 값 없음)',
+      vers:[{v:'v2',state:'canon',text:deck,when:'어제 21:40'},{v:'v1',state:'old',text:title+' — 초기 생성 문장 (표본)',when:'3일 전',note:'초기 생성'}],
+      runs:[{t:'누락 구간 생성',b:'성공',c:'ok',s:'3일 전 · T'+from+'–'+to}]};
+    ORDER.push(id);
+  });
+  var m25=MEM['M-25'];if(m25){m25.vers=[{v:'v3',state:'canon',text:m25.vers[0].text,when:'어제 21:40'},{v:'v2',state:'cand',text:'열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.',when:'어제 21:42',note:'재생성 후보 · 정본 대비 문장 2곳 차이'},{v:'v1',state:'old',text:'아스텔은 열쇠를 꺼내 문양에 맞춰 보았다.',when:'3일 전',note:'초기 생성'}];
+    m25.runs=[{t:'기존 기억 재생성 · 후보 생성',b:'성공',c:'ok',s:'어제 21:42 · 후보 v2 · 정본은 그대로'},{t:'누락 구간 생성',b:'성공',c:'ok',s:'3일 전 · T121–125'},{t:'선택 구간 재분석',b:'실패 → 기존 유지',c:'warn',s:'4일 전 · 모델 응답 형식 오류. 기존 기억은 바뀌지 않았습니다.'}];}
+  PROMPT_SAVED=$id('ps-in').value;
+}
+function canon(m){return m.vers.filter(function(v){return v.state==='canon';})[0];}
+function MEMKEY(id){return !!(id&&MEM[id]);}
+function nextV(m){return 'v'+(m.vers.reduce(function(a,v){return Math.max(a,+v.v.slice(1));},0)+1);}
+function counts(){
+  ['nav-mem-n','desk-mem-n','adv-mem-n','state-mem-n'].forEach(function(i){if($id(i))$id(i).textContent=MEMN;});
+  var open=$$('#story-open-list .row').length;['fact-open-n','link-open-n','story-open-n'].forEach(function(i){if($id(i))$id(i).textContent=open;});
+  $id('link-people-n').textContent=$$('[data-page=people] .chapter').length;
+}
+/* ---------- 버전 · 실행 기록 ---------- */
+function renderVersions(c){
+  c=c||{};var vr=$id('ver-rows'),rr=$id('run-rows');
+  if(c.all){vr.hidden=true;var h='';ORDER.forEach(function(id){MEM[id].runs.forEach(function(r){h+=runRow(r,id);});});rr.innerHTML=h||'<div class="empty"><b>실행 기록이 없습니다</b></div>';return;}
+  var m=MEM[c.mem];vr.hidden=false;if(!m){vr.innerHTML='<div class="empty"><b>대상 기억을 찾을 수 없습니다</b></div>';rr.innerHTML='';return;}
+  var cv=canon(m),h2='';
+  m.vers.forEach(function(v){var isC=v.state==='canon',badge=isC?'<span class="badge badge--ok">정본</span>':'<span class="badge">'+(v.state==='cand'?'후보':'비활성')+'</span>';
+    var ctx={mem:m.id,range:m.range,ver:v.v,vtext:v.text,cur:cv.text,curv:cv.v};
+    h2+='<div class="row">'+badge+'<div><div class="row__title">'+esc(v.v)+' · '+(isC?'현재 정본':esc(v.note||'비활성 버전'))+'</div><div class="row__meta">'+esc(m.range)+' · '+esc(v.when)+'</div><div class="row__meta">'+esc(v.text)+'</div></div>'
+      +(isC?'':'<div class="cluster"><button class="btn btn--sm'+(v.state==='cand'?' btn--primary':'')+'" data-open="dlg-promote"'+cx(ctx)+'>비교 후 정본으로 올리기</button><button class="btn btn--sm btn--danger" data-open="dlg-del-version"'+cx(ctx)+'>삭제…</button></div>')+'</div>';});
+  vr.innerHTML=h2;rr.innerHTML=m.runs.map(function(r){return runRow(r);}).join('')||'<div class="empty"><b>실행 기록이 없습니다</b></div>';
+}
+function runRow(r,id){return '<div class="res-row"><b>'+(id?esc(id)+' · ':'')+esc(r.t)+'</b><span class="badge'+(r.c?' badge--'+r.c:'')+'">'+esc(r.b)+'</span><small>'+esc(r.s)+'</small></div>';}
+function selectedMem(){var on=document.querySelector('#memory-root .chapter.is-on');var k=on&&on.dataset.selectRow;for(var id in MEM)if(MEM[id].key===k)return MEM[id];return MEM['M-25'];}
+/* ---------- 근거 서랍 ---------- */
+function renderEvidence(c){
+  c=c||{};var box=$id('ev-cites'),h='',m=c.mem&&MEM[c.mem];
+  if(c.recall){var ids=['M-25','M-24','M-23'];ids.forEach(function(id){var x=MEM[id];h+=cite(x.range+' · '+id,canon(x).text);});
+    $id('ev-link').textContent='이번 리콜에 쓰인 정본 기억 '+ids.length+'개';$id('ev-receipt').textContent='전달 기록 · 이번 턴';}
+  else if(m){for(var t=m.to;t>=m.from;t--){var k='T'+t;h+=cite(k+' · U+A',(m.id==='M-25'&&CITE25[k])||'“'+m.title+' 장면의 원문 (표본 · '+k+')”');}
+    $id('ev-link').textContent=m.link;$id('ev-receipt').textContent='receipt r-0'+m.to+' · 적용됨';}
+  else{var n=c.n||2;for(var i=1;i<=n;i++)h+=cite((c.target||'항목')+' · 근거 '+i,'“'+(c.target||'항목').replace(/^.+ · /,'')+' 관련 원문 (표본 '+i+')”');
+    $id('ev-link').textContent=(c.target||'항목')+'의 현재 값';$id('ev-receipt').textContent='receipt · 해당 항목 최신 적용분';}
+  box.innerHTML=h;
+}
+function cite(k,t){return '<div class="anno"><div class="anno__head"><span class="anno__kicker">'+esc(k)+'</span><span class="badge badge--ok">원문 일치</span></div><p>'+esc(t)+'</p></div>';}
+/* ---------- 생성 AI 프리셋 ---------- */
+var AIP=[{id:'claude',ic:'C',name:'Claude Sonnet · 분석용',meta:'기억 분석 · 연결 확인됨'},{id:'gpt',ic:'G',name:'GPT-4.1 mini',meta:'연결 확인됨'}],AIUSE='claude';
+function renderAI(){$id('ai-presets').innerHTML=AIP.map(function(p){var on=p.id===AIUSE;
+  return '<div class="row"><span class="row__icon">'+p.ic+'</span><div><div class="row__title">'+esc(p.name)+(on?' <span class="badge badge--ok">사용 중</span>':'')+'</div><div class="row__meta">'+(on?'기억 분석에 사용 중 · ':'미사용 · ')+esc(p.meta)+'</div></div><div class="cluster"><button class="btn btn--sm" data-toast="‘'+esc(p.name)+'’ 프리셋 연결 테스트 성공 (시안)">테스트</button>'
+    +(on?'':'<button class="btn btn--sm" data-ai-use="'+p.id+'">사용</button><button class="btn btn--sm btn--danger" data-ai-del="'+p.id+'">삭제</button>')+'</div></div>';}).join('');}
+/* ---------- 저장과 백업 배지 ---------- */
+function syncStore(){var w=$id('store-where'),b=$id('store-bm25');if(!w)return;var sw=window.suiteSaved(w),sb=window.suiteSaved(b);
+  var where=sw.charAt(1)==='1'?'server_only':'plugin_only',bm=sb.charAt(1)==='1'?'BM25F 서버 우선':'BM25F 로컬';
+  $id('store-badge').textContent=where+' · '+bm;var dirty=window.suiteIsDirtyEl(w)||window.suiteIsDirtyEl(b),h=$id('store-hint');
+  h.hidden=!dirty;if(dirty)h.textContent='저장 전 변경이 있습니다. 저장 위치를 바꾸면 저장 뒤 자료 검증을 마친 다음에 전환됩니다(이 시안에서는 검증 단계 생략).';}
+/* ---------- 사이드바 · 열람대 전달 문구: 저장된 설정 ---------- */
+function syncDelivery(){var sw=$$('[data-page=settings] .setting').filter(function(r){return /사서 모드에도 최근 대화 직접 주입/.test(r.textContent);})[0];if(!sw)return;
+  var inj=window.suiteSaved(sw.querySelector('input'))==='1',turns=$$('[data-sync=recent_turns]')[0];var n=turns?window.suiteSaved(turns):'8';
+  $id('foot-delivery').textContent=inj?'추가 LLM 0회 · 저장된 기억 + 최근 대화 '+n+'턴':'추가 LLM 0회 · 저장된 기억만 사용';
+  $id('desk-delivery').textContent='3개 정본 근거 · 1,248자를 그대로 전달했습니다'+(inj?' (최근 대화 '+n+'턴 포함)':'')+'. 요약·재가공 없음, 추가 LLM 호출 0회.';}
+/* ---------- 사서의 여백 ---------- */
+function marginFields(){return $$('#margin-form input, #margin-form textarea');}
+function syncMargin(){var n=window.suiteDirty('story'),empty=marginFields().every(function(f){return f.type==='checkbox'?!f.checked:!f.value.trim();});
+  $id('margin-save').disabled=n===0;$id('margin-revert').disabled=n===0;$id('margin-reset').disabled=empty;
+  $id('margin-state').textContent=n?'기록하지 않은 변경 '+n+'개 · ‘여백에 기록’을 눌러야 저장됩니다.':'기록된 내용과 같습니다.';}
+/* ---------- 이벤트 ---------- */
+document.addEventListener('suite:ready',function(){seed();counts();renderAI();syncStore();syncDelivery();syncMargin();});
+document.addEventListener('suite:save',function(){setTimeout(function(){syncStore();syncDelivery();},0);});
+document.addEventListener('suite:revert',function(){setTimeout(function(){syncStore();syncDelivery();},0);});
+document.addEventListener('input',function(e){if(e.target.closest&&e.target.closest('#margin-form'))setTimeout(syncMargin,0);
+  if(e.target.id==='co-in')syncCorr();if(e.target.id==='ps-in')$id('ps-state').textContent=e.target.value===PROMPT_SAVED?'저장된 지침입니다.':'저장하지 않은 변경이 있습니다. 닫으면 버려집니다.';});
+document.addEventListener('change',function(e){if(e.target.closest&&e.target.closest('#margin-form'))setTimeout(syncMargin,0);
+  if(e.target.id==='rb-bound'){var ov=$id('dlg-recover');if(ov._ctx)ov._ctx.boundary=e.target.value;var k=['T120','T115','T110','T105'].indexOf(e.target.value)+1;$id('rb-hint').textContent='모델 호출 0회 · 저장된 정본 '+k+'개를 다시 반영합니다.';}
+  if(e.target.id==='mg-partner'||e.target.id==='mg-split')syncMerge();
+  if(e.target.name==='pend')syncPend();});
+document.addEventListener('click',function(e){
+  var t=e.target;
+  if(t.closest('#memory-root .chapter, [data-page=people] .chapter'))return;
+  if(t.closest('#store-where, #store-bm25'))setTimeout(syncStore,0);
+  var pg=t.closest('[data-pager]');if(pg){var row=document.querySelector('#memory-root .chapter[data-select-row="'+pg.dataset.pager+'"]');if(row){row.click();row.focus();}return;}
+  if(t.closest('#margin-save')){window.suiteSnapshot('story');syncMargin();window.suiteToast('여백에 기록했습니다. 현재 사실과 별개로 보관되며 강제하지 않습니다. (시안)');return;}
+  if(t.closest('#margin-revert')){window.suiteRevertScope('story');setTimeout(syncMargin,0);window.suiteToast('기록된 여백으로 되돌렸습니다. (시안)');return;}
+  var au=t.closest('[data-ai-use]');if(au){AIUSE=au.dataset.aiUse;renderAI();window.suiteToast('‘'+AIP.filter(function(p){return p.id===AIUSE;})[0].name+'’ 프리셋을 기억 분석에 사용합니다. (시안)');return;}
+  var ad=t.closest('[data-ai-del]');if(ad){var p=AIP.filter(function(x){return x.id===ad.dataset.aiDel;})[0];if(!confirmInline(ad,'삭제 확인'))return;AIP=AIP.filter(function(x){return x!==p;});renderAI();window.suiteToast('‘'+p.name+'’ 프리셋을 삭제했습니다. (시안)');return;}
+  if(t.closest('#ps-default')){$id('ps-in').value=PROMPT_DEFAULT;$id('ps-state').textContent='기본 지침을 채웠습니다. 저장해야 적용됩니다.';return;}
+  var act=t.closest('[data-act]');if(!act||act.disabled)return;var ov=act.closest('.overlay'),c=(ov&&ov._ctx)||{};
+  if(act.dataset.act==='ver-promote'){var m=MEM[c.mem];if(!m)return;var cur=canon(m),nv=m.vers.filter(function(v){return v.v===c.ver;})[0];if(!nv)return;
+    cur.state='old';cur.note='이전 정본';nv.state='canon';nv.when='방금 승격';m.vers.sort(function(a,b){return a.state==='canon'?-1:b.state==='canon'?1:0;});
+    m.runs.unshift({t:'정본 승격 · '+nv.v,b:'성공',c:'ok',s:'방금 · 이전 정본 '+cur.v+'는 비활성'});
+    var art=document.querySelector('#memory-root [data-detail="'+m.key+'"] .deck');if(art)art.textContent=nv.text;renderVersions($id('drawer-versions')._ctx);}
+  if(act.dataset.act==='ver-delete'){var m2=MEM[c.mem];if(!m2)return;m2.vers=m2.vers.filter(function(v){return !(v.v===c.ver&&v.state!=='canon');});m2.runs.unshift({t:'비활성 버전 삭제 · '+c.ver,b:'완료',c:'',s:'방금 · 정본은 그대로'});renderVersions($id('drawer-versions')._ctx);}
+  if(act.dataset.act==='margin-reset'){marginFields().forEach(function(f){if(f.type==='checkbox')f.checked=false;else f.value='';f.dispatchEvent(new Event('input',{bubbles:true}));});setTimeout(syncMargin,0);}
+  if(act.dataset.act==='prompt-save'){PROMPT_SAVED=$id('ps-in').value;}
+  if(act.dataset.act==='corr-add'){var txt=$id('co-in').value;$id('corr-list').insertAdjacentHTML('afterbegin','<div class="row"><div><div class="row__title">'+esc(txt)+'</div><div class="row__meta">상태: <span class="badge badge--ok">적용 중</span> · 방금 · '+esc(c.target||'')+'</div></div></div>');}
+  if(act.dataset.act==='merge-apply'){/* 병합 기록 남기기 */var tgt=c.target,mode=idxOn($id('mg-mode'));if(mode===0){MERGES.push({a:tgt,b:$id('mg-partner').value});}else{MERGES=MERGES.filter(function(x){return x.a+'|'+x.b!==$id('mg-split').value;});}}
+  if(act.dataset.act==='pend-resolve'){var r=document.querySelector('input[name=pend]:checked');if(r)PEND=PEND.filter(function(p){return p.id!==r.dataset.pid;});}
+},false);
+function confirmInline(btn,label){if(btn.dataset.armed){delete btn.dataset.armed;return true;}btn.dataset.armed='1';var o=btn.textContent;btn.textContent=label;setTimeout(function(){if(btn.dataset.armed){delete btn.dataset.armed;btn.textContent=o;}},2500);return false;}
+function idxOn(el){var cs=$$('.choice',el);for(var i=0;i<cs.length;i++)if(cs[i].classList.contains('is-on'))return i;return 0;}
+/* ---------- 교정 ---------- */
+function syncCorr(){var ov=$id('dlg-correct'),c=ov._ctx||{},v=$id('co-in').value,base=c.text||'';var ok=v.trim().length>0&&v.trim()!==base.trim();
+  if(ov.hasAttribute('data-missing-target'))ok=false;$id('co-go').disabled=!ok;$id('co-hint').textContent=ok?'기록하면 교정 목록에 ‘적용 중’으로 추가됩니다.':'교정할 내용을 적어야 기록할 수 있습니다.';}
+/* ---------- 병합 · 분리 ---------- */
+var MERGES=[];
+function syncMerge(){var mode=idxOn($id('mg-mode')),ov=$id('dlg-merge'),c=ov._ctx||{};$id('mg-partner-f').hidden=mode!==0;$id('mg-split-f').hidden=mode!==1;
+  var ok=false,msg='';if(mode===0){var pv=$id('mg-partner').value;ok=!!pv;msg='‘'+c.target+'’ 항목과 ‘'+pv+'’ 항목을 같은 대상으로 병합하고';}
+  else{var sv=$id('mg-split').value;ok=!!sv;$id('mg-split-hint').textContent=ok?'':'이 항목에는 다시 나눌 병합 기록이 없습니다.';msg='‘'+c.target+'’ 병합 기록을 나누고';}
+  if(ov.hasAttribute('data-missing-target'))ok=false;$id('mg-go').disabled=!ok;if(ov._ctx)ov._ctx.mgmsg=msg;}
+/* ---------- 보류 근거 ---------- */
+var PEND=[{id:'pd1',person:'왕실 기록관',title:'왕실 기록관의 소속',opts:['T106 · 기록실 소속이라는 정원사의 말','T118 · 근위대 문장을 단 모습']},
+          {id:'pd2',person:'정원사 로웬',title:'정원사 로웬의 나이',opts:['T97 · “예순을 넘겼다”','T112 · “쉰 무렵으로 보인다”']}];
+function renderPend(c){var list=PEND.filter(function(p){return !c.person||p.person===c.person;}),h='';
+  list.forEach(function(p){h+='<div class="card card--flat"><b>'+esc(p.title)+'</b><div class="row__meta">근거가 충돌해 보류됨</div>'+p.opts.map(function(o,i){return '<label class="row" style="min-height:40px"><input type="radio" name="pend" data-pid="'+p.id+'" data-title="'+esc(p.title)+'" value="'+esc(o)+'"> <span>'+esc(o)+'</span></label>';}).join('')+'</div>';});
+  $id('pend-list').innerHTML=h||'<div class="empty"><b>'+(c.person?'‘'+esc(c.person)+'’ 인물에는 ':'')+'보류된 근거가 없습니다</b></div>';syncPend();}
+function syncPend(){var r=document.querySelector('input[name=pend]:checked'),ov=$id('dlg-pending');$id('pend-go').disabled=!r;if(r&&ov._ctx){ov._ctx.ptitle=r.dataset.title;ov._ctx.pchoice=r.value;}}
+/* ---------- 열기 전에 대상 확정 (캡처) ---------- */
+document.addEventListener('click',function(e){var t=e.target;
+  if(t.closest('#banner-versions')){var m=selectedMem();t.closest('#banner-versions').setAttribute('data-ctx',JSON.stringify({mem:m.id,range:m.range}));}
+  var ev=t.closest('[data-open="drawer-evidence"]');if(ev&&!ev.dataset.ctx&&ev.closest('[data-page=desk]'))ev.setAttribute('data-ctx',JSON.stringify({recall:true,src:'이번 리콜 · 정본 기억 3개'}));
+  if(ev&&ev.dataset.ctx){var c0=JSON.parse(ev.dataset.ctx),mm=/근거 (\d+)개/.exec(ev.textContent);
+    if(c0.recall){c0.mem='M-25 · M-24 · M-23';c0.last='T111–125 중 리콜 구간';c0.field='최종 주입 발췌';}
+    else if(MEMKEY(c0.mem)){c0.field=c0.field||c0.mem+' › 정본 사실';}
+    else{c0.n=c0.n||(mm?+mm[1]:2);c0.mem='관련 정본 기억';c0.last='근거 원문 '+c0.n+'건';}
+    ev.setAttribute('data-ctx',JSON.stringify(c0));}
+  var pd=t.closest('[data-open="dlg-pending"]');if(pd){var pane=pd.closest('.detail-pane');pd.setAttribute('data-ctx',JSON.stringify({person:pane?pane.querySelector('h2').textContent:''}));}
+},true);
+document.addEventListener('suite:open',function(e){var c=e.detail.ctx||{};
+  if(e.detail.id==='drawer-versions')renderVersions(c);
+  if(e.detail.id==='drawer-evidence')renderEvidence(c);
+  if(e.detail.id==='dlg-correct')syncCorr();
+  if(e.detail.id==='dlg-pending')renderPend(c);
+  if(e.detail.id==='dlg-prompt'){$id('ps-in').value=PROMPT_SAVED;$id('ps-state').textContent='저장된 지침입니다.';}
+  if(e.detail.id==='dlg-recover'&&c.variant==='rebuild'){$id('rb-bound').value=c.boundary||'T120';c.boundary=$id('rb-bound').value;}
+  if(e.detail.id==='dlg-merge'){var pre=(c.target||'').split(' · ')[0]+' · ';var names=[];$$('[data-open="dlg-merge"]').forEach(function(b){try{var t=JSON.parse(b.dataset.ctx).target;if(t&&t!==c.target&&t.indexOf(pre)===0&&names.indexOf(t)<0)names.push(t);}catch(x){}});
+    $id('mg-partner').innerHTML='<option value="">— 항목 선택 —</option>'+names.map(function(n){return '<option>'+esc(n)+'</option>';}).join('');
+    var mine=MERGES.filter(function(x){return x.a===c.target||x.b===c.target;});$id('mg-split').innerHTML=mine.length?mine.map(function(x){return '<option value="'+esc(x.a+'|'+x.b)+'">'+esc(x.a)+' = '+esc(x.b)+'</option>';}).join(''):'';
+    $$('#mg-mode .choice').forEach(function(b,i){b.classList.toggle('is-on',i===0);});syncMerge();}
+});
+document.addEventListener('click',function(e){if(e.target.closest('#mg-mode'))setTimeout(syncMerge,0);});
+/* ---------- 정본 작업 완료 → 구간 상태·수치·버전에 반영 ---------- */
+document.addEventListener('suite:jobdone',function(e){if(e.detail.id!=='job-memory')return;var c=e.detail.ctx||{},picked=(c.range||'').split(', ').filter(Boolean);
+  picked.forEach(function(rg){var row=$$('#seglist .segrow').filter(function(r){return r.querySelector('b').textContent===rg;})[0];var id=null;for(var k in MEM)if(MEM[k].range===rg)id=k;
+    if(c.variant==='miss'||c.variant==='fail'){MEMN++;if(row){row.dataset.kinds='regen';row.querySelector('small').textContent='저장됨 · 방금 새로 저장한 정본';var b=row.querySelector('.badge');b.className='badge badge--ok';b.textContent='저장됨';}}
+    if(c.variant==='regen'&&id){var m=MEM[id],v=nextV(m);m.vers.splice(1,0,{v:v,state:'cand',text:canon(m).text+' (재생성 후보 표본 · 방금)',when:'방금',note:'재생성 후보'});m.runs.unshift({t:'기존 기억 재생성 · 후보 생성',b:'성공',c:'ok',s:'방금 · 후보 '+v+' · 정본은 그대로'});}
+    if(c.variant==='reana'&&id){var m3=MEM[id],cv=canon(m3),v3=nextV(m3);cv.state='old';cv.note='재분석 전 정본';m3.vers.unshift({v:v3,state:'canon',text:cv.text+' (재분석 결과 표본)',when:'방금'});m3.runs.unshift({t:'선택 구간 재분석',b:'성공 → 교체',c:'ok',s:'방금 · 새 정본 '+v3});if(row){row.dataset.kinds='regen';row.querySelector('small').textContent='저장됨 · 방금 재분석으로 교체';var b2=row.querySelector('.badge');b2.className='badge badge--ok';b2.textContent='저장됨';}}
+  });counts();});
+/* ---------- 검색 ---------- */
+document.addEventListener('input',function(e){var t=e.target;if(!t.closest||!t.closest('.rail__search'))return;var q=t.value.trim().toLowerCase(),rail=t.closest('.rail'),shown=0;
+  $$('.chapter',rail).forEach(function(ch){var on=!q||ch.textContent.toLowerCase().indexOf(q)>-1;ch.hidden=!on;if(on)shown++;});
+  $$('.rail__ep',rail).forEach(function(ep){var n=ep.nextElementSibling,vis=false;while(n&&!n.classList.contains('rail__ep')){if(n.classList.contains('chapter')&&!n.hidden)vis=true;n=n.nextElementSibling;}ep.hidden=!vis;});
+  var em=rail.querySelector('.rail-empty');if(!em){em=document.createElement('p');em.className='hint rail-empty';em.style.padding='8px 12px';rail.querySelector('.rail__list,.rail__search').after(em);}em.hidden=shown>0;em.textContent='‘'+t.value+'’ 검색 결과가 없습니다.';});
 })();
 </script>
 </body>

@@ -111,7 +111,7 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
         <div class="stat"><div class="stat__label">서버 사본</div><div class="stat__value">12</div><div class="stat__meta">활성 1 · 조상 4 · 기타 7</div></div>
         <div class="stat"><div class="stat__label">정리 후보</div><div class="stat__value">2</div><div class="stat__meta">고아 후보 2</div></div>
         <div class="stat"><div class="stat__label">확인 불가</div><div class="stat__value">1</div><div class="stat__meta">삭제 차단 · 자동 정리 안 함</div></div>
-        <div class="stat"><div class="stat__label">마지막 백업</div><div class="stat__value" style="font-size:22px">어제</div><div class="stat__meta">21:40 · 41MB</div></div>
+        <div class="stat"><div class="stat__label">마지막 백업</div><div class="stat__value" style="font-size:22px" id="bk-when">어제</div><div class="stat__meta" id="bk-meta">21:40 · 41MB</div></div>
       </div>
 
       <div class="card card--tight">
@@ -138,7 +138,7 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
         <div class="check-item ok"><span class="dot">✓</span><div><b>참여 플러그인 탐지</b><small>Flashback · HAYAKU · LIBRA · LIA 응답. 미설치·미응답은 제외됩니다.</small></div><span class="badge badge--ok">통과</span></div>
         <div class="check-item ok"><span class="dot">✓</span><div><b>저장 Gate</b><small>참여 4종의 저장 모드가 서버로 같고, 내구성이 확인되었습니다.</small></div><span class="badge badge--ok">통과</span></div>
         <div class="check-item ok"><span class="dot">✓</span><div><b>호환성</b><small>각 플러그인의 계약 상태에서 승계를 막는 항목이 없습니다.</small></div><span class="badge badge--ok">통과</span></div>
-        <div class="check-item warn"><span class="dot">!</span><div><b>최신 백업 (권장)</b><small>마지막 백업 어제 21:40 — 오늘 변경분이 포함되지 않았습니다.</small></div><button class="btn btn--sm" data-go="server" data-go-sub="backup">백업·복원으로 이동</button></div>
+        <div class="check-item warn" id="bk-check"><span class="dot">!</span><div><b>최신 백업 (권장)</b><small id="bk-check-t">마지막 백업 어제 21:40 — 오늘 변경분이 포함되지 않았습니다.</small></div><button class="btn btn--sm" data-go="server" data-go-sub="backup">백업·복원으로 이동</button></div>
       </div>
       <div class="card card--accent">
         <div class="card__head"><div><h2 class="card__title">다음 세션 만들기</h2><p class="card__desc">누르면 전환 가능 여부·호환성·저장 조건을 <b>다시 확인</b>한 뒤, 이동할 수량을 보여주고 승인을 받습니다.</p></div></div>
@@ -187,13 +187,14 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
       <!-- 서버 데이터 (사본 정리) -->
       <div data-subpanel="clean" data-group="sv"><div class="stack">
         <div class="banner banner--info"><span class="banner__icon"><i data-i="info"></i></span><div>채팅이 보이지 않아도 자동 삭제하지 않습니다. 활성 스코프는 owner 플러그인이 서버 데이터를 로컬에 복원하고 <strong>플러그인 단독 모드 전환을 증명</strong>한 뒤에만 삭제됩니다. 승계 조상과 확인 불가 데이터는 보호됩니다.</div></div>
-        <div class="kinds" role="group" aria-label="종류 필터"><button class="kind" aria-pressed="true">전체 <span class="n">12</span></button><button class="kind" aria-pressed="false">활성 스코프 <span class="n">1</span></button><button class="kind" aria-pressed="false">승계 조상 <span class="n">4</span></button><button class="kind" aria-pressed="false">고아 메모리 후보 <span class="n">2</span></button><button class="kind" aria-pressed="false">확인 불가 <span class="n">1</span></button><button class="kind" aria-pressed="false">복구 페어링 <span class="n">4</span></button></div>
-        <div class="toolbar"><div><b>다중 작업</b> <span>삭제 가능 <b id="elig-n">0</b>개 · 선택 <b id="sel-n">0</b>개</span></div><div class="cluster"><button class="btn btn--sm" id="btn-sel-all">삭제 가능 전체 선택</button><button class="btn btn--sm btn--danger" id="btn-sel-del" disabled data-open="dlg-del">선택 삭제…</button></div></div>
-        <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·스코프로 찾기" aria-label="서버 사본 검색"></div>
+        <div class="kinds" role="group" aria-label="종류 필터" id="kinds"><button class="kind" aria-pressed="true" data-k="">전체 <span class="n">0</span></button><button class="kind" aria-pressed="false" data-k="k-active">활성 스코프 <span class="n">0</span></button><button class="kind" aria-pressed="false" data-k="k-ancestor">승계 조상 <span class="n">0</span></button><button class="kind" aria-pressed="false" data-k="k-orphan">고아 메모리 후보 <span class="n">0</span></button><button class="kind" aria-pressed="false" data-k="k-unknown">확인 불가 <span class="n">0</span></button><button class="kind" aria-pressed="false" data-k="k-pair">복구 페어링 <span class="n">0</span></button></div>
+        <div class="toolbar"><div><b>다중 작업</b> <span>삭제 가능 <b id="elig-n">0</b>개 · 선택 <b id="sel-n">0</b>개</span></div><div class="cluster"><button class="btn btn--sm" id="btn-sel-all" title="활성 스코프는 일괄 선택에서 빠집니다">삭제 가능 전체 선택</button><button class="btn btn--sm btn--danger" id="btn-sel-del" disabled data-open="dlg-del">선택 삭제…</button></div></div>
+        <p class="hint" style="margin:0">활성 스코프(지금 쓰는 채팅)는 일괄 선택할 수 없습니다. 카드의 ‘삭제…’로 로컬 보존·모드 전환 증명 단계를 거쳐 따로 삭제합니다.</p>
+        <div class="search"><i class="ic" data-i="search"></i><input class="input" placeholder="이름·스코프로 찾기" aria-label="서버 사본 검색" id="scope-q"></div>
 
         <div class="group-head"><h3>활성 스코프</h3><p>현재 사용 중</p></div>
         <div class="scope-card k-active"><input type="checkbox" class="sel" aria-label="아스텔 / 에피소드 42 선택" data-scope='{"name": "아스텔 / 에피소드 42", "meta": "활성 스코프 · 지금 쓰는 채팅", "srv": "이 스코프의 서버 사본 전체", "loc": "owner가 서버 데이터를 로컬에 복원하고 플러그인 단독 모드 전환을 증명한 뒤 삭제. 증명 실패 시 삭제하지 않음"}'><div><b>아스텔 / 에피소드 42 <span class="badge badge--ok">LIBRA · HAYAKU · Flashback</span></b><small>마지막 저장 3분 전 · 기억 1,248개</small></div>
-          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button><button class="btn btn--sm" data-toast="보존 상태로 고정했습니다. (시안)">보존 고정</button><button class="btn btn--sm btn--danger" data-open="dlg-del" data-ctx='{"name":"아스텔 / 에피소드 42","meta":"활성 스코프 · 지금 쓰는 채팅","srv":"이 스코프의 서버 사본 전체","loc":"삭제 전에 owner가 서버 데이터를 로컬에 복원하고 플러그인 단독 모드 전환을 증명해야 합니다. 증명 실패 시 삭제하지 않습니다.","cnt":"1개"}'>삭제…</button></div>
+          <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button><button class="btn btn--sm" data-pin>보존 고정</button><button class="btn btn--sm btn--danger" data-open="dlg-del" data-ctx='{"name":"아스텔 / 에피소드 42","meta":"활성 스코프 · 지금 쓰는 채팅","srv":"이 스코프의 서버 사본 전체","loc":"삭제 전에 owner가 서버 데이터를 로컬에 복원하고 플러그인 단독 모드 전환을 증명해야 합니다. 증명 실패 시 삭제하지 않습니다.","cnt":"1개"}'>삭제…</button></div>
           <div class="scope-ready">로컬 보존·모드 전환 증명 후 삭제할 수 있습니다. 확인 한 번으로 보존 확인 → 참조 검사 → 백업 → 삭제를 자동 진행합니다.</div></div>
 
         <div class="group-head"><h3>승계 조상</h3><p>다른 스코프가 이어받음</p></div>
@@ -207,9 +208,9 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
         <div class="scope-card k-orphan"><input type="checkbox" class="sel" disabled aria-label="LIA 시험 항목 선택 불가"><div><b>시험용 채팅 <span class="badge">LIA metadata-only</span></b><small>마지막 저장 한 달 전 · 18개</small></div>
           <div class="acts"><button class="btn btn--sm" data-toast="참조 상세 (시안)">참조 상세</button></div>
           <div class="scope-wait">LIA metadata-only 후보입니다. 안전한 정리를 위해 동일 상태를 한 번 더 확인해야 합니다. (1/2)</div></div>
-        <div class="scope-card k-orphan"><input type="checkbox" class="sel" disabled aria-label="바닷가 마을 선택 불가 (보존 고정)"><div><b>바닷가 마을 <span class="badge badge--warn">보존 고정</span></b><small>마지막 저장 3일 전 · 96개</small></div>
-          <div class="acts"><button class="btn btn--sm" data-toast="보존 고정을 해제했습니다. (시안)">보존 해제</button></div>
-          <div class="scope-block">삭제 차단 · 사용자가 보존 상태로 고정한 스코프입니다.</div></div>
+        <div class="scope-card k-orphan is-pinned"><input type="checkbox" class="sel" disabled aria-label="바닷가 마을 선택" data-scope='{"name": "바닷가 마을", "meta": "고아 메모리 후보 · 마지막 저장 3일 전 · 96개", "srv": "서버 사본(저장 원문·벡터·아카이브) 96개", "loc": "로컬 원본은 그대로 보존"}'><div><b>바닷가 마을 <span class="badge badge--warn pin-badge">보존 고정</span></b><small>마지막 저장 3일 전 · 96개</small></div>
+          <div class="acts"><button class="btn btn--sm" data-pin>보존 해제</button><button class="btn btn--sm btn--danger" data-open="dlg-del" hidden data-ctx='{"name":"바닷가 마을","meta":"고아 메모리 후보 · 마지막 저장 3일 전 · 96개","srv":"이 스코프의 서버 사본(저장 원문·벡터·아카이브) 96개","loc":"로컬 원본은 그대로 보존","cnt":"1개"}'>삭제…</button></div>
+          <div class="scope-block pin-block">삭제 차단 · 사용자가 보존 상태로 고정한 스코프입니다.</div></div>
 
         <div class="group-head"><h3>확인 불가</h3><p>자동 정리 대상 아님</p></div>
         <div class="scope-card k-unknown"><input type="checkbox" class="sel" disabled aria-label="알 수 없는 사본 선택 불가"><div><b>알 수 없는 사본 (7f3a…)</b><small>형식 또는 채팅 연결을 읽을 수 없습니다.</small></div>
@@ -227,7 +228,7 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
 
       <!-- 백업·복원 -->
       <div data-subpanel="backup" data-group="sv"><div class="stack">
-        <div class="card"><div class="card__head"><div><h2 class="card__title">서버 데이터 안전 이관 · 백업</h2><p class="card__desc"><b>권장:</b> 논리 데이터를 이관 ZIP으로 내보내면 새 서버가 현재 스키마의 빈 DB를 다시 만듭니다. 기존 DB 스냅샷은 물리 복구 호환용입니다.</p></div><span class="badge">마지막 어제 21:40</span></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">서버 데이터 안전 이관 · 백업</h2><p class="card__desc"><b>권장:</b> 논리 데이터를 이관 ZIP으로 내보내면 새 서버가 현재 스키마의 빈 DB를 다시 만듭니다. 기존 DB 스냅샷은 물리 복구 호환용입니다.</p></div><span class="badge" id="bk-badge">마지막 어제 21:40</span></div>
           <div class="stack stack--sm">
             <div class="field"><label>내보내기 형식</label><select class="select" id="exp-fmt" data-no-track><option>안전 이관 ZIP (논리 데이터 · 권장)</option><option>기존 DB 스냅샷 ZIP (물리 복구 호환용)</option></select></div>
             <div class="cluster"><button class="btn btn--primary" data-run-job="job-backup"><i data-i="db"></i>서버에 새 백업 만들기</button><button class="btn" id="btn-export" data-toast="안전 이관 ZIP을 내려받았습니다. (시안)"><i data-i="download"></i>안전 이관 ZIP 내보내기</button></div>
@@ -305,12 +306,12 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
   <!-- 미완료 승계 재검증 -->
   <div class="overlay" id="dlg-retry" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dtr-t">
     <div class="eyebrow">Retry</div><h2 id="dtr-t">미완료 승계를 재검증할까요?</h2>
-    <p>미완료 다음 세션 handoff를 <b>같은 target/transfer</b>로 다시 검증합니다. 새 채팅은 추가로 만들지 않습니다.</p>
+    <p>미완료 다음 세션 handoff를 <b>같은 target/transfer</b>로 다시 검증합니다. 새 채팅은 추가로 만들지 않습니다.</p><p class="hint" id="retry-none" hidden style="color:var(--danger-ink)">미완료 승계가 없어 재검증할 대상이 없습니다.</p>
     <dl class="kv"><dt>transferId</dt><dd class="mono">tr-20261012-0042</dd><dt>저장 모드</dt><dd>서버 · 참여 4종</dd></dl>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-toast="재검증을 마쳤습니다. 승계가 완료되었습니다. (시안)">재검증</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="retry-go" data-close data-act="retry">재검증</button></div></div></div>
 
   <!-- 사본 삭제 (대상별 내용은 data-ctx 로 채움) -->
-  <div class="overlay" id="dlg-del" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dd-t">
+  <div class="overlay" id="dlg-del" data-require="name" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dd-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Server copy delete</div><h2 id="dd-t">서버 사본 삭제 (<span data-fill="cnt">1개</span>)</h2>
     <p><b data-fill="name">아스텔 / 에피소드 40</b><br><span class="muted" data-fill="meta">고아 메모리 후보</span></p>
     <ul class="plain" id="del-list" hidden style="margin:0 0 8px;padding-left:18px;font-size:13px"></ul>
@@ -344,7 +345,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden data-go="next">결과 보기</button></div></div></div>
 
   <!-- 작업: 사본 삭제 -->
-  <div class="overlay" id="job-del" aria-hidden="true" data-inherit-ctx data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
+  <div class="overlay" id="job-del" data-require="name" aria-hidden="true" data-inherit-ctx data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jd-t"><div class="split"><div><div class="eyebrow">Server copy delete</div><h2 id="jd-t">서버 사본 삭제 · <span data-fill="cnt">1개</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>로컬 보존</b></div><div class="step"><span class="step__no">2</span><b>백업·조건</b></div><div class="step"><span class="step__no">3</span><b>삭제</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
@@ -361,7 +362,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
       <div class="dialog__actions"><button class="btn" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <!-- 작업: 복원 -->
-  <div class="overlay" id="job-restore" aria-hidden="true" data-inherit-ctx data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
+  <div class="overlay" id="job-restore" data-require="bk" aria-hidden="true" data-inherit-ctx data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t"><div class="split"><div><div class="eyebrow">Restore</div><h2 id="jr-t">서버 자료 복원 · <span data-fill="targets">LIBRA · HAYAKU</span></h2></div><span class="badge badge--info" data-fill="bk">bk-20261011-2140 · 어제 21:40</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>검사</b></div><div class="step"><span class="step__no">2</span><b>복원</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div></div>
@@ -369,7 +370,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <!-- 작업: 초기화 -->
-  <div class="overlay" id="job-reset" aria-hidden="true" data-inherit-ctx data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
+  <div class="overlay" id="job-reset" data-require="target" aria-hidden="true" data-inherit-ctx data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jx-t"><div class="split"><div><div class="eyebrow">Reset</div><h2 id="jx-t">서버 기억 초기화 · <span data-fill="target">전체 5개 플러그인</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step" data-variant="default backup"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>비우기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>
@@ -439,6 +440,52 @@ document.addEventListener('change',function(e){var t=e.target;
   if(t.id==='rs-bk'||(t.classList&&t.classList.contains('rs-ns')))syncRestore();});
 document.addEventListener('suite:ready',function(){syncScopes();syncExport();syncRestore();syncReset();});
 document.documentElement.dataset.scenario='partial';
+
+/* ---------- 5차: 보호 상태·백업·승계 결과를 한 데이터로 ---------- */
+(function(){
+function cards(){return [].slice.call(document.querySelectorAll('.scope-card'));}
+/* 활성 스코프는 일괄 선택 대상이 아님 · 고정/해제 뒤 다시 계산 */
+var _sync=syncScopes;
+syncScopes=function(){cards().forEach(function(c){var cb=c.querySelector('.sel');if(!cb)return;var blocked=isBlocked(c),active=c.classList.contains('k-active');
+    if(!blocked&&cb.dataset.scope&&!active)cb.disabled=false;
+    if(active){cb.disabled=true;cb.checked=false;cb.title='활성 스코프는 카드의 ‘삭제…’로만 삭제합니다';}});
+  _sync();$id('elig-n').textContent=cards().filter(function(c){var cb=c.querySelector('.sel');return cb&&!cb.disabled;}).length;var b=$id('btn-sel-del');if(b.disabled)b.removeAttribute('data-ctx');kindCounts();};
+document.addEventListener('click',function(e){var t=e.target.closest('#btn-sel-all');if(!t)return;e.stopImmediatePropagation();
+  cards().forEach(function(c){var cb=c.querySelector('.sel');if(cb&&!cb.disabled&&!c.classList.contains('k-active')&&!c.hidden)cb.checked=true;});syncScopes();},true);
+document.addEventListener('click',function(e){var pin=e.target.closest('[data-pin]');if(!pin)return;var c=pin.closest('.scope-card'),pinned=c.classList.contains('is-pinned'),name=c.querySelector('b').firstChild.textContent.trim();
+  if(!pinned){c.classList.add('is-pinned');c.querySelector('b').insertAdjacentHTML('beforeend',' <span class="badge badge--warn pin-badge">보존 고정</span>');
+    var blk=document.createElement('div');blk.className='scope-block pin-block';blk.textContent='삭제 차단 · 사용자가 보존 상태로 고정한 스코프입니다.';c.appendChild(blk);
+    c.querySelectorAll('[data-open="dlg-del"]').forEach(function(d){d.hidden=true;});var cb=c.querySelector('.sel');if(cb){cb.checked=false;cb.disabled=true;}pin.textContent='보존 해제';
+    window.suiteToast('‘'+name+'’ 스코프를 보존 상태로 고정했습니다. 삭제할 수 없습니다. (시안)');}
+  else{c.classList.remove('is-pinned');c.querySelectorAll('.pin-badge,.pin-block').forEach(function(x){x.remove();});c.querySelectorAll('[data-open="dlg-del"]').forEach(function(d){d.hidden=false;});pin.textContent='보존 고정';
+    window.suiteToast('‘'+name+'’ 스코프의 보존 고정을 해제했습니다. 이제 삭제 대상으로 고를 수 있습니다. (시안)');}
+  syncScopes();});
+/* 종류 필터 · 검색 */
+function kindCounts(){document.querySelectorAll('#kinds .kind').forEach(function(k){var cls=k.dataset.k;k.querySelector('.n').textContent=cards().filter(function(c){return !cls||c.classList.contains(cls);}).length;});}
+function filterCards(){var on=document.querySelector('#kinds .kind[aria-pressed="true"]'),cls=on?on.dataset.k:'',q=($id('scope-q').value||'').trim().toLowerCase();
+  cards().forEach(function(c){c.hidden=!((!cls||c.classList.contains(cls))&&(!q||c.textContent.toLowerCase().indexOf(q)>-1));});
+  document.querySelectorAll('.group-head').forEach(function(g){var n=g.nextElementSibling,vis=false;while(n&&!n.classList.contains('group-head')){if(n.classList.contains('scope-card')&&!n.hidden)vis=true;n=n.nextElementSibling;}g.hidden=!vis;});}
+document.addEventListener('click',function(e){if(e.target.closest('#kinds .kind'))setTimeout(filterCards,0);});
+document.addEventListener('input',function(e){if(e.target.id==='scope-q')filterCards();});
+/* 삭제 확인창: 선택 삭제 버튼으로 열렸는데 선택이 없으면 실행 불가 (?open= 포함) */
+/* 백업 목록: 새 백업이 모든 표시에 반영 */
+function addBackup(id){var sel=$id('rs-bk'),o=document.createElement('option');o.value=id+' · 방금';o.textContent=id+' · 방금 · 41MB';sel.insertBefore(o,sel.firstChild);sel.value=o.value;
+  $id('bk-when').textContent='방금';$id('bk-meta').textContent=id+' · 41MB';$id('bk-badge').textContent='마지막 방금';
+  var ck=$id('bk-check');ck.className='check-item ok';ck.querySelector('.dot').textContent='✓';$id('bk-check-t').textContent='방금 만든 백업('+id+')에 오늘 변경분까지 포함되어 있습니다.';syncRestore();}
+var BKN=0;
+document.addEventListener('suite:jobdone',function(e){var id='bk-20261012-'+String(2300+(++BKN));
+  if(e.detail.id==='job-backup'){addBackup(id);var m=document.querySelector('#job-backup [data-job-msg]');if(m)m.textContent='백업을 만들었습니다. ('+id+')';}
+  if(e.detail.id==='job-reset'&&e.detail.ctx&&e.detail.ctx.variant!=='nobackup')addBackup(id);});
+/* 재검증: 결과를 시나리오(승계 상태)에 반영 */
+document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-retry')return;var none=document.documentElement.dataset.scenario!=='partial';$id('retry-go').disabled=none;$id('retry-none').hidden=!none;});
+document.addEventListener('click',function(e){if(!e.target.closest('[data-act="retry"]')||$id('retry-go').disabled)return;document.documentElement.dataset.scenario='ok';
+  document.querySelectorAll('button[data-scenario]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.scenario==='ok'));});
+  window.suiteToast('재검증을 마쳤습니다. LIBRA 영속 검증을 통과해 모든 owner의 승계가 완료되었습니다. (시안)');});
+/* 복원 미리보기 문구: 조사를 이름 뒤에 붙이지 않음 */
+var _rs=syncRestore;syncRestore=function(){_rs();var all=[].slice.call(document.querySelectorAll('.rs-ns')),on=all.filter(function(c){return c.checked;}).map(function(c){return c.value;}),off=all.filter(function(c){return !c.checked;}).map(function(c){return c.value;});
+  var p=$id('btn-rs-preview');p.setAttribute('data-toast','미리보기: '+$id('rs-bk').value+' → '+(on.join(' · ')||'없음')+' 플러그인의 서버 자료가 바뀝니다. '+(off.length?off.join(' · ')+' 플러그인의 자료는 그대로입니다.':'다른 플러그인은 없습니다.')+' (시안)');};
+document.addEventListener('suite:ready',function(){syncScopes();syncRestore();filterCards();});
+})();
 </script>
 </body>
 </html>

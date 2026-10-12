@@ -67,14 +67,29 @@
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
   /* ---- 토스트 ---- */
-  function toast(msg) {
+  /* ctx를 주면 그 대상으로, 아니면 직전 대상(lastCtx)으로 {key}를 채운다.
+     채울 값이 없는 {key}가 남으면 원시 문자열 대신 실행하지 않았다는 안내를 띄운다 (대상 없는 성공 토스트 방지) */
+  function toast(msg, ctx) {
     var box = $('.toasts'); if (!box) return;
-    msg = String(msg).replace(/\{(\w+)\}/g, function (m, k) { return lastCtx && lastCtx[k] !== undefined ? lastCtx[k] : m; });
+    var c = ctx || lastCtx, missing = false;
+    msg = String(msg).replace(/\{(\w+)\}/g, function (m, k) { if (c && c[k] !== undefined && c[k] !== '') return c[k]; missing = true; return m; });
+    if (missing) { if (window.console) console.warn('[suite] 대상 없는 토스트를 막았습니다:', msg); msg = '대상이 정해지지 않아 실행하지 않았습니다. (시안)'; }
     var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status');
     t.innerHTML = '<svg class="ic ic--sm"><use href="#i-check"/></svg><span></span>'; t.lastChild.textContent = msg;
     box.appendChild(t); setTimeout(function () { t.remove(); }, 3200);
   }
   window.suiteToast = toast;
+  /* 이름·버전 뒤 조사: 마지막 글자의 받침(한글), 숫자 읽기(일·삼·육·칠·팔·영), 영문 l/m/n으로 판정 */
+  function josa(word, pair) {
+    var w = String(word), c = w.charAt(w.length - 1), code = c.charCodeAt(0), bat = false, rieul = false;
+    if (code >= 0xAC00 && code <= 0xD7A3) { var j = (code - 0xAC00) % 28; bat = j > 0; rieul = j === 8; }
+    else if (/[0-9]/.test(c)) { bat = '013678'.indexOf(c) > -1; rieul = '178'.indexOf(c) > -1; }
+    else if (/[lmn]/i.test(c)) { bat = true; rieul = /l/i.test(c); }
+    var p = pair.split('/');
+    if (pair === '으로/로') return w + (bat && !rieul ? '으로' : '로');
+    return w + (bat ? p[0] : p[1]);
+  }
+  window.suiteJosa = josa;
 
   /* ---- 페이지 전환 (사이드바 / 하단 탭바 공용) ---- */
   function goPage(id, opts) {
@@ -100,7 +115,7 @@
     var html = '';
     primary.slice(0, cap).forEach(function (b) {
       var icon = b.querySelector('use') ? b.querySelector('use').getAttribute('href') : '#i-grid';
-      html += '<button type="button" data-go="' + b.dataset.go + '"><svg class="ic"><use href="' + icon + '"/></svg>' + (b.dataset.short || b.querySelector('.nav-text').textContent) + '</button>';
+      html += '<button type="button" data-go="' + b.dataset.go + '"' + (b.dataset.unsavedFor ? ' data-unsaved-for="' + b.dataset.unsavedFor + '"' : '') + '><svg class="ic"><use href="' + icon + '"/></svg>' + (b.dataset.short || b.querySelector('.nav-text').textContent) + '</button>';
     });
     if (primary.length > cap) html += '<button type="button" data-more="1"><svg class="ic"><use href="#i-more"/></svg>더보기</button>';
     bar.innerHTML = html;
@@ -153,13 +168,31 @@
     if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
     if (ctx) lastCtx = ctx;
     ov._ctx = ctx || null;
-    resetOverlay(ov); fillCtx(ov, ctx);
+    resetOverlay(ov); fillCtx(ov, ctx); guardRequired(ov, ctx);
     lastFocus = document.activeElement; ov.classList.add('is-open'); ov.setAttribute('aria-hidden', 'false');
     var f = ov.querySelector('[data-autofocus]') || ov.querySelector('button,input,select,textarea'); if (f) setTimeout(function () { f.focus(); }, 0);
     document.dispatchEvent(new CustomEvent('suite:open', { detail: { id: id, ctx: ctx || null } }));
+    renderTray();
   }
+  /* 대상이 꼭 필요한 창(data-require="키 …"): ctx에 키가 없으면 실행 버튼(data-close가 아닌 주 버튼·data-act·data-run-job)을 막고 이유를 보인다.
+     화면 스크립트가 suite:open에서 대상을 다시 계산해 넣으면 suiteGuard(ov)로 다시 판정한다. */
+  function guardRequired(ov, ctx) {
+    if (!ov.dataset.require) return true;
+    var c = ctx || ov._ctx || {}, ok = ov.dataset.require.split(/\s+/).every(function (k) { return c[k] !== undefined && c[k] !== '' && c[k] !== null; });
+    var note = ov.querySelector('.require-note');
+    if (!note) { note = document.createElement('p'); note.className = 'hint require-note'; note.setAttribute('role', 'status'); var act = ov.querySelector('.dialog__actions'); (act ? act.parentNode : (ov.firstElementChild || ov)).insertBefore(note, act || null); }
+    note.hidden = ok; note.textContent = ov.dataset.requireText || '대상이 선택되지 않았습니다. 목록에서 대상을 고른 뒤 다시 여세요.';
+    $$('.dialog__actions button, [data-act], [data-run-job], [data-job-start]', ov).forEach(function (b) {
+      var primary = b.matches('[data-act],[data-run-job],[data-job-start],.btn--primary,.btn--danger,.btn--danger-solid');
+      if (!primary) return;
+      if (!ok) { b.dataset.reqLocked = '1'; b.disabled = true; } else if (b.dataset.reqLocked) { delete b.dataset.reqLocked; b.disabled = false; }
+    });
+    ov.toggleAttribute('data-missing-target', !ok);
+    return ok;
+  }
+  window.suiteGuard = function (ov) { ov = typeof ov === 'string' ? document.getElementById(ov) : ov; return ov ? guardRequired(ov, ov._ctx) : false; };
   function closeOv(ov) {
-    if (!ov) return; ov.classList.remove('is-open'); ov.setAttribute('aria-hidden', 'true');
+    if (!ov) return; ov.classList.remove('is-open'); ov.setAttribute('aria-hidden', 'true'); renderSave(); renderTray();
     if (lastFocus && lastFocus.focus) try { lastFocus.focus(); } catch (e) {}
   }
   window.suiteOpen = openOv; window.suiteClose = function (id) { closeOv(document.getElementById(id)); };
@@ -245,12 +278,21 @@
       if (d) d.textContent = n ? '저장하면 다음 요청부터 적용됩니다. 저장 전에는 어떤 값도 바뀌지 않습니다.' : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
       $$('[data-save], [data-revert]', bar).forEach(function (btn) { btn.disabled = n === 0; });
     });
+    /* 닫힌 서랍에 저장하지 않은 변경이 있으면 서랍을 여는 버튼에 표시 */
+    $$('.overlay').forEach(function (ov) {
+      var n = dirtyBy[ov.id] || 0, open = ov.classList.contains('is-open');
+      $$('[data-open="' + ov.id + '"]').forEach(function (b) { if (b.closest('.overlay')) return; var un = n > 0 && !open; b.classList.toggle('is-unsaved', un); if (un) b.setAttribute('title', '저장하지 않은 변경 ' + n + '개'); else if (b.dataset.keepTitle === undefined) b.removeAttribute('title'); });
+    });
     /* 다른 화면에 저장하지 않은 변경이 있으면 메뉴에 표시 */
     var curSc = activeScope();
     $$('.nav-item[data-go], .tabbar [data-go]').forEach(function (it) {
       var pg = $('.page[data-page="' + it.dataset.go + '"]'); var sc = pg ? (pg.dataset.trackGroup || pg.dataset.page) : null;
-      var un = !!(sc && sc !== curSc && dirtyBy[sc]); it.classList.toggle('is-unsaved', un);
-      if (un) it.setAttribute('data-unsaved', '저장하지 않은 변경 ' + dirtyBy[sc] + '개'); if (un) it.setAttribute('title', '저장하지 않은 변경 ' + dirtyBy[sc] + '개'); else it.removeAttribute('data-unsaved');
+      /* data-unsaved-for="edit assets": 메뉴에 없는 하위 화면의 미저장 변경도 이 메뉴에 표시 */
+      var extra = (it.dataset.unsavedFor || '').split(/\s+/).filter(Boolean), cnt = (sc && sc !== curSc ? dirtyBy[sc] || 0 : 0);
+      extra.forEach(function (x) { if (x !== curSc) cnt += dirtyBy[x] || 0; });
+      var un = cnt > 0; it.classList.toggle('is-unsaved', un);
+      if (un) { it.setAttribute('data-unsaved', '저장하지 않은 변경 ' + cnt + '개'); it.setAttribute('title', '저장하지 않은 변경 ' + cnt + '개'); }
+      if (!un) { it.removeAttribute('data-unsaved'); it.removeAttribute('title'); }
     });
   }
   /* 같은 설정이 두 곳에 있을 때(data-sync="키"): 한 값으로 움직인다.
@@ -310,6 +352,8 @@
   window.suiteMarkDirty = markDirty;
   window.suiteSnapshot = function (scope) { snapshot(scope); };
   window.suiteDirty = function (scope) { return dirtyBy[scope || activeScope()] || 0; };
+  /* 저장 막대가 없는 범위(예: LIBRA 사서의 여백)도 같은 되돌리기 처리를 쓴다 */
+  window.suiteRevertScope = function (scope) { revertScope(scope); presetSyncAll(); copyRevertedToPeers(scope); document.dispatchEvent(new CustomEvent('suite:revert', { detail: { scope: scope } })); };
 
   /* ---- 접근성: 보이는 설명을 입력 컨트롤에 프로그램상 연결 (감사 B09) ---- */
   var uid = 0;
@@ -348,12 +392,42 @@
   }
   window.suiteSubtab = activateSubtab;
 
+  /* ---- 작업 트레이: 최소화했거나(닫기·Esc 포함) 끝났지만 아직 확인하지 않은 작업을 다시 연다 ---- */
+  var JOBS = {}, JOBSEQ = 0;
+  function renderTray() {
+    var tray = $('[data-job-tray]');
+    if (!tray) { var tb = $('.topbar'); if (!tb) return; tray = document.createElement('button'); tray.type = 'button'; tray.className = 'btn btn--sm job-tray'; tray.setAttribute('data-job-tray', ''); tray.innerHTML = '<span data-tray-text></span>'; var g = tb.querySelector('.grow'); tb.insertBefore(tray, g ? g.nextSibling : null); }
+    var ids = Object.keys(JOBS).filter(function (id) { var ov = document.getElementById(id); return ov && !ov.classList.contains('is-open'); }).sort(function (a, b) { return JOBS[b].seq - JOBS[a].seq; });
+    var run = ids.filter(function (id) { return JOBS[id].state === 'running'; }), done = ids.filter(function (id) { return JOBS[id].state === 'done'; });
+    var txt = tray.querySelector('[data-tray-text]') || tray, idle = tray.dataset.idleText || (tray.dataset.idleText = txt.textContent || '');
+    if (run.length) txt.textContent = '작업 ' + run.length + '개 진행 중';
+    else if (done.length) txt.textContent = '완료된 작업 ' + done.length + '개 보기';
+    else txt.textContent = idle;
+    tray.dataset.target = (run[0] || done[0] || '');
+    tray.classList.toggle('is-busy', !!run.length); tray.classList.toggle('is-done', !run.length && !!done.length);
+    tray.hidden = !tray.dataset.target && !idle;
+    tray.setAttribute('aria-label', tray.dataset.target ? txt.textContent + ' — 눌러서 작업 창 열기' : (idle || '작업 없음'));
+  }
+  window.suiteTray = renderTray;
+  /* ---- 기본값 불러오기: 처음 화면을 열었을 때의 표본 값을 기본값으로 쓴다(저장 전 변경으로 남음) ---- */
+  var INITIAL = new Map();
+  function loadDefaults(btn) {
+    var sel = btn.dataset.loadDefaults, root = sel ? (btn.closest(sel) || $(sel)) : (btn.closest('.page') || document);
+    var n = 0;
+    trackedControls().forEach(function (el) { if (!root.contains(el) || !INITIAL.has(el)) return; if (readVal(el) !== INITIAL.get(el)) { writeVal(el, INITIAL.get(el)); if (el.dataset.sync) syncPeers(el); n++; } });
+    presetSyncAll(); recompute(); document.dispatchEvent(new CustomEvent('suite:defaults', { detail: { root: root } }));
+    toast(n ? n + '개 값을 기본값으로 채웠습니다. 저장해야 적용됩니다.' : '이미 모두 기본값입니다.');
+  }
   function init() {
     sprite(); hydrateIcons(document); buildTabbar();
     $$('.page').forEach(function (p) { if (!p.dataset.page) p.dataset.page = 'x'; });
 
     document.addEventListener('click', function (e) {
       var t = e.target;
+      var tr = t.closest('[data-job-tray]');
+      if (tr) { if (tr.dataset.target) { var jo = document.getElementById(tr.dataset.target); openOv(jo.id, jo._ctx); } else if (tr.dataset.idleGo) goPage(tr.dataset.idleGo); return; }
+      var ld = t.closest('[data-load-defaults]');
+      if (ld) { loadDefaults(ld); return; }
       var go = t.closest('[data-go]');
       if (go) { var ov = go.closest('.overlay'); if (ov) closeOv(ov); goPage(go.dataset.go, go.dataset.ctx ? { ctx: safeJson(go.dataset.ctx) } : null); if (go.dataset.goSub) activateSubtab(go.dataset.go, go.dataset.goSub); if (go.dataset.toast) toast(go.dataset.toast); var m = $('.menu.is-open'); if (m) m.classList.remove('is-open'); return; }
       if (t.closest('[data-more]')) { openOv('sheet-more'); return; }
@@ -364,9 +438,10 @@
         /* 닫기 + (중단 | 토스트 | 작업 시작)을 한 버튼에서 모두 수행 (감사 B06·B08) */
         var cov = cl.closest('.overlay');
         if (cl.hasAttribute('data-job-cancel') && cov) cancelJob(cov);
+        if (cov && JOBS[cov.id] && (cl.hasAttribute('data-job-done') || cl.hasAttribute('data-job-cancel') || JOBS[cov.id].state !== 'running' && JOBS[cov.id].state !== 'done')) delete JOBS[cov.id];
         closeOv(cov);
         if (cl.dataset.ctx) lastCtx = safeJson(cl.dataset.ctx) || lastCtx;
-        if (cl.dataset.toast) toast(cl.dataset.toast);
+        if (cl.dataset.toast) toast(cl.dataset.toast, cl.dataset.ctx ? safeJson(cl.dataset.ctx) : (cov && cov._ctx) || null);
         var nctx = cl.dataset.ctx ? safeJson(cl.dataset.ctx) : (cov && cov._ctx) || null;
         if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen, nctx);
         if (cl.dataset.thenGo) goPage(cl.dataset.thenGo, nctx ? { ctx: nctx } : null);
@@ -394,6 +469,7 @@
         return;
       }
       var ch = t.closest('.choice');
+      if (ch && ch.parentElement.classList.contains('choices') && ch.parentElement.hasAttribute('data-readonly')) { if (!ch.classList.contains('is-on')) toast(ch.parentElement.dataset.readonly || '여기서는 바꿀 수 없습니다.'); return; }
       if (ch && ch.parentElement.classList.contains('choices')) {
         var single = ch.parentElement.dataset.multi === undefined;
         if (single) $$('.choice', ch.parentElement).forEach(function (c) { c.classList.toggle('is-on', c === ch); });
@@ -420,6 +496,8 @@
     document.addEventListener('input', function (e) {
       var el = e.target;
       if (el.closest('.savebar')) return;
+      /* 입력 확인(data-typed): 정확히 입력해야 위험 버튼이 켜진다 (모든 화면 공통) */
+      if (el.dataset && el.dataset.typed) { var tb = document.getElementById(el.dataset.typedTarget); if (tb) tb.disabled = el.value.trim() !== el.dataset.typed; }
       if (el.matches('input,select,textarea')) { if (el.dataset.sync) syncPeers(el); if (el.dataset.presetField) { var pg = $('[data-preset-group="' + el.dataset.presetField + '"]'); if (pg) presetMatch(pg); } recompute(); }
       var out = el.dataset.out; if (out) { var o = document.getElementById(out); if (o) o.textContent = el.value + (el.dataset.unit || ''); }
     });
@@ -441,7 +519,7 @@
     });
     var pb = $('.proto-bar'); if (pb && !$('.proto-note', pb)) { var pn = document.createElement('span'); pn.className = 'proto-note'; pn.textContent = '표본 데이터 · 저장/삭제/진행은 시연용'; pb.appendChild(pn); }
     document.addEventListener('suite:page', renderSave);
-    presetInit(); autoLabel(); snapshot(); renderSave();
+    presetInit(); autoLabel(); trackedControls().forEach(function (el) { INITIAL.set(el, readVal(el)); }); snapshot(); renderSave(); renderTray();
     /* 화면 스크립트가 나중에 추가하는 컨트롤도 DOM에 들어오는 즉시 기준값 등록 (사용자 입력보다 먼저 실행됨) */
     if (window.MutationObserver) new MutationObserver(function (ms) {
       if (ms.some(function (m) { return [].some.call(m.addedNodes, function (n) { return n.nodeType === 1 && (n.matches('input,select,textarea,.choices,.seg') || n.querySelector('input,select,textarea,.choices,.seg')); }); })) registerNew();
@@ -451,23 +529,26 @@
     if (qs.get('device')) { var fr = $('.frame'); if (fr) { fr.dataset.device = qs.get('device'); $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.device === qs.get('device'))); }); } }
     if (h) goPage(h, { silent: true });
     else { var first = $('.page.is-active'); if (first) goPage(first.dataset.page, { silent: true }); }
-    if (qs.get('open')) openOv(qs.get('open'));
-    if (qs.get('sub')) { var sp = (qs.get('sub') || '').split(':'); if (sp.length === 2) activateSubtab(sp[0], sp[1]); }
+    /* 화면 스크립트가 suite:ready에서 표본 데이터를 만든 뒤에 쿼리로 지정한 창을 연다 */
     document.dispatchEvent(new CustomEvent('suite:ready'));
+    if (qs.get('sub')) { var sp = (qs.get('sub') || '').split(':'); if (sp.length === 2) activateSubtab(sp[0], sp[1]); }
+    if (qs.get('open')) { var qo = document.getElementById(qs.get('open')); if (qo && qo.dataset.jobLabels !== undefined) runJob(qo.id, null); else openOv(qs.get('open')); }
   }
 
   /* ---- 작업 시뮬레이션 (진행 표시 시안) ---- */
   function safeJson(t) { try { return JSON.parse(t); } catch (e) { return null; } }
   function cancelJob(ov) {
     if (!ov || !ov._t) return;
-    clearInterval(ov._t); ov._t = null; ov.dataset.state = 'cancelled';
+    clearInterval(ov._t); ov._t = null; ov.dataset.state = 'cancelled'; delete JOBS[ov.id]; renderTray();
     var msg = ov.querySelector('[data-job-msg]'); if (msg) msg.textContent = '중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.';
     toast('중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.');
   }
   function runJob(id, ctx) {
     var ov = document.getElementById(id); if (!ov) return;
+    if (ov.dataset.state === 'running' && ov._t) { openOv(id, ov._ctx); toast('진행 중인 작업이 있어 새로 시작하지 않았습니다. 끝나거나 중단한 뒤 다시 시작하세요.'); return; }
     if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
     resetOverlay(ov); openOv(id, ctx);
+    if (ov.dataset.require && !guardRequired(ov, ov._ctx)) { ov.dataset.state = 'blocked'; $$('[data-job-done]', ov).forEach(function (d) { d.hidden = true; }); var bm = ov.querySelector('[data-job-msg]'); if (bm) bm.textContent = '대상이 정해지지 않아 작업을 시작하지 않았습니다.'; return; }
     $$('[data-job-result]', ov).forEach(function (r) { r.hidden = true; });
     var bar = ov.querySelector('.progress>i');
     var steps = $$('.step', ov).filter(function (st) { return !st.closest('[hidden]'); });
@@ -475,23 +556,26 @@
     var dones = $$('[data-job-done]', ov); var cancels = $$('[data-job-cancel]', ov);
     var labels = ((ctx && ctx.labels) || ov.dataset.jobLabels || '').split('|');
     var total = steps.length || Math.max(labels.length - 1, 1); var i = 0;
-    ov.dataset.state = 'running';
-    steps.forEach(function (s) { s.classList.remove('is-done', 'is-active'); }); dones.forEach(function (d) { d.hidden = true; }); cancels.forEach(function (c) { c.hidden = false; });
+    ov.dataset.state = 'running'; JOBS[id] = { state: 'running', seq: ++JOBSEQ };
+    steps.forEach(function (s) { s.classList.remove('is-done', 'is-active'); }); dones.forEach(function (d) { d.hidden = true; }); cancels.forEach(function (c) { c.hidden = false; c.disabled = false; c.removeAttribute('title'); });
     if (bar) bar.style.setProperty('--v', '0%');
     clearInterval(ov._t);
     ov._t = setInterval(function () {
       if (i > 0 && steps[i - 1]) { steps[i - 1].classList.remove('is-active'); steps[i - 1].classList.add('is-done'); }
       if (i >= total) {
-        clearInterval(ov._t); ov._t = null; ov.dataset.state = 'done';
+        clearInterval(ov._t); ov._t = null; ov.dataset.state = 'done'; if (JOBS[id]) JOBS[id].state = 'done';
         if (bar) bar.style.setProperty('--v', '100%');
         var fin = labels[labels.length - 1] || '완료했습니다.';
         if (msg) msg.textContent = fin; dones.forEach(function (d) { d.hidden = false; }); cancels.forEach(function (c) { c.hidden = true; });
         $$('[data-job-result]', ov).forEach(function (r) { r.hidden = false; }); fillCtx(ov, ov._ctx);
         document.dispatchEvent(new CustomEvent('suite:jobdone', { detail: { id: id, ctx: ov._ctx || null } }));
-        if (!ov.classList.contains('is-open')) toast(fin);
+        if (!ov.classList.contains('is-open')) toast(fin + ' 상단 ‘완료된 작업 보기’에서 결과를 열 수 있습니다.');
+        renderTray();
         return;
       }
       if (steps[i]) steps[i].classList.add('is-active');
+      /* data-cancel-until="n": n번째 단계(0부터)부터는 저장 중이라 중단할 수 없다 */
+      if (ov.dataset.cancelUntil && i >= +ov.dataset.cancelUntil) cancels.forEach(function (c) { c.disabled = true; c.title = '저장 중에는 중단할 수 없습니다'; });
       if (bar) bar.style.setProperty('--v', Math.round((i + 0.5) / total * 100) + '%');
       if (msg && labels[i]) msg.textContent = labels[i]; i++;
     }, 1100);

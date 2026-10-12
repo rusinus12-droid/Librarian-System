@@ -285,5 +285,12 @@ details.fold>.fold__body{padding:16px}
 
 /* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */
 .nav-item.is-unsaved .nav-text::after{content:" ●";color:var(--warn,#c9822a);font-size:11px}
+.btn.is-unsaved::after{content:"●";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}
 .tabbar [data-go].is-unsaved::after{content:"●";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}
 .tabbar [data-go]{position:relative}
+
+/* 작업 트레이 · 읽기 전용 선택지 */
+.job-tray{margin-left:8px}.job-tray[hidden]{display:none}
+[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}
+[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}
+.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}
