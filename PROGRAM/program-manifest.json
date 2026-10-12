@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-12T08:19:03.947Z",
+  "generatedAt": "2026-10-12T23:40:38.864Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -3544,8 +3544,8 @@
       "bytes": 49
     },
     "run_regression_batch.py": {
-      "sha256": "d40e7fb36b68b069b2a36c87eab7a8d07843b8bba88294ede901b14b80b9a62a",
-      "bytes": 28972
+      "sha256": "435c75dea13831912ec06f598788b12892669d2344f8fffd13599bcb2d7a92f2",
+      "bytes": 33945
     },
     "sdk/FlashbackServerRepair.source.js": {
       "sha256": "891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5",
@@ -8588,8 +8588,8 @@
       "bytes": 3579
     },
     "tests/regression_owned_process_cleanup_test.cjs": {
-      "sha256": "b185e9481c8dbd386b217b1679aaa3309fa670928005233c14bc7d75c0c789ba",
-      "bytes": 5197
+      "sha256": "419e4c84a751ed22eb5bc0482f3f7f9b35bbceb9c0a17e53239a5300144115cb",
+      "bytes": 15839
     },
     "tests/regression_skip_detection_test.cjs": {
       "sha256": "602209a8e32f710aabd8bf167ccba5aa01be73bc7518c702136e12f72c4b5a5d",

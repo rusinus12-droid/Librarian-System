@@ -123,15 +123,81 @@ def _attach_owned_windows_job(process):
 
 REGRESSION_OWNER_ENV='LIBRARIAN_REGRESSION_OWNER'
 
-def _posix_owned_pids(token, root_pid, root_alive=True):
+def _enable_posix_subreaper():
+    """Linux: make the runner the reaper of orphaned test descendants.
+
+    Without this, a descendant whose parent exits is re-parented to init and its
+    lineage is lost; one that also replaced its environment (no owner token) can
+    then no longer be attributed to the test. As a child subreaper, the runner
+    receives such orphans, so they stay discoverable as its children."""
+    if not sys.platform.startswith('linux'):
+        return False
+    try:
+        import ctypes
+        libc=ctypes.CDLL(None, use_errno=True)
+        return libc.prctl(36, 1, 0, 0, 0)==0  # PR_SET_CHILD_SUBREAPER
+    except Exception:
+        return False
+
+def _posix_process_table():
+    """{pid: (ppid, state)} for every visible process; {} when it cannot be read.
+    /proc is read directly on Linux so collecting the table starts no child process."""
+    table={}
+    if os.path.isdir('/proc'):
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit(): continue
+            try:
+                with open(f'/proc/{entry}/stat','rb') as handle: data=handle.read()
+                fields=data[data.rindex(b')')+2:].split()  # the command name may itself contain ')'
+                table[int(entry)]=(int(fields[1]), fields[0].decode('ascii','replace'))
+            except Exception:
+                pass
+        return table
+    try:
+        listing=subprocess.run(['ps','-A','-o','pid=','-o','ppid=','-o','stat='],capture_output=True,text=True,timeout=10).stdout
+        for line in listing.splitlines():
+            parts=line.split()
+            if len(parts)>=2 and parts[0].isdigit() and parts[1].isdigit():
+                table[int(parts[0])]=(int(parts[1]), parts[2][:1] if len(parts)>2 else '?')
+    except Exception:
+        pass
+    return table
+
+class _PosixOrphanReaper:
+    """With the runner as subreaper, orphaned test descendants that exit become the runner's
+    zombies. Init would reap them at once; this does the same so a test that waits for a
+    detached process to disappear still observes it. Test roots started by Popen are never
+    reaped here: their exit status belongs to Popen.wait(), and a stolen status would turn a
+    failure into a reported pass. `spawning` covers the Popen-to-registration window."""
+    def __init__(self):
+        import threading
+        self.protected=set(); self.lock=threading.Lock(); self.stopped=threading.Event()
+        self.thread=threading.Thread(target=self._run, name='orphan-reaper', daemon=True)
+        self.thread.start()
+
+    def reap(self):
+        own=os.getpid()
+        with self.lock:
+            for pid,(ppid,state) in _posix_process_table().items():
+                if ppid==own and state=='Z' and pid not in self.protected:
+                    try: os.waitpid(pid, os.WNOHANG)
+                    except Exception: pass
+
+    def _run(self):
+        while not self.stopped.wait(0.1):
+            self.reap()
+
+def _posix_owned_pids(token, root_pid, root_alive=True, subreaper=False):
     """POSIX: processes started for one regression, including detached ones.
 
     A process group kill misses descendants that call setsid()/detached spawn.
     Every test receives an owner token in its environment, inherited by every
     descendant that keeps the environment; those are found through /proc
-    (Linux) or `ps eww` (BSD/macOS). Descendants of the still-running root are
-    added from the parent table so a child that replaced its environment is
-    still found while its parent lives."""
+    (Linux) or `ps eww` (BSD/macOS). The parent table then adds every descendant
+    of those processes, of the still-running root and, when the runner is the
+    subreaper, of the runner itself (orphans re-parented to it). Each found
+    process is expanded, so an environment-replacing grandchild below a
+    token-holding child is found as well."""
     own=os.getpid(); found=set(); needle=(REGRESSION_OWNER_ENV+'='+token).encode()
     if os.path.isdir('/proc'):
         for entry in os.listdir('/proc'):
@@ -149,40 +215,57 @@ def _posix_owned_pids(token, root_pid, root_alive=True):
                 if len(parts)==2 and parts[0].isdigit() and (REGRESSION_OWNER_ENV+'='+token) in parts[1]: found.add(int(parts[0]))
         except Exception:
             pass
-    # 루트가 이미 끝났다면 PID가 재사용됐을 수 있으므로 부모 표는 쓰지 않는다(토큰만으로 찾는다).
-    if root_alive:
-      try:
-        table=subprocess.run(['ps','-A','-o','pid=','-o','ppid='],capture_output=True,text=True,timeout=10).stdout
-        children={}
-        for line in table.splitlines():
-            parts=line.split()
-            if len(parts)==2 and parts[0].isdigit() and parts[1].isdigit(): children.setdefault(int(parts[1]),[]).append(int(parts[0]))
-        pending=[root_pid]
-        while pending:
-            current=pending.pop()
-            for child in children.get(current,[]):
-                if child not in found: found.add(child); pending.append(child)
-      except Exception:
-        pass
+    # 부모 표 확장의 출발점: 토큰으로 확인된 살아 있는 프로세스(지금의 자식은 실제 자손이다),
+    # 살아 있는 루트, 서브리퍼일 때 실행기 자신(재부모화된 고아). 끝난 루트의 PID는 재사용됐을 수 있어 쓰지 않는다.
+    seeds=set(found)
+    if root_alive: seeds.add(root_pid)
+    if subreaper: seeds.add(own)
+    table=_posix_process_table()
+    children={}
+    for pid,(ppid,_state) in table.items(): children.setdefault(ppid,[]).append(pid)
+    visited=set(); pending=list(seeds)
+    while pending:
+        current=pending.pop()
+        if current in visited: continue
+        visited.add(current)
+        for child in children.get(current,[]):
+            found.add(child)
+            if child not in visited: pending.append(child)  # 토큰으로 이미 찾은 자식도 그 아래를 계속 탐색한다
     found.discard(own)
     return found
 
-def _posix_terminate_owned(token, proc):
-    """Kill the test's process group and every owned process (and its group). Returns
-    (killed_count, survivors)."""
-    killed=set()
-    try: os.killpg(proc.pid, signal.SIGKILL)
-    except Exception: pass
-    own_group=os.getpgrp()
-    for _ in range(5):
-        pids=_posix_owned_pids(token, proc.pid, proc.poll() is None)-{proc.pid}
-        alive=set()
-        for pid in pids:
-            try:
-                os.kill(pid, 0); alive.add(pid)
-            except Exception:
-                continue
-        if not alive: break
+def _posix_is_live(pid):
+    """True for a running process; an exited one that only awaits reaping (zombie) is not live."""
+    try: os.kill(pid, 0)
+    except Exception: return False
+    if os.path.isdir('/proc'):
+        try:
+            with open(f'/proc/{pid}/stat','rb') as handle: data=handle.read()
+            return data[data.rindex(b')')+2:].split()[0]!=b'Z'
+        except Exception:
+            return False  # 그사이 사라졌다
+    return True
+
+def _posix_terminate_owned(token, proc, subreaper=False, reaper=None):
+    """Kill every owned process of one test (and its process group). Returns (killed_count, survivors).
+
+    Lineage is collected before anything is killed: killing the root first would orphan its
+    descendants and lose the parent links that attribute token-less (environment-replaced)
+    processes to this test. Collected processes are stopped first so none can fork while the
+    set is being killed; collection is then repeated until nothing owned remains."""
+    own_group=os.getpgrp(); killed=set()
+    def collect():
+        return {pid for pid in _posix_owned_pids(token, proc.pid, proc.poll() is None, subreaper)-{proc.pid} if _posix_is_live(pid)}
+    for attempt in range(6):
+        alive=collect()
+        if attempt>0 and not alive: break
+        for pid in alive:
+            try: os.kill(pid, signal.SIGSTOP)
+            except Exception: pass
+        if attempt==0:
+            # 루트의 그룹 ID는 그룹 구성원이 남아 있는 동안 재사용되지 않으므로 루트 종료 뒤에도 안전하다.
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except Exception: pass
         for pid in alive:
             try:
                 group=os.getpgid(pid)
@@ -191,20 +274,10 @@ def _posix_terminate_owned(token, proc):
             try: os.kill(pid, signal.SIGKILL)
             except Exception: pass
             killed.add(pid)
+        if not alive: break
         time.sleep(0.2)
-    survivors=set()
-    for pid in _posix_owned_pids(token, proc.pid, proc.poll() is None)-{proc.pid}:
-        try:
-            os.kill(pid, 0)
-        except Exception:
-            continue
-        if os.path.isdir('/proc'):
-            try:
-                with open(f'/proc/{pid}/stat') as handle:
-                    if handle.read().split(') ',1)[1].split()[0]=='Z': continue  # 종료됐고 회수만 남은 프로세스
-            except Exception:
-                continue
-        survivors.add(pid)
+    if reaper: reaper.reap()
+    survivors=collect()
     return len(killed), survivors
 
 def _unlink_regression_output(path, timeout_seconds=5):
@@ -357,10 +430,15 @@ with log_path.open(mode,encoding='utf-8') as log:
         log.write(f'Timeout seconds: default=60; overrides={json.dumps(TEST_TIMEOUT_SECONDS, sort_keys=True)}\n\n')
         log.flush()
     failures=0; timeouts=0; skips=0
+    posix_subreaper=False; orphan_reaper=None
     if os.name!='nt':
         # SIGTERM(종료 요청·timeout 명령)도 Ctrl-C와 같은 정리 경로를 거친다. 그대로 죽으면 시험이 띄운 서버가 남는다.
         def _terminate_as_interrupt(signum, frame): raise KeyboardInterrupt()
         signal.signal(signal.SIGTERM, _terminate_as_interrupt)
+        posix_subreaper=_enable_posix_subreaper()
+        if posix_subreaper: orphan_reaper=_PosixOrphanReaper()
+        if filtered or start==0:
+            log.write(f"POSIX cleanup: owner token + parent table; subreaper={'on' if posix_subreaper else 'off'}\n\n"); log.flush()
     for idx in selected_indices:
         test=all_tests[idx]
         fd, tmp_name = tempfile.mkstemp(prefix=f'librarian-regression-{os.getpid()}-{idx}-', suffix='.txt')
@@ -376,6 +454,11 @@ with log_path.open(mode,encoding='utf-8') as log:
                 # Popen-to-AssignProcessToJobObject race for test descendants.
                 launcher="import subprocess,sys; sys.stdin.readline(); raise SystemExit(subprocess.call(sys.argv[1:]))"
                 proc=subprocess.Popen([sys.executable,'-c',launcher,*test_command],cwd=root,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=test_env)
+            elif orphan_reaper:
+                # 등록 전에 곧바로 끝난 시험 루트를 고아 회수기가 가져가지 않도록 같은 잠금 안에서 띄우고 보호한다.
+                with orphan_reaper.lock:
+                    proc=subprocess.Popen(test_command,cwd=root,stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=test_env)
+                    orphan_reaper.protected.add(proc.pid)
             else:
                 proc=subprocess.Popen(test_command,cwd=root,stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=test_env)
             tree_job=None; tree_status='not_windows'; timeout_cleanup='not_timed_out'
@@ -410,7 +493,7 @@ with log_path.open(mode,encoding='utf-8') as log:
                             # start_new_session 때문에 Ctrl-C가 자식에게 전달되지 않는다. 시험이 띄운 서버가
                             # (별도 프로세스 그룹으로 분리된 detached 서버 포함) 남지 않게 정리한 뒤 중단한다.
                             if os.name!='nt':
-                                killed,survivors=_posix_terminate_owned(owner_token, proc)
+                                killed,survivors=_posix_terminate_owned(owner_token, proc, posix_subreaper, orphan_reaper)
                                 sys.stderr.write(f'\n[regression] interrupted: {test.name}; terminated {killed} owned process(es)'+(f'; still alive: {sorted(survivors)}' if survivors else '')+'\n')
                             elif tree_job: tree_job.terminate()
                             raise
@@ -419,7 +502,7 @@ with log_path.open(mode,encoding='utf-8') as log:
                         if os.name!='nt':
                             # 정상 종료 뒤 남은 자손(분리된 서버 포함)도 정리한다. Windows의 job drain과 같은 기준:
                             # 정리되면 결과는 그대로, 정리되지 않으면 FAIL.
-                            killed,survivors=_posix_terminate_owned(owner_token, proc)
+                            killed,survivors=_posix_terminate_owned(owner_token, proc, posix_subreaper, orphan_reaper)
                             if survivors:
                                 timeout_cleanup=f'posix_owned_drain_failed:{len(survivors)}'
                                 if status=='PASS': status='FAIL'; failures+=1
@@ -448,13 +531,15 @@ with log_path.open(mode,encoding='utf-8') as log:
                             try: proc.kill()
                             except Exception: pass
                         else:
-                            killed,survivors=_posix_terminate_owned(owner_token, proc)
+                            killed,survivors=_posix_terminate_owned(owner_token, proc, posix_subreaper, orphan_reaper)
                             timeout_cleanup=('posix_owned_tree_terminated' if not survivors else f'posix_owned_drain_failed:{len(survivors)}')+f';owned_killed={killed}'
                             try: proc.kill()
                             except Exception: pass
                         try: proc.wait(timeout=5)
                         except Exception: pass
             finally:
+                if orphan_reaper and proc.returncode is not None:
+                    with orphan_reaper.lock: orphan_reaper.protected.discard(proc.pid)  # 회수 완료: 재사용될 PID는 보호하지 않는다
                 # KILL_ON_JOB_CLOSE is a final safety net; explicit drain above lets Windows
                 # release descendants' inherited stdout handles before the temp log is unlinked.
                 try:
