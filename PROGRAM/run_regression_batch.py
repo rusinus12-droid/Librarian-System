@@ -121,6 +121,92 @@ def _attach_owned_windows_job(process):
         if not transferred:
             kernel32.CloseHandle(handle)
 
+REGRESSION_OWNER_ENV='LIBRARIAN_REGRESSION_OWNER'
+
+def _posix_owned_pids(token, root_pid, root_alive=True):
+    """POSIX: processes started for one regression, including detached ones.
+
+    A process group kill misses descendants that call setsid()/detached spawn.
+    Every test receives an owner token in its environment, inherited by every
+    descendant that keeps the environment; those are found through /proc
+    (Linux) or `ps eww` (BSD/macOS). Descendants of the still-running root are
+    added from the parent table so a child that replaced its environment is
+    still found while its parent lives."""
+    own=os.getpid(); found=set(); needle=(REGRESSION_OWNER_ENV+'='+token).encode()
+    if os.path.isdir('/proc'):
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit(): continue
+            try:
+                with open(f'/proc/{entry}/environ','rb') as handle:
+                    if needle in handle.read().split(b'\0'): found.add(int(entry))
+            except Exception:
+                pass
+    else:
+        try:
+            listing=subprocess.run(['ps','eww','-A','-o','pid=','-o','command='],capture_output=True,text=True,timeout=10).stdout
+            for line in listing.splitlines():
+                parts=line.strip().split(None,1)
+                if len(parts)==2 and parts[0].isdigit() and (REGRESSION_OWNER_ENV+'='+token) in parts[1]: found.add(int(parts[0]))
+        except Exception:
+            pass
+    # 루트가 이미 끝났다면 PID가 재사용됐을 수 있으므로 부모 표는 쓰지 않는다(토큰만으로 찾는다).
+    if root_alive:
+      try:
+        table=subprocess.run(['ps','-A','-o','pid=','-o','ppid='],capture_output=True,text=True,timeout=10).stdout
+        children={}
+        for line in table.splitlines():
+            parts=line.split()
+            if len(parts)==2 and parts[0].isdigit() and parts[1].isdigit(): children.setdefault(int(parts[1]),[]).append(int(parts[0]))
+        pending=[root_pid]
+        while pending:
+            current=pending.pop()
+            for child in children.get(current,[]):
+                if child not in found: found.add(child); pending.append(child)
+      except Exception:
+        pass
+    found.discard(own)
+    return found
+
+def _posix_terminate_owned(token, proc):
+    """Kill the test's process group and every owned process (and its group). Returns
+    (killed_count, survivors)."""
+    killed=set()
+    try: os.killpg(proc.pid, signal.SIGKILL)
+    except Exception: pass
+    own_group=os.getpgrp()
+    for _ in range(5):
+        pids=_posix_owned_pids(token, proc.pid, proc.poll() is None)-{proc.pid}
+        alive=set()
+        for pid in pids:
+            try:
+                os.kill(pid, 0); alive.add(pid)
+            except Exception:
+                continue
+        if not alive: break
+        for pid in alive:
+            try:
+                group=os.getpgid(pid)
+                if group!=own_group: os.killpg(group, signal.SIGKILL)
+            except Exception: pass
+            try: os.kill(pid, signal.SIGKILL)
+            except Exception: pass
+            killed.add(pid)
+        time.sleep(0.2)
+    survivors=set()
+    for pid in _posix_owned_pids(token, proc.pid, proc.poll() is None)-{proc.pid}:
+        try:
+            os.kill(pid, 0)
+        except Exception:
+            continue
+        if os.path.isdir('/proc'):
+            try:
+                with open(f'/proc/{pid}/stat') as handle:
+                    if handle.read().split(') ',1)[1].split()[0]=='Z': continue  # 종료됐고 회수만 남은 프로세스
+            except Exception:
+                continue
+        survivors.add(pid)
+    return len(killed), survivors
+
 def _unlink_regression_output(path, timeout_seconds=5):
     deadline=time.monotonic()+timeout_seconds
     while True:
@@ -279,13 +365,15 @@ with log_path.open(mode,encoding='utf-8') as log:
         st=time.time()
         with tmp.open('w+',encoding='utf-8',errors='replace') as out:
             test_command=['node',str(test)]
+            owner_token=f'{os.getpid()}-{idx}-{os.urandom(4).hex()}'
+            test_env=dict(child_env, **{REGRESSION_OWNER_ENV: owner_token})
             if os.name=='nt':
                 # The waiting shim starts no test code until after assignment. This removes the
                 # Popen-to-AssignProcessToJobObject race for test descendants.
                 launcher="import subprocess,sys; sys.stdin.readline(); raise SystemExit(subprocess.call(sys.argv[1:]))"
-                proc=subprocess.Popen([sys.executable,'-c',launcher,*test_command],cwd=root,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=child_env)
+                proc=subprocess.Popen([sys.executable,'-c',launcher,*test_command],cwd=root,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=test_env)
             else:
-                proc=subprocess.Popen(test_command,cwd=root,stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=child_env)
+                proc=subprocess.Popen(test_command,cwd=root,stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=test_env)
             tree_job=None; tree_status='not_windows'; timeout_cleanup='not_timed_out'
             status='PASS'
             try:
@@ -315,14 +403,24 @@ with log_path.open(mode,encoding='utf-8') as log:
                         try:
                             rc=proc.wait(timeout=TEST_TIMEOUT_SECONDS.get(test.name, 60))
                         except KeyboardInterrupt:
-                            # start_new_session 때문에 Ctrl-C가 자식에게 전달되지 않는다. 시험이 띄운 서버가 남지 않게 정리한다.
+                            # start_new_session 때문에 Ctrl-C가 자식에게 전달되지 않는다. 시험이 띄운 서버가
+                            # (별도 프로세스 그룹으로 분리된 detached 서버 포함) 남지 않게 정리한 뒤 중단한다.
                             if os.name!='nt':
-                                try: os.killpg(proc.pid, signal.SIGKILL)
-                                except Exception: pass
+                                killed,survivors=_posix_terminate_owned(owner_token, proc)
+                                sys.stderr.write(f'\n[regression] interrupted: {test.name}; terminated {killed} owned process(es)'+(f'; still alive: {sorted(survivors)}' if survivors else '')+'\n')
                             elif tree_job: tree_job.terminate()
                             raise
                         if rc!=0:
                             status='FAIL'; failures+=1
+                        if os.name!='nt':
+                            # 정상 종료 뒤 남은 자손(분리된 서버 포함)도 정리한다. Windows의 job drain과 같은 기준:
+                            # 정리되면 결과는 그대로, 정리되지 않으면 FAIL.
+                            killed,survivors=_posix_terminate_owned(owner_token, proc)
+                            if survivors:
+                                timeout_cleanup=f'posix_owned_drain_failed:{len(survivors)}'
+                                if status=='PASS': status='FAIL'; failures+=1
+                            elif killed:
+                                timeout_cleanup=f'posix_owned_leftovers_terminated:{killed}'
                         if tree_job:
                             tree_job.terminate()
                             if tree_job.wait_empty(5):
@@ -346,13 +444,10 @@ with log_path.open(mode,encoding='utf-8') as log:
                             try: proc.kill()
                             except Exception: pass
                         else:
-                            try:
-                                os.killpg(proc.pid, signal.SIGKILL)
-                                timeout_cleanup='process_group_terminated'
-                            except Exception:
-                                timeout_cleanup='main_process_only_fallback:process_group_kill_failed'
-                                try: proc.kill()
-                                except Exception: pass
+                            killed,survivors=_posix_terminate_owned(owner_token, proc)
+                            timeout_cleanup=('posix_owned_tree_terminated' if not survivors else f'posix_owned_drain_failed:{len(survivors)}')+f';owned_killed={killed}'
+                            try: proc.kill()
+                            except Exception: pass
                         try: proc.wait(timeout=5)
                         except Exception: pass
             finally:
