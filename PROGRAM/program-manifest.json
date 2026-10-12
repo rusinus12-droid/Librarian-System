@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-12T08:18:46.449Z",
+  "generatedAt": "2026-10-12T08:19:03.947Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2855,8 +2855,264 @@
       "sha256": "019544dbc9804a4321987c44dee26e8aa492aeb3e1579f5114c8d0f0f9f3f456",
       "bytes": 48041
     },
+    "docs/regression/selfaudit-20261012/failure-logs/030-browser_executable_resolution_test.cjs.txt": {
+      "sha256": "1054b33f50ed3dc3e306079c57d1a5e191007d2cffe16e44c09258e1c7be5828",
+      "bytes": 1169
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/031-build_plugins_artifact_behavior_negative_control_test.cjs.txt": {
+      "sha256": "a5f696189153be653363f5f7e47cc5428b906d7ce225e6e96a0594765fcb7fb9",
+      "bytes": 874
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/032-build_plugins_artifact_behavior_parity_test.cjs.txt": {
+      "sha256": "812c11dfc524d769c8e3df718652e36dffa06c953f96035e211b5ca50fc2af19",
+      "bytes": 1102
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/033-build_plugins_artifact_libra_readiness_test.cjs.txt": {
+      "sha256": "ed2ac648bac75d488c1c998cd82e713c76893604c9dbfdd857a0bf8b854884d0",
+      "bytes": 1305
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/034-build_plugins_property_key_pool_test.cjs.txt": {
+      "sha256": "03be6fa20ca00b1f051a24ea6ca2f2a978de66a1a9a0d7bfb976101cbe651cfe",
+      "bytes": 1138
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/035-build_plugins_refusal_exit_test.cjs.txt": {
+      "sha256": "ca0fa3070a55fbd32b290be1142b2c25b8779212a0a1fe8b52c354638a544d31",
+      "bytes": 986
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/036-build_plugins_string_value_pool_test.cjs.txt": {
+      "sha256": "16873ef4dcff57fdb30474ccceaf9c0dca6f5f4a0cb515d513dfacf0b812604c",
+      "bytes": 1106
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/039-composed_reanalysis_gradia_runtime_test.cjs.txt": {
+      "sha256": "61caa607419f5e14a4af37f11251d2f70107891c321b64e73eb0040d2d539404",
+      "bytes": 1420
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/040-composed_source_input_public_dom_test.cjs.txt": {
+      "sha256": "65c6eadcc73d6e19a68b4bd9a345232ffaf873188e73e0db5bd72dc259f2be67",
+      "bytes": 1084
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/045-compute_four_namespace_product_load_test.cjs.txt": {
+      "sha256": "238e007ea1ee24d6eb29d97586f971d0c8af5191203286835ba27bcd7d0bc989",
+      "bytes": 509
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/052-compute_product_worker_overlap_test.cjs.txt": {
+      "sha256": "968af86eb2f2dc4e976552c73231ff995ca0d9c2302e708968c5eac08cce2a0d",
+      "bytes": 970
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/060-current_ui_compute_contracts_test.cjs.txt": {
+      "sha256": "913bb0ad78bb23fdb631309e4e43dc6114bc692f2a572e2150e850d2f1e9523b",
+      "bytes": 1028
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/082-execution_task_profiles_artifact_test.cjs.txt": {
+      "sha256": "9ce7bec09fa06cef3b4cb2253f1cb57ed7624f6f4b71489ee1fff4dd5a45caec",
+      "bytes": 980
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/086-flashback_archive_owner_gui_test.cjs.txt": {
+      "sha256": "6ce06cbdc33f95a62aee964fdd72a70639c6bae800bbdfa31083fda9d742908b",
+      "bytes": 1069
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/089-flashback_archive_reporting_gui_test.cjs.txt": {
+      "sha256": "cc47c047b4c1c2291ea4708222fe86f8197c7827d23cadb464c878546b746daf",
+      "bytes": 1081
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1004-sdk_reset_bootstrap_sequence_runtime_test.cjs.txt": {
+      "sha256": "138b5fb70b53a250a50db19d1c78b335a6b0feec1fc7233248bcb0b097411b6d",
+      "bytes": 1096
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1008-sdk_session_availability_currentness_runtime_test.cjs.txt": {
+      "sha256": "28cd30150b08f059689749187d869009f79a17043f1edad230bcac1139197ba4",
+      "bytes": 1120
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1033-shared_reanalysis_drawer_test.cjs.txt": {
+      "sha256": "eb82e2526095c594856b5ee6ea4cf1e7927c02254c4f782cb3431c938b96d91b",
+      "bytes": 1060
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1037-shared_source_input_adapter_dom_test.cjs.txt": {
+      "sha256": "b9f2dac33c273413cda8a1a47762e7b37e014cce3d99426478b722bf720c7e03",
+      "bytes": 1081
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1038-shared_source_input_owner_test.cjs.txt": {
+      "sha256": "aa68acae496c4b74bab48dda54badbd52ee6bdc530df087b94899548d4328982",
+      "bytes": 1063
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1070-source_review_dock_browser_test.cjs.txt": {
+      "sha256": "e1325872858448d6d0e77cabac1edac51bec1111a1ab47235cd449537cff5fc5",
+      "bytes": 1166
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1072-source_review_manual_stacking_context_browser_test.cjs.txt": {
+      "sha256": "b760b198ba30f4c66434aea1d0b6fcd057f43d8e0b262afa72a63658c352e7fa",
+      "bytes": 1185
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1087-storage-compute-mode-contract-v2.test.cjs.txt": {
+      "sha256": "297af2732a9a658d99d4f9eebca2ed29160bf798ccbc6013e70dbc27f30206bf",
+      "bytes": 1032
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1100-storage_global_owner_public_gui_test.cjs.txt": {
+      "sha256": "8d7f160de42b2b2d5de9216f739fabb903a384732120c24113f0da03e7504abf",
+      "bytes": 1264
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/1124-test_surface_strip_test.cjs.txt": {
+      "sha256": "e26058251c7035c2946bf16b50cd34c18c842befa8106d04ce8c1d87d94b3542",
+      "bytes": 775
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/119-flashback_gui_modal_eligibility_label_regression_test.cjs.txt": {
+      "sha256": "96735eabc1821d81d9cf9f59091c59b5d1bdfd325976e0e71b442368a10698e0",
+      "bytes": 1313
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/170-flashback_scope_panels_browser_test.cjs.txt": {
+      "sha256": "48908d86133cef09723108e940cfe70e7ead6321a20611e2cfb61d2eb1bca817",
+      "bytes": 1170
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/177-flashback_server_inspection_artifact_test.cjs.txt": {
+      "sha256": "3c43ed84c9a2fb597e4eb84472932d879cc1771980966166a7dcbd36e1b5dfa5",
+      "bytes": 1017
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/208-flashback_unchanged_reingest_preservation_runtime_test.cjs.txt": {
+      "sha256": "76a5cb80d629fb701c1a2dfcd2b12522e94ac0d211001cd19959020e33500d15",
+      "bytes": 19602
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/215-global_owner_public_gui_startup_test.cjs.txt": {
+      "sha256": "f9387e46409c9acce0a93bd3c5f626bb8b8860d9eb1c5b02efe68afc483940f2",
+      "bytes": 1264
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/216-global_owner_public_gui_storage_isolation_test.cjs.txt": {
+      "sha256": "b699ad3ee7170d60852f81b0aba4f229eb16ef8d33917913577e344c0d7e6d0f",
+      "bytes": 1284
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/221-gradia_preset_diff_gui_test.cjs.txt": {
+      "sha256": "217f531cdd2675488e34e28722ce883f6920819f5f55818d446cafac8c877646",
+      "bytes": 1234
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/225-gradia_suite_test.cjs.txt": {
+      "sha256": "0555079308b7a01e00b8276f6ccf1f1f1c74da76a40a49abb15c387de65d9504",
+      "bytes": 51383
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/227-gradia_three_owner_connection_test.cjs.txt": {
+      "sha256": "d78c074cf9b037138b2a4d0ebfb849bfd9c683bfc779e17aca7de8b0390839ba",
+      "bytes": 1075
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/229-gradia_three_owner_pipeline_test.cjs.txt": {
+      "sha256": "ffbd66c11a501a4dac25de1b40ed392695567abcfb96e671dc72e773b058c850",
+      "bytes": 1069
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/247-hayaku_canonical_builtin_access_runtime_test.cjs.txt": {
+      "sha256": "78e25ad15a5152f1e83761e064bf714e4f6b84cf21338c1b7dca426363b1b600",
+      "bytes": 4950
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/285-hayaku_gui_workspace_v346_runtime_test.cjs.txt": {
+      "sha256": "2634c88f8b2f4cbec16cae2066d99658d305f1926e85834ee85128c19acb8c20",
+      "bytes": 1087
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/409-lia_manual_release_artifact_test.cjs.txt": {
+      "sha256": "4bbc1d8f952c358ecb9adb6d6574496a16b348ff58629592342afcaa67121f17",
+      "bytes": 1069
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/418-lia_public_asset_server_restore_flow_test.cjs.txt": {
+      "sha256": "abddf77c3789d7d05469334c1bcabbcb68f4cf9e8e9dd3e53cd501dce71bc2d8",
+      "bytes": 1097
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/421-lia_reopen_evolution_gui_test.cjs.txt": {
+      "sha256": "458cf011cd11503102c9a99bd54d7afcd32c8e9c81d73cf7cbdc9e871fd26caa",
+      "bytes": 1238
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/447-libra_book_ux_v513_true_view_layer_contract_test.cjs.txt": {
+      "sha256": "8fdb81a7e3955a26225b681ee4e62f075e40139dbd75f77e0c8292ef85f0aef3",
+      "bytes": 1043
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/507-libra_explicit_reanalysis_drawer_test.cjs.txt": {
+      "sha256": "95a60111db3f7d051017807fc9e8cb48b0f2177063258230ef9ab807b2a1b1ae",
+      "bytes": 1084
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/519-libra_gui_architecture_alignment_contract_test.cjs.txt": {
+      "sha256": "42763e7285e47f0f9d2203ee79117d650ba79eb016dc739ec4c4a812bed6464b",
+      "bytes": 1281
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/520-libra_gui_first_open_cold_cache_test.cjs.txt": {
+      "sha256": "594286a8d16342781b55d96a943923c3b01fe84736d540e7b8dcda486b9bd636",
+      "bytes": 1261
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/522-libra_gui_memory_draft_concurrency_test.cjs.txt": {
+      "sha256": "5c8f19750493784839927479d0dd12153426df4d8c73139754507b7743f11ee1",
+      "bytes": 1270
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/523-libra_gui_memory_settings_storage_modes_test.cjs.txt": {
+      "sha256": "c0aedf4fddeacf7da09205a63d9b2a489743e6c96fd8381c0f86d0c7c2db8b0b",
+      "bytes": 1280
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/524-libra_gui_memory_settings_transaction_test.cjs.txt": {
+      "sha256": "38662bf24d0d677cf25cb597209a01492c10581c7c8ba6394903b907152f54a2",
+      "bytes": 1276
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/527-libra_helper_retirement_runtime_test.cjs.txt": {
+      "sha256": "d1998e6964993f5bc62b31479a5995c251253f7ed2545bc737248df722a15385",
+      "bytes": 1081
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/598-libra_memory_ooc_compatibility_runtime_test.cjs.txt": {
+      "sha256": "1e66f19cb22339b19b673d395553438aa7a064edd6764262bea1ec2a1a1a4abc",
+      "bytes": 1102
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/604-libra_memory_work_status_runtime_test.cjs.txt": {
+      "sha256": "3646db99793592784f1b96948443aa913c519a5a6bdf60dbf77a0afbf020aa17",
+      "bytes": 1085
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/612-libra_micro_inherited_t5_overlap_3mode_test.cjs.txt": {
+      "sha256": "692b871006263e08b11c7345abf84ef8e6680918acb0f443bd39eb07f2b6eec7",
+      "bytes": 496
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/639-libra_narrative_direction_gui_rc2_test.cjs.txt": {
+      "sha256": "80fb0ec3debdcdc41a6e04dde74fecb876301089ac4974a404b3109d5daef657",
+      "bytes": 1265
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/684-libra_portable_pending_queue_runtime_test.cjs.txt": {
+      "sha256": "9743aeb85d29a4e0e969cbd36636a42ee5d9e8b7a63dcbcd54290b6a93c29843",
+      "bytes": 1096
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/694-libra_public_receipt_recovery_flow_test.cjs.txt": {
+      "sha256": "9af627a4c851f55d1bf52e155124560b84e8feb9a11133d01528bad80d42a8cd",
+      "bytes": 1090
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/764-libra_source_input_editor_test.cjs.txt": {
+      "sha256": "df39fb17ab148232c27240b5ec485d384eb7bd2f9134fd952b9c3bf600f3d11d",
+      "bytes": 1063
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/777-libra_story_arc_gui_retirement_rc2_test.cjs.txt": {
+      "sha256": "830cc62c0e302dc20d15a6afa2310d5e0f365f3f871a3c062cfa7ce75687ee17",
+      "bytes": 1267
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/825-loopback_host_compatibility_test.cjs.txt": {
+      "sha256": "e313d3c94968b228e87764f4279f0770ad74032ed22129c5c647867631981f34",
+      "bytes": 475
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/829-manifest_minified_declaration_binding_test.cjs.txt": {
+      "sha256": "885175f60d4019943cefefdabe6e4b5f003057e514fc9849156d7fbfebce4ac0",
+      "bytes": 53824
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/835-namespace_reset_all5_composition_test.cjs.txt": {
+      "sha256": "30023e901a6ceb136b9b72e51ce09258fb7dc021e223fd07aa70afacb59e0271",
+      "bytes": 1469
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/836-namespace_reset_physical_admission_test.cjs.txt": {
+      "sha256": "cbbed7a54cf4ea1e1e6b797eb8ce8296b7d65dc00a974b2f44e75bdda7195056",
+      "bytes": 3780
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/877-plugin_patch_contract_test.cjs.txt": {
+      "sha256": "ad321628356d113b2ea5fc2cda56dd7c41f4d839b5feabc12b689ddffdbe913a",
+      "bytes": 1022
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/944-remote_update_release_zip_runtime_test.cjs.txt": {
+      "sha256": "f616924c26e7b34ebaac8d196cd5baf4f37362279298dde230029cb4898d775e",
+      "bytes": 89323
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/956-retrace_dialog_lifecycle_gui_test.cjs.txt": {
+      "sha256": "35efc15f2df2369490857ecbaed451d4c39ceb2ff655286939a2b908c8c7b23d",
+      "bytes": 1246
+    },
+    "docs/regression/selfaudit-20261012/failure-logs/985-retrace_server_restore_gui_runtime_test.cjs.txt": {
+      "sha256": "f01d0eceef3d901a74ab66cfdb72ae9de3ec1563569247e4ccaa7fbc3986c5c0",
+      "bytes": 1091
+    },
     "docs/regression/selfaudit-20261012/FAILURES.tsv": {
-      "sha256": "cfbe0fd4f607bdd6b4269a6c5189fa343c43faf386e0709103d380c3fddbf501",
+      "sha256": "95cd91df55a1df6507298ff83a7471e9e25d321a4b119a15bd4191a671270d74",
       "bytes": 15458
     },
     "docs/regression/selfaudit-20261012/ISOLATED_RERUNS.tsv": {
