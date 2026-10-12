@@ -1,0 +1,24 @@
+{
+ "pages": "overview,packets,recovery,server,settings,logs",
+ "coldTag": "SELECT:5",
+ "batchTag": "SELECT:5 opts=1/5/10",
+ "coldDialog": "dlg-cold ::  Other Ax Cold Start기존 패킷이 있습니다. 그래도 Cold Start 할까요? 완료된 U+A를 최대 1턴씩 한 번의 Other Ax 호출로 묶고, 결과는 기존과 같은 턴별 패킷으로 저장합니다. 대상 턴완료 U+A 147턴묶음147묶음예상 기본 호출147회추가 복구 허용량0회 (설정에 따름) 기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가됩니다. Provider 비용이 발생할 수 있습니다. 취소Cold ",
+ "coldOther": "1",
+ "coldRunning": " Other Ax Cold Start기존 패킷이 있습니다. 그래도 Cold Start 할까요? 완료된 U+A를 최대 1턴씩 한 번의 Other Ax 호출로 묶고, 결과는 기존과 같은 턴별 패킷으로 저장합니다. 대상 턴완료 U+A 147턴묶음147묶음예상 기본 호출147회추가 복구 허용량0회 (설정에 따름) 기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로",
+ "autoTags": [
+  null,
+  null
+ ],
+ "unsaved": "1개 변경이 저장되지 않았습니다",
+ "badge": {
+  "whileUnsaved": "켜짐 · 저장 전 변경: 꺼짐",
+  "afterSave": "꺼짐",
+  "toggled": false
+ },
+ "ok": {
+  "coldFollowsBatch": true,
+  "noFixed5": true,
+  "badgeFollowsSaved": true
+ },
+ "failed": []
+}

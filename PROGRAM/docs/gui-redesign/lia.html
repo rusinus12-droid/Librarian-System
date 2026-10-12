@@ -424,7 +424,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
     <div class="dialog__actions"><button class="btn" data-close>닫기</button></div></div></div>
 
   <!-- 묶음 폐기 -->
-  <div class="overlay overlay--bottom" id="sheet-bundle-del" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sbd-t">
+  <div class="overlay overlay--bottom" id="sheet-bundle-del" data-require="pid" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sbd-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Discard bundle</div><h2 id="sbd-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이 Persona의 감정 묶음을 폐기할까요?</h2>
     <div class="note note--danger"><b>저장된 감정 이미지 <span id="bd-n">9</span>개와 Visual Lock이 폐기됩니다.</b> 다시 만들려면 Neutral부터 새로 시작해야 합니다. 먼저 ZIP으로 내보내 두는 것을 권장합니다.</div>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="bundle-del" data-toast="감정 묶음을 폐기했습니다. Neutral부터 다시 시작할 수 있습니다. (시안)">폐기</button></div></div></div>
@@ -466,7 +466,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-then-go="edit">‘<span data-fill="name">새 Persona</span>’ 초안 열기</button></div></div></div>
 
   <!-- 작업: 5턴 갱신 -->
-  <div class="overlay" id="job-update" data-cancel-until="3" data-require="name" aria-hidden="true" data-job-labels="계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.">
+  <div class="overlay" id="job-update" data-cancel-until="3" data-require="name" data-start-from="upd-go" aria-hidden="true" data-job-labels="계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="ju-t"><div class="eyebrow">Manual update</div><h2 id="ju-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">TURN 6~10을 분석하고 있어요</h2>
       <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step"><span class="step__no">2</span><b>분석</b></div><div class="step"><span class="step__no">3</span><b>갱신안</b></div><div class="step"><span class="step__no">4</span><b>저장</b></div></div>
@@ -474,15 +474,15 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden data-then-go="mine">내 페르소나로</button></div></div></div>
 
   <!-- 작업: Neutral / 개별 감정 -->
-  <div class="overlay" id="job-neutral" aria-hidden="true" data-inherit-ctx data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|이미지를 생성하는 중|저장 상태를 확인하는 중|이미지를 저장했습니다.">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jn-t"><div class="eyebrow">Image</div><h2 id="jn-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘<span data-fill="emo">neutral</span>’ 이미지를 만들고 있어요</h2>
+  <div class="overlay" id="job-neutral" data-require="pid" aria-hidden="true" data-inherit-ctx data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|이미지를 생성하는 중|저장 상태를 확인하는 중|이미지를 저장했습니다.">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="jn-t"><div class="eyebrow">Image</div><h2 id="jn-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘<span data-fill="name">세라 하운</span>’ · ‘<span data-fill="emo">neutral</span>’ 이미지를 만들고 있어요</h2>
       <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>조건 확인</b></div><div class="step"><span class="step__no">2</span><b>생성</b></div><div class="step"><span class="step__no">3</span><b>저장</b></div></div>
       <div class="dialog__actions"><button class="btn" data-job-cancel data-close>취소</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <!-- 작업: 감정 묶음 (페르소나 생성 작업과 분리) -->
-  <div class="overlay" id="job-emo" aria-hidden="true" data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|neutral 외 11개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성하세요.">
-    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="je-t"><div class="eyebrow">Emotion bundle</div><h2 id="je-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">감정 이미지를 만들고 있어요</h2>
+  <div class="overlay" id="job-emo" data-require="pid" aria-hidden="true" data-job-labels="확정된 생성 조건(Lock)을 확인하는 중|neutral 외 11개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성하세요.">
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="je-t"><div class="eyebrow">Emotion bundle</div><h2 id="je-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘<span data-fill="name">세라 하운</span>’ 감정 이미지를 만들고 있어요</h2>
       <div class="progress" style="margin:12px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>Lock 확인</b></div><div class="step"><span class="step__no">2</span><b>감정 생성</b></div><div class="step"><span class="step__no">3</span><b>저장 확인</b></div></div>
       <p class="hint" style="margin-top:10px">이미지 AI를 감정 수만큼 호출합니다. 이미 있는 감정도 다시 만들어질 수 있습니다.</p>
@@ -776,7 +776,7 @@ function renderAssets(){var pid=asTarget(),p=P[pid],a=(pid&&ASSETS[pid])||{lock:
   var f=p&&(p.adoptedF||p.f);$id('as-sum').textContent=f?[f.appearance,f.age,f.gender].filter(Boolean).join(' · ')||'(외모 정보 없음)':'대상 없음';
   $id('as-lock').textContent=a.lock?'확정됨':'미확정';$id('as-lock').className='badge '+(a.lock?'badge--ok':'badge--warn');
   $id('as-n').textContent=n+' / '+EMO.length;$id('bd-n').textContent=n;$id('as-off').hidden=!imgOff();
-  $id('emo-grid').innerHTML=EMO.map(function(e,i){var d=!!a.done[e],m=e==='neutral';var ctx={emo:m?'neutral (Visual Master)':e,key:e,pid:pid||'',variant:m&&d?'master':d?'has':'none'};
+  $id('emo-grid').innerHTML=EMO.map(function(e,i){var d=!!a.done[e],m=e==='neutral';var ctx={emo:m?'neutral (Visual Master)':e,key:e,pid:pid||'',name:p?p.adoptedName:'',variant:m&&d?'master':d?'has':'none'};
     return '<button class="emo '+(d?'is-done':'is-todo')+(m?' is-master':'')+'" data-open="sheet-emo"'+cx(ctx)+'><div class="avatar'+(d?'':' todo')+'">'+(d?esc(e.charAt(0).toUpperCase()):'?')+'</div>'+esc(e)+'<br>'+(d?'<span class="muted">✓ '+(m?'Master':'완료')+'</span>':'— 아직')+'</button>';}).join('');
   var je=document.getElementById('job-emo');if(je)je.dataset.jobLabels='확정된 생성 조건(Lock)을 확인하는 중|neutral 외 '+(EMO.length-1)+'개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성할 수 있습니다.';}
 /* ---------- 검토 탭 ---------- */
@@ -823,13 +823,13 @@ document.addEventListener('click',function(e){var t=e.target;
   if(t.closest('#rv-ignore')){var r2=REVIEW[cur];if(r2){r2.done='ignore';renderReview();window.suiteToast('수정 제안을 무시했습니다. (시안)');}return;}
   var a=t.closest('[data-act]');if(!a||a.disabled)return;var ov=a.closest('.overlay'),c=(ov&&ov._ctx)||{};
   if(a.dataset.act==='emo-del'&&c.pid&&ASSETS[c.pid]){delete ASSETS[c.pid].done[c.key];renderAssets();}
-  if(a.dataset.act==='bundle-del'){var pid=asTarget();if(pid)ASSETS[pid]={lock:false,done:{}};renderAssets();}
+  if(a.dataset.act==='bundle-del'){var pid=c.pid;if(pid)ASSETS[pid]={lock:false,done:{}};renderAssets();}
   if(a.dataset.act==='upd-restore'){var h=UPD.hist[c.idx];if(h)h.restored=true;renderUpd();}
 });
 document.addEventListener('suite:jobdone',function(e){var c=e.detail.ctx||{};
   if(e.detail.id==='job-update'&&c.pid){UPD.hist.unshift({range:c.range,when:'방금',note:'다음 5턴 분석 · Live Persona 갱신 (표본)',pid:c.pid});UPD.done=0;UPD.from+=5;LIVE[c.pid]=LIVE[c.pid]||{loc:'(이 채팅에서 아직 기록 없음)',item:'—'};renderUpd();}
-  if(e.detail.id==='job-neutral'){var pid=c.pid||asTarget();if(pid){ASSETS[pid]=ASSETS[pid]||{lock:false,done:{}};ASSETS[pid].done[c.key||'neutral']=1;if((c.key||'neutral')==='neutral')ASSETS[pid].lock=true;renderAssets();}}
-  if(e.detail.id==='job-emo'){var p2=asTarget();if(p2){ASSETS[p2]=ASSETS[p2]||{lock:false,done:{}};EMO.forEach(function(x){ASSETS[p2].done[x]=1;});renderAssets();}}
+  if(e.detail.id==='job-neutral'){var pid=c.pid;if(pid&&P[pid]){ASSETS[pid]=ASSETS[pid]||{lock:false,done:{}};ASSETS[pid].done[c.key||'neutral']=1;if((c.key||'neutral')==='neutral')ASSETS[pid].lock=true;renderAssets();}}
+  if(e.detail.id==='job-emo'){var p2=c.pid;if(p2&&P[p2]){ASSETS[p2]=ASSETS[p2]||{lock:false,done:{}};EMO.forEach(function(x){ASSETS[p2].done[x]=1;});renderAssets();}}
   if(e.detail.id==='job-cand'){setTimeout(function(){var grp=[].slice.call(document.querySelectorAll('#dlg-cand [data-detail-root]')).filter(function(g){return !g.hidden;})[0];if(grp){var first=[].slice.call(grp.querySelectorAll('[data-cand]')).filter(function(b){return !b.disabled;})[0];if(first)first.click();}},0);}
 });
 /* 후보: 이미 만든 후보는 다시 고르지 않게 */
@@ -841,6 +841,11 @@ document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-cand')r
   [].slice.call(document.querySelectorAll('#dlg-cand [data-detail-root]')).forEach(function(grp){if(!grp.querySelector('[data-cand].is-on:not([disabled])')){var f=grp.querySelector('[data-cand]:not([disabled])');if(f)f.classList.add('is-on');}});syncCand();});
 /* 이미지 제공자 '사용 안 함'(저장값)이면 이미지 진입점 숨김 */
 var _renderMine=renderMine;renderMine=function(){_renderMine();if(imgOff())document.querySelectorAll('#pocket [data-go="assets"]').forEach(function(b){b.hidden=true;});};
+/* 이미지 작업·묶음 폐기는 누르는 순간의 대상 Persona를 ctx로 고정한다 (진행 중 대상을 바꿔도 결과는 시작한 대상에) */
+document.addEventListener('click',function(e){var b=e.target.closest('[data-run-job="job-emo"],[data-run-job="job-neutral"]:not(.big-choice),[data-open="sheet-bundle-del"]');if(!b)return;
+  var pid=asTarget(),p=pid&&P[pid];var c=JSON.parse(b.dataset.ctx||'{}');c.pid=pid||'';c.name=p?p.adoptedName:'';if(b.dataset.runJob==='job-neutral'&&!c.key)c.key='neutral';
+  if(b.dataset.runJob==='job-emo')c.labels='‘'+(c.name||'?')+'’ Lock을 확인하는 중|neutral 외 '+(EMO.length-1)+'개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|‘'+(c.name||'?')+'’ 감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성할 수 있습니다.';
+  b.setAttribute('data-ctx',JSON.stringify(c));},true);
 document.addEventListener('suite:ready',function(){renderUpd();renderAssets();syncRc();syncChg();});
 
 document.addEventListener('suite:ready',function(){document.querySelectorAll('[data-key]').forEach(function(el){el.dataset.dirtyKey='f:'+el.dataset.key;});document.querySelectorAll('[data-lock]').forEach(function(el){el.dataset.dirtyKey='l:'+el.dataset.lock;});seed();applyPersona('sera');renderAll();});

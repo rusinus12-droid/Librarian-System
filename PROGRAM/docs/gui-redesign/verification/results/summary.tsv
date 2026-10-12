@@ -1,0 +1,87 @@
+script	page	checks	failed	page_errors
+final_lia	lia.html#mine	11	0	0
+r4_lia	lia.html#mine	16	0	0
+r5_lia	lia.html#mine	21	0	0
+final_libra	libra.html	5	0	0
+r5_libra	libra.html#desk	26	0	0
+pr1	libra.html#settings	7	0	0
+final_gated	libra.html	1 rows	0 not-done (대상 필요 작업은 blocked가 정상)	0
+final_hayaku	hayaku.html	3	0	0
+r5_hayaku	hayaku.html#overview	19	0	0
+final_gradia	gradia.html#manage	7	0	0
+r4_gradia	gradia.html#manage	4	0	0
+r5_gr	gradia.html#home	21	0	0
+r4_fb	flashback.html#connect	7	0	0
+r5_fb	flashback.html#lab	23	0	0
+final_retrace	retrace.html#overview	3	0	0
+r5_rt	retrace.html#overview	13	0	0
+final_gated	retrace.html	6 rows	0 not-done (대상 필요 작업은 blocked가 정상)	0
+r6_paths	flashback.html?open=job-maint#care	2	0	0
+r6_paths	retrace.html#server	3	0	0
+r6_paths	lia.html#assets	2	0	0
+r6_paths	libra.html#memory	4	0	0
+r6_extra	lia.html#mine	6	0	0
+r6_extra	libra.html#desk	8	0	0
+r6_extra	hayaku.html#overview	3	0	0
+r6_extra	gradia.html#home	1	0	0
+r6_extra	flashback.html#settings	1	0	0
+r6_extra	gradia.html?mode=rp#home	1	0	0
+sweep_noctx	libra.html	9 clicks	0	0
+sweep_noctx	hayaku.html	6 clicks	0	0
+sweep_noctx	flashback.html	3 clicks	0	0
+sweep_noctx	gradia.html	8 clicks	0	0
+sweep_noctx	lia.html	3 clicks	0	0
+sweep_noctx	retrace.html	2 clicks	0	0
+final_jobs	libra.html	2 rows	2 not-done (대상 필요 작업은 blocked가 정상)	0
+final_jobs	hayaku.html	3 rows	3 not-done (대상 필요 작업은 blocked가 정상)	0
+final_jobs	flashback.html	3 rows	2 not-done (대상 필요 작업은 blocked가 정상)	0
+final_jobs	gradia.html	0 rows	0 not-done (대상 필요 작업은 blocked가 정상)	0
+final_jobs	lia.html	5 rows	1 not-done (대상 필요 작업은 blocked가 정상)	0
+final_jobs	retrace.html	5 rows	3 not-done (대상 필요 작업은 blocked가 정상)	0
+r6_query	lia.html?open=sheet-bind	1	0	0
+r6_query	lia.html?open=sheet-persona	1	0	0
+r6_query	lia.html?open=job-gen	1	0	0
+r6_query	lia.html?open=job-update	1	0	0
+r6_query	lia.html?open=job-neutral	1	0	0
+r6_query	lia.html?open=job-emo	1	0	0
+r6_query	libra.html?open=dlg-range	1	0	0
+r6_query	libra.html?open=job-memory	1	0	0
+r6_query	libra.html?open=job-recover	1	0	0
+r6_query	hayaku.html?open=dlg-compare	1	0	0
+r6_query	hayaku.html?open=job-repair	1	0	0
+r6_query	hayaku.html?open=job-cold	1	0	0
+r6_query	hayaku.html?open=job-regen	1	0	0
+r6_query	retrace.html?open=dlg-del	1	0	0
+r6_query	retrace.html?open=job-next	1	0	0
+r6_query	retrace.html?open=job-del	1	0	0
+r6_query	retrace.html?open=job-restore	1	0	0
+r6_query	retrace.html?open=job-reset	1	0	0
+r6_query	gradia.html?open=dlg-skill	1	0	0
+r6_query	flashback.html?open=dlg-del-items	1	0	0
+r6_query	flashback.html?open=job-maint	1	0	0
+r6_query	flashback.html?open=job-restore	1	0	0
+layout	libra.html?device=mobile	7	0	0
+layout	hayaku.html?device=mobile	6	0	0
+layout	flashback.html?device=mobile	6	0	0
+layout	gradia.html?device=mobile	6	0	0
+layout	lia.html?device=mobile	8	0	0
+layout	retrace.html?device=mobile	4	0	0
+layout	libra.html?device=tablet	7	0	0
+layout	hayaku.html?device=tablet	6	0	0
+layout	flashback.html?device=tablet	6	0	0
+layout	gradia.html?device=tablet	6	0	0
+layout	lia.html?device=tablet	8	0	0
+layout	retrace.html?device=tablet	4	0	0
+layout	libra.html?device=desktop	7	0	0
+layout	hayaku.html?device=desktop	6	0	0
+layout	flashback.html?device=desktop	6	0	0
+layout	gradia.html?device=desktop	6	0	0
+layout	lia.html?device=desktop	8	0	0
+layout	retrace.html?device=desktop	4	0	0
+static_check	index.html	static	0	0
+static_check	libra.html	static	0	0
+static_check	hayaku.html	static	0	0
+static_check	flashback.html	static	0	0
+static_check	gradia.html	static	0	0
+static_check	lia.html	static	0	0
+static_check	retrace.html	static	0	0

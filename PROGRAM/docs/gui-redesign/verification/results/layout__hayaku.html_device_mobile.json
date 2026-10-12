@@ -1,0 +1,41 @@
+{
+ "overview": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "packets": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "recovery": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "server": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "settings": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "logs": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "ok": {
+  "overview": true,
+  "packets": true,
+  "recovery": true,
+  "server": true,
+  "settings": true,
+  "logs": true
+ },
+ "failed": []
+}

@@ -1,0 +1,7 @@
+[
+ "job-next: done steps=4/4 doneBtns=1 cancelVisible=0 msg=새 세션을 만들었습니다. 일부 승계는 결과 화면에서",
+ "job-del: NOT-DONE:undefined steps=0/4 doneBtns=0 cancelVisible=1 msg=준비하는 중",
+ "job-backup: done steps=3/3 doneBtns=1 cancelVisible=0 msg=백업을 만들었습니다. (bk-20261012-230",
+ "job-restore: NOT-DONE:undefined steps=0/3 doneBtns=0 cancelVisible=1 msg=준비하는 중",
+ "job-reset: NOT-DONE:undefined steps=0/4 doneBtns=0 cancelVisible=1 msg=준비하는 중"
+]

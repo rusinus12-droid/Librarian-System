@@ -1,0 +1,10 @@
+{
+ "noTarget": true,
+ "withTarget": "btn disabled=true note hidden=true",
+ "ok": {
+  "typedStillRequired": true,
+  "typedUnlocks": true,
+  "jobStarts": true
+ },
+ "failed": []
+}

@@ -1,0 +1,7 @@
+[
+ "job-cand: done steps=3/3 doneBtns=1 cancelVisible=0 msg=후보가 준비됐어요. 하나를 고르세요.",
+ "job-gen: done steps=4/4 doneBtns=1 cancelVisible=0 msg=완료했어요. 보관함의 초안을 열어 검토하세요. 아직",
+ "job-update: NOT-DONE:undefined steps=0/4 doneBtns=0 cancelVisible=1 msg=준비하는 중",
+ "job-neutral: done steps=3/3 doneBtns=1 cancelVisible=0 msg=이미지를 저장했습니다.",
+ "job-emo: done steps=3/3 doneBtns=1 cancelVisible=0 msg=‘세라 하운’ 감정 묶음을 갱신했습니다. 실패한 감"
+]

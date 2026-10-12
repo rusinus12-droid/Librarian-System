@@ -1,0 +1,23 @@
+{
+ "init": "연결 확인됨 // openai · 1,536차원 · 연결됨",
+ "urlDirty": "연결 확인됨 // openai · 1,536차원 · 연결됨 · 저장 전 변경 있음",
+ "urlSaved": "연결 테스트 필요 // openai · 설정 변경됨 · 연결 테스트 필요",
+ "testToast": "임베딩 테스트 성공: openai · text-embedding-3-small · 주소 https://emb.example.net/v1 · 1,536차원 · 83ms (시안, 화면의 연결 값 전체를 시험합니다. 저장 전 값 포함)",
+ "afterTest": "연결 확인됨 // openai · 1,536차원 · 연결됨",
+ "exactSaved": "연결 테스트 필요 // openai · 설정 변경됨 · 연결 테스트 필요",
+ "backToTested": "연결 확인됨 // openai · 1,536차원 · 연결됨",
+ "selCount": "0 sc-del disabled=true",
+ "proxy0": "open=none page=vault toast=선택한 스코프가 없어 삭제 확인창을 열지 않았습니다. 삭제할 스코프를 먼저 선택하세요.",
+ "direct0": "삭제할 스코프를 선택하지 않았습니다 / go disabled=true / empty shown=true",
+ "proxy2": "dlg-del-scope / 스코프 2개의 기억 420개를 삭제할까요? / 아스텔 / 에피소드 40 · 시험용 채팅 / go disabled=false",
+ "ok": {
+  "urlNeedsTest": true,
+  "testClears": true,
+  "exactEndpointNeedsTest": true,
+  "knownComboOk": true,
+  "proxyBlocked": true,
+  "directBlocked": true,
+  "proxy2Opens": true
+ },
+ "failed": []
+}

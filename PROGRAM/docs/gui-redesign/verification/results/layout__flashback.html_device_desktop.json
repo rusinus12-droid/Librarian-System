@@ -1,0 +1,41 @@
+{
+ "lab": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "vault": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "care": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "connect": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "log": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "settings": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "ok": {
+  "lab": true,
+  "vault": true,
+  "care": true,
+  "connect": true,
+  "log": true,
+  "settings": true
+ },
+ "failed": []
+}

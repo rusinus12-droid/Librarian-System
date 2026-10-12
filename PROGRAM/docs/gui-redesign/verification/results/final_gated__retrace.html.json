@@ -1,0 +1,8 @@
+[
+ "btn-del enabled=true",
+ "job-del: state=done doneBtns=1 resultsShown=1 msg=처리 완료 · 목록을 다시 읽었습니다.",
+ "btn-restore enabled=true",
+ "job-restore: state=done doneBtns=1 resultsShown=1 msg=복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결",
+ "btn-reset enabled=true",
+ "job-reset: state=done doneBtns=1 resultsShown=1 msg=초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연"
+]

@@ -1,0 +1,53 @@
+{
+ "mine": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "make": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "shelf": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "settings": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "edit": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "update": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "assets": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "recover": {
+  "sw": 745,
+  "w": 745,
+  "bad": []
+ },
+ "ok": {
+  "mine": true,
+  "make": true,
+  "shelf": true,
+  "settings": true,
+  "edit": true,
+  "update": true,
+  "assets": true,
+  "recover": true
+ },
+ "failed": []
+}

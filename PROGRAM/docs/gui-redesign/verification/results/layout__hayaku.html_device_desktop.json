@@ -1,0 +1,41 @@
+{
+ "overview": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "packets": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "recovery": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "server": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "settings": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "logs": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "ok": {
+  "overview": true,
+  "packets": true,
+  "recovery": true,
+  "server": true,
+  "settings": true,
+  "logs": true
+ },
+ "failed": []
+}

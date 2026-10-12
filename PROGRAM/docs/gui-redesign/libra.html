@@ -507,7 +507,7 @@
 [T121] A: 아스텔은 주머니에서 열쇠를 꺼냈다. …</pre><div class="dialog__actions"><button class="btn btn--primary" data-close data-autofocus>닫기</button></div></div></div>
 
   <!-- 정본 작업 진행 -->
-  <div class="overlay" id="job-memory" data-require="kind" aria-hidden="true" data-inherit-ctx data-job-labels="대상 TURN과 구간을 확인하는 중|Librarian이 5턴 구간을 분석하는 중|정본 후보를 검증하는 중|결과를 저장하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
+  <div class="overlay" id="job-memory" data-require="kind" data-start-from="range-go" aria-hidden="true" data-inherit-ctx data-job-labels="대상 TURN과 구간을 확인하는 중|Librarian이 5턴 구간을 분석하는 중|정본 후보를 검증하는 중|결과를 저장하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jm-t">
       <div class="split"><div><div class="eyebrow">Canonical Job</div><h2 id="jm-t" data-fill="title">선택한 구간 생성</h2><p class="muted" style="margin:2px 0 0;font-size:12.5px">대상 구간: <b data-fill="target">T91–95</b></p></div><span class="badge badge--info" data-fill="kind">누락 구간 생성</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div>
@@ -564,7 +564,7 @@ document.addEventListener('click',function(e){
     document.getElementById('range-calls').textContent=n+'회 (구간당 1회 · 모델 사용량이 발생할 수 있습니다)';
     document.getElementById('range-effect').textContent=d.e;document.getElementById('kind-hint').textContent=d.h;
     var picked=rows.filter(function(r){var c=r.querySelector('input');return c.checked&&!c.disabled;}).map(function(r){return r.querySelector('b').textContent;});
-    go.textContent=d.t;go.disabled=n===0;go.setAttribute('data-ctx',JSON.stringify({title:d.t,kind:d.k,variant:k,target:picked.join(', '),mem:picked.map(function(t){return MEMOF[t]||t;}).join(', '),range:picked.join(', '),labels:d.l.replace('{t}',picked.join(', '))}));
+    go.textContent=d.t;go.disabled=n===0;go.setAttribute('data-ctx',JSON.stringify({title:d.t,kind:d.k,variant:k,target:picked.join(', '),mem:picked.map(function(t){return window.libraMemOf?window.libraMemOf(t):(MEMOF[t]||t);}).join(', '),range:picked.join(', '),labels:d.l.replace('{t}',picked.join(', '))}));
   }
   document.addEventListener('suite:ready',function(){
     sel=document.getElementById('kind-sel');rows=[].slice.call(document.querySelectorAll('#seglist .segrow'));go=document.getElementById('range-go');
@@ -666,7 +666,7 @@ function syncMargin(){var n=window.suiteDirty('story'),empty=marginFields().ever
   $id('margin-save').disabled=n===0;$id('margin-revert').disabled=n===0;$id('margin-reset').disabled=empty;
   $id('margin-state').textContent=n?'기록하지 않은 변경 '+n+'개 · ‘여백에 기록’을 눌러야 저장됩니다.':'기록된 내용과 같습니다.';}
 /* ---------- 이벤트 ---------- */
-document.addEventListener('suite:ready',function(){seed();counts();renderAI();syncStore();syncDelivery();syncMargin();});
+document.addEventListener('suite:ready',function(){seed();counts();renderAI();syncStore();syncDelivery();syncMargin();rebuildPagers();});
 document.addEventListener('suite:save',function(){setTimeout(function(){syncStore();syncDelivery();},0);});
 document.addEventListener('suite:revert',function(){setTimeout(function(){syncStore();syncDelivery();},0);});
 document.addEventListener('input',function(e){if(e.target.closest&&e.target.closest('#margin-form'))setTimeout(syncMargin,0);
@@ -742,10 +742,31 @@ document.addEventListener('click',function(e){if(e.target.closest('#mg-mode'))se
 /* ---------- 정본 작업 완료 → 구간 상태·수치·버전에 반영 ---------- */
 document.addEventListener('suite:jobdone',function(e){if(e.detail.id!=='job-memory')return;var c=e.detail.ctx||{},picked=(c.range||'').split(', ').filter(Boolean);
   picked.forEach(function(rg){var row=$$('#seglist .segrow').filter(function(r){return r.querySelector('b').textContent===rg;})[0];var id=null;for(var k in MEM)if(MEM[k].range===rg)id=k;
-    if(c.variant==='miss'||c.variant==='fail'){MEMN++;if(row){row.dataset.kinds='regen';row.querySelector('small').textContent='저장됨 · 방금 새로 저장한 정본';var b=row.querySelector('.badge');b.className='badge badge--ok';b.textContent='저장됨';}}
+    if((c.variant==='miss'||c.variant==='fail')&&!id){addMemory(rg,c.kind);MEMN++;if(row){row.dataset.kinds='regen';row.querySelector('small').textContent='저장됨 · 방금 새로 저장한 정본';var b=row.querySelector('.badge');b.className='badge badge--ok';b.textContent='저장됨';}}
     if(c.variant==='regen'&&id){var m=MEM[id],v=nextV(m);m.vers.splice(1,0,{v:v,state:'cand',text:canon(m).text+' (재생성 후보 표본 · 방금)',when:'방금',note:'재생성 후보'});m.runs.unshift({t:'기존 기억 재생성 · 후보 생성',b:'성공',c:'ok',s:'방금 · 후보 '+v+' · 정본은 그대로'});}
     if(c.variant==='reana'&&id){var m3=MEM[id],cv=canon(m3),v3=nextV(m3);cv.state='old';cv.note='재분석 전 정본';m3.vers.unshift({v:v3,state:'canon',text:cv.text+' (재분석 결과 표본)',when:'방금'});m3.runs.unshift({t:'선택 구간 재분석',b:'성공 → 교체',c:'ok',s:'방금 · 새 정본 '+v3});if(row){row.dataset.kinds='regen';row.querySelector('small').textContent='저장됨 · 방금 재분석으로 교체';var b2=row.querySelector('.badge');b2.className='badge badge--ok';b2.textContent='저장됨';}}
-  });counts();});
+  });counts();rebuildPagers();});
+/* ---------- 새로 저장한 정본 기억: 저장소·서가 목록·본문·버전 기록에 실제로 추가 ---------- */
+window.libraMemOf=function(range){for(var k in MEM)if(MEM[k].range===range)return k;return range;};
+function addMemory(range,kind){var m=/T(\d+)–(\d+)/.exec(range);if(!m)return null;var from=+m[1],to=+m[2],num=Math.floor((from-1)/5)+1,id='M-'+num,key='m'+num;if(MEM[id])return id;
+  var title='T'+from+'–'+to+' 구간 기억',deck='새로 분석해 저장한 정본 기억입니다. (표본 · 방금 생성)';
+  MEM[id]={id:id,key:key,from:from,to:to,range:'T'+from+'–'+to,title:title,link:'(이 기억이 바꾼 값 · 표본)',vers:[{v:'v1',state:'canon',text:deck,when:'방금'}],runs:[{t:kind||'누락 구간 생성',b:'성공',c:'ok',s:'방금 · '+range}]};
+  /* 서가 목록: 번호 내림차순 위치에 삽입 */
+  var list=document.querySelector('#memory-root .rail__list'),chs=$$('.chapter',list),btn=document.createElement('button');btn.className='chapter';btn.dataset.selectRow=key;
+  btn.innerHTML='<small>'+id+' · '+range+'</small><b>'+esc(title)+'</b><span>방금 생성</span>';
+  var after=chs.filter(function(c){return +c.dataset.selectRow.slice(1)>num;}).pop();if(after)after.after(btn);else list.appendChild(btn);
+  /* 본문: 기존 정본 페이지 구조를 복제해 대상만 바꾼다 */
+  var tpl=document.querySelector('#memory-root [data-detail="m21"]'),art=tpl.cloneNode(true);art.dataset.detail=key;art.hidden=true;art.classList.remove('is-on');
+  art.querySelector('.eyebrow').textContent=id+' · TURN '+from+'–'+to+' · 정본 · 근거 5';art.querySelector('h2').textContent=title;art.querySelector('.deck').textContent=deck;
+  art.querySelector('.prose').innerHTML='<p>'+esc(range)+' 원문을 분석해 방금 저장한 기억입니다. (표본 본문 · '+id+')</p>';
+  art.querySelector('.margin-notes ul').innerHTML='<li>(표본) 이 구간이 바꾼 값</li>';
+  var ctx={target:id+' · '+title,mem:id,range:range,text:id+' ‘'+title+'’ 교정: ',src:id+' · '+range,last:'T'+to};
+  $$('[data-ctx]',art).forEach(function(b){var o=JSON.parse(b.dataset.ctx);b.setAttribute('data-ctx',JSON.stringify(o.preselect?{preselect:'regen',seg:range}:ctx));});
+  tpl.parentNode.insertBefore(art,tpl.nextSibling);window.suiteIcons(art);rebuildPagers();return id;}
+function rebuildPagers(){var chs=$$('#memory-root .rail__list .chapter');chs.forEach(function(ch,i){var art=document.querySelector('#memory-root [data-detail="'+ch.dataset.selectRow+'"]');if(!art)return;
+  var pb=art.querySelector('.pager button'),nx=chs[i+1],nm=nx&&nx.querySelector('small').textContent.split(' · ')[0];
+  if(nx){pb.disabled=false;pb.removeAttribute('title');pb.dataset.pager=nx.dataset.selectRow;pb.textContent='← '+nm;}else{pb.disabled=true;delete pb.dataset.pager;pb.title='이 회차의 첫 기억입니다';pb.textContent='← 이전 없음';}
+  var ro=art.querySelector('.pager .read-only');if(ro)ro.textContent='서가에 표시된 '+chs.length+'개 중 최신순 '+(i+1)+'번째';});}
 /* ---------- 검색 ---------- */
 document.addEventListener('input',function(e){var t=e.target;if(!t.closest||!t.closest('.rail__search'))return;var q=t.value.trim().toLowerCase(),rail=t.closest('.rail'),shown=0;
   $$('.chapter',rail).forEach(function(ch){var on=!q||ch.textContent.toLowerCase().indexOf(q)>-1;ch.hidden=!on;if(on)shown++;});

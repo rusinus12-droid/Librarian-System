@@ -1,0 +1,117 @@
+id	report	section	status	evidence	note
+COM-01	lia_libra	browser	fixed	r6_query:lia.html?open=sheet-bind;r6_query:lia.html?open=sheet-persona;r6_query:libra.html?open=dlg-range	
+COM-02	lia_libra	browser	fixed	sweep_noctx:*;r5_libra:guardDelVersion;r5_rt:del0Blocked	
+COM-03	lia_libra	browser	fixed	r6_query:lia.html?open=job-gen;r6_query:libra.html?open=job-memory	
+LIA-01	lia_libra	browser	fixed	r5_lia:protoGen	
+LIA-02	lia_libra	browser	fixed	r5_lia:editRedirect	
+LIA-03	lia_libra	browser	fixed	r5_lia:updConsistent;r5_lia:updReady	
+LIA-04	lia_libra	browser	fixed	r5_lia:histAdded	
+LIA-05	lia_libra	browser	fixed	r5_lia:cancelLockedAtSave	
+LIA-06	lia_libra	browser	fixed	r5_lia:assetsPerTarget	
+LIA-07	lia_libra	browser	fixed	r6_extra:LIA-07	
+LIA-08	lia_libra	browser	fixed	r5_lia:imgHidden	표본 기본값을 '워크플로 기반'으로 바꾸고, 저장값이 '사용 안 함'이면 상단 카드의 이미지 진입점을 숨김
+LIA-09	lia_libra	browser	fixed	r5_lia:todoNoDelete;r5_lia:masterNoDelete;r5_lia:emoDeleted	
+LIA-10	lia_libra	browser	fixed	r5_lia:emoListApplied;r6_extra:LIA-10b	
+LIA-11	lia_libra	browser	fixed	r5_lia:recover0;r5_lia:recoverCount	
+LIA-12	lia_libra	browser	fixed	r5_lia:candidateInDraft;r5_lia:draftMarked	
+LIA-13	lia_libra	browser	fixed	r5_lia:reviewApply;r5_lia:reviewPerPersona	
+LIA-14	lia_libra	browser	fixed	r5_lia:search	
+LIA-15	lia_libra	browser	fixed	r6_extra:LIA-15	
+LIA-16	lia_libra	browser	fixed	r5_lia:navShelfMarked;r5_lia:draftMarked;r6_extra:LIA-16b	
+LIA-17	lia_libra	browser	fixed	r6_extra:LIA-17	
+LIA-18	lia_libra	browser	partial		이미 만든 후보는 다시 고를 수 없게 함. 랜덤 '컨셉' 입력이 후보 목록에 반영되지 않는 부분은 미수정. 자동 확인 없음
+LIA-19	lia_libra	browser	fixed	r6_extra:LIA-19	
+LIB-01	lia_libra	browser	fixed	r5_libra:marginSave	
+LIB-02	lia_libra	browser	fixed	r5_libra:marginReset;r5_libra:marginRevert	
+LIB-03	lia_libra	browser	fixed	r5_libra:counts	
+LIB-04	lia_libra	browser	fixed	r5_libra:storeTracked;r5_libra:storeSavedBadge	
+LIB-05	lia_libra	browser	fixed	r5_libra:bannerM23;r6_extra:LIB-05b	
+LIB-06	lia_libra	browser	fixed	r5_libra:promoteCurIsM23	
+LIB-07	lia_libra	browser	fixed	r5_libra:promoteApplied;r5_libra:deleteApplied	
+LIB-08	lia_libra	browser	fixed	r5_libra:regenSingle;r5_libra:regenCandidateListed	
+LIB-09	lia_libra	browser	fixed	r5_libra:missApplied;r6_paths:memoryAdded;r6_paths:detailShown;r6_paths:compareHasCandidate	6차 검토 지적(목록에 기억이 추가되지 않음)을 반영해 재수정
+LIB-10	lia_libra	browser	fixed	r5_libra:evidenceM21;r5_libra:evWorldCount	
+LIB-11	lia_libra	browser	fixed	r5_libra:mergeNeedsPartner;r5_libra:mergeEnabled	
+LIB-12	lia_libra	browser	fixed	r5_libra:pendEmptyForAstel;r5_libra:pendEnabled;r5_libra:pendResolvedGone	
+LIB-13	lia_libra	browser	fixed	r6_extra:LIB-13	
+LIB-14	lia_libra	browser	fixed	r5_libra:promptDiscarded;r5_libra:promptDefault	
+LIB-15	lia_libra	browser	fixed	r5_libra:rebuildBoundary	
+LIB-16	lia_libra	browser	partial	r6_extra:LIB-16	결과를 주장하던 토스트는 정정함. 백업 파일 선택·검사 단계 자체는 구현하지 않음
+LIB-17	lia_libra	browser	fixed	r6_extra:LIB-17	
+LIB-18	lia_libra	browser	fixed	r6_extra:LIB-18	
+LIB-19	lia_libra	browser	fixed	r5_libra:pager	
+LIB-20	lia_libra	browser	fixed	r5_libra:search;r6_extra:LIB-20b	
+LIB-21	lia_libra	browser	fixed	r6_extra:LIB-21	
+S-LIA-1	lia_libra	static	open		Lock 확정 뒤 구도·메모 편집 잠금 미구현
+S-LIA-2	lia_libra	static	fixed	r5_lia:restoreTarget	
+S-LIA-3	lia_libra	static	open		Live Persona 카드가 저장소와 무관한 고정 표시
+S-LIA-4	lia_libra	static	open		원문/번역 보기 전환이 화면 표시를 바꾸지 않음
+S-LIA-5	lia_libra	static	open		자료 항목별 최대 문자 수 등 저장 경로 없음
+S-LIA-6	lia_libra	static	open		Blueprint/JSON 토스트에 대상 이름 없음
+S-LIB-1	lia_libra	static	fixed	r6_extra:S-LIB-1	
+S-LIB-2	lia_libra	static	fixed	r5_libra:promoteApplied	승격 토스트의 이전 정본 버전을 실제 값으로 표시
+S-LIB-3	lia_libra	static	partial	r5_hayaku:trayRunning	공통 작업 트레이로 해결했으나 자동 확인은 HAYAKU 화면에서만 함
+S-LIB-4	lia_libra	static	open		세 인물의 '근거 12 · T125 기준' 고정 표시
+S-LIB-5	lia_libra	static	open		상태창 수치가 별도 리터럴
+S-01	hfgr	browser	fixed	sweep_noctx:*	
+S-02	hfgr	browser	fixed	r5_hayaku:noStaleTitle	
+S-03	hfgr	browser	fixed	r6_extra:S-03	
+HY-01	hfgr	browser	fixed	r5_hayaku:compareReachable;r5_hayaku:trayRunning;r5_hayaku:reopenAndActual	
+HY-02	hfgr	browser	fixed	r5_hayaku:trayRunning;r5_hayaku:trayDone;r5_hayaku:trayIdle	
+HY-03	hfgr	browser	fixed	r5_hayaku:proxyZeroBlocked;r5_hayaku:proxyTwoOpens	
+HY-04	hfgr	browser	fixed	r5_hayaku:extraZeroInDialog;r5_hayaku:extraOne;r5_hayaku:reopenAndActual	
+HY-05	hfgr	browser	fixed	r5_hayaku:coldResult	
+HY-06	hfgr	browser	fixed	r5_hayaku:okConsistent;r5_hayaku:warnBanner2;r5_hayaku:failBlocked	
+HY-07	hfgr	browser	fixed	r5_hayaku:defaultsApplied;r6_extra:HY-07	
+HY-08	hfgr	browser	fixed	r5_hayaku:coldKept	
+HY-09	hfgr	browser	fixed	r5_hayaku:serverReadonly	
+HY-10	hfgr	browser	fixed	r6_query:hayaku.html?open=dlg-compare	
+HY-11	hfgr	browser	fixed	r5_hayaku:footUpdated	
+FB-01	hfgr	browser	fixed	r5_fb:maintBlocked;r6_paths:qOpenBlocked;r6_query:flashback.html?open=job-maint	6차 검토 지적(?open=job-maint)을 반영해 재수정
+FB-02	hfgr	browser	fixed	r5_fb:del0Blocked;r6_query:flashback.html?open=dlg-del-items	
+FB-03	hfgr	browser	fixed	r5_fb:maintStatus	
+FB-04	hfgr	browser	fixed	r5_fb:re0Disabled;r5_fb:reApplied	
+FB-05	hfgr	browser	fixed	r5_fb:mlDone;r5_fb:mlExpired;r5_fb:mlStopEnabled	
+FB-06	hfgr	browser	fixed	r5_fb:defaultsModel	
+FB-07	hfgr	browser	fixed	r5_fb:labModel	
+FB-08	hfgr	browser	fixed	r5_fb:srvReadonly	
+FB-09	hfgr	browser	fixed	r5_fb:embOff;r5_fb:keyNone;r5_fb:testFailsNoKey;r5_fb:keySavedOk	
+FB-10	hfgr	browser	fixed	r5_fb:counts;r5_fb:logCleared	
+FB-11	hfgr	browser	fixed	r5_fb:deletedMarked	
+FB-12	hfgr	browser	fixed	r5_fb:catSwitch	
+GR-01	hfgr	browser	fixed	r5_gr:qBadge	
+GR-02	hfgr	browser	fixed	r5_gr:inputSynced;r5_gr:inputBack	
+GR-03	hfgr	browser	fixed	r5_gr:stageSwitch;r5_gr:shadowOff	
+GR-04	hfgr	browser	fixed	r5_gr:provCount;r5_gr:renamePropagates;r5_gr:shadowModel	
+GR-05	hfgr	browser	fixed	r5_gr:ollamaFails	
+GR-06	hfgr	browser	fixed	r5_gr:impCurrent;r5_gr:impApplied	
+GR-07	hfgr	browser	fixed	r5_gr:closeCount;r5_gr:closeSaved;r5_gr:closeClean	
+GR-08	hfgr	browser	fixed	r5_gr:oocFilled	
+GR-09	hfgr	browser	fixed	r5_gr:skillNoCtxLocked;r6_query:gradia.html?open=dlg-skill	
+GR-10	hfgr	browser	fixed	r6_extra:GR-10	
+GR-11	hfgr	browser	fixed	r5_gr:srcCount;r5_gr:sumReadonly	
+GR-12	hfgr	browser	fixed	r5_gr:libStale;r5_gr:libOff	
+GR-13	hfgr	browser	fixed	r5_gr:recoDisabled	
+RT-01	hfgr	browser	fixed	r5_rt:ctxCleared;r5_rt:del0Blocked;r6_query:retrace.html?open=dlg-del	
+RT-02	hfgr	browser	fixed	r5_rt:pinBlocks;r5_rt:unpin;r5_rt:seaSelectable	
+RT-03	hfgr	browser	fixed	r5_rt:selAllNoActive;r5_rt:activeExcluded	
+RT-04	hfgr	browser	fixed	r5_rt:backupReflected	
+RT-05	hfgr	browser	fixed	r5_rt:retryOk;r5_rt:retryNoneInOk	
+RT-06	hfgr	browser	fixed	r5_rt:noBadJosa	
+RT-07	hfgr	browser	fixed	r5_rt:filter;r5_rt:kindCounts	
+HY-S1	hfgr	static	partial	r6_extra:HY-S1	채택은 한 번만 됨. 실패 기록 삭제·고아 정리 뒤 목록·수 갱신은 미수정
+HY-S2	hfgr	static	open		원장 읽기 실패 시 내보내기·보기 전환 활성, 패킷·로그 검색 미동작
+HY-S3	hfgr	static	open		'패킷 복구 사용'·'HAYAKU 사용' 저장값이 복구 버튼·상단 칩에 반영되지 않음
+FB-S1	hfgr	static	open		벡터 차원을 모델 이름으로만 판정
+FB-S2	hfgr	static	fixed	r6_extra:FB-S2	
+FB-S3	hfgr	static	fixed	r5_fb:restoreLocked	
+GR-S1	hfgr	static	partial	r6_extra:GR-S1	키 삭제는 두 번 눌러 확인. 상단 추가·복제는 동작 없이 안내만 함
+GR-S2	hfgr	static	open		Skill 우선도 숫자 검증·이름 중복·검색 미구현
+GR-S3	hfgr	static	open		Skill 추가·삭제가 즉시 반영되어 저장 막대 되돌리기와 다르다는 안내 없음
+RT-S1	hfgr	static	partial	r5_hayaku:trayRunning	작업 트레이로 다시 열 수 있음. Esc·배경 클릭으로 닫히는 동작은 그대로
+RT-S2	hfgr	static	partial	r5_rt:retryNoneInOk	ok 시나리오에서는 재검증 불가. transferId 고정 표시는 그대로
+R6-1	review6	browser	fixed	r6_paths:qOpenBlocked;r6_query:flashback.html?open=job-maint	Flashback ?open=job-maint 비용 동의 우회
+R6-2	review6	browser	fixed	r6_paths:typedStillRequired;r6_paths:typedUnlocks	RE:TRACE 무대상 창 뒤 정상 대상 창에서 입력 확인 해제
+R6-3	review6	browser	fixed	r6_paths:resultToStartTarget;r6_paths:singleToStartTarget	LIA 감정 작업 결과가 현재 선택 Persona에 반영
+R6-4	review6	browser	fixed	r6_paths:memoryAdded;r6_paths:detailShown;r6_paths:pagerLinked;r6_paths:compareHasCandidate	LIBRA 누락 생성이 기억 목록에 추가되지 않음
+R6-5	self	browser	fixed	r6_query:retrace.html?open=job-next	같은 유형: RE:TRACE ?open=job-next가 '다음 세션' 확인을 건너뜀

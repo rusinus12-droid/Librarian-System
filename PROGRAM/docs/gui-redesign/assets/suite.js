@@ -185,7 +185,9 @@
     $$('.dialog__actions button, [data-act], [data-run-job], [data-job-start]', ov).forEach(function (b) {
       var primary = b.matches('[data-act],[data-run-job],[data-job-start],.btn--primary,.btn--danger,.btn--danger-solid');
       if (!primary) return;
-      if (!ok) { b.dataset.reqLocked = '1'; b.disabled = true; } else if (b.dataset.reqLocked) { delete b.dataset.reqLocked; b.disabled = false; }
+      /* 잠글 때 원래 상태를 기억했다가 풀 때 그대로 돌린다. 입력 확인(data-typed)으로 잠긴 버튼은 대상이 있어도 계속 잠긴다 */
+      if (!ok) { if (!b.dataset.reqLocked) b.dataset.reqPrev = b.disabled ? '1' : '0'; b.dataset.reqLocked = '1'; b.disabled = true; }
+      else if (b.dataset.reqLocked) { delete b.dataset.reqLocked; var typed = b.id && ov.querySelector('[data-typed-target="' + b.id + '"]'); b.disabled = typed ? typed.value.trim() !== typed.dataset.typed : b.dataset.reqPrev === '1'; delete b.dataset.reqPrev; }
     });
     ov.toggleAttribute('data-missing-target', !ok);
     return ok;
@@ -445,7 +447,7 @@
         var nctx = cl.dataset.ctx ? safeJson(cl.dataset.ctx) : (cov && cov._ctx) || null;
         if (cl.dataset.thenOpen) openOv(cl.dataset.thenOpen, nctx);
         if (cl.dataset.thenGo) goPage(cl.dataset.thenGo, nctx ? { ctx: nctx } : null);
-        var rj = cl.closest('[data-run-job]'); if (rj) runJob(rj.dataset.runJob, rj.dataset.ctx ? safeJson(rj.dataset.ctx) : null);
+        var rj = cl.closest('[data-run-job]'); if (rj) startClick = rj; if (rj) runJob(rj.dataset.runJob, rj.dataset.ctx ? safeJson(rj.dataset.ctx) : null);
         return;
       }
       if (t.classList && t.classList.contains('overlay') && !t.dataset.sticky) { closeOv(t); return; }
@@ -491,7 +493,7 @@
       var dv = t.closest('button[data-device]');
       if (dv) { var fr = $('.frame'); fr.dataset.device = dv.dataset.device; $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === dv)); }); return; }
       var job = t.closest('[data-run-job]');
-      if (job) { if (job.disabled) return; runJob(job.dataset.runJob, job.dataset.ctx ? safeJson(job.dataset.ctx) : null); return; }
+      if (job) { if (job.disabled) return; startClick = job; runJob(job.dataset.runJob, job.dataset.ctx ? safeJson(job.dataset.ctx) : null); return; }
     });
     document.addEventListener('input', function (e) {
       var el = e.target;
@@ -543,10 +545,20 @@
     var msg = ov.querySelector('[data-job-msg]'); if (msg) msg.textContent = '중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.';
     toast('중단을 요청했습니다. 이미 전송된 요청은 처리 중일 수 있습니다.');
   }
+  var startClick = null;
   function runJob(id, ctx) {
     var ov = document.getElementById(id); if (!ov) return;
     if (ov.dataset.state === 'running' && ov._t) { openOv(id, ov._ctx); toast('진행 중인 작업이 있어 새로 시작하지 않았습니다. 끝나거나 중단한 뒤 다시 시작하세요.'); return; }
     if (!ctx && ov.hasAttribute('data-inherit-ctx')) ctx = lastCtx;
+    /* data-start-from="버튼 id": 이 작업은 그 버튼(동의·입력 확인이 걸린 정식 시작 버튼)이 켜져 있을 때만 시작한다.
+       ?open=·바로가기·스크립트 등 다른 경로도 같은 조건을 거친다. 시작하면 입력 확인은 한 번 쓴 것으로 보고 다시 잠근다 */
+    if (ov.dataset.startFrom) {
+      var starter = document.getElementById(ov.dataset.startFrom);
+      /* 시작 버튼이 확인창 안에 있으면 그 버튼을 실제로 눌러야 한다(확인창을 건너뛴 시작 차단) */
+      var clicked = startClick === starter; startClick = null;
+      if (!starter || starter.disabled || (starter.closest('.overlay') && !clicked)) { toast(ov.dataset.startBlocked || '시작 조건(동의·확인)을 채우지 않아 작업을 시작하지 않았습니다.'); return; }
+      if (starter.id && document.querySelector('[data-typed-target="' + starter.id + '"]')) starter.disabled = true;
+    }
     resetOverlay(ov); openOv(id, ctx);
     if (ov.dataset.require && !guardRequired(ov, ov._ctx)) { ov.dataset.state = 'blocked'; $$('[data-job-done]', ov).forEach(function (d) { d.hidden = true; }); var bm = ov.querySelector('[data-job-msg]'); if (bm) bm.textContent = '대상이 정해지지 않아 작업을 시작하지 않았습니다.'; return; }
     $$('[data-job-result]', ov).forEach(function (r) { r.hidden = true; });

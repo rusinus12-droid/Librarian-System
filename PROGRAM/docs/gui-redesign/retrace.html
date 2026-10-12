@@ -301,7 +301,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
     <div class="two"><div><b>참여 플러그인 · 저장 모드</b>Flashback · HAYAKU · LIBRA · LIA<br>서버 · 4종 공통</div><div><b>승계할 수량</b>Flashback 기억 1,248개<br>HAYAKU 패킷 147 · Recovery Vault 3<br>LIBRA 기록 412개</div></div>
     <div class="note" style="margin-top:10px"><b>LIA Live Persona</b> · 새 채팅 전용 Fork로 복사합니다. 원본은 그대로 둡니다.</div>
     <p class="hint" style="margin-top:8px">원본 세션 데이터는 변경하지 않습니다. 일부 owner가 실패해도 새 채팅은 보존되며 같은 transfer로 재시도할 수 있습니다.</p>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" data-close data-run-job="job-next">승계 시작</button></div></div></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="btn-next-go" data-close data-run-job="job-next">승계 시작</button></div></div></div>
 
   <!-- 미완료 승계 재검증 -->
   <div class="overlay" id="dlg-retry" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dtr-t">
@@ -338,14 +338,14 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="btn-reset" disabled data-close data-run-job="job-reset">초기화 실행</button></div></div></div>
 
   <!-- 작업: 다음 세션 -->
-  <div class="overlay" id="job-next" aria-hidden="true" data-job-labels="전환·호환성·저장 조건 다시 확인하는 중|새 채팅을 만드는 중|참여 플러그인 기억을 승계하는 중|승계 결과를 검증하는 중|새 세션을 만들었습니다. 일부 승계는 결과 화면에서 확인하세요.">
+  <div class="overlay" id="job-next" data-start-from="btn-next-go" data-start-blocked="‘다음 세션을 만들까요?’ 확인을 거쳐야 승계를 시작합니다. 작업을 시작하지 않았습니다." aria-hidden="true" data-job-labels="전환·호환성·저장 조건 다시 확인하는 중|새 채팅을 만드는 중|참여 플러그인 기억을 승계하는 중|승계 결과를 검증하는 중|새 세션을 만들었습니다. 일부 승계는 결과 화면에서 확인하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jn-t"><div class="split"><div><div class="eyebrow">Working</div><h2 id="jn-t">다음 세션을 만들고 있습니다</h2></div><span class="badge badge--info">창을 닫아도 계속됩니다</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>재확인</b></div><div class="step"><span class="step__no">2</span><b>새 채팅</b></div><div class="step"><span class="step__no">3</span><b>승계</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden data-go="next">결과 보기</button></div></div></div>
 
   <!-- 작업: 사본 삭제 -->
-  <div class="overlay" id="job-del" data-require="name" aria-hidden="true" data-inherit-ctx data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
+  <div class="overlay" id="job-del" data-start-from="btn-del" data-require="name" aria-hidden="true" data-inherit-ctx data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jd-t"><div class="split"><div><div class="eyebrow">Server copy delete</div><h2 id="jd-t">서버 사본 삭제 · <span data-fill="cnt">1개</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>로컬 보존</b></div><div class="step"><span class="step__no">2</span><b>백업·조건</b></div><div class="step"><span class="step__no">3</span><b>삭제</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
@@ -362,7 +362,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
       <div class="dialog__actions"><button class="btn" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <!-- 작업: 복원 -->
-  <div class="overlay" id="job-restore" data-require="bk" aria-hidden="true" data-inherit-ctx data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
+  <div class="overlay" id="job-restore" data-start-from="btn-restore" data-require="bk" aria-hidden="true" data-inherit-ctx data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t"><div class="split"><div><div class="eyebrow">Restore</div><h2 id="jr-t">서버 자료 복원 · <span data-fill="targets">LIBRA · HAYAKU</span></h2></div><span class="badge badge--info" data-fill="bk">bk-20261011-2140 · 어제 21:40</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>검사</b></div><div class="step"><span class="step__no">2</span><b>복원</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div></div>
@@ -370,7 +370,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>닫기</button></div></div></div>
 
   <!-- 작업: 초기화 -->
-  <div class="overlay" id="job-reset" data-require="target" aria-hidden="true" data-inherit-ctx data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
+  <div class="overlay" id="job-reset" data-start-from="btn-reset" data-require="target" aria-hidden="true" data-inherit-ctx data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
     <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jx-t"><div class="split"><div><div class="eyebrow">Reset</div><h2 id="jx-t">서버 기억 초기화 · <span data-fill="target">전체 5개 플러그인</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step" data-variant="default backup"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>비우기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>

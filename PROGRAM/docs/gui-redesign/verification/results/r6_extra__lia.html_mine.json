@@ -1,0 +1,17 @@
+{
+ "LIA-19": "‘세라 하운’ v3을 열었습니다. (시안)",
+ "LIA-15": "채택됨 (최신) disabled=true",
+ "LIA-17": "(이 채팅에서 아직 기록 없음)",
+ "LIA-07": "index=0 value=",
+ "LIA-10b": "0 / 12 | lock=미확정",
+ "LIA-16b": true,
+ "ok": {
+  "LIA-19": true,
+  "LIA-15": true,
+  "LIA-17": true,
+  "LIA-07": true,
+  "LIA-10b": true,
+  "LIA-16b": true
+ },
+ "failed": []
+}

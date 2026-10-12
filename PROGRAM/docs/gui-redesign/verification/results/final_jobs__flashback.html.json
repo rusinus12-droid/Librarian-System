@@ -1,0 +1,5 @@
+[
+ "job-maint: NOT-DONE:undefined steps=0/4 doneBtns=0 cancelVisible=1 msg=작업을 준비합니다.",
+ "job-restore: NOT-DONE:undefined steps=0/3 doneBtns=0 cancelVisible=1 msg=준비하는 중",
+ "job-ml: done steps=3/3 doneBtns=1 cancelVisible=0 msg=검증을 마쳤습니다. (시안: 실제 점수는 표시하지 "
+]

@@ -1,0 +1,52 @@
+{
+ "i4_page": "edit",
+ "i4_adoptBefore": "채택하기/disabled=false",
+ "i4_adoptAfter": "채택됨 (최신)/disabled=true",
+ "i4_bindBtnEnabled": true,
+ "i4_sheetList": [
+  "세세라 하운 (원본)✓ 지금 이 채팅에 연결됨 · 채택",
+  "카카엘 로웬 (원본)＋ 연결 안 됨 · 채택 v1선택",
+  "이이름 없는 길손 (원본)＋ 연결 안 됨 · 채택 v2",
+  "세세라 하운 · Live (‘바닷가 마을’ 관리)🔒 "
+ ],
+ "i4_pocket": "카엘 로웬",
+ "i2_init": "리오넬 / 왕실 근위대 부관",
+ "i2_dirty": "2개 변경이 저장되지 않았습니다 / adoptDisabled=true",
+ "i2_saved": "모든 변경이 저장되어 있습니다 / name=리오넬 베르그 / role=근위대 대장",
+ "i2_afterAdopt": "리오넬 베르그 / 근위대 대장 / 채택됨 (최신)",
+ "i2_shelfHasNewName": true,
+ "i2_reopen": "리오넬 베르그 / 근위대 대장",
+ "i2_mineList": [
+  "리리오넬 베르그 원본채택 v2 · 어느 채팅에도 연",
+  "세세라 하운 원본채택 v3 · 어느 채팅에도 연결되",
+  "카카엘 로웬 원본채택 v1 · 이 채팅에 연결 · ",
+  "이이름 없는 길손 원본채택 v2 · 어느 채팅에도 ",
+  "세세라 하운 · Live Live Persona‘바"
+ ],
+ "i3_settingsDirty": "1개 변경이 저장되지 않았습니다",
+ "i3_navMarks": "settings",
+ "i3_editTitle": "모든 변경이 저장되어 있습니다 / navMarks=settings",
+ "i3_settingsBack": "1개 변경이 저장되지 않았습니다 / model=gpt-x-test",
+ "i3_settingsReverted": "모든 변경이 저장되어 있습니다 / model=model-name",
+ "src_options": [
+  "lionel:리오넬 베르그 (RisuAI Persona · 채택본 v2)",
+  "sera:세라 하운 (RisuAI Persona · 채택본 v3)",
+  "kael:카엘 로웬 (RisuAI Persona · 채택본 v1)",
+  "wanderer:이름 없는 길손 (RisuAI Persona · 채택본 v2)"
+ ],
+ "classic_overlay": "job-gen ::  Working‘이름 없는 길손 · 이 세계판’ 초안을 만들고 있어요클래식 생성 준비하는 중 1자료2생성3검사4보관 요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다. 대상이 선택되지 않았습니다. 목록에서 대상을 고른 뒤 다시 여세요.취소‘이름 없는 길손 · 이 세계판’ 초안 열기",
+ "ok": {
+  "i4_kaelInList": true,
+  "i4_pocketKael": true,
+  "i2_adoptBlockedWhileDirty": true,
+  "i2_valuesKeptAfterAdopt": true,
+  "i2_reopenKept": true,
+  "i2_mineHasNewName": true,
+  "i3_editSavedLabel": true,
+  "i3_settingsStillMarked": true,
+  "i3_settingsDirtyStillCounted": true,
+  "i3_revertOk": true,
+  "classic_usesSelected": true
+ },
+ "failed": []
+}

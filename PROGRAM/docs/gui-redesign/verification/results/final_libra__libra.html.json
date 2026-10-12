@@ -1,0 +1,35 @@
+{
+ "firstOpen": {
+  "kind": "regen",
+  "checked": [
+   "T121–125 선택"
+  ],
+  "n": "1",
+  "calls": "1회 (구간",
+  "go": false
+ },
+ "afterExtra": [
+  "T106–110 선택"
+ ],
+ "secondOpen": {
+  "kind": "regen",
+  "checked": [
+   "T111–115 선택"
+  ],
+  "n": "1"
+ },
+ "job": " Canonical Job선택한 기억의 재생성 후보 만들기대상 구간: T111–115기존 기억 재생성 작업을 준비합니다. 1대상 확인TURN 범위2분석Librarian3검증근거 대조4저장readback4후보 보관정본 변경 없음 정본 기억 · T111–115새로 저장됨누락 구간의 기억을 새로 만들었습니다. (표본 결과)현재 상태앞 구간부터 순서대로 반영 이전 실패 작업폐기됨정본 기억 · T111–115새로 분석·저장(표본 결과)현재 상태일부 보류빈 구간이나 확인할",
+ "plainOpen": {
+  "kind": "miss",
+  "checked": []
+ },
+ "syncPeers": 2,
+ "ok": {
+  "firstOnlyM25": true,
+  "secondOnlyM23": true,
+  "jobMentionsM23": true,
+  "plainOpenEmpty": true,
+  "syncMirrored": true
+ },
+ "failed": []
+}
