@@ -213,10 +213,16 @@
     trackedControls().forEach(function (el) { if (!scope || scopeOf(el) === scope) baseline.set(el, readVal(el)); });
     recompute();
   }
+  /* 새로 만든 컨트롤은 만들어진 순간의 값을 기준값으로 등록한다.
+     (처음 변경 때 등록하면 그 변경이 기준값이 되어 미저장으로 잡히지 않는다) */
+  function registerNew(root) {
+    trackedControls().forEach(function (el) { if (!baseline.has(el) && (!root || root.contains(el))) baseline.set(el, readVal(el)); });
+  }
+  window.suiteRegister = function (root) { registerNew(root); recompute(); };
   function recompute() {
     dirtyBy = {}; var seen = {};
     trackedControls().forEach(function (el) {
-      if (!baseline.has(el)) baseline.set(el, readVal(el));
+      if (!baseline.has(el)) baseline.set(el, readVal(el)); /* 안전망: registerNew가 놓친 경우 */
       if (baseline.get(el) !== readVal(el)) {
         var sc = scopeOf(el);
         /* 같은 값을 여러 칸이 공유하면(data-dirty-key) 한 개 변경으로 센다 */
@@ -436,6 +442,10 @@
     var pb = $('.proto-bar'); if (pb && !$('.proto-note', pb)) { var pn = document.createElement('span'); pn.className = 'proto-note'; pn.textContent = '표본 데이터 · 저장/삭제/진행은 시연용'; pb.appendChild(pn); }
     document.addEventListener('suite:page', renderSave);
     presetInit(); autoLabel(); snapshot(); renderSave();
+    /* 화면 스크립트가 나중에 추가하는 컨트롤도 DOM에 들어오는 즉시 기준값 등록 (사용자 입력보다 먼저 실행됨) */
+    if (window.MutationObserver) new MutationObserver(function (ms) {
+      if (ms.some(function (m) { return [].some.call(m.addedNodes, function (n) { return n.nodeType === 1 && (n.matches('input,select,textarea,.choices,.seg') || n.querySelector('input,select,textarea,.choices,.seg')); }); })) registerNew();
+    }).observe(document.body, { childList: true, subtree: true });
     var h = (location.hash || '').replace('#', '');
     var qs = new URLSearchParams(location.search);
     if (qs.get('device')) { var fr = $('.frame'); if (fr) { fr.dataset.device = qs.get('device'); $$('button[data-device]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.device === qs.get('device'))); }); } }

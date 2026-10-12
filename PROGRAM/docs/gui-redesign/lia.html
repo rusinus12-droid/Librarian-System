@@ -217,7 +217,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       </div></div>
 
       <div data-subpanel="all" data-group="ed"><div class="stack">
-        <div class="seg" id="ed-lang" role="group" aria-label="보기 언어" data-dirty><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
+        <div class="seg" id="ed-lang" role="group" aria-label="보기 언어"><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
         <p class="hint">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>
         <div class="card card--tight">
 <div class="fld"><div class="fld__head"><label for="f-name">이름</label><code class="fld__key">name</code></div><input class="input" id="f-name" data-key="name" value="세라 하운"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="name" aria-label="이름 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="name"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
@@ -253,8 +253,8 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
         <div class="card"><div class="card__head"><div><h2 class="card__title">수정 미리보기</h2><p class="card__desc">적용 전에 바뀔 내용을 확인합니다.</p></div></div>
           <div class="diff-row"><b>숨은 면</b><div><del>모든 선택에서 기록을 우선한다</del> <ins>기록에 대한 집착이 크지만 최종 선택은 상황에 맡긴다</ins></div></div>
           <div class="cluster" style="margin-top:10px"><button class="btn btn--primary" data-toast="수정을 초안에 적용했습니다. (시안)">초안에 적용</button><button class="btn" data-toast="수정 제안을 무시했습니다. (시안)">무시</button></div></div>
-        <div class="card"><div class="card__head"><div><h2 class="card__title">밀도 변환</h2><p class="card__desc">RisuAI Persona로 채택할 때 길이를 선택합니다.</p></div></div>
-          <div class="choices" id="ed-density" data-dirty><button class="choice"><b>Full</b><span>전체 항목</span></button><button class="choice is-on"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class="choice"><b>Compact</b><span>짧게 압축</span></button></div></div>
+        <div class="card"><div class="card__head"><div><h2 class="card__title">밀도 변환</h2><p class="card__desc">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>
+          <div class="choices" id="ed-density"><button class="choice"><b>Full</b><span>전체 항목</span></button><button class="choice is-on"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class="choice"><b>Compact</b><span>짧게 압축</span></button></div></div>
       </div></div>
 
       <div data-subpanel="ver" data-group="ed"><div class="stack">
@@ -272,7 +272,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
         <div class="target-card"><h3>② RisuAI Persona로 채택 <small data-fill="adoptText">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>
           <div class="field"><label>채택할 내용</label><div class="seg" id="ad-lang" role="group" aria-label="채택본"><button aria-pressed="true">원문</button><button aria-pressed="false">번역본</button></div></div>
           <div class="choices" id="ad-mode"><button class="choice is-on"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class="choice"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>
-          <div class="note"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>을 기준으로 합니다.</div>
+          <dl class="kv" style="margin:0"><dt>밀도</dt><dd id="ad-density-label">Standard</dd></dl><p class="hint" style="margin:0">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class="hint" id="adopt-diff" hidden style="margin:0"></p><div class="note"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>
           <p class="hint" id="hint-adopt" hidden style="color:var(--danger-ink)">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>
           <div class="cluster"><button class="btn btn--primary" id="btn-adopt" data-toast="‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)">채택하기</button><button class="btn btn--sm btn--danger" id="btn-del-persona" data-open="sheet-del-persona">생성한 Persona 정리…</button></div><p class="hint" id="hint-del-persona" hidden>아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden></div></div>
         <div class="target-card"><h3>③ 현재 채팅에 연결 <small data-fill="bindText">이 채팅에 연결됨</small></h3><p class="muted" style="margin:0;font-size:13px">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>
@@ -380,6 +380,14 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
     <p class="hint" style="margin-top:10px">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>
     <div class="dialog__actions"><button class="btn" data-close>닫기</button><button class="btn btn--primary" id="btn-bind-go" data-close data-act="bind-go" data-toast="‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)">연결하기</button></div><p class="hint" id="bind-hint" style="margin:6px 0 0" hidden></p><div hidden></div></div></div>
 
+  <!-- RisuAI Persona 관리: 보관함 항목이 없어도 채택본·연결을 관리 -->
+  <div class="overlay overlay--bottom" id="sheet-persona" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="spm-t">
+    <div class="eyebrow">RisuAI Persona</div><h2 id="spm-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">‘<span data-fill="name">세라 하운</span>’ 관리</h2>
+    <dl class="kv" id="spm-kv"></dl>
+    <p class="hint" id="spm-note" style="margin:8px 0 0"></p>
+    <div class="stack stack--sm" id="spm-act" style="margin-top:12px"></div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button></div></div></div>
+
   <!-- 연결 해제 -->
   <div class="overlay overlay--bottom" id="sheet-unbind" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="su-t">
     <div class="eyebrow">Unlink</div><h2 id="su-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">이 채팅에서 ‘<span data-fill="name">세라 하운</span>’ 연결을 해제할까요?</h2>
@@ -389,14 +397,14 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   <!-- 보관함 항목 삭제 -->
   <div class="overlay overlay--bottom" id="sheet-del-vault" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdv-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Delete vault item</div><h2 id="sdv-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">보관함의 ‘<span data-fill="name">카엘 로웬</span>’ 항목을 삭제할까요?</h2>
-    <p class="muted" style="margin:0 0 8px;font-size:13px">삭제 대상: 최신 <span data-fill="ver">v1</span> 포함 버전 <span data-fill="verCount">1</span>개 · <span data-fill="mode">랜덤 신규 생성</span> · <span data-fill="adoptNote">채택 전</span></p><div class="note note--danger"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-vault" data-toast="‘{name}’ 보관함 항목을 삭제했습니다. 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. (시안)" data-then-go="shelf">보관함에서 삭제</button></div></div></div>
+    <p class="muted" style="margin:0 0 8px;font-size:13px">삭제 대상: 최신 <span data-fill="ver">v1</span> 포함 버전 <span data-fill="verCount">1</span>개 · <span data-fill="mode">랜덤 신규 생성</span> · <span data-fill="adoptNote">채택 전</span></p><div class="note note--danger"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class="hint" style="margin:8px 0 0" data-fill="afterVault"></p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-vault" data-toast="‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)" data-then-go="shelf">보관함에서 삭제</button></div></div></div>
 
   <!-- 생성 Persona 정리 -->
   <div class="overlay overlay--bottom" id="sheet-del-persona" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sdp-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Clean up Persona</div><h2 id="sdp-t" style="margin:2px 0 8px;font:800 19px var(--font-display)">LIA가 만든 RisuAI Persona ‘<span data-fill="name">세라 하운</span>’ 항목을 정리할까요?</h2>
-    <div class="note note--danger"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. 보관함 항목은 그대로 남으며, 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-persona" data-toast="RisuAI Persona ‘{name}’ 항목을 정리했습니다. 보관함 항목은 남아 있습니다. (시안)">Persona 정리</button></div></div></div>
+    <div class="note note--danger"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill="vaultAfter">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-act="del-persona" data-toast="RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)">Persona 정리</button></div></div></div>
 
   <!-- 이전 바인딩 복원 -->
   <div class="overlay overlay--bottom" id="sheet-restore" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sr-t">
@@ -489,7 +497,9 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
    LIA 시안의 상태 모델 — 선택·편집·저장·채택·연결이 모두 아래 한 저장소(P, BOUND)를 읽고 쓴다.
    - P[id].f        : 저장된 Persona 값 (23개 항목)
    - 화면 입력칸     : 편집 중인 값(초안). 저장 전에는 P를 바꾸지 않는다
-   - P[id].adopted* : RisuAI Persona로 채택한 버전·이름 (보관함 이름과 별개)
+   - P[id].adopted* : RisuAI Persona로 채택한 버전·이름·내용(adoptedF)·옵션(adoptedOpt)
+                      보관함 최신본(P[id].f)과 따로 보존한다. 생성 재료·연결은 채택본을 쓴다
+   - P[id].ui       : 보기 언어·밀도·채택 내용·저장 방식 (채택 옵션, 저장 막대와 별개)
    - BOUND          : 이 채팅에 연결된 Persona (한 채팅에 하나)
    - P[id].inVault  : 보관함에 있는지 (보관함 삭제 ≠ Persona 삭제)
    ===================================================================== */
@@ -505,8 +515,18 @@ function setCtx(el,o){if(el)el.setAttribute('data-ctx',JSON.stringify(o));}
 function ver(p){return p.vers[0];}
 function fillF(f){var o={};META.forEach(function(m){o[m.k]=(f&&f[m.k])||'';});return o;}
 function mk(id,mode,color,f,vers,adopted,adoptedVer,adoptedName){
-  var p={id:id,mode:mode,color:color,f:fillF(f),locks:{},ui:{},vers:vers,adopted:!!adopted,adoptedVer:adoptedVer||null,adoptedName:adoptedName||null,inVault:true,draft:null};
-  p.vers[0].f=clone(p.f);return p;}
+  var p={id:id,mode:mode,color:color,f:fillF(f),locks:{},ui:{lang:0,density:1,adLang:0,adMode:0},vers:vers,adopted:!!adopted,adoptedVer:adoptedVer||null,adoptedName:adoptedName||null,adoptedF:null,adoptedOpt:null,inVault:true,draft:null};
+  p.vers[0].f=clone(p.f);if(p.adopted){p.adoptedF=clone(p.f);p.adoptedOpt=curOpt(p);}return p;}
+var DEN=['Full','Standard','Compact'],ALANG=['원문','번역본'],AMODE=['현재 채팅 전용','새 Persona로 저장'];
+function curOpt(p){return {density:p.ui.density,lang:p.ui.adLang,mode:p.ui.adMode};}
+function optText(o){return ALANG[o.lang]+' · '+DEN[o.density]+' · '+AMODE[o.mode];}
+/* 채택본과 지금(보관함 최신 저장본 + 채택 옵션)의 차이. 비어 있으면 다시 채택할 것이 없다 */
+function adoptDiff(p){var d={content:false,opts:[]};if(!p.adopted)return d;
+  d.content=p.inVault&&p.adoptedVer!==ver(p).n;var a=p.adoptedOpt,u=curOpt(p);
+  if(a.density!==u.density)d.opts.push('밀도 '+DEN[a.density]+' → '+DEN[u.density]);
+  if(a.lang!==u.lang)d.opts.push('채택 내용 '+ALANG[a.lang]+' → '+ALANG[u.lang]);
+  if(a.mode!==u.mode)d.opts.push('저장 방식 '+AMODE[a.mode]+' → '+AMODE[u.mode]);
+  d.any=d.content||d.opts.length>0;return d;}
 function seed(){
   var sf={};META.forEach(function(m){sf[m.k]=m.v;});
   P.sera=mk('sera','클래식 생성','',sf,[{n:3,when:'방금',note:'수동 편집 · 항목 2개 변경'},{n:2,when:'어제',note:'항목 재생성 (성격)'},{n:1,when:'3일 전',note:'클래식 생성 · 원본: 세라 하운'}],true,3,'세라 하운');
@@ -528,33 +548,40 @@ function risuList(){return ORDER.map(function(i){return P[i];}).filter(function(
 /* ---------- 목록 렌더링: 모두 P에서 ---------- */
 function renderMine(){
   var b=BOUND&&P[BOUND];var pk=$id('pocket');
-  if(b){var stale=b.adoptedVer!==ver(b).n;
-    pk.innerHTML=av(b,b.adoptedName)+'<div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">'+esc(b.adoptedName)+'</h2><p>원본: RisuAI Persona ‘'+esc(b.adoptedName)+'’ (v'+b.adoptedVer+') · Live: 이 채팅 소유 복사본'+(stale&&b.inVault?' · 보관함에는 더 새로운 v'+ver(b).n+'가 있습니다':'')+'</p></div>'
-    +'<div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button><button class="btn" data-go="edit"'+cx({pid:b.id})+(b.inVault?'':' disabled title="보관함에서 삭제되어 편집할 수 없습니다"')+'><i data-i="pen"></i>편집</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button></div>';
+  if(b){var stale=b.inVault&&b.adoptedVer!==ver(b).n;
+    pk.innerHTML=av(b,b.adoptedName)+'<div><span class="bind bind--here"><i data-i="check" data-size="sm"></i>이 채팅에 연결됨</span><h2 style="margin-top:6px">'+esc(b.adoptedName)+'</h2><p>원본: RisuAI Persona ‘'+esc(b.adoptedName)+'’ (채택본 v'+b.adoptedVer+' · '+esc(optText(b.adoptedOpt))+') · Live: 이 채팅 소유 복사본'+(stale?' · 보관함에는 아직 채택하지 않은 v'+ver(b).n+' 수정본이 있습니다':'')+(b.inVault?'':' · 보관함 항목은 삭제됨')+'</p></div>'
+    +'<div class="pocket__act"><button class="btn btn--primary" data-go="update"><i data-i="sync"></i>수동 갱신</button>'+(b.inVault?'<button class="btn" data-go="edit"'+cx({pid:b.id})+'><i data-i="pen"></i>편집</button>':'')+'<button class="btn" data-open="sheet-persona"'+cx({pid:b.id})+'><i data-i="gear"></i>관리</button><button class="btn" data-go="assets"><i data-i="image"></i>이미지·감정</button><button class="btn" data-open="sheet-bind"><i data-i="link"></i>연결 변경</button></div>';
   }else{
     pk.innerHTML='<div class="avatar avatar--n">?</div><div><span class="bind bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨</span><h2 style="margin-top:6px">연결된 Persona 없음</h2><p>RisuAI 기본 Persona가 그대로 적용되고 있습니다. LIA는 기본 Persona 선택을 바꾸지 않습니다.</p></div><div class="pocket__act"><button class="btn btn--primary" data-open="sheet-bind"><i data-i="link"></i>Persona 연결…</button><button class="btn" data-go="make"><i data-i="spark"></i>새로 만들기</button></div>';}
   var list=risuList();var h='';
   list.forEach(function(p){var on=BOUND===p.id;
-    h+='<button class="pcard" data-open="sheet-bind"'+cx({bindTo:p.id})+'>'+av(p,p.adoptedName,true)+'<div><b>'+esc(p.adoptedName)+' <span class="muted" style="font-weight:500">원본</span></b><small>채택 v'+p.adoptedVer+(on?' · 이 채팅에 연결':' · 어느 채팅에도 연결되지 않음')+'</small></div><div class="pcard__side"><span class="bind '+(on?'bind--here"><i data-i="check" data-size="sm"></i>이 채팅':'bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨')+'</span></div></button>';});
+    h+='<button class="pcard" data-open="sheet-persona"'+cx({pid:p.id})+' aria-label="'+esc(p.adoptedName)+' 관리">'+av(p,p.adoptedName,true)+'<div><b>'+esc(p.adoptedName)+' <span class="muted" style="font-weight:500">원본</span></b><small>채택 v'+p.adoptedVer+(on?' · 이 채팅에 연결':' · 어느 채팅에도 연결되지 않음')+(p.inVault?'':' · 보관함 항목 없음')+' · 눌러서 관리</small></div><div class="pcard__side"><span class="bind '+(on?'bind--here"><i data-i="check" data-size="sm"></i>이 채팅':'bind--none"><i data-i="plus" data-size="sm"></i>연결 안 됨')+'</span></div></button>';});
   h+='<div class="pcard" aria-disabled="true" style="opacity:.8"><div class="avatar avatar--sm avatar--b">세</div><div><b>세라 하운 · Live <span class="muted" style="font-weight:500">Live Persona</span></b><small>‘바닷가 마을’ 채팅이 관리 중</small></div><div class="pcard__side"><span class="bind bind--other"><i data-i="lock" data-size="sm"></i>다른 채팅 관리 · 직접 연결 불가</span></div></div>';
-  if(!list.length)h='<div class="empty"><b>채택한 Persona가 없습니다</b><span>보관함의 Persona를 RisuAI Persona로 채택하면 이곳에서 연결할 수 있습니다.</span></div>'+h;
+  if(!list.length)h='<div class="empty"><b>채택한 Persona가 없습니다</b><span>보관함의 Persona를 RisuAI Persona로 채택하면 이곳에서 연결·정리할 수 있습니다.</span></div>'+h;
   $id('mine-list').innerHTML=h;window.suiteIcons($id('pocket'));window.suiteIcons($id('mine-list'));
 }
 function renderShelf(){
   var items=ORDER.map(function(i){return P[i];}).filter(function(p){return p&&p.inVault;});var h='';
-  items.forEach(function(p){var v=ver(p),stale=p.adopted&&p.adoptedVer!==v.n;
-    var badge=p.adopted?(stale?'<span class="badge badge--warn">채택 v'+p.adoptedVer+' · 수정본 미반영</span>':'<span class="badge badge--ok">채택됨</span>'):'<span class="badge badge--warn">초안</span>';
+  items.forEach(function(p){var v=ver(p),dd=adoptDiff(p);
+    var badge=p.adopted?(dd.content?'<span class="badge badge--warn">채택 v'+p.adoptedVer+' · 수정본 미반영</span>':(dd.opts.length?'<span class="badge badge--warn">채택됨 · 옵션 변경 미반영</span>':'<span class="badge badge--ok">채택됨</span>')):'<span class="badge badge--warn">초안</span>';
     h+='<button class="row" data-go="edit"'+cx({pid:p.id})+'>'+av(p,p.f.name,true)+'<div><div class="row__title">'+esc(p.f.name)+' '+badge+'</div><div class="row__meta">'+esc(p.mode)+' · v'+v.n+' · 수정 '+esc(v.when)+(BOUND===p.id?' · 이 채팅에 연결':'')+'</div></div><i class="ic faint" data-i="arrow"></i></button>';});
   $id('shelf-list').innerHTML=h;$id('shelf-empty').hidden=items.length>0;$id('shelf-n').textContent=items.length;$id('nav-shelf-n').textContent=items.length;
   window.suiteIcons($id('shelf-list'));
 }
 function renderSources(){
   var sel=$id('src-sel'),keep=sel.value,list=risuList();
-  sel.innerHTML=list.map(function(p){return '<option value="'+p.id+'">'+esc(p.adoptedName)+' (RisuAI Persona)</option>';}).join('');
+  sel.innerHTML=list.map(function(p){return '<option value="'+p.id+'">'+esc(p.adoptedName)+' (RisuAI Persona · 채택본 v'+p.adoptedVer+')</option>';}).join('');
   if(keep&&P[keep]&&P[keep].adopted)sel.value=keep;
   var has=list.length>0;$id('mk-classic').disabled=!has;
-  $id('src-hint').textContent=has?'성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.':'출발점이 될 RisuAI Persona가 없습니다. 먼저 Persona를 채택하세요.';
+  srcHint();
 }
+/* 생성 재료는 '채택한 RisuAI Persona' 내용이다. 보관함의 채택 전 수정본은 쓰지 않는다 */
+function srcHint(){var p=P[$id('src-sel').value],h=$id('src-hint');
+  if(!p){h.textContent='출발점이 될 RisuAI Persona가 없습니다. 먼저 Persona를 채택하세요.';return;}
+  var t='채택한 RisuAI Persona ‘'+p.adoptedName+'’ (채택본 v'+p.adoptedVer+')의 내용을 출발점으로 씁니다.';
+  if(p.inVault&&ver(p).n!==p.adoptedVer)t+=' 보관함에는 v'+ver(p).n+' 수정본이 있지만 아직 채택하지 않아 생성 재료에 쓰지 않습니다. 수정본을 쓰려면 먼저 채택하세요.';
+  h.textContent=t;}
+document.addEventListener('change',function(e){if(e.target.id==='src-sel')srcHint();});
 function renderAssetTarget(){
   var sel=$id('asset-target'),keep=sel.value,list=risuList(),b=BOUND&&P[BOUND];
   sel.innerHTML='<option value="">자동 (현재 Source Persona) · '+esc(b?b.adoptedName:'연결 없음')+'</option>'+list.map(function(p){return '<option value="'+p.id+'">'+esc(p.adoptedName)+'</option>';}).join('');
@@ -568,16 +595,16 @@ function populate(p){
   var root=$id('edit-root');
   root.querySelectorAll('[data-key]').forEach(function(el){el.value=p.f[el.dataset.key]||'';});
   root.querySelectorAll('[data-lock]').forEach(function(el){el.checked=!!p.locks[el.dataset.lock];});
-  setIdx($id('ed-lang'),p.ui.lang||0);setIdx($id('ed-density'),p.ui.density==null?1:p.ui.density);
-  setIdx($id('ad-lang'),p.ui.adLang||0);setIdx($id('ad-mode'),p.ui.adMode||0);
+  setIdx($id('ed-lang'),p.ui.lang);setIdx($id('ed-density'),p.ui.density);
+  setIdx($id('ad-lang'),p.ui.adLang);setIdx($id('ad-mode'),p.ui.adMode);
 }
 function readDraft(){var f={},locks={};META.forEach(function(m){var el=$id('f-'+m.k);f[m.k]=el?el.value:'';var c=document.querySelector('[data-lock="'+m.k+'"]');locks[m.k]=!!(c&&c.checked);});
-  return {f:f,locks:locks,lang:idx($id('ed-lang')),density:idx($id('ed-density'))};}
-function writeDraft(d){META.forEach(function(m){document.querySelectorAll('[data-key="'+m.k+'"]').forEach(function(el){el.value=d.f[m.k]||'';});var c=document.querySelector('[data-lock="'+m.k+'"]');if(c)c.checked=!!d.locks[m.k];});setIdx($id('ed-lang'),d.lang);setIdx($id('ed-density'),d.density);}
+  return {f:f,locks:locks};}
+function writeDraft(d){META.forEach(function(m){document.querySelectorAll('[data-key="'+m.k+'"]').forEach(function(el){el.value=d.f[m.k]||'';});var c=document.querySelector('[data-lock="'+m.k+'"]');if(c)c.checked=!!d.locks[m.k];});}
 function editInfo(p){var v=ver(p),stale=p.adopted&&p.adoptedVer!==v.n;
   return {pid:p.id,name:p.f.name,mode:p.mode,ver:'v'+v.n,verCount:String(p.vers.length),
-    statusText:(p.adopted?'채택됨 · v'+p.adoptedVer+(stale?' (수정본 v'+v.n+' 미반영)':''):'아직 채택 전 (보관함 초안)')+' · '+(BOUND===p.id?'이 채팅에 연결됨':'이 채팅에 연결 안 됨'),
-    adoptText:p.adopted?'채택됨 · RisuAI Persona ‘'+p.adoptedName+'’ (v'+p.adoptedVer+')':'아직 채택 전 · 여기서 비로소 Persona가 만들어집니다',
+    statusText:(p.adopted?'채택됨 · v'+p.adoptedVer+' · '+optText(p.adoptedOpt)+(stale?' (수정본 v'+v.n+' 미반영)':''):'아직 채택 전 (보관함 초안)')+' · '+(BOUND===p.id?'이 채팅에 연결됨':'이 채팅에 연결 안 됨'),
+    adoptText:p.adopted?'채택됨 · RisuAI Persona ‘'+p.adoptedName+'’ (v'+p.adoptedVer+' · '+optText(p.adoptedOpt)+')':'아직 채택 전 · 여기서 비로소 Persona가 만들어집니다',
     bindText:BOUND===p.id?'이 채팅에 연결됨':(p.adopted?'이 채팅에 연결 안 됨':'채택 후 연결 가능'),
     adoptNote:p.adopted?'채택한 RisuAI Persona ‘'+p.adoptedName+'’ 항목은 그대로 남음':'채택 전이라 RisuAI Persona 영향 없음',
     variant:BOUND===p.id?'bound':'unbound'};}
@@ -594,16 +621,23 @@ function renderEdit(){
     else if(v.f){var dl=diffLabels(v.f,p.vers[0].f);msg='‘'+p.f.name+'’ v'+v.n+' ↔ v'+p.vers[0].n+': '+(dl.length?'바뀐 항목 '+dl.slice(0,4).join(', ')+(dl.length>4?' 외 '+(dl.length-4)+'개':''):'항목 값 차이 없음')+' (시안)';}
     else msg='‘'+p.f.name+'’ v'+v.n+'는 항목별 기록만 남아 있어 전체 비교는 제공하지 않습니다. (시안)';
     b.setAttribute('data-toast',msg);vl.appendChild(d);});
-  setCtx($id('btn-del-vault'),info);
-  setCtx($id('btn-del-persona'),{pid:p.id,name:p.adoptedName||p.f.name});
+  setCtx($id('btn-del-vault'),Object.assign({afterVault:p.adopted?'채택한 RisuAI Persona ‘'+p.adoptedName+'’ 항목과 채팅 연결은 그대로이며, ‘내 페르소나’에서 관리할 수 있습니다.':'채택 전이라 RisuAI Persona에는 영향이 없습니다.'},info));
+  setCtx($id('btn-del-persona'),{pid:p.id,name:p.adoptedName||p.f.name,vaultAfter:'보관함 항목은 그대로 남습니다.'});
   setCtx($id('btn-unbind'),{pid:p.id,name:p.adoptedName||p.f.name});
   setCtx($id('btn-bind'),{bindTo:p.id});
   setCtx($id('btn-adopt'),{name:p.f.name});
   refreshActions();
 }
 function refreshActions(){
-  var p=cur&&P[cur];if(!p)return;var dirty=window.suiteDirty('edit')>0,v=ver(p),stale=!p.adopted||p.adoptedVer!==v.n;
-  var ad=$id('btn-adopt');ad.disabled=dirty||!stale;ad.textContent=!p.adopted?'채택하기':(stale?'v'+v.n+' 수정본으로 채택본 갱신':'채택됨 (최신)');
+  var p=cur&&P[cur];if(!p)return;
+  /* 채택 옵션(보기 언어·밀도·채택 내용·저장 방식)은 화면에서 고르는 즉시 이 Persona의 값이 된다 */
+  p.ui.lang=idx($id('ed-lang'));p.ui.density=idx($id('ed-density'));p.ui.adLang=idx($id('ad-lang'));p.ui.adMode=idx($id('ad-mode'));
+  $id('ad-density-label').textContent=DEN[p.ui.density];
+  var dirty=window.suiteDirty('edit')>0,v=ver(p),dd=adoptDiff(p),can=!p.adopted||dd.any;
+  var ad=$id('btn-adopt');ad.disabled=dirty||!can;
+  ad.textContent=!p.adopted?'채택하기':(dd.content?'v'+v.n+' 수정본으로 채택본 갱신':(dd.opts.length?'바뀐 옵션으로 다시 채택':'채택됨 (최신)'));
+  var df=$id('adopt-diff'),parts=[];if(dd.content)parts.push('내용 v'+p.adoptedVer+' → v'+v.n);parts=parts.concat(dd.opts);
+  df.hidden=!parts.length;df.textContent=parts.length?'채택본과 다른 점: '+parts.join(' · '):'';
   $id('hint-adopt').hidden=!dirty;
   $id('btn-del-persona').disabled=!p.adopted;$id('hint-del-persona').hidden=p.adopted;
   $id('btn-bind').disabled=!p.adopted||BOUND===p.id;$id('hint-bind').hidden=p.adopted;
@@ -625,7 +659,7 @@ document.addEventListener('suite:save',function(e){
   if(e.detail.scope!=='edit')return;var p=cur&&P[cur];if(!p)return;
   var d=readDraft(),ch=diffLabels(p.f,d.f),lockCh=META.some(function(m){return !!p.locks[m.k]!==!!d.locks[m.k];});
   if(ch.length||lockCh){p.vers.unshift({n:ver(p).n+1,when:'방금',note:'수동 편집'+(ch.length?' · 항목 '+ch.length+'개 변경'+(ch.length<=3?' ('+ch.join(', ')+')':''):' · 잠금 변경'),f:clone(d.f)});}
-  p.f=d.f;p.locks=d.locks;p.ui.lang=d.lang;p.ui.density=d.density;p.draft=null;
+  p.f=d.f;p.locks=d.locks;p.draft=null;
   ORDER=[p.id].concat(ORDER.filter(function(i){return i!==p.id;}));
   renderAll();
 });
@@ -645,15 +679,35 @@ document.addEventListener('click',function(e){
 /* ---------- 채택 · 연결 · 삭제 ---------- */
 document.addEventListener('click',function(e){
   if(e.target.closest('#btn-adopt')){var b=$id('btn-adopt');if(b.disabled)return;var p=P[cur];
-    p.adopted=true;p.adoptedVer=ver(p).n;p.adoptedName=p.f.name;p.ui.adLang=idx($id('ad-lang'));p.ui.adMode=idx($id('ad-mode'));renderAll();return;}
+    refreshActions();var was=p.adopted,dd=adoptDiff(p);
+    p.adopted=true;p.adoptedVer=ver(p).n;p.adoptedName=p.f.name;p.adoptedF=clone(ver(p).f);p.adoptedOpt=curOpt(p);
+    b.setAttribute('data-toast','‘'+p.adoptedName+'’ '+(was?(dd.content?'채택본을 v'+p.adoptedVer+'로 갱신했습니다':'채택본을 바뀐 옵션으로 다시 저장했습니다'):'채택본을 RisuAI Persona로 저장했습니다')+' ('+optText(p.adoptedOpt)+'). (시안)');
+    renderAll();return;}
   var b2=e.target.closest('[data-act]');if(!b2||b2.disabled)return;
   var ov=b2.closest('.overlay'),c=(ov&&ov._ctx)||{},act=b2.dataset.act,p2=P[c.pid];
   if(act==='bind-go'){var on=$id('bind-list').querySelector('.is-on[data-pid]');if(on)BOUND=on.dataset.pid;}
   if(act==='unbind'&&BOUND===c.pid)BOUND=null;
   if(act==='del-persona'&&p2){p2.adopted=false;p2.adoptedVer=null;p2.adoptedName=null;if(BOUND===p2.id)BOUND=null;if(!p2.inVault){delete P[p2.id];ORDER=ORDER.filter(function(i){return i!==p2.id;});}}
   if(act==='del-vault'&&p2){p2.inVault=false;p2.draft=null;if(!p2.adopted){delete P[p2.id];ORDER=ORDER.filter(function(i){return i!==p2.id;});}if(cur===p2.id)clearEdit();}
+  /* 보관함에 다시 보관: 채택본 내용으로 새 보관 항목을 만든다(이전 버전 기록은 복구하지 않음) */
+  if(act==='revault'&&p2&&!p2.inVault){p2.inVault=true;p2.f=clone(p2.adoptedF);p2.locks={};var o=p2.adoptedOpt;p2.ui={lang:0,density:o.density,adLang:o.lang,adMode:o.mode};
+    p2.vers=[{n:p2.adoptedVer,when:'방금',note:'RisuAI 채택본에서 보관함으로 다시 가져옴',f:clone(p2.adoptedF)}];}
   renderAll();
 });
+/* 관리 시트: 보관함 항목 유무와 상관없이 채택본·연결·정리에 들어가는 길 */
+function renderManage(pid){
+  var p=P[pid],kv=$id('spm-kv'),act=$id('spm-act'),note=$id('spm-note');if(!p||!p.adopted){kv.innerHTML='';act.innerHTML='<div class="empty"><b>관리할 RisuAI Persona가 없습니다</b></div>';note.textContent='';return;}
+  var dd=adoptDiff(p),bound=BOUND===p.id;
+  kv.innerHTML='<dt>채택본</dt><dd>v'+p.adoptedVer+' · '+esc(optText(p.adoptedOpt))+'</dd><dt>보관함</dt><dd>'+(p.inVault?'v'+ver(p).n+(dd.content?' · 채택 전 수정본 있음':' · 채택본과 같은 버전'):'삭제됨 · 채택본만 남아 있음')+'</dd><dt>이 채팅</dt><dd>'+(bound?'연결됨':'연결 안 됨')+'</dd>';
+  note.textContent=p.inVault?'편집은 보관함 항목에서 합니다. 채택본은 다시 채택하기 전까지 바뀌지 않습니다.':'보관함 항목이 없어 편집할 수 없습니다. 연결·정리는 여기서 할 수 있고, 채택본 내용으로 보관함에 다시 보관하면 편집할 수 있습니다.';
+  var nm=p.adoptedName,h='';
+  if(p.inVault)h+='<button class="btn" data-go="edit"'+cx({pid:p.id})+'><i data-i="pen"></i>보관함 항목 편집</button>';
+  else h+='<button class="btn" data-close data-act="revault"'+cx({pid:p.id,name:nm})+' data-toast="‘{name}’ 채택본 내용으로 보관함에 다시 보관했습니다. 이전 버전 기록은 복구되지 않습니다. (시안)"><i data-i="db"></i>채택본으로 보관함에 다시 보관</button>';
+  if(bound)h+='<button class="btn btn--danger" data-close data-then-open="sheet-unbind"'+cx({pid:p.id,name:nm})+'><i data-i="link"></i>이 채팅 연결 해제…</button>';
+  else h+='<button class="btn btn--primary" data-close data-then-open="sheet-bind"'+cx({bindTo:p.id})+'><i data-i="link"></i>이 채팅에 연결…</button>';
+  h+='<button class="btn btn--danger" data-close data-then-open="sheet-del-persona"'+cx({pid:p.id,name:nm,vaultAfter:p.inVault?'보관함 항목은 그대로 남습니다.':'보관함 항목도 이미 없어 남는 기록이 없습니다.'})+'><i data-i="trash"></i>생성한 Persona 정리…</button>';
+  act.innerHTML=h;window.suiteIcons(act);
+}
 /* 연결 시트: 목록은 채택한 Persona에서 만든다 */
 function renderBindList(want){
   var list=risuList(),h='';
@@ -674,8 +728,8 @@ function syncCand(){var grp=[].slice.call(document.querySelectorAll('#dlg-cand [
 document.addEventListener('click',function(e){          /* 캡처: 실행 순간의 선택을 대상으로 확정 */
   var t;
   if(e.target.closest('#mk-classic')){var src=P[$id('src-sel').value];if(!src)return;
-    var f=Object.assign(clone(src.f),{name:src.adoptedName+' · 이 세계판',worldFitNotes:'이 세계의 규칙에 맞게 재해석함 (표본)'});
-    setCtx($id('mk-classic'),{pid:mkpid(),name:f.name,mode:'클래식 생성',source:src.adoptedName,f:f});}
+    var f=Object.assign(clone(src.adoptedF),{name:src.adoptedName+' · 이 세계판',worldFitNotes:'이 세계의 규칙에 맞게 재해석함 (표본)'});
+    setCtx($id('mk-classic'),{pid:mkpid(),name:f.name,mode:'클래식 생성',source:src.adoptedName+' 채택본 v'+src.adoptedVer,f:f});}
   if(e.target.closest('#mk-conv'))setCtx($id('mk-conv'),{pid:mkpid(),name:'대화에서 추출한 Persona',mode:'대화에서 추출',f:{role:'정체를 밝히지 않는 여행자',personality:'사용자 메시지에서 드러난 신중함',speech:'질문으로 답한다.'}});
   if(e.target.closest('#btn-cand-go')){syncCand();var go=$id('btn-cand-go');if(!go.dataset.cand)return;var c=JSON.parse(go.dataset.cand);c.f=CANDF[c.pid];c.pid=mkpid();setCtx(go,c);}
   if(e.target.closest('#sheet-bind [data-select-row]'))setTimeout(syncBind,0);
@@ -690,6 +744,7 @@ document.addEventListener('suite:ctx',function(e){if(e.detail.page==='edit'&&e.d
 document.addEventListener('suite:open',function(e){
   if(e.detail.id==='sheet-bind'){renderBindList((e.detail.ctx&&e.detail.ctx.bindTo)||BOUND);syncBind();}
   if(e.detail.id==='dlg-cand')syncCand();
+  if(e.detail.id==='sheet-persona')renderManage(e.detail.ctx&&e.detail.ctx.pid);
 });
 document.addEventListener('suite:ready',function(){document.querySelectorAll('[data-key]').forEach(function(el){el.dataset.dirtyKey='f:'+el.dataset.key;});document.querySelectorAll('[data-lock]').forEach(function(el){el.dataset.dirtyKey='l:'+el.dataset.lock;});seed();applyPersona('sera');renderAll();});
 </script>

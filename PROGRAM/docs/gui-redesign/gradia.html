@@ -380,7 +380,9 @@ function skUpdate(id){var k=SK[id],r=skRow(id);if(!k||!r)return;
 function skAdd(k){var id='sk-n'+(++SKN);SK[id]={id:id,name:k.name,prio:k.prio,body:k.body,builtin:false,def:{prio:k.prio,body:k.body}};
   var r=document.createElement('div');r.className='skill-row';r.setAttribute('data-skill-id',id);
   r.innerHTML='<label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>x <span class="badge badge--info">사용자</span></b><small></small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill">편집</button><button class="btn btn--sm btn--danger" data-open="dlg-del-skill" data-skill-del="'+id+'">삭제</button></div>';
-  document.querySelector('.skill-row').parentElement.appendChild(r);skUpdate(id);window.suiteAutoLabel&&window.suiteAutoLabel();return id;}
+  document.querySelector('.skill-row').parentElement.appendChild(r);skUpdate(id);window.suiteAutoLabel&&window.suiteAutoLabel();
+  window.suiteRegister(r); /* 새 사용 스위치의 기준값 = 만들어진 순간의 값(켜짐). 처음 끄는 것도 미저장 변경으로 센다 */
+  return id;}
 function skSaveState(){var ov=$id('dlg-skill'),v=(ov._ctx||{}).variant;var ok=v==='builtin'||$id('sk-name').value.trim().length>0;
   ['sk-save-b','sk-save-c'].forEach(function(i){$id(i).disabled=!ok;});}
 document.addEventListener('suite:open',function(e){if(e.detail.id==='dlg-skill')skSaveState();});

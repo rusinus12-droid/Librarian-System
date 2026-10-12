@@ -463,7 +463,7 @@ document.addEventListener('change',function(e){if(e.target.closest('#miss-picker
 document.addEventListener('click',function(e){
   if(e.target.closest('#miss-all')){document.querySelectorAll('#miss-picker input').forEach(function(c){c.checked=true;});syncMiss();}
   if(e.target.closest('#miss-none')){document.querySelectorAll('#miss-picker input').forEach(function(c){c.checked=false;});syncMiss();}
-  var px=e.target.closest('[data-proxy]');if(px){syncCold();var t=$id(px.dataset.proxy);window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
+  var px=e.target.closest('[data-proxy]');if(px){syncCold();var t=$id(px.dataset.proxy);if(t.disabled){var pg=t.closest('.page');if(pg)window.suiteGo(pg.dataset.page);window.suiteToast('지금은 실행할 수 없어 확인창을 열지 않았습니다. (시안)');return;}window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
 });
 /* 복구 화면의 자동 복구 표시 = 설정의 '저장된 값'. 저장 전 변경은 별도로 표시 */
 function syncAuto(){[['st-after','auto-after'],['st-bg','auto-bg']].forEach(function(p){var cb=$id(p[0]),bd=$id(p[1]);if(!cb||!bd)return;

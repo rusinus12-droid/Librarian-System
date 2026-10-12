@@ -430,7 +430,7 @@ function syncReset(){var sel=$id('reset-target');var nb=$id('reset-nobackup').ch
 document.addEventListener('click',function(e){
   var k=e.target.closest('.kind');if(k){k.parentElement.querySelectorAll('.kind').forEach(function(x){x.setAttribute('aria-pressed',String(x===k));});}
   if(e.target.closest('#btn-sel-all')){scopeCards().forEach(function(c){var cb=c.querySelector('.sel');if(cb&&!cb.disabled)cb.checked=true;});syncScopes();}
-  var px=e.target.closest('[data-proxy]');if(px){syncReset();var t=$id(px.dataset.proxy);if(t)window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
+  var px=e.target.closest('[data-proxy]');if(px){syncReset();var t=$id(px.dataset.proxy);if(!t)return;if(t.disabled){var pg=t.closest('.page');if(pg)window.suiteGo(pg.dataset.page);window.suiteToast('지금은 실행할 수 없어 확인창을 열지 않았습니다. (시안)');return;}window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
 });
 document.addEventListener('change',function(e){var t=e.target;
   if(t.classList&&t.classList.contains('sel'))syncScopes();

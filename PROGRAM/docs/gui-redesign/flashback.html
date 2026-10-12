@@ -186,7 +186,7 @@
     <div data-subpanel="emb" data-group="c" class="is-active"><div class="stack">
       <div class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge badge--ok" id="emb-badge">연결 확인됨</span></div>
         <label class="switch" style="margin-bottom:12px"><input type="checkbox" checked><span class="switch__track"></span><span class="switch__text"><b>임베딩 사용</b><small>끄면 새 벡터를 만들지 않습니다. 원문 보관은 계속됩니다.</small></span></label>
-        <div class="grid g2"><div class="field"><label>Provider</label><select class="select" id="emb-provider"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option><option>custom HTTP</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" id="emb-model" value="text-embedding-3-small"><button class="btn btn--sm" data-toast="Ollama 모델을 검색했습니다. (시안)">Ollama 모델 검색</button></div></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장된 키가 있습니다 (표시하지 않음)"><span class="hint">입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다. 비워두면 유지합니다.</span></div></div>
+        <div class="grid g2"><div class="field"><label>Provider</label><select class="select" id="emb-provider"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option><option>custom HTTP</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" id="emb-model" value="text-embedding-3-small"><button class="btn btn--sm" data-toast="Ollama 모델을 검색했습니다. (시안)">Ollama 모델 검색</button></div></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" id="emb-url" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장된 키가 있습니다 (표시하지 않음)"><span class="hint">입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다. 비워두면 유지합니다.</span></div></div>
         <div class="cluster" style="margin-top:14px"><button class="btn" id="btn-emb-test">임베딩 테스트</button><button class="btn btn--ghost" data-open="dlg-key-del">키 삭제…</button></div>
         <details class="fold" style="margin-top:14px"><summary>고급 연결 설정 <span class="hint">요청 · 쿼리/문서 · Custom HTTP</span></summary><div class="fold__body"><div class="grid g2">
           <div class="field"><label>정확한 Endpoint (선택)</label><input class="input"></div><div class="field"><label>벡터 차원 (0=자동)</label><input class="input" type="number" value="0"></div>
@@ -242,10 +242,11 @@
 
   <!-- 스코프 삭제: 현행의 이질적인 남색 대화상자를 테마 토큰으로 통일, 위험 스타일 + 영향 요약 -->
   <div class="overlay" id="dlg-del-scope" aria-hidden="true"><div class="dialog dialog--danger" role="dialog" aria-modal="true" aria-labelledby="ds-t">
-    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="ds-t">스코프 <span data-fill="cnt">1</span>개의 기억 <span data-fill="chunks">402</span>개를 삭제할까요?</h2>
+    <div class="eyebrow" style="color:var(--danger-ink)">Permanent delete</div><h2 id="ds-t"><span data-variant="default">스코프 <span data-fill="cnt">1</span>개의 기억 <span data-fill="chunks">402</span>개를 삭제할까요?</span><span data-variant="none" hidden>삭제할 스코프를 선택하지 않았습니다</span></h2>
     <p><b data-fill="name">아스텔 / 에피소드 40</b> — <span data-fill="meta">고아 후보 · 마지막 저장 2주 전</span></p>
     <div class="note note--danger"><b>되돌릴 수 없습니다.</b> 이 채팅의 저장 원문·벡터·아카이브가 삭제됩니다. 다른 스코프가 참조 중이면 삭제가 차단됩니다.</div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="{name} 스코프를 삭제하고 목록을 다시 읽었습니다. (시안)">삭제</button></div></div></div>
+    <p class="hint" id="ds-empty" hidden style="color:var(--danger-ink);margin:8px 0 0">선택한 스코프가 없습니다. 기억 보관함에서 삭제할 스코프를 먼저 선택하세요.</p>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="ds-go" data-close data-toast="{name} 스코프를 삭제하고 목록을 다시 읽었습니다. (시안)">삭제</button></div></div></div>
   <div class="overlay" id="dlg-restore" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="dr-t">
     <div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="dr-t">복원 — 백업 파일 검사 후 가능한 방식만 선택할 수 있습니다</h2>
     <div class="steps" style="margin:8px 0 12px"><div class="step is-done"><span class="step__no">✓</span><b>파일 무결성</b></div><div class="step is-done"><span class="step__no">✓</span><b>현재 대상 비교</b></div><div class="step is-active"><span class="step__no">3</span><b>방식 선택</b></div><div class="step"><span class="step__no">4</span><b>영향 확인</b></div></div>
@@ -308,23 +309,31 @@ document.addEventListener('click',function(e){
   var c=e.target.closest('[data-cand-item]');if(c){var k=c.dataset.candItem,i=CAND.indexOf(k);if(i<0)CAND.push(k);else CAND.splice(i,1);syncCand();window.suiteToast(i<0?'삭제 후보에 추가했습니다. 아직 삭제되지 않았습니다. (시안)':'후보에서 뺐습니다. (시안)');}
   if(e.target.closest('#cand-clear')){CAND=[];syncCand();window.suiteToast('후보를 비웠습니다. (시안)');}
   if(e.target.closest('#cand-done')){setTimeout(function(){CAND=[];syncCand();},0);}
-  var px=e.target.closest('[data-proxy]');if(px){syncScopes();var t=$id(px.dataset.proxy);window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
+  var px=e.target.closest('[data-proxy]');if(px){syncScopes();var t=$id(px.dataset.proxy);
+    if(t.disabled){var pg=t.closest('.page');if(pg)window.suiteGo(pg.dataset.page);window.suiteToast('선택한 스코프가 없어 삭제 확인창을 열지 않았습니다. 삭제할 스코프를 먼저 선택하세요.');return;}
+    window.suiteOpen(t.dataset.open,JSON.parse(t.dataset.ctx));}
 });
 document.addEventListener('suite:ready',function(){syncScopes();syncCand();});
+/* 삭제 확인창의 대상은 언제나 '지금 선택된 스코프'다. 어떤 경로로 열려도 선택에서 다시 계산하고, 0개면 실행할 수 없다 */
+document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-del-scope')return;syncScopes();var ov=$id('dlg-del-scope'),c=JSON.parse($id('sc-del').dataset.ctx),none=c.cnt==='0';
+  if(none){c.name='선택 없음';c.meta='선택한 스코프가 없습니다';c.variant='none';}window.suiteFill(ov,c);ov._ctx=c;$id('ds-go').disabled=none;$id('ds-empty').hidden=!none;});
 /* 임베딩 설정 상태는 하나의 데이터로 본다.
-   - 저장된 값(Provider·모델)  : suiteSaved()  → 사이드바 푸터·카드 배지가 이 값을 보여준다
-   - 테스트에 성공한 조합      : TESTED        → '임베딩 테스트'는 화면에 입력된 값을 시험하고 이 집합에 더한다
-   저장된 조합이 TESTED에 없으면 '연결 테스트 필요'로 표시한다. */
+   - 연결 값      : 임베딩 카드의 모든 입력(Provider·모델·Base URL·API Key·정확한 Endpoint·고급 설정)
+   - 저장된 값    : suiteSaved()  → 사이드바 푸터·카드 배지가 이 값을 보여준다
+   - 테스트 성공  : TESTED        → '임베딩 테스트'는 화면에 입력된 연결 값 전체를 시험하고 그 조합을 기록한다
+   저장된 조합이 TESTED에 없으면(주소 하나만 바뀌어도) '연결 테스트 필요'로 표시한다. */
+function embFields(){return [].slice.call($id('emb-badge').closest('.card').querySelectorAll('input:not([type=checkbox]),select,textarea'));}
+function embSig(saved){return embFields().map(function(f){return saved?window.suiteSaved(f):f.value;}).join('\u241F');}
 var TESTED=null;
 function dimOf(m){return /large/.test(m)?'3,072':/small|ada/.test(m)?'1,536':'';}
 function syncFoot(){var pv=$id('emb-provider'),md=$id('emb-model');if(!pv||!md)return;var sp=window.suiteSaved(pv),sm=window.suiteSaved(md);
-  if(!TESTED){TESTED={};TESTED[sp+'|'+sm]=1;}var ok=!!TESTED[sp+'|'+sm],dirty=window.suiteIsDirtyEl(pv)||window.suiteIsDirtyEl(md),dm=dimOf(sm);
+  var sig=embSig(true);if(!TESTED){TESTED={};TESTED[sig]=1;}var ok=!!TESTED[sig],dirty=embFields().some(window.suiteIsDirtyEl),dm=dimOf(sm);
   $id('foot-model').textContent=sm;
   $id('foot-meta').textContent=(ok?sp+(dm?' · '+dm+'차원':'')+' · 연결됨':sp+' · 설정 변경됨 · 연결 테스트 필요')+(dirty?' · 저장 전 변경 있음':'');
   var bd=$id('emb-badge');if(bd){bd.textContent=ok?'연결 확인됨':'연결 테스트 필요';bd.className='badge '+(ok?'badge--ok':'badge--warn');}}
 document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('#btn-emb-test');if(!t)return;
-  var pv=$id('emb-provider'),md=$id('emb-model'),dm=dimOf(md.value);syncFoot();TESTED[pv.value+'|'+md.value]=1;
-  window.suiteToast('임베딩 테스트 성공: '+pv.value+' · '+md.value+(dm?' · '+dm+'차원':'')+' · 83ms (시안, 저장 전 값도 시험합니다)');syncFoot();});
+  var pv=$id('emb-provider'),md=$id('emb-model'),dm=dimOf(md.value);syncFoot();TESTED[embSig(false)]=1;
+  var u=$id('emb-url').value.trim();window.suiteToast('임베딩 테스트 성공: '+pv.value+' · '+md.value+' · 주소 '+(u||'기본값')+(dm?' · '+dm+'차원':'')+' · 83ms (시안, 화면의 연결 값 전체를 시험합니다. 저장 전 값 포함)');syncFoot();});
 ['input','change','click'].forEach(function(ev){document.addEventListener(ev,function(e){if(e.target.closest&&e.target.closest('[data-page=connect]'))setTimeout(syncFoot,0);});});
 document.addEventListener('suite:save',function(){setTimeout(syncFoot,0);});document.addEventListener('suite:revert',function(){setTimeout(syncFoot,0);});
 document.addEventListener('suite:ready',syncFoot);
