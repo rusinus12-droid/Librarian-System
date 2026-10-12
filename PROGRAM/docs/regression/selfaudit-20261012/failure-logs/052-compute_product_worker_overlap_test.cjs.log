@@ -1,0 +1,42 @@
+(node:1315) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+ "test": "compute_product_worker_overlap",
+ "observations": {
+  "workerCount": 4,
+  "poolSize": 4,
+  "jobs": 12,
+  "peakJobs": 3,
+  "peakNamespaces": 3,
+  "spreadMs": 26,
+  "wallMs": 677.2,
+  "perNamespaceFirstStart": {
+   "flashback": 1791784470773,
+   "libra": 1791784470794,
+   "hayaku": 1791784470799
+  },
+  "perNamespaceWorkerMs": {
+   "flashback": [
+    82,
+    84,
+    86,
+    98
+   ],
+   "libra": [
+    118,
+    101,
+    106,
+    97
+   ],
+   "hayaku": [
+    5,
+    5,
+    5,
+    3
+   ]
+  }
+ }
+}
+AssertionError [ERR_ASSERTION]: the pool must saturate at 4 concurrent jobs: {"peakJobs":3,"peakNamespaces":3}
+    at /projects/sandbox/Librarian-System/PROGRAM/tests/compute_product_worker_overlap_test.cjs:127:12
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

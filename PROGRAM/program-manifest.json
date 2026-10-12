@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-12T05:52:13.248Z",
+  "generatedAt": "2026-10-12T08:18:46.449Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1624,8 +1624,8 @@
       "bytes": 7181
     },
     "docs/gui-redesign/AUDIT-RESPONSE.md": {
-      "sha256": "46e782e3e6179435cb9fc524eaf43d5d04fb7011ba9e6d9aabbfaff519973540",
-      "bytes": 48509
+      "sha256": "48ef07d5038a255eadfc0d2630c9b1fe88039d289c09a2fd33543b7dfd6a3fbd",
+      "bytes": 52338
     },
     "docs/gui-redesign/flashback.html": {
       "sha256": "80f22b2b9229f90306dbbd505b0f060c9587f0b5ef0551318b053edba52a4234",
@@ -2855,6 +2855,26 @@
       "sha256": "019544dbc9804a4321987c44dee26e8aa492aeb3e1579f5114c8d0f0f9f3f456",
       "bytes": 48041
     },
+    "docs/regression/selfaudit-20261012/FAILURES.tsv": {
+      "sha256": "cfbe0fd4f607bdd6b4269a6c5189fa343c43faf386e0709103d380c3fddbf501",
+      "bytes": 15458
+    },
+    "docs/regression/selfaudit-20261012/ISOLATED_RERUNS.tsv": {
+      "sha256": "d11b90e10d2b04462d421b7dd60af68cc33a6c5b8e12d686b0a7ef1068ac6cd4",
+      "bytes": 1106
+    },
+    "docs/regression/selfaudit-20261012/PREFIX_RUN_EXCERPT.txt": {
+      "sha256": "5d9312feb188d9389c7786bbd6ce13f0aaed0733fc53137cceb347c43d337447",
+      "bytes": 2962
+    },
+    "docs/regression/selfaudit-20261012/README.md": {
+      "sha256": "0d82e9010b5192114b817b03aa960d4d2a5dd9e85c78d24c94fc1e59c5bcae29",
+      "bytes": 6456
+    },
+    "docs/regression/selfaudit-20261012/RESULTS.tsv": {
+      "sha256": "b4eebceaa52ab45ad5ecd06a80131f1b48e87beccf667cdb6a89611e24c4d2a0",
+      "bytes": 102508
+    },
     "docs/regression/SOURCE-REANALYSIS-SUCCESSORS-20261011.json": {
       "sha256": "95807001fd598aa2dfd28dbade07a0dd1ba38d3798bc8c3112002fd559655f71",
       "bytes": 20785
@@ -2960,8 +2980,8 @@
       "bytes": 4681
     },
     "docs/SELF_AUDIT_20261012.md": {
-      "sha256": "19a65b2cf4a5e6ab495d9b0a62762593ef175e56492190b56be346b9b7bd346a",
-      "bytes": 6812
+      "sha256": "5119b4f459cf8404b8f80b4018f17d676c7171d1dc8cac671dc4a437b1f92c0d",
+      "bytes": 8888
     },
     "docs/SERVER_CONDITIONAL_BATCH_06.md": {
       "sha256": "014d42cbd753601971351f263dba9503cfa08df5314cdbc7269c5e4d55d87a2a",
@@ -3268,8 +3288,8 @@
       "bytes": 49
     },
     "run_regression_batch.py": {
-      "sha256": "bc750cb57001ac140a7f1ffc2f9a7abea0feaff523202d0b34be8eaaa1eb7cc7",
-      "bytes": 28654
+      "sha256": "d40e7fb36b68b069b2a36c87eab7a8d07843b8bba88294ede901b14b80b9a62a",
+      "bytes": 28972
     },
     "sdk/FlashbackServerRepair.source.js": {
       "sha256": "891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5",
@@ -8312,8 +8332,8 @@
       "bytes": 3579
     },
     "tests/regression_owned_process_cleanup_test.cjs": {
-      "sha256": "849968b29bb8ba18b2b61ad2045aad50cc266224f11b29dbe23466868be75516",
-      "bytes": 5085
+      "sha256": "b185e9481c8dbd386b217b1679aaa3309fa670928005233c14bc7d75c0c789ba",
+      "bytes": 5197
     },
     "tests/regression_skip_detection_test.cjs": {
       "sha256": "602209a8e32f710aabd8bf167ccba5aa01be73bc7518c702136e12f72c4b5a5d",

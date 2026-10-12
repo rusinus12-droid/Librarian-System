@@ -1,0 +1,16 @@
+/projects/sandbox/Librarian-System/PROGRAM/tests/fixtures/browser_resolver.cjs:80
+  throw new Error(
+  ^
+
+Error: No Chromium-family browser was found on this linux host. Install one (Chrome, Chromium, Edge or Brave) or set CHROME_PATH to its executable. Probed: /usr/bin/chromium, /usr/bin/chromium-browser, /usr/bin/google-chrome, /usr/bin/google-chrome-stable, /usr/bin/microsoft-edge, /usr/bin/brave-browser, /snap/bin/chromium, /usr/local/bin/chromium
+    at resolveChromeExecutable (/projects/sandbox/Librarian-System/PROGRAM/tests/fixtures/browser_resolver.cjs:80:9)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_scope_panels_browser_test.cjs:13:19)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49
+
+Node.js v22.23.3

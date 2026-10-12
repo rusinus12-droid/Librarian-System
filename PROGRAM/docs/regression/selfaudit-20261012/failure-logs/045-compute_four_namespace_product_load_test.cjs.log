@@ -1,0 +1,6 @@
+(node:1207) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+compute_four_namespace_product_load_test: FAIL
+AssertionError [ERR_ASSERTION]: four workers did not overlap: {"peakJobs":3,"peakNamespaces":3}
+    at main (/projects/sandbox/Librarian-System/PROGRAM/tests/compute_four_namespace_product_load_test.cjs:164:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

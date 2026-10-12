@@ -1,0 +1,28 @@
+node:assert:150
+  throw new AssertionError(obj);
+  ^
+
+AssertionError [ERR_ASSERTION]: same-function aliases preserve exported standalone re-evaluation: release_key_pool_acorn_unavailable
++ actual - expected
+
++ 'release_key_pool_acorn_unavailable'
+- undefined
+
+    at test (/projects/sandbox/Librarian-System/PROGRAM/tests/build_plugins_property_key_pool_test.cjs:17:10)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/build_plugins_property_key_pool_test.cjs:22:1)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 'release_key_pool_acorn_unavailable',
+  expected: undefined,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.23.3

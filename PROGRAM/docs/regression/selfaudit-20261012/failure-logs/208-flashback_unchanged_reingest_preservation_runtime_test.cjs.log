@@ -1,0 +1,370 @@
+TAP version 13
+# Subtest: known unchanged-source rebuild control retains exact legacy vector through raw-only publication
+not ok 1 - known unchanged-source rebuild control retains exact legacy vector through raw-only publication
+  ---
+  duration_ms: 409.234018
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:179:1'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    exercise (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:153:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: ingest legacy-only refusal preserves exact active source and vector and remains outside the retained-work fix
+not ok 2 - ingest legacy-only refusal preserves exact active source and vector and remains outside the retained-work fix
+  ---
+  duration_ms: 142.523298
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:181:27'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    exercise (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:153:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ingest unchanged-source raw-only publication preserves public-queue unknown attempt and retained vector
+not ok 3 - ingest unchanged-source raw-only publication preserves public-queue unknown attempt and retained vector
+  ---
+  duration_ms: 623.686874
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:182:3'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    exercise (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:153:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: coldstart unchanged-source raw-only publication preserves public-queue unknown attempt and retained vector
+not ok 4 - coldstart unchanged-source raw-only publication preserves public-queue unknown attempt and retained vector
+  ---
+  duration_ms: 649.865187
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:182:3'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    exercise (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:153:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ingest keeps publicly prepared pending retained work without inventing a submission
+not ok 5 - ingest keeps publicly prepared pending retained work without inventing a submission
+  ---
+  duration_ms: 241.627883
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:196:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:210:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: coldstart keeps publicly prepared pending retained work without inventing a submission
+not ok 6 - coldstart keeps publicly prepared pending retained work without inventing a submission
+  ---
+  duration_ms: 281.556382
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:196:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:210:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed model cannot reuse the old target work or certify its retained vector as current
+not ok 7 - changed model cannot reuse the old target work or certify its retained vector as current
+  ---
+  duration_ms: 537.438364
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:224:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:240:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed dimensions cannot reuse the old target work or certify its retained vector as current
+not ok 8 - changed dimensions cannot reuse the old target work or certify its retained vector as current
+  ---
+  duration_ms: 542.798437
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:224:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:240:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed preprocessing cannot reuse the old target work or certify its retained vector as current
+not ok 9 - changed preprocessing cannot reuse the old target work or certify its retained vector as current
+  ---
+  duration_ms: 546.964515
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:224:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:240:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed endpoint cannot reuse the old target work or certify its retained vector as current
+not ok 10 - changed endpoint cannot reuse the old target work or certify its retained vector as current
+  ---
+  duration_ms: 553.937743
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:224:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:240:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed revision cannot reuse the old target work or certify its retained vector as current
+not ok 11 - changed revision cannot reuse the old target work or certify its retained vector as current
+  ---
+  duration_ms: 560.553201
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:224:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:240:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: changed body at the actual raw writer never attaches the prior source vector or attempt to its new canonical source
+not ok 12 - changed body at the actual raw writer never attaches the prior source vector or attempt to its new canonical source
+  ---
+  duration_ms: 539.945917
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:243:1'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:260:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a different raw writer scope cannot borrow the current owner retained vector or unresolved attempt
+not ok 13 - a different raw writer scope cannot borrow the current owner retained vector or unresolved attempt
+  ---
+  duration_ms: 514.242651
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:263:1'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:281:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ingest keeps a definite failed retained attempt blocked without automatic retry
+not ok 14 - ingest keeps a definite failed retained attempt blocked without automatic retry
+  ---
+  duration_ms: 534.241867
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:284:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:295:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: coldstart keeps a definite failed retained attempt blocked without automatic retry
+not ok 15 - coldstart keeps a definite failed retained attempt blocked without automatic retry
+  ---
+  duration_ms: 574.514508
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:284:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:295:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ingest preserves the exact active running attempt during the actual provider await
+not ok 16 - ingest preserves the exact active running attempt during the actual provider await
+  ---
+  duration_ms: 616.803743
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:301:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:317:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: coldstart preserves the exact active running attempt during the actual provider await
+not ok 17 - coldstart preserves the exact active running attempt during the actual provider await
+  ---
+  duration_ms: 473.173279
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:301:46'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:317:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: corrupt retained digest cannot be reused or bypass its existing unresolved registry authority
+not ok 18 - corrupt retained digest cannot be reused or bypass its existing unresolved registry authority
+  ---
+  duration_ms: 588.928571
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:331:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:357:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: corrupt missing attempt cannot be reused or bypass its existing unresolved registry authority
+not ok 19 - corrupt missing attempt cannot be reused or bypass its existing unresolved registry authority
+  ---
+  duration_ms: 603.393734
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:331:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:357:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: corrupt attempt source revision cannot be reused or bypass its existing unresolved registry authority
+not ok 20 - corrupt attempt source revision cannot be reused or bypass its existing unresolved registry authority
+  ---
+  duration_ms: 621.729785
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:331:4'
+  failureType: 'testCodeFailure'
+  error: 'external evidence directory supplied'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    persist (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:104:3)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/flashback_unchanged_reingest_preservation_runtime_test.cjs:357:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 0
+# fail 20
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10166.317403

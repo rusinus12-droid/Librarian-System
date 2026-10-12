@@ -1,0 +1,1321 @@
+TAP version 13
+# Subtest: old imported settings cannot restore second rewrite or private analysis
+ok 1 - old imported settings cannot restore second rewrite or private analysis
+  ---
+  duration_ms: 70.545215
+  type: 'test'
+  ...
+# Subtest: private analysis cannot enter final handoff; draft and raw input retained
+ok 2 - private analysis cannot enter final handoff; draft and raw input retained
+  ---
+  duration_ms: 21.736726
+  type: 'test'
+  ...
+# Subtest: input writer and recent-turn/lore public hooks remain available
+ok 3 - input writer and recent-turn/lore public hooks remain available
+  ---
+  duration_ms: 18.947353
+  type: 'test'
+  ...
+# Subtest: full source has no retired choice actions, final rewrite invocation or projection
+ok 4 - full source has no retired choice actions, final rewrite invocation or projection
+  ---
+  duration_ms: 14.733355
+  type: 'test'
+  ...
+# Subtest: legacy stage planning keeps only SHADOW and serial AIDEs
+ok 5 - legacy stage planning keeps only SHADOW and serial AIDEs
+  ---
+  duration_ms: 12.677558
+  type: 'test'
+  ...
+# Subtest: easy settings definition has no retired rewrite option
+ok 6 - easy settings definition has no retired rewrite option
+  ---
+  duration_ms: 10.722751
+  type: 'test'
+  ...
+# Subtest: default completed window and explicit stage overrides survive
+ok 7 - default completed window and explicit stage overrides survive
+  ---
+  duration_ms: 17.252418
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 174.040056
+{"wrapper":"gradia","file":"draft-only.test.cjs","exit":0,"error":null}
+/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10
+  else throw new Error(`Missing development dependency ${name}. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.`,{cause:error});
+       ^
+
+Error: Missing development dependency acorn. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.
+    at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/evidence-bridge.test.cjs:4:66)
+    ... 5 lines matching cause stack trace ...
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  [cause]: Error: Cannot find module 'acorn'
+  Require stack:
+  - /projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs
+  - /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/evidence-bridge.test.cjs
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+      at Function.resolve (node:internal/modules/helpers:157:19)
+      at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:6:25)
+      at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/evidence-bridge.test.cjs:4:66)
+      at Module._compile (node:internal/modules/cjs/loader:1781:14)
+      at Object..js (node:internal/modules/cjs/loader:1913:10)
+      at Module.load (node:internal/modules/cjs/loader:1505:32)
+      at Function._load (node:internal/modules/cjs/loader:1309:12)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs',
+      '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/evidence-bridge.test.cjs'
+    ]
+  }
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"evidence-bridge.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: actual SHADOW plain-text builder plus real meter admits evidence and asserts prepared envelope locally
+ok 1 - actual SHADOW plain-text builder plus real meter admits evidence and asserts prepared envelope locally
+  ---
+  duration_ms: 80.130384
+  type: 'test'
+  ...
+# Subtest: actual shared-prefix and streaming fields fit without omitting their final payload cost
+ok 2 - actual shared-prefix and streaming fields fit without omitting their final payload cost
+  ---
+  duration_ms: 24.028431
+  type: 'test'
+  ...
+# Subtest: actual structured AIDE formats remain unsupported instead of disabling structured output
+ok 3 - actual structured AIDE formats remain unsupported instead of disabling structured output
+  ---
+  duration_ms: 23.059567
+  type: 'test'
+  ...
+# Subtest: actual Responses builder custom endpoint and extra-body transforms are unqualified
+ok 4 - actual Responses builder custom endpoint and extra-body transforms are unqualified
+  ---
+  duration_ms: 23.996296
+  type: 'test'
+  ...
+# Subtest: actual output override is measured and over-limit output or reasoning fields reject
+ok 5 - actual output override is measured and over-limit output or reasoning fields reject
+  ---
+  duration_ms: 23.106152
+  type: 'test'
+  ...
+# Subtest: unknown cache/service fields produced by actual builder cannot silently enter supported profile
+ok 6 - unknown cache/service fields produced by actual builder cannot silently enter supported profile
+  ---
+  duration_ms: 23.086483
+  type: 'test'
+  ...
+# Subtest: pinned local vocabulary has all 256 single-byte symbols without loading a tokenizer
+ok 7 - pinned local vocabulary has all 256 single-byte symbols without loading a tokenizer
+  ---
+  duration_ms: 102.115974
+  type: 'test'
+  ...
+# Subtest: allowed-shaped extra-body override exposes a provenance limit of the pure meter, not runtime qualification
+ok 8 - allowed-shaped extra-body override exposes a provenance limit of the pure meter, not runtime qualification
+  ---
+  duration_ms: 22.079706
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 331.01172
+{"wrapper":"gradia","file":"evidence-budget-builder-v2.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: seven actual normal/heavy schema wrappers are pinned and fully charged in the exact envelope
+ok 1 - seven actual normal/heavy schema wrappers are pinned and fully charged in the exact envelope
+  ---
+  duration_ms: 9.041884
+  type: 'test'
+  ...
+# Subtest: schema/name/strictness/hash drift and arbitrary fields remain unavailable
+ok 2 - schema/name/strictness/hash drift and arbitrary fields remain unavailable
+  ---
+  duration_ms: 3.522882
+  type: 'test'
+  ...
+# Subtest: structured allowance cannot hide a context overflow or changed dispatch schema
+ok 3 - structured allowance cannot hide a context overflow or changed dispatch schema
+  ---
+  duration_ms: 1.322329
+  type: 'test'
+  ...
+# Subtest: schema hashing await cannot substitute caller-mutated body or context
+ok 4 - schema hashing await cannot substitute caller-mutated body or context
+  ---
+  duration_ms: 0.685139
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21.591234
+{"wrapper":"gradia","file":"evidence-budget-structured-v2.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: named profile admits nonzero evidence and reserves all 16384 output tokens with dated framing label
+ok 1 - named profile admits nonzero evidence and reserves all 16384 output tokens with dated framing label
+  ---
+  duration_ms: 2.634825
+  type: 'test'
+  ...
+# Subtest: exact allowance fits and one additional ASCII byte fails without issuing dispatch authority
+ok 2 - exact allowance fits and one additional ASCII byte fails without issuing dispatch authority
+  ---
+  duration_ms: 5.644256
+  type: 'test'
+  ...
+# Subtest: context rejects blank stale catalog identity and preserves configured versus catalog provenance
+ok 3 - context rejects blank stale catalog identity and preserves configured versus catalog provenance
+  ---
+  duration_ms: 1.967961
+  type: 'test'
+  ...
+# Subtest: unknown provider model format or exact route is unavailable
+ok 4 - unknown provider model format or exact route is unavailable
+  ---
+  duration_ms: 1.436949
+  type: 'test'
+  ...
+# Subtest: actual output requires one positive safe integer up to 16384 with no silent cap
+ok 5 - actual output requires one positive safe integer up to 16384 with no silent cap
+  ---
+  duration_ms: 1.369298
+  type: 'test'
+  ...
+# Subtest: unqualified request fields and message structures are rejected rather than removed
+ok 6 - unqualified request fields and message structures are rejected rather than removed
+  ---
+  duration_ms: 1.350279
+  type: 'test'
+  ...
+# Subtest: supported stream options are counted and unknown variants fail
+ok 7 - supported stream options are counted and unknown variants fail
+  ---
+  duration_ms: 0.701381
+  type: 'test'
+  ...
+# Subtest: Unicode and escaped text use independently measured serialized overhead
+ok 8 - Unicode and escaped text use independently measured serialized overhead
+  ---
+  duration_ms: 1.195425
+  type: 'test'
+  ...
+# Subtest: malformed surrogate evidence native text and raw body are never normalized
+ok 9 - malformed surrogate evidence native text and raw body are never normalized
+  ---
+  duration_ms: 1.822738
+  type: 'test'
+  ...
+# Subtest: large native input and previous draft consume capacity with tiny evidence
+ok 10 - large native input and previous draft consume capacity with tiny evidence
+  ---
+  duration_ms: 3.777737
+  type: 'test'
+  ...
+# Subtest: preflight rejects long or escape-expanded bodies before JSON.parse and digest
+ok 11 - preflight rejects long or escape-expanded bodies before JSON.parse and digest
+  ---
+  duration_ms: 1.268288
+  type: 'test'
+  ...
+# Subtest: rendered cap is strict and configurable only through 4 MiB
+ok 12 - rendered cap is strict and configurable only through 4 MiB
+  ---
+  duration_ms: 1.21621
+  type: 'test'
+  ...
+# Subtest: mutated native policy user output and request parameters fail exact base binding
+ok 13 - mutated native policy user output and request parameters fail exact base binding
+  ---
+  duration_ms: 1.186632
+  type: 'test'
+  ...
+# Subtest: only private original fitting witness authorizes an identical POST dispatch envelope
+ok 14 - only private original fitting witness authorizes an identical POST dispatch envelope
+  ---
+  duration_ms: 0.655053
+  type: 'test'
+  ...
+# Subtest: async local digest snapshots body context and envelope before awaiting caller mutation
+ok 15 - async local digest snapshots body context and envelope before awaiting caller mutation
+  ---
+  duration_ms: 0.563074
+  type: 'test'
+  ...
+# Subtest: accessors and custom input or context prototypes fail without invoking getters
+ok 16 - accessors and custom input or context prototypes fail without invoking getters
+  ---
+  duration_ms: 0.854007
+  type: 'test'
+  ...
+# Subtest: empty selection preserves native body and invalid or failed digest cannot issue authority
+ok 17 - empty selection preserves native body and invalid or failed digest cannot issue authority
+  ---
+  duration_ms: 0.701644
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 38.855701
+{"wrapper":"gradia","file":"evidence-budget-v2.test.cjs","exit":0,"error":null}
+/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10
+  else throw new Error(`Missing development dependency ${name}. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.`,{cause:error});
+       ^
+
+Error: Missing development dependency jsdom. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.
+    at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/hypav3-removal.test.cjs:5:68)
+    ... 5 lines matching cause stack trace ...
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  [cause]: Error: Cannot find module 'jsdom'
+  Require stack:
+  - /projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs
+  - /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/hypav3-removal.test.cjs
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+      at Function.resolve (node:internal/modules/helpers:157:19)
+      at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:6:25)
+      at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/hypav3-removal.test.cjs:5:68)
+      at Module._compile (node:internal/modules/cjs/loader:1781:14)
+      at Object..js (node:internal/modules/cjs/loader:1913:10)
+      at Module.load (node:internal/modules/cjs/loader:1505:32)
+      at Function._load (node:internal/modules/cjs/loader:1309:12)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs',
+      '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/hypav3-removal.test.cjs'
+    ]
+  }
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"hypav3-removal.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: removed Writer Arc Archive and session-transfer APIs are absent rather than throwing stubs
+ok 1 - removed Writer Arc Archive and session-transfer APIs are absent rather than throwing stubs
+  ---
+  duration_ms: 67.020648
+  type: 'test'
+  ...
+# Subtest: retired runtime implementations and automatic native-copy adoption are deleted from the active plugin
+ok 2 - retired runtime implementations and automatic native-copy adoption are deleted from the active plugin
+  ---
+  duration_ms: 36.157601
+  type: 'test'
+  ...
+# Subtest: active creative OOC still compiles and saves a global stage prompt while legacy user records remain untouched
+ok 3 - active creative OOC still compiles and saves a global stage prompt while legacy user records remain untouched
+  ---
+  duration_ms: 41.187217
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.320832
+{"wrapper":"gradia","file":"legacy-removal.test.cjs","exit":0,"error":null}
+/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10
+  else throw new Error(`Missing development dependency ${name}. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.`,{cause:error});
+       ^
+
+Error: Missing development dependency acorn. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.
+    at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/lib-read-consumer.test.cjs:2:66)
+    ... 5 lines matching cause stack trace ...
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  [cause]: Error: Cannot find module 'acorn'
+  Require stack:
+  - /projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs
+  - /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/lib-read-consumer.test.cjs
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+      at Function.resolve (node:internal/modules/helpers:157:19)
+      at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:6:25)
+      at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/lib-read-consumer.test.cjs:2:66)
+      at Module._compile (node:internal/modules/cjs/loader:1781:14)
+      at Object..js (node:internal/modules/cjs/loader:1913:10)
+      at Module.load (node:internal/modules/cjs/loader:1505:32)
+      at Function._load (node:internal/modules/cjs/loader:1309:12)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs',
+      '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/lib-read-consumer.test.cjs'
+    ]
+  }
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"lib-read-consumer.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: loader uses standard installed devDependencies before an optional explicit root
+ok 1 - loader uses standard installed devDependencies before an optional explicit root
+  ---
+  duration_ms: 32.536051
+  type: 'test'
+  ...
+# Subtest: loader uses GRADIA_TOOLCHAIN_ROOT when standard dependency is absent
+ok 2 - loader uses GRADIA_TOOLCHAIN_ROOT when standard dependency is absent
+  ---
+  duration_ms: 31.977422
+  type: 'test'
+  ...
+# Subtest: loader explains a missing dependency without a historical fallback
+ok 3 - loader explains a missing dependency without a historical fallback
+  ---
+  duration_ms: 27.133234
+  type: 'test'
+  ...
+# Subtest: loader preserves dependency execution errors rather than hiding them
+ok 4 - loader preserves dependency execution errors rather than hiding them
+  ---
+  duration_ms: 27.669916
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 128.33099
+{"wrapper":"gradia","file":"load-dev-dependency.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: startup and ordinary GUI state leave all removed-feature records byte unchanged
+ok 1 - startup and ordinary GUI state leave all removed-feature records byte unchanged
+  ---
+  duration_ms: 67.581933
+  type: 'test'
+  ...
+# Subtest: legacy imported role flags and stage slots cannot restore removed features
+ok 2 - legacy imported role flags and stage slots cannot restore removed features
+  ---
+  duration_ms: 15.179739
+  type: 'test'
+  ...
+# Subtest: explicit current-settings reset does not delete removed-feature user records
+ok 3 - explicit current-settings reset does not delete removed-feature user records
+  ---
+  duration_ms: 58.381019
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 147.766532
+{"wrapper":"gradia","file":"memory-retirement.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: differential original baseline: normal-memo-only
+ok 1 - differential original baseline: normal-memo-only
+  ---
+  duration_ms: 96.083852
+  type: 'test'
+  ...
+# Subtest: differential original baseline: qualified-inline-current-wrapper
+ok 2 - differential original baseline: qualified-inline-current-wrapper
+  ---
+  duration_ms: 25.220837
+  type: 'test'
+  ...
+# Subtest: differential original baseline: older-system-wrapper-later-provenance-wins
+ok 3 - differential original baseline: older-system-wrapper-later-provenance-wins
+  ---
+  duration_ms: 24.791659
+  type: 'test'
+  ...
+# Subtest: differential original baseline: multiple-assistant-source-order
+ok 4 - differential original baseline: multiple-assistant-source-order
+  ---
+  duration_ms: 30.650086
+  type: 'test'
+  ...
+# Subtest: differential original baseline: long-terminal-scene-tail
+ok 5 - differential original baseline: long-terminal-scene-tail
+  ---
+  duration_ms: 44.468921
+  type: 'test'
+  ...
+# Subtest: differential original baseline: postprocess-private-artifact-cleanup
+ok 6 - differential original baseline: postprocess-private-artifact-cleanup
+  ---
+  duration_ms: 24.20907
+  type: 'test'
+  ...
+# Subtest: differential original baseline: null-request-generation-speaker
+ok 7 - differential original baseline: null-request-generation-speaker
+  ---
+  duration_ms: 22.547536
+  type: 'test'
+  ...
+# Subtest: differential original baseline: repeated-text-distinct-ids
+ok 8 - differential original baseline: repeated-text-distinct-ids
+  ---
+  duration_ms: 24.185199
+  type: 'test'
+  ...
+# Subtest: differential original baseline: raw-input-versus-compacted-query
+ok 9 - differential original baseline: raw-input-versus-compacted-query
+  ---
+  duration_ms: 46.713409
+  type: 'test'
+  ...
+# Subtest: differential original baseline: stage-order-different-windows-map-insertion
+ok 10 - differential original baseline: stage-order-different-windows-map-insertion
+  ---
+  duration_ms: 28.942389
+  type: 'test'
+  ...
+# Subtest: differential original baseline: whole-history-turn-numbering
+ok 11 - differential original baseline: whole-history-turn-numbering
+  ---
+  duration_ms: 25.355348
+  type: 'test'
+  ...
+# Subtest: differential original baseline: filtered-blocking-tombstone
+ok 12 - differential original baseline: filtered-blocking-tombstone
+  ---
+  duration_ms: 23.747641
+  type: 'test'
+  ...
+# Subtest: differential original baseline: blocked-disabled-assistant
+ok 13 - differential original baseline: blocked-disabled-assistant
+  ---
+  duration_ms: 21.80848
+  type: 'test'
+  ...
+# Subtest: differential original baseline: comment-assistant
+ok 14 - differential original baseline: comment-assistant
+  ---
+  duration_ms: 23.062804
+  type: 'test'
+  ...
+# Subtest: differential original baseline: streaming-assistant
+ok 15 - differential original baseline: streaming-assistant
+  ---
+  duration_ms: 22.59531
+  type: 'test'
+  ...
+# Subtest: differential original baseline: host-error-assistant
+ok 16 - differential original baseline: host-error-assistant
+  ---
+  duration_ms: 23.032072
+  type: 'test'
+  ...
+# Subtest: differential original baseline: unknown-trailing-completion
+ok 17 - differential original baseline: unknown-trailing-completion
+  ---
+  duration_ms: 24.233401
+  type: 'test'
+  ...
+# Subtest: differential original baseline: unflagged-leading-greeting-excluded
+ok 18 - differential original baseline: unflagged-leading-greeting-excluded
+  ---
+  duration_ms: 23.906715
+  type: 'test'
+  ...
+# Subtest: differential original baseline: private-block-cleanup
+ok 19 - differential original baseline: private-block-cleanup
+  ---
+  duration_ms: 23.379076
+  type: 'test'
+  ...
+# Subtest: differential original baseline: system-developer-excluded-from-view
+ok 20 - differential original baseline: system-developer-excluded-from-view
+  ---
+  duration_ms: 23.192726
+  type: 'test'
+  ...
+# Subtest: differential original baseline: lite-keeps-enabled-plot
+ok 21 - differential original baseline: lite-keeps-enabled-plot
+  ---
+  duration_ms: 23.831727
+  type: 'test'
+  ...
+# Subtest: differential original baseline: unrelated-input-assist-state-excluded
+ok 22 - differential original baseline: unrelated-input-assist-state-excluded
+  ---
+  duration_ms: 23.214012
+  type: 'test'
+  ...
+# Subtest: differential original baseline: active-input-assist-additions-excluded
+ok 23 - differential original baseline: active-input-assist-additions-excluded
+  ---
+  duration_ms: 23.834729
+  type: 'test'
+  ...
+# Subtest: ambiguous identical native refs reject in both new codec and actual baseline
+ok 24 - ambiguous identical native refs reject in both new codec and actual baseline
+  ---
+  duration_ms: 24.251216
+  type: 'test'
+  ...
+# Subtest: unqualified shapes, provenance overrides, missing current ID and wrapper ambiguity reject
+ok 25 - unqualified shapes, provenance overrides, missing current ID and wrapper ambiguity reject
+  ---
+  duration_ms: 2.361739
+  type: 'test'
+  ...
+# Subtest: projection never invokes input accessors or toJSON
+ok 26 - projection never invokes input accessors or toJSON
+  ---
+  duration_ms: 1.106302
+  type: 'test'
+  ...
+# Subtest: strict normalized policy rejects duplicate, reordered shadow, unsupported stage and invalid windows
+ok 27 - strict normalized policy rejects duplicate, reordered shadow, unsupported stage and invalid windows
+  ---
+  duration_ms: 1.25294
+  type: 'test'
+  ...
+# Subtest: native facts are independent of request-visible null refs
+ok 28 - native facts are independent of request-visible null refs
+  ---
+  duration_ms: 2.458667
+  type: 'test'
+  ...
+# Subtest: projection source has no runtime, storage, provider or completion authority dependency
+not ok 29 - projection source has no runtime, storage, provider or completion authority dependency
+  ---
+  duration_ms: 1.722664
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/native-projection-v2.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing development dependency acorn. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/native-projection-v2.test.cjs:40:283)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: distinct full-reference variants preserve selected baseline branch semantics
+ok 30 - distinct full-reference variants preserve selected baseline branch semantics
+  ---
+  duration_ms: 23.365387
+  type: 'test'
+  ...
+# Subtest: conflicting role or alias identities reject instead of silently selecting precedence
+ok 31 - conflicting role or alias identities reject instead of silently selecting precedence
+  ---
+  duration_ms: 1.388252
+  type: 'test'
+  ...
+# Subtest: changed selected raw content changes the native reference and read-set value
+ok 32 - changed selected raw content changes the native reference and read-set value
+  ---
+  duration_ms: 2.355498
+  type: 'test'
+  ...
+# Subtest: all four modules have only deterministic built-in free identifiers
+not ok 33 - all four modules have only deterministic built-in free identifiers
+  ---
+  duration_ms: 0.578325
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/native-projection-v2.test.cjs:45:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing development dependency acorn. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    freeIdentifiers (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/fixtures/gradia-projection-reference.cjs:33:70)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/native-projection-v2.test.cjs:45:558)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: request arrays with nonstandard prototypes are unavailable
+ok 34 - request arrays with nonstandard prototypes are unavailable
+  ---
+  duration_ms: 0.912789
+  type: 'test'
+  ...
+# Subtest: request records reject a descriptor-cloned Object prototype
+ok 35 - request records reject a descriptor-cloned Object prototype
+  ---
+  duration_ms: 1.004066
+  type: 'test'
+  ...
+1..35
+# tests 35
+# suites 0
+# pass 33
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 753.05036
+{"wrapper":"gradia","file":"native-projection-v2.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: shared renderer preserves complete Unicode/control items and exact escaped-byte accounting
+ok 1 - shared renderer preserves complete Unicode/control items and exact escaped-byte accounting
+  ---
+  duration_ms: 5.717195
+  type: 'test'
+  ...
+# Subtest: shared MMR keeps owner similarity, duplicate penalty, forced exception and score floor
+ok 2 - shared MMR keeps owner similarity, duplicate penalty, forced exception and score floor
+  ---
+  duration_ms: 2.979911
+  type: 'test'
+  ...
+# Subtest: bounded fake-owner hydration reads over 48 full records and charges rejected narrative bytes
+ok 3 - bounded fake-owner hydration reads over 48 full records and charges rejected narrative bytes
+  ---
+  duration_ms: 17.197637
+  type: 'test'
+  ...
+# Subtest: owner size admission stops before fetching an unfit item and reports unread prefix
+ok 4 - owner size admission stops before fetching an unfit item and reports unread prefix
+  ---
+  duration_ms: 2.426758
+  type: 'test'
+  ...
+# Subtest: verified corpus selection budgets each payload, binds owner receipts and retains all consumed stages
+ok 5 - verified corpus selection budgets each payload, binds owner receipts and retains all consumed stages
+  ---
+  duration_ms: 19.819263
+  type: 'test'
+  ...
+# Subtest: semantic groups are all-or-nothing and unsupported payload cannot authorize dispatch
+ok 6 - semantic groups are all-or-nothing and unsupported payload cannot authorize dispatch
+  ---
+  duration_ms: 8.271635
+  type: 'test'
+  ...
+# Subtest: owner binder recomputes the pinned render and binds immutable selection receipts
+ok 7 - owner binder recomputes the pinned render and binds immutable selection receipts
+  ---
+  duration_ms: 1.618187
+  type: 'test'
+  ...
+# Subtest: an entirely omitted model selection binds an empty evidence hash without partial source text
+ok 8 - an entirely omitted model selection binds an empty evidence hash without partial source text
+  ---
+  duration_ms: 2.016687
+  type: 'test'
+  ...
+# Subtest: closing a selection retains its declared credit until an unfinished owner bind settles
+ok 9 - closing a selection retains its declared credit until an unfinished owner bind settles
+  ---
+  duration_ms: 1.539847
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 70.986352
+{"wrapper":"gradia","file":"ranked-evidence-basic.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: four physical operations keep their slots and bytes after cancellation
+ok 1 - four physical operations keep their slots and bytes after cancellation
+  ---
+  duration_ms: 6.46869
+  type: 'test'
+  ...
+# Subtest: settlement frees a slot while retained operation/output bytes require explicit release
+ok 2 - settlement frees a slot while retained operation/output bytes require explicit release
+  ---
+  duration_ms: 1.002815
+  type: 'test'
+  ...
+# Subtest: byte credit can block a read with free physical slots without partial mutation
+ok 3 - byte credit can block a read with free physical slots without partial mutation
+  ---
+  duration_ms: 0.845481
+  type: 'test'
+  ...
+# Subtest: duplicate ids, invalid integers, double settlement and foreign release are rejected
+ok 4 - duplicate ids, invalid integers, double settlement and foreign release are rejected
+  ---
+  duration_ms: 0.983539
+  type: 'test'
+  ...
+# Subtest: deferred retired physical reads remain owned until their promises settle
+ok 5 - deferred retired physical reads remain owned until their promises settle
+  ---
+  duration_ms: 0.904006
+  type: 'test'
+  ...
+# Subtest: snapshot reports only counts and kinds, never ids or retained content
+ok 6 - snapshot reports only counts and kinds, never ids or retained content
+  ---
+  duration_ms: 0.840367
+  type: 'test'
+  ...
+# Subtest: credit arguments reject accessors without executing them
+ok 7 - credit arguments reject accessors without executing them
+  ---
+  duration_ms: 0.831147
+  type: 'test'
+  ...
+# Subtest: credit controls refuse a nonstandard object prototype
+ok 8 - credit controls refuse a nonstandard object prototype
+  ---
+  duration_ms: 0.712427
+  type: 'test'
+  ...
+# Subtest: credit controls reject a descriptor-cloned Object prototype
+ok 9 - credit controls reject a descriptor-cloned Object prototype
+  ---
+  duration_ms: 0.935702
+  type: 'test'
+  ...
+# Subtest: stale settlement rejects when caller uses generation-qualified unique IDs
+ok 10 - stale settlement rejects when caller uses generation-qualified unique IDs
+  ---
+  duration_ms: 0.96548
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 24.306475
+{"wrapper":"gradia","file":"read-v2-credit.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: fragments are lazy, preserve well-formed Unicode and never split code points
+ok 1 - fragments are lazy, preserve well-formed Unicode and never split code points
+  ---
+  duration_ms: 5.378042
+  type: 'test'
+  ...
+# Subtest: malformed Unicode, too-small codepoint capacity and oversize fragment settings reject
+ok 2 - malformed Unicode, too-small codepoint capacity and oversize fragment settings reject
+  ---
+  duration_ms: 2.250497
+  type: 'test'
+  ...
+# Subtest: 320 and 1024 small items pack multiple entries per frame
+ok 3 - 320 and 1024 small items pack multiple entries per frame
+  ---
+  duration_ms: 162.363934
+  type: 'test'
+  ...
+# Subtest: hash preimage excludes frameHash but full wire bytes include it
+ok 4 - hash preimage excludes frameHash but full wire bytes include it
+  ---
+  duration_ms: 3.663396
+  type: 'test'
+  ...
+# Subtest: full hash envelope overflow splits even when canonical core would fit
+ok 5 - full hash envelope overflow splits even when canonical core would fit
+  ---
+  duration_ms: 2.117266
+  type: 'test'
+  ...
+# Subtest: fixed metadata entries page without arbitrary payload objects
+ok 6 - fixed metadata entries page without arbitrary payload objects
+  ---
+  duration_ms: 622.905938
+  type: 'test'
+  ...
+# Subtest: schema rejects unknown/accessor/cyclic/deep metadata before hash or serialization
+ok 7 - schema rejects unknown/accessor/cyclic/deep metadata before hash or serialization
+  ---
+  duration_ms: 1.775759
+  type: 'test'
+  ...
+# Subtest: framing consumes only a bounded lookahead and closes its source on early disposal
+ok 8 - framing consumes only a bounded lookahead and closes its source on early disposal
+  ---
+  duration_ms: 2.406175
+  type: 'test'
+  ...
+# Subtest: frame, aggregate, content and item exhaustion reject without truncation
+ok 9 - frame, aggregate, content and item exhaustion reject without truncation
+  ---
+  duration_ms: 2.287003
+  type: 'test'
+  ...
+# Subtest: exact 4 MiB and 32 MiB corpus boundaries retain complete bytes
+ok 10 - exact 4 MiB and 32 MiB corpus boundaries retain complete bytes
+  ---
+  duration_ms: 1893.605563
+  type: 'test'
+  ...
+# Subtest: exact 8192 item cap accepts and one more rejects
+ok 11 - exact 8192 item cap accepts and one more rejects
+  ---
+  duration_ms: 762.848307
+  type: 'test'
+  ...
+# Subtest: metadata and native metadata byte caps reject before a partial transfer can become complete
+ok 12 - metadata and native metadata byte caps reject before a partial transfer can become complete
+  ---
+  duration_ms: 1.412741
+  type: 'test'
+  ...
+# Subtest: content sequence rejects skipped, duplicate and interleaved fragments
+ok 13 - content sequence rejects skipped, duplicate and interleaved fragments
+  ---
+  duration_ms: 1.403581
+  type: 'test'
+  ...
+# Subtest: UTF-8 byte declarations and closed binding fields cannot be forged
+ok 14 - UTF-8 byte declarations and closed binding fields cannot be forged
+  ---
+  duration_ms: 1.250232
+  type: 'test'
+  ...
+# Subtest: managed encoding preflight rejects before hashing when simultaneous representations do not fit
+ok 15 - managed encoding preflight rejects before hashing when simultaneous representations do not fit
+  ---
+  duration_ms: 0.827511
+  type: 'test'
+  ...
+# Subtest: reservation bound is available without pulling input and includes escaped core/wire/hash copies
+ok 16 - reservation bound is available without pulling input and includes escaped core/wire/hash copies
+  ---
+  duration_ms: 1.626113
+  type: 'test'
+  ...
+# Subtest: all declared metadata discriminants round trip through receiver validation
+ok 17 - all declared metadata discriminants round trip through receiver validation
+  ---
+  duration_ms: 2.70738
+  type: 'test'
+  ...
+# Subtest: receiver rejects forged declared sizes, fields and non-hex hashes
+ok 18 - receiver rejects forged declared sizes, fields and non-hex hashes
+  ---
+  duration_ms: 1.562416
+  type: 'test'
+  ...
+# Subtest: empty content is represented explicitly and does not manufacture item completeness
+ok 19 - empty content is represented explicitly and does not manufacture item completeness
+  ---
+  duration_ms: 1.205675
+  type: 'test'
+  ...
+# Subtest: worst-case escaping of a maximum fragment still fits the complete envelope
+ok 20 - worst-case escaping of a maximum fragment still fits the complete envelope
+  ---
+  duration_ms: 21.461473
+  type: 'test'
+  ...
+# Subtest: frame entry arrays reject cloned prototypes without invoking overridden methods
+ok 21 - frame entry arrays reject cloned prototypes without invoking overridden methods
+  ---
+  duration_ms: 1.20589
+  type: 'test'
+  ...
+# Subtest: untrusted iterator accessors reject without being invoked
+ok 22 - untrusted iterator accessors reject without being invoked
+  ---
+  duration_ms: 0.870305
+  type: 'test'
+  ...
+# Subtest: flat logical metadata depth one is admitted independently of fixed envelope nesting
+ok 23 - flat logical metadata depth one is admitted independently of fixed envelope nesting
+  ---
+  duration_ms: 1.385362
+  type: 'test'
+  ...
+# Subtest: same-realm producer next, return and iterator accessors reject during admission
+ok 24 - same-realm producer next, return and iterator accessors reject during admission
+  ---
+  duration_ms: 1.09032
+  type: 'test'
+  ...
+# Subtest: a never-ending trusted producer is bounded by entry accounting and closed on rejection
+ok 25 - a never-ending trusted producer is bounded by entry accounting and closed on rejection
+  ---
+  duration_ms: 1.080872
+  type: 'test'
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3514.358433
+{"wrapper":"gradia","file":"read-v2-frames.test.cjs","exit":0,"error":null}
+TAP version 13
+# Subtest: protocol defaults and explicit maximum preserve binary-byte and item ceilings
+ok 1 - protocol defaults and explicit maximum preserve binary-byte and item ceilings
+  ---
+  duration_ms: 4.593044
+  type: 'test'
+  ...
+# Subtest: protocol rejects every malformed integer instead of coercing or clamping
+ok 2 - protocol rejects every malformed integer instead of coercing or clamping
+  ---
+  duration_ms: 1.490573
+  type: 'test'
+  ...
+# Subtest: checked arithmetic detects overflow before allocation
+ok 3 - checked arithmetic detects overflow before allocation
+  ---
+  duration_ms: 0.979409
+  type: 'test'
+  ...
+# Subtest: canonical encoding sorts keys, preserves arrays, measures UTF-8 and rejects malformed text
+ok 4 - canonical encoding sorts keys, preserves arrays, measures UTF-8 and rejects malformed text
+  ---
+  duration_ms: 1.325642
+  type: 'test'
+  ...
+# Subtest: canonical validation refuses getters, toJSON, cycles, depth and oversized strings before encoding
+ok 5 - canonical validation refuses getters, toJSON, cycles, depth and oversized strings before encoding
+  ---
+  duration_ms: 2.103066
+  type: 'test'
+  ...
+# Subtest: limits and frames reject unknown/accessor fields without invoking accessors
+ok 6 - limits and frames reject unknown/accessor fields without invoking accessors
+  ---
+  duration_ms: 0.865186
+  type: 'test'
+  ...
+# Subtest: rejected deep or oversized metadata is never serialized or byte-encoded
+ok 7 - rejected deep or oversized metadata is never serialized or byte-encoded
+  ---
+  duration_ms: 0.891597
+  type: 'test'
+  ...
+# Subtest: inherited toJSON, symbol keys and hidden unknown fields reject without executing code
+ok 8 - inherited toJSON, symbol keys and hidden unknown fields reject without executing code
+  ---
+  duration_ms: 0.955334
+  type: 'test'
+  ...
+# Subtest: arrays with nonstandard prototypes are unsupported inert data
+ok 9 - arrays with nonstandard prototypes are unsupported inert data
+  ---
+  duration_ms: 0.910995
+  type: 'test'
+  ...
+# Subtest: receiver rejects a valid-shape oversized frame before serialization or byte encoding
+ok 10 - receiver rejects a valid-shape oversized frame before serialization or byte encoding
+  ---
+  duration_ms: 6.372797
+  type: 'test'
+  ...
+# Subtest: canonical object keys sort lexically including integer-like keys at every depth
+ok 11 - canonical object keys sort lexically including integer-like keys at every depth
+  ---
+  duration_ms: 0.881098
+  type: 'test'
+  ...
+# Subtest: prototype key resemblance does not qualify object or array prototypes
+ok 12 - prototype key resemblance does not qualify object or array prototypes
+  ---
+  duration_ms: 0.783571
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 31.702422
+{"wrapper":"gradia","file":"read-v2-protocol.test.cjs","exit":0,"error":null}
+node:internal/modules/cjs/loader:1433
+  throw err;
+  ^
+
+Error: Cannot find module 'jsdom'
+Require stack:
+- /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/readonly-connection.test.cjs
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+    at Function._load (node:internal/modules/cjs/loader:1216:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Module.require (node:internal/modules/cjs/loader:1527:12)
+    at require (node:internal/modules/helpers:147:16)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/readonly-connection.test.cjs:3:15)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/readonly-connection.test.cjs'
+  ]
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"readonly-connection.test.cjs","exit":1,"error":null}
+/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10
+  else throw new Error(`Missing development dependency ${name}. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.`,{cause:error});
+       ^
+
+Error: Missing development dependency acorn. Install pinned devDependencies with npm ci, or set GRADIA_TOOLCHAIN_ROOT to an existing node_modules directory.
+    at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:10:14)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/server-read-adapter.test.cjs:4:66)
+    ... 5 lines matching cause stack trace ...
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  [cause]: Error: Cannot find module 'acorn'
+  Require stack:
+  - /projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs
+  - /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/server-read-adapter.test.cjs
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+      at Function.resolve (node:internal/modules/helpers:157:19)
+      at loadDevDependency (/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs:6:25)
+      at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/server-read-adapter.test.cjs:4:66)
+      at Module._compile (node:internal/modules/cjs/loader:1781:14)
+      at Object..js (node:internal/modules/cjs/loader:1913:10)
+      at Module.load (node:internal/modules/cjs/loader:1505:32)
+      at Function._load (node:internal/modules/cjs/loader:1309:12)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/projects/sandbox/Librarian-System/PROGRAM/tools/gradia/load-dev-dependency.cjs',
+      '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/server-read-adapter.test.cjs'
+    ]
+  }
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"server-read-adapter.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: public compiled/source binding keeps no credential, connectionless stays unavailable, unbind retires it
+ok 1 - public compiled/source binding keeps no credential, connectionless stays unavailable, unbind retires it
+  ---
+  duration_ms: 70.333194
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 77.119173
+{"wrapper":"gradia","file":"server-read-public.test.cjs","exit":0,"error":null}
+node:internal/modules/cjs/loader:1433
+  throw err;
+  ^
+
+Error: Cannot find module 'jsdom'
+Require stack:
+- /projects/sandbox/Librarian-System/PROGRAM/tests/gradia/settings-backup.test.cjs
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+    at Function._load (node:internal/modules/cjs/loader:1216:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Module.require (node:internal/modules/cjs/loader:1527:12)
+    at require (node:internal/modules/helpers:147:16)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/settings-backup.test.cjs:3:15)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/projects/sandbox/Librarian-System/PROGRAM/tests/gradia/settings-backup.test.cjs'
+  ]
+}
+
+Node.js v22.23.3
+{"wrapper":"gradia","file":"settings-backup.test.cjs","exit":1,"error":null}
+TAP version 13
+# Subtest: historical stopped output closed by actual next user is visible history, not engine completion
+ok 1 - historical stopped output closed by actual next user is visible history, not engine completion
+  ---
+  duration_ms: 75.957372
+  type: 'test'
+  ...
+# Subtest: active stream, error, comment and disabled output never count as completed pairs
+ok 2 - active stream, error, comment and disabled output never count as completed pairs
+  ---
+  duration_ms: 67.491715
+  type: 'test'
+  ...
+# Subtest: current input native identity resolves repeated text without consuming it twice
+ok 3 - current input native identity resolves repeated text without consuming it twice
+  ---
+  duration_ms: 14.435825
+  type: 'test'
+  ...
+# Subtest: trailing assistant without next user or matching output event is unknown, never guessed prefill
+ok 4 - trailing assistant without next user or matching output event is unknown, never guessed prefill
+  ---
+  duration_ms: 19.00471
+  type: 'test'
+  ...
+# Subtest: output event proof binds scope, message, generation and exact raw-content hash
+ok 5 - output event proof binds scope, message, generation and exact raw-content hash
+  ---
+  duration_ms: 14.518604
+  type: 'test'
+  ...
+# Subtest: disabled all-before and a later invalid assistant cannot resurrect an earlier variant
+ok 6 - disabled all-before and a later invalid assistant cannot resurrect an earlier variant
+  ---
+  duration_ms: 13.437913
+  type: 'test'
+  ...
+# Subtest: completion receipts cannot cross chat or generation identity
+ok 7 - completion receipts cannot cross chat or generation identity
+  ---
+  duration_ms: 14.746579
+  type: 'test'
+  ...
+# Subtest: legacy native history without IDs stays a closed-boundary tier without invented identities
+ok 8 - legacy native history without IDs stays a closed-boundary tier without invented identities
+  ---
+  duration_ms: 14.054622
+  type: 'test'
+  ...
+# Subtest: Input Writer retains verified terminal context without adopting an unsubmitted proposal
+ok 9 - Input Writer retains verified terminal context without adopting an unsubmitted proposal
+  ---
+  duration_ms: 20.315311
+  type: 'test'
+  ...
+# Subtest: Input Writer does not use an active stream as terminal scene or close it with a proposal
+ok 10 - Input Writer does not use an active stream as terminal scene or close it with a proposal
+  ---
+  duration_ms: 14.155896
+  type: 'test'
+  ...
+# Subtest: completion receipts are bounded and listener denial keeps closed history available
+ok 11 - completion receipts are bounded and listener denial keeps closed history available
+  ---
+  duration_ms: 32.169225
+  type: 'test'
+  ...
+# Subtest: reroll-bound current native user excludes its replaced assistant variant from history
+ok 12 - reroll-bound current native user excludes its replaced assistant variant from history
+  ---
+  duration_ms: 13.354589
+  type: 'test'
+  ...
+# Subtest: one group user turn retains all distinct native assistants and speakers in order
+ok 13 - one group user turn retains all distinct native assistants and speakers in order
+  ---
+  duration_ms: 15.203548
+  type: 'test'
+  ...
+# Subtest: group completion requires all output receipts; one active or invalid member excludes group
+ok 14 - group completion requires all output receipts; one active or invalid member excludes group
+  ---
+  duration_ms: 14.352445
+  type: 'test'
+  ...
+# Subtest: duplicate native assistant identity follows only last selected snapshot record
+ok 15 - duplicate native assistant identity follows only last selected snapshot record
+  ---
+  duration_ms: 13.098271
+  type: 'test'
+  ...
+# Subtest: n-window omits only entire old groups and preserves selected scope references
+ok 16 - n-window omits only entire old groups and preserves selected scope references
+  ---
+  duration_ms: 17.0347
+  type: 'test'
+  ...
+# Subtest: group participant event receipts bind the owning group room at captured index
+ok 17 - group participant event receipts bind the owning group room at captured index
+  ---
+  duration_ms: 13.537366
+  type: 'test'
+  ...
+# Subtest: different explicit current identity never binds a terminal same-text native user
+ok 18 - different explicit current identity never binds a terminal same-text native user
+  ---
+  duration_ms: 13.913804
+  type: 'test'
+  ...
+# Subtest: request fallback does not revive a replaced assistant after empty selected variant
+ok 19 - request fallback does not revive a replaced assistant after empty selected variant
+  ---
+  duration_ms: 13.148791
+  type: 'test'
+  ...
+# Subtest: group receipt lookup rejects mismatched chat ownership and group membership
+ok 20 - group receipt lookup rejects mismatched chat ownership and group membership
+  ---
+  duration_ms: 39.786259
+  type: 'test'
+  ...
+# Subtest: request fallback keeps blocking identity for selected metadata variants
+ok 21 - request fallback keeps blocking identity for selected metadata variants
+  ---
+  duration_ms: 12.461029
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 478.823563
+{"wrapper":"gradia","file":"turn-eligibility.test.cjs","exit":0,"error":null}

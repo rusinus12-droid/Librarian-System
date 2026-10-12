@@ -357,6 +357,10 @@ with log_path.open(mode,encoding='utf-8') as log:
         log.write(f'Timeout seconds: default=60; overrides={json.dumps(TEST_TIMEOUT_SECONDS, sort_keys=True)}\n\n')
         log.flush()
     failures=0; timeouts=0; skips=0
+    if os.name!='nt':
+        # SIGTERM(종료 요청·timeout 명령)도 Ctrl-C와 같은 정리 경로를 거친다. 그대로 죽으면 시험이 띄운 서버가 남는다.
+        def _terminate_as_interrupt(signum, frame): raise KeyboardInterrupt()
+        signal.signal(signal.SIGTERM, _terminate_as_interrupt)
     for idx in selected_indices:
         test=all_tests[idx]
         fd, tmp_name = tempfile.mkstemp(prefix=f'librarian-regression-{os.getpid()}-{idx}-', suffix='.txt')

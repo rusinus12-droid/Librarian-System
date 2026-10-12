@@ -61,8 +61,9 @@ function makeRunnerTree(testBody) {
         'the log records that an owned leftover was terminated');
       fs.rmSync(temp, { recursive: true, force: true });
     }
-    // 2. Ctrl-C while the test is still running: the detached server must not outlive the runner.
-    {
+    // 2/3. Ctrl-C (SIGINT) and a termination request (SIGTERM) while the test is still running:
+    //      the detached server must not outlive the runner.
+    for (const sig of ['SIGINT', 'SIGTERM']) {
       const temp = makeRunnerTree(DETACHED_SERVER + '\nsetInterval(()=>{},1000);\n');
       const pidFile = path.join(temp, 'server.pid'), log = path.join(temp, 'run.log');
       const runner = spawn(python, [path.join(temp, 'run_regression_batch.py')], {
@@ -73,14 +74,14 @@ function makeRunnerTree(testBody) {
       await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').length > 0, 20000, 'probe did not start its server');
       const pid = Number(fs.readFileSync(pidFile, 'utf8')); leaked.push(pid);
       assert.ok(alive(pid), 'server is running before the interrupt');
-      runner.kill('SIGINT');
+      runner.kill(sig);
       const code = await exited;
-      assert.notEqual(code, 0, 'an interrupted run must not report success');
-      await waitFor(() => !alive(pid), 5000, `detached server ${pid} survived Ctrl-C of the runner`);
+      assert.notEqual(code, 0, `a run stopped by ${sig} must not report success`);
+      await waitFor(() => !alive(pid), 5000, `detached server ${pid} survived ${sig} of the runner`);
       assert.match(stderr, /interrupted: probe_test\.cjs; terminated [1-9]\d* owned process/, stderr);
       fs.rmSync(temp, { recursive: true, force: true });
     }
-    console.log('regression_owned_process_cleanup_test: PASS (detached descendants are terminated after normal exit and on Ctrl-C)');
+    console.log('regression_owned_process_cleanup_test: PASS (detached descendants are terminated after normal exit, on SIGINT and on SIGTERM)');
   } finally {
     for (const pid of leaked) { try { process.kill(pid, 'SIGKILL'); } catch {} }
   }

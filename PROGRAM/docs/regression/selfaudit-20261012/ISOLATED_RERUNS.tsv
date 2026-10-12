@@ -1,0 +1,10 @@
+suite	run	exit_code	decisive_line
+compute_four_namespace_product_load_test.cjs	1	0	compute_four_namespace_product_load_test: PASS {"schema":"memory-suite.compute.four-namespace-load-report.v1","workers":4,"rounds":4,"jobs":12,"peakJobs":4,"peakNamespaces":3,"loca
+compute_four_namespace_product_load_test.cjs	2	0	compute_four_namespace_product_load_test: PASS {"schema":"memory-suite.compute.four-namespace-load-report.v1","workers":4,"rounds":4,"jobs":12,"peakJobs":4,"peakNamespaces":3,"loca
+compute_four_namespace_product_load_test.cjs	3	0	compute_four_namespace_product_load_test: PASS {"schema":"memory-suite.compute.four-namespace-load-report.v1","workers":4,"rounds":4,"jobs":12,"peakJobs":4,"peakNamespaces":3,"loca
+compute_product_worker_overlap_test.cjs	1	1	"peakJobs": 3,
+compute_product_worker_overlap_test.cjs	2	0	"peakJobs": 4,
+compute_product_worker_overlap_test.cjs	3	0	"peakJobs": 4,
+libra_micro_inherited_t5_overlap_3mode_test.cjs	1	1	Error: timed out waiting for verified T5 Micro
+libra_micro_inherited_t5_overlap_3mode_test.cjs	2	0	
+libra_micro_inherited_t5_overlap_3mode_test.cjs	3	0	

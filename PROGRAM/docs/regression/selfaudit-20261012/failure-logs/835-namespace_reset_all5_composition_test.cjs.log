@@ -1,0 +1,25 @@
+(node:2033) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+AssertionError [ERR_ASSERTION]: immutable 389 source: plugins/RETRACE.js
++ actual - expected
+
++ '1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8'
+- '366fcfab5c9f1406e67ee4f815414decac57fcaee63383eb217975d62faaf6ad'
+
+    at /projects/sandbox/Librarian-System/PROGRAM/tests/fixtures/retrace_all5_reset_fixture.cjs:55:26
+    at Array.map (<anonymous>)
+    at verifySources (/projects/sandbox/Librarian-System/PROGRAM/tests/fixtures/retrace_all5_reset_fixture.cjs:52:54)
+    at Object.run (/projects/sandbox/Librarian-System/PROGRAM/tests/fixtures/retrace_all5_reset_fixture.cjs:243:19)
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/namespace_reset_all5_composition_test.cjs:53:61)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8',
+  expected: '366fcfab5c9f1406e67ee4f815414decac57fcaee63383eb217975d62faaf6ad',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
