@@ -1,6 +1,8 @@
 'use strict';
 // Checks ZIP bytes in an isolated extraction. Runtime dependencies may resolve
 // only to built-ins or that extraction, never NODE_PATH or a source sibling.
+// Node 22의 builtinModules에는 node:sqlite·node:test 같은 접두사 전용 모듈이 빠져 있어
+// node: 접두사 요청은 Module.isBuiltin으로 다시 판정한다 (지원 런타임 22.13~22.x).
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
 const {readZipEntries}=require('./zip_writer.cjs');
 const fail=reason=>{throw Error('distribution_runtime_dependency_'+reason);};
@@ -18,7 +20,7 @@ function inspectExtractedRuntime(rootDir){
   // checked, including lazy function-local imports. Dynamic DATA paths remain
   // subject to the existing updater tests and actual apply verification.
   for(const match of source.matchAll(literalRequire)){
-   const request=match[2];if(builtins.has(request)){builtinRequires++;continue;}
+   const request=match[2];if(builtins.has(request)||(request.startsWith('node:')&&Module.isBuiltin(request))){builtinRequires++;continue;}
    if(!request.startsWith('./')&&!request.startsWith('../'))fail('external:'+path.relative(root,file)+':'+request);
    // Reject lexical escapes before module resolution can inspect any sibling.
    const requestedPath=path.resolve(path.dirname(file),request);

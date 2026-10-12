@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-11T18:41:01.739Z",
+  "generatedAt": "2026-10-12T03:17:26.816Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1408,8 +1408,8 @@
   },
   "files": {
     "_common.cmd": {
-      "sha256": "e124b67b31dc9449d86db44e25235ff41215479601c3dcc833e81a99c34b1915",
-      "bytes": 9722
+      "sha256": "522e087c4b060309d25856d586301bc3bef6aa70adf7e38849754dbdb34e7661",
+      "bytes": 9725
     },
     "_find_node.bat": {
       "sha256": "12599c6cdea467cbc35289290c6e7e331d9a0bf60e59dbfecc6a55d6f1751259",
@@ -1610,6 +1610,54 @@
     "docs/GUI_WORKSPACE_5_20.md": {
       "sha256": "a95d8f9a8ec9399904076807ce2f16839daecd1c021bf1e41acb081fb85178aa",
       "bytes": 5702
+    },
+    "docs/gui-redesign/assets/suite.css": {
+      "sha256": "d932d2ff39d74538587521967dcdf4de9ae6867ab3378872154decb1c57a9492",
+      "bytes": 27498
+    },
+    "docs/gui-redesign/assets/suite.js": {
+      "sha256": "0fa9fbb276b0112ec79e4490204a74c71bcc57e4ce85e78b8dc5228e0dca6b15",
+      "bytes": 44625
+    },
+    "docs/gui-redesign/assets/themes.css": {
+      "sha256": "5ae76e4c283a418063b12801b9edf1ca131a2af23195ca4eba4db5e407c5e959",
+      "bytes": 7181
+    },
+    "docs/gui-redesign/AUDIT-RESPONSE.md": {
+      "sha256": "46e782e3e6179435cb9fc524eaf43d5d04fb7011ba9e6d9aabbfaff519973540",
+      "bytes": 48509
+    },
+    "docs/gui-redesign/flashback.html": {
+      "sha256": "34d9c2f0a2748fb4bafbd3dd652e00508b894c5b19b57f564a6f3e8714136f2e",
+      "bytes": 68717
+    },
+    "docs/gui-redesign/gradia.html": {
+      "sha256": "38c9c778022aaa760213b17f0564e3c690a8a726e7c36329453ce694ff6902d2",
+      "bytes": 92358
+    },
+    "docs/gui-redesign/hayaku.html": {
+      "sha256": "27d4a171556148bd8db5eb8afb4c830436fb3efa1b35d4988b635257addb0c4e",
+      "bytes": 97349
+    },
+    "docs/gui-redesign/index.html": {
+      "sha256": "0bb69ab01a1cebe978e981d8d210c16c0ab185060b965b52e67955e80eaeff4a",
+      "bytes": 11885
+    },
+    "docs/gui-redesign/lia.html": {
+      "sha256": "fd1fe13bc27bad865863dd2e02b2ca153cb3b4c3ba9a058ae463da4cf20752c8",
+      "bytes": 122566
+    },
+    "docs/gui-redesign/libra.html": {
+      "sha256": "0722860b74b62ddb12b220ba23c2166984151226d34b6afb5fe8a6c32d8329cc",
+      "bytes": 131984
+    },
+    "docs/gui-redesign/README.md": {
+      "sha256": "c5043e32cae25a482fabe37bff0f5a046f93b9c8119cf57a9a869e2fe515be65",
+      "bytes": 13761
+    },
+    "docs/gui-redesign/retrace.html": {
+      "sha256": "408d98c39f562f31418cb95e7f0e98c7e5ce5ff12a3da8251f5dd23551189790",
+      "bytes": 66430
     },
     "docs/HAYAKU_3_0_88_DIAGNOSTICS_AND_ADMISSION.md": {
       "sha256": "eca088c439d2b5851e65421479632659ee0891d73edae390ad6ebae330e64e18",
@@ -2451,6 +2499,10 @@
       "sha256": "41ecc49da0fe2caa0ca936a9de62e85097caf278bd3c958e4e94173895cbdc36",
       "bytes": 4681
     },
+    "docs/SELF_AUDIT_20261012.md": {
+      "sha256": "19a65b2cf4a5e6ab495d9b0a62762593ef175e56492190b56be346b9b7bd346a",
+      "bytes": 6812
+    },
     "docs/SERVER_CONDITIONAL_BATCH_06.md": {
       "sha256": "014d42cbd753601971351f263dba9503cfa08df5314cdbc7269c5e4d55d87a2a",
       "bytes": 3988
@@ -2756,8 +2808,8 @@
       "bytes": 49
     },
     "run_regression_batch.py": {
-      "sha256": "028a2a9951e7b881100d4355d35f8d77e903eaabc5664b6d07012e677d672c9e",
-      "bytes": 23305
+      "sha256": "2fb4c1f8ec84575ce3b9c0d74a9dfe5d29191cc36f0ecc9655fedbc50bcda292",
+      "bytes": 23912
     },
     "sdk/FlashbackServerRepair.source.js": {
       "sha256": "891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5",
@@ -3684,8 +3736,8 @@
       "bytes": 8233
     },
     "tests/fixtures/authority_sqlite_fixture.cjs": {
-      "sha256": "704dbc23c7d2d940a2f8d1e9aad401bf85af3203593aeb899724085d5cb17e6c",
-      "bytes": 6857
+      "sha256": "8b25aedbf322ba8b4d6b26261ba8c9adeffd5843fc391c31a9264881fb734399",
+      "bytes": 6897
     },
     "tests/fixtures/authority_strict_guard_probe.cjs": {
       "sha256": "82e45c16277152da1b21de521cb6411272885a5d2620802ad2db13b36f775c99",
@@ -8684,8 +8736,8 @@
       "bytes": 4108
     },
     "tests/windows_bootstrap_contract_test.cjs": {
-      "sha256": "b8cc0e227c8a553c769afb7367e469307aeb7dbc05a2738156203bc946d7b868",
-      "bytes": 7800
+      "sha256": "b0ee9610a2a1c3b1756722e3864496fe2816dc05d20352bfca0bbd48e0d40a4e",
+      "bytes": 8710
     },
     "tests/wm_semantic_context_v1_test.cjs": {
       "sha256": "ee742e475a773b042a7d1b3168d5ed14036a3d74c58e61629c3d33da8d94b54b",
@@ -8896,8 +8948,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "7feba4a1d00ae2136a21d723e1b85abbe01db889e91c64bb4d27393ab6567f2b",
-      "bytes": 49140
+      "sha256": "594a54cb8a34839478399d92ce1a3e85d9f70b89b9605a89549f41e59874945d",
+      "bytes": 49546
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "d048b15b062ac43afa9f7c626090f3a9cedbd84b0c75fccd1280ca424da49497",
@@ -8972,8 +9024,8 @@
       "bytes": 28893
     },
     "tools/install_runtime.ps1": {
-      "sha256": "b93d9493f26a3bac834081928a2e33bc7851b65e5f3c2c36a1288a9560262b13",
-      "bytes": 4251
+      "sha256": "9dc584d5bc17c5ea950e6e5adf49e32e43affa5886ba1ed8e5d231ff1ced269d",
+      "bytes": 4274
     },
     "tools/lib/archive_extract.cjs": {
       "sha256": "6268faf3736feaec73e396303a132f01fa526296392c475111abf9c8b0370f2c",
@@ -9156,8 +9208,8 @@
       "bytes": 60612
     },
     "tools/verify_runtime_archive.cjs": {
-      "sha256": "75e8254229cf2d59c0d2767b51ee2edccb9e6d5852bd29abb8e013e5e2b11198",
-      "bytes": 4262
+      "sha256": "29e2de76fce6e71a1ebe211c3ca4f0685a22539ccf69bb1cd1e7ebc443a62730",
+      "bytes": 4529
     },
     "tools/zip_writer.cjs": {
       "sha256": "bd8bd526bd5d972e33eea67ce442133a71deb8fe56f586d1e27b44605e9cbe19",
@@ -9192,28 +9244,28 @@
       "bytes": 236
     },
     "관리도구/백업에서_복원.bat": {
-      "sha256": "264ed5f6e5e8b968577da9451ee463d4f018d5ee83927847577b3bada6875ef9",
-      "bytes": 1259
+      "sha256": "161c0c43ae294825e0f83574d72f7ef0b4aff902461b5e6b641e42da7c5a9c88",
+      "bytes": 1383
     },
     "관리도구/복구_전용_오프라인_복원.bat": {
-      "sha256": "1c3d61b952b0454d2eeb5d8633e9c549408e4becfd0c65ede25999a676245ac4",
-      "bytes": 948
+      "sha256": "1862f9d853ef7e5e587652896bad69a36aadae4f4179f6bcc4e9948b64803eab",
+      "bytes": 1072
     },
     "관리도구/복원_계획_미리보기.bat": {
-      "sha256": "970155623267344eac188f3e9dc10ef5f3b0ebd101091d08340990835f329dec",
-      "bytes": 686
+      "sha256": "181a05207ce92d92c06f410ef124e645e4f280ec374e0afd78645bbe4a7d646f",
+      "bytes": 810
     },
     "관리도구/연결된_플러그인_보기.bat": {
       "sha256": "58ce739b8e1dd523e9d19e1aefc19753acb6d04f7d90ce29500a7ecb400c88e5",
       "bytes": 231
     },
     "관리도구/전체_자동시험.bat": {
-      "sha256": "c24c980234e14e887cf751404db122c6cf5459eb04d819626fcb66cdc9ef1765",
-      "bytes": 1391
+      "sha256": "8340c360da1bc30dbf2023428d465278f235ae16ee8f28a3f7ddcf9da6893309",
+      "bytes": 1558
     },
     "관리도구/전체_자동시험.sh": {
-      "sha256": "24ad5b50e271275b7b5d6e6810e0d249fd8c02cf4d85109fec22661111393b60",
-      "bytes": 716
+      "sha256": "c7a8f917d835238dd06b2c0e72406109aba09207f025eee8aab91c1c72b09923",
+      "bytes": 919
     },
     "관리도구/지금_백업_만들기.bat": {
       "sha256": "6d51afefee97eb3ff95935c746504533ec6faad2343303c794e788c5f2895ac4",
@@ -9224,8 +9276,8 @@
       "bytes": 584
     },
     "기존_DATA_이관_ZIP_만들기.bat": {
-      "sha256": "bf2a7d41ae0e45d6d9b2670703583293bbc005dbeee8292cbb0def698e3a1738",
-      "bytes": 324
+      "sha256": "1e9e155bc5eef8bf0b2733cbe41e2b77176155f939f7653b6ab8f4e17319fac2",
+      "bytes": 936
     },
     "기존_DATA_이관_ZIP_만들기.sh": {
       "sha256": "294117db7a1b9aa05bb168cc059e63c481753886168c8abe214d4f45b86ec91e",

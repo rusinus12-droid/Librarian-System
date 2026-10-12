@@ -142,6 +142,17 @@ function main() {
   assert.match(server, /startup-error\.log[\s\S]*SERVER_FATAL/,
     'fatal server startup errors must be persisted before the process exits.');
 
+  // PROGRAM뿐 아니라 루트 업데이트.bat와 UPDATER의 Windows 실행 파일도 같은 규칙을 따른다.
+  const bundleRoot = path.resolve(programDir, '..');
+  const rootBatches = fs.readdirSync(bundleRoot).filter(name => /\.(?:bat|cmd)$/i.test(name)).map(name => path.join(bundleRoot, name));
+  const updaterDir = path.join(bundleRoot, 'UPDATER');
+  const updaterBatches = fs.existsSync(updaterDir) ? batchFiles(updaterDir) : [];
+  for (const filePath of [...rootBatches, ...updaterBatches]) {
+    const body = fs.readFileSync(filePath).toString('binary');
+    assert.equal((body.match(/\n/g) || []).length, (body.match(/\r\n/g) || []).length,
+      `Windows command file must use CRLF only: ${path.relative(bundleRoot, filePath)}`);
+    if (/[^\x00-\x7f]/.test(body)) assert.match(body, /chcp 65001/i, `Korean Windows command file must select UTF-8: ${path.relative(bundleRoot, filePath)}`);
+  }
   for (const filePath of batchFiles(programDir)) {
     const body = read(path.relative(programDir, filePath)).toString('binary');
     assert.equal((body.match(/\n/g) || []).length, (body.match(/\r\n/g) || []).length,

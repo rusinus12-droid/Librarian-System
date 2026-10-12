@@ -262,7 +262,8 @@ with log_path.open(mode,encoding='utf-8') as log:
             f"HAYAKU {plugin_versions.get('hayaku','unknown')} / "
             f"Flashback {plugin_versions.get('flashback','unknown')} / "
             f"LIA {plugin_versions.get('lia','unknown')} / "
-            f"RE:TRACE {plugin_versions.get('retrace','unknown')} {'selected' if filtered else 'full'} CJS regression execution\n"
+            f"RE:TRACE {plugin_versions.get('retrace','unknown')} / "
+            f"GRADIA {plugin_versions.get('gradia','unknown')} {'selected' if filtered else 'full'} CJS regression execution\n"
         )
         log.write(f'Tests: {len(all_tests)}; selected: {len(selected_indices)}\n\n')
         if filtered:
@@ -284,7 +285,7 @@ with log_path.open(mode,encoding='utf-8') as log:
                 launcher="import subprocess,sys; sys.stdin.readline(); raise SystemExit(subprocess.call(sys.argv[1:]))"
                 proc=subprocess.Popen([sys.executable,'-c',launcher,*test_command],cwd=root,stdin=subprocess.PIPE,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=child_env)
             else:
-                proc=subprocess.Popen(test_command,cwd=root,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=child_env)
+                proc=subprocess.Popen(test_command,cwd=root,stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,text=True,env=child_env)
             tree_job=None; tree_status='not_windows'; timeout_cleanup='not_timed_out'
             status='PASS'
             try:
@@ -311,7 +312,15 @@ with log_path.open(mode,encoding='utf-8') as log:
                             except Exception: pass
                 if status=='PASS':
                     try:
-                        rc=proc.wait(timeout=TEST_TIMEOUT_SECONDS.get(test.name, 60))
+                        try:
+                            rc=proc.wait(timeout=TEST_TIMEOUT_SECONDS.get(test.name, 60))
+                        except KeyboardInterrupt:
+                            # start_new_session 때문에 Ctrl-C가 자식에게 전달되지 않는다. 시험이 띄운 서버가 남지 않게 정리한다.
+                            if os.name!='nt':
+                                try: os.killpg(proc.pid, signal.SIGKILL)
+                                except Exception: pass
+                            elif tree_job: tree_job.terminate()
+                            raise
                         if rc!=0:
                             status='FAIL'; failures+=1
                         if tree_job:

@@ -283,7 +283,7 @@ const RUNTIME_SDK_FILES = new Set([
   'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
-  'ANDROID_INSTALL_HELPER.md','PORTABLE_BACKUP_USAGE.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
+  'ANDROID_INSTALL_HELPER.md','STORAGE_MODE_TRANSITION_CONTRACT.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
 ]);
 function shouldCopyRuntimeProgram(relativePath) {
   const normalized=relativePath.split(path.sep).join('/');
@@ -342,6 +342,11 @@ function assertRootUpdateLaunchers(stagedRoot) {
       const source = bytes.toString('utf8');
       if (!source.startsWith('#!')) throw new Error(`distribution_update_launcher_shebang_missing:${name}`);
       if (/\r\n/.test(source)) throw new Error(`distribution_update_launcher_must_use_lf:${name}`);
+    }
+    if (/\.(?:bat|cmd)$/i.test(name)) {
+      // cmd.exe 라벨 탐색과 한국어 코드페이지 표시를 위해 Windows 실행 파일은 CRLF만 허용한다.
+      const source = fs.readFileSync(filePath).toString('binary');
+      if ((source.match(/\n/g) || []).length !== (source.match(/\r\n/g) || []).length) throw new Error(`distribution_update_launcher_must_use_crlf:${name}`);
     }
   }
   return { launchers: REQUIRED_ROOT_UPDATE_LAUNCHERS.length };
