@@ -10,6 +10,8 @@ The 2026-10-14 successor revision incorporates the [WM HME source review](WM_HME
 
 A1 is a canonical registry transition on the approved A0 recall baseline. It preserves the existing shortlist, associative admission, BM25F/dense scorer, ranked-list fusion, gate, excerpt, and packing behavior. C2/D1 will replace that flow with the approved single frontier/scorer; A1 does not claim that engine is active. Normal runtime parity targets are `plugin_only` and `server_only`. Mirror tests remain migration evidence.
 
+The successor v1.2 now includes a separate [UM1 graph identity contract](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md) and `tools/libra_memory_graph_identity.cjs`. Its 14 tests cover normalized logical identity/binding and synthetic four-family projection connectivity only. It does not change this embedded A1 factory, production posting IDs, reader authority, scorer or final physical-proof path; registered retrieval and durable cache/Lane/generation gates remain pending.
+
 ## Pure factory and interfaces
 
 `PROGRAM/tools/libra_memory_network.cjs` exports `createMemoryNetwork({tokenize, adapters})`. `adapters.hash(serialized)` supplies a deterministic compatibility hint and optional `adapters.rowForUnit(unit,input)` supplies the original hydrated row. The factory performs no storage/provider calls, source rescans, clocks, timers, embedding, or automatic analysis. The runtime embeds its exact `toString()` through the unique `LIBRA MEMORY NETWORK` marker. `sync_libra_memory_network.cjs --check` and the LIBRA builder reject missing, duplicate, reversed, or stale factory markers before output assembly.

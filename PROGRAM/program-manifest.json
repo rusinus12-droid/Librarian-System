@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T15:32:00.198Z",
+  "generatedAt": "2026-10-13T16:21:51.371Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2524,8 +2524,8 @@
       "bytes": 8022
     },
     "docs/LIBRA_MEMORY_NETWORK_CONTRACT.md": {
-      "sha256": "6f54aa2b7b5e65e27790d8bbb168599e05dc845b5b9e4414aa99a989951815ae",
-      "bytes": 31428
+      "sha256": "9597430db98cb6b056f9c35901040bdfd814290e438818d7fb6767c50b121f2b",
+      "bytes": 31897
     },
     "docs/LIBRA_MODEL_SUMMARY_2.3.53.md": {
       "sha256": "da749705ee7876252213a252cb672a33dc205ac200cd3193228a9f4e2d13fd71",
@@ -2596,16 +2596,20 @@
       "bytes": 835
     },
     "docs/LIBRA_UM0_UM1_ADAPTER_MAPPING.md": {
-      "sha256": "bcce415051e18e16d374ec5e5ab4100f8384382fef13bce79f32e3f983a8b85b",
-      "bytes": 19361
+      "sha256": "53a47514de87b7b0be2c9f67419dacb7940f126897bb1d952725ad6957558402",
+      "bytes": 21233
+    },
+    "docs/LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md": {
+      "sha256": "cbc533426a24c0ded355a3ab7ceb534627b4e246deb79a7411e4039020507bae",
+      "bytes": 10410
     },
     "docs/LIBRA_Unified_Architecture_v2_20260921.md": {
       "sha256": "901c8f57b3713baf3921aabcb01a9cab3acb038614cd388f0139f3030c00fa60",
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "401ebd676ebb8e070b6b6a9deda7f86c53777a07bed9f48e5617840d6a015346",
-      "bytes": 60422
+      "sha256": "ac8708fc6d43702dc15b3edccdd92f2626f9fe100c49c5421f111406475911c8",
+      "bytes": 61434
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -4870,6 +4874,10 @@
     "tests/fixtures/libra_lore_link_index_fixture.cjs": {
       "sha256": "b24030ece15861f4ffb3187a5703f61c639d0b7112f5f6555671e4041d9f0661",
       "bytes": 3166
+    },
+    "tests/fixtures/libra_memory_graph_identity_fixture.cjs": {
+      "sha256": "fba9393f0878ac0223c3533e428eefd5d0b99e38f3ec4b7c557ec19e631417b2",
+      "bytes": 8446
     },
     "tests/fixtures/libra_memory_ooc_gui_fixture.cjs": {
       "sha256": "c14f156f08269e1bf01db7206b063910be89f6b2931161e0240f1bc25b6692f2",
@@ -7414,6 +7422,10 @@
     "tests/libra_memory_first_server_runtime_test.cjs": {
       "sha256": "10d0e31d989c48f1a32b1e0b4ddace2f886274b95f707e54de310f11ed95bccf",
       "bytes": 1895
+    },
+    "tests/libra_memory_graph_identity_test.cjs": {
+      "sha256": "f3b6af1881fcd4828657155a2fbec14462603c4e88f8a355045a39786ced0925",
+      "bytes": 11961
     },
     "tests/libra_memory_ooc_authority_runtime_test.cjs": {
       "sha256": "0e7bfac7a25c1571ec16864740ec5f97e0a7d36177e20c14f1bdb274a49a84c3",
@@ -10030,6 +10042,10 @@
     "tools/libra_convo_harness.js": {
       "sha256": "48ddf1d7ace7a58e3e39eba72008bfdaeceb16ae480936596781b65b384adcf0",
       "bytes": 29067
+    },
+    "tools/libra_memory_graph_identity.cjs": {
+      "sha256": "49cc156d2e3e80cc4232909e9055b9ca18f1712a4432fb314146be2b91b060aa",
+      "bytes": 10525
     },
     "tools/libra_memory_network.cjs": {
       "sha256": "da1e5bb742ee1cd492318c7c02aed6ea1cf77d4762f0ce7734d2c9c1b4410131",

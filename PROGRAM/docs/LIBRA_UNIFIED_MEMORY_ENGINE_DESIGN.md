@@ -1,7 +1,7 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.1 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **설계 초안. 아래 새 엔진·스키마·인터페이스는 아직 구현되지 않았다.**
+- 문서 버전: 1.2 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **설계 초안. UM1 normalized identity 커널·합성 투영 fixture는 구현했다. 실제 owner reader·단일 검색·GraphStore·캐시/Lane·dispatch 인터페이스는 후속 작업이다.**
 - 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
@@ -21,7 +21,8 @@
 | [PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md) | 기존 저장 소유권·읽기 소비자 역할 유지. 검색 인덱스가 새 정본 소유자가 되지 않음 |
 | [MAIN_MEMORY_TRACEABILITY.md](MAIN_MEMORY_TRACEABILITY.md) §9 | 이전 World Maker HME의 복원 판단을 보존하고, 새 WM 첨부본의 재사용 원칙과 적용 범위를 갱신 |
 | [WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md) | 새 WM의 연결·검증·검색 제어를 대조한 정적 코드 검토. LIBRA 구현 완료나 호스트 성능 증거로 사용하지 않음 |
-| [LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) | UM0/UM1 대응표 **초안**: 현재 reader schema → 새 adapter 표, 첫 fixture(V01) 골격, 남은 결정. 승인된 구현 명세가 아님 |
+| [LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) | 현재 reader schema → 새 adapter 표. F-1/F-2 identity 계약·normalized fixture 구현과 남은 결정/연결 gate |
+| [LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md) | 공통 NodeID/EdgeID·basis·binding 1차 계약, 순수 커널과 14개 검증. production 검색 완료 증거와 구분 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
 
@@ -129,6 +130,8 @@ EntityNode와 SourceNode는 연결·접근의 중계점이다. 실제 자료 출
 - 안정 anchor가 없는 legacy는 revision-bound partial identity로 유지한다. 새 그래프를 만든다는 이유로 native identity나 대응 claim을 만들어 내지 않는다.
 
 동일 의미의 다른 출처는 별개 evidence다. 같은 원문의 정본/Micro/State는 정확한 출처와 유일한 typed 대응이 확인될 때 하나의 EvidenceFamily로 연결한다. 이 family는 중복 accounting 단위이며 자체 권한을 발급하지 않는다. 출처 미확정·반복 quote·split/merge·동명 ambiguity는 별개로 남는다.
+
+UM1의 1차 결정은 [graph identity 계약](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md)을 따른다. NodeID는 세 층의 공통 `libra.node.v1` namespace를 사용하고, physical `memoryKey`와 기존 network candidate ID는 locator/alias로 유지한다. 안정 source/unit lifetime을 증명하지 못하면 exact revision/restore epoch/snapshot에 묶인 partial identity를 사용한다. normalized 커널은 identity 형식만 검증하며 owner proof를 발급하지 않는다.
 
 ### 4.3 제안된 MeaningNode 자료
 
@@ -528,7 +531,7 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 ## 14. 구현 시작 전 기록할 결정
 
-다음 작업은 UM0/UM1에서 현재 field/claim/lore reader schema를 새 adapter 표에 대응시키고, V01의 가장 작은 네 자료 연결 fixture와 source coverage를 고정하는 것이다. 현재 대응표 초안: [LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md). UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다.
+현재 [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)의 F-1/F-2 identity 계약과 normalized 커널·첫 합성 투영 fixture를 구현했다. 다음 작업은 실제 owner reader에서 canonical/Micro/State/lore unit·basis를 발급하도록 연결하고, coverage·중복·source lifetime 근거를 고정하는 것이다. UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다.
 
 WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
 
@@ -543,3 +546,4 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.0 · 2026-10-13 | 네 자료·단일 검색·캐시·Memory Lane·공통 인덱스의 최초 통합 설계 |
 | 1.1 · 2026-10-14 | WM HME 검토 반영: 역할/다중 관계, 원본/요청 뷰 분리, activation 재평가·설명 정합성, exhaustive page 접근, maintenance 게시·restart 검증·변경 가드, V13–V18 추가 |
 | 1.1 · 2026-10-14 | UM0/UM1 대응표 초안([LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)) 연결. §1 문서 목록·§14에서 참조. 설계 결정이 아니며 열린 항목을 포함 |
+| 1.2 · 2026-10-14 | 공통 NodeID·EdgeID/basis·binding 1차 계약과 normalized 커널·합성 13-node/19-edge fixture, 14개 identity 검증 구현. 실제 reader/검색/dispatch gate는 미완료 |
