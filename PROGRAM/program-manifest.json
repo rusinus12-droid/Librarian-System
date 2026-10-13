@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T13:03:31.086Z",
+  "generatedAt": "2026-10-13T13:09:02.200Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -6688,8 +6688,8 @@
       "bytes": 7901
     },
     "tests/libra_agent_workbench_color_contrast_contract_test.cjs": {
-      "sha256": "661c336e1201ba23a3f506fb8292691ef639d402e2e8693a7646ef566fc2d2bf",
-      "bytes": 1679
+      "sha256": "f453f1baec1e417e0b8151d375c416ab4c2181f7ce4830014ce4044acc0a2f93",
+      "bytes": 2853
     },
     "tests/libra_agent_workbench_consolidation_runtime_test.cjs": {
       "sha256": "d609b1429563733e94a1518c70592d5a76ad346772652a25bbedf1fe3f09a68a",
@@ -6956,8 +6956,8 @@
       "bytes": 8834
     },
     "tests/libra_debug_serial_stage_contrast_contract_test.cjs": {
-      "sha256": "8d657746b9b61dcab7c4a96a8e1d5002aaeba5278494473af44071bfee9ff4de",
-      "bytes": 1281
+      "sha256": "8d5c1c96e8d0e7a01ea206e868fcad942e934a10bf9163b8bdee0d7644656c07",
+      "bytes": 2465
     },
     "tests/libra_derived_two_ref_settlement_test.cjs": {
       "sha256": "65824584e2a2c67dc719acd2dcfaaaac11e9ab5857b9ae426b443e64033b0851",
