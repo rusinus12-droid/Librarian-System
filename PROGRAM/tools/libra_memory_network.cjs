@@ -313,7 +313,195 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
     }
     return found;
   };
-  return Object.freeze({ project, upsert, invalidate, discover, projectCanonical, createRegistry,
+  // Derived metadata only: neither a proof nor an owner-store authority. A host
+  // adapter may supply a trusted revision/delta; otherwise every item is checked.
+  const createPagedIndex = ({ pageSize = 256 } = {}) => {
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new TypeError('LIBRA_NETWORK_PAGE_SIZE');
+    const records = new Map(), terms = new Map(), dependencies = new Map(), cursors = new WeakMap();
+    const vectorPages = [], freeSlots = [];
+    let ownerKey = null, revision = null, generation = 0, order = 0, dimensions = 0, nextSlot = 0, metadataBytes = 0, dirty = true, activeWork = null;
+    const io = { snapshots: 0, fallbacks: 0, refComparisons: 0, metadataRows: 0, postingAdds: 0,
+      postingRemoves: 0, invalidatedRows: 0, pagesRead: 0, lastFallbackReason: null };
+    const ownerTuple = frame => {
+      const { activeSourceMapping, ...owner } = normalizeFrame(frame);
+      return serialize(owner);
+    };
+    const remove = id => {
+      const old = records.get(id); if (!old) return;
+      for (const key of old.keys) {
+        const pages = terms.get(key), set = pages?.get(old.page);
+        if (set?.delete(id)) io.postingRemoves++;
+        if (!set?.size) pages?.delete(old.page);
+        if (!pages?.size) terms.delete(key);
+      }
+      for (const dep of old.dependencies) {
+        const set = dependencies.get(dep); set?.delete(id); if (!set?.size) dependencies.delete(dep);
+      }
+      if (old.slot != null) { vectorPages[Math.floor(old.slot / pageSize)].fill(0, (old.slot % pageSize) * dimensions, (old.slot % pageSize + 1) * dimensions); freeSlots.push(old.slot); }
+      metadataBytes -= old.bytes; records.delete(id); io.invalidatedRows++;
+    };
+    const clear = () => {
+      records.clear(); terms.clear(); dependencies.clear(); vectorPages.length = 0;
+      freeSlots.length = 0; nextSlot = 0; order = 0; dimensions = 0; metadataBytes = 0; generation++;
+    };
+    const prepare = item => {
+      const id = entityIdValue(item?.id);
+      const postings = Object.fromEntries(['token','entity','predicate','time'].map(kind =>
+        [kind, [...new Set(array(item.postings?.[kind]).map(entityIdValue))]]));
+      const deps = [...new Set(array(item.dependencies).map(entityIdValue))];
+      const vector = item.vector == null ? null : Float64Array.from(item.vector);
+      if (vector && (!vector.length || vector.some(v => !Number.isFinite(v)))) throw new TypeError('LIBRA_NETWORK_VECTOR_INVALID');
+      return { id, postings, deps, vector, exact: serialize([item.fingerprint ?? null, postings, deps, vector?.length ?? null]) };
+    };
+    const moveOrder = (id, position) => {
+      const row=records.get(id),page=Math.floor(position/pageSize);
+      if(row.page!==page) for(const key of row.keys){
+        const pages=terms.get(key),old=pages.get(row.page); old.delete(id); io.postingRemoves++;
+        if(!old.size)pages.delete(row.page);
+        let set=pages.get(page);if(!set)pages.set(page,set=new Set());set.add(id);io.postingAdds++;
+      }
+      row.page=page;row.order=position;
+    };
+    const insert = (item, position) => {
+      const old = records.get(item.id);
+      if (old?.exact === item.exact) {
+        const sameVector = !item.vector || item.vector.every((value,d) =>
+          value === vectorPages[Math.floor(old.slot / pageSize)][(old.slot % pageSize) * dimensions + d]);
+        if (sameVector) { moveOrder(item.id,position); return; }
+      }
+      remove(item.id);
+      const page = Math.floor(position / pageSize);
+      const keys = Object.entries(item.postings).flatMap(([kind, values]) => values.map(key => serialize([kind,key])));
+      let slot = null;
+      if (item.vector) {
+        if (!dimensions) dimensions = item.vector.length;
+        slot = freeSlots.length ? freeSlots.pop() : nextSlot++;
+        const vectorPage = Math.floor(slot / pageSize);
+        vectorPages[vectorPage] ||= new Float64Array(pageSize * dimensions);
+        vectorPages[vectorPage].set(item.vector, (slot % pageSize) * dimensions);
+      }
+      const bytes = utf8Bytes(item.exact).length; metadataBytes += bytes;
+      records.set(item.id, { exact:item.exact, bytes, keys, dependencies:item.deps, page, order:position, slot });
+      for (const key of keys) {
+        let pages = terms.get(key); if (!pages) terms.set(key, pages = new Map());
+        let set = pages.get(page); if (!set) pages.set(page, set = new Set());
+        set.add(item.id); io.postingAdds++;
+      }
+      for (const dep of item.deps) { let set=dependencies.get(dep); if (!set) dependencies.set(dep,set=new Set()); set.add(item.id); }
+      io.metadataRows++;
+    };
+    const reconciliation = function* (snapshot) {
+      const nextOwner = ownerTuple(snapshot.frame), nextRevision = revisionValue(snapshot.revision);
+      const sameOwner = nextOwner === ownerKey;
+      const trusted = snapshot.trustedRevision === true;
+      if (sameOwner && trusted && revision === nextRevision && nextRevision != null && !dirty) return inspect();
+      const delta = sameOwner && trusted && snapshot.verifiedChangedIDs === true;
+      if(delta && dirty)throw new TypeError('LIBRA_NETWORK_DIRTY_SNAPSHOT_REQUIRED');
+      if (delta && (revisionValue(snapshot.fromRevision) !== revision || nextRevision == null)) throw new TypeError('LIBRA_NETWORK_DELTA_UNVERIFIED');
+      if (sameOwner && trusted && !delta) throw new TypeError('LIBRA_NETWORK_DELTA_UNVERIFIED');
+      if (delta && snapshot.append === true && snapshot.prefixVerified !== true) throw new TypeError('LIBRA_NETWORK_PREFIX_UNVERIFIED');
+      if (!Array.isArray(snapshot.items)) throw new TypeError('LIBRA_NETWORK_SNAPSHOT_REQUIRED');
+      // Validate everything before mutation so malformed deltas retain prior data.
+      const prepared=[], seen = new Set();
+      for(let i=0;i<snapshot.items.length;i++){
+        prepared.push(prepare(snapshot.items[i]));
+        if((i+1)%pageSize===0)yield;
+      }
+      for (const item of prepared) { if (seen.has(item.id)) throw new TypeError('LIBRA_NETWORK_DUPLICATE_ID'); seen.add(item.id); }
+      const changed = array(snapshot.changedIDs).map(entityIdValue), deleted = array(snapshot.deletedIDs).map(entityIdValue);
+      if (delta && (changed.length !== seen.size || new Set(changed).size !== seen.size || changed.some(id => !seen.has(id)) || deleted.some(id=>seen.has(id)))) throw new TypeError('LIBRA_NETWORK_DELTA_UNVERIFIED');
+      const vectorDimensions = new Set(prepared.filter(i=>i.vector).map(i=>i.vector.length));
+      if (vectorDimensions.size > 1 || (sameOwner && dimensions && [...vectorDimensions].some(d=>d!==dimensions))) throw new TypeError('LIBRA_NETWORK_VECTOR_SPACE_MISMATCH');
+      const reordered = snapshot.orderIDs == null ? null : snapshot.orderIDs.map(entityIdValue);
+      if (delta && reordered && (new Set(reordered).size !== reordered.length || reordered.length !== records.size - deleted.filter(id=>records.has(id)).length + prepared.filter(i=>!records.has(i.id)).length
+        || reordered.some(id=>!seen.has(id)&&(!records.has(id)||deleted.includes(id))))) throw new TypeError('LIBRA_NETWORK_ORDER_UNVERIFIED');
+      if (!sameOwner) { clear(); ownerKey = nextOwner; }
+      io.snapshots++; dirty=true; generation++;
+      if (delta) {
+        for(let i=0;i<deleted.length;i++){remove(deleted[i]);if((i+1)%pageSize===0)yield;}
+        for(let i=0;i<prepared.length;i++){const item=prepared[i];insert(item, records.get(item.id)?.order ?? order++);if((i+1)%pageSize===0)yield;}
+        if(reordered){for(let i=0;i<reordered.length;i++){moveOrder(reordered[i],i);if((i+1)%pageSize===0)yield;}order=reordered.length;}
+      } else {
+        if (!trusted) { io.fallbacks++; io.lastFallbackReason='owner_revision_unavailable'; }
+        io.refComparisons += prepared.length;
+        let visited=0;
+        for(const id of records.keys()){if(!seen.has(id))remove(id);if(++visited%pageSize===0)yield;}
+        for(let i=0;i<prepared.length;i++){insert(prepared[i],i);if((i+1)%pageSize===0)yield;}order=prepared.length;
+      }
+      revision=nextRevision; dirty=false; generation++; return inspect();
+    };
+    const startWork = () => {
+      if(activeWork)throw new TypeError('LIBRA_NETWORK_RECONCILIATION_BUSY');
+      activeWork={invalidated:false};generation++;
+      return activeWork;
+    };
+    const assertWork = work => {
+      if(work.invalidated)throw new TypeError('LIBRA_NETWORK_RECONCILIATION_INVALIDATED');
+    };
+    const reconcile = snapshot => {
+      const lease=startWork(),work=reconciliation(snapshot);let step;
+      try{do{assertWork(lease);step=work.next();}while(!step.done);}
+      finally{work.return();activeWork=null;}
+      return inspect();
+    };
+    const reconcilePaged = async (snapshot, { checkpoint = () => {}, yieldPage = async () => {} } = {}) => {
+      const lease=startWork(),work=reconciliation(snapshot);
+      try{
+        for(;;){checkpoint();assertWork(lease);const step=work.next();if(step.done)break;await yieldPage();}
+      }finally{work.return();activeWork=null;}
+      return inspect();
+    };
+    const query = ({ tokens: tokenKeys=[], entities=[], predicates=[], times=[], cursor=null, frame } = {}) => {
+      if (frame && ownerTuple(frame) !== ownerKey) throw new TypeError('LIBRA_NETWORK_OWNER_MISMATCH');
+      const key = serialize([tokenKeys,entities,predicates,times]);
+      let session = cursor ? cursors.get(cursor) : null;
+      if (cursor && (!session || session.generation !== generation || session.key !== key)) throw new TypeError('LIBRA_NETWORK_CURSOR_STALE');
+      if (!session) {
+        const pageIDs=new Set(),keys=[];
+        for(const [kind,values] of [['token',tokenKeys],['entity',entities],['predicate',predicates],['time',times]])
+          for(const value of values){const term=serialize([kind,entityIdValue(value)]);keys.push(term);for(const page of terms.get(term)?.keys()||[])pageIDs.add(page);}
+        session={key,generation,keys,pages:[...pageIDs].sort((a,b)=>a-b),pageAt:0,ids:[],offset:0};
+      }
+      const ids=[];
+      // Read only enough posting pages to fill this result page. Never materialize
+      // a common token's entire candidate set merely to return its first page.
+      while(ids.length<pageSize){
+        if(session.offset>=session.ids.length){
+          if(session.pageAt>=session.pages.length)break;
+          const page=session.pages[session.pageAt++],selected=new Set();
+          for(const term of session.keys){const set=terms.get(term)?.get(page);if(!set)continue;io.pagesRead++;for(const id of set)selected.add(id);}
+          session.ids=[...selected].sort((a,b)=>records.get(a).order-records.get(b).order);session.offset=0;
+        }
+        const take=Math.min(pageSize-ids.length,session.ids.length-session.offset);
+        ids.push(...session.ids.slice(session.offset,session.offset+take));session.offset+=take;
+      }
+      let next=null;
+      if(session.offset<session.ids.length||session.pageAt<session.pages.length){next=Object.freeze({});cursors.set(next,{...session});}
+      return Object.freeze({ids:Object.freeze(ids),cursor:next,pageExhausted:!next,complete:!next&&!dirty&&!activeWork,coverage:inspect().coverage});
+    };
+    const invalidateDependencies = refs => {
+      if(activeWork)activeWork.invalidated=true;
+      const selected = new Set();
+      for (const ref of refs) for(const id of dependencies.get(entityIdValue(ref)) || []) selected.add(id);
+      selected.forEach(remove); dirty=true; generation++;
+    };
+    // Exact packed dot access cost only. No ranking, gate or frontier policy.
+    const scanDense = queryVector => {
+      if (queryVector.length !== dimensions || Array.from(queryVector).some(v=>!Number.isFinite(v))) throw new TypeError('LIBRA_NETWORK_VECTOR_SPACE_MISMATCH');
+      let vectorsScanned=0,dotTerms=0,checksum=0;
+      for(const row of records.values()) if(row.slot!=null){
+        const page=vectorPages[Math.floor(row.slot/pageSize)],offset=(row.slot%pageSize)*dimensions;
+        let dot=0; for(let d=0;d<dimensions;d++){dot+=page[offset+d]*queryVector[d];dotTerms++;}
+        checksum+=dot; vectorsScanned++;
+      }
+      return {vectorsScanned,dotTerms,dimensions,bytesRead:dotTerms*8,checksum,complete:!dirty&&!activeWork,coverage:inspect().coverage,precision:'float64'};
+    };
+    const inspect = () => ({coverage:{status:dirty||activeWork?'partial':'complete',indexed:records.size,revision,partialReasons:activeWork?['reconciliation_in_progress']:dirty?['dependency_refresh_required']:[]},jobs:{generation},io:{...io},
+      bytes:{packedVectors:vectorPages.length*pageSize*dimensions*8,exactMetadata:metadataBytes,accounting:'serialized_metadata_and_typed_arrays_only',heapOverhead:'unmeasured',byteBounded:false},
+      frontier:{postingKeys:terms.size,pageSize,policy:'access_only'}});
+    return Object.freeze({reconcile,reconcilePaged,query,invalidateDependencies,scanDense,inspect});
+  };
+  return Object.freeze({ project, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
     diagnostics: () => activeRegistry?.diagnostics() || { schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: 0,
       identityCoverage: 'partial', pathBonus: 0, costs: {} } });
 };

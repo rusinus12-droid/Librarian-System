@@ -86,7 +86,7 @@ async function finalProofFixture(snapshot, graph = true, options = {}) {
   const counts = { query: 0, document: 0 };
   const f = await fixture({ snapshot, transformSource: options.transformSource,
     args: { evidence_link_index_enabled: String(graph), associative_recall_enabled: String(graph),
-      lore_link_index_enabled: 'false' }, host: embeddingHost(counts) });
+      lore_link_index_enabled: 'false' }, host: { ...embeddingHost(counts), ...options.host } });
   await settings(f);
   return { ...f, counts, graphRef: f.getManifest().memories['6'] };
 }
