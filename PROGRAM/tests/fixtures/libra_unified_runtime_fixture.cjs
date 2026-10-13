@@ -32,7 +32,15 @@ async function fixture(options={}){
  runLLMModel:async(...args)=>{control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};return {type:'success',result:JSON.stringify(control.artifact)};}};
  Object.assign(host,options.host || {});
  const r=await createLibraVmHarness({enable_character_ito:false,enable_world_ito:false,enable_plot_ito:false,...options.args},host,{initialValues:options.snapshot?.values,transformSource:options.transformSource});
- const settings=await r.api.getLibraMemorySettings();await r.api.saveLibraMemorySettings({...settings,memoryEngine:options.mode || 'unified'});
+ const settings=await r.api.getLibraMemorySettings();
+ const requestedEngine=options.mode || 'unified';
+ // Getter settings are normalized. Skip only the identical supported engine
+ // alias already recorded in this snapshot; other requests keep real validation.
+ const sameEngine=['librarian','legacy','unified','unified_review','serial_review'].includes(requestedEngine)
+  && settings.librarianPolicyVersion===1 && settings.configurationStatus==='ready'
+  && (settings.memoryEngine===requestedEngine
+   || (settings.memoryEngine==='librarian' && settings.compatibilityMemoryEngine===requestedEngine));
+ if(!sameEngine)await r.api.saveLibraMemorySettings({...settings,memoryEngine:requestedEngine});
  const getManifest=()=>{const key=[...r.values.keys()].find(k=>k.startsWith('libra')&&k.endsWith(':manifest'));return key?JSON.parse(r.values.get(key)):null;};
  const getMemory=(start=1)=>{const ref=getManifest()?.memories?.[String(start)];return ref?JSON.parse(r.values.get(ref.key)):null;};
  const getHead=()=>{const key=[...r.values.keys()].find(k=>{try{return JSON.parse(r.values.get(k))?.schema==='libra.continuity_state.v2';}catch{return false;}});return key?JSON.parse(r.values.get(key)):null;};

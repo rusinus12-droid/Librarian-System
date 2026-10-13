@@ -38,11 +38,15 @@ const embeddingHost = counts => ({ nativeFetch: async (url, init) => {
     index, embedding: query ? vector([[0, .58], [101, .77]]) : documentVector(String(text))
   })) }), { status: 200 });
 } });
-const settings = async f => f.r.api.saveLibraMemorySettings({
-  ...await f.r.api.getLibraMemorySettings(), performancePreset: 'custom',
-  candidateLimit: 8, recallMaxMemories: 12, recallMaxChars: 12000,
-  recallQueryMessages: 1, forceCurrentScene: true
-});
+const settings = async f => {
+  const current=await f.r.api.getLibraMemorySettings();
+  const patch={ performancePreset:'custom', candidateLimit:8, recallMaxMemories:12,
+    recallMaxChars:12000, recallQueryMessages:1, forceCurrentScene:true };
+  // This fixture configures scalar fields on normalized getter settings. Saving
+  // a no-op would invoke refreshSnapshot and hydrate the entire test corpus.
+  if(Object.entries(patch).every(([key,value])=>current[key]===value))return current;
+  return await f.r.api.saveLibraMemorySettings({...current,...patch});
+};
 async function seedSnapshot() {
   const counts = { query: 0, document: 0 };
   const f = await fixture({ host: embeddingHost(counts) });
