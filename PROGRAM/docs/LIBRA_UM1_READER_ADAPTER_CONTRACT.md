@@ -92,4 +92,4 @@ node PROGRAM/tools/sync_libra_memory_graph.cjs --check
 
 ## 6. 다음 gate
 
-F-3/F-4의 byte admission·maintenance/query 경계를 확정하고, 읽기 투영을 durable SourceGraph page/generation·공통 cache/pin/eviction/Lane에 연결한다. count cap으로 byte 예산을 대체하지 않는다. 그 뒤 UM3에서 단일 candidate/frontier/scorer·improved-path reevaluation을 구현한다. final viewer/as-of eligibility·physical readset/dispatch와 실제 설치 호스트 qualification은 별도 gate다. [대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)의 F-3–F-8/F-10을 이번 reader 연결로 닫지 않는다.
+후속 [UM2 page/cache 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)은 F-3/F-4의 첫 계상/읽기 경계와 `getMemoryGraphAccessPage`를 구현했다. 원본 projection API에는 descriptive `readerFrame`이 추가되며 byte admission이나 physical proof를 부여하지 않는다. 다음은 durable SourceGraph page/generation, 전체 source/L0/I/O budget inventory와 Memory Lane 연결이다. count cap으로 byte 예산을 대체하지 않는다. 그 뒤 UM3에서 단일 candidate/frontier/scorer·improved-path reevaluation을 구현한다. final viewer/as-of eligibility·physical readset/dispatch와 실제 설치 호스트 qualification은 별도 gate다. F-3–F-8/F-10 전체를 첫 page cache 연결로 닫지 않는다.

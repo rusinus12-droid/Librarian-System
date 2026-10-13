@@ -1,7 +1,7 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.3 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **설계 초안. UM1 identity 커널과 네 자료의 실제 owner reader → 요청 내 읽기 전용 그래프 투영을 구현했다. 단일 검색·GraphStore·캐시/Lane·최종 dispatch 연결은 후속 작업이다.**
+- 문서 버전: 1.4 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **설계 초안. 실제 owner reader의 네 자료 투영과 공통 accounted-byte page cache·pin/eviction·현재 snapshot cursor를 연결했다. durable GraphStore/generation·전체 byte inventory·Memory Lane·단일 검색·최종 dispatch는 후속 작업이다.**
 - 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
@@ -24,6 +24,7 @@
 | [LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) | 현재 reader schema → 새 adapter 표. F-1/F-2 identity 계약·normalized fixture 구현과 남은 결정/연결 gate |
 | [LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md) | 공통 NodeID/EdgeID·basis·binding 1차 계약, 순수 커널과 14개 검증. production 검색 완료 증거와 구분 |
 | [LIBRA_UM1_READER_ADAPTER_CONTRACT.md](LIBRA_UM1_READER_ADAPTER_CONTRACT.md) | 실제 정본·Micro·State·lore reader 연결, 공개 read-only projection page, 역할/근거/coverage 및 실제 등록 API의 합성 호스트 검증 |
+| [LIBRA_UM2_PAGE_CACHE_CONTRACT.md](LIBRA_UM2_PAGE_CACHE_CONTRACT.md) | F-3/F-4의 첫 경계: 공통 payload byte admission·pin/LRU·partition·staging/decode와 실제 owner projection page 접근. 전체 heap·durable generation·Lane 완료와 구분 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
 
@@ -84,6 +85,14 @@ HME 전체 엔진을 재도입하거나 기존 `bonusCap`으로 relevance/근거
 등록된 공개 API를 합성 호스트에서 실행한 plugin_only/server_only fixture는 각각 48-node/81-edge, 정본 13·Micro 1·State 17·lore 2 unit을 반환했다. 동일 span의 다른 Micro claim은 owner claim digest로 구별하고 유일 대응이 없으면 State derivation을 만들지 않는다. 별도 실제 writer 시나리오에서 사용자 정정·명시적 clear, 실제 producer 실패에서 source-only 500자 표현도 검증했다.
 
 이는 **owner reader 연결과 투영의 검증**이다. 실제 설치 호스트 qualification, viewer/as-of QueryGraphView, 최종 물리 dispatch proof, 단일 frontier/scorer, durable graph·공통 byte cache·Lane 전환은 완료하지 않았다. page의 `inventoryComplete:false`, `byteBounded:false`, `modelDispatchEligible:false`와 미해결 근거 사유를 유지한다. 기존 normal recall/beforeRequest는 새 API를 자동 호출하지 않는다. 세부 계약과 재현 명령은 [reader adapter 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)에 고정한다.
+
+### 2.5 v1.4의 구현 진척
+
+`getMemoryGraphAccessPage()`는 검증된 owner projection을 nodes/edges/bases/units의 연속 byte page로 읽는다. 공통 캐시는 역할별 payload binding·privacy partition과 전체 resident/request/staging 예산을 관리한다. 불변 payload는 generation이 달라도 재사용하며, 같은 NodeID의 binding 변화·coverage/view·restore epoch는 현재 snapshot cursor를 바꾼다. 작은 page보다 큰 항목은 누락하지 않고 같은 위치의 cursor와 stopReason을 반환한다.
+
+pin backpressure·LRU 재조회·강제 digest 충돌·finally 해제·partition quota를 순수 suite에서 검증하고, 실제 등록 API의 plugin_only/server_only 합성 호스트에서 네 자료의 33개 unit 순회와 cold/warm 일치를 검증한다. 실제 portable restore boundary와 scope 삭제/unload에 cache 무효화가 연결된다. 조회 중 durable write/provider 호출은 시작하지 않는다.
+
+이번 byte admission은 **파생 page cache와 managed decode/staging**에 한정한다. 원본 reader의 전체 projection workspace·반환값 보관·VM overhead는 미계상이며 전체 API는 `byteBounded:false`다. warm hit에서도 원본 검증·투영·encoding을 수행한다. snapshot generation label은 durable root의 독립 검증이나 QueryGraphView 권한이 아니다. 세부 범위와 다음 gate는 [UM2 page/cache 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)에 기록한다.
 
 ## 3. 전체 아키텍처
 
@@ -298,6 +307,8 @@ complete 판정은 node의 최초 방문이나 그래프의 화면 표본 소진
 위 L0–L3는 데이터 수명 계층이다. 기존 interactive/background/maintenance compute scheduling lane과 혼동하지 않는다.
 
 ### 7.2 Cache Manager와 바이트 예산
+
+v1.4의 첫 구현은 [UM2 page/cache 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)의 파생 JSON pages·request decode lease·staging admission이다. 아래 목록은 **최종 전체 엔진 요구사항**이며, source map/frontier/I/O/write barrier·durable bounded owner read는 아직 구현 완료로 판정하지 않는다.
 
 한 cache manager가 예산·pin·eviction·invalidation·계측을 통제하고, payload pool은 역할별로 나눈다. 모든 자료를 한 Map에 모으는 설계가 아니다.
 
@@ -540,7 +551,7 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 ## 14. 구현 시작 전 기록할 결정
 
-현재 [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)의 F-1/F-2 identity 계약·normalized 커널에 실제 canonical/Micro/State/lore owner reader를 연결했다. 안정 lifetime을 증명하지 못한 자료는 revision-bound로 유지하며, page 밖 근거·ambiguity·미지원 inherited Micro를 coverage로 보고한다. 다음 우선 작업은 F-3/F-4의 byte admission·maintenance/query 경계를 결정하고, 이 투영을 SourceGraph page/generation reader와 연결하는 것이다. UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다. 그 뒤 UM3에서 네 자료를 같은 frontier·평가·종료 정책으로 검색한다.
+현재 실제 canonical/Micro/State/lore owner reader와 공통 파생 JSON page/cache admission을 연결했다. F-3/F-4의 첫 계상·읽기 경계는 [UM2 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)으로 고정했다. 다음 우선 작업은 이를 durable SourceGraph shard·독립 검증된 generation reader/maintenance 게시에 연결하고, 원본 읽기와 L0/frontier/I/O/write barrier까지 byte inventory를 확장하는 것이다. legacy cache/ranker 이전과 trusted owner protocol이 없는 범위를 별도로 기록한다. 그 뒤 UM3에서 네 자료를 같은 frontier·평가·종료 정책으로 검색한다. 안정 lifetime을 증명하지 못한 자료와 미지원 inherited Micro·page 밖 근거는 기존 coverage 한계를 유지한다.
 
 WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
 
@@ -557,3 +568,4 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.1 · 2026-10-14 | UM0/UM1 대응표 초안([LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)) 연결. §1 문서 목록·§14에서 참조. 설계 결정이 아니며 열린 항목을 포함 |
 | 1.2 · 2026-10-14 | 공통 NodeID·EdgeID/basis·binding 1차 계약과 normalized 커널·합성 13-node/19-edge fixture, 14개 identity 검증 구현. 실제 reader/검색/dispatch gate는 미완료 |
 | 1.3 · 2026-10-14 | 네 자료의 실제 owner reader와 공개 read-only graph projection page 구현. 등록 API의 plugin_only/server_only 합성 호스트, source-only·정정·clear·본문 경합·cursor/route 및 11개 schema 계약 검증. 검색·durable/cache/Lane·dispatch는 후속 gate |
+| 1.4 · 2026-10-14 | 공통 accounted-byte JSON page cache·pin/LRU·partition·staging/decode admission과 실제 owner projection access API. snapshot/binding/restore cursor·예산 stop·13개 순수 검사·실제 등록 API/portable restore 검증. 전체 heap·durable SourceGraph/generation·Lane/검색은 후속 gate |

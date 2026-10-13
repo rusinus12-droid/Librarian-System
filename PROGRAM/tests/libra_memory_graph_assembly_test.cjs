@@ -4,12 +4,13 @@ const { sync, block } = require('../tools/sync_libra_memory_graph.cjs');
 const network = require('../tools/sync_libra_memory_network.cjs');
 const { buildPlugins } = require('../tools/build_plugins.cjs');
 (async () => {
-  assert.equal(sync({ check: true }).changed, false, 'the shipped plugin embeds both exact graph factories');
+  assert.equal(sync({ check: true }).changed, false, 'the shipped plugin embeds all exact graph factories');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'libra-graph-assembly-'));
   try {
     const target = path.join(tmp, 'LIBRA.js');
     for (const source of ['const empty = true;', block().replace('createLibraMemoryGraphReaders', 'staleReaders'),
       block().replace('createLibraMemoryGraphIdentity', 'staleIdentity'), `${block()}\n${block()}`,
+      block().replace('createLibraMemoryGraphPages', 'stalePages'),
       '// END LIBRA MEMORY GRAPH\n// BEGIN LIBRA MEMORY GRAPH']) {
       fs.writeFileSync(target, source);
       assert.throws(() => sync({ target, check: true }), /marker|synchronization/i);

@@ -1,8 +1,9 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
 const identity = require('./libra_memory_graph_identity.cjs'), readers = require('./libra_memory_graph_readers.cjs');
+const pages = require('./libra_memory_graph_pages.cjs');
 const begin = '// BEGIN LIBRA MEMORY GRAPH', end = '// END LIBRA MEMORY GRAPH';
-const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    ${end}`;
+const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    ${end}`;
 function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = false } = {}) {
   const before = fs.readFileSync(target, 'utf8');
   const starts = [...before.matchAll(/^[ \t]*\/\/ BEGIN LIBRA MEMORY GRAPH[ \t]*$/gm)];
@@ -25,7 +26,8 @@ function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = fa
   }
   return { checked: check, changed: after !== before,
     identitySHA256: crypto.createHash('sha256').update(identity.toString()).digest('hex'),
-    readersSHA256: crypto.createHash('sha256').update(readers.toString()).digest('hex') };
+    readersSHA256: crypto.createHash('sha256').update(readers.toString()).digest('hex'),
+    pagesSHA256: crypto.createHash('sha256').update(pages.toString()).digest('hex') };
 }
 module.exports = { sync, block };
 if (require.main === module) try { console.log(JSON.stringify(sync({ check: process.argv.includes('--check') }))); }
