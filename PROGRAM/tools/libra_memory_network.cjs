@@ -134,10 +134,21 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
     const rendered = text(memory.text || memory.summary);
     const sourceAtoms = ['ownerNamespace', 'originScope', 'objectUUID', 'birthIncarnation'].map(key => identifierValue(source[key]));
     const completeSource = sourceAtoms.every(Boolean);
+    let attachment = null;
+    if(source.attachment != null){
+      const a=source.attachment;
+      if(a.schema!=='libra.revision_source_attachment.v1' || !['owner','sourceScope','worldlineId','originIdentity','sourceRevision'].every(key=>identifierValue(a[key]))
+        || !Number.isSafeInteger(a.sessionEpoch) || !Number.isSafeInteger(a.turn) || a.turn<1 || !['user','assistant'].includes(a.role)) {
+        throw new TypeError('LIBRA_NETWORK_SOURCE_ATTACHMENT');
+      }
+      attachment={schema:a.schema,owner:identifierValue(a.owner),sourceScope:identifierValue(a.sourceScope),worldlineId:identifierValue(a.worldlineId),
+        sessionEpoch:a.sessionEpoch,turn:a.turn,role:a.role,originIdentity:identifierValue(a.originIdentity),sourceRevision:identifierValue(a.sourceRevision)};
+    }
     // Source hash is binding, never a stable source object identifier. Surface
     // message IDs and producer tempFactIds also cannot establish an incarnation.
     const sourceIdentity = completeSource
       ? ['source-object', ...sourceAtoms]
+      : attachment ? ['revision-source-attachment', attachment]
       : ['legacy-source', frame.owner, frame.scopeKey, identifierValue(source.recordKey), identifierValue(memory.memoryId), sourceRevision,
           analysisRevision, identifierValue(source.sourceDigest), digest(memory)];
     const sourceId = 'source:' + digest(sourceIdentity);
@@ -147,7 +158,7 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       const semantic = { actorId: identifierValue(claim.actorId), targetId: identifierValue(claim.targetId), predicate: identifierValue(claim.predicate),
         direction: identifierValue(claim.direction), value: claim.value ?? null, polarity: identifierValue(claim.polarity), time: claim.time ?? null,
         certainty: identifierValue(claim.certainty), sourceAnchors: anchors };
-      const complete = completeSource && semantic.actorId && semantic.predicate && semantic.direction && semantic.polarity
+      const complete = (completeSource || attachment) && semantic.actorId && semantic.predicate && semantic.direction && semantic.polarity
         && claim.value !== undefined && claim.time !== undefined && semantic.certainty && anchors.length;
       const entityIds = array(claim.entityIds).map(entityIdValue);
       return { claim, semantic, entityIds, complete: !!complete, key: serialize(semantic) };
@@ -159,7 +170,7 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       const proven = complete && counts.get(key) === 1;
       const meaning = proven ? semantic : ['legacy-claim', sourceRevision, analysisRevision, index, claim];
       claimKeys.push(serialize(meaning));
-      return { claimId: 'claim:' + digest([sourceId, meaning]), identityCoverage: proven ? 'complete' : 'partial', semantic: copy(semantic) };
+      return { claimId: 'claim:' + digest([sourceId, meaning]), identityCoverage: proven && completeSource ? 'complete' : 'partial', semantic: copy(semantic) };
     });
     const identityCoverage = completeSource && claims.length && claims.every(c => c.identityCoverage === 'complete') ? 'complete' : 'partial';
     const semanticDigest = digest(claims.map(c => c.semantic));
@@ -180,9 +191,64 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       representationId: 'representation:' + digest([nodeId, textHash, projectionVersion, embeddingSpace]),
       postings: { token: tokens([rendered, ...array(memory.recallKeys), ...rawClaims.map(c => c.text)].join(' ')),
         entity: [...new Set(entityKeys)], predicate: [...new Set(predicateKeys)], time: [...new Set(timeKeys)] } });
-    const sourceKey = serialize(completeSource ? sourceIdentity : [sourceIdentity, memory]);
-    identityRecords.set(unit, { sourceKey, logicalKey: serialize([sourceKey, claimKeys]), bindingKey: serialize([bindingFields, memory]) });
+    const sourceKey = serialize(completeSource || attachment ? sourceIdentity : [sourceIdentity, memory]);
+    identityRecords.set(unit, { sourceKey, logicalKey: serialize([sourceKey, claimKeys]), bindingKey: serialize([bindingFields, memory]),
+      typedCorrespondence: descriptors.length > 0 && descriptors.every(item => item.complete && counts.get(item.key) === 1) });
     return unit;
+  };
+  const projectMicro = (record = {}, binding = {}) => {
+    if (!['verified', 'minimum_source_bound'].includes(record.analysisStatus)) throw new TypeError('LIBRA_NETWORK_MICRO_ANALYSIS_STATUS');
+    const rawClaims = record.analysisStatus === 'verified' ? array(record.claims) : [];
+    if(rawClaims.length && binding.normalizedClaims != null && (!Array.isArray(binding.normalizedClaims)
+      || binding.normalizedClaims.length!==rawClaims.length))throw new TypeError('LIBRA_NETWORK_MICRO_CLAIM_CARDINALITY');
+    const spans = rawClaims.length ? rawClaims.map(claim => claim.evidence) : [record.excerpt];
+    if (!spans.length || spans.some(span => !span || !['user', 'assistant'].includes(span.role)
+      || !identifierValue(span.messageId) || !Number.isSafeInteger(span.startOffset)
+      || !Number.isSafeInteger(span.endOffset) || span.startOffset < 0 || span.endOffset <= span.startOffset
+      || typeof span.exactQuote !== 'string' || span.exactQuote.length !== span.endOffset - span.startOffset)) {
+      throw new TypeError('LIBRA_NETWORK_MICRO_SOURCE_SPAN');
+    }
+    // This exact semantic payload excludes durable projections, embedding/jobs,
+    // producer timestamps and public proof flags. Access and hydration therefore
+    // issue the same IDs; only the physical binding can change independently.
+    const payload = { memoryId: 'micro_' + identifierValue(record.analysisRevisionId),
+      revision: revisionValue(record.sourceRevisionId), scopeKey: identifierValue(record.scopeKey),
+      worldlineId: identifierValue(record.worldlineId), sessionEpoch: record.sessionEpoch,
+      receiptKey: identifierValue(record.receiptKey), analysisStatus: record.analysisStatus,
+      turnRange: {start: record.turn, end: record.turn},
+      sourceSpans: spans.map(copy),
+      text: [...rawClaims.map(claim => text(claim.text)), ...spans.map(span => span.exactQuote)].join('\n'),
+      claims: rawClaims.length ? binding.normalizedClaims || rawClaims.map(copy) : [] };
+    const source = { ...binding.source, revision: record.sourceRevisionId,
+      analysisRevision: record.analysisRevisionId, sourceDigest: record.sourceDigest };
+    const base = projectCanonical({memory: payload, source, frame: binding.frame});
+    const kind = rawClaims.length ? 'micro' : 'source_only';
+    const microBindingFields={...base.binding,projectionVersion:'libra.micro-network.v1'};delete microBindingFields.bindingId;
+    const microBinding=freeze({...microBindingFields,bindingId:'binding:'+digest(microBindingFields)});
+    const nodeId=kind + ':' + digest([base.sourceId, base.claims.map(claim => claim.claimId), record.analysisStatus,
+      kind==='source_only'?spans:null]);
+    const unit = freeze({...base, schema: 'libra.micro-network.v1', kind,
+      authority: kind === 'micro' ? 'source_verified_candidate' : 'source_only',
+      nodeId,binding:microBinding,representationId:'representation:'+digest([nodeId,microBinding.textHash,microBinding.projectionVersion,microBinding.embeddingSpace]),
+      text: payload.text, sourceSpans: spans.map(copy)});
+    identityRecords.set(unit, {...identityRecords.get(base),
+      logicalKey: kind==='source_only'?serialize([identityRecords.get(base).logicalKey,spans]):identityRecords.get(base).logicalKey,
+      bindingKey: serialize([identityRecords.get(base).bindingKey, microBinding, unit.authority, spans])});
+    if (binding.row) rowsByUnit.set(unit, binding.row);
+    return Object.freeze([unit]);
+  };
+  const resolveEvidenceCluster = units => {
+    const issued = array(units);
+    if (issued.some(unit => !identityRecords.has(unit))) throw new TypeError('LIBRA_NETWORK_PROJECTION_IDENTITY_UNAVAILABLE');
+    const sources = [...new Set(issued.map(unit => unit.sourceId))];
+    const key = unit => serialize([identityRecords.get(unit).sourceKey, unit.claims.map(claim => claim.claimId).sort()]);
+    const same = issued.length > 0 && issued.every(unit => identityRecords.get(unit).typedCorrespondence && unit.claims.length > 0 && key(unit) === key(issued[0]));
+    const conflictSlot = claim => {const {value, polarity, ...slot} = claim.semantic; return serialize(slot);};
+    const conflicts = issued.filter(unit => identityRecords.get(unit).typedCorrespondence && issued.some(other => other !== unit && identityRecords.get(other).typedCorrespondence && other.sourceId === unit.sourceId
+      && unit.claims.some(claim => other.claims.some(alternative => conflictSlot(claim) === conflictSlot(alternative)
+        && serialize(claim.semantic) !== serialize(alternative.semantic)))));
+    return Object.freeze({representative: same ? issued.find(unit => unit.schema === 'libra.canonical-network.v1') || issued[0] : null,
+      supportingSources: Object.freeze(sources), conflicts: Object.freeze(conflicts)});
   };
   const createRegistry = ({ frame: inputFrame } = {}) => {
     let frame = normalizeFrame(inputFrame);
@@ -207,7 +273,7 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       return error;
     };
     const upsert = (projection, row, access = { kind: 'canonical', score: 0 }) => {
-      if (!projection || projection.schema !== 'libra.canonical-network.v1' || !sameFrame(projection.binding.frame)) throw new TypeError('LIBRA_NETWORK_BINDING_FRAME_MISMATCH');
+      if (!projection || !['libra.canonical-network.v1', 'libra.micro-network.v1'].includes(projection.schema) || !sameFrame(projection.binding.frame)) throw new TypeError('LIBRA_NETWORK_BINDING_FRAME_MISMATCH');
       const identity = identityRecords.get(projection);
       if (!identity) throw new TypeError('LIBRA_NETWORK_PROJECTION_IDENTITY_UNAVAILABLE');
       costs.upserts++;
@@ -265,7 +331,10 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
     };
     return Object.freeze({ upsert, invalidate, discoverCandidates, capture, isCurrent,
       rows: () => [...candidates.values()].map(candidate => candidate.row),
-      diagnostics: () => ({ schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: candidates.size,
+      diagnostics: () => ({ schema: 'libra.canonical-network-diagnostics.v1', candidateCount: candidates.size,
+        canonicalCandidates: [...candidates.values()].filter(candidate=>candidate.projection.schema==='libra.canonical-network.v1').length,
+        microCandidates: [...candidates.values()].filter(candidate=>candidate.projection.kind==='micro').length,
+        sourceOnlyCandidates: [...candidates.values()].filter(candidate=>candidate.projection.kind==='source_only').length,
         identityCoverage: candidates.size && [...candidates.values()].every(c => c.projection.identityCoverage === 'complete') ? 'complete' : 'partial',
         pathBonus: 0, status: costs.identityLabelCollisions ? 'partial' : 'complete',
         partialReasons: costs.identityLabelCollisions ? ['identity_label_collision'] : [], costs: { ...costs } }) });
@@ -501,7 +570,7 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       frontier:{postingKeys:terms.size,pageSize,policy:'access_only'}});
     return Object.freeze({reconcile,reconcilePaged,query,invalidateDependencies,scanDense,inspect});
   };
-  return Object.freeze({ project, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
+  return Object.freeze({ project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
     diagnostics: () => activeRegistry?.diagnostics() || { schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: 0,
       identityCoverage: 'partial', pathBonus: 0, costs: {} } });
 };

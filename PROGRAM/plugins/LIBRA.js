@@ -33648,6 +33648,9 @@ function createLibraReadonlySourceContext(owner) {
     const consumedCanonicalProofsByMemory = new WeakMap();
     const consumedClosureProofsByResult = new WeakMap();
     const consumedNetworkFramesByResult = new WeakMap();
+    const networkMicroOriginsByMemory = new WeakMap();
+    const networkAbsorbedClaimsByMemory = new WeakMap();
+    const networkDeliveryClustersByRow = new WeakMap();
     // Embedding publication is derived metadata. Every other canonical field,
     // including source/evidence identity and rendered text, belongs to the
     // exact physical body from which this request selected its evidence.
@@ -33807,9 +33810,12 @@ function createLibraReadonlySourceContext(owner) {
             }
             continue;
           }
-          if (proof.kind === 'micro-state-decision') {
-            const decision = await storage.getVerifiedJson(proof.recordKey, context.scope, null);
-            if (digest(decision) !== proof.recordDigest) throw consumerContractError('CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED');
+          if (['micro-state-decision','network-identity-registry','network-source-dependency'].includes(proof.kind)) {
+            const decision = proof.kind === 'network-source-dependency'
+              ? await storage.getStoredJson(proof.recordKey, null)
+              : await storage.getVerifiedJson(proof.recordKey, context.scope, null);
+            if (digest(decision) !== proof.recordDigest) throw consumerContractError(proof.kind==='micro-state-decision'
+              ? 'CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED' : 'CONSUMER_NETWORK_DEPENDENCY_CHANGED');
             continue;
           }
           let current;
@@ -44235,10 +44241,21 @@ function createLibraReadonlySourceContext(owner) {
     const rendered = text(memory.text || memory.summary);
     const sourceAtoms = ['ownerNamespace', 'originScope', 'objectUUID', 'birthIncarnation'].map(key => identifierValue(source[key]));
     const completeSource = sourceAtoms.every(Boolean);
+    let attachment = null;
+    if(source.attachment != null){
+      const a=source.attachment;
+      if(a.schema!=='libra.revision_source_attachment.v1' || !['owner','sourceScope','worldlineId','originIdentity','sourceRevision'].every(key=>identifierValue(a[key]))
+        || !Number.isSafeInteger(a.sessionEpoch) || !Number.isSafeInteger(a.turn) || a.turn<1 || !['user','assistant'].includes(a.role)) {
+        throw new TypeError('LIBRA_NETWORK_SOURCE_ATTACHMENT');
+      }
+      attachment={schema:a.schema,owner:identifierValue(a.owner),sourceScope:identifierValue(a.sourceScope),worldlineId:identifierValue(a.worldlineId),
+        sessionEpoch:a.sessionEpoch,turn:a.turn,role:a.role,originIdentity:identifierValue(a.originIdentity),sourceRevision:identifierValue(a.sourceRevision)};
+    }
     // Source hash is binding, never a stable source object identifier. Surface
     // message IDs and producer tempFactIds also cannot establish an incarnation.
     const sourceIdentity = completeSource
       ? ['source-object', ...sourceAtoms]
+      : attachment ? ['revision-source-attachment', attachment]
       : ['legacy-source', frame.owner, frame.scopeKey, identifierValue(source.recordKey), identifierValue(memory.memoryId), sourceRevision,
           analysisRevision, identifierValue(source.sourceDigest), digest(memory)];
     const sourceId = 'source:' + digest(sourceIdentity);
@@ -44248,7 +44265,7 @@ function createLibraReadonlySourceContext(owner) {
       const semantic = { actorId: identifierValue(claim.actorId), targetId: identifierValue(claim.targetId), predicate: identifierValue(claim.predicate),
         direction: identifierValue(claim.direction), value: claim.value ?? null, polarity: identifierValue(claim.polarity), time: claim.time ?? null,
         certainty: identifierValue(claim.certainty), sourceAnchors: anchors };
-      const complete = completeSource && semantic.actorId && semantic.predicate && semantic.direction && semantic.polarity
+      const complete = (completeSource || attachment) && semantic.actorId && semantic.predicate && semantic.direction && semantic.polarity
         && claim.value !== undefined && claim.time !== undefined && semantic.certainty && anchors.length;
       const entityIds = array(claim.entityIds).map(entityIdValue);
       return { claim, semantic, entityIds, complete: !!complete, key: serialize(semantic) };
@@ -44260,7 +44277,7 @@ function createLibraReadonlySourceContext(owner) {
       const proven = complete && counts.get(key) === 1;
       const meaning = proven ? semantic : ['legacy-claim', sourceRevision, analysisRevision, index, claim];
       claimKeys.push(serialize(meaning));
-      return { claimId: 'claim:' + digest([sourceId, meaning]), identityCoverage: proven ? 'complete' : 'partial', semantic: copy(semantic) };
+      return { claimId: 'claim:' + digest([sourceId, meaning]), identityCoverage: proven && completeSource ? 'complete' : 'partial', semantic: copy(semantic) };
     });
     const identityCoverage = completeSource && claims.length && claims.every(c => c.identityCoverage === 'complete') ? 'complete' : 'partial';
     const semanticDigest = digest(claims.map(c => c.semantic));
@@ -44281,9 +44298,64 @@ function createLibraReadonlySourceContext(owner) {
       representationId: 'representation:' + digest([nodeId, textHash, projectionVersion, embeddingSpace]),
       postings: { token: tokens([rendered, ...array(memory.recallKeys), ...rawClaims.map(c => c.text)].join(' ')),
         entity: [...new Set(entityKeys)], predicate: [...new Set(predicateKeys)], time: [...new Set(timeKeys)] } });
-    const sourceKey = serialize(completeSource ? sourceIdentity : [sourceIdentity, memory]);
-    identityRecords.set(unit, { sourceKey, logicalKey: serialize([sourceKey, claimKeys]), bindingKey: serialize([bindingFields, memory]) });
+    const sourceKey = serialize(completeSource || attachment ? sourceIdentity : [sourceIdentity, memory]);
+    identityRecords.set(unit, { sourceKey, logicalKey: serialize([sourceKey, claimKeys]), bindingKey: serialize([bindingFields, memory]),
+      typedCorrespondence: descriptors.length > 0 && descriptors.every(item => item.complete && counts.get(item.key) === 1) });
     return unit;
+  };
+  const projectMicro = (record = {}, binding = {}) => {
+    if (!['verified', 'minimum_source_bound'].includes(record.analysisStatus)) throw new TypeError('LIBRA_NETWORK_MICRO_ANALYSIS_STATUS');
+    const rawClaims = record.analysisStatus === 'verified' ? array(record.claims) : [];
+    if(rawClaims.length && binding.normalizedClaims != null && (!Array.isArray(binding.normalizedClaims)
+      || binding.normalizedClaims.length!==rawClaims.length))throw new TypeError('LIBRA_NETWORK_MICRO_CLAIM_CARDINALITY');
+    const spans = rawClaims.length ? rawClaims.map(claim => claim.evidence) : [record.excerpt];
+    if (!spans.length || spans.some(span => !span || !['user', 'assistant'].includes(span.role)
+      || !identifierValue(span.messageId) || !Number.isSafeInteger(span.startOffset)
+      || !Number.isSafeInteger(span.endOffset) || span.startOffset < 0 || span.endOffset <= span.startOffset
+      || typeof span.exactQuote !== 'string' || span.exactQuote.length !== span.endOffset - span.startOffset)) {
+      throw new TypeError('LIBRA_NETWORK_MICRO_SOURCE_SPAN');
+    }
+    // This exact semantic payload excludes durable projections, embedding/jobs,
+    // producer timestamps and public proof flags. Access and hydration therefore
+    // issue the same IDs; only the physical binding can change independently.
+    const payload = { memoryId: 'micro_' + identifierValue(record.analysisRevisionId),
+      revision: revisionValue(record.sourceRevisionId), scopeKey: identifierValue(record.scopeKey),
+      worldlineId: identifierValue(record.worldlineId), sessionEpoch: record.sessionEpoch,
+      receiptKey: identifierValue(record.receiptKey), analysisStatus: record.analysisStatus,
+      turnRange: {start: record.turn, end: record.turn},
+      sourceSpans: spans.map(copy),
+      text: [...rawClaims.map(claim => text(claim.text)), ...spans.map(span => span.exactQuote)].join('\n'),
+      claims: rawClaims.length ? binding.normalizedClaims || rawClaims.map(copy) : [] };
+    const source = { ...binding.source, revision: record.sourceRevisionId,
+      analysisRevision: record.analysisRevisionId, sourceDigest: record.sourceDigest };
+    const base = projectCanonical({memory: payload, source, frame: binding.frame});
+    const kind = rawClaims.length ? 'micro' : 'source_only';
+    const microBindingFields={...base.binding,projectionVersion:'libra.micro-network.v1'};delete microBindingFields.bindingId;
+    const microBinding=freeze({...microBindingFields,bindingId:'binding:'+digest(microBindingFields)});
+    const nodeId=kind + ':' + digest([base.sourceId, base.claims.map(claim => claim.claimId), record.analysisStatus,
+      kind==='source_only'?spans:null]);
+    const unit = freeze({...base, schema: 'libra.micro-network.v1', kind,
+      authority: kind === 'micro' ? 'source_verified_candidate' : 'source_only',
+      nodeId,binding:microBinding,representationId:'representation:'+digest([nodeId,microBinding.textHash,microBinding.projectionVersion,microBinding.embeddingSpace]),
+      text: payload.text, sourceSpans: spans.map(copy)});
+    identityRecords.set(unit, {...identityRecords.get(base),
+      logicalKey: kind==='source_only'?serialize([identityRecords.get(base).logicalKey,spans]):identityRecords.get(base).logicalKey,
+      bindingKey: serialize([identityRecords.get(base).bindingKey, microBinding, unit.authority, spans])});
+    if (binding.row) rowsByUnit.set(unit, binding.row);
+    return Object.freeze([unit]);
+  };
+  const resolveEvidenceCluster = units => {
+    const issued = array(units);
+    if (issued.some(unit => !identityRecords.has(unit))) throw new TypeError('LIBRA_NETWORK_PROJECTION_IDENTITY_UNAVAILABLE');
+    const sources = [...new Set(issued.map(unit => unit.sourceId))];
+    const key = unit => serialize([identityRecords.get(unit).sourceKey, unit.claims.map(claim => claim.claimId).sort()]);
+    const same = issued.length > 0 && issued.every(unit => identityRecords.get(unit).typedCorrespondence && unit.claims.length > 0 && key(unit) === key(issued[0]));
+    const conflictSlot = claim => {const {value, polarity, ...slot} = claim.semantic; return serialize(slot);};
+    const conflicts = issued.filter(unit => identityRecords.get(unit).typedCorrespondence && issued.some(other => other !== unit && identityRecords.get(other).typedCorrespondence && other.sourceId === unit.sourceId
+      && unit.claims.some(claim => other.claims.some(alternative => conflictSlot(claim) === conflictSlot(alternative)
+        && serialize(claim.semantic) !== serialize(alternative.semantic)))));
+    return Object.freeze({representative: same ? issued.find(unit => unit.schema === 'libra.canonical-network.v1') || issued[0] : null,
+      supportingSources: Object.freeze(sources), conflicts: Object.freeze(conflicts)});
   };
   const createRegistry = ({ frame: inputFrame } = {}) => {
     let frame = normalizeFrame(inputFrame);
@@ -44308,7 +44380,7 @@ function createLibraReadonlySourceContext(owner) {
       return error;
     };
     const upsert = (projection, row, access = { kind: 'canonical', score: 0 }) => {
-      if (!projection || projection.schema !== 'libra.canonical-network.v1' || !sameFrame(projection.binding.frame)) throw new TypeError('LIBRA_NETWORK_BINDING_FRAME_MISMATCH');
+      if (!projection || !['libra.canonical-network.v1', 'libra.micro-network.v1'].includes(projection.schema) || !sameFrame(projection.binding.frame)) throw new TypeError('LIBRA_NETWORK_BINDING_FRAME_MISMATCH');
       const identity = identityRecords.get(projection);
       if (!identity) throw new TypeError('LIBRA_NETWORK_PROJECTION_IDENTITY_UNAVAILABLE');
       costs.upserts++;
@@ -44366,7 +44438,10 @@ function createLibraReadonlySourceContext(owner) {
     };
     return Object.freeze({ upsert, invalidate, discoverCandidates, capture, isCurrent,
       rows: () => [...candidates.values()].map(candidate => candidate.row),
-      diagnostics: () => ({ schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: candidates.size,
+      diagnostics: () => ({ schema: 'libra.canonical-network-diagnostics.v1', candidateCount: candidates.size,
+        canonicalCandidates: [...candidates.values()].filter(candidate=>candidate.projection.schema==='libra.canonical-network.v1').length,
+        microCandidates: [...candidates.values()].filter(candidate=>candidate.projection.kind==='micro').length,
+        sourceOnlyCandidates: [...candidates.values()].filter(candidate=>candidate.projection.kind==='source_only').length,
         identityCoverage: candidates.size && [...candidates.values()].every(c => c.projection.identityCoverage === 'complete') ? 'complete' : 'partial',
         pathBonus: 0, status: costs.identityLabelCollisions ? 'partial' : 'complete',
         partialReasons: costs.identityLabelCollisions ? ['identity_label_collision'] : [], costs: { ...costs } }) });
@@ -44602,7 +44677,7 @@ function createLibraReadonlySourceContext(owner) {
       frontier:{postingKeys:terms.size,pageSize,policy:'access_only'}});
     return Object.freeze({reconcile,reconcilePaged,query,invalidateDependencies,scanDense,inspect});
   };
-  return Object.freeze({ project, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
+  return Object.freeze({ project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
     diagnostics: () => activeRegistry?.diagnostics() || { schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: 0,
       identityCoverage: 'partial', pathBonus: 0, costs: {} } });
 });
@@ -49066,11 +49141,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       memory.retrieval = { sparseFields: buildSparseFields(memory, sections, anchors) };
       return memory;
     };
+    const microNetworkEvidenceFromMemory = memory => ({schema: 'libra.micro_network_evidence.v1',
+      scopeKey: string(memory.physicalScopeKey || memory.scopeKey), worldlineId: memory.worldlineId,
+      sessionEpoch: Number(memory.physicalSessionEpoch ?? memory.sessionEpoch), turn: Number(memory.turnRange?.start),
+      receiptKey: memory.sourceReceiptKey, recordKey: memory.memoryKey,
+      sourceRevisionId: memory.sourceRevisionId, sourceDigest: memory.sourceDigest,
+      analysisRevisionId: memory.analysisRevisionId, analysisStatus: memory.analysisStatus,
+      claims: clone(asArray(memory.claims)),
+      ...(asArray(memory.claims).length ? {} : {excerpt: clone(asArray(memory.sourceSpans)[0])})});
     const microRecallProjectionFromMemory = memory => {
       const anchors = extractMemoryAnchors(memory, memory.sections);
       return { schema: 'libra.micro_recall_projection.v1',
         sourceRevisionId: memory.sourceRevisionId,
         analysisRevisionId: memory.analysisRevisionId,
+        networkEvidence: microNetworkEvidenceFromMemory(memory),
         summary: memory.summary, searchText: memory.text,
         anchorTokens: asArray(anchors.all).slice(0, RECALL_CATALOG_ANCHOR_LIMIT),
         strongAnchorTokens: asArray(anchors.strong).slice(0, RECALL_CATALOG_ANCHOR_LIMIT) };
@@ -56248,6 +56332,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return a.epoch - b.epoch || a.start - b.start || a.end - b.end || a.revision - b.revision;
     };
     const recallRefWorldline = ref => string(ref?.logicalWorldlineId || ref?.worldlineId || 'main');
+    const recallRefWithinTemporalAnchor = (ref,anchor) => anchor?.asOf!==true || !anchor.ref
+      || (recallRefWorldline(ref)===string(anchor.logicalWorldlineId) && compareRecallRefOrder(ref,anchor.ref)<=0);
     const recallTemporalAnchorForRefs = (queryText, refsValue = []) => {
       const temporalIntent = recallTemporalIntent(queryText);
       const requestedTurn = explicitRecallTurnAnchor(queryText);
@@ -56734,6 +56820,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               worldlineId: head.worldlineId, sourceDigest: head.sourceDigest,
               refFingerprint};
             const entry = {kind: 'micro', memoryKey: ref.key, refFingerprint,
+              networkEvidence: projection.networkEvidence,
               memoryId: ref.memoryId, revision: 1, turnRange: clone(ref.turnRange),
               sessionEpoch: ref.sessionEpoch, inheritedSessionHistory: true,
               summary: projection.summary, searchText: projection.searchText,
@@ -56822,6 +56909,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             && projection.sourceRevisionId === head.sourceRevisionId
             && projection.analysisRevisionId === head.analysisRevisionId
             && !!string(projection.searchText || '')
+            && projection.networkEvidence?.schema === 'libra.micro_network_evidence.v1'
+            && projection.networkEvidence.recordKey === head.recordKey
+            && projection.networkEvidence.sourceRevisionId === head.sourceRevisionId
+            && projection.networkEvidence.analysisRevisionId === head.analysisRevisionId
+            && projection.networkEvidence.sourceDigest === head.sourceDigest
+            && projection.networkEvidence.analysisStatus === head.analysisStatus
             && head.recallProjectionDigest === digest(projection);
           if (!projectionValid) {
             // Legacy heads predate the durable search projection. Rebuild only
@@ -56843,6 +56936,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             // must be able to tell it apart from a produced Micro (spec 126 / plan 126).
             analysisStatus: string(head.analysisStatus || '') }
           const entry = { kind: 'micro', memoryKey: ref.key, refFingerprint,
+            networkEvidence: projection.networkEvidence,
             memoryId: ref.memoryId, revision: 1, turnRange: clone(ref.turnRange),
             sessionEpoch: 0, inheritedSessionHistory: false,
             summary: projection.summary, searchText: projection.searchText,
@@ -56878,6 +56972,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           corpusTurns.pending.push({ turn, reason: string(row.reason) });
         }
       }
+      if(!enumerationFallback){
+        const enumerated=new Set(turns),canonicalCoverage=listRecallMemoryRefs(manifest).filter(ref=>ref.inheritedSessionHistory!==true
+          && Number(ref.sessionEpoch||0)===0);
+        for(const pair of asArray(pairs)){
+          const turn=Number(pair.turn);
+          if(turn<1 || turn>throughTurn || enumerated.has(turn))continue;
+          // An absent Micro under a committed canonical span is not a pending
+          // producer job. Uncovered known turns are partial, never auto-backfilled.
+          if(canonicalCoverage.some(ref=>turn>=Number(ref.turnRange?.start)&&turn<=Number(ref.turnRange?.end)))continue;
+          corpusTurns.pending.push({turn,reason:'micro_head_not_produced'});
+        }
+      }
       if (!enumerationFallback && !restoreInProgress && mode) {
         const nextCache = new Map();
         for (let index = 0; index < turns.length; index++) {
@@ -56896,7 +57002,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const inherited = await inheritedMicroRecallRows(manifest, scope);
       const refs = [...indexed.filter(row => row?.ref).map(row => row.ref), ...inherited.refs];
       const entries = [...indexed.filter(row => row?.entry).map(row => row.entry), ...inherited.entries];
-      const pending = [...indexed.filter(row => row?.reason).map(row => ({ turn: row.turn, reason: row.reason })),
+      const pending = [...corpusTurns.pending,
         ...inherited.pending];
       return { schema: 'libra.micro_recall_corpus.v2', refs, entries,
         signature: digest(refs.map(ref => [ref.key, ref.refFingerprint])), pending,
@@ -58599,9 +58705,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const temporalAnchor = recallTemporalAnchorForRefs(queryBundle?.currentText || '', canonicalRefs);
       const anchorRef = temporalAnchor.status === 'resolved' ? temporalAnchor.ref : null;
       const anchorRefKey = string(anchorRef?.key || '');
-      const anchorWorldline = string(temporalAnchor.logicalWorldlineId || '');
       const refs = temporalAnchor.asOf === true && anchorRef
-        ? allRefs.filter(ref => recallRefWorldline(ref) === anchorWorldline && compareRecallRefOrder(ref, anchorRef) <= 0)
+        ? allRefs.filter(ref => recallRefWithinTemporalAnchor(ref,temporalAnchor))
         : allRefs;
       const refByKey = new Map(refs.map(ref => [string(ref?.key || ''), ref]));
       const validEntries = allEntries.filter(entry => refByKey.has(string(entry?.memoryKey || '')));
@@ -60670,7 +60775,7 @@ ${string(queryBundle?.sceneText || '')}`;
       const diagnostic = cached?.index.inspect();
       return { schema: 'libra.memory-network-cost.v1',
         coverage: { ...(diagnostic?.coverage || { status: 'unavailable', indexed: 0 }),
-          candidateDiscovery: 'unchanged_A1', postingRepresentation: 'compact_catalog',
+          candidateDiscovery: 'canonical_A1_and_Micro_B1_registry_access', postingRepresentation: 'canonical_compact_catalog',
           representationPartialReasons: ['existing_catalog_middle_and_section_caps'],
           warmZeroGate: 'blocked_owner_revision_and_raw_readset' },
         jobs: diagnostic?.jobs || {}, io: { ...state.memoryNetworkIO,
@@ -60686,10 +60791,114 @@ ${string(queryBundle?.sceneText || '')}`;
         frontier: { ...(diagnostic?.frontier || {}), enabled: false, reason: 'A2_access_cache_only' } };
     };
 
+    // B1 local correspondence is deliberately narrower than stable identity.
+    // Original receipts and canonical source rows prove a revision-bound source
+    // attachment; only uniquely resolved typed field/value/effect claims cluster.
+    const prepareMicroEvidenceClusters = async (selected, context, pairs, factory, frame, guard) => {
+      const micros=selected.filter(row=>row.memory.kind==='micro' && asArray(row.memory.claims).length
+        && !row.memory.inheritedSessionHistory && networkMicroOriginsByMemory.has(row.memory));
+      const canonicals=selected.filter(row=>row.memory.kind!=='micro' && !row.memory.inheritedSessionHistory && row.memory.sourceEvidenceRef);
+      const diagnostics={eligibleTypedClaims:0,partialCorrespondence:0,conflicts:0,policy:'exact_typed_unique_revision_attachment'};
+      if(!micros.length || !canonicals.length)return {diagnostics};
+      const registry=await runRecallStep(guard,'recall_network_identity_registry',()=>storage.getVerifiedJson(key.entityRegistry(context.scope),context.scope,null),RECALL_STEP_BUDGET_MS);
+      const pairsByTurn=new Map(asArray(pairs).map(pair=>[Number(pair.turn),pair]));
+      const scalarSetValue=value=>typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value);
+      const scalarClaimKinds=new Set(['character_state','character_goal','scene_time','world_state']);
+      const resolveName=(name,type)=>{
+        const matches=asArray(registry?.entities).filter(entity=>entity.validated===true&&entity.type===type
+          && [entity.name,...asArray(entity.aliases)].some(alias=>statePipelineIdentityKey(alias)===statePipelineIdentityKey(name)));
+        return matches.length===1?string(matches[0].id):'';
+      };
+      const rawRole=(receipt,role)=>{
+        const segments=asArray(receipt.rawSourcePacket?.[role]?.segments);
+        return segments.length && segments.every(segment=>segment.rawType==='string') ? segments.map(segment=>segment.rawValue).join('\n\n') : null;
+      };
+      for(const canonicalRow of canonicals){
+        const canonical=canonicalRow.memory;
+        let physicalSource=null;
+        const approved=await runRecallStep(guard,'recall_network_source_attachment',()=>unifiedEvidenceRead(canonical,async sourceKey=>{
+          const value=await storage.getStoredJson(sourceKey,null);physicalSource={key:sourceKey,value};return value;
+        }),RECALL_STEP_BUDGET_MS);
+        for(const microRow of micros){
+          const micro=microRow.memory,receipt=networkMicroOriginsByMemory.get(micro),pair=pairsByTurn.get(Number(receipt.turn));
+          const original=asArray(approved.rows).find(row=>Number(row.turn)===Number(receipt.turn));
+          if(!pair || !original || receipt.scopeKey!==context.scope.scopeKey || receipt.worldlineId!==micro.worldlineId
+            || Number(receipt.sessionEpoch)!==Number(canonical.sessionEpoch||0) || Number(receipt.sessionEpoch)!==0
+            || completedTurnRevisionId(pair)!==receipt.revisionId || sourceDigest([pair])!==receipt.sourceDigest
+            || original.rawAvailable!==true || original.userMessageId!==receipt.user.chatId || original.assistantMessageId!==receipt.assistant.chatId
+            || original.userText!==receipt.user.text || original.assistantText!==receipt.assistant.text
+            || original.userRaw!==rawRole(receipt,'user') || original.assistantRaw!==rawRole(receipt,'assistant'))continue;
+          const originIdentity=stableReferenceJson([receipt.user,receipt.assistant,rawPacketPayloadIdentity(receipt.rawSourcePacket,true)]);
+          for(const [index,claim] of asArray(micro.claims).entries()){
+            const intent=asObject(claim.stateIntent),evidence=claim.evidence,role=evidence.role;
+            const sourceText=string(receipt[role]?.text),quote=evidence.exactQuote,start=sourceText.indexOf(quote);
+            if(claim.temporalRole!=='current'||claim.certainty!=='confirmed'||claim.epistemicStatus!=='observed'
+              || !['world','character'].includes(intent.domain) || !['set','clear'].includes(intent.operation)
+              || !string(intent.field) || /Ref$/i.test(intent.field) || intent.operation==='set'&&!scalarSetValue(intent.value)
+              || start!==evidence.startOffset || sourceText.indexOf(quote,start+1)!==-1){diagnostics.partialCorrespondence++;continue;}
+            const actorId=resolveName(intent.target?.entityName,intent.domain==='world'?'world':'person');
+            if(!actorId){diagnostics.partialCorrespondence++;continue;}
+            const microMeaning=value=>{
+              const other=asObject(value.stateIntent),otherEvidence=asObject(value.evidence);
+              if(value.temporalRole!=='current'||value.certainty!=='confirmed'||value.epistemicStatus!=='observed')return '';
+              return stableReferenceJson([other.domain,resolveName(other.target?.entityName,other.domain==='world'?'world':'person'),
+                other.field,other.operation,other.operation==='clear'?null:other.value,'current_sequence',value.certainty,
+                otherEvidence.role,otherEvidence.startOffset,otherEvidence.endOffset,otherEvidence.exactQuote]);
+            };
+            if(asArray(micro.claims).filter(value=>microMeaning(value)===microMeaning(claim)).length!==1){diagnostics.partialCorrespondence++;continue;}
+            const attachment={schema:'libra.revision_source_attachment.v1',owner:frame.owner,sourceScope:receipt.scopeKey,
+              worldlineId:receipt.worldlineId,sessionEpoch:Number(receipt.sessionEpoch),turn:Number(receipt.turn),role,
+              originIdentity,sourceRevision:receipt.revisionId};
+            const anchors=[stableReferenceJson([role,evidence.startOffset,evidence.endOffset,quote])];
+            const typed={actorId,targetId:'',predicate:intent.domain+':'+intent.field,direction:'outgoing',
+              value:intent.operation==='clear'?null:intent.value,polarity:intent.operation==='clear'?'negative':'positive',
+              time:{turn:Number(receipt.turn),temporalRole:'current_sequence'},certainty:claim.certainty,sourceAnchors:anchors};
+            const microUnit=factory.projectMicro({...microNetworkEvidenceFromMemory(micro),claims:[claim]},
+              {frame,source:{attachment,recordKey:micro.memoryKey},normalizedClaims:[typed]})[0];
+            for(const fact of asArray(canonical.canonicalArtifact?.facts)){
+              const contract=UNIFIED_CLAIMS[fact.claimKind],span=asArray(fact.evidenceSpans)[0];
+              if(!scalarClaimKinds.has(fact.claimKind)||!contract?.field||contract.refType||contract.collection||contract.profile
+                || /Ref$/i.test(contract.value)||/Ref$/i.test(contract.field)
+                || fact.domain!==intent.domain||contract.field!==intent.field
+                || fact.temporalRole!=='current_sequence'||fact.certainty!=='confirmed'||asArray(fact.evidenceSpans).length!==1
+                || span?.ref!==`t${receipt.turn}-${role==='user'?'u':'a'}`||span.quote!==quote
+                || !string(canonicalRow.excerpt?.text).includes(string(fact.text).trim()))continue;
+              const factActor=unifiedContinuityEntityId(canonical.canonicalArtifact,fact.subjectTempRef,registry,canonical.unifiedRuntimeEntityOverrides);
+              if(!factActor||factActor!==actorId)continue;
+              const effect=string(fact.effect||'set');if(!['set','clear'].includes(effect))continue;
+              if(effect==='clear' && fact.values?.[contract.value]!==null){diagnostics.partialCorrespondence++;continue;}
+              const canonicalTyped={...typed,value:effect==='clear'?null:fact.values?.[contract.value],polarity:effect==='clear'?'negative':'positive'};
+              if(effect==='set'&&!scalarSetValue(canonicalTyped.value)){diagnostics.partialCorrespondence++;continue;}
+              const sameFact=other=>{
+                const otherContract=UNIFIED_CLAIMS[other.claimKind];
+                return otherContract?.field===contract.field && !otherContract.refType && other.domain===fact.domain
+                  && unifiedContinuityEntityId(canonical.canonicalArtifact,other.subjectTempRef,registry,canonical.unifiedRuntimeEntityOverrides)===factActor
+                  && string(other.effect||'set')===effect && other.temporalRole===fact.temporalRole && other.certainty===fact.certainty
+                  && stableReferenceJson(other.values?.[otherContract.value])===stableReferenceJson(fact.values?.[contract.value])
+                  && stableReferenceJson(other.evidenceSpans)===stableReferenceJson(fact.evidenceSpans);
+              };
+              if(asArray(canonical.canonicalArtifact.facts).filter(sameFact).length!==1){diagnostics.partialCorrespondence++;continue;}
+              const canonicalUnit=factory.project({memory:{memoryId:canonical.memoryId,revision:canonical.revision,text:fact.text,claims:[canonicalTyped]},
+                source:{attachment,recordKey:canonical.memoryKey,revision:receipt.revisionId,analysisRevision:canonical.artifactDigest},frame})[0];
+              const cluster=factory.resolveEvidenceCluster([microUnit,canonicalUnit]);
+              if(cluster.representative!==canonicalUnit){diagnostics.conflicts+=cluster.conflicts.length?1:0;continue;}
+              const absorbed=networkAbsorbedClaimsByMemory.get(micro)||new Map();
+              absorbed.set(index,{canonical,text:string(fact.text).trim(),claimId:canonicalUnit.claims[0].claimId,sourceId:canonicalUnit.sourceId,
+                proofs:[{kind:'network-identity-registry',recordKey:key.entityRegistry(context.scope),recordDigest:digest(registry)},
+                  {kind:'network-source-dependency',recordKey:physicalSource.key,recordDigest:digest(physicalSource.value)}]});
+              networkAbsorbedClaimsByMemory.set(micro,absorbed);diagnostics.eligibleTypedClaims++;
+            }
+          }
+        }
+      }
+      return {diagnostics};
+    };
+
     const recall = async (context, queryInput, guard = null) => {
       ensureRecallGuard(guard, 'recall_start');
       const capturedNetworkEpoch = Number(state.microRestoreGeneration || 0);
       let networkFrame = null;
+      let networkFactory = null;
       const suppliedBundle = queryInput && typeof queryInput === 'object' ? queryInput : null;
       const requestLocalReadOnly = suppliedBundle?.requestLocalReadOnly === true;
       let persistRecallCatalog = suppliedBundle?.persistRecallCatalog !== false && !requestLocalReadOnly;
@@ -60717,7 +60926,8 @@ ${string(queryBundle?.sceneText || '')}`;
           abortOnTimeout: false });
       const microIndexPending = asArray(microCorpus.pending);
       const microRecallIndex = { schema: 'libra.micro_recall_index_diagnostic.v1',
-        status: microIndexPending.length ? (asArray(microCorpus.refs).length ? 'partial' : 'unavailable')
+        status: microCorpus.enumerationFallback === true && microIndexPending.every(row=>row.reason==='micro_recall_enumeration_unavailable') ? 'degraded'
+          : microIndexPending.length ? (asArray(microCorpus.refs).length ? 'partial' : 'unavailable')
           : microCorpus.enumerationFallback === true ? 'degraded' : 'complete',
         indexed: asArray(microCorpus.refs).length,
         enumerationFallback: microCorpus.enumerationFallback === true,
@@ -60820,6 +61030,36 @@ ${string(queryBundle?.sceneText || '')}`;
       queryVectors.scene = embeddingResult && queryTexts.length > 1 ? embeddingResult?.vectors?.[1] || null : null;
       queryVectors.profileId = embeddingResult?.metadata?.profileId || '';
       ensureRecallGuard(guard, 'recall_shortlist');
+      // B1 access metadata is not a source capability. Discover full bounded
+      // claims/quotes in the same request registry before physical hydration,
+      // independently of the old catalog shortlist and canonical/dense gates.
+      const microNetworkAccess = {schema:'libra.micro_network_access.v1',indexed:0,
+        discoveredIds:[],hydratedIds:[],rejectedIds:[],ineligibleCandidates:[],identityCoverage:'partial',
+        coverage:microRecallIndex.status, policy:'lexical_access_only',
+        representation:'full_producer_bounded_claims_and_exact_quotes'};
+      let microNetworkCandidates = [];
+      if(asArray(microCorpus.refs).length){
+        const ownerMode=await runRecallStep(guard,'recall_network_owner',()=>MemorySuiteStorageBridge.getScopeMode(context.scope),RECALL_STEP_BUDGET_MS);
+        if(capturedNetworkEpoch!==Number(state.microRestoreGeneration||0))throw consumerContractError('CONSUMER_NETWORK_BINDING_CHANGED');
+        networkFrame={owner:stableReferenceJson([string(ownerMode?.mode||'plugin_only'),ownerMode?.mode==='plugin_only'?null:MemorySuiteStorageBridge.status().serverBinding]),
+          scopeKey:string(context.scope.scopeKey),worldlineId:hostWorldlineIdForScope(context.scope),asOf:activeView.cutoffTurn??null,
+          authorityEpoch:capturedNetworkEpoch,activeSourceMapping:string(manifestRevisionOf(key.manifest(context.scope)))};
+        networkFactory=createLibraMemoryNetwork({adapters:{hash:digest},tokenize:tokenStream});
+        const microRefsByKey=new Map(asArray(microCorpus.refs).map(ref=>[string(ref.key),ref]));
+        const accessUnits=[];
+        for(const entry of asArray(microCorpus.entries)){
+          ensureRecallGuard(guard,'recall_network_micro_access');
+          const ref=microRefsByKey.get(string(entry.memoryKey));
+          if(!ref || !entry.networkEvidence)continue;
+          const units=networkFactory.projectMicro(entry.networkEvidence,{frame:networkFrame,
+            source:{recordKey:entry.networkEvidence.recordKey},row:{ref}});
+          accessUnits.push(...units);
+          microNetworkAccess.indexed+=units.length;
+        }
+        if(accessUnits.length)networkFactory.upsert(accessUnits,{frame:networkFrame,access:{kind:'micro_catalog',score:0}});
+        microNetworkCandidates=networkFactory.discover({tokens:tokenStream(queryBundle.sparseText||queryBundle.currentText||'')});
+        microNetworkAccess.discoveredIds=microNetworkCandidates.map(candidate=>candidate.id);
+      }
       const catalogShortlist = shortlistRecallCatalog(recallCatalog, manifest, queryBundle, queryVectors,
         settings, guard, microCorpus.refs);
       const temporalAnchor = catalogShortlist.temporalAnchor || recallTemporalAnchorForRefs(queryBundle.currentText, listRecallMemoryRefs(manifest));
@@ -60839,7 +61079,17 @@ ${string(queryBundle?.sceneText || '')}`;
         }
       };
       const shortlistMetaByKey = new Map(asArray(catalogShortlist.rows).map(row => [string(row?.entry?.memoryKey || ''), row]).filter(([keyValue]) => keyValue));
-      const refs = catalogShortlist.refs;
+      const refs = [...catalogShortlist.refs];
+      const hydrationKeys=new Set(refs.map(ref=>string(ref.key)));
+      for(const candidate of microNetworkCandidates){
+        const ref=candidate.row.ref;
+        if(!recallRefWithinTemporalAnchor(ref,temporalAnchor)){
+          const wrongWorldline=recallRefWorldline(ref)!==string(temporalAnchor.logicalWorldlineId);
+          microNetworkAccess.ineligibleCandidates.push({unitId:candidate.id,reason:wrongWorldline?'as_of_worldline_mismatch':'as_of_reference_after_anchor'});
+          continue;
+        }
+        if(!hydrationKeys.has(string(ref.key))){refs.push(ref);hydrationKeys.add(string(ref.key));}
+      }
       const rowSlots = new Array(refs.length).fill(null);
       let hydrationCursor = 0;
       const hydrateOne = async (ref, slotIndex) => {
@@ -60874,8 +61124,10 @@ ${string(queryBundle?.sceneText || '')}`;
             }
             const active = await readActiveMicroMemory(context.scope, hostWorldlineIdForScope(context.scope),
               Number(ref.sessionEpoch || 0), Number(ref.turnRange?.start || 0));
-            return active.status === 'verified' && active.recordKey === ref.key
-              ? rememberConsumedMicro(microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey), activeMicroConsumptionProof(active)) : null;
+            if(active.status !== 'verified' || active.recordKey !== ref.key)return null;
+            const memory=rememberConsumedMicro(microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey),activeMicroConsumptionProof(active));
+            if(memory)networkMicroOriginsByMemory.set(memory,clone(active.receipt));
+            return memory;
           }, RECALL_STEP_BUDGET_MS, { soft: true, fallback: null, abortOnTimeout: false })
           : await runRecallStep(guard, 'recall_memory_read', () => loadMemoryRef(ref), RECALL_STEP_BUDGET_MS,
             { soft: true, fallback: null, abortOnTimeout: false });
@@ -61026,11 +61278,11 @@ ${string(queryBundle?.sceneText || '')}`;
       // BEGIN LIBRA NETWORK CANONICAL ADAPTER
       // A1 registry-only transition. Existing shortlist, graph admission, scorer
       // and excerpt/packing remain the approved A0 baseline until C2/D1.
-      const networkFactory = createLibraMemoryNetwork({ adapters: { hash: digest }, tokenize: tokenStream });
-      const networkMode = await runRecallStep(guard, 'recall_network_owner',
+      networkFactory ||= createLibraMemoryNetwork({ adapters: { hash: digest }, tokenize: tokenStream });
+      const networkMode = networkFrame ? null : await runRecallStep(guard, 'recall_network_owner',
         () => MemorySuiteStorageBridge.getScopeMode(context.scope), RECALL_STEP_BUDGET_MS);
       if (capturedNetworkEpoch !== Number(state.microRestoreGeneration || 0)) throw consumerContractError('CONSUMER_NETWORK_BINDING_CHANGED');
-      networkFrame = { owner: stableReferenceJson([string(networkMode?.mode || 'plugin_only'), networkMode?.mode === 'plugin_only'
+      networkFrame ||= { owner: stableReferenceJson([string(networkMode?.mode || 'plugin_only'), networkMode?.mode === 'plugin_only'
           ? null : MemorySuiteStorageBridge.status().serverBinding]),
         scopeKey: string(context.scope.scopeKey), worldlineId: hostWorldlineIdForScope(context.scope),
         asOf: activeView.cutoffTurn ?? null, authorityEpoch: Number(state.microRestoreGeneration || 0),
@@ -61048,7 +61300,17 @@ ${string(queryBundle?.sceneText || '')}`;
       const canonicalRowsByOriginal = new Set();
       const networkAccessResults = [];
       for (const row of rows) {
-        // Micro joins in B1. Retain its original row in the migration adapter.
+        if(row.memory.kind==='micro'){
+          const proof=consumedMicroProofsByMemory.get(row.memory);
+          if(!proof)continue;
+          const evidence=microNetworkEvidenceFromMemory(row.memory);
+          const units=networkFactory.projectMicro(evidence,{frame:networkFrame,source:{recordKey:proof.recordKey,physicalDigest:proof.recordDigest},row});
+          networkFactory.upsert(units,{frame:networkFrame,access:{kind:'micro_verified',score:0}});
+          networkAccessResults.push({unitId:units[0].nodeId,kind:'micro_verified',score:0});
+          microNetworkAccess.hydratedIds.push(units[0].nodeId);
+          canonicalRowsByOriginal.add(row);
+          continue;
+        }
         const proof = getConsumedCanonicalProof(row.memory);
         if (!proof) continue;
         const units = networkFactory.project({ memory: row.memory, row,
@@ -61064,6 +61326,8 @@ ${string(queryBundle?.sceneText || '')}`;
       // stay on original memory objects, never JSON/spread clones or public flags.
       const admittedCanonicalRows = new Set(networkFactory.discover(networkAccessResults).map(candidate => candidate.row));
       rows = rows.filter(row => !canonicalRowsByOriginal.has(row) || admittedCanonicalRows.has(row));
+      microNetworkAccess.rejectedIds=microNetworkAccess.discoveredIds.filter(id=>!microNetworkAccess.hydratedIds.includes(id)
+        && !microNetworkAccess.ineligibleCandidates.some(candidate=>candidate.unitId===id));
       Runtime.lastMemoryNetworkDiagnostics = networkFactory.diagnostics();
       // END LIBRA NETWORK CANONICAL ADAPTER
 
@@ -61139,6 +61403,7 @@ ${string(queryBundle?.sceneText || '')}`;
         if (!canExpand || (relevantDropped === 0 && packed.budgetSaturated !== true)) break;
       }
       const selected = packed.selected;
+      const networkClusters=await prepareMicroEvidenceClusters(selected,context,pairs,networkFactory,networkFrame,guard);
       const tokens = packed.tokens;
       const excerptChars = packed.excerptChars;
       selected.sort((a, b) => (Number(a.memory?.sessionEpoch || 0) - Number(b.memory?.sessionEpoch || 0)) || Number(a.memory.turnRange?.start || 0) - Number(b.memory.turnRange?.start || 0));
@@ -61369,6 +61634,8 @@ ${string(queryBundle?.sceneText || '')}`;
           }),
           catalogSource: recallCatalog.source || '',
           microRecallIndex: clone(microRecallIndex),
+          microNetworkAccess: clone(microNetworkAccess),
+          microNetworkClusters: clone(networkClusters.diagnostics),
           catalogRefreshedEntries: Number(recallCatalog.refreshedEntries || 0),
           catalogReusedEntries: Number(recallCatalog.reusedEntries || 0),
           catalogFailedEntries: Number(recallCatalog.failedEntries || 0),
@@ -62283,43 +62550,16 @@ ${string(queryBundle?.sceneText || '')}`;
       delivery.closureSkipReasons = delivery.closureProjectionOmittedFacts ? ['closure_projection_fact_limit'] : [];
       delivery.closureDeliveryComplete = closure?.closureComplete === true && closure?.projectionComplete !== false;
 
-      const sourceClaimIdentity = (messageId, claimText) => JSON.stringify([
-        string(messageId || ''),
-        string(claimText || '').normalize('NFKC').replace(/\s+/g, ' ').trim().replace(/[.!?。！？]+$/u, '')
-      ]);
-      const injectedCanonicalClaims = new Map();
-      for (const row of selected) {
-        const memory = asObject(row?.memory);
-        if (memory.kind === 'micro') continue;
-        const excerptText = string(row?.excerpt?.text || row?.text || '');
-        for (const fact of asArray(memory.canonicalArtifact?.facts)) {
-          if (!string(fact?.text || '').trim() || !excerptText.includes(string(fact.text).trim())) continue;
-          for (const span of asArray(fact.evidenceSpans)) {
-            const identity = sourceClaimIdentity(span.ref, fact.text);
-            if (!injectedCanonicalClaims.has(identity)) injectedCanonicalClaims.set(identity, []);
-            injectedCanonicalClaims.get(identity).push(string(span.quote || ''));
-          }
-        }
-      }
       for (let index = 0; index < selected.length; index += 1) {
         const row = asObject(selected[index]);
         const memory = asObject(row.memory);
         const allMicroClaims = memory.kind === 'micro' ? asArray(memory.claims) : [];
-        const visibleMicroClaims = allMicroClaims.filter(claim => {
-          const quotes = injectedCanonicalClaims.get(sourceClaimIdentity(claim?.evidence?.messageId, claim?.text)) || [];
-          const exactQuote = string(claim?.evidence?.exactQuote || '');
-          return !exactQuote || !quotes.some(quote => quote.includes(exactQuote) || exactQuote.includes(quote));
-        });
-        const deduplicatedMicroClaims = allMicroClaims.length - visibleMicroClaims.length;
+        // Every route keeps original Micro material here. Only the actual
+        // Classic renderer has admission and private dependency integration.
+        const visibleMicroClaims = allMicroClaims;
+        const deduplicatedMicroClaims = 0;
         let sectionRows = asArray(row?.excerpt?.sections);
-        if (deduplicatedMicroClaims) {
-          sectionRows = visibleMicroClaims.length ? [{ sectionKey: 'micro_detail', label: '턴별 근거',
-            text: compactMiddle(visibleMicroClaims.map((claim, claimIndex) =>
-              `[변화 ${claimIndex + 1} · ${claim.evidence.role} · ${claim.evidence.messageId}] ${claim.text}\n근거: ${claim.evidence.exactQuote}`)
-              .join('\n'), Math.max(180, string(row?.excerpt?.text || '').length)) }] : [];
-        }
-        const fallbackText = deduplicatedMicroClaims && !visibleMicroClaims.length ? ''
-          : string(row?.excerpt?.text || row?.text || memory.summary || '');
+        const fallbackText = string(row?.excerpt?.text || row?.text || memory.summary || '');
         const sections = sectionRows.length
           ? sectionRows
           : (fallbackText ? [{ sectionKey: 'global', label: '종합', text: fallbackText }] : []);
@@ -62424,6 +62664,9 @@ ${string(queryBundle?.sceneText || '')}`;
           truncated: false,
           injectionOrder: 0
         });
+        if(memory.kind==='micro' && networkAbsorbedClaimsByMemory.has(memory)){
+          networkDeliveryClustersByRow.set(delivery.rows.at(-1),{claims:allMicroClaims,eligible:networkAbsorbedClaimsByMemory.get(memory)});
+        }
       }
       // Classic consumes delivery.rows, not the layer list. Carry the validated
       // later fact and its own exact source spans across that boundary, without
@@ -62906,6 +63149,40 @@ ${string(queryBundle?.sceneText || '')}`;
           closureEvidenceTokens += evidenceTokens;
         }
       }
+      // Suppress only after the actual Classic char budget has admitted the
+      // canonical representative. A dropped representative leaves Micro intact.
+      const admittedCanonical=body.filter(item=>item.kind==='canonical'&&item.row);
+      for(let index=body.length-1;index>=0;index--){
+        const item=body[index],clusters=item.row && networkDeliveryClustersByRow.get(item.row);
+        if(item.kind!=='micro'||!clusters)continue;
+        let remaining=string(item.row.selectedText||item.row.text),removed=0;
+        const usedProofs=[];
+        for(const [claimIndex,absorption] of clusters.eligible){
+          const counterpart=admittedCanonical.find(canonical=>classicRecallMemoryIdentity(canonical.row)===classicRecallMemoryIdentity({
+            ...absorption.canonical,canonicalOriginKey:unifiedOriginKey(absorption.canonical)})
+            && string(canonical.row.selectedText||canonical.row.text).includes(absorption.text));
+          if(!counterpart)continue;
+          const claim=clusters.claims[claimIndex];
+          const rawChunk=`[변화 ${claimIndex+1} · ${claim.evidence.role} · ${claim.evidence.messageId}] ${claim.text}\n근거: ${claim.evidence.exactQuote}`;
+          const exactChunk=remaining.includes(rawChunk)?rawChunk:rawChunk.replace(/\s+/g,' ');
+          if(!remaining.includes(exactChunk))continue; // Clipped/rewritten excerpts stay distinct.
+          remaining=remaining.replace(exactChunk,'');removed++;usedProofs.push(...absorption.proofs);
+        }
+        if(!removed)continue;
+        const readset=consumedDataReadSets.get(evidencePacket.consumed_data_token);
+        if(!readset)throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
+        readset.proofs=mergeConsumedProofs(readset.proofs,usedProofs);
+        item.row.deduplicatedClaims=removed;
+        if(removed===clusters.claims.length){
+          body.splice(index,1);item.row.selectedText='';item.row.text='';item.row.classicUsed=false;item.row.injected=false;
+          item.row.directRawInjection=false;item.row.injectionOrder=0;order--;
+        }else{
+          item.row.selectedText=remaining.trim();item.row.text=remaining.trim();
+          item.text=`[TURN EVIDENCE (MICRO) · ${libraSafeClassicSourceLabel(item.row)}]\n${remaining.trim()}`;
+        }
+      }
+      order=0;
+      for(const item of body)if(item.row)item.row.injectionOrder=++order;
       delivery.closureApplied = delivery.closureInjectedFacts > 0;
       delivery.closureDeliveryComplete = delivery.closureDeliveryComplete === true
         && delivery.closureInjectedFacts === Number(delivery.closureFacts || 0);

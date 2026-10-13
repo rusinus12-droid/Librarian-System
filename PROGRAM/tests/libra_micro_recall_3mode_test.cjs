@@ -153,11 +153,11 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       const duplicateDelivery = f.r.api.getLastMemoryRecallViewer();
       const repeatedRows = Array.from(duplicateDelivery?.rows || []).filter(row =>
         row.injected && String(row.selectedText || '').includes(duplicateQuote));
-      assert.equal(repeatedRows.length, 1,
-        'a matching Canonical/Micro source span and claim is injected once');
+      assert.equal(repeatedRows.length, 2,
+        'generic Micro event and typed canonical possession remain distinct despite matching text/quote');
       assert.ok(Array.from(duplicateDelivery?.rows || []).some(row => row.kind === 'micro'
-        && row.deduplicatedClaims === 1 && row.injected === false),
-      'the Micro record stays selected with explicit deduplication metadata');
+        && row.deduplicatedClaims === 0 && row.injected === true),
+      'unproven typed correspondence cannot suppress the source-bound Micro claim');
       assert.equal((await f.r.api.debugReadActiveMicroMemory(3)).status, 'verified',
         'deduplication never deletes the durable T3 Micro');
       console.log(`PASS old Micro detail survives Canonical Recall in ${mode}`);

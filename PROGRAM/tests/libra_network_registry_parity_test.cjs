@@ -87,7 +87,7 @@ const observation = async f => {
         nativeFetch: async (url, init) => fetch(url, init) },
       transformSource: source => {
         const ownerAtom = 'MemorySuiteStorageBridge.status().serverBinding';
-        assert.equal(source.split(ownerAtom).length, 3, 'test controls only the two new-network owner snapshots');
+        assert.equal(source.split(ownerAtom).length, 4, 'test controls the final proof, canonical adapter and early Micro owner snapshots');
         source = source.replaceAll(ownerAtom,
           "({...MemorySuiteStorageBridge.status().serverBinding, dataInstanceId: state.networkTestOwnerVariant || 'initial-owner'})");
         // Reproduce a collision in the previous owner fingerprint without changing

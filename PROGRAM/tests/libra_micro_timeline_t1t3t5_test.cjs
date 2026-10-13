@@ -134,28 +134,31 @@ const sourceClaim = (input, value) => {
       // Bind T3 selection and text to the returned Classic prompt.
       const t3Packet=await actualClassicPacket(f,`${DELAY} 장면을 이어줘.`,scope.scopeKey);
       assert.equal(f.control.calls.length,beforeCalls);
-      assert.equal(t3Packet.actualClassic.block.split(DELAY).length-1,1,`${mode}: exact T3 evidence actually reaches the returned prompt once`);
+      assert.ok(t3Packet.actualClassic.block.includes(DELAY),`${mode}: exact T3 evidence reaches the actual returned prompt`);
       const t3Viewer = f.r.api.getLastMemoryRecallViewer();
       const t3Micro = Array.from(t3Viewer?.rows || [])
         .find(row => row.kind === 'micro' && Number(row.turnRange?.start) === 3);
       assert.ok(t3Micro,
         `${mode}: a T3 scene query selects the Micro row bound to turn 3 (got ${JSON.stringify(
           Array.from(t3Viewer?.rows || []).map(row => [row.kind, row.turnRange?.start]))})`);
-      if(t3Micro.classicUsed){
-        assert.equal(t3Micro.injected,true);assert.ok(t3Micro.selectedText.includes(DELAY));
-      }else{
-        assert.equal(t3Micro.deduplicatedClaims,1,`${mode}: exactly the overlapping source claim is deduplicated`);
-        assert.equal(t3Micro.selectedText,'');assert.equal(t3Micro.injected,false);
-        const deliveredCanonical=t3Packet.actualClassic.deliveredRows.filter(row=>row.kind==='canonical'&&row.selectedText.includes(DELAY));
-        assert.equal(deliveredCanonical.length,1,`${mode}: one delivered canonical row owns the overlapping T3 claim`);
-        const ref=t3Packet.actualClassic.context.canonicalRefs.find(row=>row.memoryId===deliveredCanonical[0].memoryId);
-        assert.ok(ref?.key);
-        const raw=mode==='plugin_only'?fx.local.get(ref.key):fx.storedRows().find(row=>row.key===ref.key)?.raw;
-        assert.equal(typeof raw,'string');const memory=JSON.parse(raw);
-        assert.ok(memory.canonicalArtifact.facts.some(fact=>fact.text.includes(DELAY)
-          &&fact.evidenceSpans.some(span=>span.ref==='t3-a'&&span.quote.includes(DELAY))),
-          `${mode}: deduplication is backed by the same exact T3 assistant source in the sealed canonical record`);
-      }
+      assert.equal(t3Micro.classicUsed,true);assert.equal(t3Micro.injected,true);
+      assert.ok(t3Micro.selectedText.includes(DELAY));
+      assert.equal(t3Micro.deduplicatedClaims,0,`${mode}: generic Micro event cannot be equated to canonical typed semantics by text alone`);
+      const activeT3=await f.r.api.debugReadActiveMicroMemory(3);
+      assert.equal(activeT3.status,'verified');
+      assert.equal(t3Micro.sourceReceiptKey,activeT3.record.receiptKey);
+      assert.equal(t3Micro.sourceRevisionId,activeT3.record.sourceRevisionId);
+      assert.ok(t3Micro.sourceSpans.some(span=>span.role==='assistant'&&span.messageId==='t3-a'&&span.exactQuote.includes(DELAY)));
+      const deliveredCanonical=t3Packet.actualClassic.deliveredRows.filter(row=>row.kind==='canonical'&&row.selectedText.includes(DELAY));
+      assert.equal(deliveredCanonical.length,1,`${mode}: independently typed canonical row also survives selection`);
+      assert.notEqual(deliveredCanonical[0].memoryId,t3Micro.memoryId);
+      const ref=t3Packet.actualClassic.context.canonicalRefs.find(row=>row.memoryId===deliveredCanonical[0].memoryId);
+      assert.ok(ref?.key);
+      const raw=mode==='plugin_only'?fx.local.get(ref.key):fx.storedRows().find(row=>row.key===ref.key)?.raw;
+      assert.equal(typeof raw,'string');const memory=JSON.parse(raw);
+      assert.ok(memory.canonicalArtifact.facts.some(fact=>fact.text.includes(DELAY)
+        &&fact.evidenceSpans.some(span=>span.ref==='t3-a'&&span.quote.includes(DELAY))),
+        `${mode}: distinct canonical claim remains bound to sealed original T3 source`);
       assert.equal(t3Micro.evidenceAuthority, 'source_verified_candidate',
         `${mode}: the T3 row is the source-verified Micro candidate, not a Canonical row`);
       console.log(`PASS T1/T3/T5 promise-delay-fulfillment timeline in ${mode}`);
