@@ -2,7 +2,7 @@
 
 - 지위: **초안. 제안이며 승인 아님.** 설계 문서 v1.1 §14가 요구한 UM0/UM1 대응 작업의 기록입니다.
 - 기준: 설계 문서 **v1.1**(2026-10-14) §3~§9·§11~§14, `WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md`, 플러그인 코드 `9f64f43`(이후 문서 커밋에서 코드 변경 없음).
-- 개정: v3에서 §G의 "확인 필요" 8건을 코드에서 실제로 확인해 결과로 바꾸고, 확인된 심볼을 A·B·F에 반영했습니다. 남은 미확인 항목은 §G 끝에 남겼습니다.
+- 개정: v3에서 §G의 1차 8건을 코드에서 확인했고, v4에서 남아 있던 4건(passage locator 필드, domainStatus 값 집합, 요청 경로의 saveManifest 호출, analysisStatus별 표현 제한)까지 확정했습니다. §G 표에 12행 전부 기록했습니다.
 - 표기: 심볼은 `plugins/LIBRA.js` 기준이며 줄 번호는 drift할 수 있어 참고용입니다(≈).
 
 ## A. 자료 adapter · 그래프 계층 대응표 (§4.5, §5, §7.7, §11)
@@ -93,6 +93,10 @@
 | 5 | EdgeID basis identity·incarnation 후보 | incarnation = `birthIncarnation`(sourceAtoms 4원자, ≈44242). epoch = `microRestoreGeneration`. "메시지 번호·tempFactId는 incarnation을 세울 수 없다"는 코드 주석 존재 |
 | 6 | 변경 신호 관측 지점 | `manifestRevisionOf`(11곳)·`invalidate`/`invalidated`/`invalidateDependencies`·`deepAuditDue`/`deepAuditScheduled`·LLI `upgradeInFlight`(+30s 지연)·`PAIR_REVISION_CACHE_MAX_SCOPES`. **subsystem별로 흩어져 있음** → 통합 역의존성 열거 필요 |
 | 7 | source inventory를 지금 계산할 수 있나 | 가능. `inventoryRevisionId`(58곳)·`personInventory`·`personSpanInventory`·`sourceInventory`/`consumerSourceInventory`·`wholeDataInventoryEpoch`·`inventoryFingerprint`·`inventoryStatus`·`collectGlobalInventory`·`sourceInventoryHead` |
-| 8 | 조회 중 파생 쓰기가 실제로 있나 | **있음.** `persistRecallCatalog`가 read-only가 아니면 기본 true(≈60904)이고 `loadOrRefreshRecallCatalog(..., {persist})`(≈61022)로 조회 중 파생 catalog를 저장. `saveManifest`(38곳)는 stale revision 기반 게시를 거부하는 가드를 갖지만, A2 경계 시험은 정상 hook 진행 중 실제 검증된 publication을 관측 → §7.7에 따라 유지보수 경로로 분리 대상 |
+| 8 | 조회 중 파생 쓰기가 실제로 있나 | **있음.** `persistRecallCatalog`가 read-only가 아니면 기본 true(≈60904)이고 `loadOrRefreshRecallCatalog(..., {persist})`(≈61022)로 조회 중 파생 catalog를 저장. `saveManifest`(호출 33곳, §G-11)는 stale revision 기반 게시를 거부하는 가드를 갖지만, A2 경계 시험은 정상 hook 진행 중 실제 검증된 publication을 관측 → §7.7에 따라 유지보수 경로로 분리 대상 |
+| 9 | `loreLinkPassageLocator`의 정확한 필드명 | `{locatorVersion:lore_reference_locator.v1, coordinateSpace:rendered, renderedHash, rawHash:(빈 값), rawOffsetAvailable:false, start, end, heading, excerpt: compactMiddle(passage.text, 320), rawOffsetUnavailableReason:cbs_rendered_text_only}`(≈57484). offset은 **rendered 좌표계**이고 raw offset은 제공되지 않음. excerpt는 320자 |
+| 10 | `inferDomainStatus`가 만드는 값 집합 | `normalizeContinuityDomainStatus`(≈35586) 반환 = `{status, source, sessionEpoch, throughTurn, reason, evidence, attemptedEvidence}`. `status`는 고정 enum이 아니라 **80자 이하 자유 문자열**이고 기본값은 `empty`. 상위 continuity state의 `status`만 `[ready, partial, empty]`로 제한(기본 `partial`), `narrativeStatusFallback`은 `ready`(≈35754). 같은 검색에서 보이는 `current`·`pending`·`missing`·`unavailable`은 **다른 schema의 status**이므로 domainStatus 값으로 단정하지 않음 |
+| 11 | 정상 요청 경로에서 실제로 실행되는 `saveManifest` | 호출 지점 **33곳**의 감싸는 선언까지 확인. 요청 경로에서 도달하는 것은 **파생 벡터 flush 1곳**: `scheduleUnifiedDerivedVectors`(≈55247) → `setTimeout(...,0)` → `void flushUnifiedDerivedVectors(context)`(await하지 않음) → 내부 `await saveManifest(live.scope, manifest)`(≈55233, 실패 시 ref 롤백, 긍정 증거 `rowStatus===ready`일 때만 반영). 소스 주석(≈65830–65835)이 callee closure의 유일한 enqueue가 setTimeout(0)+void라고 명시. `reconcileCanonicalBranchBeforeRecall*`는 branch audit·`scan`·`eligibleStarts`에서 호출되고 저장은 조건부(`if (changed || branchGuardChanged)`, ≈43516). 나머지 31곳은 canonical job stage·portable import·migration·실패 정리 경로 |
+| 12 | `analysisStatus`별 표현 제한 | `minimumSourceBoundMicro`(≈48798): `exactQuote = row.text.slice(0,500)`, `claims: []`, `authority: source_only`, `excerpt:{role, messageId, startOffset:0, endOffset:exactQuote.length, exactQuote}` → **500자 제한이 offset에 구조적으로 새겨짐**(endOffset=500). `projectMicro`(≈44306)는 `verified`/`minimum_source_bound` 외 status를 `TypeError(LIBRA_NETWORK_MICRO_ANALYSIS_STATUS)`로 거부하고, `verified`는 claims 사용과 span 정합(`exactQuote.length === endOffset - startOffset`)을 요구하며, `minimum_source_bound`는 `[record.excerpt]`만 사용해 projection `kind=source_only`·`authority=source_only`가 됨 |
 
-**아직 미확인으로 남긴 것**: (a) LLI `loreLinkPassageLocator`의 정확한 필드명(start/end/passage id), (b) `inferDomainStatus`가 실제로 만들어내는 값 집합, (c) `saveManifest` 게시 중 어느 호출이 정상 요청 경로에서 실제로 발생하는지의 전수 목록(§G-8의 후속), (d) `analysisStatus`별로 어떤 표현 제한이 적용되는지의 상세.
+**§G 전 항목 확정.** 남은 것은 코드 확인이 아니라 설계 결정(§F 1–10)입니다. 줄 번호는 개정 시 drift할 수 있으므로 심볼 이름으로 재확인하세요.
