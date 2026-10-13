@@ -81,6 +81,29 @@ const observation = async f => {
       assert.deepEqual(actual.sources, before.sources);
       assert.ok(actual.diagnostic?.canonicalCandidates > 0);
     } finally { await after.r.cleanup(); }
+    const { fixture: ownerFixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+    const shiftedOwner = await ownerFixture({ args: { memory_suite_server_mode: 'server_only', memory_suite_server_url: server.url },
+      host: { pluginStorage: server.backend, safeLocalStorage: server.backend, getLocalPluginStorage: async () => server.backend,
+        nativeFetch: async (url, init) => fetch(url, init) },
+      transformSource: source => {
+        const ownerAtom = 'MemorySuiteStorageBridge.status().serverBinding';
+        assert.equal(source.split(ownerAtom).length, 3, 'test controls only the two new-network owner snapshots');
+        source = source.replaceAll(ownerAtom,
+          "({...MemorySuiteStorageBridge.status().serverBinding, dataInstanceId: state.networkTestOwnerVariant || 'initial-owner'})");
+        // Reproduce a collision in the previous owner fingerprint without changing
+        // legacy physical proof hashing. Exact currentness must use the raw tuple.
+        source = source.replace('const owner = digest(', "const owner = (() => 'synthetic-owner-collision')(");
+        source = source.replace('networkFrame = { owner: digest(', "networkFrame = { owner: (() => 'synthetic-owner-collision')(");
+        const needle = 'const memory = await storage.getVerifiedJson(proof.recordKey, context.scope, null);';
+        assert.equal(source.split(needle).length, 2);
+        return source.replace(needle, needle + "\n state.networkTestOwnerVariant = 'changed-owner';");
+      } });
+    try {
+      const delivered = await shiftedOwner.control.hooks.beforeRequest(input(), 'model');
+      assert.deepEqual(plain(delivered), input(), 'same-body final read rejects a changed exact owner tuple despite colliding old owner fingerprints');
+      assert.equal(shiftedOwner.r.api.getLastMemoryRecallViewer().injectedMemories, 0);
+      assert.match(shiftedOwner.r.api.getLastMemoryRecallViewer().errorCode, /NETWORK.*BINDING/);
+    } finally { await shiftedOwner.r.cleanup(); }
   } finally { await server.cleanup(); }
   console.log('libra_network_registry_parity_test: PASS (plugin_only graph OFF/ON + server_only)');
 })().catch(e => { console.error(e.stack); process.exitCode = 1; });
