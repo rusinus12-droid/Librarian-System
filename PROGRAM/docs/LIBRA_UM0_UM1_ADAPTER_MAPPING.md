@@ -1,7 +1,7 @@
 # LIBRA UM0/UM1 대응표 — 현재 reader schema → 새 adapter 표
 
 - 지위: **F-1/F-2 identity 커널과 실제 네 자료 owner reader의 요청 내 read-only 투영 구현. 나머지 결정·통합 검색/GraphStore/dispatch는 미완료.** [identity 계약](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md)과 [reader adapter 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)을 따른다.
-- 기준: 설계 문서 **v1.4**(2026-10-14) §3~§9·§11~§14, `WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md`. §G의 최초 코드 조사 기준은 `9f64f43`; identity `654803d`·실제 reader `611ec1e` 후 [UM2 page/cache](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)를 연결했다.
+- 기준: 설계 문서 **v1.5**(2026-10-14) §3~§9·§11~§14, `WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md`. §G의 최초 코드 조사 기준은 `9f64f43`; identity `654803d`·실제 reader `611ec1e`·page/cache `ba6a25f` 후 [durable window/generation](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)을 연결했다.
 - 개정: v3에서 §G의 1차 8건을 코드에서 확인했고, v4에서 남아 있던 4건(passage locator 필드, domainStatus 값 집합, 요청 경로의 saveManifest 호출, analysisStatus별 표현 제한)까지 확정했습니다. §G 표에 12행 전부 기록했습니다.
 - 후속: 설계 v1.2의 F-1/F-2·[14개 identity 검증](../tests/libra_memory_graph_identity_test.cjs)에 v1.3의 [11개 reader schema 검증](../tests/libra_memory_graph_reader_contract_test.cjs)·[등록 owner API 검증](../tests/libra_memory_graph_reader_runtime_test.cjs)을 추가했다. plugin_only/server_only 합성 호스트에서 실제 reader/writer를 실행했다. 통합 검색의 actual host·최종 dispatch physical proof 검증은 아직 실행하지 않았다.
 - 표기: 심볼은 `plugins/LIBRA.js` 기준이며 줄 번호는 drift할 수 있어 참고용입니다(≈).
@@ -79,7 +79,7 @@
 1. **NodeID 통일 방향 — 1차 결정·normalized 구현 완료.** 공통 `libra.node.v1` exact logical tuple을 사용하고, physical key·기존 candidate ID는 binding/alias로 유지. [계약 §1–§2](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md)와 actual reader 연결 gate를 따름.
 2. **EdgeID의 basis identity — 1차 결정·normalized 구현 완료.** source + qualified occurrence identity + exact anchor. canonical claim·Micro span·State evidence/correction·lore passage를 각각 보존. 증명된 birth가 없으면 revision-bound; LLI linkKey나 receipt revision/restore epoch를 birth로 승격하지 않음.
 3. **byte admission — 첫 파생 page/cache 범위 구현.** payload/exact binding·request/view/decode lease·serialization/hash/validation staging을 공통 예산과 partition quota·pin/LRU에 계상한다. [UM2 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md) 참조. 전체 source map·L0/frontier·revision readset·I/O/coalescing·queue/write barrier 계상은 남아 있으며 전체 heap bounded를 주장하지 않는다.
-4. **maintenance / query — 첫 읽기 경계 구현.** 새 명시 API는 실제 owner projection과 RAM cache admission만 수행하고 durable build/publication을 시작하지 않는다. SourceGraph build·delta·restart 검증·root 게시와 기존 `persistRecallCatalog`·`saveManifest`의 유지보수 이전은 남아 있다(§G-8).
+4. **maintenance / query — window 단위 durable 게시·검증 연결.** 명시적 maintenance API에서만 불변 pages/manifest와 root-last/서버 CAS를 게시한다. query는 현재 source window를 재도출해 전체 stored pages를 검증하며 missing/stale/오염을 쓰기로 repair하지 않는다. [durable 계약](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md) 참조. exhaustive corpus/delta·reverse dependency·GC와 기존 `persistRecallCatalog`·`saveManifest`의 유지보수 이전은 남아 있다(§G-8).
 5. **역의존성 인덱스 통합** — 현재 subsystem별 무효화(`invalidate*`·`manifestRevisionOf`·LLI upgrade·deep audit)를 어떤 단일 열거로 합칠지(§G-6).
 6. **역할 가중치·전파 감쇠·정지 tolerance** — 고정 평가 세트 ablation으로 결정. WM 수치 이식 금지.
 7. **lore 활성 조건의 소비자 정책 표현** — 현재 `alwaysActive`(force)와 `referenceAuthorityWeight`의 `lore_host_selected:1.50`(bonus)가 병존. §5.3대로 **필수 inclusion 조건**으로 옮기고 bonus 모사를 제거하는 범위(§G-3).

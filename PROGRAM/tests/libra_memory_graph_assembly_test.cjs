@@ -11,6 +11,7 @@ const { buildPlugins } = require('../tools/build_plugins.cjs');
     for (const source of ['const empty = true;', block().replace('createLibraMemoryGraphReaders', 'staleReaders'),
       block().replace('createLibraMemoryGraphIdentity', 'staleIdentity'), `${block()}\n${block()}`,
       block().replace('createLibraMemoryGraphPages', 'stalePages'),
+      block().replace('createLibraMemoryGraphStore', 'staleStore'),
       '// END LIBRA MEMORY GRAPH\n// BEGIN LIBRA MEMORY GRAPH']) {
       fs.writeFileSync(target, source);
       assert.throws(() => sync({ target, check: true }), /marker|synchronization/i);

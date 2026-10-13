@@ -84,6 +84,6 @@ node PROGRAM/tools/sync_libra_memory_graph.cjs --check
 
 ## 7. 남은 UM2 gate
 
-다음은 이 page/cache 계약을 **durable SourceGraph shard와 독립 검증된 generation reader**에 연결하는 작업이다. source read header/size와 bounded hydration·exhaustive inventory/delta·root-last/CAS publication/restart 검증·reverse dependency를 갖춘 maintenance 경로가 필요하다. trusted owner API가 없는 범위는 비용을 기록한 exact fallback/partial로 남긴다.
+후속 [durable graph 계약](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)에서 이 cache에 owner projection-window의 불변 pages·manifest/root-last/서버 CAS와 전체 window 독립 재도출 reader를 연결했다. 다음은 source read header/size·bounded hydration·exhaustive inventory/delta와 공통 access index·reverse dependency다. trusted owner API가 없는 범위는 비용을 기록한 exact fallback/partial로 남긴다.
 
 그 뒤 L0 frontier/candidate/설명/readset과 pending I/O/coalescing·cancellation·writer barrier를 같은 byte inventory에 넣고, Memory Lane이 공통 page 접근·작업 순서를 관리하도록 연결한다. 현재 API의 ordered row cursor는 최종 Memory Lane/단일 retrieval controller가 아니다. 기존 A2 preparation loop·legacy caches/rankers 종료는 actual unified query gate에서 판정한다.

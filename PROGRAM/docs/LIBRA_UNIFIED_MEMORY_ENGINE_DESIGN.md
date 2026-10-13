@@ -1,7 +1,7 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.4 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **설계 초안. 실제 owner reader의 네 자료 투영과 공통 accounted-byte page cache·pin/eviction·현재 snapshot cursor를 연결했다. durable GraphStore/generation·전체 byte inventory·Memory Lane·단일 검색·최종 dispatch는 후속 작업이다.**
+- 문서 버전: 1.5 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **설계 초안. 네 자료 reader·byte page cache에 durable projection-window pages·generation manifest/root와 독립 재검증 reader를 연결했다. 전체 corpus inventory/delta·공통 posting/adjacency 접근·전체 byte inventory·Memory Lane·단일 검색·최종 dispatch는 후속 작업이다.**
 - 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
@@ -25,6 +25,7 @@
 | [LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md) | 공통 NodeID/EdgeID·basis·binding 1차 계약, 순수 커널과 14개 검증. production 검색 완료 증거와 구분 |
 | [LIBRA_UM1_READER_ADAPTER_CONTRACT.md](LIBRA_UM1_READER_ADAPTER_CONTRACT.md) | 실제 정본·Micro·State·lore reader 연결, 공개 read-only projection page, 역할/근거/coverage 및 실제 등록 API의 합성 호스트 검증 |
 | [LIBRA_UM2_PAGE_CACHE_CONTRACT.md](LIBRA_UM2_PAGE_CACHE_CONTRACT.md) | F-3/F-4의 첫 경계: 공통 payload byte admission·pin/LRU·partition·staging/decode와 실제 owner projection page 접근. 전체 heap·durable generation·Lane 완료와 구분 |
+| [LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md) | 유지보수 전용 불변 page/manifest·root-last/CAS 게시, 현재 원본/전체 window page 재도출 검증·재시작·취소 barrier. exhaustive corpus/delta·final delivery 완료와 구분 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
 
@@ -93,6 +94,14 @@ HME 전체 엔진을 재도입하거나 기존 `bonusCap`으로 relevance/근거
 pin backpressure·LRU 재조회·강제 digest 충돌·finally 해제·partition quota를 순수 suite에서 검증하고, 실제 등록 API의 plugin_only/server_only 합성 호스트에서 네 자료의 33개 unit 순회와 cold/warm 일치를 검증한다. 실제 portable restore boundary와 scope 삭제/unload에 cache 무효화가 연결된다. 조회 중 durable write/provider 호출은 시작하지 않는다.
 
 이번 byte admission은 **파생 page cache와 managed decode/staging**에 한정한다. 원본 reader의 전체 projection workspace·반환값 보관·VM overhead는 미계상이며 전체 API는 `byteBounded:false`다. warm hit에서도 원본 검증·투영·encoding을 수행한다. snapshot generation label은 durable root의 독립 검증이나 QueryGraphView 권한이 아니다. 세부 범위와 다음 gate는 [UM2 page/cache 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)에 기록한다.
+
+### 2.6 v1.5의 구현 진척
+
+`buildMemoryGraphGeneration()`은 명시적 maintenance API에서 현재 owner projection window를 durable pages·generation manifest·root로 게시한다. query의 `getMemoryGraphDurablePage()`는 저장된 root를 읽고 현재 원본에서 window 전체의 directory/payload를 다시 도출해 모든 physical page와 대조한다. generation이 없거나 낡으면 missing/stale를 반환하고 쓰기·repair·분석을 시작하지 않는다. raw DTO의 ID/verified 필드가 publication 또는 delivery 권한을 공급하지 않는다.
+
+합성 native host의 실제 등록 API에서 두 저장 모드 모두 48 nodes·81 edges·27 bases·33 units를 17개 page로 게시·재읽는다. server_only는 기존 SDK의 source/root readset과 page/manifest 조건을 결속한 root CAS, plugin_only는 runtime 내 직렬 root-last/readback의 partial 보장이다. 새 VM에서는 이전 RAM verified 상태를 신뢰하지 않는다. 중간 실패·오염·취소/복원·독립 publisher 경합을 [durable 계약](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)과 재현 suite에 기록한다.
+
+`durableGenerationVerified:true`는 **현재 owner projection window의 전체 persisted pages** 검증에 한정한다. 전체 owner inventory/delta·native mutation atomicity·viewer/as-of QueryGraphView·최종 dispatch를 뜻하지 않는다. `inventoryComplete:false`, `ownerAtomicity:false`, `modelDispatchEligible:false`, 전체 `byteBounded:false`와 actual-host 미인증 한계를 유지한다. 기존 normal recall·A2 preparation/ranker 경로는 아직 이전하지 않았다.
 
 ## 3. 전체 아키텍처
 
@@ -359,6 +368,8 @@ catalog의 24-entry block과 6-block 선택은 현행 기준선의 정책이다.
 
 ### 7.5 공통 durable 인덱스
 
+v1.5는 현재 owner projection window의 nodes/edges/bases/units flat pages와 generation manifest/root를 구현했다. source-window exhaustive directory·typed adjacency/entity/time/lexical/vector access와 reverse dependency/delta는 아래 최종 인덱스 요구사항의 후속 gate다. 저장된 flat edge page를 완성된 graph traversal index로 보고하지 않는다.
+
 | 인덱스 | 단위와 필요 계약 |
 | --- | --- |
 | Node/Source directory | 안정/partial ID → source locator·representation·dependency·coverage |
@@ -551,7 +562,7 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 ## 14. 구현 시작 전 기록할 결정
 
-현재 실제 canonical/Micro/State/lore owner reader와 공통 파생 JSON page/cache admission을 연결했다. F-3/F-4의 첫 계상·읽기 경계는 [UM2 계약](LIBRA_UM2_PAGE_CACHE_CONTRACT.md)으로 고정했다. 다음 우선 작업은 이를 durable SourceGraph shard·독립 검증된 generation reader/maintenance 게시에 연결하고, 원본 읽기와 L0/frontier/I/O/write barrier까지 byte inventory를 확장하는 것이다. legacy cache/ranker 이전과 trusted owner protocol이 없는 범위를 별도로 기록한다. 그 뒤 UM3에서 네 자료를 같은 frontier·평가·종료 정책으로 검색한다. 안정 lifetime을 증명하지 못한 자료와 미지원 inherited Micro·page 밖 근거는 기존 coverage 한계를 유지한다.
+현재 실제 네 자료 reader·공통 page/cache에 [durable window/generation 게시·독립 reader](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)를 연결했다. 다음 우선 작업은 generation의 node/source directory와 typed adjacency·entity/predicate/time/lexical access를 공통 page/cache로 읽도록 연결하는 것이다. exhaustive source-window inventory·delta/tombstone·reverse dependency·maintenance GC와 원본/L0/frontier/I/O/write barrier byte inventory도 확장해야 한다. legacy cache/ranker 이전과 trusted owner protocol이 없는 범위를 별도로 기록한다. 그 뒤 UM3에서 네 자료를 같은 frontier·평가·종료 정책으로 검색한다. 안정 lifetime·미지원 inherited Micro·page 밖 근거의 coverage 한계를 유지한다.
 
 WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
 
@@ -569,3 +580,4 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.2 · 2026-10-14 | 공통 NodeID·EdgeID/basis·binding 1차 계약과 normalized 커널·합성 13-node/19-edge fixture, 14개 identity 검증 구현. 실제 reader/검색/dispatch gate는 미완료 |
 | 1.3 · 2026-10-14 | 네 자료의 실제 owner reader와 공개 read-only graph projection page 구현. 등록 API의 plugin_only/server_only 합성 호스트, source-only·정정·clear·본문 경합·cursor/route 및 11개 schema 계약 검증. 검색·durable/cache/Lane·dispatch는 후속 gate |
 | 1.4 · 2026-10-14 | 공통 accounted-byte JSON page cache·pin/LRU·partition·staging/decode admission과 실제 owner projection access API. snapshot/binding/restore cursor·예산 stop·13개 순수 검사·실제 등록 API/portable restore 검증. 전체 heap·durable SourceGraph/generation·Lane/검색은 후속 gate |
+| 1.5 · 2026-10-14 | durable owner-window pages·generation manifest/root-last/서버 CAS와 전체 window source/payload 재도출 reader. 12개 순수 계약 검사·실제 등록 API/재시작·오염·취소 barrier·portable restore·서버 publisher 경합 검증. exhaustive corpus/delta·공통 access index·Lane/검색/dispatch는 후속 gate |

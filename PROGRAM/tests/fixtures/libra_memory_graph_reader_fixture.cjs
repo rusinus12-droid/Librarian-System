@@ -2,13 +2,15 @@
 const { fixture: localFixture } = require('./libra_lore_link_index_fixture.cjs');
 const { serverFixture, withLorebook } = require('./libra_server_runtime_fixture.cjs');
 const { waitFor } = require('./libra_vm_harness.cjs');
+const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 
 async function fixture({ mode = 'plugin_only', minimum = false } = {}) {
   let listener;
   const host = { addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
-  const server = mode === 'server_only' ? await serverFixture({ mode, host }) : null;
-  const f = server ? withLorebook(server.f) : await localFixture({ host });
+  const serverOptions = { mode, host };
+  const server = mode === 'server_only' ? await serverFixture(serverOptions) : null;
+  let f = server ? withLorebook(server.f) : await localFixture({ host });
   try {
     await f.run(); await f.r.api.retryPendingUnifiedVectors();
     const values = server?.local || f.r.values;
@@ -38,8 +40,27 @@ async function fixture({ mode = 'plugin_only', minimum = false } = {}) {
     const active = await f.r.api.debugReadActiveMicroMemory(6);
     if (active.status !== 'verified') throw new Error('graph fixture failed to publish a real Micro');
     f.control.onCall = async () => { throw new Error('graph projection must not invoke a provider'); };
-    return { f, server, scopeKey, active,
+    return { get f() { return f; }, server, scopeKey, active,
       project: options => f.r.api.getMemoryGraphProjectionPage({ expectedScopeKey: scopeKey, ...options }),
+      async restart() {
+        const lore = JSON.parse(JSON.stringify(f.character.lorebook)), chat = JSON.parse(JSON.stringify(f.chat));
+        if (server) { serverOptions.snapshot = { chat }; f = await server.restart(); }
+        else {
+          const values = [...f.r.values.entries()]; await f.r.cleanup();
+          f = await baseFixture({ snapshot: { chat, values }, host });
+        }
+        f.character.lorebook = lore;
+        f.control.onCall = async () => { throw new Error('restarted graph reads must not invoke a provider'); };
+        // SDK startup can advance its configuration fence during the first
+        // owner read. Wait for a fresh successfully validated capture; never
+        // weaken the shipped READ_ROUTE_CHANGED guard or reuse its old handle.
+        for (let attempt = 0; ; attempt++) {
+          try { await f.r.api.getMemoryGraphProjectionPage({ expectedScopeKey: scopeKey }); break; }
+          catch (error) { if ((error.code || error.message) !== 'READ_ROUTE_CHANGED' || attempt >= 20) throw error;
+            await new Promise(resolve => setTimeout(resolve, 10)); }
+        }
+        return f;
+      },
       async cleanup() { if (server) await server.cleanup(); else await f.r.cleanup(); } };
   } catch (error) { if (server) await server.cleanup(); else await f.r.cleanup(); throw error; }
 }
