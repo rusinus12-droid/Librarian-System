@@ -51,6 +51,10 @@ async function waitFor(check, label, timeout = 30000) {
 const expose = source => source.replace('      getLiveSyncCaptureState:', `
       restoreFlowAudit: {
         bridge: MemorySuiteStorageBridge,
+        uploadSelection: () => ({ emotion: liaSelectedVisualAssetEmotion, personaKey: liaSelectedVisualAssetPersonaKey }),
+        setGeneratedResult: raw => setGeneratedOutputText(resultToOutputText(JSON.parse(String(raw)))),
+        readResult: () => getLLMResultOverride(),
+        refresh: () => refreshPreview({skipCapture:true}),
         readStoredResultVault, readPersonaVisualAssetStore,
         readPersonaVisualAssetBackup, ensurePersonaVisualAssetAvailable
       },
@@ -114,6 +118,9 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
   });
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://127.0.0.1/', virtualConsole });
   Object.assign(fixture.context, { document: dom.window.document, window: dom.window,
+    HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement,
+    HTMLTextAreaElement: dom.window.HTMLTextAreaElement, HTMLSelectElement: dom.window.HTMLSelectElement,
+    CSS: { escape: value => String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&') },
     navigator: { language: 'en-US' }, confirm: () => true });
   assert.equal(typeof callbacks.setting, 'function', 'actual settings callback was registered');
   assert.equal(typeof callbacks.button, 'function', 'actual menu callback was registered');
@@ -123,7 +130,7 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
   if(transport)fixture.context.__legacyReadTransport=transport.api;
   async function open() {
     await callbacks.setting();
-    await waitFor(() => dom.window.document.getElementById('dpg-asset-manual-upload'), 'registered GUI rendered');
+    await waitFor(() => dom.window.document.querySelector('#dpg-preview-root .page[data-page="mine"]'), 'adopted LIA GUI rendered');
     return dom.window.document;
   }
   return { ...fixture, audit, callbacks, dom, domErrors, localRows, modelCalls, args, open, transport,
@@ -132,19 +139,20 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
 
 async function manualUpload(env, bytes, expectedTone = 'ok') {
   const document = env.dom.window.document;
-  const input = document.getElementById('dpg-asset-manual-upload');
+  const input = document.getElementById('lia-asset-image-file');
   assert.ok(input, 'actual manual upload input exists');
-  input.dataset.emotion = 'neutral';
   // The VM uses the Node Blob constructor, so its browser-file boundary must
   // receive that same Blob type rather than a duck-typed arrayBuffer object.
   const file = new Blob([bytes], { type: 'image/png' });
   Object.defineProperty(file, 'name', { value: 'marker.png' });
   Object.defineProperty(input, 'files', { configurable: true, value: [file] });
-  input.dispatchEvent(new env.dom.window.Event('change', { bubbles: true }));
-  await waitFor(() => !input.dataset.emotion, 'manual upload handler settled');
   const status = document.getElementById('dpg-status');
-  assert.equal(status?.dataset?.tone, expectedTone, status?.textContent || 'upload status missing');
-  return status.textContent;
+  const previousStatus = status?.textContent || '';
+  input.dispatchEvent(new env.dom.window.Event('change', { bubbles: true }));
+  let currentStatus;
+  await waitFor(() => { currentStatus = document.getElementById('dpg-status'); return currentStatus?.textContent !== previousStatus && currentStatus?.dataset?.tone === expectedTone; }, 'manual upload handler settled');
+  assert.equal(currentStatus?.dataset?.tone, expectedTone, currentStatus?.textContent || 'upload status missing');
+  return currentStatus.textContent;
 }
 
 function immutableRows(values, backupId) {
@@ -175,15 +183,23 @@ function diskSnapshot(env, directory, label) {
   try {
     env = await createRealm('', null, hostAssets);
     await env.open();
-    const result = env.dom.window.document.getElementById('dpg-llm-result');
-    assert.ok(result, 'actual generated-result editor exists');
-    result.value = JSON.stringify({ personaName: 'Flow Marker Persona', personaPrompt: body });
-    result.dispatchEvent(new env.dom.window.Event('input', { bubbles: true }));
-    const vaultSave = env.dom.window.document.getElementById('dpg-vault-save');
-    assert.ok(vaultSave, 'actual vault save action exists');
+    const generated = { personaName: 'Flow Marker Persona', generationMode: 'random', generationId: 'flow-marker-generation', randomCandidate: { id: 'flow-marker-candidate', name: 'Flow Marker Persona' }, personaPrompt: body, personaSpec: { name: 'Flow Marker Persona', gender: '', age: '', speciesRace: '', origin: '', role: 'Synthetic archivist', appearance: 'Synthetic appearance', personality: 'Synthetic personality', visibleSide: '', hiddenSide: '', internalContradiction: '', background: '', speech: '', motivation: '', relationshipStyle: '', relationshipToCharacter: '', preferences: '', conflictRepair: '', skills: [], limitations: '', knowledgeBoundary: '', boundaries: [], worldFitNotes: '' }, personaFieldLocks: ['role'], personaVariants: { full: body, standard: '', compact: '' }, activePersonaProfile: 'full', personaLineage: { lineageId: 'flow-marker-lineage', revision: 1, history: [{ revision: 1, at: '2026-10-12T00:00:00Z', operation: 'create', detail: 'synthetic test fixture' }, { revision: 2, at: '2026-10-13T00:00:00Z', operation: 'edit', detail: 'synthetic test fixture' }] } };
+    env.audit.setGeneratedResult(JSON.stringify(generated));
+    await env.audit.refresh();
+    const document = env.dom.window.document;
+    document.querySelector('#dpg-preview-root .sidebar [data-go="mine"]').click();
+    document.querySelector('#dpg-preview-root #pocket [data-go="edit"]').click();
+    document.querySelector('#dpg-preview-root [data-subtabs="ed"] [data-subtab="out"]').click();
+    const vaultSave = document.querySelector('#dpg-preview-root [data-lia-editor-writer="vault"]');
+    assert.ok(vaultSave, 'adopted editor exposes the local-only vault writer');
+    assert.equal(vaultSave.disabled, false, `valid generated Persona result satisfies the existing writer admission contract; result=${JSON.stringify(env.audit.readResult())}; active=${document.querySelector('#dpg-preview-root .page.is-active')?.dataset.page}; button=${vaultSave.outerHTML}`);
     vaultSave.click();
     await waitFor(() => env.values.get(VAULT)?.includes(body), 'public vault producer');
-    await waitFor(() => !vaultSave.disabled, 'vault GUI settled');
+    await waitFor(() => !document.querySelector('#dpg-preview-root [data-lia-editor-writer="vault"]')?.disabled, 'vault GUI readback completed');
+    document.querySelector('#dpg-preview-root .sidebar [data-go="mine"]').click();
+    document.querySelector('#dpg-preview-root #pocket [data-go="assets"]').click();
+    document.querySelector('#dpg-preview-root #emo-grid button[data-open="sheet-emo"]').click();
+    document.querySelector('#dpg-preview-root #sheet-emo [data-lia-asset-upload]').click();
     await manualUpload(env, image);
     const assetRaw = env.values.get(ASSETS);
     const vaultRaw = env.values.get(VAULT);
@@ -199,6 +215,8 @@ function diskSnapshot(env, directory, label) {
     const originalSet = env.api.pluginStorage.setItem;
     env.api.pluginStorage.setItem = async (key, value) => String(key).startsWith(BLOBS) && String(key).endsWith('::manifest')
       ? true : originalSet(key, value);
+    document.querySelector('#dpg-preview-root #emo-grid button[data-open="sheet-emo"]').click();
+    document.querySelector('#dpg-preview-root #sheet-emo [data-lia-asset-upload]').click();
     await manualUpload(env, replacement, 'error');
     env.api.pluginStorage.setItem = originalSet;
     assert.equal(env.values.get(ASSETS), assetRaw, 'failed public upload preserved exact asset metadata');
@@ -219,10 +237,11 @@ function diskSnapshot(env, directory, label) {
     assert.equal(env.modelCalls.length,0);assert.deepEqual(env.domErrors,[]);await env.close();env=null;
     const missing=restartSnapshot.values.filter(([key])=>!key.startsWith(`${BLOBS}${entry.backupId}::`));
     env=await createRealm('',missing,hostAssets,{snapshot:restartSnapshot,localRows:new Map(persistedLocalRows),legacySnapshotFile:legacyFile});await env.open();
-    const serverTab=env.dom.window.document.querySelector('[data-workspace-tab="server"]');assert(serverTab);serverTab.click();
+    const serverTab=env.dom.window.document.querySelector('#dpg-preview-root .menu [data-go="recover"]');assert(serverTab);serverTab.click();
     const panel=await waitFor(()=>env.dom.window.document.getElementById('liaMemorySuiteServerConnectionPanel')?.querySelector('[data-lia-recovery-preview]'),'actual legacy recovery GUI');
-    const status=panel.parentElement.querySelector('[data-lia-recovery-status]');
-    const publish=panel.parentElement.querySelector('[data-lia-recovery-publish]');
+    const recoverySection=panel.closest('section');
+    const status=recoverySection.querySelector('[data-lia-recovery-status]');
+    const publish=recoverySection.querySelector('[data-lia-recovery-publish]');
     const preview=async()=>{panel.click();await waitFor(()=>!panel.disabled,'registered read-only preview');assert.match(status.textContent,/검증/);assert.equal(publish.disabled,false);};
     const runPublish=async()=>{publish.click();await waitFor(()=>!panel.disabled,'registered local publication');return status.textContent;};
     const beforeFailure=new Map(durable.map(([key])=>[key,env.values.get(key)]));const write=env.api.pluginStorage.setItem;
@@ -246,13 +265,13 @@ function diskSnapshot(env, directory, label) {
     assert.deepEqual(Buffer.from(available.bytes), image, 'fresh owner restored exact original image bytes');
     assertRows(env.values, priorBackup, 'owner asset recovery left immutable backup unchanged');
     await env.open();
-    const document = env.dom.window.document;
-    const vaultTab = document.querySelector('[data-pocket-tab="vault"]');
+    const restoredDocument = env.dom.window.document;
+    const vaultTab = restoredDocument.querySelector('#dpg-preview-root .sidebar [data-go="shelf"]');
     assert.ok(vaultTab, 'fresh registered GUI offers the vault route');
     vaultTab.click();
-    assert.equal(document.querySelector('.lia-app-layout').dataset.page, 'vault', 'registered navigation selected vault');
-    const vaultPanel = document.getElementById('dpg-vault-panel');
-    assert.ok(vaultPanel.classList.contains('active'), 'restored vault panel is active');
+    assert.equal(restoredDocument.querySelector('#dpg-preview-root .page[data-page="shelf"].is-active') !== null, true, 'registered navigation selected adopted shelf');
+    const vaultPanel = restoredDocument.getElementById('shelf-list');
+    assert.ok(vaultPanel, 'restored vault list is mounted');
     assert.ok(vaultPanel.textContent.includes('Flow Marker Persona'), 'fresh registered GUI shows restored vault card');
     const reloadedMetadata = JSON.parse(env.values.get(ASSETS)).sets[personaKey].images.neutral;
     assert.equal(reloadedMetadata.backupId, entry.backupId, 'recovery retained immutable backup reference');

@@ -1,4 +1,5 @@
 'use strict';
+const { dialogElements } = require('./fixtures/flashback_adopted_dialog.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { test } = require('node:test');
@@ -220,7 +221,7 @@ async function mountRecovery(x, doc = makeDocument()) {
 }
 async function dialog(ui) {
   for (let i = 0; i < 200; i++) {
-    if (ui.doc.byClass('vrmDialogOk')) return { ok: ui.doc.byClass('vrmDialogOk'), cancel: ui.doc.byClass('vrmDialogCancel'), message: ui.doc.byClass('vrmDialogMessage') };
+    if (dialogElements(ui.doc).ok) return { ok: dialogElements(ui.doc).ok, cancel: dialogElements(ui.doc).cancel, message: dialogElements(ui.doc).message };
     await new Promise(resolve => setTimeout(resolve, 5));
   }
   throw Error('actual recovery confirmation dialog did not appear');
@@ -259,7 +260,7 @@ test('a retained old recovery button cannot act after reopening the same scope',
     await x.h.context.__recoveryAudit.close(); const current = await mountRecovery(x); assert(current.button());
     let calls = 0; x.h.host.nativeFetch = async (_url, init) => { calls++; return success(init); };
     const before = clone(await x.read()); await oldButton.click();
-    assert.equal(calls, 0); assert.equal(old.doc.byClass('vrmDialogOk'), null); assert.deepEqual(clone(await x.read()), before);
+    assert.equal(calls, 0); assert.equal(dialogElements(old.doc).ok, null); assert.deepEqual(clone(await x.read()), before);
   } finally { await x.h.cleanup(); }
 });
 

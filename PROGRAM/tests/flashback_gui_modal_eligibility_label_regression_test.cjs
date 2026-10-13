@@ -32,9 +32,9 @@ function key(s, node, key, options = {}) {
   return node.dispatchEvent(new s.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options }));
 }
 async function openMaintenance(s) {
-  await s.click('#tab-import');
+  await s.click('[data-go="care"]');
   const button = s.doc.querySelector('#maintenanceRunBtn'); button.focus(); button.click();
-  await until(() => s.doc.querySelector('.vrmDialogBox'), 'maintenance confirmation');
+  await until(() => s.doc.querySelector('.overlay.is-open .dialog'), 'maintenance confirmation');
   return button;
 }
 (async () => {
@@ -42,7 +42,7 @@ async function openMaintenance(s) {
     const writes = s.writes.length, hide = s.calls.hide;
     const button = await openMaintenance(s);
     key(s, s.doc, 'Escape'); await pause(120);
-    assert.equal(s.doc.querySelector('.vrmDialogBox'), null, 'Escape must dismiss confirmation');
+    assert.equal(s.doc.querySelector('.overlay.is-open .dialog'), null, 'Escape must dismiss confirmation');
     assert.equal(s.api.uiStatus().visible, true, 'Escape inside confirmation must preserve the GUI');
     assert.equal(s.calls.hide, hide, 'dialog Escape must not hide the host container');
     assert.equal(s.doc.activeElement, button, 'dialog cancellation restores its opener');
@@ -50,33 +50,33 @@ async function openMaintenance(s) {
     return { hideDelta: s.calls.hide - hide, writesDelta: s.writes.length - writes, focus: button.id };
   });
   await scenario('rapid maintenance clicks create one confirmation and cancellation releases guard', async s => {
-    await s.click('#tab-import');
+    await s.click('[data-go="care"]');
     const before = s.writes.length, button = s.doc.querySelector('#maintenanceRunBtn');
     button.focus(); button.click(); button.click();
     await pause(80);
-    assert.equal(s.doc.querySelectorAll('.vrmDialogBox').length, 1, 'only one maintenance confirmation may exist');
-    s.doc.querySelector('.vrmDialogCancel').click(); await pause(80);
-    assert.equal(s.doc.querySelectorAll('.vrmDialogBox').length, 0);
+    assert.equal(s.doc.querySelectorAll('.overlay.is-open .dialog').length, 1, 'only one maintenance confirmation may exist');
+    s.doc.querySelector('.overlay.is-open .dialog .dialog__actions button:first-child').click(); await pause(80);
+    assert.equal(s.doc.querySelectorAll('.overlay.is-open .dialog').length, 0);
     assert.equal(button.disabled, false, 'cancel releases maintenance button');
-    button.click(); await until(() => s.doc.querySelector('.vrmDialogBox'), 'confirmation reopened');
-    s.doc.querySelector('.vrmDialogCancel').click(); await pause(80);
+    button.click(); await until(() => s.doc.querySelector('.overlay.is-open .dialog'), 'confirmation reopened');
+    s.doc.querySelector('.overlay.is-open .dialog .dialog__actions button:first-child').click(); await pause(80);
     assert.equal(s.writes.length, before, 'neither cancellation should write');
     assert.equal(s.api.uiStatus().visible, true);
     return { dialogsAtMost: 1, cancelledTwice: true, writesDelta: s.writes.length - before };
   });
   await scenario('unconfigured embedding actions remain disabled after save and status refresh', async s => {
-    await s.click('#tab-provider'); await s.click('#embeddingWorkRefreshBtn');
+    await s.click('[data-go="connect"]'); await s.click('#embeddingWorkRefreshBtn');
     const disabled = () => ['embeddingWorkRunBtn', 'embeddingWorkRetryFailedBtn'].map(id => s.doc.getElementById(id).disabled);
     assert.deepEqual(disabled(), [true, true], 'unconfigured actions start disabled');
-    await s.click('#tab-advanced'); await s.change('#topK', '13'); await s.click('#saveAdvancedSettingsBtn');
-    await s.click('#tab-provider'); await s.click('#embeddingWorkRefreshBtn');
+    await s.click('[data-go="settings"]'); await s.change('#topK', '13'); await s.click('#saveAdvancedSettingsBtn');
+    await s.click('[data-go="connect"]'); await s.click('#embeddingWorkRefreshBtn');
     assert.deepEqual(disabled(), [true, true], 'busy release must preserve model and count eligibility');
     s.doc.querySelector('#embeddingWorkRunBtn').click(); s.doc.querySelector('#embeddingWorkRetryFailedBtn').click();
     await pause(80); assert.equal(s.wire.length, 0);
     return { disabled: disabled(), status: s.doc.getElementById('embeddingWorkStatus').textContent.trim() };
   });
   await scenario('existing field labels are associated with their actual controls', async s => {
-    const fields = [...s.doc.querySelectorAll('.vrmDesign .field')].map(field => {
+    const fields = [...s.doc.querySelectorAll('.app.t-flashback .field')].map(field => {
       const label = [...field.children].find(n => n.tagName === 'LABEL');
       const control = [...field.children].find(n => /^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName));
       return label && control ? { label, control } : null;
@@ -87,10 +87,10 @@ async function openMaintenance(s) {
     return { inspectedFields: fields.length, labels: fields.map(({label,control})=>({id:control.id,label:label.textContent.trim()})) };
   });
   await scenario('existing field descriptions stay separate from accessible names', async s => {
-    const fields = [...s.doc.querySelectorAll('.vrmDesign .field')].map(field => {
-      const control = [...field.children].find(n => /^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName));
-      const note = [...field.children].find(n => n.classList.contains('field-note'));
-      return control && note ? { control, note } : null;
+    const fields = [...s.doc.querySelectorAll('.app.t-flashback .field,.app.t-flashback .setting')].map(field => {
+      const control = field.querySelector('input,select,textarea');
+      const note = field.querySelector(':scope > [id$="-hint"], :scope > .hint,.setting__desc,.hint');
+      return control && note?.textContent.trim() ? { control, note } : null;
     }).filter(Boolean);
     assert.ok(fields.length >= 11);
     const missing = fields.filter(({control,note}) => !note.id || !(control.getAttribute('aria-describedby') || '').split(/\s+/).includes(note.id)).map(({control})=>control.id);
@@ -99,33 +99,33 @@ async function openMaintenance(s) {
   });
   await scenario('focused dialog Escape and Tab contain focus without closing the GUI', async s => {
     const button = await openMaintenance(s);
-    const ok = s.doc.querySelector('.vrmDialogOk'), cancel = s.doc.querySelector('.vrmDialogCancel');
+    const ok = s.doc.querySelector('.overlay.is-open .dialog .dialog__actions button:last-child'), cancel = s.doc.querySelector('.overlay.is-open .dialog .dialog__actions button:first-child');
     assert.equal(s.doc.activeElement, ok);
     key(s, ok, 'Tab'); assert.equal(s.doc.activeElement, cancel, 'Tab wraps to cancel');
     key(s, cancel, 'Tab', { shiftKey: true }); assert.equal(s.doc.activeElement, ok, 'Shift-Tab wraps to confirm');
     const before = s.calls.hide; key(s, ok, 'Escape'); await pause(80);
-    assert.equal(s.doc.querySelector('.vrmDialogBox'), null);
+    assert.equal(s.doc.querySelector('.overlay.is-open .dialog'), null);
     assert.equal(s.api.uiStatus().visible, true); assert.equal(s.calls.hide, before);
     assert.equal(s.doc.activeElement, button);
     return { focusContained: true, focusedEscape: true };
   });
   await scenario('rebuild confirmation and local-repair preview also reject repeated clicks', async s => {
-    await s.click('#tab-import');
+    await s.click('[data-go="care"]');
     for (const mode of ['rebuild', 'reembed']) {
       await s.change('#maintenanceMode', mode);
       const before = s.writes.length, button = s.doc.querySelector('#maintenanceRunBtn');
       button.focus(); button.click(); button.click();
-      await until(() => s.doc.querySelector('.vrmDialogBox'), mode + ' dialog'); await pause(80);
-      assert.equal(s.doc.querySelectorAll('.vrmDialogBox').length, 1, mode + ' opens one dialog');
+      await until(() => s.doc.querySelector('.overlay.is-open .dialog'), mode + ' dialog'); await pause(80);
+      assert.equal(s.doc.querySelectorAll('.overlay.is-open .dialog').length, 1, mode + ' opens one dialog');
       key(s, s.doc.activeElement, 'Escape'); await pause(80);
-      assert.equal(s.doc.querySelector('.vrmDialogBox'), null);
+      assert.equal(s.doc.querySelector('.overlay.is-open .dialog'), null);
       assert.equal(s.api.uiStatus().visible, true);
       assert.equal(s.writes.length, before, mode + ' cancellation must not write');
     }
     return { checkedModes: ['rebuild', 'reembed'], writes: 0 };
   });
   await scenario('configured empty-work controls remain ineligible after saving', async s => {
-    await s.click('#tab-provider');
+    await s.click('[data-go="connect"]');
     await s.change('#embeddingProvider', 'openai');
     await s.change('#embeddingModel', 'text-embedding-3-small');
     await s.change('#embeddingAutoProcess', false);
@@ -141,7 +141,7 @@ async function openMaintenance(s) {
     return { configured: true, emptyQueueDisabled: true, descriptionTargetsUnique: true };
   });
   await scenario('busy save and asynchronous panel refresh keep embedding controls disabled', async s => {
-    await s.click('#tab-provider'); await s.click('#embeddingWorkRefreshBtn');
+    await s.click('[data-go="connect"]'); await s.click('#embeddingWorkRefreshBtn');
     let release, blocked = false;
     const gate = new Promise(resolve => { release = resolve; });
     const storage = s.host.pluginStorage, write = storage.setItem;
@@ -164,26 +164,29 @@ async function openMaintenance(s) {
     assert.equal(s.doc.querySelector('#embeddingWorkRetryFailedBtn').disabled, true);
     return { busyRefreshRemainedDisabled: true, afterReleaseIneligible: true };
   });
-  await scenario('all ten views and controls preserve their original surface and navigation', async s => {
-    const tabs = [...s.doc.querySelectorAll('.nav-item[data-tab]')];
-    assert.equal(tabs.length, 10);
+  await scenario('all ten feature views preserve their surface in the six approved routes', async s => {
+    const routes = [...s.doc.querySelectorAll('.sidebar .nav-item[data-go]')];
+    assert.equal(routes.length, 6, 'the approved mockup has six top-level destinations');
+    const views=[['overview','lab'],['import','care'],['source-edits','care','#panel-source-edits'],['restore','care','#panel-restore'],['storage','vault','[data-subpanel="resp"][data-group="v"]','resp'],['worldline','vault','[data-subpanel="wl"][data-group="v"]','wl'],['provider','connect','[data-subpanel="emb"][data-group="c"]','emb'],['server','connect','[data-subpanel="srv"][data-group="c"]','srv'],['activity','log'],['advanced','settings']];
     const surfaces = [];
-    for (const tab of tabs) {
-      tab.click(); await pause(120);
-      const id = tab.dataset.tab, panel = s.doc.getElementById('panel-' + id);
-      assert.ok(panel?.classList.contains('active'), id + ' remains reachable');
-      assert.equal(tab.getAttribute('aria-selected'), 'true');
-      const controls = [...panel.querySelectorAll('input,select,textarea,button')].map(n => ({tag:n.tagName,id:n.id,name:n.name,type:n.type,text:n.tagName === 'BUTTON' ? n.textContent.trim() : undefined}));
-      surfaces.push({ id, label: tab.textContent.trim(), controls });
+    for (const [id,route,selector,subtab] of views) {
+      const nav=s.doc.querySelector('.sidebar [data-go="'+route+'"]');nav.click();await pause(120);
+      if(subtab){s.doc.querySelector('[data-subtab="'+subtab+'"]')?.click();await pause(120);}
+      const page=s.doc.querySelector('[data-page="'+route+'"]'),panel=selector?page.querySelector(selector):page;
+      assert.ok(page?.classList.contains('is-active')&&panel, id+' remains reachable');
+      if(subtab)assert.ok(panel.classList.contains('is-active'),id+' subview remains active');
+      assert.equal(nav.getAttribute('aria-current'),'page');
+      const controls=[...panel.querySelectorAll('input,select,textarea,button')].map(n=>({tag:n.tagName,id:n.id,name:n.name,type:n.type,text:n.tagName==='BUTTON'?n.textContent.trim():undefined}));
+      surfaces.push({id,label:nav.textContent.trim(),controls});
     }
     saveEvidence(output + '-surface.json', surfaces);
-    saveEvidence(output + '-surface-labels.json', [...s.doc.querySelectorAll('.vrmDesign label')].map(n => n.textContent.trim()));
+    saveEvidence(output + '-surface-labels.json', [...s.doc.querySelectorAll('.app.t-flashback label')].map(n => n.textContent.trim()));
     const before = s.calls.hide; key(s, s.doc, 'Escape'); await pause(100);
     assert.equal(s.api.uiStatus().visible, false, 'Escape without a dialog still closes the GUI');
     assert.equal(s.calls.hide, before + 1);
     await s.open(); await pause(120);
     assert.equal(s.api.uiStatus().visible, true);
-    assert.equal(s.doc.querySelectorAll('.vrmDesign').length, 1, 'reopen preserves one GUI root');
+    assert.equal(s.doc.querySelectorAll('.app.t-flashback').length, 1, 'reopen preserves one GUI root');
     return { views: surfaces.map(x=>x.id), totalControls: surfaces.reduce((n,x)=>n+x.controls.length,0), reopen: true };
   });
   saveEvidence(output + '.json', { generatedAt: new Date().toISOString(), results });

@@ -74,7 +74,7 @@ function envelope(options) {
     dom = new JSDOM('<!doctype html><body></body>', { url: 'http://127.0.0.1/', virtualConsole, pretendToBeVisual: true });
     dom.window.HTMLElement.prototype.scrollIntoView = function () {};
     Object.assign(x.f.r.context, { document: dom.window.document, window: dom.window,
-      navigator: { language: 'ko-KR' }, requestAnimationFrame: callback => setTimeout(callback, 0),
+      navigator: { language: 'ko-KR' }, MutationObserver: dom.window.MutationObserver, requestAnimationFrame: callback => setTimeout(callback, 0),
       cancelAnimationFrame: clearTimeout, confirm: () => true });
     const timer = x.f.r.context.setTimeout;
     x.f.r.context.setTimeout = (callback, ms, ...args) => {
@@ -83,10 +83,10 @@ function envelope(options) {
     };
     await waitFor(() => typeof setting === 'function' && typeof output === 'function', 'actual host registrations');
     await setting();
-    await waitFor(() => dom.window.document.querySelector('.libra-book-receipt-recovery'), 'mounted public home recovery panel');
+    await waitFor(() => dom.window.document.querySelector('[data-receipt-recovery-scope]'), 'mounted public home recovery panel');
   }
   async function refreshDesk() {
-    const button = [...dom.window.document.querySelectorAll('.libra-book-receipt-recovery button')]
+    const button = [...dom.window.document.querySelectorAll('[data-receipt-recovery-scope] button')]
       .find(row => row.textContent === '상태 새로고침');
     assert.ok(button, 'actual desk status refresh exists');
     button.click();
@@ -97,6 +97,20 @@ function envelope(options) {
     return await waitFor(() => dom.window.document.querySelector(
       kind === 'receipt' ? `[data-receipt-turn="1"][data-receipt-status="${status}"]`
         : `[data-micro-turn="1"][data-micro-status="${status}"]`), `public ${kind} ${status} card`);
+  }
+  async function approveRecovery(kind) {
+    const callsBefore=x.f.control.calls.length;
+    const overlay=await waitFor(()=>dom.window.document.querySelector(`#dlg-recover.is-open[data-recovery-kind="${kind}"]`),'actual recovery approval dialog');
+    const execute=await waitFor(()=>{const node=overlay.querySelector('[data-recovery-execute]');return node&&!node.disabled?node:null;},'scope-qualified recovery execution');
+    assert.equal(x.f.control.calls.length,callsBefore,'opening approval cannot submit analysis');
+    assert.ok(overlay.dataset.recoveryScope,'actual captured recovery scope');
+    assert.equal(overlay.dataset.recoveryTarget,overlay.querySelector('#rb-bound').value,'execution binds selected actual receipt/Micro identity');
+    execute.click();
+  }
+  async function closeRecoveryResult() {
+    const job=await waitFor(()=>{const node=dom.window.document.querySelector('#job-recover');return node&&!node.querySelector('[data-job-result]').hidden?node:null;},'actual recovery result readback');
+    const confirm=[...job.querySelectorAll('.dialog__actions button')].find(node=>node.textContent==='확인');assert.ok(confirm);confirm.click();
+    const overlay=dom.window.document.querySelector('#dlg-recover');if(overlay){await waitFor(()=>overlay.querySelector('[data-recovery-execute]').hidden,'approved action completion');const close=[...overlay.querySelectorAll('.dialog__actions button')].find(node=>node.textContent==='닫기');assert.ok(close);close.click();}
   }
   async function restart() {
     const file = path.join(x.dir, 'public-host-snapshot.json');
@@ -141,9 +155,9 @@ function envelope(options) {
     failRaw = false;
     const recheck = (await card('receipt', 'failed')).querySelector('button');
     assert.equal(recheck.textContent, '저장 다시 확인');
-    recheck.click();
+    recheck.click();await approveRecovery('receipt');
     const recovered = await waitFor(async () => (await x.f.r.api.getReceiptRecoveryStatus()).receiptJobs.find(row => row.status === 'verified'), 'public raw recheck');
-    assert.equal(recovered.cycle, 2); assert.equal(recovered.cycleHistory[0].attempts, 3);
+    await closeRecoveryResult();assert.equal(recovered.cycle, 2); assert.equal(recovered.cycleHistory[0].attempts, 3);
     assert.equal(x.f.control.calls.length, 0, 'public storage recheck cannot call analysis');
     const raw = records(x.local, 'libra.completed_turn_receipt.v1');
     assert.equal(raw.length, 1, 'one successful original raw copy');
@@ -169,7 +183,7 @@ function envelope(options) {
     let microStage = (await x.f.r.api.getReceiptRecoveryStatus()).microJobs[0];
     const firstAnalysisButton = (await card('micro', microStage.status)).querySelector('button');
     assert.ok(firstAnalysisButton.textContent.includes('Micro 분석'));
-    firstAnalysisButton.click();
+    firstAnalysisButton.click();await approveRecovery('micro');
     try {
       const result = await waitFor(async () => {
         const stage = (await x.f.r.api.getReceiptRecoveryStatus()).microJobs[0];
@@ -180,12 +194,12 @@ function envelope(options) {
       assert.equal(result.stage.status, 'failed', JSON.stringify(result));
     } catch (error) {
       throw new Error(error.message + ':' + JSON.stringify({ status: await x.f.r.api.getReceiptRecoveryStatus(),
-        calls: x.f.control.calls.length, gui: dom.window.document.querySelector('.libra-book-receipt-recovery')?.textContent }));
+        calls: x.f.control.calls.length, gui: dom.window.document.querySelector('[data-receipt-recovery-scope]')?.textContent }));
     }
     const failedAnalysisCalls = x.f.control.calls.length;
     assert.ok(failedAnalysisCalls >= 1 && failedAnalysisCalls <= 2, 'bounded physical mock provider retries');
     assert.equal(x.local.get(originalRaw.key), originalRaw.raw, 'analysis failure left original raw byte exact');
-    const analysisCard = await card('micro', 'failed');
+    await closeRecoveryResult();const analysisCard = await card('micro', 'failed');
     assert.ok(analysisCard.textContent.includes('분석 실패'));
     assert.ok(analysisCard.textContent.includes('모델 호출 비용'));
     assert.equal((await x.f.r.api.getReceiptRecoveryStatus()).receiptJobs[0].status, 'verified');
@@ -198,7 +212,7 @@ function envelope(options) {
     await delay(1550);
     const entered = deferred(); release = deferred();
     x.f.control.onCall = async args => { entered.resolve(); await release.promise; return envelope(args[0]); };
-    analysisCard.querySelector('button').click();
+    analysisCard.querySelector('button').click();await approveRecovery('micro');
     await entered.promise;
     assert.equal(x.f.control.calls.length, failedAnalysisCalls + 1);
     const pendingStage = (await x.f.r.api.getReceiptRecoveryStatus()).microJobs[0];
@@ -214,7 +228,7 @@ function envelope(options) {
     assert.equal((await x.f.r.api.getReceiptRecoveryStatus()).microJobs[0].status, 'running', 'chat returned while analysis remained pending');
     release.resolve();
     await waitFor(async () => (await x.f.r.api.getReceiptRecoveryStatus()).microJobs.find(row => row.status === 'succeeded'), 'public Micro retry committed');
-    const micro = await x.f.r.api.debugReadActiveMicroMemory(1);
+    await closeRecoveryResult();const micro = await x.f.r.api.debugReadActiveMicroMemory(1);
     assert.equal(micro.status, 'verified');
     assert.ok(micro.record.claims.some(claim => claim.evidence.exactQuote === DETAIL));
     assert.equal(micro.record.sourceRevisionId, originalRaw.value.revisionId);

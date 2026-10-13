@@ -83,7 +83,7 @@ class FakeElement {
 
   matches(selector) {
     if (selector === 'button') return this.tagName === 'BUTTON';
-    if (selector === '.vrmDesign') return this.className.split(/\s+/).includes('vrmDesign');
+    if (selector === '.app.t-flashback') return ['app','t-flashback'].every(name=>this.className.split(/\s+/).includes(name));
     if (selector === 'input[type=file]') return this.tagName === 'INPUT' && this.getAttribute('type') === 'file';
     const attribute = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
     if (attribute) {
@@ -184,7 +184,7 @@ const Runtime = { portableMemoryActiveOperationId: '', guiBusyDepth: 0, guiBusyL
 const config = {
   uiId: 'flashback-portable-memory-backup-controls',
   pluginId: 'flashback_memory',
-  rootSelectors: ['.vrmDesign']
+  rootSelectors: ['.app.t-flashback']
 };
 let bindCount = 0;
 const bindUi = root => {
@@ -213,7 +213,7 @@ assert.equal(document.getElementById(config.uiId), null, 'Flashback controls ign
 
 const mountMaintenanceGui = () => {
   const gui = document.createElement('section');
-  gui.className = 'vrmDesign';
+  gui.className = 'app t-flashback';
   gui.setAttribute('data-flashback-memory', 'flashback_memory');
   const host = document.createElement('div');
   host.setAttribute('data-portable-backup-host', 'flashback_memory');
@@ -228,7 +228,7 @@ flushTimers();
 const firstControls = document.getElementById(config.uiId);
 assert.ok(firstControls, 'observer mounts the portable controls after the GUI appears');
 assert.equal(firstControls.parentNode, first.host, 'controls are nested in the maintenance card host');
-assert.equal(firstControls.className, 'portable-memory-controls');
+assert.equal(firstControls.className, 'stack stack--sm', 'controls use the adopted mockup layout classes');
 assert.equal(firstControls.style.cssText, '', 'dedicated controls do not use fixed body positioning');
 assert.equal(document.body.children.includes(firstControls), false, 'controls are not appended directly to document.body');
 assert.equal(firstControls.querySelectorAll('button').length, 2);

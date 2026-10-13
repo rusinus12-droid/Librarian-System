@@ -2,6 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createLibraVmHarness,waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const source=fs.readFileSync(path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8');
+console.log('sourceSha256 '+require('node:crypto').createHash('sha256').update(source).digest('hex'));
 const acorn=require('acorn');
 const syntax=acorn.parse(source,{ecmaVersion:'latest'}),bindings=new Set();
 function collectBindings(n){if(!n||!n.type)return;if(n.type==='VariableDeclarator'&&n.id.type==='Identifier')bindings.add(n.id.name);if(n.type==='FunctionDeclaration')bindings.add(n.id.name);for(const [k,v]of Object.entries(n)){if(Array.isArray(v))for(const c of v)collectBindings(c);else if(v&&v.type)collectBindings(v);}}
@@ -47,10 +48,10 @@ test('actual settings DOM retains all six pages and memory import/save/restart w
  const r=await createLibraVmHarness({enable_gui:'true'},{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>character,getChar:async()=>character,getChat:async()=>chat,getCurrentChat:async()=>chat,getDatabase:async()=>({characters:[character],personas:[],selectedPersona:'',plugins:[]}),registerSetting:async(...args)=>{registrations.push({type:'settings',args});return{id:'fixture-setting'};},registerButton:async(...args)=>{registrations.push({type:'button',args});return{id:args[0].id};},showContainer:async()=>true,hideContainer:async()=>true},{contextGlobals:globals,transformSource:importAccess});
  try{
   await r.api.openSettingsGui();assert(window.document.querySelector('#sga-rp-gui-root'),'actual settings root rendered');
-  try{await waitFor(()=>window.document.querySelector('[data-active-book-page]'),4000);}catch(error){throw Error('Actual retained book page failed: '+JSON.stringify(logs));}
+  try{await waitFor(()=>window.document.querySelector('.page.is-active[data-page] [data-libra-product-detail]'),4000);}catch(error){throw Error('Actual retained book page failed: '+JSON.stringify(logs));}
   for(const page of ['desk','memory','people','world','story','settings']){
-   const button=window.document.querySelector('[data-book-page="'+page+'"]');assert(button,'actual retained navigation button '+page);button.click();
-   try{await waitFor(()=>window.document.querySelector('[data-active-book-page="'+page+'"]'),4000);}catch(error){throw Error('Actual page '+page+' failed: '+JSON.stringify(logs));}
+   const button=window.document.querySelector('.sidebar [data-go="'+page+'"]');assert(button,'actual retained navigation button '+page);button.click();
+   try{await waitFor(()=>window.document.querySelector('.page.is-active[data-page="'+page+'"] [data-libra-product-detail="'+page+'"]'),4000);}catch(error){throw Error('Actual page '+page+' failed: '+JSON.stringify(logs));}
    const text=window.document.body.textContent;assert(!/GRADIA|Input Writer|Planner/.test(text),'retired feature label on '+page+': '+(text.match(/.{0,80}(?:GRADIA|Input Writer|Planner).{0,80}/g)||[]).join(' | '));
   }
   assert(registrations.some(row=>row.type==='settings'),'settings entry retained');assert(!registrations.some(row=>JSON.stringify(row.args).includes('input-writer')),'retired input writer host action registered');

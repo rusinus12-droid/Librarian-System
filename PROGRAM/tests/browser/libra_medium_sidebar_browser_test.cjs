@@ -1,26 +1,5 @@
-const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');const {chromium}=require('playwright');
-(async()=>{const browser=await chromium.launch({executablePath:(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe'),headless:true});try{
-const page=await browser.newPage({viewport:{width:833,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.setContent('<html lang="ko"><body></body></html>');await page.addScriptTag({path:path.join(__dirname,'libra_writer_host.js')});await page.addScriptTag({path:path.join(__dirname,'../../plugins/LIBRA.js')});await page.waitForFunction(()=>!!globalThis.__LIBRA__);
-for(const family of ['libra','gradia']){
-await page.evaluate(f=>__LIBRA__.saveLibraProviderConfig({responseFamily:f}),family);await page.evaluate(()=>__LIBRA__.openSettingsGui());
-await page.locator('.libra-book-brand-button').click();await page.getByRole('menuitem').filter({has:page.locator('strong',{hasText:family==='gradia'?'GRADIA':'LIBRA'})}).click();await page.waitForFunction(f=>document.querySelector('.libra-book-app')?.dataset.responseFamily===f,family);
-for(const width of [761,833,980]){
- await page.setViewportSize({width,height:1100});
- await page.waitForTimeout(200);
- const sidebar=page.locator('.libra-book-sidebar'),shell=page.locator('.sga-shell');await sidebar.waitFor({state:'visible'});
- const b=await sidebar.boundingBox(),s=await shell.boundingBox();assert(b.width>s.width*.9,JSON.stringify({width,b,s}));
- const buttons=sidebar.locator('nav>button[data-book-page]');assert((await buttons.count())>=6);
- for(const button of await buttons.all()){const box=await button.boundingBox();assert(box.width>=130&&box.height>=44);assert(box.x>=b.x&&box.x+box.width<=b.x+b.width+1);}
- assert(await sidebar.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'no horizontal sidebar overflow');
- await sidebar.locator('[data-book-page="settings"]').click();await sidebar.locator('[data-book-page="settings"][aria-current="page"]').waitFor();
- assert(await sidebar.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'settings menu has no horizontal overflow');
- const first=sidebar.locator('nav>button[data-book-page]').first();const firstPage=await first.getAttribute('data-book-page');await first.click();await sidebar.locator(`[data-book-page="${firstPage}"][aria-current="page"]`).waitFor();
- if(width===833&&family==='gradia'&&process.env.LIBRA_MEDIUM_SCREENSHOT)await page.screenshot({path:process.env.LIBRA_MEDIUM_SCREENSHOT});
-}
-await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('.libra-book-sidebar').isVisible(),false);assert(await page.locator('.libra-book-mobile-nav').isVisible());
-await page.setViewportSize({width:1440,height:1000});const side=await page.locator('.libra-book-sidebar').boundingBox();assert(side.width>=180&&side.width<=260);
-await page.getByRole('button',{name:'설정 화면 닫기',exact:true}).click();
-}
-assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>__writerHost.calls.model),0);console.log('PASS: LIBRA/GRADIA 761/833/980px full-width wrapping navigation, settings and return, 390px mobile, 1440px desktop');
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+'use strict';
+// The old full-width wrapping tablet sidebar is replaced by original 900px/640px
+// container breakpoints. Route count, selection, fit and actual hit targets remain.
+const assert=require('node:assert/strict'),{boot,clean}=require('./libra_approved_browser.cjs');
+(async()=>{const{browser,page,errors}=await boot();try{for(const width of [900,901,640,641,820,390,928,929,668,669,761,833,980,1440]){await page.setViewportSize({width,height:1100});const sidebar=page.locator('.sidebar'),mobile=(await page.locator('.frame').boundingBox()).width<=900;assert.equal(await sidebar.isVisible(),!mobile);assert.equal(await page.locator('.tabbar').isVisible(),mobile);if(!mobile){const box=await sidebar.boundingBox();assert.ok(box.width>=180&&box.width<=260,'original fixed sidebar width');const buttons=sidebar.locator('[data-go]');assert.equal(await buttons.count(),6,'all approved destinations');for(const button of await buttons.all()){const r=await button.boundingBox();assert.ok(r.width>0&&r.height>0);assert.ok(r.x>=box.x-1&&r.x+r.width<=box.x+box.width+1);}assert.ok(await sidebar.evaluate(n=>n.scrollWidth<=n.clientWidth+1));await sidebar.locator('[data-go="settings"]').click();await sidebar.locator('[data-go="settings"][aria-current="page"]').waitFor();await sidebar.locator('[data-go="desk"]').click();await sidebar.locator('[data-go="desk"][aria-current="page"]').waitFor();}if(mobile){const bar=page.locator('.tabbar');assert.equal(await bar.locator('button').count(),5);assert.equal(await bar.locator('[data-more]').count(),0,'original settings top item leaves five primary routes');assert.deepEqual(await bar.locator('[data-go]').evaluateAll(nodes=>nodes.map(n=>n.dataset.go)),['desk','memory','people','world','story']);for(const button of await bar.locator('[data-go]').all()){const route=await button.getAttribute('data-go');const reference=await page.locator('.sidebar [data-go="'+route+'"] svg').innerHTML();assert.equal(await button.locator('svg').innerHTML(),reference,'original route icon');assert.ok(await button.evaluate(n=>{const r=n.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===n;}),'bottom navigation unoccluded');await button.click();await page.waitForFunction(value=>__approved.Gui.bookPage===value,route);await button.focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>__approved.Gui.bookPage),route);}await page.locator('.topbar [data-go="settings"]').click();await page.waitForFunction(()=>__approved.Gui.bookPage==='settings');await page.locator('.topbar [data-go="settings"]').focus();await page.keyboard.press('Enter');}assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}await clean(page,errors);console.log('PASS: approved sidebar and mobile breakpoints, six actual routes, selection and no overflow');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

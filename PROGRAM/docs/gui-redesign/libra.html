@@ -100,7 +100,7 @@
       <div><div class="brand__name">LIBRA</div><div class="brand__ver">사서 · v2.3.149</div></div></div>
     <div class="scope"><b>아스텔</b><span>›</span><span>에피소드 42 · 밤의 정원</span></div>
     <div class="grow"></div>
-    <span class="health health--ok hide-narrow" title="기억이 저장되고 현재 상태까지 반영되었습니다."><i></i>기억 정상 · T125 저장</span>
+    <span class="health health--ok hide-narrow" title="기억이 저장되고 현재 상태까지 반영되었습니다."><i></i>기억 정상 · T<span data-status-committed-turn>125</span> 저장</span>
     <button class="btn" data-open="drawer-quick"><i data-i="sliders"></i><span class="hide-narrow">빠른 설정</span></button>
     <button class="btn btn--icon" data-go="settings" aria-label="설정"><i data-i="gear"></i></button>
     <div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기"><i data-i="more"></i></button>
@@ -128,7 +128,7 @@
 
     <div class="stack">
       <div class="banner banner--ok"><div class="banner__icon"><i data-i="check"></i></div>
-        <div><b>125턴까지 기억이 저장되고 상태에 반영되었습니다.</b><span>126–128턴(3턴)은 5턴이 채워질 때까지 대기 중 · 저장된 기억 <b id="desk-mem-n">25</b>개 · 부분 저장 0 · 반영 대기 0</span></div>
+        <div><b><span data-status-committed-turn>125</span>턴까지 기억이 저장되고 상태에 반영되었습니다.</b><span><span data-status-pending-range>126–128</span>턴(<span data-status-pending-turns>3</span>턴)은 5턴이 채워질 때까지 대기 중 · 저장된 기억 <b id="desk-mem-n">25</b>개 · 부분 저장 <span data-status-partial>0</span> · 반영 대기 <span data-status-awaiting>0</span></span></div>
         <button class="btn btn--sm" data-open="dialog-state">상태 자세히</button></div>
 
       <div class="spread">
@@ -241,7 +241,7 @@
           <button class="chapter is-on" data-select-row="p0"><small>주인공</small><b>아스텔</b><span>현재: 북쪽 정원 · 열쇠 소지</span></button><button class="chapter" data-select-row="p1"><small>조력자</small><b>정원사 로웬</b><span>현재: 온실 · 경계</span></button><button class="chapter" data-select-row="p2"><small>NPC</small><b>왕실 기록관</b><span>현재: 위치 미상</span></button>
         </div></aside>
       <article class="sheet-page detail-pane" data-detail="p0">
-        <div class="eyebrow">Character · 근거 12 · T125 기준</div>
+        <div class="eyebrow" data-character-evidence data-evidence-count="12" data-evidence-turn="125">Character · 근거 <span data-evidence-count-text>12</span> · T<span data-evidence-turn-text>125</span> 기준</div>
         <h2>아스텔</h2>
         <div class="tabs" role="tablist" data-subtabs="pp0" style="margin-top:14px"><button class="tab" role="tab" aria-selected="true" data-subtab="intro">소개</button><button class="tab" role="tab" aria-selected="false" data-subtab="pref">선호</button><button class="tab" role="tab" aria-selected="false" data-subtab="bound">경계</button><button class="tab" role="tab" aria-selected="false" data-subtab="now">현재 상황</button><button class="tab" role="tab" aria-selected="false" data-subtab="rel">관계</button><button class="tab" role="tab" aria-selected="false" data-subtab="know">지식</button><button class="tab" role="tab" aria-selected="false" data-subtab="own">소속·사물</button></div>
         <div class="stack"><div data-subpanel="intro" data-group="pp0" class="is-active"><dl class="kv profile"><dt>외형</dt><dd>짙은 회색 외투, 오른손에 은색 열쇠를 쥔 채 걷는다.</dd><dt>성격</dt><dd>신중하지만 약속을 가볍게 여기지 않는다.</dd><dt>말투</dt><dd>짧고 낮은 어조.</dd><dt>목표</dt><dd>왕실 기록실의 기록을 확인한다.</dd></dl></div><div data-subpanel="pref" data-group="pp0"><ul class="plain"><li>조용한 장소를 선호한다.</li><li>식은 차를 좋아한다.</li></ul><p class="hint">‘선호’는 좋아하는 것입니다. 하지 않으려는 것은 ‘경계’에 따로 기록합니다.</p></div><div data-subpanel="bound" data-group="pp0"><ul class="plain"><li>약속한 시점 전에는 문을 열지 않는다.</li><li>정원사의 신뢰를 이용하지 않는다.</li></ul><p class="hint">‘경계’는 선호와 다른 항목입니다 — 넘지 않으려는 선입니다.</p></div><div data-subpanel="now" data-group="pp0"><dl class="kv"><dt>현재 위치·조건</dt><dd>북쪽 정원 · 열쇠 소지 · 보름달 전 개방 금지 인지</dd></dl><p class="hint">현재 상황은 최근 기억에서 바뀐 값이며 장기 소개와 분리됩니다.</p></div><div data-subpanel="rel" data-group="pp0"><div class="stack stack--sm"><div class="rel"><b>아스텔</b><span><span class="rel__arrow">→</span> 정원사 로웬 <span class="chip">신뢰 ↑</span></span><button class="linkbtn" data-open="drawer-evidence" data-ctx='{"target": "인물 · 아스텔", "text": "아스텔 교정: ", "src": "인물 · 아스텔", "field": "아스텔 › 현재 상황"}'>근거</button></div><div class="rel"><b>정원사 로웬</b><span><span class="rel__arrow">→</span> 아스텔 <span class="chip">경계 → 조건부 협력</span></span><button class="linkbtn" data-open="drawer-evidence" data-ctx='{"target": "인물 · 아스텔", "text": "아스텔 교정: ", "src": "인물 · 아스텔", "field": "아스텔 › 현재 상황"}'>근거</button></div><div class="rel"><b>아스텔</b><span><span class="rel__arrow">→</span> 왕실 기록관 <span class="chip">미확인</span></span><button class="linkbtn" data-open="drawer-evidence" data-ctx='{"target": "인물 · 아스텔", "text": "아스텔 교정: ", "src": "인물 · 아스텔", "field": "아스텔 › 현재 상황"}'>근거</button></div></div><p class="hint">관계는 <b>주체 → 대상</b> 방향이 고정된 항목입니다. 서로의 관계는 별개 항목입니다.</p></div><div data-subpanel="know" data-group="pp0"><ul class="plain"><li>북쪽 문은 보름달 전에는 열리지 않는다.</li></ul><p class="hint">“기록된 지식 없음”은 “모른다”는 뜻이 아닙니다. 기록이 없을 뿐입니다.</p></div><div data-subpanel="own" data-group="pp0"><ul class="plain"><li>은색 열쇠 (소지)</li><li>소속: 없음</li></ul></div></div>
@@ -249,7 +249,7 @@
         <div class="cluster" style="margin-top:12px"><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "인물 · 아스텔", "text": "아스텔 교정: ", "src": "인물 · 아스텔", "field": "아스텔 › 현재 상황"}'>근거 보기 →</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="p1" hidden>
-        <div class="eyebrow">Character · 근거 12 · T125 기준</div>
+        <div class="eyebrow" data-character-evidence data-evidence-count="7" data-evidence-turn="120">Character · 근거 <span data-evidence-count-text>7</span> · T<span data-evidence-turn-text>120</span> 기준</div>
         <h2>정원사 로웬</h2>
         <div class="tabs" role="tablist" data-subtabs="pp1" style="margin-top:14px"><button class="tab" role="tab" aria-selected="true" data-subtab="intro">소개</button><button class="tab" role="tab" aria-selected="false" data-subtab="pref">선호</button><button class="tab" role="tab" aria-selected="false" data-subtab="bound">경계</button><button class="tab" role="tab" aria-selected="false" data-subtab="now">현재 상황</button><button class="tab" role="tab" aria-selected="false" data-subtab="rel">관계</button><button class="tab" role="tab" aria-selected="false" data-subtab="know">지식</button><button class="tab" role="tab" aria-selected="false" data-subtab="own">소속·사물</button></div>
         <div class="stack"><div data-subpanel="intro" data-group="pp1" class="is-active"><dl class="kv profile"><dt>외형</dt><dd>이끼 낀 장갑을 낀 노인.</dd><dt>성격</dt><dd>경계심이 많지만 약속은 지킨다.</dd></dl></div><div data-subpanel="pref" data-group="pp1"><ul class="plain"><li>새벽의 정원을 좋아한다.</li></ul></div><div data-subpanel="bound" data-group="pp1"><ul class="plain"><li>보름달 전에는 문 열기를 허락하지 않는다.</li></ul></div><div data-subpanel="now" data-group="pp1"><dl class="kv"><dt>현재 위치·조건</dt><dd>온실 · 경계</dd></dl></div><div data-subpanel="rel" data-group="pp1"><div class="stack stack--sm"><div class="rel"><b>정원사 로웬</b><span><span class="rel__arrow">→</span> 아스텔 <span class="chip">경계 → 조건부 협력</span></span><button class="linkbtn" data-open="drawer-evidence" data-ctx='{"target": "인물 · 정원사 로웬", "text": "정원사 로웬 교정: ", "src": "인물 · 정원사 로웬", "field": "정원사 로웬 › 현재 상황"}'>근거</button></div></div></div><div data-subpanel="know" data-group="pp1"><ul class="plain"><li>문의 개방 조건을 안다.</li></ul></div><div data-subpanel="own" data-group="pp1"><ul class="plain"><li>온실 열쇠</li><li>소속: 북쪽 정원</li></ul></div></div>
@@ -257,7 +257,7 @@
         <div class="cluster" style="margin-top:12px"><button class="btn btn--sm" data-open="drawer-evidence" data-ctx='{"target": "인물 · 정원사 로웬", "text": "정원사 로웬 교정: ", "src": "인물 · 정원사 로웬", "field": "정원사 로웬 › 현재 상황"}'>근거 보기 →</button></div>
       </article>
       <article class="sheet-page detail-pane" data-detail="p2" hidden>
-        <div class="eyebrow">Character · 근거 12 · T125 기준</div>
+        <div class="eyebrow" data-character-evidence data-evidence-count="2" data-evidence-turn="118">Character · 근거 <span data-evidence-count-text>2</span> · T<span data-evidence-turn-text>118</span> 기준</div>
         <h2>왕실 기록관</h2>
         <div class="tabs" role="tablist" data-subtabs="pp2" style="margin-top:14px"><button class="tab" role="tab" aria-selected="true" data-subtab="intro">소개</button><button class="tab" role="tab" aria-selected="false" data-subtab="pref">선호</button><button class="tab" role="tab" aria-selected="false" data-subtab="bound">경계</button><button class="tab" role="tab" aria-selected="false" data-subtab="now">현재 상황</button><button class="tab" role="tab" aria-selected="false" data-subtab="rel">관계</button><button class="tab" role="tab" aria-selected="false" data-subtab="know">지식</button><button class="tab" role="tab" aria-selected="false" data-subtab="own">소속·사물</button></div>
         <div class="stack"><div data-subpanel="intro" data-group="pp2" class="is-active"><dl class="kv profile"><dt>외형</dt><dd>알려지지 않음</dd></dl></div><div data-subpanel="pref" data-group="pp2"><p class="muted">기록된 선호가 없습니다.</p></div><div data-subpanel="bound" data-group="pp2"><p class="muted">기록된 경계가 없습니다.</p></div><div data-subpanel="now" data-group="pp2"><dl class="kv"><dt>현재 위치·조건</dt><dd>위치 미상</dd></dl></div><div data-subpanel="rel" data-group="pp2"><div class="stack stack--sm"><div class="rel"><b>아스텔</b><span><span class="rel__arrow">→</span> 왕실 기록관 <span class="chip">미확인</span></span><button class="linkbtn" data-open="drawer-evidence" data-ctx='{"target": "인물 · 왕실 기록관", "text": "왕실 기록관 교정: ", "src": "인물 · 왕실 기록관", "field": "왕실 기록관 › 현재 상황"}'>근거</button></div></div></div><div data-subpanel="know" data-group="pp2"><p class="muted">기록된 지식 없음 — “모른다”는 뜻이 아닙니다.</p></div><div data-subpanel="own" data-group="pp2"><ul class="plain"><li>소속: 왕실 기록실</li></ul></div></div>
@@ -440,7 +440,7 @@
   <div class="overlay" id="dialog-state" aria-hidden="true">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="ds-t">
       <div class="eyebrow">Memory Status</div><h2 id="ds-t">기억 상태</h2>
-      <dl class="kv"><dt>현재 U+A</dt><dd>128턴</dd><dt>저장된 기억</dt><dd><span id="state-mem-n">25</span>개 (정본 · T125까지)</dd><dt>대기</dt><dd>3턴 (T126–128 · 5턴 미만)</dd><dt>상태 반영</dt><dd>T125까지</dd><dt>부분 저장</dt><dd>0개 구간</dd><dt>대기 중 반영</dt><dd>0개 구간</dd></dl>
+      <dl class="kv"><dt>현재 U+A</dt><dd><span data-status-current-turns>128</span>턴</dd><dt>저장된 기억</dt><dd><span id="state-mem-n">25</span>개 (정본 · T<span data-status-committed-turn>125</span>까지)</dd><dt>대기</dt><dd><span data-status-pending-turns>3</span>턴 (5턴 미만)</dd><dt>상태 반영</dt><dd>T<span data-status-committed-turn>125</span>까지</dd><dt>부분 저장</dt><dd><span data-status-partial>0</span>개 구간</dd><dt>대기 중 반영</dt><dd><span data-status-awaiting>0</span>개 구간</dd></dl>
       <div class="dialog__actions"><button class="btn" data-toast="전체 상태를 읽기 전용으로 확인했습니다. (시안)">전체 상태 확인</button><button class="btn btn--primary" data-close data-autofocus>닫기</button></div>
     </div>
   </div>
@@ -497,9 +497,12 @@
       <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>중단 요청</button><button class="btn btn--primary" data-job-done data-close hidden>확인</button></div></div></div>
 
   <!-- 복원 방식 -->
-  <div class="overlay" id="dlg-restore-mode" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="drm-t"><div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="drm-t">기억 복원 방식</h2><p class="muted" style="font-size:13px">방식을 고른 뒤 백업 파일을 검사하고, 그 파일로 가능한 방식이 아니면 다음 단계에서 막힙니다. 설정 JSON 복원과는 다른 작업입니다.</p>
-    <div class="choices" style="grid-template-columns:1fr"><button class="choice is-on"><b>같은 채팅 교체 복원</b><span>현재 채팅의 기억을 백업 상태로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.</span></button><button class="choice"><b>새 채팅으로 이사</b><span>다른 채팅의 기억을 새 범위로 이사합니다.</span></button><button class="choice"><b>복사 채팅 복원</b><span>복사된 채팅임을 검증한 뒤 현재 범위로 재귀속합니다.</span></button></div>
-    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" data-close data-toast="다음 단계(백업 파일 선택·검사)는 이 시안에서 생략했습니다. 아무것도 바뀌지 않았습니다. (시안)">다음</button></div></div></div>
+  <div class="overlay" id="dlg-restore-mode" aria-hidden="true"><div class="dialog dialog--wide dialog--danger" role="dialog" aria-modal="true" aria-labelledby="drm-t"><div class="eyebrow" style="color:var(--danger-ink)">Memory restore</div><h2 id="drm-t">기억 복원 방식</h2><p class="muted" style="font-size:13px">먼저 방식을 고르고 백업 파일을 선택합니다. 시안은 파일의 JSON 형식·LIBRA 백업 표식·기본 메타데이터만 검사합니다. 실제 digest·저장 레코드·현재 scope 자격 판정은 제품 연결 단계에서 수행해야 합니다.</p>
+    <div class="choices" id="restore-modes" style="grid-template-columns:1fr"><button class="choice is-on" type="button" data-restore-mode="restore_same_scope"><b>같은 채팅 교체 복원</b><span>현재 채팅의 기억을 백업 상태로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.</span></button><button class="choice" type="button" data-restore-mode="import_as_predecessor_archive"><b>새 채팅으로 이사</b><span>다른 채팅의 기억을 새 범위로 이사합니다.</span></button><button class="choice" type="button" data-restore-mode="reconstruct_native_copy"><b>복사 채팅 복원</b><span>복사된 채팅임을 검증한 뒤 현재 범위로 재귀속합니다.</span></button></div>
+    <div class="field" style="margin-top:12px"><label for="restore-file">LIBRA 백업 JSON 파일</label><input class="input" id="restore-file" type="file" accept=".json,application/json"><span class="hint" id="restore-file-hint">파일을 선택하면 JSON 형식과 기본 백업 메타데이터를 검사합니다.</span></div>
+    <div class="note" id="restore-inspection" role="status" aria-live="polite" hidden style="margin-top:10px"></div>
+    <div class="note note--warn" style="margin-top:10px">이 시안에서는 파일 내용을 제품 저장소에 적용하지 않습니다. 검사 결과만으로 복원 가능하다고 판정할 수 없으며, 현재 채팅·캐릭터·작업 상태와의 자격 검사 및 영향 확인은 제품 단계에서 다시 해야 합니다.</div>
+    <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--danger-solid" id="restore-next" type="button" disabled>파일 검사</button></div></div></div>
 
   <!-- Prompt Studio / 입력 미리보기 -->
   <div class="overlay" id="dlg-prompt" aria-hidden="true"><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="dps-t"><div class="eyebrow">Prompt Studio</div><h2 id="dps-t">분석기 · 지침</h2><div class="field"><label for="ps-an">분석기</label><select class="select" id="ps-an" data-no-track><option>기본 기억 분석기</option></select></div><div class="field" style="margin-top:10px"><label for="ps-in">지침</label><textarea class="textarea" id="ps-in" rows="5" data-no-track aria-describedby="ps-state">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class="hint" id="ps-state">저장된 지침입니다.</span></div><div class="dialog__actions"><button class="btn" data-close data-autofocus>닫기</button><button class="btn" id="ps-default">기본값 채우기</button><button class="btn btn--primary" id="ps-save" data-close data-act="prompt-save" data-toast="지침을 저장했습니다. (시안)">저장</button></div></div></div>
@@ -618,6 +621,21 @@ function counts(){
   ['nav-mem-n','desk-mem-n','adv-mem-n','state-mem-n'].forEach(function(i){if($id(i))$id(i).textContent=MEMN;});
   var open=$$('#story-open-list .row').length;['fact-open-n','link-open-n','story-open-n'].forEach(function(i){if($id(i))$id(i).textContent=open;});
   $id('link-people-n').textContent=$$('[data-page=people] .chapter').length;
+  syncStatus();
+}
+/* The banner, status dialog, and health chip read one prototype state snapshot. */
+var STATUS={currentTurns:128,committedTurns:125,pendingTurns:3,partial:0,awaiting:0};
+function syncStatus(){
+  var to=Object.keys(MEM).reduce(function(n,id){return Math.max(n,Number(MEM[id].to)||0);},0);
+  if(to)STATUS.committedTurns=to;
+  var pendingStart=STATUS.committedTurns+1,pendingEnd=STATUS.currentTurns;
+  STATUS.pendingTurns=Math.max(0,pendingEnd-pendingStart+1);
+  $$('[data-status-current-turns]').forEach(function(n){n.textContent=STATUS.currentTurns;});
+  $$('[data-status-committed-turn]').forEach(function(n){n.textContent=STATUS.committedTurns;});
+  $$('[data-status-pending-turns]').forEach(function(n){n.textContent=STATUS.pendingTurns;});
+  $$('[data-status-pending-range]').forEach(function(n){n.textContent=STATUS.pendingTurns?pendingStart+'–'+pendingEnd:'없음';});
+  $$('[data-status-partial]').forEach(function(n){n.textContent=STATUS.partial;});
+  $$('[data-status-awaiting]').forEach(function(n){n.textContent=STATUS.awaiting;});
 }
 /* ---------- 버전 · 실행 기록 ---------- */
 function renderVersions(c){
@@ -665,6 +683,35 @@ function marginFields(){return $$('#margin-form input, #margin-form textarea');}
 function syncMargin(){var n=window.suiteDirty('story'),empty=marginFields().every(function(f){return f.type==='checkbox'?!f.checked:!f.value.trim();});
   $id('margin-save').disabled=n===0;$id('margin-revert').disabled=n===0;$id('margin-reset').disabled=empty;
   $id('margin-state').textContent=n?'기록하지 않은 변경 '+n+'개 · ‘여백에 기록’을 눌러야 저장됩니다.':'기록된 내용과 같습니다.';}
+/* LIB-16 mockup preflight: inspect the selected file's outer envelope only.
+   Product digest, dependency graph, current-scope eligibility and restore remain G3. */
+var RESTORE={mode:'restore_same_scope',file:null,envelope:null,preflight:false};
+function resetRestore(){RESTORE={mode:'restore_same_scope',file:null,envelope:null,preflight:false};
+  var input=$id('restore-file'),hint=$id('restore-file-hint'),box=$id('restore-inspection'),go=$id('restore-next');
+  if(input)input.value='';if(hint)hint.textContent='파일을 선택하면 JSON 형식과 기본 백업 메타데이터를 검사합니다.';
+  if(box){box.hidden=true;box.textContent='';}if(go){go.disabled=true;go.textContent='파일 검사';}
+  $$('#restore-modes .choice').forEach(function(b){b.classList.toggle('is-on',b.dataset.restoreMode===RESTORE.mode);});}
+function inspectRestoreEnvelope(env){
+  if(!env||typeof env!=='object'||Array.isArray(env))throw Error('최상위 JSON 값이 객체가 아닙니다.');
+  if(env.schema!=='memory-suite.portable-memory-backup.v1')throw Error('LIBRA Portable Memory Backup 스키마가 아닙니다.');
+  if(Number(env.formatVersion)!==1)throw Error('지원하지 않는 백업 형식 버전입니다.');
+  if(String(env.plugin&&env.plugin.id||'').toLowerCase()!=='libra')throw Error('LIBRA 백업 파일이 아닙니다.');
+  if(!Array.isArray(env.records)||!env.records.length)throw Error('저장 레코드가 없거나 목록 형식이 잘못되었습니다.');
+  if(!env.source||typeof env.source!=='object')throw Error('원본 scope 메타데이터가 없습니다.');
+  if(!env.integrity||typeof env.integrity!=='object')throw Error('무결성 표식이 없습니다. 실제 digest 검증은 제품에서만 가능합니다.');
+  if(!env.policy||env.policy.restore!=='strict_same_scope_replace')throw Error('지원하지 않는 복원 정책입니다.');
+  if(env.lineage&&(env.lineage.schema!=='libra.portable_lineage.v1'||String(env.lineage.chatId||'')!==String(env.source.chatId||'')||String(env.lineage.scopeKey||'')!==String(env.source.scopeKey||env.source.scopeId||'')))throw Error('백업 lineage와 source identity가 일치하지 않습니다.');
+  return env;
+}
+function restoreFileChanged(file){var hint=$id('restore-file-hint'),box=$id('restore-inspection'),go=$id('restore-next');
+  RESTORE.file=file||null;RESTORE.envelope=null;RESTORE.preflight=false;go.disabled=true;go.textContent='파일 검사';box.hidden=true;box.textContent='';
+  if(!file){hint.textContent='파일을 선택하면 JSON 형식과 기본 백업 메타데이터를 검사합니다.';return;}
+  if(file.size>536870912){hint.textContent='검사 차단 · LIBRA Portable JSON 최대 크기(512 MiB)를 초과했습니다.';return;}
+  hint.textContent='선택됨 · '+file.name+' · '+file.size.toLocaleString('ko-KR')+' bytes';
+  file.text().then(function(raw){if(RESTORE.file!==file)return;var env;try{env=inspectRestoreEnvelope(JSON.parse(raw));}catch(err){hint.textContent='검사 차단 · '+(err&&err.message||'파일을 읽지 못했습니다.');return;}
+    RESTORE.envelope=env;RESTORE.preflight=true;go.disabled=false;go.textContent='기본 검사 결과 보기';
+    box.hidden=false;box.textContent='기본 메타데이터 확인 · '+String(env.plugin.name||'LIBRA')+' v'+String(env.plugin.version||'미상')+' · 원본 '+String(env.source.characterName||env.source.characterId||'캐릭터 미상')+' / '+String(env.source.chatTitle||env.source.chatId||'채팅 미상')+' · 레코드 '+env.records.length+'개. 이 확인은 digest·전체 레코드 의미·현재 대상 자격을 검증하지 않았습니다.';
+  }).catch(function(){hint.textContent='검사 차단 · 파일을 읽을 수 없습니다.';});}
 /* ---------- 이벤트 ---------- */
 document.addEventListener('suite:ready',function(){seed();counts();renderAI();syncStore();syncDelivery();syncMargin();rebuildPagers();});
 document.addEventListener('suite:save',function(){setTimeout(function(){syncStore();syncDelivery();},0);});
@@ -672,11 +719,14 @@ document.addEventListener('suite:revert',function(){setTimeout(function(){syncSt
 document.addEventListener('input',function(e){if(e.target.closest&&e.target.closest('#margin-form'))setTimeout(syncMargin,0);
   if(e.target.id==='co-in')syncCorr();if(e.target.id==='ps-in')$id('ps-state').textContent=e.target.value===PROMPT_SAVED?'저장된 지침입니다.':'저장하지 않은 변경이 있습니다. 닫으면 버려집니다.';});
 document.addEventListener('change',function(e){if(e.target.closest&&e.target.closest('#margin-form'))setTimeout(syncMargin,0);
+  if(e.target.id==='restore-file')restoreFileChanged(e.target.files&&e.target.files[0]);
   if(e.target.id==='rb-bound'){var ov=$id('dlg-recover');if(ov._ctx)ov._ctx.boundary=e.target.value;var k=['T120','T115','T110','T105'].indexOf(e.target.value)+1;$id('rb-hint').textContent='모델 호출 0회 · 저장된 정본 '+k+'개를 다시 반영합니다.';}
   if(e.target.id==='mg-partner'||e.target.id==='mg-split')syncMerge();
   if(e.target.name==='pend')syncPend();});
 document.addEventListener('click',function(e){
   var t=e.target;
+  var rm=t.closest&&t.closest('[data-restore-mode]');if(rm){RESTORE.mode=rm.dataset.restoreMode;$$('#restore-modes .choice').forEach(function(b){b.classList.toggle('is-on',b===rm);});return;}
+  if(t.closest&&t.closest('#restore-next')){if(!RESTORE.preflight||!RESTORE.envelope)return;var modes={restore_same_scope:'같은 채팅 교체 복원',import_as_predecessor_archive:'새 채팅으로 기억 이사',reconstruct_native_copy:'복사 채팅 기억 복구'};var box=$id('restore-inspection');box.textContent+=' 선택한 방식: '+(modes[RESTORE.mode]||'방식 미상')+'. 다음 단계에서 현재 chatId·characterId·저장 상태와 모드별 자격을 실제 제품이 다시 검사해야 합니다. 시안에서는 복원하지 않았습니다.';$id('restore-next').disabled=true;$id('restore-next').textContent='제품 자격 검사 대기';return;}
   if(t.closest('#memory-root .chapter, [data-page=people] .chapter'))return;
   if(t.closest('#store-where, #store-bm25'))setTimeout(syncStore,0);
   var pg=t.closest('[data-pager]');if(pg){var row=document.querySelector('#memory-root .chapter[data-select-row="'+pg.dataset.pager+'"]');if(row){row.click();row.focus();}return;}
@@ -727,6 +777,7 @@ document.addEventListener('click',function(e){var t=e.target;
   var pd=t.closest('[data-open="dlg-pending"]');if(pd){var pane=pd.closest('.detail-pane');pd.setAttribute('data-ctx',JSON.stringify({person:pane?pane.querySelector('h2').textContent:''}));}
 },true);
 document.addEventListener('suite:open',function(e){var c=e.detail.ctx||{};
+  if(e.detail.id==='dlg-restore-mode')resetRestore();
   if(e.detail.id==='drawer-versions')renderVersions(c);
   if(e.detail.id==='drawer-evidence')renderEvidence(c);
   if(e.detail.id==='dlg-correct')syncCorr();

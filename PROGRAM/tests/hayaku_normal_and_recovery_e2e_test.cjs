@@ -20,6 +20,7 @@ const assert = require('node:assert/strict');
 const {
   createHayakuRuntime,
   createValidPacket,
+  hiddenPacketMessage,
   waitFor
 } = require('./fixtures/hayaku_runtime_harness.cjs');
 
@@ -59,6 +60,32 @@ const envelope = (packet, lineage, summary) => JSON.stringify({
   packet: { ...packet, meta: { ...packet.meta, lineage: lineageOf(lineage) } },
   grounding: [{ path: 'meta.summary_memory.summary', source: 'target', evidence: [summary] }]
 });
+
+const eligibleMissingTurnMessages = () => [
+  user('r-u1', 'I enter the workshop.'),
+  { role: 'assistant', chatId: 'r-a1', id: 'r-a1', data: hiddenPacketMessage('Alice entered the workshop.', createValidPacket({ turn: 1, subject: 'Alice', scene: 'workshop', summary: 'Alice entered the workshop.' })), time: Date.now() },
+  user('r-u2', 'I turn the brass valve.')
+];
+
+const nativeRecoveryEnvelope = summary => {
+  const packet = createValidPacket({ turn: 2, subject: 'Alice', scene: 'workshop', summary });
+  packet.entity.characters = [{ name: 'Alice' }];
+  packet.planner.continuity_locks = [summary];
+  const grounding = [];
+  const walk = (value, base) => {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (item != null && (typeof item !== 'string' || item.trim())) grounding.push({ path: `${base}[${index}]`, source: 'target', evidence: [summary] });
+      });
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    Object.entries(value).forEach(([key, nested]) => walk(nested, base ? `${base}.${key}` : key));
+  };
+  for (const axis of ['entity', 'world', 'narrative', 'planner']) walk(packet[axis], axis);
+  grounding.push({ path: 'meta.summary_memory.summary', source: 'target', evidence: [summary] });
+  return { schema: 'hayaku.native_repair_output.v1', packet, grounding };
+};
 
 const registerCurrentTurn = async runtime => {
   const scope = await runtime.hayaku._test.currentChatScope();
@@ -132,7 +159,7 @@ const storeSnapshot = async storage => {
     messages: [user('f-u1', 'I turn the brass valve.')]
   });
   try {
-    const { lineage } = await registerCurrentTurn(failedRuntime);
+    await registerCurrentTurn(failedRuntime);
     failedRuntime.setLlmResponder(async callOptions => {
       prompts.push((callOptions?.messages || []).map(m => String(m?.content || '')).join('\n'));
       return { type: 'success', result: 'not-json-after-request' };
@@ -157,12 +184,15 @@ const storeSnapshot = async storage => {
     observed.unusable.debtRecorded = /packet_debt/.test(after.text);
     observed.unusable.recoveryVocabulary = /repair_pending|deterministic_fallback|recovery/i.test(after.text);
 
+    let inspection = null;
     try {
-      const inspection = await failedRuntime.hayaku._test.inspectRecoveryDebtsForNativeRepair?.({ includeEvidence: false });
+      inspection = await failedRuntime.hayaku._test.inspectRecoveryDebtsForNativeRepair?.({ includeEvidence: false });
       observed.unusable.inspection = inspection ? {
         available: inspection.available,
         reason: inspection.reason,
+        coverageMode: inspection.coverage?.mode,
         missingTurns: inspection.coverage?.missingTurns,
+        totalActiveDebts: inspection.totalActiveDebts,
         debtCount: Array.isArray(inspection.debts) ? inspection.debts.length : 0,
         repairableDebts: inspection.repairableDebts,
         exhaustedDebts: inspection.exhaustedDebts,
@@ -171,52 +201,102 @@ const storeSnapshot = async storage => {
     } catch (error) {
       observed.unusable.inspectionError = String(error?.message || error).slice(0, 140);
     }
+    assert.equal(observed.unusable.inspectionError, undefined, 'cold-start debt inspection must complete');
+    assert.equal(inspection?.reason, 'no_active_packet_debt');
+    assert.equal(inspection?.coverage?.mode, 'cold_start');
+    assert.equal(inspection?.totalActiveDebts, 0,
+      'an uncovered first turn has no prior canonical packet anchor and is not incremental packet debt');
 
-    // Recovery still works after the failure. `repairCurrentPacketInsideAfterRequest` runs at most
-    // ONCE per pending capture (`pending.afterRequestRepair.attempted` short-circuits a repeat), so
-    // recovery must be observed on a FRESH runtime whose first turn fails and whose scope debt then
-    // clears once a conforming answer is supplied. Asserting on the same pending would only prove
-    // the (correct) single-attempt guard.
+    const zeroTargetRuntime = await createHayakuRuntime({
+      afterRequestAutoRepair: false,
+      backgroundAutoRepair: false,
+      messages: [user('z-u1', 'A first turn without an existing packet.'), { role: 'assistant', chatId: 'z-a1', id: 'z-a1', data: 'The first response has no prior packet anchor.', time: Date.now() }],
+      llmResponder: async () => { throw new Error('ZERO_TARGET_MODEL_CALL_FORBIDDEN'); }
+    });
+    try {
+      const before = await zeroTargetRuntime.hayaku.settingsControl.current();
+      const saved = await zeroTargetRuntime.hayaku.settingsControl.apply({
+        ...before,
+        hayaku_after_request_auto_repair: 'true',
+        hayaku_background_auto_repair: 'true'
+      });
+      assert.equal(saved.ok, true);
+      assert.equal(saved.readbackVerified, true);
+      const readback = await zeroTargetRuntime.hayaku.settingsControl.current();
+      assert.equal(readback.hayaku_after_request_auto_repair, 'true');
+      assert.equal(readback.hayaku_background_auto_repair, 'true');
+      const zeroTargetRun = await zeroTargetRuntime.hayaku.recovery.repairNow({ reason: 'settings_enable_zero_targets' });
+      observed.unusable.settingsEnabledWithoutTarget = {
+        readbackVerified: saved.readbackVerified,
+        reason: zeroTargetRun.reason,
+        repaired: zeroTargetRun.repaired,
+        totalActiveDebts: zeroTargetRun.totalActiveDebts,
+        llmCalls: zeroTargetRuntime.llmCalls.length
+      };
+      assert.equal(zeroTargetRun.reason, 'no_active_packet_debt');
+      assert.equal(zeroTargetRun.repaired, false);
+      assert.equal(zeroTargetRun.totalActiveDebts, 0);
+      assert.equal(zeroTargetRuntime.llmCalls.length, 0,
+        'saving both auto-repair settings must not create targets or call a model on a first-use cold start');
+    } finally {
+      await zeroTargetRuntime.dispose?.();
+    }
+
+    // This is a cold-start transcript: turn 1 has no prior covered packet, so incremental
+    // Recovery Journal inspection must not invent packet debt for it. Exercise the actual
+    // recovery contract separately below with an eligible missing turn after a covered turn.
     await failedRuntime.dispose?.();
     const recoverRuntime = await createHayakuRuntime({
       afterRequestAutoRepair: true,
       backgroundAutoRepair: true,
-      messages: [user('r-u1', 'I turn the brass valve.')]
+      messages: eligibleMissingTurnMessages()
     });
     try {
-      const { lineage: rLineage } = await registerCurrentTurn(recoverRuntime);
-      const summary = 'Steam began flowing through the blue pipe.';
-      recoverRuntime.setLlmResponder(async () => ({
-        type: 'success',
-        result: envelope(minimalPacket(summary, rLineage), rLineage, summary)
-      }));
-      // The assistant turn must exist in the live chat: the pipeline derives its evidence from the
-    // chat (`canonicalHistoryText`), not from the argument alone, so a missing message would be
-    // reported as `evidence_unavailable` and attach nothing.
-    recoverRuntime.chat.message.push({ role: 'assistant', chatId: 'r-a1', id: 'r-a1', data: ASSISTANT_TEXT, time: Date.now() });
-    recoverRuntime.chat.messages = recoverRuntime.chat.message;
-    const recovered = await recoverRuntime.hayaku._test.repairCurrentPacketInsideAfterRequest(ASSISTANT_TEXT, 'model');
-      const recoveredInspection = recoverRuntime.hayaku._test.packetCaptureInspectionFromText(recovered);
-      observed.unusable.recoveryWorks = (recoveredInspection?.validCount ?? 0) === 1;
-      observed.unusable.recoveryCalls = recoverRuntime.llmCalls.length;
-      observed.unusable.recoveryReturnedHasPacket = /HAYAKU_STATE_PACKET_START/.test(String(recovered));
-      // The plugin's OWN record of the repair attempt says why it did or did not attach.
-      try {
-        const obs = recoverRuntime.hayaku._test.lastPacketRepairObservation
-          || recoverRuntime.hayaku._test.getPacketRepairObservation?.()
-          || null;
-        observed.unusable.repairObservation = obs ? JSON.parse(JSON.stringify(obs)) : null;
-      } catch (error) {
-        observed.unusable.repairObservationError = String(error?.message || error).slice(0, 120);
-      }
-      observed.unusable.recoveryHead = String(recovered).slice(0, 120);
-      // The pending capture carries the plugin's own verdict on the attempt.
-      try {
-        const pend = recoverRuntime.hayaku._test.prunePendingCaptures?.() || [];
-        observed.unusable.pendingCount = Array.isArray(pend) ? pend.length : null;
-      } catch (error) {
-        observed.unusable.pendingError = String(error?.message || error).slice(0, 120);
-      }
+      await registerCurrentTurn(recoverRuntime);
+      recoverRuntime.setLlmResponder(async () => ({ type: 'success', result: 'unusable-after-request-output' }));
+      const failedTurn = await recoverRuntime.hayaku._test.repairCurrentPacketInsideAfterRequest(ASSISTANT_TEXT, 'model');
+      assert.equal(failedTurn, ASSISTANT_TEXT, 'failed afterRequest repair must preserve the visible response');
+      recoverRuntime.chat.message.push({ role: 'assistant', chatId: 'r-a2', id: 'r-a2', data: failedTurn, time: Date.now() });
+      recoverRuntime.chat.messages = recoverRuntime.chat.message;
+      await recoverRuntime.hayaku._test.processRisuChatOutputEvent({
+        char: recoverRuntime.character,
+        chat: recoverRuntime.chat,
+        characterIndex: 0,
+        chatIndex: 0,
+        messageIndex: 3
+      });
+      const eligible = await recoverRuntime.hayaku._test.inspectRecoveryDebtsForNativeRepair({ includeEvidence: true, limit: 8 });
+      observed.unusable.recoveryEligibility = {
+        reason: eligible.reason,
+        coverageMode: eligible.coverage?.mode,
+        missingTurns: eligible.coverage?.missingTurns,
+        totalActiveDebts: eligible.totalActiveDebts,
+        debtTurns: (eligible.debts || []).map(debt => debt.pairIndex)
+      };
+      assert.equal(eligible.reason, 'packet_debt_available');
+      assert.equal(eligible.coverage?.mode, 'incremental_missing');
+      assert.deepEqual(Array.from(eligible.coverage?.missingTurns || []), [2]);
+      assert.deepEqual(Array.from(eligible.debts || []).map(debt => debt.pairIndex), [2]);
+
+      const summary = ASSISTANT_TEXT;
+      recoverRuntime.setLlmResponder(async () => ({ type: 'success', result: `Result:\n${JSON.stringify(nativeRecoveryEnvelope(summary))}` }));
+      const recoveryResult = await recoverRuntime.hayaku.recovery.repairNow({ reason: 'e2e_eligible_missing_turn' });
+      observed.unusable.recoveryWorks = recoveryResult.ok === true && recoveryResult.repaired === true;
+      observed.unusable.recoveryCalls = recoverRuntime.llmCalls.length - 1;
+      observed.unusable.recoveryResult = { ok: recoveryResult.ok, repaired: recoveryResult.repaired, reason: recoveryResult.reason || '' };
+      const recoveredLedger = await recoverRuntime.hayaku.ledger.inspect({ includeRecords: true });
+      observed.unusable.recoveryPacketStored = recoveredLedger.records.some(record => (
+        record.packetType === 'recovery_snapshot'
+        && record.recordState === 'active'
+        && Number(record.targetPairIndex || 0) === 2
+        && record.captureSource === 'bridge_incremental_recovery'
+      ));
+      const afterRecovery = await recoverRuntime.hayaku._test.inspectRecoveryDebtsForNativeRepair({ limit: 8 });
+      observed.unusable.remainingRecoveryDebts = afterRecovery.totalActiveDebts;
+      assert.equal(observed.unusable.recoveryWorks, true, JSON.stringify(recoveryResult));
+      assert.equal(observed.unusable.recoveryCalls, 1);
+      assert.equal(observed.unusable.recoveryPacketStored, true);
+      assert.equal(observed.unusable.remainingRecoveryDebts, 0);
     } finally {
       await recoverRuntime.dispose?.();
     }
@@ -255,16 +335,10 @@ const storeSnapshot = async storage => {
     'an already-usable packet must not trigger another call (task 4)');
   assert.ok(observed.unusable.visibleResponsePreserved,
     'an unusable answer must not damage the visible response (task 2.1)');
-  // SCOPE NOTE (not a gap in coverage, a note on what THIS file drives):
-  // this fixture drives `repairCurrentPacketInsideAfterRequest`, the afterRequest repair entry
-  // point. It does not create a durable packet-debt row, because on this path the pending capture
-  // is consumed in-turn. The debt lifecycle — creation, Recovery Vault evidence retention,
-  // `packet_debt_available` inspection, leasing and retry backoff — is covered by
-  // hayaku_native_otherax_recovery_runtime_test.cjs (which asserts totalActiveDebts and the vault
-  // record for the failing turn) and by inspectRecoveryDebtsForNativeRepair callers across 12
-  // suites. Asserting it again here would be a second test for already-covered behaviour, so this
-  // file asserts only what it uniquely drives: the packet-authoring contract on a normal turn and
-  // the shape of the prompt the model receives.
+  // The first failed turn below is an uncovered cold-start with no earlier canonical packet, so
+  // inspection correctly reports no active *incremental* packet debt. A second eligible scenario
+  // has a covered turn 1 and a failed turn 2; it asserts durable Recovery Journal debt, exact
+  // eligibility, successful native repair, packet readback, and debt discharge.
   observed.unusable.debtCreationCoveredBy = 'hayaku_native_otherax_recovery_runtime_test.cjs';
   assert.ok(observed.prompt.hasTargetTurn,
     'the model must receive a prompt marking the target turn (task 2.3)');

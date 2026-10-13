@@ -9,7 +9,7 @@ const input=require('../fixtures/unified_vertical_source.json');
  const errors=[];
  try{
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
-  await page.setContent('<html lang="ko"><body></body></html>');
+  await page.route('http://localhost/libra-synthetic-host',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="ko"><body></body></html>'}));await page.goto('http://localhost/libra-synthetic-host');await page.setContent('<html lang="ko"><body></body></html>');
   await page.addScriptTag({path:path.join(__dirname,'libra_writer_host.js')});
   await page.evaluate(({rows,a})=>{
    __writerHost.chat.message=rows.map(r=>({role:r.role,chatId:r.ref,data:r.text}));
@@ -19,7 +19,7 @@ const input=require('../fixtures/unified_vertical_source.json');
   const needle='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
   assert.ok(source.includes(needle));
   source=source.replace(needle,'  globalThis.__mergeAudit={LibraMemoryCore,buildWorldManagerIdentityMerge,worldManagerSnapshotView};\n'+needle);
-  await page.addScriptTag({content:source});await page.waitForFunction(()=>!!window.__LIBRA__);
+  await page.addScriptTag({content:source});await page.waitForFunction(()=>!!window.__LIBRA__);await page.evaluate(async()=>{const settings=await __LIBRA__.getLibraMemorySettings();await __LIBRA__.saveLibraMemorySettings({...settings,memoryEngine:'unified'});await __LIBRA__.saveLibraProviderConfig({enableLibrarian:true});});
   assert.equal((await page.evaluate(()=>__LIBRA__.runManualColdStart())).completed,1);
   await page.evaluate(async()=>{
    const head=__mergeAudit.LibraMemoryCore.peekSnapshot().continuityState;
@@ -31,7 +31,7 @@ const input=require('../fixtures/unified_vertical_source.json');
    const host=document.createElement('div');host.id='merge-test';host.style.cssText='position:fixed;inset:0;background:white;z-index:2147483647;overflow:auto';host.appendChild(__mergeAudit.buildWorldManagerIdentityMerge('characters',row,view));document.body.appendChild(host);
    window.__mergeTarget=b.id;
   });
-  const panel=page.locator('#merge-test');await panel.locator('summary').click();
+  await page.locator('#merge-test > button').click();await page.locator('#merge-test').evaluate(node=>node.remove());const panel=page.locator('#dlg-merge');await panel.locator('details > summary').filter({hasText:'충돌 검토'}).click();
   await panel.getByLabel('병합 후 남길 항목').selectOption(await page.evaluate(()=>__mergeTarget));
   await panel.getByRole('button',{name:'병합 내용 확인',exact:true}).click();
   const select=panel.locator('select').filter({has:page.locator('option[value="both"]')});

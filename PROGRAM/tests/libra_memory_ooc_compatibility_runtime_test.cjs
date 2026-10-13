@@ -2,26 +2,27 @@
 const assert=require('node:assert/strict');
 const acorn=require('acorn');
 const {createOocGui}=require('./fixtures/libra_memory_ooc_gui_fixture.cjs');
-// The current registered BOOK menu has no separately selectable compatibility shell.
-// This seam only exposes the real retained closure; it does not replace a product function.
+// The current registered canonical view has no separate old book compatibility shell.
+// Expose the retained SDK Prompt Studio builder used by its actual dialog.
 // Native registered-entry evidence is supplied by the other three unchanged-byte suites.
 function exposeCompatibilityShell(source){
  const ast=acorn.parse(source,{ecmaVersion:'latest'}),declarations=[];
  const walk=node=>{if(!node||typeof node!=='object')return;if(node.type==='VariableDeclaration')for(const d of node.declarations)if(['ArrowFunctionExpression','FunctionExpression'].includes(d.init?.type))declarations.push({d,node,code:source.slice(d.init.start,d.init.end)});for(const value of Object.values(node))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);};walk(ast);
- const shell=declarations.filter(x=>x.code.includes('libra-agent-prompts-memory-libra')).sort((a,b)=>a.code.length-b.code.length)[0];
+ const shell=declarations.find(x=>x.d.id.name==='buildLibraPromptStudioPanel');
  const binding=declarations.filter(x=>x.code.includes('.peekSnapshot()')&&x.code.includes('worldlineId')&&x.code.includes('openSerial')).sort((a,b)=>a.code.length-b.code.length)[0];
  assert(shell&&binding,'real compatibility shell and scope binding are retained');
  const core=binding.code.match(/([\w$]+)\.peekSnapshot\(/)?.[1];assert(core);
- const seam=`;globalThis.__LIBRA_OOC_TEST__={shell:()=>${shell.d.id.name}(),binding:()=>${binding.d.id.name}(),setWorldline:id=>{const value=${core}.peekSnapshot();value.continuityState={...(value.continuityState||{}),worldlineId:id};}};`;
+ const seam=`;globalThis.__LIBRA_OOC_TEST__={shell:()=>${shell.d.id.name}({allowedDomains:['memory']}),binding:()=>${binding.d.id.name}(),setWorldline:id=>{const value=${core}.peekSnapshot();value.continuityState={...(value.continuityState||{}),worldlineId:id};}};`;
  return source.slice(0,shell.node.end)+seam+source.slice(shell.node.end);
 }
 (async()=>{
  const h=await createOocGui({transformSource:exposeCompatibilityShell});const cases=[];
  try{
   await h.open();const seam=h.context.__LIBRA_OOC_TEST__;
-  const main=h.document.querySelector('[data-render-region="main"]');assert(main);
+  await h.memory();
+  const main=h.document.querySelector('#dlg-prompt [data-prompt-editor-details]');assert(main);
   main.replaceChildren(seam.shell());assert.equal(h.ooc(),null);
-  h.disclosure('Memory analysis prompts').open=true;await h.waitFor(()=>h.disclosure('고급 Prompt Studio · 구역별 직접 편집'));
+  await h.waitFor(()=>h.disclosure('고급 Prompt Studio · 구역별 직접 편집'));
   await h.expandOoc();assert.equal(h.document.querySelectorAll('#prompt-studio-ooc-builder').length,1);
   const ids=h.ooc().querySelector('select').querySelectorAll('option').map(n=>n.value);
   assert.deepEqual(ids,Array.from(h.api.debugPromptStudioOocTargets({})).filter(n=>n.domain==='memory').map(n=>n.id));

@@ -42,7 +42,7 @@ for (const kind of ['source', 'Full', 'Min']) {
 
         f.startObservation();
         const beforeOwner = JSON.stringify(f.physicalManifest(f.scope.scopeKey));
-        const dialog = () => doc.querySelector('.vrmDialogMessage');
+        const dialog = () => doc.querySelector('.overlay.is-open .dialog [id$="-message"]');
         button.click();
         const first = await f.waitFor(dialog, 'archive confirmation');
         assert.match(first.textContent, /아카이브/);
@@ -53,7 +53,7 @@ for (const kind of ['source', 'Full', 'Min']) {
         assert.equal(f.requests, 0, 'confirmation preview cannot submit the provider request');
         assert.equal(f.observation.writes.length, 0, 'confirmation preview cannot write the owner or candidate');
         assert.equal(f.observation.removals.length, 0);
-        doc.querySelector('.vrmDialogCancel').click();
+        doc.querySelector('.overlay.is-open .dialog .dialog__actions button:first-child').click();
         await f.waitFor(() => !dialog(), 'cancelled archive confirmation');
         assert.equal(f.requests, 0);
         assert.equal(JSON.stringify(f.physicalManifest(f.scope.scopeKey)), beforeOwner);
@@ -62,7 +62,7 @@ for (const kind of ['source', 'Full', 'Min']) {
         button.click();
         const second = await f.waitFor(dialog, 'second archive confirmation');
         const confirmation = second.textContent;
-        doc.querySelector('.vrmDialogOk').click();
+        doc.querySelector('.overlay.is-open .dialog .dialog__actions button:last-child').click();
         const result = await f.waitFor(() => {
           const current = dialog(); return current && current.textContent !== confirmation ? current : null;
         }, 'selected archive group result');
@@ -76,7 +76,7 @@ for (const kind of ['source', 'Full', 'Min']) {
         assert.equal(owner.archiveRef.deltaCount, f.selectedRows.length);
         assert.equal(owner.count, 0);
         f.assertProtectedUnchanged();
-        doc.querySelector('.vrmDialogOk').click();
+        doc.querySelector('.overlay.is-open .dialog .dialog__actions button:last-child').click();
         await f.waitFor(() => !dialog(), 'archive result dismissal');
         await f.api.closeUi();
         assert.equal(f.api.uiStatus().visible, false);

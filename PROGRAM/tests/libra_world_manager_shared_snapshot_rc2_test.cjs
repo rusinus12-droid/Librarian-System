@@ -18,14 +18,14 @@ const between = (start, end) => {
   return source.slice(from, to);
 };
 
-const memory = between('const buildBookMemoryPanel =', 'const buildBookPeoplePanel =');
+const memory = between('const buildApprovedMockupMemory =', 'const buildApprovedMockupSettings =');
 assert.match(source, /const SHARED_MEMORY_HUB_SECTIONS = Object\.freeze\(\['read', 'context', 'manage'\]\)/);
-assert.match(memory, /Gui\.memoryHubSection === 'read'/);
-assert.match(memory, /Gui\.memoryHubSection === 'context' \? buildCanonicalContextPanel\(\) : buildLibraMemoriesPanel\(\)/);
-assert.match(memory, /bookSelectMemorySection\('read'\)/, 'the auxiliary workbench returns to the live memory reader');
+assert.match(memory, /loadCanonicalReaderPage\(false\)/);
 assert.match(memory, /buildBookMemoryReaderProjection\(\)/);
-assert.match(memory, /buildCanonicalContextPanel\(\)/);
+assert.match(memory, /productMemoryManagement/);
+assert.match(memory, /buildBookMemoryReaderProjection\(\)/);
 assert.match(memory, /buildLibraMemoriesPanel\(\)/);
+assert.match(memory, /buildCanonicalEvidenceDrawer\(\)/);
 assert.doesNotMatch(memory, /id: 'runs', label: '실행 기록'/,
   'Memory stays content-focused; execution history belongs to the separate Logs page');
 assert.doesNotMatch(memory, /continuity_state|memoryPipelineStage|buildAgentsTab/);
@@ -58,12 +58,16 @@ for (const builder of [
 ]) assert.match(overlay, new RegExp(`const ${builder} =`), `missing shared snapshot builder: ${builder}`);
 
 require('./helpers/libra_active_book_routes.cjs')(source);
-const ownerRoutes = between('const buildBookPeoplePanel =', 'const BOOK_NATIVE_SETTINGS_SECTIONS =');
+const ownerRoutes = between('const buildApprovedMockupDestinationDetail =', 'const syncApprovedMockupShell =');
+assert.match(ownerRoutes, /buildWorldManagerCharactersPanel\(\)/);
+assert.match(ownerRoutes, /buildWorldManagerRelationshipsPanel\(\)/);
+assert.match(ownerRoutes, /buildWorldManagerWorldPanel\(\)/);
+assert.match(ownerRoutes, /buildWorldManagerNarrativePanel\(\)/);
 assert.doesNotMatch(ownerRoutes, /buildLibraContinuityStatePanel|buildLibraStoryArcPanel|buildGradiaHomePanel|buildLibraHomePanel/);
 
 const render = between('async function renderSettingsGuiOnce()', 'const hideSettingsGui =');
 assert.doesNotMatch(render, /buildSharedHeaderStatusPanel\(\)|buildInsightRail\(\)/);
-assert.match(render, /\[buildSidebarRegion\(\), buildMainRegion\(\)\]/);
+assert.match(render, /buildApprovedMockupDestinationDetail\(page\)/);
 
 const fixture = {
   manifest: { frontiers: { observedTurn: 14, committedTurn: 10 } },

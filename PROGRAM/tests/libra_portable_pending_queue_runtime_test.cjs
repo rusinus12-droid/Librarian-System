@@ -36,7 +36,7 @@ test('portable export rejects an actual held Micro transaction, then exports its
   const before=hash(f.r.values),portable=f.r.context.__LIBRAPortableMemoryBackup;
   await assert.rejects(portable.exportCurrentScope(),error=>error.code==='LIBRA_WORLD_MANAGER_BUSY');
   assert.equal(hash(f.r.values),before,'refused export performs no storage mutation');
-  dom=new JSDOM('<div id="sga-rp-gui-root"><section class="sga-app" data-response-family="libra"><div data-portable-backup-host="libra"></div></section></div>');
+  dom=new JSDOM('<div id="sga-rp-gui-root"><section class="app t-libra" data-response-family="libra"><div data-portable-backup-host="libra"></div></section></div>');
   f.r.context.document=dom.window.document;
   const controls=portable.mountUi(dom.window.document.querySelector('[data-portable-backup-host]'));assert(controls);
   assert([...controls.querySelectorAll('button')].every(button=>button.disabled),'actual mounted portable controls explain and block the pending transaction');

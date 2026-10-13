@@ -20,19 +20,22 @@ function setup(){
 }
 async function test(name,fn){await fn();results.push(name);console.log('PASS '+name);}
 (async()=>{
- await test('authoring is below worldline/orphan metrics and not in the health icon grid',()=>{
+ await test('packet authoring stays inside Packets after its list and Worldline views',()=>{
   const shell=slice('  const renderLedgerViewerShell =','  const showLedgerViewer =');
-  const overview=shell.slice(shell.indexOf('<main id="hayakuViewerPanelOverview"'),shell.indexOf('<main id="hayakuViewerPanelPackets"'));
-  assert(overview.indexOf('id="hayakuPacketAuthoring"')>overview.indexOf('id="hayakuOverviewOrphans"'));
-  assert.match(overview,/<section id="hayakuPacketAuthoring" class="hv-scope-card hv-packet-authoring"/);
-  assert(!overview.includes('<details id="hayakuPacketAuthoring"'));assert(!overview.includes('id="hayakuSourceEditConsent"'));assert(!overview.includes('id="hayakuHostLineage"'));
-  const world=shell.slice(shell.indexOf('<main id="hayakuViewerPanelWorldline"'),shell.indexOf('<main id="hayakuViewerPanelRecovery"'));
-  const recovery=shell.slice(shell.indexOf('<main id="hayakuViewerPanelRecovery"'),shell.indexOf('data-hayaku-viewer-panel="failed_analysis"'));
-  assert(world.includes('id="hayakuHostLineage"'));assert(world.indexOf('id="hayakuHostLineage"')<world.indexOf('class="hv-worldline-board"'));
+  const packet=shell.slice(shell.indexOf('const packetPage = `'),shell.indexOf('const recoveryPage = `'));
+  const list=packet.slice(packet.indexOf('id="hayakuPacketListView"'),packet.indexOf('id="hayakuPacketWorldlineView"'));
+  const world=packet.slice(packet.indexOf('id="hayakuPacketWorldlineView"'),packet.indexOf('id="hayakuPacketAuthoring"'));
+  assert(packet.includes('id="hayakuViewerPanelPackets"'));
+  assert(list.indexOf('id="hayakuViewerRecords"') < list.indexOf('id="hayakuOrphanCleanupCount"'));
+  assert(packet.indexOf('id="hayakuPacketAuthoring"') > packet.indexOf('id="hayakuPacketWorldlineView"'));
+  assert.match(packet,/<div id="hayakuPacketAuthoring" class="card">[\s\S]*실제 요청·출력·저장 관측 기록/);
+  assert(!shell.includes('<main id="hayakuViewerPanelWorldline"'), 'Worldline is not a seventh destination');
+  assert(world.includes('id="hayakuHostLineage"'));assert(world.indexOf('id="hayakuHostLineage"')<world.indexOf('id="hayakuWorldlineTimeline"'));
+  const recovery=shell.slice(shell.indexOf('const recoveryPage = `'),shell.indexOf('const serverPage = `'));
   assert(recovery.includes('id="hayakuSourceEditConsent"'));
   assert(!slice('  const viewerRenderOverview =','  const viewerRenderWorldlineInner =').includes('viewerRenderHostLineage('));
   assert(!slice('  const viewerRenderOverview =','  const viewerRenderWorldlineInner =').includes('viewerRenderSourceEditConsent('));
-  assert(slice('  const viewerRenderWorldlineInner =','  const viewerRenderPacketDiagnostics =').includes('viewerRenderHostLineage();'));
+  assert(slice('  const viewerRenderWorldlineInner =','  const viewerRenderActiveTab =').includes('viewerRenderHostLineage();'));
   assert(slice('  const viewerRenderNativeRecovery =','  const viewerRunNativeRepair =').includes('viewerRenderSourceEditConsent();'));
  });
  await test('empty authoring has a horizontal heading with the record notice underneath',()=>{const x=setup();x.c.viewerRenderPacketAuthoring();const h=x.nodes.get('#hayakuPacketAuthoring').innerHTML;assert(h.includes('</header><p'));assert.match(h,/이번 패킷 작성<\/h2>/);assert.match(h,/작성 지시 관측 기록이 없습니다/);assert(!h.includes('<summary>'));});

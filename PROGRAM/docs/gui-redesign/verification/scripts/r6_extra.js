@@ -20,7 +20,7 @@
     // LIA-17 연결한 Persona의 현재 상태
     q('#edit-root [data-subtab=out]').click(); await wait(); q('#btn-bind').click(); await wait(120); q('#btn-bind-go').click(); await wait(150);
     window.suiteGo('shelf'); await wait(); shelfRow('이름 없는 길손').click(); await wait(150);
-    out['LIA-17']=q('#edit-root [data-fill=liveLoc]').textContent; ok['LIA-17']=out['LIA-17']!=='북쪽 정원';
+    out['LIA-17']=q('#live-persona-state').textContent; ok['LIA-17']=out['LIA-17']!=='북쪽 정원';
     // LIA-07 대상 Persona 정리 → 에셋 대상 select가 비지 않음
     window.suiteGo('assets'); await wait(); var at=q('#asset-target'); var o=qa('option',at).filter(function(x){return /길손/.test(x.textContent)})[0]; at.value=o.value; fire(at); await wait();
     window.suiteGo('shelf'); await wait(); shelfRow('이름 없는 길손').click(); await wait(150); q('#edit-root [data-subtab=out]').click(); await wait();
@@ -61,9 +61,11 @@
     // LIB-21 닫힌 빠른 설정 서랍의 미저장 표시
     window.suiteOpen('drawer-quick'); await wait(); var inp=qa('#drawer-quick input[type=checkbox]').filter(function(c){return !c.dataset.sync})[0]; inp.click(); await wait(); window.suiteClose('drawer-quick'); await wait();
     out['LIB-21']=qa('[data-open=drawer-quick]').filter(function(b){return !b.closest('.overlay')}).map(function(b){return b.classList.contains('is-unsaved')}).join(); ok['LIB-21']=/true/.test(out['LIB-21']);
-    // LIB-16 복원 방식 '다음'은 결과를 주장하지 않음
-    window.suiteOpen('dlg-restore-mode'); await wait(); btn(q('#dlg-restore-mode .dialog__actions'),'다음').click(); await wait();
-    out['LIB-16']=toastT(); ok['LIB-16']=/바뀌지 않았습니다/.test(out['LIB-16']);
+    // G2 LIB-16: no file means no inspection or restore claim.
+    window.suiteOpen('dlg-restore-mode'); await wait();
+    out['LIB-16']=q('#restore-next').disabled+' | '+q('#restore-file').value;
+    ok['LIB-16']=q('#restore-next').disabled && !q('#restore-file').value && q('#restore-inspection').hidden;
+    window.suiteClose('dlg-restore-mode');
     // S-LIB-1 열람대 전달 근거 = 리콜 3개
     window.suiteGo('desk'); await wait(); btn(q('[data-page=desk]'),'전달 근거 보기').click(); await wait(120);
     out['S-LIB-1']=qa('#ev-cites .anno__kicker').map(function(k){return k.textContent}).join(','); ok['S-LIB-1']=/M-25/.test(out['S-LIB-1'])&&/M-23/.test(out['S-LIB-1'])&&qa('#ev-cites .anno').length===3;

@@ -43,23 +43,18 @@ failedCommit.runs = [{runId:'run-new',stateTracking:{status:'failed_open',reason
 assert.equal(classify('world', failedCommit).state, 'failed');
 failedCommit.continuityState.domainStatus.world = ready(10);
 assert.equal(classify('world', failedCommit).state, 'ready', 'an old failure must not override a recovered domain');
-const renderer = source.slice(end, source.indexOf('const bookProjectionStateValue =', end));
-// Still true, and the reasons this test exists: a retry must be a read-only recovery for THIS scope,
-// and the control must never kick off analysis or a cold start.
-assert.match(renderer, /force: true, unifiedOnly: true/);
-assert.match(renderer, /context\.scope\?\.scopeKey !== progress\.scopeKey/);
-assert.doesNotMatch(renderer, /startCanonical|startSelectedCanonical|coldStart|manualScan/);
-// §32.3 replaced the always-on card with a header button. Both facts are asserted against the CURRENT
-// structure: the detail builder exists and is fed the current page's progress, and the button is built
-// for `Gui.bookPage`. Asserting the old `buildBookStateProgress(...)` call would demand a deleted
-// function and is what made this suite fail on extraction before it checked anything.
-assert.ok(source.includes('const buildBookStateDetail ='), 'the status detail builder must exist');
-assert.ok(source.includes('const buildBookStateButton ='), 'the status button builder must exist');
-// The control is built for the page being shown, and the detail consumes that same progress object.
-assert.match(source, /buildBookStateButton\(options\.pageId \|\| Gui\.bookPage\)/,
-  'the header button must be built for the CURRENT page');
-assert.match(source, /buildBookStateDetail\(progress, message\)/,
-  'the detail must consume the same progress the control was built from');
-assert.match(source, /const progress = bookStateProgress\(page, LibraMemoryCore\.peekSnapshot\(\) \|\| \{\}, LibraMemoryCore\.state\.canonicalJob\)/,
-  'progress must be derived from the read-only snapshot for the displayed page');
-console.log('PASS: reader state progress, per-domain cursors, loading, pending, failure, scope and local-only recovery');
+// The approved readonly status dialog replaces the paper header detail wrapper.
+// Keep every classifier assertion above and check the new actual refresh owner.
+const approved=require('./helpers/libra_approved_gui_contract.cjs');
+const renderer=approved.extract(source,'openApprovedStateDialog');
+assert.match(renderer,/LibraMemoryCore\.peekSnapshot\(\)/);
+assert.match(renderer,/canonicalReaderBindingKey\(binding\)!==canonicalReaderBindingKey\(canonicalReaderBinding\(\)\)/,'readonly refresh stays on the captured scope');
+assert.match(renderer,/refreshGuiSnapshot\(false\)/,'explicit refresh delegates to actual snapshot readback');
+assert.doesNotMatch(renderer,/startCanonical|startSelectedCanonical|coldStart|manualScan/,'status refresh cannot launch analysis');
+assert.match(renderer,/LIBRA_APPROVED_STATE_DIALOG_HTML/);
+assert.match(renderer,/pipelineStatus==='partial'/);
+assert.match(renderer,/Number\(row\.turnRange\?\.end\|\|0\)>Number\(view\.throughTurn\|\|0\)/,'awaiting segments remain separate from saved segments');
+const deskRoute=approved.extract(source,'buildApprovedMockupDesk');
+assert.match(deskRoute,/openApprovedStateDialog\(\)/,'the desk opens the actual readonly status owner');
+assert.match(approved.extract(source,'buildWorldManagerDiagnosticsPanel'),/buildWorldManagerHistoryCorrectionsPanel/,'per-domain detailed state remains available through diagnostics');
+console.log('PASS: reader state progress, domain cursors, loading/pending/failure, scope and readonly approved status');

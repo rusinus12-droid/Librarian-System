@@ -42,12 +42,35 @@ for (const marker of [
   "'memory_suite_storage_status'",
   'payload?.recoveryRequired ?? status.recoveryRequired',
   "row.recoveryGuard.required ? '복구 필요' : '정상'",
-  'owner-storage-grid',
   'memorySuiteOwnerStorageGateFromRows',
   'participantOwners: participantSummary.map(item => item.owner)',
   '미설치·비활성으로 확인된 owner만 제외됩니다.',
   'RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다.'
 ]) assert.ok(source.includes(marker), `missing owner dashboard marker: ${marker}`);
+// The legacy owner grid was replaced by the original mockup's list/owner rows.
+// Exercise the actual renderer so mode, recovery, exclusion and errors still
+// reach the mounted GUI rather than accepting only a renamed CSS marker.
+const { JSDOM } = require('jsdom');
+const document = new JSDOM('<div id="retraceMemorySuiteServerConnectionPanel"></div>').window.document;
+const Runtime = { root: document, memorySuiteOwnerStorage: { rows: [
+  {owner:'flashback',installed:true,connected:true,supported:true,mode:'plugin_only',recoveryGuard:{required:true},scope:{scopeId:'<scope>'}},
+  {owner:'hayaku',installed:true,connected:false,supported:false,state:'timeout'},
+  {owner:'libra',installed:false,connected:false,supported:false}
+], gate:{ready:false,reason:'owner_storage_recovery_required',participantCount:2,participantOwners:['flashback','hayaku']} }, memorySuiteOwnerStorageError:'<read failed>' };
+const begin=source.indexOf('  const renderMemorySuiteOwnerStorageDashboard =');
+const end=source.indexOf('  const retraceOverviewState =',begin);
+assert.ok(begin>=0 && end>begin);
+const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const deps={Runtime,MEMORY_SUITE_OWNER_STATUS_ORDER:['flashback','hayaku','libra','lia'],MEMORY_SUITE_NAMESPACE_LABELS:{flashback:'Flashback',hayaku:'HAYAKU',libra:'LIBRA',lia:'LIA'},escapeHtml,memorySuiteModeLabel:String,compact:v=>String(v??''),text:String,formatNumber:String,refreshMemorySuiteOwnerStorageDashboard:async()=>{},warn(){}};
+new Function(...Object.keys(deps),source.slice(begin,end)+'return renderMemorySuiteOwnerStorageDashboard;')(...Object.values(deps))();
+const host=document.querySelector('#retraceMemorySuiteServerConnectionPanel');
+assert.equal(host.querySelectorAll('.list > .owner').length,4,'all four memory owners remain visible');
+assert.match(host.textContent,/plugin_only/);assert.match(host.textContent,/복구 필요/);
+assert.match(host.textContent,/응답 시간 초과/);assert.match(host.textContent,/EXCLUDED/);
+assert.match(host.textContent,/CHECKING/);assert.match(host.textContent,/BLOCKED/);
+assert.match(host.textContent,/<read failed>/);assert.match(host.textContent,/<scope>/);
+assert.equal(host.querySelector('scope'),null,'scope text is escaped');
+assert.ok(host.querySelector('#refreshOwnerStorageStatus'),'actual refresh remains available');
 assert.ok(!source.includes('고급 설정 · RE:TRACE 자체 복구 저장소'), releaseText('{retrace} keeps the retired RE:TRACE own storage-mode selector absent'));
 assert.ok(!source.includes('retraceOwnStorageAdvancedPanel'), releaseText('{retrace} keeps the retired advanced own-mode panel absent'));
 

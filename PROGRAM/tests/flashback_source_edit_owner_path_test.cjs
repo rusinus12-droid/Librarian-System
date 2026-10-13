@@ -6,12 +6,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const {syntheticFetch,configure,readyForRecall}=require('./helpers/unload_recall_contract_fixture.cjs');
 const original=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
-const source=original.replace('_test: { maintenanceResultText,','_test: { buildSourceEditTab, maintenanceResultText,');
+const source=original.replace('_test: { maintenanceResultText,','_test: { buildFlashbackSourceEditCard, maintenanceResultText,');
 const FACT='The needle holds at the red mark and the spare valve hangs on the north wall hook.';
 const chat=()=>({id:'source-owner-chat',chatId:'source-owner-chat',message:[{role:'user',chatId:'u1',data:'Inspect the gauge.'},{role:'assistant',chatId:'a1',data:FACT}]});
-test('source tab provides selected raw reanalysis and shared projection controls',async()=>{
+test('care source-edit component exposes selected raw reanalysis and shared projection controls',async()=>{
  const f=await createFixture({source,chat:chat()});try{
-  const html=f.api._test.buildSourceEditTab();
+  const html=f.api._test.buildFlashbackSourceEditCard();
   assert.match(html,/fbReanalysisRefresh/);assert.match(html,/fbReanalysisRanges/);assert.match(html,/fbReanalysisRun/);assert.match(html,/fbSourceTrackingSettings/);
   assert.equal((await f.api.previewSourceEdits([])).allowed,false,'no unselected full-source action');
   assert.equal((await f.api.applySourceEdits({allowed:true,actionKind:'explicit_reanalysis'})).status,'blocked','caller flags are not a valid ticket');
@@ -47,7 +47,7 @@ test('raw-only capture is excluded and completed model evidence reaches the actu
 test('recall UI reports hook return and storage-to-budget counts',async()=>{
  const f=await createFixture();try{
   const panel=f.api._test.renderLastRecallPanel({scopeKey:'scope',at:Date.now(),selected:[],storedRecords:8,candidates:5,preparedCandidates:3,evidenceBudgetPlan:{tier:'standard',actualChars:120},delivery:{stage:'returned_to_hook',delivered:2,pipeline:{storageRecords:8,candidates:5,selectedRecords:3,budgetedFragments:2,returnedMessages:4}}},'scope');
-  assert.match(panel,/후크 반환/);assert.match(panel,/저장 8[^<]*후보 5[^<]*선택 3[^<]*예산 2[^<]*후크 반환 4개 메시지/);assert.doesNotMatch(panel,/실제 전달/);
+  assert.match(panel,/저장 8/);assert.match(panel,/후보 5개 → 선택 3개/);assert.match(panel,/후크 반환 2개 프래그먼트 · 4개 메시지/);assert.doesNotMatch(panel,/실제 전달/);
  }finally{await f.dispose()}
 });
 test('diff renderer escapes source HTML and highlights only an exact observed span',async()=>{

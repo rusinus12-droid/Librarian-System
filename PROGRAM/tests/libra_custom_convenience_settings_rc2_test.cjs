@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const {JSDOM}=require('jsdom');
+const {extract,literal,identity}=require('./helpers/libra_approved_gui_contract.cjs');
 
 const sourcePath = process.argv[2]
   ? path.resolve(process.argv[2])
@@ -103,59 +105,22 @@ check('Custom OOC keeps the selected domain when it is visible in the active fam
     'LIBRA Planner and common Memory must not be treated as invalid OOC selections');
 });
 
-check('Retired workshop delegates to agent settings without changing persistence', () => {
-  const custom=extractConst('buildSharedCustomShellPanel');
-  assert.match(custom,/migrateCustomWorkshopSelection/);
-  assert.match(custom,/buildSharedAgentShellPanel/);
-  assert.match(custom,/buildSharedSettingsShellPanel/);
-  for(const registry of ['SHARED_SIDEBAR_PAGE_REGISTRY','BOOK_NATIVE_SETTINGS_SECTIONS','BOOK_EXTERNAL_SETTINGS_ITEMS']) {
-    assert.doesNotMatch(extractConst(registry),/id: 'custom'/,registry+' must not expose the removed workshop');
-  }
-  const agent=extractConst('buildSharedAgentShellPanel');
-  assert.match(agent,/buildMemoryPromptStudioDisclosure/);
-  assert.match(extractConst('buildMemoryPromptStudioDisclosure'),/buildLibraPromptStudioPanel/);
-  assert.doesNotMatch(agent,/saveGuiState\s*\(|pluginStorage|setItem\s*\(/);
+check('Retired workshop delegates to actual settings without changing persistence',()=>{
+ const migration=extract(source,'migrateCustomWorkshopSelection');assert.match(migration,/settingsHubSection='state'/);assert.match(migration,/bookSettingsWorkbenchSection='pipeline'/);assert.doesNotMatch(migration,/saveGuiState\s*\(|pluginStorage|setItem\s*\(/);
+ const active=extract(source,'bookSettingsRoomActiveSection');assert.match(active,/migrateCustomWorkshopSelection/);
+ for(const registry of ['SHARED_SIDEBAR_PAGE_REGISTRY','BOOK_NATIVE_SETTINGS_SECTIONS','BOOK_EXTERNAL_SETTINGS_ITEMS'])assert.doesNotMatch(extractConst(registry),/id: 'custom'/);
+ const entry=extract(source,'openApprovedPromptDialog');assert.match(entry,/buildLibraPromptStudioPanel\(\{ allowedDomains: \['memory'\] \}\)/);assert.match(entry,/detail\.className='fold'/);assert.doesNotMatch(entry,/saveGuiState\s*\(|pluginStorage|setItem\s*\(/);identity(source);
 });
 
-check('Advanced prompts stay lazy, family scoped, and accessible through old workshop routes', () => {
-  for(const family of ['libra','gradia']) for(const oldSection of ['memory','state','active_draft','ooc']) {
-    const calls=[];
-    const node=(tag,attrs={},children=[])=>({tag,attrs,children:children.filter(Boolean)});
-    const context={
-      Gui:{customHubSection:oldSection,bookSettingsWorkbenchSection:'custom'},
-      SHARED_AGENT_HUB_SECTIONS:['memory','draft'],
-      SHARED_CUSTOM_HUB_SECTIONS:['memory','state','active_draft','ooc'],
-      normalizeHubChoice:(v,allowed,fallback)=>allowed.includes(v)?v:fallback,
-      activeGuiResponseFamily:()=>family,
-      guiEl:node,
-      guiLazyDetails:(attrs,summary,open)=>({...node('details',attrs,[summary]),open,addEventListener(){}}),
-      buildLibraHubTabs:()=>node('tabs'),
-      buildStateTrackingAvailabilityPanel:()=>node('state'),
-      buildSharedSettingsShellPanel:()=>node('settings-state'),
-      buildDraftWorkspacePanel:()=>node('draft'),
-      buildMemoryPipelinePanel:()=>node('memory'),
-      setSharedCustomPromptDomain:domain=>calls.push(['domain',domain]),
-      buildLibraPromptStudioPanel:options=>{calls.push(['prompt',JSON.parse(JSON.stringify(options))]);return node('prompt');},
-      renderPromptStudioOocBuilder:options=>{calls.push(['ooc',options.family]);return node('ooc');}
-    };
-    vm.createContext(context);
-    vm.runInContext(extractConst('buildMemoryPromptStudioDisclosure')+'\n'+extractConst('buildSharedAgentShellPanel')+'\n'+extractConst('migrateCustomWorkshopSelection')+'\n'+extractConst('buildSharedCustomShellPanel')+'\nthis.render=buildSharedCustomShellPanel;',context);
-    const tree=context.render();
-    assert.equal(context.Gui.bookSettingsWorkbenchSection,oldSection==='state'?'settings':'pipeline');
-    assert.equal(context.Gui.agentHubSection,oldSection==='state'?undefined:'memory');
-    assert.equal(calls.length,0,'rendering settings must not eagerly read or overwrite prompts');
-    if(oldSection==='state'){
-      assert.equal(tree.tag,'settings-state');
-      assert.equal(context.Gui.settingsHubSection,'state');
-      continue;
-    }
-    const disclosures=tree.children.filter(n=>n.tag==='details');
-    for(const disclosure of disclosures) disclosure.open();
-    const domain='memory';
-    assert.deepEqual(calls[0],['domain',domain]);
-    assert.deepEqual(calls[1],['prompt',{allowedDomains:[domain]}]);
-    assert.equal(calls.length,2,'legacy draft links must not resurrect embedded OOC drafting');
-  }
+check('Advanced prompts stay lazy, family scoped, and accessible through old workshop routes',()=>{
+ for(const family of ['libra','gradia'])for(const oldSection of ['memory','state','active_draft','ooc']){
+  const calls=[],dom=new JSDOM('<div class="app">'+literal(source,'LIBRA_APPROVED_PROMPT_DIALOG_HTML')+'</div>');
+  try{const context={Gui:{customHubSection:oldSection,bookSettingsWorkbenchSection:'custom',settingsHubSection:'memory',app:dom.window.document.querySelector('.app')},SHARED_CUSTOM_HUB_SECTIONS:['memory','state','active_draft','ooc'],BOOK_SETTINGS_WORKBENCH_SECTIONS:['settings','pipeline'],SHARED_SETTINGS_HUB_SECTIONS:['state','memory'],normalizeHubChoice:(v,allowed,fallback)=>allowed.includes(v)?v:fallback,document:dom.window.document,setSharedCustomPromptDomain:domain=>calls.push(['domain',domain]),buildLibraPromptStudioPanel:options=>{calls.push(['prompt',JSON.parse(JSON.stringify(options))]);return dom.window.document.createElement('section');},promptStudioProfiles:()=>({}),promptStudioActiveName:()=> 'default',bindApprovedOverlayKeyboard:()=>{}};
+  vm.createContext(context);vm.runInContext(extract(source,'migrateCustomWorkshopSelection')+'\n'+extract(source,'bookSettingsRoomActiveSection')+'\n'+extract(source,'openApprovedPromptDialog')+'\nObject.assign(globalThis,{active:bookSettingsRoomActiveSection,open:openApprovedPromptDialog});',context);
+  assert.equal(context.active(),oldSection==='state'?'state':'pipeline');assert.equal(calls.length,0,'legacy navigation must not eagerly read or overwrite prompts');if(oldSection==='state'){assert.equal(context.Gui.settingsHubSection,'state');continue;}
+  assert.equal(context.open(),true);assert.deepEqual(calls[0],['domain','memory']);assert.deepEqual(calls[1],['prompt',{allowedDomains:['memory']}]);assert.equal(calls.length,2,'legacy draft links cannot resurrect embedded drafting');assert.equal(dom.window.document.querySelector('[data-prompt-editor-details]').open,false);
+  }finally{dom.window.close();}
+ }
 });
 
 check('General diagnostics loads analysis history only after disclosure opens', () => {
@@ -169,6 +134,7 @@ check('General diagnostics loads analysis history only after disclosure opens', 
     Gui: { diagnosticLogSection: 'state_reflection' },
     guiEl: node,
     guiLazyDetails: (attrs, summary, build) => ({ tag: 'details', attrs, children: [summary], open: () => build() }),
+    fieldNode:(label,control)=>node('label',{label},[control]),optionNodes:()=>[],queueGuiNavigationRender:()=>{},
     buildLibraSectionLayout: (definitions, selected, onSelect, ariaLabel, panel) =>
       node('div', { class: 'layout' }, [node('rail', { selected }, []), panel]),
     buildSwallowedDiagPanel: () => { reads += 1; return node('swallowed'); },
@@ -180,41 +146,24 @@ check('General diagnostics loads analysis history only after disclosure opens', 
   vm.runInContext(
     extractConst('DIAGNOSTIC_LOG_SECTIONS') + '\n' +
     extractConst('buildDiagnosticLogSection') + '\n' +
-    extractConst('buildDiagnosticLogPanel') + '\n' +
-    'this.render=buildDiagnosticLogPanel;', context);
+    extractConst('buildGeneralSettingsPanel') + '\n' +
+    'this.render=buildGeneralSettingsPanel;', context);
   const tree = context.render();
   assert.equal(reads, 0, 'rendering the diagnostics screen must not build any diagnostic panel');
-  const disclosure = tree.children[0].children.find(n => n.tag === 'details');
+  const disclosure = tree.children.find(n => n.tag === 'details');
   assert.ok(disclosure, 'diagnostics must remain reachable under general settings');
   disclosure.open();
   assert.equal(reads, 1, 'opening the body must build exactly the selected section');
 });
 
-check('Retired composer remains absent from settings while Book settings remain reachable',()=>{
- require('./helpers/libra_active_book_routes.cjs')(source);
- const context={Gui:{settingsHubSection:'memory'},SHARED_SETTINGS_HUB_SECTIONS:['memory'],normalizeHubChoice:(v)=>v,activeGuiResponseFamily:()=> 'libra',buildLibraMemorySettingsPanel:()=>({owner:'memory'}),guiEl:(_tag,_attrs,children)=>({children}),buildLibraSectionLayout:(_defs,_selected,_onChange,_label,panel)=>panel};
- vm.createContext(context);vm.runInContext(extractConst('buildSharedSettingsShellPanel')+'\nthis.render=buildSharedSettingsShellPanel;',context);
- assert.equal(context.render().children[0].owner,'memory','shared memory Settings dispatch must reach the retained builder');
+check('Retired composer remains absent while canonical Book memory settings stay reachable',()=>{
+ require('./helpers/libra_active_book_routes.cjs')(source);const settings=extract(source,'buildApprovedMockupSettingsPanel');assert.match(settings,/if\(groupId==='mem'\)/);assert.match(settings,/LibraMemoryCore\.getSettings\(\)/);assert.match(settings,/settingsReadback:'LibraMemoryCore'/);assert.match(settings,/memorySetting:key/);assert.match(settings,/saveSettingsRoom\(\)/);assert.doesNotMatch(source,/const showLibraInputWriterComposer\s*=/);
 });
 
-check('Settings groups Input Writer, references, memory, storage, recovery, state, and diagnostics', () => {
-  const settings = between('const buildSharedSettingsShellPanel =', 'const renderActiveTab =');
-  for (const subsection of ['references', 'memory', 'server', 'recovery', 'transfer', 'state', 'general']) {
-    assert.ok(settings.includes(`id: '${subsection}'`), `missing Settings subsection: ${subsection}`);
-  }
-  for (const builder of [
-    'buildLibraReferenceHubPanel', 'buildLibraMemorySettingsPanel',
-    'buildLibraServerConnectionPanel', 'buildLibraRecoveryPanel', 'buildTransferTab',
-    'buildStateTrackingAvailabilityPanel', 'buildGeneralSettingsPanel'
-  ]) assert.ok(settings.includes(`${builder}(`), `Settings must reuse ${builder}`);
-  assert.doesNotMatch(settings,/buildLibraProviderPanel|buildLibraEmbeddingPanel/,'connection pages are dispatched by Book native settings');
-
-  const general = extractConst('buildGeneralSettingsPanel');
-  // §34: the diagnostics builder moved one level down into the consolidated log's dispatcher, so the
-  // check follows it there. The requirement — the existing debug builder is retained — is unchanged.
-  assert.match(general, /buildDiagnosticLogPanel\(\)/, 'Diagnostics must mount the consolidated log');
-  const dispatcher = extractConst('buildDiagnosticLogSection');
-  assert.match(dispatcher, /buildDebugTab\(\)/, 'Diagnostics must retain the existing debug builder');
+check('Settings retains references, memory, storage, recovery, state and diagnostics in original destinations',()=>{
+ const registry=extractConst('BOOK_NATIVE_SETTINGS_SECTIONS'),settings=extract(source,'buildApprovedMockupSettingsPanel');for(const subsection of ['references','memory','server','recovery','transfer','state','general'])assert.ok(registry.includes("id: '"+subsection+"'")||registry.includes("id:'"+subsection+"'"),'missing Settings subsection '+subsection);
+ for(const builder of ['buildLibraReferenceHubPanel','buildLibraServerConnectionPanel','buildLibraMemoryRestorePanel','buildTransferTab','buildStateTrackingAvailabilityPanel','buildGeneralSettingsPanel'])assert.ok(settings.includes(builder+'('),'retained actual Settings dispatcher '+builder);
+ assert.match(settings,/sectionId==='embedding'/);assert.match(settings,/buildApprovedProviderExpertFields/,'connections belong original AI destination');assert.match(extract(source,'buildGeneralSettingsPanel'),/buildDiagnosticLogSection\(active\)/);assert.match(extract(source,'buildDiagnosticLogSection'),/buildDebugTab\(\)/,'existing debug builder remains reachable');
 });
 
 const buildNavigationHarness = () => {

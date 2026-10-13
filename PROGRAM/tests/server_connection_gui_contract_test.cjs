@@ -13,12 +13,14 @@ const root = path.resolve(__dirname, '..');
 const sdkPath = path.join(root, 'sdk', 'MemorySuiteStorageClient.source.js');
 const sdkText = fs.readFileSync(sdkPath, 'utf8').trim();
 const pluginDir = path.join(root, 'plugins');
+// Canonical public routes. Literal shell strings are decoded for contract checks;
+// the whole-owner public GUI suite separately clicks these live controls.
 const plugins = [
-  ['Flashback_Memory.js', 'data-tab="server"', 'flashbackMemorySuiteServerConnectionPanel'],
-  ['HAYAKU_Locator_Continuity.js', 'data-hayaku-viewer-tab="server"', 'hayakuMemorySuiteServerConnectionPanel'],
-  ['LIBRA.js', "{ id: 'server', label: '서버 · 저장' }", 'libraMemorySuiteServerConnectionPanel'],
-  ['LIA_Persona_Linker.js', '["server", "저장·이전 자료 복구"]', 'liaMemorySuiteServerConnectionPanel'],
-  ['RETRACE.js', 'data-tab="serverconnection"', 'retraceMemorySuiteServerConnectionPanel']
+  ['Flashback_Memory.js', ['data-go="${go}"', "['connect','link','임베딩 · 서버','연결']", "subtab('c','srv','서버'"], 'flashbackMemorySuiteServerConnectionPanel'],
+  ['HAYAKU_Locator_Continuity.js', ['data-hayaku-viewer-goto="server"'], 'hayakuMemorySuiteServerConnectionPanel'],
+  ['LIBRA.js', ['data-go="settings"', 'data-subtab="store"', "sections:['server','recovery','transfer']"], 'libraMemorySuiteServerConnectionPanel'],
+  ['LIA_Persona_Linker.js', ['data-go="recover"'], 'liaMemorySuiteServerConnectionPanel'],
+  ['RETRACE.js', ['data-tab="serverdata"', 'data-server-page="connection"'], 'retraceMemorySuiteServerConnectionPanel']
 ];
 
 assert.match(sdkText, releasePattern("LIBRARIAN SYSTEM STORAGE SDK v{storage}", ""));
@@ -40,10 +42,11 @@ for (const forbidden of ['memory_suite_bootstrap_key_required', 'data-mscx-key',
   assert.ok(!sdkText.includes(forbidden), `SDK manual key marker removed: ${forbidden}`);
 }
 
-for (const [file, navMarker, hostMarker] of plugins) {
+for (const [file, navMarkers, hostMarker] of plugins) {
   const text = fs.readFileSync(path.join(pluginDir, file), 'utf8');
   const expectedSdk = expectedStorageSdk(root, file, text);
-  assert.ok(text.includes(navMarker), `${file} side navigation`);
+  const decodedText = text.replace(/\\"/g, '"');
+  for (const navMarker of navMarkers) assert.ok(decodedText.includes(navMarker), `${file} canonical navigation: ${navMarker}`);
   assert.ok(text.includes(hostMarker), `${file} connection host`);
   if (file === 'RETRACE.js') {
     assert.ok(text.includes('refreshMemorySuiteOwnerStorageDashboard'), `${file} owner storage dashboard`);
@@ -73,13 +76,24 @@ function memoryStore(entries = {}) {
 
 async function verifyLiaRecoveryPanel() {
   const text = fs.readFileSync(path.join(pluginDir, 'LIA_Persona_Linker.js'), 'utf8');
-  const start = text.indexOf('function mountLiaServerConnectionPanel()');
+  const start = text.indexOf('function hydrateLiaRecoverySteps(');
   const end = text.indexOf('function activateTab(', start);
   assert(start >= 0 && end > start, 'LIA recovery panel extraction');
-  const button = disabled => ({ disabled, handlers: {}, addEventListener(name, handler) { this.handlers[name] = handler; } });
-  const preview = button(false), publish = button(true), status = { textContent: '' };
-  const nodes = { '[data-lia-recovery-preview]': preview, '[data-lia-recovery-publish]': publish, '[data-lia-recovery-status]': status };
-  const root = { innerHTML: '', querySelector(selector) { return nodes[selector]; } };
+  // Mount the original recovery page and actual step renderer; the former
+  // selector-only fake omitted the presentation dependency added by adoption.
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM(fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'docs/gui-redesign/lia.html'), 'utf8'));
+  const document = dom.window.document;
+  document.querySelector('.app').id = 'dpg-preview-root';
+  const root = document.createElement('div'); root.id = 'liaMemorySuiteServerConnectionPanel';
+  document.querySelector('[data-page="recover"] .stack').appendChild(root);
+  const originalAdd = dom.window.Element.prototype.addEventListener;
+  dom.window.Element.prototype.addEventListener = function(name, handler, ...rest) {
+    this.handlers ||= {}; this.handlers[name] = handler;
+    return originalAdd.call(this, name, handler, ...rest);
+  };
+  let preview, publish, status;
+  const steps = () => [...document.querySelectorAll('#dpg-preview-root [data-page="recover"] > .steps > .step')];
   let previews = 0, publishes = 0, clears = 0;
   let receipt = { records: 2, imageChunks: 1, conflicts: ['different-local-value'], unsupportedServerRecords: [], retainedServerTombstones: 1, unindexedShards: 1 };
   const recovery = {
@@ -88,15 +102,19 @@ async function verifyLiaRecoveryPanel() {
     async publish(selected) { assert.equal(selected, receipt); publishes++; return { restored: 2 }; }
   };
   const mount = new Function('document', 'LiaLegacyServerRecovery', 'pluginUnloaded', `${text.slice(start, end)}; return mountLiaServerConnectionPanel;`)(
-    { getElementById(id) { return id === 'liaMemorySuiteServerConnectionPanel' ? root : null; } }, recovery, false
+    document, recovery, false
   );
   assert.equal(mount(), true);
+  preview=root.querySelector('[data-lia-recovery-preview]');publish=root.querySelector('[data-lia-recovery-publish]');status=root.querySelector('[data-lia-recovery-status]');
+  assert.equal(steps().length,4,'original four recovery steps retained');
+  assert(steps().every(step=>step.dataset.state==='pending'),'opening does not imply inspection');
   assert.equal(clears, 1);
   assert.equal(previews, 0, 'opening LIA storage performs no automatic server read');
   assert.equal(publishes, 0, 'opening LIA storage performs no automatic import');
   assert(root.innerHTML.includes('LIA 로컬 저장'));
   await preview.handlers.click();
   assert.equal(publish.disabled, true, 'conflicting local data blocks publication');
+  assert.match(steps()[2].textContent,/가져오기 차단/,'conflict is shown in actual step UI');
   await publish.handlers.click();
   assert.equal(publishes, 0);
   receipt = { ...receipt, conflicts: [] };
@@ -106,6 +124,8 @@ async function verifyLiaRecoveryPanel() {
   assert.equal(publishes, 1);
   assert.equal(publish.disabled, true, 'publication consumes the preview');
   assert(status.textContent.includes('서버 자료는 그대로 유지됩니다'));
+  assert(steps().every(step=>step.dataset.state==='done'),'publication/readback completion reaches the actual steps');
+  dom.window.close();
 }
 
 async function main() {

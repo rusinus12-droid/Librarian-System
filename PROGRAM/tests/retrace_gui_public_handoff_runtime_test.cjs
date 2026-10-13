@@ -16,7 +16,10 @@ for (const scenario of ['same', 'different']) {
   const summary = JSON.parse(line.slice('U1_OWNER_WRITER_SUMMARY '.length));
   assert.equal(summary.gui?.entryId, 'retrace-main-hamburger', `${scenario}: actual registered GUI entry ran`);
   assert.equal(summary.gui?.tab, 'session', `${scenario}: actual session tab handler ran`);
-  assert.equal(summary.gui?.confirmations, 2, `${scenario}: confirm and completed alert ran`);
+  assert.equal(summary.gui?.confirmations, 1, `${scenario}: canonical named confirmation ran`);
+  assert.equal(summary.gui?.completedJobs, 1, `${scenario}: canonical job confirms actual handoff readback`);
+  assert.equal(summary.gui?.jobReopened,true,`${scenario}: next-session job task tray reopen retained actual operation`);
+  assert.equal(summary.gui?.jobSteps,4);assert.equal(summary.gui?.ownerResultRows,4);
   assert.equal(summary.gui?.providerCallsDuringHandoff, 0, `${scenario}: GUI handoff invokes no model provider`);
   assert.equal(summary.publicResultOk, true);
   assert.equal(summary.journalState, 'completed');

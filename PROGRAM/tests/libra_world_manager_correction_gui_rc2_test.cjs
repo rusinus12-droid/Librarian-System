@@ -68,8 +68,8 @@ assert.ok(receiptIndex < resultHeadIndex && resultHeadIndex < refreshIndex && re
 'success and draft clear must occur only after replay, provenance, and refreshed readback');
 
 require('./helpers/libra_active_book_routes.cjs')(source);
-assert.match(source, /const renderActiveTab = [^\n]*return buildBookExecutionFlowTab\(\)/,
-  'both response families enter the active Book renderer');
+assert.doesNotMatch(source, /const renderActiveTab\s*=/,
+  'the retired response-family renderer is not a fallback behind the approved six-destination app');
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const baseSnapshot = () => ({
@@ -222,7 +222,7 @@ for (const [domain, row] of Object.entries(editorRows)) {
   assert.equal(draft.anchorTurn, 10);
   assert.equal(draft.basisFingerprint, 'fp-current-head');
   assert.equal(draft.supersedes, expectedSupersedes[domain]);
-  const editor = ui.api.buildWorldManagerCorrectionEditor(domain, row, view);
+  const editor = ui.api.buildWorldManagerCorrectionEditor(domain, row, view, true);
   assert.equal(findNodes(editor, node => node?.attrs?.dataset?.worldCorrectionEditor === domain).length, 1,
     `${domain} must render a concrete correction editor`);
   const request = ui.api.worldManagerCorrectionRequest(draft);

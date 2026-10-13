@@ -47644,47 +47644,47 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     removeIndependentRecoveryConfirmation();
     const overlay = doc.createElement('div');
     overlay.id = RECOVERY_CONFIRMATION_OVERLAY_ID;
+    overlay.className = 'overlay is-open';
     overlay.setAttribute('role', 'presentation');
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:32;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.22);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;';
     const dialog = doc.createElement('section');
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
+    dialog.className = 'dialog';
     dialog.setAttribute('aria-labelledby', 'hayakuRecoveryConfirmationTitle');
-    dialog.style.cssText = 'box-sizing:border-box;position:relative;width:min(560px,calc(100vw - 32px));padding:28px;border:1px solid #dce3ee;border-radius:20px;background:#fff;box-shadow:0 24px 80px rgba(15,23,42,.28);';
     const eyebrow = doc.createElement('small');
+    eyebrow.className = 'eyebrow';
     eyebrow.textContent = 'HAYAKU RECOVERY';
-    eyebrow.style.cssText = 'display:block;color:#5568e8;font-size:12px;font-weight:800;letter-spacing:.08em;';
     const title = doc.createElement('h2');
     title.id = 'hayakuRecoveryConfirmationTitle';
+    title.className = 'page-title';
     title.textContent = '기억을 다시 생성할까요?';
-    title.style.cssText = 'margin:6px 0 0;font-size:24px;line-height:1.2;color:#172033;';
     const summary = doc.createElement('p');
     const turn = Math.max(1, Number(confirmation?.pairIndex || 0) || 1);
     summary.textContent = `T${turn}의 기억을 저장하지 못했어요. 보존된 대화에서 다시 생성할까요?`;
-    summary.style.cssText = 'margin:10px 0 0;color:#738099;font-size:14px;';
+    summary.className = 'card__desc';
     const reason = doc.createElement('div');
     reason.textContent = '현재 완료된 턴에 사용할 패킷을 찾지 못했습니다. 원문은 보존되어 있습니다.';
     reason.title = compact(confirmation?.reason || 'packet_missing', 120);
-    reason.style.cssText = 'margin-top:16px;padding:12px 14px;border:1px solid #dce3ee;border-radius:12px;background:#f7f9fc;color:#5568e8;font-size:13px;';
+    reason.className = 'note';
     const note = doc.createElement('p');
     note.textContent = '기억 생성은 AI를 한 번 더 호출하며 추가 비용이 발생할 수 있습니다. 나중에 선택하면 관제창에서 다시 생성할 수 있습니다.';
-    note.style.cssText = 'margin:12px 0 0;color:#738099;font-size:12px;';
+    note.className = 'hint';
     const status = doc.createElement('div');
     status.setAttribute('aria-live', 'polite');
-    status.style.cssText = 'min-height:20px;margin-top:12px;color:#738099;font-size:12px;';
+    status.className = 'hint';
     const actions = doc.createElement('div');
-    actions.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:20px;';
+    actions.className = 'dialog__actions';
     const makeButton = (label, primary = false) => {
       const button = doc.createElement('button');
       button.type = 'button';
+      button.className = primary ? 'btn btn--primary' : 'btn';
       button.textContent = label;
-      button.style.cssText = `min-height:42px;padding:0 18px;border:1px solid ${primary ? '#5568e8' : '#dce3ee'};border-radius:11px;background:${primary ? '#5568e8' : '#fff'};color:${primary ? '#fff' : '#172033'};font:700 14px/1 Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;`;
       return button;
     };
     const minimizeButton = makeButton('최소화');
     minimizeButton.id = 'minimizeHayakuIndependentRecovery';
     minimizeButton.setAttribute('aria-label', '복구 창 최소화');
-    minimizeButton.style.cssText += 'position:absolute;right:16px;top:16px;min-height:34px;padding:0 12px;font-size:12px;';
+    minimizeButton.classList.add('btn--sm');
     minimizeButton.addEventListener('click', () => { void minimizeIndependentRecoveryConfirmation(); });
     dialog.appendChild(minimizeButton);
     const noButton = makeButton('나중에');
@@ -47696,10 +47696,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const setButtonsDisabled = disabled => {
       noButton.disabled = disabled;
       yesButton.disabled = disabled;
-      noButton.style.cursor = disabled ? 'wait' : 'pointer';
-      yesButton.style.cursor = disabled ? 'wait' : 'pointer';
-      noButton.style.opacity = disabled ? '.65' : '1';
-      yesButton.style.opacity = disabled ? '.65' : '1';
+
     };
     const finish = async accepted => {
       if (settled) return;
@@ -47721,19 +47718,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         status.textContent = `처리 실패 · ${compact(error?.message || error, 180)}`;
       }
     };
-    const onKeydown = event => {
-      if (event?.key === 'Escape') {
-        event.preventDefault();
-        if (settled) void minimizeIndependentRecoveryConfirmation();
-        else void finish(false);
-      }
-    };
-    overlay.__hayakuCleanup = () => { try { doc.removeEventListener?.('keydown', onKeydown, true); } catch (_) {} };
     noButton.addEventListener('click', () => { void finish(false); });
     yesButton.addEventListener('click', () => { void finish(true); });
     overlay.addEventListener('click', event => { if (event?.target === overlay) event.preventDefault(); });
-    doc.addEventListener?.('keydown', onKeydown, true);
     doc.body.appendChild(overlay);
+    let teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => {
+      if (settled) void minimizeIndependentRecoveryConfirmation();
+      else void finish(false);
+    });
+    overlay.__hayakuCleanup = () => { try { teardownDialog(); } catch (_) {} };
     const wasViewerVisible = Memory.ledgerViewer.visible === true;
     if (!wasViewerVisible) {
       try {
@@ -47765,7 +47758,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `recovery_confirmation_container_failed:${compact(error?.message || error,120)}`].slice(-20);
       });
     }
-    try { yesButton.focus?.(); } catch (_) {}
     return true;
   };
   const requestRecoveryJournalBackgroundConfirmationOnce = async (recordInput, reason = 'packet_debt_ready') => {
@@ -55154,6 +55146,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     try { return new Date(n).toLocaleString(); }
     catch (_) { return text(value || '-'); }
   };
+  const viewerRelativeTime = value => {
+    const at=Number(value||0)||0;if(!at)return '-';const sec=Math.max(0,Math.floor((now()-at)/1000));
+    if(sec<60)return `${sec}초 전`;const min=Math.floor(sec/60);if(min<60)return `${min}분 전`;const hour=Math.floor(min/60);if(hour<24)return `${hour}시간 전`;return `${Math.floor(hour/24)}일 전`;
+  };
   const viewerFormatTurnList = (values, emptyLabel = '없음') => {
     const turns = sortedUniqueRecoveryTurns(values);
     if (!turns.length) return emptyLabel;
@@ -55573,7 +55569,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const status = Memory.ledgerViewer.root?.querySelector?.('#hayakuViewerStatus');
     if (!status) return;
     status.textContent = text(message || '');
-    status.style.color = isError ? 'var(--hv-red)' : '';
+    status.style.color = isError ? 'var(--danger-ink)' : '';
   };
   const viewerDownloadJson = (filename, payload) => {
     const body = typeof payload === 'string' ? payload : viewerPrettyJson(payload);
@@ -55604,7 +55600,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const area = root?.querySelector?.('#hayakuViewerDebugExportText');
     const body = text(Memory.ledgerViewer.debugExportText || '');
     if (panel) panel.hidden = !body;
-    if (area) area.value = body;
+    if (area) area.textContent = body;
   };
   const viewerPacketObject = record => {
     const parsed = safeJsonParse(record?.raw, null);
@@ -55654,7 +55650,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const host = root?.querySelector?.('#hayakuNativeJobComparison');
     if (!host || job?.state !== 'awaiting_choice' || Memory.ledgerViewer.comparisonLoading || host.dataset?.runId === job?.runId) return;
     Memory.ledgerViewer.comparisonLoading = true;
-    host.innerHTML = '<div class="hv-job-loading">기존 패킷과 재생성 후보를 불러오는 중입니다.</div>';
+    host.innerHTML = '<div class="empty">기존 패킷과 재생성 후보를 불러오는 중입니다.</div>';
     try {
       const scope = Memory.ledgerViewer.scope || await RisuCompat.currentChatScope();
       const state = scope?.key
@@ -55662,7 +55658,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         : { available: false, reason: 'scope_unavailable' };
       const run = state?.available === true ? state.run : null;
       if (!run || run.state !== 'awaiting_choice' || (job.runId && run.runId !== job.runId)) {
-        host.innerHTML = '<div class="hv-job-loading error">비교할 재생성 후보가 더 이상 존재하지 않습니다.</div>';
+        host.innerHTML = '<div class="empty error">비교할 재생성 후보가 더 이상 존재하지 않습니다.</div>';
         return;
       }
       let ledger = Memory.ledgerViewer.ledger;
@@ -55679,73 +55675,98 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         summary: viewerPacketSummary(record),
         raw: text(record?.raw || '')
       }));
-      const renderSide = (title, rows, className) => `<section class="hv-job-compare-side ${className}"><h3>${viewerEscapeHtml(title)}</h3>${rows.length
+      const renderSide = (title, rows, className) => `<section class="card ${className}"><h3>${viewerEscapeHtml(title)}</h3>${rows.length
         ? rows.map(row => `<article><b>T${row.turn}</b><p>${viewerEscapeHtml(row.summary || '요약 없음')}</p><details><summary>JSON 보기</summary><pre>${viewerEscapeHtml(row.raw)}</pre></details></article>`).join('')
-        : '<p class="hv-job-loading">해당 패킷을 찾지 못했습니다.</p>'}</section>`;
+        : '<p class="empty">해당 패킷을 찾지 못했습니다.</p>'}</section>`;
       host.innerHTML = `${renderSide('기존 패킷', originalRows, 'original')}${renderSide('재생성 후보', candidateRows, 'candidate')}`;
       if (host.dataset) host.dataset.runId = compact(run.runId || '', 128);
     } catch (error) {
-      host.innerHTML = `<div class="hv-job-loading error">비교 데이터 조회 실패 · ${viewerEscapeHtml(compact(error?.message || error, 180))}</div>`;
+      host.innerHTML = `<div class="empty error">비교 데이터 조회 실패 · ${viewerEscapeHtml(compact(error?.message || error, 180))}</div>`;
     } finally {
       Memory.ledgerViewer.comparisonLoading = false;
     }
   };
+  const viewerBindConfirmDialogKeys = (overlay, dialog, onEscape, initialSelector = '', returnFocusOverride = null) => {
+    const doc = overlay?.ownerDocument || dialog?.ownerDocument || null;
+    const returnFocus = returnFocusOverride || doc?.activeElement || null;
+    const selector = 'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex]:not([tabindex="-1"])';
+    const focusables = () => [...(dialog?.querySelectorAll?.(selector) || [])].filter(node =>
+      !node.hidden && node.getAttribute?.('aria-hidden') !== 'true' && !node.closest?.('[hidden],[inert],[aria-hidden="true"]')
+    );
+    const onKeydown = event => {
+      if (!overlay?.isConnected) return;
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopPropagation();
+        try { onEscape?.(); } catch (_) {}
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) {
+        event.preventDefault();
+        if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+        try { dialog?.focus?.(); } catch (_) {}
+        return;
+      }
+      const first = items[0], last = items[items.length - 1], active = doc?.activeElement;
+      if (event.shiftKey && (active === first || !dialog?.contains?.(active))) {
+        event.preventDefault(); last.focus?.();
+      } else if (!event.shiftKey && (active === last || !dialog?.contains?.(active))) {
+        event.preventDefault(); first.focus?.();
+      }
+    };
+    doc?.addEventListener?.('keydown', onKeydown, true);
+    const initial = (initialSelector && dialog?.querySelector?.(initialSelector)) || focusables()[0] || dialog;
+    if (initial === dialog && dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+    try { initial?.focus?.(); } catch (_) {}
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      try { doc?.removeEventListener?.('keydown', onKeydown, true); } catch (_) {}
+      const target = returnFocus && returnFocus.isConnected && !returnFocus.closest?.('[hidden],[inert],[aria-hidden="true"]')
+        ? returnFocus
+        : Memory.ledgerViewer.root?.querySelector?.('[data-hayaku-viewer-tab][aria-selected="true"]');
+      try { target?.focus?.(); } catch (_) {}
+    };
+  };
   // Render only changing text on the existing header indicator; never block chat.
-  const viewerRenderWorkDashboard = () => {
+  const viewerRenderHeaderHealth = () => {
     const root=Memory.ledgerViewer.root;
     const host=root?.querySelector?.('#hayakuViewerHealth');
     if(!host)return;
     const job=Memory.nativeRecovery.job;
-    const health=Memory.ledgerViewer.workHealth||{label:'복구 검토',warning:false,error:false};
     const scope=Memory.ledgerViewer.scope?.key || Memory.ledgerViewer.scopeKey || '';
     const visibleJob=job && (!scope || !job.scopeKey || scope===job.scopeKey) ? job : null;
     const terminal=visibleJob && NATIVE_JOB_TERMINAL_STATES.has(visibleJob.state);
-    const doc=host.ownerDocument;
-    if(!host.querySelector?.('#hayakuWorkDashboard') && doc?.createElement) {
-      host.style.cssText='position:relative;min-width:0;max-width:min(440px,100%);height:auto;white-space:normal;flex-shrink:0;';
-      host.innerHTML=`<style>
-        #hayakuWorkDashboard{font:13px/1.5 system-ui,sans-serif;max-width:100%;text-align:left;color:#24334c;}
-        #hayakuWorkDashboard summary{cursor:pointer;display:block;padding:5px 8px;overflow-wrap:anywhere;}
-        #hayakuWorkDashboard summary:focus-visible{outline:2px solid #5968e8;outline-offset:3px;}
-        #hayakuWorkDashboard .hv-work-popup{position:absolute;right:0;top:calc(100% + 8px);z-index:17;box-sizing:border-box;width:min(370px,calc(100vw - 32px));padding:16px;border:1px solid #ccd5e8;border-radius:16px;background:#fff;box-shadow:0 10px 28px #192b4822;color:#24334c;}
-        #hayakuWorkDashboard dl{margin:10px 0;display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;}
-        #hayakuWorkDashboard dt{color:#596982;}#hayakuWorkDashboard dd{margin:0;white-space:normal;overflow-wrap:anywhere;}
-        #hayakuWorkDashboard button{font:inherit;color:#34429e;background:#eef1ff;border:1px solid #c8d0fa;border-radius:9px;padding:8px 12px;cursor:pointer;}
-        #hayakuWorkDashboard .hv-work-note{color:#65738c;white-space:normal;font-size:12px;margin:10px 0 0;}
-        .hv-failure-history{border:1px solid #dce3f2;border-radius:12px;padding:10px 14px;margin-bottom:12px;color:#33415b;}
-        .hv-failure-history summary{cursor:pointer;font-weight:600;}.hv-failure-history button{font:inherit;display:block;border:1px solid #dbe2f0;border-radius:8px;background:#f5f7fd;color:#33415b;margin:8px 0;padding:8px;width:100%;text-align:left;}
-        #closeHayakuViewer{white-space:nowrap;flex-shrink:0;min-width:56px;padding-left:8px;padding-right:8px;}
-        @media(max-width:600px){#hayakuViewerHealth{display:block!important;max-width:calc(100vw - 170px)!important;flex-basis:auto!important;flex-shrink:1!important;}#hayakuWorkDashboard summary{font-size:12px;}#hayakuWorkDashboard .hv-work-popup{position:fixed;right:12px;top:76px;}}
-      </style><details id="hayakuWorkDashboard"><summary id="hayakuWorkSummary"></summary><div class="hv-work-popup"><strong id="hayakuWorkTitle"></strong><dl><dt>진행 단계</dt><dd id="hayakuWorkPhase"></dd><dt>처리 구간</dt><dd id="hayakuWorkTurns"></dd><dt>완료</dt><dd id="hayakuWorkCount"></dd><dt>경과 시간</dt><dd id="hayakuWorkElapsed"></dd><dt>AI 호출</dt><dd id="hayakuWorkCalls"></dd><dt>호출 상태</dt><dd id="hayakuWorkTransport"></dd></dl><p id="hayakuWorkMessage"></p><button type="button" id="hayakuWorkOpen">작업창 보기</button><p class="hv-work-note">남은 시간은 모델 응답에 따라 달라집니다. 완료되지 않은 분석을 예상 시간만으로 완료 표시하지 않습니다.</p></div></details>`;
-      host.querySelector('#hayakuWorkOpen')?.addEventListener('click',()=>{if(!Memory.nativeRecovery.job)return;Memory.ledgerViewer.jobMinimized=false;host.querySelector('#hayakuWorkDashboard').open=false;viewerRenderNativeJob();});
-    }
-    const set=(id,value)=>{const el=host.querySelector?.('#'+id);if(el&&el.textContent!==String(value))el.textContent=String(value);};
-    const kind=visibleJob?viewerNativeJobKindLabel(visibleJob.kind):health.label;
-    const phase=visibleJob?viewerNativeJobStateLabel(visibleJob.state):'작업 대기';
-    const total=Number(visibleJob?.total||0), completed=Math.min(total,Number(visibleJob?.completed||0));
-    set('hayakuWorkSummary',visibleJob?`${terminal?'':'진행 중 · '}${kind} · ${completed}/${total}${visibleJob.currentTurn?` · T${visibleJob.currentTurn}`:''} · ${viewerNativeJobElapsed(visibleJob)}`:health.label);
-    set('hayakuWorkTitle',kind);set('hayakuWorkPhase',phase);
-    set('hayakuWorkTurns',visibleJob?viewerFormatTurnList(visibleJob.targetTurns,'-'):'-');
-    set('hayakuWorkCount',`${completed} / ${total}`);set('hayakuWorkElapsed',visibleJob?viewerNativeJobElapsed(visibleJob):'-');
-    set('hayakuWorkCalls',visibleJob?`${Number(visibleJob.physicalCalls||0)}회${Number(visibleJob.physicalCalls||0)>total&&total?' · 교정 재시도 포함':''}`:'0회');
-    const call=visibleJob?.transportPhase;
-    set('hayakuWorkTransport',call==='running'?`모델 응답 대기 · ${Math.max(0,Math.floor((now()-Number(visibleJob.callStartedAt||now()))/1000))}초`:call==='queued'?'호출 차례 대기':call==='failed'?'최근 호출 실패':call==='completed'?'최근 응답 수신':'-');
-    set('hayakuWorkMessage',visibleJob?.error||visibleJob?.message||'현재 실행 중인 복구 작업이 없습니다.');
-    const open=host.querySelector?.('#hayakuWorkOpen');if(open)open.hidden=!visibleJob;
-    host.classList.toggle('error',visibleJob?visibleJob.state==='failed':health.error);
-    host.classList.toggle('warning',visibleJob?!terminal:health.warning);
+    const health=Memory.ledgerViewer.workHealth||{label:'정상 작동',warning:false,error:false};
+    const error=visibleJob ? visibleJob.state==='failed' : health.error===true;
+    const warning=visibleJob ? !terminal : health.warning===true;
+    host.classList.toggle('health--danger',error);
+    host.classList.toggle('health--warn',!error&&warning);
+    host.classList.toggle('health--ok',!error&&!warning);
+    host.classList.remove('error','warning');
+    const textNode=host.querySelector?.('[data-health-text]');
+    if(textNode) textNode.textContent=visibleJob
+      ? (error?'복구 실패':terminal?'복구 완료':'복구 진행 중')
+      : text(health.label||'정상 작동');
+    host.title=visibleJob
+      ? `${viewerNativeJobKindLabel(visibleJob.kind)} · ${viewerNativeJobStateLabel(visibleJob.state)}`
+      : text(health.label||'정상 작동');
   };
-
   const viewerRenderNativeJob = () => {
-    viewerRenderWorkDashboard();
+    viewerRenderHeaderHealth();
     const root = Memory.ledgerViewer.root;
     if (!root) return null;
     const job = Memory.nativeRecovery.job;
     const chip = root.querySelector?.('#hayakuNativeJobChip');
     const overlay = root.querySelector?.('#hayakuNativeJobOverlay');
     if (!job) {
-      if (chip) chip.hidden = true;
-      if (overlay) overlay.hidden = true;
+      if (chip) { chip.hidden = false; chip.innerHTML = `${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span>`; chip.setAttribute('aria-expanded','false'); chip.setAttribute('aria-label','작업 없음 · 작동 기록 열기'); }
+      if (overlay) {
+        overlay.hidden = true; overlay.classList?.remove('is-open'); overlay.setAttribute?.('aria-hidden','true');
+        if (typeof overlay.__hayakuDialogFocusCleanup === 'function') { overlay.__hayakuDialogFocusCleanup(); delete overlay.__hayakuDialogFocusCleanup; }
+      }
       if (Memory.ledgerViewer.jobTicker) clearInterval(Memory.ledgerViewer.jobTicker);
       Memory.ledgerViewer.jobTicker = null;
       return null;
@@ -55762,12 +55783,36 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (chip) {
       chip.hidden = Memory.ledgerViewer.jobMinimized !== true;
       chip.setAttribute?.('aria-expanded', String(Memory.ledgerViewer.jobMinimized !== true && !independentConfirmation));
-      chip.textContent = `작업창 열기 ↗ · ${progressText}`;
+      const trayText=chip.querySelector?.('[data-tray-text]');
+      if(trayText)trayText.textContent=`작업창 열기 ↗ · ${progressText}`;
       chip.setAttribute?.('aria-label', `${kindLabel} · ${stateLabel} · ${progressText} · 작업창 다시 열기`);
       chip.setAttribute?.('aria-live', 'polite');
       chip.title = `${stateLabel} · ${viewerNativeJobElapsed(job)} · 눌러서 작업창 열기`;
     }
-    if (overlay) overlay.hidden = Memory.ledgerViewer.jobMinimized === true || independentConfirmation;
+    if (overlay) {
+      overlay.hidden = Memory.ledgerViewer.jobMinimized === true || independentConfirmation;
+      overlay.classList?.toggle('is-open', !overlay.hidden);
+      overlay.setAttribute?.('aria-hidden', String(overlay.hidden));
+      if (overlay.hidden && typeof overlay.__hayakuDialogFocusCleanup === 'function') {
+        overlay.__hayakuDialogFocusCleanup();
+        delete overlay.__hayakuDialogFocusCleanup;
+      } else if (!overlay.hidden && typeof overlay.__hayakuDialogFocusCleanup !== 'function') {
+        const dialog = overlay.querySelector?.('[role="dialog"]');
+        overlay.__hayakuDialogFocusCleanup = viewerBindConfirmDialogKeys(overlay, dialog, () => {
+          const current = Memory.nativeRecovery.job;
+          if (!current) return;
+          if (current.state === 'awaiting_confirmation') {
+            void resolveRecoveryJournalBackgroundConfirmation(false).finally(() => viewerRenderNativeJob());
+          } else {
+            // Escape only hides the job view. It preserves running, failed and
+            // completed results; only the explicit close control clears a terminal view.
+            Memory.ledgerViewer.jobMinimized = true;
+            viewerRenderNativeJob();
+          }
+        }, '', Memory.ledgerViewer.jobDialogReturnFocus || null);
+        Memory.ledgerViewer.jobDialogReturnFocus = null;
+      }
+    }
     const setText = (selector, value) => { const node = root.querySelector?.(selector); if (node) node.textContent = text(value); };
     setText('#hayakuNativeJobTitle', kindLabel);
     setText('#hayakuNativeJobState', stateLabel);
@@ -55778,6 +55823,29 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     setText('#hayakuNativeJobTurns', viewerFormatTurnList(job.targetTurns, '-'));
     setText('#hayakuNativeJobCurrent', job.currentTurn ? `T${job.currentTurn}` : '-');
     setText('#hayakuNativeJobMessage', job.kind === 'manual_missing_batch' ? job.message || job.error || stateLabel : job.error || job.message || stateLabel);
+    const operationKind = job.kind === 'cold_start' ? 'cold' : job.kind === 'targeted_regeneration' ? 'regen' : job.kind === 'background_repair_confirmation' ? 'background' : 'repair';
+    const result = job.result || {};
+    root.querySelectorAll?.('[data-hayaku-job-body]')?.forEach(node => { node.hidden = node.getAttribute('data-hayaku-job-body') !== operationKind; });
+    const stepLabels = operationKind === 'cold'
+      ? ['묶음', '분석', '검증', '기록']
+      : operationKind === 'regen'
+        ? ['재검증', '분석', '후보 검증', '후보 비교']
+        : ['대조', '분석', '검증', '기록'];
+    root.querySelectorAll?.('[data-job-step]')?.forEach(node => { node.textContent = stepLabels[Math.max(0, Number(node.getAttribute('data-job-step')) - 1)] || ''; });
+    setText('#hayakuNativeJobResultTarget', viewerFormatTurnList(job.targetTurns, '-'));
+    setText('#hayakuNativeJobColdBundles', Number(result.analysisBatchCount || total) ? `${Number(result.analysisBatchCount || total).toLocaleString()}묶음` : '-');
+    const eyebrow = root.querySelector?.('#hayakuNativeJobEyebrow');
+    if (eyebrow) eyebrow.textContent = operationKind === 'cold' ? 'Other Ax Cold Start' : operationKind === 'regen' ? 'Other Ax targeted regeneration' : operationKind === 'background' ? 'Background auto repair' : 'Other Ax recovery';
+    const recoveryConfirmation = Memory.ledgerViewer.recoveryConfirmation;
+    setText('#hayakuNativeJobConfirmationTarget', recoveryConfirmation?.pairIndex ? `T${recoveryConfirmation.pairIndex}` : viewerFormatTurnList(job.targetTurns, '-'));
+    setText('#hayakuNativeJobResultMemory', `${Number(result.memorySaved ?? result.completed ?? 0)}/${Number(result.total ?? job.total ?? 0)}턴`);
+    setText('#hayakuNativeJobResultPackets', `${Number(result.packetCompleted ?? result.repaired ?? 0)}개`);
+    setText('#hayakuNativeJobResultPartial', `${Number(result.partialSaved || 0)}개`);
+    setText('#hayakuNativeJobResultCalls', `${Number(job.physicalCalls ?? result.physicalCalls ?? 0)}회`);
+    setText('#hayakuNativeJobResultColdSaved', `${Number(result.packets ?? result.saved ?? result.savedTurns ?? 0)}개`);
+    setText('#hayakuNativeJobResultColdHeld', `${Number(result.failedChunks ?? result.held ?? result.heldTurns ?? 0)}묶음`);
+    setText('#hayakuNativeJobResultColdCalls', `${Number(job.physicalCalls ?? result.llmCalls ?? result.physicalCalls ?? 0)}회`);
+    setText('#hayakuNativeJobResultRegeneration', job.state === 'awaiting_choice' ? '검증된 후보가 준비됐습니다. 기존 패킷은 아직 교체되지 않았습니다.' : (job.message || stateLabel));
     const bar = root.querySelector?.('#hayakuNativeJobProgressBar');
     if (bar) { bar.style.width = `${progress}%`; bar.classList.toggle('indeterminate', !total && !terminal); }
     const cancel = root.querySelector?.('#cancelHayakuNativeJob');
@@ -55965,45 +56033,22 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     'native_recovery:targeted_regeneration_failed': '패킷 재생성 실패',
     'ledger:replacement_variant_selected': '이전 패킷 재선택 완료',
     'ledger:replacement_variant_selection_failed': '이전 패킷 재선택 실패',
+    'worldline:ui_topology_reconciled': '세계선 대조 완료',
     'native_recovery:cold_start_completed': 'HAYAKU Cold Start 완료',
     'native_recovery:cold_start_failed': 'HAYAKU Cold Start 실패',
     ready: 'HAYAKU 준비 완료',
     install_failed: 'HAYAKU 초기화 실패'
   }[text(event)] || text(event || '작업'));
-  const viewerRenderRecall = () => {
-    const root = Memory.ledgerViewer.root;
-    if (!root) return;
-    const recall = Memory.lastViewerRecall || Memory.lastBeforeRequest?.viewerRecall || null;
-    const input = root.querySelector?.('#hayakuViewerCurrentInput');
-    const meta = root.querySelector?.('#hayakuViewerRecallMeta');
-    const body = root.querySelector?.('#hayakuViewerRecallRows');
-    if (input) input.textContent = recall?.input || '아직 처리된 인풋이 없습니다.';
-    if (meta) {
-      meta.textContent = recall?.at
-        ? `${Number(recall.selectedRows || ensureArray(recall.rows).length).toLocaleString()}개 선택 · ${Number(recall.injectedRows || 0).toLocaleString()}개 실제 전달${recall.delivery?.stage==='returned_to_hook'?` · 예산으로 제외 ${recall.delivery.budgetExcluded} · 근거 일부 부족 ${recall.delivery.incomplete}`:''} · ${viewerFormatDate(recall.at)}`
-        : '아직 이번 세션에서 떠올린 기억이 없습니다.';
-    }
-    if (!body) return;
-    const rows = ensureArray(recall?.rows);
-    if (!rows.length) {
-      body.innerHTML = '<div class="hv-recall-empty">선택된 기억이 없습니다.</div>';
-      return;
-    }
-    body.innerHTML = rows.map(row => `<article class="hv-recall-item">
-      <div class="hv-recall-item-head"><span>${viewerEscapeHtml(row.axis || 'memory')} · ${viewerEscapeHtml(row.category || 'state')}</span><em>${viewerEscapeHtml(row.timeScope || (row.sourceTime ? `T${row.sourceTime}` : 'recall'))}</em></div>
-      <strong>${viewerEscapeHtml(row.ref || '기억')}</strong>
-      <p>${viewerEscapeHtml(row.state || '')}</p>
-      <small>score ${Number(row.score || 0).toFixed(4)}${Number(row.importance || 0) ? ` · importance ${Number(row.importance).toFixed(2)}` : ''}</small>
-    </article>`).join('');
-  };
+  // Recall is rendered only in the Overview mockup card by viewerRenderOverview.
+  // There is deliberately no second legacy recall panel or dormant template.
   // Client-side text filter for the viewer lists that are rendered whole and had no search
   // (worldline, failed recovery, operation log, swallowed errors). Hides non-matching items
   // instead of re-querying data, so it works unchanged with every existing renderer.
   const VIEWER_LIST_FILTERS = Object.freeze([
-    Object.freeze({ input: 'hayakuWorldlineFilter', container: 'hayakuWorldlineTimeline', item: '.hv-worldline-node', count: 'hayakuWorldlineFilterCount' }),
-    Object.freeze({ input: 'hayakuFailedRecoveryFilter', container: 'hayakuFailedRecoveryList', item: '.hv-failure-item', count: 'hayakuFailedRecoveryFilterCount' }),
-    Object.freeze({ input: 'hayakuLogFilter', container: 'hayakuViewerOperationLog', item: '.hv-log-entry', count: 'hayakuLogFilterCount' }),
-    Object.freeze({ input: 'hayakuSwallowedDiagFilter', container: 'hayakuViewerSwallowedDiag', item: '.hv-log-entry', count: 'hayakuSwallowedDiagFilterCount' })
+    Object.freeze({ input: 'hayakuWorldlineFilter', container: 'hayakuWorldlineTimeline', item: '.pk-row', count: 'hayakuWorldlineFilterCount' }),
+    Object.freeze({ input: 'hayakuFailedRecoveryFilter', container: 'hayakuFailedRecoveryList', item: 'article.row', count: 'hayakuFailedRecoveryFilterCount' }),
+    Object.freeze({ input: 'hayakuLogFilter', container: 'hayakuViewerOperationLog', item: '.row', count: 'hayakuLogFilterCount' }),
+    Object.freeze({ input: 'hayakuSwallowedDiagFilter', container: 'hayakuViewerSwallowedDiag', item: '.row', count: 'hayakuSwallowedDiagFilterCount' })
   ]);
 
   const viewerApplyListFilter = spec => {
@@ -56025,13 +56070,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         ? `${shown.toLocaleString()} / ${items.length.toLocaleString()}개 표시`
         : `${items.length.toLocaleString()}개`;
       // A filter that hides every row would otherwise leave a blank panel.
-      let notice = container.querySelector?.('[data-hv-filter-empty]') || null;
+      let notice = container.querySelector?.('[data-list-filter-empty]') || null;
       if (needle && items.length > 0 && shown === 0) {
         if (!notice) {
           notice = (container.ownerDocument || document).createElement('div');
-          notice.setAttribute('data-hv-filter-empty', '1');
-          notice.className = 'hv-empty';
-          notice.setAttribute('data-hv-empty', 'filter');
+          notice.setAttribute('data-list-filter-empty', '1');
+          notice.className = 'empty';
+          notice.setAttribute('data-empty', 'filter');
           container.appendChild(notice);
         }
         notice.innerHTML = `<strong>${viewerEscapeHtml(needle)}와(과) 일치하는 항목이 없습니다.</strong><span>검색어를 지우면 ${items.length.toLocaleString()}개가 모두 표시됩니다.</span>`;
@@ -56098,15 +56143,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (navCount) navCount.textContent = entries.length.toLocaleString();
     if (!body) return;
     if (!entries.length) {
-      body.innerHTML = '<div class="hv-empty" data-hv-empty="data"><strong>작동 로그가 없습니다.</strong><span>HAYAKU가 요청을 처리하면 여기에 기록됩니다.</span></div>';
+      body.innerHTML = '<div class="empty" data-empty="data"><b>작동 로그가 없습니다.</b><span>HAYAKU가 요청을 처리하면 여기에 기록됩니다.</span></div>';
       return;
     }
     body.innerHTML = entries.map(entry => {
       const detail = entry.detail == null ? '' : viewerPrettyJson(entry.detail);
-      return `<article class="hv-log-entry ${viewerEscapeHtml(entry.level || 'info')}">
-        <div class="hv-log-head"><div><strong>${viewerEscapeHtml(viewerOperationTitle(entry.event))}</strong><span>${viewerEscapeHtml(entry.event || '')}</span></div><time>${viewerEscapeHtml(viewerFormatDate(entry.at))}</time></div>
-        ${detail ? `<details><summary>상세 정보</summary><pre>${viewerEscapeHtml(detail)}</pre></details>` : ''}
-      </article>`;
+      const level = entry.level === 'error' ? 'alert' : 'check';
+      const time = Number(entry.at) > 0 ? new Date(Number(entry.at)).toLocaleTimeString('ko-KR', { hour12: false }) : '-';
+      return `<div class="row"><span style="color:${entry.level==='error'?'var(--warn)':'var(--ok)'}">${hayakuMockupIcon(level)}</span><div><div class="row__title">${viewerEscapeHtml(viewerOperationTitle(entry.event))}</div><div class="row__meta mono">${viewerEscapeHtml(entry.event || '')} · ${viewerEscapeHtml(viewerRelativeTime(entry.at))}</div>${detail ? `<details><summary>상세 정보</summary><pre class="json">${viewerEscapeHtml(detail)}</pre></details>` : ''}</div><span class="hint">${viewerEscapeHtml(time)}</span></div>`;
     }).join('');
   };
 
@@ -56128,15 +56172,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (count) count.textContent = rows.length.toLocaleString();
     if (!body) return;
     if (!rows.length) {
-      body.innerHTML = '<div class="hv-empty" data-hv-empty="data"><strong>조용히 무시된 오류가 없습니다.</strong><span>내부에서 무시된 오류가 생기면 여기에 쌓입니다.</span></div>';
+      body.innerHTML = '<div class="empty" data-empty="data"><b>조용히 무시된 오류가 없습니다.</b><span>내부에서 무시된 오류가 생기면 여기에 쌓입니다.</span></div>';
       return;
     }
     body.innerHTML = rows.slice(0, 60).map(row => {
       const lastAt = Number(row?.lastAt || 0);
-      return `<article class="hv-log-entry warn">
-        <div class="hv-log-head"><div><strong>${viewerEscapeHtml(String(row?.tag || '알 수 없는 위치'))}</strong><span>${viewerEscapeHtml(String(row?.plugin || ''))} · ${Number(row?.count || 0).toLocaleString()}회</span></div><time>${viewerEscapeHtml(lastAt > 0 ? viewerFormatDate(lastAt) : '-')}</time></div>
-        ${row?.lastMessage ? `<pre>${viewerEscapeHtml(String(row.lastMessage))}</pre>` : ''}
-      </article>`;
+      return `<div class="row"><span style="color:var(--warn)">${hayakuMockupIcon('alert')}</span><div><div class="row__title">${viewerEscapeHtml(String(row?.tag || '알 수 없는 위치'))}</div><div class="row__meta mono">${viewerEscapeHtml(String(row?.plugin || ''))} · ${Number(row?.count || 0).toLocaleString()}회</div>${row?.lastMessage ? `<details><summary>최근 오류</summary><pre class="json">${viewerEscapeHtml(String(row.lastMessage))}</pre></details>` : ''}</div><span class="hint">${viewerEscapeHtml(lastAt > 0 ? new Date(lastAt).toLocaleTimeString('ko-KR', { hour12: false }) : '-')}</span></div>`;
     }).join('');
   };
   // Scroll offset, open <details> and the active text filter survive this render.
@@ -56223,6 +56264,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     error.code = 'RISUAI_GET_ARGUMENT_UNAVAILABLE';
     throw error;
   };
+  // Literal settings page from the finalized mockup; product data/actions are attached through ARG hooks below.
+  const HAYAKU_MOCKUP_SETTINGS_PAGE = String.raw`<section class="page" id="hayakuViewerPanelSettings" data-hayaku-viewer-panel="settings" data-page="settings" role="tabpanel" aria-labelledby="hayakuViewerTabSettings">
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">변경은 초안으로 유지되고, 아래 저장 막대에서 저장할 때 전체를 검증하고 다시 읽어 확인합니다. 저장에 실패하면 이전 값으로 되돌립니다(rollback). LLM은 호출하지 않습니다.</p></div><div class="page-actions"><button class="btn" id="defaultHayakuSettings" data-load-defaults="[data-page=settings]" type="button">전체 기본값</button></div></div>
+    <div class="st-layout">
+      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic" data-hayaku-settings-section-button="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick" data-hayaku-settings-section-button="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe" data-hayaku-settings-section-button="safe"><b>복구 · 안전</b><small>누락 · Cold Start (10)</small></button><button role="tab" aria-selected="false" data-subtab="adv" data-hayaku-settings-section-button="adv"><b>고급 검색</b><small>BM25 · 그래프 (11+테스트)</small></button></div>
+      <div class="stack" id="hayakuSettingsForm" aria-live="polite">
+        <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
+        <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">auto이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 wrapper일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">source면 완료된 대화 원문 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
+        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
+        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">복구 화면의 표시와 같은 값입니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></div><div class="setting__desc">시작 전 확인 대화상자가 항상 표시됩니다.</div><span class="argtag">hayaku_background_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-bg" checked><span class="switch__track"></span><span class="sr-only">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></span></label></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 구절 최대 수</div><div class="setting__desc">요청당 최대 3</div><span class="argtag">hayaku_raw_recall_max_items</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="원문 구절 최대 수"></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">원문 최소 점수</div><div class="setting__desc">0.0–1.0. 비우면 0.16</div><span class="argtag">hayaku_raw_recall_min_score</span></div><input class="input" type="number" value="0.16" style="width:100px" aria-label="원문 최소 점수"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
+      </div>
+    </div>
+  </section>`;
   const HAYAKU_GUI_SETTING_SPECS = Object.freeze([
     { argument: 'hayaku_enabled', type: 'boolean' },
     { argument: 'hayaku_mode', type: 'enum', values: ['auto', 'fast', 'balanced', 'deep'] },
@@ -56264,6 +56319,56 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     { argument: 'hayaku_hierarchical_episode_memory', type: 'boolean' },
     { argument: 'hayaku_episode_router_max_hits', type: 'integer', min: 1, max: 8 }
   ].map(spec => Object.freeze(spec)));
+  const viewerWireSettingsMarkup = root => {
+    const byArgument = new Map(HAYAKU_GUI_SETTING_SPECS.map(spec => [spec.argument, spec]));
+    const wired = new Set();
+    for (const tag of root?.querySelectorAll?.('#hayakuSettingsForm .argtag') || []) {
+      const argument = text(tag.textContent || '').trim();
+      const spec = byArgument.get(argument);
+      if (!spec) continue;
+      const row = tag.closest?.('.setting');
+      if (!row) continue;
+      if (argument === 'hayaku_mode') {
+        const segment = row.querySelector?.('.seg');
+        if (!segment) continue;
+        let control = segment.querySelector?.('[name="hayaku_mode"]');
+        if (!control) {
+          control = root.ownerDocument.createElement('input');
+          control.type = 'hidden';
+          control.name = argument;
+          segment.appendChild(control);
+        }
+        segment.querySelectorAll?.('button').forEach(button => {
+          const value = text(button.textContent || '').trim().toLowerCase();
+          if (!spec.values.includes(value)) return;
+          button.type = 'button';
+          button.setAttribute('data-hayaku-mode-value', value);
+          button.setAttribute('aria-pressed', String(control.value === value));
+        });
+        wired.add(argument);
+        continue;
+      }
+      const control = row.querySelector?.('input,select');
+      if (!control) continue;
+      control.name = argument;
+      if (spec.type === 'boolean') {
+        control.type = 'checkbox';
+        control.value = 'true';
+      } else if (spec.type === 'enum') {
+        for (const option of control.options || []) {
+          const value = text(option.value || option.textContent || '').trim().toLowerCase();
+          option.value = value;
+        }
+      } else {
+        control.type = 'number';
+        if (Number.isFinite(spec.min)) control.min = String(spec.min);
+        if (Number.isFinite(spec.max)) control.max = String(spec.max);
+        control.step = spec.type.includes('integer') ? '1' : 'any';
+      }
+      wired.add(argument);
+    }
+    return { wired: wired.size, missing: HAYAKU_GUI_SETTING_SPECS.map(spec => spec.argument).filter(argument => !wired.has(argument)) };
+  };
   const viewerSettingsValues = settings => ({
     hayaku_enabled: settings?.enabled === false ? 'false' : 'true',
     hayaku_mode: normalizedPerformanceMode(settings?.mode || DEFAULT_SETTINGS.mode, DEFAULT_SETTINGS.mode),
@@ -56452,12 +56557,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerWriteSettingsControls = valuesInput => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
-    root.querySelectorAll?.('[data-hayaku-settings-section]').forEach(section => {
-      const names = new Set([...(section.querySelectorAll?.('[name]') || [])].map(node => node.name));
-      const count = HAYAKU_GUI_SETTING_SPECS.filter(spec => names.has(spec.argument)).length;
-      const badge = section.querySelector?.('.hv-settings-count');
-      if (badge) badge.textContent = count + '개';
-    });
     const values = normalizeViewerSettingsInput(valuesInput, Memory.settings);
     for (const spec of HAYAKU_GUI_SETTING_SPECS) {
       const controls = [...(root.querySelectorAll?.(`[name="${spec.argument}"]`) || [])];
@@ -56469,6 +56568,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const output = root.querySelector?.(`[data-hayaku-setting-output="${spec.argument}"]`);
       if (output) output.textContent = values[spec.argument];
     }
+    const mode = values.hayaku_mode;
+    root.querySelectorAll?.('[data-hayaku-mode-value]')?.forEach(button => button.setAttribute('aria-pressed', String(button.getAttribute('data-hayaku-mode-value') === mode)));
   };
   // Load defaults for ONE settings section only, so a user experimenting with a single
   // group no longer has to reset all 39 values. Draft-only, like the existing global button.
@@ -56503,7 +56604,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const root = Memory.ledgerViewer.root;
       if (!root) return;
       const needle = String(root.querySelector?.('#hayakuSettingsFilter')?.value || '').trim().toLowerCase();
-      const rows = [...(root.querySelectorAll?.('#hayakuSettingsForm .hv-setting-row,#hayakuSettingsForm .hv-setting-field,#hayakuSettingsForm .hv-setting-toggle') || [])];
+      const rows = [...(root.querySelectorAll?.('#hayakuSettingsForm .setting') || [])];
       let shown = 0;
       for (const row of rows) {
         const name = text(row.querySelector?.('[name]')?.getAttribute?.('name') || '');
@@ -56515,7 +56616,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       // While searching, reveal every section so a hit in another group is reachable.
       for (const section of [...(root.querySelectorAll?.('[data-hayaku-settings-section]') || [])]) {
         if (!needle) continue;
-        section.hidden = ![...(section.querySelectorAll?.('.hv-setting-row,.hv-setting-field,.hv-setting-toggle') || [])].some(row => row.hidden !== true);
+        const matched = [...(section.querySelectorAll?.('.setting') || [])].some(row => row.hidden !== true);
+        section.classList.toggle('is-active', matched);
       }
       if (!needle) viewerSetSettingsSection(Memory.ledgerViewer.settingsSection || 'basic');
       const count = root.querySelector?.('#hayakuSettingsFilterCount');
@@ -56530,22 +56632,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     for (const spec of HAYAKU_GUI_SETTING_SPECS) {
       const control = root.querySelector?.(`[name="${spec.argument}"]`);
       if (!control) continue;
-      const container = control.closest?.('.hv-setting-row,.hv-setting-field,.hv-setting-toggle');
+      const container = control.closest?.('.setting');
       if (!container) continue;
-      let host = container;
-      if (container.classList?.contains('hv-setting-row')) host = container.querySelector?.('div:first-child') || container;
-      else if (container.classList?.contains('hv-setting-toggle')) host = container.querySelector?.('span') || container;
-      let badge = host.querySelector?.(`[data-hayaku-setting-source="${spec.argument}"]`);
-      if (!badge && typeof root.ownerDocument?.createElement === 'function') {
-        badge = root.ownerDocument.createElement('span');
-        badge.className = 'hv-setting-source';
-        badge.setAttribute('data-hayaku-setting-source', spec.argument);
-        host.appendChild(badge);
-      }
-      if (!badge) continue;
       const explicit = text(raw[spec.argument] ?? '').trim() !== '';
-      badge.classList.toggle('explicit', explicit);
-      badge.textContent = explicit ? '명시값 · ARG 저장소' : '기본값 적용';
+      const tag = container.querySelector?.('.argtag');
+      if (tag) tag.title = explicit ? '명시값 · GUI와 플러그인 argument 화면이 같은 ARG 저장소를 사용합니다.' : '기본값 적용 · ARG가 비어 있어 HAYAKU 기본값이 유효값으로 적용됩니다.';
       container.title = explicit
         ? 'GUI와 플러그인 argument 화면이 같은 명시값 저장소를 사용합니다.'
         : 'argument가 비어 있어 HAYAKU 기본값이 유효값으로 적용됩니다.';
@@ -56567,7 +56658,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerUpdateSettingsDraftState = () => {
     const root = Memory.ledgerViewer.root;
     if (!root) return [];
-    root.querySelectorAll?.('.hv-choice-group label')?.forEach(label => {
+    root.querySelectorAll?.('.choice-group label')?.forEach(label => {
       label.classList.toggle('is-selected', label.querySelector?.('input[type="radio"]')?.checked === true);
     });
     const apply = root.querySelector?.('#applyHayakuSettings');
@@ -56579,15 +56670,19 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const baseline = Memory.ledgerViewer.settingsBaseline || normalizeViewerSettingsInput({}, Memory.settings);
       const changed = HAYAKU_GUI_SETTING_SPECS.map(spec => spec.argument).filter(argument => draft[argument] !== baseline[argument]);
       Memory.ledgerViewer.settingsDirty = changed.length > 0;
-      if (title) title.textContent = changed.length ? `${changed.length}개 설정 변경됨` : '모든 변경이 저장됨';
-      if (detail) detail.textContent = changed.length ? `적용 후 ${HAYAKU_GUI_SETTING_SPECS.length}개 argument 전체를 다시 읽어 검증합니다.` : '현재 argument와 GUI 값이 일치합니다.';
-      if (apply) { apply.disabled = !changed.length || Memory.ledgerViewer.settingsApplying; apply.textContent = changed.length ? `${changed.length}개 변경 적용` : '변경 적용'; }
+      if (title) title.textContent = changed.length ? `${changed.length}개 설정 변경됨` : '모든 변경이 저장되어 있습니다';
+      if (detail) detail.textContent = changed.length ? `저장 후 ${HAYAKU_GUI_SETTING_SPECS.length}개 argument 전체를 다시 읽어 검증합니다.` : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
+      const savebar = root.querySelector?.('#hayakuSettingsSavebar');
+      if (savebar) savebar.hidden = Memory.ledgerViewer.activeTab !== 'settings';
+      if (apply) { apply.disabled = !changed.length || Memory.ledgerViewer.settingsApplying; apply.textContent = '저장'; }
       if (cancel) cancel.disabled = !changed.length || Memory.ledgerViewer.settingsApplying;
       return changed;
     } catch (error) {
       Memory.ledgerViewer.settingsDirty = true;
       if (title) title.textContent = '입력값을 확인하세요';
       if (detail) detail.textContent = compact(error?.message || error, 240);
+      const savebar = root.querySelector?.('#hayakuSettingsSavebar');
+      if (savebar) savebar.hidden = Memory.ledgerViewer.activeTab !== 'settings';
       if (apply) apply.disabled = true;
       if (cancel) cancel.disabled = Memory.ledgerViewer.settingsApplying;
       return [];
@@ -56596,15 +56691,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerSetSettingsSection = section => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
-    const active = ['basic', 'memory', 'recovery', 'advanced'].includes(section) ? section : 'basic';
+    const active = ['basic', 'pick', 'safe', 'adv'].includes(section) ? section : 'basic';
     Memory.ledgerViewer.settingsSection = active;
     root.querySelectorAll?.('[data-hayaku-settings-section-button]')?.forEach(node => {
       const selected = node.getAttribute('data-hayaku-settings-section-button') === active;
-      node.classList.toggle('active', selected);
-      node.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      node.classList.toggle('is-active', selected);
+      node.setAttribute('aria-selected', selected ? 'true' : 'false');
+      node.tabIndex = selected ? 0 : -1;
     });
     root.querySelectorAll?.('[data-hayaku-settings-section]')?.forEach(node => {
-      node.hidden = node.getAttribute('data-hayaku-settings-section') !== active;
+      const selected = node.getAttribute('data-hayaku-settings-section') === active;
+      node.classList.toggle('is-active', selected);
+      node.hidden = false;
     });
   };
   const viewerSettingsLifetime = () => ({ root: Memory.ledgerViewer.root, open: Number(Memory.ledgerViewer.settingsOpenSerial || 0), revision: Number(Memory.ledgerViewer.settingsDraftRevision || 0) });
@@ -56630,8 +56728,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     // Even an explicit reload only discards edits that existed when it began.
     if (Number(Memory.ledgerViewer.settingsDraftRevision || 0) === ticket.revision) viewerWriteSettingsControls(values);
     viewerRenderSettingSources(rawSnapshot);
-    const effective = root.querySelector?.('#hayakuSettingsEffectiveMode');
-    if (effective) effective.textContent = `현재 실제 적용: ${settings.effectiveMode || settings.mode || '아직 요청 없음'}${settings.effectiveModeReason ? ` · ${settings.effectiveModeReason}` : ''}`;
+    const effective = [...(root.querySelectorAll?.('[data-hayaku-settings-section="basic"] .argtag') || [])].find(node => text(node.textContent || '').trim() === 'hayaku_mode');
+    if (effective) {
+      const description = effective.closest('.setting')?.querySelector('.setting__desc');
+      if (description) description.textContent = `현재 실제 적용: ${settings.effectiveMode || settings.mode || '아직 요청 없음'}${settings.effectiveModeReason ? ` · ${settings.effectiveModeReason}` : ''}`;
+    }
     viewerUpdateSettingsDraftState(); viewerSetSettingsSection(Memory.ledgerViewer.settingsSection);
     return values;
   };
@@ -56735,7 +56836,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           const failureId = viewerEscapeHtml(entry.failureId);
           const title = `${entry.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${entry.turn ?? entry.startTurn ?? '-'}`;
           const diagnosis = failedAnalysisReasonExplanation({message:entry.reason},entry);
-          return `<article class="hv-failure-item"><input class="hv-failure-select" type="checkbox" data-hayaku-select-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 삭제 선택"><button type="button" class="hv-failure-row${entry.failureId === Memory.ledgerViewer.failedAnalysisSelectedId ? ' active' : ''}" data-hayaku-failure-id="${failureId}"><strong>${viewerEscapeHtml(title)}</strong><span title="${viewerEscapeHtml(entry.reason || entry.state || '')}">${viewerEscapeHtml(diagnosis.title)}</span><small>${viewerEscapeHtml(failedAnalysisStateLabel(entry.state))} · ${Number(entry.revisionCount||1)}개 이력${Number(entry.attemptCount||1)>Number(entry.revisionCount||1)?` · 동일 제출 ${Number(entry.attemptCount)-Number(entry.revisionCount||1)}회`:''} · ${viewerEscapeHtml(viewerFormatDate(entry.createdAt))}</small></button><button type="button" class="hv-failure-delete" data-hayaku-delete-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 실패 기록 삭제" title="실패 기록 삭제">삭제</button></article>`;
+          return `<article class="row"><input type="checkbox" data-hayaku-select-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 삭제 선택"><button type="button" class="btn ${entry.failureId === Memory.ledgerViewer.failedAnalysisSelectedId ? 'btn--primary' : ''}" data-hayaku-failure-id="${failureId}"><span><b>${viewerEscapeHtml(title)}</b><small>${viewerEscapeHtml(diagnosis.title)} · ${viewerEscapeHtml(failedAnalysisStateLabel(entry.state))} · ${Number(entry.revisionCount||1)}개 이력${Number(entry.attemptCount||1)>Number(entry.revisionCount||1)?` · 동일 제출 ${Number(entry.attemptCount)-Number(entry.revisionCount||1)}회`:''}</small></span></button><button type="button" class="btn btn--sm" data-hayaku-delete-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 실패 기록 삭제" title="실패 기록 삭제">삭제</button></article>`;
         }).join('') : '';
       }
       viewerUpdateFailureSelection();
@@ -56773,9 +56874,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       setText('#hayakuFailedRecoveryAutomationDetail', automatic
         ? `${automatic.state === 'completed' ? '자동 처리 완료' : automatic.state === 'checkpointed' ? '자동 구간 저장 완료 · 전체 반영 대기' : automatic.state === 'review_required' ? '자동 처리 후 검토 필요' : '자동 처리 중'} · 자동 AI 재분석 한도 ${Number(automatic.aiAttempts || 0)}/1회 사용${automatic.state === 'review_required' && automatic.reason ? ' · ' + failedAnalysisReasonExplanation({ message: automatic.reason }).title : ''}`
         : failedAutoMode() === 'off' ? '자동 처리 꺼짐' : '자동 처리 대기');
-      let historyNode=root.querySelector?.('#hayakuFailureCaseHistory');
-      if(!historyNode && detailPanel?.ownerDocument) {historyNode=detailPanel.ownerDocument.createElement('details');historyNode.id='hayakuFailureCaseHistory';historyNode.className='hv-failure-history';detailPanel.prepend(historyNode);}
-      if(historyNode) {const opened=historyNode.open;historyNode.innerHTML=`<summary>이 문제의 처리 이력 · ${Number(selectedCase?.revisionCount||1)}개</summary><p>같은 문제의 수정·AI 재시도를 한 항목에 모았습니다. 이전 기록은 보존됩니다.</p>${ensureArray(selectedCase?.revisions||[manifest]).map(row=>`<button type="button" data-hayaku-failure-id="${viewerEscapeHtml(row.failureId)}">${viewerEscapeHtml(viewerFormatDate(row.createdAt))} · ${viewerEscapeHtml(failedAnalysisStateLabel(row.state))}${row.flow?.includes('manual')?' · 직접 수정':row.flow?.includes('llm')?' · AI 재시도':''}</button>`).join('')}`;historyNode.open=opened;}
+      const historyNode = root.querySelector?.('#hayakuFailureCaseHistory');
+      if (historyNode) historyNode.innerHTML = ensureArray(selectedCase?.revisions || [manifest]).map(row => `<button type="button" class="row" data-hayaku-failure-id="${viewerEscapeHtml(row.failureId)}"><span class="row__title">${viewerEscapeHtml(viewerFormatDate(row.createdAt))}</span><span class="row__meta">${viewerEscapeHtml(failedAnalysisStateLabel(row.state))}${row.flow?.includes('manual') ? ' · 직접 수정' : row.flow?.includes('llm') ? ' · AI 재시도' : ''}</span></button>`).join('') || '<p class="hint">처리 이력이 없습니다.</p>';
 
       setText('#hayakuFailedRecoveryTitle', `${payload.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${payload.source?.turn ?? payload.source?.startTurn ?? '-'}`);
       setText('#hayakuFailedRecoveryState', failedAnalysisStateLabel(manifest.state || payload.state || 'pending_review'));
@@ -56795,7 +56895,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         ? `${requestBudget.llmCalled === false ? '호출 안 함' : '호출됨'} · ${Number(requestBudget.requestChars || 0).toLocaleString()} / ${Number(requestBudget.maxRequestChars || 0).toLocaleString()}자`
         : `${ensureArray(payload.attempts).length ? `${ensureArray(payload.attempts).length}개 처리 시도 기록 · 수정·검사 포함` : '처리 시도 기록 없음'}`);
       const groundingNode = root.querySelector?.('#hayakuFailedRecoveryGroundingStatus');
-      if (groundingNode) groundingNode.value = viewerPrettyJson({
+      if (groundingNode) groundingNode.textContent = viewerPrettyJson({
         reason: lastValidation?.reason || payload.failure?.code || manifest.reason || 'analysis_failed',
         errors: lastValidation?.errors || [],
         missingPaths: lastValidation?.missingPaths || [],
@@ -56810,21 +56910,27 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const sourceUser = text(payload.source?.userText || payload.source?.user?.text || payload.source?.user || '').trim();
         const sourceAssistant = text(payload.source?.assistantText || payload.source?.assistant?.text || payload.source?.assistant || '').trim();
         const lazySource = /<lb-lazy\b|\[LBDATA\s+START\]/i.test(sourceText);
-        sourceNode.value = (!sourceText || lazySource) && (sourceUser || sourceAssistant)
+        sourceNode.textContent = (!sourceText || lazySource) && (sourceUser || sourceAssistant)
           ? `[Turn ${Math.max(1, Number(payload.source?.targetPairIndex ?? payload.source?.turn ?? 1) || 1)}]\n[User attempt]\n${sourceUser}\n\n[Assistant outcome]\n${sourceAssistant}`
           : sourceText || viewerPrettyJson(payload.source || {});
       }
       const rawNode = root.querySelector?.('#hayakuFailedRecoveryRaw');
-      if (rawNode) rawNode.value = ensureArray(payload.attempts).map((attempt, index) => [
+      if (rawNode) rawNode.textContent = ensureArray(payload.attempts).map((attempt, index) => [
         `=== ${index + 1}. ${attempt?.mode || 'attempt'} ===`,
         `error: ${attempt?.error?.code || ''} ${attempt?.error?.message || ''}`,
         `raw hash: ${attempt?.rawHash || '-'} · chars: ${Number(attempt?.rawChars || 0).toLocaleString()}`,
         text(attempt?.rawResponse || '')
       ].join('\n')).join('\n\n');
       const previewNode = root.querySelector?.('#hayakuFailedRecoveryPreview');
-      if (previewNode && !Memory.ledgerViewer.failedAnalysisManualEdit) previewNode.value = viewerPrettyJson(payload.proposedCanonical || nativeFailureCanonicalTemplate(payload.kind, payload.source, payload.context));
-      if (previewNode) previewNode.readOnly = !Memory.ledgerViewer.failedAnalysisManualEdit;
-      if (Memory.ledgerViewer.failedAnalysisManualEdit) { const disclosure=root.querySelector?.('#hayakuFailedRecoveryPreviewDetails'); if(disclosure)disclosure.open=true; }
+      const editorNode = root.querySelector?.('#hayakuFailedRecoveryEditor');
+      const previewText = viewerPrettyJson(payload.proposedCanonical || nativeFailureCanonicalTemplate(payload.kind, payload.source, payload.context));
+      if (previewNode) previewNode.textContent = previewText;
+      if (editorNode) { editorNode.hidden = !Memory.ledgerViewer.failedAnalysisManualEdit; if (Memory.ledgerViewer.failedAnalysisManualEdit) editorNode.value = previewText; }
+      if (Memory.ledgerViewer.failedAnalysisManualEdit) {
+        const tabs = root.querySelectorAll?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]') || [];
+        tabs.forEach(tab => { const selected = tab.dataset.subtab === 'cand'; tab.setAttribute('aria-selected', String(selected)); tab.classList.toggle('is-active', selected); });
+        root.querySelectorAll?.('[data-group="hayakuFailureDetail"][data-subpanel]')?.forEach(panel => { const selected = panel.dataset.subpanel === 'cand'; panel.hidden = !selected; panel.classList.toggle('is-active', selected); });
+      }
       const resolved = ['resolved', 'resolved_checkpointed', 'resolved_by_retry'].includes(compact(manifest.state || '', 48));
       const adopt = root.querySelector?.('#adoptHayakuFailedAnalysis');
       const auto = root.querySelector?.('#autoRepairHayakuFailedAnalysis');
@@ -56871,20 +56977,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const root = Memory.ledgerViewer.root;
     let doc = null;
     try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.hayaku-viewer') || root;
+    const host = root?.querySelector?.('.app') || root;
     if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
     try { root.querySelector?.('#hayakuFailedAnalysisDeleteConfirmOverlay')?.remove?.(); } catch (_) {}
     const overlay = doc.createElement('div');
     overlay.id = 'hayakuFailedAnalysisDeleteConfirmOverlay';
-    overlay.className = 'hv-confirm-overlay';
+    overlay.className = 'overlay is-open';
     overlay.setAttribute('role', 'presentation');
     const dialog = doc.createElement('section');
-    dialog.className = 'hv-confirm-dialog';
+    dialog.className = 'dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'hayakuFailedAnalysisDeleteConfirmTitle');
     const eyebrow = doc.createElement('small');
-    eyebrow.className = 'hv-confirm-eyebrow';
+    eyebrow.className = 'eyebrow';
     eyebrow.textContent = 'FAILED RECOVERY RECORD';
     const title = doc.createElement('h2');
     title.id = 'hayakuFailedAnalysisDeleteConfirmTitle';
@@ -56892,36 +56998,37 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const summary = doc.createElement('p');
     summary.textContent = entry?.caseCount ? entry.summary : `${entry?.kind || 'analysis'} · T${entry?.turn ?? entry?.startTurn ?? '-'} · ${entry?.state || 'pending_review'}`;
     const note = doc.createElement('div');
-    note.className = 'hv-confirm-note';
-    note.textContent = '실패 복구 목록의 분석 결과·진단·승격 미리보기만 삭제합니다. 같은 턴의 Recovery Journal 원문과 복구 부채는 남아 수동 또는 자동 복구를 다시 시도할 수 있습니다. 삭제한 실패 기록 자체는 되돌릴 수 없습니다.';
+    note.className = 'note';
+    note.innerHTML = '<b>남는 것</b> Recovery Journal 원문과 복구 부채는 그대로라 수동·자동 복구를 다시 시도할 수 있습니다.<br><b>사라지는 것</b> 삭제한 실패 기록 자체는 되돌릴 수 없습니다.';
     const actions = doc.createElement('div');
-    actions.className = 'hv-confirm-actions';
+    actions.className = 'dialog__actions';
     const cancel = doc.createElement('button');
-    cancel.className = 'hv-btn';
+    cancel.className = 'btn';
     cancel.type = 'button';
     cancel.textContent = '취소';
     const confirm = doc.createElement('button');
-    confirm.className = 'hv-btn danger';
+    confirm.className = 'btn btn--danger';
     confirm.type = 'button';
     confirm.textContent = '기록 삭제';
     actions.append(cancel, confirm);
-    dialog.append(eyebrow, title, summary, note, actions);
+    const explanation = doc.createElement('p');
+    explanation.textContent = '이 항목의 분석 결과·진단·승격 미리보기만 삭제합니다.';
+    dialog.append(eyebrow, title, explanation, summary, note, actions);
     overlay.appendChild(dialog);
     let settled = false;
+    let teardownDialog = () => {};
     const finish = value => {
       if (settled) return;
       settled = true;
-      try { doc.removeEventListener('keydown', onKeydown); } catch (_) {}
       try { overlay.remove(); } catch (_) {}
+      teardownDialog();
       resolve(value === true);
     };
-    const onKeydown = event => { if (event?.key === 'Escape') finish(false); };
     cancel.addEventListener('click', () => finish(false));
     confirm.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
-    doc.addEventListener('keydown', onKeydown);
     host.append(overlay);
-    try { confirm.focus(); } catch (_) {}
+    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
   });
   const viewerDeleteFailedRecovery = async failureIdInput => {
     const viewer = Memory.ledgerViewer, root = viewer.root;
@@ -56988,24 +57095,23 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const root = Memory.ledgerViewer.root;
     const doc = root?.ownerDocument;
     if (!root || !doc?.createElement) { resolve(false); return; }
-    const overlay = doc.createElement('div'); overlay.id = 'hayakuAdoptConfirm'; overlay.className = 'hv-confirm-overlay';
-    const dialog = doc.createElement('section'); dialog.className = 'hv-confirm-dialog'; dialog.setAttribute('role','dialog'); dialog.setAttribute('aria-modal','true'); dialog.setAttribute('aria-labelledby','hayakuAdoptConfirmTitle');
+    const overlay = doc.createElement('div'); overlay.id = 'hayakuAdoptConfirm'; overlay.className = 'overlay is-open';
+    const dialog = doc.createElement('section'); dialog.className = 'dialog'; dialog.setAttribute('role','dialog'); dialog.setAttribute('aria-modal','true'); dialog.setAttribute('aria-labelledby','hayakuAdoptConfirmTitle');
     const title = doc.createElement('h2'); title.id = 'hayakuAdoptConfirmTitle'; title.textContent = '그래도 채택하시겠습니까?';
     const diagnostic = doc.createElement('p'); diagnostic.textContent = `${inspection.diagnosis?.title || '기억 내용 확인'} · ${inspection.diagnosis?.detail || '현재 후보의 내용을 확인해 주세요.'}`;
-    const note = doc.createElement('div'); note.className = 'hv-confirm-note'; note.textContent = inspection.warning
+    const note = doc.createElement('div'); note.className = 'note'; note.textContent = inspection.warning
       ? '자동 검증을 통과하지 못한 부분이 있습니다. 채택하면 사용자 확인으로 저장하며 자동 검증 완료로 표시하지 않습니다. 원문·채팅 불일치나 저장 오류는 이 확인으로 우회할 수 없습니다.'
       : '화면의 후보를 추가 AI 호출 없이 저장합니다. 다른 채팅이나 수정된 원문에는 적용하지 않습니다.';
-    const actions = doc.createElement('div'); actions.className = 'hv-confirm-actions';
-    const cancel = doc.createElement('button'); cancel.type='button'; cancel.className='hv-btn'; cancel.textContent='취소';
-    const yes = doc.createElement('button'); yes.type='button'; yes.className='hv-btn primary'; yes.textContent='확인하고 채택';
+    const actions = doc.createElement('div'); actions.className = 'dialog__actions';
+    const cancel = doc.createElement('button'); cancel.type='button'; cancel.className='btn'; cancel.textContent='취소';
+    const yes = doc.createElement('button'); yes.type='button'; yes.className='btn btn--primary'; yes.textContent='확인하고 채택';
     actions.append(cancel,yes); dialog.append(title,diagnostic,note,actions); overlay.append(dialog);
-    let done=false; const oldFocus=doc.activeElement;
-    const finish = accepted => { if(done)return;done=true;doc.removeEventListener('keydown',keydown);overlay.remove();Memory.ledgerViewer.adoptionConfirmCleanup=null;try{oldFocus?.focus?.();}catch(_){}resolve(accepted===true); };
-    const keydown = event => { if(event.key==='Escape'){event.preventDefault();finish(false);} };
+    let done=false; let teardownDialog=()=>{};
+    const finish = accepted => { if(done)return;done=true;overlay.remove();teardownDialog();Memory.ledgerViewer.adoptionConfirmCleanup=null;resolve(accepted===true); };
     Memory.ledgerViewer.adoptionConfirmCleanup=()=>finish(false);
     cancel.addEventListener('click',()=>finish(false));yes.addEventListener('click',()=>finish(true));
-    overlay.addEventListener('click',event=>{if(event.target===overlay)finish(false);});doc.addEventListener('keydown',keydown);
-    (root.querySelector('.hayaku-viewer')||root).append(overlay);cancel.focus();
+    overlay.addEventListener('click',event=>{if(event.target===overlay)finish(false);});
+    (root.querySelector('.app')||root).append(overlay);teardownDialog=viewerBindConfirmDialogKeys(overlay,dialog,()=>finish(false));
   });
   const viewerResolveFailedRecovery = async (action, manualBody = '') => {
     const failureId = Memory.ledgerViewer.failedAnalysisSelectedId;
@@ -57088,10 +57194,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     state.selected=new Set([...state.selected].filter(turn=>allowed.has(turn)&&hayakuRecoverySourceRowMatches(oldRows.get(turn),rows.find(r=>r.turn===turn))));
     state.rows=rows;state.sourceFingerprint=fingerprint;state.busy=busy;
     const draw=()=>{
-      const retry='<button type="button" class="hv-btn" data-missing-action="refresh">다시 확인</button>';
-      box.innerHTML=error?`<p class="hv-scope-error" role="alert">누락 상태 조회 실패 · ${viewerEscapeHtml(error)}</p>${retry}`
-        :!rows.length?'<p class="hv-scope-note" role="status">선택할 누락 턴이 없습니다.</p>'
-        :`<p class="hv-scope-note">누락 ${rows.length}턴 · 선택 가능 ${allowed.size}${coverage.mode==='cold_start'?' · 아래 Cold Start에서 처리하세요.':''}</p>${coverage.sourceEditError?`<p class="hv-scope-error">원문 수정 상태 확인이 필요합니다 · ${viewerEscapeHtml(coverage.sourceEditError)}</p>`:''}<div class="hv-recovery-actions">${allowed.size?'<button type="button" class="hv-btn" data-missing-action="all">표시된 턴 전체 선택</button><button type="button" class="hv-btn" data-missing-action="clear">전체 해제</button>':''}${retry}<span role="status" id="hayakuMissingSelectedCount">선택 ${state.selected.size}개</span></div><div class="hv-missing-turn-grid">${rows.slice(0,state.limit).map(row=>`<label class="hv-missing-turn-item missing"><input type="checkbox" data-missing-turn="${row.turn}" ${state.selected.has(row.turn)?'checked':''} ${!allowed.has(row.turn)||busy?'disabled':''}/><strong>T${row.turn}</strong><span>${viewerEscapeHtml(row.recoveryBlockedReason?'복구 보류 · '+row.recoveryBlockedReason:row.label||row.reason)}</span></label>`).join('')}</div>${rows.length>state.limit?'<button type="button" class="hv-btn" data-missing-action="more">턴 더 보기</button>':''}`;
+      const retry='<button type="button" class="btn" data-missing-action="refresh">다시 확인</button>';
+      box.innerHTML=error?`<p class="empty empty--error" role="alert">누락 상태 조회 실패 · ${viewerEscapeHtml(error)}</p>${retry}`
+        :!rows.length?'<p class="hint" role="status">선택할 누락 턴이 없습니다.</p>'
+        :`<p class="hint">누락 ${rows.length}턴 · 선택 가능 ${allowed.size}${coverage.mode==='cold_start'?' · 아래 Cold Start에서 처리하세요.':''}</p>${coverage.sourceEditError?`<p class="empty empty--error">원문 수정 상태 확인이 필요합니다 · ${viewerEscapeHtml(coverage.sourceEditError)}</p>`:''}<div class="cluster">${allowed.size?'<button type="button" class="btn" data-missing-action="all">표시된 턴 전체 선택</button><button type="button" class="btn" data-missing-action="clear">전체 해제</button>':''}${retry}<span role="status" id="hayakuMissingSelectedCount">선택 ${state.selected.size}개</span></div><div class="picker">${rows.slice(0,state.limit).map(row=>`<label class="row missing"><input type="checkbox" data-missing-turn="${row.turn}" ${state.selected.has(row.turn)?'checked':''} ${!allowed.has(row.turn)||busy?'disabled':''}/><strong>T${row.turn}</strong><span>${viewerEscapeHtml(row.recoveryBlockedReason?'복구 보류 · '+row.recoveryBlockedReason:row.label||row.reason)}</span></label>`).join('')}</div>${rows.length>state.limit?'<button type="button" class="btn" data-missing-action="more">턴 더 보기</button>':''}`;
       box.querySelectorAll('[data-missing-action]').forEach(button=>{button.disabled=busy;button.onclick=()=>{
         if(state.recoveryBusy)return;
         const action=button.dataset.missingAction;if(action==='refresh'){void viewerRenderNativeRecovery();return;}
@@ -57101,7 +57207,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       box.querySelectorAll('[data-missing-turn]').forEach(input=>{input.onchange=()=>{const turn=Number(input.dataset.missingTurn);if(!allowed.has(turn)||busy||state.recoveryBusy)return;if(input.checked)state.selected.add(turn);else state.selected.delete(turn);const count=box.querySelector('#hayakuMissingSelectedCount');if(count)count.textContent=`선택 ${state.selected.size}개`;syncRun();};});
       syncRun();
     };
-    const syncRun=()=>{const run=root.querySelector('#runHayakuNativeRepair');if(run){run.hidden=!!error||!allowed.size;run.disabled=busy||state.recoveryBusy||!state.selected.size||coverage.mode==='cold_start';run.textContent=`선택한 ${state.selected.size}개 턴 복구`;}};
+    const syncRun=()=>{const run=root.querySelector('#runHayakuNativeRepair');if(run){run.hidden=!!error||!allowed.size;run.disabled=busy||state.recoveryBusy||!state.selected.size||coverage.mode==='cold_start';run.textContent=`선택한 ${state.selected.size}개 턴 복구`;}const target=root.querySelector('#hayakuNativeRepairTargets');if(target)target.textContent=state.selected.size?`T${[...state.selected].sort((a,b)=>a-b).join(', T')} (${state.selected.size}턴)`:'선택된 턴 없음';const batch=root.querySelector('#hayakuNativeRepairBatch');if(batch)batch.textContent=state.selected.size?`${state.selected.size}회 단위`:'-';const calls=root.querySelector('#hayakuNativeRepairCalls');if(calls)calls.textContent=state.selected.size?`${state.selected.size}회 기본 호출`:'-';};
     draw();
   };
 
@@ -57126,6 +57232,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if(root!==Memory.ledgerViewer.root||renderScopeKey!==text(Memory.ledgerViewer.scope?.key||Memory.ledgerViewer.scope?.scopeKey))return null;
       const debt = status?.debt || {};
       const coverage = debt?.coverage || {};
+      Memory.ledgerViewer.recoveryCoverage = coverage;
       if (status.available === true) viewerRenderContinuityLine(coverage);
       const coldRun = status?.coldStartRun?.run || null;
       const repairInFlight = status?.inFlight === true || Memory.nativeRecovery.manualBatchInFlight===true;
@@ -57143,6 +57250,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         : Memory.nativeRecovery.lastManualBatchResult?.ok === false && Memory.nativeRecovery.lastManualBatchResult?.scopeKey === renderScopeKey ? '최근 복구 중단' : '호출 가능 · 모델 연결 미확인');
       setText('#hayakuNativeAutoRepairText', autoEnabled ? '켜짐' : '꺼짐');
       setText('#hayakuAfterRequestAutoRepairText', afterRequestAutoEnabled ? '켜짐 · 누락 시 1회' : '꺼짐 · 저널만 생성');
+      setText('#auto-after', afterRequestAutoEnabled ? '켜짐' : '꺼짐');
+      setText('#auto-bg', autoEnabled ? '켜짐 · 확인 후 실행' : '꺼짐');
       setText('#hayakuNativeDebtCount', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuNativeRepairableCount', Number(coverage?.recoverableDebtCount ?? debt?.repairableDebts ?? 0).toLocaleString());
       setText('#hayakuNativeNextRetry', Number(debt?.nextRetryAt || 0) > 0 ? viewerFormatDate(debt.nextRetryAt) : '-');
@@ -57152,6 +57261,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const completedTurns = Math.max(0, Number(coverage?.completedTurns || 0) || 0);
       const coveredTurns = ensureArray(coverage?.coveredTurns).length;
       const missingTurns = ensureArray(coverage?.missingTurns);
+      const recoverySteps = root.querySelector?.('#hayakuRecoveryStepsCard');
+      if (recoverySteps) recoverySteps.hidden = missingTurns.length === 0 && Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0) === 0;
       const coverageSummary = coverage?.mode === 'cold_start'
         ? `HAYAKU 기록 없음 · 완료 턴 ${completedTurns}개 · Cold Start 대상`
         : coverage?.mode === 'empty'
@@ -57159,6 +57270,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           : `완료 턴 ${completedTurns}개 · 커버 ${coveredTurns}개 · 누락 ${missingTurns.length}개`;
       setText('#hayakuNativeCoverageSummary', coverageSummary);
       setText('#hayakuOverviewCoverage', completedTurns > 0 ? `${coveredTurns} / ${completedTurns}` : '-');
+      setText('#hayakuOverviewCoverageBadge', completedTurns > 0 ? `coverage ${Math.round(coveredTurns / completedTurns * 100)}%` : 'coverage 미확인');
+      setText('#hayakuOverviewRecoveryCount', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuOverviewJournal', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuOverviewJournalMeta', Number(coverage?.recoverableDebtCount ?? debt?.repairableDebts ?? 0) > 0
         ? `복구 가능 ${Number(coverage?.recoverableDebtCount ?? debt?.repairableDebts ?? 0).toLocaleString()} · 확인 필요`
@@ -57167,13 +57280,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (topHealth) {
         const unavailable = status.available !== true || !status.runLLMModelAvailable;
         const attention = missingTurns.length > 0 || Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0) > 0;
-        topHealth.classList.toggle('warning', !unavailable && attention);
-        topHealth.classList.toggle('error', unavailable);
+        topHealth.classList.toggle('health--danger', unavailable);
+        topHealth.classList.toggle('health--warn', !unavailable && attention);
+        topHealth.classList.toggle('health--ok', !unavailable && !attention);
+        topHealth.classList.remove('warning','error');
         Memory.ledgerViewer.workHealth={label:unavailable?'상태 확인 필요':attention?'복구 검토':'정상 작동',error:unavailable,warning:!unavailable&&attention};
-        viewerRenderWorkDashboard();
+        viewerRenderHeaderHealth();
       }
-      setText('#hayakuNativeMissingTurns', viewerFormatTurnList(missingTurns));
+      setText('#hayakuNativeMissingTurns', `${missingTurns.length.toLocaleString()}개 누락`);
       setText('#hayakuNativeColdStartTurns', viewerFormatTurnList(coverage?.coldStartTargetTurns));
+      const coldTargets = ensureArray(coverage?.coldStartTargetTurns);
+      const coldBatch = normalizeColdStartBatchTurns(root.querySelector?.('#hayakuColdStartBatchTurns')?.value || Memory.settings?.coldStartBatchTurns || 1);
+      setText('#hayakuColdStartTargetRows', coldTargets.length ? `${coldTargets.length}개 · ${viewerFormatTurnList(coldTargets)}` : '대상 없음');
+      setText('#hayakuColdStartBundleCount', coldTargets.length ? `${Math.ceil(coldTargets.length / coldBatch)}묶음 (${coldBatch}턴씩)` : '-');
+      setText('#hayakuColdStartCallCount', coldTargets.length ? `${Math.ceil(coldTargets.length / coldBatch)}회 기본 호출` : '-');
       setText('#hayakuNativeRepairableTurns', viewerFormatTurnList(coverage?.manualRepairableTurns ?? coverage?.repairableTurns));
       setText('#hayakuNativeBackoffTurns', viewerFormatTurnList(coverage?.backoffTurns));
       setText('#hayakuNativeExhaustedTurns', viewerFormatTurnList(coverage?.exhaustedTurns));
@@ -57182,6 +57302,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const verifiedChunks = ensureArray(coldRun?.chunks).filter(chunk => chunk?.status === 'verified').length;
       const failedChunks = ensureArray(coldRun?.chunks).filter(chunk => chunk?.status === 'failed').length;
       setText('#hayakuNativeColdStartState', coldInFlight ? '실행 중' : compact(coldRun?.state || '대기', 48));
+      setText('#hayakuColdStartSavedValue', `${normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1)}턴`);
       setText('#hayakuNativeColdStartProgress', coldRun
         ? `${verifiedChunks} / ${ensureArray(coldRun.chunks).length} 완료${failedChunks ? ` · 실패 ${failedChunks}` : ''}`
         : '-');
@@ -57222,60 +57343,70 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return null;
     }
   };
-  const viewerConfirmNativeColdStart = (batchTurnsInput = 1, hasExistingPackets = false) => new Promise(resolve => {
+  const viewerConfirmNativeColdStart = (batchTurnsInput = 1, hasExistingPackets = false, state = {}) => new Promise(resolve => {
     const root = Memory.ledgerViewer.root;
     let doc = null;
     try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.hayaku-viewer') || root;
+    const host = root?.querySelector?.('.app') || root;
     if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
     try { root.querySelector?.('#hayakuColdStartConfirmOverlay')?.remove?.(); } catch (_) {}
     const overlay = doc.createElement('div');
     overlay.id = 'hayakuColdStartConfirmOverlay';
-    overlay.className = 'hv-confirm-overlay';
+    overlay.className = 'overlay is-open';
     const dialog = doc.createElement('section');
-    dialog.className = 'hv-confirm-dialog';
+    dialog.className = 'dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     const eyebrow = doc.createElement('small');
-    eyebrow.className = 'hv-confirm-eyebrow';
+    eyebrow.className = 'eyebrow';
     eyebrow.textContent = 'OTHER AX COLD START';
     const title = doc.createElement('h2');
+    title.id = 'hayakuColdStartConfirmTitle';
     title.textContent = hasExistingPackets
       ? '기존 패킷이 있습니다. 그래도 콜드스타트 하시겠습니까?'
       : '현재 채팅의 Cold Start를 실행할까요?';
     const summary = doc.createElement('p');
     const batchTurns = normalizeColdStartBatchTurns(batchTurnsInput);
-    summary.textContent = `완료된 U+A를 최대 ${batchTurns}턴씩 한 Other Ax 호출로 묶되, 결과는 기존과 같은 턴별 정본 패킷으로 저장합니다.`;
+    const targets = Math.max(0, Number(state.completedTurns || 0) || 0);
+    const bundles = targets ? Math.ceil(targets / batchTurns) : 0;
+    const extraCalls = Math.max(0, Number(state.extraCalls || 0) || 0);
+    summary.innerHTML = `완료된 U+A를 최대 <b>${batchTurns}</b>턴씩 한 번의 Other Ax 호출로 묶고, 결과는 기존과 같은 턴별 패킷으로 저장합니다.`;
+    const cost = doc.createElement('dl');
+    cost.className = 'cost-table';
+    cost.innerHTML = `<dt>대상 턴</dt><dd>완료 U+A ${targets.toLocaleString()}턴</dd><dt>묶음</dt><dd>${bundles.toLocaleString()}묶음</dd><dt>예상 기본 호출</dt><dd>${bundles.toLocaleString()}회</dd><dt>추가 복구 허용량</dt><dd>${bundles ? `묶음마다 설정에 따라 최대 +${extraCalls}회` : '설정 확인 중'}</dd>`;
     const note = doc.createElement('div');
-    note.className = 'hv-confirm-note';
+    note.className = 'note';
+    note.className = 'note note--warn';
     note.textContent = hasExistingPackets
-      ? '기존 활성 패킷과 검증된 체크포인트는 유지합니다. Cold Start 결과는 턴별 과거 기록으로 추가됩니다. Other Ax는 설정된 Provider를 사용하며 비용이 발생할 수 있습니다.'
-      : '검증된 체크포인트는 재사용되고, 실패한 청크만 재시도할 수 있습니다.';
+      ? '기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가됩니다. Provider 비용이 발생할 수 있습니다.'
+      : '검증된 체크포인트는 재사용되고, 실패한 청크만 재시도할 수 있습니다. Provider 비용이 발생할 수 있습니다.';
     const actions = doc.createElement('div');
-    actions.className = 'hv-confirm-actions';
+    actions.className = 'dialog__actions';
     const cancel = doc.createElement('button');
-    cancel.className = 'hv-btn';
+    cancel.className = 'btn';
     cancel.type = 'button';
     cancel.textContent = '취소';
     const confirm = doc.createElement('button');
-    confirm.className = 'hv-btn primary';
+    confirm.className = 'btn btn--primary';
     confirm.type = 'button';
     confirm.textContent = 'Cold Start 실행';
     let settled = false;
+    let teardownDialog = () => {};
     const finish = value => {
       if (settled) return;
       settled = true;
       try { overlay.remove(); } catch (_) {}
+      teardownDialog();
       resolve(value);
     };
     cancel.addEventListener('click', () => finish(false));
     confirm.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
     actions.append(cancel, confirm);
-    dialog.append(eyebrow, title, summary, note, actions);
+    dialog.append(eyebrow, title, summary, cost, note, actions);
     overlay.append(dialog);
     host.append(overlay);
-    try { confirm.focus(); } catch (_) {}
+    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
   });
   const viewerRenderNativeRepairOutcome = () => {
     const viewer=Memory.ledgerViewer, node=viewer.root?.querySelector?.('#hayakuNativeRepairOutcome');
@@ -57319,7 +57450,16 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return { ok: false, skipped: true, reason: initialLedger.reason || 'storage_unavailable' };
     }
     const initialState = nativeColdStartExistingPacketState(initialScope, initialLedger);
-    const confirmed = await viewerConfirmNativeColdStart(batchTurns, initialState.hasExistingPackets);
+    // The cold-start evidence plan includes explicit existing-packet runs;
+    // coverage.coldStartTargetTurns is only populated for the no-records mode.
+    // Use the same pure source-unit collector as the confirmed run so the
+    // confirmation target/bundle/call summary describes the actual plan.
+    const plannedUnits = collectNativeColdStartEvidence(initialScope).units;
+    const extraCalls = Math.max(0, Number(Memory.settings?.coldStartExtraCalls ?? Memory.settings?.recoveryExtraCalls ?? 0) || 0);
+    const confirmed = await viewerConfirmNativeColdStart(batchTurns, initialState.hasExistingPackets, {
+      completedTurns: ensureArray(plannedUnits).length,
+      extraCalls
+    });
     if (!confirmed) { viewerRecoveryMessage('Cold Start를 취소했습니다.'); return null; }
     const confirmedScope = await RisuCompat.currentChatScope();
     if (!confirmedScope?.confident || confirmedScope.key !== initialScope.key) {
@@ -57419,20 +57559,21 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const root = Memory.ledgerViewer.root;
     let doc = null;
     try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.hayaku-viewer') || root;
+    const host = root?.querySelector?.('.app') || root;
     if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
     try { root.querySelector?.('#hayakuVariantSelectConfirmOverlay')?.remove?.(); } catch (_) {}
     const overlay = doc.createElement('div');
     overlay.id = 'hayakuVariantSelectConfirmOverlay';
-    overlay.className = 'hv-confirm-overlay';
-    overlay.innerHTML = `<section class="hv-confirm-dialog" role="dialog" aria-modal="true"><small class="hv-confirm-eyebrow">ATOMIC VARIANT RESELECTION</small><h2>이전 패킷을 다시 채택할까요?</h2><p>T${plan.targetPairIndex}의 선택 버전을 이 패킷으로 되돌립니다.</p><div class="hv-confirm-note">현재 세계선의 U+A 해시와 소유 턴을 다시 검증합니다. 성공하면 선택한 패킷은 active가 되고 현재 활성 교체본은 replacement tombstone으로 보존되어 다시 선택할 수 있습니다.</div><div class="hv-confirm-actions"><button class="hv-btn" data-choice="cancel" type="button">취소</button><button class="hv-btn primary" data-choice="select" type="button">이 패킷 채택</button></div></section>`;
+    overlay.className = 'overlay is-open';
+    overlay.innerHTML = `<section class="dialog" role="dialog" aria-modal="true" aria-labelledby="hayakuVariantSelectConfirmTitle"><div class="eyebrow">Re-adopt</div><h2 id="hayakuVariantSelectConfirmTitle">이전 패킷(revision ${Number(record?.revision || plan?.revision || 1)})을 다시 채택할까요?</h2><p>T${plan.targetPairIndex}의 선택 버전을 이 패킷으로 되돌립니다.</p><div class="note">현재 세계선의 U+A 해시와 소유 턴을 다시 검증합니다. 성공하면 선택한 패킷은 active가 되고 현재 활성 교체본은 replacement tombstone으로 보존되어 다시 선택할 수 있습니다.</div><div class="dialog__actions"><button class="btn" data-choice="cancel" type="button">취소</button><button class="btn btn--primary" data-choice="select" type="button">다시 채택</button></div></section>`;
     let settled = false;
-    const finish = value => { if (settled) return; settled = true; try { overlay.remove(); } catch (_) {} resolve(value === true); };
+    let teardownDialog = () => {};
+    const finish = value => { if (settled) return; settled = true; try { overlay.remove(); } catch (_) {} teardownDialog(); resolve(value === true); };
     overlay.querySelector?.('[data-choice="cancel"]')?.addEventListener('click', () => finish(false));
     overlay.querySelector?.('[data-choice="select"]')?.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
     host.append(overlay);
-    try { overlay.querySelector?.('[data-choice="select"]')?.focus?.(); } catch (_) {}
+    teardownDialog = viewerBindConfirmDialogKeys(overlay, overlay.querySelector?.('[role="dialog"]'), () => finish(false));
   });
   const viewerSelectReplacementVariant = async recordIdInput => {
     const recordId = compact(recordIdInput || '', 196);
@@ -57458,51 +57599,57 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const root = Memory.ledgerViewer.root;
     let doc = null;
     try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.hayaku-viewer') || root;
+    const host = root?.querySelector?.('.app') || root;
     if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
     try { root.querySelector?.('#hayakuRegenerateConfirmOverlay')?.remove?.(); } catch (_) {}
     const overlay = doc.createElement('div');
     overlay.id = 'hayakuRegenerateConfirmOverlay';
-    overlay.className = 'hv-confirm-overlay';
+    overlay.className = 'overlay is-open';
     const dialog = doc.createElement('section');
-    dialog.className = 'hv-confirm-dialog';
+    dialog.className = 'dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     const eyebrow = doc.createElement('small');
-    eyebrow.className = 'hv-confirm-eyebrow';
+    eyebrow.className = 'eyebrow';
     eyebrow.textContent = 'OTHER AX TARGETED REGENERATION';
     const title = doc.createElement('h2');
-    title.textContent = '이 패킷을 다시 분석해 교체할까요?';
+    title.textContent = '이 패킷의 재생성 후보를 만들까요?';
     const summary = doc.createElement('p');
     summary.textContent = `대상 턴 ${plan.turns.join(', ')} · ${compact(record?.packetType || 'packet', 48)} · 기존 레코드 1개`;
     const note = doc.createElement('div');
-    note.className = 'hv-confirm-note';
-    note.textContent = '각 대상 턴을 현재 채팅 원문에서 다시 검증한 뒤 Other Ax로 분석합니다. 모든 새 패킷이 검증된 경우에만 기존 레코드를 tombstone 처리하고 한 번의 원장 트랜잭션으로 교체합니다. 리롤·롤백·편집으로 원문이 바뀌면 채택하지 않습니다.';
+    note.className = 'note';
+    note.innerHTML = '<b>분석과 검증이 끝나도 기존 패킷은 아직 교체되지 않습니다.</b> 후보를 기존 패킷과 비교한 뒤 직접 고릅니다. 이전 패킷은 다시 채택할 수 있게 보존됩니다. 각 대상 턴은 현재 채팅 원문과 재검증하며, 원문이 바뀌면 채택하지 않습니다. Provider 비용이 발생할 수 있습니다(기본 1회).';
+    const steps = doc.createElement('div');
+    steps.className = 'steps';
+    steps.style.margin = '10px 0';
+    steps.innerHTML = '<div class="step is-active"><span class="step__no">1</span><b>생성 승인</b></div><div class="step"><span class="step__no">2</span><b>분석·검증</b></div><div class="step"><span class="step__no">3</span><b>후보 비교</b></div><div class="step"><span class="step__no">4</span><b>내가 결정</b></div>';
     const actions = doc.createElement('div');
-    actions.className = 'hv-confirm-actions';
+    actions.className = 'dialog__actions';
     const cancel = doc.createElement('button');
-    cancel.className = 'hv-btn';
+    cancel.className = 'btn';
     cancel.type = 'button';
     cancel.textContent = '취소';
     const confirm = doc.createElement('button');
-    confirm.className = 'hv-btn primary';
+    confirm.className = 'btn btn--primary';
     confirm.type = 'button';
-    confirm.textContent = '재생성';
+    confirm.textContent = '후보 만들기';
     let settled = false;
+    let teardownDialog = () => {};
     const finish = value => {
       if (settled) return;
       settled = true;
       try { overlay.remove(); } catch (_) {}
+      teardownDialog();
       resolve(value === true);
     };
     cancel.addEventListener('click', () => finish(false));
     confirm.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
     actions.append(cancel, confirm);
-    dialog.append(eyebrow, title, summary, note, actions);
+    dialog.append(eyebrow, title, summary, steps, note, actions);
     overlay.append(dialog);
     host.append(overlay);
-    try { confirm.focus(); } catch (_) {}
+    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
   });
   const viewerRegenerateRecord = async recordIdInput => {
     const recordId = compact(recordIdInput || '', 196);
@@ -57559,12 +57706,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     }
   };
   const HAYAKU_VIEWER_TAB_IDS = Object.freeze([
-    'overview', 'packets', 'worldline', 'recovery', 'server', 'settings', 'logs'
+    'overview', 'packets', 'recovery', 'server', 'settings', 'logs'
   ]);
   const HAYAKU_VIEWER_TAB_META = Object.freeze({
     overview: Object.freeze({ label: '개요', description: '' }),
     packets: Object.freeze({ label: '패킷 원장', description: '턴별 정본 패킷과 원문·결속·JSON을 조회합니다.' }),
-    worldline: Object.freeze({ label: '세계선', description: '활성 정본과 리롤·복구·격리 이력을 턴 순서로 확인합니다.' }),
     recovery: Object.freeze({ label: 'Recovery Journal', description: '정상 afterRequest 복구와 확인형 백그라운드 복구를 관리합니다.' }),
     failed_recovery: Object.freeze({ label: '실패 복구', description: '원본·실패 원인·승격 예정 패킷을 비교하고 처리합니다.' }),
     server: Object.freeze({ label: '서버 연결', description: 'Storage와 Compute의 독립된 연결을 관리합니다.' }),
@@ -57610,14 +57756,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     return { scopeKey, before, authoring, repair, storageStatus: store };
   };
   // These are views of existing request/consent/lineage state, never a second store.
-  const viewerScopeFields = rows => `<dl class="hv-scope-kv">${rows.map(([label, value]) =>
+  const viewerScopeFields = rows => `<dl class="kv">${rows.map(([label, value]) =>
     `<div><dt>${viewerEscapeHtml(label)}</dt><dd>${viewerEscapeHtml(value)}</dd></div>`).join('')}</dl>`;
   const viewerRenderPacketAuthoring = () => {
     const node = Memory.ledgerViewer.root?.querySelector?.('#hayakuPacketAuthoring'); if (!node) return;
     const data = packetAuthoringViewerSnapshot(); const b = data.before;
-    const heading = '<header class="hv-scope-card-head"><div><h2 id="hayakuPacketAuthoringTitle">이번 패킷 작성</h2><p>작성 지시 · 메인 출력 · 저장 관측 기록</p></div></header>';
+    const heading = '<header class="card__head"><div><h2 id="hayakuPacketAuthoringTitle">이번 패킷 작성</h2><p>작성 지시 · 메인 출력 · 저장 관측 기록</p></div></header>';
     if (!b) {
-      node.innerHTML = heading + '<p class="hv-scope-empty">현재 채팅의 작성 지시 관측 기록이 없습니다.</p>';
+      node.innerHTML = heading + '<p class="empty">현재 채팅의 작성 지시 관측 기록이 없습니다.</p>';
       return;
     }
     const placement = b.outputContract?.packetPlacement || {};
@@ -57644,7 +57790,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if(viewer.activeTab!=='recovery')return;
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
     card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,version=0;
-    card.innerHTML='<header class="hv-scope-card-head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>저장된 턴을 선택하면 실행 시점의 현재 채팅 내용으로 다시 분석합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="hv-btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="hv-btn" data-reanalysis-run disabled>선택한 구간 재분석</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
+    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>저장된 턴을 선택하면 실행 시점의 현재 채팅 내용으로 다시 분석합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>선택한 구간 재분석</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
     const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]');
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
@@ -57684,7 +57830,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     }
     rows.push(['현재 패킷 결속 노드', Memory.ledgerViewer.ledger?.enabled === true
       ? Memory.ledgerViewer.ledger?.worldline?.headTurnNodeId || '결속 노드 없음' : '원장 미확인']);
-    card.innerHTML = `<header class="hv-scope-card-head"><div><h2 id="hayakuHostLineageTitle">현재 세계선 · 채팅 분기</h2><p>RisuAI 채팅의 분기 관계와 현재 패킷 결속을 함께 확인합니다.</p></div><span class="hv-scope-badge ${tone}">${viewerEscapeHtml(status)}</span></header>${!v ? '<p class="hv-scope-note">현재 채팅의 분기 근거를 확인하지 못했습니다.</p>' : ''}${viewerScopeFields(rows)}<p class="hv-scope-note">공통 원문 검증과 패킷별 저장·활성 결속 확인은 별도입니다.</p>`;
+    card.innerHTML = `<header class="card__head"><div><h2 id="hayakuHostLineageTitle">현재 세계선 · 채팅 분기</h2><p>RisuAI 채팅의 분기 관계와 현재 패킷 결속을 함께 확인합니다.</p></div><span class="badge ${tone}">${viewerEscapeHtml(status)}</span></header>${!v ? '<p class="hint">현재 채팅의 분기 근거를 확인하지 못했습니다.</p>' : ''}${viewerScopeFields(rows)}<p class="hint">공통 원문 검증과 패킷별 저장·활성 결속 확인은 별도입니다.</p>`;
   };
   // Read-only view model: gaps are shown only when the current coverage scan says so.
   // Never infer a missing packet from a gap between loaded/audit record indices.
@@ -57726,19 +57872,52 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (coverage && (!coverage.scopeKey || coverage.scopeKey === scopeKey)) viewer.continuitySnapshot = { scopeKey, coverage };
     const current = viewer.continuitySnapshot?.scopeKey === scopeKey ? viewer.continuitySnapshot.coverage : null;
     const model = viewerContinuityModel(viewer.ledger, current, viewer.continuityEndTurn);
-    const health=root.querySelector('#hayakuOverviewHealth'),title=root.querySelector('#hayakuOverviewHealthTitle'),copy=root.querySelector('#hayakuOverviewHealthCopy');
-    if (model.verified) {
-      health?.classList?.toggle('warning', Boolean(model.missing || model.pending));
-      if(title)title.textContent=`완료 턴 대조 · 누락 ${model.missing}턴 · 검토 대기 ${model.pending}턴`;
-      if(copy)copy.textContent=current?.sourceEditError ? '명시적 원문 재분석 상태를 저장하거나 확인하지 못했습니다. 오류가 해결되기 전에는 해당 원문을 사용하는 처리를 보류합니다. ('+current.sourceEditError+')' : '패킷을 눌러 내용을 확인하거나, 구간 점검에서 필요한 턴을 살펴보세요.';
-    } else if (!model.unavailable) {
-      if(title)title.textContent='원장 조회됨 · 완료 턴 대조 전';
-      if(copy)copy.textContent='현재 원장의 패킷을 표시합니다. 누락 여부는 완료 턴 대조 결과가 필요합니다.';
+    const stateTitle = {ok:'패킷 연결됨',missing:'누락',pending:'검토 대기',failed:'복구 실패',excluded:'사용자 제외',unknown:'미확인'};
+    const stateShort = {ok:'연결',missing:'누락',pending:'검토',failed:'실패',excluded:'제외',unknown:'미확인'};
+    const counts = model.rows.reduce((a,row) => { a[row.state]=(a[row.state]||0)+1; return a; },{});
+    const health = root.querySelector?.('#hayakuOverviewHealth');
+    const title = root.querySelector?.('#hayakuOverviewHealthTitle');
+    const copy = root.querySelector?.('#hayakuOverviewHealthCopy');
+    const badge = root.querySelector?.('#hayakuOverviewCoverageBadge');
+    if (model.unavailable) {
+      if (health) health.className='banner banner--danger';
+      if (title) title.textContent='현재 채팅 원장을 읽지 못했습니다.';
+      if (copy) copy.textContent=compact(viewer.ledger?.reason || 'storage_unavailable',180);
+      if (badge) badge.textContent='coverage 미확인';
+      host.innerHTML='<div class="empty"><b>원장을 읽지 못해 노선도를 표시하지 않습니다.</b><span>다시 대조해 현재 채팅 범위를 확인하세요.</span></div>';
+      return;
     }
-    host.innerHTML = `<div class="hv-control-line-head"><div><small class="hv-eyebrow">PACKET STATUS</small><h2>최근 패킷</h2></div><button type="button" class="hv-btn" data-hayaku-viewer-goto="packets">전체 기록 →</button></div>
-      ${model.rows.length ? `<div class="hv-packet-glance">${model.rows.slice(-4).reverse().map(row => `<button type="button" class="hv-glance-row ${row.state}" data-hayaku-line-turn="${row.turn}" data-record="${viewerEscapeHtml(row.recordId)}" data-state="${row.state}" aria-label="T${row.turn} · ${row.label}"><b>T${row.turn}</b><span>${viewerEscapeHtml(row.summary || (row.state === 'missing' ? '아직 기억 패킷이 없습니다. 점검에서 확인하세요.' : row.label))}</span><small>${row.label}</small><i aria-hidden="true">›</i></button>`).join('')}</div>` : `<div class="hv-overview-empty">${model.unavailable ? '채팅을 선택한 뒤 다시 확인해 주세요.' : '아직 표시할 패킷이 없습니다.'}</div>`}
-      <p class="hv-glance-note">최근 ${Math.min(4,model.rows.length)}턴 · ${model.verified ? '완료 턴과 대조한 결과입니다.' : '원장 기준 · 누락 여부는 아직 확인하지 않았습니다.'}</p>`;
-
+    const verified = model.verified;
+    const missing = model.missing || 0, pending = model.pending || 0;
+    if (health) health.className = `banner ${missing || pending ? 'banner--warn' : 'banner--ok'}`;
+    if (title) title.textContent = !verified ? '현재 채팅의 패킷 원장을 확인했습니다.' : missing || pending
+      ? `누락 ${missing}턴, 검토 대기 ${pending}턴이 있습니다.`
+      : '현재 세계선의 패킷이 모두 연결되어 있습니다.';
+    if (copy) copy.textContent = !verified
+      ? '완료 턴 대조가 확인되지 않았습니다. 이 원장만으로 누락 여부를 확정하지 않습니다.'
+      : current?.sourceEditError ? `원문 재분석 상태 확인 필요 · ${compact(current.sourceEditError,160)}`
+      : `완료 U+A ${Number(current?.completedTurns || 0).toLocaleString()}턴 · 패킷 보유 ${ensureArray(current?.coveredTurns).length.toLocaleString()}턴 · 누락 ${missing.toLocaleString()} · 검토 대기 ${pending.toLocaleString()}`;
+    if (badge) badge.textContent = verified && Number(current?.completedTurns)>0
+      ? `coverage ${Math.round(ensureArray(current?.coveredTurns).length/Number(current.completedTurns)*100)}%`
+      : 'coverage 미확인';
+    if (badge) {
+      const healthy = verified && Number(current?.completedTurns)>0 && ensureArray(current?.coveredTurns).length >= Number(current.completedTurns);
+      badge.classList?.toggle('badge--ok',healthy);
+      badge.classList?.toggle('badge--warn',verified && Number(current?.completedTurns)>0 && !healthy);
+    }
+    const bannerIcon=root.querySelector?.('#hayakuOverviewHealth .banner__icon');
+    if(bannerIcon) bannerIcon.innerHTML=hayakuMockupIcon(model.unavailable?'x':missing||pending?'alert':'check');
+    const rows = model.rows;
+    host.innerHTML = rows.length ? `<div class="route__track">${rows.map(row => {
+      const stateClass = {ok:'',missing:'stop--miss',pending:'stop--wait',failed:'stop--fail',excluded:'stop--skip',unknown:'stop--wait'}[row.state] ?? 'stop--wait';
+      return `<button type="button" class="stop ${stateClass}${row.turn===model.last?' is-now':''}" data-hayaku-line-turn="${row.turn}" data-record="${viewerEscapeHtml(row.recordId)}" data-state="${row.state}" aria-label="T${row.turn} · ${stateTitle[row.state] || row.label}"><b>T${row.turn}</b><i aria-hidden="true"></i><small>${stateShort[row.state] || viewerEscapeHtml(row.label)}</small></button>`;
+    }).join('')}</div>` : `<div class="empty"><b>표시할 완료 턴이 없습니다.</b><span>${verified ? '완료 U+A 대조 결과에 턴이 없습니다.' : '패킷이 저장되면 원장 기준 경로가 표시됩니다. 누락 판정은 완료 턴 대조 이후에만 가능합니다.'}</span></div>`;
+    host.setAttribute?.('aria-label',`최근 ${rows.length}턴 연속성 노선도`);
+    host.scrollLeft=host.scrollWidth;
+    const metrics=root.querySelector?.('#hayakuOverviewMetrics');
+    const failBox=root.querySelector?.('#hayakuOverviewFailBox');
+    if(metrics)metrics.hidden=false;
+    if(failBox)failBox.hidden=true;
   };
 
   const viewerRenderOverview = () => {
@@ -57746,65 +57925,61 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const ledger = Memory.ledgerViewer.ledger;
     if (!root) return;
     const records = ensureArray(ledger?.records);
-    const active = records.filter(record => ['active', 'historical'].includes(record?.recordState)).length;
-    const unbound = records.filter(record => record?.recordState === 'unbound');
-    const nodes = ensureArray(ledger?.worldline?.nodes);
-    const orphanPlan = manualOrphanCleanupPlan(ledger);
+    const active = records.filter(record => ['active','historical'].includes(record?.recordState)).length;
     const recall = Memory.lastViewerRecall || Memory.lastBeforeRequest?.viewerRecall || null;
     const recallRows = ensureArray(recall?.rows);
-    const setText = (selector, value) => {
-      const node = root.querySelector?.(selector);
-      if (node) node.textContent = text(value);
-    };
-    const probe = nativeAuxiliaryProbeSnapshot();
-    setText('#hayakuSidebarContinuity', ledger?.enabled !== true ? '미확인' : unbound.length ? '결속 대기' : orphanPlan.candidateRecords.length ? '검토 필요' : '원장 확인됨');
-    setText('#hayakuSidebarAux', probe.inFlight ? 'Other Ax · 테스트 중' : probe.last?.status === 'complete' ? 'Other Ax · 최근 테스트 성공' : probe.last?.status === 'failed' ? 'Other Ax · 최근 테스트 실패' : probe.available ? 'Other Ax · 호출 미검증' : 'Other Ax · API 미확인');
-    viewerRenderPacketAuthoring();
-    setText('#hayakuOverviewPackets', `${active.toLocaleString()} / ${records.length.toLocaleString()}`);
-    setText('#hayakuOverviewRecallCount', recallRows.length.toLocaleString());
-    setText('#hayakuOverviewRecallMeta', recall?.at
-      ? `${Number(recall?.injectedRows || 0).toLocaleString()}개 주입 · ${viewerFormatDate(recall.at)}`
-      : '이번 실행 기록 없음');
-    setText('#hayakuOverviewWorldline', `${nodes.filter(node => node?.status === 'active').length} / ${nodes.length}`);
-    setText('#hayakuOverviewWorldlineMeta', unbound.length
-      ? `현재 원장 node · 결속 대기 ${unbound.length.toLocaleString()}개`
-      : '현재 원장 node');
-    setText('#hayakuOverviewOrphans', orphanPlan.candidateRecords.length.toLocaleString());
-    const health = root.querySelector?.('#hayakuOverviewHealth');
-    const healthTitle = root.querySelector?.('#hayakuOverviewHealthTitle');
-    const healthCopy = root.querySelector?.('#hayakuOverviewHealthCopy');
-    if (health) {
-      const unavailable = ledger?.enabled !== true;
-      const pendingBinding = unbound.length > 0;
-      const needsAttention = pendingBinding || orphanPlan.candidateRecords.length > 0;
-      health.classList.toggle('warning', !unavailable && needsAttention);
-      health.classList.toggle('error', unavailable);
-      if (healthTitle) healthTitle.textContent = unavailable
-        ? '현재 채팅 원장을 확인하지 못했습니다.'
-        : pendingBinding
-          ? `패킷 ${unbound.length.toLocaleString()}개가 최종 결속을 기다리고 있습니다.`
-          : needsAttention ? '정리 가능한 고아 데이터가 있습니다.' : '현재 원장의 기본 상태가 정상입니다.';
-      if (healthCopy) healthCopy.textContent = unavailable
-        ? compact(ledger?.reason || 'storage_unavailable', 180)
-        : pendingBinding
-          ? '원장에 기록이 있으나 활성 세계선 결속을 기다리고 있습니다. 개별 쓰기의 확정 여부는 별도로 확인해야 합니다.'
-          : needsAttention
-          ? `활성·상속·영구 데이터와 분리된 후보 ${orphanPlan.candidateRecords.length}개를 검토할 수 있습니다.`
-          : '활성·상속·영구·보호 데이터에서 즉시 확인되는 이상이 없습니다.';
+    const setText = (selector,value) => { const node=root.querySelector?.(selector); if(node)node.textContent=text(value); };
+    const probe=nativeAuxiliaryProbeSnapshot();
+    setText('#hayakuSidebarAux',probe.inFlight?'Other Ax · 테스트 중':probe.last?.status==='complete'?'Other Ax · 최근 테스트 성공':probe.last?.status==='failed'?'Other Ax · 최근 테스트 실패':probe.available?'Other Ax · 호출 미검증':'Other Ax · API 미확인');
+    setText('#hayakuOverviewPackets',active.toLocaleString());
+    setText('#hayakuOverviewPacketCount',active.toLocaleString());
+    const packetCountNode=root.querySelector('#hayakuOverviewPacketCount');
+    if(packetCountNode) packetCountNode.hidden=active<=0;
+    setText('#hayakuOverviewPacketsDenominator',records.length.toLocaleString());
+    setText('#hayakuViewerScopeTop',Memory.ledgerViewer.scope?.chatTitle || '현재 채팅');
+    setText('#hayakuViewerScopeMeta',`세계선 원장 · ${records.length.toLocaleString()} records`);
+    const coverageSnapshot=Memory.ledgerViewer.continuitySnapshot?.coverage;
+    if(Array.isArray(coverageSnapshot?.rows)){
+      const completed=Math.max(0,Number(coverageSnapshot.completedTurns||0)||0);
+      const covered=ensureArray(coverageSnapshot.coveredTurns).length;
+      setText('#hayakuOverviewCoverage',completed?covered.toLocaleString():'-');
+      setText('#hayakuOverviewCoverageDenominator',completed?completed.toLocaleString():'-');
+      setText('#hayakuOverviewCoverageBadge',completed?`coverage ${Math.round(covered/completed*100)}%`:'coverage 미확인');
+      const coverageBadge = root.querySelector('#hayakuOverviewCoverageBadge');
+      if (coverageBadge) {
+        const healthy = completed > 0 && covered >= completed;
+        coverageBadge.classList.toggle('badge--ok', healthy);
+        coverageBadge.classList.toggle('badge--warn', completed > 0 && !healthy);
+      }
+      setText('#hayakuOverviewJournal',Number(coverageSnapshot.activeDebtCount||0).toLocaleString());
+      setText('#hayakuOverviewJournalMeta',Number(coverageSnapshot.recoverableDebtCount||0)>0?`복구 가능 ${Number(coverageSnapshot.recoverableDebtCount).toLocaleString()} · 확인 필요`:'즉시 복구할 항목 없음');
+      const recoveryCount=root.querySelector('#hayakuOverviewRecoveryCount');
+    const recoveryValue=Number(coverageSnapshot.activeDebtCount||0);
+    setText('#hayakuOverviewRecoveryCount',recoveryValue.toLocaleString());
+    if(recoveryCount) recoveryCount.hidden=recoveryValue<=0 || !(coverageSnapshot.warning===true || coverageSnapshot.status==='warn' || coverageSnapshot.status==='warning');
     }
-    const recallBody = root.querySelector?.('#hayakuOverviewRecallRows');
-    if (recallBody) {
-      recallBody.innerHTML = recallRows.length
-        ? recallRows.slice(0, 4).map(row => `<article class="hv-overview-recall-row"><strong>${viewerEscapeHtml(row.ref || row.axis || '기억')}</strong><span>${viewerEscapeHtml(row.state || '')}</span><em>${Number(row.score || 0).toFixed(3)}</em></article>`).join('')
-        : '<div class="hv-overview-empty">아직 이번 실행에서 떠올린 기억이 없습니다.</div>';
+    setText('#hayakuOverviewRecallCount',recallRows.length.toLocaleString());
+    setText('#hayakuOverviewRecallMeta',recall?.at?`${Number(recall?.recallDataChars||0).toLocaleString()}자 · 주입됨`:'이번 실행 기록 없음');
+    const recallBadge=root.querySelector?.('#hayakuOverviewRecallBadge');
+    if(recallBadge)recallBadge.textContent=recall?.at?`${recallRows.length.toLocaleString()}개 · ${Number(recall?.recallDataChars||0).toLocaleString()}자`:`${recallRows.length.toLocaleString()}개 · 미주입`;
+    const recallBody=root.querySelector?.('#hayakuOverviewRecallRows');
+    if(recallBody) recallBody.innerHTML=recallRows.length
+      ? recallRows.slice(0,3).map(row=>`<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b><p>${viewerEscapeHtml(compact(row.state||'',220))}</p></div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`).join('')
+      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>';
+    const activityBody=root.querySelector?.('#hayakuOverviewActivity');
+    if(activityBody){
+      const entries=operationLogSnapshot().slice(-3).reverse();
+      activityBody.innerHTML=entries.length?entries.map(entry=>`<div class="rec"><i>${hayakuMockupIcon(entry.level==='error'?'x':entry.level==='warn'?'alert':'check')}</i><div><b>${viewerEscapeHtml(viewerOperationTitle(entry.event))}</b><p>${viewerEscapeHtml(compact(text(entry.event||'').replace(/^.*?:/, '').replace(/_/g,' '), 30))}</p></div><span class="hint">${viewerEscapeHtml(viewerRelativeTime(entry.at))}</span></div>`).join(''):'<div class="empty"><span>현재 실행의 작업 기록이 없습니다.</span></div>';
     }
-    const activityBody = root.querySelector?.('#hayakuOverviewActivity');
-    if (activityBody) {
-      const entries = operationLogSnapshot().slice(-4).reverse();
-      activityBody.innerHTML = entries.length
-        ? entries.map(entry => `<article class="hv-overview-activity-row ${viewerEscapeHtml(entry.level || 'info')}"><i></i><div><strong>${viewerEscapeHtml(viewerOperationTitle(entry.event))}</strong><span>${viewerEscapeHtml(entry.event || '')}</span></div><time>${viewerEscapeHtml(viewerFormatDate(entry.at))}</time></article>`).join('')
-        : '<div class="hv-overview-empty">현재 실행의 작업 기록이 없습니다.</div>';
-    }
+    const unavailable=ledger?.enabled!==true;
+    const failBox=root.querySelector?.('#hayakuOverviewFailBox');
+    const metrics=root.querySelector?.('#hayakuOverviewMetrics');
+    const routeCard=root.querySelector?.('#hayakuOverviewRouteCard');
+    const cards=root.querySelector?.('#hayakuOverviewCards');
+    if(failBox)failBox.hidden=!unavailable;
+    if(metrics)metrics.hidden=unavailable;
+    if(routeCard)routeCard.hidden=unavailable;
+    if(cards)cards.hidden=unavailable;
     viewerRenderContinuityLine();
   };
   const viewerRenderWorldlineInner = () => {
@@ -57815,7 +57990,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const detail = root?.querySelector?.('#hayakuWorldlineDetail');
     if (!body || !detail) return;
     if (ledger?.enabled !== true) {
-      body.innerHTML = `<div class="hv-empty"><strong>세계선을 읽을 수 없습니다.</strong><span>${viewerEscapeHtml(ledger?.reason || 'storage_unavailable')}</span></div>`;
+      body.innerHTML = `<div class="empty"><strong>세계선을 읽을 수 없습니다.</strong><span>${viewerEscapeHtml(ledger?.reason || 'storage_unavailable')}</span></div>`;
       detail.innerHTML = '';
       return;
     }
@@ -57838,7 +58013,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     }
     turns.sort((a, b) => a.turn - b.turn);
     if (!turns.length) {
-      body.innerHTML = '<div class="hv-empty" data-hv-empty="data"><strong>표시할 턴 결속이 없습니다.</strong><span>패킷이 저장되면 세계선에 표시됩니다.</span></div>';
+      body.innerHTML = '<div class="empty" data-empty="data"><strong>표시할 턴 결속이 없습니다.</strong><span>패킷이 저장되면 세계선에 표시됩니다.</span></div>';
       detail.innerHTML = '';
       return;
     }
@@ -57850,11 +58025,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const state = text(record?.recordState || 'unbound');
       const selected = String(turn) === selectedTurn;
       const tone = ['active', 'historical'].includes(state) ? 'live' : (state === 'unbound' ? 'pending' : 'retired');
-      return `<button type="button" class="hv-worldline-node ${tone}${selected ? ' active' : ''}" data-hayaku-worldline-turn="${turn}"><span>T${turn}</span><strong>${viewerEscapeHtml(compact(viewerPacketSummary(record), 42) || record?.packetType || 'packet')}</strong><small>${viewerEscapeHtml(state)} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</small></button>`;
+      return `<button type="button" class="pk-row ${tone}${selected ? ' active' : ''}" data-hayaku-worldline-turn="${turn}"><span>T${turn}</span><strong>${viewerEscapeHtml(compact(viewerPacketSummary(record), 42) || record?.packetType || 'packet')}</strong><small>${viewerEscapeHtml(state)} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</small></button>`;
     }).join('');
     const selectedRecord = turns.find(item => String(item.turn) === selectedTurn)?.record || turns[turns.length - 1].record;
     const variants = records.filter(record => Number(record?.targetPairIndex || 0) === Number(selectedTurn));
-    detail.innerHTML = `<div class="hv-worldline-detail-head"><div><small>TURN BINDING</small><h2>T${viewerEscapeHtml(selectedTurn)} · ${viewerEscapeHtml(selectedRecord?.packetType || 'current_snapshot')}</h2><p>${viewerEscapeHtml(viewerPacketSummary(selectedRecord) || '패킷 요약 없음')}</p></div><em class="${viewerStateClass(selectedRecord?.recordState)}">${viewerEscapeHtml(selectedRecord?.recordState || 'unbound')}</em></div><div class="hv-worldline-kv"><b>결속 레코드</b><span>${variants.length.toLocaleString()}개</span><b>원장 slot</b><span>${viewerEscapeHtml(selectedRecord?.slotId || '-')}</span><b>Request nonce</b><span>${viewerEscapeHtml(compact(selectedRecord?.requestNonce || '-', 80))}</span><b>Packet hash</b><span>${viewerEscapeHtml(compact(selectedRecord?.hash || '-', 80))}</span><b>저장 시각</b><span>${viewerEscapeHtml(viewerFormatDate(selectedRecord?.capturedAt))}</span></div><div class="hv-worldline-actions"><button type="button" class="hv-btn" data-hayaku-open-record="${viewerEscapeHtml(viewerRecordIdentity(selectedRecord))}">패킷 상세 열기</button></div>`;
+    detail.innerHTML = `<div class="card__head"><div><small>TURN BINDING</small><h2>T${viewerEscapeHtml(selectedTurn)} · ${viewerEscapeHtml(selectedRecord?.packetType || 'current_snapshot')}</h2><p>${viewerEscapeHtml(viewerPacketSummary(selectedRecord) || '패킷 요약 없음')}</p></div><em class="${viewerStateClass(selectedRecord?.recordState)}">${viewerEscapeHtml(selectedRecord?.recordState || 'unbound')}</em></div><div class="kv"><b>결속 레코드</b><span>${variants.length.toLocaleString()}개</span><b>원장 slot</b><span>${viewerEscapeHtml(selectedRecord?.slotId || '-')}</span><b>Request nonce</b><span>${viewerEscapeHtml(compact(selectedRecord?.requestNonce || '-', 80))}</span><b>Packet hash</b><span>${viewerEscapeHtml(compact(selectedRecord?.hash || '-', 80))}</span><b>저장 시각</b><span>${viewerEscapeHtml(viewerFormatDate(selectedRecord?.capturedAt))}</span></div><div class="cluster"><button type="button" class="btn" data-hayaku-open-record="${viewerEscapeHtml(viewerRecordIdentity(selectedRecord))}">패킷 상세 열기</button></div>`;
   };
   // Scroll offset, open <details> and the active text filter survive this render.
   const viewerRenderWorldline = (...args) => viewerPreserveScroll(
@@ -57862,40 +58037,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     () => viewerRenderWorldlineInner(...args),
     () => viewerApplyListFilter(VIEWER_LIST_FILTERS.find(spec => spec.input === 'hayakuWorldlineFilter'))
   );
-  const viewerRenderPacketDiagnostics = () => {
-    const root = Memory.ledgerViewer.root;
-    const ledger = Memory.ledgerViewer.ledger;
-    if (!root) return;
-    const worldline = root.querySelector?.('#hayakuViewerWorldline');
-    const slots = root.querySelector?.('#hayakuViewerSlots');
-    const tombstoneBody = root.querySelector?.('#hayakuViewerTombstones');
-    const captureBody = root.querySelector?.('#hayakuViewerCapture');
-    if (worldline) worldline.textContent = viewerPrettyJson(ledger?.worldline || {});
-    if (slots) slots.textContent = viewerPrettyJson(ensureArray(ledger?.slotHeads));
-    if (tombstoneBody) tombstoneBody.textContent = viewerPrettyJson(ensureArray(ledger?.tombstones));
-    if (captureBody) captureBody.textContent = viewerPrettyJson({
-      lastStorageCapture: Memory.lastStorageCapture,
-      persistence: {
-        inFlight: Memory.capturePersistInFlight.size,
-        recentDurable: Memory.capturePersistRecent.size,
-        hookTimeouts: Memory.captureHookTimeouts,
-        dedupHits: Memory.capturePersistDedupHits,
-        afterRequestBudgetMs: AFTER_REQUEST_CAPTURE_WAIT_MS,
-        outputBudgetMs: OUTPUT_CAPTURE_WAIT_MS
-      },
-      hookLifecycle: hookLifecycleSnapshot(),
-      hooks: {
-        afterRequestRegistered: Memory.afterRequest.registered === true,
-        afterRequestRunCount: Memory.afterRequest.runCount,
-        afterRequestLastError: Memory.afterRequest.lastError || '',
-        outputRegistered: Memory.outputHandler.registered === true,
-        outputModes: ensureArray(Memory.outputHandler.registeredModes),
-        outputRunCount: Memory.outputHandler.runCount,
-        outputLastError: Memory.outputHandler.lastError || ''
-      },
-      hostCalls: Memory.compatCallStats
-    });
-  };
   const viewerRenderActiveTab = activeValue => {
     const active = HAYAKU_VIEWER_TAB_IDS.includes(activeValue) ? activeValue : 'overview';
     if (!Memory.ledgerViewer.visible || Memory.ledgerViewer.activeTab !== active) return;
@@ -57910,16 +58051,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       viewerMountServerConnection();
     } else if (active === 'recovery') {
       void viewerRenderNativeRecovery();
+      void viewerRenderFailedRecovery();
     } else if (active === 'failed_recovery') {
       void viewerRenderFailedRecovery();
     } else if (active === 'settings') {
       void viewerRenderSettings(false);
-    } else if (active === 'worldline') {
-      viewerRenderWorldline();
     } else {
-      viewerRenderPacketDiagnostics();
-      viewerRenderRecall();
       viewerRenderRecords();
+      viewerRenderPacketAuthoring();
+      viewerRenderWorldline();
     }
   };
   const viewerQueueActiveTabRender = activeValue => {
@@ -57938,19 +58078,27 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerSetTab = tab => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
-    const active = tab === 'failed_recovery' ? 'recovery' : HAYAKU_VIEWER_TAB_IDS.includes(tab) ? tab : 'overview';
+    const active = tab === 'failed_recovery' ? 'recovery' : tab === 'worldline' ? 'packets' : HAYAKU_VIEWER_TAB_IDS.includes(tab) ? tab : 'overview';
     if(active!==Memory.ledgerViewer.activeTab){clearSourceEditPreview();}
     Memory.ledgerViewer.activeTab = active;
+    const settingsSavebar = root.querySelector?.('#hayakuSettingsSavebar');
+    if (settingsSavebar) settingsSavebar.hidden = active !== 'settings';
     root.querySelectorAll?.('[data-hayaku-viewer-tab]')?.forEach(node => {
       const selected = node.getAttribute('data-hayaku-viewer-tab') === active;
       node.classList.toggle('active', selected);
+      if (selected) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
       node.setAttribute('aria-selected', selected ? 'true' : 'false');
       node.setAttribute('tabindex', selected ? '0' : '-1');
     });
     root.querySelectorAll?.('[data-hayaku-viewer-panel]')?.forEach(node => {
       const selected = node.getAttribute('data-hayaku-viewer-panel') === active;
       node.classList.toggle('active', selected);
+      node.classList.toggle('is-active', selected);
       node.hidden = !selected;
+    });
+    root.querySelectorAll?.('.tabbar [data-go]')?.forEach(node => {
+      const selected = node.getAttribute('data-go') === active;
+      if (selected) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
     });
     const meta = HAYAKU_VIEWER_TAB_META[active] || HAYAKU_VIEWER_TAB_META.overview;
     const location = root.querySelector?.('#hayakuViewerLocation');
@@ -57987,7 +58135,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     root.style.display = 'flex';
     root.style.alignItems = 'center';
     root.style.justifyContent = 'center';
-    root.style.background = 'rgba(6,8,14,.38)';
+    root.style.background = 'var(--page-bg,#cdd5d8)';
     root.dataset.hayakuViewerBackdrop = 'translucent';
     Memory.ledgerViewer.root = root;
     return root;
@@ -58037,15 +58185,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (value == null || value === '') return '';
     if (Array.isArray(value)) {
       const items = value.map(item => viewerRenderAxisValue(item, field)).filter(Boolean);
-      return items.length ? `<ul class="hv-axis-list">${items.map(item => `<li>${item}</li>`).join('')}</ul>` : '';
+      return items.length ? `<ul class="list">${items.map(item => `<li class="row">${item}</li>`).join('')}</ul>` : '';
     }
     if (typeof value === 'object') {
       const rows = Object.entries(value).filter(([key]) => !key.startsWith('_')).map(([key, item]) => {
         const rendered = viewerRenderAxisValue(item, key);
         const label = viewerAxisLabels[key] || key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-        return rendered ? `<div class="hv-axis-field"><dt>${viewerEscapeHtml(label)}</dt><dd>${rendered}</dd></div>` : '';
+        return rendered ? `<dt>${viewerEscapeHtml(label)}</dt><dd>${rendered}</dd>` : '';
       }).filter(Boolean);
-      return rows.length ? `<dl class="hv-axis-fields">${rows.join('')}</dl>` : '';
+      return rows.length ? `<dl class="kv">${rows.join('')}</dl>` : '';
     }
     return `<span>${viewerEscapeHtml(viewerAxisValue(value, field))}</span>`;
   };
@@ -58055,34 +58203,36 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const detail = root?.querySelector?.('#hayakuViewerRecordDetail');
     if (!detail) return;
     if (!record) {
-      detail.innerHTML = '<div class="hv-empty"><strong>패킷을 선택하세요.</strong><span>왼쪽 목록에서 턴을 선택하면 상세 내용이 표시됩니다.</span></div>';
+      detail.innerHTML = '<div class="empty"><b>패킷을 선택하세요.</b><span>목록에서 턴을 선택하면 상세 내용이 표시됩니다.</span></div>';
       return;
     }
     const state = text(record?.recordState || 'unbound');
     const packet = viewerPacketObject(record);
-    const activeTab = ['summary', 'axes', 'evidence', 'binding', 'json'].includes(Memory.ledgerViewer.selectedRecordDetailTab)
+    const activeTab = ['summary', 'axes', 'binding', 'json'].includes(Memory.ledgerViewer.selectedRecordDetailTab)
       ? Memory.ledgerViewer.selectedRecordDetailTab
       : 'summary';
     const regeneration = viewerRecordRegenerationPlan(record);
     const reselection = viewerReplacementVariantPlan(record, ledger);
     const tags = [record?.captureSource, record?.memoryClass, record?.ledgerSource, record?.auditRetained === true ? '감사 사본' : '', record?.inheritedSessionHistory === true ? '영구 과거' : '', record?.coldStartEpochId ? '콜드스타트' : ''].filter(Boolean);
-    const axis = name => viewerRenderAxisValue(packet?.[name]) || '<p class="hv-axis-empty">기록 없음</p>';
+    const detailTags = tags.length ? `<dt>분류</dt><dd>${viewerEscapeHtml(tags.join(' · '))}</dd>` : '';
+    const axis = name => viewerRenderAxisValue(packet?.[name]) || '<p class="muted">기록 없음</p>';
     const tabBody = activeTab === 'summary'
-      ? `<div class="hv-record-summary"><strong>${viewerEscapeHtml(viewerPacketSummary(record) || '요약 없음')}</strong><p>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</p></div><div class="hv-detail-kv"><b>패킷 타입</b><span>${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</span><b>Confidence</b><span>${Number(packet?.meta?.confidence ?? packet?.confidence ?? 0).toFixed(2)}</span><b>저장 시각</b><span>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</span><b>Packet hash</b><span>${viewerEscapeHtml(compact(record?.hash || '-', 96))}</span></div>`
+      ? `<p style="margin:0 0 12px;font-weight:650">${viewerEscapeHtml(viewerPacketSummary(record) || '요약 없음')}</p><dl class="kv"><dt>패킷 타입</dt><dd>${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</dd><dt>저장 시각</dt><dd>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</dd><dt>저장 확인</dt><dd>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</dd><dt>회상 가능</dt><dd>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</dd></dl>`
       : activeTab === 'axes'
-        ? `<div class="hv-axis-grid"><article><h3>인물과 관계</h3>${axis('entity')}</article><article><h3>세계와 상황</h3>${axis('world')}</article><article><h3>이야기의 흐름</h3>${axis('narrative')}</article><article><h3>앞으로 이어갈 내용</h3>${axis('planner')}</article></div>`
-        : activeTab === 'evidence'
-          ? `<p class="hv-overview-empty">출처 참조와 패킷 anchor 메타데이터입니다. 이 탭에서는 원문 U+A를 조회하지 않았습니다. 원문과의 직접 인용 검증 결과를 뜻하지 않습니다.</p><div class="hv-detail-kv"><b>Capture source</b><span>${viewerEscapeHtml(record?.captureSource || '-')}</span><b>Memory class</b><span>${viewerEscapeHtml(record?.memoryClass || '-')}</span><b>Source time</b><span>${viewerEscapeHtml(viewerRecordPairLabel(record))}</span><b>Raw packet size</b><span>${text(record?.raw || '').length.toLocaleString()}자</span><b>Summary anchors</b><span>${viewerEscapeHtml(viewerPrettyJson(packet?.meta?.summary_memory?.recallAnchors || packet?.meta?.summaryMemory?.recallAnchors || []))}</span></div>`
-          : activeTab === 'binding'
-            ? `<div class="hv-detail-kv"><b>Record state</b><span>${viewerEscapeHtml(state)}</span><b>Slot ID</b><span>${viewerEscapeHtml(record?.slotId || '-')}</span><b>Request nonce</b><span>${viewerEscapeHtml(compact(record?.requestNonce || '-', 120))}</span><b>Parent hash</b><span>${viewerEscapeHtml(compact(record?.parentHash || record?.parent || '-', 120))}</span><b>Worldline source</b><span>${viewerEscapeHtml(record?.ledgerSource || '-')}</span><b>Readback</b><span>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</span></div>`
-            : `<div class="hv-json-stack"><details open><summary>Canonical packet JSON</summary><pre>${viewerEscapeHtml(packet ? viewerPrettyJson(packet) : text(record?.raw || ''))}</pre></details><details><summary>원장 메타데이터</summary><pre>${viewerEscapeHtml(viewerPrettyJson({ ...record, raw: undefined }))}</pre></details></div>`;
+        ? `<div class="axes"><article class="axis"><h4>인물과 관계</h4>${axis('entity')}</article><article class="axis"><h4>세계와 상황</h4>${axis('world')}</article><article class="axis"><h4>이야기의 흐름</h4>${axis('narrative')}</article><article class="axis"><h4>앞으로 이어갈 내용</h4>${axis('planner')}</article></div>`
+        : activeTab === 'binding'
+          ? `<dl class="kv"><dt>Record state</dt><dd>${viewerEscapeHtml(state)}</dd><dt>Slot ID</dt><dd class="mono">${viewerEscapeHtml(record?.slotId || '-')}</dd><dt>Request nonce</dt><dd class="mono">${viewerEscapeHtml(compact(record?.requestNonce || '-', 120))}</dd><dt>Parent hash</dt><dd class="mono">${viewerEscapeHtml(compact(record?.parentHash || record?.parent || '-', 120))}</dd><dt>Worldline source</dt><dd>${viewerEscapeHtml(record?.ledgerSource || '-')}</dd><dt>Readback</dt><dd>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</dd><dt>회상 자격</dt><dd>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</dd><dt>Confidence</dt><dd>${Number(packet?.meta?.confidence ?? packet?.confidence ?? 0).toFixed(2)}</dd><dt>Packet hash</dt><dd class="mono">${viewerEscapeHtml(compact(record?.hash || '-', 96))}</dd><dt>Capture source</dt><dd>${viewerEscapeHtml(record?.captureSource || '-')}</dd><dt>Memory class</dt><dd>${viewerEscapeHtml(record?.memoryClass || '-')}</dd><dt>Source time</dt><dd>${viewerEscapeHtml(viewerRecordPairLabel(record))}</dd><dt>Raw packet size</dt><dd>${text(record?.raw || '').length.toLocaleString()}자</dd><dt>Summary anchors</dt><dd>${viewerEscapeHtml(viewerPrettyJson(packet?.meta?.summary_memory?.recallAnchors || packet?.meta?.summaryMemory?.recallAnchors || []))}</dd>${detailTags}</dl>`
+          : `<div class="stack"><details open><summary>Canonical packet JSON</summary><pre class="json">${viewerEscapeHtml(packet ? viewerPrettyJson(packet) : text(record?.raw || ''))}</pre></details><details><summary>원장 메타데이터</summary><pre class="json">${viewerEscapeHtml(viewerPrettyJson({ ...record, raw: undefined }))}</pre></details></div>`;
     const regenerationTitle = regeneration.eligible
       ? `Other Ax로 ${regeneration.startTurn === regeneration.endTurn ? `T${regeneration.startTurn}` : `T${regeneration.startTurn}–T${regeneration.endTurn}`}을 다시 분석하고 검증 후 이 레코드를 원자적으로 교체합니다.`
       : `재생성 불가 · ${regeneration.reason}`;
     const reselectTitle = reselection.eligible
       ? `T${reselection.targetPairIndex}의 현재 활성 교체본 대신 이 tombstone 패킷을 다시 채택합니다.`
       : `재선택 불가 · ${reselection.reason}`;
-    detail.innerHTML = `<div class="hv-record-detail-head"><div><small>MEMORY PACKET</small><h2>${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</h2><p>${viewerEscapeHtml(viewerPacketSummary(record) || '패킷 요약 없음')}</p></div><em class="${viewerStateClass(state)}">${viewerEscapeHtml(state)}</em></div>${tags.length ? `<div class="hv-tags">${tags.map(tag => `<span>${viewerEscapeHtml(tag)}</span>`).join('')}</div>` : ''}<div class="hv-detail-tabs" role="tablist" aria-label="패킷 상세"><button type="button" data-hayaku-record-detail-tab="summary" class="${activeTab === 'summary' ? 'active' : ''}">요약</button><button type="button" data-hayaku-record-detail-tab="axes" class="${activeTab === 'axes' ? 'active' : ''}">기억 축</button><button type="button" data-hayaku-record-detail-tab="evidence" class="${activeTab === 'evidence' ? 'active' : ''}">출처 메타데이터</button><button type="button" data-hayaku-record-detail-tab="binding" class="${activeTab === 'binding' ? 'active' : ''}">결속</button><button type="button" data-hayaku-record-detail-tab="json" class="${activeTab === 'json' ? 'active' : ''}">원본 JSON</button></div><div class="hv-detail-body">${tabBody}</div><div class="hv-record-actions"><button type="button" class="hv-btn hv-regenerate-record" data-hayaku-regenerate-record="${viewerEscapeHtml(regeneration.recordId || '')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}">Other Ax로 재생성</button>${reselection.eligible ? `<button type="button" class="hv-btn primary hv-select-variant" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}</div>`;
+    const preservationNote = reselection.eligible
+      ? `<div class="note" style="margin-top:12px"><b>이전 패킷 보존</b> ${viewerEscapeHtml(reselection.revisionLabel || '이전 교체 패킷')}이 보존되어 있습니다. <button class="btn btn--sm" type="button" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}" style="margin-left:6px">이전 패킷 다시 채택…</button></div>`
+      : '';
+    detail.innerHTML = `<div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</h2><p class="card__desc">${viewerEscapeHtml(viewerRecordWriteStatus(record))}</p></div><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(state)}</span></div><div class="tabs" role="tablist" aria-label="패킷 상세"><button type="button" role="tab" aria-selected="${activeTab === 'summary'}" data-hayaku-record-detail-tab="summary" class="tab ${activeTab === 'summary' ? 'is-active' : ''}">요약</button><button type="button" role="tab" aria-selected="${activeTab === 'axes'}" data-hayaku-record-detail-tab="axes" class="tab ${activeTab === 'axes' ? 'is-active' : ''}">기억 축</button><button type="button" role="tab" aria-selected="${activeTab === 'binding'}" data-hayaku-record-detail-tab="binding" class="tab ${activeTab === 'binding' ? 'is-active' : ''}">결속</button><button type="button" role="tab" aria-selected="${activeTab === 'json'}" data-hayaku-record-detail-tab="json" class="tab ${activeTab === 'json' ? 'is-active' : ''}">원본 JSON</button></div><div class="stack">${tabBody}</div>${preservationNote}<div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button type="button" class="btn" data-hayaku-regenerate-record="${viewerEscapeHtml(regeneration.recordId || '')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Other Ax로 재생성</button>${reselection.eligible ? `<button type="button" class="btn" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}<button type="button" class="btn btn--ghost" data-hayaku-copy-record="${viewerEscapeHtml(text(record?.recordId || record?.slotId || record?.hash || ''))}">패킷 복사</button></div>`;
   };
   const viewerRenderRecords = () => {
     const root = Memory.ledgerViewer.root;
@@ -58090,7 +58240,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const body = root?.querySelector?.('#hayakuViewerRecords');
     if (!body) return;
     if (!ledger?.enabled) {
-      body.innerHTML = `<div class="hv-empty"><strong>플러그인 원장을 읽을 수 없습니다.</strong><span>${viewerEscapeHtml(ledger?.reason || 'storage_unavailable')}</span></div>`;
+      body.innerHTML = `<div class="empty"><strong>플러그인 원장을 읽을 수 없습니다.</strong><span>${viewerEscapeHtml(ledger?.reason || 'storage_unavailable')}</span></div>`;
       viewerRenderRecordDetail(null);
       return;
     }
@@ -58126,14 +58276,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     Memory.ledgerViewer.recordsPage = page;
     const pageRows = records.slice((page-1)*pageSize, page*pageSize);
     const pager = root.querySelector?.('#hayakuViewerRecordsPager');
-    if (pager) pager.innerHTML = `<button type="button" class="hv-btn" data-hayaku-records-page="${page-1}" ${page <= 1 ? 'disabled' : ''}>이전</button><span>${page} / ${pageCount} · 페이지당 ${pageSize}개</span><button type="button" class="hv-btn" data-hayaku-records-page="${page+1}" ${page >= pageCount ? 'disabled' : ''}>다음</button>`;
+    if (pager) pager.innerHTML = `<button type="button" class="btn" data-hayaku-records-page="${page-1}" ${page <= 1 ? 'disabled' : ''}>이전</button><span>${page} / ${pageCount} · 페이지당 ${pageSize}개</span><button type="button" class="btn" data-hayaku-records-page="${page+1}" ${page >= pageCount ? 'disabled' : ''}>다음</button>`;
     const count = root.querySelector?.('#hayakuViewerVisibleCount');
     if (count) {
       const hiddenAuditCount = showAuditCopies ? 0 : auditVisibility.hiddenIds.size;
       count.textContent = `${records.length} / ${allRecords.length}${hiddenAuditCount ? ` · 감사·비활성 ${hiddenAuditCount} 숨김` : ''}`;
     }
     if (!records.length) {
-      body.innerHTML = '<div class="hv-empty"><strong>표시할 패킷이 없습니다.</strong><span>필터를 바꾸거나 현재 채팅에서 패킷이 저장되었는지 확인하세요.</span></div>';
+      body.innerHTML = '<div class="empty"><strong>표시할 패킷이 없습니다.</strong><span>필터를 바꾸거나 현재 채팅에서 패킷이 저장되었는지 확인하세요.</span></div>';
       viewerRenderRecordDetail(null);
       return;
     }
@@ -58143,7 +58293,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const recordId = viewerRecordIdentity(record);
       const state = text(record?.recordState || 'unbound');
       const selectedRow = recordId === Memory.ledgerViewer.selectedRecordId;
-      return `<button type="button" class="hv-record hv-record-row${selectedRow ? ' active' : ''}" data-hayaku-record-select="${viewerEscapeHtml(recordId)}"><span class="hv-record-turn">${viewerEscapeHtml(viewerRecordPairLabel(record))}</span><span class="hv-record-row-copy"><strong>${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</strong><span>${viewerEscapeHtml(viewerPacketSummary(record) || '패킷 요약 없음')}</span><small>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))} · ${text(record?.raw || '').length.toLocaleString()}자</small></span><em class="${viewerStateClass(state)}">${viewerEscapeHtml(state)}</em></button>`;
+      return `<button type="button" class="pk-row${selectedRow ? ' is-on' : ''}" data-hayaku-record-select="${viewerEscapeHtml(recordId)}"><b>${viewerEscapeHtml(viewerRecordPairLabel(record))}</b><span><strong>${viewerEscapeHtml(record?.packetType || 'current_snapshot')} · ${viewerEscapeHtml(viewerPacketSummary(record) || '패킷 요약 없음')}</strong><small>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))} · ${text(record?.raw || '').length.toLocaleString()}자</small></span><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(state)}</span></button>`;
     }).join('');
     viewerRenderRecordDetail(selected);
   };
@@ -58211,7 +58361,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (!root || viewer.busy) return null;
     viewer.busy = true;
     viewer.recordsFilterCache = null;
-    root.querySelector?.('.hayaku-viewer')?.classList?.add('is-busy');
+    root.querySelector?.('.app')?.classList?.add('is-busy');
     const status = root.querySelector?.('#hayakuViewerStatus');
     if (status) status.textContent = '현재 채팅의 플러그인 원장을 읽는 중입니다.';
     const stillOpen = () => Memory.ledgerViewer.root === root && viewer.visible === true;
@@ -58263,7 +58413,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return null;
     } finally {
       viewer.busy = false;
-      root.querySelector?.('.hayaku-viewer')?.classList?.remove('is-busy');
+      root.querySelector?.('.app')?.classList?.remove('is-busy');
     }
   };
   const downloadLedgerViewerJson = async () => {
@@ -58329,7 +58479,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const root = Memory.ledgerViewer.root;
     let doc = null;
     try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.hayaku-viewer') || root;
+    const host = root?.querySelector?.('.app') || root;
     if (!root || !host || typeof doc?.createElement !== 'function') {
       resolve(false);
       return;
@@ -58338,47 +58488,45 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     let settled = false;
     const overlay = doc.createElement('div');
     overlay.id = 'hayakuCleanupConfirmOverlay';
-    overlay.className = 'hv-confirm-overlay';
+    overlay.className = 'overlay is-open';
     overlay.setAttribute('role', 'presentation');
     const dialog = doc.createElement('section');
-    dialog.className = 'hv-confirm-dialog';
+    dialog.className = 'dialog';
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'hayakuCleanupConfirmTitle');
     const eyebrow = doc.createElement('small');
-    eyebrow.className = 'hv-confirm-eyebrow';
+    eyebrow.className = 'eyebrow';
     eyebrow.textContent = 'PERMANENT CLEANUP';
     const title = doc.createElement('h2');
     title.id = 'hayakuCleanupConfirmTitle';
-    title.textContent = '고아 데이터를 영구 삭제할까요?';
+    title.textContent = `고아 데이터 ${Math.max(0, Number(preview?.removableRecords || 0) || 0)}개를 영구 삭제할까요?`;
     const summary = doc.createElement('p');
     const removableRecords = Math.max(0, Number(preview?.removableRecords || 0) || 0);
     const removableChars = Math.max(0, Number(preview?.removableChars || 0) || 0);
     summary.textContent = `검증된 롤백 고아·비활성 레코드 ${removableRecords}개 (${removableChars.toLocaleString()}자)를 삭제합니다.`;
     const note = doc.createElement('div');
-    note.className = 'hv-confirm-note';
-    note.textContent = '현재 활성 세계선·상속·영구·보호 데이터는 유지됩니다. 삭제된 분기 슬롯에는 system tombstone을 남겨 숨은 라이브챗 사본이 다시 유입되지 않게 합니다. 월드라인 고아 노드의 골격은 감사 흔적으로 남지만 패킷 본문은 제거됩니다.';
+    note.className = 'note';
+    note.innerHTML = '<b>남는 것</b> 활성 세계선·상속·영구·보호 데이터는 유지됩니다. 삭제 직전 owner를 다시 확인하며 분기 슬롯에는 system tombstone을 남깁니다.<br><b>사라지는 것</b> 검증된 롤백 고아·비활성 레코드 본문은 되돌릴 수 없습니다.';
     const actions = doc.createElement('div');
-    actions.className = 'hv-confirm-actions';
+    actions.className = 'dialog__actions';
     const cancelButton = doc.createElement('button');
     cancelButton.type = 'button';
-    cancelButton.className = 'hv-btn';
+    cancelButton.className = 'btn';
     cancelButton.textContent = '취소';
     const deleteButton = doc.createElement('button');
     deleteButton.type = 'button';
-    deleteButton.className = 'hv-btn danger';
+    deleteButton.className = 'btn btn--danger';
     deleteButton.textContent = `영구 삭제 (${removableRecords})`;
     actions.append(cancelButton, deleteButton);
     dialog.append(eyebrow, title, summary, note, actions);
     overlay.appendChild(dialog);
-    const onKeydown = event => {
-      if (event?.key === 'Escape') finish(false);
-    };
+    let teardownDialog = () => {};
     const finish = value => {
       if (settled) return;
       settled = true;
-      try { doc.removeEventListener?.('keydown', onKeydown, true); } catch (_) {}
       try { overlay.remove?.(); } catch (_) {}
+      teardownDialog();
       resolve(value === true);
     };
     cancelButton.addEventListener('click', () => finish(false));
@@ -58386,15 +58534,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     overlay.addEventListener('click', event => {
       if (event?.target === overlay) finish(false);
     });
-    doc.addEventListener?.('keydown', onKeydown, true);
     host.appendChild(overlay);
-    try { deleteButton.focus?.(); } catch (_) {}
+    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
   });
   const cleanupLedgerViewerOrphans = async () => {
     const root = Memory.ledgerViewer.root;
     if (!root || Memory.ledgerViewer.busy) return null;
     Memory.ledgerViewer.busy = true;
-    root.querySelector?.('.hayaku-viewer')?.classList?.add('is-busy');
+    root.querySelector?.('.app')?.classList?.add('is-busy');
     try {
       viewerSetStatusMessage('정리 가능한 고아 데이터를 다시 검증하는 중입니다.');
       const preview = await removeOrphanedStorageRecords({ preview: true });
@@ -58410,13 +58557,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }
       // Release the busy indicator while the confirmation dialog waits for input,
       // then restore it only for the destructive storage commit.
-      root.querySelector?.('.hayaku-viewer')?.classList?.remove('is-busy');
+      root.querySelector?.('.app')?.classList?.remove('is-busy');
       const confirmed = await viewerConfirmOrphanCleanup(preview);
       if (confirmed !== true) {
         viewerSetStatusMessage('고아 데이터 정리를 취소했습니다.');
         return { ...preview, removed: false, reason: 'user_cancelled' };
       }
-      root.querySelector?.('.hayaku-viewer')?.classList?.add('is-busy');
+      root.querySelector?.('.app')?.classList?.add('is-busy');
       viewerSetStatusMessage('검증된 고아 데이터를 정리하고 내구 저장을 확인하는 중입니다.');
       const result = await removeOrphanedStorageRecords();
       if (result?.ledger) Memory.ledgerViewer.ledger = result.ledger;
@@ -58435,7 +58582,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return null;
     } finally {
       Memory.ledgerViewer.busy = false;
-      root.querySelector?.('.hayaku-viewer')?.classList?.remove('is-busy');
+      root.querySelector?.('.app')?.classList?.remove('is-busy');
     }
   };
   const closeLedgerViewer = async () => {
@@ -58478,7 +58625,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return;
     }
     if (!Number(state.detailTurn || 0)) {
-      const priorList = overlay.querySelector?.('.hv-manual-recapture-turns');
+      const priorList = overlay.querySelector?.('.list');
       if (priorList) state.listScrollTop = Math.max(0, Number(priorList.scrollTop || 0));
     }
     overlay.hidden = false;
@@ -58500,7 +58647,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       no_eligible_packet: '채택할 수 있는 패킷이 없음'
     })[text(reason || '')] || '확인 필요';
     const result = state.result
-      ? `<p class="hv-manual-recapture-result" role="status">${viewerEscapeHtml(state.result.ok === true ? (state.result.adopted === true ? `저장 및 readback 확인 · ${Number(state.result.records || 0)}개 패킷` : '이번 수동 채택은 변경 없이 완료했습니다.') : `채택하지 않았습니다 · ${state.result.reason || 'unknown'}`)}</p>`
+      ? `<p class="hint" role="status">${viewerEscapeHtml(state.result.ok === true ? (state.result.adopted === true ? `저장 및 readback 확인 · ${Number(state.result.records || 0)}개 패킷` : '이번 수동 채택은 변경 없이 완료했습니다.') : `채택하지 않았습니다 · ${state.result.reason || 'unknown'}`)}</p>`
       : '';
     const detailTurn = turns.find(turn => Number(turn.turn) === Number(state.detailTurn || 0));
     const detailPopup = detailTurn ? (() => {
@@ -58509,24 +58656,24 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const packetType = viewerEscapeHtml(packet.packetType || 'packet');
         const status = packet.eligible === true ? '채택 가능' : `보호됨 · ${viewerEscapeHtml(reasonLabel(packet.reason))}`;
         const sourceNotice = packet.normalizationChanged === true
-          ? `<details class="hv-manual-recapture-source"><summary>원본 인라인 바이트 보기 · 채택 대상은 위 표준 JSON</summary><pre tabindex="0" aria-label="T${turnNumber} ${packetType} 원본 인라인 바이트">${viewerEscapeHtml(packet.sourceRaw || '')}</pre></details>`
+          ? `<details class="source-view"><summary>원본 인라인 바이트 보기 · 채택 대상은 위 표준 JSON</summary><pre tabindex="0" aria-label="T${turnNumber} ${packetType} 원본 인라인 바이트">${viewerEscapeHtml(packet.sourceRaw || '')}</pre></details>`
           : '';
-        return `<article class="hv-manual-recapture-packet"><header><strong>${packetType}</strong><span>${status}</span></header><pre tabindex="0" aria-label="T${turnNumber} ${packetType} 전체 패킷 JSON">${viewerEscapeHtml(packet.raw || '')}</pre>${sourceNotice}</article>`;
+        return `<article class="card"><header><strong>${packetType}</strong><span>${status}</span></header><pre tabindex="0" aria-label="T${turnNumber} ${packetType} 전체 패킷 JSON">${viewerEscapeHtml(packet.raw || '')}</pre>${sourceNotice}</article>`;
       }).join('');
       const turnStatus = detailTurn.eligible === true
         ? '이 턴의 모든 표시 패킷을 채택할 수 있습니다.'
         : `보호된 턴 · ${viewerEscapeHtml(reasonLabel(detailTurn.reason))}`;
-      return `<div class="hv-manual-recapture-detail-overlay"><section class="hv-confirm-dialog hv-manual-recapture-dialog hv-manual-recapture-detail" role="dialog" aria-modal="true" aria-labelledby="hayakuManualRecaptureDetailTitle" tabindex="-1"><header class="hv-manual-recapture-detail-head"><div><small class="hv-confirm-eyebrow">MANUAL INLINE PACKET RECAPTURE</small><h2 id="hayakuManualRecaptureDetailTitle">T${turnNumber} 패킷 상세</h2><p>원문 전체와 표준 JSON을 읽기 전용으로 확인합니다.</p></div></header><p class="hv-manual-recapture-detail-status" role="status">${turnStatus}</p><div class="hv-manual-recapture-detail-packets">${packetRows || '<p>표시할 패킷이 없습니다.</p>'}</div><div class="hv-manual-recapture-detail-actions"><button class="hv-btn" data-hayaku-manual-recapture-action="back" type="button">목록으로</button></div></section></div>`;
+      return `<div class="overlay is-open overlay--bottom"><section class="dialog dialog--wide detail-view" role="dialog" aria-modal="true" aria-labelledby="hayakuManualRecaptureDetailTitle" tabindex="-1"><header class="detail-view-head"><div><small class="eyebrow">MANUAL INLINE PACKET RECAPTURE</small><h2 id="hayakuManualRecaptureDetailTitle">T${turnNumber} 패킷 상세</h2><p>원문 전체와 표준 JSON을 읽기 전용으로 확인합니다.</p></div></header><p class="detail-view-status" role="status">${turnStatus}</p><div class="detail-view-packets">${packetRows || '<p>표시할 패킷이 없습니다.</p>'}</div><div class="detail-view-actions"><div class="dialog__actions"><button class="btn" data-hayaku-manual-recapture-action="back" type="button">목록으로</button></div></div></section></div>`;
     })() : '';
     const rows = turns.map(turn => {
       const turnNumber = Math.max(0, Number(turn.turn || 0) || 0);
       const eligible = turn.eligible === true;
       const packetCount = ensureArray(turn.packets).length;
       const label = eligible ? '모든 표시 패킷 채택 가능' : `전체 턴 보호 · ${viewerEscapeHtml(reasonLabel(turn.reason))}`;
-      return `<article class="hv-manual-recapture-card" role="listitem"><button class="hv-manual-recapture-turn" data-hayaku-manual-recapture-action="select-turn" data-hayaku-manual-recapture-turn="${turnNumber}" type="button" aria-pressed="${selected.has(turnNumber) ? 'true' : 'false'}" aria-label="T${turnNumber} 선택"${!eligible || state.busy ? ' disabled' : ''}><strong>T${turnNumber}</strong><span>${label}</span><small>${packetCount.toLocaleString()}개 패킷</small></button><button class="hv-btn hv-manual-recapture-view" data-hayaku-manual-recapture-action="view-turn" data-hayaku-manual-recapture-turn="${turnNumber}" type="button" aria-label="T${turnNumber} 패킷 보기"${state.busy ? ' disabled' : ''}>패킷 보기</button></article>`;
+      return `<article class="row" role="listitem"><button class="pk-row" data-hayaku-manual-recapture-action="select-turn" data-hayaku-manual-recapture-turn="${turnNumber}" type="button" aria-pressed="${selected.has(turnNumber) ? 'true' : 'false'}" aria-label="T${turnNumber} 선택"${!eligible || state.busy ? ' disabled' : ''}><strong>T${turnNumber}</strong><span>${label}</span><small>${packetCount.toLocaleString()}개 패킷</small></button><button class="btn" data-hayaku-manual-recapture-action="view-turn" data-hayaku-manual-recapture-turn="${turnNumber}" type="button" aria-label="T${turnNumber} 패킷 보기"${state.busy ? ' disabled' : ''}>패킷 보기</button></article>`;
     }).join('');
-    overlay.innerHTML = `<section class="hv-confirm-dialog hv-manual-recapture-dialog" role="dialog" aria-modal="true" aria-labelledby="hayakuManualRecaptureTitle" tabindex="-1"${detailTurn ? ' aria-hidden="true" inert' : ''}><header class="hv-manual-recapture-head"><div><small class="hv-confirm-eyebrow">MANUAL INLINE PACKET RECAPTURE</small><h2 id="hayakuManualRecaptureTitle">현재 채팅의 인라인 패킷 검토</h2><p>완료된 U+A 턴을 읽기 전용으로 훑습니다. 미리보기는 저장·모델 호출을 하지 않습니다.</p></div></header><div class="hv-confirm-note hv-manual-recapture-note">보호된 턴은 상세를 확인할 수 있지만 선택할 수 없습니다. 사용자가 숨기거나 억제한 패킷은 보호됩니다. 일반 자동 캡처는 별도로 동작합니다.</div><div class="hv-manual-recapture-select"><button class="hv-btn" data-hayaku-manual-recapture-action="select-all" type="button" aria-label="채택 가능한 턴 모두 선택"${state.busy || !eligibleCount ? ' disabled' : ''}>모두 선택</button><button class="hv-btn" data-hayaku-manual-recapture-action="select-none" type="button" aria-label="턴 선택 해제"${state.busy || !selected.size ? ' disabled' : ''}>선택 해제</button><span role="status" aria-live="polite">${turns.length.toLocaleString()}개 턴 · 채택 가능 ${eligibleCount.toLocaleString()}개 · 선택 ${selectedCount.toLocaleString()}개</span></div><div class="hv-manual-recapture-turns" role="list" aria-label="현재 채팅 패킷 턴 목록">${rows || '<p>완료된 U+A 턴에서 패킷을 찾지 못했습니다.</p>'}</div>${result}<div class="hv-confirm-actions"><button class="hv-btn" data-hayaku-manual-recapture-action="selected" type="button" aria-label="선택한 턴 채택"${state.busy || !selectedCount ? ' disabled' : ''}>채택 (${selectedCount})</button><button class="hv-btn" data-hayaku-manual-recapture-action="cancel" type="button">취소</button></div></section>${detailPopup}`;
-    const list = overlay.querySelector?.('.hv-manual-recapture-turns');
+    overlay.innerHTML = `<section class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="hayakuManualRecaptureTitle" tabindex="-1"${detailTurn ? ' aria-hidden="true" inert' : ''}><header class="dialog__head"><div><small class="eyebrow">MANUAL INLINE PACKET RECAPTURE</small><h2 id="hayakuManualRecaptureTitle">현재 채팅의 인라인 패킷 검토</h2><p>완료된 U+A 턴을 읽기 전용으로 훑습니다. 미리보기는 저장·모델 호출을 하지 않습니다.</p></div></header><div class="note">보호된 턴은 상세를 확인할 수 있지만 선택할 수 없습니다. 사용자가 숨기거나 억제한 패킷은 보호됩니다. 일반 자동 캡처는 별도로 동작합니다.</div><div class="cluster"><div class="cluster"><button class="btn" data-hayaku-manual-recapture-action="select-all" type="button" aria-label="채택 가능한 턴 모두 선택"${state.busy || !eligibleCount ? ' disabled' : ''}>모두 선택</button><button class="btn" data-hayaku-manual-recapture-action="select-none" type="button" aria-label="턴 선택 해제"${state.busy || !selected.size ? ' disabled' : ''}>선택 해제</button><span role="status" aria-live="polite">${turns.length.toLocaleString()}개 턴 · 채택 가능 ${eligibleCount.toLocaleString()}개 · 선택 ${selectedCount.toLocaleString()}개</span></div></div><div class="list" role="list" aria-label="현재 채팅 패킷 턴 목록">${rows || '<p>완료된 U+A 턴에서 패킷을 찾지 못했습니다.</p>'}</div>${result}<div class="dialog__actions"><div class="dialog__actions"><button class="btn" data-hayaku-manual-recapture-action="selected" type="button" aria-label="선택한 턴 채택"${state.busy || !selectedCount ? ' disabled' : ''}>채택 (${selectedCount})</button><button class="btn" data-hayaku-manual-recapture-action="cancel" type="button">취소</button></div></div></section>${detailPopup}`;
+    const list = overlay.querySelector?.('.list');
     if (list) list.scrollTop = Math.max(0, Number(state.listScrollTop || 0));
   };
   const viewerCancelManualRecapture = rootInput => {
@@ -58583,7 +58730,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     }
     if (action === 'view-turn') {
       if (!turn || !ensureArray(state.preview.turns).some(row => Number(row.turn) === turn)) return;
-      const list = overlay?.querySelector?.('.hv-manual-recapture-turns');
+      const list = overlay?.querySelector?.('.list');
       if (list) state.listScrollTop = Math.max(0, Number(list.scrollTop || 0));
       state.detailTurn = turn;
       viewerRenderManualRecapture(root);
@@ -58672,8 +58819,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (event?.key !== 'Tab') return;
     const overlay = rootInput?.querySelector?.('#hayakuManualRecaptureOverlay');
     const dialog = overlay?.querySelector?.(Number(state.detailTurn || 0)
-      ? '.hv-manual-recapture-detail[role="dialog"]'
-      : '.hv-manual-recapture-dialog[role="dialog"]');
+      ? '.detail-view[role="dialog"]'
+      : '.dialog[role="dialog"]');
     if (!dialog) return;
     const focusableSelector = 'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex]:not([tabindex="-1"])';
     const focusable = [...dialog.querySelectorAll?.(focusableSelector) || []].filter(node => {
@@ -58748,13 +58895,27 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         ? `보조 모델 호출 성공 · ${Number(result.elapsedMs || 0).toLocaleString()} ms · 응답: ${compact(result.responsePreview, 100)}`
         : `${result.submitted ? '보조 모델 호출 실패' : '보조 모델 호출 전송 안 됨'} · ${compact(result.error?.message || result.status, 180)}`, result.ok !== true);
     });
+    root.querySelector?.('#ax-test')?.addEventListener('click', async event => {
+      const button = event?.currentTarget;
+      if (button?.disabled) return;
+      if (button) button.disabled = true;
+      const description = button?.closest?.('.setting')?.querySelector?.('.setting__desc');
+      if (description) description.textContent = 'RisuAI 보조 모델 호출 중 · 추가 호출을 잠시 기다려 주세요.';
+      const result = await runNativeAuxiliaryProbe();
+      if (description) description.textContent = result.ok
+        ? `RisuAI 보조 모델 호출 성공 · ${Number(result.elapsedMs || 0).toLocaleString()} ms`
+        : `${result.submitted ? '보조 모델 호출 실패' : '호출 전송 안 됨'} · ${compact(result.error?.message || result.status, 180)}`;
+      if (button) button.disabled = false;
+    });
     root.querySelector?.('#runHayakuNativeColdStart')?.addEventListener('click', () => viewerRunNativeColdStart());
     root.querySelector?.('#cancelHayakuNativeColdStart')?.addEventListener('click', () => {
       const cancelled = cancelNativeJob() || cancelNativeColdStart();
       viewerRecoveryMessage(cancelled ? 'Cold Start 중단을 요청했습니다. 현재 호출이 끝난 뒤 안전하게 멈춥니다.' : '실행 중인 Cold Start가 없습니다.', !cancelled);
       void viewerRenderNativeRecovery();
     });
-    root.querySelector?.('#hayakuNativeJobChip')?.addEventListener('click', () => {
+    root.querySelector?.('#hayakuNativeJobChip')?.addEventListener('click', event => {
+      if (!Memory.nativeRecovery.job) { viewerSetTab('logs'); return; }
+      Memory.ledgerViewer.jobDialogReturnFocus = event?.currentTarget || root.querySelector?.('#hayakuNativeJobChip') || null;
       Memory.ledgerViewer.jobMinimized = false;
       viewerRenderNativeJob();
     });
@@ -58792,38 +58953,25 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         viewerRenderNativeJob();
       });
     });
-    root.querySelector?.('#hayakuNativeAutoRepairToggle')?.addEventListener('change', async event => {
-      const enabled = event?.target?.checked === true;
-      try {
-        await setNativeAutoRepairSetting(enabled);
-        viewerRecoveryMessage(`누락 자동 복구를 ${enabled ? '켰습니다' : '껐습니다'}.`);
-      } catch (error) {
-        if (event?.target) event.target.checked = !enabled;
-        viewerRecoveryMessage(`자동 복구 설정 저장 실패 · ${compact(error?.message || error, 180)}`, true);
-      }
-      await viewerRenderNativeRecovery();
+    root.querySelector?.('#hayakuColdStartBatchTurns')?.addEventListener('change', event => {
+      const selected = normalizeColdStartBatchTurns(event?.target?.value || Memory.settings?.coldStartBatchTurns || 1);
+      if (event?.target) event.target.value = String(selected);
+      const targets = ensureArray(Memory.ledgerViewer.recoveryCoverage?.coldStartTargetTurns);
+      const bundles = targets.length ? Math.ceil(targets.length / selected) : 0;
+      const targetNode = root.querySelector?.('#hayakuColdStartBundleCount'); if (targetNode) targetNode.textContent = bundles ? `${bundles}묶음 (${selected}턴씩)` : '-';
+      const callsNode = root.querySelector?.('#hayakuColdStartCallCount'); if (callsNode) callsNode.textContent = bundles ? `${bundles}회 기본 호출` : '-';
+      viewerRecoveryMessage(`이번 Cold Start에서 호출당 최대 ${selected}턴을 사용합니다. 저장된 기본값은 설정 화면에서 관리합니다.`);
     });
-    root.querySelector?.('#hayakuAfterRequestAutoRepairToggle')?.addEventListener('change', async event => {
-      const enabled = event?.target?.checked === true;
-      try {
-        await setAfterRequestAutoRepairSetting(enabled);
-        viewerRecoveryMessage(`afterRequest 자동 복구를 ${enabled ? '켰습니다' : '껐습니다'}.`);
-      } catch (error) {
-        if (event?.target) event.target.checked = !enabled;
-        viewerRecoveryMessage(`afterRequest 자동 복구 설정 저장 실패 · ${compact(error?.message || error, 180)}`, true);
-      }
-      await viewerRenderNativeRecovery();
-    });
-    root.querySelector?.('#hayakuColdStartBatchTurns')?.addEventListener('change', async event => {
-      const previous = normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1);
-      const requested = normalizeColdStartBatchTurns(event?.target?.value || previous);
-      try {
-        await setColdStartBatchTurnsSetting(requested);
-        viewerRecoveryMessage(`Cold Start 분석 묶음을 최대 ${requested}턴으로 저장했습니다.`);
-      } catch (error) {
-        if (event?.target) event.target.value = String(previous);
-        viewerRecoveryMessage(`Cold Start 묶음 설정 저장 실패 · ${compact(error?.message || error, 180)}`, true);
-      }
+    root.querySelector?.('#hayakuFailedRecoveryDetail')?.addEventListener('click', event => {
+      const tab = event?.target?.closest?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]');
+      if (!tab) return;
+      const selected = tab.dataset.subtab;
+      root.querySelectorAll?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]')?.forEach(node => {
+        const active = node === tab; node.setAttribute('aria-selected', String(active)); node.classList.toggle('is-active', active); node.tabIndex = active ? 0 : -1;
+      });
+      root.querySelectorAll?.('[data-group="hayakuFailureDetail"][data-subpanel]')?.forEach(panel => {
+        const active = panel.dataset.subpanel === selected; panel.hidden = !active; panel.classList.toggle('is-active', active);
+      });
     });
     root.querySelector?.('#selectAllHayakuFailures')?.addEventListener('click', () => {
       if (Memory.ledgerViewer.failedDeleteBusy) return;
@@ -58873,7 +59021,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       void viewerRenderFailedRecovery(Memory.ledgerViewer.failedAnalysisSelectedId);
     });
     root.querySelector?.('#saveHayakuFailedAnalysisEdit')?.addEventListener('click', () => {
-      const body = root.querySelector?.('#hayakuFailedRecoveryPreview')?.value || '';
+      const body = root.querySelector?.('#hayakuFailedRecoveryEditor')?.value || '';
       void viewerResolveFailedRecovery('manual', body);
     });
     root.querySelector?.('#cleanupHayakuOrphans')?.addEventListener('click', () => cleanupLedgerViewerOrphans());
@@ -58893,6 +59041,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (select && !select.disabled) void viewerSelectReplacementVariant(select.getAttribute('data-hayaku-select-variant'));
     });
     root.querySelector?.('#hayakuViewerRecordDetail')?.addEventListener('click', event => {
+      const copy = event?.target?.closest?.('[data-hayaku-copy-record]');
+      if (copy) {
+        const recordId = compact(copy.getAttribute('data-hayaku-copy-record') || '', 196);
+        const record = ensureArray(Memory.ledgerViewer.ledger?.records).find(item => text(item?.recordId || item?.slotId || item?.hash || '') === recordId);
+        if (!record) { viewerSetStatusMessage('패킷 복사 실패 · 현재 원장에서 대상을 다시 찾을 수 없습니다.', true); return; }
+        const packet = viewerPacketObject(record);
+        const serialized = packet ? viewerPrettyJson(packet) : text(record.raw || '');
+        void viewerCopyTextWithFallback(serialized).then(result => {
+          viewerSetStatusMessage(result.ok ? '선택한 패킷 JSON을 복사했습니다.' : '패킷 복사 실패 · 현재 원장에서 다시 선택한 뒤 재시도하세요.', !result.ok);
+        });
+        return;
+      }
       const detailTab = event?.target?.closest?.('[data-hayaku-record-detail-tab]');
       if (detailTab) {
         Memory.ledgerViewer.selectedRecordDetailTab = compact(detailTab.getAttribute('data-hayaku-record-detail-tab') || 'summary', 24);
@@ -58911,7 +59071,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     root.querySelector?.('#hayakuContinuityLine')?.addEventListener('click', event => {
       const all = event?.target?.closest?.('[data-hayaku-viewer-goto]'); if (all) { viewerSetTab(all.getAttribute('data-hayaku-viewer-goto')); return; }
       const paging = event.target?.closest?.('[data-hayaku-line-page]');
-      if (paging && !paging.disabled) { Memory.ledgerViewer.continuityEndTurn = paging.dataset.hayakuLinePage === 'latest' ? null : Number(paging.dataset.hayakuLinePage); viewerRenderContinuityLine(); if(paging.dataset.hayakuLinePage === 'latest'){const scroller=root.querySelector('#hayakuContinuityLine .hv-line-scroll');if(scroller)scroller.scrollLeft=scroller.scrollWidth;} return; }
+      if (paging && !paging.disabled) { Memory.ledgerViewer.continuityEndTurn = paging.dataset.hayakuLinePage === 'latest' ? null : Number(paging.dataset.hayakuLinePage); viewerRenderContinuityLine(); if(paging.dataset.hayakuLinePage === 'latest'){const scroller=root.querySelector('#hayakuContinuityLine');if(scroller)scroller.scrollLeft=scroller.scrollWidth;} return; }
       const stop = event.target?.closest?.('[data-hayaku-line-turn]'); if (!stop) return;
       const state = stop.dataset.state;
       if (state === 'missing' || state === 'pending' || state === 'failed' || state === 'excluded' || !stop.dataset.record) {
@@ -58920,7 +59080,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       } else if (stop.dataset.record) {
         Memory.ledgerViewer.selectedRecordId = stop.dataset.record;
         Memory.ledgerViewer.selectedRecordDetailTab = 'summary';
-        Memory.ledgerViewer.recordsLocateSelected = true; viewerSetTab('packets');
+        Memory.ledgerViewer.recordsLocateSelected = true; Memory.ledgerViewer.showPacketView?.('list'); viewerSetTab('packets');
       }
     });
     root.querySelector?.('#hayakuWorldlineTimeline')?.addEventListener('click', event => {
@@ -58935,7 +59095,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       Memory.ledgerViewer.selectedRecordId = compact(open.getAttribute('data-hayaku-open-record') || '', 196);
       Memory.ledgerViewer.selectedRecordDetailTab = 'summary';
       Memory.ledgerViewer.recordsLocateSelected = true;
-      viewerSetTab('packets');
+      Memory.ledgerViewer.showPacketView?.('list'); viewerSetTab('packets');
     });
     root.querySelector?.('#loadHayakuArchivedFailures')?.addEventListener('click', async () => {
       const output=root.querySelector?.('#hayakuArchivedFailures');
@@ -59001,8 +59161,26 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     });
     root.querySelectorAll?.('[data-hayaku-settings-section-button]')?.forEach(node => {
       node.addEventListener('click', () => viewerSetSettingsSection(node.getAttribute('data-hayaku-settings-section-button')));
+      node.addEventListener('keydown', event => {
+        if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event?.key)) return;
+        const tabs = [...(root.querySelectorAll?.('[data-hayaku-settings-section-button]') || [])];
+        const index = tabs.indexOf(node);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+          : ['ArrowRight', 'ArrowDown'].includes(event.key) ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
+        event.preventDefault?.();
+        viewerSetSettingsSection(tabs[next]?.getAttribute('data-hayaku-settings-section-button'));
+        tabs[next]?.focus?.();
+      });
     });
     const settingsForm = root.querySelector?.('#hayakuSettingsForm');
+    settingsForm?.querySelectorAll?.('[data-hayaku-mode-value]')?.forEach(button => button.addEventListener('click', () => {
+      const control = settingsForm.querySelector('[name="hayaku_mode"]');
+      if (!control) return;
+      control.value = button.getAttribute('data-hayaku-mode-value') || '';
+      viewerWriteSettingsControls(viewerCollectSettingsDraft());
+      viewerSettingsDraftChanged();
+      viewerSetSettingsMessage('성능 모드 변경을 초안에 반영했습니다.');
+    }));
     const onSettingsDraftInput = event => {
       const argument = compact(event?.target?.name || '', 96);
       if (argument) {
@@ -59024,18 +59202,26 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       viewerSettingsDraftChanged();
       viewerSetSettingsMessage('기본값을 draft에 불러왔습니다. 변경 적용 전에는 저장되지 않습니다.');
     });
-    root.querySelector?.('#defaultHayakuSectionSettings')?.addEventListener('click', () => {
+    root.querySelectorAll?.('button[data-load-defaults="[data-subpanel]"]')?.forEach(button => button.addEventListener('click', () => {
+      const section = button.closest?.('[data-hayaku-settings-section]')?.getAttribute('data-hayaku-settings-section');
+      if (!section) return;
+      viewerSetSettingsSection(section);
       const result = viewerLoadSectionDefaults();
       if (!result.restored) { viewerSetSettingsMessage('이 섹션에서 되돌릴 설정을 찾지 못했습니다.', true); return; }
       viewerSettingsDraftChanged();
-      viewerSetSettingsMessage(`이 섹션의 기본값 ${result.restored.toLocaleString()}개를 draft에 불러왔습니다. 변경 적용 전에는 저장되지 않습니다.`);
-    });
+      viewerSetSettingsMessage(`이 섹션의 기본값 ${result.restored.toLocaleString()}개를 초안에 불러왔습니다. 저장 전에는 적용되지 않습니다.`);
+    }));
     root.querySelector?.('#hayakuSettingsFilter')?.addEventListener('input', () => viewerApplySettingsFilter());
     for (const spec of VIEWER_LIST_FILTERS) {
       root.querySelector?.('#' + spec.input)?.addEventListener('input', () => viewerApplyListFilter(spec));
     }
     root.querySelectorAll?.('[data-hayaku-viewer-goto]')?.forEach(node => {
-      node.addEventListener('click', () => viewerSetTab(node.getAttribute('data-hayaku-viewer-goto')));
+      node.addEventListener('click', () => {
+        const destination = node.getAttribute('data-hayaku-viewer-goto');
+        viewerSetTab(destination);
+        const section = node.getAttribute('data-go-sub');
+        if (destination === 'settings' && section) viewerSetSettingsSection(section);
+      });
     });
     const viewerTabs = [...(root.querySelectorAll?.('[data-hayaku-viewer-tab]') || [])];
     viewerTabs.forEach((node, index) => {
@@ -59053,575 +59239,153 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       });
     });
   };
+  // HAYAKU view source is the finalized mockup DOM/CSS; product state and actions
+  // are connected below through explicit HAYAKU Memory adapters. No suite.js behavior
+  // or mockup fixtures are included.
+  const HAYAKU_GUI_SUITE_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n";
+  const HAYAKU_GUI_THEME_CSS = "/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n";
+  const HAYAKU_GUI_COMPONENT_CSS = "\n/* HAYAKU 전용: 관제실 / 노선도 컨셉 */\n.route{overflow-x:auto;padding:6px 4px 12px}\n.route__track{display:flex;min-width:max-content}\n.stop{position:relative;flex:1 0 82px;width:82px;display:grid;justify-items:center;gap:4px;padding:6px 4px;border:0;background:transparent;color:var(--text);border-radius:var(--r-sm)}\n.stop:hover{background:var(--surface3)}\n.stop::before{content:\"\";position:absolute;top:34px;left:-50%;width:100%;height:4px;background:var(--ok)}\n.stop:first-child::before{display:none}\n.stop b{font:700 12px var(--font-mono)}\n.stop i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;border:4px solid var(--ok);background:var(--surface)}\n.stop small{font-size:11.5px;color:var(--text2)}\n.stop--miss::before{background:repeating-linear-gradient(90deg,var(--warn) 0 7px,transparent 7px 13px)}\n.stop--miss i{border:3px dashed var(--warn);background:var(--warn-soft)}\n.stop--wait i{border-color:var(--warn);border-radius:4px;transform:rotate(45deg)}\n.stop--fail i{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}\n.stop--fail::before{background:var(--danger)}\n.stop--skip i{border-color:var(--border2);background:var(--surface3)}.stop--skip::before{background:var(--border2)}\n.stop.is-now b::before{content:\"▼ \";color:var(--accent)}\n.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}\n.legend span{display:inline-flex;align-items:center;gap:6px}\n.legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}\n.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}\n.metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}\n.dash{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}\n.rec{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--border)}\n.rec:first-child{border-top:0}\n.rec .score{font:700 12px var(--font-mono);padding:3px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent-ink)}\n.rec p{margin:0;font-size:12.5px;color:var(--text2)}\n.pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}\n.pk-list{max-height:520px;overflow:auto}\n.pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.pk-row:first-child{border-top:0}.pk-row:hover{background:var(--surface2)}\n.pk-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.pk-row b{font:700 13px var(--font-mono);color:var(--accent-ink)}\n.pk-row strong{display:block;font-size:13px}.pk-row small{color:var(--text3);font-size:12px}\n.axes{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n.axis{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.axis h4{margin:0 0 6px;font-size:12.5px;color:var(--accent-ink)}.axis p{margin:0;font-size:12.5px;color:var(--text2)}\npre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.6;overflow:auto;max-height:220px;white-space:pre-wrap}\n.cost{display:flex;gap:10px;align-items:flex-start}\n.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}\n.picker label{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);cursor:pointer}\n.picker input{width:17px;height:17px;margin-top:2px;accent-color:var(--accent)}\n.picker label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}\n.picker small{display:block;color:var(--text3);font-size:11.5px}\n.st-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}\n.st-nav{display:grid;gap:3px;position:sticky;top:0}\n.st-nav button{text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.st-nav b{display:block;font-size:13.5px}.st-nav small{color:var(--text3);font-size:12px}\n.st-nav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.lvl{display:inline-flex;margin-left:6px;padding:0 7px;border-radius:99px;font:650 11px/1.7 var(--font-sans);background:var(--surface3);color:var(--text2)}\nhtml[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=warn] [data-scenario-show]:not([data-scenario-show~=warn]),html[data-scenario=fail] [data-scenario-show]:not([data-scenario-show~=fail]),html:not([data-scenario]) [data-scenario-show]:not([data-scenario-show~=ok]){display:none!important}\n.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}\n.pk-list.is-world .pk-row{position:relative}.pk-list.is-world .pk-row::before{content:\"\";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.fail-box{display:none}\nhtml[data-scenario=fail] .fail-box{display:block}\n.cost-table{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.fd-grid{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,1.6fr);gap:14px}\n.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cmp>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}.cmp b{display:block;font-size:12px;color:var(--text3);margin-bottom:3px}\n.cmp ins{background:var(--ok-soft);color:var(--ok-ink);text-decoration:none;padding:0 3px;border-radius:3px}.cmp del{background:var(--danger-soft);color:var(--danger-ink);padding:0 3px;border-radius:3px}\n.btn[disabled]+.why{display:block}.why{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n.why.on{display:block}\n@container app (max-width:900px){.fd-grid,.cmp{grid-template-columns:1fr}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){\n  .metric-row{grid-template-columns:repeat(2,1fr)}.dash,.pk-layout,.axes{grid-template-columns:1fr}\n  .st-layout{grid-template-columns:1fr}.st-nav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}.st-nav small{display:none}\n  .pk-list{max-height:260px}\n}\n";
+  const HAYAKU_GUI_ICONS = Object.freeze({
+    grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    layers:'<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5"/>',
+    wrench:'<path d="M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z"/><path d="m13.5 12.5-8 8-2-2 8-8"/>',
+    server:'<rect x="3.5" y="4" width="17" height="6.5" rx="2"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="2"/><path d="M7.5 7.2v.1M7.5 16.8v.1"/>',
+    sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    log:'<path d="M6 4h12v16H6z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/>',
+    check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',alert:'<path d="M12 8v5M12 16.6v.1"/><path d="M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/>',
+    x:'<path d="m6 6 12 12M18 6 6 18"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    more:'<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',arrow:'<path d="m9 18 6-6-6-6"/>'
+  });
+  const hayakuMockupIcon = name => `<svg class="ic" aria-hidden="true" viewBox="0 0 24 24">${HAYAKU_GUI_ICONS[name] || ''}</svg>`;
   const renderLedgerViewerShell = () => {
     const root = viewerEnsureRoot();
     if (!root) return null;
-    root.style.display = 'flex';
-    if (root.dataset?.hayakuViewerMounted === '1' && root.querySelector?.('.hayaku-viewer')) {
+    if (root.dataset?.hayakuViewerMounted === '1' && root.querySelector?.('.app[data-hayaku-mockup="1"]')) {
       viewerSetTab(Memory.ledgerViewer.activeTab || 'overview');
       viewerRenderNativeJob();
       return root;
     }
-    root.innerHTML = `<style>
-      #${LEDGER_VIEWER_ROOT_ID}{--hv-bg:#f4f7fb;--hv-card:#fff;--hv-soft:#f7f9fc;--hv-line:#dce3ee;--hv-text:#172033;--hv-muted:#738099;--hv-primary:#5568e8;--hv-primary-soft:#eef0ff;--hv-green:#14966f;--hv-green-soft:#e9f8f3;--hv-red:#c64f5a;--hv-red-soft:#fff0f1;--hv-warn:#b7791f;font:13px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--hv-text)}
-      #${LEDGER_VIEWER_ROOT_ID} *{box-sizing:border-box}
-      .hayaku-viewer{position:relative;width:min(1180px,100%);height:min(920px,100vh);display:grid;grid-template-rows:72px minmax(0,1fr);overflow:hidden;background:var(--hv-bg);border:1px solid var(--hv-line);border-radius:24px;box-shadow:0 25px 80px rgba(12,24,55,.28)}
-      .hv-top{display:flex;align-items:center;gap:13px;padding:0 22px;border-bottom:1px solid var(--hv-line);background:var(--hv-card)}.hv-mark{width:40px;height:40px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,var(--hv-primary),#7d68e8);color:#fff;box-shadow:0 8px 20px rgba(85,104,232,.24)}.hv-brand{display:grid;gap:2px}.hv-brand strong{font-size:18px}.hv-brand span{font-size:11px;color:var(--hv-muted)}.hv-top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}.hv-status{color:var(--hv-muted);font-size:11px}
-      .hv-workspace{display:grid;grid-template-columns:116px minmax(0,1fr);min-height:0}.hv-sidebar{padding:16px 10px;border-right:1px solid var(--hv-line);background:var(--hv-card);display:flex;flex-direction:column;gap:8px}.hv-nav{min-height:68px;padding:9px 6px;border:1px solid transparent;border-radius:14px;background:transparent;color:var(--hv-muted);font:700 11px inherit;cursor:pointer;display:grid;place-items:center;gap:5px}.hv-nav span:first-child{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--hv-soft);color:var(--hv-primary);font-size:15px}.hv-nav.active{border-color:var(--hv-line);background:var(--hv-primary-soft);color:var(--hv-primary)}.hv-nav-count{min-width:18px;padding:1px 5px;border-radius:999px;background:var(--hv-card);font-size:9px}
-      .hv-content{min-width:0;min-height:0}.hv-panel{display:none;height:100%;overflow-y:auto;padding:22px}.hv-panel.active{display:block}.hv-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.hv-heading h1{margin:2px 0 0;font-size:24px}.hv-heading p{margin:5px 0 0;color:var(--hv-muted)}.hv-eyebrow{display:block;color:var(--hv-muted);font-size:10px;letter-spacing:.02em}.hv-actions{display:flex;gap:8px;flex-wrap:wrap}.hv-btn{min-height:36px;padding:7px 13px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-card);color:var(--hv-text);font:650 12px inherit;cursor:pointer}.hv-btn:hover{background:var(--hv-soft)}.hv-btn.primary{border-color:var(--hv-primary);background:var(--hv-primary);color:#fff}.hv-btn.danger{border-color:var(--hv-red);color:var(--hv-red);background:var(--hv-red-soft)}.hv-btn:disabled{cursor:not-allowed;opacity:.48}      .hv-missing-turn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px;margin:14px 0;max-height:420px;overflow:auto;}
-      .hv-missing-turn-item{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid var(--hv-line);border-radius:12px;min-width:0;background:var(--hv-card);color:var(--hv-text);}
-      #reviewHayakuSourceEdits[hidden],#runHayakuNativeRepair[hidden]{display:none!important}
-      .hv-scope-actions:has(>#reviewHayakuSourceEdits[hidden]),.hv-recovery-actions:has(>#runHayakuNativeRepair[hidden]){display:none}
-      .hv-missing-turn-item input{flex:0 0 auto;margin-top:3px;accent-color:var(--hv-primary);}
-      .hv-missing-turn-item strong{flex:0 0 auto;white-space:nowrap;}
-      .hv-missing-turn-item span{min-width:0;overflow-wrap:anywhere;line-height:1.5;font-size:13px;}
-      .hv-missing-turn-item.missing{border-color:var(--hv-primary);background:var(--hv-primary-soft);}
-.hv-confirm-overlay{position:absolute;inset:0;z-index:25;display:grid;place-items:center;padding:20px;background:linear-gradient(180deg,rgba(8,14,26,.64),rgba(8,14,26,.72));backdrop-filter:none;-webkit-backdrop-filter:none}.hv-confirm-dialog{width:min(520px,100%);padding:20px;border:1px solid var(--hv-line);border-radius:18px;background:var(--hv-card);box-shadow:0 10px 26px rgba(12,24,55,.30),inset 0 1px 0 rgba(255,255,255,.45)}.hv-confirm-eyebrow{display:block;color:var(--hv-red);font-size:9px;font-weight:800;letter-spacing:.08em}.hv-confirm-dialog h2{margin:5px 0 8px;font-size:20px}.hv-confirm-dialog p{margin:0;color:var(--hv-text);line-height:1.55}.hv-confirm-note{margin-top:12px;padding:11px 12px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-soft);color:var(--hv-muted);font-size:11px;line-height:1.55}.hv-confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
-.hv-manual-recapture-dialog{width:min(1060px,100%);height:min(90dvh,860px);max-height:calc(100% - 14px);min-width:0;min-height:0;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto auto;gap:9px;overflow:hidden;padding:16px}.hv-manual-recapture-head{min-width:0}.hv-manual-recapture-head h2{margin:4px 0;font-size:19px}.hv-manual-recapture-head p{font-size:11px;color:var(--hv-muted)}.hv-manual-recapture-note{margin:0;padding:8px 10px;font-size:10px;line-height:1.45}.hv-manual-recapture-select{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:8px;min-width:0}.hv-manual-recapture-select>span{min-width:0;color:var(--hv-muted);font-size:10px;text-align:right}.hv-manual-recapture-turns{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));align-content:start;gap:7px;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:1px 4px 1px 1px}.hv-manual-recapture-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:6px;min-width:0;padding:6px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-card)}.hv-manual-recapture-turn{display:grid;grid-template-columns:auto minmax(0,1fr);align-content:center;align-items:center;gap:3px 8px;min-width:0;min-height:54px;padding:6px 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--hv-text);font:inherit;text-align:left;cursor:pointer}.hv-manual-recapture-turn strong{grid-row:span 2;color:var(--hv-primary);font-size:15px;white-space:nowrap}.hv-manual-recapture-turn span{min-width:0;overflow:hidden;color:var(--hv-muted);font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}.hv-manual-recapture-turn small{color:var(--hv-muted);font-size:9px}.hv-manual-recapture-turn[aria-pressed="true"]{border-color:var(--hv-primary);background:var(--hv-primary-soft)}.hv-manual-recapture-turn:hover:not(:disabled){background:var(--hv-soft)}.hv-manual-recapture-turn:focus-visible,.hv-manual-recapture-view:focus-visible,.hv-manual-recapture-dialog .hv-btn:focus-visible{outline:3px solid var(--hv-primary);outline-offset:2px}.hv-manual-recapture-turn:disabled{cursor:not-allowed;opacity:.58}.hv-manual-recapture-view{align-self:center;min-height:42px;padding:7px 9px;white-space:nowrap}.hv-manual-recapture-dialog>.hv-confirm-actions{justify-content:flex-end;gap:8px;margin:0;padding-top:9px;border-top:1px solid var(--hv-line)}.hv-manual-recapture-result{margin:0!important;color:var(--hv-muted);font-size:10px}.hv-manual-recapture-detail-overlay{position:absolute;inset:0;z-index:2;display:grid;place-items:center;padding:20px;background:linear-gradient(180deg,rgba(8,14,26,.42),rgba(8,14,26,.52))}.hv-manual-recapture-detail{grid-template-rows:auto auto minmax(0,1fr) auto}.hv-manual-recapture-detail-head h2{margin:4px 0;font-size:19px}.hv-manual-recapture-detail-head p{font-size:11px;color:var(--hv-muted)}.hv-manual-recapture-detail-status{margin:0!important;padding:8px 10px;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft);font-size:10px}.hv-manual-recapture-detail-packets{display:grid;align-content:start;gap:8px;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;padding:1px 4px 1px 1px}.hv-manual-recapture-packet{min-width:0;padding:10px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-card)}.hv-manual-recapture-packet header{display:flex;justify-content:space-between;gap:8px;overflow-wrap:anywhere;font-size:10px}.hv-manual-recapture-packet header span{color:var(--hv-muted);text-align:right}.hv-manual-recapture-packet pre,.hv-manual-recapture-source pre{max-height:44dvh;overflow:auto;margin:8px 0 0;padding:9px;border-radius:9px;background:var(--hv-soft);color:var(--hv-text);font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}.hv-manual-recapture-source{margin-top:8px}.hv-manual-recapture-source summary{cursor:pointer;color:var(--hv-muted);font-size:10px}.hv-manual-recapture-detail-actions{display:flex;justify-content:flex-end;padding-top:9px;border-top:1px solid var(--hv-line)}@media(max-width:680px){.hv-manual-recapture-detail-overlay{padding:8px}.hv-manual-recapture-overlay{place-items:stretch;padding:8px}.hv-manual-recapture-dialog{width:100%;height:100%;max-height:100%;padding:12px;border-radius:14px;grid-template-rows:auto auto auto minmax(0,1fr) auto auto}.hv-manual-recapture-dialog.hv-manual-recapture-detail{grid-template-rows:auto auto minmax(0,1fr) auto}.hv-manual-recapture-select{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.hv-manual-recapture-select>span{grid-column:1/-1;text-align:left}.hv-manual-recapture-turns{grid-template-columns:minmax(0,1fr)}.hv-manual-recapture-card{grid-template-columns:minmax(0,1fr) auto}.hv-manual-recapture-dialog>.hv-confirm-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.hv-manual-recapture-dialog>.hv-confirm-actions .hv-btn,.hv-manual-recapture-detail-actions .hv-btn{min-height:44px;padding:9px 8px}.hv-manual-recapture-packet{padding:8px}.hv-manual-recapture-packet pre,.hv-manual-recapture-source pre{max-height:38dvh;font-size:9px}}
-      .hv-job-chip{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-color:var(--hv-primary)!important;color:var(--hv-primary)!important;background:var(--hv-primary-soft)!important}.hv-job-overlay{position:absolute;inset:72px 0 0;z-index:24;display:grid;place-items:center;padding:22px;background:linear-gradient(180deg,rgba(9,15,27,.58),rgba(9,15,27,.70));backdrop-filter:none;-webkit-backdrop-filter:none}.hv-job-overlay[hidden],.hv-job-chip[hidden]{display:none}.hv-job-dialog{width:min(900px,100%);max-height:calc(100% - 20px);overflow:auto;padding:20px;border:1px solid var(--hv-line);border-radius:20px;background:var(--hv-card);box-shadow:0 8px 22px rgba(12,24,55,.26),inset 0 1px 0 rgba(255,255,255,.45)}.hv-job-head{display:flex;align-items:flex-start;gap:14px}.hv-job-head>div:first-child{min-width:0;flex:1}.hv-job-head small{display:block;color:var(--hv-primary);font-size:9px;font-weight:850;letter-spacing:.08em}.hv-job-head h2{margin:4px 0 3px;font-size:21px}.hv-job-head p{margin:0;color:var(--hv-muted);font-size:11px}.hv-job-head-actions{display:flex;gap:7px}.hv-job-progress{height:10px;margin:18px 0 8px;overflow:hidden;border-radius:999px;background:var(--hv-soft)}.hv-job-progress>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--hv-primary),#8a69ec);transition:width .25s ease}.hv-job-progress>i.indeterminate{animation:hv-job-pulse 1.4s ease-in-out infinite}.hv-job-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}.hv-job-stats div{padding:9px 10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft)}.hv-job-stats b{display:block;color:var(--hv-muted);font-size:9px}.hv-job-stats span{display:block;margin-top:3px;overflow-wrap:anywhere;font-size:11px}.hv-job-message{padding:11px 12px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-primary-soft);color:var(--hv-primary);font-size:11px;line-height:1.5}.hv-job-comparison{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.hv-job-comparison[hidden],.hv-job-choices[hidden]{display:none}.hv-job-compare-side{min-width:0;padding:12px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-soft)}.hv-job-compare-side.candidate{border-color:var(--hv-primary)}.hv-job-compare-side h3{margin:0 0 8px;font-size:13px}.hv-job-compare-side article{padding:9px;border-radius:10px;background:var(--hv-card)}.hv-job-compare-side article+article{margin-top:7px}.hv-job-compare-side p{margin:4px 0;color:var(--hv-muted);font-size:10px;line-height:1.45}.hv-job-compare-side details{margin-top:7px}.hv-job-compare-side summary{cursor:pointer;color:var(--hv-muted);font-size:10px}.hv-job-compare-side pre{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:9px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.hv-job-loading{grid-column:1/-1;padding:18px;color:var(--hv-muted);text-align:center}.hv-job-loading.error{color:var(--hv-red)}.hv-job-choices{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}@keyframes hv-job-pulse{0%,100%{opacity:.45;transform:translateX(-18%)}50%{opacity:1;transform:translateX(18%)}}
-      .hv-recall{margin:15px 0;padding:15px;border:1px solid var(--hv-line);border-radius:17px;background:var(--hv-card);box-shadow:0 4px 14px rgba(29,43,75,.04)}.hv-recall-head{display:grid;grid-template-columns:minmax(180px,.65fr) minmax(260px,1.35fr);gap:14px;align-items:start}.hv-recall-title{display:grid;gap:4px}.hv-recall-title strong{font-size:15px}.hv-recall-title small{color:var(--hv-muted)}.hv-current-input{padding:10px 12px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-soft)}.hv-current-input span{display:block;color:var(--hv-primary);font-size:9px;font-weight:800;text-transform:uppercase}.hv-current-input p{margin:4px 0 0;max-height:84px;overflow:auto;color:var(--hv-text);white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.5}.hv-recall-rows{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:12px}.hv-recall-item{min-width:0;padding:11px;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-soft)}.hv-recall-item-head{display:flex;justify-content:space-between;gap:8px;color:var(--hv-primary);font-size:9px}.hv-recall-item-head em{font-style:normal;color:var(--hv-muted)}.hv-recall-item>strong{display:block;margin-top:6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hv-recall-item>p{margin:4px 0;color:var(--hv-muted);font-size:11px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.hv-recall-item>small{color:var(--hv-muted);font-size:9px}.hv-recall-empty{grid-column:1/-1;padding:14px;border:1px dashed var(--hv-line);border-radius:11px;color:var(--hv-muted);text-align:center}
-      .hv-scope{display:grid;gap:5px;margin:15px 0;padding:12px 14px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-scope>div{display:flex;gap:8px;min-width:0}.hv-scope b{min-width:62px}.hv-scope code,.hv-scope span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hv-muted)}
-      .hv-metrics{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px;margin-bottom:14px}.hv-metric{padding:12px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-metric span{display:block;color:var(--hv-muted);font-size:10px}.hv-metric strong{display:block;margin-top:3px;font-size:16px}
-      .hv-tools{display:grid;grid-template-columns:180px 210px minmax(220px,1fr) auto auto;gap:9px;align-items:center;margin-bottom:12px}.hv-audit-toggle{min-height:36px;padding:7px 10px;display:flex;align-items:center;gap:7px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-card);color:var(--hv-muted);font-size:10px;white-space:nowrap;cursor:pointer}.hv-audit-toggle input{width:auto!important;margin:0}.hv-tools select,.hv-tools input{width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-card);color:var(--hv-text);font:12px inherit}.hv-tools small{color:var(--hv-muted);text-align:right}
-      .hv-records{display:grid;gap:10px}.hv-record{padding:15px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card);box-shadow:0 4px 14px rgba(29,43,75,.04)}.hv-record-head{display:flex;justify-content:space-between;gap:14px}.hv-record-head>div{display:grid;gap:4px;min-width:0}.hv-record-head strong{font-size:14px}.hv-record-head span{color:var(--hv-muted);white-space:pre-wrap;overflow-wrap:anywhere}.hv-record-head em{height:max-content;padding:3px 8px;border-radius:999px;font-style:normal;font-size:10px;font-weight:800}.hv-record-head em.is-live{background:var(--hv-green-soft);color:var(--hv-green)}.hv-record-head em.is-retired{background:var(--hv-red-soft);color:var(--hv-red)}.hv-record-head em.is-pending{background:var(--hv-primary-soft);color:var(--hv-primary)}.hv-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px;color:var(--hv-muted);font-size:10px}.hv-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.hv-tags span{padding:2px 7px;border-radius:999px;background:var(--hv-primary-soft);color:var(--hv-primary);font-size:9px}.hv-record-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:9px}.hv-record-actions .hv-btn{min-height:30px;padding:5px 10px;font-size:11px}.hv-record details,.hv-diagnostics details,.hv-log-entry details{margin-top:10px}.hv-record summary,.hv-diagnostics summary,.hv-log-entry summary{cursor:pointer;color:var(--hv-muted);font-weight:650}.hv-record pre,.hv-diagnostics pre,.hv-log-entry pre{max-height:430px;overflow:auto;padding:12px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:#44506a;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
-      .hv-diagnostics{margin-top:14px;padding:14px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card)}.hv-empty{min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--hv-line);border-radius:16px;color:var(--hv-muted)}.hv-empty strong{color:var(--hv-text)}.hayaku-viewer.is-busy .hv-status{color:var(--hv-primary)}
-      .hv-log-summary{margin:15px 0;padding:13px 15px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card);color:var(--hv-muted)}.hv-log-summary strong{color:var(--hv-text);font-size:18px}.hv-debug-export{margin:0 0 14px;padding:14px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card)}.hv-debug-export[hidden]{display:none}.hv-debug-export-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.hv-debug-export-head>div{display:grid;gap:4px}.hv-debug-export-head strong{font-size:13px}.hv-debug-export-head span{color:var(--hv-muted);font-size:10px}.hv-debug-export textarea{width:100%;min-height:280px;max-height:560px;margin-top:10px;padding:12px;resize:vertical;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-text);white-space:pre;font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.hv-log-list{display:grid;gap:9px}.hv-log-entry{padding:13px 14px;border:1px solid var(--hv-line);border-left:3px solid var(--hv-primary);border-radius:14px;background:var(--hv-card)}.hv-log-entry.success{border-left-color:var(--hv-green)}.hv-log-entry.warn{border-left-color:var(--hv-warn)}.hv-log-entry.error{border-left-color:var(--hv-red)}.hv-log-head{display:flex;justify-content:space-between;gap:12px}.hv-log-head>div{display:grid;gap:3px}.hv-log-head strong{font-size:12px}.hv-log-head span{color:var(--hv-muted);font:10px ui-monospace,SFMono-Regular,Consolas,monospace}.hv-log-head time{color:var(--hv-muted);font-size:10px;white-space:nowrap}
-      .hv-recovery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.hv-recovery-card{padding:15px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card);display:grid;gap:10px}.hv-recovery-card h3{margin:0;font-size:14px}.hv-recovery-card p{margin:0;color:var(--hv-muted);font-size:11px;line-height:1.55}.hv-recovery-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:11px}.hv-recovery-kv b{color:var(--hv-muted)}.hv-recovery-kv span,.hv-recovery-kv code{min-width:0;overflow-wrap:anywhere}.hv-recovery-state{display:inline-flex;align-items:center;align-self:start;justify-self:start;width:max-content;max-width:100%;min-height:24px;padding:4px 9px;line-height:1.2;white-space:nowrap;border-radius:999px;background:var(--hv-primary-soft);color:var(--hv-primary);font-size:10px;font-weight:800}.hv-recovery-actions{display:flex;align-items:center;align-self:end;gap:8px;flex-wrap:wrap;margin-top:14px;min-height:40px}.hv-recovery-run{width:max-content;max-width:100%;height:40px;min-height:40px;padding:0 14px;flex:0 0 auto;white-space:nowrap}.hv-recovery-toggle{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);font-size:11px}.hv-recovery-toggle input{accent-color:var(--hv-primary)}.hv-portable-memory-card{grid-column:1/-1}.hv-portable-memory-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.hv-portable-memory-title-row h3{margin:0}.hv-portable-json-badge{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--hv-primary);border-radius:999px;background:var(--hv-primary-soft);color:var(--hv-primary);font:800 9px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.06em}.hv-portable-memory-card>p{max-width:760px}.portable-memory-controls{display:block}.portable-memory-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.portable-memory-actions .hv-btn{width:100%;min-height:40px}.portable-memory-status{display:block;margin-top:8px;color:var(--hv-muted);font-size:10px;line-height:1.45}.portable-memory-status:empty{display:none}.hv-portable-memory-note{padding-top:9px;border-top:1px solid var(--hv-line);color:var(--hv-muted);font-size:10px;line-height:1.5}.hv-recovery-debug{margin-top:14px;padding:14px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card)}.hv-recovery-debug pre{max-height:430px;overflow:auto;margin:9px 0 0;padding:12px;border-radius:11px;background:var(--hv-soft);white-space:pre-wrap;overflow-wrap:anywhere;font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.hv-recovery-message{margin-top:12px;padding:10px 12px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-muted);font-size:11px}.hv-recovery-message.error{border-color:var(--hv-red);background:var(--hv-red-soft);color:var(--hv-red)}
-      .hv-batch-select{min-height:36px;padding:7px 10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-text);font:650 11px inherit}
-        .hv-failure-disclosure{border:1px solid var(--hv-border,#dce3ee);border-radius:12px;margin-top:16px;padding:12px;min-width:0;background:var(--hv-surface,#fff)}
-        .hv-failure-disclosure>summary{cursor:pointer;font-weight:700;color:var(--hv-text,#172033);padding:4px 0}
-        .hv-failure-memory{margin-top:16px;padding:16px;border:1px solid #dce3ee;border-radius:12px;background:#f7f9fd;min-width:0}
-        .hv-failure-memory h3{margin:0 0 8px;font-size:14px;color:#172033}
-        .hv-failure-memory p{margin:0;color:#344156;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
-        .hv-failure-explanation{color:#25344f!important;line-height:1.6!important;overflow-wrap:anywhere}
-        .hv-failure-actions{flex-wrap:wrap;gap:8px}
-        .hv-failure-row strong,.hv-failure-row span,.hv-failure-row small{overflow-wrap:anywhere;min-width:0}
-        #hayakuNativeJobChip{white-space:normal!important;overflow-wrap:anywhere;max-width:min(410px,54vw);height:auto;min-height:34px;text-align:left;line-height:1.4}
-.hv-failure-layout{display:grid;grid-template-columns:minmax(210px,.7fr) minmax(0,1.7fr);gap:12px;margin-top:16px;min-height:520px}.hv-failure-list,.hv-failure-detail{padding:13px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card)}.hv-failure-list{display:flex;flex-direction:column;gap:7px;overflow:auto}.hv-failure-list>.hv-empty[hidden]{display:none!important}#hayakuFailedRecoveryList{width:100%;display:grid;gap:7px;align-content:start}.hv-failure-item{position:relative;width:100%;height:104px;min-height:104px}.hv-failure-row{width:100%;height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:5px;padding:11px 54px 10px 12px;overflow:hidden;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-text);text-align:left;cursor:pointer}.hv-failure-row:hover{border-color:color-mix(in srgb,var(--hv-primary) 45%,var(--hv-line))}.hv-failure-row.active{border-color:var(--hv-primary);background:var(--hv-primary-soft)}.hv-failure-row strong,.hv-failure-row small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hv-failure-row span,.hv-failure-row small{color:var(--hv-muted);font-size:10px}.hv-failure-row span{min-height:2.7em;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.hv-failure-delete{position:absolute;top:9px;right:9px;z-index:1;min-height:27px;padding:4px 7px;border:1px solid color-mix(in srgb,var(--hv-red) 45%,var(--hv-line));border-radius:8px;background:var(--hv-card);color:var(--hv-red);font:750 9px inherit;cursor:pointer}.hv-failure-delete:hover{border-color:var(--hv-red);background:var(--hv-red-soft)}.hv-failure-detail h2{margin:0 0 4px;font-size:18px}.hv-failure-meta{display:grid;gap:5px;margin:8px 0 12px;color:var(--hv-muted);font-size:10px;overflow-wrap:anywhere}.hv-failure-explanation{white-space:pre-line;margin:10px 0 12px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--hv-primary) 30%,var(--hv-line));border-radius:11px;background:var(--hv-primary-soft);color:var(--hv-text);font-size:11px;line-height:1.55}.hv-failure-action-hint{margin:10px 0 0;color:var(--hv-muted);font-size:10px;line-height:1.45}.hv-failure-section{display:grid;gap:6px;margin-top:10px}.hv-failure-section strong{font-size:11px}.hv-failure-section textarea{width:100%;min-height:110px;max-height:320px;resize:vertical;padding:10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-text);white-space:pre;font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.hv-failure-section textarea#hayakuFailedRecoveryPreview{min-height:260px}.hv-failure-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-      .hv-settings-layout{display:grid;grid-template-columns:190px minmax(0,1fr);gap:12px;margin-top:16px}.hv-settings-nav{display:flex;flex-direction:column;gap:6px;align-self:start;position:sticky;top:0}.hv-settings-nav button{display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:center;min-height:52px;padding:9px 10px;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--hv-muted);text-align:left;cursor:pointer}.hv-settings-nav button>span:first-child{display:grid;width:24px;height:24px;place-items:center;border-radius:8px;background:var(--hv-soft);color:var(--hv-primary);font-weight:800}.hv-settings-nav button>span:last-child{display:grid;gap:2px}.hv-settings-nav button small{font-size:9px;font-weight:500}.hv-settings-nav button.active{border-color:var(--hv-line);background:var(--hv-primary-soft);color:var(--hv-primary)}.hv-settings-card{padding:16px;border:1px solid var(--hv-line);border-radius:16px;background:var(--hv-card)}.hv-settings-card[hidden]{display:none}.hv-settings-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:13px;border-bottom:1px solid var(--hv-line)}.hv-settings-card>header div{display:grid;gap:3px}.hv-settings-card h2{margin:0;font-size:17px}.hv-settings-card>header p{margin:0;color:var(--hv-muted);font-size:10px;line-height:1.5}.hv-settings-count{padding:4px 8px;border-radius:999px;background:var(--hv-primary-soft);color:var(--hv-primary);font-size:9px;font-weight:800;white-space:nowrap}.hv-setting-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;padding:13px 2px;border-bottom:1px solid var(--hv-line)}.hv-setting-row>div:first-child{display:grid;gap:3px}.hv-setting-row strong{font-size:11px}.hv-setting-row p{margin:0;color:var(--hv-muted);font-size:10px;line-height:1.45}.hv-setting-row code,.hv-setting-field code,.hv-setting-toggle code{color:var(--hv-primary);font:9px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.hv-setting-row select,.hv-setting-field input,.hv-setting-field select{min-height:36px;padding:7px 9px;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft);color:var(--hv-text);font:650 11px inherit}.hv-setting-row input[type=checkbox],.hv-setting-toggle input[type=checkbox]{width:40px;height:22px;accent-color:var(--hv-primary)}.hv-choice-group{display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--hv-soft)}.hv-choice-group label{position:relative;min-width:64px;padding:8px 10px;border-radius:8px;color:var(--hv-muted);font-size:10px;font-weight:750;text-align:center;cursor:pointer}.hv-choice-group input{position:absolute;opacity:0;pointer-events:none}.hv-choice-group label.is-selected{background:var(--hv-card);color:var(--hv-primary);box-shadow:0 2px 8px rgba(29,43,75,.1)}.hv-setting-note{grid-column:1/-1;padding:8px 10px;border-radius:10px;background:var(--hv-soft);color:var(--hv-muted);font-size:10px}.hv-setting-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:13px 0;border-bottom:1px solid var(--hv-line)}.hv-setting-field{display:grid;gap:5px;padding:10px;border-radius:11px;background:var(--hv-soft)}.hv-setting-field>span{display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700}.hv-setting-field output{color:var(--hv-primary)}.hv-setting-field input{width:100%;background:var(--hv-card)}.hv-setting-field input[type=range]{min-height:auto;padding:0;accent-color:var(--hv-primary)}.hv-setting-toggles{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin-top:13px;overflow:hidden;border:1px solid var(--hv-line);border-radius:12px;background:var(--hv-line)}.hv-setting-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px;background:var(--hv-soft)}.hv-setting-toggle>span{display:grid;gap:3px}.hv-setting-toggle small{color:var(--hv-muted);font-size:9px}.hv-setting-warning{display:flex;gap:7px;align-items:flex-start;margin-top:11px;padding:10px;border:1px solid #e1b35f;border-radius:11px;background:#fff7e8;color:#8a5a12;font-size:10px;line-height:1.5}.hv-setting-warning[hidden]{display:none}.hv-settings-route{margin-top:12px;padding:11px;border-radius:11px;background:var(--hv-primary-soft);color:var(--hv-muted);font-size:10px;line-height:1.5}.hv-settings-save{position:sticky;bottom:-22px;display:flex;align-items:center;gap:8px;margin-top:12px;padding:11px 12px;border:1px solid var(--hv-primary);border-radius:13px;background:var(--hv-primary-soft);box-shadow:0 -8px 24px rgba(29,43,75,.08)}.hv-settings-save>span{display:grid;gap:2px;margin-right:auto}.hv-settings-save small{color:var(--hv-muted);font-size:9px}.hv-settings-message{margin-top:10px;padding:9px 11px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-soft);color:var(--hv-muted);font-size:10px}.hv-settings-message.error{border-color:var(--hv-red);background:var(--hv-red-soft);color:var(--hv-red)}
-      .hayaku-viewer{width:min(1240px,100%);height:min(820px,100vh);grid-template-rows:60px minmax(0,1fr);border-radius:18px}.hv-top{gap:10px;padding:0 14px}.hv-mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,var(--hv-primary),#6685d9)}.hv-brand strong{font-size:14px}.hv-brand span{font-size:9px}.hv-top-scope{min-width:0;display:grid;gap:1px;margin-left:9px;padding-left:14px;border-left:1px solid var(--hv-line)}.hv-top-scope strong{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.hv-top-scope span{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hv-muted);font-size:9px}.hv-health{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 9px;border:1px solid color-mix(in srgb,var(--hv-green) 36%,transparent);border-radius:999px;background:var(--hv-green-soft);color:var(--hv-green);font-size:9px;font-weight:800;white-space:nowrap}.hv-health i{width:7px;height:7px;border-radius:50%;background:currentColor}.hv-health.warning{border-color:color-mix(in srgb,var(--hv-warn) 42%,transparent);background:#fff7e8;color:var(--hv-warn)}.hv-health.error{border-color:color-mix(in srgb,var(--hv-red) 42%,transparent);background:var(--hv-red-soft);color:var(--hv-red)}.hv-location{max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hv-muted);font-size:9px}
-      .hv-workspace{grid-template-columns:224px minmax(0,1fr)}.hv-sidebar{display:flex;gap:0;padding:12px 10px;overflow:hidden}.hv-sidebar-summary{padding:10px 11px;border:1px solid color-mix(in srgb,var(--hv-green) 28%,var(--hv-line));border-radius:12px;background:var(--hv-green-soft)}.hv-sidebar-summary>div{display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:800}.hv-sidebar-summary>div span:last-child{color:var(--hv-green)}.hv-sidebar-summary>small{display:block;margin-top:3px;color:var(--hv-muted);font-size:8px}.hv-nav-groups{flex:1;min-height:0;overflow:auto;padding:10px 0}.hv-nav-group+.hv-nav-group{margin-top:11px}.hv-nav-group-label{padding:0 9px 4px;color:var(--hv-muted);font-size:8px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}.hv-nav{width:100%;min-height:38px;grid-template-columns:24px minmax(0,1fr) auto;place-items:center stretch;gap:7px;padding:6px 8px;border-radius:10px;text-align:left}.hv-nav span:first-child{width:24px;height:24px;border-radius:8px;font-size:11px}.hv-nav span:nth-child(2){font-size:10px}.hv-sidebar-footer{padding-top:9px;border-top:1px solid var(--hv-line)}.hv-provider-state{display:grid;grid-template-columns:28px minmax(0,1fr) 7px;gap:8px;align-items:center;padding:8px;border-radius:10px;background:var(--hv-soft)}.hv-provider-state>strong{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--hv-primary-soft);color:var(--hv-primary);font-size:8px}.hv-provider-state>span{display:grid;min-width:0;font-size:9px;font-weight:700}.hv-provider-state>span small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hv-muted);font-size:7px}.hv-provider-state>i{width:7px;height:7px;border-radius:50%;background:var(--hv-green)}
-      .hv-panel{padding:18px 20px 28px}.hv-overview-health{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:11px;align-items:center;padding:13px;border:1px solid color-mix(in srgb,var(--hv-green) 28%,var(--hv-line));border-radius:14px;background:var(--hv-green-soft)}.hv-overview-health>i{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:var(--hv-green);color:#fff;font-style:normal;font-weight:900}.hv-overview-health strong,.hv-overview-health span{display:block}.hv-overview-health strong{font-size:12px}.hv-overview-health span{margin-top:2px;color:var(--hv-muted);font-size:9px}.hv-overview-health.warning{border-color:color-mix(in srgb,var(--hv-warn) 38%,var(--hv-line));background:#fff7e8}.hv-overview-health.warning>i{background:var(--hv-warn)}.hv-overview-health.error{border-color:var(--hv-red);background:var(--hv-red-soft)}.hv-overview-health.error>i{background:var(--hv-red)}.hv-overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px}.hv-overview-metric{min-height:88px;padding:12px;border:1px solid var(--hv-line);border-radius:13px;background:var(--hv-card)}.hv-overview-metric>span{display:flex;justify-content:space-between;gap:8px;color:var(--hv-muted);font-size:9px}.hv-overview-metric>strong{display:block;margin-top:7px;font-size:20px}.hv-overview-metric>small{display:block;margin-top:3px;color:var(--hv-muted);font-size:8px}.hv-overview-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}.hv-overview-action{display:grid;grid-template-columns:30px minmax(0,1fr);gap:9px;align-items:center;padding:10px;border:1px solid var(--hv-line);border-radius:11px;background:var(--hv-card);color:var(--hv-text);text-align:left;cursor:pointer}.hv-overview-action:hover{border-color:var(--hv-primary);background:var(--hv-primary-soft)}.hv-overview-action>i{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--hv-primary-soft);color:var(--hv-primary);font-style:normal;font-weight:900}.hv-overview-action strong,.hv-overview-action span{display:block}.hv-overview-action strong{font-size:10px}.hv-overview-action span{color:var(--hv-muted);font-size:8px}.hv-overview-grid{display:grid;grid-template-columns:1.35fr .85fr;gap:10px;margin-top:11px}.hv-overview-card{padding:13px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-overview-card-head{display:flex;justify-content:space-between;gap:10px}.hv-overview-card-head strong{font-size:12px}.hv-overview-card-head span{color:var(--hv-muted);font-size:8px}.hv-overview-recall-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:3px 8px;padding:8px 0;border-bottom:1px solid var(--hv-line)}.hv-overview-recall-row:last-child{border-bottom:0}.hv-overview-recall-row strong{font-size:9px}.hv-overview-recall-row span{grid-column:1;color:var(--hv-muted);font-size:8px}.hv-overview-recall-row em{grid-row:1/3;grid-column:2;align-self:center;color:var(--hv-primary);font:800 9px ui-monospace,SFMono-Regular,Consolas,monospace}.hv-overview-activity-row{display:grid;grid-template-columns:7px minmax(0,1fr) auto;gap:7px;padding:8px 0;border-bottom:1px solid var(--hv-line)}.hv-overview-activity-row:last-child{border-bottom:0}.hv-overview-activity-row>i{width:7px;height:7px;margin-top:4px;border-radius:50%;background:var(--hv-green)}.hv-overview-activity-row.warn>i{background:var(--hv-warn)}.hv-overview-activity-row.error>i{background:var(--hv-red)}.hv-overview-activity-row strong,.hv-overview-activity-row span{display:block}.hv-overview-activity-row strong{font-size:9px}.hv-overview-activity-row span,.hv-overview-activity-row time{color:var(--hv-muted);font-size:7px}.hv-overview-empty{padding:18px;color:var(--hv-muted);font-size:9px;text-align:center}
-      .hv-ledger-layout{display:grid;grid-template-columns:minmax(300px,.78fr) minmax(0,1.4fr);gap:10px;min-height:470px}.hv-records{display:block;min-height:0;max-height:620px;overflow:auto;padding:6px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-record-row{width:100%;display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:8px;align-items:start;margin:0;padding:9px;border-color:transparent;border-radius:10px;box-shadow:none;text-align:left;cursor:pointer}.hv-record-row+.hv-record-row{margin-top:3px}.hv-record-row:hover{background:var(--hv-soft)}.hv-record-row.active{border-color:var(--hv-primary);background:var(--hv-primary-soft)}.hv-record-turn{color:var(--hv-primary);font:800 9px ui-monospace,SFMono-Regular,Consolas,monospace}.hv-record-row-copy{display:grid;gap:2px;min-width:0}.hv-record-row-copy strong{font-size:9px}.hv-record-row-copy span,.hv-record-row-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hv-muted);font-size:8px}.hv-record-row>em,.hv-record-detail-head>em,.hv-worldline-detail-head>em{height:max-content;padding:3px 7px;border-radius:999px;font-style:normal;font-size:8px;font-weight:800}.hv-record-detail{min-width:0;padding:14px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-record-detail-head,.hv-worldline-detail-head{display:flex;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--hv-line)}.hv-record-detail-head small,.hv-worldline-detail-head small{color:var(--hv-primary);font-size:8px;font-weight:850}.hv-record-detail-head h2,.hv-worldline-detail-head h2{margin:2px 0;font-size:15px}.hv-record-detail-head p,.hv-worldline-detail-head p{margin:0;color:var(--hv-muted);font-size:9px}.hv-detail-tabs{display:flex;gap:4px;overflow:auto;padding:10px 0 8px}.hv-detail-tabs button{padding:6px 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--hv-muted);font-size:8px;font-weight:750;cursor:pointer;white-space:nowrap}.hv-detail-tabs button.active{border-color:var(--hv-line);background:var(--hv-soft);color:var(--hv-primary)}.hv-record-summary{padding:10px;border-radius:10px;background:var(--hv-soft)}.hv-record-summary strong{font-size:10px}.hv-record-summary p{margin:4px 0 0;color:var(--hv-muted);font-size:9px}.hv-detail-kv,.hv-worldline-kv{display:grid;grid-template-columns:105px minmax(0,1fr);gap:1px;margin-top:8px;overflow:hidden;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-line)}.hv-detail-kv>* ,.hv-worldline-kv>*{padding:7px 8px;background:var(--hv-soft);font-size:8px;overflow-wrap:anywhere}.hv-detail-kv b,.hv-worldline-kv b{color:var(--hv-muted)}.hv-axis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.hv-axis-grid article{min-width:0;padding:9px;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft)}.hv-axis-grid strong{color:var(--hv-primary);font-size:8px}.hv-axis-grid pre{max-height:170px;margin:5px 0 0;padding:7px;font-size:8px}.hv-json-stack details{margin-top:7px}.hv-json-stack pre{max-height:360px;overflow:auto;padding:10px;border:1px solid var(--hv-line);border-radius:9px;background:var(--hv-soft);white-space:pre-wrap;overflow-wrap:anywhere;font:9px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
-      .hv-worldline-board{margin-top:12px;padding:14px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card)}.hv-worldline-timeline{position:relative;display:flex;gap:9px;overflow:auto;padding:14px 4px 18px}.hv-worldline-timeline:before{content:"";position:absolute;left:30px;right:30px;top:35px;height:2px;background:var(--hv-line)}.hv-worldline-node{position:relative;z-index:1;min-width:112px;display:grid;gap:3px;justify-items:center;padding:0;border:0;background:transparent;color:var(--hv-text);text-align:center;cursor:pointer}.hv-worldline-node>span{width:42px;height:42px;display:grid;place-items:center;border:2px solid var(--hv-line);border-radius:50%;background:var(--hv-card);font:800 9px ui-monospace,SFMono-Regular,Consolas,monospace}.hv-worldline-node>strong{width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px}.hv-worldline-node>small{color:var(--hv-muted);font-size:7px}.hv-worldline-node.live>span{border-color:var(--hv-green);color:var(--hv-green)}.hv-worldline-node.pending>span{border-color:var(--hv-warn);color:var(--hv-warn)}.hv-worldline-node.retired>span{border-style:dashed;border-color:var(--hv-red);color:var(--hv-red)}.hv-worldline-node.active>span{border-color:var(--hv-primary);background:var(--hv-primary-soft);color:var(--hv-primary);box-shadow:0 0 0 5px color-mix(in srgb,var(--hv-primary) 10%,transparent)}.hv-worldline-detail{padding:13px;border-top:1px solid var(--hv-line)}.hv-worldline-actions{display:flex;justify-content:flex-end;margin-top:9px}.hv-setting-source{display:inline-flex!important;width:max-content;margin-top:3px;padding:2px 6px;border-radius:999px;background:var(--hv-soft);color:var(--hv-muted)!important;font-size:7px!important;font-weight:800}.hv-setting-source.explicit{background:var(--hv-primary-soft);color:var(--hv-primary)!important}
-      @media(max-width:900px){.hv-workspace{grid-template-columns:190px minmax(0,1fr)}.hv-metrics{grid-template-columns:repeat(4,1fr)}.hv-tools{grid-template-columns:1fr 1fr}.hv-tools small{grid-column:1/-1;text-align:left}.hv-recall-head{grid-template-columns:1fr}.hv-overview-grid,.hv-ledger-layout,.hv-failure-layout{grid-template-columns:1fr}.hv-records,.hv-failure-list{max-height:240px}.hv-settings-layout{grid-template-columns:1fr}.hv-settings-nav{display:grid;grid-template-columns:1fr 1fr;position:static}.hv-setting-fields{grid-template-columns:1fr 1fr}}
-      .hv-axis-grid{align-items:start;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}.hv-axis-grid article{min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere;white-space:normal;padding:16px}.hv-axis-grid h3{margin:0 0 12px;color:var(--hv-primary);font-size:14px}.hv-axis-fields{margin:0;min-width:0}.hv-axis-field{min-width:0;margin:10px 0}.hv-axis-field>dt{color:var(--hv-muted);font-size:12px;font-weight:700;margin-bottom:4px}.hv-axis-field>dd{margin:0;color:var(--hv-text,#173c43);font-size:13px;line-height:1.7;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}.hv-axis-list{margin:0;padding-left:18px;min-width:0}.hv-axis-list>li{padding:3px 0;overflow-wrap:anywhere}.hv-axis-list>li+li{margin-top:7px}.hv-axis-list .hv-axis-fields{border-left:2px solid var(--hv-line);padding-left:10px}.hv-axis-empty{font-size:13px;color:var(--hv-muted)}
-      @media(max-width:680px){.hv-recovery-grid{grid-template-columns:1fr}.portable-memory-actions{grid-template-columns:1fr}.hayaku-viewer{height:100vh;border-radius:0}.hv-top{padding:0 10px}.hv-brand span,.hv-top-scope,.hv-location,.hv-status,.hv-health{display:none}.hv-job-chip{max-width:135px}.hv-job-overlay{inset:60px 0 0;padding:10px}.hv-job-dialog{padding:15px}.hv-job-stats{grid-template-columns:repeat(2,1fr)}.hv-job-comparison{grid-template-columns:1fr}.hv-workspace{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.hv-sidebar{padding:6px 8px;border-right:0;border-bottom:1px solid var(--hv-line);overflow-x:auto}.hv-sidebar-summary,.hv-nav-group-label,.hv-sidebar-footer{display:none}.hv-nav-groups{display:flex;flex:0 0 auto;padding:0;overflow:visible}.hv-nav-group{display:flex}.hv-nav-group+.hv-nav-group{margin:0}.hv-nav{width:auto;min-width:78px;min-height:40px;display:flex;justify-content:center}.hv-nav span:first-child{width:26px;height:26px}.hv-nav-count{display:none}.hv-panel{padding:14px 11px}.hv-heading{align-items:flex-start;flex-direction:column}.hv-overview-health{grid-template-columns:30px 1fr}.hv-overview-health .hv-btn{display:none}.hv-overview-metrics,.hv-metrics{grid-template-columns:repeat(2,1fr)}.hv-overview-actions,.hv-tools{grid-template-columns:1fr}.hv-tools small{grid-column:auto}.hv-scope>div{display:grid;gap:2px}.hv-setting-row{grid-template-columns:1fr}.hv-setting-fields,.hv-setting-toggles,.hv-axis-grid{grid-template-columns:1fr}.hv-choice-group{display:grid;grid-template-columns:1fr 1fr}.hv-settings-save{bottom:-16px;align-items:stretch;flex-wrap:wrap}.hv-settings-save>span{width:100%}}
-      .hv-recovery-debug>summary{cursor:pointer;color:var(--hv-text)}.hv-recovery-debug>summary::marker{color:var(--hv-primary)}.hv-recovery-debug>summary>span{display:inline-grid;gap:2px;margin-left:3px;vertical-align:middle}.hv-recovery-debug>summary strong{font-size:11px}.hv-recovery-debug>summary small{color:var(--hv-muted);font-size:9px;font-weight:500}.hv-recovery-debug[open]>summary{padding-bottom:2px}
-      .hv-probe-preview{min-height:54px;max-height:120px;overflow:auto;margin:0;padding:10px;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--hv-muted);font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
-      /* OS dark mode is only a fallback now: when the theme bridge has published a host
-         palette (data-risu-theme="1") the viewer follows RisuAI's own colour scheme instead,
-         so a light app on a dark OS no longer flips this panel to dark on its own. */
-      @media(prefers-color-scheme:dark){:root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) #${LEDGER_VIEWER_ROOT_ID}{--hv-bg:#0d1320;--hv-card:#141c2b;--hv-soft:#101827;--hv-line:#29354a;--hv-text:#eef3ff;--hv-muted:#9aa8c1;--hv-primary-soft:#222b55;--hv-green-soft:#153b32;--hv-red-soft:#44252b}:root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) .hv-record pre,:root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) .hv-diagnostics pre,:root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) .hv-log-entry pre{color:#c8d2e6}:root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) .hv-setting-warning{border-color:#8b682b;background:#382c18;color:#f1c978}}
-      :root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) #${LEDGER_VIEWER_ROOT_ID}{--hv-bg:#0d1320;--hv-card:#141c2b;--hv-soft:#101827;--hv-line:#29354a;--hv-text:#eef3ff;--hv-muted:#9aa8c1;--hv-primary-soft:#222b55;--hv-green-soft:#153b32;--hv-red-soft:#44252b}:root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) .hv-record pre,:root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) .hv-diagnostics pre,:root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) .hv-log-entry pre{color:#c8d2e6}:root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) .hv-setting-warning{border-color:#8b682b;background:#382c18;color:#f1c978}
-      /* Host theme mapping. Only semantically exact host colours are mapped; the shades
-         RisuAI has no equivalent for are derived with color-mix() from the mapped ones so
-         they stay readable on a light theme instead of clashing with a hardcoded value. */
-      :root[data-risu-theme-colors="1"] #${LEDGER_VIEWER_ROOT_ID}{
-        --hv-bg:var(--risu-theme-bgcolor);
-        --hv-card:color-mix(in srgb,var(--risu-theme-bgcolor) 93%,var(--risu-theme-textcolor));
-        --hv-soft:color-mix(in srgb,var(--risu-theme-bgcolor) 97%,var(--risu-theme-textcolor));
-        --hv-line:color-mix(in srgb,var(--risu-theme-bgcolor) 78%,var(--risu-theme-textcolor));
-        --hv-text:var(--risu-theme-textcolor);
-        --hv-muted:var(--risu-theme-textcolor2);
-        --hv-primary:color-mix(in srgb,#5568e8 80%,var(--risu-theme-textcolor));
-        --hv-primary-soft:color-mix(in srgb,#5568e8 20%,var(--risu-theme-bgcolor));
-        --hv-red:var(--risu-theme-draculared);
-        --hv-red-soft:color-mix(in srgb,var(--risu-theme-draculared) 18%,var(--risu-theme-bgcolor));
-        --hv-green-soft:color-mix(in srgb,var(--hv-green) 18%,var(--risu-theme-bgcolor));
-      }
-      :root[data-risu-theme-type="light"]{color-scheme:light}
-      :root[data-risu-theme-type="dark"]{color-scheme:dark}
-      :root[data-risu-theme-colors="1"] .hayaku-viewer{background:var(--hv-bg)}
-      .hv-list-filter{display:flex;align-items:center;gap:8px;margin:8px 0}
-      .hv-list-filter input{flex:1 1 auto;min-width:0;padding:6px 9px;border:1px solid var(--hv-line);border-radius:9px;background:var(--hv-card);color:var(--hv-text);font:inherit}
-      .hv-list-filter input:focus{outline:none;border-color:var(--hv-primary)}
-      .hv-list-filter span{color:var(--hv-muted);font-size:12px;white-space:nowrap}
-
-      /* v3.0.47: request/consent/lineage cards share the viewer palette, not health-banner columns. */
-      .hayaku-viewer .hv-scope-card{display:block;min-width:0;max-width:100%;margin:12px 0 0;padding:16px;border:1px solid var(--hv-line);border-radius:14px;background:var(--hv-card);color:var(--hv-text);font-family:inherit;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
-      .hayaku-viewer .hv-scope-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;min-width:0}
-      .hayaku-viewer .hv-scope-card-head>div{flex:1 1 220px;min-width:0}
-      .hayaku-viewer .hv-scope-card h2{display:block;margin:0;color:var(--hv-text);font-size:14px;font-family:inherit;font-weight:750;line-height:1.5;word-break:keep-all;overflow-wrap:break-word}
-      .hayaku-viewer .hv-packet-authoring h2{white-space:nowrap}
-      .hayaku-viewer .hv-scope-card-head p,.hayaku-viewer .hv-scope-note{margin:5px 0 0;color:#56637a;font-size:12px;line-height:1.6}
-      .hayaku-viewer .hv-scope-empty{margin:12px 0 0;padding:12px;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft);color:#56637a}
-      .hayaku-viewer .hv-scope-kv{display:block;margin:12px 0 0;border:1px solid var(--hv-line);border-radius:10px;background:var(--hv-soft);overflow:hidden}
-      .hayaku-viewer .hv-scope-kv>div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px;padding:9px 12px;min-width:0}
-      .hayaku-viewer .hv-scope-kv>div+div{border-top:1px solid var(--hv-line)}
-      .hayaku-viewer .hv-scope-kv dt,.hayaku-viewer .hv-scope-kv dd{margin:0;min-width:0;max-width:100%;font:inherit;overflow-wrap:anywhere}
-      .hayaku-viewer .hv-scope-kv dt{color:#56637a;font-weight:650;word-break:keep-all}
-      .hayaku-viewer .hv-scope-kv dd{color:var(--hv-text);white-space:pre-wrap}
-      .hayaku-viewer .hv-scope-badge{display:inline-flex;flex:0 0 auto;align-items:center;max-width:100%;padding:4px 10px;border:1px solid var(--hv-line);border-radius:999px;background:var(--hv-soft);color:#56637a;font-family:inherit;font-size:11px;font-weight:650;line-height:1.5;white-space:nowrap;word-break:keep-all}
-      .hayaku-viewer .hv-scope-badge.warning{background:#fff7e8;color:#805412;border-color:#ddbe87}
-      .hayaku-viewer .hv-scope-badge.error{background:var(--hv-red-soft);color:#a52a3a;border-color:var(--hv-red)}
-      .hayaku-viewer .hv-scope-badge.verified{background:var(--hv-green-soft);color:#0d6b4e;border-color:#92cdbb}
-      .hayaku-viewer .hv-scope-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-      .hayaku-viewer .hv-scope-actions .hv-btn{max-width:100%;font-family:inherit;font-size:12px;white-space:normal;word-break:keep-all}
-      .hayaku-viewer .hv-scope-actions .hv-btn.primary{background:#4658c7;border-color:#4658c7;color:#fff}
-      .hayaku-viewer .hv-scope-actions .hv-btn:focus-visible{outline:2px solid var(--hv-primary);outline-offset:3px}
-      .hayaku-viewer .hv-scope-error{padding:10px 12px;border:1px solid var(--hv-red);border-radius:10px;color:#a52a3a;background:var(--hv-red-soft)}
-      .hayaku-viewer .hv-host-lineage{margin:0 0 12px}
-      .hayaku-viewer .hv-source-edit{margin:0 0 12px}
-      @media(max-width:680px){.hayaku-viewer .hv-scope-card{padding:13px}.hayaku-viewer .hv-scope-kv>div{grid-template-columns:1fr;gap:3px}.hayaku-viewer .hv-scope-card-head>div{flex-basis:100%}}
-    
-        /* HAYAKU owns this light theme; shared SDK consumers keep their themes. */
-        .hayaku-viewer .hv-recovery-grid{grid-template-columns:minmax(0,1fr);align-items:start}
-        .hayaku-viewer .hv-recovery-card{align-content:start;grid-column:auto}
-        .hayaku-viewer .hv-failure-layout{grid-template-columns:minmax(0,1fr);align-items:start}
-        .hv-failure-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
-        .hv-failure-select{position:absolute;z-index:1;left:12px;top:14px;width:18px;height:18px;accent-color:var(--hv-accent,#5b61ef);cursor:pointer}
-        .hayaku-viewer .hv-failure-row{padding-left:42px}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root{color:#1b253a;color-scheme:light}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-card{background:#fff;border-color:#d8e1f0}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .muted{color:#7383a4}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root :is(.scope,.status,.job,.result){background:#f6f8fc;border-color:#d8e1f0;color:#1b253a}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root label.mode{background:#fff;border-color:#d8e1f0}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root label.mode:has(input:checked){background:#eff0ff;border-color:#6267f5}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root :is(input[type=text],input[type=password]){background:#fff;color:#1b253a;border-color:#d8e1f0}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button{background:#fff;color:#1b253a;border-color:#d8e1f0}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button.primary{background:#5b61ef;color:#fff;border-color:#5b61ef}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button.danger{background:#fff3f4;color:#bc3349;border-color:#e8a1af}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .job.failed{background:#fff3f4;border-color:#e8a1af}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .bar{background:#e7ebf5}
-        #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .bar>i{background:#5b61ef}
-
-  /* --- MemorySuite shared design tokens -------------------------------------------------------------
-     One scale shared by Flashback, HAYAKU and LIBRA so the three panels read as one
-     product. Colours are NOT declared here: those come from the host theme bridge.
-     Every token has a literal fallback, so a plugin still renders if this block is
-     ever dropped. */
-  :root{
-    --ms-font-sans:Pretendard,"Pretendard Variable","Pretendard JP","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    --ms-font-mono:ui-monospace,SFMono-Regular,"D2Coding",Menlo,Consolas,"Malgun Gothic",monospace;
-
-    /* type scale: eyebrow / title / subtitle / body / note */
-    --ms-fs-eyebrow:12px;
-    --ms-fs-title:19px;
-    --ms-fs-subtitle:15px;
-    --ms-fs-body:13px;
-    --ms-fs-note:12px;
-
-    /* Hangul is a full-width square script and needs more leading than Latin. */
-    --ms-lh-tight:1.35;
-    --ms-lh-body:1.65;
-    --ms-ls-eyebrow:0;
-    --ms-ls-title:-.01em;
-
-    /* 4px spacing grid */
-    --ms-sp-1:4px;--ms-sp-2:8px;--ms-sp-3:12px;--ms-sp-4:16px;--ms-sp-5:24px;--ms-sp-6:32px;
-
-    /* radius scale -- the three plugins used 9/12, 24/9 and 22/16 before this */
-    --ms-r-sm:8px;--ms-r-md:12px;--ms-r-lg:16px;--ms-r-xl:20px;
-
-    /* elevation scale */
-    --ms-sh-1:0 1px 2px rgba(0,0,0,.18);
-    --ms-sh-2:0 4px 14px rgba(0,0,0,.20);
-    --ms-sh-3:0 12px 36px rgba(0,0,0,.28);
-    --ms-sh-4:0 24px 72px rgba(0,0,0,.36);
-
-    /* Local fallback: iframe host animation speed is not transported. */
-    --ms-motion:.2s;
-  }
-  @media(prefers-reduced-motion:reduce){:root{--ms-motion:0s}}
-  /* Hangul must not break mid-word. keep-all fixes that; overflow-wrap:anywhere keeps
-     long unbreakable tokens (hashes, scope keys, URLs) from overflowing their box.
-     Deliberately NOT applied to code/pre/textarea, where character breaking is correct. */
-  .ms-typo,.ms-typo *:not(pre):not(code):not(textarea):not(kbd){word-break:keep-all;overflow-wrap:anywhere}
-  .ms-typo pre,.ms-typo code,.ms-typo textarea,.ms-typo kbd{font-family:var(--ms-font-mono);word-break:break-all;overflow-wrap:anywhere}
-
-  /* Shared hierarchy utilities. Plugin-specific classes are mapped onto these below. */
-  .ms-eyebrow{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.7}
-  .ms-title{font-size:var(--ms-fs-title);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  .ms-subtitle{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650}
-  .ms-body{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body)}
-  .ms-note{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);opacity:.82}
-  /* Counts and turn numbers stop jittering when digits share one advance width. */
-  .ms-num,.ms-typo table,.ms-typo time,.ms-typo .nav-count{font-variant-numeric:tabular-nums}
-
-  /* --- HAYAKU mapping onto the shared scale --- */
-  /* Before this the viewer led with Inter, which has no Hangul: Latin rendered in Segoe UI
-     while Hangul fell through to Malgun Gothic in the same sentence. */
-  #${LEDGER_VIEWER_ROOT_ID}{font-family:var(--ms-font-sans);font-size:var(--ms-fs-body);line-height:var(--ms-lh-body);word-break:keep-all;overflow-wrap:anywhere}
-  #${LEDGER_VIEWER_ROOT_ID} pre,#${LEDGER_VIEWER_ROOT_ID} code,#${LEDGER_VIEWER_ROOT_ID} textarea{font-family:var(--ms-font-mono);word-break:break-all}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-eyebrow{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.7}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-heading h1{font-size:calc(var(--ms-fs-title) + 3px);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-heading p{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body)}
-  #${LEDGER_VIEWER_ROOT_ID} h2{font-size:var(--ms-fs-title);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  #${LEDGER_VIEWER_ROOT_ID} h3{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-nav-group-label{font-size:var(--ms-fs-eyebrow);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.62}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-list-filter span,#${LEDGER_VIEWER_ROOT_ID} .hv-log-summary,#${LEDGER_VIEWER_ROOT_ID} small{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body)}
-  #${LEDGER_VIEWER_ROOT_ID} time,#${LEDGER_VIEWER_ROOT_ID} strong,#${LEDGER_VIEWER_ROOT_ID} .hv-worldline-kv span,#${LEDGER_VIEWER_ROOT_ID} .hv-recovery-kv span{font-variant-numeric:tabular-nums}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-btn,#${LEDGER_VIEWER_ROOT_ID} .hv-nav,#${LEDGER_VIEWER_ROOT_ID} .hv-list-filter input{transition:background-color var(--ms-motion) ease,border-color var(--ms-motion) ease,color var(--ms-motion) ease}
-  /* Align the viewer's outer radius with the shared scale (was 24px). */
-  #${LEDGER_VIEWER_ROOT_ID} .hayaku-viewer{border-radius:var(--ms-r-xl);box-shadow:var(--ms-sh-4)}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-log-entry:nth-child(even),#${LEDGER_VIEWER_ROOT_ID} .hv-record:nth-child(even){background:color-mix(in srgb,var(--hv-text) 3%,transparent)}
-
-  /* --- MemorySuite contrast, empty states and skeletons -------------------------------------------------------------
-     Muted text is derived from the active text and background colours rather than taken
-     from the host verbatim: RisuAI's own secondary colour measures 2.99:1 on its own
-     background, below WCAG AA. 62% clears 4.5:1 on both a dark and a light host. */
-  :root{
-    --ms-mix-muted:62%;
-    --ms-skeleton-base:color-mix(in srgb,currentColor 10%,transparent);
-    --ms-skeleton-shine:color-mix(in srgb,currentColor 22%,transparent);
-  }
-  @keyframes ms-shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
-  @keyframes ms-pulse{0%,100%{opacity:.6}50%{opacity:1}}
-
-  /* Shimmer bar. Width/height are set by the caller; three of these read as a loading card. */
-  .ms-skeleton{
-    border-radius:var(--ms-r-sm);
-    background:linear-gradient(90deg,var(--ms-skeleton-base) 0%,var(--ms-skeleton-shine) 45%,var(--ms-skeleton-base) 90%);
-    background-size:220% 100%;
-    animation:ms-shimmer 1.5s linear infinite;
-  }
-  .ms-loading{animation:ms-pulse 1.5s ease-in-out infinite}
-  @media(prefers-reduced-motion:reduce){
-    .ms-skeleton{animation:none;background:var(--ms-skeleton-base)}
-    .ms-loading{animation:none;opacity:.8}
-  }
-
-  /* Empty state. The icon is a mask filled with currentColor, so it never fights the theme. */
-  .ms-empty-face{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);
-    text-align:center;text-wrap:balance;
-  }
-  .ms-empty-face::before{
-    content:'';width:32px;height:32px;flex:0 0 auto;opacity:.55;
-    background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  .ms-empty-face[data-ms-empty-icon="search"]::before{-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat}
-  .ms-empty-face>strong{font-size:var(--ms-fs-subtitle);font-weight:650}
-  .ms-empty-face>span,.ms-empty-face>div{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);max-width:34ch}
-
-  /* --- HAYAKU: contrast + empty states --- */
-  :root[data-risu-theme-colors="1"] #${LEDGER_VIEWER_ROOT_ID}{
-    --hv-muted:color-mix(in srgb,var(--risu-theme-textcolor) var(--ms-mix-muted),var(--risu-theme-bgcolor));
-  }
-  /* The built-in light palette's own muted tone measures 3.60:1, so it is corrected too. */
-  #${LEDGER_VIEWER_ROOT_ID}:not([data-risu-theme-colors="1"] *){--hv-muted:color-mix(in srgb,var(--hv-text) 68%,var(--hv-bg))}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-eyebrow{opacity:1;color:var(--hv-muted)}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-nav-group-label{opacity:1;color:var(--hv-muted)}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-empty{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);text-align:center;
-    border:1px dashed var(--hv-line);border-radius:var(--ms-r-md);
-    background:color-mix(in srgb,var(--hv-text) 2%,transparent);color:var(--hv-muted);
-  }
-  #${LEDGER_VIEWER_ROOT_ID} .hv-empty::before{
-    content:'';width:32px;height:32px;opacity:.55;background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  #${LEDGER_VIEWER_ROOT_ID} .hv-empty>strong{font-size:var(--ms-fs-subtitle);font-weight:650;color:var(--hv-text)}
-  #${LEDGER_VIEWER_ROOT_ID} .hv-empty>span{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);max-width:34ch}
-  /* A search or filter that matched nothing is a different situation from "no data yet". */
-  #${LEDGER_VIEWER_ROOT_ID} .hv-empty[data-hv-empty="filter"]::before{-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat}
-
-
-/* HAYAKU continuity control: shared across every existing panel. */
-#${LEDGER_VIEWER_ROOT_ID}{--hv-bg:#edf2f3;--hv-card:#f9fbfc;--hv-soft:#e4ecee;--hv-line:#cad7dc;--hv-text:#17313d;--hv-muted:#536c78;--hv-primary:#166e61;--hv-primary-soft:#dcece7;--hv-green:#187b66;--hv-green-soft:#deeee8;--hv-red:#b33e39;--hv-red-soft:#f8e5e1;--hv-warn:#976313;--ms-fs-body:13px;--ms-fs-note:12px;--ms-fs-subtitle:16px;--ms-lh-body:1.7;color-scheme:light}
-#${LEDGER_VIEWER_ROOT_ID} .hayaku-viewer{background:var(--hv-bg);grid-template-rows:74px minmax(0,1fr);border-radius:12px;box-shadow:0 20px 70px #00192345}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top{min-height:74px;padding:14px 24px;background:#10212b;color:#eaf1f2;border-color:#30444e}
-#${LEDGER_VIEWER_ROOT_ID} .hv-brand strong{font-size:23px;letter-spacing:-.8px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-brand span{font:10px Consolas,monospace;letter-spacing:1px;color:#b6cbd1}
-#${LEDGER_VIEWER_ROOT_ID} .hv-mark{background:transparent;border:1px solid #92aab3;box-shadow:none;border-radius:8px;color:#d1e5e8}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope strong,#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-btn{color:#eaf1f2}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope span,#${LEDGER_VIEWER_ROOT_ID} .hv-location,#${LEDGER_VIEWER_ROOT_ID} .hv-status{color:#b6cbd1}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-btn{border-color:#56717d;background:transparent}
-#${LEDGER_VIEWER_ROOT_ID} .hv-workspace{grid-template-columns:200px minmax(0,1fr)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar{background:#10212b;color:#b6cbd1;border:0;padding:22px 14px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar-summary{border-color:#415963;background:#16343e;color:#c2d7d9}
-#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar-summary small,#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar-summary span,#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar .hv-nav-group-label{color:#b6cbd1}
-#${LEDGER_VIEWER_ROOT_ID} .hv-nav{padding:12px 10px;min-height:46px;border-radius:6px;color:#b6cbd1}
-#${LEDGER_VIEWER_ROOT_ID} .hv-nav span:nth-child(2){font-size:13px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-nav span:first-child{background:transparent;font:12px Consolas;color:inherit}
-#${LEDGER_VIEWER_ROOT_ID} .hv-nav.active{background:#edf2f3;color:#17313d;box-shadow:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-provider-state{background:#19343f;color:#c4d9dd}
-#${LEDGER_VIEWER_ROOT_ID} .hv-provider-state small{color:#b6cbd1}
-#${LEDGER_VIEWER_ROOT_ID} .hv-panel{padding:28px 30px;background:var(--hv-bg)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-heading{margin-bottom:22px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-heading h1{font-size:28px;letter-spacing:-1px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-eyebrow{font:10px Consolas,monospace;letter-spacing:1.2px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-btn{min-height:38px;padding:9px 14px;border-radius:6px;font-size:12px;box-shadow:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health{background:#193743;color:#e6f0f2;border-color:#304b56;border-radius:6px;padding:16px 20px;margin-bottom:20px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health strong{font-size:14px;color:inherit}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health span{color:#bbced4;font-size:12px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health>i{width:12px;height:12px;overflow:hidden;font-size:0;border-radius:50%;background:#67baa2;box-shadow:0 0 0 5px #67baa21c}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health.warning>i{background:#e4b65e}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health.error>i{background:#ed8e88}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metrics{gap:1px;border:1px solid var(--hv-line);background:var(--hv-line);border-radius:7px;overflow:hidden;margin:20px 0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metric{background:var(--hv-bg);border:0;border-radius:0;padding:16px 20px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metric strong{font:28px Consolas,monospace}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-card,#${LEDGER_VIEWER_ROOT_ID} .hv-recovery-card,#${LEDGER_VIEWER_ROOT_ID} .hv-scope-card,#${LEDGER_VIEWER_ROOT_ID} .hv-record-detail,#${LEDGER_VIEWER_ROOT_ID} .hv-worldline-board,#${LEDGER_VIEWER_ROOT_ID} .hv-failure-detail{border-radius:8px;padding:22px;background:var(--hv-card);box-shadow:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-card-head strong{font-size:16px}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-card-head span{display:block;margin-top:5px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-action{border-radius:6px;padding:14px;background:var(--hv-card)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-records{background:var(--hv-card);border-radius:8px;max-height:650px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-record-row{padding:14px 12px;border-radius:5px;border-bottom:1px solid var(--hv-line)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-record-row-copy strong,#${LEDGER_VIEWER_ROOT_ID} .hv-record-summary strong{font-size:13px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-record-row-copy span,#${LEDGER_VIEWER_ROOT_ID} .hv-record-row-copy small,#${LEDGER_VIEWER_ROOT_ID} .hv-record-summary p,#${LEDGER_VIEWER_ROOT_ID} .hv-detail-kv>*,#${LEDGER_VIEWER_ROOT_ID} .hv-worldline-kv>*{font-size:12px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-record-turn{font:12px Consolas,monospace}
-#${LEDGER_VIEWER_ROOT_ID} .hv-detail-tabs button{min-height:38px;font-size:12px;padding:9px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-detail-body{font-size:13px;line-height:1.8}
-#${LEDGER_VIEWER_ROOT_ID} .hv-setting-row{padding:18px 0}#${LEDGER_VIEWER_ROOT_ID} .hv-setting-row strong{font-size:14px}
-#${LEDGER_VIEWER_ROOT_ID} input,#${LEDGER_VIEWER_ROOT_ID} select,#${LEDGER_VIEWER_ROOT_ID} textarea{font-size:13px;border-radius:5px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line{margin:0 0 20px;border:1px solid var(--hv-line);border-radius:8px;background:linear-gradient(180deg,var(--hv-card),var(--hv-bg));padding:22px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head{display:flex;justify-content:space-between;align-items:center;gap:16px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head h2{font-size:17px;margin:5px 0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-scroll{overflow-x:auto;padding:18px 0 10px;scrollbar-width:thin}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-track{display:flex;min-width:max-content;gap:0;padding:0 12px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop{position:relative;flex:1 0 92px;width:92px;min-height:125px;border:0;background:transparent;color:var(--hv-text);cursor:pointer;text-align:center;padding:12px 6px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop:after{content:'';position:absolute;top:57px;left:50%;width:100%;height:4px;background:#318674}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop:last-child:after{display:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop b{display:block;font:12px Consolas,monospace;margin-bottom:45px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop i{position:absolute;z-index:1;left:calc(50% - 8px);top:51px;width:17px;height:17px;border:4px solid #318674;border-radius:50%;background:var(--hv-card)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop small{display:block;font-size:11px;line-height:1.4}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.missing:after,#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.unknown:after{background:repeating-linear-gradient(90deg,#b18b3f 0 8px,transparent 8px 17px)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.missing i{border:2px dashed #a97a24;background:#f1e6cc}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.pending i{border-color:#aa7a27;transform:rotate(45deg);border-radius:3px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.excluded i{border-color:#819099;background:var(--hv-soft)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.unknown i{border-color:#6f818a;background:var(--hv-soft)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.failed i{border-color:#b33e39;border-radius:2px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.current{background:#d7e6e950;border-radius:6px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop.current b:before{content:'▼ ';color:var(--hv-primary)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-stop:hover{background:var(--hv-soft)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-line-legend{display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid var(--hv-line);padding-top:14px;color:var(--hv-muted);font-size:11px}
-@media(max-width:760px){#${LEDGER_VIEWER_ROOT_ID} .hv-workspace{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar{padding:8px;display:flex;overflow-x:auto;flex-direction:row}#${LEDGER_VIEWER_ROOT_ID} .hv-nav-groups{display:flex;padding:0;overflow:visible}#${LEDGER_VIEWER_ROOT_ID} .hv-nav-group{display:flex;margin:0}#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar-summary,#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar-footer,#${LEDGER_VIEWER_ROOT_ID} .hv-nav-group-label{display:none}#${LEDGER_VIEWER_ROOT_ID} .hv-nav{width:auto;min-width:95px;padding:10px;display:flex;white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .hv-nav span:first-child{display:none}#${LEDGER_VIEWER_ROOT_ID} .hv-top{padding:12px;min-height:66px}#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope,#${LEDGER_VIEWER_ROOT_ID} .hv-location,#${LEDGER_VIEWER_ROOT_ID} .hv-status{display:none}#${LEDGER_VIEWER_ROOT_ID} .hv-panel{padding:20px 15px}#${LEDGER_VIEWER_ROOT_ID} .hv-heading h1{font-size:24px}#${LEDGER_VIEWER_ROOT_ID} .hv-control-line{padding:17px}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}#${LEDGER_VIEWER_ROOT_ID} .hv-ledger-layout{grid-template-columns:1fr}#${LEDGER_VIEWER_ROOT_ID} .hv-records{max-height:330px}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-grid{grid-template-columns:1fr}}
-@media(prefers-reduced-motion:reduce){#${LEDGER_VIEWER_ROOT_ID} *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-
-
-@media(max-width:760px){#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head{flex-direction:column;align-items:stretch}#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head .hv-actions{justify-content:flex-end}#${LEDGER_VIEWER_ROOT_ID} .hayaku-viewer{grid-template-rows:90px minmax(0,1fr)}#${LEDGER_VIEWER_ROOT_ID} .hv-top{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:5px 10px;padding:10px 13px}#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope{display:grid;grid-column:2/4;grid-row:2;border:0;margin:0;padding:0}#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope>span{display:none}#${LEDGER_VIEWER_ROOT_ID} .hv-top-scope strong{font-size:11px;color:#b6cbd1}#${LEDGER_VIEWER_ROOT_ID} .hv-top-actions{grid-column:3;grid-row:1}}
-
-/* Simple control desk: overview is the entry point; detail tools are one level deeper. */
-#${LEDGER_VIEWER_ROOT_ID} .hayaku-viewer{--hv-bg:#edf2f3;--hv-card:#f9fbfc;--hv-soft:#e4ecee;--hv-line:#cad7dc;--hv-text:#17313d;--hv-muted:#536c78;--hv-primary:#166e61;--hv-primary-soft:#dcece7;--hv-green:#187b66;--hv-green-soft:#deeee8;--hv-red:#b33e39;--hv-red-soft:#f8e5e1;color:var(--hv-text);color-scheme:light}
-#${LEDGER_VIEWER_ROOT_ID} .hv-sidebar{display:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-panel{padding:26px clamp(16px,5vw,64px)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-location,#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-status,#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-health{display:none}
-#${LEDGER_VIEWER_ROOT_ID} .hv-top-actions{margin-left:auto;flex-shrink:0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-health{margin-bottom:16px;padding:14px 18px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line{padding:18px 22px;margin:16px 0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head{margin-bottom:10px;align-items:center}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head h2{font-size:18px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row{display:grid;grid-template-columns:45px minmax(0,1fr) auto 12px;gap:12px;align-items:center;width:100%;padding:12px 0;background:transparent;border:0;border-bottom:1px solid var(--hv-line);color:var(--hv-text);text-align:left;cursor:pointer;font:inherit}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row small{border-radius:4px;padding:3px 8px;background:var(--hv-green-soft);color:#176251;font-size:11px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row.missing small,#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row.pending small{background:#f5e9ca;color:#775114}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row.failed small{background:var(--hv-red-soft);color:var(--hv-red)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row.excluded small,#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row.unknown small{background:var(--hv-soft);color:var(--hv-muted)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row:hover{background:var(--hv-soft)}
-#${LEDGER_VIEWER_ROOT_ID} .hv-glance-note{font-size:11px;color:var(--hv-muted);margin:12px 0 0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metrics{margin:12px 0}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metric{padding:13px 16px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-metric>strong{font-size:25px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-actions{margin:16px 0;grid-template-columns:repeat(3,minmax(0,1fr))}
-#${LEDGER_VIEWER_ROOT_ID} .hv-overview-action{padding:18px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-more{margin-top:18px;border-top:1px solid var(--hv-line);padding-top:14px}
-#${LEDGER_VIEWER_ROOT_ID} .hv-control-more>summary{cursor:pointer;color:var(--hv-muted);font-size:12px;margin-bottom:14px}
-@media(max-width:760px){#${LEDGER_VIEWER_ROOT_ID} .hv-workspace{grid-template-rows:minmax(0,1fr)}#${LEDGER_VIEWER_ROOT_ID} .hv-brand strong{font-size:18px}#${LEDGER_VIEWER_ROOT_ID} .hv-top .hv-btn{padding:6px 9px}#${LEDGER_VIEWER_ROOT_ID} .hv-top-actions{gap:5px}#${LEDGER_VIEWER_ROOT_ID} .hv-control-line-head{flex-direction:row}#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row{grid-template-columns:34px minmax(0,1fr) auto;gap:7px}#${LEDGER_VIEWER_ROOT_ID} .hv-glance-row i{display:none}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-actions{grid-template-columns:1fr}#${LEDGER_VIEWER_ROOT_ID} .hv-overview-action{padding:13px}}
-
-/* Minimized work stays reachable independently of the hidden legacy dashboard. */
-#${LEDGER_VIEWER_ROOT_ID} .hv-log-entry pre,#${LEDGER_VIEWER_ROOT_ID} .hv-diagnostics pre,#${LEDGER_VIEWER_ROOT_ID} #hayakuArchivedFailures{color:#173c43!important;background:#e4edef!important;opacity:1!important;font-size:12px;line-height:1.6}
-#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip{position:absolute;right:24px;bottom:22px;z-index:23;max-width:calc(100% - 40px);min-height:44px;padding:11px 17px;border-radius:8px;background:#173c43!important;color:#f1f7f5!important;border:1px solid #739b9e!important;box-shadow:0 5px 18px #10212b26;font-size:13px;cursor:pointer}
-#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip[hidden]{display:none!important}
-#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip:hover{background:#21605d!important}
-#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip:focus-visible{outline:3px solid #55ad9d;outline-offset:3px}
-#${LEDGER_VIEWER_ROOT_ID} .hayaku-viewer:has(#hayakuNativeJobChip:not([hidden])) .hv-panel{padding-bottom:86px}
-@media(max-width:760px){#${LEDGER_VIEWER_ROOT_ID} #hayakuNativeJobChip{right:14px;bottom:14px;font-size:12px}}
-</style>
-    <section class="hayaku-viewer">
-      <header class="hv-top"><span class="hv-mark">${ledgerViewerIconSvg}</span><div class="hv-brand"><strong>HAYAKU</strong><span>CONTINUITY CONTROL · v${PLUGIN_VERSION}</span></div><div class="hv-top-scope"><strong id="hayakuViewerScopeTop">현재 채팅</strong><span id="hayakuViewerScopeMeta">세계선 원장을 확인하는 중입니다.</span></div><div class="hv-top-actions"><button class="hv-btn" data-hayaku-viewer-goto="overview" type="button">관제창</button><button class="hv-btn" data-hayaku-viewer-goto="settings" type="button">설정</button><span id="hayakuViewerLocation" class="hv-location">개요</span><span id="hayakuViewerStatus" class="hv-status">조회 대기</span><span id="hayakuViewerHealth" class="hv-health"><i></i><span>상태 확인 중</span></span><button id="closeHayakuViewer" class="hv-btn">닫기</button></div></header>
-      <button id="hayakuNativeJobChip" class="hv-btn hv-job-chip" type="button" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" hidden></button>
-      <div id="hayakuNativeJobOverlay" class="hv-job-overlay" hidden><section class="hv-job-dialog" role="dialog" aria-live="polite"><div class="hv-job-head"><div><small>HAYAKU RECOVERY JOB</small><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><div class="hv-job-head-actions"><button id="minimizeHayakuNativeJob" class="hv-btn" type="button">최소화</button><button id="closeHayakuNativeJob" class="hv-btn" type="button" hidden>닫기</button><button id="cancelHayakuNativeJob" class="hv-btn danger" type="button">작업 중단</button></div></div><div class="hv-job-progress"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="hv-job-stats"><div><b>진척도</b><span id="hayakuNativeJobProgressText">-</span></div><div><b>대상 턴</b><span id="hayakuNativeJobTurns">-</span></div><div><b>현재 턴</b><span id="hayakuNativeJobCurrent">-</span></div><div><b>상태</b><span id="hayakuNativeJobStateCompact">실시간</span></div><div><b>경과 시간</b><span id="hayakuNativeJobElapsedCompact">실시간</span></div></div><div id="hayakuNativeJobMessage" class="hv-job-message">작업을 준비합니다.</div><div id="hayakuNativeJobComparison" class="hv-job-comparison" hidden></div><div id="hayakuNativeJobChoices" class="hv-job-choices" hidden><button class="hv-btn" data-hayaku-regeneration-choice="later" type="button">나중에 결정</button><button class="hv-btn" data-hayaku-regeneration-choice="keep_original" type="button">기존 패킷 유지</button><button class="hv-btn primary" data-hayaku-regeneration-choice="adopt_regenerated" type="button">재생성 후보 채택</button></div><div id="hayakuRecoveryConfirmationChoices" class="hv-job-choices" hidden><button class="hv-btn" data-hayaku-recovery-confirmation="no" type="button">아니요 · 저널에 유지</button><button class="hv-btn primary" data-hayaku-recovery-confirmation="yes" type="button">예 · 자동 복구 시작</button></div></section></div>
-      <div class="hv-workspace">
-        <aside class="hv-sidebar" aria-label="HAYAKU 탐색">
-          <div class="hv-sidebar-summary"><div><span>연속성 상태</span><span id="hayakuSidebarContinuity">미확인</span></div><small>원장·세계선·복구 상태를 현재 채팅 기준으로 표시합니다.</small></div>
-          <nav class="hv-nav-groups" role="tablist" aria-label="HAYAKU 화면">
-            <div class="hv-nav-group"><div class="hv-nav-group-label">상태</div><button class="hv-nav active" id="hayakuViewerTabOverview" data-hayaku-viewer-tab="overview" type="button" role="tab" aria-selected="true" aria-controls="hayakuViewerPanelOverview" tabindex="0"><span>◇</span><span>연속성 관제</span></button></div>
-            <div class="hv-nav-group"><div class="hv-nav-group-label">기억</div><button class="hv-nav" id="hayakuViewerTabPackets" data-hayaku-viewer-tab="packets" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelPackets" tabindex="-1"><span>02</span><span>패킷 기록</span></button><button class="hv-nav" id="hayakuViewerTabWorldline" data-hayaku-viewer-tab="worldline" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelWorldline" tabindex="-1"><span>⌁</span><span>세계선</span></button></div>
-            <div class="hv-nav-group"><div class="hv-nav-group-label">복구</div><button class="hv-nav" id="hayakuViewerTabRecovery" data-hayaku-viewer-tab="recovery" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelRecovery" tabindex="-1"><span>↺</span><span>구간 점검</span></button></div>
-            <div class="hv-nav-group"><div class="hv-nav-group-label">연결</div><button class="hv-nav" id="hayakuViewerTabServer" data-hayaku-viewer-tab="server" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelServer" tabindex="-1"><span>⇄</span><span>서버 연결</span></button></div>
-            <div class="hv-nav-group"><div class="hv-nav-group-label">설정 및 진단</div><button class="hv-nav" id="hayakuViewerTabSettings" data-hayaku-viewer-tab="settings" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelSettings" tabindex="-1"><span>⚙</span><span>설정</span></button><button class="hv-nav" id="hayakuViewerTabLogs" data-hayaku-viewer-tab="logs" type="button" role="tab" aria-selected="false" aria-controls="hayakuViewerPanelLogs" tabindex="-1"><span>☷</span><span>운행 기록</span><em id="hayakuViewerLogCountNav" class="hv-nav-count">0</em></button></div>
-          </nav>
-          <div class="hv-sidebar-footer"><div class="hv-provider-state"><strong>AX</strong><span><span id="hayakuSidebarAux">Other Ax · 호출 미검증</span><small>Provider와 키는 RisuAI 소유</small></span><i></i></div></div>
-        </aside>
-        <div class="hv-content">
-          <main id="hayakuViewerPanelOverview" class="hv-panel active" data-hayaku-viewer-panel="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
-            <div class="hv-heading"><div><small class="hv-eyebrow">CONTINUITY STATUS</small><h1>연속성 관제</h1></div></div>
-            <section id="hayakuOverviewHealth" class="hv-overview-health"><i>✓</i><div><strong id="hayakuOverviewHealthTitle">현재 원장을 확인하는 중입니다.</strong><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span></div></section>
-            <div class="hv-overview-metrics"><article class="hv-overview-metric"><span>패킷 원장<em class="hv-nav-count">정본</em></span><strong id="hayakuOverviewPackets">0 / 0</strong><small>활성·영구 / 전체</small></article><article class="hv-overview-metric"><span>기억이 연결된 턴</span><strong id="hayakuOverviewCoverage">-</strong><small>패킷 보유 / 완료 U+A 턴</small></article><article class="hv-overview-metric"><span>복구 대기 기록</span><strong id="hayakuOverviewJournal">0</strong><small id="hayakuOverviewJournalMeta">상태 확인 중</small></article><article class="hv-overview-metric"><span>이번 회상</span><strong id="hayakuOverviewRecallCount">0</strong><small id="hayakuOverviewRecallMeta">이번 실행 기록 없음</small></article></div>
-            <div class="hv-overview-actions"><button class="hv-overview-action" data-hayaku-viewer-goto="packets" type="button"><i>01</i><span><strong>패킷 기록</strong><span>저장된 기억 읽기</span></span></button><button class="hv-overview-action" data-hayaku-viewer-goto="recovery" type="button"><i>02</i><span><strong>구간 점검</strong><span>누락·수정된 턴 확인</span></span></button><button class="hv-overview-action" data-hayaku-viewer-goto="logs" type="button"><i>03</i><span><strong>운행 기록</strong><span>최근 작업과 오류 확인</span></span></button></div>
-            <section id="hayakuContinuityLine" class="hv-control-line" aria-label="최근 패킷 현황"><div class="hv-overview-empty">완료 턴과 패킷을 확인하고 있습니다.</div></section>
-            <details class="hv-control-more"><summary>상세 상태와 관리</summary><div class="hv-actions"><button class="hv-btn" data-hayaku-viewer-goto="worldline" type="button">세계선</button><button class="hv-btn" data-hayaku-viewer-goto="server" type="button">서버 연결</button></div>
-            <div class="hv-overview-grid"><section class="hv-overview-card"><div class="hv-overview-card-head"><div><strong>이번에 떠올린 기억</strong><span>현재 요청에 선택된 기억</span></div><button class="hv-btn" data-hayaku-viewer-goto="packets" type="button">전체 보기</button></div><div id="hayakuOverviewRecallRows"><div class="hv-overview-empty">이번 실행 회상을 확인하는 중입니다.</div></div></section><section class="hv-overview-card"><div class="hv-overview-card-head"><div><strong>최근 운행 기록</strong><span>현재 플러그인 실행</span></div><button class="hv-btn" data-hayaku-viewer-goto="logs" type="button">전체 로그</button></div><div id="hayakuOverviewActivity"><div class="hv-overview-empty">작업 로그를 확인하는 중입니다.</div></div></section></div>
-            <div class="hv-overview-metrics"><article class="hv-overview-metric"><span>세계선 활성/전체</span><strong id="hayakuOverviewWorldline">0 / 0</strong><small id="hayakuOverviewWorldlineMeta">현재 원장 node</small></article><article class="hv-overview-metric"><span>정리 가능 고아</span><strong id="hayakuOverviewOrphans">0</strong><small>검증 후에만 수동 삭제</small></article></div>
-            <section id="hayakuPacketAuthoring" class="hv-scope-card hv-packet-authoring" aria-labelledby="hayakuPacketAuthoringTitle"><header class="hv-scope-card-head"><div><h2 id="hayakuPacketAuthoringTitle">이번 패킷 작성</h2><p>작성 지시 · 메인 출력 · 저장 관측 기록</p></div></header><p class="hv-scope-empty">관측 기록 미조회</p></section>
-            </details>
-          </main>
-          <main id="hayakuViewerPanelPackets" class="hv-panel" data-hayaku-viewer-panel="packets" role="tabpanel" aria-labelledby="hayakuViewerTabPackets" hidden>
-            <div class="hv-heading"><div><small class="hv-eyebrow">하야쿠의 플러그인 스토리지에 쌓인 기억을 조회하고 검증된 고아 데이터만 수동 정리합니다.</small><h1>패킷 기록</h1><p>활성·격리·상속·영구·보호 데이터는 건드리지 않으며, 고아 정리는 확인 후 영구 삭제됩니다.</p></div><div class="hv-actions"><button id="openHayakuManualRecapture" class="hv-btn" type="button">인라인 패킷 수동 검토</button><button id="cleanupHayakuOrphans" class="hv-btn danger">고아 데이터 정리 (<span id="hayakuOrphanCleanupCount">0</span>)</button><button id="exportHayakuViewer" class="hv-btn" title="조회·진단용 JSON이며 기억 복원용 백업 파일이 아닙니다.">원장 JSON 내보내기</button><button id="refreshHayakuViewer" class="hv-btn primary">새로고침</button></div></div>
-            <section class="hv-recall">
-              <div class="hv-recall-head">
-                <div class="hv-recall-title"><strong>이번에 떠올린 기억</strong><small id="hayakuViewerRecallMeta">아직 이번 세션에서 떠올린 기억이 없습니다.</small></div>
-                <div class="hv-current-input"><span>인풋</span><p id="hayakuViewerCurrentInput">아직 처리된 인풋이 없습니다.</p></div>
-              </div>
-              <div id="hayakuViewerRecallRows" class="hv-recall-rows"><div class="hv-recall-empty">선택된 기억이 없습니다.</div></div>
-            </section>
-            <div class="hv-scope"><div><b>채팅</b><span id="hayakuViewerScope">-</span></div><div><b>저장 키</b><code id="hayakuViewerKey">-</code></div><div><b>갱신</b><span id="hayakuViewerUpdated">-</span></div></div>
-            <div class="hv-metrics">
-              <div class="hv-metric"><span>전체 레코드</span><strong id="hayakuMetricRecords">0</strong></div>
-              <div class="hv-metric"><span>활성·과거</span><strong id="hayakuMetricActive">0</strong></div>
-              <div class="hv-metric"><span>비활성</span><strong id="hayakuMetricInactive">0</strong></div>
-              <div class="hv-metric"><span>패킷 크기</span><strong id="hayakuMetricSize">0자</strong></div>
-              <div class="hv-metric"><span>월드라인 활성/전체</span><strong id="hayakuMetricWorldline">0 / 0</strong></div>
-              <div class="hv-metric"><span>슬롯 헤드</span><strong id="hayakuMetricSlots">0</strong></div>
-              <div class="hv-metric"><span>활성 tombstone</span><strong id="hayakuMetricTombstones">0</strong></div>
-              <div class="hv-metric"><span>정리 가능 고아</span><strong id="hayakuMetricOrphans">0</strong></div>
-            </div>
-            <div class="hv-tools"><select id="hayakuViewerState"><option value="all">모든 상태</option></select><select id="hayakuViewerType"><option value="all">모든 패킷 타입</option></select><input id="hayakuViewerSearch" type="search" placeholder="본문·hash·nonce 검색"><label class="hv-audit-toggle"><input id="hayakuViewerShowAuditCopies" type="checkbox">감사·비활성 사본 표시</label><small>표시 <b id="hayakuViewerVisibleCount">0 / 0</b></small></div>
-            <div id="hayakuViewerRecordsPager" class="hv-record-actions" aria-label="패킷 목록 페이지"></div>
-            <div class="hv-ledger-layout"><div id="hayakuViewerRecords" class="hv-records" aria-label="패킷 목록"><div class="hv-empty"><strong>조회 대기</strong><span>새로고침하여 플러그인 원장을 읽습니다.</span></div></div><section id="hayakuViewerRecordDetail" class="hv-record-detail" aria-live="polite"><div class="hv-empty"><strong>패킷을 선택하세요.</strong><span>왼쪽 목록에서 턴을 선택하면 상세 내용이 표시됩니다.</span></div></section></div>
-            <div class="hv-diagnostics">
-              <strong>원장 진단 데이터</strong>
-              <details><summary>월드라인 JSON</summary><pre id="hayakuViewerWorldline">{}</pre></details>
-              <details><summary>슬롯 헤드 JSON</summary><pre id="hayakuViewerSlots">[]</pre></details>
-              <details><summary>Tombstone JSON</summary><pre id="hayakuViewerTombstones">[]</pre></details>
-              <details><summary>최근 캡처 상태 JSON</summary><pre id="hayakuViewerCapture">{}</pre></details>
-            </div>
-            <div id="hayakuManualRecaptureOverlay" class="hv-confirm-overlay hv-manual-recapture-overlay" hidden style="display:none"></div>
-          </main>
-          <main id="hayakuViewerPanelWorldline" class="hv-panel" data-hayaku-viewer-panel="worldline" role="tabpanel" aria-labelledby="hayakuViewerTabWorldline" hidden>
-            <div class="hv-heading"><div><small class="hv-eyebrow">WORLDLINE CONTINUITY</small><h1>세계선</h1><p>활성 정본과 리롤·복구·격리 패킷을 턴 순서로 확인합니다. 원본 데이터는 변경하지 않습니다.</p></div><div class="hv-actions"><button class="hv-btn" data-hayaku-viewer-goto="packets" type="button">패킷 원장</button><button id="refreshHayakuWorldline" class="hv-btn primary" type="button">새로고침</button></div></div>
-            <section id="hayakuHostLineage" class="hv-scope-card hv-host-lineage" aria-labelledby="hayakuHostLineageTitle"><header class="hv-scope-card-head"><div><h2 id="hayakuHostLineageTitle">현재 세계선 · 채팅 분기</h2></div></header><p class="hv-scope-empty">분기 상태 미조회</p></section>
-            <section class="hv-worldline-board"><div class="hv-overview-card-head"><div><strong>턴 연속성</strong><span>최근 24개 패킷 턴 · 미결속은 대기 상태로 표시</span></div><span id="hayakuWorldlineStateBadge" class="hv-recovery-state">현재 세계선</span></div><div class="hv-list-filter"><input id="hayakuWorldlineFilter" type="search" placeholder="턴 번호나 요약으로 찾기" aria-label="세계선 검색" /><span id="hayakuWorldlineFilterCount"></span></div><div id="hayakuWorldlineTimeline" class="hv-worldline-timeline"><div class="hv-empty"><strong>조회 대기</strong><span>현재 채팅의 패킷을 읽고 있습니다.</span></div></div><div id="hayakuWorldlineDetail" class="hv-worldline-detail"></div></section>
-          </main>
-          <main id="hayakuViewerPanelRecovery" class="hv-panel" data-hayaku-viewer-panel="recovery" role="tabpanel" aria-labelledby="hayakuViewerTabRecovery" hidden>
-            <div class="hv-heading"><div><small class="hv-eyebrow">SECTION MAINTENANCE</small><h1>구간 점검과 복구</h1><p>수정된 원문을 검토하고, 누락된 턴만 골라 복구합니다. AI 재분석은 확인 후 시작됩니다.</p></div><div class="hv-actions"><button id="refreshHayakuRecovery" class="hv-btn primary">상태 새로고침</button></div></div>
-            <section id="hayakuSourceEditConsent" class="hv-scope-card hv-source-edit" aria-labelledby="hayakuSourceEditConsentTitle"><header class="hv-scope-card-head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2></div></header><p class="hv-scope-empty">저장된 구간을 조회하세요.</p></section>
-            <div class="hv-recovery-grid">
-              <section class="hv-recovery-card"><h3>복구 엔진</h3><div class="hv-recovery-actions"><button id="hayakuSafeHealthInspect" class="hv-btn" type="button">읽기 전용 건강 검사</button><button id="hayakuSafeHealthPreview" class="hv-btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="hv-btn" type="button" disabled>캐시 복구 실행</button></div><p id="hayakuSafeHealthStatus" role="status">명시적 검사 · 자동 모델 재분석 없음</p><span id="hayakuNativeRecoveryState" class="hv-recovery-state">조회 대기</span><div class="hv-recovery-kv"><b>전송</b><span>RisuAI runLLMModel · Other Ax</span><b>Provider</b><span>RisuAI 설정 사용 · HAYAKU에는 키 저장 안 함</span><b>afterRequest</b><span id="hayakuAfterRequestAutoRepairText">${Memory.settings?.afterRequestAutoRepair !== false ? '켜짐 · 누락 시 1회' : '꺼짐 · 저널만 생성'}</span><b>백그라운드</b><span id="hayakuNativeAutoRepairText">${Memory.settings?.backgroundAutoRepair !== false ? '켜짐' : '꺼짐'}</span></div><p>Other Ax 호출 시 RisuAI에 설정된 Provider 비용이 발생할 수 있습니다.</p><label class="hv-recovery-toggle"><input id="hayakuAfterRequestAutoRepairToggle" type="checkbox" ${Memory.settings?.afterRequestAutoRepair !== false ? 'checked' : ''}>afterRequest 자동 복구 · 성공 시 채팅 원장 기록</label><label class="hv-recovery-toggle"><input id="hayakuNativeAutoRepairToggle" type="checkbox" ${Memory.settings?.backgroundAutoRepair !== false ? 'checked' : ''}>백그라운드 자동 복구 · 시작 전 확인 요청</label></section>
-              <section class="hv-recovery-card"><h3>수동 복구 · 누락 및 원문 수정 턴 선택</h3><p>완료된 U+A와 실제 패킷을 비교합니다. 선택한 누락만 복구하며, 원문 수정 턴은 미리보기 후 별도 적용을 눌러 다시 분석합니다. 정상 패킷과 이전 실패 기록은 보존합니다. Other Ax 호출 비용이 발생할 수 있습니다.</p><div id="hayakuMissingTurnPicker"><p>누락 턴을 확인하고 있습니다.</p></div><div class="hv-recovery-actions"><button id="runHayakuNativeRepair" type="button" disabled class="hv-btn primary hv-recovery-run">선택한 턴 복구</button></div></section>
-              <section class="hv-recovery-card"><h3>Cold Start</h3><p>이 채팅에서 HAYAKU를 한 번도 사용하지 않았을 때만 실행합니다. 호출은 최대 1/5/10턴씩 묶고, 정본은 계속 턴별 패킷으로 유지합니다.</p><div class="hv-recovery-kv"><b>상태</b><span id="hayakuNativeColdStartState">대기</span><b>진행</b><span id="hayakuNativeColdStartProgress">-</span><b>호출당 U+A</b><select id="hayakuColdStartBatchTurns" class="hv-batch-select"><option value="1">1턴</option><option value="5">5턴 · 속도 권장</option><option value="10">10턴</option></select></div><div class="hv-recovery-actions"><button id="runHayakuNativeColdStart" class="hv-btn primary hv-recovery-run">Cold Start 실행</button><button id="cancelHayakuNativeColdStart" class="hv-btn danger">중단</button></div></section>
-              <section class="hv-recovery-card hv-portable-memory-card"><div class="hv-portable-memory-title-row"><h3>기억 복원</h3><span class="hv-portable-json-badge">JSON</span></div><p>현재 채팅의 영구 기억을 JSON으로 보관하고, 같은 채팅을 되돌리거나 새 채팅으로 이사하거나 복사된 대화의 월드라인을 복구합니다.</p><div data-portable-backup-host="hayaku_locator_continuity" aria-label="JSON 기억 백업 및 복원"></div><div class="hv-portable-memory-note">같은 채팅은 교체 복원 · 다른 채팅은 format v3의 이사/복사 모드만 허용 · 작업 전 대상 기억 자동 안전 백업</div></section>
-            </div>
-            <div id="hayakuNativeRepairOutcome" class="hv-recovery-message" role="status" aria-live="polite" hidden></div>
-            <div id="hayakuNativeRecoveryMessage" class="hv-recovery-message">복구 상태를 불러오지 않았습니다.</div>
-          </main>
-
-          <main class="hv-panel" data-hayaku-viewer-panel="server"><div id="hayakuMemorySuiteServerConnectionPanel"><section class="hv-recovery-card"><h3>저장 및 연산 설정을 불러오는 중…</h3></section></div></main>
-          <main class="hv-panel" data-hayaku-viewer-panel="settings">
-            <div class="hv-heading"><div><small class="hv-eyebrow">플러그인 argument 편집 화면을 열지 않고 HAYAKU의 사용자 설정 ${HAYAKU_GUI_SETTING_SPECS.length}개를 관리합니다.</small><h1>설정</h1><p>변경은 draft로 유지되며, 적용 시 전체 저장·readback 검증과 실패 시 rollback readback을 수행합니다. 설정 저장 자체는 LLM을 호출하지 않습니다.</p></div><div class="hv-actions"><button id="defaultHayakuSettings" class="hv-btn" type="button">기본값 불러오기</button></div></div>
-            <div class="hv-settings-layout">
-              <nav class="hv-settings-nav" aria-label="HAYAKU 설정 그룹">
-                <button class="active" data-hayaku-settings-section-button="basic" type="button" aria-pressed="true"><span>1</span><span>기본 동작<small>켜기 · 성능 · 출력</small></span></button>
-                <button data-hayaku-settings-section-button="memory" type="button" aria-pressed="false"><span>2</span><span>기억 선택<small>회상 기준 · 문맥</small></span></button>
-                <button data-hayaku-settings-section-button="recovery" type="button" aria-pressed="false"><span>3</span><span>복구·안전<small>누락 · Cold Start</small></span></button>
-                <button data-hayaku-settings-section-button="advanced" type="button" aria-pressed="false"><span>4</span><span>고급 검색<small>BM25 · 그래프 · 진단</small></span></button>
-              </nav>
-              <div>
-                <div class="hv-list-filter"><input id="hayakuSettingsFilter" type="search" placeholder="설정 이름이나 설명으로 찾기" aria-label="설정 검색" /><span id="hayakuSettingsFilterCount"></span><button id="defaultHayakuSectionSettings" class="hv-btn" type="button" title="지금 보고 있는 섹션만 기본값으로 되돌립니다. 적용 전에는 저장되지 않습니다.">이 섹션만 기본값</button></div>
-                <form id="hayakuSettingsForm" autocomplete="off">
-                  <section class="hv-settings-card" data-hayaku-settings-section="basic">
-                    <header><div><h2>기본 동작</h2><p>일상적으로 바꾸는 실행·표현 설정입니다.</p></div><span class="hv-settings-count">5개</span></header>
-                    <label class="hv-setting-row"><div><strong>HAYAKU 사용</strong><p>현재 채팅의 기억 패킷 생성과 회상을 활성화합니다.</p><code>hayaku_enabled</code></div><input name="hayaku_enabled" type="checkbox"></label>
-                    <div class="hv-setting-row"><div><strong>성능 모드</strong><p>Auto는 채팅 길이와 요청 압력에 맞춰 실제 모드를 결정합니다.</p><code>hayaku_mode</code></div><div class="hv-choice-group"><label><input name="hayaku_mode" type="radio" value="auto">Auto</label><label><input name="hayaku_mode" type="radio" value="fast">Fast</label><label><input name="hayaku_mode" type="radio" value="balanced">Balanced</label><label><input name="hayaku_mode" type="radio" value="deep">Deep</label></div><small id="hayakuSettingsEffectiveMode" class="hv-setting-note">현재 실제 적용: 아직 요청 없음</small></div>
-                    <label class="hv-setting-row"><div><strong>프롬프트 상세도</strong><p>Auto는 Deep·정밀 복구 신호와 충분한 컨텍스트 여유가 함께 있을 때 Full, 그 외에는 Balanced를 사용합니다.</p><code>hayaku_prompt_mode</code></div><select name="hayaku_prompt_mode"><option value="auto">Auto</option><option value="balanced">Balanced</option><option value="full">Full</option></select></label>
-                    <label class="hv-setting-row"><div><strong>패킷 출력 위치</strong><p>자동 판정이 불명확한 경우에만 지정합니다. 현재 출력 지시에 없는 태그나 footer는 강제하지 않습니다. 순수 JSON 전용 보호는 유지됩니다.</p><code>hayaku_packet_output_slot</code></div><select name="hayaku_packet_output_slot"><option value="auto">자동</option><option value="tail">본문 뒤</option><option value="wrapper">지정 닫는 태그 앞</option><option value="footer">필수 숨은 footer 앞</option></select></label>
-                    <label class="hv-setting-row"><div><strong>닫는 태그</strong><p>예: &lt;/Story&gt;. 현재 프리셋의 명시적 출력 형식에 같은 태그가 있어야 합니다.</p><code>hayaku_packet_closing_tag</code></div><input name="hayaku_packet_closing_tag" type="text" placeholder="&lt;/Story&gt;" maxlength="67"></label>
-                    <label class="hv-setting-row"><div><strong>기억 언어</strong><p>다국어 대화에는 완료된 본문의 언어를 따르는 Source가 권장됩니다.</p><code>hayaku_memory_language</code></div><select name="hayaku_memory_language"><option value="source">대화 원문 자동 · 다국어 권장</option><option value="ko">한국어</option><option value="en">English</option><option value="ja">日本語</option><option value="zh">中文</option></select></label>
-                    <label class="hv-setting-row"><div><strong>패킷 표시 숨김</strong><p>채팅 화면에서는 숨기되 정본 원장에는 보존합니다.</p><code>hayaku_display_scrubber</code></div><input name="hayaku_display_scrubber" type="checkbox"></label>
-                  </section>
-
-                  <section class="hv-settings-card" data-hayaku-settings-section="memory" hidden>
-                    <header><div><h2>기억 선택</h2><p>검색을 통과한 기억을 어떤 기준으로 우선할지 조정합니다.</p></div><span class="hv-settings-count">15개</span></header>
-                    <div class="hv-setting-fields">
-                      <label class="hv-setting-field"><span>관련성 <output data-hayaku-setting-output="hayaku_recall_relatedness_weight">70</output></span><input name="hayaku_recall_relatedness_weight" type="range" min="0" max="100" step="1"><code>hayaku_recall_relatedness_weight</code></label>
-                      <label class="hv-setting-field"><span>최신성 <output data-hayaku-setting-output="hayaku_recall_recency_weight">30</output></span><input name="hayaku_recall_recency_weight" type="range" min="0" max="100" step="1"><code>hayaku_recall_recency_weight</code></label>
-                      <label class="hv-setting-field"><span>축별 최대 기억</span><input name="hayaku_max_items_per_axis" type="number" min="1" max="12" step="1"><code>hayaku_max_items_per_axis</code></label>
-                      <label class="hv-setting-field"><span>단기 · 최대 경과 턴</span><input name="hayaku_recall_short_max_age" type="number" min="0" max="10000000" step="1" placeholder="미설정"></label>
-                      <label class="hv-setting-field"><span>중기 · 최대 경과 턴</span><input name="hayaku_recall_medium_max_age" type="number" min="0" max="10000000" step="1" placeholder="미설정"></label>
-                      <label class="hv-setting-field"><span>단기 · 출처 턴 한도</span><input name="hayaku_recall_short_turn_quota" type="number" min="0" max="24" step="1" placeholder="미설정"></label>
-                      <label class="hv-setting-field"><span>중기 · 출처 턴 한도</span><input name="hayaku_recall_medium_turn_quota" type="number" min="0" max="24" step="1" placeholder="미설정"></label>
-                      <label class="hv-setting-field"><span>장기 · 출처 턴 한도</span><input name="hayaku_recall_long_turn_quota" type="number" min="0" max="24" step="1" placeholder="미설정"></label>
-                      <p>시간별 한도는 다섯 값을 모두 입력하면 적용합니다. 비우면 기존 선택을 유지합니다. 단기는 첫 경과 턴 이하, 중기는 그 다음부터 두 번째 이하, 장기는 나머지입니다. 현재 상태·미해결 제약·지식 경계는 따로 계산하며 전체 기억 예산은 유지합니다. 관련 후보가 부족하면 한도가 채워지지 않을 수 있습니다.</p>
-                      <label class="hv-setting-field"><span>최근 문맥 메시지</span><input name="hayaku_recall_context_messages" type="number" min="0" max="20" step="1"><code>hayaku_recall_context_messages</code></label>
-                      <label class="hv-setting-field"><span>안정성 부스트</span><input name="hayaku_recall_stability_boost" type="number" min="0" max="0.08" step="0.005"><code>hayaku_recall_stability_boost</code></label>
-                    </div>
-                    <div class="hv-setting-toggles">
-                      <label class="hv-setting-toggle"><span><strong>구형 문맥 설정 · 호환 보존</strong><small>현재 검색은 위에서 설정한 최근 메시지 수를 사용합니다.</small><code>hayaku_adaptive_context_window</code></span><input name="hayaku_adaptive_context_window" type="checkbox" disabled></label>
-                      <label class="hv-setting-toggle"><span><strong>다중 주제 회상</strong><small>서로 다른 초점으로 후보 생성</small><code>hayaku_multi_query_recall</code></span><input name="hayaku_multi_query_recall" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>변화 전후 묶음</strong><small>충돌 후보를 함께 비교</small><code>hayaku_contradiction_bundle</code></span><input name="hayaku_contradiction_bundle" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>다중 해상도 회상</strong><small>요약과 세부 기억 함께 탐색</small><code>hayaku_multi_resolution_recall</code></span><input name="hayaku_multi_resolution_recall" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>장면 회상 안정화</strong><small>연속 장면의 선택 흔들림 완화</small><code>hayaku_recall_stability</code></span><input name="hayaku_recall_stability" type="checkbox"></label>
-                    </div>
-                  </section>
-
-                  <section class="hv-settings-card" data-hayaku-settings-section="recovery" hidden><div id="hayakuSourceTrackingSettings"></div>
-                    <header><div><h2>복구·안전</h2><p>완료 턴 누락 감지, 응답 원장 복구, 확인형 백그라운드 복구를 관리합니다.</p></div><span class="hv-settings-count">7개</span></header>
-                    <label class="hv-setting-row"><div><strong>누락 패킷 감지</strong><p>완료된 visible U+A와 정본 패킷을 대조합니다.</p><code>hayaku_packet_recovery</code></div><input name="hayaku_packet_recovery" type="checkbox"></label>
-                    <label class="hv-setting-row"><div><strong>afterRequest 자동 복구</strong><p>현재 응답의 패킷이 없거나 사용할 수 없으면 정상 afterRequest 파이프라인에서 Other Ax를 한 번 호출합니다. 성공하면 같은 Assistant 채팅 원장에 current_snapshot을 기록하며, 호출 시 Provider 비용이 발생할 수 있습니다.</p><code>hayaku_after_request_auto_repair</code></div><input name="hayaku_after_request_auto_repair" type="checkbox" ${Memory.settings?.afterRequestAutoRepair !== false ? 'checked' : ''}></label>
-
-                    <label class="hv-setting-row"><div><strong>백그라운드 자동 복구</strong><p>afterRequest 복구가 실패했거나 꺼져 있어 Recovery Journal이 생성되면 복구 시작 여부를 먼저 묻습니다. 두 설정은 서로 독립적이며, 승인한 호출에는 추가 AI 비용이 발생할 수 있습니다.</p><code>hayaku_background_auto_repair</code></div><input name="hayaku_background_auto_repair" type="checkbox" ${Memory.settings?.backgroundAutoRepair !== false ? 'checked' : ''}></label>
-                    <label class="hv-setting-row"><div><strong>플러그인 제공 보조 모델 허용</strong><p>RisuAI의 Other Ax가 pluginmodel 계열이어도 복구·Cold Start·호출 테스트에 사용합니다. 기본값은 허용이며, 명시적으로 끄면 일반 RisuAI 모델만 허용합니다.</p><code>risuai_aux_allow_plugins</code></div><input name="risuai_aux_allow_plugins" type="checkbox"></label>
-                    <label class="hv-setting-row"><div><strong>형식 오류 추가 복구</strong><p>작업 전체에서 최대 1회. 정상 종료된 형식 오류에만 사용하며 길이 제한·의미·근거 오류·결과 미확정에는 재호출하지 않습니다.</p><code>hayaku_recovery_extra_calls</code></div><select name="hayaku_recovery_extra_calls"><option value="0">추가 없음 · 기본</option><option value="1">최대 1회 허용</option></select></label>
-                    <div class="hv-setting-warning"><strong>비용 안내</strong><span>afterRequest 복구는 누락 감지 시 확인 없이 정상 파이프라인으로 1회 호출합니다. 백그라운드 복구는 매번 확인 후 호출합니다. 형식 오류 추가 복구를 켜면 작업당 최대 1회가 추가됩니다.</span></div>
-                    <div class="hv-setting-row"><div><strong>Cold Start 묶음 분석</strong><p>한 번의 Other Ax 호출에 넣을 최대 완료 U+A 턴 수입니다.</p><code>hayaku_cold_start_batch_turns</code></div><div class="hv-choice-group"><label><input name="hayaku_cold_start_batch_turns" type="radio" value="1">1턴</label><label><input name="hayaku_cold_start_batch_turns" type="radio" value="5">5턴 · 속도 권장</label><label><input name="hayaku_cold_start_batch_turns" type="radio" value="10">10턴</label></div><small class="hv-setting-note">큰 묶음은 호출 수를 줄이지만 실패 시 재시도 범위가 커집니다.</small></div>
-                    <label class="hv-setting-row"><div><strong>패킷 coverage 점검</strong><p>현재 세계선의 완료 턴과 패킷 범위를 검사합니다.</p><code>hayaku_packet_coverage_audit</code></div><input name="hayaku_packet_coverage_audit" type="checkbox"></label>
-                    <label class="hv-setting-row"><div><strong>coverage fallback 회상</strong><p>누락 가능성이 있는 턴의 원문 근거를 회상에 보완합니다.</p><code>hayaku_packet_coverage_fallback_recall</code></div><input name="hayaku_packet_coverage_fallback_recall" type="checkbox"></label>
-                    <label class="hv-setting-row"><div><strong>원문 passage 회상</strong><p>Recovery Journal의 exact U+A를 exact·BM25·trigram·근접도 기준으로 검색합니다.</p><code>hayaku_raw_passage_recall</code></div><input name="hayaku_raw_passage_recall" type="checkbox"></label>
-                  </section>
-
-                  <section class="hv-settings-card" data-hayaku-settings-section="advanced" hidden>
-                    <header><div><h2>고급 검색·구조</h2><p>검색 성능과 기억 구조에 직접 영향을 주는 내부값입니다.</p></div><span class="hv-settings-count">12개</span></header>
-                    <label class="hv-setting-row"><div><strong>프롬프트 캐시</strong><p>구조 캐시 또는 host native 캐시를 선택합니다.</p><code>hayaku_prompt_cache</code></div><select name="hayaku_prompt_cache"><option value="off">Off</option><option value="structural">Structural</option><option value="native">Native</option></select></label>
-                    <label class="hv-setting-row"><div><strong>BM25 채널</strong><p>어휘 일치를 후보 점수에 혼합합니다.</p><code>hayaku_bm25_channel</code></div><input name="hayaku_bm25_channel" type="checkbox"></label>
-                    <div class="hv-setting-fields">
-                      <label class="hv-setting-field"><span>BM25 가중치</span><input name="hayaku_bm25_weight" type="number" min="0" max="0.25" step="0.01"><code>hayaku_bm25_weight</code></label>
-                      <label class="hv-setting-field"><span>원문 최대 passage</span><input name="hayaku_raw_recall_max_items" type="number" min="1" max="8" step="1"><code>hayaku_raw_recall_max_items</code></label>
-                      <label class="hv-setting-field"><span>원문 최대 문자</span><input name="hayaku_raw_recall_max_chars" type="number" min="600" max="8000" step="100"><code>hayaku_raw_recall_max_chars</code></label>
-                      <label class="hv-setting-field"><span>원문 최소 점수</span><input name="hayaku_raw_recall_min_score" type="number" min="0.04" max="0.8" step="0.01"><code>hayaku_raw_recall_min_score</code></label>
-                      <label class="hv-setting-field"><span>Graph closure 최대 행</span><input name="hayaku_graph_closure_max_nodes" type="number" min="2" max="24" step="1"><code>hayaku_graph_closure_max_nodes</code></label>
-                      <label class="hv-setting-field"><span>Episode router 최대 hit</span><input name="hayaku_episode_router_max_hits" type="number" min="1" max="8" step="1"><code>hayaku_episode_router_max_hits</code></label>
-                    </div>
-                    <div class="hv-setting-toggles">
-                      <label class="hv-setting-toggle"><span><strong>Typed memory graph</strong><small>패킷 행 사이 결정적 관계 파생</small><code>hayaku_typed_memory_graph</code></span><input name="hayaku_typed_memory_graph" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>Graph closure recall</strong><small>게이트 후 제한된 이웃 근거 허용</small><code>hayaku_graph_closure_recall</code></span><input name="hayaku_graph_closure_recall" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>계층형 에피소드 기억</strong><small>L1 행에서 장면·턴 라우터 생성</small><code>hayaku_hierarchical_episode_memory</code></span><input name="hayaku_hierarchical_episode_memory" type="checkbox"></label>
-                      <label class="hv-setting-toggle"><span><strong>디버그 로그</strong><small>문제 분석 중에만 상세 진단 기록</small><code>hayaku_debug</code></span><input name="hayaku_debug" type="checkbox"></label>
-                    </div>
-                    <div class="hv-settings-route">Storage와 Compute argument는 기존 owner를 복제하지 않고 <strong>서버 연결</strong> 화면의 공유 패널에서 계속 관리합니다. migration 전용 <code>memory_suite_server_mode</code>는 직접 편집하지 않습니다.</div>
-              <section class="hv-settings-card hv-auxiliary-probe-card" style="margin-top:12px"><h3>RisuAI 보조 모델 호출 테스트</h3><span id="hayakuAuxiliaryProbeState" class="hv-recovery-state">조회 대기</span><div class="hv-recovery-kv"><b>API</b><span id="hayakuAuxiliaryProbeSource">-</span><b>플러그인 모델</b><span id="hayakuAuxiliaryPluginModels">-</span><b>마지막 실행</b><span id="hayakuAuxiliaryProbeTime">-</span><b>지연</b><span id="hayakuAuxiliaryProbeLatency">-</span><b>전송 여부</b><span id="hayakuAuxiliaryProbeSubmission">-</span></div><pre id="hayakuAuxiliaryProbeResponse" class="hv-probe-preview">아직 호출 테스트를 실행하지 않았습니다.</pre><p>버튼을 누를 때만 <code>runLLMModel({ mode: 'otherAx', allowPlugins: 설정값 })</code>를 정확히 한 번 호출합니다. 기본값은 플러그인 제공 모델 허용이며 설정에서 명시적으로 끌 수 있습니다. Provider 비용이 발생할 수 있으며, 결과는 현재 세션 진단에만 남고 기억·패킷 원장에는 쓰지 않습니다.</p><div class="hv-recovery-actions"><button id="testHayakuAuxiliaryModel" class="hv-btn primary" type="button">보조 모델 호출 테스트</button></div></section>
-                  </section>
-                </form>
-                <div class="hv-settings-save" aria-live="polite"><span><strong id="hayakuSettingsSaveTitle">설정을 불러오는 중</strong><small id="hayakuSettingsSaveDetail">현재 argument를 읽고 있습니다.</small></span><button id="cancelHayakuSettings" class="hv-btn" type="button" disabled>변경 취소</button><button id="applyHayakuSettings" class="hv-btn primary" type="button" disabled>변경 적용</button></div>
-                <div id="hayakuSettingsMessage" class="hv-settings-message">설정을 바꾸어도 적용 버튼을 누르기 전에는 저장되지 않습니다.</div>
-              </div>
-            </div>
-          </main>
-          <main class="hv-panel" data-hayaku-viewer-panel="logs">
-            <div class="hv-heading"><div><small class="hv-eyebrow">현재 플러그인 실행에서 발생한 요청·회상·캡처·결속 작업입니다.</small><h1>작동 로그</h1><p>최근 작동 로그와 요청·회상·패킷·캡처·결속 상태를 한 번에 JSON으로 내보냅니다. 인증 값은 자동으로 제거됩니다.</p></div><div class="hv-actions"><button id="copyHayakuDebug" class="hv-btn">디버그 JSON 복사</button><button id="exportHayakuDebug" class="hv-btn">디버그 JSON 파일로 저장</button><button id="showHayakuDebug" class="hv-btn">디버그 JSON 표시</button><button id="refreshHayakuLog" class="hv-btn primary">새로고침</button></div></div>
-            <div class="hv-log-summary">현재 실행 로그 <strong id="hayakuViewerLogCount">0</strong>개</div>
-            <div class="hv-list-filter"><input id="hayakuLogFilter" type="search" placeholder="로그 내용으로 찾기" aria-label="작동 로그 검색" /><span id="hayakuLogFilterCount"></span></div>
-            <details class="hv-card"><summary>보존된 분석 진단 · 읽기 전용</summary><p>실패 원문과 제외 사유를 확인합니다. 기억 생성은 관제창의 누락 턴에서 실행하세요.</p><button id="loadHayakuArchivedFailures" class="hv-btn" type="button">최근 진단 불러오기</button><pre id="hayakuArchivedFailures" style="white-space:pre-wrap;overflow:auto;max-height:420px"></pre></details><section id="hayakuViewerDebugExportPanel" class="hv-debug-export" hidden><div class="hv-debug-export-head"><div><strong>HAYAKU 디버그 JSON</strong><span>클립보드나 파일 저장이 차단된 환경에서는 아래 내용을 직접 복사할 수 있습니다.</span></div><button id="clearHayakuDebugText" class="hv-btn" type="button">닫기</button></div><textarea id="hayakuViewerDebugExportText" readonly></textarea></section>
-            <div id="hayakuViewerOperationLog" class="hv-log-list"><div class="hv-empty"><strong>작동 로그가 없습니다.</strong><span>HAYAKU가 요청을 처리하면 여기에 기록됩니다.</span></div></div>
-            <div class="hv-heading" style="margin-top:14px"><div><small class="hv-eyebrow">동작을 멈추지는 않았지만 내부에서 무시된 오류입니다.</small><h1>조용히 무시된 오류</h1><p>같은 위치가 반복해서 쌓이면 그 기능이 조용히 실패하고 있다는 신호입니다. 위치별로 모아 셉니다.</p></div><div class="hv-actions"><button id="resetHayakuSwallowedDiag" class="hv-btn" type="button">기록 비우기</button><button id="refreshHayakuSwallowedDiag" class="hv-btn primary" type="button">새로고침</button></div></div>
-            <div class="hv-log-summary">기록된 위치 <strong id="hayakuViewerSwallowedDiagCount">0</strong>개</div>
-            <div class="hv-list-filter"><input id="hayakuSwallowedDiagFilter" type="search" placeholder="위치나 메시지로 찾기" aria-label="무시된 오류 검색" /><span id="hayakuSwallowedDiagFilterCount"></span></div>
-            <div id="hayakuViewerSwallowedDiag" class="hv-log-list"><div class="hv-empty"><strong>조용히 무시된 오류가 없습니다.</strong><span>내부에서 무시된 오류가 생기면 여기에 쌓입니다.</span></div></div>
-            <section id="hayakuViewerRecoveryStatus" class="hv-recovery-card hv-log-recovery-status" style="margin-top:14px"><h3>Recovery Journal</h3><div class="hv-recovery-kv"><b>판정</b><strong id="hayakuNativeCoverageSummary">조회 대기</strong><b>활성</b><strong id="hayakuNativeDebtCount">0</strong><b>복구 가능</b><span id="hayakuNativeRepairableCount">0</span><b>누락 턴</b><span id="hayakuNativeMissingTurns">-</span><b>수동 복구 가능</b><span id="hayakuNativeRepairableTurns">-</span><b>재검토 대기 턴</b><span id="hayakuNativeBackoffTurns">-</span><b>시도 한도 턴</b><span id="hayakuNativeExhaustedTurns">-</span><b>처리 중 턴</b><span id="hayakuNativeLeasedTurns">-</span><b>사용자 제외 턴</b><span id="hayakuNativeSuppressedTurns">-</span><b>Cold Start 대상</b><span id="hayakuNativeColdStartTurns">-</span><b>현재 작업</b><span id="hayakuNativeRepairCurrent">대기</span></div><p>정확한 visible U+A는 항상 Recovery Journal에 유지됩니다. 상태 새로고침은 LLM을 호출하지 않습니다. 실패 후 자동 타이머 재시도는 없으며, 백그라운드 호출마다 먼저 확인을 요청합니다.</p></section>
-            <details class="hv-recovery-debug hv-log-recovery-debug"><summary><span><strong>복구 진단 JSON</strong><small>복구 엔진·Recovery Journal·Other Ax 전송 상태의 원시 진단</small></span></summary><pre id="hayakuNativeRecoveryJson">{}</pre></details>
-          </main>
+    root.classList.add('t-hayaku');
+    root.style.background = 'var(--page-bg,#cdd5d8)';
+    const nav = (id,label,short,icon,aria) => `<button class="nav-item" id="hayakuViewerTab${id}" data-hayaku-viewer-tab="${id.toLowerCase()}" data-go="${id.toLowerCase()}" data-short="${short}" type="button" role="tab" aria-selected="${id==='Overview'?'true':'false'}" aria-controls="hayakuViewerPanel${id}" tabindex="${id==='Overview'?'0':'-1'}">${hayakuMockupIcon(icon)}<span class="nav-text">${label}</span>${aria || ''}</button>`;
+    const packetPage = `<section class="page" id="hayakuViewerPanelPackets" data-hayaku-viewer-panel="packets" data-page="packets" role="tabpanel" aria-labelledby="hayakuViewerTabPackets" hidden>
+      <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory ledger</div><h1 class="page-title">패킷 · 세계선</h1><p class="page-desc">같은 원장을 목록으로도, 세계선으로도 봅니다. 두 보기는 같은 항목을 선택합니다. 삭제·정리는 검증 후 영구 삭제되므로 별도 도구로 분리했습니다.</p></div><div class="page-actions"><div class="seg" role="group" aria-label="보기 방식"><button type="button" aria-pressed="true" data-packet-view="list">목록</button><button type="button" aria-pressed="false" data-packet-view="worldline">세계선</button></div><button class="btn" id="exportHayakuViewer" type="button">${hayakuMockupIcon('download')}원장 JSON</button></div></div>
+      <div class="stack">
+        <div class="card fail-box" id="hayakuPacketReadError" hidden><div class="empty"><b>현재 채팅 원장을 읽지 못했습니다.</b><span>정상으로 간주하지 않고 패킷 목록을 표시하지 않습니다. 개요에서 다시 확인하세요.</span></div></div>
+        <div id="hayakuPacketListView" class="stack">
+          <div class="cluster"><select id="hayakuViewerState" class="select" style="width:auto" aria-label="상태 필터"><option value="all">모든 상태</option><option value="active">활성</option><option value="historical">영구 과거</option><option value="audit">감사 사본</option></select><select id="hayakuViewerType" class="select" style="width:auto" aria-label="타입"><option value="all">모든 패킷 타입</option><option value="current_snapshot">current_snapshot</option><option value="recovery_snapshot">recovery_snapshot</option></select><label class="search grow" style="min-width:200px">${hayakuMockupIcon('search')}<input id="hayakuViewerSearch" class="input" type="search" placeholder="본문 · hash · nonce 검색" aria-label="패킷 검색"></label><label class="field"><input id="hayakuViewerShowAuditCopies" type="checkbox"><span>감사 사본 표시</span></label><span id="hayakuViewerVisibleCount" class="hint"></span><button id="refreshHayakuViewer" class="btn" type="button">${hayakuMockupIcon('refresh')}다시 확인</button><button id="openHayakuManualRecapture" class="btn" type="button">완료 턴 패킷 검토</button></div>
+          <div class="pk-layout" data-detail-root><div id="hayakuViewerRecords" class="list pk-list" aria-label="패킷 목록"></div><section id="hayakuViewerRecordDetail" class="card" aria-live="polite"></section></div>
+          <div id="hayakuViewerRecordsPager" class="cluster" aria-label="패킷 페이지"></div>
+          <details class="fold"><summary>정리 도구 · 고아 데이터 <span class="badge" id="hayakuOrphanCleanupCount">검사 전</span></summary><div class="fold__body"><p class="muted" style="margin-top:0">활성·상속·영구·보호 데이터는 건드리지 않습니다. 삭제 직전에 대상을 다시 검증하며 되돌릴 수 없습니다.</p><button id="cleanupHayakuOrphans" class="btn btn--danger" type="button">${hayakuMockupIcon('trash')}고아 데이터 정리</button></div></details>
         </div>
+        <section id="hayakuPacketWorldlineView" class="stack" hidden><div class="card"><div class="card__head"><div><h2 class="card__title">세계선</h2><p class="card__desc">패킷과 같은 원장에서 활성 정본 및 이력을 확인합니다.</p></div><button id="refreshHayakuWorldline" class="btn btn--sm" type="button">다시 확인</button></div><input id="hayakuWorldlineFilter" class="input" type="search" placeholder="턴 번호나 요약으로 찾기" aria-label="세계선 검색"><span id="hayakuWorldlineFilterCount" class="hint"></span><div id="hayakuHostLineage" class="card"></div><div id="hayakuWorldlineTimeline" class="list"></div><div id="hayakuWorldlineDetail" class="card"></div></div></section>
+        <div id="hayakuPacketAuthoring" class="card"><div class="card__head"><div><h2 class="card__title">패킷 작성 관측</h2><p class="card__desc">실제 요청·출력·저장 관측 기록입니다.</p></div></div><div class="empty">요청 관측을 확인하는 중입니다.</div></div>
       </div>
     </section>`;
-    const search = root.querySelector?.('#hayakuViewerSearch');
-    if (search) search.value = Memory.ledgerViewer.search || '';
-    const auditToggle = root.querySelector?.('#hayakuViewerShowAuditCopies');
-    if (auditToggle) auditToggle.checked = Memory.ledgerViewer.showAuditCopies === true;
-    bindLedgerViewerUi();
+    const recoveryPage = `<section class="page" id="hayakuViewerPanelRecovery" data-hayaku-viewer-panel="recovery" data-page="recovery" role="tabpanel" aria-labelledby="hayakuViewerTabRecovery" hidden>
+      <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Section maintenance</div><h1 class="page-title">구간 점검 · 복구</h1><p class="page-desc">진단은 읽기 전용입니다. AI를 쓰는 작업은 대상·비용을 먼저 보여주고 확인을 받은 뒤에만 시작됩니다.</p></div><div class="page-actions"><button class="btn" id="refreshHayakuRecovery" type="button">${hayakuMockupIcon('refresh')}상태 새로고침</button></div></div>
+      <div class="stack">
+        <div class="tabs" role="tablist" aria-label="복구 작업" data-subtabs="rc"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-subtab="miss" data-recovery-view="missing">누락 복구</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="reana" data-recovery-view="reanalysis">직접 원문 재분석</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="failed" data-recovery-view="failed">실패 후보 수리</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cold" data-recovery-view="cold">Cold Start</button></div>
+        <section data-recovery-panel="missing" data-subpanel="miss" data-group="rc" class="is-active"><div class="stack">
+          <div class="card" id="hayakuRecoveryStepsCard"><div class="steps"><div class="step is-done"><span class="step__no">1</span><b>1 · 진단</b><span id="hayakuNativeMissingTurns">누락 상태 확인</span></div><div class="step is-active"><span class="step__no">2</span><b>2 · 대상 선택</b><span>복구할 턴을 고릅니다</span></div><div class="step"><span class="step__no">3</span><b>3 · 비용 확인</b><span>Other Ax 호출 승인</span></div><div class="step"><span class="step__no">4</span><b>4 · 복구·결과</b><span>readback 확인</span></div></div></div>
+          <div class="card"><div class="card__head"><div><h2 class="card__title">복구할 턴 선택</h2><p class="card__desc">패킷이 없는 완료 턴만 표시합니다. 원문이 수정된 턴은 직접 원문 재분석에서 다룹니다.</p></div></div><div id="hayakuMissingTurnPicker"></div>
+            <div class="note note--warn cost" style="margin-top:14px">${hayakuMockupIcon('alert')}<span><b>비용 안내</b> — 복구는 RisuAI에 설정된 Provider(Other Ax)를 호출하며 비용이 발생할 수 있습니다. 정상 패킷 응답에는 추가 호출이 없습니다.</span></div>
+            <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
+            <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
+          </div></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceTrackingSettings" class="stack"></div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
+        <section data-recovery-panel="failed" data-subpanel="failed" data-group="rc" hidden><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">실패 후보</h2><p id="hayakuFailedRecoveryAutomationStatus" class="card__desc"></p></div><div class="cluster"><button id="refreshHayakuFailedRecovery" class="btn btn--sm" type="button">새로고침</button><button id="selectAllHayakuFailures" class="btn btn--sm" type="button">전체 선택</button><button id="clearHayakuFailureSelection" class="btn btn--sm" type="button">선택 해제</button><button id="deleteHayakuSelectedFailures" class="btn btn--danger btn--sm" type="button">선택 기록 삭제</button></div></div><div class="search">${hayakuMockupIcon('search','ic ic--sm')}<input id="hayakuFailedRecoveryFilter" class="input" type="search" placeholder="턴·원인·상태 검색" aria-label="실패 기록 검색"></div><span id="hayakuFailedRecoveryFilterCount" class="hint"></span><div class="fd-grid" data-detail-root><div><div id="hayakuFailedRecoveryList" class="list" aria-label="실패 후보 목록"></div><div id="hayakuFailedRecoveryEmpty" class="empty" hidden><b>보관된 실패 분석이 없습니다.</b><span>현재 채팅에서 보관된 실패가 나타납니다.</span></div></div><section id="hayakuFailedRecoveryDetail" class="card" hidden><div class="card__head"><div><div class="eyebrow">Failed recovery</div><h2 id="hayakuFailedRecoveryTitle" class="card__title"></h2><p id="hayakuFailedRecoveryReason" class="card__desc"></p></div><span id="hayakuFailedRecoveryState" class="badge"></span></div><p id="hayakuFailedRecoveryExplanation"></p><p id="hayakuFailedRecoverySummary"></p><p id="hayakuFailedRecoveryHashes" class="hint mono"></p><p id="hayakuFailedRecoveryEvidenceStatus" class="hint"></p><p id="hayakuFailedRecoveryRequestStatus" class="hint"></p><p id="hayakuFailedRecoveryAutomationDetail" class="hint"></p><div class="tabs" role="tablist" aria-label="실패 분석 상세" data-subtabs="hayakuFailureDetail"><button class="tab" type="button" role="tab" aria-selected="true" data-subtab="src">원문 U+A</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="raw">원시 응답</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="dx">진단</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cand">승격 후보</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="hist">처리 이력</button></div><div data-subpanel="src" data-group="hayakuFailureDetail" class="is-active"><pre id="hayakuFailedRecoverySource" class="json"></pre></div><div data-subpanel="raw" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryRaw" class="json"></pre></div><div data-subpanel="dx" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryGroundingStatus" class="json"></pre></div><div data-subpanel="cand" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryPreview" class="json"></pre><textarea id="hayakuFailedRecoveryEditor" class="textarea" rows="12" hidden></textarea></div><div data-subpanel="hist" data-group="hayakuFailureDetail" hidden><div id="hayakuFailureCaseHistory" class="list"></div></div><p id="hayakuFailedRecoveryActionHint" class="hint"></p><div class="stack stack--sm"><div><button id="adoptHayakuFailedAnalysis" class="btn btn--primary" type="button">후보 확인 후 채택</button></div><div><button id="editHayakuFailedAnalysis" class="btn" type="button">직접 수정·검증</button><button id="saveHayakuFailedAnalysisEdit" class="btn btn--primary" type="button" hidden>수정 후보 저장</button></div><div><button id="autoRepairHayakuFailedAnalysis" class="btn" type="button">AI 다시 분석…</button></div></div><div class="cluster" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"><span>삭제는 수리와 별개입니다.</span><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">보관 진단 읽기</button></div><p id="hayakuFailureDeleteResult" class="hint" hidden></p><p id="hayakuFailedRecoveryMessage" role="status" aria-live="polite"></p><pre id="hayakuArchivedFailures" class="json"></pre></section></div></div></section>
+        <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
+        <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 성공 시에만 원장에 기록합니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><div class="setting"><div><div class="setting__name">백그라운드 자동 복구</div><div class="setting__desc">매번 시작 전에 확인을 요청합니다.</div></div><span class="badge" id="auto-bg" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
+        <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
+      </div></section>`;
+    const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">Storage와 Compute는 독립된 연결입니다. 공용 연결 패널을 같은 토큰으로 감쌉니다.</p></div></div><div class="grid g2"><div class="card" id="hayakuMemorySuiteServerConnectionPanel"></div></div></section>`;
+    const settingsPage = HAYAKU_MOCKUP_SETTINGS_PAGE;
+    const logsPage = `<section class="page" id="hayakuViewerPanelLogs" data-hayaku-viewer-panel="logs" data-page="logs" role="tabpanel" aria-labelledby="hayakuViewerTabLogs" hidden>
+      <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">작동 기록</h1><p class="page-desc">현재 실행의 요청·회상·패킷·복구 기록입니다. 민감한 값은 제거됩니다.</p></div><div class="page-actions"><button id="copyHayakuDebug" class="btn" type="button">디버그 JSON 복사</button><button id="exportHayakuDebug" class="btn" type="button">파일로 저장</button></div></div>
+      <div class="stack"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
+        <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
+      </div></section>`;
+    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:var(--page-bg,#cdd5d8);font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:14px;overflow:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
+/* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
+#${LEDGER_VIEWER_ROOT_ID} .pk-layout{min-width:0}
+@container app (max-width:900px){#${LEDGER_VIEWER_ROOT_ID} .pk-layout{grid-template-columns:minmax(0,1fr)}}
+#${LEDGER_VIEWER_ROOT_ID} .rec{min-width:0;grid-template-columns:auto minmax(0,1fr) auto}
+#${LEDGER_VIEWER_ROOT_ID} .rec>div{min-width:0}
+#${LEDGER_VIEWER_ROOT_ID} .rec time{min-width:0;overflow-wrap:anywhere}
+/* Local HAYAKU header fit: preserve type scale and actions; remove only the long sublabel on narrow panels. */
+@container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 6px;gap:4px}#${LEDGER_VIEWER_ROOT_ID} .brand{flex:0 0 auto;gap:8px}#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:max-content}#${LEDGER_VIEWER_ROOT_ID} .brand__name{white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}}
+@container app (max-width:350px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
+@container app (max-width:300px){#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}</style>
+      <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
+        <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button><button id="closeHayakuViewer" type="button">${hayakuMockupIcon('x')}닫기</button></div></div></header>
+        <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
+        <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
+        <main class="main"><div class="page-body">
+          <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
+            <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 한눈에 확인합니다. 이 화면은 읽기 전용입니다.</p></div><div class="page-actions"><button class="btn" data-hayaku-viewer-goto="recovery" type="button">${hayakuMockupIcon('wrench')}구간 점검</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
+            <div class="stack">
+              <div id="hayakuOverviewHealth" class="banner banner--danger"><div class="banner__icon">${hayakuMockupIcon('alert')}</div><div><b id="hayakuOverviewHealthTitle">현재 채팅 원장을 확인하고 있습니다.</b><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span></div><span id="hayakuOverviewCoverageBadge" class="badge">coverage 미확인</span></div>
+              <div id="hayakuOverviewFailBox" class="card fail-box"><div class="empty"><b>원장을 읽지 못해 수치와 노선도를 표시하지 않습니다.</b><span>정상 수치를 그대로 보여주지 않습니다. 다시 대조해 현재 채팅 범위를 확인하세요.</span></div></div>
+              <div class="metric-row" id="hayakuOverviewMetrics"><div class="card card--tight"><div class="label">패킷 원장</div><div class="stat__value"><span id="hayakuOverviewPackets">-</span><small style="font-size:16px"> / <span id="hayakuOverviewPacketsDenominator">-</span></small></div><div class="stat__meta">활성·영구 / 전체 레코드</div></div><div class="card card--tight"><div class="label">기억이 연결된 턴</div><div class="stat__value"><span id="hayakuOverviewCoverage">-</span><small style="font-size:16px"> / <span id="hayakuOverviewCoverageDenominator">-</span></small></div><div class="stat__meta">패킷 보유 / 완료 U+A</div></div><div class="card card--tight"><div class="label">복구 대기</div><div class="stat__value" id="hayakuOverviewJournal">-</div><div class="stat__meta" id="hayakuOverviewJournalMeta">Recovery Journal 확인 중</div></div><div class="card card--tight"><div class="label">이번 회상</div><div class="stat__value" id="hayakuOverviewRecallCount">0</div><div class="stat__meta" id="hayakuOverviewRecallMeta">이번 실행 기록 없음</div></div></div>
+              <div class="card" id="hayakuOverviewRouteCard"><div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="packets" type="button">전체 기록 →</button></div><div id="hayakuContinuityLine" class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div><div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div></div>
+              <div class="dash" id="hayakuOverviewCards"><div class="card"><div class="card__head"><div><h2 class="card__title">이번에 떠올린 기억</h2><p class="card__desc">현재 입력에 실제로 전달된 기억</p></div><span class="badge badge--ok" id="hayakuOverviewRecallBadge">0개 · -</span></div><div id="hayakuOverviewRecallRows"><div class="empty"><span>이번 실행 회상을 확인하는 중입니다.</span></div></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 작동</h2><p class="card__desc">현재 실행의 주요 이벤트</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="logs" type="button">전체 로그</button></div><div id="hayakuOverviewActivity"><div class="empty"><span>작업 로그를 확인하는 중입니다.</span></div></div></div></div>
+            </div>
+          </section>${packetPage}${recoveryPage}${serverPage}${settingsPage}${logsPage}
+        </div><footer class="savebar" id="hayakuSettingsSavebar" hidden><div class="savebar__copy"><b id="hayakuSettingsSaveTitle" data-save-title>모든 변경이 저장되어 있습니다</b><span id="hayakuSettingsSaveDetail" data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span><span id="hayakuSettingsMessage" role="status" aria-live="polite"></span></div><div class="cluster"><button id="cancelHayakuSettings" class="btn" data-revert type="button" disabled>변경 취소</button><button id="applyHayakuSettings" class="btn btn--primary" data-save type="button" disabled>저장</button></div></footer></main>
+        <nav class="tabbar" aria-label="HAYAKU 하단 메뉴"><button type="button" data-hayaku-viewer-goto="overview" data-go="overview" aria-current="page">${hayakuMockupIcon('grid')}관제</button><button type="button" data-hayaku-viewer-goto="packets" data-go="packets">${hayakuMockupIcon('layers')}패킷</button><button type="button" data-hayaku-viewer-goto="recovery" data-go="recovery">${hayakuMockupIcon('wrench')}복구</button><button type="button" data-hayaku-viewer-goto="server" data-go="server">${hayakuMockupIcon('server')}연결</button><button type="button" data-hayaku-more="1" aria-haspopup="dialog">${hayakuMockupIcon('more')}더보기</button></nav>
+        <div id="hayakuManualRecaptureOverlay" class="overlay" role="presentation" hidden></div><div class="overlay overlay--bottom" id="hayakuMoreSheet" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list><button class="row" type="button" data-hayaku-viewer-goto="settings"><span class="row__icon">${hayakuMockupIcon('sliders')}</span><span><span class="row__title">설정</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button><button class="row" type="button" data-hayaku-viewer-goto="logs"><span class="row__icon">${hayakuMockupIcon('log')}</span><span><span class="row__title">작동 기록</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button></div></div></div>
+      </div></div>`;
     root.dataset.hayakuViewerMounted = '1';
+    const settingsWiring = viewerWireSettingsMarkup(root);
+    if (settingsWiring.missing.length) {
+      pushOperationLog('settings:markup_binding_incomplete', { missing: settingsWiring.missing }, 'error');
+    }
+    const jobOverlay = root.querySelector('#hayakuNativeJobOverlay');
+    const moreSheet=root.querySelector('#hayakuMoreSheet'),moreButton=root.querySelector('[data-hayaku-more]');
+    const closeMoreSheet=()=>{if(!moreSheet)return;moreSheet.classList.remove('is-open');moreSheet.setAttribute('aria-hidden','true');moreButton?.focus?.();};
+    moreButton?.addEventListener('click',()=>{moreSheet?.classList.add('is-open');moreSheet?.setAttribute('aria-hidden','false');moreSheet?.querySelector('button')?.focus?.();});
+    moreSheet?.addEventListener('click',event=>{if(event.target===moreSheet)closeMoreSheet();});
+    moreSheet?.querySelectorAll('[data-hayaku-viewer-goto]').forEach(button=>button.addEventListener('click',closeMoreSheet));
+    root.addEventListener('keydown',event=>{if(event.key==='Escape'&&moreSheet?.classList.contains('is-open')){event.preventDefault();closeMoreSheet();}});
+    // Keep all actions on product APIs. The mockup menu's presentation never owns state.
+    root.querySelector('#hayakuOverviewReconcile')?.addEventListener('click', () => void refreshLedgerViewer());
+    root.querySelector('#hayakuOverviewRefresh')?.addEventListener('click', () => void refreshLedgerViewer());
+    root.querySelector('#hayakuOverviewExport')?.addEventListener('click', () => downloadHayakuOperationDebugJson());
+    root.querySelector('[data-menu]')?.addEventListener('click', event => { const menu=event.currentTarget.closest('.menu'); menu?.classList.toggle('is-open'); });
+    root.querySelectorAll('.menu__panel button').forEach(button => button.addEventListener('click', () => button.closest('.menu')?.classList.remove('is-open')));
+    const showPacketView = view => {
+      const worldline = view === 'worldline';
+      const list = root.querySelector('#hayakuPacketListView'), world = root.querySelector('#hayakuPacketWorldlineView');
+      if (list) list.hidden = worldline;
+      if (world) world.hidden = !worldline;
+      root.querySelectorAll('[data-packet-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.packetView === view)));
+      if (worldline) viewerRenderWorldline();
+    };
+    Memory.ledgerViewer.showPacketView = showPacketView;
+    root.querySelectorAll('[data-packet-view]').forEach(button => button.addEventListener('click', () => showPacketView(button.dataset.packetView)));
+    root.querySelectorAll('[data-recovery-view]').forEach(button => button.addEventListener('click', () => {
+      const view = button.dataset.recoveryView;
+      const panelKey = ({ missing: 'miss', reanalysis: 'reana', failed: 'failed', cold: 'cold' })[view] || 'miss';
+      root.querySelectorAll('[data-recovery-view]').forEach(node => {
+        const selected = node === button;
+        node.classList.toggle('is-active', selected);
+        node.setAttribute('aria-selected', String(selected));
+        node.tabIndex = selected ? 0 : -1;
+      });
+      root.querySelectorAll('[data-recovery-panel]').forEach(panel => {
+        const selected = panel.dataset.recoveryPanel === view;
+        panel.hidden = !selected;
+        panel.classList.toggle('is-active', selected);
+      });
+      root.querySelectorAll('[data-group="rc"][data-subpanel]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === panelKey));
+      if (view === 'failed') void viewerRenderFailedRecovery();
+      if (view === 'reanalysis' || view === 'missing' || view === 'cold') void viewerRenderNativeRecovery();
+    }));
+    showPacketView('list');
+    bindLedgerViewerUi();
     viewerSetTab(Memory.ledgerViewer.activeTab || 'overview');
+    viewerRenderOverview();
     viewerRenderDebugExportText();
     viewerRenderNativeJob();
     return root;
@@ -61127,7 +60891,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const Hayaku_PORTABLE_BACKUP_SCHEMA = 'memory-suite.portable-memory-backup.v1';
   const Hayaku_PORTABLE_BACKUP_FORMAT_VERSION = 3;
   const Hayaku_PORTABLE_BACKUP_ACCEPTED_FORMAT_VERSIONS = new Set([1, 2, Hayaku_PORTABLE_BACKUP_FORMAT_VERSION]);
-  const Hayaku_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Hayaku","old":"3.0.42","new":PLUGIN_VERSION,"pluginVersion":PLUGIN_VERSION,"pluginId":"hayaku_locator_continuity","pluginName":"HAYAKU Locator Continuity","filePrefix":"hayaku_portable_memory_backup","globalApiKey":"__HAYAKUPortableMemoryBackup","uiId":"hayaku-portable-memory-backup-controls","rootSelectors":["[data-hayaku-ledger-viewer]","[data-hayaku-ledger]","#hayaku-ledger-viewer","#hayaku-viewer",".hayaku-viewer",".ledger-viewer","[class*='hayaku-']"],"anchorSelectors":[".ledger-viewer-toolbar",".hayaku-toolbar",".topbar-actions",".toolbar",".actions"],"allowedKeyPatterns":["^(?:hayaku|memory[_:-]?session)"],"excludedKeyPatterns":["settings","provider","credential","api[_:-]?key","secret","prompt[_:-]?cache","compatibility[_:-]?beacon","operation[_:-]?log","debug","pending[_:-]?capture","reconciliation","management","server[_:-]?connection"],"requiredDataPatterns":["hayaku_storage_ledger_v[12]","hayaku\\.v2\\.ledger","recovery_vault","hayaku\\.shared_archive"],"minimumRecords":1,"maxImportBytes":536870912});
+  const Hayaku_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Hayaku","old":"3.0.42","new":PLUGIN_VERSION,"pluginVersion":PLUGIN_VERSION,"pluginId":"hayaku_locator_continuity","pluginName":"HAYAKU Locator Continuity","filePrefix":"hayaku_portable_memory_backup","globalApiKey":"__HAYAKUPortableMemoryBackup","uiId":"hayaku-portable-memory-backup-controls","rootSelectors":["[data-hayaku-mockup='1']"],"anchorSelectors":[".topbar"],"allowedKeyPatterns":["^(?:hayaku|memory[_:-]?session)"],"excludedKeyPatterns":["settings","provider","credential","api[_:-]?key","secret","prompt[_:-]?cache","compatibility[_:-]?beacon","operation[_:-]?log","debug","pending[_:-]?capture","reconciliation","management","server[_:-]?connection"],"requiredDataPatterns":["hayaku_storage_ledger_v[12]","hayaku\\.v2\\.ledger","recovery_vault","hayaku\\.shared_archive"],"minimumRecords":1,"maxImportBytes":536870912});
 
   const installHayakuPortableMemoryBackup = async () => {
     const config = Hayaku_PORTABLE_BACKUP_CONFIG;
@@ -63145,37 +62909,53 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return runtime.lastExport;
     };
     const modal = ({ title, body, confirmLabel = '확인', cancelLabel = '취소', danger = false, confirm = true }) => new Promise(resolve => {
+      const host = document.querySelector?.('.app');
+      if (!host) { resolve(false); return; }
       const overlay = document.createElement('div');
+      overlay.className = 'overlay is-open';
       overlay.setAttribute('data-portable-backup-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;';
-      const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(560px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#151820;color:#edf1f7;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.6);font:13px/1.55 system-ui,sans-serif;';
-      const heading = document.createElement('h3');
+      overlay.setAttribute('role', 'presentation');
+      const panel = document.createElement('section');
+      panel.className = 'dialog';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      const heading = document.createElement('h2');
+      heading.id = `hayakuPortableModalTitle-${config.pluginId}`;
+      heading.className = 'card__title';
       heading.textContent = title;
-      heading.style.cssText = 'margin:0 0 12px;font-size:17px;';
-      const content = document.createElement('div');
-      content.style.cssText = 'white-space:pre-wrap;color:#c8d0dc;';
+      panel.setAttribute('aria-labelledby', heading.id);
+      const content = document.createElement('p');
+      content.className = danger ? 'note note--danger' : 'note';
       content.textContent = body;
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:18px;';
+      actions.className = 'dialog__actions';
+      let settled = false, teardownDialog = () => {};
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        overlay.remove(); teardownDialog(); resolve(value === true);
+      };
       if (confirm) {
         const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'btn';
         cancelButton.textContent = cancelLabel;
-        cancelButton.style.cssText = 'border:1px solid #465066;background:#222838;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;';
-        cancelButton.onclick = () => { overlay.remove(); resolve(false); };
+        cancelButton.onclick = () => finish(false);
         actions.appendChild(cancelButton);
       }
       const okayButton = document.createElement('button');
+      okayButton.type = 'button';
+      okayButton.className = danger ? 'btn btn--danger' : 'btn btn--primary';
       okayButton.textContent = confirm ? confirmLabel : '닫기';
-      okayButton.style.cssText = `border:1px solid ${danger ? '#8e3e45' : '#436aa6'};background:${danger ? '#6f2830' : '#31578f'};color:#fff;border-radius:7px;padding:7px 12px;cursor:pointer;`;
-      okayButton.onclick = () => { overlay.remove(); resolve(true); };
+      okayButton.onclick = () => finish(true);
       actions.appendChild(okayButton);
       panel.append(heading, content, actions);
       overlay.appendChild(panel);
       overlay.addEventListener('click', event => {
-        if (event.target === overlay) { overlay.remove(); resolve(false); }
+        if (event.target === overlay) finish(false);
       });
-      document.body.appendChild(overlay);
+      host.appendChild(overlay);
+      teardownDialog = viewerBindConfirmDialogKeys(overlay, panel, () => finish(false), 'button:not(:disabled)');
     });
     const notice = async (title, body, danger = false) => await modal({ title, body, danger, confirm: false });
     const setUiBusy = (busy, message = '') => {
@@ -63187,6 +62967,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (status) status.textContent = message;
     };
     const closePortableJob = () => {
+      try { runtime.job?.focusCleanup?.(); } catch (_) {}
       try { runtime.job?.overlay?.remove?.(); } catch (_) {}
       try { runtime.job?.chip?.remove?.(); } catch (_) {}
       runtime.job = null;
@@ -63194,29 +62975,41 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const startPortableJob = title => {
       closePortableJob();
       if (typeof document === 'undefined') return null;
-      const viewer = document.querySelector?.('.hayaku-viewer');
-      const topActions = viewer?.querySelector?.('.hv-top-actions');
+      const viewer = document.querySelector?.('.app');
+      const topActions = viewer?.querySelector?.('.topbar');
       if (!viewer || !topActions) return null;
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'hv-btn hv-job-chip';
+      chip.className = 'btn btn--sm';
       chip.textContent = `${title} · 준비`;
       const overlay = document.createElement('div');
-      overlay.className = 'hv-job-overlay';
+      overlay.className = 'overlay is-open';
       overlay.setAttribute('data-hayaku-portable-job', 'true');
-      overlay.innerHTML = `<section class="hv-job-dialog" role="dialog" aria-live="polite"><div class="hv-job-head"><div><small>HAYAKU PORTABLE MEMORY JOB</small><h2 data-portable-job-title></h2><p data-portable-job-state>준비</p></div><div class="hv-job-head-actions"><button data-portable-job-minimize class="hv-btn" type="button">최소화</button><button data-portable-job-cancel class="hv-btn danger" type="button">작업 취소</button></div></div><div class="hv-job-progress"><i data-portable-job-progress style="width:0%"></i></div><div data-portable-job-message class="hv-job-message">작업을 준비합니다.</div></section>`;
+      overlay.innerHTML = `<section class="dialog" role="dialog" aria-live="polite"><header class="dialog__head"><div><div class="eyebrow">HAYAKU PORTABLE MEMORY JOB</div><h2 data-portable-job-title></h2><p data-portable-job-state>준비</p></div><div class="cluster"><button data-portable-job-minimize class="btn" type="button">최소화</button><button data-portable-job-cancel class="btn btn--danger" type="button">작업 취소</button></div></header><div class="progress"><i data-portable-job-progress style="width:0%"></i></div><div data-portable-job-message class="note">작업을 준비합니다.</div></section>`;
       overlay.querySelector('[data-portable-job-title]').textContent = title;
       topActions.insertBefore(chip, topActions.querySelector('#closeHayakuViewer') || null);
       viewer.appendChild(overlay);
-      runtime.job = { title, chip, overlay, cancelled: false, cancellable: true, percent: 0 };
-      const maximize = () => { if (runtime.job?.overlay) runtime.job.overlay.hidden = false; };
+      runtime.job = { title, chip, overlay, cancelled: false, cancellable: true, percent: 0, returnFocus: document.activeElement || null, focusCleanup: null };
+      const hide = () => {
+        if (!runtime.job) return;
+        overlay.hidden = true;
+        try { runtime.job.focusCleanup?.(); } catch (_) {}
+        runtime.job.focusCleanup = null;
+      };
+      const maximize = () => {
+        if (!runtime.job?.overlay) return;
+        runtime.job.returnFocus = document.activeElement || chip;
+        overlay.hidden = false;
+        runtime.job.focusCleanup = viewerBindConfirmDialogKeys(overlay, overlay.querySelector('[role="dialog"]'), hide, '[data-portable-job-minimize]', runtime.job.returnFocus);
+      };
       chip.onclick = maximize;
-      overlay.querySelector('[data-portable-job-minimize]').onclick = () => { overlay.hidden = true; };
+      overlay.querySelector('[data-portable-job-minimize]').onclick = hide;
       overlay.querySelector('[data-portable-job-cancel]').onclick = () => {
         if (!runtime.job?.cancellable) return;
         runtime.job.cancelled = true;
         overlay.querySelector('[data-portable-job-message]').textContent = '안전한 중단 지점에서 작업을 취소합니다…';
       };
+      runtime.job.focusCleanup = viewerBindConfirmDialogKeys(overlay, overlay.querySelector('[role="dialog"]'), hide, '[data-portable-job-minimize]', runtime.job.returnFocus);
       return runtime.job;
     };
     const updatePortableJob = (message, percent, options = {}) => {
@@ -63243,41 +63036,60 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }
     };
     const choiceModal = ({ title, body, choices }) => new Promise(resolve => {
+      const host = document.querySelector?.('.app');
+      if (!host) { resolve(''); return; }
       const overlay = document.createElement('div');
+      overlay.className = 'overlay is-open';
       overlay.setAttribute('data-portable-choice-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;';
-      const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(680px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#151820;color:#edf1f7;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.6);font:13px/1.55 system-ui,sans-serif;';
-      const heading = document.createElement('h3');
+      overlay.setAttribute('role', 'presentation');
+      const panel = document.createElement('section');
+      panel.className = 'dialog';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      const heading = document.createElement('h2');
+      heading.id = `hayakuPortableChoiceTitle-${config.pluginId}`;
+      heading.className = 'card__title';
       heading.textContent = title;
-      heading.style.cssText = 'margin:0 0 10px;font-size:17px;';
-      const content = document.createElement('div');
+      panel.setAttribute('aria-labelledby', heading.id);
+      const content = document.createElement('p');
+      content.className = 'note';
       content.textContent = body;
-      content.style.cssText = 'white-space:pre-wrap;color:#c8d0dc;margin-bottom:14px;';
       const rows = document.createElement('div');
-      rows.style.cssText = 'display:grid;gap:8px;';
+      rows.className = 'stack';
+      let settled = false, teardownDialog = () => {};
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        overlay.remove(); teardownDialog(); resolve(typeof value === 'string' ? value : '');
+      };
       for (const choice of choices) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.style.cssText = 'display:grid;gap:3px;text-align:left;border:1px solid #465066;background:#222838;color:#edf1f7;border-radius:9px;padding:11px 12px;cursor:pointer;';
+        button.className = 'row';
         const strong = document.createElement('strong');
+        strong.className = 'row__title';
         strong.textContent = choice.label;
         const small = document.createElement('small');
+        small.className = 'hint';
         small.textContent = choice.description;
-        small.style.color = '#aeb9ca';
         button.append(strong, small);
-        button.onclick = () => { overlay.remove(); resolve(choice.value); };
+        button.onclick = () => finish(choice.value);
         rows.appendChild(button);
       }
+      const actions = document.createElement('div');
+      actions.className = 'dialog__actions';
       const cancel = document.createElement('button');
       cancel.type = 'button';
+      cancel.className = 'btn';
+      cancel.dataset.cancel = '1';
       cancel.textContent = '취소';
-      cancel.style.cssText = 'margin-top:14px;border:1px solid #465066;background:transparent;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;';
-      cancel.onclick = () => { overlay.remove(); resolve(''); };
-      panel.append(heading, content, rows, cancel);
+      cancel.onclick = () => finish('');
+      actions.appendChild(cancel);
+      panel.append(heading, content, rows, actions);
       overlay.appendChild(panel);
-      overlay.addEventListener('click', event => { if (event.target === overlay) { overlay.remove(); resolve(''); } });
-      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) finish(''); });
+      host.appendChild(overlay);
+      teardownDialog = viewerBindConfirmDialogKeys(overlay, panel, () => finish(''), '[data-cancel]');
     });
     const previewText = (envelope, prepared = null) => {
       const byKind = envelope.inventory?.byKind || {};
@@ -63478,8 +63290,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       root.className = 'portable-memory-controls';
       root.innerHTML = `
         <div class="portable-memory-actions">
-          <button data-portable-backup class="hv-btn primary" type="button" aria-label="현재 채팅 HAYAKU 기억을 JSON 백업 파일로 다운로드">↓ JSON 백업 다운로드</button>
-          <button data-portable-restore class="hv-btn" type="button" aria-label="JSON 백업 파일을 선택하여 현재 채팅 HAYAKU 기억 복원">↑ JSON 백업에서 복원</button>
+          <button data-portable-backup class="btn btn--primary" type="button" aria-label="현재 채팅 HAYAKU 기억을 JSON 백업 파일로 다운로드">↓ JSON 백업 다운로드</button>
+          <button data-portable-restore class="btn" type="button" aria-label="JSON 백업 파일을 선택하여 현재 채팅 HAYAKU 기억 복원">↑ JSON 백업에서 복원</button>
         </div>
         <input type="file" accept=".json,application/json" hidden>
         <span data-portable-status class="portable-memory-status" role="status" aria-live="polite"></span>`;

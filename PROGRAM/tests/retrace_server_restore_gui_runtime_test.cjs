@@ -129,7 +129,7 @@ async function realm(baseUrl, sourceHost) {
   const audit = context.__retraceRestoreAudit;
   const document = dom.window.document;
   const open = async () => { await callbacks.get('retrace-main-hamburger')(); return document.querySelector('#flashback-hayaku-bridge-root'); };
-  return { context, document, audit, callbacks, requests, domErrors, readsetDrifts, pluginStorage, open,
+  return { context, document, window: dom.window, audit, callbacks, requests, domErrors, readsetDrifts, pluginStorage, open,
     selection(value) { selection = value; },
     holdStatus(ordinal = 1) { held = { entered: deferred(), release: deferred(), captured: null, delivered: false, ordinal, statusSeen: 0 }; return held; },
     async close() {
@@ -186,6 +186,9 @@ async function realm(baseUrl, sourceHost) {
     };
     click('backup-create');
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.backups?.length === 1, 'GUI backup result');
+    assert.equal(root.querySelector('#job-backup').hidden,false,'manager backup opens its named job dialog');
+    assert.match(root.querySelector('#job-backup [data-job-result]').textContent,/백업 생성 완료:/,'job result is the real manager response');
+    root.querySelector('#job-backup [data-job-hide]').click();
     const backupId = root.querySelector('#serverControlBackups').value;
     assert.ok(backupId, 'GUI selects its created backup');
     root.querySelector('[data-control-namespace][value="hayaku"]').checked = true;
@@ -194,8 +197,8 @@ async function realm(baseUrl, sourceHost) {
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.plan, 'GUI restore preview');
     assert.equal(app.repositories.hayaku.get('plugin', key).value.text, 'later server value', 'preview leaves durable data unchanged');
     click('restore-execute');
-    await waitFor(() => !root.querySelector('#retraceDialogLayer').hidden, 'real confirmation dialog');
-    root.querySelector('#retraceDialogCancel').click();
+    await waitFor(() => !root.querySelector('#dlg-restore').hidden, 'real confirmation dialog');
+    root.querySelector('#dlg-restore [data-dialog-cancel]').click();
     assert.equal(app.repositories.hayaku.get('plugin', key).value.text, 'later server value', 'cancel leaves durable data unchanged');
     const firstPlanId = env.audit.state().control.plan.planId;
 
@@ -213,11 +216,17 @@ async function realm(baseUrl, sourceHost) {
     click('restore-plan');
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.plan?.planId !== firstPlanId && env.audit.state().control?.plan, 'fresh preview after namespace scan');
     click('restore-execute');
-    await waitFor(() => !root.querySelector('#retraceDialogLayer').hidden, 'restore confirmation reopened');
-    root.querySelector('#retraceDialogConfirm').click();
+    await waitFor(() => !root.querySelector('#dlg-restore').hidden, 'restore confirmation reopened');
+    root.querySelector('#dlg-restore [data-dialog-typed-input]').value='복원';root.querySelector('#dlg-restore [data-dialog-typed-input]').dispatchEvent(new env.window.Event('input',{bubbles:true}));root.querySelector('#dlg-restore [data-dialog-confirm]').click();
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.history?.some(row => row.action === 'restore-execute' && row.status === 'complete'), 'GUI restore and current history').catch(error => {
       console.error(JSON.stringify({boundary:'post-restore-readset',drifts:env.readsetDrifts,state:env.audit.state(),requests:env.requests.slice(-12)})); throw error;
     });
+    assert.equal(root.querySelector('#job-restore').hidden,false,'confirmed manager restore opens its named job dialog');
+    assert.equal(root.querySelectorAll('#job-restore [data-job-steps] .step').length,3,'canonical restore steps retained');
+    assert.equal(root.querySelectorAll('#job-restore [data-job-result] .res').length,2,'canonical restored/kept owner rows retained');
+    assert.match(root.querySelector('#job-restore [data-job-result]').textContent,/hayaku/,'canonical job target row reflects actual restored owner');
+    assert.match(root.querySelector('#job-restore [data-job-response]').textContent,/복원 완료:/,'collapsed actual manager response retained');
+    root.querySelector('#job-restore [data-job-hide]').click();
     trace('restore completed');
     assert.deepEqual(app.repositories.hayaku.get('plugin', key).value, payload, 'exact server physical readback after registered restore');
     assert.deepEqual(app.repositories.libra.get('plugin', untouchedKey), untouched, 'unselected namespace remains byte-equivalent');
@@ -352,6 +361,26 @@ async function realm(baseUrl, sourceHost) {
     await waitFor(()=>!env.audit.state().control.loading&&env.audit.state().control.errors?.some(error=>error.includes('fixture_status_refused')),'uncertified partial batch refuses publication');
     assert.equal(env.audit.state().control.status,undefined);assert.equal(env.audit.state().control.backups,undefined);assert.equal(env.audit.state().control.history,undefined);assert.equal(env.audit.state().control.plan,null);
     assert.equal(faultProxy.requests.filter(row=>row.status===400).length,2,'both faults are actual loopback HTTP status refusals');
+    root.querySelector('[data-server-page="data"]').click();
+    root.querySelector('#serverResetTarget').value='hayaku';
+    root.querySelector('#serverResetBegin').click();
+    await waitFor(()=>!root.querySelector('#dlg-reset').hidden,'named reset confirmation');
+    assert.equal(root.querySelector('#dlg-reset [data-dialog-summary-value]').textContent,'hayaku','reset dialog shows the captured namespace target');
+    root.querySelector('#dlg-reset [data-dialog-typed-input]').value='초기화';
+    root.querySelector('#dlg-reset [data-dialog-typed-input]').dispatchEvent(new env.window.Event('input',{bubbles:true}));
+    assert.equal(root.querySelector('#dlg-reset [data-dialog-confirm]').disabled,false,'destructive confirmation requires the exact typed word');
+    root.querySelector('#dlg-reset [data-dialog-confirm]').click();
+    await waitFor(()=>root.querySelector('#serverResetStatus').textContent.includes('초기화 및 빈 상태 확인 완료'),'actual manager reset readback');
+    assert.equal(root.querySelector('#job-reset').hidden,false,'reset operation displays its named result dialog');
+    assert.equal(root.querySelectorAll('#job-reset [data-job-steps] .step').length,4,'canonical reset steps retained');
+    assert.equal(root.querySelectorAll('#job-reset [data-job-result] .res').length,2,'canonical reset target/backup result rows retained');
+    assert.match(root.querySelector('#job-reset [data-job-result]').textContent,/hayaku/,'reset target row retains captured owner');
+    assert.match(root.querySelector('#job-reset [data-job-response]').textContent,/backupId/,'collapsed reset receipt retains actual backup id');
+    const resetOwner=await boot('hayaku_locator_continuity');
+    assert.equal(resetOwner.resetEpochs.hayaku,Number(currentAuthority.resetEpochs.hayaku||0)+1,'reset advances the owner reset epoch');
+    const afterReset=await ownerRead(resetOwner);
+    assert.equal(afterReset.body.result.exists,false,'fresh owner read confirms reset data is empty');
+    root.querySelector('#job-reset [data-job-hide]').click();
     assert.equal(env.modelCalls(),0);assert.equal(sha(sourceHost),originalHash);assert.deepEqual(env.domErrors,[]);
     console.log(JSON.stringify({ test: 'retrace_server_restore_gui_runtime', result: 'PASS',
       registeredEntry: 'retrace-main-hamburger', namespace: 'hayaku', backupId,
@@ -361,7 +390,7 @@ async function realm(baseUrl, sourceHost) {
       evidence: ['preview/cancel no mutation', 'confirmed physical restore', 'late HTTP status fenced in UI', 'closed UI response discarded',
         'old owner read/write 409', 'fresh HTTP field readback', 'unselected namespace invariant', 'SQLite/server/plugin restart', 'actual profile drift rejected after final HTTP await',
         'native null/no-chat global controls', 'native absence transition rejected', 'native throw/malformed rejected', 'unload response discarded',
-        'stable initial HTTP status refusal rejects dependent batch', 'restore epoch increment rejects uncertified old history', 'raw SQLite partial-batch readback'] }));
+        'stable initial HTTP status refusal rejects dependent batch', 'restore epoch increment rejects uncertified old history', 'raw SQLite partial-batch readback', 'named typed reset confirmation', 'manager reset epoch and fresh owner empty readback', 'job backup/restore/reset result dialogs'] }));
   } finally {
     partialHeld?.release.resolve();
     if (env) await env.close();

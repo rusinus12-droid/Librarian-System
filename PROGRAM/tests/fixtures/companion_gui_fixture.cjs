@@ -48,7 +48,7 @@ async function gradia(options = {}) {
   const h = domHost(), unloads = [];
   const f = await require('../gradia/host.cjs').load({ sourceFile: sourceFile('GRADIA.js'), storage: options.storage, transformSource: options.transformSource,
     api: { showContainer: async () => {}, hideContainer: async () => {}, onUnload: async callback => unloads.push(callback) },
-    testGlobals: { ...h.globals, crypto: require('node:crypto').webcrypto, Response }
+    testGlobals: { ...h.globals, Element: h.w.Element, navigator: h.w.navigator, crypto: require('node:crypto').webcrypto, Response }
   });
   return { ...h, ...f, close: async () => { await f.plugin.closeSettingsGui(); for (const callback of unloads) await callback(); h.w.close(); } };
 }

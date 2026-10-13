@@ -54,6 +54,7 @@ class Element {
     if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this);
     this.parentNode = null;
   }
+  contains(node) { for (let current = node; current; current = current.parentNode) if (current === this) return true; return false; }
   get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
   set textContent(value) { this._text = String(value); this.children = []; }
   set innerHTML(value) {

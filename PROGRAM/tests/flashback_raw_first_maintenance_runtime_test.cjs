@@ -1,4 +1,5 @@
 'use strict';
+const { dialogElements } = require('./fixtures/flashback_adopted_dialog.cjs');
 const assert = require('node:assert/strict'), path = require('node:path');
 const { test } = require('node:test');
 const { createFlashback } = require('./fixtures/embedding_contract_harness.cjs');
@@ -653,9 +654,9 @@ test('the registered rebuild GUI surfaces rechunk refusal instead of completion 
     const run = root.nodes.get('maintenanceRunBtn').click().then(() => { done = true; }, error => { done = true; handlerError = error; });
     const messages = [], seen = new Set();
     for (let index = 0; index < 1000 && !done; index++) {
-      const button = doc.all().find(node => node.className === 'vrmDialogOk');
+      const button = dialogElements(doc).ok;
       if (button && !seen.has(button)) {
-        seen.add(button); messages.push(doc.all().find(node => node.className === 'vrmDialogMessage')?.textContent || ''); await button.click();
+        seen.add(button); messages.push(dialogElements(doc).message?.textContent || ''); await button.click();
       }
       await new Promise(resolve => setTimeout(resolve, 5));
     }

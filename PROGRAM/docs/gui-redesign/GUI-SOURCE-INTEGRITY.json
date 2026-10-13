@@ -1,0 +1,20 @@
+{
+  "schema": "gui-application.source-integrity.v1",
+  "baseline": "98ba851a10279c8281c5b60656a6c9e5f4e8e09c",
+  "reviewedLocalSnapshot": "7770d85d1f7150fabf6379208825d41856be6c03",
+  "assemblyInputs": {
+    "PROGRAM/plugins/LIBRA.js": "38e89181848092a0b7c7e1d7725a1e7a4b205341818a368f9521c2de48f7bab1",
+    "PROGRAM/plugins/HAYAKU_Locator_Continuity.js": "8b47fa765569fa05111800608d691ce9aa4097a0d3ab88dc104d1479d8f90ed7",
+    "PROGRAM/plugins/Flashback_Memory.js": "04d4ee7144ae11fe71b95144a8ea93a901c4cf92579b7319c8fa43c09cb04bc2",
+    "PROGRAM/plugins/GRADIA.js": "2bfc7e61c0362640896aaa66e59e9bd3e3416646baa6c97003fa6240083b17cb",
+    "PROGRAM/plugins/LIA_Persona_Linker.js": "9b94274e457b46fe2c85fea6721804a1eb13ff006e5c63fd7b2e6800931cca1b",
+    "PROGRAM/plugins/RETRACE.js": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e"
+  },
+  "canonicalAssets": {
+    "suite.css": "d932d2ff39d74538587521967dcdf4de9ae6867ab3378872154decb1c57a9492",
+    "themes.css": "5ae76e4c283a418063b12801b9edf1ca131a2af23195ca4eba4db5e407c5e959"
+  },
+  "rawExecutionEvidencePublished": false,
+  "versionBumped": false,
+  "newRetrievalEngineIncluded": false
+}

@@ -189,7 +189,7 @@
         <div class="grid g2"><div class="field"><label>Provider</label><select class="select" id="emb-provider"><option>openai</option><option>voyage_context (Context 4)</option><option>ollama</option><option>custom HTTP</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" id="emb-model" value="text-embedding-3-small"><button class="btn btn--sm" data-toast="Ollama 모델을 검색했습니다. (시안)">Ollama 모델 검색</button></div></div><div class="field"><label>Base URL / 서버 주소</label><input class="input" id="emb-url" placeholder="비워두면 기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" id="emb-key" placeholder="저장된 키가 있습니다 (표시하지 않음)"><span class="hint">입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다. 비워두면 유지합니다.</span></div></div>
         <div class="cluster" style="margin-top:14px"><button class="btn" id="btn-emb-test">임베딩 테스트</button><button class="btn btn--ghost" data-open="dlg-key-del">키 삭제…</button></div>
         <details class="fold" style="margin-top:14px"><summary>고급 연결 설정 <span class="hint">요청 · 쿼리/문서 · Custom HTTP</span></summary><div class="fold__body"><div class="grid g2">
-          <div class="field"><label>정확한 Endpoint (선택)</label><input class="input"></div><div class="field"><label>벡터 차원 (0=자동)</label><input class="input" type="number" value="0"></div>
+          <div class="field"><label>정확한 Endpoint (선택)</label><input class="input"></div><div class="field"><label for="emb-dim">벡터 차원 (0=자동)</label><input class="input" id="emb-dim" type="number" min="0" max="65536" step="1" value="0"><span class="hint">0은 프로바이더 응답에서 차원을 확인합니다. 요청·응답 차원이 다르면 실패합니다. 기존 벡터와의 호환은 전체 임베딩 프로필로 확인하며, 차원이나 모델 이름만으로 단정하지 않습니다.</span></div>
           <div class="field"><label>요청 제한시간(ms)</label><input class="input" type="number" value="30000"></div><div class="field"><label>배치 크기</label><input class="input" type="number" value="16"></div>
           <div class="field"><label>재시도 횟수</label><input class="input" type="number" value="2"></div><div class="field"><label>정규화</label><select class="select"><option>모델 기본</option><option>L2 정규화</option><option>사용 안 함</option></select></div>
           <div class="field"><label>Query task / prefix</label><input class="input" placeholder="예: search_query: "></div><div class="field"><label>Document task / prefix</label><input class="input" placeholder="예: search_document: "></div></div>
@@ -324,16 +324,20 @@ document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-del-sco
    저장된 조합이 TESTED에 없으면(주소 하나만 바뀌어도) '연결 테스트 필요'로 표시한다. */
 function embFields(){return [].slice.call($id('emb-badge').closest('.card').querySelectorAll('input:not([type=checkbox]),select,textarea'));}
 function embSig(saved){return embFields().map(function(f){return saved?window.suiteSaved(f):f.value;}).join('\u241F');}
-var TESTED=null;
-function dimOf(m){return /large/.test(m)?'3,072':/small|ada/.test(m)?'1,536':'';}
-function syncFoot(){var pv=$id('emb-provider'),md=$id('emb-model');if(!pv||!md)return;var sp=window.suiteSaved(pv),sm=window.suiteSaved(md);
-  var sig=embSig(true);if(!TESTED){TESTED={};TESTED[sig]=1;}var ok=!!TESTED[sig],dirty=embFields().some(window.suiteIsDirtyEl),dm=dimOf(sm);
+var TESTED={};
+function requestedDim(value){var n=Number(String(value||'0').trim());return Number.isInteger(n)&&n>=0&&n<=65536?n:null;}
+function dimLabel(n){return n?Number(n).toLocaleString('ko-KR')+'차원':'자동';}
+function syncFoot(){var pv=$id('emb-provider'),md=$id('emb-model'),di=$id('emb-dim');if(!pv||!md||!di)return;var sp=window.suiteSaved(pv),sm=window.suiteSaved(md),sd=window.suiteSaved(di),want=requestedDim(sd);
+  var sig=embSig(true),tested=TESTED[sig],ok=!!tested&&want!==null&&(!want||tested.dimensions===want),dirty=embFields().some(window.suiteIsDirtyEl),dm=ok?tested.dimensions:want;
   $id('foot-model').textContent=sm;
-  $id('foot-meta').textContent=(ok?sp+(dm?' · '+dm+'차원':'')+' · 연결됨':sp+' · 설정 변경됨 · 연결 테스트 필요')+(dirty?' · 저장 전 변경 있음':'');
+  $id('foot-meta').textContent=(ok?sp+' · '+dimLabel(dm)+' · 테스트 확인됨':sp+' · 요청 '+dimLabel(want)+' · 연결 테스트 필요')+(dirty?' · 저장 전 변경 있음':'');
   var bd=$id('emb-badge');if(bd){bd.textContent=ok?'연결 확인됨':'연결 테스트 필요';bd.className='badge '+(ok?'badge--ok':'badge--warn');}}
 document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('#btn-emb-test');if(!t)return;
-  var pv=$id('emb-provider'),md=$id('emb-model'),dm=dimOf(md.value);syncFoot();TESTED[embSig(false)]=1;
-  var u=$id('emb-url').value.trim();window.suiteToast('임베딩 테스트 성공: '+pv.value+' · '+md.value+' · 주소 '+(u||'기본값')+(dm?' · '+dm+'차원':'')+' · 83ms (시안, 화면의 연결 값 전체를 시험합니다. 저장 전 값 포함)');syncFoot();});
+  var pv=$id('emb-provider'),md=$id('emb-model'),di=$id('emb-dim'),requested=requestedDim(di.value),responseDimensions=1536;
+  if(requested===null){window.suiteToast('차원은 자동(0) 또는 1–65,536 사이의 정수여야 합니다. (시안)');return;}
+  if(requested&&requested!==responseDimensions){delete TESTED[embSig(false)];window.suiteToast('임베딩 테스트 실패: 요청 '+dimLabel(requested)+' · 응답 '+dimLabel(responseDimensions)+' · DIMENSION_MISMATCH. 이 설정 조합은 확인되지 않았습니다. (시안 고정 응답 표본)');syncFoot();return;}
+  TESTED[embSig(false)]={dimensions:responseDimensions};syncFoot();
+  var u=$id('emb-url').value.trim();window.suiteToast('임베딩 테스트 성공: '+pv.value+' · '+md.value+' · 응답 '+dimLabel(responseDimensions)+' · '+(requested?'요청 차원 일치':'자동 차원 확인')+' (시안 고정 응답 표본, 실제 API 호출 아님)');});
 ['input','change','click'].forEach(function(ev){document.addEventListener(ev,function(e){if(e.target.closest&&e.target.closest('[data-page=connect]'))setTimeout(syncFoot,0);});});
 document.addEventListener('suite:save',function(){setTimeout(syncFoot,0);});document.addEventListener('suite:revert',function(){setTimeout(syncFoot,0);});
 document.addEventListener('suite:ready',syncFoot);
