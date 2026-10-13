@@ -4,8 +4,14 @@ const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const observe=source=>{
  const entry='const refreshMemoryNetworkIndex = async (context, manifest, catalog, frame, guard) => {';
  assert.equal(source.split(entry).length,2);source=source.replace(entry,entry+'globalThis.__a2CacheCalls=(globalThis.__a2CacheCalls||0)+1;globalThis.__a2CacheBefore=[state.microRestoreGeneration,manifestRevisionOf(key.manifest(context.scope))];');
- const check='if(capturedNetworkEpoch!==Number(state.microRestoreGeneration||0)';
- assert.equal(source.split(check).length,2);source=source.replace(check,'        globalThis.__a2CacheAfter=[state.microRestoreGeneration,manifestRevisionOf(key.manifest(context.scope))];\n'+check);
+ // B1 (49cd043) added a second epoch guard in the Micro access path, so the bare
+ // guard string is no longer unique and the replacement patched the Micro guard
+ // instead of the post-preparation guard this suite exercises. Anchor on the
+ // preparation call that precedes the intended guard.
+ const prepared='        await refreshMemoryNetworkIndex(context, manifest, canonicalCatalog, networkFrame, guard);\n';
+ const check=prepared+'        if(capturedNetworkEpoch!==Number(state.microRestoreGeneration||0)';
+ assert.equal(source.split(check).length,2,'the post-preparation epoch guard must be unique');
+ source=source.replace(check,prepared+'        globalThis.__a2CacheAfter=[state.microRestoreGeneration,manifestRevisionOf(key.manifest(context.scope))];\n        if(capturedNetworkEpoch!==Number(state.microRestoreGeneration||0)');
  const anchor='      getUnifiedStorageStatus,';assert.equal(source.split(anchor).length,2);
  source=source.replace(anchor,`      a2GuardedRecall: async query => recall(await resolveContext(),query,createRecallGuard()),
       a2ReadOnlyRecall: async query => {const context=await resolveContext(),settings=await loadMemorySettings(),pairs=buildPairs(context.chat,context.scope.scopeKey),bundle=buildQueryBundle([{role:'user',content:query}],context,settings,pairs);return recall(context,{...bundle,requestLocalReadOnly:true,persistRecallCatalog:false});},\n`+anchor);
