@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T15:24:53.981Z",
+  "generatedAt": "2026-10-13T15:27:48.743Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2604,8 +2604,8 @@
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "de9c82c1c0acce30034c06fb93a354b31cc70fca2c08c989dc18b3a56667d1d5",
-      "bytes": 59890
+      "sha256": "401ebd676ebb8e070b6b6a9deda7f86c53777a07bed9f48e5617840d6a015346",
+      "bytes": 60422
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
