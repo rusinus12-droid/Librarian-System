@@ -1,5 +1,11 @@
 # A2 acceptance evidence
 
+## Record scope and successor gates (2026-10-13)
+
+This is a historical A2 qualification record, not acceptance of the complete unified engine. The new graph, four-source adapters, cache/Memory Lane/index redesign, retrieval and delivery gates are defined in [LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md). All proposed components remain unimplemented.
+
+A2 was subsequently committed as be4529f03cfddfa31dda69e2277a1583b4d7bead; the successor design pins ca40d76450784f4ff6397666d47aba079415eec9. The uncommitted snapshot and absolute workspace paths below identify the original experiment and are preserved as provenance, not current checkout paths. Its raw external logs are not bundled here, so their independent reproduction/inspection is not established by this document. Use the actual execution environment's dependency setup when rerunning fixtures; the historical env.sh path is not a portable setup instruction. No historical number is relabeled as a new final-source or unified-engine measurement.
+
 | Requirement | Qualified result | Evidence |
 | --- | --- | --- |
 | Owner/frame-bound derived postings and reverse dependency invalidation | Implemented; metadata is not authority | `libra_network_incremental_index_test.cjs` |
@@ -16,10 +22,10 @@
 | Canonical candidate discovery and selected physical guards | Existing A1 behavior retained | Network registry parity, A0 final-proof and affected currentness regressions |
 | Full-model recall quality and final latency envelope | **Not certified** | Synthetic provider/metadata/vector fixtures only; later C2/D2 gates |
 
-Run runtime fixtures and builders only in fresh ordinary PROGRAM copies, source `/workspace/librarian-cloud/env.sh`, and run sequentially. Default, `--factory-only`, and `--skip-scaled` all use n=100; `--runtime-only` runs the baseline and explicit actual hook sizes. `--sizes=100,1000` selects diagnostic sizes (1–10k); 100k/unknown options are rejected before fixture startup. Stage logs include heapUsed/RSS/external/arrayBuffers. Heap >=1GiB or RSS >=2GiB stops the experiment; SIGINT/SIGTERM requests diagnostic cancellation. Timer checks operate at event-loop boundaries, so large synchronous work cannot be preempted by this guard. These thresholds and small sizes are experiment controls, not product caps or a memory-safety certificate. Do not increase heap or replace failed actual runtime measurements with factory costs to claim PASS.
+Run runtime fixtures and builders only in fresh ordinary PROGRAM copies, load the current environment's dependency setup, and run sequentially. The original setup used `/workspace/librarian-cloud/env.sh`. Default, `--factory-only`, and `--skip-scaled` all use n=100; `--runtime-only` runs the baseline and explicit actual hook sizes. `--sizes=100,1000` selects diagnostic sizes (1–10k); 100k/unknown options are rejected before fixture startup. Stage logs include heapUsed/RSS/external/arrayBuffers. Heap >=1GiB or RSS >=2GiB stops the experiment; SIGINT/SIGTERM requests diagnostic cancellation. Timer checks operate at event-loop boundaries, so large synchronous work cannot be preempted by this guard. These thresholds and small sizes are experiment controls, not product caps or a memory-safety certificate. Do not increase heap or replace failed actual runtime measurements with factory costs to claim PASS.
 
 
-## Current source bounded qualification (2026-10-13)
+## Historical A2 bounded qualification snapshot (2026-10-13)
 
 Code/test snapshot: `/workspace/libra-a2-resume/final2-PROGRAM`, based on `e4a738c84d3e0695cbad641ca057afcd01c58d93` plus uncommitted A2. SHA256 map: `/workspace/libra-a2-resume/source-hashes.json`. Raw logs and per-request CPU/I/O/proof/currentness/selected IDs: `/workspace/libra-a2-resume/logs/final2/measurements.json`.
 
@@ -34,6 +40,6 @@ Maximum **reported stage observations** across seed/setup/cold/warm/cleanup: def
 
 Current Float64 factory100/1000 scans every vector at 256 dimensions: allocated packed bytes524288/2097152, serialized metadata9270/95670 B, dot terms25600/256000, descriptive seven-sample p95 1.168/2.122 ms. Historical Float32 10k/100k curves do not establish current Float64 allocations or actual hook costs. Current 10k is unmeasured; actual100k remains BLOCKED after the historical OOM. No large rerun or heap increase occurred.
 
-Eight factory safety contracts and the runtime boundary/busy tests passed after meaningful RED reproductions. Initial regression11/15 and round2 8/9 failures were preserved and diagnosed; final scoped corrections pass InputWriter and actual registry parity, while normal-hook races retain exact binding rejection. Earlier passing unaffected suites are retained as their recorded source-snapshot evidence, not relabeled a new whole-suite final-source run. Independent review and local A2 commit remain the next gate.
+Eight factory safety contracts and the runtime boundary/busy tests passed after meaningful RED reproductions. Initial regression11/15 and round2 8/9 failures were preserved and diagnosed; final scoped corrections pass InputWriter and actual registry parity, while normal-hook races retain exact binding rejection. Earlier passing unaffected suites are retained as their recorded source-snapshot evidence, not relabeled a new whole-suite final-source run. At the time of this snapshot, independent review and a local A2 commit were the next gate. The later A2 commit is recorded above; this historical measurement does not certify its later descendants or the proposed unified engine.
 
 Diagnostic controls additionally reject100k before startup, stop at injected heap/RSS threshold values, and honor real SIGTERM with nonzero cancellation. Injected usage tests validate stop branches; they do not allocate 1GiB/2GiB or certify memory bounds. `controls.json` preserves those distinctions.
