@@ -10,8 +10,15 @@ if errorlevel 1 (
 echo 현재 백업 목록:
 "%NODE_EXE%" --no-warnings "%~dp0..\server\admin.cjs" list-backups --url "%MEMORY_SUITE_SERVER_URL%"
 echo.
+set "BACKUP_ID="
+set "TARGET="
+set "CONFIRM="
 set /p "BACKUP_ID=복원할 백업 ID를 정확히 입력하세요: "
-if not defined BACKUP_ID exit /b 1
+if not defined BACKUP_ID (
+  echo 백업 ID를 입력하지 않아 종료합니다.
+  pause
+  exit /b 1
+)
 set /p "TARGET=대상 [all/flashback/hayaku/libra/lia/retrace 또는 쉼표 목록] (기본 all): "
 if not defined TARGET set "TARGET=all"
 echo.

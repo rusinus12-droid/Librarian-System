@@ -1,0 +1,10 @@
+AssertionError [ERR_ASSERTION]: Acorn must resolve through the release builder; without it, AST removal is unverified
+    at /projects/sandbox/Librarian-System/PROGRAM/tests/test_surface_strip_test.cjs:55:10
+    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/test_surface_strip_test.cjs:335:3)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10)
+    at Module.load (node:internal/modules/cjs/loader:1505:32)
+    at Function._load (node:internal/modules/cjs/loader:1309:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49

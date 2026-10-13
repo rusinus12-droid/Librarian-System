@@ -20,13 +20,17 @@ class Element {
  const tests=[];
  try{
   const t=r.context.__quickSaveTest();await t.ensureGuiState();
-  r.context.document={createElement:tag=>new Element(tag),createTextNode:value=>Object.assign(new Element('#text'),{textContent:value}),activeElement:null,getElementById:()=>null};
+  r.context.document={createElement:tag=>new Element(tag),createElementNS:(_namespace,tag)=>new Element(tag),createTextNode:value=>Object.assign(new Element('#text'),{textContent:value}),activeElement:null,getElementById:()=>null};
   t.Gui.bookQuickOpen=true;t.Gui.bookQuickSection='ai';
   const app=new Element('div');app.appendChild(t.buildBookQuickSettingsDrawer());
-  const tabs=flat(app).filter(node=>node.className.split(' ').includes('libra-book-drawer-tab'));
+  const tabs=flat(app).filter(node=>node.tagName==='BUTTON'&&node.getAttribute('role')==='tab');
   assert.equal(t.Gui.bookQuickSection,'response');
   assert.deepEqual(tabs.map(node=>node.textContent),['응답','기억']);
   assert.equal(tabs.length,2);
+  assert.ok(flat(app).some(node=>node.className.split(' ').includes('overlay')));
+  assert.ok(flat(app).some(node=>node.className.split(' ').includes('drawer__head')));
+  assert.ok(flat(app).some(node=>node.className.split(' ').includes('drawer__foot')));
+  assert.equal(flat(app).some(node=>node.className.split(' ').includes('libra-book-drawer')),false);
   assert.equal(flat(app).some(node=>node.dataset?.bookTechnicalQuick),false);
   assert.equal(flat(app).some(node=>['AI 연결','임베딩','서버'].includes(node.textContent)),false);
   tests.push('Quick Settings exposes only Classic response and memory-agent controls');

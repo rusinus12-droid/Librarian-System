@@ -1,0 +1,10 @@
+{
+ "qOpen": "undefined | open=false | 비용 동의를 체크해야 점검·복구를 시작할 수 있습니다. 작업을 시작하지 않았습니다.",
+ "btn": true,
+ "restoreDirect": "비용 동의를 체크해야 점검·복구를 시작할 수 있습니다. 작업을 시작하지 않았습니다.",
+ "ok": {
+  "qOpenBlocked": true,
+  "consentStarts": true
+ },
+ "failed": []
+}

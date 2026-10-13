@@ -42,7 +42,7 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'RETRACE.js
     const root = document.querySelector('#flashback-hayaku-bridge-root');
     assert.ok(root?.isConnected, 'real plugin UI mounted');
     assert.deepEqual(root.querySelectorAll('[data-tab]').map(node => node.getAttribute('data-tab')),
-      ['overview', 'session', 'serverdata', 'serverconnection', 'diagnostics']);
+      ['overview', 'session', 'serverdata', 'diagnostics', 'overview', 'session', 'serverdata', 'diagnostics']);
     for (const id of retiredIds) assert.equal(root.querySelector('#' + id), null, `${id}: no retired control`);
     for (const id of ['createSession', 'refreshTransition', 'serverDataBody', 'refreshServerData', 'serverResetBegin']) {
       assert.ok(root.querySelector('#' + id), `${id}: existing handoff/server control remains`);
@@ -54,6 +54,6 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'RETRACE.js
     assert.equal(await pluginStorage.getItem(preservedKey), 'preserve old backup bytes');
     assert.equal(await pluginStorage.getItem(preservedCatalogKey), 'preserve old catalog bytes');
     assert.equal(runtime.llmCalls.length, 0, 'retirement never starts recovery models');
-    console.log('retrace_retired_surface_runtime_test: PASS (real API/UI, five server scopes, handoff inspection, old bytes retained)');
+    console.log('retrace_retired_surface_runtime_test: PASS (real API/UI, four destinations, five server scopes, handoff inspection, old bytes retained)');
   } finally { await runtime.dispose(); }
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

@@ -1,13 +1,22 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const s=fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8');
-const node=(attr,value)=>({hidden:false,attrs:{[attr]:value},getAttribute(k){return this.attrs[k]},setAttribute(k,v){this.attrs[k]=v}});
-const buttons=['response','scopes'].map(v=>node('data-storage-tab',v)),panels=['response','scopes'].map(v=>node('data-storage-pane',v));
-const root={querySelectorAll:q=>q==='[data-storage-tab]'?buttons:panels},Runtime={};
-const context=vm.createContext({Runtime,guiRoot:root});
-vm.runInContext(s.slice(s.indexOf('  const setStorageGuiTab ='),s.indexOf('  const setActiveGuiTab ='))+'globalThis.select=setStorageGuiTab;',context);
-context.select('scopes');assert.equal(panels[0].hidden,true);assert.equal(panels[1].hidden,false);assert.equal(buttons[1].attrs['aria-selected'],'true');assert.equal(buttons[1].attrs.tabindex,'0');assert.equal(Runtime.guiStorageTab,'scopes');
-context.select('response');assert.equal(panels[0].hidden,false);assert.equal(panels[1].hidden,true);assert.equal(buttons[1].attrs.tabindex,'-1');
-context.select('unknown');assert.equal(Runtime.guiStorageTab,'response');
-const open=s.slice(s.indexOf('  const openManualEditorForSourceType ='),s.indexOf('  const bindManualEditorEvents ='));assert(open.includes("setStorageGuiTab('response')"),'cross-screen source link must select the response subtab');
-(async()=>{const f=await require('./fixtures/flashback_native_runtime_fixture.cjs').createFixture();try{const html=await f.api._test.buildUiHtml();const a=html.indexOf('id="fbStorageResponse"'),b=html.indexOf('id="fbStorageScopes"'),end=html.indexOf('</section>',b);assert(a>=0&&b>a);assert(html.slice(a,b).includes('id="manualEditorPanel"'));assert(!html.slice(a,b).includes('id="storageRows"'));assert(html.slice(b,end).includes('id="storageRows"'));assert(!html.slice(b,end).includes('id="manualEditorPanel"'));console.log('PASS storage subtabs: exclusive visibility, ARIA, source entry routing and separated source/scope controls');}finally{await f.dispose()}})().catch(e=>{console.error(e);process.exitCode=1});
+const assert=require('node:assert/strict');
+const {create,pause,until}=require('./fixtures/flashback_complete_gui_fixture.cjs');
+(async()=>{const f=await create('Flashback','Source');try{
+ await f.open();await f.click('.sidebar [data-go="vault"]');
+ const active=id=>f.doc.querySelector('[data-subpanel="'+id+'"][data-group="v"]').classList.contains('is-active');
+ const tab=id=>f.doc.querySelector('[data-subtab="'+id+'"][data-group="v"]');
+ assert.equal(active('resp'),true,'vault starts on the response subtab');
+ await f.click('[data-subtab="scopes"][data-group="v"]');
+ assert.equal(active('resp'),false);assert.equal(active('scopes'),true);assert.equal(tab('scopes').getAttribute('aria-selected'),'true');assert.equal(tab('scopes').getAttribute('tabindex'),'0');
+ await f.click('[data-subtab="resp"][data-group="v"]');
+ assert.equal(active('resp'),true);assert.equal(active('scopes'),false);assert.equal(tab('scopes').getAttribute('tabindex'),'-1');
+ assert.equal(f.api._test.normalizeFlashbackGuiTab('unknown'),'overview','unknown external navigation retains the canonical default route');
+ await f.click('[data-subtab="scopes"][data-group="v"]');
+ // The actual cross-screen source action must reveal the response editor.
+ await f.click('[data-subtab="wl"][data-group="v"]');assert.equal(active('wl'),true);
+ await f.click('#panel-worldline [data-open-manual-editor="response"]');assert.equal(active('resp'),true,'source button switches from worldline to response editor');assert.equal(active('wl'),false);
+ const response=f.doc.querySelector('[data-subpanel="resp"][data-group="v"]'),scopes=f.doc.querySelector('[data-subpanel="scopes"][data-group="v"]');
+ assert(response.querySelector('#manualEditorPanel'));assert(!response.querySelector('#storageRows'));assert(scopes.querySelector('#storageRows'));assert(!scopes.querySelector('#manualEditorPanel'));
+ assert.deepEqual(f.errors,[]);assert.equal(f.wire.length,0);
+ console.log('PASS storage subtabs: exclusive canonical visibility, ARIA, source entry routing and separated source/scope controls');
+}finally{await f.close()}})().catch(e=>{console.error(e);process.exitCode=1});

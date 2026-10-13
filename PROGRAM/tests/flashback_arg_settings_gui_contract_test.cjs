@@ -59,11 +59,11 @@ const uncovered = settingArgs.filter(name => !coveredKeys.has(camel(name)));
 assert.deepEqual(uncovered, [], 'every normal setting ARG has an editable control or an explicit read-only policy');
 
 assert.match(source, /우선순위: 기본값 &lt; GUI 저장값 &lt; 명시적 ARG/);
-assert.match(source, /id="argumentSettingsAuditPanel"/);
 assert.match(source, /data-clear-setting-arg=/);
 assert.match(source, /data-toggle-arg-setting-group=/, 'ARG groups use explicit host-compatible toggle buttons');
-assert.match(source, /aria-expanded="\$\{expanded \? 'true' : 'false'\}"/, 'ARG group toggle exposes expanded state');
-assert.match(source, /class="arg-setting-panel" \$\{expanded \? '' : 'hidden'\}/, 'collapsed ARG panels use an explicit hidden state');
+assert.match(source, /aria-expanded="\$\{expanded\}"/, 'ARG group toggle exposes expanded state');
+assert.match(source, /class="card" data-arg-setting-group="\$\{escapeHtml\(group\.id\)\}"/, 'ARG toggle remains inside the group ancestor required by its event binding');
+assert.match(source, /id="\$\{panelId\}" class="stack" \$\{expanded \? '' : 'hidden'\}/, 'collapsed ARG panels use an explicit hidden state');
 assert.match(source, /button\.addEventListener\('click',[\s\S]*?panel\.hidden = expanded;/, 'ARG group toggle controls the paired panel');
 assert.doesNotMatch(source, /<details class="card arg-setting-group"/, 'ARG groups no longer depend on native details rendering');
 assert.match(source, /const clearFlashbackSettingArgument = async/);

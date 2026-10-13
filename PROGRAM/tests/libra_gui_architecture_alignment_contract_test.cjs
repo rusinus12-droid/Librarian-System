@@ -87,27 +87,25 @@ assert.deepEqual(route('providers'),{pageId:'ai'});assert.deepEqual(route('embed
 for(const name of ['runs','execution_results'])assert.deepEqual(route(name),{pageId:'logs',executionLogSection:'memory'});
 
 require('./helpers/libra_active_book_routes.cjs')(source);
-const settings = extractConst('buildSharedSettingsShellPanel');
+const settings = extractConst('buildApprovedMockupSettingsPanel');
 assert.doesNotMatch(source,/const buildInputAssistSettingsPanel\s*=|const showLibraInputWriterComposer\s*=/,'retired input-writer controls and composer remain absent');
 assert.doesNotMatch(settings,/showLibraInputWriterComposer\s*\(|showLibraInputWriterChoicePicker\s*\(/,'Settings do not revive the retired composer');
 
-const pipelineShell = extractConst('buildSharedPipelineShellPanel');
-assert.match(pipelineShell,/Gui\.pipelineHubSection='memory_pipeline'/);assert.match(pipelineShell,/Gui\.agentHubSection='memory'/);assert.match(pipelineShell,/buildSharedAgentShellPanel\(\)/,'memory work remains on the shared workbench');
-assert.doesNotMatch(pipelineShell, /state_tracking|buildStateTrackingAvailabilityPanel/);
-
-const agentShell = extractConst('buildSharedAgentShellPanel');
-for (const route of [
-  ['memory', 'buildMemoryPipelinePanel']
-]) {
-  assert.match(agentShell, new RegExp(`${route[0]}[\\s\\S]*${route[1]}\\(`),
-    `Agent tab ${route[0]} lost its independent stage editor`);
-}
-
+// Explicitly approved UI ownership: the single Librarian editor now owns the
+// pipeline route directly; the retired nested shell is an obsolete visual layer.
+const pipelineShell=extractConst('buildApprovedMockupSettingsPanel');
+assert.match(pipelineShell,/sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel/);
+assert.doesNotMatch(pipelineShell,/buildSharedPipelineShellPanel|buildSharedAgentShellPanel/);
+const agentShell=extractConst('buildLibrarianAnalyzerPanel');
+assert.match(agentShell,/memoryStage:LIBRARIAN_STAGE_ID/);
+assert.match(agentShell,/slot\.turnWindow=5/);
+assert.match(agentShell,/slot\.executionMode='draft_only'/);
+assert.match(agentShell,/analyzerField\('presetName'/,'actual independent stage preset remains reachable');
 const stateTrackingPanel = extractConst('buildStateTrackingAvailabilityPanel');
 assert.match(stateTrackingPanel, /librarianLocalState:'true'/);
 assert.doesNotMatch(stateTrackingPanel, /buildEntityAdmissionStageCard|buildStateStageSlotCard/,'no retired remote agent controls in active state panel');
-assert.match(stateTrackingPanel, /추가 생성 호출/);
-assert.match(stateTrackingPanel, /읽기 전용/);
+assert.match(stateTrackingPanel, /buildApprovedRecoveryActions\(\)/);
+assert.match(stateTrackingPanel, /three-status/);
 assert.doesNotMatch(agentShell, /buildStateTrackingAvailabilityPanel|id: 'state'/,
   'Agent Workbench must not expose the non-actionable State Tracking tab');
 assert.match(settings, /buildStateTrackingAvailabilityPanel\('settings'\)/,

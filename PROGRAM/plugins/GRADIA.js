@@ -20208,15 +20208,45 @@ ${passage.text || ''}`, 420));
     }
   };
 
-  const setCompactInputAssistModalSurface = (enabled = true) => {
+  const setMockupDialogSurface = (enabled = true) => {
     try {
       const root = document?.getElementById?.('sga-rp-gui-root') || Gui.root;
-      if (!root?.classList) return false;
-      root.classList.toggle('sga-compact-modal-root', enabled === true);
+      if (!root?.dataset) return false;
+      if (enabled === true) root.dataset.mockupDialogSurface = 'true';
+      else delete root.dataset.mockupDialogSurface;
       return true;
     } catch (_) {
       return false;
     }
+  };
+
+  const mountMockupDialog = content => {
+    if (!Gui.root || !content) return false;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay is-open';
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.addEventListener('click', event => { if (event.target === overlay) event.preventDefault?.(); });
+    let dialog = content;
+    if (content.classList?.contains('frame')) {
+      dialog = content.querySelector(':scope > .card') || content.firstElementChild;
+      if (!dialog) return false;
+      dialog.classList.remove('card', 'wide');
+      dialog.classList.add('dialog', 'dialog--wide');
+      Object.assign(dialog.dataset, content.dataset || {});
+      dialog.removeAttribute('style');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      content.replaceChildren(dialog);
+    }
+    if (!dialog.classList?.contains('dialog')) dialog.classList.add('dialog', 'dialog--wide');
+    if (!dialog.hasAttribute('role')) dialog.setAttribute('role', 'dialog');
+    if (!dialog.hasAttribute('aria-modal')) dialog.setAttribute('aria-modal', 'true');
+    overlay.appendChild(dialog);
+    Gui.root.replaceChildren(overlay);
+    Gui.modalOverlay = overlay;
+    Gui.app = dialog;
+    setMockupDialogSurface(true);
+    return true;
   };
 
   const showInputAssistComposer = async () => {
@@ -20235,7 +20265,7 @@ ${passage.text || ''}`, 420));
       if (typeof guiApi?.showContainer === 'function') await guiApi.showContainer('fullscreen');
     } catch (_) {}
     if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
-    setCompactInputAssistModalSurface(true);
+    setMockupDialogSurface(true);
     Gui.visible = true;
     Gui.confirmationVisible = true;
     const clearRoot = () => {
@@ -20245,8 +20275,8 @@ ${passage.text || ''}`, 420));
     clearRoot();
     return await new Promise(resolve => {
       let settled = false;
-      const app = guiEl('div', { class: 'sga-input-compact-app' });
-      const card = guiEl('section', { class: 'sga-card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } });
+      const app = guiEl('div', { class: 'frame' });
+      const card = guiEl('section', { class: 'card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } });
       const textarea = guiEl('textarea', {
         placeholder: '비워 두면 직전 상황 이어가기\n내용을 입력하면 해당 인풋을 확장합니다.',
         style: { width: '100%', minHeight: '180px', resize: 'vertical', boxSizing: 'border-box', padding: '14px', borderRadius: '12px', font: 'inherit' }
@@ -20254,7 +20284,7 @@ ${passage.text || ''}`, 420));
       const restore = async () => {
         Gui.confirmationVisible = false;
         Gui.app = null;
-        setCompactInputAssistModalSurface(false);
+        setMockupDialogSurface(false);
         clearRoot();
         if (settingsWasVisible) {
           Gui.visible = true;
@@ -20283,16 +20313,16 @@ ${passage.text || ''}`, 420));
       document.addEventListener('keydown', keyHandler);
       card.appendChild(guiEl('div', {}, [
         guiEl('h2', { text: 'GRADIA로 인풋 작성하기' }),
-        guiEl('p', { class: 'sga-note', text: '아무것도 입력하지 않고 진행하면 직전 상황 이어가기, 내용을 입력하면 인풋 확장으로 작동합니다.' })
+        guiEl('p', { class: 'note', text: '아무것도 입력하지 않고 진행하면 직전 상황 이어가기, 내용을 입력하면 인풋 확장으로 작동합니다.' })
       ]));
       card.appendChild(textarea);
       card.appendChild(guiEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' } }, [
-        guiEl('button', { class: 'sga-btn ghost', text: '취소', onClick: () => { void finish(null); } }),
-        guiEl('button', { class: 'sga-btn primary', text: '진행', onClick: () => { void finish(textarea.value || ''); } })
+        guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: () => { void finish(null); } }),
+        guiEl('button', { class: 'btn btn--primary', text: '진행', onClick: () => { void finish(textarea.value || ''); } })
       ]));
       app.appendChild(card);
       Gui.app = app;
-      Gui.root.appendChild(app);
+      mountMockupDialog(app);
       forceTransparentGuiSurface();
       setTimeout(() => { try { textarea.focus(); } catch (_) {} }, 0);
     });
@@ -20328,7 +20358,7 @@ ${passage.text || ''}`, 420));
       if (typeof guiApi?.showContainer === 'function') await guiApi.showContainer('fullscreen');
     } catch (_) {}
     if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
-    setCompactInputAssistModalSurface(true);
+    setMockupDialogSurface(true);
     Gui.visible = true;
     Gui.confirmationVisible = true;
     const clearRoot = () => {
@@ -20338,15 +20368,15 @@ ${passage.text || ''}`, 420));
     clearRoot();
     return await new Promise(resolve => {
       let settled = false;
-      const app = guiEl('div', { class: 'sga-input-compact-app', dataset: { draftCheckpointDialog: '' } });
+      const app = guiEl('div', { class: 'frame', dataset: { draftCheckpointDialog: '' } });
       const card = guiEl('section', {
-        class: 'sga-card wide',
+        class: 'card wide',
         style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' }
       });
       const restore = async () => {
         Gui.confirmationVisible = false;
         Gui.app = null;
-        setCompactInputAssistModalSurface(false);
+        setMockupDialogSurface(false);
         clearRoot();
         if (settingsWasVisible) {
           Gui.visible = true;
@@ -20385,28 +20415,28 @@ ${passage.text || ''}`, 420));
       document.addEventListener('keydown', keyHandler);
       card.appendChild(guiEl('div', {}, [
         guiEl('h2', { text: '동일 인풋 감지' }),
-        guiEl('p', { class: 'sga-note', text: question })
+        guiEl('p', { class: 'note', text: question })
       ]));
       if (draftPreview) {
         card.appendChild(guiEl('pre', {
-          class: 'sga-input-confirm-text',
+          class: 'textarea',
           text: draftPreview,
           style: { maxHeight: '220px', overflow: 'auto', whiteSpace: 'pre-wrap', margin: '0' }
         }));
       }
       card.appendChild(guiEl('div', {
-        class: 'sga-note',
+        class: 'note',
         text: [storedLabel ? `저장 시각 ${storedLabel}` : '', checkpoint?.finalDraft ? `${text(checkpoint.finalDraft).length.toLocaleString('ko-KR')}자` : ''].filter(Boolean).join(' · ')
       }));
       card.appendChild(guiEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' } }, [
         guiEl('button', {
-          class: 'sga-btn ghost',
+          class: 'btn btn--ghost',
           text: '아니오',
           dataset: { draftCheckpointDecision: 'regenerate' },
           onClick: () => { void finish('regenerate'); }
         }),
         guiEl('button', {
-          class: 'sga-btn primary',
+          class: 'btn btn--primary',
           text: '예',
           dataset: { draftCheckpointDecision: 'reuse' },
           onClick: () => { void finish('reuse'); }
@@ -20414,7 +20444,7 @@ ${passage.text || ''}`, 420));
       ]));
       app.appendChild(card);
       Gui.app = app;
-      Gui.root.appendChild(app);
+      mountMockupDialog(app);
       forceTransparentGuiSurface();
     });
   };
@@ -20443,7 +20473,7 @@ ${passage.text || ''}`, 420));
       if (typeof guiApi?.showContainer === 'function') await guiApi.showContainer('fullscreen');
     } catch (_) {}
     if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
-    setCompactInputAssistModalSurface(true);
+    setMockupDialogSurface(true);
     Gui.visible = true;
     Gui.confirmationVisible = true;
     const clearRoot = () => {
@@ -20473,7 +20503,7 @@ ${passage.text || ''}`, 420));
       const restore = async () => {
         Gui.confirmationVisible = false;
         Gui.app = null;
-        setCompactInputAssistModalSurface(false);
+        setMockupDialogSurface(false);
         clearRoot();
         if (settingsWasVisible) {
           Gui.visible = true;
@@ -20489,7 +20519,7 @@ ${passage.text || ''}`, 420));
         }
       };
       const preview = guiEl('textarea', {
-        class: 'sga-textarea sga-input-confirm-text editable',
+        class: 'textarea textarea editable',
         value: displayedValue,
         spellcheck: true,
         dataset: { inputDeliveryEditor: '' },
@@ -20497,16 +20527,16 @@ ${passage.text || ''}`, 420));
         style: { width: '100%', minHeight: '180px', maxHeight: '420px', padding: '12px', borderRadius: '10px', resize: 'vertical', background: 'rgba(5,9,17,.58)' }
       });
       const copyStatus = guiEl('div', {
-        class: 'sga-note',
+        class: 'note',
         text: '현재 인풋을 직접 수정하거나 다른 언어로 번역한 뒤 전송할 수 있습니다.',
         style: { minHeight: '18px', margin: '0', color: 'var(--sga-muted)' }
       });
-      const countNode = guiEl('span', { class: 'sga-note', text: `${displayedValue.length.toLocaleString('ko-KR')}자` });
+      const countNode = guiEl('span', { class: 'note', text: `${displayedValue.length.toLocaleString('ko-KR')}자` });
       let copyButton = null;
       let directButton = null;
       let cancelButton = null;
       const languageButtons = Object.fromEntries(languageDefs.map(([language, label]) => [language, guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: `${label}로 번역`,
         disabled: typeof onTranslate !== 'function',
         dataset: { inputDeliveryTranslate: language }
@@ -20643,9 +20673,9 @@ ${passage.text || ''}`, 420));
       for (const [language] of languageDefs) {
         languageButtons[language].addEventListener('click', () => { void toggleTranslation(language); });
       }
-      copyButton = guiEl('button', { class: 'sga-btn ghost', text: '복사 후 직접 전송', onClick: () => { void onCopy(); } });
-      cancelButton = guiEl('button', { class: 'sga-btn ghost', text: '취소', onClick: () => { void finish(cancelledResult); } });
-      directButton = guiEl('button', { class: 'sga-btn primary', text: '바로 전송', onClick: () => { void finish(reviewResult('direct')); } });
+      copyButton = guiEl('button', { class: 'btn btn--ghost', text: '복사 후 직접 전송', onClick: () => { void onCopy(); } });
+      cancelButton = guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: () => { void finish(cancelledResult); } });
+      directButton = guiEl('button', { class: 'btn btn--primary', text: '바로 전송', onClick: () => { void finish(reviewResult('direct')); } });
       const keyHandler = event => {
         if (event?.key === 'Escape') {
           event.preventDefault?.();
@@ -20653,17 +20683,17 @@ ${passage.text || ''}`, 420));
         }
       };
       document.addEventListener('keydown', keyHandler);
-      const app = guiEl('div', { class: 'sga-input-compact-app wide' });
-      const card = guiEl('section', { class: 'sga-card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } }, [
+      const app = guiEl('div', { class: 'frame wide' });
+      const card = guiEl('section', { class: 'card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '작성된 인풋 최종 확인' }),
-          guiEl('p', { class: 'sga-note', text: '현재 내용을 직접 수정하거나 영어·한국어·일본어로 번역한 뒤, 그대로 전송하거나 복사할 수 있습니다.' })
+          guiEl('p', { class: 'note', text: '현재 내용을 직접 수정하거나 영어·한국어·일본어로 번역한 뒤, 그대로 전송하거나 복사할 수 있습니다.' })
         ]),
         guiEl('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' } }, [
-          guiEl('span', { class: 'sga-input-confirm-edit-badge', text: '편집 가능' }),
+          guiEl('span', { class: 'badge badge--info', text: '편집 가능' }),
           countNode
         ]),
-        guiEl('div', { class: 'sga-input-confirm-translation-row', style: { padding: '0' } }, languageDefs.map(([language]) => languageButtons[language])),
+        guiEl('div', { class: 'cluster', style: { padding: '0' } }, languageDefs.map(([language]) => languageButtons[language])),
         preview,
         copyStatus,
         guiEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' } }, [
@@ -20674,7 +20704,7 @@ ${passage.text || ''}`, 420));
       ]);
       app.appendChild(card);
       Gui.app = app;
-      Gui.root.appendChild(app);
+      mountMockupDialog(app);
       forceTransparentGuiSurface();
     });
   };
@@ -36513,16 +36543,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'restricted_g2_profile',model:'gpt-4o-mini-2024-07-18'});
     const refresh = () => {
-      const card = Gui.root?.querySelector('[data-lib-read-card]');
-      if (!card) return;
-      const label = card.querySelector('[data-lib-read-status]');
-      if (label) label.textContent = `연결: ${state}${reason ? ' · '+reason : ''}${corpus ? ' · '+corpus.items+'개 / '+corpus.bytes+' bytes' : ''}`;
-      const owners = card.querySelector('[data-lib-read-owners]');
-      if (owners) owners.textContent = '활성 읽기: '+(Object.keys(scopeBundle?.scopes || {}).join(' · ') || '없음')+Object.entries(unavailable).map(([owner,why])=>' / '+owner+': '+why).join('');
-      const inspect = card.querySelector('[data-lib-read-inspect]');
-      if (inspect) inspect.disabled = state !== 'connected';
-      const connect = card.querySelector('[data-lib-read-connect]');
-      if (connect) connect.disabled = state === 'connecting';
+      if (Gui.app && Gui.state) mockupRenderSources({ preserveUrlDraft: true });
     };
     const preferenceStore = async () => {
       const store = await API.getLocalPluginStorage?.();
@@ -37757,6 +37778,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     characterLoreCatalogScope: '',
     userIntentOocDraft: '',
     confirmationVisible: false,
+    mockupPage: 'home',
     pageId: 'overview',
     pageSubview: '',
     savedSnapshot: null,
@@ -37892,7 +37914,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       Gui.root.querySelectorAll('[data-runtime-live]').forEach(node => { node.textContent = liveText; });
       Gui.root.querySelectorAll('[data-runtime-pipeline]').forEach(node => {
         node.textContent = !hookActive ? (permissionDenied ? 'replacer 권한 필요' : '플러그인 훅 비활성') : Runtime.inFlight ? '실행 중' : '대기 중';
-        node.className = `sga-badge ${!hookActive ? 'danger' : Runtime.inFlight ? 'warn' : 'good'}`;
+        node.className = `badge ${!hookActive ? 'danger' : Runtime.inFlight ? 'warn' : 'good'}`;
       });
       const lastRunAt = Number(Runtime.lastPipeline?.at || Runtime.last?.at || 0);
       const lastRunText = lastRunAt ? new Date(lastRunAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '기록 없음';
@@ -38023,8 +38045,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       Gui.dirtySummaryTimer = null;
       if (!Gui.state) return;
       const summary = refreshGuiChangeSummary();
-      try { syncGuiDirtyChrome(summary); } catch (_) {}
-    }, Math.max(40, Number(delay) || 180));
+      }, Math.max(40, Number(delay) || 180));
   };
 
   const resetGuiDirtySummary = () => {
@@ -38611,204 +38632,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Gui.dirtySummaryRevision = -1;
     Gui.dirty = true;
     const summary = currentGuiChangeSummary();
-    try { syncGuiDirtyChrome(summary); } catch (_) {}
     scheduleGuiChangeSummaryRefresh();
   };
+
+  const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}";
+  const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>"};
+  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.83 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s0\" id=\"mini-s0\" data-go=\"pipeline\">인풋 관리자 · 사용 안 함</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" data-go=\"pipeline\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>속도와 품질</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">속도·품질 프로필을 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3 data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h3><p data-novel=\"전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).\" data-rp=\"직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다. 후보는 제안일 뿐 유저의 확정 행동이 아닙니다.\">전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).</p></div>\n          <div class=\"choices\" id=\"q-input\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b data-novel=\"사용 안 함\" data-rp=\"직접 입력\">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class=\"choice\"><b data-novel=\"사용\" data-rp=\"행동 3가지 제안\">사용</b><span data-novel=\"세부 방식은 ‘파이프라인’에서 바꿉니다.\" data-rp=\"NPC 반응·성공·결과는 미리 정하지 않습니다.\">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>속도와 품질 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>최근 문맥과 분석 깊이를 단계별로 함께 조정합니다. 전문가 설정을 직접 바꾸면 “직접 조정”으로 표시됩니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>빠르게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형 있게</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>꼼꼼하게</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 분량이 유저 행동을 추가할 권한이 되지 않습니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          <button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">사용 안 함</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\"><b>원본 입력</b>을 그대로 보내거나, 유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 직접 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            <div class=\"choices\" id=\"inp-mode\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b>사용 안 함</b><span>원본 입력을 그대로 전달 · 추가 호출 없음</span></button><button class=\"choice\"><b data-novel=\"사용 (세 관점 후보)\" data-rp=\"사용 (행동 후보 3개)\">사용 (세 관점 후보)</b><span>전송 전 후보 선택 화면이 열립니다.</span></button></div>\n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><div class=\"banner banner--warn\" style=\"margin:10px 0\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>정보 전달</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 + 기본 지시 (draft_only)</b><span>단계 분석은 메인 응답에 전달하지 않습니다.</span></button></div><span class=\"hint\">현재 화면에서 고를 수 있는 전달 방식은 이 한 가지입니다.</span></div>\n            <div class=\"field\"><label>응답 마무리</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 기반 마무리 (draft_guided)</b><span>최종 AI가 초안을 바탕으로 마무리합니다.</span></button></div></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">Skill과 분리된 별도 NSFW 지침 주입입니다. 사용자·캐릭터의 동의·거부·경계를 GRADIA가 추정하지 않습니다.</div></div><select class=\"select\" style=\"width:150px\"><option>off</option><option>soft</option><option>direct</option><option>explicit</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">사용 가능 여부와 현재 상태를 확인합니다. 연결에 따라 지원되지 않을 수 있습니다.</div></div><span class=\"badge\">미사용</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback의 현재 채팅 서버 기억을 읽습니다. 쓰기 권한은 없습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>연결됨 · 3개 생산자</span></span></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>서버 URL</label><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:8787\"></div><dl class=\"kv\" style=\"align-self:end\"><dt>활성 읽기</dt><dd>LIBRA · HAYAKU · Flashback</dd><dt>코퍼스</dt><dd>128개 / 1.4 MiB (한도 4 MiB)</dd></dl></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결</button><button class=\"btn\" id=\"lib-disconnect\">연결 해제</button><button class=\"btn\" id=\"lib-check\">현재 기억 연결 확인</button></div>\n        <div class=\"state-grid\" style=\"margin-top:12px\">\n          <div><b>서버 연결</b><span id=\"lib-state\">✓ 연결됨 (읽기 전용)</span></div>\n          <div><b>활성 읽기 대상</b>LIBRA · HAYAKU · Flashback<br><span class=\"hint\">Flashback: 현재 채팅 scope가 아직 없어 읽을 수 없음 (표본)</span></div>\n          <div><b>현재 채팅 scope</b>아스텔 / 에피소드 42 · 채팅이 바뀌면 다시 연결하세요</div>\n          <div><b>단계 모델 호환</b>⚠ <b style=\"display:inline;color:var(--warn-ink)\">검증 조합 아님</b><br><span class=\"hint\">현재 SHADOW 모델 <span id=\"src-shadow-model\">claude-sonnet</span></span></div></div>\n        <div class=\"note note--warn\" style=\"margin-top:12px\"><b>연결됨 ≠ 생성 호환.</b> 기억을 포함한 생성의 검증 조합은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18입니다. 연결이 성공해도 다른 모델은 이 조합으로 검증되지 않았습니다. 서버 URL을 바꾸거나, 가져오기·연결 해제를 하면 읽기 <b>동의가 초기화</b>됩니다.</div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"setting\"><div><div class=\"setting__name\">Skill 자동 선택</div><div class=\"setting__desc\">단계마다 어울리는 작법 Skill을 <b>로컬에서</b> 고릅니다. 추가 LLM 호출은 없습니다. 0개 선택도 허용됩니다.</div></div><label class=\"switch\"><input type=\"checkbox\" checked><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label></div>\n          <div class=\"setting\"><div><div class=\"setting__name\">단계당 최대 Skill 수</div><div class=\"setting__desc\">기본 2개 · 최대 3개</div></div><input class=\"input\" type=\"number\" min=\"0\" max=\"3\" value=\"2\" style=\"width:90px\" aria-label=\"단계당 최대 Skill 수\"></div></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·사용 전환·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"i\">입력 도우미</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"s\">SHADOW ACT</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\">폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯</button></div>\n      <div data-subpanel=\"i\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div>\n      <div data-subpanel=\"s\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
 
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
     const style = document.createElement('style');
     style.id = 'sga-rp-gui-style';
-    style.textContent = `
-:root{color-scheme:normal;--sga-vh:100vh;--sga-bg:#090d14;--sga-surface:#111827;--sga-surface2:#172033;--sga-surface3:#202b40;--sga-line:#2b3850;--sga-text:#eef2ff;--sga-muted:#9aa8bf;--sga-accent:#7c9cff;--sga-good:#4ade80;--sga-warn:#fbbf24;--sga-danger:#fb7185}
-@supports (height:100dvh){:root{--sga-vh:100dvh}}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:transparent;color:var(--sga-text);font-family:Inter,Pretendard,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit}
-#sga-rp-gui-root{min-height:var(--sga-vh);background:var(--sga-bg)}
-.sga-app{min-height:var(--sga-vh)}.sga-top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-bottom:1px solid var(--sga-line);background:#090d14;user-select:auto;-webkit-user-select:auto}.sga-top button{cursor:pointer}
-.sga-brand{display:flex;align-items:center;gap:12px;min-width:0}.sga-brand-copy{min-width:0}.sga-brand h1{font-size:20px;line-height:1.2;margin:0}.sga-brand p{margin:5px 0 0;color:var(--sga-muted);font-size:12px}.sga-writing-switch{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid rgba(124,156,255,.22);border-radius:999px;background:rgba(5,9,17,.72)}.sga-writing-switch button{border:0;border-radius:999px;padding:7px 11px;background:transparent;color:var(--sga-muted);font-size:11px;font-weight:800}.sga-writing-switch button[data-active="true"]{background:rgba(124,156,255,.18);color:var(--sga-text)}.sga-app[data-writing-mode="rp"] .sga-writing-switch button[data-mode="rp"][data-active="true"]{background:rgba(255,183,77,.18)}.sga-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.sga-dirty{font-size:11px;color:var(--sga-muted);padding:6px 9px;border:1px solid var(--sga-line);border-radius:999px}.sga-dirty[data-dirty="true"]{color:#fde68a;border-color:#8a6b1e;background:rgba(251,191,36,.08)}
-.sga-tabs{position:sticky;top:77px;z-index:15;display:flex;gap:7px;overflow:auto;padding:10px 24px;border-bottom:1px solid var(--sga-line);background:#090d14;scrollbar-width:thin}.sga-tab{white-space:nowrap;border:1px solid var(--sga-line);border-radius:999px;background:var(--sga-surface);color:#cbd5e1;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer}.sga-tab:hover{background:var(--sga-surface2)}.sga-tab[data-active="true"]{background:var(--sga-text);border-color:var(--sga-text);color:#09101d}.sga-tab .sga-tab-short{display:none}
-.sga-main{max-width:1320px;margin:0 auto;padding:22px 24px 80px}.sga-status{min-height:24px;margin-bottom:10px;padding:0 2px;color:#bbf7d0;font-size:12px}.sga-status.err{color:#fecdd3}
-.sga-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sga-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-card{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.92),rgba(17,24,39,.92));padding:16px;box-shadow:0 18px 45px rgba(0,0,0,.13)}.sga-card.wide{grid-column:1/-1}.sga-card h2,.sga-card h3{margin:0 0 8px}.sga-card h2{font-size:17px}.sga-card h3{font-size:14px}.sga-note{color:var(--sga-muted);font-size:12px;line-height:1.55}.sga-section-title{margin-bottom:14px}.sga-section-title h2{margin:0;font-size:18px}.sga-section-title p{margin:6px 0 0;color:var(--sga-muted);font-size:12px}
-.sga-stat{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sga-stat-value{font-size:28px;font-weight:900}.sga-stat-label{color:var(--sga-muted);font-size:12px}.sga-badge{display:inline-flex;align-items:center;border:1px solid var(--sga-line);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}.sga-badge.good{color:#bbf7d0;border-color:#166534;background:rgba(34,197,94,.08)}.sga-badge.warn{color:#fde68a;border-color:#854d0e;background:rgba(251,191,36,.08)}.sga-badge.danger{color:#fecdd3;border-color:#9f1239;background:rgba(244,63,94,.09)}.sga-badge.off{color:#cbd5e1}.sga-flow{display:flex;align-items:stretch;gap:8px;overflow:auto;padding:8px 0}.sga-flow-node{min-width:150px;flex:1;border:1px solid var(--sga-line);border-radius:13px;padding:12px;background:#0d1421}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node span{display:block;color:var(--sga-muted);font-size:11px;margin-top:5px;line-height:1.4}.sga-arrow{display:flex;align-items:center;color:var(--sga-muted)}
-.sga-count-badge{align-self:flex-start;flex:0 0 auto;min-width:max-content;justify-content:center;white-space:nowrap;line-height:1.2;padding:6px 10px}
-.sga-split{display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:14px}.sga-list{border:1px solid var(--sga-line);border-radius:14px;background:#0d1421;overflow:hidden}.sga-list-head{display:flex;gap:7px;padding:10px;border-bottom:1px solid var(--sga-line)}.sga-list-items{max-height:620px;overflow:auto;padding:8px}.sga-list-item{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--sga-text);padding:10px;cursor:pointer}.sga-list-item:hover{background:var(--sga-surface2)}.sga-list-item[data-selected="true"]{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.45)}.sga-list-item strong{display:block;font-size:12px}.sga-list-item span{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sga-field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}.sga-field label{font-size:11px;font-weight:800;color:#cbd5e1}.sga-field small{color:var(--sga-muted);font-size:10px;line-height:1.45}.sga-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sga-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sga-input,.sga-select,.sga-textarea{width:100%;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:9px 10px;font-size:12px;outline:none}.sga-input:focus,.sga-select:focus,.sga-textarea:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}.sga-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}.sga-textarea.tall{min-height:310px}.sga-textarea.preview{min-height:270px;color:#cbd5e1;background:#060a11}.sga-check{display:flex;align-items:center;gap:8px;font-size:12px;color:#dbe4f3}.sga-check input{width:17px;height:17px;accent-color:var(--sga-accent)}
-.sga-actions{display:flex;gap:8px;flex-wrap:wrap}.sga-btn{border:1px solid var(--sga-line);border-radius:10px;background:var(--sga-surface3);color:var(--sga-text);padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer}.sga-btn:hover{filter:brightness(1.15)}.sga-btn.primary{background:#4f67d8;border-color:#6f86f5}.sga-btn.good{background:#165c34;border-color:#25894f}.sga-btn.danger{background:#641f31;border-color:#9f3450}.sga-btn.ghost{background:transparent}.sga-btn:disabled{opacity:.45;cursor:not-allowed}
-.sga-agent{display:flex;flex-direction:column;gap:11px;min-height:225px}.sga-agent-head{display:flex;justify-content:space-between;gap:10px}.sga-agent-index{display:inline-flex;width:25px;height:25px;align-items:center;justify-content:center;border-radius:8px;background:rgba(124,156,255,.14);color:#c7d2fe;font-size:11px;font-weight:900}.sga-agent-title{display:flex;align-items:center;gap:8px}.sga-agent-title h3{margin:0}.sga-agent-desc{color:var(--sga-muted);font-size:11px;line-height:1.5;min-height:48px}.sga-prompt-mode{margin-left:auto}
-.sga-callout{border:1px solid #725815;border-radius:12px;background:rgba(251,191,36,.07);color:#fde68a;padding:11px;font-size:11px;line-height:1.5}.sga-callout.good{border-color:#166534;background:rgba(34,197,94,.07);color:#bbf7d0}.sga-callout.danger{border-color:#881337;background:rgba(244,63,94,.07);color:#fecdd3}.sga-divider{height:1px;background:var(--sga-line);margin:14px 0}.sga-code{white-space:pre-wrap;word-break:break-word;border:1px solid var(--sga-line);border-radius:12px;background:#060a11;padding:12px;color:#cbd5e1;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:430px;overflow:auto}.sga-hidden{display:none!important}
-.sga-phase{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.55),rgba(13,20,33,.55));padding:14px 14px 12px}.sga-phase+.sga-phase{margin-top:12px}.sga-phase-label{display:flex;align-items:center;gap:9px;margin-bottom:11px}.sga-phase-label .sga-phase-tag{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#09101d;background:var(--sga-text);border-radius:999px;padding:3px 9px}.sga-phase-label .sga-phase-title{font-size:13px;font-weight:800;color:#dbe4f3}.sga-phase-label .sga-phase-sub{font-size:11px;color:var(--sga-muted);margin-left:auto}
-.sga-flow-chain{display:flex;align-items:stretch;gap:0;overflow:auto;padding:4px 0}.sga-flow-chain .sga-flow-node{min-width:158px;flex:1;margin:0 6px}.sga-flow-chain .sga-arrow{font-size:18px;padding:0 2px;opacity:.65}.sga-flow-node{position:relative;border:1px solid var(--sga-line);border-radius:13px;padding:11px 12px;background:#0d1421;transition:border-color .15s,background .15s}.sga-flow-node .sga-flow-status{position:absolute;top:9px;right:9px}.sga-flow-node.state-ok{border-color:rgba(74,222,128,.55);background:rgba(74,222,128,.06)}.sga-flow-node.state-fallback{border-color:rgba(251,113,133,.55);background:rgba(251,113,133,.06)}.sga-flow-node.state-skip{border-color:rgba(154,168,191,.35);background:rgba(154,168,191,.04)}.sga-flow-node.state-run{border-color:rgba(124,156,255,.65);background:rgba(124,156,255,.08)}.sga-flow-node.state-run::after{content:'';position:absolute;inset:-2px;border-radius:15px;border:1.5px solid rgba(124,156,255,.55);animation:sga-pulse 1.4s ease-in-out infinite;pointer-events:none}@keyframes sga-pulse{0%,100%{opacity:.25}50%{opacity:.85}}.sga-flow-node.dim{opacity:.42}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node .sga-flow-meta{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;line-height:1.4}.sga-flow-node .sga-flow-elapsed{display:block;color:#7c9cff;font-size:10px;margin-top:3px;font-variant-numeric:tabular-nums}
-.sga-handoff{display:flex;align-items:center;gap:8px;margin:-2px 0;padding:0 20px;color:var(--sga-muted);font-size:10px;font-weight:700}.sga-handoff::before{content:'';width:2px;height:14px;background:linear-gradient(180deg,transparent,var(--sga-line));border-radius:2px}.sga-handoff span{padding:2px 7px;border:1px dashed var(--sga-line);border-radius:999px;white-space:nowrap}
-.sga-advanced{border:1px solid var(--sga-line);border-radius:12px;background:#080d16;margin-top:12px}.sga-advanced>summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:11px;font-weight:800;color:#cbd5e1;display:flex;align-items:center;gap:7px}.sga-advanced>summary::-webkit-details-marker{display:none}.sga-advanced>summary::before{content:'▸';transition:transform .15s;color:var(--sga-muted)}.sga-advanced[open]>summary::before{transform:rotate(90deg)}.sga-advanced>summary .sga-advanced-hint{margin-left:auto;color:var(--sga-muted);font-weight:600;font-size:10px}.sga-advanced-body{padding:0 13px 13px}
-.sga-summary-panel{border:1px solid var(--sga-line);border-radius:14px;background:rgba(13,20,33,.6);padding:12px 14px;margin-bottom:14px;display:flex;flex-direction:column;gap:6px}.sga-summary-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:0}.sga-summary-row+.sga-summary-row{margin-top:4px}.sga-summary-label{font-size:10px;font-weight:900;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px}.sga-summary-empty{color:var(--sga-muted);font-size:11px;font-style:italic}.sga-summary-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--sga-line);border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700;background:#0d1421}.sga-summary-pill .sga-summary-name{color:var(--sga-text)}.sga-summary-pill .sga-summary-state{font-size:10px;font-weight:900;padding:1px 6px;border-radius:999px;color:#cbd5e1;background:rgba(154,168,191,.12)}.sga-summary-pill.ok{border-color:rgba(34,197,94,.3)}.sga-summary-pill.ok .sga-summary-state{color:#bbf7d0;background:rgba(34,197,94,.12)}.sga-summary-pill.fallback{border-color:rgba(251,191,36,.3)}.sga-summary-pill.fallback .sga-summary-state{color:#fde68a;background:rgba(251,191,36,.12)}.sga-summary-pill.skip{border-color:rgba(244,63,94,.3)}.sga-summary-pill.skip .sga-summary-state{color:#fecdd3;background:rgba(244,63,94,.12)}.sga-summary-elapsed{color:#7c9cff;font-variant-numeric:tabular-nums;font-size:10px}.sga-inflight{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#c7d2fe;border:1px solid rgba(124,156,255,.5);border-radius:999px;padding:4px 9px;background:rgba(124,156,255,.08);align-self:flex-start}.sga-inflight::before{content:'';width:7px;height:7px;border-radius:50%;background:#7c9cff;animation:sga-pulse 1.2s ease-in-out infinite}
-.sga-summary-pill.skip{border-color:rgba(148,163,184,.24)}.sga-summary-pill.skip .sga-summary-state{color:#cbd5e1;background:rgba(148,163,184,.11)}.sga-summary-pill.error{border-color:rgba(244,63,94,.3)}.sga-summary-pill.error .sga-summary-state{color:#fecdd3;background:rgba(244,63,94,.12)}
-.sga-agent-run-meta{display:flex;align-items:flex-start;justify-content:flex-end;gap:6px;flex-wrap:wrap;min-width:150px}.sga-mini-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--sga-line);border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;line-height:1.2;background:#080d16;color:#cbd5e1;white-space:nowrap}.sga-mini-badge.good{color:#bbf7d0;border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.08)}.sga-mini-badge.warn{color:#fde68a;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.08)}.sga-mini-badge.danger{color:#fecdd3;border-color:rgba(251,113,133,.45);background:rgba(251,113,133,.08)}.sga-mini-badge.run{color:#c7d2fe;border-color:rgba(124,156,255,.5);background:rgba(124,156,255,.08)}.sga-mini-badge.off{color:var(--sga-muted);background:rgba(154,168,191,.05)}.sga-mini-badge .sga-mini-time{font-variant-numeric:tabular-nums;color:#93c5fd}.sga-stage-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}.sga-stage-controls{display:flex;flex-direction:column;gap:14px;min-width:0}.sga-stage-result{order:-1;width:100%;min-width:0;overflow:hidden;border:1px solid var(--sga-line);border-radius:13px;background:rgba(8,13,22,.66);padding:12px}.sga-stage-result-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.sga-stage-result-title{font-size:11px;font-weight:900;color:#dbe4f3}.sga-stage-result-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;min-width:0}.sga-result-row{min-width:0;margin:0;padding:9px 10px;border:1px solid rgba(43,56,80,.62);border-radius:11px;background:rgba(6,10,17,.56)}.sga-result-row.wide{grid-column:1/-1}.sga-result-label{display:block;font-size:9px;font-weight:900;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}.sga-result-value{font-size:11px;line-height:1.55;color:#dbe4f3;overflow-wrap:anywhere}.sga-result-code{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(43,56,80,.72);border-radius:10px;background:#060a11;padding:9px;color:#cbd5e1;font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:210px;overflow:auto}.sga-result-empty{grid-column:1/-1;color:var(--sga-muted);font-size:11px;line-height:1.5}.sga-stage-result details{margin-top:10px;border-top:1px dashed var(--sga-line);padding-top:9px}.sga-stage-result summary{cursor:pointer;color:#c7d2fe;font-size:10px;font-weight:800}.sga-stage-result details .sga-result-code{margin-top:7px;max-height:180px}
-.sga-list-search{margin:8px;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:8px 10px;font-size:12px;outline:none;width:calc(100% - 16px)}.sga-list-search:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}
-.sga-stack{display:flex;flex-direction:column;gap:0}.sga-stack .sga-card.sga-agent{margin:0}.sga-stack .sga-card.sga-agent+.sga-handoff{margin:0;padding:0 20px}.sga-stack .sga-card.sga-agent.dim{opacity:.5}
-.sga-row4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.sga-provider-editor{min-width:0}.sga-provider-panels{display:flex;flex-direction:column;gap:12px}.sga-provider-panel{border:1px solid var(--sga-line);border-radius:14px;background:rgba(8,13,22,.7);padding:14px}.sga-provider-panel.vertex{border-color:rgba(124,156,255,.5);background:rgba(124,156,255,.055)}.sga-provider-panel.reasoning{border-color:rgba(74,222,128,.32)}.sga-provider-panel.flex{border-color:rgba(251,191,36,.36);background:rgba(251,191,36,.035)}.sga-provider-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.sga-provider-panel-head h3{margin:0;font-size:14px}.sga-provider-panel-head p{margin:4px 0 0;color:var(--sga-muted);font-size:11px;line-height:1.5}.sga-provider-actions{margin-top:14px;padding-top:14px;border-top:1px solid var(--sga-line)}.sga-provider-note-box{display:flex;flex-direction:column;gap:4px;border:1px solid var(--sga-line);border-radius:11px;background:#080d16;padding:10px 12px;min-width:0}.sga-provider-note-box strong{font-size:10px;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em}.sga-provider-note-box span{font-size:12px;color:#dbe4f3;overflow-wrap:anywhere}
-.sga-flow-page{display:flex;flex-direction:column;gap:24px}.sga-flow-page-title{margin-bottom:-8px}.sga-flow-overview{display:grid;grid-template-columns:repeat(9,minmax(115px,1fr));gap:7px;overflow:auto;padding:2px 0 8px;scrollbar-width:thin}.sga-flow-mini{position:relative;border:1px solid rgba(74,222,128,.35);border-radius:12px;background:rgba(74,222,128,.045);padding:9px 10px;min-width:115px}.sga-flow-mini:not(:last-child)::after{content:'›';position:absolute;right:-7px;top:50%;transform:translateY(-50%);z-index:2;color:var(--sga-muted);font-size:16px}.sga-flow-mini.main{border-color:rgba(124,156,255,.58);background:rgba(124,156,255,.08)}.sga-flow-mini.analysis{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.06)}.sga-flow-mini.off{opacity:.42;border-color:var(--sga-line);background:#080d16}.sga-flow-mini strong{display:block;font-size:10px;white-space:nowrap}.sga-flow-mini span{display:block;margin-top:4px;color:var(--sga-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-flow-section{scroll-margin-top:190px}.sga-flow-section+.sga-flow-section{margin-top:4px}.sga-flow-major-handoff{justify-content:center;margin:-10px 0;padding:0}.sga-flow-major-handoff::before{height:28px}.sga-flow-major-handoff span{font-size:11px;color:#c7d2fe;border-color:rgba(124,156,255,.45);background:rgba(124,156,255,.05)}.sga-flow-handoff{justify-content:center}.sga-debug-fold{margin-top:2px}.sga-debug-fold>.sga-advanced-body{padding-top:4px}
-.sga-agent-expanded{min-height:0;padding:18px;gap:14px}.sga-agent-desc.compact{min-height:0}.sga-agent-expanded.dim{opacity:.52}.sga-analysis-agent{border-color:rgba(251,191,36,.36);background:rgba(251,191,36,.035)}.sga-stage-primary{display:grid;grid-template-columns:minmax(150px,.65fr) minmax(220px,1.2fr) minmax(220px,1.2fr);gap:12px;align-items:start;border-top:1px solid var(--sga-line);padding-top:13px}.sga-stage-primary>.sga-check{padding-top:27px}.sga-stage-detail{border:1px solid var(--sga-line);border-radius:13px;background:rgba(8,13,22,.62);padding:13px}.sga-stage-detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}.sga-stage-detail-head strong{font-size:12px}.sga-stage-detail-head span{font-size:10px;color:var(--sga-muted)}.sga-reference-box{border-top:1px dashed var(--sga-line);margin-top:2px;padding-top:12px}.sga-reference-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.sga-reference-head strong{font-size:11px}.sga-reference-head span{font-size:10px;color:var(--sga-muted)}.sga-reference-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 12px;margin-bottom:8px}.sga-prompt-builtin{display:flex;flex-direction:column;gap:2px}.sga-textarea.stage-prompt{min-height:230px}.sga-main-response-card{border-color:rgba(124,156,255,.56);background:linear-gradient(180deg,rgba(37,51,85,.9),rgba(17,24,39,.94))}.sga-agent-index.main{background:rgba(124,156,255,.28);color:#eef2ff}.sga-main-response-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:3px 0 10px}.sga-runtime-legacy{margin-top:14px}
-@media(max-width:1100px){.sga-stage-layout{grid-template-columns:1fr}.sga-agent-run-meta{justify-content:flex-start}}
-html{scroll-behavior:smooth}
-.sga-app{position:relative}
-.sga-top{padding:22px 28px;border-bottom:1px solid rgba(124,156,255,.18);background:linear-gradient(180deg,rgba(8,12,21,.96),rgba(8,12,21,.9));box-shadow:0 16px 50px rgba(0,0,0,.22)}
-.sga-brand h1{font-size:28px;font-weight:900;letter-spacing:-.03em}.sga-brand p{margin-top:7px;font-size:13px;color:#a8b5cc}
-.sga-head-actions .sga-btn{padding:10px 14px;border-radius:12px}.sga-head-actions .sga-btn.good{background:linear-gradient(135deg,#7c5cff,#6b7cff);border-color:#8a79ff}.sga-dirty{padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.03)}
-.sga-tabs{top:95px;gap:10px;padding:14px 28px;border-bottom:0;background:transparent}.sga-tab{padding:10px 16px;border-radius:14px;background:rgba(17,24,39,.9);border-color:rgba(124,156,255,.16);box-shadow:0 10px 24px rgba(0,0,0,.12)}.sga-tab[data-active="true"]{background:linear-gradient(135deg,#7c5cff,#4d7dff);border-color:rgba(255,255,255,.12);color:#fff}
-.sga-main{max-width:1440px;padding:26px 28px 88px}.sga-status{margin-bottom:14px;padding:10px 14px;border:1px solid rgba(124,156,255,.12);border-radius:14px;background:rgba(10,16,27,.72);backdrop-filter:blur(10px)}.sga-status:empty{display:none}
-.sga-card{border:1px solid rgba(124,156,255,.14);border-radius:20px;background:linear-gradient(180deg,rgba(18,25,40,.95),rgba(10,16,27,.92));padding:18px;box-shadow:0 18px 48px rgba(0,0,0,.18)}
-.sga-section-title h2{font-size:24px;letter-spacing:-.02em}.sga-section-title p{font-size:13px;color:#a9b6cd}
-.sga-flow-page{gap:20px}
-.sga-glance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.sga-glance-card{position:relative;overflow:hidden;padding:18px 18px 16px;border:1px solid rgba(124,156,255,.16);border-radius:18px;background:linear-gradient(180deg,rgba(16,24,38,.95),rgba(11,17,28,.92));box-shadow:0 14px 34px rgba(0,0,0,.16)}.sga-glance-card::after{content:'';position:absolute;inset:auto -18% -52% auto;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(124,156,255,.24),transparent 62%);pointer-events:none}.sga-glance-card.accent-purple::after{background:radial-gradient(circle,rgba(124,92,255,.28),transparent 62%)}.sga-glance-card.accent-green::after{background:radial-gradient(circle,rgba(16,185,129,.24),transparent 62%)}.sga-glance-card.accent-amber::after{background:radial-gradient(circle,rgba(245,158,11,.22),transparent 62%)}.sga-glance-card.accent-blue::after{background:radial-gradient(circle,rgba(77,125,255,.24),transparent 62%)}
-.sga-glance-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.sga-glance-title{font-size:12px;font-weight:800;color:#dbe4f3}.sga-glance-kicker{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;padding:5px 9px;border-radius:999px;background:rgba(124,156,255,.1);border:1px solid rgba(124,156,255,.18)}.sga-glance-value{font-size:34px;line-height:1;font-weight:900;letter-spacing:-.03em;margin-bottom:8px}.sga-glance-label{font-size:12px;color:#9fb0cb;line-height:1.5}.sga-glance-meta{margin-top:12px;font-size:11px;color:#d7e0f1}
-.sga-quicknav{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 2px}.sga-quicknav-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border-radius:13px;border:1px solid rgba(124,156,255,.14);background:rgba(13,20,33,.76);color:#d8e2f2;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 12px 28px rgba(0,0,0,.12)}.sga-quicknav-btn:hover{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.28)}
-.sga-flow-overview-card{padding:16px 16px 14px}.sga-flow-overview-card .sga-agent-head{margin-bottom:10px}.sga-flow-overview{grid-template-columns:repeat(9,minmax(120px,1fr));gap:8px;padding:0}.sga-flow-mini{border-radius:14px;padding:11px 12px;min-width:120px}.sga-flow-mini strong{font-size:11px}.sga-flow-mini span{font-size:10px}
-.sga-flow-section{scroll-margin-top:210px}.sga-flow-major-handoff span,.sga-flow-handoff span{background:rgba(124,156,255,.06);border-color:rgba(124,156,255,.25)}
-.sga-provider-panel,.sga-stage-detail,.sga-stage-result,.sga-provider-note-box{border-color:rgba(124,156,255,.12);border-radius:16px}
-.sga-input,.sga-select,.sga-textarea,.sga-list-search{border-color:rgba(124,156,255,.14);border-radius:12px;background:rgba(5,10,18,.9);padding:10px 12px}.sga-field label{font-size:11px;letter-spacing:.02em}.sga-btn{border-radius:12px;padding:9px 12px}.sga-btn.primary{background:linear-gradient(135deg,#7c5cff,#4d7dff);border-color:#7f8fff}.sga-btn.good{background:linear-gradient(135deg,#256b45,#2d8a58);border-color:#43b072}.sga-btn.danger{background:linear-gradient(135deg,#6d2134,#953150);border-color:#b94d6e}
-.sga-stage-layout{gap:16px}.sga-agent-expanded{padding:20px;border-radius:20px}.sga-main-response-card{border-radius:20px}
-.sga-order-card{border-color:rgba(124,92,255,.32);background:linear-gradient(180deg,rgba(28,22,54,.72),rgba(10,16,27,.94))}.sga-order-list{display:grid;gap:9px;margin-top:14px}.sga-order-item{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 12px;border:1px solid rgba(124,156,255,.14);border-radius:14px;background:rgba(6,11,19,.7)}.sga-order-item.fixed{border-color:rgba(74,222,128,.28);background:rgba(34,197,94,.055)}.sga-order-number{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;background:rgba(124,156,255,.14);color:#d8e1ff;font-size:12px;font-weight:900}.sga-order-copy{display:flex;flex-direction:column;gap:3px;min-width:0}.sga-order-copy strong{font-size:12px}.sga-order-copy span{font-size:10px;color:var(--sga-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-order-actions{display:flex;gap:6px}.sga-order-actions .sga-btn{padding:7px 10px}
-.sga-module-lore-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-top:14px;max-height:460px;overflow:auto;padding:2px 5px 2px 2px;scrollbar-width:thin}.sga-module-lore-item{display:grid;grid-template-columns:24px minmax(0,1fr);align-items:start;gap:12px;min-width:0;min-height:126px;padding:16px;border:1px solid rgba(124,156,255,.16);border-radius:16px;background:linear-gradient(145deg,rgba(10,17,29,.94),rgba(7,12,21,.86));cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease,box-shadow .16s ease}.sga-module-lore-item:hover{border-color:rgba(124,156,255,.42);background:linear-gradient(145deg,rgba(20,30,52,.94),rgba(8,14,24,.9));transform:translateY(-1px)}.sga-module-lore-item.selected{border-color:rgba(74,222,128,.48);background:linear-gradient(145deg,rgba(22,56,43,.46),rgba(8,19,22,.92));box-shadow:inset 0 0 0 1px rgba(74,222,128,.08)}.sga-module-lore-item.excluded{border-color:rgba(251,113,133,.5);background:linear-gradient(145deg,rgba(74,20,40,.45),rgba(25,10,20,.92));box-shadow:inset 0 0 0 1px rgba(251,113,133,.1)}.sga-module-lore-check{width:18px;height:18px;margin:3px 0 0;accent-color:var(--sga-good);cursor:pointer}.sga-character-lore-exclusion-check{accent-color:var(--sga-danger)}.sga-module-lore-copy{display:flex;flex-direction:column;gap:9px;min-width:0}.sga-module-lore-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}.sga-module-lore-head strong{min-width:0;color:#eef2ff;font-size:13px;line-height:1.45;overflow-wrap:anywhere}.sga-module-lore-head .sga-badge{flex:0 0 auto}.sga-module-lore-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.sga-module-lore-meta>span{max-width:100%;border:1px solid rgba(124,156,255,.16);border-radius:999px;background:rgba(124,156,255,.055);padding:4px 8px;color:#b7c3d8;font-size:10px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sga-module-lore-description{display:-webkit-box;margin:0;color:var(--sga-muted);font-size:11px;line-height:1.55;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}.sga-module-lore-description.empty{opacity:.55;font-style:italic}
-.sga-simple-settings{border-color:rgba(124,156,255,.34);background:linear-gradient(180deg,rgba(24,30,52,.97),rgba(12,18,31,.96))}.sga-simple-head{margin-bottom:14px}.sga-simple-step{padding:16px 0;border-top:1px solid rgba(124,156,255,.12)}.sga-simple-step:first-of-type{border-top:0}.sga-simple-step-head{display:flex;align-items:flex-start;gap:11px;margin-bottom:11px}.sga-simple-step-head>b{display:flex;align-items:center;justify-content:center;width:25px;height:25px;flex:0 0 auto;border-radius:9px;background:rgba(124,156,255,.16);color:#dce5ff;font-size:12px}.sga-simple-step-head>div{display:flex;flex-direction:column;gap:3px}.sga-simple-step-head strong{font-size:13px}.sga-simple-step-head span{font-size:11px;color:var(--sga-muted);line-height:1.45}.sga-simple-choice-grid{display:grid;gap:10px}.sga-simple-choice-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-simple-choice-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-simple-choice-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.sga-simple-choice-grid.five{grid-template-columns:repeat(5,minmax(0,1fr))}.sga-simple-choice{min-height:112px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:13px 14px;border:1px solid rgba(124,156,255,.18);border-radius:15px;background:rgba(7,12,21,.7);color:var(--sga-text);cursor:pointer;text-align:left;transition:border-color .14s ease,background .14s ease,transform .14s ease}.sga-simple-choice:hover{transform:translateY(-1px);border-color:rgba(124,156,255,.45);background:rgba(124,156,255,.08)}.sga-simple-choice.active{border-color:#7c9cff;background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(77,125,255,.15));box-shadow:0 0 0 1px rgba(124,156,255,.14) inset}.sga-simple-choice-top{width:100%;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}.sga-simple-choice-top>strong{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.sga-simple-choice strong{font-size:13px}.sga-simple-choice-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:34px;white-space:nowrap;word-break:keep-all;line-height:1.2;font-size:9px;font-weight:900;color:#dbe5ff;padding:4px 8px;border-radius:999px;background:rgba(124,156,255,.15);border:1px solid rgba(124,156,255,.2)}.sga-simple-choice-desc{font-size:11px;line-height:1.5;color:#d6deed}.sga-simple-choice small{font-size:10px;line-height:1.4;color:var(--sga-muted)}.sga-simple-stage-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sga-simple-stage-provider{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;padding:12px;border:1px solid rgba(124,156,255,.15);border-radius:14px;background:rgba(7,12,21,.62)}.sga-simple-stage-provider>.sga-badge{margin-bottom:21px}.sga-simple-provider-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:11px}.sga-simple-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:4px;padding:14px;border:1px solid rgba(74,222,128,.28);border-radius:15px;background:rgba(34,197,94,.055)}.sga-simple-summary.warn{border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.055)}.sga-simple-summary>div:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}.sga-simple-summary strong{font-size:12px}.sga-simple-summary span{font-size:11px;color:#cbd5e1;line-height:1.5}.sga-simple-summary-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.sga-stage-advanced{margin-top:0;background:rgba(8,13,22,.48)}.sga-stage-advanced>.sga-advanced-body{padding-top:4px}
-@media(max-width:1100px){.sga-stage-layout{grid-template-columns:1fr}.sga-agent-run-meta{justify-content:flex-start}.sga-glance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:680px){.sga-simple-choice-grid.two,.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid{grid-template-columns:1fr}.sga-simple-summary{align-items:flex-start;flex-direction:column}.sga-simple-summary-actions{width:100%;justify-content:stretch}.sga-simple-summary-actions .sga-btn{flex:1}.sga-simple-stage-provider{grid-template-columns:1fr}.sga-simple-stage-provider>.sga-badge{margin:0;justify-self:start}.sga-simple-provider-actions{align-items:stretch;flex-direction:column}}
-.sga-simple-summary{display:grid;grid-template-columns:minmax(0,1fr) 205px;align-items:stretch;gap:18px;padding:17px 18px}.sga-simple-summary-copy{justify-content:center}.sga-simple-summary-main{font-size:11px;line-height:1.65}.sga-simple-summary-ai{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px;margin-top:5px;padding-top:8px;border-top:1px dashed rgba(124,156,255,.16)}.sga-simple-summary-ai b{color:#9fb0ca;font-size:10px;white-space:nowrap}.sga-simple-summary-ai span{min-width:0;color:#9eacc0;font-size:10px;line-height:1.5;overflow-wrap:anywhere}.sga-simple-summary-actions{display:grid;grid-template-columns:minmax(0,1fr);align-content:center;gap:10px;width:205px}.sga-simple-summary-actions .sga-btn{width:100%;min-height:44px;padding:10px 14px;border-radius:12px;white-space:nowrap;line-height:1.2}.sga-simple-summary-actions .sga-btn:first-child{border-color:rgba(124,156,255,.28);background:linear-gradient(180deg,rgba(37,48,75,.92),rgba(27,36,57,.92))}.sga-simple-summary-actions .sga-btn.good{background:linear-gradient(180deg,rgba(28,103,67,.92),rgba(21,80,52,.92))}
-@media(max-width:840px){.sga-simple-summary{grid-template-columns:minmax(0,1fr)}.sga-simple-summary-actions{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.sga-simple-summary-actions .sga-btn{min-width:0}}
-@media(max-width:560px){.sga-simple-summary-actions{grid-template-columns:minmax(0,1fr)}}
-html{scroll-behavior:smooth}
-@media(max-width:900px){.sga-grid,.sga-grid.three,.sga-row3,.sga-row4,.sga-reference-grid,.sga-main-response-grid,.sga-glance-grid{grid-template-columns:1fr}.sga-stage-primary{grid-template-columns:1fr}.sga-stage-primary>.sga-check{padding-top:0}.sga-flow-overview{grid-template-columns:repeat(9,135px)}.sga-split{grid-template-columns:1fr}.sga-row2{grid-template-columns:1fr}.sga-top{align-items:flex-start;padding:18px}.sga-tabs{top:112px;padding:10px 18px}.sga-main{padding:18px 18px 72px}.sga-flow-node{min-width:135px}.sga-tabs .sga-tab{padding:8px 12px;font-size:11px}.sga-tab .sga-tab-full{display:none}.sga-tab .sga-tab-short{display:inline}.sga-phase-label .sga-phase-sub{display:none}.sga-brand h1{font-size:21px}.sga-brand p{font-size:11px}}
-@media(max-width:560px){.sga-provider-panel-head{flex-direction:column}.sga-brand h1{font-size:18px}.sga-brand p{font-size:10px}.sga-head-actions{flex-wrap:wrap}.sga-summary-pill{font-size:10px;padding:4px 7px}.sga-quicknav{overflow:auto;flex-wrap:nowrap;padding-bottom:2px}.sga-order-item{grid-template-columns:32px minmax(0,1fr)}.sga-order-actions{grid-column:1/-1;justify-content:flex-end}.sga-order-copy span{white-space:normal}.sga-stage-result-body{grid-template-columns:minmax(0,1fr)}}
-.sga-module-lore-browser{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(250px,.75fr);gap:14px;margin-top:14px;min-width:0}.sga-module-browser-pane{min-width:0;border:1px solid rgba(124,156,255,.16);border-radius:16px;background:rgba(7,12,21,.72);overflow:hidden}.sga-module-browser-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid rgba(124,156,255,.14);background:rgba(124,156,255,.045)}.sga-module-browser-title strong{color:#eef2ff;font-size:13px}.sga-module-browser-title span{color:var(--sga-muted);font-size:10px}.sga-module-entry-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid rgba(124,156,255,.1)}.sga-module-entry-list,.sga-module-list{display:flex;flex-direction:column;gap:7px;max-height:540px;overflow:auto;padding:10px;scrollbar-width:thin}.sga-module-entry-item,.sga-module-list-row{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:11px 12px;border:1px solid rgba(124,156,255,.14);border-radius:12px;background:rgba(10,17,29,.78);transition:border-color .16s ease,background .16s ease}.sga-module-entry-item:hover,.sga-module-list-row:hover{border-color:rgba(124,156,255,.38);background:rgba(20,30,52,.76)}.sga-module-entry-item.selected,.sga-module-list-row.selected{border-color:rgba(74,222,128,.42);background:rgba(22,56,43,.32)}.sga-module-list-row.focused{box-shadow:inset 0 0 0 1px rgba(124,156,255,.58)}.sga-module-entry-item.disabled{opacity:.55}.sga-module-list-copy,.sga-module-entry-copy{display:flex;flex-direction:column;gap:5px;min-width:0;cursor:pointer}.sga-module-list-head,.sga-module-entry-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.sga-module-list-head strong,.sga-module-entry-head strong{min-width:0;color:#eef2ff;font-size:12px;line-height:1.4;overflow-wrap:anywhere}.sga-module-entry-preview,.sga-module-list-description{margin:0;color:var(--sga-muted);font-size:10px;line-height:1.5;overflow-wrap:anywhere}.sga-module-entry-meta,.sga-module-list-meta{display:flex;gap:5px;flex-wrap:wrap;color:#aebbd0;font-size:9px}.sga-module-browser-empty{padding:18px;color:var(--sga-muted);font-size:11px;line-height:1.6;text-align:center}
-.sga-module-list-copy{border:0;background:transparent;padding:0;text-align:left;color:inherit;font:inherit;width:100%}
-@media(max-width:720px){.sga-module-lore-grid{grid-template-columns:minmax(0,1fr);max-height:520px}.sga-module-lore-item{min-height:0;padding:14px}.sga-module-lore-head{gap:8px}.sga-module-lore-meta>span{white-space:normal}.sga-module-lore-browser{grid-template-columns:minmax(0,1fr)}.sga-module-browser-modules{order:-1}.sga-module-entry-list,.sga-module-list{max-height:420px}}
-
-/* v0.12.4 full dashboard shell */
-#sga-rp-gui-root{padding:1px;background:transparent}
-.sga-app{min-height:calc(var(--sga-vh) - 2px);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 11% 0%,rgba(124,92,255,.14),transparent 29%),radial-gradient(circle at 91% 5%,rgba(77,125,255,.09),transparent 26%),#070b13}
-.sga-top{position:sticky;top:0;z-index:40;min-height:96px;padding:24px 30px;border-bottom:1px solid rgba(124,156,255,.12);background:rgba(7,11,19,.94);backdrop-filter:blur(22px)}
-.sga-brand h1{font-size:29px}.sga-brand p{max-width:700px}
-.sga-shell{display:grid;grid-template-columns:228px minmax(0,1fr) 248px;gap:14px;max-width:1620px;margin:0 auto;padding:16px 16px 30px}
-.sga-sidebar,.sga-insight-rail{position:sticky;top:112px;align-self:start;height:calc(var(--sga-vh) - 130px);overflow:auto;scrollbar-width:thin}
-.sga-sidebar{display:flex;flex-direction:column;min-height:0;overflow:hidden;border:1px solid rgba(124,156,255,.14);border-radius:18px;background:linear-gradient(180deg,rgba(14,21,35,.96),rgba(9,15,25,.95));padding:12px;box-shadow:0 24px 56px rgba(0,0,0,.22)}
-.sga-side-label{min-width:0;white-space:nowrap;line-height:1.2}.sga-side-item.sub[data-stage="input_assist"]{gap:7px;padding-left:8px;padding-right:8px;font-size:10.5px;letter-spacing:-.015em}
-.sga-side-nav{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;gap:3px;padding:2px 4px 8px 0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(124,156,255,.42) transparent;overscroll-behavior:contain}.sga-side-nav::-webkit-scrollbar{width:6px}.sga-side-nav::-webkit-scrollbar-track{background:transparent}.sga-side-nav::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(124,156,255,.34)}.sga-side-nav::-webkit-scrollbar-thumb:hover{background:rgba(124,156,255,.56)}.sga-side-group{margin-top:11px;padding:0 9px;color:#71829e;font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.sga-side-item{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:1px solid transparent;border-radius:11px;background:transparent;color:#c5d0e1;text-align:left;font-size:11px;font-weight:760;cursor:pointer}.sga-side-item:hover{background:rgba(124,156,255,.07);color:#fff}.sga-side-item[data-active="true"]{border-color:rgba(124,156,255,.2);background:linear-gradient(90deg,rgba(124,92,255,.22),rgba(77,125,255,.12));color:#fff;box-shadow:inset 3px 0 #8b5cff}.sga-side-item.sub{padding-left:33px;font-weight:650;color:#aab8cd}.sga-side-icon{display:grid;place-items:center;width:18px;min-width:18px;color:#9daeff;font-size:13px}.sga-side-bottom{flex:0 0 auto;margin-top:10px;padding:11px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(6,11,19,.68)}.sga-side-status-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#9dadc5}.sga-side-status-row+.sga-side-status-row{margin-top:7px}.sga-live-dot{display:inline-flex;align-items:center;gap:6px;color:#a7f3d0;font-weight:800}.sga-live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#36c977;box-shadow:0 0 10px rgba(54,201,119,.55)}
-.sga-main{max-width:none;margin:0;padding:0;min-width:0}.sga-main>.sga-status{margin:0 0 12px}.sga-insight-rail{display:flex;flex-direction:column;gap:11px}.sga-rail-card{border:1px solid rgba(124,156,255,.14);border-radius:16px;background:linear-gradient(180deg,rgba(15,23,38,.94),rgba(9,15,25,.92));padding:14px;box-shadow:0 18px 40px rgba(0,0,0,.16)}.sga-rail-card h3{margin:0 0 10px;font-size:12px;color:#a990ff}.sga-rail-stat{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid rgba(124,156,255,.08);font-size:10px;color:#93a4bf}.sga-rail-stat:last-child{border-bottom:0}.sga-rail-stat strong{max-width:128px;color:#dbe5f5;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sga-rail-log{display:grid;grid-template-columns:9px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid rgba(124,156,255,.08)}.sga-rail-log:last-child{border-bottom:0}.sga-rail-log-dot{width:7px;height:7px;margin-top:4px;border-radius:50%;background:#37c978}.sga-rail-log-dot.warn{background:#ffb020}.sga-rail-log-dot.off{background:#71809a}.sga-rail-log strong{display:block;font-size:10px;color:#dbe5f5}.sga-rail-log span{display:block;margin-top:3px;color:#8698b4;font-size:9px;line-height:1.4}.sga-rail-tip{display:flex;gap:9px;padding:8px 0;color:#9dadc5;font-size:10px;line-height:1.5}.sga-rail-tip+.sga-rail-tip{border-top:1px solid rgba(124,156,255,.08)}.sga-rail-tip b{color:#9a80ff}
-.sga-tabs{display:none!important}.sga-flow-page{gap:14px}.sga-section-title.sga-flow-page-title{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:4px 4px 1px}.sga-section-title.sga-flow-page-title h2{font-size:20px}.sga-section-title.sga-flow-page-title p{max-width:640px;margin:4px 0 0}
-.sga-glance-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.sga-glance-card{min-height:132px;padding:14px;border-radius:15px}.sga-glance-value{font-size:25px}.sga-glance-label{font-size:10px}.sga-glance-meta{font-size:9px}.sga-glance-title{font-size:10px}.sga-glance-kicker{font-size:8px;padding:4px 7px}
-.sga-dashboard-lower{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:10px}.sga-summary-table{display:grid;grid-template-columns:minmax(120px,.9fr) minmax(0,1.2fr);font-size:10px}.sga-summary-table span,.sga-summary-table strong{padding:7px 0;border-bottom:1px solid rgba(124,156,255,.08)}.sga-summary-table span{color:#8fa0ba}.sga-summary-table strong{color:#dce5f4;text-align:right;font-weight:700}.sga-summary-table span:nth-last-child(-n+2),.sga-summary-table strong:nth-last-child(-n+2){border-bottom:0}.sga-recent-log-list{display:flex;flex-direction:column;gap:6px}.sga-recent-log-item{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:8px;align-items:start;padding:9px;border:1px solid rgba(124,156,255,.1);border-radius:10px;background:rgba(7,12,20,.55)}.sga-recent-log-item i{width:7px;height:7px;margin-top:4px;border-radius:50%;background:#36c978}.sga-recent-log-item i.warn{background:#ffb020}.sga-recent-log-item i.off{background:#72809a}.sga-recent-log-item strong{display:block;font-size:10px}.sga-recent-log-item span{display:block;margin-top:3px;color:#8798b2;font-size:9px}.sga-recent-log-item em{color:#9eb0ca;font-size:9px;font-style:normal;font-variant-numeric:tabular-nums}
-.sga-card,.sga-agent-expanded,.sga-main-response-card{border-radius:16px}.sga-flow-overview-card{padding:15px}.sga-flow-overview{grid-template-columns:repeat(9,minmax(112px,1fr))}.sga-flow-mini{min-width:112px}.sga-flow-section{scroll-margin-top:116px}
-@media(max-width:1320px){.sga-shell{grid-template-columns:210px minmax(0,1fr)}.sga-insight-rail{grid-column:1/-1;position:static;height:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible}.sga-glance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:980px){#sga-rp-gui-root{padding:0}.sga-app{border-radius:0}.sga-top{min-height:auto;padding:17px}.sga-shell{display:block;padding:10px}.sga-sidebar{position:sticky;top:88px;z-index:30;height:auto;margin-bottom:10px;padding:7px;overflow:visible}.sga-side-bottom,.sga-side-group{display:none}.sga-side-nav{display:flex;flex-direction:row;overflow:auto;gap:5px;padding:0;scrollbar-width:thin}.sga-side-item,.sga-side-item.sub{width:auto;min-width:max-content;padding:8px 11px}.sga-side-item.sub{padding-left:11px}.sga-insight-rail{grid-template-columns:1fr;margin-top:10px}.sga-glance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-dashboard-lower{grid-template-columns:1fr}.sga-brand h1{font-size:20px}.sga-brand p{font-size:10px}}
-@media(max-width:600px){.sga-glance-grid{grid-template-columns:1fr}.sga-glance-card{min-height:110px}.sga-shell{padding:7px}.sga-top{align-items:flex-start}.sga-head-actions{width:100%;justify-content:flex-start}.sga-head-actions .sga-dirty{order:3}.sga-insight-rail{display:block}.sga-rail-card+.sga-rail-card{margin-top:8px}.sga-summary-table{grid-template-columns:1fr}.sga-summary-table strong{text-align:left;padding-top:0}}
-
-/* v0.12.8 centered settings window */
-html,body{width:100%;height:100%;overflow:hidden;background:transparent!important;background-color:transparent!important;background-image:none!important}
-#sga-rp-gui-root{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;min-height:0;padding:24px;background:rgba(6,8,14,.38)!important;background-image:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;overflow:hidden}
-.sga-app{color-scheme:dark;display:flex;flex-direction:column;width:min(1280px,calc(100vw - 48px));height:min(820px,calc(var(--sga-vh) - 48px));min-height:0;max-height:820px;border:1px solid rgba(124,156,255,.28);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 10% 0%,rgba(124,92,255,.13),transparent 28%),#070b13;box-shadow:0 24px 72px rgba(0,0,0,.42)}
-.sga-top{position:relative;top:auto;flex:0 0 auto;min-height:78px;padding:17px 21px}.sga-brand h1{font-size:22px}.sga-brand p{font-size:10px}
-.sga-shell{flex:1;min-height:0;width:100%;max-width:none;margin:0;padding:12px;grid-template-columns:200px minmax(0,1fr) 215px;overflow:hidden}
-.sga-sidebar{position:static;top:auto;align-self:stretch;height:100%;min-height:0;max-height:none;overflow:hidden}.sga-insight-rail{position:static;top:auto;height:auto;min-height:0;max-height:none;overflow:auto}
-.sga-main{height:100%;min-height:0;overflow:auto;padding:0 4px 18px;scrollbar-width:thin}
-.sga-app[data-tab="providers"] .sga-shell{grid-template-columns:200px minmax(0,1fr)}
-.sga-app[data-tab="providers"] .sga-insight-rail{display:none}
-.sga-app[data-tab="providers"] .sga-split{grid-template-columns:220px minmax(0,1fr)}
-.sga-app[data-tab="providers"] .sga-list-items{max-height:none}
-.sga-app[data-tab="providers"] #sga-provider-page{min-width:0}
-.sga-provider-editor{overflow:hidden}.sga-provider-panels{min-width:0}
-.sga-render-error{border:1px solid rgba(251,113,133,.55);border-radius:16px;background:rgba(100,20,40,.18);padding:18px}.sga-render-error h2{margin:0 0 8px;font-size:16px;color:#fecdd3}.sga-render-error pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#fda4af;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
-@media(max-width:1320px){.sga-app{width:min(1120px,calc(100vw - 36px));height:calc(var(--sga-vh) - 36px)}.sga-shell{grid-template-columns:190px minmax(0,1fr)}.sga-insight-rail{display:none}.sga-app[data-tab="providers"] .sga-shell{grid-template-columns:190px minmax(0,1fr)}}
-@media(max-width:980px){#sga-rp-gui-root{padding:10px}.sga-app{width:calc(100vw - 20px);height:calc(var(--sga-vh) - 20px);max-height:none;border-radius:17px}.sga-shell{display:flex;flex-direction:column;padding:8px}.sga-sidebar{position:static;flex:0 0 auto;align-self:auto;width:100%;height:auto;overflow:hidden}.sga-main{flex:1}.sga-app[data-tab="providers"] .sga-split{grid-template-columns:1fr}.sga-app[data-tab="providers"] .sga-list-items{max-height:220px}}
-@media(max-width:600px){#sga-rp-gui-root{padding:0}.sga-app{width:100vw;height:var(--sga-vh);border:0;border-radius:0}.sga-top{padding:13px}.sga-brand{align-items:flex-start;flex-direction:column;gap:7px}.sga-brand h1{font-size:17px}.sga-writing-switch button{padding:6px 9px;font-size:10px}.sga-head-actions .sga-btn{padding:8px 10px}}
-
-
-/* v0.12.17 visible execution results */
-.sga-execution-results{scroll-margin-top:116px;border-color:rgba(124,156,255,.34);background:linear-gradient(180deg,rgba(18,27,47,.98),rgba(9,15,26,.98))}
-.sga-result-stage-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0 12px}
-.sga-result-stage-tab{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:11px 12px;border:1px solid rgba(124,156,255,.16);border-radius:13px;background:rgba(5,10,18,.72);color:#dce5f4;text-align:left;cursor:pointer}
-.sga-result-stage-tab:hover{border-color:rgba(124,156,255,.42);background:rgba(124,156,255,.08)}
-.sga-result-stage-tab.active{border-color:#7c9cff;background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(77,125,255,.13));box-shadow:inset 0 0 0 1px rgba(124,156,255,.12)}
-.sga-result-stage-tab span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:850}
-.sga-result-stage-tab small{flex:0 0 auto;font-size:9px;color:#9eb0ca}.sga-result-stage-tab small.good{color:#86efac}.sga-result-stage-tab small.warn,.sga-result-stage-tab small.danger{color:#fbbf24}.sga-result-stage-tab small.off{color:#7f8da4}.sga-result-stage-tab small.run{color:#9bb4ff}
-.sga-result-selected-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;padding:11px 12px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(5,10,18,.48)}
-.sga-result-selected-head strong{display:block;font-size:13px}.sga-result-selected-head span{display:block;margin-top:4px;color:#8fa0ba;font-size:10px;line-height:1.45}
-.sga-live-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sga-live-result-card{min-width:0;border:1px solid rgba(124,156,255,.12);border-radius:14px;background:rgba(5,10,18,.58);padding:12px}.sga-live-result-card.wide{grid-column:1/-1}
-.sga-live-result-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}.sga-live-result-card-head h4{margin:0;font-size:11px;color:#dce5f4}
-.sga-live-result-text,.sga-live-result-code{white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid rgba(124,156,255,.09);border-radius:10px;background:#050910;padding:11px;color:#cdd8ea;font-size:10px;line-height:1.58;max-height:520px;overflow:auto}
-.sga-live-result-text{font-family:inherit}.sga-live-result-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.sga-live-result-code.final{max-height:620px;min-height:120px}
-.sga-result-empty.prominent{margin:12px 0;padding:24px;border:1px dashed rgba(124,156,255,.28);border-radius:14px;background:rgba(5,10,18,.45);color:#aab8cd;text-align:center;line-height:1.65}
-.sga-result-raw-details{margin-top:12px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(5,10,18,.42);padding:10px 12px}.sga-result-raw-details>summary{cursor:pointer;color:#aab8cd;font-size:10px;font-weight:800}.sga-result-raw-details[open]>summary{margin-bottom:10px}
-.sga-final-draft-result{margin-top:12px;padding:13px;border:1px solid rgba(74,222,128,.24);border-radius:15px;background:linear-gradient(180deg,rgba(24,70,48,.16),rgba(5,10,18,.62))}
-@media(max-width:900px){.sga-result-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-live-result-grid{grid-template-columns:1fr}.sga-live-result-card.wide{grid-column:auto}}
-@media(max-width:560px){.sga-result-stage-tabs{grid-template-columns:1fr}}
-
-/* v0.12.22 lightweight GUI paint path */
-.sga-main,.sga-sidebar,.sga-insight-rail,.sga-list-items,.sga-live-result-text,.sga-live-result-code{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.sga-top,.sga-tabs{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-.sga-flow-node.state-run::after{display:none!important;animation:none!important}
-.sga-card,.sga-glance-card,.sga-quicknav-btn,.sga-simple-choice,.sga-insight-rail,.sga-sidebar,.sga-rail-card{box-shadow:none!important}
-.sga-flow-node,.sga-simple-choice,.sga-advanced>summary::before{transition:none!important}
-.sga-mobile-nav{display:none}
-@media(max-width:760px){
-html,body{width:100%;height:100%;overflow:hidden}
-#sga-rp-gui-root{display:block;width:100%;height:100%;padding:0}
-.sga-app{width:100vw;height:var(--sga-vh);max-height:none;border:0;border-radius:0;background:radial-gradient(circle at 50% 0%,rgba(124,92,255,.1),transparent 24%),#070b13}
-.sga-top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;min-height:58px;padding:9px 11px;border-bottom-color:rgba(124,156,255,.14)}
-.sga-brand h1{font-size:17px;line-height:1.1}.sga-brand p,.sga-dirty{display:none}
-.sga-head-actions{gap:6px;flex-wrap:nowrap;justify-content:flex-end}.sga-head-actions .sga-btn{min-height:38px;padding:8px 10px;font-size:10px;white-space:nowrap}
-.sga-mobile-nav{display:grid;flex:0 0 auto;gap:8px;padding:9px 10px 10px;border-bottom:1px solid rgba(124,156,255,.16);background:linear-gradient(180deg,rgba(12,19,32,.98),rgba(8,14,24,.96))}
-.sga-mobile-nav-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.sga-mobile-nav-head>div{display:flex;min-width:0;flex-direction:column;gap:2px}.sga-mobile-nav-head small{color:#7f91ad;font-size:9px;font-weight:800}.sga-mobile-nav-head strong{overflow:hidden;color:#e7edfb;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-.sga-mobile-quick-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.sga-mobile-quick-btn{display:flex;min-width:0;min-height:50px;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid rgba(124,156,255,.14);border-radius:11px;background:rgba(5,10,18,.62);color:#b8c5d9;cursor:pointer}.sga-mobile-quick-btn>span{color:#9daeff;font-size:14px}.sga-mobile-quick-btn>small{max-width:100%;overflow:hidden;font-size:9px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.sga-mobile-quick-btn.active{border-color:rgba(124,156,255,.62);background:linear-gradient(135deg,rgba(124,92,255,.25),rgba(77,125,255,.15));color:#fff;box-shadow:inset 0 -2px rgba(139,92,255,.7)}
-.sga-mobile-nav-select-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:9px}.sga-mobile-nav-select-wrap>span{color:#91a2bd;font-size:10px;font-weight:850}.sga-mobile-nav-select{min-height:42px;padding:8px 11px;font-size:12px}
-.sga-shell,.sga-app[data-tab="providers"] .sga-shell{display:block;flex:1;min-height:0;padding:0;overflow:hidden}.sga-sidebar,.sga-insight-rail{display:none!important}
-.sga-main{width:100%;height:100%;min-height:0;padding:10px 10px 84px;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}
-.sga-main>.sga-status{margin:0 0 9px;padding:9px 11px;border-radius:11px}.sga-flow-page{gap:14px}.sga-flow-page-title{margin:0}.sga-flow-page-title h2{font-size:17px}.sga-flow-page-title p{font-size:11px;line-height:1.5}
-.sga-card,.sga-agent-expanded,.sga-main-response-card{padding:14px;border-radius:14px}.sga-card h2{font-size:16px}.sga-card h3{font-size:13px}.sga-agent-head{align-items:flex-start;gap:8px}.sga-agent-run-meta{min-width:0;justify-content:flex-start}
-.sga-grid,.sga-grid.three,.sga-row2,.sga-row3,.sga-row4,.sga-glance-grid,.sga-dashboard-lower,.sga-main-response-grid,.sga-simple-choice-grid.two,.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid{grid-template-columns:minmax(0,1fr)}
-.sga-stage-layout,.sga-stage-primary,.sga-stage-result-body,.sga-live-result-grid,.sga-module-lore-grid,.sga-reference-grid{grid-template-columns:minmax(0,1fr)}.sga-stage-primary>.sga-check{padding-top:0}.sga-stage-result{padding:11px}.sga-stage-result-body{gap:7px}.sga-result-row{padding:9px}
-.sga-field{margin-bottom:10px}.sga-input,.sga-select,.sga-list-search{min-height:44px;padding:10px 11px;font-size:13px}.sga-textarea{min-height:138px;padding:11px;font-size:12px}.sga-textarea.tall,.sga-textarea.stage-prompt{min-height:240px}.sga-textarea.preview{min-height:210px}
-.sga-check{min-height:42px;align-items:flex-start;padding:8px 0;line-height:1.45}.sga-check input{flex:0 0 auto;width:20px;height:20px}.sga-actions{gap:7px}.sga-actions .sga-btn{min-height:44px;flex:1 1 132px;padding:10px 12px}.sga-btn{touch-action:manipulation}
-.sga-advanced{border-radius:12px}.sga-advanced>summary{min-height:46px;padding:11px 12px}.sga-advanced-body{padding:0 11px 12px}
-.sga-provider-panel,.sga-stage-detail,.sga-provider-note-box{padding:12px;border-radius:13px}.sga-provider-panel-head,.sga-stage-detail-head,.sga-simple-provider-actions{align-items:stretch;flex-direction:column}.sga-provider-actions{padding-top:11px}
-.sga-result-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.sga-result-stage-tab{min-height:48px;padding:9px}.sga-result-selected-head{flex-direction:column}.sga-live-result-card{padding:10px}.sga-live-result-text,.sga-live-result-code{max-height:440px;padding:10px}
-.sga-flow-overview{grid-template-columns:repeat(9,128px);padding-bottom:8px}.sga-flow-mini{min-width:128px}.sga-summary-table{grid-template-columns:minmax(0,1fr)}.sga-summary-table strong{text-align:left;padding-top:0}.sga-glance-card{min-height:108px}
-.sga-module-lore-grid{max-height:none;overflow:visible;padding:0}.sga-module-lore-item{min-height:0;padding:13px}.sga-module-lore-meta>span{white-space:normal}.sga-order-item{grid-template-columns:32px minmax(0,1fr)}.sga-order-actions{grid-column:1/-1;justify-content:flex-start}
-.sga-app[data-tab="providers"] .sga-split{grid-template-columns:minmax(0,1fr)}.sga-app[data-tab="providers"] .sga-list-items{max-height:180px}.sga-app[data-tab="providers"] .sga-provider-editor{overflow:visible}
-}
-@media(max-width:420px){
-.sga-top{grid-template-columns:minmax(0,1fr) auto;padding:8px}.sga-brand h1{font-size:15px}.sga-head-actions .sga-btn{padding:7px 8px;font-size:9px}.sga-mobile-nav{padding:8px}.sga-mobile-quick-nav{gap:4px}.sga-mobile-quick-btn{min-height:46px}.sga-mobile-quick-btn>small{font-size:8px}.sga-main{padding:8px 8px 76px}.sga-result-stage-tabs{grid-template-columns:minmax(0,1fr)}.sga-card,.sga-agent-expanded{padding:12px}.sga-actions .sga-btn{flex-basis:100%}
-}
-#sga-rp-gui-root.sga-compact-modal-root{display:grid!important;place-items:center!important;padding:20px!important}
-.sga-input-compact-app{display:block;width:min(760px,calc(100vw - 40px));max-height:calc(var(--sga-vh) - 40px);overflow:auto;color:#e7edfb}
-.sga-input-compact-app.wide{width:min(820px,calc(100vw - 40px))}
-.sga-input-compact-app>.sga-card{width:100%!important;margin:0!important;box-shadow:0 24px 72px rgba(0,0,0,.42)}
-@media(max-width:760px){#sga-rp-gui-root.sga-compact-modal-root{display:grid!important;padding:12px!important}.sga-input-compact-app,.sga-input-compact-app.wide{width:calc(100vw - 24px);max-height:calc(var(--sga-vh) - 24px)}.sga-input-compact-app>.sga-card{border-radius:16px}}
-.sga-input-confirm-app{display:flex;min-height:0;flex-direction:column;width:min(1180px,calc(100vw - 48px));height:min(760px,calc(var(--sga-vh) - 48px));overflow:hidden;border:1px solid rgba(124,156,255,.32);border-radius:22px;background:radial-gradient(circle at 86% 0%,rgba(124,92,255,.14),transparent 28%),#070b13;box-shadow:0 24px 72px rgba(0,0,0,.48);color:#e7edfb}
-.sga-input-confirm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px 22px;border-bottom:1px solid rgba(124,156,255,.17);background:rgba(9,14,24,.96)}.sga-input-confirm-head h2{margin:0 0 6px;font-size:20px}.sga-input-confirm-head p{margin:0;color:#9aabc4;font-size:12px;line-height:1.55}.sga-input-confirm-close{flex:0 0 auto;min-width:42px;min-height:38px;padding:7px 12px;border:1px solid rgba(124,156,255,.24);border-radius:11px;background:#111a2b;color:#dce5f7;font-size:18px;cursor:pointer}
-.sga-input-confirm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;flex:1;min-height:0;padding:16px 18px}.sga-input-confirm-pane{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;border:1px solid rgba(124,156,255,.19);border-radius:16px;background:rgba(7,12,21,.76)}.sga-input-confirm-pane.expanded{border-color:rgba(124,92,255,.42);box-shadow:inset 0 2px rgba(139,92,255,.55)}.sga-input-confirm-pane-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-bottom:1px solid rgba(124,156,255,.14)}.sga-input-confirm-pane-head strong{font-size:14px}.sga-input-confirm-pane-head span{color:#8497b4;font-size:10px}.sga-input-confirm-pane-tools{display:flex;align-items:center;justify-content:flex-end;gap:7px}.sga-input-confirm-edit-badge{padding:3px 7px;border:1px solid rgba(139,92,255,.34);border-radius:999px;background:rgba(124,92,255,.12);color:#cbbcff!important}.sga-input-confirm-translation-row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;padding:8px 12px 0}.sga-input-confirm-translate{min-height:30px;padding:5px 9px;border:1px solid rgba(124,156,255,.22);border-radius:9px;background:#111a2b;color:#cbd7eb;font-size:10px;cursor:pointer}.sga-input-confirm-text{flex:1;min-height:0;margin:0;padding:16px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#cfd9eb;font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;user-select:text;-webkit-user-select:text}.sga-input-confirm-text.editable{box-sizing:border-box;width:100%;border:0;resize:none;background:rgba(5,9,17,.58);outline:none;caret-color:#a999ff}.sga-input-confirm-text.editable:focus{background:rgba(8,12,23,.9);box-shadow:inset 0 0 0 1px rgba(139,92,255,.38)}.sga-input-confirm-text.editable:disabled{opacity:.7}.sga-input-confirm-empty{color:#73839d;font-style:italic}.sga-input-confirm-actions{display:flex;gap:8px;padding:13px 15px;border-top:1px solid rgba(124,156,255,.14)}.sga-input-confirm-actions .sga-btn{flex:1;min-height:42px}.sga-input-confirm-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 18px 17px}.sga-input-confirm-status{min-width:0;color:#8fa1bd;font-size:11px;line-height:1.45}.sga-input-confirm-status.err{color:#ff9eb3}.sga-input-confirm-regenerate{flex:0 0 auto;min-width:122px}.sga-input-confirm-app.busy button{opacity:.55;pointer-events:none}
-@media(max-width:760px){.sga-input-confirm-app{width:100vw;height:var(--sga-vh);border:0;border-radius:0}.sga-input-confirm-head{padding:14px}.sga-input-confirm-head h2{font-size:17px}.sga-input-confirm-grid{grid-template-columns:minmax(0,1fr);overflow:auto;padding:10px}.sga-input-confirm-pane{min-height:330px}.sga-input-confirm-footer{padding:0 10px 12px;align-items:stretch;flex-direction:column}.sga-input-confirm-regenerate{width:100%;min-height:44px}}
-@media(hover:none) and (pointer:coarse){.sga-simple-choice:hover,.sga-quicknav-btn:hover{transform:none}}
-
-/* v0.25.7 settings information architecture and persistent shell */
-.sga-redesign-app{position:relative;width:min(1460px,calc(100vw - 36px));height:min(900px,calc(var(--sga-vh) - 36px));max-height:900px}
-.sga-redesign-top{min-height:70px;padding:15px 20px}.sga-redesign-top .sga-brand p{font-size:10px}.sga-redesign-top .sga-head-actions{flex-wrap:nowrap}
-.sga-redesign-shell{grid-template-columns:220px minmax(0,1fr) 230px;padding:10px 12px 0;gap:10px}.sga-redesign-main{padding:0 5px 18px}.sga-redesign-content{min-width:0}.sga-redesign-rail{min-width:0}
-.sga-redesign-nav-group+.sga-redesign-nav-group{margin-top:8px}.sga-redesign-nav-group .sga-side-item{min-height:38px}.sga-redesign-nav-group .sga-side-group{display:block;padding:8px 10px 4px}
-.sga-redesign-page{gap:14px}.sga-redesign-page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.sga-redesign-page-head h2{margin:2px 0 0;font-size:22px}.sga-redesign-page-head p{margin:6px 0 0;color:var(--sga-muted);font-size:12px;line-height:1.55}.sga-redesign-breadcrumb{color:#8ea1c2;font-size:10px;font-weight:800;letter-spacing:.04em}
-.sga-redesign-notice{display:flex;gap:12px;padding:12px 14px;border:1px solid rgba(124,156,255,.25);border-radius:13px;background:rgba(124,156,255,.055)}.sga-redesign-notice strong{flex:0 0 auto;font-size:11px}.sga-redesign-notice span{color:var(--sga-muted);font-size:11px;line-height:1.5}
-.sga-redesign-two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sga-redesign-flow{display:flex;align-items:stretch;gap:7px;overflow:auto;margin-top:12px;padding:2px 0 6px}.sga-redesign-flow-step{flex:1;min-width:125px;padding:10px 11px;border:1px solid rgba(74,222,128,.3);border-radius:12px;background:rgba(74,222,128,.045)}.sga-redesign-flow-step.main{border-color:rgba(124,156,255,.5);background:rgba(124,156,255,.08)}.sga-redesign-flow-step.off{opacity:.45;border-color:var(--sga-line)}.sga-redesign-flow-step strong,.sga-redesign-flow-step span{display:block}.sga-redesign-flow-step strong{font-size:10px}.sga-redesign-flow-step span{margin-top:4px;color:var(--sga-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-redesign-flow-arrow{display:flex;align-items:center;color:var(--sga-muted)}
-.sga-redesign-stage-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.sga-redesign-stage-tab{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:10px;border:1px solid var(--sga-line);border-radius:12px;background:#0a111d;color:var(--sga-text);text-align:left;cursor:pointer}.sga-redesign-stage-tab.active{border-color:var(--sga-accent);background:rgba(124,156,255,.1)}.sga-redesign-stage-tab>b{display:flex;width:26px;height:26px;align-items:center;justify-content:center;border-radius:8px;background:rgba(124,156,255,.13);font-size:10px}.sga-redesign-stage-tab span,.sga-redesign-stage-tab strong,.sga-redesign-stage-tab small{display:block;min-width:0}.sga-redesign-stage-tab strong{font-size:11px}.sga-redesign-stage-tab small{margin-top:3px;color:var(--sga-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-redesign-stage-tab em{font-style:normal}
-.sga-redesign-subnav{display:flex;gap:7px;overflow:auto;padding:2px 0}.sga-redesign-subnav .sga-btn{white-space:nowrap}
-.sga-redesign-savebar{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:14px;min-height:62px;padding:10px 16px;border-top:1px solid rgba(124,156,255,.2);background:#09101c;box-shadow:0 -12px 30px rgba(0,0,0,.16);z-index:40}.sga-redesign-save-copy{min-width:0}.sga-redesign-save-copy strong,.sga-redesign-save-copy span{display:block}.sga-redesign-save-copy strong{font-size:11px}.sga-redesign-save-copy span{margin-top:3px;color:var(--sga-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-redesign-savebar .sga-actions{flex:0 0 auto}.sga-redesign-savebar .sga-btn{min-width:92px}
-.sga-redesign-dialog-layer{position:absolute;inset:0;z-index:100;display:grid;place-items:center;padding:18px}.sga-redesign-dialog-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.68)}.sga-redesign-dialog{position:relative;width:min(540px,100%);max-height:calc(100% - 24px);overflow:auto;border:1px solid rgba(124,156,255,.35);border-radius:18px;background:#0c1321;box-shadow:0 28px 80px rgba(0,0,0,.55)}.sga-redesign-dialog-head{padding:17px 18px 12px;border-bottom:1px solid var(--sga-line)}.sga-redesign-dialog-head h2{margin:0;font-size:17px}.sga-redesign-dialog-head p{margin:5px 0 0;color:var(--sga-muted);font-size:11px;line-height:1.5}.sga-redesign-dialog-body{padding:14px 18px}.sga-redesign-dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px 17px}.sga-redesign-diff-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:9px 0;border-bottom:1px solid var(--sga-line);font-size:11px}.sga-redesign-diff-row:last-child{border-bottom:0}.sga-redesign-diff-row strong{color:var(--sga-muted)}.sga-redesign-diff-row b{color:#aaf1ca}
-.sga-app[data-dense="true"] .sga-redesign-shell{grid-template-columns:220px minmax(0,1fr)}.sga-app[data-dense="true"] .sga-redesign-rail{display:none}
-@media(max-width:1200px){.sga-redesign-app{width:min(1120px,calc(100vw - 24px));height:calc(var(--sga-vh) - 24px)}.sga-redesign-shell,.sga-app[data-dense="true"] .sga-redesign-shell{display:grid;grid-template-columns:205px minmax(0,1fr)}.sga-redesign-rail{display:none}.sga-redesign-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:980px) and (min-width:861px){.sga-redesign-shell,.sga-app[data-dense="true"] .sga-redesign-shell{display:grid;grid-template-columns:190px minmax(0,1fr)}.sga-redesign-sidebar{position:static;width:auto;height:100%;margin:0;padding:9px;overflow:hidden}.sga-redesign-sidebar .sga-side-nav{display:block;overflow:auto}.sga-redesign-sidebar .sga-side-item{width:100%;padding:8px 10px}.sga-redesign-sidebar .sga-side-group,.sga-redesign-sidebar .sga-side-bottom{display:block}}
-@media(max-width:860px){#sga-rp-gui-root{padding:0}.sga-redesign-app{width:100vw;height:var(--sga-vh);max-height:none;border:0;border-radius:0}.sga-redesign-top{min-height:58px;padding:10px 12px}.sga-redesign-top .sga-brand h1{font-size:17px}.sga-redesign-top .sga-brand p{display:none}.sga-redesign-top .sga-dirty{display:inline-flex}.sga-redesign-mobile-nav{display:block;padding:8px 10px;border-bottom:1px solid rgba(124,156,255,.16)}.sga-redesign-mobile-nav .sga-mobile-nav-select-wrap{display:grid}.sga-redesign-shell,.sga-app[data-dense="true"] .sga-redesign-shell{display:block;padding:0}.sga-redesign-sidebar,.sga-redesign-rail{display:none!important}.sga-redesign-main{height:100%;padding:9px 9px 16px}.sga-redesign-page-head{flex-direction:column}.sga-redesign-page-head h2{font-size:19px}.sga-redesign-two-col,.sga-redesign-stage-tabs{grid-template-columns:minmax(0,1fr)}.sga-redesign-notice{flex-direction:column;gap:5px}.sga-redesign-savebar{min-height:66px;padding:8px 10px}.sga-redesign-save-copy span{display:none}.sga-redesign-savebar .sga-actions{flex-wrap:nowrap}.sga-redesign-savebar .sga-btn{min-width:82px;min-height:42px}.sga-redesign-dialog-layer{padding:10px}.sga-redesign-dialog-actions{flex-wrap:wrap}.sga-redesign-dialog-actions .sga-btn{flex:1 1 130px}.sga-redesign-diff-row{grid-template-columns:minmax(0,1fr) auto}.sga-redesign-diff-row strong{display:none}}
-@media(max-width:460px){.sga-redesign-top .sga-dirty{max-width:92px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.sga-redesign-save-copy{max-width:42%}.sga-redesign-savebar .sga-btn{min-width:74px;padding:8px}.sga-redesign-stage-tab{grid-template-columns:28px minmax(0,1fr)}}
-
-`;
+    style.textContent = `${GRADIA_MOCKUP_STYLE}\n#sga-rp-gui-root{position:fixed;inset:0;z-index:9999;display:block;overflow:auto;background:var(--page-bg);color-scheme:normal}\n\n#sga-rp-gui-root .app{width:100%;height:100%}
+#sga-rp-gui-root .proto-bar{display:none}\n`;
     document.head.appendChild(style);
   };
 
@@ -38885,7 +38721,7 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const inputNode = (value, onInput, options = {}) => guiEl(options.tag || 'input', {
     type: options.type || (options.tag === 'textarea' ? null : 'text'),
-    class: options.tag === 'textarea' ? `sga-textarea ${options.class || ''}` : 'sga-input',
+    class: options.tag === 'textarea' ? `textarea ${options.class || ''}` : 'input',
     value: value ?? '',
     placeholder: options.placeholder || '',
     min: options.min,
@@ -38909,7 +38745,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       markGuiDirty({ affectsQuickProfile: options.affectsQuickProfile === true });
     };
     const node = guiEl('select', {
-      class: 'sga-select',
+      class: 'select',
       value: selectedValue,
       onChange: commit,
       onInput: commit
@@ -38918,7 +38754,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     return node;
   };
 
-  const checkboxNode = (checked, label, onChange, options = {}) => guiEl('label', { class: 'sga-check' }, [
+  const checkboxNode = (checked, label, onChange, options = {}) => guiEl('label', { class: 'row' }, [
     guiEl('input', { type: 'checkbox', checked, onChange: event => {
       onChange(!!event.target.checked, event);
       markGuiDirty({ affectsQuickProfile: options.affectsQuickProfile === true });
@@ -38926,7 +38762,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     guiEl('span', { text: label })
   ]);
 
-  const fieldNode = (label, control, note = '') => guiEl('div', { class: 'sga-field' }, [
+  const fieldNode = (label, control, note = '') => guiEl('div', { class: 'field' }, [
     guiEl('label', { text: label }), control, note ? guiEl('small', { text: note }) : null
   ]);
 
@@ -38994,17 +38830,17 @@ html,body{width:100%;height:100%;overflow:hidden}
       style: { padding: '13px', border: '1px solid rgba(139,92,255,.32)', borderRadius: '14px', background: 'rgba(10,12,24,.80)', display: 'grid', gap: '8px' }
     });
     const editor = guiEl('textarea', {
-      class: 'sga-input-confirm-text editable',
+      class: 'textarea editable',
       value: displayedValue,
       spellcheck: true,
       dataset: { inputChoiceEditor: '' },
       'aria-label': `${title || `선택지 ${index + 1}`} 편집`,
       style: { maxHeight: '240px', minHeight: '120px', padding: '10px', borderRadius: '10px', background: 'rgba(5,9,17,.58)' }
     });
-    const countNode = guiEl('span', { class: 'sga-note', text: `${displayedValue.length.toLocaleString('ko-KR')}자` });
-    const selectButton = guiEl('button', { class: 'sga-btn primary', text: actionLabel, disabled: !displayedValue.trim() });
+    const countNode = guiEl('span', { class: 'note', text: `${displayedValue.length.toLocaleString('ko-KR')}자` });
+    const selectButton = guiEl('button', { class: 'btn btn--primary', text: actionLabel, disabled: !displayedValue.trim() });
     const languageButtons = Object.fromEntries(languageDefs.map(([language, label]) => [language, guiEl('button', {
-      class: 'sga-input-confirm-translate',
+      class: 'btn btn--sm',
       text: `${label}로 번역`,
       disabled: typeof onTranslate !== 'function' || !currentSource.trim(),
       dataset: { inputChoiceTranslate: language }
@@ -39097,13 +38933,13 @@ html,body{width:100%;height:100%;overflow:hidden}
     card.appendChild(guiEl('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' } }, [
       guiEl('strong', { text: title || `${index + 1}. 선택지 ${index + 1}` }),
       guiEl('div', { style: { display: 'flex', alignItems: 'center', gap: '7px' } }, [
-        guiEl('span', { class: 'sga-input-confirm-edit-badge', text: '편집 가능' }),
-        badge ? guiEl('span', { class: 'sga-badge', text: badge }) : null,
+        guiEl('span', { class: 'badge badge--info', text: '편집 가능' }),
+        badge ? guiEl('span', { class: 'badge', text: badge }) : null,
         countNode
       ])
     ]));
-    if (summary) card.appendChild(guiEl('div', { class: 'sga-note', text: summary }));
-    card.appendChild(guiEl('div', { class: 'sga-input-confirm-translation-row', style: { padding: '0' } }, languageDefs.map(([language]) => languageButtons[language])));
+    if (summary) card.appendChild(guiEl('div', { class: 'note', text: summary }));
+    card.appendChild(guiEl('div', { class: 'cluster', style: { padding: '0' } }, languageDefs.map(([language]) => languageButtons[language])));
     card.appendChild(editor);
     card.appendChild(selectButton);
     return card;
@@ -39196,18 +39032,18 @@ html,body{width:100%;height:100%;overflow:hidden}
     return await new Promise(resolve => {
       let settled = false;
       let busy = false;
-      const app = guiEl('div', { class: 'sga-input-confirm-app' });
+      const app = guiEl('div', { class: 'dialog dialog--wide' });
       Gui.app = app;
       const statusNode = guiEl('div', {
-        class: 'sga-input-confirm-status',
+        class: 'note',
         text: 'AI가 제안한 행동은 아직 아무 것도 확정되지 않았습니다. 원래 입력을 유지하거나, 원하는 유저 행동 하나를 직접 고르세요.'
       });
       const bodyNode = guiEl('div', {
         style: { display: 'grid', gap: '11px', padding: '14px 18px', overflow: 'auto', minHeight: '0', flex: '1' }
       });
-      const regenerateButton = guiEl('button', { class: 'sga-btn ghost sga-input-confirm-regenerate', text: '선택지 다시 제안' });
+      const regenerateButton = guiEl('button', { class: 'btn btn--ghost btn', text: '선택지 다시 제안' });
       const closeButton = guiEl('button', {
-        class: 'sga-input-confirm-close', text: '×',
+        class: 'btn btn--icon', text: '×',
         title: sourceIsExplicitContinue ? '닫고 취소' : '닫고 원본 입력 유지',
         'aria-label': sourceIsExplicitContinue ? '닫고 취소' : '닫고 원본 입력 유지'
       });
@@ -39274,10 +39110,10 @@ html,body{width:100%;height:100%;overflow:hidden}
           }, [
             guiEl('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' } }, [
               guiEl('strong', { text: '내가 작성한 입력 그대로' }),
-              guiEl('span', { class: 'sga-badge good', text: '원본' })
+              guiEl('span', { class: 'badge good', text: '원본' })
             ]),
-            guiEl('pre', { class: 'sga-input-confirm-text', text: initialOriginal, style: { maxHeight: '150px', minHeight: '0', padding: '10px', borderRadius: '10px', background: 'rgba(5,9,17,.58)' } }),
-            guiEl('button', { class: 'sga-btn ghost', text: '원본 입력 사용', onClick: () => { void finish('original', initialOriginal, null); } })
+            guiEl('pre', { class: 'textarea', text: initialOriginal, style: { maxHeight: '150px', minHeight: '0', padding: '10px', borderRadius: '10px', background: 'rgba(5,9,17,.58)' } }),
+            guiEl('button', { class: 'btn btn--ghost', text: '원본 입력 사용', onClick: () => { void finish('original', initialOriginal, null); } })
           ]);
           bodyNode.appendChild(originalCard);
         }
@@ -39300,7 +39136,7 @@ html,body{width:100%;height:100%;overflow:hidden}
           });
           bodyNode.appendChild(card);
         });
-        if (!currentChoices.length) bodyNode.appendChild(guiEl('div', { class: 'sga-callout', text: '유효한 행동 선택지를 만들지 못했습니다. 원본 입력을 사용하거나 선택지를 다시 요청하세요.' }));
+        if (!currentChoices.length) bodyNode.appendChild(guiEl('div', { class: 'note note--warn', text: '유효한 행동 선택지를 만들지 못했습니다. 원본 입력을 사용하거나 선택지를 다시 요청하세요.' }));
       };
       regenerateButton.addEventListener('click', async () => {
         if (busy || typeof onRegenerate !== 'function') return;
@@ -39323,7 +39159,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       document.addEventListener('keydown', keyHandler);
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-head' }, [
+      app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: 'RP 행동 선택' }),
           guiEl('p', { text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
@@ -39331,8 +39167,8 @@ html,body{width:100%;height:100%;overflow:hidden}
         closeButton
       ]));
       app.appendChild(bodyNode);
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-footer' }, [statusNode, regenerateButton]));
-      Gui.root.appendChild(app);
+      app.appendChild(guiEl('div', { class: 'cluster' }, [statusNode, regenerateButton]));
+      mountMockupDialog(app);
       renderCards();
       forceTransparentGuiSurface();
     });
@@ -39426,18 +39262,18 @@ html,body{width:100%;height:100%;overflow:hidden}
     return await new Promise(resolve => {
       let settled = false;
       let busy = false;
-      const app = guiEl('div', { class: 'sga-input-confirm-app' });
+      const app = guiEl('div', { class: 'dialog dialog--wide' });
       Gui.app = app;
       const statusNode = guiEl('div', {
-        class: 'sga-input-confirm-status',
+        class: 'note',
         text: '같은 핵심 작가 의도를 세 가지 관점으로 구체화했습니다. 명시적으로 고정한 사건·결과·경계는 유지되며, 지정하지 않은 주인공의 세부 행동·대사·내면은 후보마다 달라질 수 있습니다. 원하는 방향을 직접 고르세요.'
       });
       const bodyNode = guiEl('div', {
         style: { display: 'grid', gap: '11px', padding: '14px 18px', overflow: 'auto', minHeight: '0', flex: '1' }
       });
-      const regenerateButton = guiEl('button', { class: 'sga-btn ghost sga-input-confirm-regenerate', text: '3가지 선택지 다시 제안' });
+      const regenerateButton = guiEl('button', { class: 'btn btn--ghost btn', text: '3가지 선택지 다시 제안' });
       const closeButton = guiEl('button', {
-        class: 'sga-input-confirm-close', text: '×',
+        class: 'btn btn--icon', text: '×',
         title: sourceIsExplicitContinue ? '닫고 취소' : '닫고 원본 입력 유지',
         'aria-label': sourceIsExplicitContinue ? '닫고 취소' : '닫고 원본 입력 유지'
       });
@@ -39504,10 +39340,10 @@ html,body{width:100%;height:100%;overflow:hidden}
           }, [
             guiEl('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' } }, [
               guiEl('strong', { text: '내가 작성한 입력 그대로' }),
-              guiEl('span', { class: 'sga-badge good', text: '원본' })
+              guiEl('span', { class: 'badge good', text: '원본' })
             ]),
-            guiEl('pre', { class: 'sga-input-confirm-text', text: initialOriginal, style: { maxHeight: '150px', minHeight: '0', padding: '10px', borderRadius: '10px', background: 'rgba(5,9,17,.58)' } }),
-            guiEl('button', { class: 'sga-btn ghost', text: '원본 입력 사용', onClick: () => { void finish('original', initialOriginal, null); } })
+            guiEl('pre', { class: 'textarea', text: initialOriginal, style: { maxHeight: '150px', minHeight: '0', padding: '10px', borderRadius: '10px', background: 'rgba(5,9,17,.58)' } }),
+            guiEl('button', { class: 'btn btn--ghost', text: '원본 입력 사용', onClick: () => { void finish('original', initialOriginal, null); } })
           ]);
           bodyNode.appendChild(originalCard);
         }
@@ -39533,7 +39369,7 @@ html,body{width:100%;height:100%;overflow:hidden}
           bodyNode.appendChild(card);
         });
         if (currentChoices.length !== NOVEL_INPUT_CHOICE_TARGET) {
-          bodyNode.appendChild(guiEl('div', { class: 'sga-callout', text: '세 작가 관점 선택지가 모두 준비되지 않았습니다. 원본 입력을 유지하거나 3가지 선택지를 다시 요청하세요.' }));
+          bodyNode.appendChild(guiEl('div', { class: 'note note--warn', text: '세 작가 관점 선택지가 모두 준비되지 않았습니다. 원본 입력을 유지하거나 3가지 선택지를 다시 요청하세요.' }));
         }
       };
       regenerateButton.addEventListener('click', async () => {
@@ -39557,7 +39393,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       document.addEventListener('keydown', keyHandler);
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-head' }, [
+      app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '소설 모드 · 인풋 선택' }),
           guiEl('p', { text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
@@ -39565,8 +39401,8 @@ html,body{width:100%;height:100%;overflow:hidden}
         closeButton
       ]));
       app.appendChild(bodyNode);
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-footer' }, [statusNode, regenerateButton]));
-      Gui.root.appendChild(app);
+      app.appendChild(guiEl('div', { class: 'cluster' }, [statusNode, regenerateButton]));
+      mountMockupDialog(app);
       renderCards();
       forceTransparentGuiSurface();
     });
@@ -39637,75 +39473,75 @@ html,body{width:100%;height:100%;overflow:hidden}
       let expandedTranslationView = 'source';
       let busy = false;
       const sourceIsExplicitContinue = source === 'explicit_continue_button';
-      const app = guiEl('div', { class: 'sga-input-confirm-app' });
+      const app = guiEl('div', { class: 'dialog dialog--wide' });
       Gui.app = app;
       const expandedTextNode = guiEl('textarea', {
-        class: 'sga-input-confirm-text editable',
+        class: 'textarea editable',
         value: displayedExpanded,
         spellcheck: true,
         'aria-label': `${expandedTitle} 편집`
       });
       const expandedCountNode = guiEl('span', { text: `${currentExpanded.length.toLocaleString('ko-KR')}자` });
       const statusNode = guiEl('div', {
-        class: `sga-input-confirm-status${notice ? ' err' : ''}`,
+        class: `note${notice ? ' err' : ''}`,
         text: notice || (sourceIsExplicitContinue
           ? '상황 이어가기는 원본 메시지가 없습니다. 오른쪽 확장본을 편집해 보내거나 닫아서 취소할 수 있습니다.'
           : '오른쪽 확장본을 직접 편집할 수 있습니다. 닫기를 누르면 확장본 대신 원본 메시지를 전송합니다.')
       });
       const originalLabel = initialOriginal || '(원본 메시지 없음 · 상황 이어가기 요청)';
       const originalTextNode = guiEl('pre', {
-        class: `sga-input-confirm-text${initialOriginal ? '' : ' sga-input-confirm-empty'}`,
+        class: `textarea${initialOriginal ? '' : ' empty'}`,
         text: originalLabel
       });
       const originalCountNode = guiEl('span', {
         text: initialOriginal ? `${initialOriginal.length.toLocaleString('ko-KR')}자` : '전송할 원본 없음'
       });
       const originalEnglishButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '영어로 번역',
         disabled: !initialOriginal || typeof onTranslate !== 'function'
       });
       const originalKoreanButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '한국어로 번역',
         disabled: !initialOriginal || typeof onTranslate !== 'function'
       });
       const originalJapaneseButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '일본어로 번역',
         disabled: !initialOriginal || typeof onTranslate !== 'function'
       });
       const expandedEnglishButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '영어로 번역',
         disabled: !initialExpanded || typeof onTranslate !== 'function'
       });
       const expandedKoreanButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '한국어로 번역',
         disabled: !initialExpanded || typeof onTranslate !== 'function'
       });
       const expandedJapaneseButton = guiEl('button', {
-        class: 'sga-input-confirm-translate',
+        class: 'btn btn--sm',
         text: '일본어로 번역',
         disabled: !initialExpanded || typeof onTranslate !== 'function'
       });
       const originalSendButton = guiEl('button', {
-        class: 'sga-btn ghost',
+        class: 'btn btn--ghost',
         text: '원본 메시지 보내기',
         disabled: !canUseOriginal
       });
       const expandedSendButton = guiEl('button', {
-        class: 'sga-btn primary',
+        class: 'btn btn--primary',
         text: expandedActionLabel,
         disabled: !currentExpanded.trim()
       });
       const regenerateButton = guiEl('button', {
-        class: 'sga-btn ghost sga-input-confirm-regenerate',
+        class: 'btn btn--ghost btn',
         text: '재생성'
       });
       const closeButton = guiEl('button', {
-        class: 'sga-input-confirm-close',
+        class: 'btn btn--icon',
         text: '×',
         title: sourceIsExplicitContinue ? '닫고 전송 취소' : '닫고 원본 메시지 전송',
         'aria-label': sourceIsExplicitContinue ? '닫고 전송 취소' : '닫고 원본 메시지 전송'
@@ -39918,41 +39754,41 @@ html,body{width:100%;height:100%;overflow:hidden}
       });
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       document.addEventListener('keydown', keyHandler);
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-head' }, [
+      app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '인풋 작성 결과 확인' }),
           guiEl('p', { text: '원본과 확장본을 비교하고, 오른쪽 확장 메시지는 필요한 만큼 직접 수정한 뒤 보내세요.' })
         ]),
         closeButton
       ]));
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-grid' }, [
-        guiEl('section', { class: 'sga-input-confirm-pane' }, [
-          guiEl('div', { class: 'sga-input-confirm-pane-head' }, [
+      app.appendChild(guiEl('div', { class: 'grid g2' }, [
+        guiEl('section', { class: 'card' }, [
+          guiEl('div', { class: 'card__head' }, [
             guiEl('strong', { text: '원본 메시지' }),
             originalCountNode
           ]),
-          guiEl('div', { class: 'sga-input-confirm-translation-row' }, [originalEnglishButton, originalKoreanButton, originalJapaneseButton]),
+          guiEl('div', { class: 'cluster' }, [originalEnglishButton, originalKoreanButton, originalJapaneseButton]),
           originalTextNode,
-          guiEl('div', { class: 'sga-input-confirm-actions' }, [originalSendButton])
+          guiEl('div', { class: 'cluster' }, [originalSendButton])
         ]),
-        guiEl('section', { class: 'sga-input-confirm-pane expanded' }, [
-          guiEl('div', { class: 'sga-input-confirm-pane-head' }, [
+        guiEl('section', { class: 'card expanded' }, [
+          guiEl('div', { class: 'card__head' }, [
             guiEl('strong', { text: expandedTitle }),
-            guiEl('div', { class: 'sga-input-confirm-pane-tools' }, [
-              guiEl('span', { class: 'sga-input-confirm-edit-badge', text: '편집 가능' }),
+            guiEl('div', { class: 'cluster' }, [
+              guiEl('span', { class: 'badge badge--info', text: '편집 가능' }),
               expandedCountNode
             ])
           ]),
-          guiEl('div', { class: 'sga-input-confirm-translation-row' }, [expandedEnglishButton, expandedKoreanButton, expandedJapaneseButton]),
+          guiEl('div', { class: 'cluster' }, [expandedEnglishButton, expandedKoreanButton, expandedJapaneseButton]),
           expandedTextNode,
-          guiEl('div', { class: 'sga-input-confirm-actions' }, [expandedSendButton])
+          guiEl('div', { class: 'cluster' }, [expandedSendButton])
         ])
       ]));
-      app.appendChild(guiEl('div', { class: 'sga-input-confirm-footer' }, [
+      app.appendChild(guiEl('div', { class: 'cluster' }, [
         statusNode,
         regenerateButton
       ]));
-      Gui.root.appendChild(app);
+      mountMockupDialog(app);
       forceTransparentGuiSurface();
     });
   };
@@ -40037,37 +39873,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     markGuiDirty();
   };
 
-  const providerEditorField = (label, key, options = {}) => {
-    const preset = Gui.state.providers[Gui.selectedPreset];
-    const value = preset?.[key] ?? '';
-    let control;
-    if (options.choices) {
-      control = selectNode(value, options.choices, next => {
-        const oldProvider = preset.provider;
-        preset[key] = next;
-        if (key === 'provider') {
-          const oldDefault = defaultUrlForProvider(oldProvider);
-          if (!preset.url || preset.url === oldDefault) preset.url = defaultUrlForProvider(next);
-          preset.provider = canonicalProvider(next);
-          renderSettingsGui();
-        } else if (key === 'reasoning_preset') {
-          renderSettingsGui();
-        }
-      });
-    } else if (options.checkbox) {
-      control = checkboxNode(!!value, options.checkboxLabel || '사용', next => { preset[key] = next; });
-    } else {
-      control = inputNode(value, next => { preset[key] = options.number ? Number(next) : next; }, {
-        tag: options.textarea ? 'textarea' : 'input',
-        type: options.number ? 'number' : (options.type || 'text'),
-        class: options.tall ? 'tall' : '',
-        placeholder: options.placeholder || '',
-        autocomplete: options.autocomplete
-      });
-    }
-    return fieldNode(label, control, options.note || '');
-  };
-
   const isVertexProvider = (provider) => ['vertex', 'vertex-openai'].includes(canonicalProvider(provider));
 
   const inferReasoningFamily = (preset = {}) => effectiveReasoningFamilyForPreset(preset);
@@ -40093,22 +39898,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     return { kind: parsed.access_token || parsed.token ? 'access_token_json' : 'service_account_json', projectId, location };
   };
 
-  const providerPanel = (title, note, children, className = '') => guiEl('section', { class: `sga-provider-panel ${className}`.trim() }, [
-    guiEl('div', { class: 'sga-provider-panel-head' }, [
-      guiEl('h3', { text: title }),
-      note ? guiEl('p', { text: note }) : null
-    ]),
-    ...children
-  ]);
-
-  const providerAdvancedPanel = (title, note, children, className = '') => guiEl('details', { class: `sga-advanced sga-provider-panel ${className}`.trim(), style: { marginTop: '0', padding: '0' } }, [
-    guiEl('summary', {}, [
-      guiEl('span', { text: title }),
-      guiEl('span', { class: 'sga-advanced-hint', text: note || '고급 설정' })
-    ]),
-    guiEl('div', { class: 'sga-advanced-body' }, children)
-  ]);
-
   const providerPresetUsageLabels = presetName => {
     const name = text(presetName || '').trim();
     if (!name) return [];
@@ -40126,277 +39915,6 @@ html,body{width:100%;height:100%;overflow:hidden}
                     : def.label);
     }
     return Array.from(new Set(labels));
-  };
-
-  const buildReasoningPanel = (preset) => {
-    const effective = inferReasoningFamily(preset);
-    const kimiK3 = effective === 'kimi' && isKimiK3Model(preset.model);
-    const effortChoices = effective === 'gemini'
-      ? [['none','기본값'],['minimal','최소'],['low','낮음'],['medium','중간'],['high','높음']]
-      : kimiK3
-        ? [['none','기본값(max)'],['low','낮음'],['high','높음'],['max','최대']]
-        : ['gpt','openrouter','claude'].includes(effective)
-          ? [['none','기본값'],['low','낮음'],['medium','중간'],['high','높음'],['xhigh','매우 높음'],['max','최대']]
-          : [['none','없음'],['low','낮음'],['medium','중간'],['high','높음']];
-    const compatibilityNote = isGpt56Model(preset.model)
-      ? 'GPT-5.6은 none~max를 지원합니다. 추론·도구 사용에는 Responses API가 권장됩니다.'
-      : isClaudeOpus5Model(preset.model)
-        ? 'Claude Opus 5는 low~max를 지원하며, xhigh/max에서는 thinking을 끌 수 없습니다.'
-        : kimiK3
-          ? 'Kimi K3는 항상 추론합니다. low/high/max만 지원하며 끄기 요청은 low로 안전하게 변환됩니다.'
-          : isGemini3Model(preset.model)
-            ? 'Gemini 3.x는 minimal~high를 사용하며 temperature/top_p/top_k/candidate_count를 보내지 않습니다.'
-            : '';
-    const quickButton = (label, patch) => guiEl('button', {
-      class: 'sga-btn ghost',
-      text: label,
-      onClick: () => { Object.assign(preset, patch); markGuiDirty(); renderSettingsGui(); }
-    });
-    const choices = REASONING_PRESET_KEYS.map(key => [key, REASONING_PRESETS[key].label]);
-    const fields = [
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('추론 프리셋', 'reasoning_preset', { choices }),
-        guiEl('div', { class: 'sga-note sga-provider-note-box', text: `실제 적용: ${effective.toUpperCase()} · ${REASONING_PRESETS[effective]?.hint || ''}` })
-      ])
-    ];
-    if (['gpt','openrouter','claude','gemini','ollama'].includes(effective) || kimiK3) {
-      fields.push(providerEditorField('Reasoning effort', 'reasoning_effort', { choices: effortChoices }));
-    }
-    if (['openrouter','claude_budget','gemini_budget'].includes(effective)) {
-      fields.push(providerEditorField('Thinking / Reasoning 예산 토큰', 'reasoning_budget_tokens', { number: true, note: effective === 'gemini_budget' ? '-1은 dynamic, 0은 off입니다.' : '출력 토큰 상한 안에서 최종 답변 공간을 남기도록 자동 제한합니다.' }));
-    }
-    if (['openrouter','claude','claude_budget','gemini','gemini_budget','kimi','glm','ollama'].includes(effective) && !kimiK3) {
-      fields.push(providerEditorField('Thinking type', 'thinking_type', { choices: [['enabled','사용'],['disabled','사용 안 함']] }));
-    }
-    if (compatibilityNote) fields.push(guiEl('div', { class: 'sga-note sga-provider-note-box', text: compatibilityNote }));
-    const quickActions = [
-      quickButton('추론 끔', { reasoning_preset: 'off', reasoning_effort: 'none', reasoning_budget_tokens: 0, thinking_type: 'disabled', glm_thinking_type: 'disabled' }),
-      quickButton('자동', { reasoning_preset: 'auto', thinking_type: 'enabled', glm_thinking_type: 'enabled' })
-    ];
-    for (const [effort, label] of effortChoices) {
-      if (effort === 'none') continue;
-      quickActions.push(quickButton(label, { reasoning_effort: effort, thinking_type: 'enabled', glm_thinking_type: 'enabled' }));
-    }
-    fields.push(guiEl('div', { class: 'sga-actions' }, quickActions));
-    return providerAdvancedPanel('추론 설정', 'Reasoning / Thinking을 세부 조정합니다.', fields, 'reasoning');
-  };
-
-  const buildProvidersTab = () => {
-    let names = presetNamesFromState();
-    if (!Gui.state.providers[Gui.selectedPreset]) Gui.selectedPreset = names[0];
-    const preset = Gui.state.providers[Gui.selectedPreset];
-    const provider = canonicalProvider(preset.provider);
-    const vertex = isVertexProvider(provider);
-    const filter = text(Gui.providerFilter || '').trim().toLowerCase();
-    const visibleNames = filter ? names.filter(name => name.toLowerCase().includes(filter) || text(Gui.state.providers[name]?.model || '').toLowerCase().includes(filter) || text(Gui.state.providers[name]?.provider || '').toLowerCase().includes(filter)) : names;
-    const list = guiEl('div', { class: 'sga-list' }, [
-      guiEl('div', { class: 'sga-list-head' }, [
-        guiEl('button', { class: 'sga-btn primary', text: '추가', onClick: addGuiPreset }),
-        guiEl('button', { class: 'sga-btn', text: '복제', onClick: () => {
-          const name = uniquePresetName(`${Gui.selectedPreset} 복사본`);
-          Gui.state.providers[name] = cloneJson(preset);
-          Gui.selectedPreset = name;
-          markGuiDirty();
-          renderSettingsGui();
-        } })
-      ]),
-      guiEl('input', { class: 'sga-list-search', type: 'search', placeholder: '프리셋 이름 · 모델 · 프로바이더 검색', value: Gui.providerFilter || '', onInput: event => { Gui.providerFilter = event.target.value; queueGuiRender(140); } }),
-      guiEl('div', { class: 'sga-list-items' }, (visibleNames.length ? visibleNames : names).map(name => {
-        const item = Gui.state.providers[name];
-        const usage = providerPresetUsageLabels(name);
-        return guiEl('button', { class: 'sga-list-item', dataset: { selected: String(name === Gui.selectedPreset) }, onClick: () => { Gui.selectedPreset = name; renderSettingsGui(); } }, [
-          guiEl('strong', { text: name }),
-          guiEl('span', { text: `${providerDisplayLabel(item.provider)} · ${item.model || '(모델 미설정)'}` }),
-          usage.length ? guiEl('span', { class: 'sga-actions', style: { marginTop: '5px', gap: '4px' } }, usage.slice(0, 5).map(label => guiEl('em', { class: 'sga-badge', text: label }))) : null
-        ]);
-      }))
-    ]);
-
-    const secretStatus = preset.key ? '저장된 비밀 키가 있습니다.' : '비밀 키가 설정되지 않았습니다.';
-    const secretField = inputNode('', next => { preset.key = next; preset.secret_deleted = false; }, { type: 'password', placeholder: preset.key ? '새 값을 입력하면 기존 키를 교체합니다' : 'API 키 / 토큰', autocomplete: 'new-password' });
-    const connectionChildren = [
-      guiEl('div', { class: 'sga-row2' }, [
-        fieldNode('프리셋 이름', guiEl('div', { class: 'sga-actions' }, [
-          inputNode(Gui.selectedPreset, () => {}, { placeholder: '프리셋 이름' }),
-          guiEl('button', { class: 'sga-btn', text: '이름 변경', onClick: event => {
-            try { renameGuiPreset(event.currentTarget.parentElement.querySelector('input').value); renderSettingsGui(); } catch (error) { guiSetStatus(error.message, true); }
-          } })
-        ])),
-        providerEditorField('프로바이더 종류', 'provider', { choices: providerChoices() })
-      ]),
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('API 주소 / Base URL', 'url', { placeholder: defaultUrlForProvider(preset.provider), note: '전체 endpoint 또는 base URL을 입력할 수 있습니다.' }),
-        providerEditorField('모델 이름', 'model', { placeholder: '프로바이더 모델 ID' })
-      ])
-    ];
-    const latestModelSuggestions = suggestedModelsForProvider(provider);
-    if (latestModelSuggestions.length) {
-      connectionChildren.push(fieldNode('최신 공식 모델 빠른 선택', selectNode(
-        preset.model,
-        [['', '(직접 입력 유지)'], ...latestModelSuggestions.map(model => [model, model])],
-        next => {
-          if (!next) return;
-          preset.model = next;
-          markGuiDirty();
-          renderSettingsGui();
-        }
-      ), '공식 API에 공개된 현재 모델 ID입니다. 계정별 실제 사용 권한은 모델 목록 조회 결과가 우선합니다.'));
-    }
-    const modelMeta = providerModelMetadata(provider, preset.url);
-    const modelCacheKey = `${provider}|${String(preset.url || '')}|${providerCredentialCacheFingerprint(preset.key)}`;
-    const fetchedModels = Array.isArray(Gui.providerModels[modelCacheKey]) ? Gui.providerModels[modelCacheKey] : [];
-    if (modelMeta?.modelsUrl) {
-      connectionChildren.push(fieldNode('프로바이더 모델 목록', guiEl('div', {}, [
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn', text: Gui.providerModelLoading ? '불러오는 중…' : '모델 목록 불러오기', disabled: Gui.providerModelLoading, onClick: async () => {
-            try {
-              Gui.providerModelLoading = true;
-              guiSetStatus(`${modelMeta.label} 모델 목록을 불러오는 중…`, false, true);
-              const models = await listProviderModels(preset, { force: true });
-              Gui.providerModels[modelCacheKey] = models;
-              Gui.providerModelLoading = false;
-              await renderSettingsGui();
-              guiSetStatus(`${modelMeta.label} 모델 ${models.length}개를 불러왔습니다.`);
-            } catch (error) {
-              Gui.providerModelLoading = false;
-              await renderSettingsGui();
-              guiSetStatus(error.message || String(error), true, true);
-            }
-          } }),
-          guiEl('span', { class: `sga-badge ${fetchedModels.length ? 'good' : 'off'}`, text: fetchedModels.length ? `${fetchedModels.length}개 로드됨` : '직접 입력 가능' })
-        ]),
-        fetchedModels.length ? selectNode(preset.model, [['','(현재 직접 입력 유지)'], ...fetchedModels.map(item => [item.id, item.label === item.id ? item.id : `${item.label} · ${item.id}`])], next => {
-          if (!next) return;
-          const selectedModel = fetchedModels.find(item => item.id === next);
-          preset.model = next;
-          preset.metadata_model_id = next;
-          preset.catalog_context_window = Number(selectedModel?.contextWindow || 0);
-          preset.catalog_max_output_tokens = Number(selectedModel?.maxOutputTokens || 0);
-          markGuiDirty();
-          renderSettingsGui();
-        }) : null
-      ]), 'LIBRA 6.1 모델 카탈로그를 지원하는 프로바이더에서 최신 모델 ID를 조회합니다.'));
-    }
-
-    if (!vertex) connectionChildren.push(fieldNode('API 키 / 토큰', guiEl('div', {}, [secretField, guiEl('div', { class: 'sga-actions', style: { marginTop: '7px' } }, [
-      guiEl('span', { class: `sga-badge ${preset.key ? 'good' : 'off'}`, text: secretStatus }),
-      guiEl('button', { class: 'sga-btn danger', text: '저장된 키 삭제', onClick: () => { preset.key = ''; preset.secret_deleted = true; markGuiDirty(); renderSettingsGui(); } })
-    ])]), '비밀값은 가능한 경우 기기 로컬 저장소에 보관합니다.'));
-
-    const panels = [providerPanel('기본 연결', '프리셋 이름, 프로바이더, endpoint와 모델을 설정합니다.', connectionChildren, 'connection')];
-
-    if (vertex) {
-      const draft = Gui.vertexCredentialDrafts[Gui.selectedPreset] || '';
-      const vertexArea = inputNode(draft, next => {
-        Gui.vertexCredentialDrafts[Gui.selectedPreset] = next;
-        const parsed = tryJsonParse(next, null);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          try {
-            const applied = applyVertexCredentialsToPreset(preset, next, false);
-            renderSettingsGui().then(() => guiSetStatus(`Vertex JSON 자동 적용 · ${applied.projectId || '프로젝트 ID는 URL에서 확인'} / ${applied.location || 'global'}`));
-          } catch (_) {}
-        }
-      }, { tag: 'textarea', class: 'vertex-json', placeholder: '{\n  "type": "service_account",\n  "project_id": "...",\n  "private_key": "...",\n  "client_email": "..."\n}\n\n또는 {"access_token":"...","project_id":"...","location":"global"}' });
-      panels.push(providerPanel('Vertex 설정', 'Vertex 계열을 선택했을 때만 표시됩니다. 서비스 계정 JSON을 붙여넣으면 자격 증명과 URL을 즉시 채웁니다.', [
-        vertexArea,
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn primary', text: '붙여넣은 JSON 적용', onClick: () => {
-            try {
-              const applied = applyVertexCredentialsToPreset(preset, Gui.vertexCredentialDrafts[Gui.selectedPreset] || '', true);
-              markGuiDirty();
-              renderSettingsGui().then(() => guiSetStatus(`Vertex 자격 증명 적용 완료 · ${applied.projectId || '토큰 방식'} / ${applied.location || 'URL 유지'}`));
-            } catch (error) { guiSetStatus(error.message, true, true); }
-          } }),
-          guiEl('button', { class: 'sga-btn', text: '기본 Vertex URL로 재생성', onClick: () => {
-            try {
-              const credential = preset.key || Gui.vertexCredentialDrafts[Gui.selectedPreset] || '';
-              const parsed = tryJsonParse(credential, null);
-              let applied;
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                applied = applyVertexCredentialsToPreset(preset, credential, false);
-              } else {
-                preset.url = defaultUrlForProvider(preset.provider);
-                applied = applyVertexCredentialsToPreset(preset, credential, true);
-              }
-              markGuiDirty(); renderSettingsGui().then(() => guiSetStatus(`Vertex URL 재생성 · ${applied.projectId || 'PROJECT_ID 확인 필요'}`));
-            } catch (error) { guiSetStatus(error.message, true, true); }
-          } }),
-          guiEl('span', { class: `sga-badge ${preset.key ? 'good' : 'warn'}`, text: preset.key ? '자격 증명 저장됨' : '자격 증명 필요' }),
-          guiEl('button', { class: 'sga-btn danger', text: 'Vertex 자격 증명 삭제', onClick: () => { preset.key = ''; preset.secret_deleted = true; Gui.vertexCredentialDrafts[Gui.selectedPreset] = ''; markGuiDirty(); renderSettingsGui(); } })
-        ]),
-        guiEl('div', { class: 'sga-note', text: '붙여넣은 JSON의 project_id와 location/region 값을 이용해 Vertex Gemini 또는 Vertex OpenAI endpoint를 자동 구성합니다.' })
-      ], 'vertex') );
-    }
-
-    panels.push(providerAdvancedPanel('생성 설정', 'Temperature·출력 토큰·문맥·타임아웃·요청 형식', [
-      guiEl('div', { class: 'sga-row3' }, [
-        providerEditorField('Temperature', 'temp', { number: true }),
-        providerEditorField('최대 출력 토큰', 'max_tokens', { number: true }),
-        providerEditorField('모델 문맥 크기(토큰)', 'context_window', { number: true, note: '모델 목록에서 문맥 크기를 확인할 수 없을 때 참조 자료 안전 예산 계산에 사용합니다. 0이면 속도·품질 프로필 상한을 사용합니다.' }),
-        providerEditorField('기본 타임아웃(ms)', 'timeout_ms', { number: true, note: '실행 흐름의 단계별 타임아웃이 있으면 그 값이 우선합니다.' })
-      ]),
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('요청 형식', 'request_format', { choices: providerSupportsResponses(provider) ? [['chat_completions','Chat Completions'],['responses','Responses API']] : [['chat_completions','Chat Completions (이 프로바이더의 지원 형식)']], note: providerSupportsResponses(provider) ? 'LIBRA 6.1 형식 라우팅을 사용합니다.' : '선택한 프로바이더는 Responses endpoint가 등록되지 않았습니다.' }),
-        checkboxNode(!!preset.stream, '스트리밍 응답 사용', next => { preset.stream = next; })
-      ])
-    ], 'generation'));
-
-    panels.push(buildReasoningPanel(preset));
-
-    const flexChildren = [
-      guiEl('div', { class: vertex ? 'sga-row2' : 'sga-row2' }, [
-        providerAllowsServiceTier(provider, preset)
-          ? providerEditorField('서비스 티어', 'service_tier', { choices: [['off','사용 안 함'],['auto','자동'],['default','default'],['flex','flex'],['priority','priority'],['scale','scale']] })
-          : guiEl('div', { class: 'sga-note sga-provider-note-box', text: '이 프로바이더에는 service_tier를 자동 전달하지 않습니다. 필요하면 추가 요청 Body에서 명시하세요.' }),
-        vertex
-          ? providerEditorField('Vertex Flex 모드', 'vertex_flex_mode', { choices: [['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']] })
-          : guiEl('div', { class: 'sga-note sga-provider-note-box', text: 'Flex/priority/scale 지원 여부는 선택한 API와 모델 정책에 따릅니다.' })
-      ])
-    ];
-    if (provider === 'custom') flexChildren.push(checkboxNode(!!preset.custom_service_tier_passthrough, 'Custom provider 요청 Body에 service_tier 전달', next => { preset.custom_service_tier_passthrough = next; }));
-    panels.push(providerAdvancedPanel('서비스 / Flex', 'Service tier와 Vertex Flex를 조정합니다.', flexChildren, 'flex'));
-
-    panels.push(providerAdvancedPanel('추가 요청 데이터', '필요한 경우에만 Header / Body JSON을 추가합니다.', [
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('추가 HTTP 헤더 JSON', 'extra_headers_json', { textarea: true, placeholder: '{"HTTP-Referer":"..."}' }),
-        providerEditorField('추가 요청 Body JSON', 'extra_body_json', { textarea: true, placeholder: '{"top_p":0.9}', note: 'messages·contents·system 등 핵심 필드는 덮어쓰지 않는 것을 권장합니다.' })
-      ])
-    ], 'extra'));
-
-    const editor = guiEl('div', { class: 'sga-card sga-provider-editor' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [guiEl('h2', { text: Gui.selectedPreset }), guiEl('div', { class: 'sga-note', text: '이 AI 프리셋의 기본 연결을 먼저 설정하고, 필요한 경우에만 아래 고급 항목을 펼칩니다.' })]),
-        guiEl('span', { class: `sga-badge ${providerConfigured(preset) ? 'good' : 'warn'}`, title: providerConfigurationIssues(preset).join(', '), text: providerConfigured(preset) ? '사용 가능' : `설정 필요: ${providerConfigurationIssues(preset).join(', ')}` })
-      ]),
-      guiEl('div', { class: 'sga-provider-panels' }, panels),
-      guiEl('div', { class: 'sga-actions sga-provider-actions' }, [
-        guiEl('button', {
-          class: 'sga-btn',
-          text: text(Gui.state?.runtime?.defaultPresetName || '').trim() === Gui.selectedPreset ? '기본 프리셋' : '기본으로 지정',
-          disabled: text(Gui.state?.runtime?.defaultPresetName || '').trim() === Gui.selectedPreset,
-          onClick: () => {
-            Gui.state.runtime.defaultPresetName = Gui.selectedPreset;
-            markGuiDirty();
-            renderSettingsGui();
-            guiSetStatus(`${Gui.selectedPreset} 프리셋을 기본 AI 연결로 지정했습니다.`);
-          }
-        }),
-        guiEl('button', { class: 'sga-btn good', text: '연결 테스트', onClick: async () => {
-          try {
-            guiSetStatus('연결을 테스트하고 있습니다…', false, true);
-            const result = await testProviderPreset(preset);
-            if (!result.ok) throw new Error(result.reason || '빈 응답');
-            guiSetStatus(`연결 성공 · ${result.provider} / ${result.model} · ${result.elapsedMs}ms · ${compact(result.content, 100)}`);
-          } catch (error) { guiSetStatus(`연결 실패: ${error.message || error}`, true, true); }
-        } }),
-        guiEl('button', { class: 'sga-btn danger', text: '프리셋 삭제', disabled: names.length <= 1, onClick: () => { try { deleteGuiPreset(); renderSettingsGui(); } catch (error) { guiSetStatus(error.message, true); } } })
-      ])
-    ]);
-
-    return guiEl('div', { id: 'sga-provider-page' }, [
-      guiEl('div', { class: 'sga-section-title' }, [guiEl('h2', { text: 'AI 연결' }), guiEl('p', { text: '여러 AI 설정을 프리셋으로 만들어 두고 각 파이프라인 단계에서 필요한 프리셋을 선택합니다.' })]),
-      guiEl('div', { class: 'sga-split' }, [list, editor])
-    ]);
   };
 
   const latestTraceForStage = (stageId) => {
@@ -40442,21 +39960,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       return { label: '폴백', className: 'warn', elapsed, title: reason || '폴백 결과가 사용되었습니다.' };
     }
     return { label: '실패', className: 'danger', elapsed, title: reason || '최근 실행이 실패했습니다.' };
-  };
-
-  const traceBadgeNode = (info) => guiEl('span', { class: `sga-mini-badge ${info.className}`, title: info.title || '' }, [
-    guiEl('span', { text: info.label }),
-    info.elapsed ? guiEl('span', { class: 'sga-mini-time', text: info.elapsed }) : null
-  ]);
-
-  const resultLineNode = (label, value, options = {}) => {
-    const max = Object.prototype.hasOwnProperty.call(options, 'max') ? options.max : 900;
-    const body = resultText(value, max);
-    if (!body) return null;
-    return guiEl('div', { class: `sga-result-row${options.wide ? ' wide' : ''}` }, [
-      guiEl('span', { class: 'sga-result-label', text: label }),
-      guiEl('div', { class: options.code ? 'sga-result-code' : 'sga-result-value', text: body })
-    ]);
   };
 
   const resultListText = (items) => {
@@ -40509,93 +40012,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     return JSON.stringify({ status: base, materials_used: trace?.materialsUsed || null, values }, null, 2);
   };
 
-  const lazyPayloadNode = (valueFactory, options = {}) => {
-    let cachedText = null;
-    const body = guiEl('div', {
-      class: options.bodyClass || 'sga-live-result-code',
-      dataset: { lazyPayloadBody: 'true' },
-      text: options.placeholder || '원문은 필요할 때만 불러옵니다.'
-    });
-    const resolveText = () => {
-      if (cachedText != null) return cachedText;
-      let value;
-      try { value = typeof valueFactory === 'function' ? valueFactory() : valueFactory; }
-      catch (error) { value = error?.stack || error?.message || String(error); }
-      cachedText = typeof value === 'string'
-        ? value
-        : value == null
-          ? ''
-          : JSON.stringify(value, null, 2);
-      if (!cachedText) cachedText = options.emptyText || '(기록 없음)';
-      return cachedText;
-    };
-    const wrapper = guiEl('div', {
-      class: 'sga-lazy-payload',
-      dataset: { lazyPayload: 'true', lazyLoaded: 'false' }
-    }, [
-      guiEl('div', { class: 'sga-actions', style: { marginBottom: '8px' } }, [
-        guiEl('button', {
-          class: 'sga-btn ghost', type: 'button', dataset: { lazyPayloadShow: 'true' }, text: '원문 표시',
-          onClick: event => {
-            body.textContent = resolveText();
-            wrapper.dataset.lazyLoaded = 'true';
-            if (event?.currentTarget) event.currentTarget.disabled = true;
-          }
-        }),
-        options.copy === false ? null : guiEl('button', {
-          class: 'sga-btn ghost', type: 'button', text: '복사',
-          onClick: async () => {
-            const result = await copyTextWithFallback(resolveText());
-            guiSetStatus(result.ok ? '원문을 복사했습니다.' : `복사하지 못했습니다. ${result.error || 'unknown error'}`, !result.ok, true);
-          }
-        })
-      ]),
-      body
-    ]);
-    return wrapper;
-  };
-
-  const buildStageResultPanel = (def, trace, options = {}) => {
-    const isAnalysisOnly = !!options.isAnalysisOnly;
-    const statusInfo = traceStateInfo(trace, options);
-    const parsed = trace?.parsed || trace?.fallbackStage || {};
-    const providerLine = trace ? [trace.provider, trace.presetName, trace.model].filter(Boolean).join(' / ') : '';
-    const rows = [];
-    if (trace) {
-      rows.push(resultLineNode('호출', providerLine || '(provider 기록 없음)', { max: 520 }));
-      rows.push(resultLineNode('사유', trace.reason || parsed.reason || '', { max: 520 }));
-      if (isAnalysisOnly || parsed.analysisOnly) {
-        rows.push(resultLineNode('분석 요약', parsed.summary || parsed.analysis?.summary || '', { max: 900 }));
-        rows.push(resultLineNode('제약 값', resultListText(parsed.constraints || parsed.analysis?.constraints), { max: 1200, code: true }));
-        rows.push(resultLineNode('리스크 값', resultListText(parsed.risks || parsed.analysis?.risks), { max: 1200, code: true }));
-        rows.push(resultLineNode('노트', resultListText(parsed.notes || parsed.draft?.notes), { max: 1200, code: true }));
-        rows.push(resultLineNode('다음 작성 전달', parsed.handoff || '', { max: 1200, code: true }));
-      } else {
-        const analysis = parsed.analysis || {};
-        const draftText = parsed.final_overlay?.final_rp_draft || parsed.draft?.rp_text || parsed.rp_text || '';
-        rows.push(resultLineNode('분석 요약', analysis.summary || '', { max: 700 }));
-        rows.push(resultLineNode('제약 값', resultListText(analysis.constraints), { max: 1100, code: true }));
-        rows.push(resultLineNode('리스크 값', resultListText(analysis.risks), { max: 1100, code: true }));
-        rows.push(resultLineNode('수정 로그', resultListText(parsed.change_log?.length ? parsed.change_log : parsed.edits), { max: 1100, code: true }));
-        rows.push(resultLineNode('초안 결과', draftText, { max: 0, code: true, wide: true }));
-      }
-    }
-    return guiEl('aside', { class: 'sga-stage-result' }, [
-      guiEl('div', { class: 'sga-stage-result-head' }, [
-        guiEl('span', { class: 'sga-stage-result-title', text: '최근 결과' }),
-        traceBadgeNode(statusInfo)
-      ]),
-      guiEl('div', { class: 'sga-stage-result-body' }, trace
-        ? rows
-        : [guiEl('div', { class: 'sga-result-empty', text: statusInfo.className === 'run' ? '실행 중입니다. 결과가 기록되면 자동으로 갱신됩니다.' : '아직 이 단계의 실행 기록이 없습니다.' })]),
-      trace ? guiEl('details', {}, [
-        guiEl('summary', { text: '실제 값 JSON' }),
-        lazyPayloadNode(() => traceJsonForDisplay(def, trace, parsed), { bodyClass: 'sga-result-code' })
-      ]) : null
-    ]);
-  };
-
-
   const executionResultTracesForStage = stageId =>
     (Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
 
@@ -40610,42 +40026,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     const povLimits = twoCall?.povLimits || parsed?.draft?.pov_limits || [];
     return { twoCall, analysis, domain, directives, doNotReveal, povLimits };
   };
-
-  const resultContentBlock = (title, value, options = {}) => {
-    const body = typeof value === 'string'
-      ? value.trim()
-      : value == null
-        ? ''
-        : JSON.stringify(value, null, 2);
-    if (!body) return null;
-    return guiEl('section', { class: `sga-live-result-card${options.wide ? ' wide' : ''}` }, [
-      guiEl('div', { class: 'sga-live-result-card-head' }, [
-        guiEl('h4', { text: title }),
-        options.copy ? guiEl('button', {
-          class: 'sga-btn ghost',
-          type: 'button',
-          text: '복사',
-          onClick: async () => {
-            const result = await copyTextWithFallback(body);
-            guiSetStatus(result.ok ? `${title}을 복사했습니다.` : `복사하지 못했습니다: ${result.error || 'unknown error'}`, !result.ok, true);
-          }
-        }) : null
-      ]),
-      guiEl('div', { class: options.code === false ? 'sga-live-result-text' : 'sga-live-result-code', text: body })
-    ]);
-  };
-
-  const lazyResultContentBlock = (title, valueFactory, options = {}) => guiEl('section', {
-    class: `sga-live-result-card${options.wide ? ' wide' : ''}`,
-    dataset: { lazyResultBlock: 'true' }
-  }, [
-    guiEl('div', { class: 'sga-live-result-card-head' }, [guiEl('h4', { text: title })]),
-    lazyPayloadNode(valueFactory, {
-      bodyClass: options.code === false ? 'sga-live-result-text' : 'sga-live-result-code',
-      copy: options.copy !== false,
-      emptyText: options.emptyText || '(기록 없음)'
-    })
-  ]);
 
   const stageMaterialKindLabel = kind => ({
     author_note: 'Author Note',
@@ -40760,796 +40140,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       lines.push('', '[참조 예산]', `사용 ${Number(usage.referenceBudget.usedChars || 0).toLocaleString()} / ${Number(usage.referenceBudget.effectiveBudgetChars || 0).toLocaleString()}자 · 미주입 ${Number(usage.referenceBudget.omittedChars || 0).toLocaleString()}자 · omission ${Number(usage.referenceBudget.omissionCount || 0)}개`);
     }
     return lines.join('\n');
-  };
-
-  const buildUserIntentOocPanel = () => {
-    const ooc = ensureCreativeOocState();
-    const targetStage = normalizeCreativeOocTarget(ooc.targetStage);
-    const targetDef = STAGE_DEF_MAP[targetStage] || STAGE_DEF_MAP.shadow_act;
-    const targetGuide = creativeOocTargetGuide(targetStage);
-    const promptEntry = normalizePromptEntry(Gui.state?.prompts?.[targetStage], { mode: 'builtin' });
-    const currentInstruction = text(promptEntry.customPrompt || '').trim();
-    const savedDirections = BEFORE_STAGE_DEFS.map(def => {
-      const entry = normalizePromptEntry(Gui.state?.prompts?.[def.id], { mode: 'builtin' });
-      return {
-        def,
-        instruction: text(entry.customPrompt || '').trim()
-      };
-    });
-    const savedDirectionCount = savedDirections.filter(item => item.instruction).length;
-    const messages = Array.isArray(ooc.messages) ? ooc.messages : [];
-    const started = ooc.startedByStage?.[targetStage] === true || messages.length > 0;
-    const hasCompletedExchange = hasCompletedCreativeOocExchange(messages);
-    const hasPendingConversation = ooc.pendingByStage?.[targetStage] === true;
-    const canGenerateInstruction = hasCompletedExchange && hasPendingConversation && !ooc.busy;
-    const conversation = messages.length
-      ? messages.map((item, index) => guiEl('div', {
-          class: 'sga-provider-note-box',
-          style: {
-            marginBottom: '8px',
-            borderColor: item.role === 'user'
-              ? 'rgba(124,156,255,.35)'
-              : item.role === 'error' ? 'rgba(251,113,133,.45)' : 'rgba(74,222,128,.28)'
-          }
-        }, [
-          guiEl('strong', { text: item.role === 'user' ? `사용자 OOC ${Math.floor(index / 2) + 1}` : item.role === 'error' ? 'OOC 오류' : `GRADIA · ${targetDef.label}` }),
-          guiEl('span', { text: item.content, style: { whiteSpace: 'pre-wrap' } })
-        ]))
-      : [guiEl('div', {
-          class: 'sga-provider-note-box',
-          style: { borderColor: 'rgba(74,222,128,.28)' }
-        }, [
-          guiEl('strong', { text: `GRADIA · ${targetDef.label}` }),
-          guiEl('span', {
-            text: creativeOocWelcomeText(targetDef),
-            style: { whiteSpace: 'pre-wrap' }
-          })
-        ])];
-    const conversationBox = guiEl('div', { style: { marginTop: '14px', maxHeight: '360px', overflow: 'auto' } }, conversation);
-    try { requestAnimationFrame(() => { conversationBox.scrollTop = conversationBox.scrollHeight; }); } catch (_) {}
-    let oocInput = null;
-    let oocSend = null;
-    const startOocSession = async () => {
-      if (ooc.busy) return;
-      const state = ensureCreativeOocState();
-      state.startedByStage[targetStage] = true;
-      state.messages = [{ role: 'assistant', content: creativeOocWelcomeText(targetDef) }];
-      state.messagesByStage[targetStage] = state.messages;
-      state.pendingByStage[targetStage] = false;
-      state.lastError = '';
-      state.statusText = `${targetDef.label} OOC를 시작했습니다.`;
-      state.statusState = 'idle';
-      Gui.userIntentOocDraft = '';
-      await renderSettingsGui();
-    };
-    const submitOocMessage = async () => {
-      const draft = text(Gui.userIntentOocDraft || oocInput?.value || '').trim();
-      if (!draft || ooc.busy) {
-        if (!draft) guiSetStatus('OOC에서 이야기할 내용을 입력하세요.', true, true);
-        oocInput?.focus?.();
-        return;
-      }
-      try {
-        const task = runUserIntentOocTurn(draft, { targetStage });
-        Gui.userIntentOocDraft = '';
-        queueGuiRender(0);
-        await task;
-        await renderSettingsGui();
-        guiSetStatus('OOC 답변이 완료되었습니다. 합의가 충분하면 창작 지침 생성 버튼을 누르세요.', false, true);
-      } catch (error) {
-        Gui.userIntentOocDraft = draft;
-        await renderSettingsGui();
-        guiSetStatus(`창작 지침 OOC 실패: ${error?.message || error}`, true, true);
-      }
-    };
-    const generateCreativeInstruction = async () => {
-      if (!canGenerateInstruction) {
-        guiSetStatus('먼저 OOC와 대화를 나누고 합의할 방향을 확인하세요.', true, true);
-        return;
-      }
-      try {
-        const task = compileCreativeOocInstruction(targetStage);
-        queueGuiRender(0);
-        await task;
-        await renderSettingsGui();
-        guiSetStatus(`${targetDef.label} 창작 지침을 생성하고 영구 저장했습니다.`, false, true);
-      } catch (error) {
-        await renderSettingsGui();
-        guiSetStatus(`창작 지침 생성 실패: ${error?.message || error}`, true, true);
-      }
-    };
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-user-intent-ooc' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '창작 지침 OOC' }),
-            guiEl('div', { class: 'sga-note', text: '대상 단계의 OOC와 먼저 방향을 대화한 뒤, 사용자가 생성 버튼을 눌렀을 때만 판단 기준과 실제 작성 행동을 하나의 창작 지침으로 작성하고 저장합니다. 이 지침은 경량과 중량 모드 모두에서 같은 의미로 유지됩니다.' })
-          ]),
-          guiEl('span', {
-            class: `sga-badge ${ooc.busy ? 'warn' : hasPendingConversation ? 'warn' : currentInstruction ? 'good' : 'off'}`,
-            text: ooc.busy
-              ? ooc.statusState === 'compiling' ? '지침 생성 중' : '답변 중'
-              : hasPendingConversation ? '생성 전 대화 있음'
-                : currentInstruction ? `${targetDef.label} 지침 사용` : `${targetDef.label} 기본값`
-          })
-        ]),
-        fieldNode(
-          '작업 대상',
-          guiEl('select', {
-            class: 'sga-select',
-            value: targetStage,
-            disabled: ooc.busy,
-            onChange: async event => {
-              selectCreativeOocTarget(event.target.value);
-              Gui.userIntentOocDraft = '';
-              await renderSettingsGui();
-            }
-          }, optionNodes(BEFORE_STAGE_DEFS.map(def => [def.id, def.label]), targetStage)),
-          `선택한 ${targetDef.label} OOC가 “${targetGuide.keyQuestion}”를 기준으로 요청을 변환합니다. 다른 단계로 지침을 분배하거나 다른 단계의 저장 내용을 변경하지 않습니다.`
-        ),
-        guiEl('details', { class: 'sga-advanced', style: { marginTop: '10px' } }, [
-          guiEl('summary', {}, [
-            guiEl('span', { text: 'OOC 대화 AI 프리셋' }),
-            guiEl('span', { class: 'sga-advanced-hint', text: resolvedPresetNameForStage(USER_INTENT_OOC_STAGE_ID) })
-          ]),
-          guiEl('div', { class: 'sga-advanced-body' }, [
-            fieldNode(
-              'OOC 대화 AI 프리셋',
-              guiEl('select', {
-                class: 'sga-select',
-                value: Gui.state.agents?.[USER_INTENT_OOC_STAGE_ID]?.presetName || '',
-                disabled: ooc.busy,
-                onChange: event => {
-                  Gui.state.agents[USER_INTENT_OOC_STAGE_ID].presetName = event.target.value;
-                  markGuiDirty();
-                }
-              }, optionNodes(
-                [['', '기본 AI 연결 사용'], ...presetNamesFromState().map(name => [name, name])],
-                Gui.state.agents?.[USER_INTENT_OOC_STAGE_ID]?.presetName || ''
-              )),
-              '이 화면에서 대화하고 선택한 단계의 창작 지침을 정리할 때만 사용하는 연결입니다.'
-            )
-          ])
-        ]),
-        ...(started ? [
-          conversationBox,
-          (oocInput = guiEl('textarea', {
-            class: 'sga-textarea',
-            value: Gui.userIntentOocDraft || '',
-            placeholder: targetGuide.placeholder,
-            disabled: ooc.busy,
-            style: { marginTop: '12px' },
-            onInput: event => {
-              Gui.userIntentOocDraft = event.target.value;
-              if (oocSend) oocSend.disabled = ooc.busy || !text(event.target.value).trim();
-            },
-            onKeyDown: event => {
-              if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-              event.preventDefault();
-              void submitOocMessage();
-            }
-          })),
-          guiEl('div', { class: 'sga-note', style: { marginTop: '6px' }, text: 'Enter로 전송 · Shift+Enter로 줄바꿈' }),
-          guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-            (oocSend = guiEl('button', {
-              class: 'sga-btn primary',
-              type: 'button',
-              disabled: ooc.busy || !text(Gui.userIntentOocDraft || '').trim(),
-              text: ooc.busy && ooc.statusState !== 'compiling' ? '답변 중…' : '보내기',
-              onClick: submitOocMessage
-            })),
-            guiEl('button', {
-              class: 'sga-btn',
-              type: 'button',
-              disabled: ooc.busy,
-              text: '대화창만 비우기',
-              onClick: async () => {
-                const state = ensureCreativeOocState();
-                state.startedByStage[targetStage] = false;
-                state.pendingByStage[targetStage] = false;
-                state.messages = [];
-                state.messagesByStage[targetStage] = [];
-                state.lastError = '';
-                state.statusText = `${targetDef.label} OOC 대화창을 비웠습니다. 저장된 창작 지침은 유지됩니다.`;
-                state.statusState = 'idle';
-                state.requestId = Number(state.requestId || 0) + 1;
-                await renderSettingsGui();
-                guiSetStatus(`${targetDef.label} OOC 대화창을 비웠습니다. 저장된 창작 지침은 유지됩니다.`);
-              }
-            }),
-            guiEl('button', {
-              class: 'sga-btn danger',
-              type: 'button',
-              disabled: ooc.busy || !currentInstruction,
-              text: '이 단계 지침 비우기',
-              onClick: async () => {
-                try {
-                  await clearCurrentOocUserIntent(targetStage);
-                  await renderSettingsGui();
-                  guiSetStatus(`${targetDef.label}의 사용자 창작 지침을 비웠습니다. 이제 내장 지침만 사용합니다.`);
-                } catch (error) {
-                  guiSetStatus(`창작 지침을 비우지 못했습니다: ${error?.message || error}`, true, true);
-                }
-              }
-            })
-          ]),
-          guiEl('div', {
-            class: 'sga-provider-note-box',
-            style: {
-              marginTop: '12px',
-              borderColor: canGenerateInstruction ? 'rgba(124,156,255,.42)' : 'rgba(120,136,166,.18)'
-            }
-          }, [
-            guiEl('strong', { text: '2단계 · 대화를 창작 지침으로 저장' }),
-            guiEl('span', {
-              text: hasPendingConversation
-                ? '현재 대화 내용은 아직 저장된 지침에 반영되지 않았습니다. 합의가 충분하면 아래 버튼을 눌러 생성·저장하세요.'
-                : 'OOC와 대화하는 동안에는 저장된 지침이 바뀌지 않습니다. 새 대화에서 방향을 확인하면 생성 버튼이 활성화됩니다.',
-              style: { marginTop: '6px', whiteSpace: 'pre-wrap' }
-            }),
-            guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-              guiEl('button', {
-                class: 'sga-btn primary',
-                type: 'button',
-                disabled: !canGenerateInstruction,
-                text: ooc.busy && ooc.statusState === 'compiling'
-                  ? '창작 지침 생성 중…'
-                  : '대화를 바탕으로 창작 지침 생성',
-                onClick: generateCreativeInstruction
-              })
-            ])
-          ])
-        ] : [
-          guiEl('div', { class: 'sga-result-empty', style: { marginTop: '14px' }, text: `${targetDef.label}와 창작 지침 대화를 시작하면, 에이전트가 먼저 역할과 예시를 안내합니다.` }),
-          guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-            guiEl('button', {
-              class: 'sga-btn primary',
-              type: 'button',
-              disabled: ooc.busy,
-              text: `${targetDef.label} OOC 시작`,
-              onClick: startOocSession
-            })
-          ])
-        ]),
-        ooc.statusText ? guiEl('div', {
-          class: `sga-callout ${ooc.statusState === 'error' ? 'danger' : ooc.statusState === 'warning' ? 'warn' : ooc.statusState === 'running' || ooc.statusState === 'compiling' ? 'info' : 'good'}`,
-          style: { marginTop: '10px' },
-          text: ooc.statusText
-        }) : null
-      ]),
-      guiEl('details', { class: 'sga-advanced', style: { marginTop: '0' } }, [
-        guiEl('summary', {}, [
-          guiEl('span', { text: '저장된 창작 지침 보기' }),
-          guiEl('span', { class: 'sga-advanced-hint', text: `${savedDirectionCount}/4 저장됨` })
-        ]),
-        guiEl('div', { class: 'sga-advanced-body' }, [
-          guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '단계별로 저장된 창작 지침' }),
-            guiEl('div', {
-              class: 'sga-note',
-              text: 'OOC 대화 후 생성 버튼을 눌러 확정한 내용만 선택한 단계에 영구 저장됩니다. 아래에 표시된 원문이 실제로 각 단계의 초안 작성에 추가 적용됩니다.'
-            })
-          ]),
-          guiEl('span', {
-            class: `sga-badge sga-count-badge ${savedDirectionCount ? 'good' : 'off'}`,
-            text: `${savedDirectionCount}/4 저장됨`
-          })
-        ]),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '14px' } }, savedDirections.map(item =>
-          guiEl('div', {
-            class: 'sga-provider-note-box',
-            style: {
-              borderColor: item.instruction
-                ? 'rgba(74,222,128,.30)'
-                : item.def.id === targetStage ? 'rgba(124,156,255,.35)' : 'rgba(120,136,166,.18)'
-            }
-          }, [
-            guiEl('div', { class: 'sga-agent-head' }, [
-              guiEl('strong', { text: item.def.label }),
-              guiEl('span', {
-                class: `sga-badge ${item.instruction ? 'good' : 'off'}`,
-                text: item.instruction ? '저장됨 · 적용 중' : '사용자 지침 없음'
-              })
-            ]),
-            ooc.summariesByStage?.[item.def.id]
-              ? guiEl('div', { class: 'sga-note', style: { marginTop: '8px' }, text: ooc.summariesByStage[item.def.id] })
-              : null,
-            item.instruction
-              ? guiEl('pre', {
-                  class: 'sga-code',
-                  style: { marginTop: '10px', whiteSpace: 'pre-wrap', maxHeight: '260px', overflow: 'auto' },
-                  text: item.instruction
-                })
-              : guiEl('div', {
-                  class: 'sga-result-empty',
-                  style: { marginTop: '10px' },
-                  text: '별도로 저장된 사용자 창작 지침이 없습니다. 내장 지침만 사용합니다.'
-                }),
-            guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-              guiEl('button', {
-                class: item.def.id === targetStage ? 'sga-btn primary' : 'sga-btn',
-                type: 'button',
-                disabled: ooc.busy,
-                text: item.def.id === targetStage ? '현재 OOC 대상' : '이 단계 OOC 열기',
-                onClick: async () => {
-                  if (item.def.id === targetStage) return;
-                  selectCreativeOocTarget(item.def.id);
-                  Gui.userIntentOocDraft = '';
-                  await renderSettingsGui();
-                }
-              })
-            ])
-          ])
-        )),
-        ])
-      ])
-    ]);
-  };
-
-  const buildExecutionResultsPanel = () => {
-    const runtime = Gui.state?.runtime || {};
-    const orderedDefs = [INPUT_ASSIST_STAGE_DEF, ...orderedBeforeStageDefs(runtime.aideStageOrder)];
-    const validIds = new Set(orderedDefs.map(def => def.id));
-    if (!validIds.has(Gui.selectedResultStage)) Gui.selectedResultStage = 'shadow_act';
-
-    const selectedDef = STAGE_DEF_MAP[Gui.selectedResultStage] || orderedDefs[0] || STAGE_DEF_MAP.shadow_act;
-    const traces = executionResultTracesForStage(selectedDef.id);
-    const trace = traces[traces.length - 1] || null;
-    const parsed = trace?.parsed || trace?.fallbackStage || null;
-    const slot = Gui.state?.agents?.[selectedDef.id] || {};
-    const isLiteSkip = runtime.mode === 'lite' && (selectedDef.id === 'aide_character' || selectedDef.id === 'aide_world');
-    const statusInfo = traceStateInfo(trace, { enabled: slot.enabled !== false, isLiteSkip });
-    const selectedSkillRoute = trace?.skillRouter || Runtime.skillRoutes?.[selectedDef.id] || null;
-    const materialUsage = stageMaterialUsageForDisplay(selectedDef.id, trace);
-    const blocks = [];
-    let technicalCallInfo = null;
-
-    if (trace && materialUsage) {
-      blocks.push(resultContentBlock('이번 턴 사용 자료', stageMaterialUsageSummaryText(materialUsage), { wide: true, code: false, copy: true }));
-      blocks.push(lazyResultContentBlock('이번 턴 사용 자료 전체 목록', () => stageMaterialUsageFullText(materialUsage), { wide: true, copy: true, code: true }));
-    }
-
-    if (trace && parsed && selectedDef.id === INPUT_ASSIST_STAGE_ID) {
-      blocks.push(resultContentBlock('원래 입력', parsed.originalInput || Runtime.lastInputAssist?.original || '(기록 없음)', { wide: true, copy: true }));
-      blocks.push(resultContentBlock('재구성된 입력', parsed.rewrittenInput || Runtime.lastInputAssist?.rewritten || '(기록 없음)', { wide: true, copy: true }));
-      technicalCallInfo = {
-        status: statusInfo.label,
-        reason: trace.reason || parsed.reason || '',
-        requested_mode: parsed.requestedMode || Runtime.lastInputAssist?.requestedMode || '',
-        effective_mode: parsed.effectiveMode || Runtime.lastInputAssist?.effectiveMode || '',
-        scope: parsed.scope || Runtime.lastInputAssist?.scope || '',
-        target_chars: parsed.targetChars || Runtime.lastInputAssist?.targetChars || DEFAULT_INPUT_ASSIST_TARGET_CHARS,
-        output_chars: parsed.outputChars ?? Runtime.lastInputAssist?.outputChars ?? 0,
-        recent_turns: parsed.recentTurns ?? Runtime.lastInputAssist?.recentTurns ?? 0,
-        previous_turn_anchor: parsed.previousTurnAnchorAvailable ?? Runtime.lastInputAssist?.previousTurnAnchorAvailable ?? false,
-        continuation_cue: parsed.continuationCue ?? Runtime.lastInputAssist?.continuationCue ?? false,
-        continuation_cue_kind: parsed.continuationCueKind || Runtime.lastInputAssist?.continuationCueKind || '',
-        continuation_created: parsed.continuationCreated ?? Runtime.lastInputAssist?.continuationCreated ?? false,
-        delivery_fallback: parsed.deliveryFallback ?? Runtime.lastInputAssist?.deliveryFallback ?? false,
-        delivery_fallback_reason: parsed.deliveryFallbackReason || Runtime.lastInputAssist?.deliveryFallbackReason || '',
-        bypassed: parsed.bypassed ?? Runtime.lastInputAssist?.bypassed ?? false,
-        existing_turn_kind: parsed.existingTurnKind || Runtime.lastInputAssist?.existingTurnKind || '',
-        existing_assistant_after: parsed.existingAssistantAfter ?? Runtime.lastInputAssist?.existingAssistantAfter ?? false,
-        chat_source: parsed.chatSource || Runtime.lastInputAssist?.chatSource || '',
-        references: parsed.references || Runtime.lastInputAssist?.references || {},
-        risu_context_available: parsed.risuContextAvailable ?? Runtime.lastInputAssist?.risuContextAvailable ?? false,
-        risu_context_chars: parsed.risuContextChars ?? Runtime.lastInputAssist?.risuContextChars ?? 0,
-        reconstruction_changed: parsed.reconstructionChanged ?? Runtime.lastInputAssist?.reconstructionChanged ?? false,
-        reconstruction_retry: parsed.retried ?? Runtime.lastInputAssist?.retried ?? false,
-        provider: trace.provider || '',
-        preset: trace.presetName || '',
-        model: trace.model || '',
-        elapsed: trace.elapsedMs ? formatElapsedBrief(trace.elapsedMs) : ''
-      };
-    } else if (trace && parsed) {
-      const parts = executionResultAnalysisParts(parsed);
-      const analysisSummary = parts.analysis?.summary || parsed.summary || '';
-      const shadowPlanning = selectedDef.id === 'shadow_act'
-        ? shadowPlanningFromDomain(parts.domain || {})
-        : null;
-      const analysisDetails = {
-        constraints: parts.analysis?.constraints || parsed.constraints || [],
-        risks: parts.analysis?.risks || parsed.risks || [],
-        domain: parts.domain || undefined,
-        rewrite_directives: parts.directives?.length ? parts.directives : undefined,
-        do_not_reveal: parts.doNotReveal?.length ? parts.doNotReveal : undefined,
-        pov_limits: parts.povLimits?.length ? parts.povLimits : undefined
-      };
-      Object.keys(analysisDetails).forEach(key => analysisDetails[key] === undefined && delete analysisDetails[key]);
-
-      const draftText = parsed.final_overlay?.final_rp_draft || parsed.draft?.rp_text || parsed.rp_text || '';
-      const changes = parsed.change_log?.length ? parsed.change_log : parsed.edits;
-      const notes = parsed.draft?.notes || parsed.notes || [];
-      const callInfo = {
-        status: statusInfo.label,
-        reason: trace.reason || parsed.reason || '',
-        provider: trace.provider || parsed.provider || '',
-        preset: trace.presetName || parsed.presetName || '',
-        model: trace.model || parsed.model || '',
-        elapsed: trace.elapsedMs ? formatElapsedBrief(trace.elapsedMs) : '',
-        call_mode: trace.patchMode
-          ? ((parts.twoCall || trace.analysisSystemPrompt || trace.analysisRawResponse)
-              ? '분석 분리 + 부분 수정 2회'
-              : '통합 분석 + 부분 수정 1회')
-          : (parts.twoCall || trace.analysisSystemPrompt || trace.analysisRawResponse) ? '분석 후 전체 초안 작성 2회' : '한 번에 작성',
-        analysis_finish_reason: trace.analysisFinishReason || '',
-        analysis_token_budget: trace.analysisContextFit?.outputTokens || 0,
-        analysis_completion_tokens: trace.analysisUsage?.completion_tokens || trace.analysisUsage?.output_tokens || 0,
-        rewrite_finish_reason: trace.rewriteFinishReason || '',
-        rewrite_token_budget: trace.rewriteContextFit?.outputTokens || 0,
-        rewrite_completion_tokens: trace.rewriteUsage?.completion_tokens || trace.rewriteUsage?.output_tokens || 0,
-        patch_token_budget: trace.patchContextFit?.outputTokens || 0,
-        patch_completion_tokens: trace.patchUsage?.completion_tokens || trace.patchUsage?.output_tokens || 0,
-        patch_applied_edits: parsed.patchMeta?.appliedEdits ?? 0,
-        patch_skipped_edits: parsed.patchMeta?.skippedEdits?.length ?? 0,
-        fallback: !!(trace.fallbackStage || parsed.fallback),
-        skills: [...(trace?.skillRouter?.baselineIds || Runtime.skillRoutes?.[selectedDef.id]?.baselineIds || []), ...(trace?.skillRouter?.selected || Runtime.skillRoutes?.[selectedDef.id]?.selected || []).map(item => item.id)]
-      };
-
-      const skillRoute = trace?.skillRouter || Runtime.skillRoutes?.[selectedDef.id] || null;
-      if (skillRoute?.enabled) {
-        const baselineSkills = (skillRoute.baselineIds || []).map(id => ({
-          type: 'base', skill: id, source: 'builtin', application: 'compact quality floor'
-        }));
-        const selectedSkills = (skillRoute.selected || []).map(item => ({
-          type: 'dynamic',
-          rank: item.rank,
-          skill: item.id,
-          source: item.source || 'builtin',
-          score: item.score,
-          relevance: item.relevance,
-          reranker_priority: `${item.priorityPercent ?? Math.round(Number(item.affinity || 0) * 100)}${item.prioritySource === 'user' ? ' (사용자)' : ' (기본)'}`,
-          reference: item.reference?.id || ''
-        }));
-        const appliedSkills = [...baselineSkills, ...selectedSkills];
-        blocks.push(resultContentBlock('이번 실행에 작동한 Skill', appliedSkills.length ? appliedSkills : '(적용 Skill 없음)', { copy: true }));
-      }
-      if (selectedDef.id === 'shadow_act') {
-        const draftMode = normalizeShadowDraftMode(trace?.shadowDraftMode || Runtime.settings?.shadowDraftMode);
-        blocks.push(resultContentBlock('SHADOW 첫 초안 작성 방식', `${SHADOW_DRAFT_MODE_DEFS[draftMode]?.label || draftMode}\n${SHADOW_DRAFT_MODE_DEFS[draftMode]?.description || ''}`, { copy: false }));
-      }
-      blocks.push(resultContentBlock('실제 분석 요약', analysisSummary || '(분석 요약이 비어 있습니다.)', { code: false, copy: true }));
-      if (shadowPlanning?.hasStoryAuthorPlan) {
-        blocks.push(resultContentBlock('스토리 작가 계획', shadowPlanning.storyAuthorPlan, { copy: true }));
-      }
-      if (shadowPlanning?.hasDirectorBrief) {
-        blocks.push(resultContentBlock('감독 브리프', shadowPlanning.directorBrief, { copy: true }));
-      }
-      if (Object.keys(analysisDetails).length) blocks.push(resultContentBlock('분석 세부값', analysisDetails, { copy: true }));
-      blocks.push(resultContentBlock(
-        trace.patchMode ? '부분 패치가 적용된 최신 초안' : '이 단계가 만든 초안',
-        draftText || '(초안이 비어 있습니다.)',
-        { wide: true, copy: true }
-      ));
-      if (Array.isArray(changes) && changes.length) blocks.push(resultContentBlock('수정한 내용', changes, { copy: true }));
-      if (Array.isArray(notes) && notes.length) blocks.push(resultContentBlock('작성 노트', notes, { copy: true }));
-      technicalCallInfo = callInfo;
-    }
-
-    const stageButtons = orderedDefs.map(def => {
-      const stageTraces = executionResultTracesForStage(def.id);
-      const stageTrace = stageTraces[stageTraces.length - 1] || null;
-      const stageSlot = Gui.state?.agents?.[def.id] || {};
-      const stageLiteSkip = runtime.mode === 'lite' && (def.id === 'aide_character' || def.id === 'aide_world');
-      const info = traceStateInfo(stageTrace, { enabled: stageSlot.enabled !== false, isLiteSkip: stageLiteSkip });
-      return guiEl('button', {
-        class: `sga-result-stage-tab${Gui.selectedResultStage === def.id ? ' active' : ''}`,
-        type: 'button',
-        onClick: async () => {
-          const scroller = Gui.root?.querySelector('.sga-main');
-          const savedTop = scroller?.scrollTop ?? null;
-          const savedLeft = scroller?.scrollLeft ?? null;
-          Gui.selectedResultStage = def.id;
-          await renderSettingsGui();
-          const next = Gui.root?.querySelector('.sga-main');
-          if (next && savedTop != null) {
-            next.scrollTop = savedTop;
-            if (savedLeft != null) next.scrollLeft = savedLeft;
-          }
-        }
-      }, [
-        guiEl('span', { text: def.label }),
-        guiEl('small', { class: info.className, text: info.label })
-      ]);
-    });
-
-    const finalDraft = Runtime.finalDraft || '';
-    const noResultReason = Runtime.finalDraftMeta?.skipped
-      ? `최근 실행이 중단되거나 건너뛰어졌습니다: ${Runtime.finalDraftMeta.reason || '원인 정보 없음'}`
-      : '아직 실행 결과가 없습니다. 채팅에서 응답을 한 번 생성하면 각 단계의 실제 분석과 초안이 여기에 표시됩니다.';
-    const hasPatchTrace = trace?.patchMode === true;
-    const hasSplitTrace = !!(
-      trace?.analysisRawResponse
-      || trace?.analysisSystemPrompt
-      || trace?.analysisUserPrompt
-      || trace?.rewriteRawResponse
-    );
-    const rawTraceBlocks = !trace
-      ? []
-      : hasPatchTrace
-        ? [
-            lazyResultContentBlock('분석·부분 패치 모델 원문', () => trace.rawResponse || '(모델 원문 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('분석·부분 패치 시스템 프롬프트', () => trace.systemPrompt || '(시스템 프롬프트 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('분석·부분 패치 사용자 프롬프트', () => trace.userPrompt || '(사용자 프롬프트 없음)', { wide: true, copy: true })
-          ]
-      : hasSplitTrace
-        ? [
-            lazyResultContentBlock('분석 모델 원문', () => trace.analysisRawResponse || '(분석 원문 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('분석 시스템 프롬프트', () => trace.analysisSystemPrompt || '(분석 시스템 프롬프트 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('분석 사용자 프롬프트', () => trace.analysisUserPrompt || '(분석 사용자 프롬프트 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('작성 모델 원문', () => trace.rewriteRawResponse || '(작성 원문 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('작성 시스템 프롬프트', () => trace.rewriteSystemPrompt || '(작성 시스템 프롬프트 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('작성 사용자 프롬프트', () => trace.rewriteUserPrompt || '(작성 사용자 프롬프트 없음)', { wide: true, copy: true })
-          ]
-        : [
-            lazyResultContentBlock('모델 원문 응답', () => trace.rawResponse || '(원문 응답 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('시스템 프롬프트', () => trace.systemPrompt || '(시스템 프롬프트 없음)', { wide: true, copy: true }),
-            lazyResultContentBlock('사용자 프롬프트', () => trace.userPrompt || '(사용자 프롬프트 없음)', { wide: true, copy: true })
-          ];
-
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-execution-results' }, [
-      guiEl('div', { class: 'sga-card wide sga-execution-results' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '실행 결과' }),
-            guiEl('div', { class: 'sga-note', text: '설정 화면과 분리된 결과 보기입니다. 각 단계가 이번 턴에 실제로 사용한 자료와 분석 내용, 생성·수정한 초안을 확인할 수 있습니다.' })
-          ]),
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '새로고침', onClick: () => renderSettingsGui() })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-result-stage-tabs' }, stageButtons),
-        guiEl('div', { class: 'sga-result-selected-head' }, [
-          guiEl('div', {}, [
-            guiEl('strong', { text: selectedDef.label }),
-            guiEl('span', { text: selectedDef.description || '' })
-          ]),
-          traceBadgeNode(statusInfo)
-        ]),
-        selectedDef.id !== INPUT_ASSIST_STAGE_ID && trace
-          ? guiEl('div', { class: 'sga-stage-detail', style: { marginBottom: '12px' } }, [
-              guiEl('div', { class: 'sga-stage-detail-head' }, [
-                guiEl('strong', { text: '이 실행에 적용된 Skill' }),
-                guiEl('span', { text: selectedSkillRoute?.compiler || SKILL_COMPILER_VERSION })
-              ]),
-              selectedSkillRoute?.enabled === false
-                ? guiEl('div', { class: 'sga-note', text: 'Skill Router가 꺼져 있었습니다.' })
-                : guiEl('div', {}, [
-                    (selectedSkillRoute?.baselineIds || []).length
-                      ? guiEl('div', { class: 'sga-actions', style: { marginBottom: '7px' } }, (selectedSkillRoute.baselineIds || []).map(id => guiEl('span', { class: 'sga-badge', text: `BASE ${id}` })))
-                      : null,
-                    (selectedSkillRoute?.selected || []).length
-                      ? guiEl('div', { class: 'sga-actions' }, (selectedSkillRoute.selected || []).map(item => guiEl('span', { class: 'sga-badge good', text: `#${item.rank} ${item.id} · P${item.priorityPercent ?? Math.round(Number(item.affinity || 0) * 100)}` })))
-                      : guiEl('div', { class: 'sga-note', text: '관련도 컷을 통과한 전체 Skill은 없고 활성 Base Skill만 적용되었습니다.' })
-                  ])
-            ])
-          : null,
-        trace && parsed
-          ? guiEl('div', { class: 'sga-live-result-grid' }, blocks)
-          : guiEl('div', { class: 'sga-result-empty prominent', text: noResultReason }),
-        trace ? guiEl('details', { class: 'sga-result-raw-details' }, [
-          guiEl('summary', { text: '기술 정보 · 호출 계측과 원문 프롬프트' }),
-          guiEl('div', { class: 'sga-live-result-grid' }, [
-            technicalCallInfo ? resultContentBlock('호출 정보', technicalCallInfo, { copy: true }) : null,
-            ...rawTraceBlocks
-          ].filter(Boolean))
-        ]) : null,
-        guiEl('div', { class: 'sga-final-draft-result' }, [
-          guiEl('div', { class: 'sga-live-result-card-head' }, [
-            guiEl('div', {}, [
-              guiEl('h4', { text: 'GRADIA 최종 초안' }),
-              guiEl('div', { class: 'sga-note', text: '네 단계가 끝난 뒤 메인 응답 모델에 전달되는 최종 초안입니다.' })
-            ]),
-            finalDraft ? guiEl('button', {
-              class: 'sga-btn ghost',
-              type: 'button',
-              text: '최종 초안 복사',
-              onClick: async () => {
-                const result = await copyTextWithFallback(finalDraft);
-                guiSetStatus(result.ok ? '최종 초안을 복사했습니다.' : `복사하지 못했습니다: ${result.error || 'unknown error'}`, !result.ok, true);
-              }
-            }) : null
-          ]),
-          guiEl('div', { class: 'sga-live-result-code final', text: finalDraft || noResultReason })
-        ])
-      ])
-    ]);
-  };
-
-  const buildStageCard = (def, slotValue, index, kind, settings, flowMeta = {}) => {
-    const isBefore = kind === 'before';
-    const slot = normalizeAgentSlot(slotValue, {
-      enabled: true,
-      maxChars: defaultContextCharsForStage(def.id),
-      turnWindow: defaultTurnWindowForStage(def.id),
-      timeoutMs: DEFAULT_STAGE_TIMEOUT_MS,
-      risuRefs: defaultRisuReferencesForStage(def.id)
-    }, def.id);
-    Object.assign(slotValue, slot);
-    if (!Gui.state.prompts || typeof Gui.state.prompts !== 'object') Gui.state.prompts = {};
-    if (!Gui.state.prompts[def.id] || typeof Gui.state.prompts[def.id] !== 'object') Gui.state.prompts[def.id] = {};
-    const prompt = Gui.state.prompts[def.id];
-    Object.assign(prompt, normalizePromptEntry(prompt, { mode: 'builtin', customPrompt: '', extraPrompt: '' }));
-    const isLiteSkip = isBefore && settings?.mode === 'lite' && (def.id === 'aide_character' || def.id === 'aide_world');
-    const multiPipelineMode = normalizeMultiPipelineMode(settings?.multiPipelineMode);
-    const isHeavyPipeline = multiPipelineMode === 'heavyweight';
-    const nextStageLabel = compact(flowMeta.nextStageLabel || '', 80);
-    const handoffLabel = !isBefore ? null
-      : def.id === 'shadow_act'
-        ? `첫 초안 작성 → ${nextStageLabel || '첫 번째 AIDE'}에 전달`
-        : nextStageLabel
-          ? `${def.label} ${isHeavyPipeline ? '분석 후 부분 수정' : '통합 부분 수정'} → ${nextStageLabel}에 전달`
-          : `${def.label} ${isHeavyPipeline ? '분석 후 부분 수정' : '통합 부분 수정'} → 메인 모델에 전달`;
-    const trace = latestTraceForStage(def.id);
-    const traceOptions = { enabled: !!slot.enabled, isLiteSkip };
-    const statusInfo = traceStateInfo(trace, traceOptions);
-    const hasCreativeInstruction = !!text(prompt.customPrompt || '').trim();
-    const promptStatusField = fieldNode(
-      '사용자 창작 지침',
-      guiEl('div', { class: 'sga-provider-note-box' }, [
-        guiEl('strong', { text: hasCreativeInstruction ? '저장된 지침 적용' : '내장 지침만 사용' }),
-        guiEl('span', { text: hasCreativeInstruction
-          ? (isHeavyPipeline
-              ? (def.id === 'shadow_act' ? '분석과 첫 초안 작성에 함께 적용됩니다.' : '분석과 문단 부분 수정에 함께 적용됩니다.')
-              : (def.id === 'shadow_act' ? '비공개 판단과 첫 초안 작성에 직접 적용됩니다.' : '통합 판단과 문단 부분 수정에 직접 적용됩니다.'))
-          : '아래에 입력하거나 OOC에서 작성할 수 있습니다.' })
-      ]),
-      isHeavyPipeline
-        ? (def.id === 'shadow_act'
-            ? '사용자 지침은 SHADOW ACT의 분석 기준과 첫 초안 작성을 함께 조정합니다.'
-            : '사용자 지침은 해당 AIDE의 분석 기준과 문단 부분 수정을 함께 조정합니다.')
-        : (def.id === 'shadow_act'
-            ? '별도 분석 JSON 없이 같은 호출의 비공개 Story Author·Director 판단과 첫 초안 작성을 조정합니다.'
-            : '별도 분석 JSON 없이 같은 호출의 영역 판단과 문단 부분 수정을 조정합니다.')
-    );
-
-    const detailFields = [
-      fieldNode('설정·로어·기억 참고 상한', inputNode(slot.maxChars, next => { slotValue.maxChars = Number(next); }, { type: 'number', min: 1000, max: REFERENCE_BUDGET_CUSTOM_MAX_CHARS }), '실제 자료량과 활성 모델의 문맥 크기에 따라 이 상한보다 적게 사용합니다. 최근 대화 원문은 아래 대화 수만큼 별도로 보존됩니다.'),
-      fieldNode('참고할 최근 대화 수', inputNode(slot.turnWindow, next => { slotValue.turnWindow = Number(next); }, { type: 'number', min: 1, max: 64 }), '사용자 입력과 AI 응답 한 쌍을 1턴으로 계산하며, 선택한 턴은 원문 그대로 전달합니다.'),
-      fieldNode('최대 대기 시간(초)', inputNode(Math.round(slot.timeoutMs / 1000), next => { slotValue.timeoutMs = Math.max(5, Number(next) || 5) * 1000; }, { type: 'number', min: 5, max: 300 }), `응답이 이 시간보다 오래 걸리면 안전하게 중단합니다. 기본 ${Math.round(DEFAULT_STAGE_TIMEOUT_MS / 1000)}초입니다.`)
-    ];
-    if (isBefore && def.id === 'shadow_act') {
-      const writingMode = normalizeWritingMode(settings?.writingMode, writingModeFromDraftMode(settings?.shadowDraftMode));
-      detailFields.unshift(fieldNode(
-        writingMode === 'rp' ? '작성 모드' : '소설 모드 · 첫 초안 작성 방식',
-        writingMode === 'rp'
-          ? guiEl('div', { class: 'sga-provider-note-box' }, [guiEl('strong', { text: 'RP 모드 전용 파이프라인' }), guiEl('span', { text: '초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 화면 최상단에서 소설/RP 모드를 전환하세요.' })])
-          : selectNode(normalizeNovelShadowDraftMode(settings?.shadowDraftMode), NOVEL_SHADOW_DRAFT_MODES.map(mode => [mode, SHADOW_DRAFT_MODE_DEFS[mode].label]), next => applyShadowDraftModeToGui(next)),
-        writingMode === 'rp'
-          ? 'RP 모드에서는 이 단계만 따로 Classic/Input-inclusive로 바꿀 수 없습니다. 모드 전체가 함께 전환됩니다.'
-          : SHADOW_DRAFT_MODE_DEFS[normalizeNovelShadowDraftMode(settings?.shadowDraftMode)]?.description || ''
-      ));
-    }
-    if (isBefore) detailFields.push(fieldNode(
-      '검토 방식',
-      guiEl('div', { class: 'sga-provider-note-box' }, [
-        guiEl('strong', { text: isHeavyPipeline
-          ? (def.id === 'shadow_act' ? '분석 분리 + 전체 초안 · 2회' : '분석 분리 + 부분 수정 · 2회')
-          : (def.id === 'shadow_act' ? '통합 분석 + 전체 초안 · 1회' : '통합 분석 + 부분 수정 · 1회') }),
-        guiEl('span', { text: isHeavyPipeline
-          ? (def.id === 'shadow_act'
-              ? 'SHADOW ACT는 구조화된 분석을 먼저 완료한 다음 첫 전체 초안을 작성합니다.'
-              : 'AIDE는 구조화된 분석을 먼저 완료한 다음 최신 초안의 필요한 문단만 부분 수정합니다.')
-          : (def.id === 'shadow_act'
-              ? 'SHADOW ACT는 분석과 첫 전체 초안 작성을 한 번의 호출에서 수행합니다.'
-              : 'AIDE는 분석과 직전 초안의 필요한 문단 부분 수정을 한 번의 호출에서 수행합니다.') })
-      ]),
-      isHeavyPipeline
-        ? (def.id === 'shadow_act'
-            ? '분리된 분석 결과와 그 분석을 적용한 전체 초안을 각각 저장합니다.'
-            : '분리된 분석 결과와 그 분석을 적용한 부분 수정 결과를 각각 저장합니다.')
-        : '별도 분석 JSON은 생성·저장하지 않으며, 같은 호출 안의 비공개 판단을 거쳐 작성·부분 수정한 결과만 저장합니다.'
-    ));
-
-    const risuReferenceBlock = isBefore && def.id === 'shadow_act' ? guiEl('div', { class: 'sga-reference-box' }, [
-      guiEl('div', { class: 'sga-reference-head' }, [
-        guiEl('strong', { text: '참고할 RisuAI 정보' }),
-        guiEl('span', { text: '공통 후보 수집 + 일반 로어 Top 8' })
-      ]),
-      guiEl('div', { class: 'sga-provider-note-box', style: { marginBottom: '10px' } }, [
-        checkboxNode(slot.risuRefs.authorNote, '작가의 노트', next => { slotValue.risuRefs.authorNote = next; }),
-        guiEl('span', { text: '기본값은 켜짐입니다. 켜져 있으면 현재 채팅의 작가 노트를 SHADOW ACT가 현재 입력 다음 권위로 읽습니다. AIDE는 노트를 다시 해석하지 않고 SHADOW 초안에 반영된 결과를 이어받습니다.' })
-      ]),
-      guiEl('div', { class: 'sga-reference-grid' }, [
-        checkboxNode(slot.risuRefs.persona, '페르소나', next => { slotValue.risuRefs.persona = next; }),
-        checkboxNode(slot.risuRefs.characterDescription, '캐릭터 설명', next => { slotValue.risuRefs.characterDescription = next; }),
-        checkboxNode(slot.risuRefs.characterLorebook, '캐릭터 로어북', next => { slotValue.risuRefs.characterLorebook = next; }),
-        checkboxNode(slot.risuRefs.moduleLorebook, '선택한 모듈 로어북', next => { slotValue.risuRefs.moduleLorebook = next; })
-      ]),
-      guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 참고할 자료 종류와 로어 후보 풀을 한 번 확정합니다. 페르소나·캐릭터 설명은 공통으로 재사용하고, 로어만 각 단계가 관련도를 다시 계산합니다. 일반 로어는 설정한 슬롯 수까지 선택하며 강제/항상 활성 로어와 현재 관계·호칭 잠금은 별도로 보존합니다. 기본 일반 슬롯은 8개입니다.' })
-    ]) : isBefore ? guiEl('div', { class: 'sga-reference-box' }, [
-      guiEl('div', { class: 'sga-reference-head' }, [
-        guiEl('strong', { text: '공통 후보 · 단계별 리랭킹' }),
-        guiEl('span', { text: '추가 검색 없음 · 일반 로어 Top 8' })
-      ]),
-      guiEl('div', { class: 'sga-note', text: '이 AIDE는 SHADOW ACT가 만든 공통 자료 후보를 다시 읽어오지 않습니다. 대신 이미 수집된 로어 후보를 자신의 담당 영역 기준으로 로컬 리랭킹합니다. 일반 로어는 기본 8개 슬롯을 쓰고 강제/항상 활성 로어는 별도로 보호합니다. 인물 AIDE는 활성 로어에서 추출한 관계·호칭 정본 잠금도 함께 확인합니다.' })
-    ]) : null;
-
-    const promptBody = guiEl('div', { class: 'sga-prompt-builtin' }, [
-      fieldNode(
-        '사용자 창작 지침',
-        inputNode(prompt.customPrompt || '', next => {
-          prompt.customPrompt = next;
-          prompt.extraPrompt = '';
-          prompt.mode = text(next || '').trim() ? 'replace' : 'builtin';
-        }, {
-          tag: 'textarea',
-          class: 'stage-prompt',
-          placeholder: isHeavyPipeline
-            ? (def.id === 'shadow_act'
-                ? '분석할 기준과 첫 초안에 적용할 방향을 입력하세요.'
-                : '분석할 기준과 문단 부분 수정 방향을 입력하세요.')
-            : (def.id === 'shadow_act'
-                ? '비공개 판단과 첫 초안에 적용할 방향을 입력하세요.'
-                : '통합 판단과 문단 부분 수정에 적용할 방향을 입력하세요.')
-        }),
-        `${def.id === 'shadow_act'
-          ? (isHeavyPipeline ? '분리된 분석과 첫 전체 초안 작성' : '한 번의 비공개 판단과 첫 전체 초안 작성')
-          : (isHeavyPipeline ? '분리된 분석과 문단 부분 수정' : '한 번의 통합 판단과 문단 부분 수정')}에 적용됩니다. 내장 역할과 출력 계약은 유지됩니다. 사용 가능 변수: {{stage}}, {{stage_label}}, {{recent_chat}}, {{latest_user}}, {{previous_draft}}, {{risu_context}}, {{original_response}}, {{current_response}}, {{json_contract}}`
-      ),
-      guiEl('details', { class: 'sga-advanced' }, [
-        guiEl('summary', {}, [guiEl('span', { text: '내장 프롬프트 미리보기' }), guiEl('span', { class: 'sga-advanced-hint', text: def.label })]),
-        guiEl('div', { class: 'sga-advanced-body' }, [guiEl('textarea', { class: 'sga-textarea preview', value: builtInPromptPreview(def.id), readonly: true })])
-      ])
-    ]);
-
-    const advancedStageSettings = guiEl('details', { class: 'sga-advanced sga-stage-advanced', style: { marginTop: '10px' } }, [
-      guiEl('summary', {}, [
-        guiEl('span', { text: '세부 설정' }),
-        guiEl('span', { class: 'sga-advanced-hint', text: `최근 ${slot.turnWindow}턴 · 최대 대기 ${Math.round(slot.timeoutMs / 1000)}초` })
-      ]),
-      guiEl('div', { class: 'sga-advanced-body' }, [
-        guiEl('div', { class: isBefore ? 'sga-row4' : 'sga-row3' }, detailFields),
-        risuReferenceBlock
-      ])
-    ]);
-
-    const stageResultShortcut = guiEl('aside', { class: 'sga-stage-result sga-stage-result-shortcut' }, [
-      guiEl('div', { class: 'sga-stage-result-head' }, [
-        guiEl('span', { class: 'sga-stage-result-title', text: '최근 실행' }),
-        traceBadgeNode(statusInfo)
-      ]),
-      guiEl('div', { class: 'sga-stage-result-body' }, [
-        guiEl('div', { class: 'sga-note', text: trace
-          ? `${statusInfo.label}${statusInfo.elapsed ? ` · ${statusInfo.elapsed}` : ''} · 상세 분석과 초안은 실행 결과에서 확인합니다.`
-          : (statusInfo.className === 'run' ? '현재 실행 중입니다.' : '아직 실행 기록이 없습니다.') }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          type: 'button',
-          text: '실행 결과 보기',
-          onClick: () => { Gui.selectedResultStage = def.id; void navigateGui('flow', '', 'results'); }
-        })
-      ])
-    ]);
-
-    return guiEl('div', { id: `sga-stage-${def.id}`, class: `sga-card sga-agent sga-agent-expanded${isLiteSkip || (!slot.enabled && def.id !== 'shadow_act') ? ' dim' : ''}` }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', { class: 'sga-agent-title' }, [guiEl('span', { class: 'sga-agent-index', text: String(index + 1) }), guiEl('div', {}, [guiEl('h3', { text: def.label }), guiEl('div', { class: 'sga-agent-desc compact', text: def.description })])]),
-        guiEl('div', { class: 'sga-agent-run-meta' }, [
-          traceBadgeNode(statusInfo),
-          guiEl('span', { class: `sga-badge ${slot.enabled ? (isStageConfiguredInGui(def.id) ? 'good' : 'warn') : 'off'}`, text: isLiteSkip ? '라이트 건너뜀' : (slot.enabled ? (isStageConfiguredInGui(def.id) ? '사용' : '프리셋 확인') : '꺼짐') })
-        ])
-      ]),
-      isBefore && handoffLabel ? guiEl('div', { class: 'sga-handoff', style: { padding: '0', margin: '0 0 2px' } }, [guiEl('span', { text: handoffLabel })]) : null,
-      guiEl('div', { class: 'sga-stage-layout' }, [
-        guiEl('div', { class: 'sga-stage-controls' }, [
-          guiEl('div', { class: 'sga-stage-primary' }, [
-            checkboxNode(slot.enabled, '이 단계 사용', next => { slotValue.enabled = next; renderSettingsGui(); }),
-            fieldNode(
-              '사용할 AI 프리셋',
-              selectNode(slot.presetName || '', presetChoicesFromState(true), next => { slotValue.presetName = next; renderSettingsGui(); }),
-              `실제 사용: ${resolvedPresetNameForStage(def.id)} · 자동 동작 보정: ${resolvedModelBehaviorForStageInGui(def.id).label}`
-            ),
-            promptStatusField
-          ]),
-          promptBody,
-          advancedStageSettings,
-          isBefore && def.id === 'shadow_act' ? guiEl('div', { class: 'sga-note', text: 'SHADOW ACT가 꺼지면 응답 전 파이프라인 전체가 실행되지 않습니다.' }) : null
-        ]),
-        stageResultShortcut
-      ])
-    ]);
   };
 
   const applyQuickProfileValues = (profileId, runtime = {}, agents = {}) => {
@@ -41818,16 +40408,16 @@ html,body{width:100%;height:100%;overflow:hidden}
       title: 'RP 모드로 전환할까요?',
       description: 'RP 모드는 유저 캐릭터의 행동 권한을 완전히 유저에게 고정합니다. AI는 유저 입력을 이미 성립한 행동으로 받아들이고 NPC·세계는 자기 권한 안에서 적극적으로 진행합니다. 아래 변경을 확인한 뒤 적용하세요.',
       body: [
-        guiEl('div', { class: 'sga-redesign-diff-row' }, [guiEl('span', { text: '현재 인풋' }), guiEl('strong', { text: '출발점/행동' }), guiEl('b', { text: '유저가 실제로 수행한 이번 턴 행동 · AI 재연 금지' })]),
-        guiEl('div', { class: 'sga-redesign-diff-row' }, [guiEl('span', { text: '인풋 관리자' }), guiEl('strong', { text: '입력 재작성 가능' }), guiEl('b', { text: `선택 사용 · 유저 행동 ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 직접 선택` })]),
-        guiEl('div', { class: 'sga-redesign-diff-row' }, [guiEl('span', { text: 'SHADOW ACT' }), guiEl('strong', { text: '다음 장면 창작' }), guiEl('b', { text: '유저 행동 이후 NPC·세계 자율 전개 · 유저 경계에서 정지' })]),
-        guiEl('div', { class: 'sga-redesign-diff-row' }, [guiEl('span', { text: 'Character / World / Plot AIDE' }), guiEl('strong', { text: '전개 보강 가능' }), guiEl('b', { text: 'NPC·세계 자율성/인과 보강 · 유저 행동 생성 금지' })]),
-        guiEl('div', { class: 'sga-redesign-diff-row' }, [guiEl('span', { text: '분량과 종료' }), guiEl('strong', { text: '모델 소유 전개는 충분히 진행' }), guiEl('b', { text: '질문형 말미 강제 없음 · 새 유저 행동이 실제로 필요해지는 지점에서 정지' })]),
-        guiEl('div', { class: 'sga-callout', text: '경량/중량 선택, 단계별 LLM 프로필, 로어/Skill/NSFW 설정은 그대로 유지됩니다. 현재 소설 모드의 Classic/Input-inclusive 및 인풋 관리자 설정은 별도로 기억했다가 소설 모드로 돌아올 때 복원합니다.' })
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: '현재 인풋' }), guiEl('strong', { text: '출발점/행동' }), guiEl('b', { text: '유저가 실제로 수행한 이번 턴 행동 · AI 재연 금지' })]),
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: '인풋 관리자' }), guiEl('strong', { text: '입력 재작성 가능' }), guiEl('b', { text: `선택 사용 · 유저 행동 ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 직접 선택` })]),
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: 'SHADOW ACT' }), guiEl('strong', { text: '다음 장면 창작' }), guiEl('b', { text: '유저 행동 이후 NPC·세계 자율 전개 · 유저 경계에서 정지' })]),
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: 'Character / World / Plot AIDE' }), guiEl('strong', { text: '전개 보강 가능' }), guiEl('b', { text: 'NPC·세계 자율성/인과 보강 · 유저 행동 생성 금지' })]),
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: '분량과 종료' }), guiEl('strong', { text: '모델 소유 전개는 충분히 진행' }), guiEl('b', { text: '질문형 말미 강제 없음 · 새 유저 행동이 실제로 필요해지는 지점에서 정지' })]),
+        guiEl('div', { class: 'note note--warn', text: '경량/중량 선택, 단계별 LLM 프로필, 로어/Skill/NSFW 설정은 그대로 유지됩니다. 현재 소설 모드의 Classic/Input-inclusive 및 인풋 관리자 설정은 별도로 기억했다가 소설 모드로 돌아올 때 복원합니다.' })
       ],
       actions: [
-        guiEl('button', { class: 'sga-btn ghost', text: '취소', onClick: closeGuiDialog }),
-        guiEl('button', { class: 'sga-btn primary', text: '확인 · RP 모드 적용', onClick: () => { void activateRpWritingModeInGui(); } })
+        guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: closeGuiDialog }),
+        guiEl('button', { class: 'btn btn--primary', text: '확인 · RP 모드 적용', onClick: () => { void activateRpWritingModeInGui(); } })
       ]
     });
   };
@@ -41901,19 +40491,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     renderSettingsGui();
   };
 
-  const simpleChoiceCard = ({ active = false, title = '', description = '', meta = '', badge = '', onClick = null, className = '' } = {}) => guiEl('button', {
-    class: `sga-simple-choice${active ? ' active' : ''}${className ? ` ${className}` : ''}`,
-    type: 'button',
-    onClick
-  }, [
-    guiEl('div', { class: 'sga-simple-choice-top' }, [
-      guiEl('strong', { text: title }),
-      badge ? guiEl('span', { class: 'sga-simple-choice-badge', text: badge }) : null
-    ]),
-    description ? guiEl('span', { class: 'sga-simple-choice-desc', text: description }) : null,
-    meta ? guiEl('small', { text: meta }) : null
-  ]);
-
   const simpleProfileSummary = profileId => {
     const profile = QUICK_PROFILE_DEFS[profileId] || QUICK_PROFILE_DEFS.custom;
     if (profileId === 'custom') return '전문가 설정에서 일부 값을 직접 바꾼 상태입니다.';
@@ -41931,454 +40508,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     }
   };
 
-  const buildSimpleSettingsPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const shadow = normalizeAgentSlot(Gui.state.agents?.shadow_act, {
-      enabled: true, turnWindow: 8, maxChars: 12000, timeoutMs: DEFAULT_STAGE_TIMEOUT_MS,
-      risuRefs: defaultRisuReferencesForStage('shadow_act')
-    }, 'shadow_act');
-    const currentProfile = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
-    const inputAssistMode = normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off');
-    const inputAssistScope = normalizeChoice(runtime.inputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline');
-    const inputAssistTarget = inputAssistTargetChoice(runtime.inputAssistTargetChars);
-    const inputAssistLoreActivationMode = normalizeInputAssistLoreActivationMode(runtime.inputAssistLoreActivationMode);
-    const informationTransferMode = normalizeChoice(runtime.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only');
-    const multiPipelineMode = normalizeMultiPipelineMode(runtime.multiPipelineMode);
-    const writingMode = normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode));
-    runtime.writingMode = writingMode;
-    const shadowDraftMode = writingMode === 'rp' ? 'author_directed' : normalizeNovelShadowDraftMode(runtime.shadowDraftMode);
-    const authorDirectedInput = writingMode === 'rp';
-    const currentPriority = simplePriorityIdForOrder(runtime.aideStageOrder);
-    const outputMode = normalizeChoice(runtime.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided');
-    const internalDraftLanguage = normalizeInternalDraftLanguage(runtime.internalDraftLanguage);
-    const nsfwMode = normalizeNsfwMode(runtime.nsfwMode);
-    const inputAssistProvider = {
-      def: INPUT_ASSIST_STAGE_DEF,
-      selected: Gui.state.agents?.[INPUT_ASSIST_STAGE_ID]?.presetName || '',
-      resolved: resolvedPresetNameForStage(INPUT_ASSIST_STAGE_ID),
-      behavior: resolvedModelBehaviorForStageInGui(INPUT_ASSIST_STAGE_ID),
-      enabled: inputAssistMode !== 'off',
-      ready: inputAssistMode === 'off' ? true : isStageConfiguredInGui(INPUT_ASSIST_STAGE_ID)
-    };
-    const stageProviders = BEFORE_STAGE_DEFS.map(def => ({
-      def,
-      selected: Gui.state.agents?.[def.id]?.presetName || '',
-      resolved: resolvedPresetNameForStage(def.id),
-      behavior: resolvedModelBehaviorForStageInGui(def.id),
-      enabled: true,
-      ready: isStageConfiguredInGui(def.id)
-    }));
-    const allStageProviders = [inputAssistProvider, ...stageProviders];
-    const providerReady = allStageProviders.every(item => item.ready);
-    const unavailableStageLabels = allStageProviders.filter(item => !item.ready).map(item => item.def.label);
-    const stageProviderSummary = allStageProviders.map(item => `${item.def.label.replace(' AIDE', '')} ${item.resolved}`).join(' · ');
-    const turnChoice = SIMPLE_TURN_CHOICES.find(item => item.value === Number(shadow.turnWindow));
-    const lengthChoice = simpleLengthChoiceForRange(runtime.targetDraftMinChars, runtime.targetDraftMaxChars);
-    const lengthLabel = simpleLengthLabelForRuntime(runtime);
-    const priorityLabel = SIMPLE_PRIORITY_DEFS[currentPriority]?.label || aideOrderLabel(runtime.aideStageOrder);
-    const outputLabel = SIMPLE_OUTPUT_DEFS[outputMode]?.label || '일반 모드';
-    const internalDraftLanguageLabel = INTERNAL_DRAFT_LANGUAGE_DEFS[internalDraftLanguage]?.label || '한국어';
-    const nsfwLabel = `NSFW ${NSFW_MODE_DEFS[nsfwMode]?.label || 'OFF'}`;
-    const inputAssistLabel = inputAssistMode === 'off' ? (authorDirectedInput ? '직접 입력' : '사용 안 함') : authorDirectedInput ? '유저 행동 선택지 제안' : '3관점 선택지 제안';
-    const inputScopeLabel = inputAssistScope === 'standalone' ? '단독 사용' : '전체 파이프라인';
-    const transferLabel = informationTransferMode === 'draft_and_analysis' ? '초안+분석 전달' : '초안+기본 지시(분석 제외)';
-    const multiPipelineLabel = MULTI_PIPELINE_MODE_DEFS[multiPipelineMode]?.label || '경량 멀티 파이프라인';
-    const loreActivationLabel = LORE_ACTIVATION_MODE_DEFS[normalizeLoreActivationMode(runtime.loreActivationMode)]?.label || 'GRADIA 통합 로어 검색';
-    const inputAssistLoreActivationLabel = INPUT_ASSIST_LORE_ACTIVATION_MODE_DEFS[inputAssistLoreActivationMode]?.label || 'RisuAI식 · 활성화 키';
-
-    return guiEl('section', { class: 'sga-card wide sga-simple-settings', id: 'sga-simple-settings' }, [
-      guiEl('div', { class: 'sga-agent-head sga-simple-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '쉬운 설정' }),
-          guiEl('div', { class: 'sga-note', text: '아래 항목만 순서대로 고르면 됩니다. 숫자와 내부 용어는 GRADIA가 자동으로 맞춥니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${writingMode === 'rp' ? 'warn' : currentProfile === 'custom' ? 'warn' : 'good'}`, text: `${WRITING_MODE_DEFS[writingMode]?.label || '소설 모드'} · ${QUICK_PROFILE_DEFS[currentProfile]?.label || '직접 조정'}` })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step sga-writing-mode-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [
-          guiEl('b', { text: writingMode === 'rp' ? 'RP' : 'NOVEL' }),
-          guiEl('div', {}, [
-            guiEl('strong', { text: writingMode === 'rp' ? 'RP 모드 전용 GUI' : '소설 모드 전용 GUI' }),
-            guiEl('span', { text: '작성 모드 전환은 화면 최상단 GRADIA 옆의 소설 모드 / RP 모드 버튼에서 합니다.' })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-callout', text: writingMode === 'rp'
-          ? '유저 캐릭터의 이번 턴 행동은 현재 입력에 있는 것만 성립합니다. GRADIA는 그 행동을 사칭하거나 이어서 조종하지 않고 NPC·세계의 반응을 작성합니다.'
-          : '기존 GRADIA 소설형 작성 GUI입니다. SHADOW ACT가 현재 입력 뒤의 장면을 창작하고 Classic / Input-inclusive를 선택할 수 있습니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '1' }), guiEl('div', {}, [guiEl('strong', { text: '인풋 관리자' }), guiEl('span', { text: authorDirectedInput ? '전송 직전, AI가 유저가 취할 수 있는 행동 후보 3개를 제안하고 유저가 하나를 직접 선택합니다.' : '전송 직전, 같은 핵심 작가 의도를 주인공·현장 인물·세계/외부 인물의 세 관점으로 구체화하고 유저가 하나를 직접 선택합니다.' })])]),
-        authorDirectedInput
-          ? guiEl('div', { class: 'sga-simple-choice-grid two' }, [
-              simpleChoiceCard({
-                active: inputAssistMode === 'off',
-                title: '사용 안 함',
-                description: '내가 작성한 유저 행동 입력을 그대로 사용합니다. GRADIA는 그 행동 이후 NPC·세계 반응부터 작성합니다.',
-                meta: '선택지 생성 없음 · 유저 입력 직접 사용',
-                badge: 'RP',
-                onClick: () => applyInputAssistModeToGui('off')
-              }),
-              simpleChoiceCard({
-                active: inputAssistMode !== 'off',
-                title: '유저 행동 3가지 제안',
-                description: '현재 장면에서 유저가 취할 수 있는 서로 다른 행동 세 가지를 제안합니다. 고른 행동만 실제 유저 입력이 되며 NPC·세계 반응은 제안에 포함하지 않습니다.',
-                meta: `${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 원본 입력도 별도 선택 가능`,
-                badge: 'RP',
-                onClick: () => applyInputAssistModeToGui('user_focus')
-              })
-            ])
-          : guiEl('div', { class: 'sga-simple-choice-grid two' }, [
-              simpleChoiceCard({
-                active: inputAssistMode === 'off',
-                title: '사용 안 함',
-                description: '원래 입력을 그대로 초안 작성 단계로 전달합니다.',
-                meta: '입력 변경 없음',
-                badge: '기본',
-                onClick: () => applyInputAssistModeToGui('off'),
-                className: 'compact'
-              }),
-              simpleChoiceCard({
-                active: inputAssistMode !== 'off',
-                title: '3관점 선택지 제안',
-                description: '같은 핵심 작가 의도를 주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심으로 각각 구체화하고, 세 후보 중 하나를 직접 고릅니다.',
-                meta: `${NOVEL_INPUT_CHOICE_TARGET}개 제안 · 원본 입력도 별도 선택 가능`,
-                badge: '소설 모드',
-                onClick: () => applyInputAssistModeToGui('user_focus')
-              })
-            ]),
-        inputAssistMode !== 'off' && !authorDirectedInput ? guiEl('div', { class: 'sga-simple-choice-grid two', style: { marginTop: '10px' } }, [
-          simpleChoiceCard({
-            active: inputAssistScope === 'full_pipeline',
-            title: '전체 파이프라인 사용',
-            description: '재작성한 입력을 SHADOW ACT와 세 AIDE의 최상단 입력으로 사용합니다.',
-            meta: '인풋 재작성 → 초안 작성 → 메인 응답',
-            badge: '연결',
-            onClick: () => applyInputAssistScopeToGui('full_pipeline')
-          }),
-          simpleChoiceCard({
-            active: inputAssistScope === 'standalone',
-            title: '인풋 도우미 단독 사용',
-            description: '초안 작성 파이프라인을 건너뛰고 재작성한 입력을 메인 응답 모델에 바로 보냅니다.',
-            meta: '인풋 재작성 → 메인 응답',
-            badge: '단독',
-            onClick: () => applyInputAssistScopeToGui('standalone')
-          })
-        ]) : null,
-        inputAssistMode !== 'off' ? guiEl('div', { class: 'sga-stage-detail-head', style: { marginTop: '14px', marginBottom: '9px' } }, [
-          guiEl('strong', { text: '인풋 도우미 로어 검색' }),
-          guiEl('span', { text: '메인 초안 파이프라인과 동일한 통합 엔진을 사용합니다.' })
-        ]) : null,
-        inputAssistMode !== 'off' ? guiEl('div', { class: 'sga-simple-choice-grid two' }, Object.entries(INPUT_ASSIST_LORE_ACTIVATION_MODE_DEFS).map(([mode, def]) => simpleChoiceCard({
-          active: inputAssistLoreActivationMode === mode,
-          title: def.label,
-          description: def.description,
-          meta: def.meta,
-          badge: '통합',
-          onClick: () => applyInputAssistLoreActivationModeToGui(mode)
-        }))) : null,
-        !authorDirectedInput ? guiEl('div', { class: 'sga-stage-detail-head', style: { marginTop: '14px', marginBottom: '9px' } }, [
-          guiEl('strong', { text: '재구성 목표 글자 수' }),
-          guiEl('span', { text: '정확한 절단값이 아니라 완결된 입력을 만들기 위한 목표 분량입니다.' })
-        ]) : null,
-        !authorDirectedInput ? guiEl('div', { class: 'sga-simple-choice-grid five' }, INPUT_ASSIST_TARGET_CHAR_CHOICES.map(choice => simpleChoiceCard({
-          active: inputAssistTarget.id === choice.id,
-          title: choice.label,
-          description: choice.description,
-          meta: choice.chars ? `약 ${choice.chars.toLocaleString('ko-KR')}자` : '문맥에 맞춰 자동 결정',
-          badge: choice.id === DEFAULT_INPUT_ASSIST_TARGET_CHARS ? '기본' : '',
-          onClick: () => applyInputAssistTargetCharsToGui(choice.id),
-          className: 'compact'
-        }))) : null,
-        guiEl('div', { class: 'sga-callout', style: { marginTop: '12px' }, text: authorDirectedInput
-          ? 'RP 모드에서는 인풋 관리자를 끌 수 있습니다. 켜면 유저 행동 세 가지를 제안하고, 고른 항목만 유저가 실제로 수행한 입력이 됩니다. SHADOW ACT는 그 행동을 재연하지 않고 NPC·세계 반응부터 씁니다.'
-          : '소설 모드에서는 핵심 작가 의도·명시적 고정 사건·금지사항은 유지하되, 지정하지 않은 주인공의 세부 행동·대사·내면까지 고정하지 않습니다. 주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 입력 후보를 한 번에 만든 뒤 직접 선택합니다. “GRADIA로 인풋 작성하기”에서도 같은 선택창이 적용됩니다.' }),
-        guiEl('div', { class: 'sga-simple-stage-provider-grid', style: { marginTop: '12px' } }, [
-          guiEl('div', { class: 'sga-simple-stage-provider' }, [
-            fieldNode(
-              '인풋 도우미 AI 프리셋',
-              selectNode(inputAssistProvider.selected, presetChoicesFromState(true), next => applyQuickStageProviderToGui(INPUT_ASSIST_STAGE_ID, next)),
-              `실제 사용: ${inputAssistProvider.resolved} · 자동 동작 보정: ${inputAssistProvider.behavior.label}`
-            ),
-            guiEl('span', {
-              class: `sga-badge ${!inputAssistProvider.enabled ? 'off' : inputAssistProvider.ready ? 'good' : 'warn'}`,
-              text: !inputAssistProvider.enabled ? '현재 미사용' : inputAssistProvider.ready ? '사용 가능' : '연결 필요'
-            })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-simple-provider-actions' }, [
-          guiEl('span', { class: 'sga-note', text: authorDirectedInput ? '이 프로필은 RP 유저 행동 선택지 제안 호출에만 적용되며 SHADOW ACT와 세 AIDE의 프로필에는 영향을 주지 않습니다.' : '이 프로필은 인풋 재구성 호출에만 적용되며 SHADOW ACT와 세 AIDE의 프로필에는 영향을 주지 않습니다.' }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: 'LLM 프로필 관리', onClick: () => { void navigateGui('providers', '', 'providers'); } })
-        ]),
-        guiEl('div', { class: 'sga-note', text: '리롤·롤백처럼 같은 사용자 입력(U)이 현재 채팅에 이미 저장되어 있으면 인풋 관리자는 자동으로 건너뜁니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '2' }), guiEl('div', {}, [guiEl('strong', { text: '멀티 파이프라인 방식' }), guiEl('span', { text: '각 단계를 한 번에 작성할지, 분석과 작성을 분리할지 선택합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid two' }, Object.entries(MULTI_PIPELINE_MODE_DEFS).map(([mode, def]) => simpleChoiceCard({
-          active: multiPipelineMode === mode,
-          title: def.label,
-          description: def.description,
-          meta: def.meta,
-          badge: def.badge,
-          onClick: () => applyMultiPipelineModeToGui(mode)
-        }))),
-        guiEl('div', { class: 'sga-note', text: multiPipelineMode === 'heavyweight'
-          ? '중량 모드에서는 SHADOW ACT와 활성 AIDE마다 분석 호출과 작성·부분 수정 호출을 분리합니다. 분석이 실패하면 해당 단계의 작성이나 수정도 진행하지 않습니다.'
-          : '경량 모드에서는 별도 분석 JSON을 만들지 않습니다. SHADOW ACT는 비공개 Story Author·Director 판단과 전체 초안 작성을, 각 AIDE는 영역 판단과 문단 부분 수정을 단계별 한 번의 호출에서 수행합니다.' }),
-        guiEl('div', { class: 'sga-stage-detail', style: { marginTop: '12px' } }, [
-          guiEl('div', { class: 'sga-stage-detail-head' }, [guiEl('strong', { text: writingMode === 'rp' ? 'RP 모드 · 전용 초안 계약' : '소설 모드 · 전체 캐스트 작가 계약' }), guiEl('span', { text: writingMode === 'rp' ? WRITING_MODE_DEFS.rp.meta : (SHADOW_DRAFT_MODE_DEFS[shadowDraftMode]?.meta || '') })]),
-          writingMode === 'rp'
-            ? guiEl('div', { class: 'sga-simple-choice-grid one' }, [simpleChoiceCard({
-                active: true,
-                title: '유저 행동 → NPC·세계 자율 전개',
-                description: '현재 인풋은 이미 성립한 유저 캐릭터의 이번 턴 행동입니다. AI는 이를 다시 연기하거나 새 유저 행동을 만들지 않고 NPC·세계의 행동·사건·반응을 인과적으로 진행하며 실제 유저 행동이 필요해지는 경계에서 멈춥니다.',
-                meta: 'player-controlled 계약 · 유저 행동 불가침',
-                badge: 'RP 전용'
-              })])
-            : guiEl('div', { class: 'sga-simple-choice-grid two' }, NOVEL_SHADOW_DRAFT_MODES.map(mode => {
-                const def = SHADOW_DRAFT_MODE_DEFS[mode];
-                return simpleChoiceCard({
-                  active: shadowDraftMode === mode,
-                  title: def.label,
-                  description: def.description,
-                  meta: def.meta,
-                  badge: mode === DEFAULT_SHADOW_DRAFT_MODE ? '기본' : '장면 흡수',
-                  onClick: () => applyShadowDraftModeToGui(mode)
-                });
-              })),
-          guiEl('div', { class: 'sga-note', text: writingMode === 'rp'
-            ? 'RP 모드에서는 Classic / Input-inclusive를 선택하지 않습니다. 유저 행동 불가침과 NPC·세계 자율 전개를 동시에 적용하며, 완료된 최근 대화와 현재 입력을 바탕으로 작성합니다.'
-            : shadowDraftMode === 'input_inclusive'
-              ? '인풋 포함 모드는 사용자가 실제로 작성한 장면 행동·대사·관찰 가능한 상황만 다시 무대화합니다. OOC 지시나 사용자가 쓰지 않은 감정·선택·행동은 새로 만들지 않습니다.'
-              : '클래식 모드는 현재 인풋을 이미 일어난 출발점으로 취급하고 그 뒤의 반응부터 씁니다. 기존 GRADIA 동작과 같습니다.' })
-        ])
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '3' }), guiEl('div', {}, [guiEl('strong', { text: '초안 작성 도우미 · 속도와 품질' }), guiEl('span', { text: '선택한 멀티 파이프라인 안에서 참고 범위와 검토 깊이를 조절합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid three' }, ['fast', 'balanced', 'quality'].map(profileId => {
-          const profile = QUICK_PROFILE_DEFS[profileId];
-          return simpleChoiceCard({
-            active: currentProfile === profileId,
-            title: profile.label,
-            description: profile.summary,
-            meta: `최근 ${profile.turnWindow}턴 · 참고 상한 ${profile.maxChars.toLocaleString('ko-KR')}자 · ${profile.analysisLabel}`,
-            badge: profileId === 'balanced' ? '추천' : profileId === 'fast' ? '속도 우선' : '품질 우선',
-            onClick: () => applyQuickProfileToGui(profileId)
-          });
-        })),
-        guiEl('div', { class: 'sga-note', text: '표시된 글자 수는 설정·로어·기억 참고 자료의 최대 상한입니다. 실제 자료량과 모델 문맥에 따라 자동으로 덜 사용될 수 있으며, 경량/중량 선택과 호출 구조는 바꾸지 않습니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '4' }), guiEl('div', {}, [guiEl('strong', { text: '목표 글자 수' }), guiEl('span', { text: '원하는 응답 분량을 고르면 단계 사이의 초안 전달량과 출력 한도도 함께 맞춥니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid four' }, SIMPLE_LENGTH_CHOICES.map(choice => simpleChoiceCard({
-          active: lengthChoice?.id === choice.id,
-          title: choice.label,
-          description: choice.description,
-          meta: choice.meta,
-          badge: choice.id === 'standard' ? '추천' : choice.id === 'extended' ? '장편' : '',
-          onClick: () => applySimpleLengthToGui(choice.id)
-        }))),
-        !lengthChoice ? guiEl('div', { class: 'sga-callout', text: `현재 목표는 ${lengthLabel} 상태입니다. 아래 전문가 설정에서 최소·최대 글자 수를 세부 조정할 수 있습니다.` }) : null
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '5' }), guiEl('div', {}, [guiEl('strong', { text: '내부 초안 작성 언어' }), guiEl('span', { text: 'SHADOW ACT, 세 AIDE와 최종 장면 마무리가 새로 작성하는 본문의 언어를 고정합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid three' }, Object.entries(INTERNAL_DRAFT_LANGUAGE_DEFS).map(([language, def]) => simpleChoiceCard({
-          active: internalDraftLanguage === language,
-          title: def.label,
-          description: def.description,
-          meta: language === 'korean' ? 'Korean' : language === 'english' ? '영어' : 'Japanese',
-          badge: language === DEFAULT_INTERNAL_DRAFT_LANGUAGE ? '기본' : '',
-          onClick: () => applyInternalDraftLanguageToGui(language)
-        }))),
-        guiEl('div', { class: 'sga-note', text: '최근 대화·로어·시스템 원문은 번역하지 않습니다. JSON 키, 고유명사, 이미지 명령과 정확한 인용은 보존하고 새로 생성하는 자연어 초안과 수정문만 선택 언어로 작성합니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '6' }), guiEl('div', {}, [guiEl('strong', { text: '초안 단계별 LLM 프로필' }), guiEl('span', { text: 'SHADOW ACT와 세 AIDE가 서로 다른 LLM 프로필을 사용할 수 있습니다.' })])]),
-        guiEl('div', { class: 'sga-simple-stage-provider-grid' }, stageProviders.map(item => guiEl('div', { class: 'sga-simple-stage-provider' }, [
-          fieldNode(item.def.label, selectNode(item.selected, presetChoicesFromState(true), next => applyQuickStageProviderToGui(item.def.id, next)), `실제 사용: ${item.resolved} · 자동 동작 보정: ${item.behavior.label}`),
-          guiEl('span', { class: `sga-badge ${!item.enabled ? 'off' : item.ready ? 'good' : 'warn'}`, text: !item.enabled ? '현재 미사용' : item.ready ? '사용 가능' : '연결 필요' })
-        ]))),
-        guiEl('div', { class: 'sga-simple-provider-actions' }, [
-          guiEl('span', { class: 'sga-note', text: '프로필의 provider와 model을 보고 GPT, Claude, Gemini/Gemma, DeepSeek, GLM, Kimi 계열을 단계마다 자동 판정합니다. 공통/알 수 없는 모델에는 계열별 보정을 추가하지 않습니다.' }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: 'LLM 프로필 관리', onClick: () => { void navigateGui('providers', '', 'providers'); } })
-        ]),
-        guiEl('div', { class: 'sga-note', text: '자동 동작 보정은 별도 분석이나 AI 호출을 만들지 않고, 해당 단계의 작성·수정 출력 규율만 짧게 보강합니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '7' }), guiEl('div', {}, [guiEl('strong', { text: '초안 단계는 얼마나 이전 대화까지 참고할까요?' }), guiEl('span', { text: 'SHADOW ACT와 세 AIDE가 참고할 범위입니다. 인풋 도우미는 이 설정과 무관하게 직전 AI 응답의 종결부만 사용합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid four' }, SIMPLE_TURN_CHOICES.map(choice => simpleChoiceCard({
-          active: Number(shadow.turnWindow) === choice.value,
-          title: choice.label,
-          description: choice.description,
-          meta: choice.meta,
-          badge: choice.value === 8 ? '추천' : '',
-          onClick: () => applyQuickTurnWindowToGui(choice.value)
-        })))
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '8' }), guiEl('div', {}, [guiEl('strong', { text: '참고 자료' }), guiEl('span', { text: '허용한 자료 안에서 현재 장면에 필요한 로어를 GRADIA가 자동으로 찾습니다.' })])]),
-        guiEl('div', { class: 'sga-summary-table' }, [
-          guiEl('span', { text: '검색' }), guiEl('strong', { text: '자동' }),
-          guiEl('span', { text: '사용 범위' }), guiEl('strong', { text: '자료 화면에서 관리' })
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-          guiEl('button', { class: 'sga-btn', text: '자료 관리', onClick: () => navigateGui('flow', '', 'references') })
-        ])
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '9' }), guiEl('div', {}, [guiEl('strong', { text: '무엇을 먼저 확인할까요?' }), guiEl('span', { text: 'SHADOW ACT는 초안 작성의 첫 번째이며, 그 뒤의 검토 우선순위만 고릅니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid three' }, Object.entries(SIMPLE_PRIORITY_DEFS).map(([id, def]) => simpleChoiceCard({
-          active: currentPriority === id,
-          title: def.label,
-          description: def.description,
-          meta: `실행 순서: ${aideOrderLabel(def.order)}`,
-          badge: id === 'character' ? '기본' : '',
-          onClick: () => applySimplePriorityToGui(id)
-        }))),
-        currentPriority === 'custom' ? guiEl('div', { class: 'sga-callout', text: `현재 직접 조정된 순서: ${aideOrderLabel(runtime.aideStageOrder)}. 아래 전문가 설정에서 세부 순서를 바꿀 수 있습니다.` }) : null
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '10' }), guiEl('div', {}, [guiEl('strong', { text: '초안을 어떻게 마무리할까요?' }), guiEl('span', { text: '일반 모드는 가장 안정적이며, 확장 모드는 한 단계 더 깊게 초안을 처리합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid two' }, Object.entries(SIMPLE_OUTPUT_DEFS).map(([mode, def]) => simpleChoiceCard({
-          active: outputMode === mode,
-          title: def.label,
-          description: def.description,
-          meta: def.meta,
-          badge: mode === 'draft_guided' ? '추천' : '고급',
-          onClick: () => applySimpleOutputToGui(mode)
-        })))
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '11' }), guiEl('div', {}, [guiEl('strong', { text: '응답 옵션' }), guiEl('span', { text: '작성 품질 지시는 Skill에서 관리하고, 여기에는 NSFW와 Assistant Prefill 같은 별도 정책·전송 옵션만 남깁니다.' })])]),
-        guiEl('div', { class: 'sga-summary-table' }, [
-          guiEl('span', { text: 'Skill' }), guiEl('strong', { text: runtime.skillRouterEnabled !== false ? '자동 선택 사용' : '사용 안 함' }),
-          guiEl('span', { text: 'NSFW 지침 모드' }), guiEl('strong', { text: nsfwLabel }),
-          guiEl('span', { text: 'Assistant Prefill' }), guiEl('strong', { text: '기존 구조 보존' })
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, [
-          guiEl('button', {
-            class: 'sga-btn primary',
-            type: 'button',
-            text: '응답 옵션 열기',
-            onClick: () => navigateGui('flow', '#sga-response-options', 'internal_response_improvement')
-          })
-        ]),
-        guiEl('div', { class: 'sga-note', text: '작성 품질 절차는 Skill 화면에서 관리합니다. 응답 옵션은 NSFW 정책과 Assistant Prefill 상태만 다룹니다.' })
-      ]),
-
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '12' }), guiEl('div', {}, [guiEl('strong', { text: '정보 전달 도우미' }), guiEl('span', { text: '최종 초안과 필수 제약만 전달하며 비공개 단계별 분석은 제외합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid two' }, [
-          simpleChoiceCard({
-            active: informationTransferMode === 'draft_only',
-            title: '초안만 전달',
-            description: '최종 초안과 필수 합성·종결 장면 연속성 지시는 유지하고, GRADIA 단계별 분석 블록만 제외합니다.',
-            meta: '분석 블록 제외 · 기본 합성/연속성 유지',
-            badge: '추천',
-            onClick: () => applyInformationTransferModeToGui('draft_only')
-          })
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, [
-          guiEl('button', {
-            class: 'sga-btn',
-            type: 'button',
-            text: '정보 전달 도우미 설정 열기',
-            onClick: () => navigateGui('flow', '', 'information_transfer')
-          })
-        ])
-      ]),
-
-      guiEl('div', { class: `sga-simple-summary${providerReady ? '' : ' warn'}` }, [
-      guiEl('div', { class: 'sga-simple-summary-copy' }, [
-        guiEl('strong', { text: '현재 선택' }),
-        guiEl('span', { class: 'sga-simple-summary-main', text: `작성 ${WRITING_MODE_DEFS[writingMode]?.label || '소설 모드'} · 인풋 ${inputAssistLabel}${inputAssistMode !== 'off' ? (authorDirectedInput ? `(${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 직접 선택 · ${inputAssistLoreActivationLabel})` : `(${NOVEL_INPUT_CHOICE_TARGET}관점 · 직접 선택 · ${inputScopeLabel} · ${inputAssistTarget.label} · 직전 1턴 · ${inputAssistLoreActivationLabel})`) : ''} · ${multiPipelineLabel} · ${simpleProfileSummary(currentProfile)} · ${lengthLabel} · 초안 언어 ${internalDraftLanguageLabel} · 초안 ${turnChoice?.meta || `최근 ${shadow.turnWindow}턴`} · 메인 ${loreActivationLabel} · ${priorityLabel} · ${outputLabel} · ${nsfwLabel} · Skill ${runtime.skillRouterEnabled !== false ? `Top ${clampInt(runtime.skillRouterTopK, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K)}` : 'OFF'} · ${transferLabel}` }),
-        guiEl('div', { class: 'sga-simple-summary-ai' }, [
-          guiEl('b', { text: '단계별 AI' }),
-          guiEl('span', { text: stageProviderSummary })
-        ])
-      ]),
-      guiEl('div', { class: 'sga-simple-summary-actions' }, [
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '↺ 추천 설정으로 되돌리기', onClick: resetSimpleSettingsToRecommended }),
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: Gui.dirty ? '이 설정 저장' : '✓ 저장됨', disabled: !Gui.dirty, onClick: saveSimpleSettingsFromGui })
-      ])
-      ]),
-      !providerReady ? guiEl('div', { class: 'sga-callout', text: `${unavailableStageLabels.join(', ')} 단계의 AI 연결이 아직 준비되지 않았습니다. “AI 연결 설정 열기”에서 API 키와 모델을 확인한 뒤 저장하세요.` }) : null
-    ]);
-  };
-
-  const buildQuickSettingsPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const inputMode = normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off');
-    const writingMode = normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode));
-    const playerControlled = writingMode === 'rp';
-    const pipelineMode = normalizeMultiPipelineMode(runtime.multiPipelineMode);
-    const profileId = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
-    const lengthChoice = simpleLengthChoiceForRange(runtime.targetDraftMinChars, runtime.targetDraftMaxChars);
-    const language = normalizeInternalDraftLanguage(runtime.internalDraftLanguage);
-    const enabledMode = inputMode === 'off'
-      ? normalizeChoice(Gui.lastInputAssistMode || 'user_focus', INPUT_ASSIST_MODES, 'user_focus')
-      : inputMode;
-    return guiEl('section', { class: 'sga-card wide sga-quick-five', id: 'sga-quick-settings' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: playerControlled ? 'RP 모드 · 핵심 설정' : '소설 모드 · 핵심 설정' }),
-          guiEl('div', { class: 'sga-note', text: '작성 모드 자체는 화면 최상단의 소설 모드 / RP 모드 스위치에서 전환합니다. 전환하면 GRADIA 설정 화면 전체를 해당 모드 GUI로 다시 구성합니다.' })
-        ]),
-        guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '추천값 적용', onClick: () => openRecommendedSettingsDialog() })
-      ]),
-      guiEl('div', { class: 'sga-simple-step sga-writing-mode-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: 'MODE' }), guiEl('div', {}, [guiEl('strong', { text: playerControlled ? 'RP 모드 GUI' : '소설 모드 GUI' }), guiEl('span', { text: playerControlled ? '유저 행동은 오직 유저 입력에서만 확정되고 AI는 NPC·세계를 자율적으로 진행합니다.' : '기존 GRADIA의 소설형 장면 창작 파이프라인을 사용합니다.' })])]),
-        guiEl('div', { class: 'sga-callout', text: playerControlled
-          ? 'RP 모드에서는 유저 행동·대사·선택·감정·의도를 AI가 새로 만들 수 없습니다. 대신 NPC·세계의 자율 행동과 인과적 전개는 적극적으로 허용됩니다. Skill, 로어, Author Note도 유저 행동 금지를 해제할 수 없습니다.'
-          : '소설 모드에서는 현재 유저 입력을 최우선으로 두되, SHADOW ACT가 다음 장면을 창작하고 AIDE가 단계별로 보강합니다.' })
-      ]),
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '1' }), guiEl('div', {}, [guiEl('strong', { text: '인풋 관리자' }), guiEl('span', { text: playerControlled ? '직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 선택합니다.' : '사용 여부만 빠르게 바꾸며 기존 세부 모드는 기억합니다.' })])]),
-        playerControlled
-          ? guiEl('div', { class: 'sga-simple-choice-grid two' }, [
-              simpleChoiceCard({ active: inputMode === 'off', title: '직접 입력', description: 'AI가 유저 행동을 제안하지 않습니다. 내가 쓴 입력을 그대로 RP 반응 파이프라인에 전달합니다.', meta: '추가 LLM 호출 없음', badge: inputMode === 'off' ? '현재' : '', onClick: () => applyInputAssistModeToGui('off') }),
-              simpleChoiceCard({ active: inputMode !== 'off', title: '유저 행동 3가지 제안', description: 'AI가 현재 장면에서 유저가 취할 수 있는 서로 다른 행동 3개만 제안합니다. NPC 반응·성공·결과는 미리 결정하지 않습니다.', meta: '1회 호출 · 직접 선택 · 원본 입력 별도', badge: inputMode !== 'off' ? '현재' : '', onClick: () => applyInputAssistModeToGui('user_focus') })
-            ])
-          : guiEl('div', { class: 'sga-simple-choice-grid two' }, [
-              simpleChoiceCard({ active: inputMode === 'off', title: '사용 안 함', description: '원본 입력을 그대로 초안 파이프라인에 전달합니다.', meta: '세부 설정 보존', onClick: () => applyInputAssistModeToGui('off') }),
-              simpleChoiceCard({ active: inputMode !== 'off', title: '사용', description: `현재 방식: ${INPUT_ASSIST_MODE_DEFS[enabledMode]?.label || enabledMode}`, meta: '세부 방식은 전용 화면에서 변경', badge: inputMode !== 'off' ? '사용 중' : '', onClick: () => applyInputAssistModeToGui(enabledMode === 'off' ? 'user_focus' : enabledMode) })
-            ])
-      ]),
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '2' }), guiEl('div', {}, [guiEl('strong', { text: '파이프라인 무게' }), guiEl('span', { text: '분석과 작성을 한 호출에 묶을지 분리할지 선택합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid two' }, Object.entries(MULTI_PIPELINE_MODE_DEFS).map(([mode, def]) => simpleChoiceCard({ active: pipelineMode === mode, title: def.label, description: def.description, meta: def.meta, badge: mode === 'lightweight' ? '추천' : '', onClick: () => applyMultiPipelineModeToGui(mode) })))
-      ]),
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '3' }), guiEl('div', {}, [guiEl('strong', { text: '속도와 품질' }), guiEl('span', { text: '최근 문맥과 분석 깊이를 단계별로 함께 조정합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid three' }, ['fast', 'balanced', 'quality'].map(id => {
-          const def = QUICK_PROFILE_DEFS[id];
-          return simpleChoiceCard({ active: profileId === id, title: def.label, description: def.summary, meta: def.analysisLabel, badge: id === 'balanced' ? '추천' : '', onClick: () => applyQuickProfileToGui(id) });
-        })),
-        profileId === 'custom' ? guiEl('div', { class: 'sga-callout', text: '현재는 직접 조정한 실행값을 사용합니다. 아래 프로필을 선택하기 전까지 기존 값을 그대로 보존합니다.' }) : null
-      ]),
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '4' }), guiEl('div', {}, [guiEl('strong', { text: '목표 초안 분량' }), guiEl('span', { text: playerControlled ? 'RP에서는 분량이 유저 행동을 추가할 권한이 되지 않습니다.' : 'SHADOW ACT의 목표 작성 범위를 선택합니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid four' }, SIMPLE_LENGTH_CHOICES.map(choice => simpleChoiceCard({ active: lengthChoice?.id === choice.id, title: choice.label, description: choice.description, meta: choice.meta, badge: choice.id === 'standard' ? '추천' : '', onClick: () => applySimpleLengthToGui(choice.id) }))),
-        !lengthChoice ? guiEl('div', { class: 'sga-callout', text: `현재 ${simpleLengthLabelForRuntime(runtime)} 직접 조정값을 사용합니다. 전문가 설정에서 숫자를 확인할 수 있습니다.` }) : null
-      ]),
-      guiEl('div', { class: 'sga-simple-step' }, [
-        guiEl('div', { class: 'sga-simple-step-head' }, [guiEl('b', { text: '5' }), guiEl('div', {}, [guiEl('strong', { text: '내부 초안 언어' }), guiEl('span', { text: 'SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.' })])]),
-        guiEl('div', { class: 'sga-simple-choice-grid three' }, Object.entries(INTERNAL_DRAFT_LANGUAGE_DEFS).map(([id, def]) => simpleChoiceCard({ active: language === id, title: def.label, description: def.description, meta: id === 'korean' ? 'Korean' : id === 'english' ? 'English' : 'Japanese', onClick: () => applyInternalDraftLanguageToGui(id) })))
-      ])
-    ]);
-  };
-
   const moveAideStageInGui = (stageId, direction) => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
     const order = normalizeAideStageOrder(runtime.aideStageOrder);
@@ -42389,188 +40518,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     runtime.aideStageOrder = order;
     markGuiDirty();
     renderSettingsGui();
-  };
-
-  const buildAideOrderPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const order = normalizeAideStageOrder(runtime.aideStageOrder);
-    runtime.aideStageOrder = order;
-    return guiEl('div', { class: 'sga-card wide sga-order-card' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: 'AIDE 실행 순서' }),
-          guiEl('div', { class: 'sga-note', text: 'SHADOW ACT는 1번에 고정됩니다. 아래 세 AIDE만 위·아래로 이동할 수 있으며 저장 후 실제 직렬 호출 순서에 적용됩니다.' })
-        ]),
-        guiEl('button', { class: 'sga-btn ghost', text: '기본 순서 복원', onClick: () => {
-          runtime.aideStageOrder = DEFAULT_AIDE_STAGE_ORDER.slice();
-          markGuiDirty();
-          renderSettingsGui();
-        } })
-      ]),
-      guiEl('div', { class: 'sga-order-list' }, [
-        guiEl('div', { class: 'sga-order-item fixed' }, [
-          guiEl('span', { class: 'sga-order-number', text: '1' }),
-          guiEl('div', { class: 'sga-order-copy' }, [guiEl('strong', { text: 'SHADOW ACT' }), guiEl('span', { text: '첫 초안 생성 · 순서 고정' })]),
-          guiEl('span', { class: 'sga-badge good', text: '고정' })
-        ]),
-        ...order.map((stageId, index) => {
-          const def = STAGE_DEF_MAP[stageId];
-          return guiEl('div', { class: 'sga-order-item' }, [
-            guiEl('span', { class: 'sga-order-number', text: String(index + 2) }),
-            guiEl('div', { class: 'sga-order-copy' }, [guiEl('strong', { text: def?.label || stageId }), guiEl('span', { text: def?.description || '' })]),
-            guiEl('div', { class: 'sga-order-actions' }, [
-              guiEl('button', { class: 'sga-btn ghost', text: '위로', disabled: index === 0, onClick: () => moveAideStageInGui(stageId, -1) }),
-              guiEl('button', { class: 'sga-btn ghost', text: '아래로', disabled: index === order.length - 1, onClick: () => moveAideStageInGui(stageId, 1) })
-            ])
-          ]);
-        })
-      ])
-    ]);
-  };
-
-  const buildInputAssistSettingsPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const mode = normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off');
-    const scope = normalizeChoice(runtime.inputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline');
-    const targetChoice = inputAssistTargetChoice(runtime.inputAssistTargetChars);
-    const loreActivationMode = normalizeInputAssistLoreActivationMode(runtime.inputAssistLoreActivationMode);
-    const shadowDraftMode = normalizeShadowDraftMode(runtime.shadowDraftMode);
-    const playerControlled = normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(shadowDraftMode)) === 'rp';
-    const confirmationMode = playerControlled
-      ? (mode === 'off' ? 'direct' : 'player_choice')
-      : mode !== 'off' ? 'novel_choice' : normalizeChoice(runtime.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct');
-    runtime.inputAssistLoreActivationMode = loreActivationMode;
-    const agents = Gui.state.agents || (Gui.state.agents = {});
-    const slotValue = agents[INPUT_ASSIST_STAGE_ID] || (agents[INPUT_ASSIST_STAGE_ID] = {});
-    const slot = normalizeAgentSlot(slotValue, {
-      enabled: mode !== 'off',
-      presetName: '',
-      maxChars: defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID),
-      turnWindow: DEFAULT_INPUT_ASSIST_TURNS,
-      timeoutMs: DEFAULT_STAGE_TIMEOUT_MS,
-      risuRefs: defaultRisuReferencesForStage(INPUT_ASSIST_STAGE_ID)
-    }, INPUT_ASSIST_STAGE_ID);
-    Object.assign(slotValue, slot, { enabled: mode !== 'off' });
-    return guiEl('section', { class: 'sga-flow-section', id: `sga-stage-${INPUT_ASSIST_STAGE_ID}` }, [
-      guiEl('div', { class: 'sga-section-title' }, [
-        guiEl('h2', { text: playerControlled ? 'RP 행동 선택지 설정' : '인풋 관리자 설정' }),
-        guiEl('p', { text: playerControlled
-          ? 'RP 모드에서는 직접 입력이 기본 권한입니다. 선택 기능을 켜면 AI가 유저가 취할 수 있는 행동 후보만 세 가지 제안하며, 선택된 행동만 유저 입력으로 확정됩니다.'
-          : '소설 모드에서는 같은 핵심 작가 의도를 세 작가 관점으로 구체화한 뒤 선택창에서 하나를 직접 고릅니다. 전체 파이프라인보다 항상 먼저 실행됩니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide', id: 'sga-input-assist-delivery-settings', style: { marginBottom: '14px' } }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '전송 및 확인' }),
-            guiEl('div', { class: 'sga-note', text: playerControlled
-              ? mode === 'off'
-                ? 'RP 행동 선택지가 꺼져 있습니다. 사용자가 작성한 입력이 그대로 유저 행동 정본이 되고 바로 RP 반응 파이프라인으로 넘어갑니다.'
-                : 'AI 행동 후보는 자동 적용되지 않습니다. 유저가 원본 입력 또는 세 행동 후보 중 하나를 명시적으로 선택해야만 현재 유저 입력으로 확정됩니다.'
-              : mode === 'off' ? '인풋 관리자가 꺼져 있습니다.' : '소설 모드에서도 자동 전송하지 않습니다. 원본 입력과 세 작가 관점 AI 후보를 선택창에서 비교하고 하나를 직접 골라야 합니다.' })
-          ]),
-          guiEl('span', {
-            class: `sga-badge ${confirmationMode === 'player_choice' || confirmationMode === 'novel_choice' || confirmationMode === 'confirm' ? 'good' : 'off'}`,
-            text: confirmationMode === 'player_choice' ? '유저 행동 선택 필수' : confirmationMode === 'novel_choice' ? '3관점 선택 필수' : confirmationMode === 'confirm' ? '확인창 사용 중' : '선택창 없음'
-          })
-        ]),
-        mode !== 'off'
-          ? guiEl('div', { class: 'sga-callout good', style: { marginTop: '14px' }, text: playerControlled
-              ? '원본 입력과 유저 행동 후보 3개를 보여주며 자동 선택하지 않습니다. 사용자가 고른 항목만 실제 입력으로 확정됩니다.'
-              : '원본 입력과 세 작가 관점 후보를 비교해 사용자가 직접 하나를 고릅니다. 자동 전송하지 않습니다.' })
-          : guiEl('div', { class: 'sga-callout', style: { marginTop: '14px' }, text: playerControlled ? '직접 입력 모드입니다. GRADIA는 유저 행동을 제안하거나 다시 쓰지 않습니다.' : '인풋 관리자가 꺼져 있어 별도 선택창을 사용하지 않습니다.' }),
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: playerControlled ? 'RP 유저 행동 제안' : '3관점 입력 선택지' }),
-            guiEl('div', { class: 'sga-note', text: playerControlled
-              ? '이 기능은 유저 행동을 사칭하는 기능이 아니라 선택 보조입니다. 선택 전 후보는 비정본이고, 선택 후에는 그 문장이 유저가 직접 제출한 행동으로 취급됩니다. AI 본문은 그 행동을 다시 대신 수행하지 않고 NPC·세계 반응부터 작성합니다.'
-              : '핵심 작가 의도·명시적 고정 사건/결과·금지사항·관계 경계는 세 후보 모두 유지합니다. 다만 작가가 고정하지 않은 주인공의 세부 행동·대사·내면·선택은 주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심 관점에 맞게 달라질 수 있습니다.' })
-          ]),
-          guiEl('span', { class: `sga-badge ${mode === 'off' ? 'off' : Runtime.hookStatus.input ? 'good' : 'warn'}`, text: playerControlled ? (mode === 'off' ? '직접 입력' : 'RP 행동 선택') : mode === 'off' ? '사용 안 함' : Runtime.hookStatus.input ? '입력 훅 활성' : '입력 훅 확인 필요' })
-        ]),
-        playerControlled
-          ? guiEl('div', {}, [
-              guiEl('div', { class: 'sga-row2' }, [
-                fieldNode('RP 행동 선택지', selectNode(mode === 'off' ? 'off' : 'three_choices', [
-                  ['off', '사용 안 함 · 직접 입력'],
-                  ['three_choices', `유저 행동 ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}가지 제안`]
-                ], next => applyInputAssistModeToGui(next === 'off' ? 'off' : 'user_focus')), mode === 'off' ? '내가 작성한 입력만 유저 행동으로 인정합니다.' : 'AI가 유저가 취할 수 있는 서로 다른 행동만 제안하며 NPC·세계의 반응이나 결과를 선결정하지 않습니다.'),
-                fieldNode(
-                  '인풋 도우미 AI 프리셋',
-                  selectNode(slot.presetName || '', presetChoicesFromState(true), next => applyQuickStageProviderToGui(INPUT_ASSIST_STAGE_ID, next)),
-                  `실제 사용: ${resolvedPresetNameForStage(INPUT_ASSIST_STAGE_ID)} · 자동 동작 보정: ${resolvedModelBehaviorForStageInGui(INPUT_ASSIST_STAGE_ID).label}`
-                )
-              ]),
-              guiEl('div', { class: 'sga-note', style: { marginTop: '12px' }, text: 'PLAYER-CONTROLLED 규칙: Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다.' })
-            ])
-          : guiEl('div', {}, [
-              guiEl('div', { class: 'sga-row2' }, [
-                fieldNode('소설 모드 인풋 도우미', selectNode(mode === 'off' ? 'off' : 'three_choices', [['off', '사용 안 함'], ['three_choices', '3관점 선택지 제안']], next => applyInputAssistModeToGui(next === 'off' ? 'off' : 'user_focus')), mode === 'off' ? '원본 입력을 그대로 사용합니다.' : '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심 세 후보를 한 번에 생성하고 직접 선택합니다.'),
-                fieldNode('사용 범위', selectNode(scope, [
-                  ['full_pipeline', '전체 파이프라인의 최상단'],
-                  ['standalone', '인풋 관리자만 단독 사용']
-                ], next => applyInputAssistScopeToGui(next)), scope === 'standalone' ? '재작성한 입력을 메인 응답 모델에 바로 보냅니다.' : '재작성한 입력으로 SHADOW ACT부터 초안을 만듭니다.')
-              ]),
-              guiEl('div', { class: 'sga-row2' }, [
-                fieldNode('목표 글자 수', selectNode(targetChoice.id, INPUT_ASSIST_TARGET_CHAR_CHOICES.map(choice => [choice.id, choice.label]), next => applyInputAssistTargetCharsToGui(next)), targetChoice.chars ? `약 ${targetChoice.chars.toLocaleString('ko-KR')}자를 목표로 완결된 입력을 만듭니다.` : '입력과 문맥의 복잡도에 맞춰 AI가 적절한 길이를 정합니다.'),
-                fieldNode(
-                  '인풋 도우미 AI 프리셋',
-                  selectNode(slot.presetName || '', presetChoicesFromState(true), next => applyQuickStageProviderToGui(INPUT_ASSIST_STAGE_ID, next)),
-                  `실제 사용: ${resolvedPresetNameForStage(INPUT_ASSIST_STAGE_ID)} · 자동 동작 보정: ${resolvedModelBehaviorForStageInGui(INPUT_ASSIST_STAGE_ID).label}`
-                )
-              ])
-            ]),
-        mode !== 'off' ? guiEl('details', { class: 'sga-advanced sga-stage-advanced', style: { marginTop: '14px' } }, [
-          guiEl('summary', {}, [
-            guiEl('span', { text: '세부 설정 · 참고 범위와 대기 시간' }),
-            guiEl('span', { class: 'sga-advanced-hint', text: `자료 자동 선별 · 최대 ${Math.round(slot.timeoutMs / 1000)}초` })
-          ]),
-          guiEl('div', { class: 'sga-advanced-body' }, [
-            guiEl('div', { class: 'sga-note', style: { marginBottom: '10px' }, text: '현재 인풋과 직전 AI 응답 종결부를 기준으로 필요한 자료를 자동으로 찾습니다. 자료 허용 여부는 “자료” 화면에서 공통 관리합니다.' }),
-            guiEl('div', { class: 'sga-row2' }, [
-              fieldNode('설정·로어 참고량', inputNode(slot.maxChars, next => { slotValue.maxChars = Number(next); }, { type: 'number', min: 1000, max: defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID) })),
-              fieldNode('최대 대기 시간(초)', inputNode(Math.round(slot.timeoutMs / 1000), next => { slotValue.timeoutMs = Math.max(5, Number(next) || 5) * 1000; }, { type: 'number', min: 5, max: 300 }))
-            ]),
-            guiEl('div', { class: 'sga-reference-box' }, [
-              guiEl('div', { class: 'sga-reference-head' }, [guiEl('strong', { text: '참고할 RisuAI 정보' }), guiEl('span', { text: playerControlled ? '행동 후보의 가능성/정합성에만 사용' : '체크한 자료만 재구성 프롬프트에 포함' })]),
-              guiEl('div', { class: 'sga-reference-grid' }, [
-                checkboxNode(slot.risuRefs.persona, '페르소나', next => { slotValue.risuRefs.persona = next; }),
-                checkboxNode(slot.risuRefs.characterDescription, '캐릭터 설명', next => { slotValue.risuRefs.characterDescription = next; }),
-                checkboxNode(slot.risuRefs.characterLorebook, '캐릭터 로어북', next => { slotValue.risuRefs.characterLorebook = next; }),
-                checkboxNode(slot.risuRefs.moduleLorebook, '선택한 모듈 로어북', next => { slotValue.risuRefs.moduleLorebook = next; })
-              ]),
-              guiEl('div', { class: 'sga-note', text: playerControlled
-                ? '참고 자료는 가능한 유저 행동 후보를 만드는 배경일 뿐입니다. 자료 속 사건·감정·선택을 유저가 이미 수행한 것으로 승격하지 않습니다.'
-                : '현재 인풋과 직전 AI 응답의 종결부만 검색 문맥으로 사용합니다. 모듈 로어북은 자료 화면에서 고른 항목만 전달합니다.' })
-            ])
-          ])
-        ]) : null,
-        guiEl('div', { class: 'sga-callout', text: '리롤·롤백 예외: 현재 입력과 같은 U가 채팅의 마지막 사용자 메시지로 이미 저장되어 있으면 LLM을 호출하거나 입력을 다시 쓰지 않고 이 단계만 자동으로 건너뜁니다.' })
-      ])
-    ]);
-  };
-
-  const buildAgentsTab = (stageIdFilter = '') => {
-    const settings = Gui.state.runtime;
-    const orderedDefs = orderedBeforeStageDefs(settings?.aideStageOrder);
-    const selectedDef = stageIdFilter && STAGE_DEF_MAP[stageIdFilter]
-      ? STAGE_DEF_MAP[stageIdFilter]
-      : orderedDefs[0];
-    const index = Math.max(0, orderedDefs.findIndex(def => def.id === selectedDef?.id));
-    const nextDef = orderedDefs[index + 1] || null;
-    const card = selectedDef
-      ? buildStageCard(selectedDef, Gui.state.agents[selectedDef.id], index, 'before', settings, { nextStageLabel: nextDef?.label || '' })
-      : null;
-    const sequenceText = orderedDefs.map(def => def.label).join(' → ');
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-flow-before' }, [
-      guiEl('div', { class: 'sga-section-title' }, [
-        guiEl('h2', { text: selectedDef ? `${selectedDef.label} 설정` : '단계별 전문가 설정' }),
-        guiEl('p', { text: `${sequenceText} 순서로 실행합니다. 현재 선택한 단계만 불러와 초기 렌더링 부담을 줄였습니다.` })
-      ]),
-      settings.mode === 'lite' ? guiEl('div', { class: 'sga-callout', text: '현재 라이트 모드에서는 인물 AIDE와 세계관 AIDE를 건너뜁니다. 속도·품질 프로필을 바꿔도 이 작동 방식은 유지됩니다.', style: { marginBottom: '14px' } }) : null,
-      card
-    ]);
   };
 
   const builtInPromptPreview = stageId => {
@@ -42626,63 +40573,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       return `[HEAVYWEIGHT — SEPARATE ANALYSIS CALL]\n\n${analysisSystem}\n\n[HEAVYWEIGHT — FIRST FULL-DRAFT WRITE CALL]\n\n${draftSystem}`;
     }
     return builtInPostPrompt(stageId, null);
-  };
-
-  const buildPromptsTab = () => {
-    const stageId = Gui.selectedPrompt;
-    const def = STAGE_DEF_MAP[stageId] || BEFORE_STAGE_DEFS[0];
-    if (!Gui.state.prompts || typeof Gui.state.prompts !== 'object') Gui.state.prompts = {};
-    if (!Gui.state.prompts[stageId] || typeof Gui.state.prompts[stageId] !== 'object') Gui.state.prompts[stageId] = {};
-    const entry = Gui.state.prompts[stageId];
-    Object.assign(entry, normalizePromptEntry(entry, { mode: 'builtin', customPrompt: '', extraPrompt: '' }));
-    const isBefore = BEFORE_STAGE_DEFS.some(item => item.id === stageId);
-    const multiPipelineMode = normalizeMultiPipelineMode(Gui.state.runtime?.multiPipelineMode);
-    const isHeavyPipeline = multiPipelineMode === 'heavyweight';
-    const stageItems = BEFORE_STAGE_DEFS.map(item => [item.id, `응답 전 · ${item.label}`]);
-    const customArea = inputNode(entry.customPrompt || '', next => {
-      entry.customPrompt = next;
-      entry.extraPrompt = '';
-      entry.mode = text(next || '').trim() ? 'replace' : 'builtin';
-    }, { tag: 'textarea', class: 'tall', placeholder: '판단 기준과 그 결과를 초안에 적용할 구체적인 작성 행동, 조건, 제한을 입력하세요.' });
-    const hasCreativeInstruction = !!text(entry.customPrompt || '').trim();
-    return guiEl('div', {}, [
-      guiEl('div', { class: 'sga-section-title' }, [guiEl('h2', { text: '창작 지침 관리' }), guiEl('p', { text: isHeavyPipeline ? '같은 지침을 SHADOW의 분리 분석·첫 초안 또는 AIDE의 분리 분석·부분 수정에 함께 적용합니다.' : '같은 지침을 SHADOW의 비공개 판단·첫 초안 또는 AIDE의 통합 판단·부분 수정에 직접 적용합니다.' })]),
-      guiEl('div', { class: 'sga-card wide', style: { marginBottom: '14px' } }, [
-        guiEl('div', { class: 'sga-row2' }, [
-          fieldNode('편집할 단계', selectNode(stageId, stageItems, next => { Gui.selectedPrompt = next; renderSettingsGui(); })),
-          fieldNode('적용 상태', guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: hasCreativeInstruction ? '사용자 창작 지침 적용 중' : '내장 지침만 사용' }),
-            guiEl('span', { text: hasCreativeInstruction
-              ? (def.id === 'shadow_act'
-                  ? (isHeavyPipeline ? '분리된 분석과 첫 초안에 동일한 지침을 전달합니다.' : '비공개 판단과 첫 초안에 지침을 직접 전달합니다.')
-                  : (isHeavyPipeline ? '분리된 분석과 문단 부분 수정에 동일한 지침을 전달합니다.' : '통합 판단과 문단 부분 수정에 지침을 직접 전달합니다.'))
-              : '지침이 비어 있으면 내장 단계 역할만 사용합니다.' })
-          ]))
-        ]),
-        guiEl('div', { class: 'sga-callout good', text: hasCreativeInstruction ? `${def.label}: 내장 구조를 유지하면서 사용자 창작 지침을 판단 기준과 실제 작성·부분 수정 행동에 적용합니다.` : `${def.label}: 플러그인 내장 구조와 기본 작성 방향만 사용합니다.` })
-      ]),
-      guiEl('div', { class: 'sga-grid' }, [
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '내장 프롬프트 미리보기' }),
-          guiEl('textarea', { class: 'sga-textarea preview', value: builtInPromptPreview(stageId), readonly: true })
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '사용자 창작 지침' }),
-          customArea,
-          guiEl('div', { class: 'sga-note', text: '분석에서는 무엇을 확인할지, 작성에서는 그 판단을 어떤 행동·반응·대사·묘사·속도 조절로 적용할지 함께 적는 것이 좋습니다. 구조 대체가 아닙니다. 사용 가능한 변수: {{stage}}, {{stage_label}}, {{recent_chat}}, {{latest_user}}, {{latest_assistant}}, {{previous_stage_json}}, {{previous_draft}}, {{json_contract}}, {{original_response}}, {{current_response}}, {{response}}' }),
-          guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-            guiEl('button', { class: 'sga-btn', text: '창작 지침 비우기', onClick: () => { entry.mode = 'builtin'; entry.customPrompt = ''; entry.extraPrompt = ''; markGuiDirty(); renderSettingsGui(); } }),
-            guiEl('button', { class: 'sga-btn', text: '창작 지침 예시 넣기', onClick: () => {
-              entry.customPrompt = '분석 기준: 현재 관계 수준과 직전 행동의 적절성을 확인하고, 이유 없는 감탄·호의·거부처럼 인과가 약한 반응을 위험으로 표시한다.\n작성 적용: 분석된 관계와 상황에 맞춰 구체적인 대사·시선·거리 변화·행동으로 반응을 구성하고, 같은 장면 안에서 상대가 다시 대응할 여지를 남긴다.\n제한: 호감이나 적대감을 근거 없이 확정하지 말고, 모든 장면에 같은 반응 패턴을 반복하지 않는다.';
-              entry.extraPrompt = '';
-              entry.mode = 'replace';
-              markGuiDirty();
-              renderSettingsGui();
-            } })
-          ])
-        ])
-      ])
-    ]);
   };
 
   const backendHostingSummary = (hosting = {}) => {
@@ -42772,492 +40662,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       guiSetStatus(`Hosting Bridge 연결 실패: ${error.message || error}`, true, true);
     }
   };
-
-  const buildBackendHostingPanel = () => {
-    const hosting = normalizeBackendHostingConfig(Gui.state.runtime.backendHosting || {});
-    Gui.state.runtime.backendHosting = hosting;
-    const update = (patch) => {
-      Gui.state.runtime.backendHosting = normalizeBackendHostingConfig({ ...Gui.state.runtime.backendHosting, ...patch });
-      markGuiDirty();
-    };
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('h3', { text: 'LIBRA Hosting Bridge / 프록시' }),
-      guiEl('div', { class: 'sga-note', text: 'provider 요청만 LIBRA 백엔드의 /__libra_host__/fetch로 우회합니다. RisuAI 본체 fetch나 GUI 동작은 건드리지 않습니다.' }),
-      guiEl('div', { class: 'sga-row3', style: { marginTop: '10px' } }, [
-        fieldNode('브릿지 모드', selectNode(hosting.mode, [['off','끄기'],['auto','자동'],['hosted','백엔드 사용']], next => update({ mode: next })), backendHostingSummary(hosting)),
-        fieldNode('Backend URL', inputNode(hosting.url, next => update({ url: next, autoDetected: false }), { placeholder: 'https://xxxx.trycloudflare.com 또는 http://127.0.0.1:18787' }), '자동 감지는 로컬 bootstrap에서 public/local URL을 채웁니다.'),
-        fieldNode('Backend Token', inputNode(hosting.token, next => update({ token: next, autoDetected: false }), { type: 'password', placeholder: 'x-libra-backend-token' }), hosting.token ? '토큰 입력됨' : '백엔드 토큰이 필요합니다.')
-      ]),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-        guiEl('button', { class: 'sga-btn good', text: '로컬 백엔드 자동 감지', onClick: detectBackendBridgeFromGui }),
-        guiEl('button', { class: 'sga-btn', text: '브릿지 연결 테스트', onClick: testBackendBridgeFromGui }),
-        guiEl('button', { class: 'sga-btn danger', text: '브릿지 설정 비우기', onClick: async () => {
-          setGuiBackendHosting({ mode: 'off', url: '', token: '', autoDetected: false, lastDetectedAt: '', lastManifest: null });
-          await renderSettingsGui();
-          guiSetStatus('Hosting Bridge 설정을 비웠습니다.');
-        } })
-      ]),
-      hosting.lastManifest ? guiEl('details', { class: 'sga-advanced', style: { marginTop: '10px' } }, [
-        guiEl('summary', { text: '마지막 manifest' }),
-        guiEl('div', { class: 'sga-code', text: JSON.stringify(hosting.lastManifest, null, 2) })
-      ]) : null
-    ]);
-  };
-
-  const runtimeField = (label, key, options = {}) => {
-    const runtime = Gui.state.runtime;
-    let control;
-    if (options.choices) control = selectNode(runtime[key], options.choices, next => { runtime[key] = next; if (key === 'defaultPresetName') renderSettingsGui(); });
-    else if (options.checkbox) control = checkboxNode(!!runtime[key], options.checkboxLabel || '사용', next => { runtime[key] = next; });
-    else control = inputNode(runtime[key], next => { runtime[key] = options.number ? Number(next) : next; }, { type: options.number ? 'number' : 'text', min: options.min, max: options.max });
-    return fieldNode(label, control, options.note || '');
-  };
-
-  const buildCharacterLoreExclusionPanel = () => {
-    const runtime = Gui.state.runtime;
-    const excludedIds = normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds);
-    runtime.excludedCharacterLoreIds = excludedIds;
-    const excluded = new Set(excludedIds);
-    const catalog = Array.isArray(Gui.characterLoreCatalog) ? Gui.characterLoreCatalog : [];
-    const currentUsedCount = catalog.filter(item => !excluded.has(item.key)).length;
-    const setUsed = (item, used) => {
-      const next = new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));
-      if (used) next.delete(item.key);
-      else next.add(item.key);
-      runtime.excludedCharacterLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const rows = catalog.map(item => {
-      const used = !excluded.has(item.key);
-      return guiEl('label', {
-        class: `sga-module-lore-item${used ? ' selected' : ' excluded'}`,
-        title: used ? `${item.name} · GRADIA가 사용할 수 있음` : `${item.name} · GRADIA가 읽지 않음`
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check',
-          type: 'checkbox',
-          checked: used,
-          'aria-label': `${item.name} 캐릭터 로어북 사용`,
-          onChange: event => setUsed(item, event.target.checked)
-        }),
-        guiEl('div', { class: 'sga-module-lore-copy' }, [
-          guiEl('div', { class: 'sga-module-lore-head' }, [
-            guiEl('strong', { text: item.name }),
-            guiEl('span', { class: `sga-badge ${used ? 'good' : 'off'}`, text: used ? '사용' : '사용 안 함' })
-          ]),
-          guiEl('div', { class: 'sga-module-lore-meta' }, [
-            item.activationKey ? guiEl('span', { text: `키 · ${item.activationKey}` }) : guiEl('span', { text: '활성화 키 없음' }),
-            item.localAlwaysActive ? guiEl('span', { text: '현재 챗 활성' }) : item.alwaysActive ? guiEl('span', { text: '항상 활성' }) : null,
-            item.mode ? guiEl('span', { text: `mode · ${item.mode}` }) : null,
-            Number.isFinite(Number(item.insertorder)) ? guiEl('span', { text: `순서 · ${item.insertorder}` }) : null
-          ]),
-          item.contentPreview
-            ? guiEl('p', { class: 'sga-module-lore-description', text: item.contentPreview })
-            : guiEl('p', { class: 'sga-module-lore-description empty', text: '내용 미리보기 없음' })
-        ])
-      ]);
-    });
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '캐릭터 로어북' }),
-          guiEl('div', { class: 'sga-note', text: '체크한 항목만 GRADIA가 사용할 수 있습니다. 체크를 끈 항목은 검색·활성화·RisuAI 선택 여부와 관계없이 읽지 않습니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${currentUsedCount ? 'good' : 'off'}`, text: `${currentUsedCount}/${catalog.length} 사용` })
-      ]),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-        guiEl('button', {
-          class: 'sga-btn',
-          text: '모두 사용',
-          disabled: !catalog.length || currentUsedCount === catalog.length,
-          onClick: () => {
-            const currentKeys = new Set(catalog.map(item => item.key));
-            runtime.excludedCharacterLoreIds = excludedIds.filter(key => !currentKeys.has(key));
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          text: '모두 끄기',
-          disabled: !catalog.length || currentUsedCount === 0,
-          onClick: () => {
-            runtime.excludedCharacterLoreIds = normalizeExcludedCharacterLoreIds([...excludedIds, ...catalog.map(item => item.key)]);
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          text: Gui.characterLoreCatalogLoading ? '불러오는 중…' : '목록 새로고침',
-          disabled: Gui.characterLoreCatalogLoading,
-          onClick: () => { void refreshCharacterLoreCatalog(true); }
-        })
-      ]),
-      Gui.characterLoreCatalogLoading ? guiEl('div', { class: 'sga-callout', text: '현재 캐릭터의 로어북 목록을 불러오고 있습니다.' }) : null,
-      Gui.characterLoreCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `캐릭터 로어북 목록을 불러오지 못했습니다: ${Gui.characterLoreCatalogError}` }) : null,
-      !Gui.characterLoreCatalogLoading && !catalog.length ? guiEl('div', { class: 'sga-callout', text: '현재 캐릭터에 선택 가능한 캐릭터 로어북이 없습니다.' }) : null,
-      rows.length ? guiEl('div', { class: 'sga-module-lore-grid' }, rows) : null,
-      guiEl('div', { class: 'sga-note', text: `체크 해제한 항목은 내부적으로 제외 목록에 저장됩니다. 다른 캐릭터의 저장값을 포함한 전체 제외 수는 ${excludedIds.length}개입니다.` })
-    ]);
-  };
-
-  const buildModuleLoreSelectionPanel = () => {
-    const runtime = Gui.state.runtime;
-    const selectedIds = normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds);
-    runtime.selectedModuleLoreIds = selectedIds;
-    const excludedIds = normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds);
-    runtime.excludedModuleLoreIds = excludedIds;
-    const selected = new Set(selectedIds);
-    const excluded = new Set(excludedIds);
-    const catalog = Array.isArray(Gui.moduleCatalog) ? Gui.moduleCatalog : [];
-    const activeModules = catalog.filter(item => item.active && item.loreCount > 0);
-    const matchedKeys = new Set(catalog.flatMap(item => item.aliases || [item.key]).filter(Boolean));
-    const unavailableSelected = selectedIds.filter(key => !matchedKeys.has(key));
-    const moduleIsSelected = item => selected.has(item.key) || (item.aliases || []).some(alias => selected.has(alias));
-    const selectedModules = activeModules.filter(moduleIsSelected);
-    const selectedLoreTotal = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).length, 0);
-    const selectedLoreUsed = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).filter(entry => !excluded.has(entry.key)).length, 0);
-    if (!activeModules.some(item => item.key === Gui.moduleCatalogFocusedKey)) Gui.moduleCatalogFocusedKey = selectedModules[0]?.key || activeModules[0]?.key || '';
-    const focusedModule = activeModules.find(item => item.key === Gui.moduleCatalogFocusedKey) || null;
-    const setFocused = item => {
-      Gui.moduleCatalogFocusedKey = item?.key || '';
-      renderSettingsGui();
-    };
-    const setModuleSelected = (item, checked) => {
-      const next = new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds));
-      const nextExcluded = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      const aliases = Array.from(new Set([item.key, ...(item.aliases || [])].filter(Boolean)));
-      aliases.forEach(alias => next.delete(alias));
-      if (checked) next.add(item.key);
-      (item.loreEntries || []).forEach(entry => nextExcluded.delete(entry.key));
-      runtime.selectedModuleLoreIds = Array.from(next);
-      runtime.excludedModuleLoreIds = Array.from(nextExcluded);
-      Gui.moduleCatalogFocusedKey = item.key;
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setEntrySelected = (entry, checked) => {
-      const next = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      if (checked) next.delete(entry.key);
-      else next.add(entry.key);
-      runtime.excludedModuleLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setAllFocusedEntries = checked => {
-      if (!focusedModule || !moduleIsSelected(focusedModule)) return;
-      const next = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      (focusedModule.loreEntries || []).forEach(entry => checked ? next.delete(entry.key) : next.add(entry.key));
-      runtime.excludedModuleLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setAllModules = checked => {
-      const activeEntryKeys = activeModules.flatMap(item => (item.loreEntries || []).map(entry => entry.key));
-      const nextExcluded = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      activeEntryKeys.forEach(key => nextExcluded.delete(key));
-      runtime.selectedModuleLoreIds = checked ? activeModules.map(item => item.key) : [];
-      runtime.excludedModuleLoreIds = Array.from(nextExcluded);
-      if (!Gui.moduleCatalogFocusedKey && activeModules[0]) Gui.moduleCatalogFocusedKey = activeModules[0].key;
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const moduleRows = activeModules.map(item => {
-      const checked = moduleIsSelected(item);
-      const enabledEntries = checked ? (item.loreEntries || []).filter(entry => !excluded.has(entry.key)).length : 0;
-      const focused = item.key === Gui.moduleCatalogFocusedKey;
-      const searchText = normalizeForLoreMatch([
-        item.name,
-        item.namespace,
-        item.description,
-        ...(item.loreEntries || []).flatMap(entry => [entry.name, entry.activationKey, entry.contentPreview])
-      ].filter(Boolean).join('\n'));
-      return guiEl('div', {
-        class: `sga-module-list-row${checked ? ' selected' : ''}${focused ? ' focused' : ''}`,
-        title: item.description || item.name,
-        'data-module-lore-module': item.key,
-        'data-lore-search-text': searchText
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check',
-          type: 'checkbox',
-          checked,
-          'data-module-lore-module-toggle': item.key,
-          'aria-label': `${item.name} 모듈 로어북 사용`,
-          onChange: event => setModuleSelected(item, event.target.checked)
-        }),
-        guiEl('button', {
-          class: 'sga-module-list-copy',
-          type: 'button',
-          'data-module-lore-module-focus': item.key,
-          onClick: () => setFocused(item)
-        }, [
-          guiEl('div', { class: 'sga-module-list-head' }, [
-            guiEl('strong', { text: item.name }),
-            guiEl('span', { class: `sga-badge ${checked ? 'good' : 'off'}`, text: checked ? `${enabledEntries}/${item.loreCount}` : '사용 안 함' })
-          ]),
-          guiEl('div', { class: 'sga-module-list-meta' }, [
-            guiEl('span', { text: `로어 ${item.loreCount}개` }),
-            item.namespace ? guiEl('span', { text: item.namespace }) : null,
-            item.embedded ? guiEl('span', { text: '페르소나 내장' }) : null
-          ]),
-          item.description ? guiEl('p', { class: 'sga-module-list-description', text: item.description }) : null
-        ])
-      ]);
-    });
-    const focusedSelected = !!focusedModule && moduleIsSelected(focusedModule);
-    const focusedEntries = focusedModule?.loreEntries || [];
-    const enabledFocusedCount = focusedSelected ? focusedEntries.filter(entry => !excluded.has(entry.key)).length : 0;
-    const entryRows = focusedEntries.map(entry => {
-      const checked = focusedSelected && !excluded.has(entry.key);
-      const searchText = normalizeForLoreMatch([entry.name, entry.activationKey, entry.contentPreview].filter(Boolean).join('\n'));
-      return guiEl('label', {
-        class: `sga-module-entry-item${checked ? ' selected' : ''}${focusedSelected ? '' : ' disabled'}`,
-        title: entry.contentPreview || entry.name,
-        'data-module-lore-entry': entry.key,
-        'data-lore-search-text': searchText
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check',
-          type: 'checkbox',
-          checked,
-          disabled: !focusedSelected,
-          'data-module-lore-entry-toggle': entry.key,
-          'aria-label': `${entry.name} 로어 사용`,
-          onChange: event => setEntrySelected(entry, event.target.checked)
-        }),
-        guiEl('div', { class: 'sga-module-entry-copy' }, [
-          guiEl('div', { class: 'sga-module-entry-head' }, [
-            guiEl('strong', { text: entry.name }),
-            entry.alwaysActive ? guiEl('span', { class: 'sga-badge good', text: '상시' }) : null
-          ]),
-          guiEl('div', { class: 'sga-module-entry-meta' }, [
-            entry.activationKey ? guiEl('span', { text: `키 · ${entry.activationKey}` }) : guiEl('span', { text: '활성화 키 없음' }),
-            Number.isFinite(Number(entry.priority)) ? guiEl('span', { text: `우선순위 ${entry.priority}` }) : null,
-            entry.position ? guiEl('span', { text: entry.position }) : null
-          ]),
-          guiEl('p', { class: 'sga-module-entry-preview', text: entry.contentPreview || '본문 미리보기 없음' })
-        ])
-      ]);
-    });
-    const filterVisibleLoreRows = event => {
-      const root = event?.currentTarget?.closest?.('.sga-card');
-      if (!root) return;
-      const query = normalizeForLoreMatch(event.currentTarget.value || '');
-      root.querySelectorAll('[data-lore-search-text]').forEach(node => {
-        const searchable = text(node.getAttribute('data-lore-search-text') || '');
-        node.style.display = !query || searchable.includes(query) ? '' : 'none';
-      });
-    };
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '모듈 로어북' }),
-          guiEl('div', { class: 'sga-note', text: '체크한 모듈과 내부 로어만 GRADIA가 사용할 수 있습니다. 모듈을 처음 켜면 내부 로어는 모두 사용 상태가 됩니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${selectedModules.length ? 'good' : 'off'}`, text: `${selectedModules.length}개 모듈 · ${selectedLoreUsed}/${selectedLoreTotal} 로어 사용` })
-      ]),
-      guiEl('div', { class: 'sga-row2', style: { marginTop: '10px' } }, [
-        fieldNode('찾기', guiEl('input', {
-          class: 'sga-input',
-          type: 'search',
-          placeholder: '모듈명 · 로어 제목 · 활성화 키 검색',
-          autocomplete: 'off',
-          onInput: filterVisibleLoreRows
-        }), '현재 목록만 빠르게 필터링합니다.'),
-        guiEl('div', { class: 'sga-actions', style: { alignItems: 'end' } }, [
-          guiEl('button', { class: 'sga-btn', text: '모두 사용', disabled: !activeModules.length || selectedModules.length === activeModules.length, onClick: () => setAllModules(true) }),
-          guiEl('button', { class: 'sga-btn ghost', text: '모두 끄기', disabled: !selectedModules.length, onClick: () => setAllModules(false) }),
-          guiEl('button', { class: 'sga-btn ghost', text: Gui.moduleCatalogLoading ? '불러오는 중…' : '새로고침', disabled: Gui.moduleCatalogLoading, onClick: () => { void refreshModuleLoreCatalog(true); } })
-        ])
-      ]),
-      Gui.moduleCatalogLoading ? guiEl('div', { class: 'sga-callout', text: 'RisuAI의 모듈 목록을 불러오고 있습니다.' }) : null,
-      Gui.moduleCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `모듈 목록을 불러오지 못했습니다: ${Gui.moduleCatalogError}` }) : null,
-      !Gui.moduleCatalogLoading && !activeModules.length ? guiEl('div', { class: 'sga-callout', text: '현재 활성 상태이며 로어북을 가진 모듈이 없습니다.' }) : null,
-      activeModules.length ? guiEl('div', { class: 'sga-module-lore-browser', 'data-module-lore-browser': '' }, [
-        guiEl('section', { class: 'sga-module-browser-pane', 'data-module-lore-entries-pane': '' }, [
-          guiEl('div', { class: 'sga-module-browser-title' }, [
-            guiEl('strong', { text: focusedModule ? focusedModule.name : '내부 로어북' }),
-            guiEl('span', { text: focusedModule ? (focusedSelected ? `${enabledFocusedCount}/${focusedEntries.length}개 사용` : '모듈 사용 안 함') : '모듈을 선택하세요' })
-          ]),
-          guiEl('div', { class: 'sga-module-entry-toolbar' }, [
-            guiEl('button', { class: 'sga-btn', text: '모두 사용', 'data-module-lore-select-all': '', disabled: !focusedSelected || !focusedEntries.length || enabledFocusedCount === focusedEntries.length, onClick: () => setAllFocusedEntries(true) }),
-            guiEl('button', { class: 'sga-btn ghost', text: '모두 끄기', 'data-module-lore-clear-all': '', disabled: !focusedSelected || !enabledFocusedCount, onClick: () => setAllFocusedEntries(false) })
-          ]),
-          entryRows.length
-            ? guiEl('div', { class: 'sga-module-entry-list' }, entryRows)
-            : guiEl('div', { class: 'sga-module-browser-empty', text: focusedModule ? '표시할 로어가 없습니다.' : '오른쪽 목록에서 모듈을 선택하면 내부 로어가 여기에 표시됩니다.' })
-        ]),
-        guiEl('section', { class: 'sga-module-browser-pane sga-module-browser-modules', 'data-module-lore-modules-pane': '' }, [
-          guiEl('div', { class: 'sga-module-browser-title' }, [
-            guiEl('strong', { text: '활성 모듈' }),
-            guiEl('span', { text: `${activeModules.length}개` })
-          ]),
-          guiEl('div', { class: 'sga-module-list' }, moduleRows)
-        ])
-      ]) : null,
-      unavailableSelected.length ? guiEl('div', { class: 'sga-note', text: `현재 찾을 수 없거나 비활성인 선택값: ${unavailableSelected.join(', ')}. 이 값들은 실행 시 읽지 않습니다.` }) : null,
-      guiEl('div', { class: 'sga-note', text: '체크를 끈 항목은 후보 수집 단계에서 제외됩니다. 체크한 항목 안에서 실제로 필요한 로어는 GRADIA가 자동으로 선별합니다.' })
-    ]);
-  };
-
-  const buildNsfwInternalImprovementCard = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const mode = normalizeNsfwMode(runtime.nsfwMode);
-    const enabled = runtime.nsfwGuidanceEnabled !== false;
-    runtime.nsfwMode = mode;
-    runtime.nsfwGuidanceEnabled = enabled;
-    return guiEl('section', { class: 'sga-card wide', id: 'sga-nsfw-guidance-settings' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: 'NSFW 모드와 지침' }),
-          guiEl('div', { class: 'sga-note', text: 'SHADOW ACT와 세 AIDE의 분석·작성·부분 수정에 공통으로 적용할 표현 강도를 선택합니다.' })
-        ]),
-        guiEl('span', {
-          class: `sga-badge ${!enabled || mode === 'off' ? 'off' : 'good'}`,
-          text: !enabled ? '지침 주입 꺼짐' : `NSFW ${NSFW_MODE_DEFS[mode]?.label || 'OFF'}`
-        })
-      ]),
-      fieldNode(
-        'NSFW 지침 주입',
-        checkboxNode(enabled, '선택한 NSFW 모드 지침을 네 단계 프롬프트에 포함', next => applyNsfwGuidanceEnabledToGui(next)),
-        '꺼도 일반적인 장면 프롬프트와 사용자 창작 지침은 그대로 유지됩니다.'
-      ),
-      guiEl('div', { class: 'sga-simple-choice-grid four', style: { marginTop: '12px' } }, Object.entries(NSFW_MODE_DEFS).map(([modeId, def]) => simpleChoiceCard({
-        active: mode === modeId,
-        title: def.label,
-        description: def.description,
-        meta: def.meta,
-        badge: modeId === 'off' ? '기본' : modeId === 'direct' ? '균형' : modeId === 'explicit' ? '최고 강도' : '',
-        onClick: () => applyNsfwModeToGui(modeId)
-      }))),
-      guiEl('div', { class: 'sga-callout', text: 'NSFW 모드는 성인 장면을 새로 만들거나 동의를 추정하는 지시가 아닙니다. 현재 장면, 관계, 명시된 동의·거부·경계와 연속성이 뒷받침할 때 표현 방식과 직접성만 조절합니다.' }),
-      mode !== 'off' ? guiEl('details', { class: 'sga-advanced', style: { marginTop: '12px' } }, [
-        guiEl('summary', {}, [
-          guiEl('span', { text: '현재 NSFW 지침 미리보기' }),
-          guiEl('span', { class: 'sga-advanced-hint', text: `${NSFW_MODE_DEFS[mode]?.label || mode} · 작성 단계 기준` })
-        ]),
-        guiEl('div', { class: 'sga-advanced-body' }, [
-          guiEl('textarea', {
-            class: 'sga-textarea preview',
-            value: buildNsfwGuidanceBlock({ nsfwMode: mode, nsfwGuidanceEnabled: enabled }, 'writing') || '(현재 지침 주입이 꺼져 있습니다.)',
-            readonly: true
-          })
-        ])
-      ]) : null
-    ]);
-  };
-
-  const buildAssistantPrefillOptionCard = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    return guiEl('section', { class: 'sga-card wide', id: 'sga-assistant-prefill-status' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: 'Assistant Prefill' }),
-          guiEl('div', { class: 'sga-note', text: 'GRADIA 확장 응답 엔진이 최종 모델의 RP 본문 시작점을 고정하기 위해 사용하는 출력 구조입니다.' })
-        ]),
-        guiEl('span', { class: 'sga-badge good', text: '기존 구조 보존' })
-      ]),
-      guiEl('div', { class: 'sga-summary-table' }, [
-        guiEl('span', { text: '보존 위치' }), guiEl('strong', { text: 'RisuAI prompt-plan 호환 경로' }),
-        guiEl('span', { text: 'Prefill' }), guiEl('strong', { text: 'Roleplay response:' }),
-        guiEl('span', { text: 'Skill 여부' }), guiEl('strong', { text: '아님 · 출력 전송 구조' })
-      ]),
-      guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: 'Assistant Prefill은 작성 절차가 아니라 출력 시작점 구조이므로 Skill Router로 이동하지 않았고 기존 구현을 제거하지 않았습니다.' })
-    ]);
-  };
-
-  const buildInternalResponseImprovementPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const mode = normalizeNsfwMode(runtime.nsfwMode);
-    const nsfwActive = runtime.nsfwGuidanceEnabled !== false && mode !== 'off';
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-response-options' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '응답 옵션' }),
-            guiEl('div', { class: 'sga-note', text: '기존 응답 개선 지시는 Skill에 흡수되었습니다. 이 화면에는 Skill이 아닌 NSFW 표현 정책과 Assistant Prefill만 남습니다.' })
-          ]),
-          guiEl('span', { class: 'sga-badge good', text: '정책 · 전송' })
-        ]),
-        guiEl('div', { class: 'sga-summary-table' }, [
-          guiEl('span', { text: 'NSFW' }), guiEl('strong', { text: nsfwActive ? `NSFW ${NSFW_MODE_DEFS[mode]?.label || mode}` : '비활성' }),
-          guiEl('span', { text: 'Assistant Prefill' }), guiEl('strong', { text: '기존 구조 보존' }),
-          guiEl('span', { text: '작성 품질 절차' }), guiEl('strong', { text: 'Skill 페이지에서 관리' }),
-          guiEl('span', { text: '추가 AI 호출' }), guiEl('strong', { text: '없음' })
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, [
-          guiEl('button', { class: 'sga-btn', text: 'Skill 열기', onClick: () => navigateGui('flow', '', 'skills') })
-        ])
-      ]),
-      buildNsfwInternalImprovementCard(),
-      buildAssistantPrefillOptionCard()
-    ]);
-  };
-
-  const buildRuntimeTab = () => guiEl('details', { class: 'sga-advanced sga-flow-section', id: 'sga-flow-runtime' }, [
-    guiEl('summary', {}, [
-      guiEl('span', { text: '전문가 실행 설정' }),
-      guiEl('span', { class: 'sga-advanced-hint', text: '일반 사용자는 변경하지 않아도 됩니다.' })
-    ]),
-    guiEl('div', { class: 'sga-advanced-body' }, [
-      guiEl('div', { class: 'sga-section-title' }, [
-        guiEl('h2', { text: '전문가 실행 설정' }),
-        guiEl('p', { text: '오류 처리, 초안 전달 위치, 글자 상한처럼 고급 사용자에게 필요한 값입니다. 쉬운 설정이 이 값을 자동으로 맞춥니다.' })
-      ]),
-      guiEl('div', { class: 'sga-grid' }, [
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '초안 작성 도우미' }),
-          runtimeField('초안 작성 모드', 'mode', { choices: [['off','사용 안 함'],['lite','간소: SHADOW ACT와 플롯만'],['normal','표준: 네 단계 사용']] }),
-          runtimeField('멀티 파이프라인 방식', 'multiPipelineMode', {
-            choices: [['lightweight','경량: 통합 분석 + 작성/부분 수정 1회'],['heavyweight','중량: 분석 분리 + 작성/부분 수정 2회']],
-            note: '경량은 판단을 같은 호출에 통합합니다. 중량은 각 단계의 분리 분석이 성공해야 SHADOW ACT 작성 또는 AIDE 부분 수정을 진행합니다.'
-          }),
-          fieldNode('현재 확인 순서', guiEl('div', { class: 'sga-provider-note-box' }, [guiEl('span', { text: orderedAideStageDefs(Gui.state.runtime.aideStageOrder).map(def => def.label).join(' → ') })]), '쉬운 설정의 “무엇을 먼저 확인할까요?” 또는 단계별 전문가 설정에서 변경합니다.'),
-          runtimeField('응답 마무리 방식', 'outputMode', { choices: [['draft_guided','RisuAI 메인 모델이 마무리']] }),
-          runtimeField('내부 초안 작성 언어', 'internalDraftLanguage', {
-            choices: [['korean','한국어'],['english','English'],['japanese','日本語']],
-            note: 'SHADOW ACT의 초안, 세 AIDE의 자연어 분석값과 수정문, 최종 장면 본문에 적용합니다. 참고 원문과 고유명사·태그·JSON 키는 번역하지 않습니다.'
-          }),
-          runtimeField('내장 작성 방식', 'builtInStylePreset', { choices: [['unified_stylepack','GRADIA 통합 작성 방식']] }),
-          fieldNode('로어 검색 엔진', guiEl('div', { class: 'sga-provider-note-box' }, [guiEl('span', { text: '자동 · 전체 passage 통합 검색' })]), '모든 허용 로어의 전체 본문을 passage 인덱스로 검색한 뒤 RRF·관련도·Coverage MMR·문맥 예산을 이용해 필요한 만큼 자동 확장합니다.'),
-          runtimeField('단계별 로어 시작값', 'loreRerankerTopK', { number: true, min: 1, max: 32, note: '기본 8. 고정 최대치가 아닙니다. 필요한 인물·관계·규칙·사건 근거가 덜 덮였거나 관련도 점수군이 이어지면 문맥 예산 안에서 자동으로 늘어납니다.' }),
-          runtimeField('오류가 났을 때', 'failureMode', { choices: [['soft','다음 단계 계속 · 추천'],['degraded','직전 정상 초안 사용'],['hard','전체 실행 중단']] })
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '창작 지침 OOC' }),
-          guiEl('div', { class: 'sga-note', text: '별도의 작가 제어 계층 없이, OOC가 선택한 기본 단계의 사용자 창작 지침을 직접 편집합니다. 경량에서는 SHADOW의 비공개 판단·첫 초안 또는 AIDE의 통합 판단·부분 수정에, 중량에서는 분리된 분석과 작성·부분 수정에 적용됩니다.' }),
-          fieldNode('OOC AI 연결', guiEl('select', { class: 'sga-select', value: Gui.state.agents?.[USER_INTENT_OOC_STAGE_ID]?.presetName || '', onChange: event => { Gui.state.agents[USER_INTENT_OOC_STAGE_ID].presetName = event.target.value; markGuiDirty(); } }, optionNodes([['','기본 AI 연결 사용'], ...presetNamesFromState().map(name => [name,name])], Gui.state.agents?.[USER_INTENT_OOC_STAGE_ID]?.presetName || '')), 'OOC 대화와 창작 지침 정리에만 사용하는 연결입니다. 실제 네 단계는 각 단계에 지정된 AI 연결을 그대로 사용합니다.'),
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('button', { class: 'sga-btn primary', text: '창작 지침 OOC 열기', onClick: () => navigateGui('flow', '', 'user_intent_ooc') }),
-            guiEl('button', { class: 'sga-btn', text: 'SHADOW 지침 직접 편집', onClick: () => navigateToStageAgent('shadow_act', 'agent_shadow_act') })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: 'AI와 진단' }),
-          runtimeField('기본 AI 연결', 'defaultPresetName', { choices: presetNamesFromState().map(name => [name,name]), note: '단계별 AI 연결 또는 OOC 연결이 비어 있을 때 사용하는 폴백 연결입니다.' }),
-          runtimeField('설정 바로가기', 'guiEnabled', { checkbox: true, checkboxLabel: 'RisuAI 메뉴에 GRADIA 설정 버튼 표시' }),
-          runtimeField('상세 진단 기록', 'debugLog', { checkbox: true, checkboxLabel: '개발자 콘솔에 상세 실행 내용 출력' })
-        ]),
-        buildBackendHostingPanel(),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '정보 전달 도우미' }),
-          runtimeField('메인 응답 모델에 전달할 자료', 'informationTransferMode', { choices: [['draft_only','초안 + 기본 합성·연속성(분석 제외)']] }),
-          runtimeField('앞 단계 분석 전달 글자 수', 'maxPreviousStageChars', { number: true, min: 1000, max: 60000, note: '쉬운 설정의 목표 글자 수가 자동으로 맞춥니다.' }),
-          runtimeField('메인 모델 주입 기본 예산', 'maxInjectionChars', { number: true, min: 1500, max: 60000, note: '전체 초안과 필수 합성 계약을 우선 보존합니다. 공간이 부족하면 분석·창작 보강·Skill 보존·종결 상태 순서로 줄이며, 필요한 경우에만 최대 60,000자까지 자동 확장합니다.' }),
-          runtimeField('초안 전달 위치', 'injectionPosition', { choices: [['before_last_user','현재 사용자 입력 바로 앞 · 권장'],['first_system','설정 지시의 앞부분'],['last_system','설정 지시의 뒷부분']], note: '새 설정의 기본값은 현재 사용자 입력 바로 앞입니다. 이전에 저장한 위치 선택은 그대로 유지됩니다.' }),
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('h3', { text: '권장 응답 길이' }),
-          runtimeField('최소 글자 수', 'targetDraftMinChars', { number: true, min: 100, max: 20000 }),
-          runtimeField('최대 글자 수', 'targetDraftMaxChars', { number: true, min: 500, max: 60000 }),
-          guiEl('div', { class: 'sga-note', text: '응답 길이를 강제로 자르는 값이 아니라, 각 단계에 전달되는 권장 범위입니다. 최근 대화 원문은 별도의 대화 범위 설정을 따릅니다.' })
-        ])
-      ])
-    ])
-  ]);
 
   const settingsBackupSecretKey = key => /^(?:key|api[-_]?key|llm_key|token|backend_hosting_token|secret_deleted|authorization|proxy-authorization|cookie|set-cookie|private_key|client_secret|access_token|refresh_token|x-api-key)$/i.test(key) || /(?:secret|credential|password)/i.test(key);
   const cleanSettingsBackup = (value, importing = false, depth = 0, presetNames = false) => {
@@ -43523,62 +40927,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     return true;
   };
 
-  const buildTransferTab = () => {
-    const isFullExport = Gui.exportScope === 'all';
-    const textarea = inputNode(Gui.importText, next => { Gui.importText = next; }, { tag: 'textarea', class: 'tall', placeholder: '실행 흐름 프리셋 또는 전체 설정 JSON을 붙여넣으세요.' });
-    const fileInput = guiEl('input', { type: 'file', accept: 'application/json,.json', class: 'sga-hidden', onChange: async event => {
-      const file = event.target.files?.[0];
-      event.target.value = '';
-      if (!file) return;
-      try { Gui.importText = await file.text(); renderSettingsGui(); guiSetStatus(`${file.name} 파일을 읽었습니다.`); } catch (error) { guiSetStatus(error.message, true); }
-    } });
-    const scopeControls = guiEl('div', { class: 'sga-row2' }, [
-      fieldNode('내보내기 범위', selectNode(Gui.exportScope || 'flow', [
-        ['flow','실행 흐름 프리셋 · 에이전트/프롬프트/후속/런타임'],
-        ['all','전체 설정 · 실행 흐름 + 프로바이더']
-      ], next => { Gui.exportScope = next; renderSettingsGui(); }), isFullExport ? '프로바이더 프리셋도 함께 이동합니다.' : 'API 키와 프로바이더 정의는 제외하며, 대상 환경의 같은 이름 프리셋을 참조합니다.'),
-      guiEl('div', { class: 'sga-provider-note-box' }, [guiEl('strong', { text: '키 없는 설정 백업' }), guiEl('span', { text: 'API 키와 인증 토큰은 항상 제외합니다. 가져오기는 먼저 편집기에 표시되며, 상단 저장을 눌러 적용합니다.' })])
-    ]);
-    const downloadCurrent = () => {
-      const payload = selectedExportPayload();
-      const date = new Date().toISOString().slice(0, 10);
-      const name = isFullExport ? `gradia-config-${date}.json` : `gradia-flow-${date}.json`;
-      downloadJson(name, payload);
-      guiSetStatus(isFullExport ? '전체 설정 JSON 파일을 생성했습니다.' : '실행 흐름 프리셋 JSON 파일을 생성했습니다.');
-    };
-    return guiEl('div', {}, [
-      guiEl('div', { class: 'sga-section-title' }, [
-        guiEl('h2', { text: 'JSON 프리셋 가져오기 / 내보내기' }),
-        guiEl('p', { text: '실행 흐름만 재사용하거나, 필요할 때 프로바이더까지 포함한 전체 설정을 이동합니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        scopeControls,
-        textarea,
-        fileInput,
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-          guiEl('button', { class: 'sga-btn primary', text: isFullExport ? '전체 설정 JSON 만들기' : '실행 흐름 JSON 만들기', onClick: () => { Gui.importText = JSON.stringify(selectedExportPayload(), null, 2); renderSettingsGui(); } }),
-          guiEl('button', { class: 'sga-btn', text: 'JSON 파일로 저장', onClick: downloadCurrent }),
-          guiEl('button', { class: 'sga-btn', text: '파일 열기', onClick: () => fileInput.click() }),
-          guiEl('button', { class: 'sga-btn good', text: 'JSON으로 교체 가져오기', onClick: () => { try { applyImportedConfiguration(JSON.parse(Gui.importText), false); renderSettingsGui(); guiSetStatus('가져온 프리셋으로 GUI 상태를 교체했습니다. 상단 저장 버튼을 눌러 적용하세요.'); } catch (error) { guiSetStatus(error.message, true, true); } } }),
-          guiEl('button', { class: 'sga-btn', text: 'JSON 병합 가져오기', onClick: () => { try { applyImportedConfiguration(JSON.parse(Gui.importText), true); renderSettingsGui(); guiSetStatus('가져온 프리셋을 현재 GUI 상태에 병합했습니다. 상단 저장 버튼을 눌러 적용하세요.'); } catch (error) { guiSetStatus(error.message, true, true); } } })
-        ]),
-        guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '실행 흐름 프리셋을 가져왔을 때 같은 이름의 프로바이더 프리셋이 없으면 해당 단계 카드에 “프리셋 확인”이 표시됩니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide', style: { marginTop: '14px' } }, [
-        guiEl('h3', { text: '초기화' }),
-        guiEl('div', { class: 'sga-note', text: 'GUI 저장 설정을 삭제하면 다시 //@arg 설정과 내장 기본값을 사용합니다.' }),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-          guiEl('button', { class: 'sga-btn danger', text: 'GUI 설정 초기화(비밀 유지)', onClick: async () => {
-            await clearStructuredSettings(false); await ensureGuiState(true); await renderSettingsGui(); guiSetStatus('GUI 설정을 초기화했습니다. 기기 로컬 비밀 키는 유지했습니다.');
-          } }),
-          guiEl('button', { class: 'sga-btn danger', text: '모든 설정과 비밀 키 초기화', onClick: async () => {
-            await clearStructuredSettings(true); await ensureGuiState(true); await renderSettingsGui(); guiSetStatus('모든 저장 설정과 비밀 키를 초기화했습니다.');
-          } })
-        ])
-      ])
-    ]);
-  };
-
   const runtimeForDisplay = () => activeLibEvidenceRun ? { externalEvidence: true, status: 'request_local_redacted' } : ({
     version: PLUGIN_VERSION,
     runs: Runtime.runs,
@@ -43652,282 +41000,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     stageTrace: Runtime.stageTrace.slice(-32)
   });
 
-  const canonicalReferenceBudgetForDisplay = (lastRisuContext = Runtime.lastRisuContext) => {
-    const shared = lastRisuContext?.shared || {};
-    const fullPacket = shared.referencePacket || null;
-    const referenceMeta = shared?.meta?.referencePacket
-      || lastRisuContext?.last?.meta?.referencePacket
-      || null;
-    const budget = fullPacket?.budget || referenceMeta?.budget || null;
-    if ((!fullPacket && !referenceMeta) || !budget) return null;
-    const groups = Object.fromEntries(Object.entries(budget.groups || {}).map(([group, value]) => [
-      group,
-      {
-        demandChars: Number(value?.demandChars || 0),
-        usedChars: Number(value?.usedChars || 0),
-        omittedChars: Number(value?.omittedChars || 0),
-        selectedCount: Number(value?.selectedCount || 0),
-        omittedCount: Number(value?.omittedCount || 0)
-      }
-    ]));
-    return {
-      demandChars: Number(budget.demandChars || 0),
-      profileCapChars: Number(budget.profileCapChars || 0),
-      safeAvailableChars: Number(budget.safeAvailableChars || 0),
-      effectiveBudgetChars: Number(budget.effectiveBudgetChars || referenceMeta?.effectiveBudgetChars || 0),
-      usedChars: Number(budget.usedChars || 0),
-      omittedChars: Number(budget.omittedChars || 0),
-      capacitySource: budget.capacitySource
-        || shared?.referenceCapacity?.capacitySource
-        || referenceMeta?.capacitySource
-        || '',
-      limitingStage: budget.limitingStage || '',
-      selectionHash: fullPacket?.selectionHash || referenceMeta?.selectionHash || '',
-      packedHash: fullPacket?.packedHash || referenceMeta?.packedHash || '',
-      transport: fullPacket?.transport || referenceMeta?.transport || null,
-      groups,
-      omissions: Array.isArray(budget.omissions) ? budget.omissions : [],
-      warnings: Array.isArray(budget.warnings)
-        ? budget.warnings
-        : Array.isArray(budget.capacityWarnings)
-          ? budget.capacityWarnings
-          : [],
-      fallback: referenceMeta?.fallback === true,
-      fallbackReason: referenceMeta?.fallbackReason || ''
-    };
-  };
-
-  const lazyDebugCodeCard = (title, valueFactory, emptyText = '(기록 없음)') => guiEl('div', {
-    class: 'sga-card wide',
-    dataset: { lazyDebugCard: 'true' }
-  }, [
-    guiEl('h3', { text: title }),
-    lazyPayloadNode(valueFactory, { bodyClass: 'sga-code', emptyText })
-  ]);
-
-  const buildDebugTab = () => {
-    const stageLabel = (id) => id === 'beforeRequest'
-      ? '요청 적용 확인'
-      : STAGE_DEF_MAP[id]?.label || Runtime.stageTrace.find(t => t.stage === id)?.parsed?.label || id;
-    const debugPayloadText = () => JSON.stringify(runtimeForDisplay(), null, 2);
-    const showDebugExportText = async (message = '디버그 JSON을 아래 텍스트 영역에 표시했습니다.', isError = false) => {
-      Gui.debugExportText = debugPayloadText();
-      await renderSettingsGui();
-      guiSetStatus(message, isError, true);
-    };
-    const tracePill = (t) => {
-      const info = traceStateInfo(t);
-      const state = info.className === 'good' ? 'ok' : info.className === 'warn' ? 'fallback' : info.className === 'danger' ? 'error' : 'skip';
-      const label = stageLabel(t.stage);
-      const elapsed = info.elapsed;
-      return guiEl('div', { class: `sga-summary-pill ${state}` }, [
-        guiEl('span', { class: 'sga-summary-name', text: label }),
-        guiEl('span', { class: 'sga-summary-state', text: info.label }),
-        elapsed ? guiEl('span', { class: 'sga-summary-elapsed', text: elapsed }) : null
-      ]);
-    };
-    const beforeTraceLimit = Math.max(16, BEFORE_STAGE_DEFS.length);
-    const beforeTraces = Runtime.stageTrace.slice(-beforeTraceLimit);
-    const summaryBlocks = [];
-    const canonicalReferenceBudget = canonicalReferenceBudgetForDisplay();
-    const formatChars = value => `${Number(value || 0).toLocaleString('ko-KR')}자`;
-    if (Runtime.inFlight) summaryBlocks.push(guiEl('div', { class: 'sga-inflight', text: '● 파이프라인 실행 중…' }));
-    if (beforeTraces.length) summaryBlocks.push(guiEl('div', { class: 'sga-summary-row' }, [guiEl('span', { class: 'sga-summary-label', text: '직렬 단계' }), ...beforeTraces.map(t => tracePill(t))]));
-    if (!summaryBlocks.length) summaryBlocks.push(guiEl('div', { class: 'sga-summary-empty', text: '아직 실행 기록이 없습니다. 응답을 한 번 생성하면 요약이 표시됩니다.' }));
-    return guiEl('div', {}, [
-      guiEl('div', { class: 'sga-section-title' }, [guiEl('h2', { text: '디버그' }), guiEl('p', { text: '네 단계 직렬 처리 상태, 단계별 프리셋, 경고와 최종 주입 초안을 확인합니다.' })]),
-      guiEl('div', { class: 'sga-actions', style: { marginBottom: '12px' } }, [
-        guiEl('button', { class: 'sga-btn', text: '새로고침', onClick: () => renderSettingsGui() }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 복사', onClick: async () => {
-          const payload = debugPayloadText();
-          const result = await copyTextWithFallback(payload);
-          if (result.ok) {
-            Gui.debugExportText = '';
-            await renderSettingsGui();
-            guiSetStatus(result.method === 'clipboard' ? '디버그 JSON을 복사했습니다.' : '디버그 JSON을 fallback 복사 방식으로 복사했습니다.');
-          } else {
-            Gui.debugExportText = payload;
-            await renderSettingsGui();
-            guiSetStatus(`클립보드 복사가 차단되어 아래 텍스트 영역에 표시했습니다. ${result.error}`, true, true);
-          }
-        } }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 파일로 저장', onClick: async () => {
-          const ok = downloadJson(`gradia-debug-${new Date().toISOString().slice(0,10)}.json`, runtimeForDisplay());
-          if (ok) guiSetStatus('디버그 JSON 파일을 생성했습니다.');
-          else await showDebugExportText('파일 저장 API를 사용할 수 없어 아래 텍스트 영역에 표시했습니다.', true);
-        } }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 표시', onClick: async () => {
-          await showDebugExportText();
-        } }),
-        guiEl('button', { class: 'sga-btn danger', text: '경고 로그 지우기', onClick: () => { Runtime.warnings.length = 0; renderSettingsGui(); } })
-      ]),
-      Gui.debugExportText ? guiEl('div', { class: 'sga-card wide', style: { marginBottom: '12px' } }, [
-        guiEl('h3', { text: '디버그 JSON 내보내기' }),
-        guiEl('div', { class: 'sga-note', text: '클립보드가 차단된 환경에서는 아래 내용을 직접 선택해서 복사하거나 파일 저장 버튼을 사용하세요.' }),
-        guiEl('textarea', { class: 'sga-textarea tall', readonly: true, value: Gui.debugExportText })
-      ]) : null,
-      guiEl('div', { class: 'sga-summary-panel' }, summaryBlocks),
-      guiEl('div', { class: 'sga-grid' }, [
-        guiEl('div', { class: 'sga-card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'sga-code', text: JSON.stringify({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }, null, 2) })]),
-        lazyDebugCodeCard('마지막 호출 계측', () => Runtime.callTelemetry, '(아직 GRADIA 호출 기록 없음)'),
-        lazyDebugCodeCard('마지막 Provider 호출', () => ({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge }), '(아직 provider 호출 기록 없음)'),
-        guiEl('div', { class: 'sga-card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'sga-code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
-        guiEl('div', { class: 'sga-card wide' }, [
-          guiEl('h3', { text: '정본 참조 예산' }),
-          canonicalReferenceBudget
-            ? guiEl('div', {}, [
-                guiEl('div', {
-                  class: 'sga-note',
-                  style: { marginBottom: '10px' },
-                  text: [
-                    `요구 ${formatChars(canonicalReferenceBudget.demandChars)}`,
-                    `프로필 상한 ${formatChars(canonicalReferenceBudget.profileCapChars)}`,
-                    `모델 안전량 ${formatChars(canonicalReferenceBudget.safeAvailableChars)}`,
-                    `실제 사용 ${formatChars(canonicalReferenceBudget.usedChars)}`,
-                    `제외 ${formatChars(canonicalReferenceBudget.omittedChars)}`,
-                    '경량 후보 압축 → 공용 후보 24 · 일반 로어 Top 8 + 필수 로어 보호'
-                  ].join(' · ')
-                }),
-                guiEl('div', { class: 'sga-code', text: JSON.stringify(canonicalReferenceBudget, null, 2) })
-              ])
-            : guiEl('div', { class: 'sga-note', text: '아직 정본 참조 패킷의 예산 기록이 없습니다.' })
-        ]),
-        lazyDebugCodeCard('마지막 SHADOW ACT RisuAI 참조', () => Runtime.lastRisuContext, '(아직 참조 기록 없음)'),
-        lazyDebugCodeCard('확장 모드 RisuAI식 엔진 기록', () => Runtime.risuEngine, '(아직 확장 모드 실행 기록 없음)'),
-        lazyDebugCodeCard('GRADIA 최종 응답 초안', () => Runtime.finalDraft || (Runtime.finalDraftMeta?.skipped ? `실행 안 됨: ${Runtime.finalDraftMeta.reason || 'unknown'}` : '(아직 최종 초안 없음)')),
-        lazyDebugCodeCard('응답 전 에이전트 원문 추적', () => Runtime.stageTrace.slice(-32), '(아직 실행 기록 없음)'),
-        lazyDebugCodeCard('마지막 메인 모델 주입 draft', () => Runtime.lastInjection || '(아직 주입 기록 없음)')
-      ])
-    ]);
-  };
-
-  const injectionPositionUserLabel = value => ({
-    first_system: '설정 지시의 앞부분',
-    last_system: '설정 지시의 뒷부분',
-    before_last_user: '현재 사용자 입력 바로 앞'
-  }[value] || '현재 사용자 입력 바로 앞');
-
-  const injectionCapacityUserLabel = value => {
-    const chars = Number(value) || DEFAULT_MAX_INJECTION_CHARS;
-    if (chars <= 9000) return '가볍게';
-    if (chars <= 16000) return '보통';
-    return '넉넉하게';
-  };
-
-  const buildInformationTransferSettingsPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const mode = normalizeChoice(runtime.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only');
-    const withAnalysis = mode === 'draft_and_analysis';
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-information-transfer-settings' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', { class: 'sga-agent-title' }, [
-            guiEl('span', { class: 'sga-agent-index main', text: 'I' }),
-            guiEl('div', {}, [
-              guiEl('h3', { text: '정보 전달 범위' }),
-              guiEl('div', { class: 'sga-agent-desc compact', text: '최종 초안과 필수 제약만 정상 RisuAI 응답 경로에 전달합니다. 단계별 분석 자료는 내부에서만 사용합니다.' })
-            ])
-          ]),
-          guiEl('span', { class: `sga-badge ${withAnalysis ? 'warn' : 'good'}`, text: withAnalysis ? '초안 + 분석' : '분석 제외' })
-        ]),
-        guiEl('div', { class: 'sga-simple-choice-grid two', style: { marginTop: '14px' } }, [
-          simpleChoiceCard({
-            active: mode === 'draft_only',
-            title: '초안만 전달',
-            description: '완성된 초안과 필수 합성·종결 장면 연속성 지시는 유지하고, GRADIA 단계별 분석 블록만 제외합니다.',
-            meta: '분석 블록 제외 · 기본 합성/연속성 유지 · 추천',
-            badge: '추천',
-            onClick: () => applyInformationTransferModeToGui('draft_only')
-          })
-        ]),
-        guiEl('div', { class: 'sga-callout', style: { marginTop: '14px' } }, [
-          guiEl('strong', { text: '현재 전달되는 자료' }),
-          guiEl('div', { class: 'sga-summary-table', style: { marginTop: '10px' } }, [
-            guiEl('span', { text: '최종 초안' }), guiEl('strong', { text: '항상 전달' }),
-            guiEl('span', { text: '단계별 분석 제약' }), guiEl('strong', { text: withAnalysis ? '우선순위·중복 정리 후 전달' : '분석 블록 제외' }),
-            guiEl('span', { text: '단계별 분석 의도' }), guiEl('strong', { text: withAnalysis ? '우선순위·중복 정리 후 전달' : '분석 블록 제외' }),
-            guiEl('span', { text: '분석 위험 점검' }), guiEl('strong', { text: withAnalysis ? '심각도·구체성 기준 최대 3개' : '분석 블록 제외' })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-note', text: '경량·중량 모두 실제 단계 결과에 존재하는 분석 객체만 사용합니다. 후단의 성공한 AIDE 수정과 사용자 주도권·연속성·비공개·시점 경계를 우선하고, 위험은 심각도와 구체성 기준 최대 3개만 선택합니다. 초안과 중복되는 문장은 제거하며 로어북이나 장기기억 원문은 이 경로로 다시 전달하지 않습니다.' }),
-        guiEl('div', { class: 'sga-note', text: '분석 자료는 메인 응답을 돕는 비공개 참고 정보로만 주입됩니다. 현재 사용자 입력, 활성 로어북, 시스템 지시를 덮어쓰지 않으며 응답에 그대로 노출하지 않도록 명시됩니다.' }),
-        guiEl('div', { class: 'sga-note', text: '“초안만 전달”을 선택해도 메인 요청에 이미 제공된 활성 설정·최근 대화·연속성·장기기억 문맥은 제거되지 않습니다. 이 선택은 GRADIA 내부 분석 자료를 추가로 보낼지만 결정합니다.' })
-      ])
-    ]);
-  };
-
-  const buildMainResponseBridge = () => {
-    const runtime = Gui.state.runtime || {};
-    const playerControlled = normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)) === 'rp';
-    const mode = normalizeChoice(runtime.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided');
-    const guided = mode === 'draft_guided';
-    const engine = mode === 'risu_engine';
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-flow-main-response' }, [
-      guiEl('div', { class: 'sga-card wide sga-main-response-card' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', { class: 'sga-agent-title' }, [
-            guiEl('span', { class: 'sga-agent-index main', text: 'M' }),
-            guiEl('div', {}, [
-              guiEl('h3', { text: '메인 응답 모델' }),
-              guiEl('div', { class: 'sga-agent-desc compact', text: playerControlled
-                ? (engine
-                    ? 'RP 확장 모드: Risu Engine부터 메인 응답 모델까지 별도 RP 전용 최종 프롬프트를 사용해, USER AGENCY LEDGER 아래에서 NPC·세계 반응 후보만 보존·마무리합니다.'
-                    : 'RP 기본 모드: 최종 초안과 USER AGENCY LEDGER를 함께 주입해, 메인 응답 모델이 새 유저 행동을 만들지 않고 NPC·세계 반응만 다듬습니다.')
-                : engine
-                  ? '확장 모드: GRADIA 최종 초안을 RisuAI식 promptTemplate/RAG 자체 엔진으로 한 번 더 구성한 뒤, 그 결과를 RisuAI 메인 응답 모델에 주입합니다.'
-                  : '기본 모드: GRADIA 최종 초안을 같은 장면의 시드로 주입하고, RisuAI 메인 응답 모델이 활성 로어·최근 턴·장기기억 연속성까지 활용해 장면 내부를 발전시킵니다.' })
-            ])
-          ]),
-          guiEl('span', { class: `sga-badge ${guided ? 'good' : 'warn'}`, text: engine ? '자체 엔진' : '초안 주입' })
-        ]),
-        guiEl('div', { class: 'sga-simple-choice-grid two', style: { marginTop: '14px', marginBottom: '14px' } }, [
-          simpleChoiceCard({
-            active: guided,
-            title: '일반 · 메인 모델이 마무리',
-            description: playerControlled
-              ? 'GRADIA 초안과 유저 행동 불가침 지시를 메인 응답 모델에 전달해 같은 장면 안에서 자연스럽게 다듬습니다.'
-              : 'GRADIA 최종 초안을 메인 응답 모델에 전달해 활성 로어와 최근 문맥을 활용해 같은 장면 안에서 마무리합니다.',
-            meta: '기본 · 가장 안정적인 전달 방식',
-            badge: guided ? '현재' : '추천',
-            onClick: () => applySimpleOutputToGui('draft_guided')
-          })
-        ]),
-        guiEl('div', { class: 'sga-main-response-grid' }, [
-          guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '출력 방식' }),
-            guiEl('span', { text: engine ? '확장 모드 · 엔진 초안 주입' : '기본 모드 · 메인 모델 다듬기' })
-          ]),
-          guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '초안 전달 위치' }),
-            guiEl('span', { text: injectionPositionUserLabel(runtime.injectionPosition) })
-          ]),
-          guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '초안 전달량' }),
-            guiEl('span', { text: injectionCapacityUserLabel(runtime.maxInjectionChars) })
-          ]),
-          guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '정보 전달 도우미' }),
-            guiEl('span', { text: runtime.informationTransferMode === 'draft_and_analysis' ? '초안 + 기본 지시 + 실제 분석' : '초안 + 기본 합성·연속성' })
-          ]),
-          guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '장면 확장 근거' }),
-            guiEl('span', { text: '현재 요청에 제공된 활성 설정 · 최근 U+A · 연속성 · 장기기억 문맥' })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-note', text: playerControlled
-          ? 'RP 모드의 최종 합성은 유저 입력을 이미 수행된 행동으로 취급합니다. 그 행동을 다시 서술하거나 새 유저 행동·대사·감정·선택을 추가하지 않습니다. NPC·세계는 인과적으로 충분히 진행하거나 자연스럽게 장면을 닫을 수 있고, 다음 전개가 새 유저 행동에 의존하는 순간에만 멈춥니다.'
-          : '메인 모델은 초안 뒤의 다음 장면을 이어 쓰지 않고, 주어진 문맥을 행동·반응·대화·물리적 연속성에 녹여 같은 장면 내부를 발전시킵니다.' })
-      ])
-    ]);
-  };
-
-  const scrollGuiSectionIntoView = (selector) => {
-    try {
-      const target = Gui.root?.querySelector(selector) || (typeof document !== 'undefined' ? document.querySelector(selector) : null);
-      if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (_) {}
-  };
-
   const easySettingsShadowSlot = (agents = Gui.state?.agents) => normalizeAgentSlot(agents?.shadow_act, {
     enabled: true,
     maxChars: defaultContextCharsForStage('shadow_act'),
@@ -43935,355 +41007,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     timeoutMs: DEFAULT_STAGE_TIMEOUT_MS,
     risuRefs: defaultRisuReferencesForStage('shadow_act')
   }, 'shadow_act');
-
-  const buildExecutionFlowTab = () => {
-    const runtime = Gui.state.runtime || {};
-    const section = Gui.sidebarSection || 'overview';
-    const page = (title, description, children) => guiEl('div', { class: 'sga-flow-page' }, [
-      guiEl('div', { class: 'sga-section-title sga-flow-page-title' }, [
-        guiEl('h2', { text: title }),
-        description ? guiEl('p', { text: description }) : null
-      ]),
-      ...(Array.isArray(children) ? children : [children])
-    ]);
-
-    if (section === 'results') return page('실행 결과', '단계별 실제 분석과 초안을 필요할 때만 불러옵니다.', buildExecutionResultsPanel());
-    if (section === 'user_intent_ooc') return page('창작 지침 OOC', '작업 대상을 선택하고 대화로 해당 단계의 분석 기준과 작성 행동을 하나의 창작 지침으로 작성합니다.', buildUserIntentOocPanel());
-    if (section === 'internal_response_improvement' || section === 'response_improvement') {
-      return page('응답 옵션', 'Skill과 분리된 NSFW 표현 정책과 Assistant Prefill 상태를 관리합니다.', buildInternalResponseImprovementPanel());
-    }
-    if (section === 'runtime') return page('전문가 설정', '내부 한도와 실행 방식을 조정합니다.', buildRuntimeTab());
-    if (section === 'modules') return page('모듈 로어북', '사용할 모듈과 내부 로어를 선택합니다.', buildModuleLoreSelectionPanel());
-    if (section === 'character_lore_exclusions') return page('캐릭터 로어북', 'GRADIA가 사용할 캐릭터 로어북을 선택합니다.', buildCharacterLoreExclusionPanel());
-    if (section === 'information_transfer') return page('정보 전달 도우미', 'GRADIA의 최종 초안과 단계별 분석 자료 중 무엇을 메인 응답 모델에 제공할지 선택합니다.', buildInformationTransferSettingsPanel());
-    if (section === 'main') return page('메인 응답', 'GRADIA 초안을 최종 응답 모델에 전달하는 방식을 확인합니다.', buildMainResponseBridge());
-    if (section === 'transfer') return page('가져오기 / 내보내기', '설정 JSON을 이동하거나 병합합니다.', buildTransferTab());
-    if (section === 'debug') return page('디버그 / 실행 진단', '대형 실행 데이터는 이 화면을 열었을 때만 생성됩니다.', buildDebugTab());
-    if (section.startsWith('agent_')) {
-      const stageId = section.slice('agent_'.length);
-      if (stageId === INPUT_ASSIST_STAGE_ID) return buildInputAssistSettingsPanel();
-      return buildAgentsTab(stageId);
-    }
-
-    const shadowSlot = easySettingsShadowSlot();
-    const beforeEnabled = BEFORE_STAGE_DEFS.filter(def => Gui.state.agents?.[def.id]?.enabled).length;
-    const providerNames = presetNamesFromState();
-    const configuredProviders = providerNames.filter(name => providerConfigured(Gui.state.providers?.[name])).length;
-    const orderedDefs = orderedBeforeStageDefs(runtime.aideStageOrder);
-    const creativeDirectionStages = BEFORE_STAGE_DEFS.filter(def =>
-      text(Gui.state?.prompts?.[def.id]?.customPrompt || '').trim()
-    );
-    const inputAssistMode = normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off');
-    const inputAssistScope = normalizeChoice(runtime.inputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline');
-    const authorDirectedInput = normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)) === 'rp';
-    const multiPipelineMode = normalizeMultiPipelineMode(runtime.multiPipelineMode);
-    const multiPipelineDef = MULTI_PIPELINE_MODE_DEFS[multiPipelineMode];
-    const guiCallPlan = expectedTotalCallPlan({
-      ...runtime,
-      enableShadowAct: Gui.state.agents?.shadow_act?.enabled === true,
-      enableCharacterAide: Gui.state.agents?.aide_character?.enabled === true,
-      enableWorldAide: Gui.state.agents?.aide_world?.enabled === true,
-      enablePlotAide: Gui.state.agents?.aide_plot?.enabled === true
-    });
-    const beforeMiniNodes = [
-      guiEl('div', { class: `sga-flow-mini${inputAssistMode !== 'off' ? '' : ' off'}` }, [
-        guiEl('strong', { text: INPUT_ASSIST_STAGE_DEF.label }),
-        guiEl('span', { text: inputAssistMode === 'off' ? (authorDirectedInput ? '직접 입력' : '사용 안 함') : authorDirectedInput ? `유저 행동 선택지 · ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 · 직접 선택` : `3관점 선택지 · ${NOVEL_INPUT_CHOICE_TARGET}개 · ${inputAssistTargetChoice(runtime.inputAssistTargetChars).label} · ${inputAssistScope === 'standalone' ? '단독' : '최상단'}` })
-      ]),
-      ...orderedDefs.map(def => guiEl('div', { class: `sga-flow-mini${Gui.state.agents?.[def.id]?.enabled && (inputAssistMode === 'off' || inputAssistScope !== 'standalone') ? '' : ' off'}` }, [
-      guiEl('strong', { text: def.label }),
-      guiEl('span', { text: resolvedPresetNameForStage(def.id) })
-      ]))
-    ];
-
-    return page(authorDirectedInput ? 'RP 모드 개요' : '소설 모드 개요', authorDirectedInput ? '유저 행동 불가침 상태와 RP 반응 파이프라인만 요약합니다. 모드 전환은 화면 최상단 스위치에서 합니다.' : '기존 GRADIA 소설형 작성 상태를 요약합니다. 모드 전환은 화면 최상단 스위치에서 합니다.', [
-      buildSimpleSettingsPanel(),
-      guiEl('div', { class: 'sga-glance-grid' }, [
-        guiEl('div', { class: `sga-glance-card ${authorDirectedInput ? 'accent-amber' : 'accent-blue'}` }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '작성 모드' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Writing' })]), guiEl('div', { class: 'sga-glance-value', text: authorDirectedInput ? 'RP' : '소설' }), guiEl('div', { class: 'sga-glance-label', text: authorDirectedInput ? '유저 행동 불가침 · NPC/세계 자율 전개' : '기존 GRADIA 장면 창작' })]),
-        guiEl('div', { class: 'sga-glance-card accent-purple' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '멀티 파이프라인' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Pipeline' })]), guiEl('div', { class: 'sga-glance-value', text: multiPipelineMode === 'heavyweight' ? '중량' : '경량' }), guiEl('div', { class: 'sga-glance-label', text: `${runtime.mode === 'lite' ? '간소' : runtime.mode === 'off' ? '꺼짐' : '표준'} 범위 · ${multiPipelineDef.meta}` })]),
-        guiEl('div', { class: 'sga-glance-card accent-blue' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '활성 단계' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Stages' })]), guiEl('div', { class: 'sga-glance-value', text: `${beforeEnabled}/4` }), guiEl('div', { class: 'sga-glance-label', text: '활성화된 주요 직렬 단계 수' })]),
-        guiEl('div', { class: 'sga-glance-card' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '최대 대기 시간' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Wait' })]), guiEl('div', { class: 'sga-glance-value', text: `${Math.round(shadowSlot.timeoutMs / 1000)}초` }), guiEl('div', { class: 'sga-glance-label', text: 'SHADOW ACT 기준' })]),
-        guiEl('div', { class: 'sga-glance-card accent-green' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '출력 방식' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Output' })]), guiEl('div', { class: 'sga-glance-value', text: runtime.outputMode === 'risu_engine' ? '확장' : '일반' }), guiEl('div', { class: 'sga-glance-label', text: '최종 응답 마무리 방식' })]),
-        guiEl('div', { class: 'sga-glance-card accent-purple' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: '예상 호출' }), guiEl('span', { class: 'sga-glance-kicker', text: 'Calls' })]), guiEl('div', { class: 'sga-glance-value', text: `${guiCallPlan.internalLogicalCalls} + 1` }), guiEl('div', { class: 'sga-glance-label', text: `초안 ${guiCallPlan.baseDraftCalls} · Input ${guiCallPlan.inputAssistCalls} · Arc ${guiCallPlan.arcBoundaryCalls} · Engine ${guiCallPlan.risuEngineCalls} · 외부 메인 +1` })]),
-        guiEl('div', { class: 'sga-glance-card accent-amber' }, [guiEl('div', { class: 'sga-glance-top' }, [guiEl('span', { class: 'sga-glance-title', text: 'AI 연결' }), guiEl('span', { class: 'sga-glance-kicker', text: 'AI' })]), guiEl('div', { class: 'sga-glance-value', text: `${configuredProviders}/${providerNames.length}` }), guiEl('div', { class: 'sga-glance-label', text: '즉시 사용 가능한 프리셋' })])
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '단계별 창작 지침' }),
-            guiEl('div', { class: 'sga-note', text: '별도 제어 계층 없이 네 기본 단계가 각자의 창작 지침을 직접 사용합니다. OOC에서 작업 대상을 선택해 지침을 대화로 작성할 수 있습니다.' })
-          ]),
-          guiEl('span', { class: `sga-badge sga-count-badge ${creativeDirectionStages.length ? 'good' : 'off'}`, text: `${creativeDirectionStages.length}/4 사용자 지침` })
-        ]),
-        guiEl('div', { class: 'sga-summary-table', style: { marginTop: '12px' } }, [
-          ...BEFORE_STAGE_DEFS.flatMap(def => [
-            guiEl('span', { text: def.label }),
-            guiEl('strong', { text: text(Gui.state?.prompts?.[def.id]?.customPrompt || '').trim() ? '사용자 창작 지침 사용' : '내장 지침만 사용' })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, [
-          guiEl('button', { class: 'sga-btn primary', text: '창작 지침 OOC', onClick: () => navigateGui('flow', '', 'user_intent_ooc') }),
-          guiEl('button', { class: 'sga-btn ghost', text: '현재 대상 직접 편집', onClick: () => { const stageId = ensureCreativeOocState().targetStage; navigateToStageAgent(stageId, `agent_${stageId}`); } })
-        ])
-      ]),
-      guiEl('div', { class: 'sga-card wide sga-flow-overview-card' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '전체 처리 흐름' }), guiEl('span', { class: `sga-badge ${Runtime.inFlight ? 'warn' : 'good'}`, dataset: { runtimePipeline: 'true' }, text: Runtime.inFlight ? '실행 중' : '대기 중' })]),
-        guiEl('div', { class: 'sga-note', text: authorDirectedInput ? '인풋 관리자는 유저 행동 선택지를 제안하고, 유저가 고른 하나만 실제 이번 턴 유저 입력으로 전달합니다. SHADOW/AIDE는 그 행동 이후 NPC·세계를 자기 권한 안에서 인과적으로 진행합니다.' : inputAssistMode === 'off' ? '인풋 관리자가 꺼져 있으면 원본 입력으로 네 단계가 초안을 만듭니다.' : inputAssistScope === 'standalone' ? '인풋 관리자가 세 작가 관점 후보를 제안하고, 유저가 고른 입력을 초안 단계 없이 메인 응답 모델로 전달합니다.' : '인풋 관리자가 세 작가 관점 후보를 제안하고, 유저가 고른 하나의 입력으로 네 단계가 초안을 만듭니다.' }),
-        guiEl('div', { class: 'sga-flow-overview', style: { marginTop: '12px' } }, beforeMiniNodes)
-      ]),
-      guiEl('div', { class: 'sga-dashboard-lower' }, [
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '주요 설정 요약' }), guiEl('button', { class: 'sga-btn ghost', text: '전문가 설정 보기', onClick: () => navigateGui('flow', '', 'runtime') })]),
-          guiEl('div', { class: 'sga-summary-table' }, [
-            guiEl('span', { text: '최근 챗' }), guiEl('strong', { text: `${shadowSlot.turnWindow}턴 U+A 원문 전체` }),
-            guiEl('span', { text: '인풋 작성' }), guiEl('strong', { text: inputAssistMode === 'off' ? (authorDirectedInput ? '직접 입력' : '사용 안 함') : authorDirectedInput ? `유저 행동 선택지 · ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 · 직접 선택` : `3관점 선택지 · ${NOVEL_INPUT_CHOICE_TARGET}개 · ${inputAssistScope === 'standalone' ? '단독 사용' : '전체 파이프라인'}` }),
-            guiEl('span', { text: authorDirectedInput ? 'RP 행동 선택지' : '소설 인풋 선택지' }), guiEl('strong', { text: authorDirectedInput ? (inputAssistMode === 'off' ? '사용 안 함 · 직접 입력' : `${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 원본 별도`) : inputAssistMode === 'off' ? '사용 안 함' : `${NOVEL_INPUT_CHOICE_TARGET}개 관점 · 원본 별도 · ${inputAssistTargetChoice(runtime.inputAssistTargetChars).label}` }),
-            guiEl('span', { text: '인풋 장면 문맥' }), guiEl('strong', { text: '직전 AI 응답 종결부' }),
-            guiEl('span', { text: '인풋 작성 AI' }), guiEl('strong', { text: resolvedPresetNameForStage(INPUT_ASSIST_STAGE_ID) }),
-            guiEl('span', { text: 'AIDE 실행 순서' }), guiEl('strong', { text: orderedAideStageDefs(runtime.aideStageOrder).map(def => def.label).join(' → ') }),
-            guiEl('span', { text: '정보 전달' }), guiEl('strong', { text: runtime.informationTransferMode === 'draft_and_analysis' ? '초안+기본 지시+분석' : '초안+기본 지시(분석 제외)' }),
-            guiEl('span', { text: '단계별 AI' }), guiEl('strong', { text: BEFORE_STAGE_DEFS.map(def => `${def.label.replace(' AIDE', '')} ${resolvedPresetNameForStage(def.id)}`).join(' · ') }),
-            guiEl('span', { text: '목표 초안 길이' }), guiEl('strong', { text: simpleLengthLabelForRuntime(runtime) })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '빠른 이동' })]),
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('button', { class: 'sga-btn', text: '실행 결과', onClick: () => navigateGui('flow', '', 'results') }),
-            guiEl('button', { class: 'sga-btn', text: '스토리 아크', onClick: () => navigateGui('flow', '', 'arc') }),
-            guiEl('button', { class: 'sga-btn', text: 'SHADOW 설정', onClick: () => navigateToStageAgent('shadow_act', 'agent_shadow_act') }),
-            guiEl('button', { class: 'sga-btn', text: 'AI 연결', onClick: () => navigateGui('providers', '', 'providers') }),
-            guiEl('button', { class: 'sga-btn', text: '자료', onClick: () => navigateGui('flow', '', 'references') }),
-            guiEl('button', { class: 'sga-btn', text: '정보 전달', onClick: () => navigateGui('flow', '', 'information_transfer') }),
-            guiEl('button', { class: 'sga-btn', text: '디버그', onClick: () => navigateGui('flow', '', 'debug') })
-          ])
-        ])
-      ])
-    ]);
-  };
-
-  const guiPageFrame = (pageId, title, description, children = [], actions = []) => {
-    const def = guiPageDefinition(pageId);
-    const group = GUI_PAGE_GROUPS.find(item => item.id === def.group);
-    return guiEl('div', { class: `sga-flow-page sga-redesign-page sga-page-${pageId}`, dataset: { page: pageId } }, [
-      guiEl('div', { class: 'sga-redesign-page-head' }, [
-        guiEl('div', {}, [
-          guiEl('div', { class: 'sga-redesign-breadcrumb', text: `${group?.label || '설정'} / ${def.label}` }),
-          guiEl('h2', { text: title }),
-          description ? guiEl('p', { text: description }) : null
-        ]),
-        actions.length ? guiEl('div', { class: 'sga-actions' }, actions) : null
-      ]),
-      ...(Array.isArray(children) ? children : [children])
-    ]);
-  };
-
-  const buildRedesignedOverviewPage = () => {
-    const runtime = Gui.state.runtime || {};
-    const inputMode = normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off');
-    const profile = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
-    const configured = presetNamesFromState().filter(name => providerConfigured(Gui.state.providers?.[name])).length;
-    const providerTotal = presetNamesFromState().length;
-    const callPlan = expectedTotalCallPlan({
-      ...runtime,
-      enableShadowAct: Gui.state.agents?.shadow_act?.enabled === true,
-      enableCharacterAide: Gui.state.agents?.aide_character?.enabled === true,
-      enableWorldAide: Gui.state.agents?.aide_world?.enabled === true,
-      enablePlotAide: Gui.state.agents?.aide_plot?.enabled === true
-    });
-    const stageNodes = [
-      { label: '인풋 관리자', meta: inputMode === 'off' ? '명시 입력 통과' : INPUT_ASSIST_MODE_DEFS[inputMode]?.label, off: false },
-      ...orderedBeforeStageDefs(runtime.aideStageOrder).map(def => ({ label: def.label, meta: resolvedPresetNameForStage(def.id), off: Gui.state.agents?.[def.id]?.enabled === false })),
-      { label: '메인 응답', meta: runtime.outputMode === 'risu_engine' ? 'Risu 엔진 보존' : '초안 기반 마무리', main: true }
-    ];
-    const traces = (Runtime.stageTrace || []).slice(-4).reverse();
-    return guiPageFrame('overview', '현재 상태를 한눈에', '이 화면은 읽기 전용입니다. 값을 바꾸려면 각 전용 설정 화면으로 이동하세요.', [
-      guiEl('div', { class: 'sga-redesign-notice' }, [
-        guiEl('strong', { text: '설정 소유권 정리됨' }),
-        guiEl('span', { text: '동일한 값을 여러 화면에서 반복 편집하지 않고, 개요에서는 상태와 이동 경로만 제공합니다.' })
-      ]),
-      guiEl('div', { class: 'sga-glance-grid' }, [
-        guiEl('div', { class: 'sga-glance-card accent-purple' }, [guiEl('div', { class: 'sga-glance-title', text: '파이프라인' }), guiEl('div', { class: 'sga-glance-value', text: normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? '중량' : '경량' }), guiEl('div', { class: 'sga-glance-label', text: runtime.mode === 'lite' ? '간소 범위' : runtime.mode === 'off' ? '사용 안 함' : '표준 범위' })]),
-        guiEl('div', { class: 'sga-glance-card accent-blue' }, [guiEl('div', { class: 'sga-glance-title', text: '속도와 품질' }), guiEl('div', { class: 'sga-glance-value', text: QUICK_PROFILE_DEFS[profile]?.label || '직접 조정' }), guiEl('div', { class: 'sga-glance-label', text: simpleProfileSummary(profile) })]),
-        guiEl('div', { class: 'sga-glance-card accent-green' }, [guiEl('div', { class: 'sga-glance-title', text: '목표 분량' }), guiEl('div', { class: 'sga-glance-value', text: simpleLengthLabelForRuntime(runtime) }), guiEl('div', { class: 'sga-glance-label', text: 'SHADOW ACT 작성 목표' })]),
-        guiEl('div', { class: 'sga-glance-card accent-amber' }, [guiEl('div', { class: 'sga-glance-title', text: 'AI 연결' }), guiEl('div', { class: 'sga-glance-value', text: `${configured}/${providerTotal}` }), guiEl('div', { class: 'sga-glance-label', text: '즉시 사용 가능한 연결' })]),
-        guiEl('div', { class: 'sga-glance-card accent-purple' }, [guiEl('div', { class: 'sga-glance-title', text: '예상 호출' }), guiEl('div', { class: 'sga-glance-value', text: `${callPlan.internalLogicalCalls} + 1` }), guiEl('div', { class: 'sga-glance-label', text: `초안 ${callPlan.baseDraftCalls} · Input ${callPlan.inputAssistCalls} · Arc ${callPlan.arcBoundaryCalls} · Engine ${callPlan.risuEngineCalls} · 외부 메인 +1` })])
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [guiEl('div', {}, [guiEl('h3', { text: '현재 처리 흐름' }), guiEl('div', { class: 'sga-note', text: '실제 실행 순서와 단계별 연결을 간결하게 표시합니다.' })]), guiEl('span', { class: `sga-badge ${Runtime.inFlight ? 'warn' : 'good'}`, dataset: { runtimePipeline: 'true' }, text: Runtime.inFlight ? '실행 중' : '대기 중' })]),
-        guiEl('div', { class: 'sga-redesign-flow' }, stageNodes.flatMap((item, index) => [
-          guiEl('div', { class: `sga-redesign-flow-step${item.off ? ' off' : ''}${item.main ? ' main' : ''}` }, [guiEl('strong', { text: item.label }), guiEl('span', { text: item.meta || '' })]),
-          index < stageNodes.length - 1 ? guiEl('span', { class: 'sga-redesign-flow-arrow', text: '→' }) : null
-        ]))
-      ]),
-      guiEl('div', { class: 'sga-redesign-two-col' }, [
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '주요 설정' }), guiEl('button', { class: 'sga-btn ghost', text: '빠른 설정', onClick: () => navigateGui('flow', '', 'quick') })]),
-          guiEl('div', { class: 'sga-summary-table' }, [
-            guiEl('span', { text: '인풋 작성' }), guiEl('strong', { text: inputMode === 'off' ? '사용 안 함' : INPUT_ASSIST_MODE_DEFS[inputMode]?.label || inputMode }),
-            guiEl('span', { text: '초안 언어' }), guiEl('strong', { text: INTERNAL_DRAFT_LANGUAGE_DEFS[normalizeInternalDraftLanguage(runtime.internalDraftLanguage)]?.label || '한국어' }),
-            guiEl('span', { text: '정보 전달' }), guiEl('strong', { text: runtime.informationTransferMode === 'draft_and_analysis' ? '초안과 분석' : '초안 중심' }),
-            guiEl('span', { text: 'Skill' }), guiEl('strong', { text: runtime.skillRouterEnabled !== false ? `자동 Top ${clampInt(runtime.skillRouterTopK, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K)}` : '사용 안 함' })
-          ])
-        ]),
-        guiEl('div', { class: 'sga-card' }, [
-          guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '최근 실행' }), guiEl('button', { class: 'sga-btn ghost', text: '전체 보기', onClick: () => navigateGui('flow', '', 'results') })]),
-          traces.length ? guiEl('div', { class: 'sga-recent-log-list' }, traces.map(trace => {
-            const info = traceStateInfo(trace);
-            return guiEl('div', { class: 'sga-recent-log-item' }, [guiEl('i', { class: info.className === 'off' ? 'off' : info.className === 'good' ? '' : 'warn' }), guiEl('div', {}, [guiEl('strong', { text: STAGE_DEF_MAP[trace?.stage]?.label || trace?.stage || '요청' }), guiEl('span', { text: info.label })]), guiEl('em', { text: info.elapsed || '' })]);
-          })) : guiEl('div', { class: 'sga-note', text: '아직 실행 기록이 없습니다.' })
-        ])
-      ])
-    ], [guiEl('button', { class: 'sga-btn primary', text: '빠른 설정 열기', onClick: () => navigateGui('flow', '', 'quick') })]);
-  };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
-
-  const buildPipelineSettingsPage = () => {
-    const stageId = STAGE_DEF_MAP[Gui.pageSubview] && Gui.pageSubview !== INPUT_ASSIST_STAGE_ID ? Gui.pageSubview : 'shadow_act';
-    const playerControlled = currentWritingModeFromGui() === 'rp';
-    Gui.selectedPrompt = stageId;
-    return guiPageFrame('pipeline', playerControlled ? 'RP 반응 파이프라인' : 'SHADOW ACT와 AIDE', playerControlled
-      ? 'SHADOW ACT와 AIDE는 유저가 이미 수행한 입력 뒤에서 NPC·세계의 자율 행동·사건·반응을 작성·보정합니다. 어느 단계도 새 유저 행동을 생성할 수 없으며, 질문형 말미를 강제하지 않습니다.'
-      : '단계 순서와 사용 여부, AI 연결, 창작 지침을 한 화면에서 관리합니다.', [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [guiEl('div', {}, [guiEl('h3', { text: '직렬 단계' }), guiEl('div', { class: 'sga-note', text: 'SHADOW ACT는 첫 단계에 고정되며 세 AIDE만 순서를 바꿀 수 있습니다.' })]), guiEl('button', { class: 'sga-btn ghost', text: 'OOC로 지침 작성', onClick: () => navigateGui('flow', '', 'user_intent_ooc') })]),
-        guiEl('div', { class: 'sga-redesign-stage-tabs' }, BEFORE_STAGE_DEFS.map((def, index) => guiEl('button', {
-          class: `sga-redesign-stage-tab${stageId === def.id ? ' active' : ''}`,
-          type: 'button',
-          onClick: () => navigateToStageAgent(def.id, `agent_${def.id}`)
-        }, [guiEl('b', { text: String(index + 1) }), guiEl('span', {}, [guiEl('strong', { text: def.label }), guiEl('small', { text: resolvedPresetNameForStage(def.id) })]), guiEl('em', { class: `sga-badge ${Gui.state.agents?.[def.id]?.enabled === false ? 'off' : 'good'}`, text: Gui.state.agents?.[def.id]?.enabled === false ? '사용 안 함' : '사용' })])))
-      ]),
-      buildAideOrderPanel(),
-      buildAgentsTab(stageId)
-    ]);
-  };
-
-  const buildReferenceSummaryPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const characterCatalog = Array.isArray(Gui.characterLoreCatalog) ? Gui.characterLoreCatalog : [];
-    const characterExcluded = new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));
-    const characterUsed = characterCatalog.filter(item => !characterExcluded.has(item.key)).length;
-
-    const moduleCatalog = Array.isArray(Gui.moduleCatalog) ? Gui.moduleCatalog : [];
-    const activeModules = moduleCatalog.filter(item => item.active && item.loreCount > 0);
-    const selectedModuleIds = new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds));
-    const moduleExcluded = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-    const moduleIsSelected = item => selectedModuleIds.has(item.key) || (item.aliases || []).some(alias => selectedModuleIds.has(alias));
-    const selectedModules = activeModules.filter(moduleIsSelected);
-    const moduleLoreTotal = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).length, 0);
-    const moduleLoreUsed = selectedModules.reduce((sum, item) => sum + (item.loreEntries || []).filter(entry => !moduleExcluded.has(entry.key)).length, 0);
-
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '자료' }),
-          guiEl('div', { class: 'sga-note', text: '사용할 자료만 켜두면 됩니다. 실제로 어떤 로어가 필요한지는 GRADIA가 현재 장면에 맞춰 자동으로 결정합니다.' })
-        ]),
-        guiEl('span', { class: 'sga-badge good', text: '자동 검색' })
-      ]),
-      guiEl('div', { class: 'sga-simple-choice-grid three', style: { marginTop: '12px' } }, [
-        simpleChoiceCard({
-          active: characterUsed > 0,
-          title: '캐릭터',
-          description: characterCatalog.length ? `${characterUsed}/${characterCatalog.length} 사용` : '목록 불러오는 중 또는 없음',
-          meta: '캐릭터 로어북',
-          badge: '관리',
-          onClick: () => navigateGui('flow', '', 'character_lore_exclusions')
-        }),
-        simpleChoiceCard({
-          active: selectedModules.length > 0,
-          title: '모듈',
-          description: `${selectedModules.length}개 모듈 · ${moduleLoreUsed}/${moduleLoreTotal} 로어 사용`,
-          meta: `${activeModules.length}개 활성 모듈`,
-          badge: '관리',
-          onClick: () => navigateGui('flow', '', 'modules')
-        }),
-        simpleChoiceCard({
-          active: true,
-          title: '로어 검색',
-          description: '자동',
-          meta: `자동 · 시작 ${clampInt(runtime.loreRerankerTopK, 1, 32, DEFAULT_STAGE_LORE_RERANK_TOP_K)}개 · 필요 시 확장`,
-          badge: '고급',
-          onClick: () => navigateGui('flow', '#sga-flow-runtime', 'runtime')
-        })
-      ]),
-      (Gui.moduleCatalogLoading || Gui.characterLoreCatalogLoading)
-        ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '자료 목록을 불러오는 중입니다…' })
-        : null,
-      guiEl('details', { class: 'sga-advanced', style: { marginTop: '12px' } }, [
-        guiEl('summary', { text: '검색 방식 보기' }),
-        guiEl('div', { class: 'sga-advanced-body' }, [
-          guiEl('div', { class: 'sga-summary-table' }, [
-            guiEl('span', { text: '후보 찾기' }), guiEl('strong', { text: 'RisuAI 선택 + 활성화 키 + 내용 관련도' }),
-            guiEl('span', { text: '중복 정리' }), guiEl('strong', { text: '자동' }),
-            guiEl('span', { text: '강제/항상 활성' }), guiEl('strong', { text: '별도 보호' }),
-            guiEl('span', { text: '세부 한도' }), guiEl('strong', { text: '전문가 설정에서 조정' })
-          ])
-        ])
-      ])
-    ]);
-  };
-
-  const buildLibReadConnectionCard = () => {
-    const status = LibReadConnection.status();
-    const action = fn => async () => { try { await fn(); } catch (_) { guiSetStatus('LIB_READ_PREFERENCE_UNAVAILABLE: 자동 연결 설정을 저장하지 못했습니다.',true); } await renderSettingsGui(); };
-    return guiEl('section', {class:'sga-card',dataset:{libReadCard:'true'}}, [
-      guiEl('h3',{text:'LIB 기억 읽기'}),
-      guiEl('p',{text:'LIBRA · HAYAKU · Flashback의 현재 채팅에 등록된 서버 기억을 읽습니다. 연결 시 세 생산자의 제한된 읽기 권한만 요청하며 쓰기 권한은 없습니다.'}),
-      guiEl('label',{text:'서버 URL'},[guiEl('input',{type:'url',value:status.url,dataset:{libReadUrl:'true'},onInput:event=>LibReadConnection.setUrl(event.target.value)})]),
-      guiEl('div',{class:'sga-actions'},[
-        guiEl('button',{type:'button',class:'sga-btn primary',text:'읽기 전용 연결',dataset:{libReadConnect:'true'},onClick:action(LibReadConnection.connect)}),
-        guiEl('button',{type:'button',class:'sga-btn',text:'연결 해제',dataset:{libReadDisconnect:'true'},onClick:action(LibReadConnection.disconnect)}),
-        guiEl('button',{type:'button',class:'sga-btn',text:'현재 기억 연결 확인',dataset:{libReadInspect:'true'},disabled:status.state!=='connected',onClick:action(LibReadConnection.inspect)})
-      ]),
-      guiEl('p',{dataset:{libReadOwners:'true'},text:'활성 읽기: '+(status.activeOwners.join(' · ') || '없음')+Object.entries(status.unavailable).map(([owner,why])=>' / '+owner+': '+why).join('')}),
-      guiEl('p',{'aria-live':'polite',dataset:{libReadStatus:'true'},text:`연결: ${status.state}${status.reason ? ' · '+status.reason : ''}${status.corpus ? ' · '+status.corpus.items+'개 / '+status.corpus.bytes+' bytes' : ''}`}),
-      guiEl('p',{text:'직접 연결한 같은 URL과 승인한 생산자만 자동 연결합니다. 이전 동의는 LIBRA만 유지하며 다시 연결하면 세 생산자를 승인합니다. URL 변경·설정 가져오기·연결 해제는 동의를 지웁니다. 채팅이 바뀌면 다시 연결하세요.'}),
-      guiEl('p',{dataset:{libReadModelStatus:'true'},text:'모델 호환: 별도 제한. 기억 확인에는 모델 호출이 없습니다. 기억을 포함한 생성은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18의 검증된 텍스트 조합만 지원합니다.'})
-    ]);
-  };
-
-  const buildReferenceSettingsPage = () => {
-    const subview = ['selection', 'modules', 'character_lore_exclusions'].includes(Gui.pageSubview) ? Gui.pageSubview : 'selection';
-    const tabs = [
-      ['selection', '요약'],
-      ['character_lore_exclusions', '캐릭터'],
-      ['modules', '모듈']
-    ];
-    const body = subview === 'modules' ? buildModuleLoreSelectionPanel()
-      : subview === 'character_lore_exclusions' ? buildCharacterLoreExclusionPanel()
-        : buildReferenceSummaryPanel();
-    return guiPageFrame('references', '자료', 'GRADIA가 읽을 수 있는 자료를 한곳에서 관리합니다.', [
-      buildLibReadConnectionCard(),
-      guiEl('div', { class: 'sga-redesign-subnav' }, tabs.map(([id, label]) => guiEl('button', { class: `sga-btn${subview === id ? ' primary' : ' ghost'}`, text: label, onClick: () => navigateGui('flow', '', id === 'selection' ? 'references' : id) }))),
-      body
-    ]);
-  };
-
 
   const skillPriorityValueForGui = (stageName, skillId, skill, runtime = Gui.state?.runtime || {}) => {
     const resolved = skillPriorityResolution(stageName, skillId, runtime, skill);
@@ -44350,12 +41073,12 @@ html,body{width:100%;height:100%;overflow:hidden}
     let rawDraft = existing?.raw || `---\nname: my-custom-skill\ndescription: Describe exactly when this skill should be selected and what failure it prevents.\n---\n\n# My custom skill\n\n## Why / failure\n\nDescribe the concrete failure.\n\n## Check before writing\n\nDescribe what to inspect first.\n\n## Do this in the response\n\n- Describe the procedure.\n\n## Boundary with adjacent skills\n\nDescribe what this skill must not own.\n\n## What should stay visible in the response\n\nDescribe the observable success condition.`;
     let initialScope = existing ? 'keep' : 'auto';
     const rawArea = guiEl('textarea', {
-      class: 'sga-textarea tall',
+      class: 'textarea tall',
       value: rawDraft,
       onInput: event => { rawDraft = event.target.value; }
     });
     const scopeSelect = guiEl('select', {
-      class: 'sga-select',
+      class: 'select',
       value: initialScope,
       onChange: event => { initialScope = event.target.value; }
     }, optionNodes([
@@ -44376,8 +41099,8 @@ html,body{width:100%;height:100%;overflow:hidden}
         existing ? null : fieldNode('처음 적용할 단계', scopeSelect, '추가 후 Skill 화면에서 단계별 0~200 우선도를 언제든 직접 바꿀 수 있습니다.')
       ].filter(Boolean),
       actions: [
-        guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '취소', onClick: closeGuiDialog }),
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: existing ? '수정 반영' : '추가', onClick: async () => {
+        guiEl('button', { class: 'btn btn--ghost', type: 'button', text: '취소', onClick: closeGuiDialog }),
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: existing ? '수정 반영' : '추가', onClick: async () => {
           const parsed = normalizeCustomSkillEntry({ raw: rawDraft, enabled: true }, existingId || '');
           if (!parsed?.raw || !parsed?.description) {
             guiSetStatus('Skill 원문이나 description을 읽지 못했습니다.', true, true);
@@ -44407,8 +41130,8 @@ html,body{width:100%;height:100%;overflow:hidden}
       title: `사용자 Skill 삭제 · ${skillId}`,
       description: '내장 Skill은 삭제되지 않습니다. 이 사용자 Skill과 단계별 수동 우선도만 제거합니다.',
       actions: [
-        guiEl('button', { class: 'sga-btn ghost', text: '취소', onClick: closeGuiDialog }),
-        guiEl('button', { class: 'sga-btn danger', text: '삭제', onClick: async () => {
+        guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: closeGuiDialog }),
+        guiEl('button', { class: 'btn btn--danger', text: '삭제', onClick: async () => {
           delete custom[skillId];
           runtime.skillCustomLibrary = custom;
           const priorities = normalizeSkillPriorityOverrides(runtime.skillPriorityOverrides || {});
@@ -44428,229 +41151,14 @@ html,body{width:100%;height:100%;overflow:hidden}
     });
   };
 
-  const GUI_SKILL_PAGE_SIZE = 80;
-  const buildSkillSettingsPage = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.skillCustomLibrary = normalizeCustomSkillLibrary(runtime.skillCustomLibrary || {});
-    runtime.skillPriorityOverrides = normalizeSkillPriorityOverrides(runtime.skillPriorityOverrides || {});
-    const library = skillLibraryForSettings(runtime, true);
-    const ids = Object.keys(library);
-    if (!library[Gui.selectedSkillId]) Gui.selectedSkillId = ids[0] || '';
-    if (!SKILL_STAGE_IDS.includes(Gui.selectedSkillStage)) Gui.selectedSkillStage = 'shadow_act';
-    const stage = Gui.selectedSkillStage;
-    const selectedSkill = library[Gui.selectedSkillId] || null;
-    const filter = text(Gui.skillSearchText || '').trim().toLowerCase();
-    const filteredIds = ids.filter(id => {
-      if (!filter) return true;
-      const skill = library[id];
-      return `${id}\n${skill?.name || ''}\n${skill?.description || ''}\n${skill?.koDescription || ''}`.toLowerCase().includes(filter);
-    }).sort((left, right) => {
-      const lp = skillPriorityValueForGui(stage, left, library[left], runtime).percent;
-      const rp = skillPriorityValueForGui(stage, right, library[right], runtime).percent;
-      return rp - lp || Number(library[left]?.source === 'custom') - Number(library[right]?.source === 'custom') || left.localeCompare(right);
-    });
-    const visibleSkillLimit = Math.max(GUI_SKILL_PAGE_SIZE, Number(Gui.skillListLimit || GUI_SKILL_PAGE_SIZE));
-    const visibleSkillIds = filteredIds.slice(0, visibleSkillLimit);
-
-    const recentStageCards = SKILL_STAGE_IDS.map(stageId => {
-      const def = STAGE_DEF_MAP[stageId];
-      const route = Runtime.skillRoutes?.[stageId] || null;
-      const selected = route?.selected || [];
-      const baseline = route?.baselineIds || [];
-      return guiEl('button', {
-        class: `sga-simple-choice${stage === stageId ? ' active' : ''}`,
-        type: 'button',
-        onClick: async () => {
-          Gui.selectedSkillStage = stageId;
-          if (selected[0]?.id && library[selected[0].id]) Gui.selectedSkillId = selected[0].id;
-          else if (baseline[0] && library[baseline[0]]) Gui.selectedSkillId = baseline[0];
-          await renderSettingsGui();
-        }
-      }, [
-        guiEl('strong', { text: def?.label || stageId }),
-        guiEl('span', { text: selected.length ? selected.map(item => item.id).join(' · ') : (baseline.length ? `Base: ${baseline.join(' · ')}` : '최근 적용 Skill 없음') }),
-        guiEl('small', { text: route?.enabled === false ? 'Router 꺼짐' : `Base ${baseline.length} · 동적 ${selected.length}` })
-      ]);
-    });
-
-    const controls = guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [guiEl('h3', { text: 'Skill Router와 Compiler' }), guiEl('div', { class: 'sga-note', text: '원본 Skill은 보존하고 실제 모델에는 단계×실행 phase에 맞춘 GRADIA 컴파일본만 전달합니다. 추가 LLM 호출은 없습니다.' })]),
-        guiEl('span', { class: 'sga-badge good', text: `${Object.keys(GRADIA_SKILL_LIBRARY).length} 내장 + ${Object.keys(runtime.skillCustomLibrary).length} 사용자` })
-      ]),
-      guiEl('div', { class: 'sga-callout', text: 'v0.25.14부터 기존 내부 응답 개선 16개는 Skill 체계에 흡수되었습니다. 장면 실행·사용자 주도권·출력 계약은 Base Skill, 나머지는 기존 Skill/child reference 또는 선택형 스타일 Skill로 관리합니다. NSFW와 Assistant Prefill은 응답 옵션에 별도로 남습니다.' }),
-      guiEl('div', { class: 'sga-row3' }, [
-        fieldNode('Skill Router 사용', selectNode(runtime.skillRouterEnabled === false ? 'false' : 'true', [['true', '사용'], ['false', '사용 안 함']], next => { runtime.skillRouterEnabled = next !== 'false'; }), '각 단계가 관련 Skill을 자동 선택합니다.'),
-        fieldNode('단계별 전체 Skill 최대', inputNode(clampInt(runtime.skillRouterTopK, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K), next => { runtime.skillRouterTopK = clampInt(next, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K); }, { type: 'number', min: 1, max: MAX_SKILL_ROUTER_TOP_K }), '기본 2, 최대 3. 컷을 통과하지 못하면 0개도 가능합니다.'),
-        fieldNode('세부 reference', selectNode(runtime.skillRouterReferences === false ? 'false' : 'true', [['true', '사용'], ['false', '사용 안 함']], next => { runtime.skillRouterReferences = next !== 'false'; }), '선택된 Skill 아래에서 직접 관련된 reference 최대 1개만 사용합니다.')
-      ]),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '새 Skill 추가', onClick: () => openSkillEditorDialog() }),
-        guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '모든 수동 우선도 기본값 복원', onClick: () => resetSkillPriorityForGui('') })
-      ])
-    ]);
-
-    const stagePanel = guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [guiEl('div', {}, [guiEl('h3', { text: '최근 단계별 적용 Skill' }), guiEl('div', { class: 'sga-note', text: '카드를 누르면 그 단계와 최근 1순위 Skill을 뷰어에서 바로 확인합니다.' })])]),
-      guiEl('div', { class: 'sga-simple-choice-grid four' }, recentStageCards)
-    ]);
-
-    const search = guiEl('input', {
-      class: 'sga-list-search',
-      value: Gui.skillSearchText || '',
-      placeholder: 'Skill 이름·설명 검색',
-      onInput: event => { Gui.skillSearchText = event.target.value; Gui.skillListLimit = GUI_SKILL_PAGE_SIZE; queueGuiRender(120); }
-    });
-    const listPanel = guiEl('div', { class: 'sga-card' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: `Skill 목록 · ${filteredIds.length}` }), guiEl('span', { class: 'sga-badge', text: STAGE_DEF_MAP[stage]?.label || stage })]),
-      search,
-      guiEl('div', { class: 'sga-list-items', style: { maxHeight: '640px', marginTop: '10px' } }, visibleSkillIds.map(id => {
-        const skill = library[id];
-        const priority = skillPriorityValueForGui(stage, id, skill, runtime);
-        const applied = (Runtime.skillRoutes?.[stage]?.selected || []).some(item => item.id === id);
-        return guiEl('button', {
-          class: `sga-list-item${Gui.selectedSkillId === id ? ' active' : ''}`,
-          type: 'button',
-          onClick: async () => { Gui.selectedSkillId = id; await renderSettingsGui(); }
-        }, [
-          guiEl('div', {}, [guiEl('strong', { text: skill?.name || id }), guiEl('span', { text: compact(skill?.koDescription || skill?.description || '', 130) })]),
-          guiEl('div', { class: 'sga-actions' }, [
-            applied ? guiEl('span', { class: 'sga-badge good', text: '이번 실행' }) : null,
-            guiEl('span', { class: `sga-badge ${priority.percent <= 0 ? 'off' : priority.source === 'user' ? 'warn' : ''}`, text: `${priority.percent}` }),
-            guiEl('span', { class: `sga-badge ${skill?.source === 'custom' ? 'warn' : ''}`, text: skill?.source === 'custom' ? '사용자' : '내장' })
-          ])
-        ]);
-      })),
-      visibleSkillIds.length < filteredIds.length ? guiEl('button', {
-        class: 'sga-btn ghost', type: 'button', text: `더 보기 (${visibleSkillIds.length}/${filteredIds.length})`,
-        onClick: async () => { Gui.skillListLimit = visibleSkillLimit + GUI_SKILL_PAGE_SIZE; await renderSettingsGui(); }
-      }) : null
-    ]);
-
-    let viewerPanel = guiEl('div', { class: 'sga-card', text: 'Skill이 없습니다.' });
-    if (selectedSkill) {
-      const priorityRows = SKILL_STAGE_IDS.map(stageId => {
-        const priority = skillPriorityValueForGui(stageId, Gui.selectedSkillId, selectedSkill, runtime);
-        return guiEl('div', { class: 'sga-row2' }, [
-          fieldNode(STAGE_DEF_MAP[stageId]?.label || stageId,
-            inputNode(priority.percent, next => setSkillPriorityForGui(stageId, Gui.selectedSkillId, next), { type: 'number', min: SKILL_PRIORITY_MIN, max: SKILL_PRIORITY_MAX, step: 1 }),
-            `기본 ${priority.defaultPercent} · 현재 ${priority.source === 'user' ? '사용자 지정' : '기본값'} · 0은 이 단계에서 비활성`),
-          guiEl('div', { class: 'sga-note', style: { alignSelf: 'center' }, text: `리랭커 점수에서 단계 affinity로 사용됩니다. 100 초과는 의도적인 부스트입니다.` })
-        ]);
-      });
-      const selectedRouteItem = (Runtime.skillRoutes?.[stage]?.selected || []).find(item => item.id === Gui.selectedSkillId) || null;
-      const priority = skillPriorityValueForGui(stage, Gui.selectedSkillId, selectedSkill, runtime);
-      const previewItem = selectedRouteItem || { id: Gui.selectedSkillId, priorityPercent: priority.percent, prioritySource: priority.source, relevance: '(preview)', reference: null };
-      viewerPanel = guiEl('div', { class: 'sga-card' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [guiEl('h3', { text: selectedSkill.name || Gui.selectedSkillId }), guiEl('div', { class: 'sga-note', text: selectedSkill.description || selectedSkill.koDescription || '' })]),
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('span', { class: `sga-badge ${selectedSkill.source === 'custom' ? 'warn' : 'good'}`, text: selectedSkill.source === 'custom' ? '사용자 Skill' : '내장 Skill' }),
-            selectedRouteItem ? guiEl('span', { class: 'sga-badge good', text: `이번 ${STAGE_DEF_MAP[stage]?.label || stage} 실행 #${selectedRouteItem.rank}` }) : null
-          ])
-        ]),
-        guiEl('div', { class: 'sga-redesign-subnav' }, SKILL_STAGE_IDS.map(stageId => guiEl('button', { class: `sga-btn ${stage === stageId ? 'primary' : 'ghost'}`, type: 'button', text: STAGE_DEF_MAP[stageId]?.label || stageId, onClick: async () => { Gui.selectedSkillStage = stageId; await renderSettingsGui(); } }))),
-        guiEl('details', { open: true }, [guiEl('summary', { text: '원본 SKILL.md 보기' }), guiEl('textarea', { class: 'sga-textarea tall preview', readonly: true, value: selectedSkill.raw || '' })]),
-        guiEl('details', {}, [
-          guiEl('summary', { text: `${STAGE_DEF_MAP[stage]?.label || stage} · GRADIA 분석 컴파일본` }),
-          lazyPayloadNode(() => compileSelectedSkillForStage(Gui.selectedSkillId, selectedSkill, stage, 'analysis', previewItem), { bodyClass: 'sga-result-code' })
-        ]),
-        guiEl('details', {}, [
-          guiEl('summary', { text: `${STAGE_DEF_MAP[stage]?.label || stage} · GRADIA 실행 컴파일본` }),
-          lazyPayloadNode(() => compileSelectedSkillForStage(Gui.selectedSkillId, selectedSkill, stage, stage === 'shadow_act' ? 'writing' : 'patch', previewItem), { bodyClass: 'sga-result-code' })
-        ]),
-        guiEl('div', { class: 'sga-stage-detail-head', style: { marginTop: '14px' } }, [guiEl('strong', { text: '단계별 리랭커 우선도 · 0~200' }), guiEl('span', { text: '표시된 기본값은 GRADIA 내장 stage affinity입니다.' })]),
-        ...priorityRows,
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '이 Skill 우선도 기본값 복원', onClick: () => resetSkillPriorityForGui(Gui.selectedSkillId) }),
-          selectedSkill.source === 'custom' ? guiEl('button', { class: 'sga-btn primary', type: 'button', text: '사용자 Skill 수정', onClick: () => openSkillEditorDialog(Gui.selectedSkillId) }) : null,
-          selectedSkill.source === 'custom' ? guiEl('button', { class: 'sga-btn danger', type: 'button', text: '사용자 Skill 삭제', onClick: () => deleteCustomSkillFromGui(Gui.selectedSkillId) }) : null
-        ])
-      ]);
-    }
-
-    return guiPageFrame('skills', 'Skill', '각 단계가 실제로 어떤 Skill을 선택했는지 확인하고, 원본과 GRADIA 실행 컴파일본을 열람·조정합니다.', [
-      controls,
-      stagePanel,
-      guiEl('div', { class: 'sga-redesign-two-col' }, [listPanel, viewerPanel])
-    ]);
-  };
-
-  const buildOutputSettingsPage = () => {
-    const playerControlled = currentWritingModeFromGui() === 'rp';
-    return guiPageFrame('output', playerControlled ? 'RP 최종 응답' : '초안을 어떻게 넘길까요?', playerControlled
-      ? '소설용 최종 합성과 분리된 RP 전용 주입기를 사용합니다. USER AGENCY LEDGER·직전 장면·현재 Continuity·NPC/세계 자율 전개 후보를 핵심으로 하고 Creative/Scene Intent는 최종 단계에서 제외합니다.'
-      : '내부 분석 전달과 최종 응답 마무리 방식을 한 화면에서 설정합니다.', [
-      buildInformationTransferSettingsPanel(),
-      buildMainResponseBridge()
-    ]);
-  };
-
-  const buildManagementPage = () => {
-    const subview = Gui.pageSubview === 'debug' ? 'debug' : 'transfer';
-    return guiPageFrame('management', '설정 이동과 문제 해결', '일상적인 설정에서 분리된 관리 도구입니다.', [
-      guiEl('div', { class: 'sga-redesign-subnav' }, [
-        guiEl('button', { class: `sga-btn ${subview === 'transfer' ? 'primary' : 'ghost'}`, text: '가져오기 / 내보내기', onClick: () => navigateGui('flow', '', 'transfer') }),
-        guiEl('button', { class: `sga-btn ${subview === 'debug' ? 'primary' : 'ghost'}`, text: '디버그 / 진단', onClick: () => navigateGui('flow', '', 'debug') })
-      ]),
-      subview === 'debug' ? buildDebugTab() : buildTransferTab()
-    ]);
-  };
-
-  const buildGuiPageContent = pageId => {
-    switch (pageId) {
-      case 'quick': return guiPageFrame('quick', '핵심 선택만 빠르게', '자주 바꾸는 다섯 가지에만 집중합니다.', buildQuickSettingsPanel());
-      case 'results': return guiPageFrame('results', '단계별 실행 결과', '상태, 실제 참고 자료, 분석과 초안을 실행별로 표시합니다.', buildExecutionResultsPanel());
-      
-      case 'input': return guiPageFrame('input', '인풋을 장면에 맞게 재구성', '직전 장면의 종결부를 기준으로 전송 전 입력을 다듬습니다.', buildInputAssistSettingsPanel());
-      case 'pipeline': return buildPipelineSettingsPage();
-      case 'ooc': return guiPageFrame('ooc', '단계 지침을 대화로 작성', '대상 단계를 선택하고 대화가 끝난 뒤 창작 지침을 생성합니다.', buildUserIntentOocPanel());
-      case 'improve': return guiPageFrame('improve', '응답 옵션', 'Skill과 분리된 NSFW 표현 정책과 Assistant Prefill 상태를 관리합니다.', buildInternalResponseImprovementPanel());
-      case 'references': return buildReferenceSettingsPage();
-      
-      case 'skills': return buildSkillSettingsPage();
-      case 'output': return buildOutputSettingsPage();
-      case 'providers': return guiPageFrame('providers', 'AI 연결 관리', '프로바이더와 모델 연결을 만들고 단계별로 선택합니다.', buildProvidersTab());
-      
-      case 'advanced': return guiPageFrame('advanced', '전문가 설정', '빠른 설정이 자동으로 맞춘 내부 한도와 예외 처리를 직접 조정합니다.', buildRuntimeTab());
-      case 'management': return buildManagementPage();
-      default: return buildRedesignedOverviewPage();
-    }
-  };
-
   const navigateGui = async (tab = 'flow', selector = '', section = '') => {
-    const route = normalizeGuiRoute(tab, section || (tab === 'providers' ? 'providers' : 'overview'));
+    const route = normalizeGuiRoute(tab, section);
     Gui.pageId = route.pageId;
-    Gui.pageSubview = route.subview;
-    Gui.activeTab = route.pageId === 'providers' ? 'providers' : 'flow';
-    Gui.sidebarSection = section || route.pageId;
+    Gui.pageSubview = route.subview || '';
+    Gui.activeTab = route.tab || (route.pageId === 'providers' ? 'providers' : 'flow');
+    Gui.sidebarSection = route.section || '';
     if (route.stageId && route.stageId !== INPUT_ASSIST_STAGE_ID) Gui.selectedPrompt = route.stageId;
-    
-    
-    
-    if (route.pageId === 'ooc') {
-      // Navigation must be instant. Saved-prompt hydration is not a prerequisite for
-      // painting the OOC page, and recent-chat context is only needed when an OOC
-      // model call actually starts.
-      await renderSettingsGui();
-      if (!Gui.oocHydrationPromise) {
-        const oocHydrationStartedAt = Date.now();
-        Runtime.guiPerformance ||= { stateLoads: 0, lastStateLoadMs: 0, lastStateLoadSource: '', renders: 0, lastRenderMs: 0, maxRenderMs: 0, oocHydrations: 0, lastOocHydrationMs: 0 };
-        Runtime.guiPerformance.oocHydrations += 1;
-        Gui.oocHydrationPromise = loadCurrentOocUserIntent()
-          .catch(error => {
-            const state = ensureCreativeOocState();
-            state.lastError = compact(error?.message || error, 1000);
-          })
-          .finally(() => {
-            Runtime.guiPerformance.lastOocHydrationMs = Date.now() - oocHydrationStartedAt;
-            Gui.oocHydrationPromise = null;
-            if (Gui.visible && Gui.pageId === 'ooc') queueGuiRender(0);
-          });
-      }
-    } else {
-      await renderSettingsGui();
-    }
+    await renderSettingsGui();
     if (route.pageId === 'references') {
       if (!route.subview || route.subview === 'selection') {
         void refreshModuleLoreCatalog(false);
@@ -44660,353 +41168,25 @@ html,body{width:100%;height:100%;overflow:hidden}
         if (route.subview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
       }
     }
+    // A selector from a legacy route is retained only as an optional focus hint;
+    // it never mounts or falls back to an old page template.
     if (selector) setTimeout(() => {
-      const target = Gui.root?.querySelector(selector) || (typeof document !== 'undefined' ? document.querySelector(selector) : null);
+      const target = Gui.app?.querySelector(selector);
       if (target?.tagName === 'DETAILS') target.open = true;
-      else {
-        const disclosure = target?.closest?.('details');
-        if (disclosure) disclosure.open = true;
-      }
-      scrollGuiSectionIntoView(selector);
+      target?.focus?.({ preventScroll: true });
     }, 0);
   };
 
   const navigateToStageAgent = async (stageId, sectionKey) => {
-    await navigateGui('flow', '', sectionKey || `agent_${stageId}`);
-    setTimeout(() => {
-      const details = Gui.root?.querySelector('.sga-stage-advanced');
-      if (details && !details.open) details.open = true;
-      scrollGuiSectionIntoView(`#sga-stage-${stageId}`);
-    }, 0);
-  };
-
-  const MOBILE_NAV_ITEMS = Object.freeze([
-    Object.freeze({ value: 'flow|overview', section: 'overview', tab: 'flow', label: '개요', icon: '⌂' }),
-    Object.freeze({ value: 'flow|results', section: 'results', tab: 'flow', label: '실행 결과', icon: '▤' }),
-    Object.freeze({ value: 'flow|user_intent_ooc', section: 'user_intent_ooc', tab: 'flow', label: '창작 지침 OOC', icon: '✦' }),
-    Object.freeze({ value: 'flow|runtime', section: 'runtime', tab: 'flow', label: '전문가 설정', icon: '⚙' }),
-    Object.freeze({ value: 'flow|references', section: 'references', tab: 'flow', label: '자료', icon: '▦' }),
-    Object.freeze({ value: 'flow|internal_response_improvement', section: 'internal_response_improvement', tab: 'flow', label: '응답 옵션', icon: '✧' }),
-    Object.freeze({ value: 'flow|agent_input_assist', section: 'agent_input_assist', tab: 'flow', stageId: INPUT_ASSIST_STAGE_ID, label: '인풋 관리자', icon: '◇' }),
-    Object.freeze({ value: 'flow|agent_shadow_act', section: 'agent_shadow_act', tab: 'flow', stageId: 'shadow_act', label: 'SHADOW ACT', icon: '◆' }),
-    Object.freeze({ value: 'flow|agent_aide_character', section: 'agent_aide_character', tab: 'flow', stageId: 'aide_character', label: '인물 AIDE', icon: '◆' }),
-    Object.freeze({ value: 'flow|agent_aide_world', section: 'agent_aide_world', tab: 'flow', stageId: 'aide_world', label: '세계관 AIDE', icon: '◆' }),
-    Object.freeze({ value: 'flow|agent_aide_plot', section: 'agent_aide_plot', tab: 'flow', stageId: 'aide_plot', label: '플롯 AIDE', icon: '◆' }),
-    Object.freeze({ value: 'providers|providers', section: 'providers', tab: 'providers', label: 'AI 연결 & 모델', icon: '◈' }),
-    Object.freeze({ value: 'flow|information_transfer', section: 'information_transfer', tab: 'flow', label: '정보 전달 도우미', icon: '⇢' }),
-    Object.freeze({ value: 'flow|main', section: 'main', tab: 'flow', label: '메인 응답', icon: '▣' }),
-    Object.freeze({ value: 'flow|transfer', section: 'transfer', tab: 'flow', label: '가져오기 / 내보내기', icon: '⇧' }),
-    Object.freeze({ value: 'flow|debug', section: 'debug', tab: 'flow', label: '디버그 / 진단', icon: '?' })
-  ]);
-
-  const navigateMobileGui = async value => {
-    const target = MOBILE_NAV_ITEMS.find(item => item.value === value) || MOBILE_NAV_ITEMS[0];
-    if (target.stageId) return await navigateToStageAgent(target.stageId, target.section);
-    return await navigateGui(target.tab, '', target.section);
-  };
-
-  const buildMobileNavigation = () => {
-    const activeValue = `${Gui.activeTab === 'providers' ? 'providers' : 'flow'}|${Gui.sidebarSection || 'overview'}`;
-    const activeItem = MOBILE_NAV_ITEMS.find(item => item.value === activeValue) || MOBILE_NAV_ITEMS[0];
-    const quickSections = new Set(['internal_response_improvement', 'overview', 'results', 'user_intent_ooc']);
-    return guiEl('nav', { class: 'sga-mobile-nav', 'aria-label': '모바일 화면 이동' }, [
-      guiEl('div', { class: 'sga-mobile-nav-head' }, [
-        guiEl('div', {}, [
-          guiEl('small', { text: '현재 화면' }),
-          guiEl('strong', { text: `${activeItem.icon} ${activeItem.label}` })
-        ]),
-        guiEl('span', { class: `sga-badge ${Runtime.inFlight ? 'warn' : 'good'}`, dataset: { runtimePipeline: 'true' }, text: Runtime.inFlight ? '실행 중' : '대기 중' })
-      ]),
-      guiEl('div', { class: 'sga-mobile-quick-nav' }, MOBILE_NAV_ITEMS
-        .filter(item => quickSections.has(item.section))
-        .map(item => guiEl('button', {
-          class: `sga-mobile-quick-btn${activeItem.section === item.section ? ' active' : ''}`,
-          type: 'button',
-          onClick: () => navigateMobileGui(item.value)
-        }, [
-          guiEl('span', { text: item.icon }),
-          guiEl('small', { text: item.label === '창작 지침 OOC' ? '지침 OOC' : item.label })
-        ]))),
-      guiEl('label', { class: 'sga-mobile-nav-select-wrap' }, [
-        guiEl('span', { text: '전체 메뉴' }),
-        guiEl('select', {
-          class: 'sga-select sga-mobile-nav-select',
-          value: activeItem.value,
-          onChange: event => { void navigateMobileGui(event.target.value); }
-        }, optionNodes(MOBILE_NAV_ITEMS.map(item => [item.value, `${item.icon}  ${item.label}`]), activeItem.value))
-      ])
-    ]);
-  };
-
-  const buildSidebar = () => {
-    const item = (key, label, icon, tab = 'flow', selector = '', sub = false) => guiEl('button', {
-      class: `sga-side-item${sub ? ' sub' : ''}`,
-      dataset: { active: String(Gui.sidebarSection === key) },
-      onClick: () => navigateGui(tab, selector, key)
-    }, [guiEl('span', { class: 'sga-side-icon', text: icon }), guiEl('span', { class: 'sga-side-label', text: label })]);
-    const stageItem = (stageId, label, icon) => guiEl('button', {
-      class: 'sga-side-item sub',
-      dataset: { active: String(Gui.sidebarSection === `agent_${stageId}`), stage: stageId },
-      onClick: () => navigateToStageAgent(stageId, `agent_${stageId}`)
-    }, [guiEl('span', { class: 'sga-side-icon', text: icon }), guiEl('span', { class: 'sga-side-label', text: label })]);
-    const lastRunAt = Number(Runtime.lastPipeline?.at || Runtime.last?.at || 0);
-    const lastRunText = lastRunAt ? new Date(lastRunAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '기록 없음';
-    return guiEl('aside', { class: 'sga-sidebar' }, [
-      guiEl('nav', { class: 'sga-side-nav' }, [
-        item('overview', '개요', '⌂', 'flow', '.sga-flow-page-title'),
-        item('results', '실행 결과', '▤', 'flow', '#sga-execution-results'),
-        item('user_intent_ooc', '창작 지침 OOC', '✦', 'flow', '#sga-user-intent-ooc'),
-        item('runtime', '전문가 설정', '⚙', 'flow', '#sga-flow-runtime'),
-        item('references', '자료', '▦', 'flow', ''),
-        item('skills', 'Skill', '✺', 'flow', ''),
-        item('internal_response_improvement', '응답 옵션', '✧', 'flow', '#sga-response-options'),
-        guiEl('div', { class: 'sga-side-group', text: '입력 처리' }),
-        stageItem(INPUT_ASSIST_STAGE_ID, '인풋 관리자', '◇'),
-        guiEl('div', { class: 'sga-side-group', text: '에이전트 설정' }),
-        stageItem('shadow_act', 'SHADOW ACT', '◆'),
-        stageItem('aide_character', '인물 AIDE', '◆'),
-        stageItem('aide_world', '세계관 AIDE', '◆'),
-        stageItem('aide_plot', '플롯 AIDE', '◆'),
-        guiEl('div', { class: 'sga-side-group', text: '연결 및 출력' }),
-        item('providers', 'AI 연결 & 모델', '◈', 'providers', '#sga-provider-page'),
-        item('information_transfer', '정보 전달 도우미', '⇢', 'flow', '#sga-information-transfer-settings'),
-        item('main', '메인 응답', '▣', 'flow', '#sga-flow-main-response'),
-        item('transfer', '가져오기 / 내보내기', '⇧', 'flow', '#sga-flow-transfer'),
-        item('debug', '디버그 / 진단', '?', 'flow', '.sga-debug-fold')
-      ]),
-      guiEl('div', { class: 'sga-side-bottom' }, [
-        guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '작성 모드' }), guiEl('strong', { text: currentWritingModeFromGui() === 'rp' ? 'RP · 유저 행동 불가침' : '소설' })]),
-      guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '플러그인 상태' }), guiEl('strong', { class: 'sga-live-dot', dataset: { runtimeLive: 'true' }, text: Runtime.inFlight ? '실행 중' : '활성' })]),
-        guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '마지막 실행' }), guiEl('strong', { dataset: { runtimeLast: 'true' }, text: lastRunText })]),
-        guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '버전' }), guiEl('strong', { text: PLUGIN_VERSION })])
-      ])
-    ]);
-  };
-
-  const buildInsightRail = () => {
-    const runtime = Gui.state?.runtime || {};
-    const providers = presetNamesFromState();
-    const configured = providers.filter(name => providerConfigured(Gui.state?.providers?.[name])).length;
-    const traces = (Runtime.stageTrace || []).slice(-5).reverse();
-    const labelFor = stageId => stageId === 'beforeRequest'
-      ? '요청 적용 확인'
-      : STAGE_DEF_MAP[stageId]?.label || stageId || '단계';
-    return guiEl('aside', { class: 'sga-insight-rail' }, [
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '현재 상태' }),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '작동 방식' }), guiEl('strong', { text: runtime.mode === 'lite' ? '간소' : runtime.mode === 'off' ? '꺼짐' : '표준' })]),
-        guiEl('div', { class: 'sga-rail-stat stacked' }, [guiEl('span', { text: '단계별 AI' }), guiEl('strong', { text: PIPELINE_PROVIDER_STAGE_DEFS.map(def => `${def.label.replace(' AIDE', '')}: ${resolvedPresetNameForStage(def.id)}`).join(' · ') })]),
-        guiEl('div', { class: 'sga-rail-stat stacked' }, [guiEl('span', { text: '확인 순서' }), guiEl('strong', { text: orderedAideStageDefs(runtime.aideStageOrder).map(def => def.label.replace(' AIDE', '')).join(' → ') })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: 'Skill' }), guiEl('strong', { text: runtime.skillRouterEnabled !== false ? '자동 선택' : '사용 안 함' })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '사용 가능한 AI 연결' }), guiEl('strong', { text: `${configured}/${providers.length}` })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '변경 상태' }), guiEl('strong', { text: Gui.dirty ? '저장 필요' : '저장됨' })])
-      ]),
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '최근 실행' }),
-        ...(traces.length ? traces.map(trace => {
-          const info = traceStateInfo(trace);
-          const cls = info.className === 'danger' || info.className === 'warn'
-            ? 'warn'
-            : info.className === 'off'
-              ? 'off'
-              : '';
-          return guiEl('div', { class: 'sga-rail-log' }, [
-            guiEl('i', { class: `sga-rail-log-dot ${cls}`.trim() }),
-            guiEl('div', {}, [guiEl('strong', { text: labelFor(trace?.stage) }), guiEl('span', { text: `${info.elapsed || '시간 기록 없음'} · ${info.label}` })])
-          ]);
-        }) : [guiEl('div', { class: 'sga-note', text: '아직 실행 기록이 없습니다.' })])
-      ]),
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '설정 팁' }),
-        guiEl('div', { class: 'sga-rail-tip' }, [guiEl('b', { text: '01' }), guiEl('span', { text: '인풋 관리자는 RisuAI input 핸들러에서 초안 파이프라인보다 먼저 실행됩니다.' })]),
-        guiEl('div', { class: 'sga-rail-tip' }, [guiEl('b', { text: '02' }), guiEl('span', { text: '정보 전달 도우미에서 메인 모델에 초안만 보낼지 분석 자료도 함께 보낼지 선택합니다.' })]),
-        guiEl('div', { class: 'sga-rail-tip' }, [guiEl('b', { text: '03' }), guiEl('span', { text: '쉬운 설정 아래의 “이 설정 저장” 버튼으로 바로 적용할 수 있습니다.' })])
-      ])
-    ]);
-  };
-
-  const renderActiveTab = () => Gui.activeTab === 'providers' ? buildProvidersTab() : buildExecutionFlowTab();
-
-  const GUI_SCROLL_SELECTORS = Object.freeze([
-    '.sga-main', '.sga-sidebar', '.sga-list-items', '.sga-live-result-text', '.sga-live-result-code'
-  ]);
-
-  const guiDisclosureStateKey = (node, index = 0) => {
-    if (!node) return '';
-    if (node.id) return `id:${node.id}`;
-    const owner = node.parentElement?.closest?.('[id]');
-    const summary = Array.from(node.children || []).find(child => child?.tagName === 'SUMMARY');
-    const classKey = text(node.className || '').trim().split(/\s+/).filter(Boolean).sort().join('.');
-    return `details:${owner?.id || 'root'}:${classKey}:${compact(summary?.textContent || '', 160)}:${index}`;
-  };
-
-  const guiInteractiveStateKey = (node, index = 0) => {
-    if (!node) return '';
-    if (node.id) return `id:${node.id}`;
-    const owner = node.parentElement?.closest?.('[id]');
-    const field = node.closest?.('.sga-field');
-    const label = compact(field?.querySelector?.('label')?.textContent || '', 120);
-    return `control:${owner?.id || 'root'}:${node.tagName || ''}:${node.type || ''}:${label}:${index}`;
-  };
-
-  const captureGuiViewportState = () => {
-    if (!Gui.root || typeof document === 'undefined') return null;
-    const scroll = {};
-    for (const selector of GUI_SCROLL_SELECTORS) {
-      const node = Gui.root.querySelector(selector);
-      if (node) scroll[selector] = { top: Number(node.scrollTop || 0), left: Number(node.scrollLeft || 0) };
-    }
-    const page = document.scrollingElement || document.documentElement;
-    const disclosures = {};
-    Array.from(Gui.root.querySelectorAll('details')).forEach((node, index) => {
-      disclosures[guiDisclosureStateKey(node, index)] = node.open === true;
-    });
-    const controls = Array.from(Gui.root.querySelectorAll('input,select,textarea,button'));
-    const active = document.activeElement;
-    const activeIndex = controls.indexOf(active);
-    let focus = null;
-    if (activeIndex >= 0) {
-      focus = {
-        key: guiInteractiveStateKey(active, activeIndex),
-        index: activeIndex,
-        selectionStart: null,
-        selectionEnd: null,
-        selectionDirection: ''
-      };
-      try {
-        if (typeof active.selectionStart === 'number') focus.selectionStart = active.selectionStart;
-        if (typeof active.selectionEnd === 'number') focus.selectionEnd = active.selectionEnd;
-        focus.selectionDirection = text(active.selectionDirection || '');
-      } catch (_) {}
-    }
-    return {
-      tab: Gui.activeTab,
-      section: Gui.app?.dataset?.section || Gui.sidebarSection,
-      pageTop: Number(page?.scrollTop || 0),
-      pageLeft: Number(page?.scrollLeft || 0),
-      scroll,
-      disclosures,
-      focus
-    };
-  };
-
-  const restoreGuiViewportState = state => {
-    if (!state || !Gui.root || state.tab !== Gui.activeTab || state.section !== Gui.sidebarSection) return;
-    const apply = () => {
-      try {
-        Array.from(Gui.root.querySelectorAll('details')).forEach((node, index) => {
-          const key = guiDisclosureStateKey(node, index);
-          if (Object.prototype.hasOwnProperty.call(state.disclosures || {}, key)) {
-            node.open = state.disclosures[key] === true;
-          }
-        });
-        if (state.focus) {
-          const controls = Array.from(Gui.root.querySelectorAll('input,select,textarea,button'));
-          const target = controls.find((node, index) => guiInteractiveStateKey(node, index) === state.focus.key)
-            || controls[state.focus.index];
-          if (target) {
-            try { target.focus({ preventScroll: true }); } catch (_) { try { target.focus(); } catch (_) {} }
-            if (state.focus.selectionStart != null && typeof target.setSelectionRange === 'function') {
-              try {
-                target.setSelectionRange(
-                  Number(state.focus.selectionStart),
-                  Number(state.focus.selectionEnd ?? state.focus.selectionStart),
-                  state.focus.selectionDirection || undefined
-                );
-              } catch (_) {}
-            }
-          }
-        }
-        for (const selector of GUI_SCROLL_SELECTORS) {
-          const node = Gui.root.querySelector(selector);
-          const position = state.scroll?.[selector];
-          if (!node || !position) continue;
-          node.scrollTop = Number(position.top || 0);
-          node.scrollLeft = Number(position.left || 0);
-        }
-        const page = document.scrollingElement || document.documentElement;
-        if (page) { page.scrollTop = Number(state.pageTop || 0); page.scrollLeft = Number(state.pageLeft || 0); }
-      } catch (_) {}
-    };
-    try { requestAnimationFrame(apply); } catch (_) { setTimeout(apply, 0); }
-  };
-  const buildRedesignedSidebar = () => guiEl('aside', { class: 'sga-sidebar sga-redesign-sidebar', 'aria-label': '설정 메뉴' }, [
-    guiEl('nav', { class: 'sga-side-nav' }, GUI_PAGE_GROUPS.map(group => guiEl('div', { class: 'sga-redesign-nav-group' }, [
-      guiEl('div', { class: 'sga-side-group', text: group.label }),
-      ...GUI_PAGE_REGISTRY.filter(page => page.group === group.id).map(rawPage => { const page = guiPageDisplayDefinition(rawPage); return guiEl('button', {
-        class: 'sga-side-item', type: 'button', dataset: { pageTarget: page.id, active: String(Gui.pageId === page.id) },
-        'aria-current': Gui.pageId === page.id ? 'page' : false,
-        onClick: () => navigateGui(page.id === 'providers' ? 'providers' : 'flow', '', page.id)
-      }, [guiEl('span', { class: 'sga-side-icon', text: page.icon }), guiEl('span', { class: 'sga-side-label', text: page.label })]); })
-    ]))),
-    guiEl('div', { class: 'sga-side-bottom' }, [
-      guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '작성 모드' }), guiEl('strong', { text: currentWritingModeFromGui() === 'rp' ? 'RP · 유저 행동 불가침' : '소설 · 기존 GRADIA' })]),
-      guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '플러그인 상태' }), guiEl('strong', { class: 'sga-live-dot', dataset: { runtimeLive: 'true' }, text: Runtime.inFlight ? '실행 중' : '활성' })]),
-      guiEl('div', { class: 'sga-side-status-row' }, [guiEl('span', { text: '버전' }), guiEl('strong', { text: PLUGIN_VERSION })])
-    ])
-  ]);
-
-  const buildRedesignedMobileNavigation = () => guiEl('nav', { class: 'sga-mobile-nav sga-redesign-mobile-nav', 'aria-label': '모바일 설정 화면 이동' }, [
-    guiEl('label', { class: 'sga-mobile-nav-select-wrap' }, [
-      guiEl('span', { text: '현재 화면' }),
-      guiEl('select', {
-        class: 'sga-select sga-mobile-nav-select', value: Gui.pageId, dataset: { mobilePageSelect: 'true' },
-        onChange: event => { const pageId = GUI_PAGE_IDS.includes(event.target.value) ? event.target.value : 'overview'; void navigateGui(pageId === 'providers' ? 'providers' : 'flow', '', pageId); }
-      }, GUI_PAGE_GROUPS.map(group => guiEl('optgroup', { label: group.label }, GUI_PAGE_REGISTRY.filter(page => page.group === group.id).map(rawPage => { const page = guiPageDisplayDefinition(rawPage); return guiEl('option', { value: page.id, selected: page.id === Gui.pageId, text: `${page.icon}  ${page.label}` }); }))))
-    ])
-  ]);
-
-  const redesignedRailSignature = () => {
-    const runtime = Gui.state?.runtime || {};
-    const providers = presetNamesFromState();
-    const configured = providers.filter(name => providerConfigured(Gui.state?.providers?.[name])).length;
-    const traces = (Runtime.stageTrace || []).slice(-3).map(trace => [
-      trace?.at || 0,
-      trace?.stage || '',
-      trace?.ok === true,
-      trace?.reason || '',
-      trace?.elapsedMs || 0
-    ]);
-    return JSON.stringify({
-      pipeline: normalizeMultiPipelineMode(runtime.multiPipelineMode),
-      providers: providers.length,
-      configured,
-      skillEnabled: runtime.skillRouterEnabled !== false,
-      skillTopK: clampInt(runtime.skillRouterTopK, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K),
-      traces
-    });
-  };
-
-  const buildRedesignedRail = () => {
-    const runtime = Gui.state?.runtime || {};
-    const providers = presetNamesFromState();
-    const configured = providers.filter(name => providerConfigured(Gui.state?.providers?.[name])).length;
-    const traces = (Runtime.stageTrace || []).slice(-3).reverse();
-    return guiEl('aside', { class: 'sga-insight-rail sga-redesign-rail' }, [
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '현재 상태' }),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '작성 모드' }), guiEl('strong', { text: currentWritingModeFromGui() === 'rp' ? 'RP · 유저 행동 불가침' : '소설 · 기존 설계' })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '파이프라인' }), guiEl('strong', { text: normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? '중량' : '경량' })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: 'AI 연결' }), guiEl('strong', { text: `${configured}/${providers.length}` })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: 'Skill' }), guiEl('strong', { text: runtime.skillRouterEnabled !== false ? `자동 Top ${clampInt(runtime.skillRouterTopK, 1, MAX_SKILL_ROUTER_TOP_K, DEFAULT_SKILL_ROUTER_TOP_K)}` : '사용 안 함' })]),
-        guiEl('div', { class: 'sga-rail-stat' }, [guiEl('span', { text: '변경 상태' }), guiEl('strong', { dataset: { railDirty: 'true' }, text: Gui.dirty ? '저장 필요' : '저장됨' })])
-      ]),
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '최근 실행' }),
-        ...(traces.length ? traces.map(trace => { const info = traceStateInfo(trace); return guiEl('div', { class: 'sga-rail-log' }, [guiEl('i', { class: `sga-rail-log-dot ${info.className === 'off' ? 'off' : info.className === 'good' ? '' : 'warn'}` }), guiEl('div', {}, [guiEl('strong', { text: STAGE_DEF_MAP[trace?.stage]?.label || trace?.stage || '요청' }), guiEl('span', { text: `${info.elapsed || '시간 기록 없음'} · ${info.label}` })])]); }) : [guiEl('div', { class: 'sga-note', text: '아직 실행 기록이 없습니다.' })])
-      ]),
-      guiEl('section', { class: 'sga-rail-card' }, [
-        guiEl('h3', { text: '이 화면의 원칙' }),
-        guiEl('div', { class: 'sga-rail-tip', text: '개요는 읽기 전용입니다.' }),
-        guiEl('div', { class: 'sga-rail-tip', text: '각 설정은 전용 화면에서 관리합니다.' }),
-        guiEl('div', { class: 'sga-rail-tip', text: '모든 변경은 하단 저장 바에서 확정합니다.' })
-      ])
-    ]);
+    const alias = ({ shadow_act:'shadow', aide_character:'char', aide_world:'world', aide_plot:'plot' })[stageId];
+    await navigateGui('flow', '', 'pipeline');
+    if (alias) setTimeout(() => Gui.app?.querySelector(`.node[data-select-row="${alias}"]`)?.click(), 0);
   };
 
   const closeGuiDialog = () => {
     if (!Gui.dialogLayer) return;
-    Gui.dialogLayer.classList.add('sga-hidden');
+    Gui.dialogLayer.classList.remove('is-open');
+    Gui.dialogLayer.setAttribute('aria-hidden', 'true');
     Gui.dialogLayer.replaceChildren();
     Gui.closeDialogOpen = false;
     const target = Gui.dialogReturnFocus;
@@ -45017,13 +41197,20 @@ html,body{width:100%;height:100%;overflow:hidden}
   const openGuiDialog = ({ title = '', description = '', body = null, actions = [] } = {}) => {
     if (!Gui.dialogLayer || typeof document === 'undefined') return;
     Gui.dialogReturnFocus = document.activeElement;
-    const card = guiEl('section', { class: 'sga-redesign-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
-      guiEl('div', { class: 'sga-redesign-dialog-head' }, [guiEl('h2', { text: title }), description ? guiEl('p', { text: description }) : null]),
-      body ? guiEl('div', { class: 'sga-redesign-dialog-body' }, body) : null,
-      guiEl('div', { class: 'sga-redesign-dialog-actions' }, actions)
+    const card = guiEl('section', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
+      guiEl('div', { class: 'eyebrow', text: 'GRADIA' }), guiEl('h2', { text: title }),
+      description ? guiEl('p', { text: description }) : null,
+      body ? guiEl('div', { class: 'stack stack--sm' }, body) : null,
+      guiEl('div', { class: 'dialog__actions' }, actions)
     ]);
-    Gui.dialogLayer.replaceChildren(guiEl('div', { class: 'sga-redesign-dialog-backdrop', onClick: closeGuiDialog }), card);
-    Gui.dialogLayer.classList.remove('sga-hidden');
+    actions.forEach?.(action => {
+      if (!action?.classList) return;
+      const tone = action.classList.contains('danger') || action.classList.contains('btn--danger') ? 'danger' : action.classList.contains('primary') || action.classList.contains('good') || action.classList.contains('btn--primary') ? 'primary' : '';
+      action.className = `btn${tone ? ` btn--${tone}` : ''}`;
+    });
+    Gui.dialogLayer.replaceChildren(card);
+    Gui.dialogLayer.classList.add('is-open');
+    Gui.dialogLayer.setAttribute('aria-hidden', 'false');
     Gui.closeDialogOpen = true;
     setTimeout(() => { try { card.querySelector('button')?.focus(); } catch (_) {} }, 0);
   };
@@ -45075,9 +41262,9 @@ html,body{width:100%;height:100%;overflow:hidden}
       title: '저장하지 않은 변경이 있습니다',
       description: '닫기 전에 변경을 저장하거나 취소할 수 있습니다.',
       actions: [
-        guiEl('button', { class: 'sga-btn ghost', text: '계속 편집', onClick: closeGuiDialog }),
-        guiEl('button', { class: 'sga-btn danger', text: '변경 버리고 닫기', onClick: async () => { if (Gui.savedSnapshot) Gui.state = cloneJson(Gui.savedSnapshot); Gui.pendingSettingsImport = null; resetGuiDirtySummary(); closeGuiDialog(); await hideSettingsGui(); } }),
-        guiEl('button', { class: 'sga-btn good', text: '저장 후 닫기', onClick: () => { void saveCurrentGuiState({ closeAfter: true }); } })
+        guiEl('button', { class: 'btn btn--ghost', text: '계속 편집', onClick: closeGuiDialog }),
+        guiEl('button', { class: 'btn btn--danger', text: '변경 버리고 닫기', onClick: async () => { if (Gui.savedSnapshot) Gui.state = cloneJson(Gui.savedSnapshot); Gui.pendingSettingsImport = null; resetGuiDirtySummary(); closeGuiDialog(); await hideSettingsGui(); } }),
+        guiEl('button', { class: 'btn btn--primary', text: '저장 후 닫기', onClick: () => { void saveCurrentGuiState({ closeAfter: true }); } })
       ]
     });
   };
@@ -45150,45 +41337,22 @@ html,body{width:100%;height:100%;overflow:hidden}
           const nextValue = guiRecommendedChangeValue(after, parts);
           // Keep both values visible at narrow widths; the older generic dialog hides strong.
           const valueStyle = { display: 'block', minWidth: '0', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' };
-          return guiEl('div', { class: 'sga-redesign-diff-row', dataset: { settingPath: parts.join('.') }, style: { gridTemplateColumns: 'minmax(0,1.2fr) repeat(2,minmax(0,1fr))', fontSize: '12px' } }, [
+          return guiEl('div', { class: 'note', dataset: { settingPath: parts.join('.') }, style: { gridTemplateColumns: 'minmax(0,1.2fr) repeat(2,minmax(0,1fr))', fontSize: '12px' } }, [
             guiEl('span', { text: guiRecommendedChangeLabel(parts), style: { overflowWrap: 'anywhere' } }),
             guiEl('strong', { text: previousValue, 'aria-label': `현재: ${previousValue}`, style: valueStyle }),
             guiEl('b', { text: nextValue, 'aria-label': `추천: ${nextValue}`, style: valueStyle })
           ]);
         })
-      : [guiEl('div', { class: 'sga-note', text: '이미 추천 설정을 사용하고 있습니다.' })];
+      : [guiEl('div', { class: 'note', text: '이미 추천 설정을 사용하고 있습니다.' })];
     openGuiDialog({
       title: '추천 설정을 적용할까요?',
       description: '변경 항목별 현재 값 → 추천값입니다. 적용 후에도 저장 버튼을 눌러야 확정됩니다.',
       body: rows,
       actions: [
-        guiEl('button', { class: 'sga-btn ghost', text: '취소', onClick: closeGuiDialog }),
-        guiEl('button', { class: 'sga-btn primary', text: '추천값 적용', disabled: !changes.length, onClick: async () => { Gui.state = preview; markGuiDirty(); closeGuiDialog(); await renderSettingsGui(); } })
+        guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: closeGuiDialog }),
+        guiEl('button', { class: 'btn btn--primary', text: '추천값 적용', disabled: !changes.length, onClick: async () => { Gui.state = preview; markGuiDirty(); closeGuiDialog(); await renderSettingsGui(); } })
       ]
     });
-  };
-
-  const buildSettingsSaveBar = () => guiEl('footer', { class: 'sga-redesign-savebar', dataset: { saveBar: 'true' }, 'aria-live': 'polite' }, [
-    guiEl('div', { class: 'sga-redesign-save-copy' }, [guiEl('strong', { dataset: { saveTitle: 'true' }, text: '모든 변경이 저장되어 있습니다' }), guiEl('span', { dataset: { saveDescription: 'true' }, text: '설정을 바꾸면 저장 전 변경 상태를 여기에 표시합니다.' })]),
-    guiEl('div', { class: 'sga-actions' }, [
-      guiEl('button', { class: 'sga-btn ghost', type: 'button', dataset: { revertSettings: 'true' }, text: '변경 취소', onClick: () => { void revertGuiChanges(); } }),
-      guiEl('button', { class: 'sga-btn good', type: 'button', dataset: { saveSettings: 'true' }, text: '저장', onClick: () => { void saveCurrentGuiState(); } })
-    ])
-  ]);
-
-  const syncGuiDirtyChrome = (providedSummary = null) => {
-    const summary = providedSummary || currentGuiChangeSummary();
-    Gui.dirty = summary.count > 0;
-    if (Gui.dirtyBadgeNode) {
-      Gui.dirtyBadgeNode.dataset.dirty = String(Gui.dirty);
-      Gui.dirtyBadgeNode.textContent = Gui.dirty ? `${summary.count}개 변경` : '저장됨';
-    }
-    if (Gui.saveTitleNode) Gui.saveTitleNode.textContent = Gui.saving ? '설정을 저장하고 있습니다…' : Gui.dirty ? `${summary.count}개 변경이 저장되지 않았습니다` : '모든 변경이 저장되어 있습니다';
-    if (Gui.saveDescriptionNode) Gui.saveDescriptionNode.textContent = Gui.dirty ? `${summary.labels.slice(0, 3).join(' · ')}${summary.labels.length > 3 ? ' 외' : ''}` : '설정을 바꾸면 저장할 변경 상태를 여기에 표시합니다.';
-    if (Gui.saveSettingsNode) Gui.saveSettingsNode.disabled = Gui.saving || !Gui.dirty;
-    if (Gui.revertSettingsNode) Gui.revertSettingsNode.disabled = Gui.saving || !Gui.dirty;
-    if (Gui.railDirtyNode) Gui.railDirtyNode.textContent = Gui.dirty ? '저장 필요' : '저장됨';
-    return summary;
   };
 
   const syncSettingsChrome = (providedSummary = null) => {
@@ -45208,85 +41372,818 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (mobile) mobile.value = Gui.pageId;
     Gui.app.querySelectorAll('[data-dirty-badge]').forEach(node => { node.dataset.dirty = String(Gui.dirty); node.textContent = Gui.dirty ? `${summary.count}개 변경` : '저장됨'; });
     const saveTitle = Gui.app.querySelector('[data-save-title]');
-    const saveDescription = Gui.app.querySelector('[data-save-description]');
+    const saveDescription = Gui.app.querySelector('[data-save-desc]');
     if (saveTitle) saveTitle.textContent = Gui.saving ? '설정을 저장하고 있습니다…' : Gui.dirty ? `${summary.count}개 변경이 저장되지 않았습니다` : '모든 변경이 저장되어 있습니다';
-    if (saveDescription) saveDescription.textContent = Gui.dirty ? `${summary.labels.slice(0, 3).join(' · ')}${summary.labels.length > 3 ? ' 외' : ''}` : '설정을 바꾸면 저장 전 변경 상태를 여기에 표시합니다.';
-    Gui.app.querySelectorAll('[data-save-settings],[data-revert-settings]').forEach(node => { node.disabled = Gui.saving || !Gui.dirty; });
+    if (saveDescription) saveDescription.textContent = Gui.dirty ? `${summary.labels.slice(0, 3).join(' · ')}${summary.labels.length > 3 ? ' 외' : ''}` : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
+    Gui.app.querySelectorAll('[data-save],[data-revert]').forEach(node => { node.disabled = Gui.saving || !Gui.dirty; });
     const railDirty = Gui.app.querySelector('[data-rail-dirty]');
     if (railDirty) railDirty.textContent = Gui.dirty ? '저장 필요' : '저장됨';
   };
 
+
+  const mockupPageForGuiRoute = pageId => ({
+    overview: 'home', quick: 'home', results: 'results', pipeline: 'pipeline', input: 'pipeline',
+    ooc: 'pipeline', improve: 'pipeline', output: 'pipeline', references: 'sources', skills: 'sources',
+    providers: 'providers', advanced: 'manage', management: 'manage'
+  })[pageId] || 'home';
+  const mockupInternalRoute = page => ({
+    home: 'overview', results: 'results', pipeline: 'pipeline', sources: 'references',
+    providers: 'providers', manage: 'management'
+  })[page] || 'overview';
+  const mockupSetChoice = (group, index) => {
+    if (!group) return;
+    [...group.querySelectorAll(':scope > .choice')].forEach((node, i) => node.classList.toggle('is-on', i === index));
+  };
+  const mockupRuntime = () => Gui.state?.runtime || (Gui.state.runtime = {});
+  const mockupCallPlan = () => {
+    const runtime = mockupRuntime();
+    return expectedTotalCallPlan({ ...runtime, enableShadowAct: Gui.state?.agents?.shadow_act?.enabled === true,
+      enableCharacterAide: Gui.state?.agents?.aide_character?.enabled === true,
+      enableWorldAide: Gui.state?.agents?.aide_world?.enabled === true,
+      enablePlotAide: Gui.state?.agents?.aide_plot?.enabled === true });
+  };
+  const mockupSyncAideOrder = () => {
+    const app=Gui.app;if(!app)return;
+    const runtime=mockupRuntime(),order=normalizeAideStageOrder(runtime.aideStageOrder);
+    runtime.aideStageOrder=order;
+    const stageAliases={aide_character:'char',aide_world:'world',aide_plot:'plot'};
+    const ladder=app.querySelector('#ladder'),shadow=ladder?.querySelector('[data-select-row="shadow"]'),main=ladder?.querySelector('[data-select-row="main"]');
+    if(ladder&&main)order.forEach(id=>{const node=ladder.querySelector(`[data-select-row="${stageAliases[id]}"]`);if(node)ladder.insertBefore(node,main);});
+    order.forEach((id,index)=>{
+      const alias=stageAliases[id],rank=String(index+2);
+      app.querySelector(`#ladder [data-select-row="${alias}"] .node__dot`)?.replaceChildren(document.createTextNode(rank));
+    });
+    const mini=app.querySelector('[data-page="home"] .mini');
+    if(mini){const step=id=>mini.querySelector(id),arrows=[...mini.querySelectorAll('.mini__arrow')];const sequence=[step('#mini-s0'),arrows[0],step('#mini-s1'),arrows[1],...order.flatMap((id,index)=>[step(`#mini-s${({aide_character:2,aide_world:3,aide_plot:4})[id]}`),arrows[index+2]]),step('.mini__step.s5')].filter(Boolean);sequence.forEach(node=>mini.appendChild(node));}
+    const selected=order.includes(Gui.selectedAideStage)?Gui.selectedAideStage:order[0];Gui.selectedAideStage=selected;
+    const index=order.indexOf(selected),name=STAGE_DEF_MAP[selected]?.label||selected;
+    const hint=app.querySelector('#ladder + .cluster .hint');if(hint)hint.textContent=`AIDE 순서 · ${name}`;
+    app.querySelectorAll('[data-aide-order]').forEach(button=>{button.dataset.aideOrderStage=selected;button.disabled=button.dataset.aideOrder==='-1'?index<=0:index>=order.length-1;button.setAttribute('aria-label',`${name} ${button.dataset.aideOrder==='-1'?'위로':'아래로'} 이동`);});
+  };
+  const mockupRefreshStatus = () => {
+    const app = Gui.app;
+    if (!app || !Gui.state) return;
+    const runtime = mockupRuntime(), mode = currentWritingModeFromGui();
+    app.querySelectorAll('[data-existing-response-field]').forEach(control=>{
+      const key=control.dataset.existingResponseField;
+      if(key==='nsfwMode')control.value=normalizeNsfwMode(runtime.nsfwMode);
+      else if(key==='nsfwGuidanceEnabled')control.checked=runtime.nsfwGuidanceEnabled!==false;
+      else if(key==='shadowDraftMode'){control.value=normalizeNovelShadowDraftMode(runtime.novelShadowDraftMode||runtime.shadowDraftMode);control.disabled=mode==='rp';}
+    });
+    const draftHint=app.querySelector('[data-existing-draft-mode-hint]');if(draftHint)draftHint.textContent=mode==='rp'?'RP 모드에서는 유저 행동 불가침 계약으로 고정됩니다. 소설 모드로 돌아오면 이전 초안 방식을 복원합니다.':SHADOW_DRAFT_MODE_DEFS[normalizeNovelShadowDraftMode(runtime.shadowDraftMode)]?.description||'';
+    const nsfwPreview=app.querySelector('[data-existing-nsfw-preview]');if(nsfwPreview)nsfwPreview.value=buildNsfwGuidanceBlock(runtime,'writing')||'(현재 지침 주입이 꺼져 있습니다.)';
+    app.dataset.writing = mode === 'rp' ? 'rp' : 'novel';
+    const modeLabel = app.querySelector('#modeLabel');
+    if (modeLabel) modeLabel.textContent = mode === 'rp' ? 'RP 모드 · 유저 행동 불가침' : '소설 모드';
+    app.querySelector('.mode-switch [data-mode="novel"]')?.setAttribute('aria-pressed', String(mode !== 'rp'));
+    app.querySelector('.mode-switch [data-mode="rp"]')?.setAttribute('aria-pressed', String(mode === 'rp'));
+    const navPipe = app.querySelector('#navPipe');
+    if (navPipe) navPipe.textContent = mode === 'rp' ? 'RP 반응 파이프라인' : '초안 파이프라인';
+    const configured = presetNamesFromState().filter(name => providerConfigured(Gui.state.providers?.[name])).length;
+    const providerTotal = presetNamesFromState().length;
+    const navCount = app.querySelector('#nav-prov-n');
+    if (navCount) navCount.textContent = configured + '/' + providerTotal;
+    const plan = mockupCallPlan(), foot = app.querySelector('#foot-calls');
+    if (foot) foot.textContent = '내부 ' + plan.internalLogicalCalls + '회 + 메인 1회';
+    const run = app.querySelector('#n-run');
+    if (run) run.textContent = (runtime.mode === 'off' ? '꺼짐' : runtime.mode === 'lite' ? '라이트' : '일반') + ' · ' + (normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? '중량' : '경량');
+    const quality = app.querySelector('#n-quality');
+    if (quality) quality.textContent = QUICK_PROFILE_DEFS[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')]?.label || '직접 조정';
+    const qualityBadge = app.querySelector('#q-badge');
+    if (qualityBadge) qualityBadge.textContent = '현재: ' + (quality?.textContent || '직접 조정');
+    for (const [alias,id] of [['shadow','shadow_act'],['char','aide_character'],['world','aide_world'],['plot','aide_plot']]) {
+      const detail=app.querySelector('.stage-detail[data-detail="'+alias+'"]'),slot=Gui.state.agents?.[id]||{};
+      const turns=detail?.querySelector('.turns-now'),hint=turns?.parentElement;
+      if(turns&&hint){turns.textContent=String(slot.turnWindow??defaultTurnWindowForStage(id));hint.replaceChildren(document.createTextNode('최근 '),turns,document.createTextNode('턴 · 최대 대기 '+Math.round((slot.timeoutMs??DEFAULT_STAGE_TIMEOUT_MS)/1000)+'초'));}
+      const info=traceStateInfo(latestTraceForStage(id),{enabled:slot.enabled!==false,isLiteSkip:runtime.mode==='lite'&&(id==='aide_character'||id==='aide_world')});
+      const badge=detail?.querySelector('.card__head .cluster .badge');if(badge){badge.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');badge.className='badge '+(info.className==='good'?'badge--ok':info.className==='warn'?'badge--warn':info.className==='danger'?'badge--danger':'');}
+      const banner=detail?.querySelector('.banner');if(banner){const title=banner.querySelector('b'),body=banner.querySelector('div:not(.banner__icon)>span');if(title)title.textContent=info.label;if(body)body.textContent=info.title;banner.classList.toggle('banner--warn',info.className==='warn'||info.className==='danger');}
+    }
+    const length = app.querySelector('#n-length');
+    if (length) length.textContent = simpleLengthLabelForRuntime(runtime);
+    const prov = app.querySelector('#n-prov');
+    if (prov) prov.textContent = configured + ' / ' + providerTotal;
+    const modeIndex = ({ off: 0, lite: 1, normal: 2, full: 2 })[runtime.mode] ?? 2;
+    mockupSetChoice(app.querySelector('#q-runmode'), modeIndex);
+    const inputIndex = runtime.inputAssistMode === 'off' ? 0 : 1;
+    mockupSetChoice(app.querySelector('#q-input'), inputIndex);
+    mockupSetChoice(app.querySelector('#inp-mode'), inputIndex);
+    mockupSetChoice(app.querySelector('#q-weight'), normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? 1 : 0);
+    const profileIndex = ({ fast: 0, balanced: 1, quality: 2 })[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')] ?? -1;
+    mockupSetChoice(app.querySelector('#q-quality'), profileIndex);
+    const lengths = [[1000,2000],[3000,5000],[5000,7000],[8000,20000]];
+    const lengthIndex = lengths.findIndex(pair => Number(runtime.targetDraftMinChars) === pair[0] && Number(runtime.targetDraftMaxChars) === pair[1]);
+    mockupSetChoice(app.querySelector('#q-length'), lengthIndex);
+    const languageIndex = ({ korean: 0, english: 1, japanese: 2 })[normalizeInternalDraftLanguage(runtime.internalDraftLanguage)] ?? 0;
+    mockupSetChoice(app.querySelector('#q-language'), languageIndex);
+    app.querySelectorAll('[data-page]').forEach(section => section.classList.toggle('is-active', section.dataset.page === Gui.mockupPage));
+    app.querySelectorAll('.nav-item[data-go],.tabbar [data-go]').forEach(button => {
+      const active = button.dataset.go === Gui.mockupPage;
+      button.classList.toggle('is-active', active);
+      if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+    });
+    app.querySelectorAll('.ribbon').forEach(node => { node.hidden = mode !== 'rp'; });
+    const health = app.querySelector('.health');
+    if (health) {
+      const active = Runtime.hookStatus?.beforeRequest === true || Runtime.hookStatus?.input === true;
+      health.className = 'health ' + (active ? 'health--ok' : 'health--warn') + ' hide-narrow';
+      health.lastChild.textContent = Runtime.inFlight ? '실행 중' : active ? '훅 활성 · 대기 중' : '훅 확인 필요';
+    }
+    const savebar = app.querySelector('#savebar');
+    if (savebar) savebar.classList.toggle('is-dirty', Gui.dirty);
+    const summary = currentGuiChangeSummary();
+    const saveTitle = app.querySelector('[data-save-title]');
+    const saveDesc = app.querySelector('[data-save-desc]');
+    if (saveTitle) saveTitle.textContent = Gui.saving ? '설정을 저장하고 있습니다…' : Gui.dirty ? summary.count + '개 변경이 저장되지 않았습니다' : '모든 변경이 저장되어 있습니다';
+    if (saveDesc) saveDesc.textContent = Gui.dirty ? summary.labels.slice(0, 3).join(' · ') : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
+    app.querySelector('[data-save]')?.toggleAttribute('disabled', Gui.saving || !Gui.dirty);
+    app.querySelector('[data-revert]')?.toggleAttribute('disabled', Gui.saving || !Gui.dirty);
+  };
+  const runtimeModePick = index => {
+    mockupRuntime().mode = ['off','lite','normal'][index] || 'normal';
+    markGuiDirty(); void renderSettingsGui();
+  };
+  const bindMockupEvents = app => {
+    if (app.dataset.productEvents === 'true') return;
+    app.dataset.productEvents = 'true';
+    app.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (target.closest('[data-more]')) {
+        event.preventDefault();
+        const sheet=app.querySelector('#sheet-more');
+        Gui.moreSheetReturnFocus=target.closest('[data-more]');
+        sheet?.classList.add('is-open');sheet?.setAttribute('aria-hidden','false');
+        sheet?.querySelector('button')?.focus();return;
+      }
+      if (target.id === 'sheet-more') { mockupCloseMoreSheet(); return; }
+      const mode = target.closest('.mode-switch [data-mode]');
+      if (mode) { event.preventDefault(); requestWritingModeChangeFromGui(mode.dataset.mode); return; }
+      const go = target.closest('[data-go]');
+      if (go) {
+        event.preventDefault();
+        if (go.closest('#sheet-more')) mockupCloseMoreSheet();
+        const page = go.dataset.go;
+        if (page === 'home') { Gui.pageId = 'overview'; Gui.pageSubview = ''; }
+        else if (page === 'sources') { Gui.pageId = 'references'; Gui.pageSubview = 'selection'; }
+        else if (page === 'manage') { Gui.pageId = 'management'; Gui.pageSubview = 'transfer'; }
+        else if (page === 'pipeline') { Gui.pageId = 'pipeline'; Gui.pageSubview = go.dataset.goSub || 'shadow_act'; }
+        else if (page === 'providers') { Gui.pageId = 'providers'; Gui.pageSubview = ''; }
+        else { Gui.pageId = page; Gui.pageSubview = go.dataset.goSub || ''; }
+        Gui.mockupPage = mockupPageForGuiRoute(Gui.pageId);
+        Gui.activeTab = Gui.pageId === 'providers' ? 'providers' : 'flow';
+        void renderSettingsGui();
+        return;
+      }
+      const close = target.closest('[data-close]');
+      if (close) { event.preventDefault(); const overlay = close.closest('.overlay'); if (overlay) { overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden', 'true'); } return; }
+      if (target.closest('[data-open="dlg-close"]')) { event.preventDefault(); requestSettingsGuiClose(); return; }
+      if (target.closest('[data-open="dlg-reco"]')) { event.preventDefault(); void openRecommendedSettingsDialog(); return; }
+      if (target.closest('#savebar [data-save]')) { event.preventDefault(); void saveCurrentGuiState(); return; }
+      if (target.closest('#savebar [data-revert]')) { event.preventDefault(); void revertGuiChanges(); return; }
+      const choice = target.closest('.choice');
+      if (choice) {
+        const group = choice.parentElement, choices = [...group.querySelectorAll(':scope > .choice')], index = choices.indexOf(choice);
+        if (group.id === 'q-runmode') { runtimeModePick(index); return; }
+        if (group.id === 'q-input' || group.id === 'inp-mode') { applyInputAssistModeToGui(index === 0 ? 'off' : 'user_focus'); return; }
+        if (group.id === 'q-weight') { applyMultiPipelineModeToGui(index === 0 ? 'lightweight' : 'heavyweight'); return; }
+        if (group.id === 'q-quality') { if (index >= 0) applyQuickProfileToGui(['fast','balanced','quality'][index]); return; }
+        if (group.id === 'q-length') { if (index >= 0) applySimpleLengthToGui(['compact','standard','detailed','extended'][index]); return; }
+        if (group.id === 'q-language') { if (index >= 0) applyInternalDraftLanguageToGui(['korean','english','japanese'][index]); return; }
+      }
+      const node = target.closest('.node[data-select-row]');
+      if (node) {
+        const id = node.dataset.selectRow;
+        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', main:'main' })[id] || 'shadow';
+        app.querySelectorAll('.node[data-select-row]').forEach(item => item.classList.toggle('is-on', item === node));
+        app.querySelectorAll('.stage-detail[data-detail]').forEach(item => item.classList.toggle('is-on', item.dataset.detail === detail));
+        const selectedAide=({char:'aide_character',world:'aide_world',plot:'aide_plot'})[id];
+        if(selectedAide)Gui.selectedAideStage=selectedAide;
+        mockupSyncAideOrder();
+        return;
+      }
+      const orderButton=target.closest('[data-aide-order]');
+      if(orderButton){moveAideStageInGui(orderButton.dataset.aideOrderStage,Number(orderButton.dataset.aideOrder));return;}
+      const backendAction=target.closest('[data-backend-action]')?.dataset.backendAction;
+      if(backendAction==='backend-detect'){void detectBackendBridgeFromGui();return;}
+      if(backendAction==='backend-test'){void testBackendBridgeFromGui();return;}
+      if(backendAction==='backend-clear'){setGuiBackendHosting({mode:'off',url:'',token:'',autoDetected:false,lastDetectedAt:'',lastManifest:null});void renderSettingsGui().then(()=>guiSetStatus('Hosting Bridge 설정을 비웠습니다.'));return;}
+      const tab = target.closest('[data-subtab]');
+      if (tab) {
+        const tabs = tab.closest('[data-subtabs]'), group = tabs?.dataset.subtabs;
+        tabs?.querySelectorAll('[data-subtab]').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
+        app.querySelectorAll('[data-group="' + group + '"]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === tab.dataset.subtab));
+        return;
+      }
+      const skillDelete = target.closest('[data-skill-del]');
+      if (skillDelete) { openMockupSkillDelete(skillDelete.dataset.skillDel); return; }
+      const skillEdit = target.closest('[data-skill-edit]');
+      if (skillEdit) { openSkillEditorDialog(skillEdit.dataset.skillEdit); return; }
+      if (target.closest('#skill-add')) { openSkillEditorDialog(); return; }
+      const mockupSkillEditor = target.closest('[data-open="dlg-skill"]');
+      if (mockupSkillEditor) { event.preventDefault(); const context=JSON.parse(mockupSkillEditor.dataset.ctx||'{}'); openSkillEditorDialog(context.id||''); return; }
+      const skillRestore = target.closest('[data-skill-restore]');
+      if (skillRestore) { restoreMockupSkill(skillRestore.dataset.skillRestore); return; }
+      if (target.closest('[data-prov-add]')) { addMockupProvider(); return; }
+      if (target.closest('[data-provider-clone]')) { cloneMockupProvider(target.closest('[data-provider-clone]').dataset.providerClone); return; }
+      if (target.closest('[data-prov-clone]')) { cloneMockupProvider(); return; }
+      const exportScope = target.closest('[data-export-scope]');
+      if (exportScope) {
+        Gui.exportScope = exportScope.dataset.exportScope === 'all' ? 'all' : 'flow';
+        app.querySelectorAll('[data-export-scope]').forEach(button => button.setAttribute('aria-pressed', String(button === exportScope)));
+        return;
+      }
+      if(target.closest('[data-provider-default]')){const name=target.closest('[data-provider-default]').dataset.providerDefault;Gui.state.runtime.defaultPresetName=name;markGuiDirty();void renderSettingsGui();return;}
+      if(target.closest('[data-provider-models]')){const name=target.closest('[data-provider-models]').dataset.providerModels;const preset=Gui.state.providers?.[name];void (async()=>{try{Gui.providerModelLoading=true;await renderSettingsGui();const models=await listProviderModels(preset,{force:true});const meta=providerModelMetadata(preset.provider,preset.url);const cacheKey=`${canonicalProvider(preset.provider)}|${String(preset.url||'')}|${providerCredentialCacheFingerprint(preset.key)}`;Gui.providerModels[cacheKey]=models;Gui.providerModelLoading=false;await renderSettingsGui();guiSetStatus(`${meta?.label||providerDisplayLabel(preset.provider)} 모델 ${models.length}개를 불러왔습니다.`);}catch(error){Gui.providerModelLoading=false;await renderSettingsGui();guiSetStatus(error?.message||String(error),true,true);}})();return;}
+      if(target.closest('[data-vertex-apply]')){const name=target.closest('[data-vertex-apply]').dataset.vertexApply;const preset=Gui.state.providers?.[name];try{const result=applyVertexCredentialsToPreset(preset,Gui.vertexCredentialDrafts?.[name]||'',true);markGuiDirty();void renderSettingsGui().then(()=>guiSetStatus(`Vertex 자격 증명 적용 · ${result.projectId||'토큰 방식'} / ${result.location||'URL 유지'}`));}catch(error){guiSetStatus(error?.message||String(error),true,true);}return;}
+      if(target.closest('[data-vertex-url]')){const name=target.closest('[data-vertex-url]').dataset.vertexUrl;const preset=Gui.state.providers?.[name];try{const credential=preset?.key||Gui.vertexCredentialDrafts?.[name]||'';const parsed=tryJsonParse(credential,null);let result;if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))result=applyVertexCredentialsToPreset(preset,credential,false);else{preset.url=defaultUrlForProvider(preset.provider);result=credential?applyVertexCredentialsToPreset(preset,credential,true):{projectId:'',location:'global'};}markGuiDirty();void renderSettingsGui().then(()=>guiSetStatus(`Vertex URL 재생성 · ${result.projectId||'PROJECT_ID 확인 필요'}`));}catch(error){guiSetStatus(error?.message||String(error),true,true);}return;}
+      const manageAction=target.closest('[data-manage-action]')?.dataset.manageAction;
+      if(manageAction==='export-file'){const payload=selectedExportPayload(),date=new Date().toISOString().slice(0,10);downloadJson(Gui.exportScope==='all'?`gradia-config-${date}.json`:`gradia-flow-${date}.json`,payload);guiSetStatus('비밀 키를 제외한 설정 JSON을 저장했습니다.');return;}
+      if(manageAction==='export-copy'){void mockupCopyText(JSON.stringify(selectedExportPayload(),null,2)).then(ok=>guiSetStatus(ok?'비밀 키를 제외한 설정 JSON을 복사했습니다.':'클립보드에 접근하지 못했습니다.'));return;}
+      if(manageAction==='import-file'){app.querySelector('#mockup-import-file')?.click();return;}
+      if(manageAction==='import-review'||manageAction==='import-replace'){mockupOpenImportReview('replace');return;}
+      if(manageAction==='import-merge'){mockupOpenImportReview('merge');return;}
+      if(manageAction==='debug-copy'||manageAction==='debug-file'){
+        const payload=runtimeForDisplay();
+        if(manageAction==='debug-file'){downloadJson(`gradia-debug-${new Date().toISOString().slice(0,10)}.json`,payload);guiSetStatus('현재 GRADIA 진단 JSON을 저장했습니다.');}
+        else void mockupCopyText(JSON.stringify(payload,null,2)).then(ok=>guiSetStatus(ok?'현재 GRADIA 진단 JSON을 복사했습니다.':'클립보드에 접근하지 못했습니다.'));
+        return;
+      }
+      if(target.closest('[data-open="dlg-reset"]')){mockupOpenResetConfirm(false);return;}
+      if(target.closest('[data-open="dlg-reset-all"]')){mockupOpenResetConfirm(true);return;}
+      if(target.closest('[data-open="dlg-ooc"]')){const stage=target.closest('.stage-detail')?.dataset.detail;void mockupOpenOoc(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[stage]||'shadow_act');return;}
+      if(target.closest('[data-open="dlg-cand"]')){mockupOpenCandidate();return;}
+      if(target.closest('[data-open="dlg-used"]')){const stage=target.closest('.stage-detail')?.dataset.detail;mockupOpenUsedMaterials(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[stage]||'shadow_act');return;}
+      if(target.matches('[data-action="prompt-preview"]')||target.closest('[data-action="prompt-preview"]')){const detail=target.closest('.stage-detail')?.dataset.detail;mockupOpenPromptPreview(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[detail]||'shadow_act');return;}
+      const providerRow = target.closest('[data-provider-name]');
+      if (providerRow && providerRow.matches('button.row')) { Gui.selectedPreset = providerRow.dataset.providerName; void renderSettingsGui(); return; }
+      const stage = target.closest('.stage-detail[data-detail]');
+      const stageId = ({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[stage?.dataset.detail];
+      if (target.closest('[data-provider-test]')) {
+        const name=target.closest('[data-provider-test]').dataset.providerTest;
+        const preset=Gui.state.providers?.[name];
+        void testProviderPreset(preset).then(result=>guiSetStatus(`‘${name}’ 연결 테스트 성공 · ${result?.model||preset?.model||'응답 확인'}`)).catch(error=>guiSetStatus(error?.message||String(error),true,true));
+        return;
+      }
+      if (target.closest('[data-provider-key-delete]')) {
+        const name=target.closest('[data-provider-key-delete]').dataset.providerKeyDelete;
+        openGuiDialog({title:`${name} API 키 삭제`,description:'이 프리셋에 저장된 키를 삭제합니다.',actions:[guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),guiEl('button',{class:'btn btn--danger',text:'삭제',onClick:async()=>{const preset=Gui.state.providers?.[name];if(preset){preset.key='';preset.secret_deleted=true;markGuiDirty();}closeGuiDialog();await renderSettingsGui();}})]});return;
+      }
+      if (target.closest('[data-provider-delete]')) {
+        const name=target.closest('[data-provider-delete]').dataset.providerDelete;
+        openGuiDialog({title:`${name} 프리셋 삭제`,description:'연결 중인 단계는 기본 연결로 되돌립니다. 저장 전 변경으로 표시됩니다.',actions:[guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),guiEl('button',{class:'btn btn--danger',text:'삭제',onClick:async()=>{delete Gui.state.providers[name];for(const slot of Object.values(Gui.state.agents||{}))if(slot.presetName===name)slot.presetName='';if(Gui.state.runtime.defaultPresetName===name)Gui.state.runtime.defaultPresetName='';if(Gui.state.runtime.userIntentOocPreset===name)Gui.state.runtime.userIntentOocPreset='';Gui.selectedPreset=Object.keys(Gui.state.providers||{})[0]||'';markGuiDirty();closeGuiDialog();await renderSettingsGui();}})]});return;
+      }
+      if (target.closest('#lib-connect')) { LibReadConnection.setUrl(app.querySelector('#lib-url')?.value||''); void LibReadConnection.connect(false,LIB_READ_OWNERS).then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결 상태를 갱신했습니다.');}); return; }
+      if (target.closest('#lib-disconnect')) { void LibReadConnection.disconnect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결을 해제했습니다.');}).catch(()=>{mockupRenderSources();guiSetStatus('LIB_READ_PREFERENCE_UNAVAILABLE: 자동 연결 해제를 저장하지 못했습니다. 연결 해제를 다시 눌러 주세요.',true,true);}); return; }
+      if (target.closest('#lib-check')) { void LibReadConnection.inspect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 상태를 다시 확인했습니다.');}); return; }
+    });
+    app.addEventListener('change', event => { void handleMockupControlChange(event.target); });
+    app.addEventListener('input', event => { void handleMockupControlChange(event.target, true); });
+    app.addEventListener('keydown', event => {
+      const overlay = app.querySelector('.overlay.is-open');
+      if (event.key === 'Escape') {
+        if (overlay === Gui.dialogLayer) closeGuiDialog();
+        else if (overlay?.id === 'sheet-more') mockupCloseMoreSheet();
+        else if (overlay) { overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden', 'true'); }
+        else requestSettingsGuiClose();
+        event.preventDefault();
+      }
+      if (event.key === 'Tab' && overlay) {
+        const controls=[...overlay.querySelectorAll('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')].filter(node=>!node.disabled&&node.offsetParent!==null);
+        const first=controls[0],last=controls.at(-1);
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+      }
+      const tab=event.target.closest?.('[role="tab"]');
+      if(tab&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
+        const tabs=[...tab.parentElement.querySelectorAll('[role="tab"]')],index=tabs.indexOf(tab);
+        const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+        tabs[next]?.focus();tabs[next]?.click();event.preventDefault();
+      }
+    });
+  };
+  const handleMockupControlChange = async (control, inputEvent = false) => {
+    if (!control || !Gui.state || control.matches?.('[data-no-track]')) return;
+    const page = control.closest('.page')?.dataset.page, runtime = mockupRuntime();
+    if(control.matches?.('[data-existing-response-field]')){
+      const key=control.dataset.existingResponseField;
+      if(key==='nsfwMode')applyNsfwModeToGui(control.value);
+      else if(key==='nsfwGuidanceEnabled')applyNsfwGuidanceEnabledToGui(control.checked);
+      else if(key==='shadowDraftMode'&&currentWritingModeFromGui()!=='rp')applyShadowDraftModeToGui(control.value);
+      return;
+    }
+    if(control.matches?.('[data-stage-ref][data-stage-ref-owner]')){const id=control.dataset.stageRefOwner,key=control.dataset.stageRef;if(Gui.state.agents?.[id]){Gui.state.agents[id].risuRefs=normalizeRisuReferences(Gui.state.agents[id].risuRefs,defaultRisuReferencesForStage(id));Gui.state.agents[id].risuRefs[key]=control.checked;markGuiDirty();mockupRefreshStatus();}return;}
+    if(control.matches?.('[data-backend-hosting]')){const config=normalizeBackendHostingConfig(Gui.state.runtime.backendHosting||{}),key=control.dataset.backendHosting;setGuiBackendHosting({...config,[key]:control.value,autoDetected:key==='mode'?config.autoDetected:false});mockupRefreshStatus();return;}
+    if(control.matches?.('[data-input-assist-field]')){const key=control.dataset.inputAssistField;if(key==='scope')applyInputAssistScopeToGui(control.value);else if(key==='confirmation')applyInputAssistConfirmationModeToGui(control.value);else if(key==='targetChars')applyInputAssistTargetCharsToGui(control.value);else if(key==='loreActivation')applyInputAssistLoreActivationModeToGui(control.value);return;}
+    if(control.matches?.('[data-input-assist-stage-field]')){const key=control.dataset.inputAssistStageField,slot=Gui.state.agents[INPUT_ASSIST_STAGE_ID]||(Gui.state.agents[INPUT_ASSIST_STAGE_ID]={});if(key==='presetName')slot.presetName=control.value;else if(key==='maxChars')slot.maxChars=clampInt(control.value,500,60000,defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID));markGuiDirty();mockupRefreshStatus();return;}
+    if (control.matches?.('[data-stage-ins]')) {
+      const id = ({ 'SHADOW ACT':'shadow_act', '인물 AIDE':'aide_character', '세계관 AIDE':'aide_world', '플롯 AIDE':'aide_plot' })[control.dataset.stageIns];
+      if (id) { Gui.state.prompts[id] ||= {}; Gui.state.prompts[id].customPrompt = control.value; markGuiDirty(); mockupRefreshStatus(); }
+      return;
+    }
+    if (control.matches?.('[data-len]')) {
+      runtime[control.dataset.len === 'min' ? 'targetDraftMinChars' : 'targetDraftMaxChars'] = clampInt(control.value, control.dataset.len === 'min' ? 100 : 500, 60000, control.dataset.len === 'min' ? DEFAULT_TARGET_DRAFT_MIN_CHARS : DEFAULT_TARGET_DRAFT_MAX_CHARS);
+      markGuiDirty(); if (!inputEvent) mockupRefreshStatus(); return;
+    }
+    if (control.matches?.('[data-turns]')) {
+      const detail = control.closest('.stage-detail')?.dataset.detail;
+      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot' })[detail];
+      if (id && Gui.state.agents[id]) { Gui.state.agents[id].turnWindow = clampInt(control.value,1,64,defaultTurnWindowForStage(id)); markGuiDirty(); mockupRefreshStatus(); }
+      return;
+    }
+    if (control.matches?.('[data-stage-field]')) {
+      const section=control.closest('.stage-detail')?.dataset.detail;
+      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[section];
+      if(!id||!Gui.state.agents[id])return;
+      if(control.dataset.stageField==='maxChars')Gui.state.agents[id].maxChars=clampInt(control.value,500,60000,defaultContextCharsForStage(id));
+      else if(control.dataset.stageField==='timeoutSeconds')Gui.state.agents[id].timeoutMs=clampInt(Number(control.value)*1000,1000,600000,DEFAULT_STAGE_TIMEOUT_MS);
+      else return;
+      markGuiDirty();mockupRefreshStatus();return;
+    }
+    if (control.matches?.('[data-skill-priority]')) {
+      if (!/^\d+$/.test(control.value) || Number(control.value) < SKILL_PRIORITY_MIN || Number(control.value) > SKILL_PRIORITY_MAX) { control.setCustomValidity(`우선도는 ${SKILL_PRIORITY_MIN}~${SKILL_PRIORITY_MAX} 정수여야 합니다.`); if (!inputEvent) control.reportValidity?.(); return; }
+      control.setCustomValidity(''); setSkillPriorityForGui(control.dataset.skillStage,control.dataset.skillPriority,control.value); markGuiDirty(); mockupRefreshStatus(); return;
+    }
+    if(control.id==='skill-search'){const q=control.value.trim().toLocaleLowerCase();Gui.app?.querySelectorAll('[data-page="sources"] [data-subpanel="skill"] .skill-row').forEach(row=>{row.hidden=!!q&&!row.textContent.toLocaleLowerCase().includes(q);});return;}
+    if (control.matches?.('[data-skill-router-top-k]')) { runtime.skillRouterTopK=clampInt(control.value,1,MAX_SKILL_ROUTER_TOP_K,DEFAULT_SKILL_ROUTER_TOP_K); markGuiDirty(); mockupRefreshStatus(); return; }
+    if(control.matches?.('[data-vertex-credential]')){Gui.vertexCredentialDrafts[control.dataset.vertexCredential]=control.value;return;}
+    if (control.matches?.('[data-provider-field]')) {
+      const name=control.dataset.providerName, field=control.dataset.providerField;
+      if(name && field){
+        if(field==='name'){
+          if(inputEvent)return;
+          try{if(control.value.trim()!==name){Gui.selectedPreset=name;renameGuiPreset(control.value);void renderSettingsGui();}}
+          catch(error){control.value=name;guiSetStatus(error?.message||String(error),true);}
+          return;
+        }
+        Gui.state.providers[name] ||= {};const preset=Gui.state.providers[name];let value=control.type==='checkbox'?control.checked:control.value;if(control.type==='number')value=Number(control.value);if(field==='key'&&!control.value)value=preset.key;if(field==='provider'){const prior=preset.provider,canonical=canonicalProvider(value);const oldDefault=defaultUrlForProvider(prior);if(!preset.url||preset.url===oldDefault)preset.url=defaultUrlForProvider(canonical);value=canonical;}preset[field]=value;if(field==='key')preset.secret_deleted=false;markGuiDirty();mockupRefreshStatus();if(field==='provider'||field==='reasoning_preset')void renderSettingsGui();
+      }
+      return;
+    }
+    if (control.matches?.('[data-character-lore-key]')) { const excluded=new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));control.checked?excluded.delete(control.dataset.characterLoreKey):excluded.add(control.dataset.characterLoreKey);runtime.excludedCharacterLoreIds=[...excluded];markGuiDirty();mockupRefreshStatus();return; }
+    if (control.matches?.('[data-module-lore-key]')) { const selected=new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds));control.checked?selected.add(control.dataset.moduleLoreKey):selected.delete(control.dataset.moduleLoreKey);runtime.selectedModuleLoreIds=[...selected];markGuiDirty();mockupRefreshStatus();return; }
+    if (control.matches?.('[data-lib-action]')) return;
+    if (page === 'pipeline') {
+      const section = control.closest('.stage-detail')?.dataset.detail;
+      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot' })[section];
+      if (control.matches?.('#on-s1,#on-s2,#on-s3,#on-s4') && id && Gui.state.agents[id]) { Gui.state.agents[id].enabled = control.checked; markGuiDirty(); }
+      if (id && control.tagName === 'SELECT' && control.closest('.stage-detail') && control.closest('.stage-detail')?.querySelectorAll('select')[0] === control) { Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus(); }
+      if (id && control.tagName === 'INPUT' && control.type === 'number') {
+        const label=control.closest('.field')?.querySelector('label')?.textContent||control.getAttribute('aria-label')||'';
+        if(label.includes('참고 자료'))Gui.state.agents[id].maxChars=clampInt(control.value,500,60000,defaultContextCharsForStage(id));
+        else if(label.includes('턴'))Gui.state.agents[id].turnWindow=clampInt(control.value,1,64,defaultTurnWindowForStage(id));
+        else if(label.includes('제한 시간')||label.includes('시간 제한'))Gui.state.agents[id].timeoutMs=clampInt(control.value,1000,600000,DEFAULT_STAGE_TIMEOUT_MS);
+        else return;
+        markGuiDirty();
+      }
+    }
+    if (page === 'manage') {
+      const label = control.getAttribute('aria-label') || control.closest('.setting')?.querySelector('.setting__name')?.textContent || '';
+      const map = { '실패 처리':'failureMode', '기본 연결':'defaultPresetName', 'OOC 연결':'userIntentOocPreset', '진단 기록':'debugLog', '로어 시작값':'loreRerankerTopK', '이전 단계 분석량':'maxPreviousStageChars', '주입 위치':'injectionPosition', '최종 전달 최대 글자':'maxInjectionChars' };
+      const key = map[label];
+      if (key) { runtime[key] = key==='debugLog' ? control.value==='true' : control.type === 'number' ? Number(control.value) : control.value; markGuiDirty(); mockupRefreshStatus(); }
+    }
+    if (control.matches?.('[data-dirty-key="skill-library"]')) { updateMockupSkillToggle(control); mockupRefreshStatus(); return; }
+    if (control.matches?.('#lib-url')) { LibReadConnection.setUrl(control.value); markGuiDirty(); mockupRefreshStatus(); }
+    const providerStage=control.closest('.stage-detail[data-detail]');
+    if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
+  };
+
+  const mockupNode = (tag, className, value) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value !== undefined) node.textContent = String(value);
+    return node;
+  };
+  const mockupOption = (select, value, label) => {
+    const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
+  };
+  let mockupImportCandidate = null;
+  const mockupInstallManageControls = app => {
+    const stageRefKeys=['authorNote','persona','characterDescription','characterLorebook','moduleLorebook'];
+    app.querySelectorAll('.stage-detail[data-detail]').forEach(detail=>{
+      const stageId=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[detail.dataset.detail];
+      if(!stageId)return;
+      const refInputs=detail.querySelectorAll('[data-subpanel="ref"] input[type="checkbox"]');
+      refInputs.forEach((control,index)=>{if(stageRefKeys[index]){control.dataset.stageRef=stageRefKeys[index];control.dataset.stageRefOwner=stageId;}});
+      detail.querySelectorAll('.fold__body .field, .opt-grid .field').forEach(field=>{
+        const label=field.querySelector('label')?.textContent?.trim()||'',input=field.querySelector('input[type="number"]');
+        if(!input)return;
+        if(label.includes('참고 상한'))input.dataset.stageField='maxChars';
+        else if(label.includes('대기 시간')){input.dataset.stageField='timeoutSeconds';input.min='1';input.max='600';input.step='1';}
+      });
+      detail.querySelectorAll('button').forEach(button=>{if(button.textContent.includes('프롬프트 미리보기'))button.dataset.action='prompt-preview';});
+    });
+    const inputStack=app.querySelector('.stage-detail[data-detail="inp"] .stack');
+    if(inputStack&&!inputStack.querySelector('[data-input-assist-options]')){
+      const fold=document.createElement('details');fold.className='fold';fold.dataset.inputAssistOptions='true';
+      const summary=document.createElement('summary');summary.textContent='인풋 관리자 세부 설정';fold.append(summary);
+      const body=mockupNode('div','fold__body grid g2');
+      const addSelect=(label,key,options,value)=>{const field=mockupNode('label','field');field.append(mockupNode('span','label',label));const select=document.createElement('select');select.className='select';select.dataset.inputAssistField=key;options.forEach(([v,l])=>mockupOption(select,v,l));select.value=value;field.append(select);body.append(field);};
+      addSelect('적용 범위','scope',[['full_pipeline','전체 파이프라인'],['standalone','단독 실행']], 'full_pipeline');
+      addSelect('확인 방식','confirmation',[['direct','바로 적용'],['confirm','확인 후 적용']], 'direct');
+      const target=mockupNode('label','field');target.append(mockupNode('span','label','목표 글자 수'));const targetSelect=document.createElement('select');targetSelect.className='select';targetSelect.dataset.inputAssistField='targetChars';INPUT_ASSIST_TARGET_CHAR_CHOICES.forEach(option=>mockupOption(targetSelect,option.id,option.label));target.append(targetSelect);body.append(target);
+      addSelect('로어 적용','loreActivation',INPUT_ASSIST_LORE_ACTIVATION_MODES.map(value=>[value,value]),INPUT_ASSIST_LORE_ACTIVATION_MODES[0]);
+      const providerField=mockupNode('label','field');providerField.append(mockupNode('span','label','AI 프리셋'));const providerSelect=document.createElement('select');providerSelect.className='select';providerSelect.dataset.inputAssistStageField='presetName';mockupOption(providerSelect,'','기본 연결 사용');presetNamesFromState().forEach(name=>mockupOption(providerSelect,name,name));providerField.append(providerSelect);body.append(providerField);
+      const budgetField=mockupNode('label','field');budgetField.append(mockupNode('span','label','참고 상한(자)'));const budget=document.createElement('input');budget.type='number';budget.min='500';budget.max='60000';budget.step='100';budget.className='input';budget.dataset.inputAssistStageField='maxChars';budgetField.append(budget);body.append(budgetField);
+      fold.append(body);inputStack.append(fold);
+    }
+    const page=app.querySelector('[data-page="manage"]');if(!page)return;
+    const io=page.querySelector('[data-subpanel="io"]');if(!io)return;
+    const cards=io.querySelectorAll('.card');if(cards.length<2)return;
+    const scope=cards[0].querySelector('.seg');
+    scope?.querySelectorAll('button').forEach((button,index)=>{button.dataset.exportScope=index===0?'flow':'all';button.setAttribute('aria-pressed',String((Gui.exportScope||'flow')===(index===0?'flow':'all')));});
+    const imp=cards[1];
+    if(!imp.querySelector('#mockup-import-text')){const area=document.createElement('textarea');area.id='mockup-import-text';area.className='textarea';area.rows=7;area.placeholder='키가 포함되지 않은 실행 흐름 또는 GRADIA 설정 JSON';area.value=Gui.importText||'';area.addEventListener('input',()=>{Gui.importText=area.value;});const cluster=imp.querySelector('.cluster');cluster?.after(area);}
+    if(!imp.querySelector('#mockup-import-file')){const file=document.createElement('input');file.type='file';file.accept='application/json,.json';file.id='mockup-import-file';file.hidden=true;file.addEventListener('change',async()=>{const selected=file.files?.[0];file.value='';if(!selected)return;try{Gui.importText=await selected.text();const area=imp.querySelector('#mockup-import-text');if(area)area.value=Gui.importText;guiSetStatus(`${selected.name} 파일을 읽었습니다. 검토 후 가져오기를 눌러 적용하세요.`);}catch(error){guiSetStatus(error?.message||String(error),true,true);}});imp.appendChild(file);}
+    app.querySelectorAll('.stage-detail').forEach(detail=>{
+      detail.querySelectorAll('button').forEach(button=>{if(button.textContent.includes('프롬프트 미리보기'))button.dataset.action='prompt-preview';});
+    });
+    const expert=page.closest('.app')?.querySelector('[data-page="manage"] [data-subpanel="adv"] .stack');
+    if(expert&&!expert.querySelector('[data-existing-response-options]')){
+      const fold=document.createElement('details');fold.className='fold';fold.dataset.existingResponseOptions='true';
+      fold.append(mockupNode('summary','','기존 응답 지침 · 소설 초안 방식'));
+      const body=mockupNode('div','fold__body stack stack--sm');
+      const field=(label,key,options)=>{const row=mockupNode('label','field');row.append(mockupNode('span','label',label));const select=document.createElement('select');select.className='select';select.dataset.existingResponseField=key;select.setAttribute('aria-label',label);options.forEach(([value,title])=>mockupOption(select,value,title));row.append(select);body.append(row);return select;};
+      field('NSFW 모드','nsfwMode',Object.entries(NSFW_MODE_DEFS).map(([value,def])=>[value,def.label]));
+      const enable=mockupNode('label','row');const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.dataset.existingResponseField='nsfwGuidanceEnabled';enable.append(checkbox,mockupNode('span','','NSFW 지침 주입'));body.append(enable);
+      field('소설 첫 초안 방식','shadowDraftMode',NOVEL_SHADOW_DRAFT_MODES.map(value=>[value,SHADOW_DRAFT_MODE_DEFS[value].label]));
+      const modeHint=mockupNode('p','hint');modeHint.dataset.existingDraftModeHint='true';body.append(modeHint);
+      const preview=document.createElement('textarea');preview.className='textarea';preview.readOnly=true;preview.rows=5;preview.setAttribute('aria-label','현재 NSFW 지침 미리보기');preview.dataset.existingNsfwPreview='true';body.append(preview);
+      fold.append(body);expert.append(fold);
+    }
+    if(expert&&!expert.querySelector('[data-backend-hosting-panel]')){
+      const fold=document.createElement('details');fold.className='fold';fold.dataset.backendHostingPanel='true';
+      const summary=document.createElement('summary');summary.textContent='LIBRA Hosting Bridge / 프록시';fold.append(summary);
+      const body=mockupNode('div','fold__body stack stack--sm');
+      const mode=mockupNode('label','field');mode.append(mockupNode('span','label','브릿지 모드'));const select=document.createElement('select');select.className='select';select.dataset.backendHosting='mode';[['off','끄기'],['auto','자동'],['hosted','백엔드 사용']].forEach(([value,label])=>mockupOption(select,value,label));mode.append(select);body.append(mode);
+      const url=mockupNode('label','field');url.append(mockupNode('span','label','Backend URL'));const urlInput=document.createElement('input');urlInput.className='input';urlInput.type='url';urlInput.placeholder='https://… 또는 http://127.0.0.1:18787';urlInput.dataset.backendHosting='url';url.append(urlInput);body.append(url);
+      const token=mockupNode('label','field');token.append(mockupNode('span','label','Backend Token'));const tokenInput=document.createElement('input');tokenInput.className='input';tokenInput.type='password';tokenInput.autocomplete='new-password';tokenInput.placeholder='x-libra-backend-token';tokenInput.dataset.backendHosting='token';token.append(tokenInput);body.append(token);
+      const summaryText=mockupNode('p','hint');summaryText.dataset.backendHostingSummary='true';body.append(summaryText);
+      const actions=mockupNode('div','cluster');[['backend-detect','로컬 백엔드 자동 감지'],['backend-test','브릿지 연결 테스트'],['backend-clear','브릿지 설정 비우기']].forEach(([action,label])=>{const button=mockupNode('button','btn btn--sm',label);button.type='button';button.dataset.backendAction=action;actions.append(button);});body.append(actions);
+      const manifest=mockupNode('pre','json mono');manifest.dataset.backendManifest='true';fold.append(body,manifest);expert.append(fold);
+    }
+    app.querySelectorAll('#ladder + .cluster button').forEach(button=>{
+      if(button.textContent.includes('위로'))button.dataset.aideOrder='-1';
+      else if(button.textContent.includes('아래로'))button.dataset.aideOrder='1';
+    });
+    const actions=page.querySelectorAll('button');
+    actions.forEach(button=>{
+      const text=button.textContent.trim();
+      if(text.includes('JSON 파일로 저장'))button.dataset.manageAction='export-file';
+      else if(text.includes('클립보드로 복사'))button.dataset.manageAction='export-copy';
+      else if(text.includes('파일 열기'))button.dataset.manageAction='import-file';
+      else if(text.includes('붙여넣기 검사'))button.dataset.manageAction='import-review';
+      else if(text.includes('교체해서 가져오기'))button.dataset.manageAction='import-replace';
+      else if(text.includes('병합해서 가져오기'))button.dataset.manageAction='import-merge';
+      else if(text.includes('디버그 JSON 복사'))button.dataset.manageAction='debug-copy';
+      else if(text.includes('파일로 저장'))button.dataset.manageAction='debug-file';
+    });
+  };
+  const mockupCopyText = async value => {
+    const textValue=String(value??'');
+    try{await navigator.clipboard.writeText(textValue);return true;}catch(_){
+      const area=document.createElement('textarea');area.value=textValue;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();const ok=document.execCommand?.('copy')===true;area.remove();return ok;
+    }
+  };
+  const mockupOpenImportReview = mode => {
+    let payload;try{payload=JSON.parse(Gui.importText||'');}catch(error){guiSetStatus('JSON 형식을 확인하세요: '+(error?.message||error),true,true);return;}
+    if(!payload||typeof payload!=='object'||Array.isArray(payload)){guiSetStatus('가져올 설정은 JSON 객체여야 합니다.',true,true);return;}
+    mockupImportCandidate={payload,mode};
+    const keys=Object.keys(payload).filter(key=>!/(key|token|secret|password|credential)/i.test(key));
+    openGuiDialog({title:mode==='merge'?'설정을 병합할까요?':'현재 GUI 설정을 교체할까요?',description:'가져온 값은 아직 저장되지 않습니다. 확인 뒤 초안에 반영하고, 저장 바에서 저장해야 확정됩니다.',body:[guiEl('div',{class:'note'},[guiEl('b',{text:'파일 항목'}),guiEl('p',{text:keys.slice(0,10).join(' · ')||'지원되는 설정 항목이 없습니다.'})]),guiEl('p',{class:'hint',text:'API 키/인증 정보는 가져오기에 포함되지 않으며, 현재 저장 데이터는 저장 버튼을 누르기 전까지 유지됩니다.'})],actions:[guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),guiEl('button',{class:'btn btn--primary',text:mode==='merge'?'병합 검토 완료':'교체 검토 완료',onClick:async()=>{try{applyImportedConfiguration(mockupImportCandidate.payload,mockupImportCandidate.mode==='merge');mockupImportCandidate=null;closeGuiDialog();await renderSettingsGui();guiSetStatus('가져온 설정을 미저장 초안에 반영했습니다. 대상·변경 내용을 확인한 뒤 저장하세요.');}catch(error){guiSetStatus(error?.message||String(error),true,true);}}})]});
+  };
+  const mockupOpenResetConfirm = all => {
+    const input=document.createElement('input');input.className='input';input.autocomplete='off';input.placeholder='초기화';input.setAttribute('aria-label','초기화 확인 입력');
+    const confirm=guiEl('button',{class:'btn btn--danger',text:all?'모든 설정 초기화':'GUI 설정 초기화',disabled:true});
+    input.addEventListener('input',()=>{confirm.disabled=input.value.trim()!=='초기화';});
+    confirm.addEventListener('click',async()=>{if(input.value.trim()!=='초기화')return;try{await clearStructuredSettings(all);await ensureGuiState(true);closeGuiDialog();await renderSettingsGui();guiSetStatus(all?'모든 저장 설정과 비밀 키를 초기화했습니다.':'GUI 저장 설정을 초기화했습니다. 기기 로컬 비밀 키는 유지했습니다.');}catch(error){guiSetStatus(error?.message||String(error),true,true);}});
+    openGuiDialog({title:all?'모든 설정과 비밀 키 초기화':'GUI 설정 초기화',description:all?'모든 저장 설정과 비밀 키를 제거합니다. 이 작업은 되돌릴 수 없습니다.':'저장된 GUI 설정만 제거하고 //@arg 설정과 기본값으로 돌아갑니다. 기기 로컬 비밀 키는 유지됩니다.',body:[guiEl('div',{class:'field'},[guiEl('label',{text:'계속하려면 “초기화”를 입력하세요'}),input])],actions:[guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),confirm]});
+  };
+  const mockupOpenPromptPreview = stageId => {
+    const entry=normalizePromptEntry(Gui.state?.prompts?.[stageId],{mode:'builtin'});
+    const effective=entry.customPrompt?.trim()?entry.customPrompt:builtInPromptPreview(stageId);
+    openGuiDialog({title:`${STAGE_DEF_MAP[stageId]?.label||stageId} 프롬프트 미리보기`,description:'현재 저장 설정과 단계 프롬프트를 기준으로 만든 읽기 전용 미리보기입니다.',body:[guiEl('pre',{class:'json mono',text:effective})],actions:[guiEl('button',{class:'btn',text:'닫기',onClick:closeGuiDialog})]});
+  };
+  const mockupOpenUsedMaterials = stageId => {
+    const trace=latestTraceForStage(stageId), usage=stageMaterialUsageForDisplay(stageId,trace);
+    const detail=usage?stageMaterialUsageFullText(usage):'';
+    openGuiDialog({title:`${STAGE_DEF_MAP[stageId]?.label||stageId} 실제 사용 자료`,description:trace?'제품 실행 기록의 자료 사용 내역입니다.':'이 단계의 실행 자료가 아직 없습니다.',body:[guiEl('pre',{class:'json mono',text:detail||'실행 기록 없음'})],actions:[guiEl('button',{class:'btn',text:'닫기',onClick:closeGuiDialog})]});
+  };
+  const mockupOpenCandidate = () => {
+    const result=Runtime.lastInputAssist||null;
+    const content=result?.rewritten||result?.deliveredInput||'';
+    openGuiDialog({title:'실제 인풋 관리자 결과',description:content?'가장 최근 제품 요청에서 기록한 값입니다. 후보를 새로 생성하거나 전송하지 않습니다.':'아직 제품 요청에서 생성된 결과가 없습니다.',body:[guiEl('pre',{class:'json mono',text:content||'실행 기록 없음'})],actions:[guiEl('button',{class:'btn',text:'닫기',onClick:closeGuiDialog})]});
+  };
+  const mockupOpenOoc = async stageId => {
+    const target=normalizeCreativeOocTarget(stageId||ensureCreativeOocState().targetStage);
+    await loadCurrentOocUserIntent(target);
+    const state=ensureCreativeOocState(), def=STAGE_DEF_MAP[target];
+    const messages=Array.isArray(state.messages)?state.messages:[];
+    const list=guiEl('div',{class:'stack stack--sm'});
+    messages.forEach(message=>list.appendChild(guiEl('div',{class:'note'},[guiEl('b',{text:message.role==='user'?'사용자':message.role==='error'?'오류':'GRADIA'}),guiEl('p',{text:message.content})])));
+    if(!messages.length)list.appendChild(guiEl('div',{class:'empty'},[guiEl('b',{text:'OOC 대화를 시작할 수 있습니다.'}),guiEl('span',{text:creativeOocWelcomeText(def)})]));
+    const stage=document.createElement('select');stage.className='select';SKILL_STAGE_IDS.forEach(id=>mockupOption(stage,id,STAGE_DEF_MAP[id]?.label||id));stage.value=target;stage.addEventListener('change',()=>{selectCreativeOocTarget(stage.value);void mockupOpenOoc(stage.value);});
+    const input=document.createElement('textarea');input.className='textarea';input.placeholder='창작 방향을 대화로 정리…';input.value=Gui.userIntentOocDraft||'';
+    const sendButton=guiEl('button',{class:'btn',text:'보내기',disabled:!input.value.trim()||state.busy});
+    input.addEventListener('input',()=>{Gui.userIntentOocDraft=input.value;sendButton.disabled=!input.value.trim()||state.busy;});
+    const canGenerate=hasCompletedCreativeOocExchange(messages)&&state.pendingByStage?.[target]===true&&!state.busy;
+    sendButton.addEventListener('click',async()=>{try{const message=input.value.trim();if(!message||state.busy)return;Gui.userIntentOocDraft=message;sendButton.disabled=true;await runUserIntentOocTurn(message,{targetStage:target});await renderSettingsGui();await mockupOpenOoc(target);}catch(error){guiSetStatus(error?.message||String(error),true,true);sendButton.disabled=!input.value.trim()||state.busy;}});
+    openGuiDialog({title:`${def?.label||target} 창작 지침 OOC`,description:'OOC 대화만으로는 저장 지침이 바뀌지 않습니다. 명시적으로 지침을 생성한 뒤 저장 반영 상태를 확인하세요.',body:[guiEl('label',{class:'field'},[guiEl('span',{class:'label',text:'대상 단계'}),stage]),list,guiEl('label',{class:'field'},[guiEl('span',{class:'label',text:'메시지'}),input])],actions:[guiEl('button',{class:'btn btn--ghost',text:'닫기',onClick:closeGuiDialog}),guiEl('button',{class:'btn',text:'대화 비우기',onClick:async()=>{const current=ensureCreativeOocState();current.messages=[];current.messagesByStage[target]=[];current.pendingByStage[target]=false;await renderSettingsGui();await mockupOpenOoc(target);}}),sendButton,guiEl('button',{class:'btn btn--primary',text:'지침 생성',disabled:!canGenerate,onClick:async()=>{try{await compileCreativeOocInstruction(target);await renderSettingsGui();closeGuiDialog();guiSetStatus(`${def?.label||target} 창작 지침을 생성했습니다. 저장 상태를 확인하세요.`);}catch(error){guiSetStatus(error?.message||String(error),true,true);}}})]});
+  };
+  const mockupIcon = (name, size = '') => {
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('class','ic'+(size?` ic--${size}`:''));svg.setAttribute('aria-hidden','true');svg.setAttribute('viewBox','0 0 24 24');
+    const navigationIcons={more:'<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',arrow:'<path d="m9 5 7 7-7 7"/>'};
+    svg.innerHTML=GRADIA_MOCKUP_ICONS[name]||navigationIcons[name]||'';return svg;
+  };
+  const mockupSyncProviderOptions = () => {
+    const names = presetNamesFromState(), selected = Gui.selectedPreset && names.includes(Gui.selectedPreset) ? Gui.selectedPreset : names[0];
+    Gui.selectedPreset = selected || '';
+    Gui.app.querySelectorAll('[data-detail-root] select[data-stage-provider]').forEach(select => {
+      const current = Gui.state.agents?.[select.dataset.stageProvider]?.presetName || '';
+      select.replaceChildren();
+      mockupOption(select, '', '기본 연결 사용');
+      names.forEach(name => mockupOption(select, name, name));
+      select.value = names.includes(current) ? current : '';
+    });
+  };
+  const mockupRenderProviders = () => {
+    const page = Gui.app?.querySelector('[data-page="providers"]');
+    if (!page || !Gui.state) return;
+    const list = page.querySelector('.list'), root = page.querySelector('[data-detail-root]');
+    if (!list || !root) return;
+    const names = presetNamesFromState();
+    list.replaceChildren();
+    const cards = [...root.querySelectorAll('[data-detail]')];
+    cards.forEach(card => card.remove());
+    names.forEach((name, index) => {
+      const preset = sanitizePreset(Gui.state.providers?.[name] || {});
+      const configured = providerConfigured(preset);
+      const row = mockupNode('button','row' + (name === Gui.selectedPreset ? ' is-on' : ''));
+      row.type='button'; row.dataset.providerName=name; row.setAttribute('aria-current',String(name === Gui.selectedPreset));
+      const icon=mockupNode('span','row__icon',String((preset.provider||'?').slice(0,1)).toUpperCase());
+      const copy=mockupNode('div','');
+      copy.append(mockupNode('div','row__title',name),mockupNode('div','row__meta',String(preset.provider||'custom')+' · '+(preset.model||'모델 미지정')));
+      const badge=mockupNode('span','badge '+(configured?'badge--ok':'badge--warn'),configured?'설정 완료':'연결 확인 필요');
+      row.append(icon,copy,badge); list.append(row);
+      const card=mockupNode('div','card'); card.dataset.detail=name;
+      card.hidden=name!==Gui.selectedPreset;
+      const head=mockupNode('div','card__head');
+      const heading=mockupNode('div',''); heading.append(mockupNode('h2','card__title',name),mockupNode('p','card__desc','API 키는 내보내기와 백업에 포함되지 않습니다.'));
+      const test=mockupNode('button','btn btn--sm','연결 테스트'); test.type='button'; test.dataset.providerTest=name;
+      head.append(heading,test); card.append(head);
+      const grid=mockupNode('div','grid g2');
+      const addField=(label,field,kind='text')=>{const wrap=mockupNode('div','field');wrap.append(mockupNode('label','',label));const input=document.createElement(kind==='select'?'select':'input');input.className=kind==='select'?'select':'input';if(kind!=='select')input.type=kind;input.dataset.providerName=name;input.dataset.providerField=field;wrap.append(input);return {wrap,input};};
+      const nameField=addField('이름','name'); nameField.input.value=name;
+      const providerField=addField('Provider','provider','select');
+      providerChoices().forEach(([provider,label])=>mockupOption(providerField.input,provider,label));
+      providerField.input.value=preset.provider;
+      const modelField=addField('모델','model'); modelField.input.value=preset.model;
+      const urlField=addField('Endpoint URL','url'); urlField.input.value=preset.url;
+      const keyField=addField('API Key','key','password'); keyField.input.placeholder=preset.key?'저장됨 · 새 키 입력 시 교체':'API 키 입력'; keyField.input.value='';
+      grid.append(nameField.wrap,providerField.wrap,modelField.wrap,urlField.wrap,keyField.wrap);
+      card.append(grid);
+      const fold=document.createElement('details'); fold.className='fold'; fold.style.marginTop='14px';
+      const summary=document.createElement('summary'); summary.textContent='제공자별 상세 · 모델·토큰·추론·서비스 등급'; fold.append(summary);
+      const foldBody=mockupNode('div','fold__body grid g2');
+      const addExtra=(field,label,kind='text',choices=null)=>{const wrap=mockupNode('div','field');wrap.append(mockupNode('label','',label));const input=choices?document.createElement('select'):kind==='textarea'?document.createElement('textarea'):document.createElement('input');input.className=choices?'select':kind==='textarea'?'textarea':'input';if(!choices&&kind!=='textarea')input.type=kind;input.dataset.providerName=name;input.dataset.providerField=field;if(choices)choices.forEach(([value,textValue])=>mockupOption(input,value,textValue));if(kind==='checkbox'){input.type='checkbox';input.checked=preset[field]===true;}else input.value=preset[field]??'';wrap.append(input);foldBody.append(wrap);return input;};
+      addExtra('temp','Temperature','number');addExtra('max_tokens','최대 출력 토큰','number');addExtra('context_window','모델 문맥 크기(토큰)','number');addExtra('timeout_ms','기본 타임아웃(ms)','number');
+      const requestChoices=providerSupportsResponses(preset.provider)?[['chat_completions','Chat Completions'],['responses','Responses API']]:[['chat_completions','Chat Completions']];
+      addExtra('request_format','요청 형식','select',requestChoices);addExtra('stream','스트리밍 응답 사용','checkbox');
+      addExtra('reasoning_preset','추론 프리셋','select',REASONING_PRESET_KEYS.map(key=>[key,REASONING_PRESETS[key].label]));
+      const family=effectiveReasoningFamilyForPreset(preset);const effortOptions=family==='gemini'?[['none','기본값'],['minimal','최소'],['low','낮음'],['medium','중간'],['high','높음']]:family==='kimi'?[['none','기본값(max)'],['low','낮음'],['high','높음'],['max','최대']]:['gpt','openrouter','claude'].includes(family)?[['none','기본값'],['low','낮음'],['medium','중간'],['high','높음'],['xhigh','매우 높음'],['max','최대']]:[['none','없음'],['low','낮음'],['medium','중간'],['high','높음']];
+      if(['gpt','openrouter','claude','gemini','ollama','kimi'].includes(family))addExtra('reasoning_effort','Reasoning effort','select',effortOptions);
+      if(['openrouter','claude_budget','gemini_budget'].includes(family))addExtra('reasoning_budget_tokens','Thinking / Reasoning 예산 토큰','number');
+      if(['openrouter','claude','claude_budget','gemini','gemini_budget','kimi','glm','ollama'].includes(family))addExtra(family==='glm'?'glm_thinking_type':'thinking_type','Thinking type','select',[['enabled','사용'],['disabled','사용 안 함']]);
+      if(providerAllowsServiceTier(preset.provider,preset))addExtra('service_tier','서비스 티어','select',[['off','사용 안 함'],['auto','자동'],['default','default'],['flex','flex'],['priority','priority'],['scale','scale']]);
+      if(isVertexProvider(preset.provider))addExtra('vertex_flex_mode','Vertex Flex 모드','select',[['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']]);
+      if(canonicalProvider(preset.provider)==='custom')addExtra('custom_service_tier_passthrough','Custom provider 요청 Body에 service_tier 전달','checkbox');
+      addExtra('extra_headers_json','추가 HTTP 헤더 JSON','textarea');addExtra('extra_body_json','추가 요청 Body JSON','textarea');
+      const modelMeta=providerModelMetadata(preset.provider,preset.url);const suggestions=suggestedModelsForProvider(preset.provider);
+      if(suggestions.length){const wrap=mockupNode('label','field');wrap.append(mockupNode('span','label','공식 모델 빠른 선택'));const select=document.createElement('select');select.className='select';mockupOption(select,'','(직접 입력 유지)');suggestions.forEach(model=>mockupOption(select,model,model));select.addEventListener('change',()=>{if(!select.value)return;Gui.state.providers[name].model=select.value;markGuiDirty();void renderSettingsGui();});wrap.append(select);foldBody.prepend(wrap);}
+      if(modelMeta?.modelsUrl){const modelAction=mockupNode('button','btn btn--sm',Gui.providerModelLoading?'불러오는 중…':'모델 목록 불러오기');modelAction.type='button';modelAction.dataset.providerModels=name;foldBody.prepend(modelAction);}
+      if(isVertexProvider(preset.provider)){const vertexArea=document.createElement('textarea');vertexArea.className='textarea';vertexArea.placeholder='Vertex 서비스 계정 JSON 또는 access token JSON';vertexArea.value=Gui.vertexCredentialDrafts?.[name]||'';vertexArea.dataset.vertexCredential=name;foldBody.prepend(vertexArea);const apply=mockupNode('button','btn btn--sm btn--primary','Vertex 자격 증명 적용');apply.type='button';apply.dataset.vertexApply=name;foldBody.prepend(apply);const url=mockupNode('button','btn btn--sm','기본 Vertex URL로 재생성');url.type='button';url.dataset.vertexUrl=name;foldBody.prepend(url);}
+      fold.append(foldBody); card.append(fold);
+      const actions=mockupNode('div','cluster');actions.style.marginTop='14px';
+      const makeDefault=mockupNode('button','btn btn--sm',Gui.state.runtime.defaultPresetName===name?'기본 프리셋':'기본으로 지정');makeDefault.type='button';makeDefault.dataset.providerDefault=name;makeDefault.disabled=Gui.state.runtime.defaultPresetName===name;
+      const clone=mockupNode('button','btn btn--sm','복제');clone.type='button';clone.dataset.providerClone=name;
+      const keydel=mockupNode('button','btn btn--sm btn--danger','키 삭제');keydel.type='button';keydel.dataset.providerKeyDelete=name;
+      const del=mockupNode('button','btn btn--sm btn--danger','프리셋 삭제');del.type='button';del.dataset.providerDelete=name;
+      actions.append(makeDefault,clone,keydel,del);card.append(actions);root.append(card);
+    });
+    mockupSyncProviderOptions();
+  };
+  const mockupRenderSkills = () => {
+    const page=Gui.app?.querySelector('[data-page="sources"]'); if(!page||!Gui.state)return;
+    const skillPanel=page.querySelector('[data-subpanel="skill"]'); if(!skillPanel)return;
+    const runtime=mockupRuntime(), custom=normalizeCustomSkillLibrary(runtime.skillCustomLibrary||{}), library=skillLibraryForSettings(runtime,true);
+    const list=skillPanel.querySelector('.list'); if(!list)return;
+    const globalToggle=[...skillPanel.querySelectorAll('.setting')].find(node=>node.textContent.includes('Skill 자동 선택'));
+    if(globalToggle)globalToggle.remove();
+    const split=skillPanel.querySelector('.split');
+    if(split&&!skillPanel.querySelector('#skill-stage-filter')){
+      const label=mockupNode('label','field'); label.append(mockupNode('span','label','우선도 대상 단계'));
+      const select=document.createElement('select');select.className='select';select.id='skill-stage-filter';select.setAttribute('aria-label','우선도 대상 단계');
+      SKILL_STAGE_IDS.forEach(id=>mockupOption(select,id,STAGE_DEF_MAP[id]?.label||id)); select.value=Gui.selectedSkillStage||'shadow_act';
+      select.addEventListener('change',()=>{Gui.selectedSkillStage=select.value;mockupRenderSkills();});
+      label.append(select); split.prepend(label);
+    }
+    list.replaceChildren();
+    const selectedStage=Gui.selectedSkillStage||'shadow_act';
+    const ids=Object.keys(library).sort((a,b)=>String(library[a]?.name||a).localeCompare(String(library[b]?.name||b)));
+    ids.forEach(id=>{
+      const item=library[id], priority=skillPriorityValueForGui(selectedStage,id,item,runtime);
+      const row=mockupNode('div','skill-row');row.dataset.skillId=id;
+      const info=mockupNode('div','');info.append(mockupNode('b','',item?.name||id),mockupNode('small','',compact(item?.koDescription||item?.description||'',220)));
+      const controls=mockupNode('div','cluster');
+      const priorityWrap=mockupNode('label','field');priorityWrap.append(mockupNode('span','hint',(STAGE_DEF_MAP[selectedStage]?.label||selectedStage)+' 우선도 (0~200)'));
+      const number=document.createElement('input');number.type='number';number.min='0';number.max='200';number.step='1';number.className='input prio';number.value=String(priority.percent);number.dataset.skillPriority=id;number.dataset.skillStage=selectedStage;number.setAttribute('aria-label',item.name+' '+selectedStage+' 우선도');priorityWrap.append(number);controls.append(priorityWrap);
+      if(item.source==='custom'){const edit=mockupNode('button','btn btn--sm','편집');edit.type='button';edit.dataset.skillEdit=id;controls.append(edit);const del=mockupNode('button','btn btn--sm btn--danger','삭제');del.type='button';del.dataset.skillDel=id;controls.append(del);}
+      else {const view=mockupNode('span','badge badge--info','내장 원본');controls.append(view);}
+      row.append(info,controls);list.append(row);
+    });
+    const top=skillPanel.querySelector('.card');
+    if(top&&!top.querySelector('[data-skill-router-settings]')){
+      const settings=mockupNode('div','setting');settings.dataset.skillRouterSettings='true';
+      const copy=mockupNode('div','');copy.append(mockupNode('div','setting__name','단계별 Skill 선택 설정'),mockupNode('div','setting__desc','기존 Skill Router 사용 여부와 단계당 최대 수는 그대로 유지합니다. 개별 Skill은 위 단계 우선도에서 조정합니다.'));
+      const max=document.createElement('input');max.type='number';max.min='1';max.max=String(MAX_SKILL_ROUTER_TOP_K);max.className='input';max.value=String(clampInt(runtime.skillRouterTopK,1,MAX_SKILL_ROUTER_TOP_K,DEFAULT_SKILL_ROUTER_TOP_K));max.dataset.skillRouterTopK='true';max.setAttribute('aria-label','단계별 전체 Skill 최대');
+      settings.append(copy,max);top.append(settings);
+    }
+  };
+  const mockupRenderSources = (options = {}) => {
+    const page=Gui.app?.querySelector('[data-page="sources"]');if(!page||!Gui.state)return;
+    const status=LibReadConnection.status();
+    const url=page.querySelector('#lib-url');if(url){if(!options.preserveUrlDraft)url.value=status.url;url.dataset.savedUrl=status.url;}
+    const chip=page.querySelector('#lib-chip');if(chip){chip.className='health '+(status.state==='connected'?'health--ok':'health--warn');const textNode=chip.querySelector('span');if(textNode)textNode.textContent=status.state==='connected'?'읽기 전용 연결됨':'읽기 연결 '+status.state;}
+    const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason:'');
+    const inspect=page.querySelector('#lib-check');if(inspect)inspect.disabled=status.state!=='connected';
+    const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
+    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
+    const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.join(' · ')||'없음';
+    const names=page.querySelectorAll('.state-grid > div');
+    if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.join(' · ')||'없음')+' · 쓰기 권한 없음'));
+    if(names[2])names[2].replaceChildren(mockupNode('b','','현재 채팅 scope'),document.createTextNode(Runtime.currentChatScope||'현재 채팅 scope 미확인'));
+    if(names[3])names[3].replaceChildren(mockupNode('b','','단계 모델 호환'),document.createTextNode(status.modelCompatibility+' · '+status.model));
+    const note=page.querySelector('.note--warn');if(note)note.textContent='LIB 기억 연결은 읽기 전용입니다. URL 변경·가져오기·연결 해제는 기존 동의와 연결을 초기화합니다. 연결 성공은 생성 호환을 뜻하지 않습니다.';
+    const charList=page.querySelector('#lib-char');if(charList){charList.replaceChildren();(Gui.characterLoreCatalog||[]).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=!new Set(normalizeExcludedCharacterLoreIds(mockupRuntime().excludedCharacterLoreIds)).has(item.key);check.dataset.characterLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',item.key));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));charList.append(row);});}
+    const modList=page.querySelector('#lib-mod');if(modList){modList.replaceChildren();(Gui.moduleCatalog||[]).filter(item=>item.active).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds).includes(item.key);check.dataset.moduleLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',String(item.loreEntries?.length||0)+'개 항목'));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));modList.append(row);});}
+    const charSummary=page.querySelector('#sum-char');if(charSummary){const rows=[...charList.querySelectorAll('input[type="checkbox"]')];charSummary.textContent=rows.filter(row=>row.checked).length+' / '+rows.length+' 사용';}
+    const modSummary=page.querySelector('#sum-mod');if(modSummary){const modules=(Gui.moduleCatalog||[]).filter(item=>item.active),selected=new Set(normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds));const chosen=modules.filter(item=>selected.has(item.key));const count=rows=>rows.reduce((total,item)=>total+(item.loreEntries?.length||0),0);modSummary.textContent=chosen.length+'개 모듈 · '+count(chosen)+' / '+count(modules)+' 로어 사용';}
+    const loreSummary=page.querySelector('[data-subpanel="sum"] .choice:last-child span');if(loreSummary)loreSummary.textContent='자동 · 시작 '+(mockupRuntime().loreRerankerTopK??DEFAULT_STAGE_LORE_RERANK_TOP_K)+'개 · 필요 시 확장';
+    mockupRenderSkills();
+  };
+  const hydrateMockupProductView = () => {
+    const app=Gui.app;if(!app||!Gui.state)return;
+    const runtime=mockupRuntime();
+    mockupSyncAideOrder();
+    mockupRefreshStatus();
+    // Replace the mockup's example execution rows and results with actual product trace data.
+    const recent=app.querySelector('[data-page="home"] .list');
+    if(recent){recent.replaceChildren();const traces=(Runtime.stageTrace||[]).slice(-4).reverse();traces.forEach(trace=>{const row=mockupNode('div','row');const info=traceStateInfo(trace);const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',STAGE_DEF_MAP[trace.stage]?.label||trace.stage||'요청'),mockupNode('div','row__meta',info.label));row.append(mockupNode('i','',info.label),copy,mockupNode('span','hint',info.elapsed||''));recent.append(row);});if(!traces.length)recent.append(mockupNode('div','empty','실행 기록이 없습니다.'));}
+    const results=app.querySelector('[data-page="results"]');
+    if(results){
+      const assist=Runtime.lastInputAssist;
+      const inputs=results.querySelectorAll('[data-subpanel="i"] .card p');
+      if(inputs[0])inputs[0].textContent=assist?.originalInput||assist?.original||'실행 기록 없음';
+      if(inputs[1])inputs[1].textContent=assist?.rewritten||assist?.deliveredInput||'실행 기록 없음';
+      const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),draft=results.querySelector('[data-subpanel="s"] .card p');
+      if(draft)draft.textContent=shadow?.parsed?.draft?resultText(shadow.parsed.draft,6000):'실행 기록 없음';
+      const values=results.querySelectorAll('[data-subpanel="s"] .kv dd');
+      if(values[0]){const button=values[0].querySelector('button');values[0].replaceChildren(document.createTextNode(usage?stageMaterialUsageSummaryText(usage):'실행 자료 미조회'));if(button)values[0].append(button);}
+      if(values[1])values[1].textContent=usage?stageMaterialUsageFullText(usage):'실행 자료 미조회';
+      if(values[2])values[2].textContent=usage?.skillMaterials?String(usage.skillMaterials.length)+'개':'실행 자료 미조회';
+      if(values[3])values[3].textContent=shadow?formatElapsedBrief(shadow.elapsedMs):'실행 전';
+      for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');const title=panel?.querySelector('b'),body=panel?.querySelector('span:not(.banner__icon)');if(title)title.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');if(body)body.textContent=trace?resultText(trace.parsed||trace.reason||info.title,6000):info.title;const banner=panel?.querySelector('.banner');if(banner)banner.classList.toggle('banner--warn',info.className==='warn'||info.className==='danger');}
+      const fallback=results.querySelector('[data-subtab="w"] .count');if(fallback){const info=traceStateInfo(latestTraceForStage('aide_world'));fallback.hidden=info.className!=='warn';fallback.textContent='폴백';}
+    }
+    const mode=normalizeChoice(runtime.mode==='full'?'normal':runtime.mode,['off','lite','normal'],'normal');
+    const ids=['shadow_act','aide_character','aide_world','aide_plot'];
+    ids.forEach((id,index)=>{const node=app.querySelector('[data-detail="'+(['shadow','char','world','plot'][index])+'"]');if(!node)return;const slot=Gui.state.agents?.[id]||{};const toggle=node.querySelector('#on-s'+(index+1));if(toggle)toggle.checked=slot.enabled!==false;const prompt=node.querySelector('[data-stage-ins]');if(prompt)prompt.value=Gui.state.prompts?.[id]?.customPrompt||'';const trace=latestTraceForStage(id);const info=traceStateInfo(trace,{enabled:slot.enabled!==false,isLiteSkip:mode==='lite'&&(id==='aide_character'||id==='aide_world')});const badge=app.querySelector('#lb-'+(['shadow','char','world','plot'][index]));if(badge){badge.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');badge.className='badge '+(info.className==='good'?'badge--ok':info.className==='warn'?'badge--warn':info.className==='danger'?'badge--danger':'');}});
+    const inputMode=runtime.inputAssistMode||'off';const inBadge=app.querySelector('#lb-inp');if(inBadge)inBadge.textContent=inputMode==='off'?'꺼짐':'사용';
+    app.querySelectorAll('[data-input-assist-field]').forEach(control=>{const key=control.dataset.inputAssistField;const value=key==='scope'?runtime.inputAssistScope:key==='confirmation'?runtime.inputAssistConfirmationMode:key==='targetChars'?runtime.inputAssistTargetChars:runtime.inputAssistLoreActivationMode;if(value!=null)control.value=String(value);});
+    app.querySelectorAll('[data-stage-ref][data-stage-ref-owner]').forEach(control=>{const refs=normalizeRisuReferences(Gui.state.agents?.[control.dataset.stageRefOwner]?.risuRefs,defaultRisuReferencesForStage(control.dataset.stageRefOwner));control.checked=refs[control.dataset.stageRef]===true;});
+    const toggles=app.querySelectorAll('[data-detail-root] input[type=checkbox]');
+    toggles.forEach(toggle=>{if(toggle.dataset.characterLoreKey||toggle.dataset.moduleLoreKey) return;});
+    const inputs=app.querySelectorAll('[data-len]');inputs.forEach(input=>{input.value=String(input.dataset.len==='min'?runtime.targetDraftMinChars:runtime.targetDraftMaxChars);});
+    app.querySelectorAll('[data-stage-ins]').forEach(node=>{const id=({'SHADOW ACT':'shadow_act','인물 AIDE':'aide_character','세계관 AIDE':'aide_world','플롯 AIDE':'aide_plot'})[node.dataset.stageIns];node.value=Gui.state.prompts?.[id]?.customPrompt||'';});
+    mockupRenderProviders();mockupRenderSources();
+    const providerNames=presetNamesFromState();
+    app.querySelectorAll('.stage-detail[data-detail]').forEach(detail=>{
+      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot'})[detail.dataset.detail];
+      const providerSelect=detail.querySelector('[data-subpanel="run"] .field select, .opt-grid .field select');
+      if(id&&providerSelect)providerSelect.dataset.stageProvider=id;
+      if(id){const slot=Gui.state.agents?.[id]||{};detail.querySelectorAll('[data-stage-field]').forEach(input=>{if(input.dataset.stageField==='maxChars')input.value=String(slot.maxChars??defaultContextCharsForStage(id));else if(input.dataset.stageField==='timeoutSeconds')input.value=String(Math.round((slot.timeoutMs??DEFAULT_STAGE_TIMEOUT_MS)/1000));});detail.querySelectorAll('[data-turns]').forEach(input=>{input.value=String(slot.turnWindow??defaultTurnWindowForStage(id));});}
+    });
+    ids.forEach(id=>{const select=app.querySelector('[data-stage-provider="'+id+'"]');if(select){select.replaceChildren();mockupOption(select,'','기본 연결 사용');providerNames.forEach(name=>mockupOption(select,name,name));select.value=Gui.state.agents?.[id]?.presetName||'';}});
+    const inputAssistSlot=Gui.state.agents?.[INPUT_ASSIST_STAGE_ID]||{};
+    const inputAssistProvider=app.querySelector('[data-input-assist-stage-field="presetName"]');
+    if(inputAssistProvider){inputAssistProvider.replaceChildren();mockupOption(inputAssistProvider,'','기본 연결 사용');providerNames.forEach(name=>mockupOption(inputAssistProvider,name,name));inputAssistProvider.value=inputAssistSlot.presetName||'';}
+    const inputAssistBudget=app.querySelector('[data-input-assist-stage-field="maxChars"]');if(inputAssistBudget)inputAssistBudget.value=String(inputAssistSlot.maxChars??defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID));
+    const backend=normalizeBackendHostingConfig(runtime.backendHosting||{});
+    app.querySelectorAll('[data-backend-hosting]').forEach(control=>{const key=control.dataset.backendHosting;control.value=key==='mode'?backend.mode:key==='url'?backend.url:backend.token;});
+    const backendSummary=app.querySelector('[data-backend-hosting-summary]');if(backendSummary)backendSummary.textContent=backendHostingSummary(backend);
+    const backendManifest=app.querySelector('[data-backend-manifest]');if(backendManifest){backendManifest.textContent=backend.lastManifest?JSON.stringify(backend.lastManifest,null,2):'최근 manifest 없음';backendManifest.hidden=!backend.lastManifest;}
+    const runtimeSelects=app.querySelectorAll('[data-runtime-field]');
+    runtimeSelects.forEach(input=>{const key=input.dataset.runtimeField;input.value=runtime[key]??'';});
+    const bindRuntime=(selector,key,transform=value=>value)=>{const node=app.querySelector(selector);if(!node)return;node.dataset.runtimeField=key;node.value=transform(runtime[key]);};
+    bindRuntime('[aria-label="실패 처리"]','failureMode',v=>v||'soft');
+    bindRuntime('[aria-label="기본 연결"]','defaultPresetName',v=>v||'');
+    bindRuntime('[aria-label="OOC 연결"]','userIntentOocPreset',v=>v||'');
+    bindRuntime('[aria-label="로어 시작값"]','loreRerankerTopK',v=>String(v??DEFAULT_STAGE_LORE_RERANK_TOP_K));
+    bindRuntime('[aria-label="최종 전달 최대 글자"]','maxInjectionChars',v=>String(v??DEFAULT_MAX_INJECTION_CHARS));
+    const failure=app.querySelector('[aria-label="실패 처리"]');if(failure){[...failure.options].forEach((option,index)=>{option.value=['soft','degraded','hard'][index]||option.textContent;});failure.value=runtime.failureMode||'soft';}
+    for(const label of ['기본 연결','OOC 연결']){const select=app.querySelector(`[aria-label="${label}"]`);if(select){const value=runtime[label==='기본 연결'?'defaultPresetName':'userIntentOocPreset']||'';select.replaceChildren();mockupOption(select,'','기본 연결');providerNames.forEach(name=>mockupOption(select,name,name));select.value=value;}}
+    const diag=app.querySelector('[aria-label="진단 기록"]');if(diag){[...diag.options].forEach((option,index)=>{option.value=index===0?'false':'true';});diag.value=String(runtime.debugLog===true);diag.dataset.runtimeField='debugLog';}
+    const prev=app.querySelector('[aria-label="이전 단계 분석량"]');if(prev){const wrap=prev.parentElement;const input=document.createElement('input');input.className='input';input.type='number';input.min='1000';input.max='60000';input.setAttribute('aria-label','이전 단계 분석량');input.dataset.runtimeField='maxPreviousStageChars';input.value=String(runtime.maxPreviousStageChars??DEFAULT_MAX_PREVIOUS_STAGE_CHARS);wrap.replaceChild(input,prev);}
+    const inject=app.querySelector('[aria-label="주입 위치"]');if(inject){inject.replaceChildren();[['first_system','메인 지시 앞'],['last_system','메인 지시 뒤'],['before_last_user','마지막 사용자 메시지 앞']].forEach(([value,label])=>mockupOption(inject,value,label));inject.dataset.runtimeField='injectionPosition';inject.value=runtime.injectionPosition||DEFAULT_INJECTION_POSITION;}
+    app.querySelectorAll('[data-runtime-field]').forEach(control=>{
+      const key=control.dataset.runtimeField;if(!['failureMode','defaultPresetName','userIntentOocPreset','debugLog','loreRerankerTopK','maxInjectionChars','maxPreviousStageChars','injectionPosition'].includes(key))return;
+      if(key==='debugLog')control.value=String(runtime.debugLog===true);
+      else if(!['기본 연결','OOC 연결'].includes(control.getAttribute('aria-label')))control.value=runtime[key]??control.value;
+    });
+    app.querySelectorAll('[data-novel]').forEach(node=>{node.textContent=currentWritingModeFromGui()==='rp'?(node.dataset.rp||node.dataset.novel):node.dataset.novel;});
+  };
+  const updateMockupSkillToggle = control => {
+    const id=control.closest('[data-skill-id]')?.dataset.skillId;if(!id)return;
+    const runtime=mockupRuntime(), custom=normalizeCustomSkillLibrary(runtime.skillCustomLibrary||{});
+    if(custom[id]){custom[id].enabled=control.checked;runtime.skillCustomLibrary=custom;markGuiDirty();}
+  };
+  const openMockupSkillDelete = id => {
+    const runtime=mockupRuntime(), custom=normalizeCustomSkillLibrary(runtime.skillCustomLibrary||{});
+    if(!custom[id])return;
+    openGuiDialog({title:'사용자 Skill 삭제',description:'이 Skill의 본문, 단계별 우선도와 연결 정보가 지워집니다.',actions:[
+      guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),
+      guiEl('button',{class:'btn btn--danger',text:'삭제',onClick:async()=>{delete custom[id];runtime.skillCustomLibrary=custom;const priorities=normalizeSkillPriorityOverrides(runtime.skillPriorityOverrides||{});for(const stage of SKILL_STAGE_IDS)delete priorities[stage]?.[id];runtime.skillPriorityOverrides=priorities;markGuiDirty();closeGuiDialog();await renderSettingsGui();}})
+    ]});
+  };
+  const restoreMockupSkill = id => { resetSkillPriorityForGui(id); markGuiDirty(); void renderSettingsGui(); };
+  const addMockupProvider = () => { addGuiPreset(); };
+  const cloneMockupProvider = name => {
+    const source=name||Gui.selectedPreset, current=Gui.state.providers?.[source];if(!current)return;
+    const cloneName=uniquePresetName(source+' 복사');Gui.state.providers[cloneName]=cloneJson(current);Gui.selectedPreset=cloneName;markGuiDirty();void renderSettingsGui();
+  };
+
+  const mockupCloseMoreSheet = () => {
+    const sheet=Gui.app?.querySelector('#sheet-more');
+    sheet?.classList.remove('is-open');sheet?.setAttribute('aria-hidden','true');
+    if(Gui.moreSheetReturnFocus?.isConnected)Gui.moreSheetReturnFocus.focus();
+    Gui.moreSheetReturnFocus=null;
+  };
   const ensureSettingsShell = () => {
     if (Gui.shellReady && Gui.app && Gui.root?.contains?.(Gui.app)) return Gui.app;
     Gui.root.replaceChildren();
-    const writingMode = currentWritingModeFromGui();
-    const app = guiEl('div', { class: 'sga-app sga-redesign-app', dataset: { tab: 'flow', page: Gui.pageId, writingMode } });
-    Gui.app = app;
-    const top = guiEl('header', { class: 'sga-top sga-redesign-top' }, [
-      guiEl('div', { class: 'sga-brand' }, [
-        guiEl('div', { class: 'sga-brand-copy' }, [
-          guiEl('h1', { text: PUBLIC_DISPLAY_NAME }),
-          guiEl('p', { text: writingMode === 'rp' ? `v${PLUGIN_VERSION} · RP 모드 GUI · 유저 행동 불가침` : `v${PLUGIN_VERSION} · 소설 모드 GUI · 전체 캐스트 작가 집필` })
-        ]),
-        guiEl('div', { class: 'sga-writing-switch', role: 'group', 'aria-label': 'GRADIA 작성 모드' }, [
-          guiEl('button', { type: 'button', dataset: { mode: 'novel', active: String(writingMode === 'novel') }, 'aria-pressed': String(writingMode === 'novel'), text: '소설 모드', onClick: () => requestWritingModeChangeFromGui('novel') }),
-          guiEl('button', { type: 'button', dataset: { mode: 'rp', active: String(writingMode === 'rp') }, 'aria-pressed': String(writingMode === 'rp'), text: 'RP 모드', onClick: () => requestWritingModeChangeFromGui('rp') })
-        ])
-      ]),
-      guiEl('div', { class: 'sga-head-actions' }, [guiEl('span', { class: 'sga-dirty', dataset: { dirtyBadge: 'true', dirty: String(Gui.dirty) }, text: Gui.dirty ? '저장되지 않은 변경' : '저장됨' }), guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', onClick: requestSettingsGuiClose })])
-    ]);
-    Gui.mobileNode = buildRedesignedMobileNavigation();
-    const main = guiEl('main', { class: 'sga-main sga-redesign-main' }, [guiEl('div', { class: 'sga-status', dataset: { guiStatus: 'true' } })]);
-    Gui.contentNode = guiEl('div', { class: 'sga-redesign-content', dataset: { pageOutlet: 'true' } });
-    main.appendChild(Gui.contentNode);
-    Gui.railNode = buildRedesignedRail();
-    Gui.railSignature = redesignedRailSignature();
-    const shell = guiEl('div', { class: 'sga-shell sga-redesign-shell' }, [buildRedesignedSidebar(), main, Gui.railNode]);
-    Gui.saveBarNode = buildSettingsSaveBar();
-    Gui.dialogLayer = guiEl('div', { class: 'sga-redesign-dialog-layer sga-hidden', dataset: { dialogLayer: 'true' } });
-    app.appendChild(top);
-    app.appendChild(Gui.mobileNode);
-    app.appendChild(shell);
-    app.appendChild(Gui.saveBarNode);
-    app.appendChild(Gui.dialogLayer);
-    Gui.dirtyBadgeNode = app.querySelector('[data-dirty-badge]');
-    Gui.saveTitleNode = Gui.saveBarNode.querySelector('[data-save-title]');
-    Gui.saveDescriptionNode = Gui.saveBarNode.querySelector('[data-save-description]');
-    Gui.saveSettingsNode = Gui.saveBarNode.querySelector('[data-save-settings]');
-    Gui.revertSettingsNode = Gui.saveBarNode.querySelector('[data-revert-settings]');
-    Gui.railDirtyNode = Gui.railNode?.querySelector('[data-rail-dirty]') || null;
-    app.addEventListener('keydown', event => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      if (Gui.closeDialogOpen) closeGuiDialog(); else requestSettingsGuiClose();
-    });
-    Gui.root.appendChild(app);
-    Gui.shellReady = true;
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const frame = document.createElement('div');
+    frame.className = 'frame';
+    frame.innerHTML = GRADIA_MOCKUP_MARKUP;
+    const app = frame.querySelector('.app');
+    if (!app) throw new Error('GRADIA mockup shell is missing');
+    app.classList.add('t-gradia');
+    const tabbar=app.querySelector('.tabbar');
+    if(tabbar){
+      tabbar.replaceChildren();
+      const items=[...app.querySelectorAll('.sidebar .nav-item[data-go]')].filter(item=>item.dataset.tab!=='top');
+      const cap=items.length>5?4:items.length;
+      items.slice(0,cap).forEach(item=>{
+        const button=document.createElement('button');button.type='button';button.dataset.go=item.dataset.go;
+        if(item.dataset.unsavedFor)button.dataset.unsavedFor=item.dataset.unsavedFor;
+        button.append(mockupIcon(item.querySelector('i[data-i]')?.dataset.i||'grid'),document.createTextNode(item.dataset.short||item.querySelector('.nav-text').textContent));
+        tabbar.appendChild(button);
+      });
+      if(items.length>cap){
+        const more=document.createElement('button');more.type='button';more.dataset.more='1';more.append(mockupIcon('more'),document.createTextNode('더보기'));tabbar.appendChild(more);
+        const sheet=document.createElement('div');sheet.className='overlay overlay--bottom';sheet.id='sheet-more';sheet.setAttribute('aria-hidden','true');
+        sheet.innerHTML='<div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list></div></div>';
+        const list=sheet.querySelector('[data-more-list]');
+        items.slice(cap).forEach(item=>{
+          const button=document.createElement('button');button.type='button';button.className='row';button.dataset.go=item.dataset.go;button.setAttribute('data-close','');
+          const icon=document.createElement('span');icon.className='row__icon';icon.append(mockupIcon(item.querySelector('i[data-i]').dataset.i));
+          const text=document.createElement('span'),title=document.createElement('span');title.className='row__title';title.textContent=item.querySelector('.nav-text').textContent;text.append(title);
+          const arrow=mockupIcon('arrow','sm');arrow.classList.add('faint');button.append(icon,text,arrow);list.appendChild(button);
+        });
+        app.appendChild(sheet);
+      }
+    }
+    app.querySelectorAll('i[data-i]').forEach(icon=>icon.replaceWith(mockupIcon(icon.dataset.i,icon.dataset.size||'')));
+    mockupInstallManageControls(app);
+    const dialogLayer = document.createElement('div');
+    dialogLayer.className = 'overlay';
+    dialogLayer.setAttribute('aria-hidden', 'true');
+    dialogLayer.addEventListener('click', event => { if (event.target === dialogLayer) closeGuiDialog(); });
+    app.appendChild(dialogLayer);
+    Gui.app = app; Gui.contentNode = app.querySelector('.page-body'); Gui.saveBarNode = app.querySelector('#savebar'); Gui.dialogLayer = dialogLayer;
+    stage.appendChild(frame);
+    Gui.root.appendChild(stage);
+    bindMockupEvents(app); Gui.shellReady = true;
     return app;
   };
-
   const renderSettingsPage = () => {
-    if (!Gui.contentNode) return false;
-    const viewportState = captureGuiViewportState();
-    const epoch = ++Gui.renderEpoch;
-    let content;
-    try {
-      content = buildGuiPageContent(Gui.pageId);
-    } catch (error) {
-      warn('settings_gui_tab_render_failed', error);
-      content = guiEl('section', { class: 'sga-render-error' }, [guiEl('h2', { text: '설정 화면을 불러오지 못했습니다.' }), guiEl('div', { class: 'sga-note', text: 'GUI의 다른 화면과 저장 데이터는 유지됩니다. 아래 오류를 디버그 접수 시 함께 보내주세요.' }), guiEl('pre', { text: error?.stack || error?.message || String(error) })]);
-    }
-    if (epoch !== Gui.renderEpoch) return false;
-    Gui.contentNode.replaceChildren(content);
-    const nextRailSignature = redesignedRailSignature();
-    if (Gui.railNode && Gui.railSignature !== nextRailSignature) {
-      const nextRail = buildRedesignedRail();
-      Gui.railNode.replaceWith(nextRail);
-      Gui.railNode = nextRail;
-      Gui.railSignature = nextRailSignature;
-      Gui.railDirtyNode = nextRail.querySelector('[data-rail-dirty]');
-    }
-    restoreGuiViewportState(viewportState);
+    if (!Gui.app) return false;
+    Gui.mockupPage = mockupPageForGuiRoute(Gui.pageId);
+    mockupRefreshStatus();
+    hydrateMockupProductView();
     return true;
   };
 
@@ -45351,10 +42248,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     }
     const root = document.getElementById('sga-rp-gui-root');
     if (root?.style?.setProperty) {
-      // Flashback Memory uses a translucent root over a transparent iframe canvas.
-      // Keeping the dimming here (rather than on html/body) prevents an opaque
-      // WebView document canvas from replacing the RisuAI chat behind the panel.
-      const rootDim = root.classList?.contains?.('sga-compact-modal-root') ? 'rgba(6,8,14,.22)' : 'rgba(6,8,14,.38)';
+      // The ordinary settings canvas uses the reference page color. Standalone
+      // confirmation overlays own their scrim while the document stays clear.
+      const rootDim = root.dataset?.mockupDialogSurface === 'true' ? 'transparent' : 'var(--page-bg)';
       root.style.setProperty('background', rootDim, 'important');
       root.style.setProperty('background-color', rootDim, 'important');
       root.style.setProperty('background-image', 'none', 'important');
@@ -45386,6 +42282,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         else if (oldRoot.parentElement) oldRoot.parentElement.removeChild?.(oldRoot);
       }
       const root = guiEl('div', { id: 'sga-rp-gui-root' });
+      root.classList.add('t-gradia');
       body.appendChild(root);
       Gui.root = root;
       forceTransparentGuiSurface();

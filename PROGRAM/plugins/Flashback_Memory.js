@@ -3106,11 +3106,9 @@ const PLUGIN_VERSION = '1.0.101';
       if (node) node.innerHTML = renderActivityLogHtml();
       const overviewNode = getGuiNode('overviewActivityList');
       if (overviewNode) overviewNode.innerHTML = renderOverviewActivityHtml();
-      const count = getGuiNode('activityLogCount');
-      if (count) count.textContent = String(Runtime.activityLog.length);
-      const navCount = getGuiNode('activityLogCountNav');
-      if (navCount) navCount.textContent = String(Runtime.activityLog.length);
-      applyGuiListFilter('activityLogFilter', 'activityLogList', '.activity-log-entry', 'activityLogFilterCount');
+      const count = String(activityLogSnapshot().length);
+      setNodeText('tab-log-n', count);
+      setNodeText('nav-log-n', count);
       return !!(node || overviewNode);
     } catch (_) {
       return false;
@@ -44172,9 +44170,9 @@ ${cleanedText}`, 80),
     const primary = groups[0] || cost;
     const price = primary.pricePerMillion != null ? `$${Number(primary.pricePerMillion).toFixed(2)}/1M` : '단가 미설정';
     const free = Number(primary.freeTokens || 0) > 0 ? `무료 ${formatNumber(primary.freeTokens)} tokens` : (primary.local ? '로컬 무료' : '무료 구간 없음');
-    return `<div class="cost-line">
-      <span>${escapeHtml(label)}<em>${formatNumber(cost.tokens || 0)} tokens · ${escapeHtml(primary.model || primary.provider || '')} · ${escapeHtml(price)} · ${escapeHtml(free)}</em></span>
-      <strong>${escapeHtml(formatCostSummary(cost))}</strong>
+    return `<div class="res-row">
+      <b>${escapeHtml(label)}</b><span>${escapeHtml(formatCostSummary(cost))}</span>
+      <small>${formatNumber(cost.tokens || 0)} tokens · ${escapeHtml(primary.model || primary.provider || '')} · ${escapeHtml(price)} · ${escapeHtml(free)}</small>
     </div>`;
   };
 
@@ -44189,17 +44187,15 @@ ${cleanedText}`, 80),
     const sourceText = pricing.provider === 'voyageai' || pricing.provider === 'voyage_context'
       ? 'Voyage 공식 pricing 기준, 계정 무료 토큰 잔량 미반영'
       : (pricing.local ? '로컬 임베딩은 API 과금 없음' : 'Voyage 외 provider 단가는 아직 추정하지 않음');
-    return `<div class="card-title">임베딩 비용 추정</div>
-      <div class="cost-total"><span>현재 스코프 리스트가</span><strong>${escapeHtml(formatCostSummary(scopeCost))}</strong></div>
-      <div class="cost-formula">${escapeHtml(formula)} · ${escapeHtml(sourceText)}</div>
-      <div class="cost-list">
+    return `<div class="card__head"><div><h2 class="card__title">임베딩 비용 추정</h2><p class="card__desc">${escapeHtml(formula)} · ${escapeHtml(sourceText)}</p></div><strong class="badge">${escapeHtml(formatCostSummary(scopeCost))}</strong></div>
+      <div class="stack stack--sm">
         ${renderCostLine('현재 스코프 누적', scopeCost)}
         ${renderCostLine('마지막 벡터화 작업', latestVectorCost)}
         ${renderCostLine('마지막 리콜 쿼리 임베딩', queryCost)}
       </div>`;
   };
 
-  const renderEmbeddingCostPanel = (settings, stats = {}) => `<div id="embeddingCostPanel" class="card cost-card">${renderEmbeddingCostPanelBody(settings, stats)}</div>`;
+  const renderEmbeddingCostPanel = (settings, stats = {}) => `<section id="embeddingCostPanel" class="card">${renderEmbeddingCostPanelBody(settings, stats)}</section>`;
 
   const currentScopeStats = async (options = {}) => {
     const ttlMs = clampInt(options.ttlMs, 0, 60000, 5000);
@@ -45205,27 +45201,10 @@ ${cleanedText}`, 80),
     return '현재 스코프 통계';
   };
 
-  const renderCountCards = (stats) => {
-    const total = Math.max(1, Number(stats?.tokenTotal || 0));
-    const coverage = flashbackStatsCoverageLabel(stats);
-    const notice = `<div class="tiny" data-stats-coverage style="padding:0 0 7px;color:${stats?.statsPartial === true ? 'var(--warn)' : 'var(--text3)'}">${escapeHtml(coverage)}</div>`;
-    return notice + COUNT_TYPES.map(([type, label], index) => {
-      const item = stats?.byType?.[type] || { records: 0, tokens: 0 };
-      const percent = Math.max(3, Math.min(100, Math.round(((Number(item.tokens || 0) || 0) / total) * 100)));
-      const color = ['var(--accent)', 'var(--success)', 'var(--purple)', 'var(--warn)', 'var(--text3)', 'var(--border2)'][index % 6];
-      const body = `<span class="type-name">${escapeHtml(label)}</span>
-        <div class="type-bar-wrap"><div class="type-bar" style="width:${percent}%;background:${color}"></div></div>
-        <span class="type-tokens">${formatNumber(item.tokens || 0)}</span>`;
-      if (type !== MANUAL_EDITOR_SOURCE_TYPE) {
-        return `<div class="type-row type-row-readonly" title="${escapeHtml(`${label}: 자동 생성·관리되는 읽기 전용 데이터`)}">
-        ${body}
-      </div>`;
-      }
-      return `<button class="type-row type-row-action" type="button" data-edit-source-type="${escapeHtml(type)}" title="${escapeHtml(`${label}: ${formatNumber(item.tokens || 0)} tokens · 클릭해서 원문 보기 및 수동 편집`)}">
-        ${body}
-      </button>`;
-    }).join('');
-  };
+  const renderCountCards = (stats) => COUNT_TYPES.map(([type,label]) => {
+    const item = stats?.byType?.[type] || {records:0,tokens:0};
+    return `<dt>${escapeHtml(label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`;
+  }).join('');
 
   const renderStorageTypeCells = (stats) => COUNT_TYPES.map(([type]) => `<td>${formatNumber(stats?.byType?.[type]?.tokens || 0)}</td>`).join('');
 
@@ -45312,22 +45291,22 @@ ${cleanedText}`, 80),
                 : verificationStatus === SCOPE_STORAGE_VERIFICATION.PHYSICAL_KEYS_PRESENT
                   ? 'manifest 외 물리 키 존재 · 자동 정리 차단'
                   : 'manifest 확인 대기';
-      const copied = item.copiedFromScopeKey ? `<div class="muted tiny">copied from ${escapeHtml(item.copiedFromScopeKey.slice(0, 36))}</div>` : '';
+      const copied = item.copiedFromScopeKey ? `<div class="hint">copied from ${escapeHtml(item.copiedFromScopeKey.slice(0, 36))}</div>` : '';
       const selector = scopeKey
         ? `<input class="storage-scope-select" type="checkbox" data-select-scope="${escapeHtml(scopeKey)}" ${canSelect && selected.has(scopeKey) ? 'checked' : ''} ${canSelect ? '' : 'disabled'} aria-label="${escapeHtml(isCurrent ? '현재 스코프는 선택 삭제에서 제외됩니다.' : '스코프 선택 · 실행할 때 안전 검증')}" />`
         : '';
       const action = manifestVerified
-        ? `<button class="btn btn-danger small" data-delete-scope="${escapeHtml(scopeKey)}">삭제</button>`
+        ? `<button class="btn btn--danger btn--sm" data-delete-scope="${escapeHtml(scopeKey)}">삭제</button>`
         : registryOnlyVerified
-          ? `<button class="btn small" data-clean-registry-scope="${escapeHtml(scopeKey)}">목록 정리</button>`
-          : `<button class="btn small" data-delete-scope="${escapeHtml(scopeKey)}">확인 후 삭제</button>`;
-      return `<tr class="${isCurrent ? 'current-row' : ''}" data-storage-scope-row="${escapeHtml(scopeKey)}">
-        <td><div class="storage-scope-selector">${selector}${isCurrent ? '<span class="badge badge-on">현재</span>' : ''}</div></td>
-        <td><strong>${escapeHtml(live.characterName || item.characterName || fallbackName)}</strong><div class="muted tiny">${escapeHtml(live.chatTitle || item.chatTitle || item.chatId || `scope ${text(item.storageHash || '').slice(0, 10)}`)}</div><div class="muted tiny">${escapeHtml(item.personaName || '')}</div><div class="muted tiny">${escapeHtml(label || verificationLabel)}</div>${copied}</td>
+          ? `<button class="btn btn--sm" data-clean-registry-scope="${escapeHtml(scopeKey)}">목록 정리</button>`
+          : `<button class="btn btn--sm" data-delete-scope="${escapeHtml(scopeKey)}">확인 후 삭제</button>`;
+      return `<tr class="${isCurrent ? 'is-cur' : ''}" data-storage-scope-row="${escapeHtml(scopeKey)}">
+        <td><div class="cluster">${selector}${isCurrent ? '<span class="badge badge--info">현재</span>' : ''}</div></td>
+        <td><strong>${escapeHtml(live.characterName || item.characterName || fallbackName)}</strong><div class="hint">${escapeHtml(live.chatTitle || item.chatTitle || item.chatId || `scope ${text(item.storageHash || '').slice(0, 10)}`)}</div><div class="hint">${escapeHtml(item.personaName || '')}</div><div class="hint">${escapeHtml(label || verificationLabel)}</div>${copied}</td>
         <td>${!manifestVerified&&!item.guiSummaryComplete?'—':formatNumber(item.stats?.tokenTotal||0)}</td>
         <td>${!manifestVerified&&!item.guiSummaryComplete?'—':formatNumber(item.count||0)}</td>
         <td>${formatNumber(item.shardCount || 0)} / ${formatNumber(item.archiveCount || 0)}</td>
-        <td class="muted tiny">${escapeHtml(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-')}</td>
+        <td class="muted">${escapeHtml(item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-')}</td>
         <td>${action}</td>
       </tr>`;
     }).join('');
@@ -45370,13 +45349,9 @@ ${cleanedText}`, 80),
 
   const renderManualEditorPanelHtml = (data = null) => {
     const state = ensureManualEditorState();
+    const searchIcon = '<svg class="ic ic--sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 4.5 4.5"></path></svg>';
     if (!data) {
-      return `<div class="manual-editor-empty">
-        <div class="card-title">수동 편집</div>
-        <div class="muted">현재 스코프에 저장된 응답 턴의 원문과 청크를 확인하고 필요한 항목을 선택 삭제할 수 있습니다.</div>
-        <div class="manual-editor-empty-actions"><button class="btn btn-primary" type="button" data-open-manual-editor="response">응답 원문 목록 열기</button></div>
-        <div class="tiny">응답 파생 인덱스는 응답 턴에서 자동 생성되는 읽기 전용 데이터이며 여기서 직접 편집하지 않습니다.</div>
-      </div>`;
+      return `<div class="empty"><b>수동 편집</b><span>현재 스코프의 응답 원문과 청크를 확인하고 필요한 항목을 골라 삭제 후보에 둘 수 있습니다.</span><button class="btn btn--primary" type="button" data-open-manual-editor="response">응답 원문 목록 열기</button><small class="hint">응답 파생 인덱스는 자동 생성되는 읽기 전용 데이터입니다.</small></div>`;
     }
     const pending = new Set((data.pendingDeleteKeys || state.pendingDeleteKeys || []).map(key => text(key).trim()).filter(Boolean));
     const groups = Array.isArray(data.groups) && data.groups.length
@@ -45384,10 +45359,7 @@ ${cleanedText}`, 80),
       : [{ type: MANUAL_EDITOR_SOURCE_TYPE, label: sourceTypeLabel(MANUAL_EDITOR_SOURCE_TYPE), records: 0, tokens: 0, chars: 0 }];
     const typeRows = groups.map(group => {
       const active = group.type === data.sourceType;
-      return `<button class="manual-type ${active ? 'active' : ''}" type="button" data-manual-source-type="${escapeHtml(group.type)}">
-        <span>${escapeHtml(group.label || sourceTypeLabel(group.type))}</span>
-        <strong>${formatNumber(group.records || 0)}</strong>
-      </button>`;
+      return `<button class="row ${active ? 'is-on' : ''}" type="button" data-manual-source-type="${escapeHtml(group.type)}"><span class="row__icon">${formatNumber(group.records || 0)}</span><span><span class="row__title">${escapeHtml(group.label || sourceTypeLabel(group.type))}</span><span class="row__meta" style="display:block">최신순</span></span></button>`;
     }).join('');
     const visible = data.records.length;
     const total = Number(data.total || 0) || 0;
@@ -45399,7 +45371,7 @@ ${cleanedText}`, 80),
     ].filter(Boolean).join(' · ');
     const problems = (data.issues || []).map(issue => `파일 ${issue.shardIndex + 1}: ${issue.reason}`);
     if (data.countMismatch) problems.push(`저장 목록 ${formatNumber(data.expectedTotal)}개 / 읽은 원문 ${formatNumber(total)}개`);
-    const warning = problems.length ? `<div class="fb-storage-warning" role="status"><strong>원문 목록 확인 필요</strong><p>${escapeHtml(problems.join(' · '))}</p><p>읽을 수 있는 기록만 표시합니다. 데이터 삭제나 재구축 없이 기억 유지보수의 ‘상태만 진단’으로 확인하세요.</p></div>` : '';
+    const warning = problems.length ? `<div class="note note--warn" role="status"><strong>원문 목록 확인 필요</strong><span>${escapeHtml(problems.join(' · '))}</span><span>읽을 수 있는 기록만 표시합니다. 데이터 삭제나 재구축 없이 기억 유지보수의 ‘상태만 진단’으로 확인하세요.</span></div>` : '';
     const rows = data.records.map(record => {
       const selected = pending.has(record.key);
       const metaLine = [
@@ -45411,58 +45383,27 @@ ${cleanedText}`, 80),
         `${formatNumber(record.tokens)} tokens`
       ].filter(Boolean).join(' · ');
       const time = record.createdAt ? new Date(record.createdAt).toLocaleString() : '-';
-      return `<article class="manual-record ${selected ? 'pending-delete' : ''}" data-manual-record-key="${escapeHtml(record.key)}">
-        <div class="manual-record-head">
-          <div class="manual-record-title">
-            <span class="recall-type">${escapeHtml(record.sourceLabel)}</span>
-            ${escapeHtml(text(record.title || record.id || 'Untitled').replace(/^라이브챗 콜드스타트:/, '채팅 응답:'))}
-          </div>
-          <button class="btn ${selected ? '' : 'btn-danger'} small" type="button" data-manual-toggle-delete="${escapeHtml(record.key)}" ${record.deletionProtected ? 'disabled' : ''}>${record.deletionProtected ? '영구 기록 보호' : selected ? '대기 취소' : '삭제 후보'}</button>
-        </div>
-        <div class="fb-record-state ${record.status?.tone || 'warning'}">${escapeHtml(record.status?.label || '상태 미확인')} · ${formatNumber(record.chars)}자</div>
-        <div class="manual-record-preview">${escapeHtml(record.preview || '')}</div>
-        <button class="btn small" type="button" data-manual-open-text="${escapeHtml(record.key)}" aria-expanded="false">원문 펼치기</button>
-        <pre class="manual-record-full" hidden></pre>
-        <div class="manual-record-meta">
-          <span>${escapeHtml(record.id || '')}</span>
-          <span>${escapeHtml(time)}</span>
-          <span>${escapeHtml(metaLine)}</span>
-        </div>
-      </article>`;
+      const recordTitle = record.title || (record.turnIndex ? `T${formatNumber(record.turnIndex)} · ${sourceTypeLabel(record.sourceType)}` : sourceTypeLabel(record.sourceType));
+      return `<article class="card card--tight" data-manual-record-key="${escapeHtml(record.key)}"><div class="split"><b>${escapeHtml(text(recordTitle || record.id || 'Untitled').replace(/^라이브챗 콜드스타트:/, '채팅 응답:'))}</b><span class="badge ${record.deletionProtected ? 'badge--ok' : selected ? 'badge--warn' : ''}">${escapeHtml(record.deletionProtected ? '영구 기록 보호' : `${record.status?.label || '상태 미확인'} · ${formatNumber(record.chars)}자`)}</span></div><p class="muted">${escapeHtml(record.preview || '')}</p><div class="cluster"><button class="btn btn--sm" type="button" data-manual-open-text="${escapeHtml(record.key)}" aria-expanded="false">원문 펼치기</button><button class="btn btn--sm ${record.deletionProtected ? '' : 'btn--danger'}" type="button" data-manual-toggle-delete="${escapeHtml(record.key)}" ${record.deletionProtected ? 'disabled' : ''}>${record.deletionProtected ? '영구 기록 보호' : selected ? '대기 취소' : '삭제 후보에 추가'}</button></div><pre data-full-record class="mono" hidden></pre><details class="fold"><summary>원문 메타데이터</summary><div class="fold__body hint">${escapeHtml([record.sourceLabel, record.id || '', time, metaLine].filter(Boolean).join(' · '))}</div></details></article>`;
     }).join('');
     const more = data.hasMore === true
-      ? `<button id="manualEditorMoreBtn" class="btn full-btn" type="button" data-manual-load-more="1">더 보기 ${formatNumber(visible)} / ${formatNumber(total)}</button>`
+      ? `<button id="manualEditorMoreBtn" class="btn" type="button" data-manual-load-more="1">더 보기 ${formatNumber(visible)} / ${formatNumber(total)}</button>`
       : '';
-    return `<div class="manual-editor-grid">
-      <aside class="manual-editor-types">
-        <div class="manual-editor-side-title">카테고리</div>
-        ${typeRows || '<div class="muted tiny">저장된 데이터가 없습니다.</div>'}
-      </aside>
-      <section class="manual-editor-main">
-        <div class="manual-editor-toolbar">
-          <div class="manual-editor-heading">
-            <strong>${escapeHtml(data.sourceLabel || sourceTypeLabel(data.sourceType))}</strong>
-            <span>${escapeHtml(meta)}</span>
-          </div>
-          <div class="manual-editor-controls">
-            <input id="manualEditorSearch" value="${escapeHtml(data.search || '')}" placeholder="원문 검색..." />
-            <select id="manualEditorSort">
+    return `<div class="grid g-side" data-manual-editor>
+      <aside class="list">${typeRows || '<div class="empty">저장된 데이터가 없습니다.</div>'}</aside>
+      <section class="stack stack--sm">
+        <div class="cluster"><div class="search grow"><span aria-hidden="true" style="position:absolute;left:11px;top:10px;color:var(--text3)">${searchIcon}</span><input class="input" style="padding-left:36px;padding-right:42px" id="manualEditorSearch" value="${escapeHtml(data.search || '')}" placeholder="원문 검색..." aria-label="원문 검색"><button id="manualEditorSearchBtn" class="btn btn--icon" style="position:absolute;right:4px;top:4px;border:0;background:transparent;padding:4px" type="button" aria-label="검색">${searchIcon}</button></div>
+            <select class="select" style="width:auto" id="manualEditorSort" aria-label="원문 정렬">
               <option value="newest" ${data.sort === 'newest' ? 'selected' : ''}>최신순</option>
               <option value="oldest" ${data.sort === 'oldest' ? 'selected' : ''}>오래된 순</option>
               <option value="longest" ${data.sort === 'longest' ? 'selected' : ''}>긴 원문 우선</option>
             </select>
-            <button id="manualEditorSearchBtn" class="btn" type="button">검색</button>
-          </div>
-        </div>
+            </div>
         ${warning}
-        <div class="manual-editor-list">${rows || `<div class="manual-editor-empty muted">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
-        ${total > visible && !data.hasMore ? '<p class="tiny">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
+        <div id="manualEditorRecordList" class="stack stack--sm">${rows || `<div class="empty">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
+        ${total > visible && !data.hasMore ? '<p class="hint">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
         ${more}
-        <div class="manual-editor-apply">
-          <div id="manualEditorPendingText" class="muted">삭제 후보 ${formatNumber(selectedCount)}개</div>
-          <button id="manualEditorClearBtn" class="btn" type="button" ${selectedCount ? '' : 'disabled'}>후보 비우기</button>
-          <button id="manualEditorApplyBtn" class="btn btn-danger" type="button" ${selectedCount ? '' : 'disabled'}>선택 삭제 적용</button>
-        </div>
+        <div class="toolbar-lite card card--flat"><div class="split"><span id="manualEditorPendingText">삭제 후보 ${formatNumber(selectedCount)}개</span><div class="cluster"><button id="manualEditorClearBtn" class="btn btn--sm" type="button" ${selectedCount ? '' : 'disabled'}>후보 비우기</button><button id="manualEditorApplyBtn" class="btn btn--sm btn--danger" type="button" ${selectedCount ? '' : 'disabled'}>선택 삭제 적용…</button></div></div><p class="hint">후보에 추가해도 삭제되지 않습니다. 확인 후 선택 항목만 삭제합니다.</p></div>
       </section>
     </div>`;
   };
@@ -45480,7 +45421,7 @@ ${cleanedText}`, 80),
     const expectedLogicalScope = Runtime.currentScope?.scopeKey || '';
     const cancelled = () => token !== manualEditorRenderToken || (refreshToken && refreshToken !== Runtime.guiRefreshToken) || (expectedLogicalScope && expectedLogicalScope !== Runtime.currentScope?.scopeKey);
     try {
-      node.innerHTML = '<div class="manual-editor-empty muted">수동 편집 목록을 불러오는 중...</div>';
+      node.innerHTML = '<div class="empty">수동 편집 목록을 불러오는 중…</div>';
       setNodeText('busyStatus', '수동 편집 목록을 불러오는 중...');
       await nextRenderFrame();
       if (cancelled()) return false;
@@ -45503,7 +45444,7 @@ ${cleanedText}`, 80),
       node.innerHTML = renderManualEditorPanelHtml(data);
       return true;
     } catch (error) {
-      if (!cancelled()) node.innerHTML = `<div class="manual-editor-empty muted">수동 편집 목록 로딩 실패: ${escapeHtml(error?.message || error)}</div>`;
+      if (!cancelled()) node.innerHTML = `<div class="note note--danger">수동 편집 목록 로딩 실패: ${escapeHtml(error?.message || error)}</div>`;
       throw error;
     } finally {
       if (!cancelled()) setNodeText('busyStatus', Runtime.guiBusyDepth > 0 ? Runtime.guiBusyLabel : '대기 중');
@@ -45518,126 +45459,42 @@ ${cleanedText}`, 80),
     return new Date(Number(at)).toLocaleTimeString();
   };
 
-  const scoreToneClass = (score) => {
-    const n = Number(score || 0);
-    if (n >= 0.7) return 'score-high';
-    if (n >= 0.45) return 'score-mid';
-    return 'score-low';
-  };
-
   const renderLastRecallPanel = (recall = Runtime.lastRecall, currentScopeKey = Runtime.currentScope?.scopeKey || '') => {
-    // Source edit state is also available through the owner API and its source-edits tab.
-    if (!recall) {
-      return `<div class="recall-empty">아직 이번 세션에서 떠올린 기억이 없습니다.</div>`;
+    if (!recall || (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey)) {
+      return '<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">아직 이번 세션에서 떠오른 기억이 없습니다.</p><div class="lab__meta">실제 리콜 결과가 생기면 프레임과 근거를 확인할 수 있습니다.</div><div class="lab__chips"><span class="badge">리콜 기록 없음</span></div></div><div class="frames"><div class="empty"><b>표시할 기억 프레임이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">이번 세션의 리콜 기록이 없습니다.</pre></div></details>';
     }
-    if (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey) {
-      return `<div class="recall-empty">현재 챗 스코프에서 떠올린 기억이 아직 없습니다.</div>`;
-    }
-    if (recall.skipped) {
-      return `<div class="recall-empty">최근 요청은 리콜을 건너뜀 · ${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div>`;
-    }
-    const selected = Array.isArray(recall.selected) ? recall.selected : [];
-    const deliveryPipeline=recall.delivery?.pipeline||{};
-    const arms = recall.candidateArms || {};
-    const laneSelected = recall.laneDiagnostics?.selected || {};
-    const alignment = recall.recallAlignment && typeof recall.recallAlignment === 'object'
-      ? recall.recallAlignment
-      : Runtime.recallAlignment;
-    const alignmentLabel = alignment?.peerDataUsed === true
-      ? 'peer+visible-u+a'
-      : (alignment?.independent === true
-        ? 'independent-visible-u+a'
-        : text(alignment?.profile || '').trim());
-    const meta = [
-      recall.queryType ? `type=${recall.queryType}` : '',
-      recall.temporalIntent ? `time=${recall.temporalIntent}` : '',
-      recall.truthIntent && recall.truthIntent !== TRUTH_INTENTS.NORMAL ? `truth=${recall.truthIntent}` : '',
-      `selected=${selected.length}`,
-      `stored=${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}`,
-      `candidates=${formatNumber(recall.candidates || 0)}`,
-      arms.dense != null ? `arms d${formatNumber(arms.dense || 0)}/s${formatNumber(arms.sparse || 0)}/e${formatNumber(arms.exact || 0)}/f${formatNumber(arms.forced || 0)}/c${formatNumber(arms.contextSparse || 0)}/t${formatNumber((arms.topicSparse || 0) + (arms.topicExact || 0))}` : '',
-      recall.preferenceDiagnostics ? `mix ${Math.round(Number(recall.preferenceDiagnostics.relatedness || 0) * 100)}/${Math.round(Number(recall.preferenceDiagnostics.recency || 0) * 100)}${recall.preferenceDiagnostics.modifier ? `(${recall.preferenceDiagnostics.modifier})` : ''}` : '',
-      recall.sceneContext?.active ? `ctx ${formatNumber(recall.sceneContext.usedMessages || 0)}/${formatNumber(recall.sceneContext.configuredMessages || 0)} ${escapeHtml(recall.sceneContext.reason || '')}` : '',
-      Array.isArray(recall.queryTopics) && recall.queryTopics.length > 1 ? `topics=${formatNumber(recall.queryTopics.length)}` : '',
-      Array.isArray(recall.contradictionBundles) && recall.contradictionBundles.length ? `changes=${formatNumber(recall.contradictionBundles.length)}` : '',
-      recall.rrfUnionCount ? `rrf=${formatNumber(recall.rrfUnionCount)}` : '',
-      recall.laneDiagnostics ? `lane ${formatNumber(laneSelected.short || 0)}/${formatNumber(laneSelected.medium || 0)}/${formatNumber(laneSelected.long || 0)}` : '',
-      alignmentLabel ? `align=${alignmentLabel}` : '',
-      recall.inactiveBranchFiltered ? `branch-${formatNumber(recall.inactiveBranchFiltered)}` : '',
-      recall.worldlineMismatchFiltered ? `worldline-${formatNumber(recall.worldlineMismatchFiltered)}` : '',
-      recall.privacyFiltered ? `privacy-${formatNumber(recall.privacyFiltered)}` : '',
-      recall.sourceEditFiltered ? `source-edit-${formatNumber(recall.sourceEditFiltered)}` : '',
-      recall.sparseCache ? `cache ${formatNumber(recall.sparseCache.hits || 0)}/${formatNumber(recall.sparseCache.misses || 0)}` : '',
-      recall.stageElapsed?.total != null ? `${formatNumber(recall.stageElapsed.total)}ms` : '',
-      `gate-${formatNumber(recall.gateRejected || 0)}`,
-      recall.externalSuppressed ? `external-retired-${formatNumber(recall.externalSuppressed)}` : '',
-      recall.previousTurnRecall?.active ? `T${formatNumber(recall.previousTurnRecall.turnIndex)} ctx-${Number(recall.previousTurnRecall.previousWeight || 0).toFixed(2)}` : '',
-      recall.episodeTraversal?.boosted ? `episode+${formatNumber(recall.episodeTraversal.boosted)}` : '',
-      recall.queryDim ? `${formatNumber(recall.queryDim)}d` : '',
-      recall.queryEmbeddingCost?.tokens ? `query ${formatUsd(costValue(recall.queryEmbeddingCost))}` : '',
-      recall.sceneContextEmbeddingCost?.tokens ? `ctx ${formatUsd(costValue(recall.sceneContextEmbeddingCost))}` : ''
-    ].filter(Boolean).join(' · ');
-    const query = recall.retrievalQuery || recall.latestUser || '';
-    const rows = selected.slice(0, 8).map((item, index) => {
-      const components = item.components || {};
-      const componentText = [
-        item.gate?.length ? `gate=${item.gate.join('|')}` : '',
-        components.anchor ? `anchor=${Number(components.anchor).toFixed(2)}` : '',
-        components.entityAnchor ? `entity=${Number(components.entityAnchor).toFixed(2)}` : '',
-        components.importance ? `imp=${Number(components.importance).toFixed(2)}` : '',
-        components.stateUpdate ? `state=${Number(components.stateUpdate).toFixed(2)}` : '',
-        components.episodeTraversal ? `episode=${Number(components.episodeTraversal).toFixed(2)}` : '',
-        components.previousTurnContribution ? `prev=${Number(components.previousTurnContribution).toFixed(2)}` : '',
-        components.sceneContextContribution ? `ctx=${Number(components.sceneContextContribution).toFixed(2)}` : '',
-        components.preferenceScore ? `mix=${Number(components.preferenceScore).toFixed(2)}` : '',
-        components.stabilityBoost ? `stable=+${Number(components.stabilityBoost).toFixed(3)}` : '',
-        components.bm25f ? `bm25=${Number(components.bm25f).toFixed(2)}` : '',
-        components.exactArm ? `exact=${Number(components.exactArm).toFixed(2)}` : '',
-        components.topicExactArm ? `topic=${Number(components.topicExactArm).toFixed(2)}` : '',
-        Array.isArray(components.contradictionBundles) && components.contradictionBundles.length ? `change=${components.contradictionBundles.length}` : '',
-        components.lanes?.length ? `lane=${components.lanes.join('|')}` : '',
-        components.heat?.tier ? `heat=${components.heat.tier}` : ''
-      ].filter(Boolean).join(' · ');
-      const detail = text(item.detail || item.preview || '');
-      return `<details class="recall-card-item" id="fb-recall-frame-${index}">
-        <summary class="recall-card-summary">
-          <span class="recall-score ${scoreToneClass(item.score)}" aria-label="검색 점수">${Number(item.score || 0).toFixed(3)}</span>
-          <div class="recall-card-body">
-            <div class="recall-card-title"><span class="recall-type">FRAME ${String(index + 1).padStart(2, '0')} · ${escapeHtml(item.sourceType || 'source')}</span>${escapeHtml(item.title || item.id || 'Untitled')}</div>
-            <div class="recall-card-preview">${escapeHtml(item.preview || detail)}</div>
-            <div class="recall-card-meta">${escapeHtml(item.origin || '현재 검색에서 선택된 기억')}</div>
-            <span class="recall-card-toggle" aria-hidden="true"></span>
-          </div>
-        </summary>
-        <div class="recall-card-detail">${Number.isFinite(item.cosine) ? `<div class="fb-focus-meter"><strong>FOCUS · 벡터 유사도 ${Number(item.cosine).toFixed(3)}</strong><meter min="-1" max="1" value="${Math.max(-1,Math.min(1,item.cosine))}" aria-label="벡터 유사도"></meter></div>` : ''}<strong>기억 내용</strong><div>${escapeHtml(detail)}</div><details class="recall-diagnostics"><summary>출처 및 검색 점수</summary><div>출처: ${escapeHtml(item.origin || '미확인')} · ${escapeHtml(item.sourceType || 'source')}</div><div>턴 범위: ${escapeHtml(safeStringify(item.turnRange, '미확인'))}</div><div>검색 점수: ${Number(item.score || 0).toFixed(3)} · 벡터 유사도: ${Number.isFinite(item.cosine) ? Number(item.cosine).toFixed(3) : '미확인'}</div><div>${escapeHtml(componentText)}</div><p>기억 본문입니다. 원문 U+A 전문을 별도로 조회한 결과는 아닙니다.</p></details></div>
-      </details>`;
+    const queryFailure = recall.modelReadiness?.status === 'query_failed'
+      ? `<div class="note note--warn"><b>쿼리 임베딩 실패 · 리콜 미전달</b><span> 원문은 보관됩니다. 모델 연결과 실제 오류를 확인한 뒤 다시 요청하세요.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
+    if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({reason:recall.reason,normalizedType:recall.normalizedType},'{}'))}</pre></div></details>`;
+    const selected = Array.isArray(recall.selected) ? recall.selected.slice(0, 8) : [];
+    const delivery = recall.delivery || {}, pipeline = delivery.pipeline || {};
+    const returned = delivery.stage === 'returned_to_hook';
+    const delivered = returned ? (pipeline.budgetedFragments ?? delivery.returnedFragments ?? delivery.delivered ?? null) : null;
+    const selectedCount = Math.max(0, Number(pipeline.selectedRecords ?? selected.length) || 0);
+    const returnedMessages = returned ? (pipeline.returnedMessages ?? null) : null;
+    const rows = selected.map((item, index) => {
+      const detail = text(item.detail || item.preview || item.record?.text || '');
+      const title = text(item.title || item.record?.title || item.id || item.record?.id || '제목 없음');
+      const source = text(item.sourceType || item.record?.sourceType || item.record?.type || 'source');
+      const score = Number.isFinite(Number(item.score)) ? Number(item.score).toFixed(3) : '—';
+      const cosine = Number.isFinite(Number(item.cosine)) ? Number(item.cosine) : null;
+      return `<details class="frame-card" id="fb-recall-frame-${index}"><summary><div class="frame-card__img">${escapeHtml(text(item.preview || detail || '미리보기 없음'))}</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME ${String(index + 1).padStart(2, '0')} · ${escapeHtml(source)}</div><div class="frame-card__title">${escapeHtml(title)}</div></div><span class="frame-card__score" aria-label="검색 점수">${score}</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">${cosine == null ? '' : `<div class="meter"><span>FOCUS · 벡터 유사도 ${cosine.toFixed(3)}</span><meter min="-1" max="1" value="${Math.max(-1, Math.min(1, cosine))}" aria-label="벡터 유사도"></meter></div>`}<b>기억 내용</b><p>${escapeHtml(detail || '저장된 상세 본문이 없습니다.')}</p><details class="fold"><summary>출처 및 검색 점수</summary><div class="fold__body"><dl class="kv"><dt>출처</dt><dd>${escapeHtml(item.origin || item.record?.origin || '확인 불가')} · ${escapeHtml(source)}</dd><dt>턴 범위</dt><dd>${escapeHtml(safeStringify(item.turnRange || item.record?.turnRange, '확인 불가'))}</dd><dt>검색 점수</dt><dd>${score}</dd><dt>벡터 유사도</dt><dd>${cosine == null ? '확인 불가' : cosine.toFixed(3)}</dd></dl><p class="hint">기억 본문입니다. 원문 U+A 전문을 별도로 조회한 결과는 아닙니다.</p></div></details></div></details>`;
     }).join('');
-    return `<div class="recall-panel-head">
-      <div><strong>CURRENT FRAME · 최근 검색 장면</strong><div class="tiny">${escapeHtml(recallAgeText(recall.at))}</div></div>
-      <div class="recall-query">${escapeHtml(compact(query, 180))}</div>
-    </div>
-    ${recall.delivery?.stage === 'returned_to_hook' ? `<div class="recall-delivery">저장 ${formatNumber(deliveryPipeline.storageRecords??recall.storedRecords??0)} · 후보 ${formatNumber(deliveryPipeline.candidates??recall.candidates??0)} · 선택 ${formatNumber(deliveryPipeline.selectedRecords??selected.length)} · 예산 ${formatNumber(deliveryPipeline.budgetedFragments??recall.delivery.returnedFragments??recall.delivery.delivered??0)} 조각 · 후크 반환 ${deliveryPipeline.returnedMessages==null?'확인 불가':`${formatNumber(deliveryPipeline.returnedMessages)}개 메시지`} · 예산으로 제외 ${(recall.delivery.discarded||[]).filter(item=>item.reason==='not_delivered_budget').length} · 근거 일부 부족 ${(recall.delivery.requirements||[]).filter(item=>['partial','unmet','support_unknown'].includes(item.status)).length}</div>` : ''}
-    ${recall.fallbackWarning ? `<div class="recall-warning">⚠ ${escapeHtml(recall.fallbackWarning)}</div>` : ''}
-    <div class="recall-card-list">${rows || '<div class="recall-empty">이 검색에서 선택된 기억이 없습니다.</div>'}</div>${selected.length ? `<nav class="fb-film-strip" aria-label="최근 선택 기억 프레임">${selected.slice(0,8).map((item,index)=>`<a href="#fb-recall-frame-${index}">FRAME ${String(index+1).padStart(2,'0')}</a>`).join('')}</nav>` : ''}<details class="recall-diagnostics"><summary>검색 과정 · 고급 진단</summary><p>${escapeHtml(meta)}</p></details>`;
+    const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
+    const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
+    return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
     const entries = activityLogSnapshot().slice().reverse();
     if (!entries.length) {
-      return '<div class="activity-log-empty">아직 이번 플러그인 실행에서 기록된 작업이 없습니다.</div>';
+      return '<div class="empty"><b>이번 실행 기록이 없습니다.</b></div>';
     }
     return entries.map(entry => {
       const details = entry.data && Object.keys(entry.data).length
         ? compact(safeStringify(entry.data, '{}'), 520)
         : '';
-      return `<article class="activity-log-entry ${escapeHtml(entry.level || 'info')}">
-        <div class="activity-log-head">
-          <strong>${escapeHtml(entry.message || entry.event || '작업')}</strong>
-          <time>${escapeHtml(new Date(entry.at).toLocaleTimeString())}</time>
-        </div>
-        <div class="activity-log-event">${escapeHtml(entry.event || '')}</div>
-        ${details ? `<div class="activity-log-detail">${escapeHtml(details)}</div>` : ''}
-      </article>`;
+      return `<article class="row"><span class="badge ${entry.level==='success'?'badge--ok':entry.level==='error'?'badge--danger':'badge--info'}">${escapeHtml(entry.level || 'info')}</span><div><div class="row__title">${escapeHtml(entry.message || entry.event || '작업')}</div><div class="row__meta">${escapeHtml(entry.event || '')} · ${escapeHtml(new Date(entry.at).toLocaleTimeString())}</div>${details ? `<p class="hint">${escapeHtml(details)}</p>` : ''}</div></article>`;
     }).join('');
   };
 
@@ -45756,6 +45613,8 @@ ${cleanedText}`, 80),
     };
   };
 
+  const flashbackHealthChipLabel = health => ({'저장 상태 확인 필요':'저장 확인','현재 채팅 상태 불러오는 중':'불러오는 중','부분 통계 표시 중':'부분 통계','기본 저장 상태에서 이상 없음':'기본 정상'})[health.title] || health.title;
+
   const flashbackOverviewRecallSummary = (recall = Runtime.lastRecall, currentScopeKey = '') => {
     if (!recall) return { value: '아직 없음', meta: '이번 세션에서 리콜 기록이 없습니다.', badge: '대기' };
     if (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey) {
@@ -45776,11 +45635,8 @@ ${cleanedText}`, 80),
 
   const renderOverviewActivityHtml = () => {
     const entries = activityLogSnapshot().slice(-4).reverse();
-    if (!entries.length) return '<div class="overview-activity-empty">아직 이번 실행에서 기록된 작업이 없습니다.</div>';
-    return entries.map(entry => `<div class="overview-activity-item ${escapeHtml(entry.level || 'info')}">
-      <span class="overview-activity-dot" aria-hidden="true"></span>
-      <div><strong>${escapeHtml(entry.message || entry.event || '작업')}</strong><span>${escapeHtml(recallAgeText(entry.at))}</span></div>
-    </div>`).join('');
+    if (!entries.length) return '<dt>최근 활동</dt><dd>아직 이번 실행에서 기록된 작업이 없습니다.</dd>';
+    return entries.map(entry => `<dt>${escapeHtml(recallAgeText(entry.at))}</dt><dd>${escapeHtml(entry.message || entry.event || '작업')}</dd>`).join('');
   };
 
   // Read-only worldline workspace. The existing engine remains the sole writer.
@@ -45788,7 +45644,7 @@ ${cleanedText}`, 80),
   let flashbackWorldlineViewToken = 0;
   let flashbackWorldlineVisible = 24;
   const flashbackWorldlineLabels = Object.freeze({ active: '현재 대화에 연결됨', quarantined: '격리 · 확인 필요', inactive_variant: '선택되지 않은 응답 · 리콜 제외', detached_branch: '현재 대화에서 벗어난 턴 · 리콜 제외', orphaned: '연결 확인 필요' });
-  const flashbackScopeFields = rows => `<dl class="fb-scope-fields">${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value == null || value === '' ? '—' : value)}</dd></div>`).join('')}</dl>`;
+  const flashbackScopeFields = rows => `<dl class="kv">${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value == null || value === '' ? '—' : value)}</dd>`).join('')}</dl>`;
   const flashbackWorldlineSourceIdentity = (snapshot, scope) => JSON.stringify([
     scope.scopeKey, scope.chatId, MemorySuiteHostLineage.fingerprint(Array.isArray(snapshot.chat?.message) ? snapshot.chat.message : snapshot.chat?.messages || []), scope.hostLineage
   ]);
@@ -45834,7 +45690,7 @@ ${cleanedText}`, 80),
     };
   };
   const renderFlashbackWorldlineView = (view, visible = 24) => {
-    if (!view) return '<div class="card fb-worldline-empty">현재 채팅의 세계선 정보를 불러오는 중…</div>';
+    if (!view) return '<div class="empty">현재 채팅의 세계선 정보를 불러오는 중…</div>';
     const v = view.lineage?.hostChatId === view.scope.chatId ? view.lineage : null;
     const label = { verified: '공통 원문 검증됨', unverified: '분기 근거 미검증', diverged: '부모와 원문 불일치', independent: '네이티브 분기 표식 없음' }[v?.status] || '분기 근거 미확인';
     const rows = [['현재 채팅', `${view.scope.chatTitle || view.scope.chatId} · ${view.scope.chatId}`], ['현재 스코프', view.scope.scopeKey], ['현재 경로', v?.path?.join(' → ') || view.scope.chatId]];
@@ -45849,17 +45705,16 @@ ${cleanedText}`, 80),
     const excluded = view.nodes.filter(node => ['inactive_variant','detached_branch'].includes(node.status));
     const current = view.nodes.filter(node => !['inactive_variant','detached_branch'].includes(node.status));
     const shown = current.slice(0, visible);
-    const renderNodes = nodes => nodes.map(node => `<details class="fb-worldline-node"><summary><strong>T${node.pairIndex}</strong><span class="fb-node-id">${escapeHtml(node.turnNodeId)}</span><span class="fb-scope-badge ${node.status==='active'?'success':'warning'}">${escapeHtml(flashbackWorldlineLabels[node.status] || '미확인 상태')}</span></summary>${flashbackScopeFields([['상태',flashbackWorldlineLabels[node.status]||node.status],['상위 노드',node.parentTurnNodeId],['논리 턴',node.logicalTurnId],['응답 버전',node.variantId],['유저 원문 해시',node.userHash],['응답 원문 해시',node.assistantHash],['대체한 노드',node.supersededBy]])}</details>`).join('');
-    return `<section class="card fb-scope-card" id="fbHostLineage"><header class="fb-scope-head"><div><h2>현재 세계선 · 채팅 분기</h2><p class="muted">RisuAI 분기 근거와 저장된 턴 연속성을 함께 확인합니다.</p></div><span class="fb-scope-badge ${v?.status === 'verified' ? 'success' : 'warning'}">${escapeHtml(label)}</span></header>${flashbackScopeFields(rows)}</section>
-      <section class="card fb-scope-card"><h2>원문 승계 · 저장 확인</h2>${flashbackScopeFields(receiptRows)}<p class="tiny">승계 당시의 저장 확인 기록입니다. 이 화면을 여는 것만으로 원문을 복사하거나 다시 검증·승인하지 않습니다.</p></section>
-      <section class="card fb-scope-card"><header class="fb-scope-head"><div><h2>턴 연속성</h2><p class="muted">현재 대화에 연결된 기억과 확인이 필요한 기록입니다. 선택되지 않은 응답과 벗어난 턴은 아래에 접어 보관합니다.</p></div><span class="fb-scope-badge">${view.nodes.length}개 노드</span></header>
-      <div class="fb-worldline-counts">${counts.map(([label,count])=>`<div><span>${label}</span><strong>${count}</strong></div>`).join('')}</div>
+    const renderNodes = nodes => nodes.map(node => `<details class="fold"><summary><b>T${formatNumber(node.pairIndex)}</b> · ${escapeHtml(node.turnNodeId)} <span class="badge ${node.status==='active'?'badge--ok':'badge--warn'}">${escapeHtml(flashbackWorldlineLabels[node.status] || '미확인 상태')}</span></summary><div class="fold__body">${flashbackScopeFields([['상태',flashbackWorldlineLabels[node.status]||node.status],['상위 노드',node.parentTurnNodeId],['논리 턴',node.logicalTurnId],['응답 버전',node.variantId],['유저 원문 해시',node.userHash],['응답 원문 해시',node.assistantHash],['대체한 노드',node.supersededBy]])}</div></details>`).join('');
+    return `<section class="card" id="fbHostLineage"><div class="card__head"><div><h2 class="card__title">현재 세계선 · 채팅 분기</h2><p class="card__desc">RisuAI 분기 근거와 저장된 턴 연속성을 함께 확인합니다.</p></div><span class="badge ${v?.status === 'verified' ? 'badge--ok' : 'badge--warn'}">${escapeHtml(label)}</span></div>${flashbackScopeFields(rows)}</section>
+      <section class="card"><div class="card__head"><div><h2 class="card__title">원문 승계 · 저장 확인</h2><p class="card__desc">승계 당시 기록입니다. 이 화면을 여는 것만으로 원문을 복사하거나 다시 검증·승인하지 않습니다.</p></div></div>${flashbackScopeFields(receiptRows)}</section>
+      <section class="card"><div class="card__head"><div><h2 class="card__title">턴 연속성</h2><p class="card__desc">현재 대화에 연결된 기억과 확인이 필요한 기록입니다. 선택되지 않은 응답과 벗어난 턴은 아래에 접어 보관합니다.</p></div><span class="badge">${formatNumber(view.nodes.length)}개 노드</span></div>
+      <div class="stats">${counts.map(([label,count])=>`<div class="stat"><div class="stat__label">${escapeHtml(label)}</div><div class="stat__value">${formatNumber(count)}</div></div>`).join('')}</div>
       ${flashbackScopeFields([['원장 revision', view.present ? view.revision : '원장 없음'], ['현재 결속 노드', view.headTurnNodeId || '결속 노드 없음'], ['보존된 이전 원문 청크', view.retiredCount]])}
-      <div class="fb-worldline-nodes">${renderNodes(shown) || '<p class="fb-worldline-empty">현재 대화에 연결되거나 확인이 필요한 기록이 없습니다.</p>'}</div>
+      <div class="stack stack--sm">${renderNodes(shown) || '<div class="empty">현재 대화에 연결되거나 확인이 필요한 기록이 없습니다.</div>'}</div>
       ${current.length > shown.length ? `<button type="button" class="btn" data-fb-worldline-more>더 보기 ${shown.length} / ${current.length}</button>` : ''}
-      ${excluded.length ? `<details class="fb-worldline-excluded"><summary>현재 대화에서 제외된 기록 · ${excluded.length}개</summary><p class="muted">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p><div class="fb-worldline-nodes">${renderNodes(excluded.slice(0,visible))}</div>${excluded.length>visible?'<button type="button" class="btn" data-fb-worldline-more>제외 기록 더 보기</button>':''}</details>` : ''}</section>`;
+      ${excluded.length ? `<details class="fold"><summary>현재 대화에서 제외된 기록 · ${formatNumber(excluded.length)}개</summary><div class="fold__body"><p class="hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p><div class="stack stack--sm">${renderNodes(excluded.slice(0,visible))}</div>${excluded.length>visible?'<button type="button" class="btn" data-fb-worldline-more>제외 기록 더 보기</button>':''}</div></details>` : ''}</section>`;
   };
-  const buildWorldlineTab = () => `<section id="panel-worldline" class="panel" data-panel="worldline" role="tabpanel" aria-labelledby="tab-worldline"><div class="actions"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></section>`;
   const refreshFlashbackWorldlinePanel = async () => {
     const node = getGuiNode('fbWorldlineContent');
     if (!node || Runtime.guiTab !== 'worldline') return false;
@@ -45872,21 +45727,21 @@ ${cleanedText}`, 80),
       if (cancelled() || !data) return false;
       flashbackWorldlineView = data; node.innerHTML = renderFlashbackWorldlineView(data); return true;
     } catch (error) {
-      if (!cancelled()) node.innerHTML = `<div class="card fb-storage-warning" role="status"><strong>세계선 조회를 완료하지 못했습니다.</strong><p>${escapeHtml(error?.message || error)}</p><p>원문이나 저장 데이터는 변경하지 않았습니다.</p></div>`;
+      if (!cancelled()) node.innerHTML = `<div class="note note--warn" role="status"><strong>세계선 조회를 완료하지 못했습니다.</strong><span>${escapeHtml(error?.message || error)}</span><span>원문이나 저장 데이터는 변경하지 않았습니다.</span></div>`;
       return false;
     }
   };
 
   let flashbackSourceEditView = null;
   let flashbackSourceEditUiToken = 0;
-  const buildFlashbackSourceEditCard=()=>`<section class="card fb-scope-card" aria-labelledby="fbSourceEditTitle"><header class="fb-scope-head"><div><h2 id="fbSourceEditTitle">직접 원문 재분석</h2><p class="muted">선택한 턴을 실행 시점의 현재 U+A 원문으로 다시 저장합니다. 요약 LLM은 호출하지 않습니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" id="fbReanalysisRefresh">구간 목록 새로고침</button><div id="fbReanalysisRanges"></div><button type="button" id="fbReanalysisRun" disabled>선택한 구간 재분석</button><div id="fbSourceEditStatus" role="status" aria-live="polite"></div><div id="fbSourceTrackingSettings"></div></section>`;
-  const renderFlashbackSourceEditStatus=(status,message='')=>`<p>${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
+  const buildFlashbackSourceEditCard=()=>`<section class="card" aria-labelledby="fbSourceEditTitle"><div class="card__head"><div><h2 id="fbSourceEditTitle" class="card__title">직접 원문 재분석</h2><p class="card__desc">선택한 턴을 실행 시점의 현재 U+A 원문으로 다시 저장합니다. 요약 LLM은 호출하지 않습니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></div><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>선택한 구간 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></section>`;
+  const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
-    if(Runtime.guiTab!=='source-edits')return false;
+    if(!['import','source-edits'].includes(Runtime.guiTab))return false;
     const token=++flashbackSourceEditUiToken,refreshToken=Runtime.guiRefreshToken;
     const list=getGuiNode('fbReanalysisRanges'),run=getGuiNode('fbReanalysisRun'),refresh=getGuiNode('fbReanalysisRefresh');
     if(!list||!run||!refresh)return false;
-    const current=()=>token===flashbackSourceEditUiToken&&refreshToken===Runtime.guiRefreshToken&&Runtime.guiTab==='source-edits'&&isGuiRenderActive();
+    const current=()=>token===flashbackSourceEditUiToken&&refreshToken===Runtime.guiRefreshToken&&['import','source-edits'].includes(Runtime.guiTab)&&isGuiRenderActive();
     let busy=false,inventory=null;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
     const sync=()=>{run.disabled=busy||!selected().length;refresh.disabled=busy;for(const input of list.querySelectorAll('input'))input.disabled=busy;};
@@ -45902,63 +45757,6 @@ ${cleanedText}`, 80),
         finally{busy=false;if(current())sync();}};return true;
     }catch(error){if(current())setNodeText('fbSourceEditStatus','목록 조회 실패: '+String(error?.message||error));return false;}
   };
-  const buildOverviewTab = (settings, current, currentCost) => {
-    const health = flashbackOverviewHealth(current);
-    const recall = flashbackOverviewRecallSummary(Runtime.lastRecall, current?.scope?.scopeKey || '');
-    const lastCapture = Runtime.lastCapture?.at ? recallAgeText(Runtime.lastCapture.at) : '아직 없음';
-    const embeddingLabel = settings.embeddingProvider === 'hash'
-      ? '이전 해시 설정 · 모델 선택 필요'
-      : configuredModelEmbedding(settings) ? `${settings.embeddingProvider} · ${settings.embeddingModel}` : '모델 미설정 · 원문 보관 중';
-    return `<section id="panel-overview" class="panel" data-panel="overview" role="tabpanel" aria-labelledby="tab-overview">
-      <div id="overviewHealthBanner" class="overview-health ${health.tone}" role="status">
-        <span class="overview-health-icon" aria-hidden="true"></span>
-        <div><strong id="overviewHealthTitle">${escapeHtml(health.title)}</strong><span id="overviewHealthMeta">${escapeHtml(health.meta)}</span></div>
-        <button id="overviewMaintenanceBtn" class="btn small" type="button">상태만 진단</button>
-      </div>
-      <div class="overview-stat-grid">
-        <article class="overview-stat-card">
-          <span id="metricChunkLabel">${current.stats?.statsPartial === true ? '저장 기억 (부분)' : '저장 기억'}</span>
-          <strong id="metricChunkTotal">${formatNumber(current.records.length)}</strong>
-          <small>현재 채팅 레코드</small>
-        </article>
-        <article class="overview-stat-card">
-          <span>최근 리콜 <em id="overviewRecallBadge">${escapeHtml(recall.badge)}</em></span>
-          <strong id="overviewRecallCount">${escapeHtml(recall.value)}</strong>
-          <small id="overviewRecallMeta">${escapeHtml(recall.meta)}</small>
-        </article>
-        <article class="overview-stat-card">
-          <span id="metricTokenLabel">${current.stats?.statsPartial === true ? '토큰 추정 (부분)' : '토큰 추정'}</span>
-          <strong id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</strong>
-          <small>저장된 기억 기준</small>
-        </article>
-        <article class="overview-stat-card">
-          <span>비용 추정</span>
-          <strong id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</strong>
-          <small id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</small>
-        </article>
-      </div>
-      <div class="overview-quick-actions" aria-label="빠른 작업">
-        <button id="overviewBackupBtn" class="overview-action" type="button"><strong>JSON 백업</strong><span>내보내기·복원 화면으로 이동</span></button>
-        <button id="overviewEmbedTestBtn" class="overview-action" type="button"><strong>임베딩 테스트</strong><span>현재 프로바이더 연결 확인</span></button>
-        <button id="overviewActivityBtn" class="overview-action" type="button"><strong>작업 로그</strong><span>이번 실행의 기록 보기</span></button>
-      </div>
-      <details class="card overview-recall-card" open>
-        <summary><span>이번 턴에 떠올린 기억</span><span class="tiny">프레임을 눌러 기억 확인</span></summary>
-        <div id="lastRecallPanel" class="last-recall-panel">${renderLastRecallPanel(Runtime.lastRecall, current.scope.scopeKey)}</div>
-      </details>
-      <div class="overview-lower-grid">
-        <div class="card">
-          <div class="overview-card-heading"><div><div class="card-title">기억 분포</div><div class="tiny">현재 로드된 범위의 유형별 구성</div></div><span id="metricMode" class="provider-tag">${escapeHtml(settings.mode)}</span></div>
-          <div id="miniCounts" class="mini-counts">${renderCountCards(current.stats)}</div>
-        </div>
-        <div class="card">
-          <div class="overview-card-heading"><div><div class="card-title">최근 활동</div><div id="overviewLastCapture" class="tiny">마지막 캡처 · ${escapeHtml(lastCapture)}</div></div><button id="overviewActivityMoreBtn" class="btn small" type="button">전체 보기</button></div>
-          <div id="overviewActivityList" class="overview-activity-list">${renderOverviewActivityHtml()}</div>
-        </div>
-      </div>
-    </section>`;
-  };
-
   const multilingualProbeStateForSettings = (settings = DEFAULTS, probe = Runtime.multilingualEmbeddingProbe) => {
     const cfg = normalizeSettings(settings);
     if (!configuredModelEmbedding(cfg)) return 'not_applicable';
@@ -46023,7 +45821,7 @@ ${cleanedText}`, 80),
       : (probe?.compatibilityError && state === 'verified'
         ? `<div class="multilingual-probe-compat warning">현재 기억의 profile 호환 범위를 확인하지 못했습니다 · ${escapeHtml(compact(probe.compatibilityError, 240))}</div>`
         : '');
-    return `<div class="multilingual-probe-summary ${tone}"><strong>${escapeHtml(stateLabels[state] || state)}</strong><span>${escapeHtml(summary)}</span></div>${profile}${matrix}${compatibilityHtml}`;
+    return `<div class="note ${tone==='verified'?'note--ok':tone==='failed'?'note--danger':'note--warn'}"><strong>${escapeHtml(stateLabels[state] || state)}</strong> <span>${escapeHtml(summary)}</span></div>${profile}${matrix}${compatibilityHtml}`;
   };
 
   const buildMultilingualProbeCard = settings => {
@@ -46031,131 +45829,117 @@ ${cleanedText}`, 80),
     const running = state === 'running';
     const compatibility = Runtime.multilingualEmbeddingProbe?.compatibility;
     const showMaintenance = !!(state === 'verified' && compatibility && !compatibility.integrityIssue && Number(compatibility.reembedRequired || 0) > 0);
-    return `<div class="card multilingual-probe-card">
-      <div class="actions"><button id="sameSpacePreviewBtn" class="btn" type="button">같은 공간 이전 미리보기</button><button id="sameSpaceApplyBtn" class="btn" type="button">미리본 메타데이터 이전 적용</button></div><div id="sameSpaceStatus" role="status">검증 등록부와 저장된 생성 이력이 일치하는 항목만 이전합니다. 벡터 원본 보존 · API 호출 0.</div>
-      <div class="multilingual-probe-heading"><div><div class="card-title">다국어 리콜 검증</div><p class="muted">현재 AI 연결이 한국어·영어·일본어·중국어의 의미를 양방향으로 연결하고 근거 기준을 통과하는지 확인합니다.</p></div><span class="provider-tag">사용자 실행</span></div>
-      <div class="actions"><button id="multilingualProbeBtn" class="btn" type="button" ${running || state === 'not_applicable' ? 'disabled' : ''}>다국어 리콜 검증</button><button id="cancelMultilingualProbeBtn" class="btn danger" type="button" ${running ? '' : 'hidden'}>검증 중지</button><button id="multilingualProbeMaintenanceBtn" class="btn" type="button" ${showMaintenance ? '' : 'hidden'}>재임베딩 화면으로</button></div>
-      <div class="tiny multilingual-probe-privacy">사용자 대화는 사용하지 않습니다. 미리 정해진 비개인 문장 24개를 질문과 문서로 나누어 호출하며, 이 과정에서 외부 AI 사용량이 발생할 수 있습니다. 검증만으로 저장된 기억이나 벡터는 변경되지 않습니다.</div>
+    const preview = Runtime.sameSpacePreview;
+    const previewRows = Array.isArray(preview?.rows) ? preview.rows.length : null;
+    const previewUnknown = Array.isArray(preview?.unknown) ? preview.unknown.length : null;
+    return `<section class="card">
+      <div class="card__head"><div><h2 class="card__title">같은 공간 이전 미리보기</h2><p class="card__desc">검증 등록부와 저장된 생성 이력이 일치하는 항목만 이전합니다. <b>벡터 원본 보존 · API 호출 0.</b> 원문 재임베딩과는 다릅니다.</p></div><span class="badge">API 호출 0</span></div>
+      <dl class="cost-table"><dt>이전 가능</dt><dd id="sameSpaceEligibleCount">${previewRows == null ? '아직 미리보지 않음' : formatNumber(previewRows)}</dd><dt>이전 불가</dt><dd id="sameSpaceUnknownCount">${previewUnknown == null ? '미확인' : formatNumber(previewUnknown)}${previewUnknown == null ? '' : ' (등록부·생성 이력 검증 불일치)'}</dd></dl>
+      <div class="cluster" style="margin-top:12px"><button id="sameSpacePreviewBtn" class="btn" type="button">같은 공간 이전 미리보기</button><button id="sameSpaceApplyBtn" class="btn btn--primary" type="button">미리본 메타데이터 이전 적용…</button><button id="multilingualProbeMaintenanceBtn" class="btn btn--ghost" type="button" ${showMaintenance ? '' : 'hidden'}>재임베딩 화면으로</button></div><p id="sameSpaceStatus" class="hint" role="status">${preview ? '미리보기가 준비됐습니다. 적용 전 검사된 항목과 자격을 다시 확인합니다.' : '아직 아무것도 바뀌지 않았습니다.'}</p>
+    </section>
+    <section class="card">
+      <div class="card__head"><div><h2 class="card__title">다국어 리콜 검증</h2><p class="card__desc">현재 AI 연결이 한국어·영어·일본어·중국어의 의미를 양방향으로 연결하고 근거 기준을 통과하는지 확인합니다. 고정된 비개인 문장을 쓰지만 <b>외부 AI 사용량이 발생</b>할 수 있습니다.</p></div><span class="badge ${state === 'verified' ? 'badge--ok' : state === 'failed' ? 'badge--danger' : 'badge--warn'}">${escapeHtml(state === 'verified' ? '검증됨' : state === 'failed' ? '검증 실패' : state === 'running' ? '검증 중' : '설정 변경으로 만료됨')}</span></div>
+      <div class="cluster"><button id="multilingualProbeBtn" class="btn btn--primary" type="button" ${running || state === 'not_applicable' ? 'disabled' : ''}>사용자 실행</button><button id="cancelMultilingualProbeBtn" class="btn" type="button" ${running ? '' : 'hidden'}>검증 중지</button></div>
       <div id="multilingualProbeStatus" role="status" aria-live="polite">${renderMultilingualProbeResults(settings)}</div>
-    </div>`;
-  };
-
-  const buildEmbeddingWorkCard = () => `<div class="card">
-    <div class="card-title">임베딩 작업</div>
-    <div id="embeddingWorkStatus" role="status" aria-live="polite">작업 상태를 불러오는 중…</div>
-    <div class="actions"><button id="embeddingWorkRefreshBtn" class="btn" type="button">상태 새로고침</button>
-      <button id="embeddingWorkRunBtn" class="btn" type="button" disabled>대기·이전 작업 진행</button>
-      <button id="embeddingWorkRetryFailedBtn" class="btn" type="button" disabled>실패 작업만 재시도</button></div>
-    <div class="tiny">진행·재시도는 저장한 모델을 호출하며 한 번에 정해진 작업 예산만 사용합니다. 결과 확인이 필요한 요청은 자동으로 재전송하지 않습니다.</div>
-  </div>`;
-
-  const buildProviderTab = (settings, stats = {}) => {
-    const providerLabels = { '': '모델 미설정', hash: '이전 해시 설정 · 모델 선택 필요', bedrock: 'bedrock (Titan V2)', voyage_context: 'voyage_context (Context 4)' };
-    const providerOptions = ['', ...PROVIDER_CHOICES.filter(value => value !== 'hash' || settings.embeddingProvider === 'hash')].map(value => `<option value="${value}" ${settings.embeddingProvider === value ? 'selected' : ''}>${providerLabels[value] || value}</option>`).join('');
-    const recommendedModels = [...new Set([...EMBEDDING_MODEL_SUGGESTIONS, ...ollamaModelSuggestionNames()])].map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
-    const ollamaVisible = settings.embeddingProvider === 'ollama';
-    return `<section id="panel-provider" class="panel active" data-panel="provider" role="tabpanel" aria-labelledby="tab-provider">
-      <div class="card">
-        <div class="card-title">임베딩 프로바이더</div>
-        <label class="checkline" style="margin-bottom:10px"><input id="embeddingEnabled" type="checkbox" ${settings.embeddingEnabled ? 'checked' : ''}/> 임베딩 사용</label>
-        <label class="checkline" style="margin-bottom:10px"><input id="embeddingAutoProcess" type="checkbox" ${settings.embeddingAutoProcess !== false ? 'checked' : ''}/> 새 임베딩 작업 자동 시작</label>
-        <div class="grid2" style="margin-bottom:10px">
-          <div class="field"><label for="embeddingProvider">Provider</label><select id="embeddingProvider">${providerOptions}</select></div>
-          <div class="field"><label for="embeddingModel">모델</label><input id="embeddingModel" list="embeddingModelSuggestions" value="${escapeHtml(settings.embeddingModel)}" /><datalist id="embeddingModelSuggestions">${recommendedModels}</datalist></div>
-          <div class="field"><label for="embeddingUrl">Base URL / 서버 주소</label><input id="embeddingUrl" value="${escapeHtml(settings.embeddingUrl)}" placeholder="비워두면 기본값" /></div>
-          <div class="field"><label for="embeddingKey">API Key / Access Token</label><input id="embeddingKey" type="password" placeholder="입력 후 저장하면 설정·동기화 백업·로컬에 보관됩니다" /></div>
-          <div class="field"><label for="embeddingDimensions">벡터 차원 (0=자동)</label><input id="embeddingDimensions" type="number" min="0" max="65536" value="${settings.embeddingDimensions}" /></div>
-          <div class="field"><label for="embeddingTimeoutMs">요청 제한시간(ms)</label><input id="embeddingTimeoutMs" type="number" min="3000" max="180000" value="${settings.embeddingTimeoutMs}" /></div>
-          <div class="field"><label for="embeddingBatchSize">배치 크기</label><input id="embeddingBatchSize" type="number" min="1" max="128" value="${settings.embeddingBatchSize}" /></div>
-          <div class="field"><label for="embeddingMaxRetries">재시도 횟수</label><input id="embeddingMaxRetries" type="number" min="0" max="5" value="${settings.embeddingMaxRetries}" /></div>
-        </div>
-        <details class="card" style="margin:8px 0 12px"><summary>고급 연결 설정</summary>
-          <div class="grid2" style="margin-top:10px">
-            <div class="field"><label for="embeddingEndpoint">정확한 Endpoint (선택)</label><input id="embeddingEndpoint" value="${escapeHtml(settings.embeddingEndpoint)}" /></div>
-            <div class="field"><label for="embeddingQueryTask">Query task / input type</label><input id="embeddingQueryTask" value="${escapeHtml(settings.embeddingQueryTask)}" /></div>
-            <div class="field"><label for="embeddingDocumentTask">Document task / input type</label><input id="embeddingDocumentTask" value="${escapeHtml(settings.embeddingDocumentTask)}" /></div>
-            <div class="field"><label for="embeddingQueryPrefix">Query prefix</label><input id="embeddingQueryPrefix" value="${escapeHtml(settings.embeddingQueryPrefix)}" /></div>
-            <div class="field"><label for="embeddingDocumentPrefix">Document prefix</label><input id="embeddingDocumentPrefix" value="${escapeHtml(settings.embeddingDocumentPrefix)}" /></div>
-            <label class="checkline"><input id="embeddingNormalize" type="checkbox" ${settings.embeddingNormalize ? 'checked' : ''}/> 반환 벡터 정규화</label>
-            <div class="field-note">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</div>
-            <div class="field"><label for="embeddingCustomMethod">Custom HTTP method</label><select id="embeddingCustomMethod"><option value="POST" ${settings.embeddingCustomMethod === 'POST' ? 'selected' : ''}>POST</option><option value="PUT" ${settings.embeddingCustomMethod === 'PUT' ? 'selected' : ''}>PUT</option><option value="PATCH" ${settings.embeddingCustomMethod === 'PATCH' ? 'selected' : ''}>PATCH</option></select></div>
-            <div class="field"><label for="embeddingCustomHeaders">Custom HTTP headers (JSON)</label><textarea id="embeddingCustomHeaders" rows="3">${escapeHtml(settings.embeddingCustomHeaders)}</textarea></div>
-            <div class="field"><label for="embeddingCustomRequestTemplate">Custom request JSON template</label><textarea id="embeddingCustomRequestTemplate" rows="3">${escapeHtml(settings.embeddingCustomRequestTemplate)}</textarea></div>
-            <div class="field"><label for="embeddingCustomResponsePath">Custom response JSON path</label><input id="embeddingCustomResponsePath" value="${escapeHtml(settings.embeddingCustomResponsePath)}" placeholder="data[*].embedding" /></div>
-            <div class="field"><label for="embeddingCustomErrorPath">Custom error JSON path</label><input id="embeddingCustomErrorPath" value="${escapeHtml(settings.embeddingCustomErrorPath)}" /></div>
-          </div>
-        </details>
-        <div class="actions"><button id="saveSettingsBtn" class="btn btn-primary">저장</button><button id="restoreDefaultsBtn" class="btn" type="button" title="모든 설정을 기본값으로 되돌려 화면에 채웁니다. 저장을 눌러야 실제로 적용됩니다.">기본값 불러오기</button><button id="clearEmbeddingKeyBtn" class="btn">키 삭제</button><button id="testEmbedBtn" class="btn">임베딩 테스트</button><button id="refreshOllamaModelsBtn" class="btn" style="${ollamaVisible ? '' : 'display:none'}">Ollama 모델 검색</button></div>
-        <div id="restoreDefaultsStatus" class="field-note"></div>
-        <div id="embeddingTestStatus" class="embedding-test-status" role="status" aria-live="polite"></div>
-        <div id="ollamaModelStatus" class="tiny" role="status" aria-live="polite" style="margin-top:8px;${ollamaVisible ? '' : 'display:none'}">${escapeHtml(ollamaDiscoveryStatusText())}</div>
-        <div class="tiny" style="margin-top:8px">${escapeHtml(embeddingKeyPersistenceStatusText())}</div>
-        <div class="tiny" style="margin-top:8px">데이터 동기화·정제·재임베딩은 ‘기억 유지보수’에서 한 번에 관리합니다.</div>
-      </div>
-      ${buildEmbeddingWorkCard()}
-      ${buildMultilingualProbeCard(settings)}
-      ${renderEmbeddingCostPanel(settings, stats)}
     </section>`;
   };
 
-  const buildSourceEditTab = () => `<section id="panel-source-edits" class="panel" data-panel="source-edits" role="tabpanel" aria-labelledby="tab-source-edits">${buildFlashbackSourceEditCard()}</section>`;
-  const buildRestoreTab = () => `<section id="panel-restore" class="panel" data-panel="restore" role="tabpanel" aria-labelledby="tab-restore">
-      <div class="card portable-memory-card">
-        <div class="portable-memory-title-row">
-          <div class="card-title">기억 복원</div>
-          <span class="portable-json-badge">JSON</span>
-        </div>
-        <p class="muted">현재 채팅의 영구 기억을 JSON 파일로 보관하고, 같은 채팅 복원·새 채팅 이사·복사된 채팅 복구 중 원하는 방식으로 불러옵니다.</p>
-        <div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div>
-        <div class="tiny portable-memory-note">동일 채팅은 백업 시점으로 교체 · 채팅 이사는 과거 아카이브로 연결 · 채팅 복사는 현재 대화와 검증 후 월드라인 재구성</div>
-      </div>
+  const buildEmbeddingWorkCard = () => `<section class="card">
+    <div class="card__head"><div><h2 class="card__title">임베딩 작업</h2><p class="card__desc">대기 작업을 시작하거나 실패한 항목만 다시 시도합니다.</p></div></div>
+    <div id="embeddingWorkStatus" class="note" role="status" aria-live="polite">작업 상태를 불러오는 중…</div>
+    <div class="cluster"><button id="embeddingWorkRefreshBtn" class="btn" type="button">상태 새로고침</button>
+      <button id="embeddingWorkRunBtn" class="btn" type="button" disabled>대기·이전 작업 진행</button>
+      <button id="embeddingWorkRetryFailedBtn" class="btn" type="button" disabled>실패 작업만 재시도</button></div>
+    <p class="hint">진행·재시도는 저장한 모델을 호출합니다. 결과 확인이 필요한 요청은 자동으로 재전송하지 않습니다.</p>
   </section>`;
 
-  const buildImportTab = () => {
-    return `<section id="panel-import" class="panel" data-panel="import" role="tabpanel" aria-labelledby="tab-import">
-      <div class="card">
-        <div class="card-title">기억 유지보수</div>
-        <p class="muted">현재 채팅의 유저 입력+AI 응답 턴을 원본으로 삼아 누락·변경·고아 데이터, 오염 텍스트, 잘못된 벡터와 파생 인덱스를 한 번에 점검합니다.</p>
-        <div class="actions"><button id="maintenanceInspectBtn" class="btn btn-primary">상태만 진단</button><button id="maintenanceAutoBtn" class="btn">자동 점검·복구</button></div>
-        <div class="tiny" style="margin-top:8px">권장 기능입니다. 정상 데이터는 다시 임베딩하지 않고 필요한 항목만 증분 처리합니다.</div>
-      </div>
-      <section id="maintenanceExecutionCard" class="card maintenance-execution-card" aria-labelledby="maintenanceExecutionTitle">
-        <div class="maintenance-execution-head">
-          <div><div id="maintenanceExecutionTitle" class="card-title">유지보수 실행 현황</div><p class="tiny">최근 유지보수 작업의 임베딩 처리 기록</p></div>
-          <span id="maintenanceExecutionBadge" class="maintenance-execution-badge" data-tone="neutral">대기</span>
+  const buildProviderTab = (settings, stats = {}) => {
+    const providerLabels = { '': '모델 미설정', hash: '이전 해시 설정 · 모델 선택 필요', bedrock: 'bedrock (Titan V2)', voyage_context: 'voyage_context (Context 4)' };
+    const providerOptions = ['', ...PROVIDER_CHOICES.filter(value => value !== 'hash' || settings.embeddingProvider === 'hash')].map(value => `<option value="${escapeHtml(value)}" ${settings.embeddingProvider === value ? 'selected' : ''}>${escapeHtml(providerLabels[value] || value)}</option>`).join('');
+    const recommendedModels = [...new Set([...EMBEDDING_MODEL_SUGGESTIONS, ...ollamaModelSuggestionNames()])].map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
+    const ollamaVisible = settings.embeddingProvider === 'ollama';
+    const field = (id,label,value,attrs='') => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${escapeHtml(value ?? '')}" ${attrs}></div>`;
+    return `<div class="stack">
+      <section class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge" id="embeddingProviderBadge">${escapeHtml(providerLabels[settings.embeddingProvider] || settings.embeddingProvider || '모델 미설정')}</span></div>
+        <label class="setting"><span><b class="setting__name">임베딩 사용</b><span class="setting__desc" id="embeddingEnabled-description">끄면 새 벡터를 만들지 않습니다. 원문 보관은 계속됩니다.</span></span><span class="switch"><input id="embeddingEnabled" aria-describedby="embeddingEnabled-description" type="checkbox" ${settings.embeddingEnabled?'checked':''}><span class="switch__track"></span></span></label>
+        <label class="setting"><span><b class="setting__name">새 임베딩 작업 자동 시작</b><span class="setting__desc" id="embeddingAutoProcess-description">저장된 새 기억의 임베딩을 자동으로 시작합니다.</span></span><span class="switch"><input id="embeddingAutoProcess" aria-describedby="embeddingAutoProcess-description" type="checkbox" ${settings.embeddingAutoProcess!==false?'checked':''}><span class="switch__track"></span></span></label>
+        <div class="grid g2"><div class="field"><label for="embeddingProvider">Provider</label><select class="select" id="embeddingProvider">${providerOptions}</select></div><div class="field"><label for="embeddingModel">모델</label><input class="input" id="embeddingModel" list="embeddingModelSuggestions" value="${escapeHtml(settings.embeddingModel)}"><datalist id="embeddingModelSuggestions">${recommendedModels}</datalist></div>
+          ${field('embeddingUrl','Base URL / 서버 주소',settings.embeddingUrl,'placeholder="비워두면 기본값"')}
+          <div class="field"><label for="embeddingKey">API Key / Access Token</label><input class="input" id="embeddingKey" aria-describedby="embeddingKey-hint" type="password" autocomplete="new-password" placeholder="새 키 입력 (저장된 값은 표시하지 않음)"><span class="hint" id="embeddingKey-hint">비워두면 저장된 자격 증명을 유지합니다. 키 삭제는 별도 확인이 필요합니다.</span></div>
+          ${field('embeddingDimensions','벡터 차원 (0=자동)',settings.embeddingDimensions,'type="number" min="0" max="65536"')}
         </div>
-        <p id="maintenanceExecutionStatus" class="maintenance-execution-summary" role="status" aria-live="polite" aria-atomic="true">아직 실행한 유지보수 작업이 없습니다.</p>
-        <dl id="maintenanceExecutionMetrics" class="maintenance-execution-metrics" hidden>
-          <div><dt>완료 배치</dt><dd id="maintenanceCompletedBatches">—</dd></div>
-          <div><dt>실제 요청</dt><dd id="maintenanceRequests">미확인</dd></div>
-          <div><dt>응답 대기</dt><dd id="maintenancePending">미확인</dd></div>
-          <div><dt>결과 미확정</dt><dd id="maintenanceUnknown">미확인</dd></div>
-        </dl>
-        <div id="maintenanceExecutionActions" class="maintenance-execution-actions" hidden>
-          <button id="maintenanceExecutionDetailsBtn" class="btn" type="button" aria-expanded="false" aria-controls="maintenanceExecutionDetails">실행 상세 보기</button>
-          <button id="cancelMaintenanceResultBtn" class="btn btn-danger" type="button" disabled hidden>유지보수 중지 요청</button>
-        </div>
-        <div id="maintenanceExecutionDetails" class="maintenance-execution-details" hidden>
-          <dl class="maintenance-execution-detail-grid">
-            <div><dt>요청 차원</dt><dd id="maintenanceRequestedDimensions">자동</dd></div>
-            <div><dt>적용 차원</dt><dd id="maintenanceResolvedDimensions">미확인</dd></div>
-            <div><dt>사용량 보고</dt><dd id="maintenanceUsageReported">미확인</dd></div>
-            <div><dt>체크포인트 재사용</dt><dd id="maintenanceResumedBatches">—</dd></div>
-            <div class="maintenance-execution-scope"><dt>작업 범위 ID</dt><dd id="maintenanceExecutionScope">확인 중</dd></div>
-          </dl>
-          <p class="tiny">사용량 보고는 제공자가 사용량을 반환한 요청 건수입니다. 미확인은 기록이 없다는 뜻이며 0건과 다릅니다. 완료 배치는 기억 개수가 아닌 임베딩 처리 묶음입니다.</p>
-        </div>
-        <p id="maintenanceExecutionCancelNote" class="maintenance-execution-note" hidden>중지 요청 후에도 이미 전송된 요청은 처리 중일 수 있습니다. 완료된 체크포인트만 다음 작업에서 재사용합니다.</p>
+        <details class="fold"><summary>고급 연결 설정 <span class="hint">요청 · 쿼리/문서 · Custom HTTP</span></summary><div class="fold__body grid g2">
+          ${field('embeddingEndpoint','정확한 Endpoint (선택)',settings.embeddingEndpoint)}
+          ${field('embeddingTimeoutMs','요청 제한시간(ms)',settings.embeddingTimeoutMs,'type="number" min="3000" max="180000"')}
+          ${field('embeddingBatchSize','배치 크기',settings.embeddingBatchSize,'type="number" min="1" max="128"')}
+          ${field('embeddingMaxRetries','재시도 횟수',settings.embeddingMaxRetries,'type="number" min="0" max="5"')}
+          ${field('embeddingQueryTask','Query task / input type',settings.embeddingQueryTask)}
+          ${field('embeddingDocumentTask','Document task / input type',settings.embeddingDocumentTask)}
+          ${field('embeddingQueryPrefix','Query prefix',settings.embeddingQueryPrefix)}
+          ${field('embeddingDocumentPrefix','Document prefix',settings.embeddingDocumentPrefix)}
+          <label class="setting"><span class="setting__name">반환 벡터 정규화</span><span class="switch"><input id="embeddingNormalize" type="checkbox" ${settings.embeddingNormalize?'checked':''}><span class="switch__track"></span></span></label>
+          <div class="field"><label for="embeddingCustomMethod">Custom HTTP method</label><select class="select" id="embeddingCustomMethod">${['POST','PUT','PATCH'].map(v=>`<option value="${v}" ${settings.embeddingCustomMethod===v?'selected':''}>${v}</option>`).join('')}</select></div>
+          <div class="field"><label for="embeddingCustomHeaders">Custom HTTP headers (JSON)</label><textarea class="textarea" id="embeddingCustomHeaders" rows="3">${escapeHtml(settings.embeddingCustomHeaders)}</textarea></div>
+          <div class="field"><label for="embeddingCustomRequestTemplate">Custom request JSON template</label><textarea class="textarea" id="embeddingCustomRequestTemplate" rows="3">${escapeHtml(settings.embeddingCustomRequestTemplate)}</textarea></div>
+          ${field('embeddingCustomResponsePath','Custom response JSON path',settings.embeddingCustomResponsePath,'placeholder="data[*].embedding"')}
+          ${field('embeddingCustomErrorPath','Custom error JSON path',settings.embeddingCustomErrorPath)}
+        </div></details>
+        <div class="cluster"><button id="saveSettingsBtn" class="btn btn--primary" type="button">설정 저장</button><button id="restoreDefaultsBtn" class="btn" type="button">기본값 불러오기</button><button id="clearEmbeddingKeyBtn" class="btn btn--danger" type="button">키 삭제…</button><button id="testEmbedBtn" class="btn" type="button">임베딩 테스트</button><button id="refreshOllamaModelsBtn" class="btn" type="button" ${ollamaVisible?'':'hidden'}>Ollama 모델 검색</button></div>
+        <p id="restoreDefaultsStatus" class="hint" role="status"></p><p id="embeddingTestStatus" class="hint" role="status" aria-live="polite"></p><p id="ollamaModelStatus" class="hint" role="status" aria-live="polite">${escapeHtml(ollamaDiscoveryStatusText())}</p><p class="hint">${escapeHtml(embeddingKeyPersistenceStatusText())}</p>
       </section>
-      <div class="card">
-        <div class="card-title">고급 실행</div>
-        <div class="grid2">
-          <div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode"><option value="sync">누락·변경 턴만 동기화</option><option value="rebuild">현재 채팅에서 전체 재구축</option><option value="reembed">로컬 미완료 벡터 복구</option></select></div>
-          <div class="field"><label>용도</label><div class="tiny">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 미완료 벡터 복구는 이미 저장된 대기 작업만 처리하며 아카이브와 프로필 이관 대상은 제외합니다.</div></div>
-        </div>
-        <div class="actions"><button id="maintenanceRunBtn" class="btn">선택 작업 실행</button></div>
-        <div class="actions"><button id="maintenanceArchiveRunBtn" class="btn">아카이브 응답 한 묶음 복구</button></div>
-      </div>
+      ${buildEmbeddingWorkCard()}
+      ${renderEmbeddingCostPanel(settings, stats)}
+    </div>`;
+  };
+
+  const renderMaintenancePlanInUi = plan => {
+    const target = getGuiNode('maintenancePlan');
+    if (!target || !plan) return false;
+    Runtime.guiLastMaintenancePlan = plan;
+    const number = value => formatNumber(Number.isFinite(Number(value)) ? Number(value) : 0);
+    const fullRebuild = !!plan.requiresFullRebuild;
+    const newVectors = fullRebuild ? plan.rebuildEstimatedNewEmbeddingVectors : plan.estimatedEmbeddingChunks;
+    const tokens = fullRebuild ? plan.rebuildEstimatedEmbeddingTokens : plan.estimatedEmbeddingTokens;
+    const cost = fullRebuild ? plan.rebuildEmbeddingCost : plan.embeddingCost;
+    const damage = Number(plan.storageMissingShards || 0) + Number(plan.storageCorruptShards || 0) + Number(!!plan.storageManifestCorrupt) + Number(!!plan.storageArchiveRefInvalid) + Number(!!plan.storageRecordCountMismatch) + Number(!!plan.storageForeignScopeKey);
+    const metrics = [
+      ['누락', `${number(plan.missingTurns)}턴`],
+      ['변경 감지', `${number(plan.changedTurns)}구간`],
+      ['손상', number(damage)],
+      ['영구 과거', `${number(plan.readablePermanentHistory)} / ${number(plan.expectedPermanentHistory)} 보존 · 변경 없음`],
+      ['벡터 재사용', `${number(plan.estimatedReusableVectors)}개`],
+      ['새 임베딩', `${number(newVectors)}개`],
+      ['예상 토큰', `약 ${number(tokens)}`],
+      ['예상 비용', formatCostSummary(cost)]
+    ];
+    const details = maintenancePlanText(plan).split('\n').filter(Boolean);
+    const callsText = Number(newVectors || 0) > 0
+      ? `새 임베딩 ${number(newVectors)}개를 위해 임베딩 제공자를 호출합니다.`
+      : '예상 임베딩 제공자 호출 없음.';
+    const credentialText = plan.inspection?.coverage === 'server_snapshot'
+      ? (plan.inspection.credentialStatus === 'not_required' ? '필요 없음 · 설정 기준' : '미검증 · 점검에서 읽지 않음')
+      : plan.embeddingCredentialRequired ? (plan.embeddingCredential?.present ? '준비됨' : plan.embeddingWorkPending ? '없음 · 원격 복구 차단' : '없음 · 현재 기억 데이터는 유지') : '필요 없음';
+    const serverModeText = plan.inspection?.coverage === 'server_snapshot'
+      ? '검증된 서버 스냅샷의 읽기 전용 검사만 가능 · 물리 복구는 금지 · 제공자 호출 없음'
+      : '서버 전용 모드에서는 물리 복구와 제공자 호출을 수행하지 않습니다.';
+    target.innerHTML = `<div class="plan-grid">${metrics.map(([label,value]) => `<div><b>${escapeHtml(label)}</b>${escapeHtml(value)}</div>`).join('')}</div><dl class="cost-table" style="margin-top:12px"><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(credentialText)}</dd><dt>서버 전용 모드</dt><dd>${escapeHtml(serverModeText)}</dd>${details.map((line,index) => `<dt>${escapeHtml(['저장 범위','턴 상태','정제 상태','정제기 버전','문장 청크','리콜 샤드','저장 무결성','영구 기록','이전 아카이브','벡터 복구','임베딩 자격','에피소드 인덱스','자동 복구 경로','예상 작업','판정'][index] || '점검 세부')}</dt><dd>${escapeHtml(line)}</dd>`).join('')}</dl>`;
+    setNodeText('maintenancePlanBadge', plan.healthy ? '정상 확인' : plan.automatic?.blocked ? '실행 차단' : '계획 확인');
+    return true;
+  };
+
+  const buildImportTab = () => {
+    return `<section id="panel-import" data-panel="import" class="stack stack--lg">
+      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태만 진단</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>승인</b><span>비용이 있으면 동의 필요</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button">상태만 진단</button><button id="maintenanceAutoBtn" class="btn" type="button">자동 점검·복구</button></div><p class="hint">진단은 저장소를 읽기만 합니다. 정상 벡터를 다시 만들지 않고, 실행 전에 범위와 예상 호출을 표시합니다.</p></div>
+      <section class="card"><div class="card__head"><div><h2 class="card__title">점검 · 복구 계획</h2><p class="card__desc">실행 전 확인된 원문과 저장 상태를 비교합니다. 자격 증명이나 제공자 호출이 필요하면 동의 전에 구분해 표시합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? (Runtime.guiLastMaintenancePlan.healthy ? '정상 확인' : Runtime.guiLastMaintenancePlan.automatic?.blocked ? '실행 차단' : '계획 확인') : '진단 대기'}</span></div><div id="maintenancePlan"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태만 진단’을 눌러 읽기 전용 결과를 확인하세요.</span></div></div>
+        <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴만 동기화</option><option value="rebuild">현재 채팅에서 전체 재구축</option><option value="reembed">로컬 미완료 벡터 복구</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
+        <div class="cluster"><button id="maintenanceRunBtn" class="btn btn--primary" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">아카이브 응답 한 묶음 복구</button></div>
+      </section>
+      <section id="maintenanceExecutionCard" class="card" aria-labelledby="maintenanceExecutionTitle"><div class="card__head"><div><h2 id="maintenanceExecutionTitle" class="card__title">유지보수 실행 현황</h2><p class="card__desc">요청 수, 완료 배치, 미확정 결과는 별도로 표시합니다.</p></div><span id="maintenanceExecutionBadge" class="badge" data-tone="neutral">대기</span></div>
+        <p id="maintenanceExecutionStatus" class="note" role="status" aria-live="polite" aria-atomic="true">아직 실행한 유지보수 작업이 없습니다.</p>
+        <dl id="maintenanceExecutionMetrics" class="kv" hidden><dt>완료 배치</dt><dd id="maintenanceCompletedBatches">—</dd><dt>실제 요청</dt><dd id="maintenanceRequests">미확인</dd><dt>응답 대기</dt><dd id="maintenancePending">미확인</dd><dt>결과 미확정</dt><dd id="maintenanceUnknown">미확인</dd></dl>
+        <div id="maintenanceExecutionActions" class="cluster" hidden><button id="maintenanceExecutionDetailsBtn" class="btn" type="button" aria-expanded="false" aria-controls="maintenanceExecutionDetails">실행 상세 보기</button><button id="cancelMaintenanceResultBtn" class="btn btn--danger" type="button" disabled hidden>유지보수 중지 요청</button></div>
+        <div id="maintenanceExecutionDetails" class="fold__body" hidden><dl class="kv"><dt>요청 차원</dt><dd id="maintenanceRequestedDimensions">자동</dd><dt>적용 차원</dt><dd id="maintenanceResolvedDimensions">미확인</dd><dt>사용량 보고</dt><dd id="maintenanceUsageReported">미확인</dd><dt>체크포인트 재사용</dt><dd id="maintenanceResumedBatches">—</dd><dt>작업 범위 ID</dt><dd id="maintenanceExecutionScope">확인 중</dd></dl><p class="hint">미확인 사용량은 0건과 다릅니다. 완료 배치는 기억 개수가 아닌 임베딩 처리 묶음입니다.</p></div><p id="maintenanceExecutionCancelNote" class="hint" hidden>중지 요청 후에도 이미 전송된 요청은 처리 중일 수 있습니다. 완료된 체크포인트만 다음 작업에서 재사용합니다.</p>
+      </section>
     </section>`;
   };
 
@@ -46221,9 +46005,7 @@ ${cleanedText}`, 80),
   };
 
   const GUI_LIST_FILTERS = Object.freeze([
-    Object.freeze({ input: 'storageScopeFilter', container: 'storageRows', item: 'tr', count: 'storageScopeFilterCount' }),
-    Object.freeze({ input: 'activityLogFilter', container: 'activityLogList', item: '.activity-log-entry', count: 'activityLogFilterCount' }),
-    Object.freeze({ input: 'swallowedDiagFilter', container: 'swallowedDiagList', item: '.activity-log-entry', count: 'swallowedDiagFilterCount' })
+    Object.freeze({ input: 'storageScopeFilter', container: 'storageRows', item: 'tr', count: 'storageScopeFilterCount' })
   ]);
 
   const reapplyGuiListFilters = () => {
@@ -46235,57 +46017,11 @@ ${cleanedText}`, 80),
   const renderSwallowedDiagHtml = () => {
     let rows = [];
     try { rows = globalThis.__librarianDiag?.snapshot?.() || []; } catch (_e) { rows = []; }
-    if (!Array.isArray(rows) || !rows.length) return '<div class="activity-log-empty">조용히 무시된 오류가 아직 없습니다.</div>';
+    if (!Array.isArray(rows) || !rows.length) return '<div class="empty"><b>조용히 무시된 오류가 없습니다.</b></div>';
     return rows.slice(0, 60).map(row => {
       const lastAt = Number(row?.lastAt || 0);
-      return `<article class="activity-log-entry warn">
-        <div class="activity-log-head">
-          <strong>${escapeHtml(String(row?.tag || '알 수 없는 위치'))}</strong>
-          <time>${escapeHtml(lastAt > 0 ? new Date(lastAt).toLocaleTimeString() : '-')}</time>
-        </div>
-        <div class="activity-log-event">${escapeHtml(String(row?.plugin || ''))} · ${formatNumber(Number(row?.count || 0))}회</div>
-        ${row?.lastMessage ? `<div class="activity-log-detail">${escapeHtml(String(row.lastMessage))}</div>` : ''}
-      </article>`;
+      return `<article class="row"><span class="badge badge--warn">${formatNumber(Number(row?.count || 0))}회</span><div><div class="row__title">${escapeHtml(String(row?.tag || '알 수 없는 위치'))}</div><div class="row__meta">${escapeHtml(String(row?.plugin || ''))} · ${escapeHtml(lastAt > 0 ? new Date(lastAt).toLocaleTimeString() : '-')}</div>${row?.lastMessage ? `<p class="hint">${escapeHtml(String(row.lastMessage))}</p>` : ''}</div></article>`;
     }).join('');
-  };
-
-  const buildActivityLogTab = (lastActionHtml = '아직 없음', warningText = '없음') => {
-    const diagnosticLogState = Runtime.settings?.operationLogEnabled ? '켜짐' : '꺼짐';
-    return `<section id="panel-activity" class="panel" data-panel="activity" role="tabpanel" aria-labelledby="tab-activity">
-      <div class="card activity-log-card">
-        <div class="activity-log-toolbar">
-          <div>
-            <div class="card-title">작업 로그 <span id="activityLogCount" class="nav-count">${formatNumber(Runtime.activityLog.length)}</span></div>
-            <div class="tiny">현재 실행의 리콜·주입·캡처·유지보수 기록을 RAM에 보관합니다. 다시 로드하면 사라집니다.</div>
-            <div class="tiny">개발자 진단 로그: ${escapeHtml(diagnosticLogState)} · 진단 로그는 별도로 저장되어 디버그 내보내기에 포함됩니다.</div>
-          </div>
-          <button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button>
-        </div>
-        <div class="gui-list-filter"><input id="activityLogFilter" type="search" placeholder="로그 내용으로 찾기" aria-label="작업 로그 검색" /><span id="activityLogFilterCount" class="muted tiny"></span></div>
-        <div id="activityLogList" class="activity-log-list">${renderActivityLogHtml()}</div>
-      </div>
-      <div class="card activity-log-card">
-        <div class="activity-log-toolbar">
-          <div>
-            <div class="card-title">조용히 무시된 오류 <span id="swallowedDiagCount" class="nav-count">${formatNumber((() => { try { return (globalThis.__librarianDiag?.snapshot?.() || []).length; } catch (_e) { return 0; } })())}</span></div>
-            <div class="tiny">동작을 멈추지는 않았지만 내부에서 무시된 오류를 위치별로 모아 셉니다. 같은 위치가 반복해서 쌓이면 그 기능이 조용히 실패하고 있다는 신호입니다.</div>
-          </div>
-          <button id="resetSwallowedDiagBtn" class="btn" type="button">기록 비우기</button>
-        </div>
-        <div class="gui-list-filter"><input id="swallowedDiagFilter" type="search" placeholder="위치나 메시지로 찾기" aria-label="무시된 오류 검색" /><span id="swallowedDiagFilterCount" class="muted tiny"></span></div>
-        <div id="swallowedDiagList" class="activity-log-list">${renderSwallowedDiagHtml()}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">최근 경고</div>
-        <div class="tiny">플러그인이 남긴 최근 경고 8건입니다.</div>
-        <pre id="warningLog" class="activity-log-detail" style="white-space:pre-wrap;margin-top:8px">${escapeHtml(warningText)}</pre>
-      </div>
-      <div class="card">
-        <div class="card-title">마지막 작업 기록</div>
-        <div class="tiny">가장 최근에 실행된 작업의 원본 기록입니다.</div>
-        <pre id="lastActionLog" class="activity-log-detail" style="white-space:pre-wrap;margin-top:8px">${lastActionHtml}</pre>
-      </div>
-    </section>`;
   };
 
   const argumentSettingValueText = value => {
@@ -46298,39 +46034,37 @@ ${cleanedText}`, 80),
 
   const renderArgumentSourceBadge = (source, impact = '') => {
     const impactLabel = flashbackSettingImpactLabel(impact);
-    return `<span class="setting-source-badge source-${escapeHtml(source)}">${escapeHtml(flashbackSettingSourceLabel(source))}</span>${impactLabel ? `<span class="setting-impact-badge impact-${escapeHtml(impact)}">${escapeHtml(impactLabel)}</span>` : ''}`;
+    return `<span class="badge ${source === 'argument' ? 'badge--warn' : source === 'saved' ? 'badge--ok' : ''}">${escapeHtml(flashbackSettingSourceLabel(source))}</span>${impactLabel ? `<span class="badge">${escapeHtml(impactLabel)}</span>` : ''}`;
   };
 
+  // Keep the ARG ownership and lock behavior while rendering with the approved suite field components.
   const renderArgumentSettingField = (field, settings = Runtime.settings || DEFAULTS) => {
     const source = flashbackSettingSource(field.key);
     const locked = source === 'argument';
     const id = argumentSettingControlId(field.key);
     const value = settings?.[field.key];
     const badges = renderArgumentSourceBadge(source, field.impact || '');
-    const lockNote = locked ? `<span id="fb-${id}-lock-note" class="field-note arg-lock-note">ARG 강제값이 우선 적용됩니다. 아래 ARG 현황에서 강제값을 해제하면 GUI 저장값을 사용할 수 있습니다.</span>` : '';
-    const note = field.note ? `<span id="fb-${id}-note" class="field-note">${escapeHtml(field.note)}</span>` : '';
-    const descriptionIds = [field.note ? `fb-${id}-note` : '', locked ? `fb-${id}-lock-note` : ''].filter(Boolean).join(' ');
-    const describedBy = descriptionIds ? `aria-describedby="${descriptionIds}"` : '';
-    if (field.type === 'checkbox') {
-      return `<label class="toggle-row arg-setting-field" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><input id="${id}" type="checkbox" ${value ? 'checked' : ''} ${locked ? 'disabled' : ''}/><span>${escapeHtml(field.label)}<span class="arg-field-badges">${badges}</span>${note}${lockNote}</span></label>`;
-    }
+    const lockNote = locked ? `<span class="hint" ${field.type === 'checkbox' ? `id="${id}-${field.note ? 'lock-' : ''}hint"` : ''}>명시적 ARG가 우선 적용됩니다. ARG 현황에서 해제한 뒤 GUI 저장값을 사용할 수 있습니다.</span>` : '';
+    const note = field.note ? `<span class="hint" ${field.type === 'checkbox' ? `id="${id}-hint"` : ''}>${escapeHtml(field.note)}</span>` : '';
+    const describedBy = field.note || locked ? `aria-describedby="${id}-hint${field.type === 'checkbox' && field.note && locked ? ` ${id}-lock-hint` : ''}"` : '';
+    if (field.type === 'checkbox') return `<label class="setting" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><span><b class="setting__name">${escapeHtml(field.label)} ${badges}</b>${note}${lockNote}</span><span class="switch"><input id="${id}" ${describedBy} type="checkbox" ${value ? 'checked' : ''} ${locked ? 'disabled' : ''}><span class="switch__track"></span></span></label>`;
+    const notes = `${note}${lockNote}`;
     if (field.type === 'select') {
-      const options = (field.options || []).map(([optionValue, label]) => `<option value="${escapeHtml(optionValue)}" ${String(value) === String(optionValue) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
-      return `<div class="field arg-setting-field" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><label for="${id}">${escapeHtml(field.label)}<span class="arg-field-badges">${badges}</span></label><select id="${id}" ${describedBy} ${locked ? 'disabled' : ''}>${options}</select>${note}${lockNote}</div>`;
+      const options = (field.options || []).map(([v, label]) => `<option value="${escapeHtml(v)}" ${String(value) === String(v) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+      return `<div class="field" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><label for="${id}">${escapeHtml(field.label)} ${badges}</label><select class="select" id="${id}" ${describedBy} ${locked ? 'disabled' : ''}>${options}</select><span id="${id}-hint">${notes}</span></div>`;
     }
-    return `<div class="field arg-setting-field" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><label for="${id}">${escapeHtml(field.label)}<span class="arg-field-badges">${badges}</span></label><input id="${id}" ${describedBy} type="number" value="${escapeHtml(value)}" ${field.min !== undefined ? `min="${escapeHtml(field.min)}"` : ''} ${field.max !== undefined ? `max="${escapeHtml(field.max)}"` : ''} ${field.step !== undefined ? `step="${escapeHtml(field.step)}"` : ''} ${locked ? 'disabled' : ''}/>${note}${lockNote}</div>`;
+    return `<div class="field" data-setting-key="${escapeHtml(field.key)}" data-setting-arg="${escapeHtml(field.name)}"><label for="${id}">${escapeHtml(field.label)} ${badges}</label><input class="input" id="${id}" ${describedBy} type="number" value="${escapeHtml(value)}" ${field.min !== undefined ? `min="${escapeHtml(field.min)}"` : ''} ${field.max !== undefined ? `max="${escapeHtml(field.max)}"` : ''} ${field.step !== undefined ? `step="${escapeHtml(field.step)}"` : ''} ${locked ? 'disabled' : ''}><span id="${id}-hint">${notes}</span></div>`;
   };
 
   const buildArgumentBackedSettingsPanel = (settings = Runtime.settings || DEFAULTS) => {
     const groups = FLASHBACK_ARGUMENT_SETTING_GROUPS.map((group, index) => {
       const fields = FLASHBACK_ARGUMENT_SETTING_FIELDS.filter(field => field.group === group.id);
       if (!fields.length) return '';
-      const body = fields.map(field => renderArgumentSettingField(field, settings)).join('');
-      const expanded = index === 0;
       const panelId = `arg-setting-panel-${text(group.id).replace(/[^A-Za-z0-9_-]/g, '')}`;
-      return `<section class="card arg-setting-group ${expanded ? 'open' : ''}" data-arg-setting-group="${escapeHtml(group.id)}"><button class="arg-setting-toggle" type="button" data-toggle-arg-setting-group="${escapeHtml(group.id)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${panelId}"><span>${escapeHtml(group.label)}</span><small>${formatNumber(fields.length)}개 설정</small></button><div id="${panelId}" class="arg-setting-panel" ${expanded ? '' : 'hidden'}><p class="muted arg-group-note">${escapeHtml(group.note)}</p><div class="grid2 arg-setting-grid">${body}</div></div></section>`;
+      const expanded = index === 0;
+      return `<section class="card" data-arg-setting-group="${escapeHtml(group.id)}"><div class="card__head"><div><h3 class="card__title">${escapeHtml(group.label)}</h3><p class="card__desc">${escapeHtml(group.note)}</p></div><button class="btn btn--sm" type="button" data-toggle-arg-setting-group="${escapeHtml(group.id)}" aria-expanded="${expanded}" aria-controls="${panelId}">${expanded ? '접기' : '열기'} · ${formatNumber(fields.length)}개</button></div><div id="${panelId}" class="stack" ${expanded ? '' : 'hidden'}>${fields.map(field => renderArgumentSettingField(field, settings)).join('')}</div></section>`;
     }).join('');
-    return `<div class="card arg-settings-intro"><div class="card-title">ARG 기반 세부 설정</div><p class="muted">기존에 플러그인 ARG로만 조정할 수 있던 활성 설정을 GUI 저장값으로 관리합니다. 명시적 ARG가 있으면 해당 값이 계속 최우선이며 컨트롤은 잠깁니다.</p><div class="arg-settings-legend">${renderArgumentSourceBadge('default')}${renderArgumentSourceBadge('saved')}${renderArgumentSourceBadge('argument')}</div></div>${groups}`;
+    return `<section class="card"><div class="card__head"><div><h3 class="card__title">ARG 기반 세부 설정</h3><p class="card__desc">기존 ARG 전용 설정을 GUI 저장값으로 관리합니다. 명시적 ARG가 있으면 우선 적용되고 해당 컨트롤이 잠깁니다.</p></div></div><div class="cluster">${renderArgumentSourceBadge('default')}${renderArgumentSourceBadge('saved')}${renderArgumentSourceBadge('argument')}</div></section>${groups}`;
   };
 
   const buildArgumentSettingsStatusCard = (settings = Runtime.settings || DEFAULTS) => {
@@ -46339,120 +46073,36 @@ ${cleanedText}`, 80),
     const saved = rows.filter(row => row.source === 'saved');
     const defaults = rows.filter(row => row.source === 'default');
     const readOnlyNames = new Set(FLASHBACK_READ_ONLY_ARGUMENT_SETTINGS.map(item => item.name));
-    const rowHtml = rows.map(row => {
-      const locked = row.explicit;
-      const action = locked
-        ? `<button class="btn tiny-btn" type="button" data-clear-setting-arg="${escapeHtml(row.name)}">ARG 해제</button>`
-        : '';
-      const policy = readOnlyNames.has(row.name) ? '<span class="setting-impact-badge impact-legacy">읽기 전용</span>' : '';
-      return `<tr data-argument-row="${escapeHtml(row.name)}"><td><code>${escapeHtml(row.name)}</code><span>${escapeHtml(row.key)}</span></td><td>${escapeHtml(argumentSettingValueText(row.value))}</td><td>${renderArgumentSourceBadge(row.source)}${policy}</td><td>${escapeHtml(row.location)}${row.note ? `<span>${escapeHtml(row.note)}</span>` : ''}</td><td>${action}</td></tr>`;
-    }).join('');
-    const specialRows = FLASHBACK_SPECIAL_ARGUMENTS.map(item => `<tr data-argument-row="${escapeHtml(item.name)}"><td><code>${escapeHtml(item.name)}</code><span>${escapeHtml(item.label)}</span></td><td>${item.policy === 'credential' ? '보안상 숨김' : '전용 패널에서 관리'}</td><td><span class="setting-source-badge source-dedicated">${item.policy === 'legacy' ? '레거시' : '전용 설정'}</span></td><td>${escapeHtml(item.location)}<span>${escapeHtml(item.note)}</span></td><td></td></tr>`).join('');
-    return `<div class="card argument-status-card"><div class="argument-status-head"><div><div class="card-title">ARG 및 설정 출처</div><p class="muted">우선순위: 기본값 &lt; GUI 저장값 &lt; 명시적 ARG. ARG 해제는 빈 값 write와 readback이 모두 확인돼야 완료됩니다.</p></div><div class="argument-status-counts"><span>선언 ${formatNumber(rows.length + FLASHBACK_SPECIAL_ARGUMENTS.length)}</span><span class="source-argument">ARG ${formatNumber(explicit.length)}</span><span class="source-saved">저장 ${formatNumber(saved.length)}</span><span>기본 ${formatNumber(defaults.length)}</span></div></div><details id="argumentSettingsAuditPanel" class="argument-audit"><summary>전체 ARG와 효과적인 값 보기</summary><div class="argument-table-wrap"><table class="argument-table"><thead><tr><th>ARG / 설정 키</th><th>효과적인 값</th><th>출처</th><th>설정 위치·정책</th><th></th></tr></thead><tbody>${rowHtml}${specialRows}</tbody></table></div></details></div>`;
+    const rowHtml = rows.map(row => `<div class="row" data-argument-row="${escapeHtml(row.name)}"><div class="stack stack--sm"><b><code>${escapeHtml(row.name)}</code> · ${escapeHtml(row.key)}</b><span class="muted">${escapeHtml(row.location)}${row.note ? ` · ${escapeHtml(row.note)}` : ''}</span></div><span>${escapeHtml(argumentSettingValueText(row.value))}</span><span>${renderArgumentSourceBadge(row.source)}${readOnlyNames.has(row.name) ? '<span class="badge">읽기 전용</span>' : ''}</span>${row.explicit ? `<button class="btn btn--sm" type="button" data-clear-setting-arg="${escapeHtml(row.name)}">ARG 해제</button>` : ''}</div>`).join('');
+    const special = FLASHBACK_SPECIAL_ARGUMENTS.map(item => `<div class="row" data-argument-row="${escapeHtml(item.name)}"><div><code>${escapeHtml(item.name)}</code><span class="muted">${escapeHtml(item.label)}</span></div><span>${item.policy === 'credential' ? '보안상 숨김' : '전용 패널에서 관리'}</span><span class="badge">${item.policy === 'legacy' ? '레거시' : '전용 설정'}</span><span class="muted">${escapeHtml(item.location)} · ${escapeHtml(item.note)}</span></div>`).join('');
+    return `<section class="card"><div class="card__head"><div><h3 class="card__title">ARG 및 설정 출처</h3><p class="card__desc">ARG 해제는 빈 값 write와 readback이 모두 확인돼야 완료됩니다.</p></div><div class="cluster"><span class="badge">선언 ${formatNumber(rows.length + FLASHBACK_SPECIAL_ARGUMENTS.length)}</span><span class="badge badge--warn">ARG ${formatNumber(explicit.length)}</span><span class="badge badge--ok">저장 ${formatNumber(saved.length)}</span><span class="badge">기본 ${formatNumber(defaults.length)}</span></div></div><details class="fold"><summary>전체 ARG와 효과적인 값 보기</summary><div class="fold__body stack">${rowHtml}${special}</div></details></section>`;
   };
 
   const buildAdvancedTab = (settings = Runtime.settings || DEFAULTS) => {
     const checked = value => value ? 'checked' : '';
-    const recallQualityPreset = settings.recallQualityPreset || recallQualityPresetForValues(settings);
-    const recallPresetButtons = Object.keys(RECALL_QUALITY_PRESETS).map(id => `<button class="recall-preset-btn ${recallQualityPreset === id ? 'active' : ''}" type="button" data-recall-quality-preset="${id}" aria-pressed="${recallQualityPreset === id ? 'true' : 'false'}">${escapeHtml(RECALL_QUALITY_PRESET_LABELS[id])}</button>`).join('');
-    return `<section id="panel-advanced" class="panel" data-panel="advanced" role="tabpanel" aria-labelledby="tab-advanced">
-      <div class="card">
-        <div class="card-title">기억 경로</div>
-        <div class="toggle-list">
-          <label class="toggle-row"><input id="captureAfterRequest" type="checkbox" ${checked(settings.captureAfterRequest)} /><span>응답 자동 캡처</span></label>
-        </div>
-        <div class="tiny" style="margin-top:8px">영구 저장 원천은 유저 입력 + AI 최종 응답 턴으로 고정됩니다.</div>
-      </div>
-      <div class="card">
-        <div class="card-title">리콜 품질</div>
-        <div class="recall-preset-row">
-          <div><strong>성능 프리셋</strong><span>4개 리콜 품질 값을 한 번에 조절합니다.</span></div>
-          <div class="recall-preset-actions">${recallPresetButtons}<span id="recallQualityPresetStatus" class="recall-preset-status ${recallQualityPreset === 'custom' ? 'active' : ''}">${escapeHtml(RECALL_QUALITY_PRESET_LABELS[recallQualityPreset] || RECALL_QUALITY_PRESET_LABELS.custom)}</span></div>
-          <input id="recallQualityPreset" type="hidden" value="${escapeHtml(recallQualityPreset)}" />
-        </div>
-        <div class="grid2">
-          <div class="field"><label for="topK">Top K</label><input id="topK" aria-describedby="topK-note" type="number" min="1" max="80" value="${escapeHtml(settings.topK)}" /><span id="topK-note" class="field-note">최종 선택할 기억의 최대 개수입니다.</span></div>
-          <div class="field"><label for="minScore">최소 점수</label><input id="minScore" aria-describedby="minScore-note" type="number" min="0" max="1" step="0.01" value="${escapeHtml(settings.minScore)}" /><span id="minScore-note" class="field-note">이 점수보다 낮은 기억은 제외합니다.</span></div>
-          <div class="field"><label for="candidateLimit">후보 수</label><input id="candidateLimit" aria-describedby="candidateLimit-note" type="number" min="8" max="400" value="${escapeHtml(settings.candidateLimit)}" /><span id="candidateLimit-note" class="field-note">정밀 선별 전에 검토할 기억의 최대 개수입니다.</span></div>
-          <div class="field"><label for="gateHighCosine">고유사도 기준</label><input id="gateHighCosine" aria-describedby="gateHighCosine-note" type="number" min="0" max="1" step="0.01" value="${escapeHtml(settings.gateHighCosine)}" /><span id="gateHighCosine-note" class="field-note">이 코사인 유사도 이상이면 강한 관련 기억으로 봅니다.</span></div>
-          <div class="field"><label for="maxInjectionChars">최대 주입 글자</label><input id="maxInjectionChars" aria-describedby="maxInjectionChars-note" type="number" min="800" max="8000" step="100" value="${escapeHtml(settings.maxInjectionChars)}" /><span id="maxInjectionChars-note" class="field-note">리콜 기억에 주입할 최대 글자 수며 8,000자를 넘을 수 없습니다.</span></div>
-          <div class="field"><label for="hookRecallTimeoutMs">요청 훅 리콜 제한시간(ms)</label><input id="hookRecallTimeoutMs" aria-describedby="hookRecallTimeoutMs-note" type="number" min="1000" max="20000" step="250" value="${escapeHtml(settings.hookRecallTimeoutMs)}" /><span id="hookRecallTimeoutMs-note" class="field-note">네트워크 임베딩을 기다리는 최대 시간이며 기본값은 20초입니다.</span></div>
-          <div class="field"><label for="recallRelatednessWeight">관련 기억 비중(%)</label><input id="recallRelatednessWeight" aria-describedby="recallRelatednessWeight-note" type="number" min="0" max="100" step="1" value="${escapeHtml(settings.recallRelatednessWeight)}" /><span id="recallRelatednessWeight-note" class="field-note">증거 게이트를 통과한 기억 사이에서 현재 입력과의 관련성을 얼마나 우선할지 정합니다.</span></div>
-          <div class="field"><label for="recallRecencyWeight">최근 기억 비중(%)</label><input id="recallRecencyWeight" aria-describedby="recallRecencyWeight-note" type="number" min="0" max="100" step="1" value="${escapeHtml(settings.recallRecencyWeight)}" /><span id="recallRecencyWeight-note" class="field-note">관련 기억끼리 비교할 때 대화 턴상 최근 사건을 얼마나 우선할지 정합니다. 두 값의 합은 내부에서 자동 정규화됩니다.</span></div>
-          <div class="field"><label for="recallContextMessages">리콜 문맥 채팅 수</label><input id="recallContextMessages" aria-describedby="recallContextMessages-note" type="number" min="0" max="20" step="1" value="${escapeHtml(settings.recallContextMessages)}" /><span id="recallContextMessages-note" class="field-note">최근 대화를 시간순으로 보존하고 현재 입력과 함께 임베딩합니다. 추가 생성 호출은 없습니다. 모델 검색이 준비되지 않으면 원문을 보관하고 검색을 건너뜁니다.</span></div>
-          <div class="field"><label for="recallStabilityBoost">리콜 안정성 보너스</label><input id="recallStabilityBoost" aria-describedby="recallStabilityBoost-note" type="number" min="0" max="0.12" step="0.005" value="${escapeHtml(settings.recallStabilityBoost)}" /><span id="recallStabilityBoost-note" class="field-note">같은 장면의 유사 요청에서 유효한 직전 선택이 갑자기 뒤집히지 않도록 주는 작은 보너스입니다.</span></div>
-        </div>
-        <div class="toggle-list advanced-toggles">
-          <label class="toggle-row"><input id="evidenceGate" type="checkbox" ${checked(settings.evidenceGate)} /><span>증거 게이트</span></label>
-          <label class="toggle-row"><input id="currentSceneTailEnabled" type="checkbox" ${checked(settings.currentSceneTailEnabled)} /><span>현재 장면 보강</span></label>
-          <label class="toggle-row"><input id="entityFocusedRecallEnabled" type="checkbox" ${checked(settings.entityFocusedRecallEnabled)} /><span>엔티티 집중 회수</span></label>
-          <label class="toggle-row"><input id="episodeIndexEnabled" type="checkbox" ${checked(settings.episodeIndexEnabled)} /><span>에피소드 인덱스</span></label>
-          <label class="toggle-row"><input id="contextualRecall" type="checkbox" ${checked(settings.contextualRecall)} /><span>문맥 중심 의미 검색 · 최근 대화와 현재 입력을 함께 비교</span></label>
-          <label class="toggle-row"><input id="adaptiveContextWindow" type="checkbox" ${checked(settings.adaptiveContextWindow)} /><span>적응형 최근 문맥 · 문맥 중심 검색을 끈 경우 적용</span></label>
-          <label class="toggle-row"><input id="multiQueryRecall" type="checkbox" ${checked(settings.multiQueryRecall)} /><span>다중 주제 리콜</span></label>
-          <label class="toggle-row"><input id="contradictionBundleEnabled" type="checkbox" ${checked(settings.contradictionBundleEnabled)} /><span>상태 변화 묶음</span></label>
-          <label class="toggle-row"><input id="multiResolutionRecallEnabled" type="checkbox" ${checked(settings.multiResolutionRecallEnabled)} /><span>다중 해상도 에피소드 확장</span></label>
-          <label class="toggle-row"><input id="recallStabilityEnabled" type="checkbox" ${checked(settings.recallStabilityEnabled)} /><span>장면 리콜 안정화</span></label>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">프롬프트 캐싱</div>
-        <div class="field">
-          <label for="promptCacheMode">캐시 경계 정책</label>
-          <select id="promptCacheMode" aria-describedby="promptCacheMode-note">
-            <option value="off" ${settings.promptCacheMode === 'off' ? 'selected' : ''}>Flashback 최적화 끄기</option>
-            <option value="existing_only" ${settings.promptCacheMode === 'existing_only' ? 'selected' : ''}>기존 경계 우선</option>
-            <option value="safe_auto" ${settings.promptCacheMode === 'safe_auto' ? 'selected' : ''}>안전 자동</option>
-          </select>
-          <span id="promptCacheMode-note" class="field-note">Flashback 최적화 끄기는 Flashback의 배치 최적화와 자동 생성만 끄며, 프리셋과 RisuAI가 만든 캐시 지점은 제거하지 않습니다. 기존 경계 우선은 그 지점을 존중하고, 안전 자동은 기존 지점이 없고 완결된 이전 턴과 1,024토큰 이상의 안정 접두부가 있을 때만 요청 복사본에 경계를 만듭니다.</span>
-        </div>
-        <div class="tiny" style="margin-top:8px">동적으로 바뀌는 회상문은 기존 프리필 순서를 보존하면서 가능한 경우 캐시 경계 뒤에 배치됩니다. 현재 입력 위치의 잘못된 경계는 재작성하지 않고 진단에만 기록합니다. TTL과 제공자별 캐시 키는 RisuAI 및 제공자 설정을 따릅니다.</div>
-      </div>
-      <div class="card">
-        <div class="card-title">보안 및 진단</div>
-        <div class="toggle-list">
-          <label class="toggle-row"><input id="operationLogEnabled" type="checkbox" ${checked(settings.operationLogEnabled)} /><span>개발자 진단 로그를 저장하고 디버그 내보내기에 포함</span></label>
-        </div>
-      </div>
-      ${buildArgumentBackedSettingsPanel(settings)}
-      ${buildArgumentSettingsStatusCard(settings)}
-      <div id="restoreAdvancedDefaultsStatus" class="field-note"></div>
-      <div class="advanced-save-footer"><button id="restoreAdvancedDefaultsBtn" class="btn" type="button" title="모든 설정을 기본값으로 되돌려 화면에 채웁니다. 저장을 눌러야 실제로 적용됩니다.">기본값 불러오기</button><button id="saveAdvancedSettingsBtn" class="btn btn-primary">고급 설정 저장</button></div>
-    </section>`;
+    const preset = settings.recallQualityPreset || recallQualityPresetForValues(settings);
+    const presetDescriptions = { light: 'Top 6 · 빠름', balanced: 'Top 12 · 권장', heavy: 'Top 20 · 느림' };
+    const presetButtons = Object.keys(RECALL_QUALITY_PRESETS).map(id => `<button class="choice ${preset===id?'is-on':''}" type="button" data-recall-quality-preset="${id}" aria-pressed="${preset===id}"><b>${escapeHtml(id==='light'?'가볍게':id==='balanced'?'균형':id==='heavy'?'깊게':RECALL_QUALITY_PRESET_LABELS[id])}</b><span>${escapeHtml(presetDescriptions[id] || '직접 설정')}</span>${id==='balanced'?'<small>기본값</small>':''}</button>`).join('');
+    const field = (id,label,value,attrs='',hint='') => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${escapeHtml(value ?? '')}" ${attrs}>${hint?`<span class="hint">${hint}</span>`:''}</div>`;
+    const setting = (id,label,description,value) => `<label class="setting"><span><b class="setting__name">${label}</b><span class="setting__desc" id="${id}-description">${description}</span></span><span class="switch"><input id="${id}" aria-describedby="${id}-description" type="checkbox" ${checked(value)}><span class="switch__track"></span></span></label>`;
+    return `<div class="stack">
+      <section class="card"><div class="card__head"><div><h2 class="card__title">리콜 품질 프리셋</h2><p class="card__desc">Top K와 최소 점수를 함께 조절합니다. 현재 값은 저장 설정에서 읽었습니다.</p></div><span id="recallQualityPresetStatus" class="badge">${escapeHtml(RECALL_QUALITY_PRESET_LABELS[preset] || '직접 설정')}</span></div><div class="choices" data-preset-group="recall">${presetButtons}</div><input id="recallQualityPreset" type="hidden" value="${escapeHtml(preset)}"></section>
+      <section class="card"><div class="card__head"><div><h2 class="card__title">기억 경로</h2><p class="card__desc">저장 원천은 유저 입력과 AI 최종 응답 턴입니다.</p></div></div>${setting('captureAfterRequest','응답 자동 캡처','완결된 응답을 현재 채팅의 기억으로 저장합니다.',settings.captureAfterRequest)}${setting('evidenceGate','증거 게이트','근거가 약한 기억은 리콜 후보에서 제외합니다.',settings.evidenceGate)}</section>
+      <details class="fold"><summary>세부 값 <span class="hint">검색 수 · 근거 · 문맥</span></summary><div class="fold__body grid g2">
+        ${field('topK','Top K',settings.topK,'type="number" min="1" max="80"')}${field('minScore','최소 점수',settings.minScore,'type="number" min="0" max="1" step="0.01"')}
+        ${field('candidateLimit','후보 수',settings.candidateLimit,'type="number" min="8" max="400"')}${field('gateHighCosine','고유사도 기준',settings.gateHighCosine,'type="number" min="0" max="1" step="0.01"')}
+        ${field('maxInjectionChars','최대 주입 글자',settings.maxInjectionChars,'type="number" min="800" max="8000" step="100"')}${field('hookRecallTimeoutMs','요청 훅 리콜 제한시간(ms)',settings.hookRecallTimeoutMs,'type="number" min="1000" max="20000" step="250"')}
+        ${field('recallRelatednessWeight','관련 기억 비중(%)',settings.recallRelatednessWeight,'type="number" min="0" max="100"')}${field('recallRecencyWeight','최근 기억 비중(%)',settings.recallRecencyWeight,'type="number" min="0" max="100"')}
+        ${field('recallContextMessages','리콜 문맥 채팅 수',settings.recallContextMessages,'type="number" min="0" max="20"')}${field('recallStabilityBoost','리콜 안정성 보너스',settings.recallStabilityBoost,'type="number" min="0" max="0.12" step="0.005"')}
+        <div class="stack">${setting('currentSceneTailEnabled','현재 장면 보강','현재 장면의 직접 근거를 함께 검사합니다.',settings.currentSceneTailEnabled)}${setting('entityFocusedRecallEnabled','엔티티 집중 회수','인물·대상 근거를 추가로 비교합니다.',settings.entityFocusedRecallEnabled)}${setting('episodeIndexEnabled','에피소드 인덱스','파생 인덱스를 리콜 확장에 사용합니다.',settings.episodeIndexEnabled)}${setting('contextualRecall','문맥 중심 의미 검색','최근 대화와 현재 입력을 함께 비교합니다.',settings.contextualRecall)}${setting('adaptiveContextWindow','적응형 최근 문맥','문맥 중심 검색을 끈 경우에 적용합니다.',settings.adaptiveContextWindow)}${setting('multiQueryRecall','다중 주제 리콜','현재 요청의 독립 주제를 보존합니다.',settings.multiQueryRecall)}${setting('contradictionBundleEnabled','상태 변화 묶음','서로 다른 사실 상태를 한 근거 묶음으로 유지합니다.',settings.contradictionBundleEnabled)}${setting('multiResolutionRecallEnabled','다중 해상도 에피소드 확장','필요한 경우 관련 에피소드 문맥을 확장합니다.',settings.multiResolutionRecallEnabled)}${setting('recallStabilityEnabled','장면 리콜 안정화','연속 요청의 유효한 선택을 안정화합니다.',settings.recallStabilityEnabled)}</div>
+      </div></details>
+      <details class="fold"><summary>프롬프트 캐싱</summary><div class="fold__body"><div class="field"><label for="promptCacheMode">캐시 경계 정책</label><select id="promptCacheMode" aria-describedby="promptCacheMode-hint" class="select"><option value="off" ${settings.promptCacheMode==='off'?'selected':''}>Flashback 최적화 끄기</option><option value="existing_only" ${settings.promptCacheMode==='existing_only'?'selected':''}>기존 경계 우선</option><option value="safe_auto" ${settings.promptCacheMode==='safe_auto'?'selected':''}>안전 자동</option></select><span class="hint" id="promptCacheMode-hint">기존 경계는 보존합니다. 안전 자동은 확인된 안정 접두부에 요청 복사본의 경계만 추가합니다.</span></div></div></details>
+      <details class="fold"><summary>ARG 및 설정 출처 <span class="badge">감사용</span></summary><div class="fold__body"><p class="muted">우선순위: 기본값 &lt; GUI 저장값 &lt; 명시적 ARG. ARG가 있으면 해당 컨트롤은 잠기고 이유가 표시됩니다.</p>${buildArgumentBackedSettingsPanel(settings)}${buildArgumentSettingsStatusCard(settings)}${setting('operationLogEnabled','개발자 진단 로그','진단 로그를 저장하고 디버그 내보내기에 포함합니다.',settings.operationLogEnabled)}</div></details>
+      <div class="cluster"><p id="restoreAdvancedDefaultsStatus" class="hint" role="status"></p><button id="restoreAdvancedDefaultsBtn" class="btn" type="button">기본값 불러오기</button><button id="saveAdvancedSettingsBtn" class="btn btn--primary" type="button">고급 설정 저장</button></div>
+    </div>`;
   };
 
-  const buildStorageTab = (scopeStats, currentScopeKey) => {
-    const initialText = Array.isArray(scopeStats) && scopeStats.length
-      ? `저장소 목록을 준비하는 중... 0 / ${formatNumber(scopeStats.length)}`
-      : '저장소 목록을 불러오는 중...';
-    return `<section id="panel-storage" class="panel" data-panel="storage" role="tabpanel" aria-labelledby="tab-storage">
-      <div class="fb-storage-tabs" role="tablist" aria-label="필름 보관함 보기"><button id="fbStorageTabResponse" class="btn" type="button" role="tab" data-storage-tab="response" aria-selected="true" aria-controls="fbStorageResponse" tabindex="0">응답 원문</button><button id="fbStorageTabScopes" class="btn" type="button" role="tab" data-storage-tab="scopes" aria-selected="false" aria-controls="fbStorageScopes" tabindex="-1">스코프 관리</button></div>
-      <div id="fbStorageResponse" class="fb-storage-pane" data-storage-pane="response" role="tabpanel" aria-labelledby="fbStorageTabResponse"><div class="actions"><button id="openResponseRecordsBtn" class="btn btn-primary" type="button" data-open-manual-editor="response">응답 원문 보기</button></div>      <div id="manualEditorPanel" class="card manual-editor-card">${renderManualEditorPanelHtml(null)}</div></div>
-      <div id="fbStorageScopes" class="fb-storage-pane" data-storage-pane="scopes" role="tabpanel" aria-labelledby="fbStorageTabScopes" hidden>
-      <div class="actions storage-actions">
-
-        <button id="refreshStorageBtn" class="btn">새로고침</button>
-        <button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button>
-        <button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button>
-        <button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button>
-        <button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button>
-        <span id="selectedScopeCount" class="muted tiny">선택 0개</span>
-        <button id="deleteSelectedScopesBtn" class="btn btn-danger" disabled>선택 삭제</button>
-        <button id="deleteCurrentScopeBtn" class="btn btn-danger">현재 스코프 삭제</button>
-      </div>
-
-      <div class="card table-card storage-table-card">
-        <div class="storage-table-head"><strong>스코프 스토리지 관리</strong><span>삭제·정리는 선택 항목을 실행 시점에 확인합니다. 고아 판정은 현재 캐릭터의 확인 가능한 채팅 목록 기준이며, 확인 불가 데이터는 자동 정리하지 않습니다.</span></div>
-        <div class="gui-list-filter"><select id="storageManagementView" aria-label="저장소 분류">${[["memory","기억 저장소"],["cleanup","정리 후보"],["orphan","고아 기억"],["all","전체"]].map(([value,label]) => `<option value="${value}" ${(Runtime.guiStorageManagementView || "memory") === value ? "selected" : ""}>${label}</option>`).join("")}</select><input id="storageScopeFilter" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색" /><span id="storageScopeFilterCount" class="muted tiny"></span></div>
-        <div class="storage-table-scroll"><table class="data-table"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택" /></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>shards / archive</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">${escapeHtml(initialText)}</td></tr></tbody></table></div>
-      </div>
-      </div>
-    </section>`;
-  };
-
-  const buildServerConnectionTab = () => `<section id="panel-server" class="panel" data-panel="server" role="tabpanel" aria-labelledby="tab-server">
-    <div id="flashbackMemorySuiteServerConnectionPanel"><div class="card"><strong>저장 및 연산 설정을 불러오는 중…</strong></div></div>
-  </section>`;
+  const buildServerConnectionTab = () => `<div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장 및 연산</h2><p class="card__desc">연결 전환은 공용 SDK 검증 절차로만 진행됩니다. 여기서 직접 모드를 바꾸지 않습니다.</p></div><span id="flashbackServerModeBadge" class="badge">현재 설정 읽기 중</span></div><div id="flashbackMemorySuiteServerConnectionPanel"><div class="empty"><span>저장 및 연산 설정을 불러오는 중…</span></div></div></div></div>`;
 
   const mountFlashbackServerConnectionPanel = () => {
     const storageHost = getGuiNode('flashbackMemorySuiteServerConnectionPanel');
@@ -46465,867 +46115,83 @@ ${cleanedText}`, 80),
     return true;
   };
 
+  const FLASHBACK_GUI_MOCKUP_STYLES = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */\n.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}\n.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}\n.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}\n.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}\n.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}\n.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}\n.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}\n.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}\n.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}\n.frame-card>summary{list-style:none;cursor:pointer;display:block}\n.frame-card>summary::-webkit-details-marker{display:none}\n.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}\n.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}\n.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}\n.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}\n.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}\n.frame-card__more{color:var(--accent-ink);font-size:12px}\n.frame-card__more::after{content:\"기억 펼치기 ↗\"}.frame-card[open] .frame-card__more::after{content:\"기억 접기 −\"}\n.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}\n.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}\n.meter meter{width:100%;height:12px;accent-color:var(--accent)}\n.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}\n.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}\n.film a:hover{background:#76594b}\n.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}\n.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}\n.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}\n.work+.work{margin-top:10px}\n.scopes tr.is-cur td{background:var(--accent-soft)}\n.tbl-act{display:flex;gap:6px;justify-content:flex-end}\n.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}\n.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}\n.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}\n.plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.plan-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px}.plan-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.mode-opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 14px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.mode-opt.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}\n.mode-opt[disabled]{opacity:.62;cursor:not-allowed;background:var(--surface2)}\n.mode-opt b{font-size:14px}.mode-opt small{grid-column:1/-1;font-size:12.5px;color:var(--text2)}.mode-opt .why{grid-column:1/-1;font-size:12px;color:var(--danger-ink)}\n.film a.is-on{background:var(--accent);color:var(--on-accent)}\n.frame-card.is-cut .frame-card__img{opacity:.78}\n.cut-tag{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px dashed var(--border2);color:var(--text3)}\n.btn[disabled]+.why-d{display:block}.why-d{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n@container app (max-width:900px){.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}\n";
+
   const buildUiHtml = async () => {
     const settings = await loadSettings();
     const activeTab = normalizeFlashbackGuiTab(Runtime.guiTab);
-    const activeMeta = FLASHBACK_GUI_TAB_META[activeTab];
     const placeholderScope = Runtime.currentScope && typeof Runtime.currentScope === 'object'
       ? Runtime.currentScope
-      : { scopeKey: '', characterName: 'Loading', chatTitle: '-', chatId: '', personaName: '' };
+      : { scopeKey: '', characterName: '현재 채팅 없음', chatTitle: '', chatId: '', personaName: '' };
     const placeholderStats = normalizeStatsForDisplay(statsForRecords([]));
-    // Never hold the first GUI paint behind character/chat cloning or storage
-    // RPC. Cached data is safe to show immediately; a cancellable hydration
-    // refreshes these placeholders after the shell has painted.
     const current = Runtime.guiCurrentStatsCache?.value || {
       scope: placeholderScope,
       manifest: { ...emptyManifest(placeholderScope), stats: placeholderStats, count: 0 },
-      records: { length: 0 },
-      stats: placeholderStats
+      records: { length: 0 }, stats: placeholderStats
     };
-    const scopeStats = [];
-    const lastAction = Runtime.lastImport || Runtime.lastCapture || Runtime.lastStorageAction || Runtime.lastClone;
-    const lastActionText = lastAction ? escapeHtml(safeStringify(lastAction, '{}')) : '아직 없음';
-    const warningText = Runtime.warnings.slice(-8).map(w => `[${new Date(w.at).toLocaleTimeString()}] ${w.msg}`).join('\n') || '없음';
     const currentCost = scopeEmbeddingCostEstimate(current.stats, settings);
-    const overviewHealth = flashbackOverviewHealth(current);
-    return `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
-<title>${escapeHtml(PLUGIN_NAME)}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#0b0e14;--surface:#141923;--surface2:#1a2130;--surface3:#222b3d;--border:#2d384d;--border2:#3c4b66;--text:#f2f5fa;--text2:#b0bad0;--text3:#7d8aa6;--accent:#7ea5f8;--accent-dim:#1a2b52;--accent-glow:#304d83;--success:#50d394;--success-dim:#123324;--warn:#f2b55e;--warn-dim:#352713;--danger:#ff7d86;--danger-dim:#391b21;--purple:#b49af7;--purple-dim:#2b2250;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--r:9px;--r2:12px}
-    /* Host theme mapping. Only active once __memorySuiteTheme has published a complete
-       palette (data-risu-theme="1"); until then every value above stands unchanged.
-       Only semantically exact host colours are mapped -- the shades RisuAI has no
-       equivalent for are derived with color-mix() from the mapped ones, so they stay
-       consistent on a light theme instead of clashing with a hardcoded dark value. */
-    :root[data-risu-theme-colors="1"] .vrmDesign,:root[data-risu-theme-colors="1"]{
-      --bg:var(--risu-theme-bgcolor);
-      --surface:color-mix(in srgb,var(--risu-theme-bgcolor) 94%,var(--risu-theme-textcolor));
-      --surface2:color-mix(in srgb,var(--risu-theme-bgcolor) 89%,var(--risu-theme-textcolor));
-      --surface3:color-mix(in srgb,var(--risu-theme-bgcolor) 83%,var(--risu-theme-textcolor));
-      --border:color-mix(in srgb,var(--risu-theme-bgcolor) 77%,var(--risu-theme-textcolor));
-      --border2:color-mix(in srgb,var(--risu-theme-bgcolor) 66%,var(--risu-theme-textcolor));
-      --text:var(--risu-theme-textcolor);
-      --text2:var(--risu-theme-textcolor2);
-      --text3:color-mix(in srgb,var(--risu-theme-textcolor2) 68%,var(--risu-theme-bgcolor));
-      --accent:color-mix(in srgb,#7ea5f8 84%,var(--risu-theme-textcolor));
-      --accent-dim:color-mix(in srgb,#7ea5f8 26%,var(--risu-theme-bgcolor));
-      --accent-glow:color-mix(in srgb,#7ea5f8 46%,var(--risu-theme-bgcolor));
-      --danger:var(--risu-theme-draculared);
-      --danger-dim:color-mix(in srgb,var(--risu-theme-draculared) 24%,var(--risu-theme-bgcolor));
-      --success-dim:color-mix(in srgb,var(--success) 24%,var(--risu-theme-bgcolor));
-      --warn-dim:color-mix(in srgb,var(--warn) 24%,var(--risu-theme-bgcolor));
-      --purple-dim:color-mix(in srgb,var(--purple) 24%,var(--risu-theme-bgcolor));
-    }
-    :root[data-risu-theme-type="light"]{color-scheme:light}
-    :root[data-risu-theme-type="dark"]{color-scheme:dark}
-
-  .vrmDesign{width:min(1180px,100%);height:min(790px,100%);min-height:0;background:var(--bg);color:var(--text);font-family:Inter,Pretendard,"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;border:1px solid var(--border);border-radius:16px;box-shadow:0 28px 80px rgba(0,0,0,.46)}
-  .vrmDesign *{scrollbar-width:thin;scrollbar-color:var(--border2) var(--surface)}
-  .vrmDesign *::-webkit-scrollbar{width:10px;height:10px}
-  .vrmDesign *::-webkit-scrollbar-track{background:var(--surface);border-radius:999px}
-  .vrmDesign *::-webkit-scrollbar-thumb{background:var(--border2);border:2px solid var(--surface);border-radius:999px}
-  .vrmDesign *::-webkit-scrollbar-thumb:hover{background:var(--accent-glow)}
-  .vrmDesign *::-webkit-scrollbar-corner{background:transparent}
-  .shell{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:52px minmax(0,1fr);height:100%;overflow:hidden}
-  .topbar{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--border);background:rgba(20,25,35,.96)}
-  .topbar-logo{display:flex;align-items:center;font-size:11px;font-weight:700;color:var(--text);letter-spacing:0;white-space:nowrap;flex-shrink:0}
-  .topbar-scope{flex:1;min-width:0;display:flex;align-items:center;gap:5px;padding:0 10px;border-left:1px solid var(--border);margin-left:2px}
-  .scope-char{font-size:12px;font-weight:600;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .scope-sep{color:var(--text3);font-size:11px}
-  .scope-chat{font-size:12px;color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.03em;white-space:nowrap}
-  .badge-on{background:var(--success-dim);color:var(--success)}
-  .badge-off{background:var(--surface3);color:var(--text3)}
-  .topbar-actions{position:relative;display:flex;gap:6px;align-items:center;flex-shrink:0}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;text-decoration:none}
-  .btn:hover{background:var(--surface3);color:var(--text)}
-  .btn:disabled{opacity:.55;cursor:not-allowed}
-  .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .btn-primary:hover{background:#4a7de0;border-color:#4a7de0}
-  .btn-danger{color:var(--danger);border-color:transparent}
-  .btn-danger:hover{background:var(--danger-dim);border-color:var(--danger-dim)}
-  .small{padding:3px 8px;font-size:10px}
-  .btn:focus-visible,.nav-item:focus-visible,.overview-action:focus-visible,.top-menu-item:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  #topMoreBtn{display:none;min-width:34px;font-size:16px}
-  .top-more-menu{position:absolute;top:39px;right:0;z-index:9;display:none;width:190px;padding:6px;border:1px solid var(--border2);border-radius:12px;background:var(--surface2);box-shadow:0 18px 44px rgba(0,0,0,.4)}
-  .top-more-menu.open{display:grid;gap:2px}
-  .top-menu-item{width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--text2);font:inherit;font-size:11px;font-weight:650;text-align:left;cursor:pointer}
-  .top-menu-item:hover{background:var(--surface3);color:var(--text)}
-  .sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .sidebar-health{margin:12px 11px 2px;padding:10px;border:1px solid rgba(80,211,148,.2);border-radius:11px;background:linear-gradient(145deg,rgba(80,211,148,.08),rgba(80,211,148,.025))}
-  .sidebar-health strong{display:block;font-size:11px;color:var(--text);margin-bottom:3px}
-  .sidebar-health span{display:block;font-size:10px;color:var(--text3);line-height:1.4}
-  .sidebar-health.warning{border-color:rgba(242,181,94,.25);background:linear-gradient(145deg,rgba(242,181,94,.09),rgba(242,181,94,.025))}
-  .sidebar-health.danger{border-color:rgba(255,125,134,.28);background:linear-gradient(145deg,rgba(255,125,134,.1),rgba(255,125,134,.025))}
-  .stat-strip{padding:8px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border)}
-  .stat-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-  .stat-label{font-size:10px;color:var(--text3);font-weight:600}
-  .stat-val{font-size:13px;font-weight:700;color:var(--text);font-family:var(--mono)}
-  .stat-val.accent{color:var(--accent)}
-  .stat-val.success{color:var(--success)}
-  .nav-section{padding:12px 8px 4px;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
-  .nav-tabs{display:flex;flex-direction:column;min-width:0;padding:5px 7px 12px;overflow-y:auto}
-  .nav-group{margin-top:8px}
-  .nav-group-label{padding:0 9px 4px;color:var(--text3);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-  .nav-item{display:flex;align-items:center;gap:8px;min-height:36px;padding:7px 9px;border-radius:var(--r);margin:1px 0;color:var(--text2);cursor:pointer;font-size:12px;font-weight:700;transition:all .12s;background:transparent;border:1px solid transparent;width:100%;text-align:left}
-  .nav-item:hover{background:var(--surface3);color:var(--text)}
-  .nav-item.active{background:var(--accent-dim);border-color:rgba(126,165,248,.2);box-shadow:inset 3px 0 0 var(--accent);color:var(--accent)}
-  .nav-count{margin-left:auto;font-size:10px;padding:1px 5px;border-radius:20px;background:var(--surface3);color:var(--text3)}
-  .nav-item.active .nav-count{background:var(--accent-glow);color:var(--accent)}
-  .sidebar-footer{margin-top:auto;border-top:1px solid var(--border);padding:10px 8px}
-  .main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(126,165,248,.025),transparent 130px),var(--bg)}
-  .page-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:0 0 auto;min-height:66px;padding:10px 18px;border-bottom:1px solid var(--border);background:rgba(11,14,20,.84)}
-  .page-head-copy{min-width:0}
-  .page-eyebrow{margin-bottom:1px;color:var(--accent);font-size:9px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}
-  .page-title{font-size:18px;line-height:1.25;letter-spacing:-.02em}
-  .page-description{margin-top:2px;color:var(--text3);font-size:10px}
-  .status-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;min-height:36px}
-  .status-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);min-width:0}
-  .status-dot{width:6px;height:6px;border-radius:50%;background:var(--success);flex-shrink:0}
-  .status-sep{width:1px;height:14px;background:var(--border2);flex-shrink:0}
-  #busyStatus{min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .panel{display:none;flex:1;overflow-y:auto;padding:12px;min-height:0}
-  .panel.active{display:flex;flex-direction:column;gap:10px}
-  .panel[data-panel="storage"].active{display:grid;grid-template-rows:auto minmax(180px,1fr) minmax(148px,30%);overflow:hidden}
-  .panel[data-panel="storage"] .storage-actions{flex:0 0 auto}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px}
-  .card-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px}
-  .maintenance-execution-card{flex-shrink:0}
-  .maintenance-execution-card [hidden]{display:none!important}
-  .maintenance-execution-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-  .maintenance-execution-head .card-title{margin-bottom:3px}
-  .maintenance-execution-badge{display:inline-flex;align-items:center;flex-shrink:0;padding:4px 9px;border-radius:20px;font-size:11px;font-weight:700;background:var(--surface3);color:var(--text2)}
-  .maintenance-execution-badge[data-tone="active"]{background:var(--accent-dim);color:var(--accent)}
-  .maintenance-execution-badge[data-tone="success"]{background:var(--success-dim);color:var(--success)}
-  .maintenance-execution-badge[data-tone="warning"]{background:var(--warn-dim);color:var(--warn)}
-  .maintenance-execution-badge[data-tone="danger"]{background:var(--danger-dim);color:var(--danger)}
-  .maintenance-execution-summary{margin-top:12px;color:var(--text2);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
-  .maintenance-execution-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
-  .maintenance-execution-metrics>div{padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);min-width:0}
-  .maintenance-execution-card dt{font-size:11px;color:var(--text2)}
-  .maintenance-execution-metrics dd{margin-top:4px;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-  .maintenance-execution-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:12px}
-  .maintenance-execution-details{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
-  .maintenance-execution-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px}
-  .maintenance-execution-detail-grid dd{margin-top:3px;font-size:12px;color:var(--text);overflow-wrap:anywhere}
-  .maintenance-execution-scope{grid-column:1/-1;min-width:0}
-  .maintenance-execution-scope dd{font-family:var(--mono);font-size:11px}
-  .maintenance-execution-note{margin-top:12px;padding:10px 12px;border-radius:var(--r);background:var(--warn-dim);color:var(--warn);font-size:11px;line-height:1.7}
-  @media(max-width:600px){.maintenance-execution-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.maintenance-execution-metrics dd{font-size:16px}}
-  .portable-memory-title-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
-  .portable-memory-title-row .card-title{margin-bottom:0}
-  .portable-json-badge{display:inline-flex;align-items:center;padding:2px 6px;border:1px solid var(--accent-glow);border-radius:20px;background:var(--accent-dim);color:var(--accent);font:700 9px var(--mono);letter-spacing:.05em}
-  .portable-memory-card>p{margin:0 0 10px;line-height:1.55}
-  .portable-memory-controls{display:block}
-  .portable-memory-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .portable-memory-actions .btn{min-height:38px;padding:8px 12px;font-size:11px}
-  .portable-memory-status{display:block;margin-top:8px;color:var(--text3);font-size:10px;line-height:1.4}
-  .portable-memory-status:empty{display:none}
-  .portable-memory-note{margin-top:9px;padding-top:9px;border-top:1px solid var(--border);line-height:1.5}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .import-btn{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
-  .import-btn:hover{background:var(--surface3);color:var(--text);border-color:var(--border2)}
-  .import-btn.primary{border-color:var(--accent-dim);color:var(--accent);background:var(--accent-dim)}
-  .two-actions .btn{flex:1;padding:9px}
-  .field{display:flex;flex-direction:column;gap:4px}
-  .field label{font-size:11px;font-weight:600;color:var(--text2)}
-  .field input,.field select,.field textarea{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:12px;outline:none;transition:border-color .15s;width:100%;font:inherit}
-  .field textarea{height:92px;resize:vertical;line-height:1.45}
-  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
-  .field select option{background:var(--surface2)}
-  .field input::placeholder,.field textarea::placeholder{color:var(--text3)}
-  .field-note{font-size:10px;color:var(--text3);line-height:1.35}
-  .embedding-test-status{display:none;margin-top:8px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--r);font-size:11px;font-weight:700;line-height:1.4}
-  .embedding-test-status.active{display:block}
-  .embedding-test-status.testing{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
-  .embedding-test-status.success{background:var(--success-dim);border-color:rgba(53,194,135,.35);color:var(--success)}
-  .embedding-test-status.failure{background:var(--danger-dim);border-color:rgba(224,82,82,.35);color:var(--danger)}
-  .multilingual-probe-card{display:flex;flex-direction:column;gap:10px;min-width:0}
-  .multilingual-probe-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-  .multilingual-probe-heading .card-title{margin-bottom:4px}
-  .multilingual-probe-heading p{margin:0;line-height:1.5}
-  .multilingual-probe-privacy{padding-top:8px;border-top:1px solid var(--border);line-height:1.5}
-  .multilingual-probe-summary{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface2);color:var(--text2);font-size:11px;line-height:1.45}
-  .multilingual-probe-summary strong{flex:0 0 auto;color:var(--text)}
-  .multilingual-probe-summary.testing{border-color:var(--accent-glow);background:var(--accent-dim)}
-  .multilingual-probe-summary.testing strong{color:var(--accent)}
-  .multilingual-probe-summary.success{border-color:rgba(53,194,135,.35);background:var(--success-dim)}
-  .multilingual-probe-summary.success strong{color:var(--success)}
-  .multilingual-probe-summary.failure{border-color:rgba(224,82,82,.35);background:var(--danger-dim)}
-  .multilingual-probe-summary.failure strong{color:var(--danger)}
-  .multilingual-probe-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  .multilingual-probe-meta span{padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);color:var(--text3);font:700 9px var(--mono)}
-  .multilingual-probe-table-wrap{max-width:100%;margin-top:8px;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);scrollbar-gutter:stable}
-  .multilingual-probe-table{width:100%;min-width:620px;border-collapse:collapse;font-size:10px}
-  .multilingual-probe-table th,.multilingual-probe-table td{padding:7px 8px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
-  .multilingual-probe-table tr:last-child th,.multilingual-probe-table tr:last-child td{border-bottom:0}
-  .multilingual-probe-table th:last-child,.multilingual-probe-table td:last-child{border-right:0}
-  .multilingual-probe-table th{background:var(--surface2);color:var(--text3);font-size:9px;white-space:nowrap}
-  .probe-cell{min-width:104px;background:var(--surface);color:var(--text2)}
-  .probe-cell strong,.probe-cell span,.probe-cell em{display:block;white-space:nowrap}
-  .probe-cell strong{font:800 11px var(--mono);color:var(--text)}
-  .probe-cell span{margin-top:2px;color:var(--text3);font:9px var(--mono)}
-  .probe-cell em{margin-top:3px;color:var(--purple);font:700 8px var(--mono);font-style:normal;text-transform:uppercase}
-  .probe-cell.pass{box-shadow:inset 3px 0 0 var(--success)}
-  .probe-cell.fail{box-shadow:inset 3px 0 0 var(--danger)}
-  .probe-cell.control{background:var(--purple-dim)}
-  .multilingual-probe-compat{margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);font-size:10px;line-height:1.45}
-  .multilingual-probe-compat.success{border-color:rgba(53,194,135,.35);background:var(--success-dim);color:var(--success)}
-  .multilingual-probe-compat.warning{border-color:rgba(242,181,94,.35);background:var(--warn-dim);color:var(--warn)}
-  .multilingual-probe-compat.danger{border-color:rgba(224,82,82,.35);background:var(--danger-dim);color:var(--danger)}
-  .recall-preset-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;margin-bottom:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r)}
-  .recall-preset-row>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .recall-preset-row strong{font-size:11px;color:var(--text)}
-  .recall-preset-row>div:first-child span{font-size:10px;color:var(--text3)}
-  .recall-preset-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
-  .recall-preset-btn,.recall-preset-status{border:1px solid var(--border);background:var(--surface);color:var(--text2);border-radius:999px;padding:4px 9px;font:inherit;font-size:10px;font-weight:700;white-space:nowrap}
-  .recall-preset-btn{cursor:pointer}
-  .recall-preset-btn:hover{border-color:var(--border2);color:var(--text)}
-  .recall-preset-btn.active{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
-  .recall-preset-status{display:none;border-color:var(--purple);background:var(--purple-dim);color:var(--purple)}
-  .recall-preset-status.active{display:inline-flex}
-  .toggle-list{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
-  .toggle-row{display:flex;align-items:center;gap:8px;min-height:34px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer}
-  .toggle-row input[type="checkbox"]{width:16px;height:16px;flex:0 0 auto;accent-color:var(--accent)}
-  .advanced-toggles{margin-top:10px;margin-bottom:10px}
-  .arg-settings-intro{border-color:var(--accent-glow);background:linear-gradient(135deg,var(--surface),rgba(26,43,82,.46))}
-  .arg-settings-intro p{line-height:1.55}
-  .arg-settings-legend,.arg-field-badges{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
-  .arg-settings-legend{margin-top:9px}
-  .arg-field-badges{margin-left:7px;vertical-align:middle}
-  .setting-source-badge,.setting-impact-badge{display:inline-flex;align-items:center;min-height:18px;padding:2px 6px;border:1px solid var(--border);border-radius:999px;font:700 9px var(--mono);white-space:nowrap}
-  .setting-source-badge.source-default{background:var(--surface2);color:var(--text3)}
-  .setting-source-badge.source-saved{background:var(--success-dim);border-color:rgba(80,211,148,.32);color:var(--success)}
-  .setting-source-badge.source-argument{background:var(--purple-dim);border-color:rgba(180,154,247,.42);color:var(--purple)}
-  .setting-source-badge.source-dedicated{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
-  .setting-impact-badge{background:var(--warn-dim);border-color:rgba(242,181,94,.32);color:var(--warn)}
-  .setting-impact-badge.impact-legacy{background:var(--surface2);border-color:var(--border2);color:var(--text3)}
-  .arg-setting-group{padding:0;overflow:hidden}
-  .arg-setting-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:12px 14px;border:0;background:transparent;color:var(--text);cursor:pointer;font:inherit;font-size:12px;font-weight:800;text-align:left}
-  .arg-setting-toggle:hover{background:var(--surface2)}
-  .arg-setting-toggle:after{content:'+';flex:0 0 auto;color:var(--text3);font-size:17px;font-weight:500}
-  .arg-setting-group.open>.arg-setting-toggle:after{content:'−'}
-  .arg-setting-toggle small{margin-left:auto;color:var(--text3);font:700 9px var(--mono)}
-  .arg-setting-panel[hidden]{display:none}
-  .arg-group-note{margin:0 14px 10px;line-height:1.5}
-  .arg-setting-grid{padding:0 14px 14px}
-  .arg-setting-field{min-width:0}
-  .arg-setting-field input:disabled,.arg-setting-field select:disabled{cursor:not-allowed;opacity:.62;border-style:dashed}
-  .arg-setting-field.toggle-row:has(input:disabled){cursor:not-allowed;opacity:.78;border-style:dashed}
-  .arg-lock-note{color:var(--purple)}
-  .argument-status-card{padding:0;overflow:hidden}
-  .argument-status-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:12px 14px}
-  .argument-status-head .card-title{margin-bottom:4px}
-  .argument-status-head p{line-height:1.5}
-  .argument-status-counts{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;flex-shrink:0}
-  .argument-status-counts span{padding:3px 7px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);color:var(--text2);font:700 9px var(--mono)}
-  .argument-status-counts .source-argument{background:var(--purple-dim);border-color:rgba(180,154,247,.42);color:var(--purple)}
-  .argument-status-counts .source-saved{background:var(--success-dim);border-color:rgba(80,211,148,.32);color:var(--success)}
-  .argument-audit{border-top:1px solid var(--border)}
-  .argument-audit>summary{padding:10px 14px;cursor:pointer;color:var(--accent);font-size:11px;font-weight:750}
-  .argument-table-wrap{max-height:420px;overflow:auto;border-top:1px solid var(--border)}
-  .argument-table{width:100%;border-collapse:collapse;min-width:830px;font-size:10px}
-  .argument-table th,.argument-table td{padding:8px 9px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
-  .argument-table th{position:sticky;top:0;z-index:1;background:var(--surface2);color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:.05em}
-  .argument-table td{color:var(--text2)}
-  .argument-table td:first-child{min-width:185px}
-  .argument-table td:nth-child(2){max-width:190px;overflow-wrap:anywhere;font-family:var(--mono)}
-  .argument-table td:nth-child(4){min-width:230px}
-  .argument-table td>code{display:block;color:var(--text);font:700 10px var(--mono)}
-  .argument-table td>span:not(.setting-source-badge):not(.setting-impact-badge){display:block;margin-top:3px;color:var(--text3);line-height:1.4}
-  .tiny-btn{min-height:25px;padding:3px 7px;font-size:9px;white-space:nowrap}
-  .advanced-save-footer{display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:-2px;z-index:2;padding:9px 0 2px;background:linear-gradient(180deg,transparent,var(--bg) 35%)}
-  .gui-list-filter{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border)}
-  .gui-list-filter input{flex:1 1 auto;min-width:0;padding:6px 9px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface2);color:var(--text);font:inherit}
-  .gui-list-filter input:focus{outline:none;border-color:var(--accent)}
-  .full-btn{width:100%;padding:9px}
-  .storage-actions{justify-content:flex-end}
-  .manual-editor-card{min-height:0;padding:0;overflow:hidden;display:flex}
-  .manual-editor-card>.manual-editor-empty{width:100%}
-  .manual-editor-empty-actions{display:flex;align-items:center;gap:8px;margin:12px 0 8px}
-  .manual-editor-grid{display:grid;grid-template-columns:142px minmax(0,1fr);height:100%;min-height:0;width:100%;overflow:hidden}
-  .manual-editor-types{border-right:1px solid var(--border);padding:10px;background:var(--surface);overflow-y:auto;scrollbar-gutter:stable}
-  .manual-editor-side-title{font-size:10px;font-weight:800;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
-  .manual-type{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid transparent;background:transparent;color:var(--text2);border-radius:var(--r);padding:7px 8px;margin-bottom:4px;font:inherit;font-size:11px;cursor:pointer;text-align:left}
-  .manual-type span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .manual-type strong{font-family:var(--mono);font-size:10px;color:var(--text3);font-weight:700}
-  .manual-type:hover{background:var(--surface3);color:var(--text)}
-  .manual-type.active{background:var(--accent-dim);border-color:var(--accent-glow);color:var(--accent)}
-  .manual-editor-main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
-  .manual-editor-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex:0 0 auto}
-  .manual-editor-heading{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .manual-editor-heading strong{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .manual-editor-heading span{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .manual-editor-controls{display:flex;gap:6px;align-items:center;min-width:0}
-  .manual-editor-controls input,.manual-editor-controls select{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:5px 8px;color:var(--text);font:inherit;font-size:11px;outline:none}
-  .manual-editor-controls input{width:150px}
-  .manual-editor-controls select{width:104px}
-  .manual-editor-list{display:grid;gap:8px;padding:10px 12px;min-height:0;overflow-y:auto;scrollbar-gutter:stable;align-content:start}
-  .manual-record{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px;min-width:0}
-  .manual-record.pending-delete{border-color:rgba(224,82,82,.65);background:rgba(224,82,82,.08)}
-  .manual-record-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
-  .manual-record-title{font-size:11px;font-weight:800;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .manual-record-preview{font-size:11px;color:var(--text2);white-space:pre-wrap;line-height:1.5;max-height:78px;overflow:hidden;border-top:1px solid var(--border);padding-top:7px}
-  .manual-record-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px;font-size:10px;color:var(--text3);font-family:var(--mono)}
-  .manual-record-meta span{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .manual-editor-apply{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface);flex:0 0 auto}
-  .manual-editor-apply .muted{margin-right:auto}
-  .manual-editor-empty{padding:16px}
-  .panel[data-panel="storage"] .table-card{min-height:0}
-  .table-card{padding:0;overflow:hidden;scrollbar-gutter:stable}
-  .storage-table-card{display:flex;flex-direction:column}
-  .storage-table-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .storage-table-head strong{font-size:11px;color:var(--text);white-space:nowrap}
-  .storage-table-head span{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .storage-table-scroll{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-gutter:stable}
-  .storage-actions #selectedScopeCount{margin-left:auto;align-self:center}
-  .storage-scope-selector{display:flex;align-items:center;gap:6px;min-width:54px}
-  .storage-scope-select{width:14px;height:14px;accent-color:var(--accent);cursor:pointer}
-  .storage-scope-select:disabled{cursor:not-allowed;opacity:.45}
-  .data-table{width:100%;border-collapse:collapse;font-size:11px;min-width:680px}
-  .data-table th{color:var(--text3);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface)}
-  .data-table td{padding:7px 8px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:top}
-  .data-table tr:last-child td{border-bottom:none}
-  .data-table tr:hover td{background:var(--surface2)}
-  .current-row td{color:var(--text)}
-  .muted{color:var(--text2)}
-  .tiny{font-size:10px;color:var(--text3)}
-  .provider-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:var(--purple-dim);color:var(--purple)}
-  .mini-counts{margin:6px;padding:6px 8px;overflow:hidden}
-  .mini-counts .type-row{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:8px;min-width:0;padding:5px 0}
-  .mini-counts .type-name{width:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .mini-counts .type-bar-wrap{display:none}
-  .mini-counts .type-tokens{min-width:0;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .type-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
-  .type-row:last-child{border-bottom:none}
-  .type-row-action{width:100%;background:transparent;color:inherit;border-left:0;border-right:0;border-top:0;cursor:pointer;font:inherit;text-align:left}
-  .type-row-action:hover .type-name{color:var(--text)}
-  .type-row-readonly{cursor:default}
-  .type-name{font-size:11px;color:var(--text2);width:92px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .type-bar-wrap{flex:1;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden}
-  .type-bar{height:100%;border-radius:3px}
-  .type-tokens{font-size:11px;font-family:var(--mono);color:var(--text3);min-width:54px;text-align:right}
-  .cost-card{display:flex;flex-direction:column;gap:8px}
-  .cost-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:var(--r);background:var(--surface2);border:1px solid var(--border)}
-  .cost-total span{font-size:11px;color:var(--text2);font-weight:700}
-  .cost-total strong{font-family:var(--mono);font-size:18px;color:var(--success)}
-  .cost-formula{font-size:10px;color:var(--text3);font-family:var(--mono)}
-  .cost-list{display:grid;gap:6px}
-  .cost-line{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding-top:7px}
-  .cost-line span{font-size:11px;color:var(--text2);min-width:0}
-  .cost-line span em{display:block;font-style:normal;font-size:10px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
-  .cost-line strong{font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap}
-  .last-recall-panel{border-bottom:1px solid var(--border);background:var(--surface);padding:8px 12px;max-height:148px;overflow:auto;flex-shrink:0}
-  .recall-warning{background:rgba(255,180,0,.12);border:1px solid rgba(255,180,0,.3);border-radius:6px;padding:4px 8px;margin:4px 0 6px;font-size:11px;color:var(--warn,#b80)}
-  .recall-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px}
-  .recall-query{font-size:10px;color:var(--text3);font-family:var(--mono);max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
-  .recall-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px;align-items:start}
-  .recall-card-item{display:block;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);min-width:0;overflow:hidden}
-  .recall-card-summary{display:flex;gap:8px;align-items:flex-start;padding:8px;cursor:pointer;list-style:none}
-  .recall-card-summary::-webkit-details-marker{display:none}
-  .recall-score{font-family:var(--mono);font-size:10px;font-weight:800;border-radius:4px;padding:2px 5px;min-width:42px;text-align:center;flex-shrink:0}
-  .score-high{background:var(--success-dim);color:var(--success)}
-  .score-mid{background:var(--accent-dim);color:var(--accent)}
-  .score-low{background:var(--surface3);color:var(--text3)}
-  .recall-card-body{min-width:0;flex:1}
-  .recall-card-title{font-size:11px;color:var(--text);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .recall-type{font-size:9px;color:var(--purple);background:var(--purple-dim);border-radius:999px;padding:1px 5px;margin-right:5px;font-weight:800}
-  .recall-card-preview{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .recall-card-meta{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .recall-card-toggle{display:inline-flex;margin-top:6px;color:var(--accent);font-size:10px;font-weight:750}
-  .recall-card-toggle::before{content:"본문 펼치기"}
-  .recall-card-item[open] .recall-card-toggle::before{content:"본문 접기"}
-  .recall-card-item[open] .recall-card-preview{display:none}
-  .recall-card-item[open] .recall-card-title,.recall-card-item[open] .recall-card-meta{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
-  .recall-card-detail{border-top:1px solid var(--border);padding:10px 12px;color:var(--text2);font-size:11px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
-  .recall-empty{font-size:11px;color:var(--text3);padding:6px 0}
-  .log-area{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;font-size:11px;font-family:var(--mono);color:var(--text2);max-height:120px;overflow-y:auto;line-height:1.6;white-space:pre-wrap}
-  .panel[data-panel="activity"].active{overflow:hidden}
-  .activity-log-card{display:flex;flex-direction:column;min-height:0;flex:1;padding:0;overflow:hidden}
-  .activity-log-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);flex:0 0 auto}
-  .activity-log-toolbar .card-title{margin-bottom:3px}
-  .activity-log-list{display:grid;gap:8px;padding:12px 14px;overflow-y:auto;align-content:start;min-height:0}
-  .activity-log-entry{border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r);background:var(--surface2);padding:9px 11px}
-  .activity-log-entry.success{border-left-color:var(--success)}
-  .activity-log-entry.warn{border-left-color:var(--warn)}
-  .activity-log-entry.error{border-left-color:var(--danger)}
-  .activity-log-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-  .activity-log-head strong{font-size:12px;color:var(--text)}
-  .activity-log-head time{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
-  .activity-log-event{margin-top:2px;font-size:10px;color:var(--text3);font-family:var(--mono)}
-  .activity-log-detail{margin-top:7px;border-top:1px solid var(--border);padding-top:7px;color:var(--text2);font-size:10px;font-family:var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
-  .activity-log-empty{padding:20px;color:var(--text3);text-align:center}
-  .panel[data-panel="overview"].active{gap:12px}
-  .overview-health{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid rgba(80,211,148,.22);border-radius:12px;background:linear-gradient(90deg,rgba(80,211,148,.09),rgba(80,211,148,.02))}
-  .overview-health.warning{border-color:rgba(242,181,94,.28);background:linear-gradient(90deg,rgba(242,181,94,.11),rgba(242,181,94,.02))}
-  .overview-health.danger{border-color:rgba(255,125,134,.3);background:linear-gradient(90deg,rgba(255,125,134,.11),rgba(255,125,134,.02))}
-  .overview-health-icon{width:11px;height:11px;flex:0 0 auto;border-radius:50%;background:var(--success);box-shadow:0 0 0 5px rgba(80,211,148,.1)}
-  .overview-health.warning .overview-health-icon{background:var(--warn);box-shadow:0 0 0 5px rgba(242,181,94,.1)}
-  .overview-health.danger .overview-health-icon{background:var(--danger);box-shadow:0 0 0 5px rgba(255,125,134,.1)}
-  .overview-health>div{min-width:0;flex:1}
-  .overview-health strong,.overview-health span{display:block}
-  .overview-health strong{font-size:12px;color:var(--text)}
-  .overview-health div span{font-size:10px;color:var(--text3)}
-  .overview-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-  .overview-stat-card{position:relative;min-width:0;min-height:106px;padding:13px;overflow:hidden;border:1px solid var(--border);border-radius:var(--r2);background:var(--surface)}
-  .overview-stat-card::after{content:"";position:absolute;width:84px;height:84px;right:-34px;bottom:-40px;border-radius:50%;background:rgba(126,165,248,.06)}
-  .overview-stat-card>span{display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text3);font-size:10px;font-weight:750}
-  .overview-stat-card em{padding:2px 6px;border-radius:999px;background:var(--accent-dim);color:var(--accent);font-style:normal;font-size:9px}
-  .overview-stat-card strong{display:block;margin-top:11px;overflow:hidden;color:var(--text);font:800 20px/1.1 var(--mono);letter-spacing:-.04em;text-overflow:ellipsis;white-space:nowrap}
-  .overview-stat-card small{display:block;margin-top:7px;overflow:hidden;color:var(--text3);font-size:9px;text-overflow:ellipsis;white-space:nowrap}
-  .overview-quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-  .overview-action{display:flex;flex-direction:column;gap:2px;min-width:0;padding:10px 11px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text2);font:inherit;text-align:left;cursor:pointer;transition:140ms ease}
-  .overview-action:hover{border-color:rgba(126,165,248,.42);color:var(--text);transform:translateY(-1px)}
-  .overview-action strong{font-size:11px}
-  .overview-action span{overflow:hidden;color:var(--text3);font-size:9px;text-overflow:ellipsis;white-space:nowrap}
-  .overview-recall-card{padding:0;overflow:hidden}
-  .overview-recall-card summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;color:var(--text);font-size:11px;font-weight:750;cursor:pointer;list-style:none}
-  .overview-recall-card summary::-webkit-details-marker{display:none}
-  .overview-recall-card[open] summary{border-bottom:1px solid var(--border)}
-  .overview-recall-card .last-recall-panel{max-height:none;overflow:visible;border:0;background:var(--surface);padding:10px 13px}
-  .overview-lower-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:10px}
-  .overview-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
-  .overview-card-heading .card-title{margin-bottom:1px}
-  .overview-lower-grid .mini-counts{margin:0;padding:0}
-  .overview-activity-list{display:grid;gap:5px}
-  .overview-activity-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid var(--border)}
-  .overview-activity-item:first-child{border-top:0}
-  .overview-activity-dot{width:7px;height:7px;margin-top:5px;flex:0 0 auto;border-radius:50%;background:var(--accent)}
-  .overview-activity-item.success .overview-activity-dot{background:var(--success)}
-  .overview-activity-item.warn .overview-activity-dot{background:var(--warn)}
-  .overview-activity-item.error .overview-activity-dot{background:var(--danger)}
-  .overview-activity-item div{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0;flex:1}
-  .overview-activity-item strong{overflow:hidden;color:var(--text2);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
-  .overview-activity-item div span{flex:0 0 auto;color:var(--text3);font:9px var(--mono)}
-  .overview-activity-empty{padding:12px 0;color:var(--text3);font-size:10px;text-align:center}
-  .tiny,.field-note{font-size:11px}
-  @media (max-width: 760px){
-    .vrmDesign{width:100%;height:100%;border-radius:0;border:0;box-shadow:none}
-    .shell{grid-template-columns:1fr;grid-template-rows:44px auto minmax(0,1fr)}
-    .topbar{grid-column:1;padding:0 8px;gap:6px}
-    .topbar-logo{display:none}
-    .topbar-scope{border-left:0;margin-left:0;padding:0 4px;gap:4px}
-    .scope-char,.scope-chat{font-size:11px}
-    .scope-char{max-width:34vw}
-    .scope-chat{display:inline;max-width:38vw}
-    .badge{padding:1px 5px;font-size:9px}
-    .topbar-actions{display:flex;gap:0;margin-left:auto}
-    .topbar-actions>.btn{display:none}
-    #topMoreBtn{display:inline-flex;min-width:36px;padding:5px 9px}
-    .sidebar{border-right:0;border-bottom:1px solid var(--border);flex-direction:row;overflow-x:auto}
-    .sidebar-health{display:none}
-    .nav-tabs{flex-direction:row;min-width:max-content;padding:5px 7px;overflow:visible}
-    .nav-group{display:contents}
-    .nav-group-label{display:none}
-    .sidebar-footer{display:none}
-    .nav-item{display:inline-flex;width:auto;min-height:34px;white-space:nowrap;padding:7px 10px}
-    .stat-strip{display:none}
-    .status-bar{padding:6px 8px;gap:6px;min-height:32px}
-    .page-head{min-height:62px;padding:9px 12px}
-    .page-title{font-size:16px}
-    .page-description{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .panel{padding:10px}
-    .overview-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .overview-lower-grid{grid-template-columns:1fr}
-    .grid2,.recall-card-list,.toggle-list{grid-template-columns:1fr}
-    .portable-memory-actions{grid-template-columns:1fr}
-    .recall-preset-row{align-items:flex-start;flex-direction:column}
-    .recall-preset-actions{width:100%;flex-wrap:wrap}
-    .argument-status-head{flex-direction:column}
-    .argument-status-counts{justify-content:flex-start}
-    .arg-setting-toggle{align-items:flex-start}
-    .advanced-save-footer .btn{width:100%}
-    .manual-editor-grid{grid-template-columns:1fr}
-    .manual-editor-types{border-right:0;border-bottom:1px solid var(--border);display:flex;gap:4px;overflow-x:auto;overflow-y:hidden}
-    .manual-editor-side-title{display:none}
-    .manual-type{width:auto;min-width:112px;margin-bottom:0}
-    .manual-editor-toolbar{flex-direction:column}
-    .manual-editor-controls{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 112px auto}
-    .manual-editor-controls input,.manual-editor-controls select{width:100%}
-    .manual-record-meta span{max-width:100%}
-    .last-recall-panel{max-height:250px;padding:8px}
-    .recall-query{display:none}
-  }
-  @media (max-width: 540px){
-    .topbar-scope{overflow:hidden}
-    .scope-char{max-width:31vw}
-    .scope-chat{max-width:31vw}
-    .status-bar .storage-status{display:none}
-    .overview-health{align-items:flex-start}
-    .overview-health .btn{flex:0 0 auto}
-    .overview-quick-actions{grid-template-columns:1fr}
-    .overview-action span{white-space:normal}
-  }
-  @media (prefers-reduced-motion:reduce){
-    *{scroll-behavior:auto!important;transition:none!important}
-  }
-
-  .vrmDesign .fb-scope-card{min-width:0;overflow-wrap:anywhere}
-  .vrmDesign .fb-scope-card h2{font-size:16px;color:var(--text);font-weight:700;margin:0 0 5px}
-  .vrmDesign .fb-scope-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
-  .vrmDesign .fb-scope-head>div{flex:1 1 240px;min-width:0}
-  .vrmDesign .fb-scope-badge,.vrmDesign .fb-record-state{display:inline-flex;align-items:center;flex:0 0 auto;white-space:nowrap;word-break:keep-all;font:inherit;font-size:12px;line-height:1.6;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:4px 10px;max-width:100%}
-  .vrmDesign .fb-scope-badge.success,.vrmDesign .fb-record-state.success{color:var(--success);background:var(--success-dim)}
-  .vrmDesign .fb-scope-badge.warning,.vrmDesign .fb-record-state.warning{color:var(--warn);background:var(--warn-dim)}
-  .vrmDesign .fb-record-state{margin:8px 0}
-  .vrmDesign .fb-scope-fields{margin:10px 0}
-  .vrmDesign .fb-scope-fields>div{display:grid;grid-template-columns:minmax(115px,160px) minmax(0,1fr);gap:12px;border-bottom:1px solid var(--border);padding:9px 0}
-  .vrmDesign .fb-scope-fields dt{color:var(--text2);font-weight:500}
-  .vrmDesign .fb-scope-fields dd{color:var(--text);min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
-  .vrmDesign .fb-worldline-counts{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-  .vrmDesign .fb-worldline-counts>div{flex:1 1 90px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:12px}
-  .vrmDesign .fb-worldline-counts span{color:var(--text2);display:block}.vrmDesign .fb-worldline-counts strong{font-size:22px}
-  .vrmDesign .fb-worldline-node{border:1px solid var(--border);border-radius:9px;margin:10px 0;padding:12px;background:var(--surface2)}
-  .vrmDesign .fb-worldline-node>summary{display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer;min-width:0}
-  .vrmDesign .fb-worldline-node>summary .fb-node-id{flex:1 1 130px;min-width:0;overflow-wrap:anywhere;color:var(--text2);font-family:var(--mono);font-size:12px}
-  .vrmDesign .fb-worldline-empty{color:var(--text2);padding:20px 0}
-  .vrmDesign .fb-source-task-list>div{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border);color:var(--text2)}
-  .vrmDesign .fb-source-task-list strong{color:var(--text)}.vrmDesign .fb-source-task-list p{flex-basis:100%;color:var(--warn);overflow-wrap:anywhere}
-  .vrmDesign .fb-storage-warning{padding:14px;margin:10px;color:var(--warn);background:var(--warn-dim);border:1px solid var(--border2);border-radius:9px;overflow-wrap:anywhere}
-  .vrmDesign .manual-record-full{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);color:var(--text);padding:14px;margin-top:10px;border:1px solid var(--border);border-radius:8px;max-width:100%}
-  .vrmDesign .manual-record-full[hidden]{display:none}.vrmDesign .manual-record{min-width:0}
-  .vrmDesign .manual-record-head{flex-wrap:wrap}.vrmDesign .manual-record-title{overflow-wrap:anywhere;min-width:0}
-  @media(max-width:560px){.vrmDesign .fb-scope-fields>div{grid-template-columns:minmax(0,1fr);gap:4px}.vrmDesign .fb-scope-head>div{flex-basis:100%}.vrmDesign .manual-editor-grid{grid-template-columns:minmax(0,1fr)}.vrmDesign .manual-editor-types{border-right:0}.vrmDesign .manual-editor-controls{flex-wrap:wrap;min-width:0}.vrmDesign .manual-editor-controls>*{max-width:100%}}
-
-  /* --- MemorySuite shared design tokens -------------------------------------------------------------
-     One scale shared by Flashback, HAYAKU and LIBRA so the three panels read as one
-     product. Colours are NOT declared here: those come from the host theme bridge.
-     Every token has a literal fallback, so a plugin still renders if this block is
-     ever dropped. */
-  :root{
-    --ms-font-sans:Pretendard,"Pretendard Variable","Pretendard JP","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    --ms-font-mono:ui-monospace,SFMono-Regular,"D2Coding",Menlo,Consolas,"Malgun Gothic",monospace;
-
-    /* type scale: eyebrow / title / subtitle / body / note */
-    --ms-fs-eyebrow:12px;
-    --ms-fs-title:19px;
-    --ms-fs-subtitle:15px;
-    --ms-fs-body:13px;
-    --ms-fs-note:12px;
-
-    /* Hangul is a full-width square script and needs more leading than Latin. */
-    --ms-lh-tight:1.35;
-    --ms-lh-body:1.65;
-    --ms-ls-eyebrow:0;
-    --ms-ls-title:-.01em;
-
-    /* 4px spacing grid */
-    --ms-sp-1:4px;--ms-sp-2:8px;--ms-sp-3:12px;--ms-sp-4:16px;--ms-sp-5:24px;--ms-sp-6:32px;
-
-    /* radius scale -- the three plugins used 9/12, 24/9 and 22/16 before this */
-    --ms-r-sm:8px;--ms-r-md:12px;--ms-r-lg:16px;--ms-r-xl:20px;
-
-    /* elevation scale */
-    --ms-sh-1:0 1px 2px rgba(0,0,0,.18);
-    --ms-sh-2:0 4px 14px rgba(0,0,0,.20);
-    --ms-sh-3:0 12px 36px rgba(0,0,0,.28);
-    --ms-sh-4:0 24px 72px rgba(0,0,0,.36);
-
-    /* Local fallback: iframe host animation speed is not transported. */
-    --ms-motion:.2s;
-  }
-  @media(prefers-reduced-motion:reduce){:root{--ms-motion:0s}}
-  /* Hangul must not break mid-word. keep-all fixes that; overflow-wrap:anywhere keeps
-     long unbreakable tokens (hashes, scope keys, URLs) from overflowing their box.
-     Deliberately NOT applied to code/pre/textarea, where character breaking is correct. */
-  .ms-typo,.ms-typo *:not(pre):not(code):not(textarea):not(kbd){word-break:keep-all;overflow-wrap:anywhere}
-  .ms-typo pre,.ms-typo code,.ms-typo textarea,.ms-typo kbd{font-family:var(--ms-font-mono);word-break:break-all;overflow-wrap:anywhere}
-
-  /* Shared hierarchy utilities. Plugin-specific classes are mapped onto these below. */
-  .ms-eyebrow{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.7}
-  .ms-title{font-size:var(--ms-fs-title);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  .ms-subtitle{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650}
-  .ms-body{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body)}
-  .ms-note{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);opacity:.82}
-  /* Counts and turn numbers stop jittering when digits share one advance width. */
-  .ms-num,.ms-typo table,.ms-typo time,.ms-typo .nav-count{font-variant-numeric:tabular-nums}
-
-  /* --- Flashback mapping onto the shared scale --- */
-  .vrmDesign{font-family:var(--ms-font-sans);font-size:var(--ms-fs-body);line-height:var(--ms-lh-body);word-break:keep-all;overflow-wrap:anywhere}
-  .vrmDesign pre,.vrmDesign code,.vrmDesign textarea{font-family:var(--ms-font-mono);word-break:break-all}
-  .vrmDesign .page-eyebrow{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.7}
-  .vrmDesign .page-title{font-size:calc(var(--ms-fs-title) + 3px);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  .vrmDesign .page-description{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body)}
-  .vrmDesign .card-title{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650;letter-spacing:var(--ms-ls-title)}
-  .vrmDesign .nav-group-label{font-size:var(--ms-fs-eyebrow);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.62}
-  .vrmDesign .tiny,.vrmDesign .field-note,.vrmDesign .muted{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body)}
-  .vrmDesign .data-table,.vrmDesign .nav-count,.vrmDesign time,.vrmDesign .activity-log-entry time{font-variant-numeric:tabular-nums}
-  /* Numbers in a settings form are read as values, not prose. */
-  .vrmDesign input[type="number"],.vrmDesign .metric-value,.vrmDesign strong{font-variant-numeric:tabular-nums}
-  .vrmDesign .btn,.vrmDesign .tab,.vrmDesign .gui-list-filter input{transition:background-color var(--ms-motion) ease,border-color var(--ms-motion) ease,color var(--ms-motion) ease}
-  .vrmDesign .data-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--text) 3%,transparent)}
-  .vrmDesign .data-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
-
-  /* --- MemorySuite contrast, empty states and skeletons -------------------------------------------------------------
-     Muted text is derived from the active text and background colours rather than taken
-     from the host verbatim: RisuAI's own secondary colour measures 2.99:1 on its own
-     background, below WCAG AA. 62% clears 4.5:1 on both a dark and a light host. */
-  :root{
-    --ms-mix-muted:62%;
-    --ms-skeleton-base:color-mix(in srgb,currentColor 10%,transparent);
-    --ms-skeleton-shine:color-mix(in srgb,currentColor 22%,transparent);
-  }
-  @keyframes ms-shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
-  @keyframes ms-pulse{0%,100%{opacity:.6}50%{opacity:1}}
-
-  /* Shimmer bar. Width/height are set by the caller; three of these read as a loading card. */
-  .ms-skeleton{
-    border-radius:var(--ms-r-sm);
-    background:linear-gradient(90deg,var(--ms-skeleton-base) 0%,var(--ms-skeleton-shine) 45%,var(--ms-skeleton-base) 90%);
-    background-size:220% 100%;
-    animation:ms-shimmer 1.5s linear infinite;
-  }
-  .ms-loading{animation:ms-pulse 1.5s ease-in-out infinite}
-  @media(prefers-reduced-motion:reduce){
-    .ms-skeleton{animation:none;background:var(--ms-skeleton-base)}
-    .ms-loading{animation:none;opacity:.8}
-  }
-
-  /* Empty state. The icon is a mask filled with currentColor, so it never fights the theme. */
-  .ms-empty-face{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);
-    text-align:center;text-wrap:balance;
-  }
-  .ms-empty-face::before{
-    content:'';width:32px;height:32px;flex:0 0 auto;opacity:.55;
-    background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  .ms-empty-face[data-ms-empty-icon="search"]::before{-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat}
-  .ms-empty-face>strong{font-size:var(--ms-fs-subtitle);font-weight:650}
-  .ms-empty-face>span,.ms-empty-face>div{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);max-width:34ch}
-
-  /* --- Flashback: contrast + empty states --- */
-  /* Correct the host-supplied secondary tones; the built-in dark palette already measures
-     9.9:1 and 5.6:1, so it is deliberately left alone. */
-  :root[data-risu-theme-colors="1"] .vrmDesign,:root[data-risu-theme-colors="1"]{
-    --text2:color-mix(in srgb,var(--risu-theme-textcolor) var(--ms-mix-muted),var(--risu-theme-bgcolor));
-    --text3:color-mix(in srgb,var(--risu-theme-textcolor) calc(var(--ms-mix-muted) - 8%),var(--risu-theme-bgcolor));
-  }
-  /* Labels carried their dimming as opacity, which cost more contrast than it bought. */
-  .vrmDesign .page-eyebrow{opacity:1;color:var(--text2)}
-  .vrmDesign .nav-group-label{opacity:1;color:var(--text2)}
-  .vrmDesign .tiny,.vrmDesign .field-note,.vrmDesign .muted{color:var(--text2)}
-  .vrmDesign .activity-log-empty{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);text-align:center;
-    border:1px dashed var(--border);border-radius:var(--ms-r-md);
-    background:color-mix(in srgb,var(--text) 2%,transparent);color:var(--text2);
-  }
-  .vrmDesign .activity-log-empty::before{
-    content:'';width:32px;height:32px;opacity:.55;background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  /* The chunked table renderer parks a "…중" row here while it draws. */
-  .vrmDesign #storageRows td.muted{animation:ms-pulse 1.5s ease-in-out infinite}
-  @media(prefers-reduced-motion:reduce){.vrmDesign #storageRows td.muted{animation:none}}
-
-
-/* Flashback recall lab: warm paper and film, throughout the existing workspace. */
-.vrmDesign{--bg:#e9e5dd;--surface:#faf8f2;--surface2:#f0ece3;--surface3:#e6e0d4;--border:#d6d0c4;--border2:#bbb2a3;--text:#302b28;--text2:#62594f;--text3:#71685d;--accent:#915044;--accent-dim:#f0e0d8;--accent-glow:#b78370;--success:#287052;--success-dim:#e0eee4;--warn:#8b601b;--warn-dim:#f4e9d0;--danger:#b03332;--danger-dim:#f9e2df;--purple:#795b75;--purple-dim:#ebe3e9;--r:6px;--r2:9px;color-scheme:light;box-shadow:0 20px 70px #30251333;font-size:13px}
-.vrmDesign .shell{grid-template-columns:200px minmax(0,1fr);grid-template-rows:74px minmax(0,1fr)}
-.vrmDesign .topbar{background:var(--surface);padding:12px 24px;gap:14px}
-.vrmDesign .topbar-logo{font-size:20px;font-weight:800;letter-spacing:-.7px;gap:10px}
-.vrmDesign .topbar-logo:before{content:'◎';width:33px;height:33px;border:1px solid #8e8273;border-radius:8px;display:grid;place-items:center;font-size:26px;font-weight:400}
-.vrmDesign .sidebar{background:var(--bg);padding:22px 13px;border:0}
-.vrmDesign .sidebar-health{border-color:var(--border);background:var(--surface2)}
-.vrmDesign .nav-item{min-height:44px;padding:12px 13px;font-size:13px;border-radius:6px;color:var(--text2)}
-.vrmDesign .nav-item.active{background:#332e2a;color:#fff9ee;border-color:#332e2a;box-shadow:none}
-.vrmDesign .nav-group-label{font-size:10px;letter-spacing:1px;margin-top:10px;color:var(--text3)}
-.vrmDesign .main{background:var(--surface);margin:16px 18px 16px 0;border:1px solid var(--border);border-radius:10px;padding:28px 30px}
-.vrmDesign .page-title{font-size:28px;letter-spacing:-1px}
-.vrmDesign .page-eyebrow{font:10px Consolas,monospace;letter-spacing:1.7px;color:var(--text3)}
-.vrmDesign .page-description{font-size:13px;line-height:1.7;margin-top:8px;color:var(--text2)}
-.vrmDesign .btn{min-height:38px;border-radius:6px;font-size:12px;padding:9px 14px}
-.vrmDesign .btn-primary{background:var(--accent);color:#fff8f1;border-color:var(--accent)}
-.vrmDesign .status-bar{background:var(--surface2);border-color:var(--border);border-radius:5px;margin-bottom:22px}
-.vrmDesign .card{background:var(--surface);padding:22px;border-color:var(--border);border-radius:8px;box-shadow:none}
-.vrmDesign .card-title{font-size:16px}
-.vrmDesign .tiny,.vrmDesign .muted{font-size:12px;line-height:1.7}
-.vrmDesign .field label{font-size:12px;color:var(--text2)}
-.vrmDesign input,.vrmDesign textarea,.vrmDesign select{background:var(--surface);color:var(--text);border-color:var(--border2);border-radius:5px;font-size:13px}
-.vrmDesign .overview-health{padding:14px 17px;border-radius:6px;background:var(--surface2)}
-.vrmDesign .overview-stat-grid{gap:1px;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--border);margin:20px 0}
-.vrmDesign .overview-stat-card{border:0;border-radius:0;padding:17px;background:var(--surface)}
-.vrmDesign .overview-stat-card strong{font:27px Consolas,monospace}
-.vrmDesign .overview-quick-actions{margin-bottom:20px}.vrmDesign .overview-action{border-radius:6px;padding:15px;background:var(--surface2)}
-.vrmDesign #panel-overview.active{display:flex;flex-direction:column}
-.vrmDesign .overview-recall-card{order:-1;padding:0;border:0;margin:0 0 24px;background:transparent}
-.vrmDesign .overview-recall-card>summary{padding:0 0 15px;font-size:16px;list-style:none;display:flex;justify-content:space-between;gap:12px;cursor:pointer}
-.vrmDesign .overview-recall-card>summary:after{content:'−';font-size:20px}.vrmDesign .overview-recall-card:not([open])>summary:after{content:'+'}
-.vrmDesign .overview-recall-card .last-recall-panel{padding:0;border:0;background:transparent;margin:0;max-height:none}
-.vrmDesign .recall-panel-head{display:block;margin:0 0 20px;border:0;padding:24px;background:#2c2d2b;color:#f3ece1;border-radius:6px;position:relative}
-.vrmDesign .recall-panel-head:before{content:'◎';position:absolute;right:20px;top:16px;color:#bcb7a6;font-size:32px}
-.vrmDesign .recall-panel-head strong{font:11px Consolas,monospace;letter-spacing:1.5px;color:#efe7d9}
-.vrmDesign .recall-query{max-width:none;margin-top:13px;border:0;background:none;color:#f3ece1;font-size:15px;line-height:1.8;padding:0 35px 0 0;white-space:pre-wrap}
-.vrmDesign .recall-panel-head .tiny{color:#ccc3b4;padding-right:40px}
-.vrmDesign .recall-diagnostics{margin:12px 0;color:var(--text2);font-size:12px}
-.vrmDesign .recall-diagnostics>summary{cursor:pointer;padding:10px 0}
-.vrmDesign .recall-delivery{font-size:12px;color:var(--text2);margin:12px 0}
-.vrmDesign .recall-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}
-.vrmDesign .recall-card-item{position:relative;min-width:0;background:#fffdf7;border:1px solid var(--border);border-radius:1px;padding:10px;box-shadow:0 3px 8px #34291709;transition:border-color .2s}
-.vrmDesign .recall-card-item:hover,.vrmDesign .recall-card-item[open]{border-color:var(--accent)}
-.vrmDesign .recall-card-summary{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0;min-width:0;list-style:none;cursor:pointer}
-.vrmDesign .recall-card-body{display:flex;flex-direction:column;min-width:0;width:100%}
-.vrmDesign .recall-card-preview{order:-1;background:#d7e0da;color:#36483f;min-height:120px;padding:19px 16px;margin:0 0 14px;line-height:1.8;font-size:13px;display:block;white-space:normal;overflow-wrap:anywhere;max-height:150px;overflow:hidden}
-.vrmDesign .recall-card-item:nth-child(4n+2) .recall-card-preview{background:#e8d9c6;color:#574737}.vrmDesign .recall-card-item:nth-child(4n+3) .recall-card-preview{background:#d8dfe2;color:#374951}.vrmDesign .recall-card-item:nth-child(4n+4) .recall-card-preview{background:#e4e1d1;color:#534e38}
-.vrmDesign .recall-card-title{display:block;font-size:14px;line-height:1.6;color:var(--text);padding-bottom:7px;overflow-wrap:anywhere}
-.vrmDesign .recall-type{display:block;font:10px Consolas,monospace;background:none;color:var(--text3);padding:0;margin:0 0 5px}
-.vrmDesign .recall-score{align-self:flex-end;font:12px Consolas,monospace;padding:5px 7px;background:var(--surface2);color:var(--text);border-radius:2px;margin-bottom:7px}
-.vrmDesign .recall-card-meta{font-size:11px;color:var(--text3);line-height:1.6}
-.vrmDesign .recall-card-detail{font-size:14px;line-height:1.9;color:var(--text);padding:18px 9px;max-height:none;background:#fffdf7}
-.vrmDesign .recall-card-item[open]{grid-column:1/-1}.vrmDesign .recall-card-item[open] .recall-card-preview{max-height:none;min-height:130px}
-.vrmDesign .recall-card-toggle:after{content:'기억 펼치기 ↗';font-size:11px;color:var(--accent)}.vrmDesign .recall-card-item[open] .recall-card-toggle:after{content:'기억 접기 −'}
-.vrmDesign .recall-empty{grid-column:1/-1;min-height:130px;padding:35px 24px;border:1px dashed var(--border2);background:var(--surface2);color:var(--text2);text-align:center;border-radius:5px;line-height:1.8;font-size:13px}
-.vrmDesign .fb-film-strip{display:flex;gap:9px;overflow-x:auto;margin:22px 0 8px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}
-.vrmDesign .fb-film-strip a{flex:0 0 auto;padding:9px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11px Consolas,monospace;text-decoration:none;min-height:40px;display:grid;place-items:center}
-.vrmDesign .fb-film-strip a:hover{background:#76594b;border-color:#d6aa8e}
-.vrmDesign .arg-setting-group,.vrmDesign .arg-setting-panel,.vrmDesign .manual-editor-card,.vrmDesign .worldline-card{background:var(--surface);border-color:var(--border)}
-.vrmDesign .activity-log-entry{border-color:var(--border);border-radius:4px;background:var(--surface);padding:16px}.vrmDesign .activity-log-event{font:11px Consolas;color:var(--text3)}
-@media(max-width:760px){.vrmDesign .shell{grid-template-columns:1fr;grid-template-rows:66px auto minmax(0,1fr)}.vrmDesign .topbar{padding:10px 13px}.vrmDesign .topbar-logo{font-size:17px}.vrmDesign .sidebar{padding:7px;flex-direction:row;overflow-x:auto}.vrmDesign .sidebar-health,.vrmDesign .sidebar-footer,.vrmDesign .nav-group-label{display:none}.vrmDesign .nav-tabs{display:flex;flex-direction:row}.vrmDesign .nav-group{display:contents}.vrmDesign .nav-item{white-space:nowrap;padding:10px;min-height:40px;flex:0 0 auto}.vrmDesign .main{margin:0 7px 7px;padding:20px 15px}.vrmDesign .page-title{font-size:24px}.vrmDesign .recall-card-list{gap:11px}.vrmDesign .recall-card-preview{padding:13px 10px;font-size:12px;min-height:125px}.vrmDesign .recall-card-title{font-size:12px}.vrmDesign .recall-panel-head{padding:20px}.vrmDesign .recall-query{font-size:13px;padding-right:0}.vrmDesign .overview-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vrmDesign .overview-lower-grid{grid-template-columns:1fr}.vrmDesign .card{padding:17px}.vrmDesign .overview-recall-card{padding:0}.vrmDesign .topbar-scope{display:none}.vrmDesign .status-bar{flex-wrap:wrap}.vrmDesign .recall-card-item[open]{padding:10px}}
-@media(prefers-reduced-motion:reduce){.vrmDesign *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-
-
-.vrmDesign .page-head{background:transparent;border:0;padding:0 0 22px}.vrmDesign .recall-query{display:block;text-align:left}.vrmDesign .topbar-logo *:before{content:none}.vrmDesign .overview-stat-card:before,.vrmDesign .overview-stat-card:after{display:none}.vrmDesign .fb-focus-meter{padding:12px;margin-bottom:18px;background:var(--surface2);border-radius:5px}.vrmDesign .fb-focus-meter strong{display:block;font:12px Consolas,monospace}.vrmDesign meter{display:block;width:100%;height:12px;margin-top:10px;accent-color:var(--accent)}.vrmDesign .recall-card-item:target{outline:2px solid var(--accent);outline-offset:3px}.vrmDesign .recall-card-toggle{display:block;margin-top:7px}.vrmDesign .page-head-copy{min-width:0}
-
-.vrmDesign .recall-card-title{white-space:normal;overflow:visible;text-overflow:clip}.vrmDesign .recall-card-toggle:before{content:none}.vrmDesign .recall-card-summary:after{content:none}.vrmDesign .recall-card-toggle{font-size:0}.vrmDesign .topbar-logo{display:flex}
-@media(max-width:760px){.vrmDesign .shell{grid-template-rows:86px auto minmax(0,1fr)}.vrmDesign .topbar{flex-wrap:wrap;gap:5px 10px}.vrmDesign .topbar-logo{display:flex;font-size:14px}.vrmDesign .topbar-logo:before{width:25px;height:25px;font-size:20px}.vrmDesign .topbar-scope{display:flex;flex-basis:100%;order:3;padding:0;margin:0;border:0}.vrmDesign .topbar-actions{margin-left:auto}}
-
-/* Natural-height workspaces: cards must never compete for a fixed-height remainder. */
-.vrmDesign .panel[data-panel="activity"].active,.vrmDesign .panel[data-panel="storage"].active{display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0;gap:16px}
-.vrmDesign .panel[data-panel="activity"]>.card,.vrmDesign .panel[data-panel="storage"]>.card{flex:0 0 auto;min-height:0}
-.vrmDesign .activity-log-card{overflow:visible;padding:0}
-.vrmDesign .activity-log-toolbar{padding:18px;flex-wrap:wrap}
-.vrmDesign .activity-log-toolbar>div{flex:1 1 240px;min-width:0}
-.vrmDesign .activity-log-list{min-height:100px;max-height:440px;overflow:auto;padding:16px 18px}
-.vrmDesign .storage-table-card{display:flex;flex-direction:column;min-height:350px!important;padding:18px}
-.vrmDesign .storage-table-scroll{flex:0 0 auto;min-height:230px;max-height:520px;overflow:auto}
-.vrmDesign .storage-table-head{flex-wrap:wrap;gap:8px}
-.vrmDesign .storage-table-head>span{max-width:600px;font-size:12px}
-.vrmDesign .storage-table-scroll th{position:sticky;top:0;background:var(--surface2);z-index:1}
-.vrmDesign .storage-table-scroll .data-table{min-width:700px}
-.vrmDesign .manual-editor-card{min-height:0}
-@media(max-width:760px){.vrmDesign .activity-log-toolbar{padding:14px}.vrmDesign .storage-table-card{padding:12px}.vrmDesign .storage-table-scroll{max-height:420px}}
-
-/* One viewport-bounded frame for every section; only interior content scrolls. */
-.vrmDesign{box-sizing:border-box;width:min(1180px,calc(100vw - 24px));height:min(790px,calc(100dvh - 24px));min-height:0;max-height:calc(100dvh - 24px);flex:none;overflow:hidden}
-.vrmDesign .shell{height:100%;min-height:0;min-width:0;overflow:hidden}
-.vrmDesign .main{min-height:0;min-width:0;overflow:hidden}
-.vrmDesign .panel{min-height:0;min-width:0;flex:1 1 0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
-.vrmDesign .panel.active>*{flex-shrink:0}
-.vrmDesign #panel-storage.active{overflow:hidden;gap:12px}
-.vrmDesign .fb-storage-tabs{display:flex;gap:8px;flex:0 0 auto;border-bottom:1px solid var(--border);padding-bottom:12px}
-.vrmDesign .fb-storage-tabs [aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
-.vrmDesign #panel-storage .fb-storage-pane{display:flex;flex-direction:column;gap:12px;flex:1 1 0;min-height:0;min-width:0;overflow:auto;scrollbar-gutter:stable}
-.vrmDesign #panel-storage .fb-storage-pane[hidden]{display:none}
-.vrmDesign .fb-storage-pane>.actions{flex:0 0 auto}
-.vrmDesign #fbStorageScopes .storage-table-card{flex:1 1 0;min-height:300px!important;overflow:hidden}
-.vrmDesign #fbStorageScopes .storage-table-scroll{flex:1 1 0;min-height:0;max-height:none;overflow:auto}
-.vrmDesign #fbStorageScopes .storage-table-head,.vrmDesign #fbStorageScopes .gui-list-filter{flex:0 0 auto}
-.vrmDesign #fbStorageResponse .manual-editor-card{flex:1 0 auto}
-@media(max-width:760px){.vrmDesign .main{padding:14px 12px}.vrmDesign .page-head{padding-bottom:12px}.vrmDesign .page-title{font-size:22px}.vrmDesign .status-bar{margin-bottom:10px}.vrmDesign .panel{padding:6px}.vrmDesign #fbStorageScopes .storage-table-head>span{font-size:11px}}
-</style>
-</head>
-<body>
-<div class="vrmDesign" data-flashback-memory="flashback_memory">
-  <div class="shell">
-    <div class="topbar">
-      <div class="topbar-logo">
-        ${escapeHtml(PLUGIN_NAME)}
-      </div>
-      <div class="topbar-scope">
-        <span id="currentScopeText" class="scope-char">${escapeHtml(current.scope.scopeKey ? (current.scope.characterName || current.scope.characterId || '이름 확인 중') : '현재 활성 채팅 없음')}</span>
-        <span class="scope-sep">›</span>
-        <span id="currentChatText" class="scope-chat">${escapeHtml(current.scope.scopeKey ? (current.scope.chatTitle || current.scope.chatId || '이름 확인 중') : '')}</span>
-        <span id="topModeBadge" class="badge ${settings.mode === 'off' ? 'badge-off' : 'badge-on'}">${settings.mode === 'off' ? 'OFF' : 'ON'}</span>
-      </div>
-      <div class="topbar-actions">
-        <button id="exportDebugLogBtn" class="btn" type="button">디버그 로그 내보내기</button>
-        <button id="refreshBtn" class="btn" type="button">새로고침</button>
-        <button id="closeBtn" class="btn btn-primary" type="button">닫기</button>
-        <button id="topMoreBtn" class="btn" type="button" aria-label="더보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu">⋯</button>
-        <div id="topMoreMenu" class="top-more-menu" role="menu" hidden>
-          <button id="topMenuRefreshBtn" class="top-menu-item" type="button" role="menuitem">새로고침</button>
-          <button id="topMenuDebugBtn" class="top-menu-item" type="button" role="menuitem">디버그 로그 내보내기</button>
-          <button id="topMenuCloseBtn" class="top-menu-item" type="button" role="menuitem">닫기</button>
-        </div>
-      </div>
-    </div>
-    <div class="sidebar">
-      <div id="sidebarHealth" class="sidebar-health ${overviewHealth.tone}">
-        <strong id="sidebarHealthState">${escapeHtml(overviewHealth.title)}</strong>
-        <span id="sidebarHealthMeta">${escapeHtml(overviewHealth.meta)}</span>
-      </div>
-      <div class="nav-tabs" role="tablist" aria-label="Flashback 설정">
-        <div class="nav-group" role="presentation">
-          <div class="nav-group-label">상태</div>
-          <button id="tab-overview" class="tab nav-item ${activeTab === 'overview' ? 'active' : ''}" data-tab="overview" type="button" role="tab" aria-controls="panel-overview" aria-selected="${activeTab === 'overview' ? 'true' : 'false'}" tabindex="${activeTab === 'overview' ? '0' : '-1'}">기억 현상실</button>
-        </div>
-        <div class="nav-group" role="presentation">
-          <div class="nav-group-label">기억</div>
-          <button id="tab-import" class="tab nav-item ${activeTab === 'import' ? 'active' : ''}" data-tab="import" type="button" role="tab" aria-controls="panel-import" aria-selected="${activeTab === 'import' ? 'true' : 'false'}" tabindex="${activeTab === 'import' ? '0' : '-1'}">기억 유지보수</button>
-          <button id="tab-source-edits" class="tab nav-item ${activeTab === 'source-edits' ? 'active' : ''}" data-tab="source-edits" type="button" role="tab" aria-controls="panel-source-edits" aria-selected="${activeTab === 'source-edits' ? 'true' : 'false'}" tabindex="${activeTab === 'source-edits' ? '0' : '-1'}">원문 수정 동기화</button>
-          <button id="tab-restore" class="tab nav-item ${activeTab === 'restore' ? 'active' : ''}" data-tab="restore" type="button" role="tab" aria-controls="panel-restore" aria-selected="${activeTab === 'restore' ? 'true' : 'false'}" tabindex="${activeTab === 'restore' ? '0' : '-1'}">기억 복원</button>
-          <button id="tab-storage" class="tab nav-item ${activeTab === 'storage' ? 'active' : ''}" data-tab="storage" type="button" role="tab" aria-controls="panel-storage" aria-selected="${activeTab === 'storage' ? 'true' : 'false'}" tabindex="${activeTab === 'storage' ? '0' : '-1'}">필름 보관함<span id="storageShardCountNav" class="nav-count">${formatNumber(current.manifest.shardCount || 0)}</span></button>
-          <button id="tab-worldline" class="tab nav-item ${activeTab === 'worldline' ? 'active' : ''}" data-tab="worldline" type="button" role="tab" aria-controls="panel-worldline" aria-selected="${activeTab === 'worldline' ? 'true' : 'false'}" tabindex="${activeTab === 'worldline' ? '0' : '-1'}">세계선</button>
-        </div>
-        <div class="nav-group" role="presentation">
-          <div class="nav-group-label">연결</div>
-          <button id="tab-provider" class="tab nav-item ${activeTab === 'provider' ? 'active' : ''}" data-tab="provider" type="button" role="tab" aria-controls="panel-provider" aria-selected="${activeTab === 'provider' ? 'true' : 'false'}" tabindex="${activeTab === 'provider' ? '0' : '-1'}">초점 · 임베딩</button>
-          <button id="tab-server" class="tab nav-item ${activeTab === 'server' ? 'active' : ''}" data-tab="server" type="button" role="tab" aria-controls="panel-server" aria-selected="${activeTab === 'server' ? 'true' : 'false'}" tabindex="${activeTab === 'server' ? '0' : '-1'}">서버 연결</button>
-        </div>
-        <div class="nav-group" role="presentation">
-          <div class="nav-group-label">설정 및 진단</div>
-          <button id="tab-activity" class="tab nav-item ${activeTab === 'activity' ? 'active' : ''}" data-tab="activity" type="button" role="tab" aria-controls="panel-activity" aria-selected="${activeTab === 'activity' ? 'true' : 'false'}" tabindex="${activeTab === 'activity' ? '0' : '-1'}">현상 기록<span id="activityLogCountNav" class="nav-count">${formatNumber(Runtime.activityLog.length)}</span></button>
-          <button id="tab-advanced" class="tab nav-item ${activeTab === 'advanced' ? 'active' : ''}" data-tab="advanced" type="button" role="tab" aria-controls="panel-advanced" aria-selected="${activeTab === 'advanced' ? 'true' : 'false'}" tabindex="${activeTab === 'advanced' ? '0' : '-1'}">고급 설정</button>
-        </div>
-      </div>
-      <div class="sidebar-footer">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span id="metricEmbedding" class="provider-tag">${escapeHtml(settings.embeddingProvider)} · ${escapeHtml(configuredModelEmbedding(settings) ? settings.embeddingModel : '모델 설정 필요')}</span>
-          <span class="tiny">v${PLUGIN_VERSION}</span>
-        </div>
-      </div>
-    </div>
-    <div class="main">
-      <header class="page-head">
-        <div class="page-head-copy">
-          <div id="guiPageEyebrow" class="page-eyebrow">${escapeHtml(activeMeta.eyebrow)}</div>
-          <h1 id="guiPageTitle" class="page-title">${escapeHtml(activeMeta.title)}</h1>
-          <p id="guiPageDescription" class="page-description">${escapeHtml(activeMeta.description)}</p>
-        </div>
-      </header>
-      <div class="status-bar">
-        <div class="status-item"><div class="status-dot"></div><span>리콜 활성</span></div>
-        <div class="status-sep"></div>
-        <div class="status-item"><span id="busyStatus">대기 중</span></div>
-        <div class="status-sep"></div>
-        <div class="status-item storage-status">local shard <span id="statusShardCount">${formatNumber(current.manifest.shardCount || 0)}</span> / <span id="statusShardSize">${formatNumber(current.manifest.shardSize || DEFAULTS.shardSize)}</span> · archive <span id="statusArchiveCount">${formatNumber(current.manifest.archiveCount || 0)}</span> · <span id="statusStatsCoverage">${escapeHtml(flashbackStatsCoverageLabel(current.stats, current.manifest))}</span></div>
-      </div>
-      ${buildOverviewTab(settings, current, currentCost).replace('class="panel"', `class="panel ${activeTab === 'overview' ? 'active' : ''}"`)}
-      ${buildImportTab().replace('class="panel"', `class="panel ${activeTab === 'import' ? 'active' : ''}"`)}
-      ${buildSourceEditTab().replace('class="panel"', `class="panel ${activeTab === 'source-edits' ? 'active' : ''}"`)}
-      ${buildRestoreTab().replace('class="panel"', `class="panel ${activeTab === 'restore' ? 'active' : ''}"`)}
-      ${buildWorldlineTab().replace('class="panel"', `class="panel ${activeTab === 'worldline' ? 'active' : ''}"`)}
-      ${buildStorageTab(scopeStats, current.scope.scopeKey).replace('class="panel"', `class="panel ${activeTab === 'storage' ? 'active' : ''}"`)}
-      ${buildProviderTab(settings, current.stats).replace('class="panel active"', `class="panel ${activeTab === 'provider' ? 'active' : ''}"`)}
-      ${buildServerConnectionTab().replace('class="panel"', `class="panel ${activeTab === 'server' ? 'active' : ''}"`)}
-      ${buildActivityLogTab(lastActionText, warningText).replace('class="panel"', `class="panel ${activeTab === 'activity' ? 'active' : ''}"`)}
-      ${buildAdvancedTab(settings).replace('class="panel"', `class="panel ${activeTab === 'advanced' ? 'active' : ''}"`)}
-    </div>
-  </div>
-</div>
-</body>
-</html>`;
+    const health = flashbackOverviewHealth(current);
+    const healthTone = health.tone === 'danger' ? 'health--danger' : health.tone === 'warning' ? 'health--warn' : 'health--ok';
+    const routeFor = tab => ({
+      overview: 'lab', storage: 'vault', worldline: 'vault', import: 'care', 'source-edits': 'care', restore: 'care',
+      provider: 'connect', server: 'connect', activity: 'log', advanced: 'settings'
+    })[tab] || 'lab';
+    const pageFor = routeFor(activeTab);
+    const subtabs = { vault: Runtime.guiVaultSubtab || (activeTab === 'worldline' ? 'wl' : 'resp'), connect: Runtime.guiConnectSubtab || (activeTab === 'server' ? 'srv' : 'emb') };
+    if (activeTab === 'worldline') subtabs.vault = 'wl';
+    if (activeTab === 'server') subtabs.connect = 'srv';
+    const recall = Runtime.lastRecall && (!Runtime.lastRecall.scopeKey || !current.scope?.scopeKey || Runtime.lastRecall.scopeKey === current.scope.scopeKey)
+      ? Runtime.lastRecall : null;
+    const selected = Array.isArray(recall?.selected) ? recall.selected : [];
+    const delivery = recall?.delivery || {};
+    const pipeline = delivery.pipeline || {};
+    const returned = delivery.stage === 'returned_to_hook';
+    const deliveredFragments = returned ? (pipeline.budgetedFragments ?? delivery.returnedFragments ?? delivery.delivered ?? null) : null;
+    const actualChars = Math.max(0, Number(recall?.evidenceBudgetPlan?.actualChars || 0) || 0);
+    const excluded = (delivery.discarded || []).filter(item => item?.reason === 'not_delivered_budget').length;
+    const frameHtml = selected.slice(0, 8).map((item, index) => {
+      const detail = text(item?.detail || item?.preview || item?.record?.text || '');
+      const preview = text(item?.preview || detail);
+      const title = text(item?.title || item?.record?.title || item?.id || item?.record?.id || '제목 없음');
+      const sourceType = text(item?.sourceType || item?.record?.sourceType || item?.record?.type || 'source');
+      const score = Number.isFinite(Number(item?.score)) ? Number(item.score).toFixed(3) : '—';
+      const cosine = Number.isFinite(Number(item?.cosine)) ? Number(item.cosine) : null;
+      const turnRange = safeStringify(item?.turnRange || item?.record?.turnRange, '확인 불가');
+      const components = item?.components && typeof item.components === 'object' ? Object.entries(item.components).filter(([,v]) => Number.isFinite(Number(v))).map(([k,v]) => `${k} ${Number(v).toFixed(3)}`).join(' · ') : '구성 점수 확인 불가';
+      return `<details class="frame-card" id="fb-recall-frame-${index}"><summary><div class="frame-card__img fc${index % 4 + 1}">${escapeHtml(preview || '미리보기 없음')}</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME ${String(index + 1).padStart(2,'0')} · ${escapeHtml(sourceType)}</div><div class="frame-card__title">${escapeHtml(title)}</div></div><span class="frame-card__score" aria-label="검색 점수">${score}</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">${cosine == null ? '' : `<div class="meter"><span>FOCUS · 벡터 유사도 ${cosine.toFixed(3)}</span><meter min="-1" max="1" value="${Math.max(-1,Math.min(1,cosine))}" aria-label="벡터 유사도"></meter></div>`}<b>기억 내용</b><p>${escapeHtml(detail || '저장된 상세 본문이 없습니다.')}</p><details class="fold"><summary>출처 및 검색 점수</summary><div class="fold__body"><dl class="kv"><dt>출처</dt><dd>${escapeHtml(item?.origin || item?.record?.origin || '확인 불가')} · ${escapeHtml(sourceType)}</dd><dt>턴 범위</dt><dd>${escapeHtml(turnRange)}</dd><dt>검색 점수</dt><dd>${score}</dd><dt>구성</dt><dd>${escapeHtml(components)}</dd></dl><p class="hint">기억 본문입니다. 원문 U+A 전문을 별도로 조회한 결과는 아닙니다.</p></div></details></div></details>`;
+    }).join('');
+    const recallFrame = renderLastRecallPanel(recall, current.scope?.scopeKey || '');
+    const byType = COUNT_TYPES.map(([type,label]) => ({type,label,...(current.stats?.byType?.[type] || {records:0,tokens:0})}));
+    const activityEntries = activityLogSnapshot().slice(-2).reverse();
+    const activityHtml = renderOverviewActivityHtml();
+    const lastAction = Runtime.lastImport || Runtime.lastCapture || Runtime.lastStorageAction || Runtime.lastClone;
+    const captureText = Runtime.lastCapture?.at ? recallAgeText(Runtime.lastCapture.at) : '아직 없음';
+    const embeddingLabel = settings.embeddingProvider === 'hash' ? '이전 해시 설정 · 모델 선택 필요' : configuredModelEmbedding(settings) ? `${settings.embeddingProvider} · ${settings.embeddingModel}` : '모델 미설정 · 원문 보관 중';
+    const healthDescription = `${health.title} · ${health.meta}`;
+    const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
+    const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
+    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${formatNumber(Runtime.guiStorageScopeCount || 0)}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다.</div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>shards / archive</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
+    const careBody = buildImportTab() + `<section id="panel-source-edits" data-panel="source-edits"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Source edits</div><h2 class="section-title">원문 수정 동기화</h2><p class="page-desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div>${buildFlashbackSourceEditCard()}</section><section id="panel-restore" data-panel="restore"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory restore</div><h2 class="section-title">백업 · 복원 · 이사</h2><p class="page-desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다.</p></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">JSON 백업 및 복원</h2><p class="card__desc">대화 원문과 비공개 기억이 포함될 수 있습니다. 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></div></section>`;
+    const providerBody = buildProviderTab(settings, current.stats);
+    const serverBody = buildServerConnectionTab();
+    const logSubtab = Runtime.guiLogSubtab || 'a';
+    const warningText = Runtime.warnings.slice(-8).map(w => `[${new Date(w.at).toLocaleTimeString()}] ${w.msg}`).join('\n') || '없음';
+    const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div><details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
+    const settingsBody = buildAdvancedTab(settings);
+    const pages = [
+      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태만 진단</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
+      `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
+      `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
+      `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','이전 · 검증',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
+      `<section class="page ${pageFor==='log'?'is-active':''}" data-page="log"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">현상 기록</h1><p class="page-desc">현재 실행의 리콜·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.</p></div><div class="page-actions">${activityBody.match(/<div class="page-actions">([\s\S]*?)<\/div>/)?.[1] || ''}</div></div>${activityBody.replace(/<div class="page-actions">[\s\S]*?<\/div>/,'')}</section>`,
+      `<section class="page ${pageFor==='settings'?'is-active':''}" data-page="settings" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recall settings</div><h1 class="page-title">리콜 설정</h1><p class="page-desc">프리셋으로 시작하고, 필요한 값만 세부 조정합니다. 저장 출처와 ARG 우선순위를 확인합니다.</p></div></div><div class="stack">${settingsBody}</div></section>`
+    ].join('');
+    const pageKey = routeTabKey[pageFor] || 'overview';
+    const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
+    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${formatNumber(current.manifest?.shardCount || 0)}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
+    const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button><button id="topMenuCloseBtn" class="menu-item" type="button" role="menuitem">닫기</button></div></div></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}</style></head><body>${root}</body></html>`;
   };
-
 
 
   const guiDialog = (message, options = {}) => new Promise((resolve) => {
@@ -47335,25 +46201,10 @@ ${cleanedText}`, 80),
     const previousFocus = doc?.activeElement || null;
     try {
       if (!doc || !doc.body) { console.log(`[${PLUGIN_NAME}] ${title}: ${message}`); resolve(!confirmMode); return; }
-      if (!doc.getElementById('vrmDialogStyle')) {
-        const style = doc.createElement('style');
-        style.id = 'vrmDialogStyle';
-        style.textContent = `
-          .vrmDialogBackdrop { position: fixed; inset: 0; z-index: 29; display:flex; align-items:center; justify-content:center; padding:20px; background: rgba(0,0,0,.62); }
-          .vrmDialogBox { width:min(520px, 100%); border:1px solid #334155; border-radius:16px; background:#121722; color:#eef1f7; box-shadow:0 24px 70px rgba(0,0,0,.45); padding:18px; }
-          .vrmDialogTitle { margin:0 0 10px; font-size:18px; font-weight:900; }
-          .vrmDialogMessage { white-space:pre-wrap; color:#cbd5e1; line-height:1.55; margin:0 0 16px; }
-          .vrmDialogActions { display:flex; gap:8px; justify-content:flex-end; }
-          .vrmDialogActions button { border:0; border-radius:10px; padding:9px 13px; font:inherit; cursor:pointer; font-weight:800; }
-          .vrmDialogOk { background:#3b82f6; color:white; }
-          .vrmDialogCancel { background:#2b313f; color:#e7ebf5; }
-        `;
-        doc.head.appendChild(style);
-      }
       const backdrop = doc.createElement('div');
-      backdrop.className = 'vrmDialogBackdrop';
+      backdrop.className = 'overlay is-open';
       const box = doc.createElement('div');
-      box.className = 'vrmDialogBox';
+      box.className = 'dialog dialog--wide';
       const dialogId = `vrm-dialog-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       box.setAttribute('role', 'dialog');
       box.setAttribute('aria-modal', 'true');
@@ -47361,21 +46212,21 @@ ${cleanedText}`, 80),
       box.setAttribute('aria-describedby', `${dialogId}-message`);
       const titleEl = doc.createElement('h3');
       titleEl.id = `${dialogId}-title`;
-      titleEl.className = 'vrmDialogTitle';
+      titleEl.className = 'page-title';
       titleEl.textContent = title;
       const msgEl = doc.createElement('p');
       msgEl.id = `${dialogId}-message`;
-      msgEl.className = 'vrmDialogMessage';
+      msgEl.className = 'muted';
       msgEl.textContent = String(message || '');
       const actions = doc.createElement('div');
-      actions.className = 'vrmDialogActions';
+      actions.className = 'dialog__actions';
       const cancelBtn = doc.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'vrmDialogCancel';
+      cancelBtn.className = 'btn';
       cancelBtn.textContent = options.cancelText || '취소';
       const okBtn = doc.createElement('button');
       okBtn.type = 'button';
-      okBtn.className = 'vrmDialogOk';
+      okBtn.className = confirmMode ? 'btn btn--primary' : 'btn';
       okBtn.textContent = options.okText || (confirmMode ? '확인' : '닫기');
       let settled = false;
       let onKey = null;
@@ -47585,7 +46436,7 @@ ${cleanedText}`, 80),
     if (hidden) hidden.value = normalized;
     for (const btn of guiQueryAll('button[data-recall-quality-preset]')) {
       const active = btn.getAttribute?.('data-recall-quality-preset') === normalized;
-      btn.classList?.toggle?.('active', active);
+      btn.classList?.toggle?.('is-on', active);
       btn.setAttribute?.('aria-pressed', active ? 'true' : 'false');
     }
     const status = getGuiNode('recallQualityPresetStatus');
@@ -47924,22 +46775,25 @@ ${cleanedText}`, 80),
         inset: '0',
         zIndex: '26',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'stretch',
         justifyContent: 'center',
-        padding: '12px',
+        padding: '0',
         boxSizing: 'border-box',
         overflowY: 'auto',
         overflowX: 'hidden',
         scrollbarWidth: 'thin',
-        scrollbarGutter: 'stable both-edges',
+        scrollbarGutter: 'auto',
         overscrollBehavior: 'contain',
-        background: 'rgba(6,8,14,.38)',
-        color: '#0f172a'
+        background: 'var(--page-bg,#cfc9bd)',
+        color: 'var(--text,#2e2a23)'
       });
+      // The canonical mockup owns the page theme; the host wrapper adds no
+      // second inset, scrollbar gutter, or scrim around its own padded stage.
+      body.classList?.add('t-flashback');
       forceTransparentGuiCanvas();
       body.style.margin = '0';
       body.style.background = 'transparent';
-      body.style.color = '#0f172a';
+      body.style.color = 'var(--text,#2e2a23)';
     } catch (_) {}
     return guiRoot;
   };
@@ -48174,20 +47028,9 @@ ${cleanedText}`, 80),
     if (!button || !menu) return false;
     const expanded = open === true;
     button.setAttribute?.('aria-expanded', expanded ? 'true' : 'false');
-    try { menu.classList?.toggle('open', expanded); } catch (_) {}
+    try { menu.classList?.toggle('is-open', expanded); } catch (_) {}
     try { menu.hidden = !expanded; } catch (_) {}
     return expanded;
-  };
-
-  const setStorageGuiTab = (tab = 'response', root = guiRoot || document) => {
-    const active = tab === 'scopes' ? 'scopes' : 'response';
-    Runtime.guiStorageTab = active;
-    for (const button of Array.from(root.querySelectorAll?.('[data-storage-tab]') || [])) {
-      const selected = button.getAttribute('data-storage-tab') === active;
-      button.setAttribute('aria-selected', String(selected));
-      button.setAttribute('tabindex', selected ? '0' : '-1');
-    }
-    for (const panel of Array.from(root.querySelectorAll?.('[data-storage-pane]') || [])) panel.hidden = panel.getAttribute('data-storage-pane') !== active;
   };
 
   const setActiveGuiTab = (tab = 'overview') => {
@@ -48195,24 +47038,49 @@ ${cleanedText}`, 80),
     if (Runtime.guiTab !== activeTab) { flashbackArchiveRecovery.clear(); flashbackWorldlineViewToken += 1; flashbackSourceEditUiToken += 1; manualEditorRenderToken += 1; }
     Runtime.guiTab = activeTab;
     const root = guiRoot || document;
-    for (const btn of Array.from(root.querySelectorAll?.('.tab[data-tab]') || [])) {
-      const isActive = btn.getAttribute?.('data-tab') === activeTab;
-      try { btn.classList?.toggle('active', isActive); } catch (_) {}
-      if (!btn.classList) btn.className = `tab ${isActive ? 'active' : ''}`.trim();
-      try { btn.setAttribute?.('aria-selected', isActive ? 'true' : 'false'); } catch (_) {}
-      try { btn.setAttribute?.('tabindex', isActive ? '0' : '-1'); } catch (_) {}
+    const route = ({overview:'lab',storage:'vault',worldline:'vault',import:'care','source-edits':'care',restore:'care',provider:'connect',server:'connect',activity:'log',advanced:'settings'})[activeTab] || 'lab';
+    const routeTab = ({lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'})[route];
+    if (activeTab === 'worldline') Runtime.guiVaultSubtab = 'wl';
+    else if (activeTab === 'storage' && !['wl','scopes'].includes(Runtime.guiVaultSubtab)) Runtime.guiVaultSubtab = 'resp';
+    if (activeTab === 'server') Runtime.guiConnectSubtab = 'srv';
+    else if (activeTab === 'provider' && !['mig','srv'].includes(Runtime.guiConnectSubtab)) Runtime.guiConnectSubtab = 'emb';
+    for (const page of Array.from(root.querySelectorAll?.('.page[data-page]') || [])) {
+      page.classList?.toggle('is-active', page.getAttribute?.('data-page') === route);
     }
-    for (const panel of Array.from(root.querySelectorAll?.('.panel[data-panel]') || [])) {
-      const isActive = panel.getAttribute?.('data-panel') === activeTab;
-      try { panel.classList?.toggle('active', isActive); } catch (_) {}
-      if (!panel.classList) panel.className = `panel ${isActive ? 'active' : ''}`.trim();
-      try { panel.setAttribute?.('aria-hidden', isActive ? 'false' : 'true'); } catch (_) {}
-      try { panel.hidden = !isActive; } catch (_) {}
+    for (const button of Array.from(root.querySelectorAll?.('[data-go]') || [])) {
+      const selected = button.getAttribute?.('data-go') === route;
+      button.setAttribute?.('aria-current', selected ? 'page' : 'false');
+    }
+    const wantedSubtabs = {v:Runtime.guiVaultSubtab || 'resp',c:Runtime.guiConnectSubtab || 'emb',l:Runtime.guiLogSubtab || 'a'};
+    for (const button of Array.from(root.querySelectorAll?.('[data-subtab][data-group]') || [])) {
+      const selected = button.getAttribute?.('data-subtab') === wantedSubtabs[button.getAttribute?.('data-group')];
+      button.setAttribute?.('aria-selected', selected ? 'true' : 'false');
+      button.setAttribute?.('tabindex', selected ? '0' : '-1');
+    }
+    for (const panel of Array.from(root.querySelectorAll?.('[data-subpanel][data-group]') || [])) {
+      panel.classList?.toggle('is-active', panel.getAttribute?.('data-subpanel') === wantedSubtabs[panel.getAttribute?.('data-group')]);
     }
     const meta = FLASHBACK_GUI_TAB_META[activeTab] || FLASHBACK_GUI_TAB_META.overview;
     setNodeText('guiPageEyebrow', meta.eyebrow);
     setNodeText('guiPageTitle', meta.title);
     setNodeText('guiPageDescription', meta.description);
+    const pageMeta = {
+      lab:['Memory recall lab','기억 현상실','현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.'],
+      vault:['Storage','필름 보관함','저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.'],
+      care:['Memory care','기억 관리','진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.'],
+      connect:['Connection','임베딩 · 서버','검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.'],
+      log:['Session log','현상 기록','현재 실행의 리콜·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.'],
+      settings:['Recall settings','리콜 설정','프리셋으로 시작하고 필요한 값만 세부 조정합니다.']
+    }[route];
+    const currentPage = root.querySelector?.(`[data-page="${route}"]`);
+    if (currentPage && pageMeta) {
+      const nodes = currentPage.querySelectorAll?.('.page-head .eyebrow,.page-head .page-title,.page-head .page-desc') || [];
+      if (nodes[0]) nodes[0].textContent = pageMeta[0];
+      if (nodes[1]) nodes[1].textContent = pageMeta[1];
+      if (nodes[2]) nodes[2].textContent = pageMeta[2];
+    }
+    if (activeTab === 'source-edits') root.querySelector?.('#panel-source-edits')?.scrollIntoView?.({block:'start'});
+    if (activeTab === 'restore') root.querySelector?.('#panel-restore')?.scrollIntoView?.({block:'start'});
     if (activeTab === 'server') mountFlashbackServerConnectionPanel();
   };
 
@@ -48244,7 +47112,7 @@ ${cleanedText}`, 80),
     setNodeText('metricMode', settings.mode);
     setNodeText('topModeBadge', settings.mode === 'off' ? 'OFF' : 'ON');
     const topModeBadge = getGuiNode('topModeBadge');
-    if (topModeBadge) topModeBadge.className = `badge ${settings.mode === 'off' ? 'badge-off' : 'badge-on'}`;
+    if (topModeBadge) topModeBadge.className = `badge ${settings.mode === 'off' ? '' : 'badge--ok'}`;
     setNodeHtml('miniCounts', renderCountCards(current.stats));
     setNodeHtml('embeddingCostPanel', renderEmbeddingCostPanelBody(settings, current.stats));
     setNodeHtml('lastRecallPanel', renderLastRecallPanel(Runtime.lastRecall, current.scope.scopeKey));
@@ -48252,11 +47120,11 @@ ${cleanedText}`, 80),
     const healthBanner = getGuiNode('overviewHealthBanner');
     if (healthBanner) healthBanner.className = `overview-health ${health.tone}`;
     const sidebarHealth = getGuiNode('sidebarHealth');
-    if (sidebarHealth) sidebarHealth.className = `sidebar-health ${health.tone}`;
+    if (sidebarHealth) { sidebarHealth.className = `health ${health.tone === 'danger' ? 'health--danger' : health.tone === 'warning' ? 'health--warn' : 'health--ok'}`; sidebarHealth.title = `${health.title} · ${health.meta}`; }
     setNodeText('overviewHealthTitle', health.title);
     setNodeText('overviewHealthMeta', health.meta);
-    setNodeText('sidebarHealthState', health.title);
-    setNodeText('sidebarHealthMeta', health.meta);
+    setNodeText('sidebarHealthState', flashbackHealthChipLabel(health));
+    setNodeText('sidebarHealthMeta', ` · ${formatNumber(current.records.length)}개`);
     const recall = flashbackOverviewRecallSummary(Runtime.lastRecall, current.scope.scopeKey);
     setNodeText('overviewRecallCount', recall.value);
     setNodeText('overviewRecallMeta', recall.meta);
@@ -48394,7 +47262,7 @@ ${cleanedText}`, 80),
   // A forced remount replaces the whole body via innerHTML, so the caret, the scroll
   // offsets and every open accordion are destroyed. These two helpers snapshot that
   // state and put it back. Purely best-effort: they never throw into the mount path.
-  const GUI_SCROLL_SELECTOR = '.nav-tabs,.panel,.manual-editor-list,.storage-table-scroll,.activity-log-list';
+  const GUI_SCROLL_SELECTOR = '.tabs,.list,.table-wrap,[data-manual-editor]';
 
   const guiViewStateKey = (node) => {
     try {
@@ -48523,6 +47391,13 @@ ${cleanedText}`, 80),
       }
     }
     root.innerHTML = extractTagContent(html, 'body');
+    if (Runtime.guiLastMaintenancePlan) renderMaintenancePlanInUi(Runtime.guiLastMaintenancePlan);
+    // The mockup normally lays `.stage` out in the viewport body. Flashback mounts
+    // inside a fixed flex overlay, so give that same stage the overlay's available
+    // box; without it, shrink-to-fit collapses `.frame` in the host WebView.
+    const mockupStage = root.querySelector?.('.stage');
+    if (mockupStage?.style) { mockupStage.style.width = '100%'; mockupStage.style.height = '100%'; }
+    hydrateFlashbackMockupIcons(root);
     root.removeAttribute?.('data-vrm-skeleton');
     root.setAttribute?.('data-vrm-mounted', '1');
     guiMounted = true;
@@ -48531,6 +47406,48 @@ ${cleanedText}`, 80),
     restoreGuiViewState(root, viewState);
     applyBusyState();
     return true;
+  };
+
+  const hydrateFlashbackMockupIcons = root => {
+    if (!root?.ownerDocument) return;
+    const doc = root.ownerDocument;
+    const icons = {
+      eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+      film:'<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4"/>',
+      wrench:'<path d="M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z"/><path d="m13.5 12.5-8 8-2-2 8-8"/>',
+      link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+      log:'<path d="M6 4h12v16H6z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/>',
+      sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+      check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+      alert:'<path d="M12 8v5M12 16.6v.1M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/>',
+      info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.1"/>',
+      shield:'<path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z"/><path d="m9 12 2.2 2.2L15.2 10"/>',
+      search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+      more:'<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',
+      refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+      download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>'
+    };
+    if (!doc.getElementById('flashback-mockup-icon-sprite')) {
+      const sprite = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      sprite.id = 'flashback-mockup-icon-sprite';
+      sprite.setAttribute('aria-hidden', 'true');
+      sprite.style.display = 'none';
+      for (const [name, markup] of Object.entries(icons)) {
+        const symbol = doc.createElementNS('http://www.w3.org/2000/svg', 'symbol');
+        symbol.id = `i-${name}`; symbol.setAttribute('viewBox', '0 0 24 24');
+        symbol.innerHTML = markup; sprite.appendChild(symbol);
+      }
+      root.prepend(sprite);
+    }
+    for (const node of Array.from(root.querySelectorAll('i[data-i]'))) {
+      const name = node.getAttribute('data-i');
+      if (!icons[name]) continue;
+      const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', `ic${node.getAttribute('data-size') ? ` ic--${node.getAttribute('data-size')}` : ''}`);
+      svg.setAttribute('aria-hidden', 'true');
+      const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', `#i-${name}`); svg.appendChild(use); node.replaceWith(svg);
+    }
   };
 
   const refreshUi = async (tab = Runtime.guiTab || 'overview', options = {}) => {
@@ -48554,7 +47471,7 @@ ${cleanedText}`, 80),
     }
     if (refreshToken !== Runtime.guiRefreshToken) return false;
     if (activeTab === 'worldline') await refreshFlashbackWorldlinePanel();
-    if (activeTab === 'source-edits') await refreshFlashbackSourceEditPanel();
+    if (activeTab === 'import' || activeTab === 'source-edits') await refreshFlashbackSourceEditPanel();
     if (activeTab === 'provider') await refreshEmbeddingWorkPanel(guiRoot);
     getFlashbackSourceInput().mountControls(getGuiNode('fbSourceTrackingSettings'));
     if (activeTab === 'storage' || options.storage === true) {
@@ -48648,8 +47565,8 @@ ${cleanedText}`, 80),
     for (const btn of Array.from(root.querySelectorAll?.('button[data-manual-toggle-delete]') || [])) {
       const key = btn.getAttribute?.('data-manual-toggle-delete') || '';
       const selected = pending.has(key);
-      if (!btn.disabled) btn.textContent = selected ? '대기 취소' : '삭제 후보';
-      btn.classList?.toggle?.('btn-danger', !selected);
+      if (!btn.disabled) btn.textContent = selected ? '대기 취소' : '삭제 후보에 추가';
+      btn.classList?.toggle?.('btn--danger', !selected);
     }
   };
 
@@ -48685,9 +47602,9 @@ ${cleanedText}`, 80),
       return false;
     }
     resetManualEditorForType(MANUAL_EDITOR_SOURCE_TYPE);
+    Runtime.guiVaultSubtab = 'resp';
     Runtime.guiTab = 'storage';
     setActiveGuiTab('storage');
-    setStorageGuiTab('response');
     await nextRenderFrame();
     const token = Runtime.guiRefreshToken;
     await Promise.all([
@@ -48711,7 +47628,7 @@ ${cleanedText}`, 80),
       const textBtn = event?.target?.closest?.('button[data-manual-open-text]');
       if (textBtn && root.contains?.(textBtn)) {
         const article = textBtn.closest('[data-manual-record-key]');
-        const pre = article?.querySelector('.manual-record-full');
+        const pre = article?.querySelector('[data-full-record]');
         if (!pre || textBtn.disabled) return;
         if (textBtn.getAttribute('aria-expanded') === 'true') {
           pre.hidden = true; pre.textContent = ''; textBtn.setAttribute('aria-expanded', 'false'); textBtn.textContent = '원문 펼치기'; return;
@@ -48825,18 +47742,6 @@ ${cleanedText}`, 80),
   const bindUiEvents = (_root = null) => {
     const root = _root || guiRoot || document;
     bindEmbeddingWorkControls(root);
-    setStorageGuiTab(Runtime.guiStorageTab || 'response', root);
-    const storageTabs = Array.from(root.querySelectorAll?.('[data-storage-tab]') || []);
-    storageTabs.forEach((button, index) => {
-      button.addEventListener('click', () => setStorageGuiTab(button.getAttribute('data-storage-tab'), root));
-      button.addEventListener('keydown', event => {
-        if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
-        event.preventDefault();
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? storageTabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + storageTabs.length) % storageTabs.length;
-        setStorageGuiTab(storageTabs[next].getAttribute('data-storage-tab'), root);
-        storageTabs[next].focus();
-      });
-    });
     getGuiNode('fbWorldlineRefresh')?.addEventListener('click', () => { void refreshFlashbackWorldlinePanel(); });
     getGuiNode('fbWorldlineContent')?.addEventListener('click', event => {
       if (!event.target?.closest?.('[data-fb-worldline-more]') || !flashbackWorldlineView || Runtime.guiTab !== 'worldline') return;
@@ -48905,29 +47810,60 @@ ${cleanedText}`, 80),
         group.classList?.toggle?.('open', !expanded);
       });
     }
-    const activateTabButton = btn => {
-      const tab = normalizeFlashbackGuiTab(btn?.getAttribute?.('data-tab'));
-      Runtime.guiPerf.tabFastSwitches += 1;
-      setActiveGuiTab(tab);
-      runGuiRefresh(tab, { summary: false, deferHeavy: true });
+    const moreSheet = root.querySelector?.('#sheet-more');
+    const moreTrigger = root.querySelector?.('.tabbar [data-more]');
+    let moreReturnFocus = null;
+    const closeMoreSheet = () => {
+      if (!moreSheet?.classList?.contains('is-open')) return;
+      moreSheet.classList.remove('is-open'); moreSheet.setAttribute('aria-hidden','true');
+      moreTrigger?.setAttribute('aria-expanded','false');
+      moreReturnFocus?.focus?.(); moreReturnFocus = null;
     };
-    for (const btn of Array.from(root.querySelectorAll?.('.tab[data-tab]') || [])) {
-      btn.addEventListener('click', () => activateTabButton(btn));
-      btn.addEventListener('keydown', event => {
-        const key = event?.key || '';
-        if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(key)) return;
-        const tabs = Array.from(root.querySelectorAll?.('.tab[data-tab]') || []);
-        const currentIndex = Math.max(0, tabs.indexOf(btn));
-        let nextIndex = currentIndex;
-        if (key === 'Home') nextIndex = 0;
-        else if (key === 'End') nextIndex = Math.max(0, tabs.length - 1);
-        else if (key === 'ArrowRight' || key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
-        else if (key === 'ArrowLeft' || key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
-        const next = tabs[nextIndex];
-        if (!next) return;
-        event.preventDefault?.();
-        next.focus?.();
-        activateTabButton(next);
+    moreTrigger?.addEventListener('click', () => {
+      moreReturnFocus = document.activeElement;
+      moreSheet?.classList?.add('is-open'); moreSheet?.setAttribute('aria-hidden','false');
+      moreTrigger.setAttribute('aria-expanded','true'); moreSheet?.querySelector('button')?.focus?.();
+    });
+    moreSheet?.addEventListener('click', event => {
+      if (event.target === moreSheet || event.target?.closest?.('[data-close]')) closeMoreSheet();
+    });
+    moreSheet?.addEventListener('keydown', event => {
+      if (!moreSheet.classList.contains('is-open')) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMoreSheet(); return; }
+      if (event.key !== 'Tab') return;
+      const buttons = Array.from(moreSheet.querySelectorAll('button:not([disabled])'));
+      const first = buttons[0], last = buttons[buttons.length-1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus?.(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
+    });
+    for (const button of Array.from(root.querySelectorAll?.('[data-go]') || [])) {
+      button.addEventListener('click', () => {
+        const route = text(button.getAttribute?.('data-go') || 'lab');
+        const tab = ({lab:'overview',vault:Runtime.guiVaultSubtab === 'wl' ? 'worldline' : 'storage',care:'import',connect:Runtime.guiConnectSubtab === 'srv' ? 'server' : 'provider',log:'activity',settings:'advanced'})[route] || 'overview';
+        Runtime.guiPerf.tabFastSwitches += 1;
+        setActiveGuiTab(tab);
+        if (route === 'vault' && Runtime.guiVaultSubtab === 'resp') openManualEditorForSourceType(MANUAL_EDITOR_SOURCE_TYPE).catch(error => warn('manual editor open failed', error));
+        else runGuiRefresh(tab, { summary:false, deferHeavy:true, storage:route === 'vault' && Runtime.guiVaultSubtab !== 'wl' });
+      });
+    }
+    for (const button of Array.from(root.querySelectorAll?.('button[data-subtab][data-group]') || [])) {
+      button.addEventListener('click', () => {
+        const group = text(button.getAttribute?.('data-group') || '');
+        const destination = text(button.getAttribute?.('data-subtab') || '');
+        let tab = 'overview';
+        if (group === 'v') {
+          Runtime.guiVaultSubtab = destination;
+          tab = destination === 'wl' ? 'worldline' : 'storage';
+        } else if (group === 'c') {
+          Runtime.guiConnectSubtab = destination;
+          tab = destination === 'srv' ? 'server' : 'provider';
+        } else if (group === 'l') {
+          Runtime.guiLogSubtab = destination;
+          tab = 'activity';
+        }
+        setActiveGuiTab(tab);
+        if (group === 'v' && destination === 'resp') openManualEditorForSourceType(MANUAL_EDITOR_SOURCE_TYPE).catch(error => warn('manual editor open failed', error));
+        else runGuiRefresh(tab, { summary:false, deferHeavy:true, storage:group === 'v' && destination !== 'wl' });
       });
     }
     getGuiNode('overviewMaintenanceBtn')?.addEventListener('click', () => {
@@ -49182,8 +48118,13 @@ ${cleanedText}`, 80),
       if (mode) mode.value = 'reembed';
       getGuiNode('maintenanceRunBtn')?.focus?.();
     });
-    getGuiNode('sameSpacePreviewBtn')?.addEventListener('click',async()=>{try{const preview=await previewVerifiedEmbeddingMigration();Runtime.sameSpacePreview=preview;setNodeText('sameSpaceStatus',`현재 채팅 · 이전 가능 ${preview.rows.length}개 · 근거 부족 ${preview.unknown.length}개 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
-    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;setNodeText('sameSpaceStatus',`이전 ${result.migrated}개 · 벡터·원문 재읽기 확인 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    const refreshSameSpacePreviewCounts = () => {
+      const preview = Runtime.sameSpacePreview;
+      setNodeText('sameSpaceEligibleCount', Array.isArray(preview?.rows) ? formatNumber(preview.rows.length) : '아직 미리보지 않음');
+      setNodeText('sameSpaceUnknownCount', Array.isArray(preview?.unknown) ? `${formatNumber(preview.unknown.length)} (등록부·생성 이력 검증 불일치)` : '미확인');
+    };
+    getGuiNode('sameSpacePreviewBtn')?.addEventListener('click',async()=>{try{const preview=await previewVerifiedEmbeddingMigration();Runtime.sameSpacePreview=preview;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`현재 채팅 · 이전 가능 ${preview.rows.length}개 · 근거 부족 ${preview.unknown.length}개 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`이전 ${result.migrated}개 · 벡터·원문 재읽기 확인 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
     getGuiNode('cancelMaintenanceResultBtn')?.addEventListener('click',()=>{if(!maintenanceExecutionStatus().canCancel)return;Runtime.maintenanceController?.abort();Runtime.maintenanceExecutionLedger?.cancel();renderMaintenanceExecution();});
     getGuiNode('maintenanceExecutionDetailsBtn')?.addEventListener('click',()=>{
       const button=getGuiNode('maintenanceExecutionDetailsBtn'),panel=getGuiNode('maintenanceExecutionDetails');
@@ -49352,6 +48293,7 @@ ${cleanedText}`, 80),
       setBusy(true, '기억 상태 진단');
       try {
         const plan = await inspectMemoryMaintenance({ requestPermission: true });
+        renderMaintenancePlanInUi(plan);
         await guiAlert(maintenancePlanText(plan), '기억 유지보수 진단');
       } catch (error) { await guiError('기억 상태 진단 실패', error); }
       finally { setBusy(false); }
@@ -49359,7 +48301,7 @@ ${cleanedText}`, 80),
     getGuiNode('maintenanceAutoBtn')?.addEventListener('click', async () => {
       let plan = null;
       setBusy(true, '자동 복구 계획 확인');
-      try { plan = await inspectMemoryMaintenance({ requestPermission: true }); }
+      try { plan = await inspectMemoryMaintenance({ requestPermission: true }); renderMaintenancePlanInUi(plan); }
       catch (error) { await guiError('자동 복구 진단 실패', error); }
       finally { setBusy(false); }
       if (!plan) return;
@@ -49570,7 +48512,7 @@ ${cleanedText}`, 80),
       guiKeyHandler = event => {
         if (event?.key === 'Escape') {
           // The dialog owns this key before the outer capture handler closes the GUI.
-          if (document.querySelector?.('.vrmDialogBackdrop')) return;
+          if (document.querySelector?.('.overlay.is-open .dialog[role="dialog"]')) return;
           event.preventDefault?.();
           if (getGuiNode('topMoreBtn')?.getAttribute?.('aria-expanded') === 'true') {
             event.stopPropagation?.();
@@ -52204,37 +51146,57 @@ ${cleanedText}`, 80),
       return runtime.lastExport;
     };
     const modal = ({ title, body, confirmLabel = '확인', cancelLabel = '취소', danger = false, confirm = true }) => new Promise(resolve => {
+      const returnFocus = document.activeElement;
       const overlay = document.createElement('div');
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        overlay.remove();
+        try { returnFocus?.focus?.({ preventScroll: true }); } catch (_) {}
+        resolve(value);
+      };
       overlay.setAttribute('data-portable-backup-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;';
+      overlay.className = 'overlay is-open';
       const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(560px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#151820;color:#edf1f7;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.6);font:13px/1.55 system-ui,sans-serif;';
+      panel.className = `dialog${danger ? ' dialog--danger' : ''}`;
+      panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');
       const heading = document.createElement('h3');
+      heading.className = 'page-title';
       heading.textContent = title;
-      heading.style.cssText = 'margin:0 0 12px;font-size:17px;';
       const content = document.createElement('div');
-      content.style.cssText = 'white-space:pre-wrap;color:#c8d0dc;';
+      content.className = 'muted';
+      content.style.whiteSpace = 'pre-wrap';
       content.textContent = body;
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:18px;';
+      actions.className = 'dialog__actions';
       if (confirm) {
         const cancelButton = document.createElement('button');
+        cancelButton.className = 'btn';
         cancelButton.textContent = cancelLabel;
-        cancelButton.style.cssText = 'border:1px solid #465066;background:#222838;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;';
-        cancelButton.onclick = () => { overlay.remove(); resolve(false); };
+        cancelButton.onclick = () => finish(false);
         actions.appendChild(cancelButton);
       }
       const okayButton = document.createElement('button');
+      okayButton.className = danger ? 'btn btn--danger' : 'btn btn--primary';
       okayButton.textContent = confirm ? confirmLabel : '닫기';
-      okayButton.style.cssText = `border:1px solid ${danger ? '#8e3e45' : '#436aa6'};background:${danger ? '#6f2830' : '#31578f'};color:#fff;border-radius:7px;padding:7px 12px;cursor:pointer;`;
-      okayButton.onclick = () => { overlay.remove(); resolve(true); };
+      okayButton.onclick = () => finish(true);
       actions.appendChild(okayButton);
       panel.append(heading, content, actions);
       overlay.appendChild(panel);
       overlay.addEventListener('click', event => {
-        if (event.target === overlay) { overlay.remove(); resolve(false); }
+        if (event.target === overlay) finish(false);
+      });
+      overlay.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(false); return; }
+        if (event.key !== 'Tab') return;
+        const controls = [...(panel.querySelectorAll?.('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])') || [])].filter(node => !node.disabled && !node.hidden);
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus?.(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
       });
       document.body.appendChild(overlay);
+      try { actions.querySelector?.('button')?.focus?.(); } catch (_) {}
     });
     const portableRestoreReasonText = reason => ({
       same_chat_verified: '현재 채팅과 백업의 ID가 일치합니다.',
@@ -52247,23 +51209,33 @@ ${cleanedText}`, 80),
       chat_copy_ready: '현재 대화가 백업 당시 채팅과 정확히 일치합니다.'
     }[reason] || reason || '사용할 수 없습니다.');
     const restoreModeModal = inspection => new Promise(resolve => {
+      const returnFocus = document.activeElement;
       const overlay = document.createElement('div');
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        overlay.remove();
+        try { returnFocus?.focus?.({ preventScroll: true }); } catch (_) {}
+        resolve(value);
+      };
       overlay.setAttribute('data-portable-restore-mode-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:18px;';
+      overlay.className = 'overlay is-open';
       const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(720px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:#151820;color:#edf1f7;padding:19px;box-shadow:0 28px 90px rgba(0,0,0,.65);font:13px/1.5 system-ui,sans-serif;';
+      panel.className = 'dialog dialog--wide dialog--danger';
+      panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');
       const heading = document.createElement('h3');
+      heading.className = 'page-title';
       heading.textContent = `${config.pluginName} 기억 복원 방식`;
-      heading.style.cssText = 'margin:0 0 8px;font-size:17px;';
       const summary = document.createElement('div');
-      summary.style.cssText = 'color:#aeb8c8;margin-bottom:14px;white-space:pre-wrap;';
+      summary.className = 'note';summary.style.whiteSpace = 'pre-wrap';
       summary.textContent = [
         `백업: ${inspection.payload.source.characterName || inspection.payload.source.characterId || '-'} / ${inspection.payload.source.chatTitle || inspection.payload.source.chatId || '-'}`,
         `현재: ${inspection.target.scope.characterName || inspection.target.scope.characterId || '-'} / ${inspection.target.scope.chatTitle || inspection.target.scope.chatId || '-'}`,
         `기억 ${inspection.payload.records.length.toLocaleString('ko-KR')}개 · 대상 저장소 ${inspection.target.empty ? '비어 있음' : '데이터 있음'} · 대화 지문 ${inspection.transcriptMatches ? '일치' : '불일치'}`
       ].join('\n');
       const list = document.createElement('div');
-      list.style.cssText = 'display:grid;gap:9px;';
+      list.className = 'stack stack--sm';
       const definitions = [
         { mode: Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT, title: '백업 시점으로 복원', body: '같은 채팅의 현재 기억을 백업 상태로 교체합니다.', accent: '#5f8ee8' },
         { mode: Flashback_PORTABLE_RESTORE_MODES.CHAT_MIGRATION, title: '새 채팅으로 이사', body: '다른 채팅의 기억을 영구 과거 아카이브로 연결하고 새 월드라인을 시작합니다.', accent: '#46a58c' },
@@ -52274,26 +51246,23 @@ ${cleanedText}`, 80),
       const renderSelection = () => {
         for (const [mode, card] of cards) {
           const active = mode === selected;
-          card.style.borderColor = active ? card.dataset.accent : 'rgba(255,255,255,.12)';
-          card.style.background = active ? 'rgba(72,102,154,.23)' : 'rgba(255,255,255,.035)';
+          card.classList.toggle('is-on', active);
         }
       };
       for (const definition of definitions) {
         const state = inspection.modes[definition.mode] || { allowed: false, reason: 'blocked' };
         const card = document.createElement('button');
+        card.className = 'mode-opt';
         card.type = 'button';
         card.disabled = !state.allowed;
-        card.dataset.accent = definition.accent;
-        card.style.cssText = `text-align:left;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 13px;color:${state.allowed ? '#edf1f7' : '#778091'};background:rgba(255,255,255,.035);cursor:${state.allowed ? 'pointer' : 'not-allowed'};opacity:${state.allowed ? '1' : '.72'};`;
-        const title = document.createElement('div');
+        const title = document.createElement('b');
         title.textContent = definition.title;
-        title.style.cssText = 'font-weight:750;font-size:14px;margin-bottom:3px;';
-        const body = document.createElement('div');
+        const body = document.createElement('small');
         body.textContent = definition.body;
-        body.style.cssText = 'font-size:12px;color:inherit;';
-        const reason = document.createElement('div');
+        const reason = document.createElement('span');
+        reason.className = 'why';
         reason.textContent = `${state.allowed ? '사용 가능' : '차단'} · ${portableRestoreReasonText(state.reason)}`;
-        reason.style.cssText = `font-size:11px;margin-top:6px;color:${state.allowed ? definition.accent : '#c1797f'};`;
+        reason.classList.toggle('why--ok', state.allowed);
         card.append(title, body, reason);
         card.onclick = () => { if (state.allowed) { selected = definition.mode; renderSelection(); } };
         cards.set(definition.mode, card);
@@ -52301,21 +51270,30 @@ ${cleanedText}`, 80),
       }
       renderSelection();
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:17px;';
+      actions.className = 'dialog__actions';
       const cancel = document.createElement('button');
+      cancel.className = 'btn';
       cancel.textContent = '취소';
-      cancel.style.cssText = 'border:1px solid #465066;background:#222838;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;';
       const confirm = document.createElement('button');
+      confirm.className = 'btn btn--danger';
       confirm.textContent = '선택한 방식으로 계속';
       confirm.disabled = !selected;
-      confirm.style.cssText = 'border:1px solid #8e3e45;background:#6f2830;color:#fff;border-radius:7px;padding:7px 12px;cursor:pointer;';
-      cancel.onclick = () => { overlay.remove(); resolve(''); };
-      confirm.onclick = () => { const result = selected; overlay.remove(); resolve(result); };
+      cancel.onclick = () => finish('');
+      confirm.onclick = () => finish(selected);
       actions.append(cancel, confirm);
       panel.append(heading, summary, list, actions);
       overlay.appendChild(panel);
-      overlay.addEventListener('click', event => { if (event.target === overlay) { overlay.remove(); resolve(''); } });
+      overlay.addEventListener('click', event => { if (event.target === overlay) finish(''); });
+      overlay.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(''); return; }
+        if (event.key !== 'Tab') return;
+        const controls = [...(panel.querySelectorAll?.('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])') || [])].filter(node => !node.disabled && !node.hidden);
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus?.(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
+      });
       document.body.appendChild(overlay);
+      try { cancel.focus?.(); } catch (_) {}
     });
     const notice = async (title, body, danger = false) => await modal({ title, body, danger, confirm: false });
     const syncPortableUiState = message => {
@@ -52498,14 +51476,14 @@ ${cleanedText}`, 80),
       const root = document.createElement('div');
       root.id = config.uiId;
       root.setAttribute('data-memory-suite-portable-backup', config.pluginId);
-      root.className = 'portable-memory-controls';
+      root.className = 'stack stack--sm';
       root.innerHTML = `
-        <div class="portable-memory-actions">
-          <button data-portable-backup class="btn btn-primary" type="button" aria-label="현재 채팅 기억을 JSON 백업 파일로 다운로드">↓ JSON 백업 다운로드</button>
+        <div class="cluster">
+          <button data-portable-backup class="btn btn--primary" type="button" aria-label="현재 채팅 기억을 JSON 백업 파일로 다운로드">↓ JSON 백업 다운로드</button>
           <button data-portable-restore class="btn" type="button" aria-label="JSON 백업 파일을 선택하여 현재 채팅 기억 복원">↑ JSON 백업에서 복원</button>
         </div>
         <input type="file" accept=".json,application/json" hidden>
-        <span data-portable-status class="portable-memory-status" role="status" aria-live="polite"></span>`;
+        <span data-portable-status class="hint" role="status" aria-live="polite"></span>`;
       anchor.appendChild(root);
       runtime.uiRoot = root;
       runtime.input = root.querySelector('input[type=file]');

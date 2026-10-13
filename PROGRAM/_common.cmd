@@ -16,7 +16,7 @@ set "MEMORY_SUITE_STARTUP_ERROR_LOG=%MEMORY_SUITE_TEMP_STARTUP_LOG%"
 >>"%MEMORY_SUITE_TEMP_STARTUP_LOG%" echo PROGRAM="%MEMORY_SUITE_PROGRAM_DIR%"
 >>"%MEMORY_SUITE_TEMP_STARTUP_LOG%" echo DATA="%MEMORY_SUITE_DATA_DIR%"
 
-echo [1/4] Node.js 22 이상 런타임을 확인합니다.
+echo [1/4] Node.js 22.13 이상 런타임을 확인합니다.
 set "MEMORY_SUITE_BOOTSTRAP_STAGE=Node.js 확인"
 call "%MEMORY_SUITE_PROGRAM_DIR%\_find_node.bat"
 if not errorlevel 1 goto :node_ready

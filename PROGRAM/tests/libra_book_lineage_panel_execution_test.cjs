@@ -31,7 +31,7 @@ const between = (a, b) => {
   assert.ok(i >= 0 && j > i, `source anchors not found: ${a} .. ${b}`);
   return source.slice(i, j);
 };
-const panelSource = between('const buildBookHostLineagePanel =', 'const buildBookDeskPanel =');
+const panelSource = require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildBookHostLineagePanel');
 
 // A DOM-free element model, the same shape the other GUI runtime suites use.
 const el = (tag, attrs = {}, children = []) => ({ tag, ...attrs, children: children.filter(Boolean) });

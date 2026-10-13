@@ -1,0 +1,41 @@
+{
+ "home": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "pipeline": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "sources": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "results": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "providers": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "manage": {
+  "sw": 373,
+  "w": 373,
+  "bad": []
+ },
+ "ok": {
+  "home": true,
+  "pipeline": true,
+  "sources": true,
+  "results": true,
+  "providers": true,
+  "manage": true
+ },
+ "failed": []
+}

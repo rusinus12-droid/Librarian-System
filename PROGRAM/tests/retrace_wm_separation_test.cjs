@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const { JSDOM } = require('jsdom');
+const shellMatch = retrace => retrace.match(/root\.innerHTML = ("(?:\\.|[^"\\])*");/s);
 const program = process.env.REGRESSION_PROGRAM || path.resolve(__dirname, '..');
 const retrace = fs.readFileSync(path.join(program, 'plugins/RETRACE.js'), 'utf8');
 const lia = fs.readFileSync(path.join(program, 'plugins/LIA_Persona_Linker.js'), 'utf8');
@@ -15,11 +17,14 @@ test('RETRACE excludes standalone WM integration surfaces', () => {
 test('RETRACE keeps four memory peers and all five server namespaces', () => {
   assert.ok(retrace.includes("ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra', 'lia'])"));
   assert.ok(retrace.includes("MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia'])"));
-  for (const owner of ['libra', 'hayaku', 'flashback', 'lia', 'retrace']) {
-    assert.ok(retrace.includes('data-control-namespace value="' + owner + '"'), owner);
-  }
+  // The approved GUI embeds one literal shell. Parse it instead of matching
+  // unescaped markup in JavaScript source; all five selectable namespaces remain.
+  const match = shellMatch(retrace); assert.ok(match, 'literal approved shell');
+  const document = new JSDOM(JSON.parse(match[1])).window.document;
+  assert.deepEqual([...document.querySelectorAll('[data-control-namespace]')].map(n => n.value).sort(), ['flashback','hayaku','lia','libra','retrace']);
+  for (const node of document.querySelectorAll('[data-control-namespace]')) assert.equal(node.type, 'checkbox', 'namespace remains independently selectable');
   for (const action of ['backup-create', 'backup-check', 'restore-plan', 'restore-execute']) {
-    assert.ok(retrace.includes('data-server-control="' + action + '"'), action);
+    assert.ok(document.querySelector('[data-server-control="' + action + '"]'), action);
   }
 });
 test('LIBRA internal World Manager refresh and ordinary LIA handoffs remain', () => {

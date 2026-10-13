@@ -1,0 +1,27 @@
+{
+ "kinds": "전체 7,활성 스코프 1,승계 조상 1,고아 메모리 후보 3,확인 불가 1,복구 페어링 1",
+ "elig": "1",
+ "selAll": "아스텔 / 에피소드 40 선택",
+ "del0": "note=true",
+ "pin": true,
+ "filter": 3,
+ "bk": "방금 | 마지막 방금 | bk-20261012-2301 · 방금 | 방금 만든 백업(bk-20261012-2301)에 오늘",
+ "retry": "ok | 재검증을 마쳤습니다. LIBRA 영속 검증을 통과해 모든 owner의 승계가 완료되었습니다. (시안)",
+ "preview": "미리보기: bk-20261012-2301 · 방금 → LIA · RE:TRACE 플러그인의 서버 자료가 바뀝니다. LIBRA · HAYAKU · Flashback 플러그인의 자료는 그대로입니다. (시안)",
+ "ok": {
+  "kindCounts": true,
+  "activeExcluded": true,
+  "selAllNoActive": true,
+  "ctxCleared": true,
+  "del0Blocked": true,
+  "pinBlocks": true,
+  "unpin": true,
+  "seaSelectable": true,
+  "filter": true,
+  "backupReflected": true,
+  "retryOk": true,
+  "retryNoneInOk": true,
+  "noBadJosa": true
+ },
+ "failed": []
+}

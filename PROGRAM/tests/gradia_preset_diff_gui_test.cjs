@@ -10,9 +10,9 @@ test('GRADIA speed preset preserves stage exclusion and timeout while changing c
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('quick', 'flow');
     const before = JSON.parse(f.store.get(AGENTS));
-    const fast = [...f.doc.querySelectorAll('.sga-simple-choice')].find(n => n.textContent.includes('빠르게'));
+    const fast = [...f.doc.querySelectorAll('#q-quality .choice')].find(n => n.textContent.includes('빠르게'));
     assert(fast); fast.click(); await sleep(80);
-    f.doc.querySelector('[data-save-settings]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'preset save');
+    f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'preset save');
     const after = JSON.parse(f.store.get(AGENTS));
     assert.equal(after.slots.shadow_act.enabled, before.slots.shadow_act.enabled, 'speed choice cannot re-enable a stage');
     assert.equal(after.slots.shadow_act.timeout_ms, 51000, 'speed choice cannot reset timeout');
@@ -26,28 +26,23 @@ test('GRADIA recommendation preview names exact values, Cancel is inert, and App
   const f = await gradia();
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('skills', 'flow');
-    const maximum = f.doc.querySelector('[data-page-outlet] input[type="number"]');
+    const maximum = f.doc.querySelector('[data-skill-router-top-k]');
     assert(maximum); maximum.value = '3'; maximum.dispatchEvent(new f.w.Event('input', { bubbles: true })); maximum.dispatchEvent(new f.w.Event('change', { bubbles: true }));
-    await sleep(80); f.doc.querySelector('[data-save-settings]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'skill save');
+    await sleep(80); f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'skill save');
     await f.plugin.debugNavigateGui('quick', 'flow');
-    const open = () => [...f.doc.querySelectorAll('[data-page-outlet] button')].find(n => n.textContent === '추천값 적용').click();
+    const open = () => f.doc.querySelector('[data-open="dlg-reco"]').click();
     const stored = JSON.stringify([...f.store]); open();
-    const rows = [...f.doc.querySelectorAll('.sga-redesign-diff-row')];
-    // JSDOM does not apply viewport media queries. Apply the actual existing
-    // narrow-screen declaration directly to exercise its recommendation override.
-    const narrowRule = f.doc.getElementById('sga-rp-gui-style').textContent.match(/\.sga-redesign-diff-row strong\{display:none\}/);
-    assert(narrowRule, 'existing narrow-dialog rule is present');
-    const style = f.doc.createElement('style'); style.textContent = narrowRule[0]; f.doc.head.append(style);
-    assert(rows.every(n => f.w.getComputedStyle(n.querySelector('strong')).display !== 'none'), 'recommendation prior values remain visible under the narrow-dialog rule');
+    const rows = [...f.doc.querySelectorAll('[data-setting-path]')];
+    assert(rows.every(n => f.w.getComputedStyle(n.querySelector('strong')).display !== 'none'), 'recommendation prior values remain visible under the adopted dialog style');
     assert(rows.some(n => /Skill/.test(n.textContent) && /3/.test(n.textContent) && /2/.test(n.textContent)), 'preview discloses Skill maximum 3 to 2');
     assert(!rows.some(n => /現在|현재 값추천값/.test(n.textContent)), 'not placeholder headings');
-    const layer = f.doc.querySelector('[data-dialog-layer]');
+    const layer = f.doc.querySelector('.overlay.is-open');
     [...layer.querySelectorAll('button')].find(n => n.textContent === '취소').click();
     assert.equal(JSON.stringify([...f.store]), stored); assert.equal(f.plugin.debugGuiStateInfo().dirty, false);
     open(); [...layer.querySelectorAll('button')].find(n => n.textContent === '추천값 적용').click(); await sleep(80);
     assert.equal(JSON.stringify([...f.store]), stored, 'applying preview is not a persistent write');
     assert.equal(f.plugin.debugGuiStateInfo().dirty, true);
-    f.doc.querySelector('[data-revert-settings]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'revert');
+    f.doc.querySelector('#savebar [data-revert]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'revert');
     assert.equal(JSON.stringify([...f.store]), stored); assert.equal(f.getCalls(), 0);
   } finally { await f.close(); }
 });
@@ -97,8 +92,8 @@ test('GRADIA recommendation review includes exact stage inclusion and timeout ch
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('quick', 'flow');
     const stored = JSON.stringify([...f.store]);
-    [...f.doc.querySelectorAll('[data-page-outlet] button')].find(n => n.textContent === '추천값 적용').click();
-    const rows = [...f.doc.querySelectorAll('.sga-redesign-diff-row')];
+    f.doc.querySelector('[data-open="dlg-reco"]').click();
+    const rows = [...f.doc.querySelectorAll('[data-setting-path]')];
     const row = path => rows.find(n => n.dataset.settingPath === path);
     assert(row('agents.input_assist.enabled'), 'stage inclusion has its own row');
     assert.match(row('agents.input_assist.enabled').textContent, /인풋 관리자.*켜짐.*꺼짐/);
@@ -107,17 +102,17 @@ test('GRADIA recommendation review includes exact stage inclusion and timeout ch
     assert(!row('agents.shadow_act.enabled'), 'unchanged disabled SHADOW is not listed');
     assert(!row('agents.shadow_act.timeoutMs'), 'unchanged SHADOW timeout is not listed');
     assert.equal(JSON.stringify([...f.store]), stored, 'review cannot write settings');
-    const layer = f.doc.querySelector('[data-dialog-layer]');
+    const layer = f.doc.querySelector('.overlay.is-open');
     [...layer.querySelectorAll('button')].find(n => n.textContent === '추천값 적용').click(); await sleep(80);
     assert.equal(JSON.stringify([...f.store]), stored, 'apply remains a draft');
-    f.doc.querySelector('[data-save-settings]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'recommendation save');
+    f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'recommendation save');
     const after = JSON.parse(f.store.get(AGENTS));
     assert.equal(after.slots.input_assist.enabled, false); assert.equal(after.slots.input_assist.timeout_ms, 120000);
     assert.equal(after.slots.shadow_act.enabled, false); assert.equal(after.slots.shadow_act.timeout_ms, 51000);
     assert.equal(JSON.parse(f.store.get(RUNTIME)).settings.skill_router_top_k, '2');
-    [...f.doc.querySelectorAll('[data-page-outlet] button')].find(n => n.textContent === '추천값 적용').click();
-    assert.equal(f.doc.querySelectorAll('.sga-redesign-diff-row').length, 0, 'saved recommendations produce no spurious diff');
-    assert([...f.doc.querySelector('[data-dialog-layer]').querySelectorAll('button')].find(n => n.textContent === '추천값 적용').disabled);
+    f.doc.querySelector('[data-open="dlg-reco"]').click();
+    assert.equal(f.doc.querySelectorAll('[data-setting-path]').length, 0, 'saved recommendations produce no spurious diff');
+    assert([...f.doc.querySelector('.overlay.is-open').querySelectorAll('button')].find(n => n.textContent === '추천값 적용').disabled);
     assert.equal(f.getCalls(), 0);
   } finally { await f.close(); }
 });
@@ -141,9 +136,9 @@ test('GRADIA source-injected recommendation rows safely show fallback paths and 
   } });
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('quick', 'flow');
-    [...f.doc.querySelectorAll('[data-page-outlet] button')].find(n => n.textContent === '추천값 적용').click();
-    const layer = f.doc.querySelector('[data-dialog-layer]');
-    const rows = [...layer.querySelectorAll('.sga-redesign-diff-row')];
+    f.doc.querySelector('[data-open="dlg-reco"]').click();
+    const layer = f.doc.querySelector('.overlay.is-open');
+    const rows = [...layer.querySelectorAll('[data-setting-path]')];
     const fallback = rows.find(n => n.dataset.settingPath === 'runtime.futureSettings.custom.with.dot');
     assert(fallback, 'unmapped fields retain an identifiable fallback path');
     assert.equal(fallback.children[0].textContent, 'runtime.futureSettings.custom.with.dot');

@@ -1,0 +1,32 @@
+{
+ "pages": "overview,next,server,diag",
+ "typedOpeners": [
+  "dlg-del",
+  "dlg-del",
+  "dlg-del",
+  "dlg-del",
+  "dlg-del",
+  "dlg-restore",
+  "dlg-reset"
+ ],
+ "typed0": {
+  "id": "dlg-reset",
+  "disabled": true
+ },
+ "typedFilled": {
+  "disabled": false
+ },
+ "typedReopened": {
+  "value": "",
+  "disabled": true
+ },
+ "backupJobOpen": "true state=running",
+ "backupAfterCancel": "state=cancelled open=false",
+ "backupDone": "state=done",
+ "ok": {
+  "typedResetOnReopen": true,
+  "cancelStops": true,
+  "jobCompletes": true
+ },
+ "failed": []
+}

@@ -13,7 +13,9 @@ node --no-warnings "$PROGRAM_DIR/tools/check_node.cjs" || exit $?
 
 PASS=0
 FAIL=0
-for TEST_FILE in "$PROGRAM_DIR"/tests/*.cjs; do
+# 시험 스위트(*_test.cjs, *.test.cjs)만 실행합니다. 나머지 tests/*.cjs는 인자가 필요한 보조 도구입니다.
+for TEST_FILE in "$PROGRAM_DIR"/tests/*_test.cjs "$PROGRAM_DIR"/tests/*.test.cjs; do
+  [ -f "$TEST_FILE" ] || continue
   TEST_NAME=$(basename -- "$TEST_FILE")
   if node --no-warnings "$TEST_FILE"; then
     printf 'PASS %s\n' "$TEST_NAME"

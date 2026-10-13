@@ -1,0 +1,47 @@
+{
+ "desk": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "memory": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "people": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "world": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "story": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "settings": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "x": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "ok": {
+  "desk": true,
+  "memory": true,
+  "people": true,
+  "world": true,
+  "story": true,
+  "settings": true,
+  "x": true
+ },
+ "failed": []
+}

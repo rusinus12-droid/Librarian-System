@@ -102,17 +102,17 @@ const restoreValidation = between('async function memorySuiteLibraValidateRestor
 assert.match(restoreValidation, /libra_restore_variant_vector_memory_mismatch/);
 assert.match(restoreValidation, /libra_restore_variant_delta_digest_mismatch/);
 
-for (const label of ['수동 콜드스타트', '현재 5턴 분석', '실패 구간 새 분석', '재생성', '수정', '버전 기록', '기존 유지', '후보 채택', '나중에 결정', '작업 취소', '최소화']) {
+for (const label of ['수동 콜드스타트', '누락 구간 생성 (기본)', '실패 구간 새 분석', '재생성', '수정', '버전 기록', '기존 유지', '후보 채택', '나중에 결정', '작업 취소', '최소화']) {
   assert.ok(source.includes(label), `missing GUI label ${label}`);
 }
 
-const renderer = between('async function renderSettingsGuiOnce()', 'const hideSettingsGui = async');
-assert.match(renderer, /const previousApp = Gui\.app && Gui\.root\.contains\(Gui\.app\)/);
-assert.match(renderer, /if \(!previousApp\) \{[\s\S]*Gui\.root\.replaceChildren\(app\)/);
-assert.match(renderer, /data-render-region/);
-assert.match(renderer, /const requestedRegions = new Set\(Gui\.invalidations\)/);
-assert.match(renderer, /querySelector\(':scope > \[data-render-region="main"\]'\)\?\.replaceWith/);
-assert.match(renderer, /regionTimesMs/);
+const renderer=require('./helpers/libra_approved_gui_contract.cjs').extract(source,'renderSettingsGuiOnce');
+assert.match(renderer,/Gui\.mockupApp &&|!Gui\.mockupApp \|\| !Gui\.root\.contains\(Gui\.mockupApp\)/,'one actual app owns the shell');
+assert.match(renderer,/Gui\.root\.replaceChildren\(stage\)/,'root mounting occurs at the approved frame boundary');
+assert.match(renderer,/current\.replaceChildren\(\)/,'only the selected destination body is hydrated');
+assert.match(renderer,/requestedRegions=new Set\(Gui\.invalidations\)/);
+assert.match(renderer,/existingDrawer=app\.querySelector\('#drawer-quick\[data-book-quick-drawer\]'\)/,'the app keeps one independent drawer owner');
+assert.match(renderer,/regionTimesMs/,'actual main/drawer construction retains measured diagnostics');
 assert.match(source, /const typing = activeTag === 'TEXTAREA'[\s\S]*?!\['checkbox', 'radio', 'range', 'button', 'submit'\]\.includes\(activeType\)[\s\S]*?if \(active && Gui\.app\?\.contains\(active\) && typing\) return;/,
   'text editing blocks body remounts without suppressing checkbox or button navigation');
 assert.match(source, /summaryOnly: true/);

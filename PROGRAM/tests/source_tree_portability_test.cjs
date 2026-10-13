@@ -120,7 +120,9 @@ assert.ok(files.length > 0, `source_tree_portability found zero shipped test/too
 // A path literal that names THIS project's own tree, or a user profile directory. Accept both
 // ordinary Windows separators and the doubled separators emitted when JSON.stringify writes a
 // Windows absolute path into JavaScript source.
-const LOCAL_TREE = /['"`](?:[A-Za-z]:(?:[\\/]+)?(?:Users|Documents)[\\/]+|\/(?:Users|home)\/)/;
+// POSIX home directories include root's (/root on Linux, /var/root on macOS): a suite run as root must
+// still recognise a lookup under its own home.
+const LOCAL_TREE = /['"`](?:[A-Za-z]:(?:[\\/]+)?(?:Users|Documents)[\\/]+|\/(?:Users|home|root|var\/root)\/)/;
 
 // `fs.readFileSync`, `require`, `spawn` and friends: the call shapes that turn a path into a lookup.
 const LOOKUP_CALL = /(?:readFileSync|require|createRequire|spawn|spawnSync|execFile|execFileSync|fork|readdirSync|statSync|existsSync|createReadStream|path\.resolve)\s*\(\s*([^)]{0,200})/g;

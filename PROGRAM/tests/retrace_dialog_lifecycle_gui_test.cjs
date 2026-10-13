@@ -9,8 +9,8 @@ async function withDialog(run) {
     await f.plugin.showUi();
     const opener = f.doc.getElementById('createSession');
     opener.focus(); opener.click();
-    await wait(() => f.doc.getElementById('retraceDialogLayer')?.hidden === false, 'live session confirmation', 30000);
-    assert.match(f.doc.getElementById('retraceDialogTitle').textContent, /다음 세션/);
+    await wait(() => f.doc.getElementById('dlg-next')?.hidden === false, 'live session confirmation', 30000);
+    assert.match(f.doc.querySelector('#dlg-next [data-dialog-title]').textContent, /다음 세션/);
     let writes = 0;
     f.host.setDatabase = f.host.setCharacter = f.host.setCharacterToIndex = async () => { writes++; throw Error('SYNTHETIC_WRITER_BLOCKED'); };
     await run(f, opener, () => writes);
@@ -20,7 +20,7 @@ async function withDialog(run) {
 }
 
 test('RETRACE reopening cancels pending consent and detached confirmation cannot reach the writer', async () => withDialog(async (f, opener, writes) => {
-  const oldConfirm = f.doc.getElementById('retraceDialogConfirm');
+  const oldConfirm = f.doc.querySelector('#dlg-next [data-dialog-confirm]');
   await f.plugin.showUi();
   const unrelated = f.doc.getElementById('serverScopeSearch'); unrelated.focus();
   const event = new f.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -33,25 +33,25 @@ test('RETRACE reopening cancels pending consent and detached confirmation cannot
 }));
 
 test('RETRACE close cancels pending consent before reopening and Escape restores focus', async () => withDialog(async (f, opener, writes) => {
-  const oldConfirm = f.doc.getElementById('retraceDialogConfirm');
+  const oldConfirm = f.doc.querySelector('#dlg-next [data-dialog-confirm]');
   await f.plugin.closeUi(); oldConfirm.click();
   f.doc.dispatchEvent(new f.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await sleep(150); assert.equal(writes(), 0);
   await f.plugin.showUi();
   const next = f.doc.getElementById('createSession'); next.focus(); next.click();
-  await wait(() => f.doc.getElementById('retraceDialogLayer')?.hidden === false, 'second confirmation', 30000);
+  await wait(() => f.doc.getElementById('dlg-next')?.hidden === false, 'second confirmation', 30000);
   f.doc.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   await wait(() => !next.disabled, 'cancelled action');
-  assert.equal(f.doc.getElementById('retraceDialogLayer').hidden, true);
+  assert.equal(f.doc.getElementById('dlg-next').hidden, true);
   assert.equal(f.doc.activeElement, next, 'focus returns to the triggering action after unlock');
   assert.equal(writes(), 0);
 }));
 
 test('RETRACE modal contains focus and Enter on Cancel cancels rather than approving', async () => withDialog(async (f, opener, writes) => {
-  const layer = f.doc.getElementById('retraceDialogLayer');
+  const layer = f.doc.getElementById('dlg-next');
   f.doc.getElementById('closeBridge').focus();
   assert(layer.contains(f.doc.activeElement), 'focus remains inside the live modal');
-  const cancel = f.doc.getElementById('retraceDialogCancel'); cancel.focus();
+  const cancel = f.doc.querySelector('#dlg-next [data-dialog-cancel]'); cancel.focus();
   cancel.dispatchEvent(new f.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await sleep(150);
   assert.equal(writes(), 0, 'Cancel keyboard activation never approves');
@@ -59,15 +59,15 @@ test('RETRACE modal contains focus and Enter on Cancel cancels rather than appro
 }));
 
 test('RETRACE explicit live confirmation remains functional and is single-use', async () => withDialog(async (f, opener, writes) => {
-  const confirm = f.doc.getElementById('retraceDialogConfirm');
+  const confirm = f.doc.querySelector('#dlg-next [data-dialog-confirm]');
   confirm.focus(); confirm.click(); confirm.click();
   await wait(() => writes() > 0, 'explicit confirmation reaches synthetic writer', 30000);
   assert.equal(writes(), 1);
 }));
 
 test('RETRACE unload settles a pending confirmation as cancelled', async () => withDialog(async (f, opener, writes) => {
-  const layer = f.doc.getElementById('retraceDialogLayer');
-  const confirm = f.doc.getElementById('retraceDialogConfirm');
+  const layer = f.doc.getElementById('dlg-next');
+  const confirm = f.doc.querySelector('#dlg-next [data-dialog-confirm]');
   const unload = f.retraceUnload;
   assert(unload, 'actual plugin unload callback is registered');
   await unload(); await sleep(20);

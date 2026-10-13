@@ -1,0 +1,15 @@
+{
+ "rail": "M-19 · T91–95T91–95 구간 기억방금 생성",
+ "detail": "M-19 · TURN 91–95 · 정본 · 근거 5",
+ "pagerM21": "← M-19",
+ "regenSel": "T91–95 선택",
+ "compare": "M-19 버전 · 실행 기록 | v1 · 현재 정본,v2 · 재생성 후보",
+ "nav": "26",
+ "ok": {
+  "memoryAdded": true,
+  "detailShown": true,
+  "pagerLinked": true,
+  "compareHasCandidate": true
+ },
+ "failed": []
+}

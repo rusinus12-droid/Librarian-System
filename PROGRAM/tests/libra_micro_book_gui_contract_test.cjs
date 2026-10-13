@@ -78,9 +78,9 @@ const evidenceFor = () => context.buildBookTurnEvidenceSection(
 {
   const section = evidenceFor();
   assert.ok(section, 'a chapter with Micro evidence renders a turn-evidence section');
-  assert.equal(String(section.class || '').includes('libra-book-turn-evidence'), true,
+  assert.equal(String(section.class || '').includes('fold'), true,
     'the section carries its own class so the reader can find it');
-  const details = byClass(section, 'libra-book-turn-evidence-item');
+  const details=flat(section).filter(node=>node.tag==='details'&&node.dataset?.microTurn!==undefined);
   assert.equal(details.length, 2,
     `each covered turn with evidence gets its own expandable item (got ${details.length})`);
   for (const item of details) {
@@ -102,7 +102,7 @@ const evidenceFor = () => context.buildBookTurnEvidenceSection(
 // ── a turn whose analysis never ran is marked, not silently presented as verified ────────────
 {
   const section = evidenceFor();
-  const item2 = byClass(section, 'libra-book-turn-evidence-item').find(item => domText(item).includes('T2'));
+  const item2 = flat(section).filter(node=>node.dataset?.microTurn!==undefined).find(item => domText(item).includes('T2'));
   assert.ok(item2, 'the source-bound turn gets its own item');
   // Assert on the item's own SUMMARY label, not on any text inside it: the mutation run showed a loose
   // /원문|.../ match still passed when the summary said '단일 턴 근거', because the explanatory paragraph
@@ -113,10 +113,10 @@ const evidenceFor = () => context.buildBookTurnEvidenceSection(
     `the source-bound item's summary labels it as unanalysed (got "${domText(summary2)}")`);
   assert.ok(!/단일 턴 근거$/.test(domText(summary2).trim()),
     'the source-bound item must not be labelled as an analysed single-turn Micro');
-  assert.equal(byClass(item2, 'libra-book-turn-evidence-pending').length, 1,
+  assert.equal(byClass(item2, 'note--warn').length, 1,
     'the source-bound item explains that its analysis is unfinished');
   // And the analysed turn must NOT be labelled as source-bound, or the two are indistinguishable.
-  const item1 = byClass(section, 'libra-book-turn-evidence-item').find(item => domText(item).includes('T1'));
+  const item1 = flat(section).filter(node=>node.dataset?.microTurn!==undefined).find(item => domText(item).includes('T1'));
   const summary1 = flat(item1).find(node => node.tag === 'summary');
   assert.ok(/단일 턴 근거/.test(domText(summary1)),
     'the analysed turn says it is single-turn evidence');
@@ -140,8 +140,8 @@ const evidenceFor = () => context.buildBookTurnEvidenceSection(
   context.Gui.canonicalReaderLoaded = true;
   context.Gui.bookTurnEvidence = TURN_EVIDENCE;
   const sheet = context.buildBookMemoryReadingSheet();
-  assert.ok(byClass(sheet, 'libra-book-reading-sheet').length === 1, 'the reading sheet renders');
-  const sections = byClass(sheet, 'libra-book-turn-evidence');
+  assert.ok(byClass(sheet, 'sheet-page').length === 1, 'the reading sheet renders');
+  const sections=flat(sheet).filter(node=>node.dataset?.bookTurnEvidence!==undefined);
   assert.equal(sections.length, 1,
     'the reading sheet renders the turn evidence inside the Canonical chapter view (one flow)');
   assert.ok(domText(sheet).includes('도서관 전체는 정숙 구역'),

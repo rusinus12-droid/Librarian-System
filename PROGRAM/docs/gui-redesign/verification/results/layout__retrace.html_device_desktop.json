@@ -1,0 +1,29 @@
+{
+ "overview": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "next": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "server": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "diag": {
+  "sw": 959,
+  "w": 959,
+  "bad": []
+ },
+ "ok": {
+  "overview": true,
+  "next": true,
+  "server": true,
+  "diag": true
+ },
+ "failed": []
+}

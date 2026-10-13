@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal DisableDelayedExpansion
 cd /d "%~dp0"
 
@@ -40,6 +41,12 @@ echo 기존에 사용 중인 Librarian System 폴더를 입력하세요.
 echo 폴더를 이 창으로 끌어다 놓아도 됩니다.
 set "TARGET_ROOT="
 set /p "TARGET_ROOT=기존 설치 폴더: "
+if not defined TARGET_ROOT (
+  echo.
+  echo 폴더를 입력하지 않아 메뉴로 돌아갑니다.
+  pause
+  goto :MENU
+)
 set "TARGET_ROOT=%TARGET_ROOT:"=%"
 if not exist "%TARGET_ROOT%\PROGRAM\VERSION.txt" (
   echo.

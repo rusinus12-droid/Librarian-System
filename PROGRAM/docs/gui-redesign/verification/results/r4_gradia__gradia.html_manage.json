@@ -1,0 +1,17 @@
+{
+ "start": "모든 변경이 저장되어 있습니다",
+ "addBtn": "사용자 Skill 추가",
+ "rowAdded": true,
+ "afterAdd": "모든 변경이 저장되어 있습니다",
+ "firstOff": "checked=false / 1개 변경이 저장되지 않았습니다",
+ "reverted": "checked=true / 모든 변경이 저장되어 있습니다",
+ "savedOff": "checked=false / 모든 변경이 저장되어 있습니다",
+ "onAgain": "checked=true / 1개 변경이 저장되지 않았습니다",
+ "ok": {
+  "addNotDirty": true,
+  "firstToggleCounts": true,
+  "revertRestoresOn": true,
+  "saveRebases": true
+ },
+ "failed": []
+}

@@ -1,0 +1,29 @@
+{
+ "overview": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "next": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "server": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "diag": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "ok": {
+  "overview": true,
+  "next": true,
+  "server": true,
+  "diag": true
+ },
+ "failed": []
+}

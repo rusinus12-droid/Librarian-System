@@ -1,41 +1,13 @@
 'use strict';
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const source=fs.readFileSync(path.resolve(__dirname,'..','plugins','LIBRA.js'),'utf8');
-const between=(a,b)=>{const i=source.indexOf(a);assert.notEqual(i,-1,`missing ${a}`);const j=source.indexOf(b,i+a.length);assert.notEqual(j,-1,`missing ${b}`);return source.slice(i,j)};
-// GRADIA and Input Writer were deliberately retired; active drawer behavior remains covered.
-assert.doesNotMatch(source, /const buildBookQuick(?:Gradia|InputWriter)Panel\s*=/, 'retired helper drawers stay absent');
-const quick=between('const buildBookQuickSettingsDrawer =','const buildBookExecutionFlowTab =');
-for(const nativeFn of ['buildBookQuickLibraResponsePanel','buildBookQuickMemoryAgentsPanel']) assert.match(source,new RegExp(`const ${nativeFn} =`),`missing ${nativeFn}`);
-for(const forbidden of ['buildInputAssistSettingsPanel','buildMemoryPipelinePanel','buildGradiaDraftSettingsPanel','buildLibraResponseModeSettingsPanel']) assert.doesNotMatch(quick,new RegExp(`${forbidden}\\(`),`${forbidden} must not render directly inside Book Quick Settings`);
-assert.match(quick,/const definitions = \[/);
-assert.doesNotMatch(quick,/id: 'ai'|id: 'embedding'|id: 'server'/,
-  'AI, Embedding and Server connections are available from the sidebar Settings pages, not Quick Settings');
-assert.doesNotMatch(quick,/buildBookTechnicalQuickPanel\(/,
-  'technical connection panels must not be duplicated inside Quick Settings');
-const flow=between('const buildBookExecutionFlowTab =','const buildBookSidebar =');
-assert.doesNotMatch(flow,/buildBookQuickSettingsDrawer\(/,'Quick Settings drawer must not live inside main render region');
-const render=between('async function renderSettingsGuiOnce()','const hideSettingsGui =');
-assert.match(render,/data-render-region: 'book-drawer'|renderRegion: 'book-drawer'/);
-assert.match(render,/const drawerRender = !previousApp \|\| requestedRegions\.has\('book-drawer'\) \|\| requestedRegions\.has\('family'\)/);
-assert.doesNotMatch(render,/implicitBodyRender && Gui\.bookQuickOpen === true/,'implicit main refresh must not remount an open Book drawer');
-assert.match(render,/const implicitBodyRender = !!previousApp && requestedRegions\.size === 0/);
-assert.match(render,/app\.appendChild\(buildBookDrawerRegion\(\)\)/);
-assert.match(render,/if \(drawerRender\).*book-drawer/);
-const server=between('const buildLibraServerConnectionPanel =','const scheduleLibraPortableMemoryBackupMount =');
-// Both Settings Room and Quick Settings now share the same BOOK_UX server panel.
-assert.match(server,/const bookTheme = true/);
-assert.doesNotMatch(server,/const bookTheme = Gui\.bookQuickOpen/);
-assert.match(server,/theme: bookTheme \? 'book' : 'default'/);
-assert.match(source,/const bookTheme = String\(panelOptions\.theme \|\| ''\)\.toLowerCase\(\) === 'book'/);
-const settings=between('const BOOK_NATIVE_SETTINGS_SECTIONS =','const bookQuickChoiceCard =');
-assert.match(settings,/buildBookNativeSettingsRoom/);
-assert.match(settings,/libra-book-settings-room-shell/);
-assert.match(settings,/buildBookSettingsNativeInnerPanel/);
-const settingsPanel=between('const buildBookSettingsPanel =','const bookQuickChoiceCard =');
-assert.match(settingsPanel,/buildBookNativeSettingsRoom\(\{ showIndex: false \}\)/,'restored sidebar owns the settings index');
-assert.doesNotMatch(settingsPanel,/buildSharedSettingsShellPanel\(\)/,'visible Book Settings Room must not embed legacy shared settings shell');
-assert.match(quick,/libra-book-drawer-tab/);
-assert.match(quick,/libra-book-drawer-action/);
-process.stdout.write('libra_book_ux_v511_native_drawer_contract_test: PASS\n');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const source=fs.readFileSync(path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8');const{extract,identity}=require('./helpers/libra_approved_gui_contract.cjs');identity(source);
+assert.doesNotMatch(source,/const buildBookQuick(?:Gradia|InputWriter)Panel\s*=/,'retired helper workspaces stay absent');
+const quick=extract(source,'buildBookQuickSettingsDrawer');for(const fn of ['buildBookQuickLibraResponsePanel','buildBookQuickMemoryAgentsPanel'])assert.ok(source.includes('const '+fn+' ='));
+for(const forbidden of ['buildInputAssistSettingsPanel','buildMemoryPipelinePanel','buildGradiaDraftSettingsPanel','buildLibraResponseModeSettingsPanel','buildBookTechnicalQuickPanel'])assert.doesNotMatch(quick,new RegExp(forbidden+'\\('),'independent/retired panels are not duplicated');
+assert.match(quick,/const definitions = \[/);assert.doesNotMatch(quick,/id: 'ai'|id: 'embedding'|id: 'server'/);for(const role of ['overlay overlay--right','drawer__head','drawer__body','drawer__foot savebar'])assert.ok(quick.includes(role),role);
+assert.match(quick,/bookQuickRevert/);assert.match(quick,/saveBookQuickSettings/);assert.match(quick,/aria-modal/);
+const render=extract(source,'renderSettingsGuiOnce');assert.match(render,/Gui\.mockupApp/);assert.match(render,/current\.replaceChildren\(\)/);assert.match(render,/app\.appendChild\(drawer\)/,'drawer has app-level ownership outside the destination body');
+assert.doesNotMatch(extract(source,'buildApprovedMockupDestinationDetail'),/buildBookQuickSettingsDrawer\(/,'drawer never lives in the main destination');
+const server=extract(source,'buildLibraServerConnectionPanel');assert.match(server,/const bookTheme = true/);assert.doesNotMatch(server,/const bookTheme = Gui\.bookQuickOpen/);assert.match(server,/theme: bookTheme \? 'book' : 'default'/);assert.match(source,/const bookTheme = String\(panelOptions\.theme \|\| ''\)\.toLowerCase\(\) === 'book'/,'independent SDK owner theme mapping remains explicit');
+const settings=extract(source,'buildApprovedMockupSettings');assert.match(settings,/LIBRA_APPROVED_SETTINGS_LAYOUT_HTML/);assert.match(settings,/buildApprovedMockupSettingsPanel/);assert.doesNotMatch(settings,/buildSharedSettingsShellPanel\(/,'no legacy shell adapter');
+console.log('libra_book_ux_v511_native_drawer_contract_test: PASS (approved drawer ownership)');

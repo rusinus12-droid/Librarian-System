@@ -1,0 +1,41 @@
+{
+ "home": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "pipeline": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "sources": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "results": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "providers": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "manage": {
+  "sw": 803,
+  "w": 803,
+  "bad": []
+ },
+ "ok": {
+  "home": true,
+  "pipeline": true,
+  "sources": true,
+  "results": true,
+  "providers": true,
+  "manage": true
+ },
+ "failed": []
+}

@@ -1,47 +1,23 @@
 'use strict';
-
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const sourcePath = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(__dirname, '..', 'plugins', 'LIBRA.js');
-const source = fs.readFileSync(sourcePath, 'utf8');
-const between = (start, end) => {
-  const a = source.indexOf(start); assert.notEqual(a, -1, `missing ${start}`);
-  const b = source.indexOf(end, a + start.length); assert.notEqual(b, -1, `missing ${end}`);
-  return source.slice(a, b);
-};
-const extractConst = name => {
-  const marker = `const ${name} =`; const start = source.indexOf(marker); assert.notEqual(start, -1, `missing ${name}`);
-  let q='', esc=false, r=0,s=0,c=0;
-  for(let i=start;i<source.length;i++){const ch=source[i];if(q){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch===q)q='';continue;}if(ch==='"'||ch==="'"||ch==='`')q=ch;else if(ch==='(')r++;else if(ch===')')r--;else if(ch==='[')s++;else if(ch===']')s--;else if(ch==='{')c++;else if(ch==='}')c--;else if(ch===';'&&r===0&&s===0&&c===0)return source.slice(start,i+1);}throw new Error('unterminated '+name);
-};
-const ctx={Object,Array};vm.createContext(ctx);vm.runInContext(`${extractConst('BOOK_SIDEBAR_PAGE_REGISTRY')}\nthis.pages=BOOK_SIDEBAR_PAGE_REGISTRY;`,ctx);
-assert.deepEqual(JSON.parse(JSON.stringify(ctx.pages.map(x=>x.id))), ['desk','memory','people','world','story','settings']);
-const book = between('const buildBookPage =', 'const GUI_SCROLL_SELECTORS =');
-for(const fn of ['buildBookMemoryReaderProjection','buildWorldManagerCharactersPanel','buildWorldManagerRelationshipsPanel','buildWorldManagerWorldPanel','buildWorldManagerNarrativePanel','buildNarrativeDirectionPanel','buildBookNativeSettingsRoom','buildSharedPipelineShellPanel','buildSharedAgentShellPanel','buildSharedCustomShellPanel','buildSharedExecutionLogsPanel','buildLibraProviderPanel','buildLibraEmbeddingPanel','buildLibraServerConnectionPanel','buildBookQuickMemoryAgentsPanel','buildBookRecallSettingsPanel']) assert.match(book,new RegExp(`${fn}\\(`),`${fn} not reachable from Book UX`);
-const quick = between('const buildBookQuickSettingsDrawer =', 'const buildBookExecutionFlowTab =');
-assert.doesNotMatch(quick,/buildBookQuickInputWriterPanel\(\)/,'retired composer must not mount');
-assert.match(quick,/buildBookQuickMemoryAgentsPanel\(\)/);
-assert.match(quick,/buildBookRecallSettingsPanel\(\)/);
-const responseSettings = extractConst('buildBookRecallSettingsPanel');
-assert.match(responseSettings,/buildBookQuickLibraResponsePanel\(\)/);
-assert.doesNotMatch(quick,/buildInputAssistSettingsPanel\(/,'legacy Input Writer builder leaked back into visible Book Quick Settings');
-assert.doesNotMatch(quick,/buildMemoryPipelinePanel\(/,'legacy memory agent builder leaked back into visible Book Quick Settings');
-assert.doesNotMatch(quick,/buildGradiaDraftSettingsPanel\(/,'legacy GRADIA quick builder leaked back into visible Book Quick Settings');
-assert.doesNotMatch(quick,/buildLibraResponseModeSettingsPanel\(/,'legacy LIBRA response builder leaked back into visible Book Quick Settings');
-assert.match(source,/class:'sga-btn libra-book-librarian-save'[^\n]*Librarian 설정 저장/,'Librarian quick-settings save action needs its paper-workbench class');
-assert.match(source,/:is\(\.libra-book-page,\.libra-book-drawer\) \.sga-btn\.libra-book-librarian-save\{background:#dfc39d;border-color:#a97947;color:#53341c/,'Librarian quick-settings save action must use the paper palette');
-const quickMode = between('const buildBookQuickLibraResponsePanel =', 'const buildBookQuickMemoryAgentsPanel =');
-assert.match(quickMode,/buildLibraClassicPanel\(\{compact:true\}\)/,'response settings retain Classic controls');
-assert.match(quickMode,/buildLibraLiveContextSettingsPanel\(\)/,'response settings retain recent-dialogue controls');
-assert.match(book,/BOOK_PEOPLE_SECTIONS/);assert.match(book,/BOOK_STORY_SECTIONS/);assert.match(book,/BOOK_SETTINGS_WORKBENCH_SECTIONS/);assert.match(book,/BOOK_QUICK_SECTIONS/);
-assert.match(source,/const renderActiveTab = \(\) => \{[^}]*buildBookExecutionFlowTab\(\)/);
-assert.match(source,/const node = buildBookMobileNavigation\(\)/);
-assert.match(source,/const node = buildBookSidebar\(\)/);
+// The former paper workbench identity is superseded by the explicitly approved
+// original mockup. Reachability, authority and independent setting owners remain.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const source=fs.readFileSync(process.argv[2]?path.resolve(process.argv[2]):path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8');
+const {extract,identity,literal}=require('./helpers/libra_approved_gui_contract.cjs');identity(source);
+const ctx={Object,Array};vm.createContext(ctx);vm.runInContext(extract(source,'BOOK_SIDEBAR_PAGE_REGISTRY')+';this.pages=BOOK_SIDEBAR_PAGE_REGISTRY;',ctx);
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.pages.map(x=>x.id))),['desk','memory','people','world','story','settings']);
+const pages=extract(source,'buildApprovedMockupDestinationDetail'),settings=extract(source,'buildApprovedMockupSettingsPanel'),quick=extract(source,'buildBookQuickSettingsDrawer');
+for(const fn of ['buildBookMemoryReaderProjection','buildWorldManagerCharactersPanel','buildWorldManagerRelationshipsPanel','buildWorldManagerWorldPanel','buildWorldManagerNarrativePanel'])assert.match(pages+extract(source,'buildApprovedMockupMemory'),new RegExp(fn+'\\('),fn+' remains reachable');
+for(const fn of ['buildLibrarianAnalyzerPanel','buildSharedExecutionLogsPanel','buildLibraReferenceHubPanel','buildAnalysisInputPanel','buildStateTrackingAvailabilityPanel','buildTransferTab','buildGeneralSettingsPanel','buildLibraServerConnectionPanel','buildLibraMemoryRestorePanel','buildApprovedProviderExpertFields','buildApprovedEmbeddingOperations'])assert.match(settings,new RegExp(fn+'\\('),fn+' has an actual Settings destination');
+assert.match(extract(source,'openApprovedPromptDialog'),/buildLibraPromptStudioPanel\(\{ allowedDomains: \['memory'\] \}\)/,'memory Prompt Studio ownership stays scoped');
+for(const forbidden of ['buildBookQuickInputWriterPanel','buildInputAssistSettingsPanel','buildMemoryPipelinePanel','buildGradiaDraftSettingsPanel','buildLibraResponseModeSettingsPanel'])assert.doesNotMatch(quick,new RegExp(forbidden+'\\('),'retired/duplicate workspace must not mount');
+assert.match(quick,/buildBookQuickMemoryAgentsPanel\(\)/);assert.match(quick,/buildBookRecallSettingsPanel\(\)/);
+assert.match(extract(source,'buildBookRecallSettingsPanel'),/buildBookQuickLibraResponsePanel\(\)/);
+const quickMode=extract(source,'buildBookQuickLibraResponsePanel');assert.match(quickMode,/buildLibraClassicPanel\(\{compact:true\}\)/);assert.match(quickMode,/buildLibraLiveContextSettingsPanel\(\)/);
+assert.match(quick,/drawer__head/);assert.match(quick,/drawer__body/);assert.match(quick,/drawer__foot savebar/);assert.match(quick,/saveBookQuickSettings/);assert.match(quick,/revertGuiStateFromStorage/);
+assert.match(literal(source,'LIBRA_APPROVED_MOCKUP_STYLE'),/\.btn--primary\{/,'save uses original approved button palette');
+for(const name of ['BOOK_PEOPLE_SECTIONS','BOOK_STORY_SECTIONS','BOOK_SETTINGS_WORKBENCH_SECTIONS','BOOK_QUICK_SECTIONS'])assert.ok(source.includes(name),'retained compatibility section '+name);
 require('./helpers/libra_active_book_routes.cjs')(source);
-assert.match(source,/방향성 Relationship Head/);
-const story=between('const buildBookStoryPanel =','const BOOK_NATIVE_SETTINGS_SECTIONS =');
-assert.match(story,/Gui\.bookStorySection === 'direction'[\s\S]*buildNarrativeDirectionPanel\(\)/);
-assert.match(story,/else \{[\s\S]*buildWorldManagerNarrativePanel\(\)/,'current facts retain a separate path from future direction');
-process.stdout.write('libra_book_ux_1to1_contract_test: PASS\\n');
+const story=extract(source,'buildApprovedMockupStory');assert.match(story,/saveNarrativeDirectionDraft\(\)/);assert.match(story,/clearNarrativeDirectionDraft\(\)/);assert.match(pages,/buildWorldManagerNarrativePanel\(\)/,'current facts retain a distinct management path from future direction');
+const relationshipRead=extract(source,'buildApprovedMockupPeople');assert.match(relationshipRead,/subjectId/);assert.match(relationshipRead,/targetId/);assert.match(relationshipRead,/rel__arrow/);assert.doesNotMatch(source,/const renderActiveTab\s*=|const buildBookPage\s*=/,'retired paper renderer is absent');
+console.log('libra_book_ux_1to1_contract_test: PASS (approved mockup ownership and retained controls)');

@@ -21,15 +21,21 @@ function check({api,html,source}){
  const audit=tags.map(tag=>attr(tag,'data-argument-row')).filter(Boolean);
  assert.deepEqual(sorted(audit),sorted(declared),'rendered audit covers every declared ARG once');
  const fieldIds=fields.map(f=>t.argumentSettingControlForKey(f.key));
- assert.deepEqual(sorted(ids.filter(id=>id.startsWith('argSetting_'))),sorted(fieldIds),'rendered expert fields match current editable settings');
- const tabs=tags.filter(tag=>attr(tag,'role')==='tab'),panels=tags.filter(tag=>attr(tag,'role')==='tabpanel');
- for(const id of ['tab-overview','tab-worldline','tab-source-edits','tab-restore'])assert(ids.includes(id),'required navigation missing: '+id);
- const targets=tabs.map(tag=>attr(tag,'aria-controls'));unique(targets,'tab targets');
- assert.deepEqual(sorted(targets),sorted(panels.map(tag=>attr(tag,'id'))),'each current tab has one matching panel including storage subpanels');
+ assert.deepEqual(sorted(tags.filter(tag=>/^<(?:input|select)\b/.test(tag)).map(tag=>attr(tag,'id')).filter(id=>id&&id.startsWith('argSetting_'))),sorted(fieldIds),'rendered expert fields match current editable settings');
+ const pages=tags.filter(tag=>attr(tag,'data-page')).map(tag=>attr(tag,'data-page'));
+ assert.deepEqual(sorted(pages),sorted(['lab','vault','care','connect','log','settings']),'six approved destinations cover all product views');
+ const routes=tags.filter(tag=>(attr(tag,'class')||'').split(/\s+/).includes('nav-item')).map(tag=>attr(tag,'data-go'));
+ assert.deepEqual(sorted(routes),sorted(pages),'each current route has one matching page');
+ for(const id of ['panel-worldline','panel-source-edits','panel-restore'])assert(ids.includes(id),'required feature destination missing: '+id);
+ const tabs=tags.filter(tag=>attr(tag,'data-subtab')&&attr(tag,'data-group'));
+ const panels=tags.filter(tag=>attr(tag,'data-subpanel')&&attr(tag,'data-group'));
+ const target=tag=>attr(tag,'data-group')+':'+(attr(tag,'data-subtab')||attr(tag,'data-subpanel'));
+ unique(tabs.map(target),'subtab targets');
+ assert.deepEqual(sorted(tabs.map(target)),sorted(panels.map(target)),'each current subtab has one matching panel including response and scope management');
  const toggles=tags.filter(tag=>attr(tag,'data-toggle-arg-setting-group'));
  const groupTargets=toggles.map(tag=>attr(tag,'aria-controls'));
  unique(groupTargets,'ARG group targets');
- const groupPanels=tags.filter(tag=>(attr(tag,'class')||'').split(/\s+/).includes('arg-setting-panel'));
+ const groupPanels=tags.filter(tag=>groupTargets.includes(attr(tag,'id')));
  assert.deepEqual(sorted(groupTargets),sorted(groupPanels.map(tag=>attr(tag,'id'))),'ARG group toggles match controlled panels');
  assert.equal(toggles.filter(tag=>attr(tag,'aria-expanded')==='true').length,1,'only first ARG group opens initially');
  for(const toggle of toggles){const panel=groupPanels.find(tag=>attr(tag,'id')===attr(toggle,'aria-controls'));assert.equal(/\shidden(?:\s|>)/.test(panel),attr(toggle,'aria-expanded')!=='true','group visibility matches expanded state');}

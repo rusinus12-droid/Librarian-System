@@ -1,0 +1,6 @@
+(node:1333) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS inherited T5 Micro overlap in plugin_only
+Error: timed out waiting for verified T5 Micro
+    at waitFor (/projects/sandbox/Librarian-System/PROGRAM/tests/libra_micro_inherited_t5_overlap_3mode_test.cjs:13:9)
+    at async /projects/sandbox/Librarian-System/PROGRAM/tests/libra_micro_inherited_t5_overlap_3mode_test.cjs:93:7

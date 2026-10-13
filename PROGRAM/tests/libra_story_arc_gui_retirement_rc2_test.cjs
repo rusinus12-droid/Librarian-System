@@ -61,8 +61,8 @@ if (oldGradiaRenderer) {
 }
 
 // The render-then-hide MutationObserver workaround is fully retired.
-assert.doesNotMatch(source, /new\s+MutationObserver\s*\(/,
-  'Story Arc MutationObserver DOM scan must be removed');
+assert.doesNotMatch(source, /MutationObserver[\s\S]{0,400}(?:RetireStoryArc|story-arc)/,
+  'Story Arc render-then-hide DOM observer must remain removed; approved overlay focus cleanup has independent ownership');
 const retireHelperReferences = source.match(/__libraCompletionRetireStoryArcDom/g) || [];
 assert.ok(retireHelperReferences.length <= 1,
   'Story Arc DOM retirement helper still has an active invocation');

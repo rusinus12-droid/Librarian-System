@@ -6,9 +6,9 @@ const prefix='serial_gradation_agents_for_rp:';
 const wait=async fn=>{const start=Date.now();while(Date.now()-start<6000){const result=fn();if(result)return result;await new Promise(r=>setTimeout(r,10));}throw Error('GUI action did not settle');};
 async function gui(t){
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'}),store=new Map(),writes=[],unloads=[];
- let failPrompt=false,hidden=false;
+ let failPrompt=false,hidden=false,clipboard=null;
  const storage={getItem:async k=>store.get(k)??null,setItem:async(k,v)=>{writes.push(k);if(failPrompt&&k===prefix+'prompt_overrides:v2'){failPrompt=false;throw Error('SIMULATED_SETTINGS_WRITE_FAILURE');}store.set(k,v);},removeItem:async k=>{writes.push(k);store.delete(k);}};
- const host=await load({api:{pluginStorage:storage,onUnload:async fn=>unloads.push(fn),hideContainer:async()=>{hidden=true;},showContainer:async()=>{hidden=false;}},testGlobals:{window:dom.window,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
+ const host=await load({api:{pluginStorage:storage,onUnload:async fn=>unloads.push(fn),hideContainer:async()=>{hidden=true;},showContainer:async()=>{hidden=false;}},testGlobals:{window:dom.window,Element:dom.window.Element,navigator:{clipboard:{writeText:async value=>{clipboard=value;}}},document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
  t.after(async()=>{await host.plugin.closeSettingsGui();for(const fn of unloads)await fn();dom.window.close();});
  await host.plugin.saveProviderPreset('default',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',model:'test-offline',key:'CREDENTIAL_SENTINEL',extra_headers_json:'{"Authorization":"Bearer HEADER_SECRET","HTTP-Referer":"https://example.test"}'});
  await host.plugin.saveProviderPreset('my-secret-model',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',model:'named-provider',key:'NAMED_SECRET_SENTINEL'});
@@ -16,9 +16,11 @@ async function gui(t){
  await host.plugin.openSettingsGui();await host.plugin.debugNavigateGui('transfer','flow');
  const doc=dom.window.document;
  const button=text=>{const found=[...doc.querySelectorAll('button')].find(b=>b.textContent.trim()===text);assert.ok(found,text);return found;};
- const input=payload=>{const box=doc.querySelector('textarea.tall');assert.ok(box);box.value=typeof payload==='string'?payload:JSON.stringify(payload);box.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
- const exportAll=async()=>{const select=[...doc.querySelectorAll('select')].find(n=>[...n.options].some(o=>o.value==='all')&&[...n.options].some(o=>o.value==='flow'));assert.ok(select);select.value='all';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await wait(()=>[...doc.querySelectorAll('button')].some(b=>b.textContent.trim()==='전체 설정 JSON 만들기'));const prior=doc.querySelector('textarea.tall');button('전체 설정 JSON 만들기').click();return await wait(()=>{const box=doc.querySelector('textarea.tall');if(box===prior)return false;try{return JSON.parse(box.value);}catch{return false;}});};
- return {...host,store,writes,doc,button,input,exportAll,isHidden:()=>hidden,failPromptOnce:()=>{failPrompt=true;}};
+ const input=payload=>{const box=doc.querySelector('#mockup-import-text');assert.ok(box);box.value=typeof payload==='string'?payload:JSON.stringify(payload);box.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
+ const exportAll=async()=>{clipboard=null;doc.querySelector('[data-export-scope="all"]').click();doc.querySelector('[data-manage-action="export-copy"]').click();return await wait(()=>clipboard&&JSON.parse(clipboard));};
+ const importPayload=async()=>{doc.querySelector('[data-manage-action="import-replace"]').click();const confirm=doc.querySelector('.overlay.is-open .dialog button.btn--primary');if(confirm){confirm.click();await new Promise(r=>setTimeout(r,80));}};
+
+ return {...host,store,writes,doc,button,input,exportAll,importPayload,isHidden:()=>hidden,failPromptOnce:()=>{failPrompt=true;}};
 }
 test('safe full settings backup includes plain custom prompts but no credential fields or secret headers',async t=>{
  const h=await gui(t),payload=await h.exportAll(),text=JSON.stringify(payload);
@@ -31,7 +33,7 @@ test('safe full settings backup includes plain custom prompts but no credential 
 test('invalid JSON, invalid version and late invalid provider payload leave the GUI draft and stored config unchanged',async t=>{
  const h=await gui(t),before=await h.exportAll(),persisted=JSON.stringify([...h.store]);
  for(const payload of ['{', {...before,version:999}, {...before,providerPresets:{},runtime:{mode:'lite'}}]){
-  h.input(payload);h.button('JSON으로 교체 가져오기').click();
+  h.input(payload);await h.importPayload();
   assert.equal(JSON.stringify([...h.store]),persisted);
   const after=await h.exportAll();delete after.exportedAt;const expected={...before};delete expected.exportedAt;
   assert.deepEqual(after,expected,'rejected import must not partially change the editor');
@@ -41,10 +43,10 @@ test('one explicit save restores imported custom prompts and leaves existing cre
  const h=await gui(t),payload=await h.exportAll();
  payload.promptOverrides.before.shadow_act.customPrompt='Imported plain prompt.\nPreserve "token" as ordinary prose.';
  const credentials=[...h.store].filter(([k])=>/secret|token/.test(k));
- h.input(payload);h.button('JSON으로 교체 가져오기').click();
+ h.input(payload);await h.importPayload();
  assert.notEqual((await h.plugin.getPromptOverrides()).before.shadow_act.customPrompt,payload.promptOverrides.before.shadow_act.customPrompt,'import is only a draft before Save');
- const start=h.writes.length;h.doc.querySelector('[data-save-settings]').click();
- await wait(()=>h.doc.body.textContent.includes('GRADIA 설정을 저장했습니다.'));
+ const start=h.writes.length;h.doc.querySelector('#savebar [data-save]').click();
+ await wait(()=>!h.plugin.debugGuiStateInfo().dirty);
  assert.equal((await h.plugin.getPromptOverrides()).before.shadow_act.customPrompt,payload.promptOverrides.before.shadow_act.customPrompt);
  assert.equal((await h.plugin.listProviderPresets())['my-secret-model'].model,'named-provider');
  assert.deepEqual([...h.store].filter(([k])=>/secret|token/.test(k)),credentials);
@@ -53,21 +55,21 @@ test('one explicit save restores imported custom prompts and leaves existing cre
 });
 test('failed imported-setting write restores the exact previous persistent config',async t=>{
  const h=await gui(t),payload=await h.exportAll();payload.runtime.mode='lite';payload.promptOverrides.before.shadow_act.customPrompt='MUST_NOT_COMMIT';
- h.input(payload);h.button('JSON으로 교체 가져오기').click();
+ h.input(payload);await h.importPayload();
  const before=JSON.stringify([...h.store].sort(([a],[b])=>a.localeCompare(b)));h.failPromptOnce();
- h.doc.querySelector('[data-save-settings]').click();
+ h.doc.querySelector('#savebar [data-save]').click();
  await wait(()=>!h.doc.body.textContent.includes('설정을 저장하고 있습니다')&&/저장하지 못|되돌렸|실패/.test(h.doc.body.textContent));
  assert.equal(JSON.stringify([...h.store].sort(([a],[b])=>a.localeCompare(b))),before);
  assert.notEqual((await h.plugin.getPromptOverrides()).before.shadow_act.customPrompt,'MUST_NOT_COMMIT');assert.equal(h.getCalls(),0);
 });
 test('discarding an imported draft does not change how later ordinary connection edits are saved',async t=>{
  const h=await gui(t),payload=await h.exportAll();payload.runtime.mode='lite';
- h.input(payload);h.button('JSON으로 교체 가져오기').click();
- h.button('닫기').click();await wait(()=>[...h.doc.querySelectorAll('button')].some(b=>b.textContent.trim()==='변경 버리고 닫기'));
+ h.input(payload);await h.importPayload();
+ h.doc.querySelector('[data-open="dlg-close"]').click();await wait(()=>[...h.doc.querySelectorAll('button')].some(b=>b.textContent.trim()==='변경 버리고 닫기'));
  h.button('변경 버리고 닫기').click();
  await wait(h.isHidden);
  await h.plugin.openSettingsGui();await h.plugin.debugNavigateGui('providers','providers');
- const key=await wait(()=>h.doc.querySelector('input[type="password"]'));key.value='NEW_SYNTHETIC_KEY';key.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
- h.doc.querySelector('[data-save-settings]').click();await wait(()=>h.doc.body.textContent.includes('GRADIA 설정을 저장했습니다.'));
+ const key=await wait(()=>h.doc.querySelector('input[type="password"]'));key.value='NEW_SYNTHETIC_KEY';key.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
+ h.doc.querySelector('#savebar [data-save]').click();await wait(()=>!h.plugin.debugGuiStateInfo().dirty);
  assert.equal((await h.plugin.listProviderPresets()).default.key,'NEW_SYNTHETIC_KEY');assert.equal(h.getCalls(),0);
 });

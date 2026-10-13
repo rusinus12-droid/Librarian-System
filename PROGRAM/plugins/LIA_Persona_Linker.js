@@ -209,6 +209,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg max_lore_chars int Maximum characters copied from each lorebook entry as generation context
 
 (async () => {
+  // Canonical LIA mockup CSS/DOM transplanted verbatim; suite.js demo behavior is intentionally excluded.
+  const LIA_MOCKUP_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n/* LIA 전용: \"라일락 주머니\" — 모바일 우선, 카드 1열, 큰 터치 영역, 한 화면 한 일 */\n.t-lia .page-body{max-width:760px;margin:0 auto;width:100%}\n.pocket{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;padding:18px;border:1px solid var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft)}\n.avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 24px var(--font-display);border:3px solid #fff}\n.avatar--sm{width:44px;height:44px;font-size:17px;border-width:2px}\n.avatar--b{background:#3d7258}.avatar--c{background:#8a5f17}.avatar--d{background:#ab3453}.avatar--n{background:#6f6580}\n.pocket h2{margin:0;font:800 20px/1.25 var(--font-display);letter-spacing:-.03em}\n.pocket p{margin:3px 0 0;font-size:13px;color:var(--text2)}\n.pocket__act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}\n.pocket__act .btn{flex:1 1 140px}\n/* 연결 상태: 색만으로 구분하지 않도록 아이콘 + 글자를 항상 함께 */\n.bind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface);color:var(--text2)}\n.bind--here{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.bind--other{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.bind--none{border-style:dashed}\n.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--text3)}\n.pcard{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\nbutton.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}\n.pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}\n.pcard__side{display:grid;gap:6px;justify-items:end}\n.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}\n.big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}\n.big-choice .row__icon{width:44px;height:44px;border-radius:50%}\n.big-choice .pick{font-size:12px;font-weight:700;color:var(--text3)}\n.big-choice.is-on .pick{color:var(--accent-ink)}\n.mode-panel{display:none}.mode-panel.is-on{display:block}\n.emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}\n.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center;color:var(--text);width:100%}\nbutton.emo:hover{border-color:var(--accent-line);background:var(--surface2)}\n.emo .avatar{width:48px;height:48px;font-size:20px}\n.emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}\n.emo.is-master{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}\n.emo .avatar.todo{background:var(--surface3);color:var(--text3)}\n.base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}\n.base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}\n.back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}\n.turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}\n.jargon{font-size:12px;color:var(--text3)}\n.confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}\n.fld{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--border)}\n.fld:first-child{border-top:0}\n.fld__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.fld__head label{font-weight:700;font-size:13px}.fld__key{font:11.5px var(--font-mono);color:var(--text3)}\n.fld__act{display:flex;gap:12px;align-items:center;flex-wrap:wrap}\n.fld__act .check{font-size:12.5px;color:var(--text2)}\n.diff-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}\n.diff-row:first-child{border-top:0}\n.diff-row del{color:var(--danger-ink);background:var(--danger-soft);text-decoration:line-through;padding:0 3px;border-radius:3px}\n.diff-row ins{color:var(--ok-ink);background:var(--ok-soft);text-decoration:none;padding:0 3px;border-radius:3px}\n.chk-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);font-size:12px;font-weight:650;background:var(--surface)}\n.chk-chip.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.chk-chip.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.target-card{display:grid;gap:10px;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)}\n.target-card h3{margin:0;font-size:14.5px}\n.target-card h3 small{font-weight:500;color:var(--text3);margin-left:6px}\n.lock-card dl{margin:0}\n.ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}\n@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}\n@container app (max-width:640px){.topbar .brand__ver{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\n";
+  const LIA_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"user\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">LIA</div><div class=\"brand__ver\">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>\n    <div class=\"scope\"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok\" title=\"LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다\"><i></i>LIA 자료 local_only</span>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu aria-label=\"더 보기\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button data-toast=\"새로 읽었습니다. (시안)\"><i data-i=\"refresh\"></i>새로 읽기</button><button data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button><button data-toast=\"닫기 (시안)\"><i data-i=\"x\"></i>닫기</button></div></div>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"LIA 메뉴\">\n    <button class=\"nav-item\" data-go=\"mine\" data-short=\"내 페르소나\" data-unsaved-for=\"assets\"><i data-i=\"user\"></i><span class=\"nav-text\">내 페르소나</span></button>\n    <button class=\"nav-item\" data-go=\"make\" data-short=\"만들기\"><i data-i=\"spark\"></i><span class=\"nav-text\">만들기</span></button>\n    <button class=\"nav-item\" data-go=\"shelf\" data-short=\"보관함\" data-unsaved-for=\"edit\"><i data-i=\"shelf\"></i><span class=\"nav-text\">보관함</span><span class=\"count\" id=\"nav-shelf-n\">4</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-short=\"설정\"><i data-i=\"sliders\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  \n  <section class=\"page is-active\" data-page=\"mine\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Now</div><h1 class=\"page-title\">내 페르소나</h1><p class=\"page-desc\">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"pocket\" id=\"pocket\"></div>\n\n      <div class=\"card card--tight\" id=\"upd-card\">\n        <div class=\"card__head\"><div><h2 class=\"card__title\">다음 갱신 범위</h2><p class=\"card__desc\">자동으로 바뀌지 않습니다. 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 직접 눌러서 한 번에 분석·반영합니다.</p></div><span class=\"badge badge--warn\" id=\"upd-badge\">3 / 5쌍</span></div>\n        <div class=\"turns\" id=\"upd-dots\" aria-label=\"3 / 5쌍\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i></div>\n        <p class=\"hint\" style=\"margin-top:8px\" id=\"upd-hint\">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>\n      </div>\n\n      <div class=\"note\"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>\n\n      <div>\n        <div class=\"section-title\"><h2>선택할 수 있는 Persona <span class=\"muted\" style=\"font-weight:500\">(RisuAI Persona로 채택한 것)</span></h2></div>\n        <div class=\"stack stack--sm\" id=\"mine-list\"></div>\n        <div class=\"legend\" style=\"margin-top:10px\"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>\n      </div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"make\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Create</div><h1 class=\"page-title\">Persona 만들기</h1><p class=\"page-desc\">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>\n    <div class=\"stack\" data-detail-root>\n      <div class=\"stack stack--sm\" role=\"group\" aria-label=\"생성 모드\">\n        <button class=\"big-choice is-on\" data-select-row=\"classic\"><span class=\"row__icon\"><i data-i=\"user\"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"random\"><span class=\"row__icon\"><i data-i=\"spark\"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"character\"><span class=\"row__icon\"><i data-i=\"users\"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"conversation\"><span class=\"row__icon\"><i data-i=\"chat\"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class=\"pick\">선택</span></button>\n      </div>\n\n      <div class=\"card\">\n        <div class=\"mode-panel is-on\" data-detail=\"classic\"><div class=\"stack stack--sm\">\n          <div class=\"field\"><label>Source Persona</label><select class=\"select\" id=\"src-sel\" data-no-track></select><span class=\"hint\" id=\"src-hint\">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-classic\" data-run-job=\"job-gen\"><i data-i=\"spark\"></i><span>Persona 만들기</span></button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"random\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>\n          <div class=\"field\"><label for=\"random-concept\">컨셉 (선택)</label><textarea class=\"textarea\" id=\"random-concept\" rows=\"2\" data-no-track placeholder=\"예) 북쪽 항구 도시의 약재상 견습생\"></textarea></div>\n          <div class=\"note\"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"random-cand-go\" data-run-job=\"job-cand\" data-ctx='{\"variant\": \"random\", \"mode\": \"랜덤 신규 생성\"}'><i data-i=\"spark\"></i>후보 3개 만들기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"character\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" data-run-job=\"job-cand\" data-ctx='{\"variant\": \"character\", \"mode\": \"등장인물 추출\"}'><i data-i=\"users\"></i>등장인물 후보 찾기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"conversation\"><div class=\"stack stack--sm\">\n          <div class=\"kv-line\"><dl class=\"kv\"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-conv\" data-run-job=\"job-gen\"><i data-i=\"chat\"></i>대화에서 추출</button></div></div></div>\n      </div>\n\n      <details class=\"card card--flat\"><summary style=\"cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center\">사용할 자료 · 세계관 분석 (고급)</summary>\n        <div class=\"stack stack--sm\" style=\"margin-top:12px\">\n          <dl class=\"kv\"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>\n          <div class=\"field\"><label for=\"lia-max-chars\">자료 항목별 최대 문자 수</label><input class=\"input\" id=\"lia-max-chars\" type=\"number\" min=\"240\" max=\"3000\" step=\"1\" value=\"1200\"><span class=\"hint\" id=\"lia-max-chars-hint\">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>\n          <label class=\"check\"><input id=\"lia-rich-profile\" type=\"checkbox\" checked><span>상세 프로필 사용 <span class=\"hint\">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"세계관을 분석합니다. (시안)\">세계관 분석</button><button class=\"btn btn--sm\" data-toast=\"세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)\">재분석</button><button class=\"btn btn--sm\" data-open=\"sheet-evidence\">근거 검토</button></div>\n        </div></details>\n\n      <div class=\"note\"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"shelf\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Vault</div><h1 class=\"page-title\">보관함</h1><p class=\"page-desc\">생성 직후 자동 보관된 결과 <b id=\"shelf-n\">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"search\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" placeholder=\"이름·특징으로 찾기\" aria-label=\"보관함 검색\"></div>\n      <div class=\"list\" id=\"shelf-list\"></div>\n      <div class=\"empty\" id=\"shelf-empty\" hidden><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>\n      <div class=\"note\"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class=\"muted\" style=\"margin:2px 0 8px\">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class=\"btn btn--sm\" data-go=\"recover\">이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"settings\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">텍스트 AI</h2><p class=\"card__desc\">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class=\"badge badge--ok\">연결됨 (표본)</span></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>제공자</label><select class=\"select\"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"https://api.example.com/v1\"></div>\n          <div class=\"field\"><label>모델</label><input class=\"input\" value=\"model-name\"></div>\n          <div class=\"field\"><label>API 키</label><input class=\"input\" type=\"password\" value=\"\" placeholder=\"저장된 키가 있습니다\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"연결 테스트 성공 (시안)\">연결 테스트</button></div>\n          <details><summary style=\"cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center\">고급 옵션</summary><p class=\"hint\">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>\n        </div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">이미지 AI</h2><p class=\"card__desc\">끄면 이미지·감정 메뉴가 숨겨집니다.</p></div></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>이미지 제공자</label><select class=\"select\" id=\"img-provider\"><option>사용 안 함</option><option selected>워크플로 기반</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"\" placeholder=\"https://\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"워크플로를 검사했습니다. (시안)\">워크플로 검사</button><button class=\"btn btn--sm\" data-toast=\"이미지 연결 테스트 (시안)\">연결 테스트</button></div>\n        </div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">저장 위치와 전송</h2><p class=\"card__desc\">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>\n        <dl class=\"kv\"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>\n        <div class=\"setting\" style=\"margin-top:12px\"><div><div class=\"setting__name\">진단</div><div class=\"setting__desc\">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class=\"btn btn--sm\" data-toast=\"진단을 마쳤습니다. (읽기 전용, 시안)\">진단 실행</button></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>에셋 ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>에셋 ZIP 가져오기</button><button class=\"btn\" data-toast=\"디버그 JSON을 내보냈습니다. (시안)\">디버그 JSON</button><button class=\"btn\" data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"edit\" data-track id=\"edit-root\">\n    <input type=\"hidden\" id=\"ed-view-dirty\" value=\"0\" data-dirty-key=\"view-drafts\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Edit · <span data-fill=\"ver\">v3</span> · <span data-fill=\"mode\">클래식 생성</span></div><h1 class=\"page-title\" data-fill=\"name\">세라 하운</h1><p class=\"page-desc\">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill=\"statusText\">채택됨 · 이 채팅에 연결됨</b></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ed\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"all\">전체 23개 항목</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rev\">검토</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ver\">버전·기록</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"out\">채택·연결·삭제</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"sum\" data-group=\"ed\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">장기 Persona 요약</h2><p class=\"card__desc\">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>\n          <div class=\"stack stack--sm\">\n            <div class=\"field\"><label>이름</label><input class=\"input\" data-key=\"name\" value=\"세라 하운\"></div>\n            <div class=\"field\"><label>역할/직업</label><input class=\"input\" data-key=\"role\" value=\"왕실 기록실 사서\"></div>\n            <div class=\"field\"><label>성격</label><textarea class=\"textarea\" rows=\"2\" data-key=\"personality\">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>\n            <div class=\"field\"><label>말투</label><textarea class=\"textarea\" rows=\"2\" data-key=\"speech\">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>\n          </div></div>\n        <div class=\"card card--flat\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 상태 (일시적)</h2><p class=\"card__desc\">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>\n          <div id=\"live-persona-state\"><p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona의 Live 상태를 불러오는 중</p></div></div>\n      </div></div>\n\n      <div data-subpanel=\"all\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"seg\" id=\"ed-lang\" role=\"group\" aria-label=\"보기 언어\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역</button></div><p class=\"hint\" id=\"ed-lang-note\" style=\"margin:0\">보관된 원문을 편집합니다.</p>\n        <p class=\"hint\">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>\n        <div class=\"card card--tight\">\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-name\">이름</label><code class=\"fld__key\">name</code></div><input class=\"input\" id=\"f-name\" data-key=\"name\" value=\"세라 하운\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"name\" aria-label=\"이름 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"name\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-gender\">성별</label><code class=\"fld__key\">gender</code></div><input class=\"input\" id=\"f-gender\" data-key=\"gender\" value=\"여성\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"gender\" aria-label=\"성별 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"gender\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-age\">나이</label><code class=\"fld__key\">age</code></div><input class=\"input\" id=\"f-age\" data-key=\"age\" value=\"29세\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"age\" aria-label=\"나이 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"age\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speciesRace\">종족</label><code class=\"fld__key\">speciesRace</code></div><input class=\"input\" id=\"f-speciesRace\" data-key=\"speciesRace\" value=\"인간\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speciesRace\" aria-label=\"종족 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speciesRace\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-origin\">출신</label><code class=\"fld__key\">origin</code></div><input class=\"input\" id=\"f-origin\" data-key=\"origin\" value=\"북쪽 도서 도시 ‘하운’\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"origin\" aria-label=\"출신 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"origin\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-role\">역할/직업</label><code class=\"fld__key\">role</code></div><input class=\"input\" id=\"f-role\" data-key=\"role\" value=\"왕실 기록실 사서\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"role\" aria-label=\"역할/직업 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"role\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-appearance\">외모</label><code class=\"fld__key\">appearance</code></div><input class=\"input\" id=\"f-appearance\" data-key=\"appearance\" value=\"짙은 회색 외투, 은색 열쇠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"appearance\" aria-label=\"외모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"appearance\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-personality\">성격</label><code class=\"fld__key\">personality</code></div><input class=\"input\" id=\"f-personality\" data-key=\"personality\" value=\"신중하지만 약속을 가볍게 여기지 않는다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"personality\" aria-label=\"성격 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"personality\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-visibleSide\">겉으로 보이는 면</label><code class=\"fld__key\">visibleSide</code></div><input class=\"input\" id=\"f-visibleSide\" data-key=\"visibleSide\" value=\"차분하고 예의 바름\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"visibleSide\" aria-label=\"겉으로 보이는 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"visibleSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-hiddenSide\">숨은 면</label><code class=\"fld__key\">hiddenSide</code></div><input class=\"input\" id=\"f-hiddenSide\" data-key=\"hiddenSide\" value=\"기록되지 않은 일에 대한 집착\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"hiddenSide\" aria-label=\"숨은 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"hiddenSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-internalContradiction\">내적 모순</label><code class=\"fld__key\">internalContradiction</code></div><input class=\"input\" id=\"f-internalContradiction\" data-key=\"internalContradiction\" value=\"비밀을 지키려다 진실을 외면한다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"internalContradiction\" aria-label=\"내적 모순 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"internalContradiction\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-background\">배경</label><code class=\"fld__key\">background</code></div><input class=\"input\" id=\"f-background\" data-key=\"background\" value=\"기록실에서 자라 외부와 거리를 둠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"background\" aria-label=\"배경 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"background\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speech\">말투</label><code class=\"fld__key\">speech</code></div><input class=\"input\" id=\"f-speech\" data-key=\"speech\" value=\"짧고 낮은 어조\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speech\" aria-label=\"말투 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speech\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-motivation\">동기/욕망</label><code class=\"fld__key\">motivation</code></div><input class=\"input\" id=\"f-motivation\" data-key=\"motivation\" value=\"사라진 기록의 행방을 찾는 것\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"motivation\" aria-label=\"동기/욕망 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"motivation\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipStyle\">관계 방식</label><code class=\"fld__key\">relationshipStyle</code></div><input class=\"input\" id=\"f-relationshipStyle\" data-key=\"relationshipStyle\" value=\"거리를 두되 한번 믿으면 끝까지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipStyle\" aria-label=\"관계 방식 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipStyle\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipToCharacter\">{{char}}와의 접점</label><code class=\"fld__key\">relationshipToCharacter</code></div><input class=\"input\" id=\"f-relationshipToCharacter\" data-key=\"relationshipToCharacter\" value=\"열쇠를 맡긴 첫 의뢰인\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipToCharacter\" aria-label=\"{{char}}와의 접점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipToCharacter\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-preferences\">선호/취향</label><code class=\"fld__key\">preferences</code></div><input class=\"input\" id=\"f-preferences\" data-key=\"preferences\" value=\"오래된 종이 냄새, 식은 차\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"preferences\" aria-label=\"선호/취향 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"preferences\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-conflictRepair\">갈등/회복</label><code class=\"fld__key\">conflictRepair</code></div><input class=\"input\" id=\"f-conflictRepair\" data-key=\"conflictRepair\" value=\"말수가 줄었다가 사실부터 정리해 사과\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"conflictRepair\" aria-label=\"갈등/회복 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"conflictRepair\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-skills\">기술/강점</label><code class=\"fld__key\">skills</code></div><input class=\"input\" id=\"f-skills\" data-key=\"skills\" value=\"고문서 판독, 암기\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"skills\" aria-label=\"기술/강점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"skills\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-limitations\">한계/약점</label><code class=\"fld__key\">limitations</code></div><input class=\"input\" id=\"f-limitations\" data-key=\"limitations\" value=\"몸싸움에 약함\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"limitations\" aria-label=\"한계/약점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"limitations\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-knowledgeBoundary\">지식 경계</label><code class=\"fld__key\">knowledgeBoundary</code></div><input class=\"input\" id=\"f-knowledgeBoundary\" data-key=\"knowledgeBoundary\" value=\"왕실 외부 소식은 소문 수준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"knowledgeBoundary\" aria-label=\"지식 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"knowledgeBoundary\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-boundaries\">RP 경계</label><code class=\"fld__key\">boundaries</code></div><input class=\"input\" id=\"f-boundaries\" data-key=\"boundaries\" value=\"직접 묘사하지 않을 수위 설정은 보관 결과 기준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"boundaries\" aria-label=\"RP 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"boundaries\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-worldFitNotes\">세계관 적합 메모</label><code class=\"fld__key\">worldFitNotes</code></div><input class=\"input\" id=\"f-worldFitNotes\" data-key=\"worldFitNotes\" value=\"보름달 전 개방 금지 규칙을 인지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"worldFitNotes\" aria-label=\"세계관 적합 메모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"worldFitNotes\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n        </div>\n      </div></div>\n\n      <div data-subpanel=\"rev\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">검사 결과</h2><p class=\"card__desc\">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>\n          <div class=\"cluster\" id=\"rv-chips\"></div>\n          <p class=\"muted\" style=\"margin:10px 0 0;font-size:13px\" id=\"rv-note\"></p></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">수정 미리보기</h2><p class=\"card__desc\">적용 전에 바뀔 내용을 확인합니다.</p></div></div>\n          <div id=\"rv-diff\"></div>\n          <div class=\"cluster\" style=\"margin-top:10px\" id=\"rv-acts\"><button class=\"btn btn--primary\" id=\"rv-apply\">초안에 적용</button><button class=\"btn\" id=\"rv-ignore\">무시</button></div></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">밀도 변환</h2><p class=\"card__desc\">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>\n          <div class=\"choices\" id=\"ed-density\"><button class=\"choice\"><b>Full</b><span>전체 항목</span></button><button class=\"choice is-on\"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class=\"choice\"><b>Compact</b><span>짧게 압축</span></button></div></div>\n      </div></div>\n\n      <div data-subpanel=\"ver\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"list\" id=\"ver-list\">\n          <div class=\"ver\"><span class=\"badge badge--ok\">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class=\"btn btn--sm\" data-toast=\"v3를 열었습니다. (시안)\">열기</button></div>\n          <div class=\"ver\"><span class=\"badge\">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class=\"btn btn--sm\" data-toast=\"v2와 비교합니다. (시안)\">비교</button></div>\n          <div class=\"ver\"><span class=\"badge\">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class=\"btn btn--sm\" data-toast=\"v1에서 파생본을 만들었습니다. (시안)\">파생본 만들기</button></div>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" id=\"btn-persona-blueprint\" data-open=\"sheet-persona-blueprint\">생성 Blueprint</button><button class=\"btn\" id=\"btn-persona-json\" data-open=\"sheet-persona-json\">JSON 보기</button></div>\n      </div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-blueprint\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spb-title\"><div class=\"eyebrow\">World blueprint</div><h2 id=\"spb-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">생성 Blueprint</h2><p class=\"muted\" id=\"spb-target\" style=\"margin:0 0 10px;font-size:13px\"></p><div class=\"list\" id=\"spb-items\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-json\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spj-title\"><div class=\"eyebrow\">PersonaSpec</div><h2 id=\"spj-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">PersonaSpec JSON</h2><p class=\"muted\" id=\"spj-target\" style=\"margin:0 0 10px;font-size:13px\"></p><pre id=\"spj-content\" style=\"max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)\"></pre><div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n      <div data-subpanel=\"out\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"target-card\"><h3>① LIA 보관함 <small>‘<span data-fill=\"name\">세라 하운</span>’ · 자동 보관됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--sm btn--danger\" id=\"btn-del-vault\" data-open=\"sheet-del-vault\">보관함에서 삭제…</button></div></div>\n        <div class=\"target-card\"><h3>② RisuAI Persona로 채택 <small data-fill=\"adoptText\">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>\n          <div class=\"field\"><label>채택할 내용</label><div class=\"seg\" id=\"ad-lang\" role=\"group\" aria-label=\"채택본\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역본</button></div></div>\n          <div class=\"choices\" id=\"ad-mode\"><button class=\"choice is-on\"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class=\"choice\"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>\n          <dl class=\"kv\" style=\"margin:0\"><dt>밀도</dt><dd id=\"ad-density-label\">Standard</dd></dl><p class=\"hint\" style=\"margin:0\">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class=\"hint\" id=\"adopt-diff\" hidden style=\"margin:0\"></p><div class=\"note\"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>\n          <p class=\"hint\" id=\"hint-adopt\" hidden style=\"color:var(--danger-ink)\">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"btn-adopt\" data-toast=\"‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)\">채택하기</button><button class=\"btn btn--sm btn--danger\" id=\"btn-del-persona\" data-open=\"sheet-del-persona\">생성한 Persona 정리…</button></div><p class=\"hint\" id=\"hint-del-persona\" hidden>아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden></div></div>\n        <div class=\"target-card\"><h3>③ 현재 채팅에 연결 <small data-fill=\"bindText\">이 채팅에 연결됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>\n          <div class=\"cluster\"><button class=\"btn\" id=\"btn-bind\" data-open=\"sheet-bind\"><i data-i=\"link\"></i>이 채팅에 연결…</button><button class=\"btn btn--sm btn--danger\" id=\"btn-unbind\" data-open=\"sheet-unbind\">연결 해제…</button></div><p class=\"hint\" id=\"hint-bind\" hidden>RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"update\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Manual update</div><h1 class=\"page-title\">수동 갱신</h1><p class=\"page-desc\">두 가지 서로 다른 검토가 있습니다. 근거와 반영 대상이 다릅니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"up\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"five\">다음 5턴 갱신</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"full\">전체 대화 변화 검토</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"five\" data-group=\"up\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">처리 범위</h2><p class=\"card__desc\">마지막 처리 지점 다음의 <b>완결된 5쌍</b>만 한 번 분석해 Live Persona를 갱신합니다.</p></div><span class=\"badge badge--ok\" id=\"upd2-badge\">준비됨</span></div>\n          <dl class=\"kv\"><dt>범위</dt><dd id=\"upd2-range\">TURN 6~10 · 다음 5턴만 분석합니다.</dd><dt>정책</dt><dd>자동 갱신 꺼짐 · 수동 실행만</dd><dt>대상</dt><dd id=\"upd2-target\">이 채팅 소유 Live Persona</dd></dl>\n          <div class=\"note\" style=\"margin-top:12px\">결과별 체크 승인 단계는 없습니다. 한 번 실행하면 분석 결과가 Live Persona에 반영되고, 기록에 남습니다. 실행 전 바인딩은 기록에서 <b>복원</b>할 수 있습니다.</div>\n          <p class=\"hint\" id=\"upd2-why\" hidden style=\"margin:10px 0 0\"></p><div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"upd-go\" data-run-job=\"job-update\"><i data-i=\"sync\"></i>다음 5턴 갱신 실행</button></div></div>\n        <div class=\"card card--tight\"><div class=\"card__head\"><div><h2 class=\"card__title\">갱신 기록</h2></div></div>\n          <div class=\"list\" id=\"upd-hist\"></div></div>\n      </div></div>\n      <div data-subpanel=\"full\" data-group=\"up\"><div class=\"stack\">\n        <div class=\"note\"><b>다른 기능입니다.</b> 채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 Live Persona가 아니라 <b>초안</b>에 반영됩니다.</div>\n        <div class=\"list\">\n          <label class=\"row\"><input type=\"checkbox\" checked class=\"chg\" data-key=\"\" data-chg-key=\"speech\" data-chg-val=\"짧고 낮은 어조. 말끝을 줄임표로 흐린다.\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">말투 — 줄임표가 늘어남</div><div class=\"row__meta\">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>\n          <label class=\"row\"><input type=\"checkbox\" class=\"chg\" data-chg-key=\"preferences\" data-chg-val=\"오래된 종이 냄새, 따뜻한 차\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">선호 — 차를 즐기게 됨</div><div class=\"row__meta\">근거: User 메시지 #77 · 근거 1건</div></div></label>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" data-toast=\"사용자 작성 메시지 전체를 비교합니다. (시안)\">변화 후보 찾기</button><button class=\"btn btn--primary\" id=\"chg-go\">선택 후보를 초안에 반영</button><span class=\"hint\" id=\"chg-hint\"></span></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"assets\" data-track>\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Persona asset studio</div><h1 class=\"page-title\">이미지 · 감정</h1><p class=\"page-desc\">기본 모습을 정하고, 다양한 표정을 더합니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>Neutral 생성</b></div><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>기준 확정</b></div><div class=\"step is-active\"><span class=\"step__no\">3</span><b>감정 묶음</b></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">대상</h2><p class=\"card__desc\">기본값은 이 채팅에 연결된 Persona입니다. 다른 Persona를 골라 그 Persona 전용 에셋을 만들 수 있습니다.</p><div class=\"banner banner--warn\" id=\"as-off\" hidden style=\"margin-top:8px\"><div><b>이미지 제공자가 ‘사용 안 함’으로 저장되어 있습니다.</b><span>설정에서 이미지 제공자를 고르고 저장해야 이미지를 만들 수 있습니다. 이미 저장된 에셋은 그대로 볼 수 있습니다.</span></div></div></div></div>\n        <div class=\"field\"><label>에셋 타겟 Persona</label><select class=\"select\" id=\"asset-target\" data-no-track></select></div>\n        <dl class=\"kv\" style=\"margin-top:10px\"><dt>저장 상태</dt><dd id=\"as-state\">9개 저장됨 · Neutral Master 있음</dd><dt>대상 요약</dt><dd id=\"as-sum\">짙은 회색 외투, 은색 열쇠를 쥔 29세 여성</dd></dl></div>\n      <div class=\"card lock-card\"><div class=\"card__head\"><div><h2 class=\"card__title\">Visual Generation Lock</h2><p class=\"card__desc\">기준은 <b>프롬프트와 생성 조건(Lock)</b>입니다. 확정 뒤에는 감정별로 바뀌지 않습니다.</p></div><span class=\"badge badge--ok\" id=\"as-lock\">확정됨</span></div>\n        <dl class=\"kv\"><dt>생성 조건</dt><dd>seed 482913 · 832×1216 · sampler 표본</dd><dt>구도</dt><dd>표준 감정 에셋 · 상반신</dd><dt>구형 Lock</dt><dd>해당 없음 — 이전 형식의 Lock이 남아 있으면 이곳에 ‘구형’으로 표시됩니다.</dd><dt>배경 규칙</dt><dd>순백색 고정 · Positive/Negative 양쪽에서 강제 · 투명/장면 배경 사용 안 함</dd></dl>\n        <div id=\"asset-lock-fields\"><div class=\"field\" style=\"margin-top:12px\"><label>구도 프리셋 <span class=\"hint\">(Neutral 기준 확정 시 Lock에 포함)</span></label>\n          <div class=\"choices\" data-dirty><button class=\"choice is-on\"><b>표준 감정 에셋 · 상반신</b><span>허리 위 · 중앙 · 손 최소</span></button><button class=\"choice\"><b>얼굴 중심 에셋 · 흉상</b><span>머리와 어깨 중심</span></button><button class=\"choice\"><b>반신 에셋 · 반신</b><span>허리~허벅지 중간까지</span></button></div></div>\n        <div class=\"field\" style=\"margin-top:12px\"><label>추가 스타일 메모</label><textarea class=\"textarea\" rows=\"2\">부드러운 수채 질감</textarea><span class=\"hint\">Neutral 생성 시 Lock 후보에 포함됩니다. 기준 확정 뒤에는 바뀌지 않습니다.</span></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-run-job=\"job-neutral\" data-ctx='{\"emo\": \"neutral (Visual Master)\"}'>Neutral 다시 만들기</button><button class=\"btn\" id=\"btn-confirm-visual-lock\">Neutral 기준 확정</button></div></div></div>\n      <div><div class=\"section-title\"><h2>감정 이미지 <span class=\"muted\" style=\"font-weight:500\" id=\"as-n\">9 / 12</span></h2><span class=\"hint\">눌러서 업로드·프롬프트 편집·재생성·삭제</span></div>\n        <div class=\"emo-grid\" id=\"emo-grid\">\n          <button class=\"emo is-done is-master\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"neutral (Visual Master)\"}'><div class=\"avatar\">N</div>neutral<br><span class=\"muted\">✓ Master</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"gentle smile\"}'><div class=\"avatar avatar--b\">G</div>gentle smile<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"happy\"}'><div class=\"avatar avatar--b\">H</div>happy<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"angry\"}'><div class=\"avatar avatar--d\">A</div>angry<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"sad\"}'><div class=\"avatar avatar--n\">S</div>sad<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"embarrassed\"}'><div class=\"avatar avatar--c\">E</div>embarrassed<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"jealous\"}'><div class=\"avatar todo\">?</div>jealous<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"surprised\"}'><div class=\"avatar avatar--c\">S</div>surprised<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"worried\"}'><div class=\"avatar todo\">?</div>worried<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"determined\"}'><div class=\"avatar\">D</div>determined<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"affectionate\"}'><div class=\"avatar todo\">?</div>affectionate<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"exhausted\"}'><div class=\"avatar avatar--n\">E</div>exhausted<br><span class=\"muted\">✓ 완료</span></button>\n        </div>\n        <div class=\"field\" style=\"margin-top:12px\"><label>감정 목록 (한 줄에 하나 또는 쉼표)</label><textarea class=\"textarea\" rows=\"3\" id=\"emo-list\">neutral, gentle smile, happy, angry, sad, embarrassed, jealous, surprised, worried, determined, affectionate, exhausted</textarea><span class=\"hint\">Neutral은 Visual Master입니다. 사용자 정의 감정 추가는 Neutral 기준이 확정된 뒤에만 가능합니다.</span></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">묶음 작업</h2></div></div>\n        <div class=\"note\"><b>묶음 생성은 neutral을 제외한 전체 감정을 생성·갱신합니다.</b> 이미 있는 감정도 다시 만들어질 수 있습니다. 하나만 만들려면 위에서 해당 감정을 눌러 개별 재생성하세요.</div>\n        <label class=\"check\" style=\"margin-top:10px\"><input type=\"checkbox\" checked><span>해당 감정이 없으면 neutral로 대체해 자동 첨부 <span class=\"hint\">— 런타임 neutral 대체</span></span></label>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" data-run-job=\"job-emo\"><i data-i=\"spark\"></i>감정 묶음 생성·갱신</button><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>ZIP 가져오기</button><button class=\"btn btn--danger\" data-open=\"sheet-bundle-del\">묶음 폐기…</button></div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">감정 에셋 프리셋</h2><p class=\"card__desc\">Persona 고유 이미지와 Visual Lock은 저장하지 않습니다.</p></div></div>\n        <div class=\"cluster\"><select class=\"select\" style=\"max-width:240px\" aria-label=\"프리셋 선택\"><option>기본 수채</option></select><button class=\"btn btn--sm\" data-toast=\"프리셋을 불러왔습니다. (시안)\">불러오기</button><button class=\"btn btn--sm\" data-toast=\"프리셋을 삭제했습니다. (시안)\">삭제</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"recover\">\n    <button class=\"back\" data-go=\"settings\"><i data-i=\"back\" data-size=\"sm\"></i>설정</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Recovery</div><h1 class=\"page-title\">이전 자료 복구</h1><p class=\"page-desc\">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>검사</b></div><div class=\"step is-active\"><span class=\"step__no\">2</span><b>결과·충돌</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>가져오기</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>읽기 확인</b></div></div>\n    <div class=\"stack\">\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class=\"muted\" style=\"margin:2px 0 0\">목록·Live shard·이미지 조각을 검증했습니다. (표본)</p></div></div>\n      <div class=\"list\">\n        <label class=\"row\"><input type=\"checkbox\" checked class=\"rc\" data-name=\"카엘 로웬\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">카엘 로웬 <span class=\"badge badge--ok\">충돌 없음</span></div><div class=\"row__meta\">Live shard 검증됨 · 이미지 조각 12/12</div></div></label>\n        <label class=\"row\"><input type=\"checkbox\" class=\"rc\" data-name=\"세라 하운\" data-conflict=\"1\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">세라 하운 <span class=\"badge badge--warn\">로컬과 충돌</span></div><div class=\"row__meta\">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>\n        <div class=\"row\"><span class=\"row__icon\"><i data-i=\"alert\"></i></span><div><div class=\"row__title\">리오넬 <span class=\"badge badge--danger\">가져올 수 없음</span></div><div class=\"row__meta\">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>\n      </div>\n      <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"rc-go\">선택 항목 가져오기</button><span class=\"hint\" id=\"rc-hint\"></span><button class=\"btn\" data-go=\"settings\">취소</button></div>\n    </div>\n  </section>\n\n  </div>\n  <footer class=\"savebar\" id=\"savebar\" hidden>\n    <div class=\"savebar__copy\"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIA 하단 메뉴\"></nav>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bind\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sb-t\">\n    <div class=\"eyebrow\">Connect</div><h2 id=\"sb-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\">이 채팅에서 쓸 Persona</h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>\n    <div class=\"stack stack--sm\" data-detail-root id=\"bind-list\"></div>\n    <p class=\"hint\" style=\"margin-top:10px\">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button><button class=\"btn btn--primary\" id=\"btn-bind-go\" data-close data-act=\"bind-go\" data-toast=\"‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)\">연결하기</button></div><p class=\"hint\" id=\"bind-hint\" style=\"margin:6px 0 0\" hidden></p><div hidden></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spm-t\">\n    <div class=\"eyebrow\">RisuAI Persona</div><h2 id=\"spm-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 관리</h2>\n    <dl class=\"kv\" id=\"spm-kv\"></dl>\n    <p class=\"hint\" id=\"spm-note\" style=\"margin:8px 0 0\"></p>\n    <div class=\"stack stack--sm\" id=\"spm-act\" style=\"margin-top:12px\"></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-unbind\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"su-t\">\n    <div class=\"eyebrow\">Unlink</div><h2 id=\"su-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 채팅에서 ‘<span data-fill=\"name\">세라 하운</span>’ 연결을 해제할까요?</h2>\n    <div class=\"note\"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger\" data-close data-act=\"unbind\" data-toast=\"‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)\">연결 해제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-vault\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdv-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete vault item</div><h2 id=\"sdv-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">보관함의 ‘<span data-fill=\"name\">카엘 로웬</span>’ 항목을 삭제할까요?</h2>\n    <p class=\"muted\" style=\"margin:0 0 8px;font-size:13px\">삭제 대상: 최신 <span data-fill=\"ver\">v1</span> 포함 버전 <span data-fill=\"verCount\">1</span>개 · <span data-fill=\"mode\">랜덤 신규 생성</span> · <span data-fill=\"adoptNote\">채택 전</span></p><div class=\"note note--danger\"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class=\"hint\" style=\"margin:8px 0 0\" data-fill=\"afterVault\"></p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"del-vault\" data-toast=\"‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)\" data-then-go=\"shelf\">보관함에서 삭제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdp-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Clean up Persona</div><h2 id=\"sdp-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">LIA가 만든 RisuAI Persona ‘<span data-fill=\"name\">세라 하운</span>’ 항목을 정리할까요?</h2>\n    <div class=\"note note--danger\"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill=\"vaultAfter\">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"del-persona\" data-toast=\"RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)\">Persona 정리</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-restore\" data-require=\"range\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sr-t\">\n    <div class=\"eyebrow\">Restore binding</div><h2 id=\"sr-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">갱신 전 바인딩으로 되돌릴까요?</h2>\n    <p class=\"muted\" style=\"font-size:13px\"><span data-fill=\"range\">TURN 1~5</span> 갱신 이전의 ‘<span data-fill=\"name\">세라 하운</span>’ Live Persona 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" data-close data-act=\"upd-restore\" data-toast=\"{range} 갱신 이전 상태로 복원했습니다. 기록은 남아 있습니다. (시안)\">복원</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-emo\" data-require=\"emo\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"se-t\">\n    <div class=\"eyebrow\">Emotion asset</div><h2 id=\"se-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\" data-fill=\"emo\">happy</h2>\n    <div class=\"stack stack--sm\">\n      <button class=\"big-choice\" data-close data-toast=\"이미지 업로드 (시안)\"><span class=\"row__icon\"><i data-i=\"upload\"></i></span><div><b>이미지 업로드</b><span>직접 만든 이미지로 바꿉니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-close data-toast=\"프롬프트 편집 (시안)\"><span class=\"row__icon\"><i data-i=\"pen\"></i></span><div><b>프롬프트 편집</b><span>이 감정의 표정 지시만 고칩니다. 생성 조건(Lock)은 바뀌지 않습니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-close data-run-job=\"job-neutral\"><span class=\"row__icon\"><i data-i=\"refresh\"></i></span><div><b data-variant=\"has master\">이 감정만 재생성</b><b data-variant=\"none\" hidden>이 감정 만들기</b><span>확정된 Lock 그대로, 표정만 다시 만듭니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-variant=\"has\" data-close data-act=\"emo-del\" data-toast=\"‘{emo}’ 감정 이미지를 삭제했습니다. (시안)\"><span class=\"row__icon\"><i data-i=\"trash\"></i></span><div><b>이 이미지 삭제</b><span>다른 감정에는 영향이 없습니다.</span></div><span class=\"pick\"></span></button><p class=\"hint\" data-variant=\"master\" hidden>Visual Master(neutral)는 Lock의 기준이라 따로 삭제할 수 없습니다. 지우려면 ‘묶음 폐기’를 쓰세요.</p><p class=\"hint\" data-variant=\"none\" hidden>아직 만들지 않은 감정입니다. 재생성하거나 업로드할 수 있습니다.</p>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bundle-del\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sbd-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Discard bundle</div><h2 id=\"sbd-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 Persona의 감정 묶음을 폐기할까요?</h2>\n    <div class=\"note note--danger\"><b>저장된 감정 이미지 <span id=\"bd-n\">9</span>개와 Visual Lock이 폐기됩니다.</b> 다시 만들려면 Neutral부터 새로 시작해야 합니다. 먼저 ZIP으로 내보내 두는 것을 권장합니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"bundle-del\" data-toast=\"감정 묶음을 폐기했습니다. Neutral부터 다시 시작할 수 있습니다. (시안)\">폐기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-evidence\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sev-t\">\n    <div class=\"eyebrow\">World blueprint</div><h2 id=\"sev-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">세계관 분석 근거</h2>\n    <div class=\"list\"><div class=\"row\"><div><div class=\"row__title\">보름달 전 개방 금지</div><div class=\"row__meta\">Character Lore #3 · 근거 확인됨</div></div></div><div class=\"row\"><div><div class=\"row__title\">왕실 기록실 출입 규칙</div><div class=\"row__meta\">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"dlg-cand\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dc-t\">\n    <div class=\"eyebrow\">Candidates</div><h2 id=\"dc-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\"><span data-variant=\"default random\">새 인물 후보를 하나 고르세요</span><span data-variant=\"character\" hidden>Persona로 바꿀 등장인물을 고르세요</span></h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class=\"hint\" id=\"random-cand-context\" hidden style=\"margin:0 0 12px\"></p>\n    <div class=\"stack stack--sm\" data-detail-root data-variant=\"default random\">\n      <button class=\"big-choice is-on\" data-select-row=\"c1\" data-cand='{\"pid\":\"mira\",\"name\":\"미라\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--c\">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c2\" data-cand='{\"pid\":\"tobi\",\"name\":\"토비\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--b\">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c3\" data-cand='{\"pid\":\"har\",\"name\":\"하르\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--d\">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"stack stack--sm\" data-detail-root data-variant=\"character\" hidden>\n      <button class=\"big-choice is-on\" data-select-row=\"h1\" data-cand='{\"pid\":\"rowen\",\"name\":\"정원사 로웬\",\"mode\":\"등장인물 추출\"}'><div class=\"avatar avatar--sm avatar--b\">로</div><div><b>정원사 로웬</b><span>캐릭터 카드 · 로어 2건 · 최근 대화 근거 6건</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"h2\" data-cand='{\"pid\":\"archivist\",\"name\":\"왕실 기록관\",\"mode\":\"등장인물 추출\"}'><div class=\"avatar avatar--sm avatar--n\">기</div><div><b>왕실 기록관</b><span>로어 1건 · 직접 근거 적음</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>취소</button><button class=\"btn btn--primary\" id=\"btn-cand-go\" data-close data-run-job=\"job-gen\">이 후보로 상세 생성</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-cand\" aria-hidden=\"true\" data-inherit-ctx data-job-labels=\"세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jc-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jc-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">후보를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>후보 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>정리</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-open=\"dlg-cand\">후보 보기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-gen\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jg-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jg-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">새 Persona</span>’ 초안을 만들고 있어요</h2><p class=\"muted\" style=\"margin:0 0 6px;font-size:12.5px\" data-fill=\"mode\">생성 모드</p>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>검사</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>보관</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-go=\"edit\">‘<span data-fill=\"name\">새 Persona</span>’ 초안 열기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-update\" data-cancel-until=\"3\" data-require=\"name\" data-start-from=\"upd-go\" aria-hidden=\"true\" data-job-labels=\"계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ju-t\"><div class=\"eyebrow\">Manual update</div><h2 id=\"ju-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">TURN 6~10을 분석하고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>계획</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>분석</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>갱신안</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>저장</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">저장이 시작되기 전까지만 취소할 수 있습니다. 저장 중에는 취소 버튼이 동작하지 않습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-go=\"mine\">내 페르소나로</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-neutral\" data-require=\"pid\" aria-hidden=\"true\" data-inherit-ctx data-job-labels=\"확정된 생성 조건(Lock)을 확인하는 중|이미지를 생성하는 중|저장 상태를 확인하는 중|이미지를 저장했습니다.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jn-t\"><div class=\"eyebrow\">Image</div><h2 id=\"jn-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ · ‘<span data-fill=\"emo\">neutral</span>’ 이미지를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>조건 확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>저장</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-emo\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"확정된 생성 조건(Lock)을 확인하는 중|neutral 외 11개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성하세요.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"je-t\"><div class=\"eyebrow\">Emotion bundle</div><h2 id=\"je-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 감정 이미지를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>Lock 확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>감정 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>저장 확인</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">이미지 AI를 감정 수만큼 호출합니다. 이미 있는 감정도 다시 만들어질 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>중단 요청</button><button class=\"btn btn--primary\" data-job-done data-close hidden>닫기</button></div></div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-more\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"더보기\"><div data-more-list></div></div></div>\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
   const RISU_API_ALIASES = Object.freeze(["risuai", "Risuai", "risuApi", "risuAPI", "RisuAI"]);
   const resolveRisuApi = () => {
     for (const alias of RISU_API_ALIASES) {
@@ -359,10 +362,13 @@ const PLUGIN_VERSION = "0.26.83";
   let preservedPersonaVariantProfile = "full";
   let preservedPersonaEvolution = null;
   let preservedVisualEmotionText = "neutral\ngentle smile\nhappy\nangry\nsad\nembarrassed\njealous\nsurprised\nworried\ndetermined\naffectionate\nexhausted";
+  let liaVisualEmotionDraftText = preservedVisualEmotionText;
   let preservedVisualStyleNotes = "";
   let preservedVisualCompositionPreset = "standard_waist_up";
   let preservedVisualCompositionNotes = "";
   let preservedVisualTargetPersonaId = "__auto__";
+  let liaSelectedVisualAssetEmotion = "";
+  let liaSelectedVisualAssetPersonaKey = "";
   let preservedVisualAssetPresetStore = { version: 1, updatedAt: "", items: [] };
   let preservedVisualAssetPresetId = "";
   let visualAssetPreviewUrlCache = new Map();
@@ -1268,12 +1274,13 @@ const PLUGIN_VERSION = "0.26.83";
     } finally { loreLimitSaveInFlight = false; }
   }
   function bindLoreLimitControl() {
-    const button = document.getElementById('dpg-save-lore-limit');
+    const button = document.getElementById('dpg-save-lore-limit') || document.querySelector('[data-save-lore-limit]');
     if (!button || button.dataset.bound === 'true') return;
     button.dataset.bound = 'true';
     button.addEventListener('click', async () => {
-      const input = document.getElementById('dpg-max-lore-chars');
-      const status = document.getElementById('dpg-lore-limit-status');
+      const input = document.getElementById('lia-max-chars') || document.getElementById('dpg-max-lore-chars');
+      const status = document.getElementById('lia-max-chars-hint') || document.getElementById('dpg-lore-limit-status');
+      if (!input || !status) return;
       button.disabled = true;
       try {
         const value = await saveLoreCharacterLimit(input.value);
@@ -11169,12 +11176,14 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       .map((input) => String(input.value || "").trim())
       .filter(Boolean);
     const selectedPersonaKey = String(document.getElementById("dpg-source-persona")?.value || DEFAULT_CONTEXT_OPTIONS.selectedPersonaKey).trim() || DEFAULT_CONTEXT_OPTIONS.selectedPersonaKey;
-    const generationMode = normalizeGenerationMode(document.getElementById("dpg-generation-mode")?.value || DEFAULT_CONTEXT_OPTIONS.generationMode);
+    const generationMode = normalizeGenerationMode(document.getElementById("dpg-generation-mode")?.value || liaMockupContextOptions.generationMode || DEFAULT_CONTEXT_OPTIONS.generationMode);
     return {
       characterLore: checked("dpg-use-character-lore", DEFAULT_CONTEXT_OPTIONS.characterLore),
       chatLore: checked("dpg-use-chat-lore", DEFAULT_CONTEXT_OPTIONS.chatLore),
       moduleLore: checked("dpg-use-module-lore", DEFAULT_CONTEXT_OPTIONS.moduleLore),
-      richPersonaMode: checked("dpg-rich-persona-mode", DEFAULT_CONTEXT_OPTIONS.richPersonaMode),
+      richPersonaMode: document.getElementById("lia-rich-profile")
+        ? document.getElementById("lia-rich-profile").checked === true
+        : checked("dpg-rich-persona-mode", DEFAULT_CONTEXT_OPTIONS.richPersonaMode),
       generationMode,
       selectedPersonaKey,
       selectedModuleIds,
@@ -15113,80 +15122,6 @@ ${revisionText}`);
     };
   }
 
-  function renderPersonaSidePanel(ctx) {
-    const state = buildPersonaPanelState(ctx);
-    const personaDatabaseReadFailed = ctx?.personaDatabaseReadStatus?.available === false;
-    const selectedLabel = personaDatabaseReadFailed ? "목록 읽기 실패" : state.selectedPersona?.name || "선택 없음";
-    const dynamicLabel = state.dynamicPersona?.name || (state.dynamicId ? "삭제되었거나 찾을 수 없음" : "없음");
-    const effectiveLabel = state.effectivePersona?.name || "확인 불가";
-    const proof = normalizePersonaProof(ctx?.personaRequestProof || null);
-    const proofState = proof?.state || (state.dynamicId ? "bound_only" : "idle");
-    const proofTitle = proofState === "response_verified" ? "응답 적용 확인" : proofState === "request_verified" ? "이전 요청 적용 기록" : proofState === "verifying" ? "이전 확인 기록" : proofState === "mismatch" ? "검증 실패" : state.dynamicId ? "바인딩 확인" : "동적 바인딩 없음";
-    const proofTone = proofState === "response_verified" ? "good" : proofState === "request_verified" ? "dynamic" : proofState === "verifying" ? "checking" : proofState === "mismatch" ? "danger" : "neutral";
-    const proofPersona = proof?.personaName || effectiveLabel;
-    const proofWhen = proof?.responseCompletedAt || proof?.requestVerifiedAt || proof?.updatedAt || "";
-    const cards = state.personas.map((persona, index) => {
-      if (!persona) return "";
-      const ref = personaPanelChoiceRef(persona, index);
-      const id = String(persona?.id || "").trim();
-      const isDefault = index === state.selectedIndex;
-      const isDynamic = Boolean(id && state.dynamicId && id === state.dynamicId);
-      const isEffective = isDynamic || (!state.dynamicId && isDefault);
-      const live = isLivePersona(persona);
-      const classes = ["lia-persona-card", isDefault ? "is-risu-selected" : "", isDynamic ? "is-dynamic-bound" : "", isEffective ? "is-effective" : "", live ? "is-live" : ""].filter(Boolean).join(" ");
-      const initial = String(persona?.name || "P").trim().slice(0, 1).toUpperCase() || "P";
-      const note = limitText(String(persona?.note || "").replace(LIVE_PERSONA_NOTE_MARKER, "").trim(), 80);
-      return `
-        <article class="${classes}" data-persona-card data-persona-search="${htmlEscape(`${persona?.name || ""} ${note}`.toLowerCase())}">
-          <button class="lia-persona-card-main" type="button" data-persona-apply="${htmlEscape(ref)}" title="현재 채팅에 이 Persona를 동적 바인딩 · RisuAI 기본 선택은 변경하지 않음">
-            <span class="lia-persona-avatar">${htmlEscape(initial)}</span>
-            <span class="lia-persona-card-copy">
-              <strong>${htmlEscape(persona?.name || `Persona ${index + 1}`)}</strong>
-              <small>${htmlEscape(note || (live ? "LIA Live Persona" : "RisuAI Persona"))}</small>
-            </span>
-            <span class="lia-persona-card-flags">
-              ${isDefault ? `<em class="flag-risu">기본</em>` : ""}
-              ${isDynamic ? `<em class="flag-dynamic">채팅</em>` : ""}
-              ${live ? `<em class="flag-live">LIVE</em>` : ""}
-            </span>
-          </button>
-          <button class="lia-persona-pin ${isDynamic ? "active" : ""}" type="button" data-persona-dynamic="${htmlEscape(ref)}" aria-label="${isDynamic ? "현재 채팅 Persona 바인딩 해제" : "현재 채팅에 이 Persona만 동적 바인딩"}" title="${isDynamic ? "채팅 바인딩 해제" : "동적 바인딩만 변경"}">${isDynamic ? "◆" : "◇"}</button>
-        </article>`;
-    }).join("");
-    return `
-      <div id="dpg-persona-panel-backdrop" class="lia-persona-panel-backdrop" aria-hidden="true"></div>
-      <aside class="lia-persona-panel" role="dialog" aria-modal="true" aria-label="페르소나 선택과 바인딩">
-        <header class="lia-persona-panel-head">
-          <div><span class="lia-kicker">PERSONA BINDING</span><strong>페르소나</strong></div>
-          <div class="lia-persona-panel-head-actions"><button id="dpg-persona-panel-refresh" class="btn-soft" type="button" title="RisuAI 상태 재조회">↻</button><button id="dpg-persona-panel-close" class="btn-soft" type="button">닫기</button></div>
-        </header>
-        <details class="lia-pocket-fold lia-persona-diagnostics"><summary>연결 상태 확인<span>${htmlEscape(effectiveLabel)}</span></summary>
-        ${MemorySuiteHostLineage.render(MemorySuiteHostLineage.inspect(ctx.char || ctx.character, ctx.chat), { owner: 'lia', chatId: ctx.chat?.id || ctx.chat?.chatId,
-          inheritance: ctx.livePersonaBinding?.nativeBranchState ? `Persona 상태 확인: ${ctx.livePersonaBinding.nativeBranchState.stateThroughPair}턴 · ${ctx.livePersonaBinding.nativeBranchState.reason}` : 'Persona 바인딩 확인과 분기 시점의 상태 검증은 별도입니다.' })}
-        <section class="lia-persona-binding-summary">
-          <div><span class="lia-binding-swatch risu"></span><b>RisuAI 기본 선택</b><strong>${htmlEscape(selectedLabel)}</strong></div>
-          <div><span class="lia-binding-swatch dynamic"></span><b>채팅 동적 바인딩</b><strong>${htmlEscape(dynamicLabel)}</strong></div>
-          <div class="effective"><span>실질 적용</span><strong>${htmlEscape(effectiveLabel)}</strong><em>${state.effectiveMode === "dynamic" ? "채팅 바인딩 우선" : "기본 Persona"}</em></div>
-        </section>
-        <section class="lia-persona-proof ${proofTone}">
-          <div class="lia-persona-proof-head"><span>REQUEST PROOF</span><strong>${htmlEscape(proofTitle)}</strong></div>
-          <div class="lia-persona-proof-main"><b>${htmlEscape(proofPersona)}</b><em>${proof?.bindingVerified ? "바인딩 ✓" : state.dynamicId ? "바인딩 확인 필요" : "UNBOUND"}${proof?.promptEvidenceVerified ? " · 발송 Prompt ✓" : proof?.bindingVerified ? " · 발송 Prompt 대기" : ""}</em></div>
-          <p>${htmlEscape(proof?.message || (state.dynamicId ? "지금 바인딩 확인 버튼으로 현재 채팅의 Persona 연결을 확인할 수 있습니다." : "Persona를 연결한 뒤 필요할 때 연결 상태를 직접 확인하세요."))}</p>
-          <small>자동 요청 검증 ${personaProofHooksEnabled ? "ON" : "OFF"} · RisuAI 채팅 배지 ${personaProofMainDomGranted ? "ON" : "OFF"}</small>
-          ${proofWhen ? `<small>마지막 확인 ${htmlEscape(new Date(proofWhen).toLocaleString())}${proof?.liveRevision ? ` · Live Rev.${proof.liveRevision}` : ""}${proof?.lastLiveSyncRange?.length === 2 ? ` · TURN ${proof.lastLiveSyncRange[0]}~${proof.lastLiveSyncRange[1]}` : ""}</small>` : ""}
-          <button id="dpg-persona-proof-check" class="btn-soft" type="button">지금 바인딩 확인</button>
-        </section>
-        <div class="lia-persona-legend"><span><i class="risu"></i> 파랑 · RisuAI 기본 선택(읽기 전용)</span><span><i class="dynamic"></i> 보라 · 현재 채팅 바인딩</span><small>기본 Persona 변경은 RisuAI Persona 설정에서 직접 하세요. 같은 카드면 두 색 테두리가 함께 표시됩니다.</small></div>
-        </details>
-        <label class="lia-persona-search"><span>페르소나 찾기</span><input id="dpg-persona-filter" type="search" placeholder="이름 또는 메모 검색"></label>
-        <div class="lia-persona-card-list">${personaDatabaseReadFailed ? personaDatabaseReadFailureMarkup() : cards || `<div class="lia-persona-empty">RisuAI에 저장된 Persona가 없습니다.</div>`}</div>
-        <footer class="lia-persona-panel-foot">
-          <button id="dpg-persona-unbind" class="btn-soft" type="button"${state.dynamicId ? "" : " disabled"}>채팅 바인딩 해제</button>
-          <small>카드 클릭 = 현재 채팅 동적 바인딩 · ◇ = 바인딩 토글 · 파란 기본 선택은 RisuAI에서만 변경</small>
-        </footer>
-      </aside>`;
-  }
-
   function resolveExternalFollowSource(runtimeCtx, verification) {
     const currentId = String(verification?.personaId || "").trim();
     let sourceId = currentId;
@@ -17488,7 +17423,7 @@ ${revisionText}`);
 
   function getRandomConcept() {
     if (typeof document === "undefined") return preservedRandomConceptText;
-    const el = document.getElementById("dpg-random-concept");
+    const el = document.getElementById("random-concept") || document.getElementById("dpg-random-concept");
     return normalizeRandomConcept(el ? el.value : preservedRandomConceptText);
   }
 
@@ -17506,19 +17441,20 @@ ${revisionText}`);
 
   function getTranslationLanguage() {
     if (typeof document === "undefined") return normalizeTranslationLanguage(preservedTranslationLanguage);
-    return normalizeTranslationLanguage(document.getElementById("dpg-translation-language")?.value || preservedTranslationLanguage);
+    return normalizeTranslationLanguage(document.getElementById("dpg-translation-language")?.value || document.getElementById("lia-translation-language")?.value || document.querySelector('#ed-lang [aria-pressed="true"]')?.dataset?.language || preservedTranslationLanguage);
   }
 
   function getTranslationText() {
     if (typeof document === "undefined") return String(preservedTranslationText || "").trim();
-    return String(document.getElementById("dpg-translation-preview")?.value || preservedTranslationText || "").trim();
+    const field = document.getElementById("dpg-translation-preview") || document.querySelector('[data-translation-draft]');
+    return String(field?.value || preservedTranslationText || "").trim();
   }
 
   function setTranslationText(text, language = null) {
     preservedTranslationText = String(text || "");
     if (language) preservedTranslationLanguage = normalizeTranslationLanguage(language);
     if (typeof document !== "undefined") {
-      const output = document.getElementById("dpg-translation-preview");
+      const output = document.getElementById("dpg-translation-preview") || document.querySelector('[data-translation-draft]');
       if (output) output.value = preservedTranslationText;
       const select = document.getElementById("dpg-translation-language");
       if (select && language) select.value = preservedTranslationLanguage;
@@ -17574,9 +17510,9 @@ ${revisionText}`);
         preservedPersonaVariantProfile = normalizePersonaVariantProfile(parsed.activePersonaProfile || preservedPersonaVariantProfile);
       }
     }
-    const translationEl = document.getElementById("dpg-translation-preview");
+    const translationEl = document.getElementById("dpg-translation-preview") || document.querySelector("[data-translation-draft]");
     if (translationEl) preservedTranslationText = String(translationEl.value || "");
-    const translationLanguageEl = document.getElementById("dpg-translation-language");
+    const translationLanguageEl = document.getElementById("dpg-translation-language") || document.getElementById("lia-translation-language");
     if (translationLanguageEl) preservedTranslationLanguage = normalizeTranslationLanguage(translationLanguageEl.value);
     const activePane = document.querySelector(".lia-output-pane.active[data-output-pane]");
     const paneName = String(activePane?.getAttribute("data-output-pane") || "").trim();
@@ -17592,31 +17528,33 @@ ${revisionText}`);
   }
 
   function readLLMConfig() {
+    const saved=normalizeLLMConfig(liaMockupContext?.savedLLMConfig||{});
     const intValue = (id, fallback) => {
       const value = Number(document.getElementById(id)?.value);
       return Number.isFinite(value) ? value : fallback;
     };
     return normalizeLLMConfig({
-      provider: String(document.getElementById("dpg-llm-provider")?.value || "openai").trim(),
-      endpoint: String(document.getElementById("dpg-llm-endpoint")?.value || "").trim(),
-      model: String(document.getElementById("dpg-llm-model")?.value || "").trim(),
-      apiKey: String(document.getElementById("dpg-llm-key")?.value || "").trim(),
-      temp: intValue("dpg-llm-temp", 0.35),
-      timeout: intValue("dpg-llm-timeout", 60000),
-      maxCompletionTokens: intValue("dpg-llm-max-tokens", 8192),
-      contextWindow: intValue("dpg-llm-context-window", 0),
-      requestFormat: String(document.getElementById("dpg-llm-request-format")?.value || "chat_completions"),
-      reasoningPreset: String(document.getElementById("dpg-llm-reasoning-preset")?.value || "auto"),
-      reasoningEffort: String(document.getElementById("dpg-llm-reasoning-effort")?.value || "none"),
-      reasoningBudgetTokens: intValue("dpg-llm-reasoning-budget", 0),
-      thinkingType: String(document.getElementById("dpg-llm-thinking-type")?.value || "enabled"),
-      stream: document.getElementById("dpg-llm-stream")?.checked === true,
-      serviceTier: String(document.getElementById("dpg-llm-service-tier")?.value || "off"),
+      ...saved,
+      provider: String(document.getElementById("dpg-llm-provider")?.value || document.getElementById("lia-provider")?.value || saved.provider || "openai").trim(),
+      endpoint: String(document.getElementById("dpg-llm-endpoint")?.value ?? document.getElementById("lia-endpoint")?.value ?? saved.endpoint ?? "").trim(),
+      model: String(document.getElementById("dpg-llm-model")?.value ?? document.getElementById("lia-model")?.value ?? saved.model ?? "").trim(),
+      apiKey: document.getElementById("lia-clear-api-key")?.checked===true?"":String(document.getElementById("dpg-llm-key")?.value || document.getElementById("lia-api-key")?.value || saved.apiKey || "").trim(),
+      temp: intValue("dpg-llm-temp", Number(document.getElementById("lia-temperature")?.value ?? saved.temp ?? 0.35)),
+      timeout: intValue("dpg-llm-timeout", Number(document.getElementById("lia-timeout")?.value ?? saved.timeout)),
+      maxCompletionTokens: intValue("dpg-llm-max-tokens", Number(document.getElementById("lia-max-tokens")?.value ?? saved.maxCompletionTokens)),
+      contextWindow: intValue("dpg-llm-context-window", Number(document.getElementById("lia-context-window")?.value ?? saved.contextWindow)),
+      requestFormat: String(document.getElementById("dpg-llm-request-format")?.value || document.getElementById("lia-request-format")?.value || saved.requestFormat),
+      reasoningPreset: String(document.getElementById("dpg-llm-reasoning-preset")?.value || document.getElementById("lia-reasoning-preset")?.value || saved.reasoningPreset),
+      reasoningEffort: String(document.getElementById("dpg-llm-reasoning-effort")?.value || document.getElementById("lia-reasoning-effort")?.value || saved.reasoningEffort),
+      reasoningBudgetTokens: intValue("dpg-llm-reasoning-budget", Number(document.getElementById("lia-reasoning-budget")?.value ?? saved.reasoningBudgetTokens)),
+      thinkingType: String(document.getElementById("dpg-llm-thinking-type")?.value || document.getElementById("lia-thinking-type")?.value || saved.thinkingType),
+      stream: document.getElementById("dpg-llm-stream")?.checked ?? document.getElementById("lia-stream")?.checked ?? saved.stream,
+      serviceTier: String(document.getElementById("dpg-llm-service-tier")?.value || document.getElementById("lia-service-tier")?.value || saved.serviceTier),
       customServiceTierPassthrough: document.getElementById("dpg-llm-custom-service-tier")?.checked === true,
       vertexFlexMode: String(document.getElementById("dpg-llm-vertex-flex")?.value || "off"),
-      promptCacheMode: String(document.getElementById("dpg-llm-cache-mode")?.value || "auto"),
-      extraHeadersJson: String(document.getElementById("dpg-llm-extra-headers")?.value || "").trim(),
-      extraBodyJson: String(document.getElementById("dpg-llm-extra-body")?.value || "").trim(),
+      promptCacheMode: String(document.getElementById("dpg-llm-cache-mode")?.value || document.getElementById("lia-cache-mode")?.value || saved.promptCacheMode),
+      extraHeadersJson: String(document.getElementById("dpg-llm-extra-headers")?.value ?? document.getElementById("lia-extra-headers")?.value ?? saved.extraHeadersJson).trim(),
+      extraBodyJson: String(document.getElementById("dpg-llm-extra-body")?.value ?? document.getElementById("lia-extra-body")?.value ?? saved.extraBodyJson).trim(),
     });
   }
 
@@ -20978,225 +20916,11 @@ ${revisionText}`);
     }
   }
 
-  function renderVaultOptions(vault) {
-    const items = asArray(vault);
-    if (!items.length) return `<option value="">저장된 생성 결과 없음</option>`;
-    const selectedId = preservedResultVaultId && items.some((item) => item.id === preservedResultVaultId)
-      ? preservedResultVaultId
-      : items[0].id;
-    preservedResultVaultId = selectedId || "";
-    return items.map((item) => {
-      const date = formatVaultDate(item.updatedAt || item.createdAt);
-      const lineage = normalizePersonaLineage(item.personaLineage);
-      const bits = [
-        item.title || "Saved LIA Result",
-        generationModeLabel(item.generationMode),
-        lineage ? `v${lineage.revision}` : "",
-        item.activePersonaProfile ? PERSONA_VARIANT_PROFILES[normalizePersonaVariantProfile(item.activePersonaProfile)].label : "",
-        date ? `(${date})` : "",
-        item.personaPrompt ? "Persona" : "",
-      ].filter(Boolean);
-      return `<option value="${htmlEscape(item.id)}"${item.id === selectedId ? " selected" : ""}>${htmlEscape(bits.join(" · "))}</option>`;
-    }).join("");
-  }
 
-  function renderVaultCards(vault) {
-    const items = asArray(vault);
-    if (!items.length) return `<div class="lia-vault-empty"><strong>보관된 Persona가 없습니다.</strong><span>생성 결과는 자동 저장되며, 편집 화면에서도 수동으로 보관할 수 있습니다.</span></div>`;
-    const selectedId = preservedResultVaultId && items.some((item) => item.id === preservedResultVaultId) ? preservedResultVaultId : items[0]?.id || "";
-    return `<div class="lia-vault-card-grid">${items.map((item) => {
-      const lineage = normalizePersonaLineage(item.personaLineage);
-      const audit = normalizePersonaAudit(item.personaAudit);
-      const spec = normalizePersonaSpec(item.personaSpec);
-      const date = formatVaultDate(item.updatedAt || item.createdAt);
-      const identity = [spec?.speciesRace, spec?.gender, spec?.role].filter(Boolean).join(" · ");
-      const profile = PERSONA_VARIANT_PROFILES[normalizePersonaVariantProfile(item.activePersonaProfile || "full")];
-      return `<button type="button" class="lia-vault-card ${item.id === selectedId ? "active" : ""}" data-vault-card-id="${htmlEscape(item.id)}" aria-label="${htmlEscape(item.personaName || item.title || "페르소나")} 선택" aria-pressed="${item.id === selectedId}">
-        <span class="lia-vault-avatar" aria-hidden="true">${pocketIcon("persona")}</span><header><strong>${htmlEscape(item.personaName || item.title || "LIA Persona")}</strong><span>${htmlEscape(generationModeLabel(item.generationMode))}</span></header>
-        <p>${htmlEscape(identity || limitText(spec?.personality || item.title || "Persona", 120))}</p>
-        <div class="lia-vault-card-meta">
-          <span>${lineage ? `Rev.${lineage.revision}` : "Legacy"}</span>
-          <span>${profile?.label || "Full"}</span>
-          <span class="${audit?.verdict === "fail" ? "danger" : audit?.verdict === "warn" ? "warn" : audit ? "good" : ""}">${audit ? `Audit ${audit.score}` : "Audit -"}</span>
-          ${date ? `<span>${htmlEscape(date)}</span>` : ""}
-        </div>
-      </button>`;
-    }).join("")}</div>`;
-  }
 
-  function renderProviderSettings(savedLLMConfig) {
-    const config = normalizeLLMConfig(savedLLMConfig || {});
-    const coreProviders = [
-      ["openai", "OpenAI"], ["claude", "Claude / Anthropic"], ["gemini", "Gemini API"],
-      ["openrouter", "OpenRouter"], ["deepseek", "DeepSeek"], ["ollama", "Ollama Local"],
-      ["ollama_cloud", "Ollama Cloud"], ["lmstudio", "LM Studio"], ["nanogpt", "NanoGPT"],
-      ["vertex", "Vertex Gemini"], ["vertex-openai", "Vertex OpenAI-compatible"],
-      ["copilot", "GitHub Copilot"], ["custom", "Custom OpenAI-compatible"],
-    ];
-    const directProviders = Object.entries(LIA_DIRECT_LLM_PROVIDER_REGISTRY).map(([key, value]) => [key, value.label]);
-    const providerOptions = (items) => items.map(([key, label]) => `<option value="${htmlEscape(key)}"${providerSelected(config.provider, key)}>${htmlEscape(label)}</option>`).join("");
-    const reasoningOptions = Object.entries(LIA_REASONING_PRESETS)
-      .map(([key, label]) => `<option value="${htmlEscape(key)}"${config.reasoningPreset === key ? " selected" : ""}>${htmlEscape(label)}</option>`)
-      .join("");
-    const effectiveFamily = providerReasoningFamily(config);
-    const effortOptions = reasoningEffortChoices(effectiveFamily, config.model)
-      .map((key) => `<option value="${key}"${config.reasoningEffort === key ? " selected" : ""}>${key}</option>`).join("");
-    const cacheOptions = [
-      ["auto", "자동 · GRADIA 권장"], ["off", "끄기"], ["explicit", "명시적 캐시"],
-    ].map(([key, label]) => `<option value="${key}"${config.promptCacheMode === key ? " selected" : ""}>${label}</option>`).join("");
-    const showEffort = ["gpt", "openrouter", "claude", "gemini"].includes(effectiveFamily) || (effectiveFamily === "kimi" && isKimiK3Model(config.model));
-    const showBudget = ["openrouter", "claude_budget", "gemini_budget"].includes(effectiveFamily);
-    const showThinking = ["openrouter", "claude", "claude_budget", "gemini", "gemini_budget", "kimi", "glm", "ollama"].includes(effectiveFamily);
-    const providerKey = normalizeProviderKey(config.provider);
-    const showServiceTier = providerKey === "openai" || providerKey === "custom";
-    const showVertexFlex = ["vertex", "vertex-openai"].includes(providerKey);
-    const vertexMeta = showVertexFlex ? vertexCredentialMeta(config.apiKey) : null;
-    const vertexAutoEndpoint = showVertexFlex ? vertexUrlWithCredentials(config.endpoint || providerDefaultUrl(providerKey), config.apiKey, providerKey) : "";
-    return `
-      <div class="lia-field-grid lia-settings-grid">
-        <label class="lia-field">
-          <span>Provider</span>
-          <select id="dpg-llm-provider">
-            <optgroup label="Core Providers">${providerOptions(coreProviders)}</optgroup>
-            <optgroup label="GRADIA Direct Providers">${providerOptions(directProviders)}</optgroup>
-          </select>
-        </label>
-        <label class="lia-field">
-          <span>Model</span>
-          <input id="dpg-llm-model" type="text" list="dpg-llm-model-list" value="${htmlEscape(config.model)}" placeholder="${htmlEscape(providerDefaultModel(config.provider))}">
-          <datalist id="dpg-llm-model-list"></datalist>
-        </label>
-        <label class="lia-field lia-field-full">
-          <span>Endpoint URL</span>
-          <input id="dpg-llm-endpoint" type="text" value="${htmlEscape(config.endpoint)}" placeholder="${htmlEscape(providerDefaultUrl(config.provider) || "프로바이더 기본값 또는 직접 입력")}">
-          <small id="dpg-provider-endpoint-hint">${showVertexFlex ? `Vertex JSON의 project_id/location을 기본 endpoint에 자동 반영합니다.${vertexMeta?.hasProject ? ` 현재 자동 경로: ${htmlEscape(vertexAutoEndpoint)}` : " Bearer token만 사용할 때는 실제 project 경로를 Endpoint에 입력해야 합니다."}` : "비우면 해당 provider의 GRADIA 기본 endpoint를 사용합니다."}</small>
-        </label>
-        <label class="lia-field lia-field-full">
-          <span>${showVertexFlex ? "Vertex credential" : "API Key"}</span>
-          <input id="dpg-llm-key" type="password" value="${htmlEscape(config.apiKey)}" placeholder="${showVertexFlex ? "Service Account JSON · {access_token/token, project_id, location} · Bearer token" : "API Key"}">
-          <small id="dpg-vertex-credential-meta">${showVertexFlex ? `인증: ${htmlEscape(vertexMeta?.kind || "missing")} · Project: ${htmlEscape(vertexMeta?.projectId || "Endpoint에서 지정 필요")} · Location: ${htmlEscape(vertexMeta?.location || "global")}` : "API Key는 기기 로컬 저장소와 pluginStorage 백업에 함께 저장하고 readback으로 검증합니다. 한쪽이 사라지면 남은 복사본에서 자동 복구합니다."}</small>
-        </label>
-        <label class="lia-field">
-          <span>Temperature</span>
-          <input id="dpg-llm-temp" type="number" min="0" max="2" step="0.05" value="${htmlEscape(config.temp)}">
-        </label>
-        <label class="lia-field">
-          <span>Max Tokens</span>
-          <input id="dpg-llm-max-tokens" type="number" min="64" step="256" value="${htmlEscape(config.maxCompletionTokens)}">
-        </label>
-        <label class="lia-field">
-          <span>Timeout (ms)</span>
-          <input id="dpg-llm-timeout" type="number" min="5000" max="300000" step="1000" value="${htmlEscape(config.timeout)}">
-        </label>
-        <label class="lia-field">
-          <span>Prompt Cache</span>
-          <select id="dpg-llm-cache-mode">${cacheOptions}</select>
-          <small>GPT-5.6/Claude는 native cache marker를 사용하고, 명시적 모드의 Gemini/Vertex Gemini는 5분 CachedContent를 재사용합니다.</small>
-        </label>
-      </div>
-      <div class="lia-actions lia-settings-actions lia-provider-actions">
-        <button id="dpg-refresh-models" class="btn-soft" type="button">모델 목록</button>
-        <button id="dpg-test-llm" class="btn-soft" type="button">연결 테스트</button>
-        <button id="dpg-save-llm-config" class="btn-primary" type="button">프로바이더 설정 저장</button>
-      </div>
 
-      <details class="lia-provider-advanced">
-        <summary>추론 · 요청 고급 설정</summary>
-        <div class="lia-provider-section-block">
-          <div class="lia-provider-section-head">
-            <strong>추론 설정</strong>
-            <small id="dpg-reasoning-effective">실제 적용: ${htmlEscape(effectiveFamily.toUpperCase())} · ${htmlEscape(reasoningPayloadSummary(config))}</small>
-          </div>
-          <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-            <label class="lia-field">
-              <span>Reasoning Preset</span>
-              <select id="dpg-llm-reasoning-preset">${reasoningOptions}</select>
-              <small id="dpg-reasoning-hint">${htmlEscape(LIA_REASONING_PRESET_HINTS[effectiveFamily] || LIA_REASONING_PRESET_HINTS.custom)}</small>
-            </label>
-            <label id="dpg-reasoning-effort-field" class="lia-field"${showEffort ? "" : ' style="display:none"'}>
-              <span>Reasoning Effort</span>
-              <select id="dpg-llm-reasoning-effort">${effortOptions}</select>
-            </label>
-            <label id="dpg-reasoning-budget-field" class="lia-field"${showBudget ? "" : ' style="display:none"'}>
-              <span>Reasoning Budget</span>
-              <input id="dpg-llm-reasoning-budget" type="number" min="-1" max="200000" step="128" value="${htmlEscape(config.reasoningBudgetTokens)}">
-              <small>${effectiveFamily === "gemini_budget" ? "-1은 Gemini dynamic budget입니다." : "출력 토큰 상한 안에서 답변 공간을 남겨 사용합니다."}</small>
-            </label>
-            <label id="dpg-reasoning-thinking-field" class="lia-field"${showThinking ? "" : ' style="display:none"'}>
-              <span>Thinking</span>
-              <select id="dpg-llm-thinking-type">
-                <option value="enabled"${config.thinkingType === "enabled" ? " selected" : ""}>Enabled</option>
-                <option value="disabled"${config.thinkingType === "disabled" ? " selected" : ""}>Disabled</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="lia-provider-section-block">
-          <div class="lia-provider-section-head"><strong>요청 형식</strong><small>생성 요청과 스트리밍 동작</small></div>
-          <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-            <label class="lia-field">
-              <span>Request Format</span>
-              <select id="dpg-llm-request-format">
-                <option value="chat_completions"${config.requestFormat === "chat_completions" ? " selected" : ""}>Chat Completions</option>
-                <option value="responses"${config.requestFormat === "responses" ? " selected" : ""}>Responses</option>
-              </select>
-            </label>
-            <label class="lia-field">
-              <span>Context Window</span>
-              <input id="dpg-llm-context-window" type="number" min="0" step="1024" value="${htmlEscape(config.contextWindow)}" placeholder="0 = provider default">
-            </label>
-            <label class="lia-check-card lia-field-full lia-provider-stream-check">
-              <input id="dpg-llm-stream" type="checkbox"${config.stream ? " checked" : ""}>
-              <span><strong>Streaming aggregation</strong><small>SSE/NDJSON 응답을 LIA 내부에서 끝까지 모아 하나의 생성 결과로 처리합니다.</small></span>
-            </label>
-          </div>
-        </div>
-        <div class="lia-provider-section-block">
-          <div class="lia-provider-section-head"><strong>추가 요청 데이터</strong><small>필요한 경우에만 직접 추가</small></div>
-          <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-            <label class="lia-field lia-field-full">
-              <span>Extra Headers JSON</span>
-              <textarea id="dpg-llm-extra-headers" class="lia-provider-json" spellcheck="false" placeholder='{"X-Custom":"value"}'>${htmlEscape(config.extraHeadersJson)}</textarea>
-            </label>
-            <label class="lia-field lia-field-full">
-              <span>Extra Body JSON</span>
-              <textarea id="dpg-llm-extra-body" class="lia-provider-json" spellcheck="false" placeholder='{"top_p":0.9}'>${htmlEscape(config.extraBodyJson)}</textarea>
-            </label>
-          </div>
-        </div>
-      </details>
 
-      <details class="lia-provider-advanced lia-provider-service">
-        <summary>서비스 설정</summary>
-        <div class="lia-provider-section-block">
-          <div class="lia-provider-section-head"><strong>Service Tier · Vertex Flex</strong><small id="dpg-service-setting-note">일반 추론 옵션과 분리된 서비스 전용 설정입니다.</small></div>
-          <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-            <label id="dpg-service-tier-field" class="lia-field"${showServiceTier ? "" : ' style="display:none"'}>
-              <span>Service Tier</span>
-              <select id="dpg-llm-service-tier"${providerKey === "custom" && !config.customServiceTierPassthrough ? " disabled" : ""}>
-                ${[["off","사용 안 함"],["auto","자동"],["default","default"],["flex","flex"],["priority","priority"],["scale","scale"]].map(([key,label]) => `<option value="${key}"${config.serviceTier === key ? " selected" : ""}>${label}</option>`).join("")}
-              </select>
-            </label>
-            <label id="dpg-vertex-flex-field" class="lia-field"${showVertexFlex ? "" : ' style="display:none"'}>
-              <span>Vertex Flex</span>
-              <select id="dpg-llm-vertex-flex">
-                ${[["off","사용 안 함"],["provisioned_then_flex","Provisioned → Flex"],["flex_only","Flex only"]].map(([key,label]) => `<option value="${key}"${config.vertexFlexMode === key ? " selected" : ""}>${label}</option>`).join("")}
-              </select>
-            </label>
-            <label id="dpg-custom-service-tier-field" class="lia-check-card lia-field-full"${providerKey === "custom" ? "" : ' style="display:none"'}>
-              <input id="dpg-llm-custom-service-tier" type="checkbox"${config.customServiceTierPassthrough ? " checked" : ""}>
-              <span><strong>Custom provider에 service_tier 전달</strong><small>명시적으로 켠 경우에만 Custom OpenAI-compatible 요청 Body에 service_tier를 보냅니다.</small></span>
-            </label>
-          </div>
-        </div>
-      </details>
-    `;
-  }
 
-  function pocketPrimaryTab(tab) {
-    if (["home", "edit", "realtime", "assets"].includes(tab)) return "home";
-    return tab === "server" ? "settings" : tab;
-  }
 
   function pocketIcon(name) {
     const paths = {
@@ -21214,635 +20938,345 @@ ${revisionText}`);
     return `<svg class="lia-pocket-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.persona}</svg>`;
   }
 
-  function renderPocketHeader() {
-    return `<header class="lia-header"><div class="lia-brand-text"><h1 class="lia-brand-title">LIA <span>your persona, gently.</span></h1></div><details class="lia-pocket-menu"><summary aria-label="LIA 메뉴">${pocketIcon('more')}</summary><div class="lia-header-actions"><button id="dpg-persona-panel-toggle" type="button">페르소나 관리</button><button id="dpg-refresh" type="button">새로고침</button><button id="dpg-pocket-width" type="button">화면 넓게 / 작게</button><button id="dpg-close" type="button">LIA 닫기</button></div></details></header>`;
-  }
-
-  async function togglePocketLiveSync() {
-    // Home opens the reviewable manual range; it never toggles stored state.
-    return { needsSetup: true, skipCapture: true };
-  }
-
-  function syncPocketPersonaDialog(open, moveFocus = true) {
-    const panel = document.querySelector('.lia-persona-panel');
-    for (const selector of ['.lia-workspace', '.lia-pocket-nav', '.lia-header']) {
-      const node = document.querySelector(selector);
-      if (node) node.inert = open;
-    }
-    if (!panel) return;
-    panel.onkeydown = event => {
-      if (event.key === 'Escape') { event.preventDefault(); document.getElementById('dpg-persona-panel-close')?.click(); }
-      if (event.key !== 'Tab') return;
-      const controls = [...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),summary,[tabindex="0"]')].filter(node => node.getClientRects().length);
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    if (!moveFocus) return;
-    if (open) document.getElementById('dpg-persona-filter')?.focus();
-    else document.getElementById('lia-pocket-personas')?.focus();
-  }
-
-  function renderPocketHome(ctx, currentTab) {
+  function renderMockupMine(ctx, app) {
     const state = buildPersonaPanelState(ctx);
-    const persona = state.effectivePersona;
     const binding = normalizeLivePersonaBinding(ctx.livePersonaBinding);
-    const manualPlan = ctx.manualViewPlan || manualLivePersonaPlan(ctx, binding);
-    const pending = manualPlan.pending;
-    const connected = ['connected','connected_paused'].includes(ctx.livePersonaBindingStatus?.state);
-    const warning = binding?.pendingBindingChange ? '바인딩 변경을 확인해 주세요.' : binding && !connected ? '연결 상태를 확인해 주세요.' : '';
-    const description = String(persona?.note || '').replace(LIVE_PERSONA_NOTE_MARKER, '').trim();
-    return `<section id="lia-pocket-home" class="dpg-tab-panel ${currentTab === 'home' ? 'active' : ''}">
-      <h2 class="lia-pocket-title">지금, 나의 페르소나</h2>
-      <p class="lia-pocket-chat">${pocketIcon('chat')}<span>${htmlEscape(ctx.chat?.name || '현재 채팅')} · ${state.dynamicId ? '채팅 전용' : '기본 페르소나'}</span></p>
-      <div class="lia-pocket-columns"><div>
-        <article class="lia-pocket-profile"><div class="lia-pocket-profile-top"><span class="lia-pocket-badge"><i></i>${state.dynamicId ? '이 채팅에 연결됨' : '기본 페르소나 사용 중'}</span><button type="button" data-pocket-personas aria-label="페르소나 바인딩 관리">${pocketIcon('more')}</button></div>
-          <div class="lia-pocket-person"><div><h3>${htmlEscape(persona?.name || '나의 페르소나')}</h3><p>${htmlEscape(limitText(description || '이 대화에서 함께할 나의 모습',75))}</p></div><div class="lia-pocket-avatar" aria-hidden="true"><svg viewBox="0 0 100 100"><circle cx="50" cy="37" r="19"/><path d="M10 100a40 40 0 0 1 80 0Z"/></svg></div></div>
-          <div class="lia-pocket-profile-actions"><button type="button" data-pocket-tab="edit">${pocketIcon('edit')}초안 편집</button><button id="lia-pocket-personas" type="button" data-pocket-personas>${pocketIcon('persona')}다른 페르소나</button></div>
-        </article>
-        <h3 class="lia-pocket-heading">페르소나 꾸미기</h3>
-        <button class="lia-pocket-row" type="button" data-pocket-tab="assets"><span class="lia-pocket-tile">${pocketIcon('image')}</span><span><strong>이미지와 감정 에셋</strong><small>나의 표정에 어울리는 이미지</small></span>${pocketIcon('arrow')}</button>
-      </div><div>
-        <div class="lia-pocket-heading-row"><h3 class="lia-pocket-heading">원할 때 대화를 반영해요</h3><button type="button" data-pocket-tab="realtime">상세 보기</button></div>
-        <article class="lia-pocket-card lia-pocket-sync"><div class="lia-pocket-sync-head"><span class="lia-pocket-tile">${pocketIcon('sync')}</span><div><strong>Persona 수동 갱신</strong><small>버튼을 눌렀을 때만 분석해요</small></div><button id="lia-pocket-sync-toggle" class="btn-soft" type="button" aria-label="Persona 수동 갱신 열기">열기</button></div>
-          <div class="lia-pocket-progress"><small>${htmlEscape(manualLivePersonaPlanLabel(manualPlan))}</small></div>
-          ${warning || binding?.lastError ? `<p class="lia-live-error">${htmlEscape(warning || binding.lastError)}</p>` : ''}
-        </article>
-        <div class="lia-pocket-heading-row"><h3 class="lia-pocket-heading">최근 반영된 상태</h3><button type="button" data-pocket-tab="realtime">모두 보기</button></div>
-        <article class="lia-pocket-card"><ul class="lia-pocket-state">${binding?.liveState?.length ? binding.liveState.slice(0,3).map(item=>`<li><span class="lia-pocket-state-dot"></span><div><strong>${htmlEscape(item.value)}</strong><small>${htmlEscape(item.category)}</small></div></li>`).join('') : '<li><div><strong>아직 반영된 변화가 없어요.</strong><small>수동 분석·갱신한 상태를 이곳에서 확인해요.</small></div></li>'}</ul></article>
-      </div></div>
-    </section>`;
+    const plan = ctx.manualViewPlan || manualLivePersonaPlan(ctx, binding);
+    const dbFailed = ctx?.personaDatabaseReadStatus?.available === false;
+    const persona = state.effectivePersona;
+    const name = String(persona?.name || "Persona 없음");
+    const initial = name.trim().slice(0, 1).toUpperCase() || "P";
+    const status = binding ? (ctx.livePersonaBindingStatus?.state === "connected" ? "Live 연결됨" : ctx.livePersonaBindingStatus?.state === "connected_paused" ? "Live · 수동 갱신" : "Live 연결 상태 확인 필요") : "Live 연결 안 됨";
+    const pocket = app.querySelector("#pocket");
+    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").replace(LIVE_PERSONA_NOTE_MARKER, "").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">수동 갱신</button><button class="btn" type="button" data-go="assets">이미지·감정</button>${binding?.previousBinding?`<button class="btn" type="button" data-lia-restore-previous-only title="이전 대상만 복원하고 현재 LIA Live 연결 기록은 유지합니다.">이전 연결만 복원…</button><button class="btn" type="button" data-lia-restore-previous title="이전 대상으로 복원하고 현재 LIA Live 연결을 정리합니다.">Live 복원·정리…</button>`:""}</div>`;
+    const planBadge = app.querySelector("#upd-badge");
+    const planDots = app.querySelector("#upd-dots");
+    const planHint = app.querySelector("#upd-hint");
+    const pendingPairs=Math.max(0,Number(plan.pending||0));
+    if (planBadge) { planBadge.className = `badge ${plan.range ? "badge--ok" : "badge--warn"}`; planBadge.textContent = `${Math.min(5,pendingPairs)} / 5쌍`; }
+    if (planDots) { planDots.setAttribute("aria-label", `${Math.min(5,pendingPairs)} / 5쌍`); planDots.innerHTML = Array.from({length:5},(_,i)=>`<i class="${i < Math.min(5,pendingPairs) ? "on" : ""}"></i>`).join(""); }
+    if (planHint) planHint.textContent = `${Math.min(5,pendingPairs)}/5턴 · 완료된 대화 ${Math.max(0,5-pendingPairs)}턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.`;
+    const list = app.querySelector("#mine-list");
+    if (list) {
+      if (dbFailed) list.innerHTML = `<div class="banner banner--danger" role="status"><b>RisuAI Persona 목록을 읽지 못했습니다.</b><span>${htmlEscape(personaDatabaseReadFailureMessage())}</span></div>`;
+      else if (!state.personas.length) list.innerHTML = `<div class="empty"><b>Persona가 없습니다</b><span>만들기에서 초안을 생성하거나 RisuAI에서 Persona를 추가하세요.</span></div>`;
+      else list.innerHTML = state.personas.map((item,index)=>{
+        const id=String(item?.id||""); const isDefault=index===state.selectedIndex; const isBound=!!id&&id===state.dynamicId; const live=isLivePersona(item); const note=limitText(String(item?.note||"").replace(LIVE_PERSONA_NOTE_MARKER,"").trim(),96);
+        const label=String(item?.name||`Persona ${index+1}`);
+        const flags=[isDefault?"RisuAI 기본":null,isBound?"이 채팅 연결":null,live?"Live Persona":null].filter(Boolean);
+        return `<article class="pcard" aria-label="${htmlEscape(label)}"><span class="avatar avatar--sm ${live?"avatar--b":""}">${htmlEscape(label.slice(0,1).toUpperCase())}</span><span><b>${htmlEscape(label)}</b><small>${htmlEscape(note||"RisuAI Persona")}</small></span><span class="pcard__side">${flags.map(flag=>`<span class="bind ${isBound?"bind--here":live&&!isBound?"bind--other":"bind--none"}">${htmlEscape(flag)}</span>`).join("")}</span><button class="btn btn--sm" type="button" data-lia-persona-manage="${htmlEscape(personaPanelChoiceRef(item,index))}">관리</button></article>`;
+      }).join("");
+    }
+    const live = app.querySelector("#live-persona-state");
+    if (live) live.innerHTML = binding ? `<div class="kv-line"><dl class="kv"><dt>상태</dt><dd>${htmlEscape(status)}</dd><dt>관리 범위</dt><dd>${htmlEscape(ctx.chat?.name || "현재 채팅")} · 이 채팅 소유</dd><dt>갱신</dt><dd>${htmlEscape(manualLivePersonaPlanLabel(plan))}</dd></dl></div>${binding.liveState?.length ? `<ul class="list">${binding.liveState.slice(0,6).map(item=>`<li class="row"><div><div class="row__title">${htmlEscape(item.category)}</div><div class="row__meta">${htmlEscape(item.value)}</div></div></li>`).join("")}</ul>` : `<p class="hint">아직 반영된 현재 상태가 없습니다.</p>`}` : `<p class="hint">현재 채팅에는 Live Persona가 연결되지 않았습니다. 연결이 없으면 RisuAI 기본 Persona가 적용됩니다.</p>`;
+    const headerScope = app.querySelector(".scope span:last-child");
+    if (headerScope) headerScope.textContent = `${ctx.char?.name || "현재 캐릭터"} · ${ctx.chat?.name || "현재 채팅"}`;
+    const version = app.querySelector(".brand__ver");
+    if (version) version.textContent = "Persona Linker · local_only";
+    return {state,binding,plan};
+  }
+
+  function hydrateLiaMockupApp(ctx, app) {
+    const routeMode = normalizeGenerationMode(ctx?.contextOptions?.generationMode || liaMockupContextOptions.generationMode || DEFAULT_CONTEXT_OPTIONS.generationMode);
+    liaMockupContextOptions = { ...liaMockupContextOptions, ...ctx?.contextOptions, generationMode: routeMode };
+    const scope=app.querySelector(".topbar .scope");
+    if(scope)scope.innerHTML=`<b>현재 채팅</b><span>›</span><span>${htmlEscape(ctx?.char?.name||"캐릭터 미선택")} · ${htmlEscape(ctx?.chat?.name||"채팅 미선택")}</span>`;
+    app.querySelectorAll("#dlg-cand [data-detail-root]").forEach(root=>{root.innerHTML='<div class="empty"><b>실제 후보 결과가 없습니다.</b><span>후보 생성 작업을 완료한 뒤 표시합니다.</span></div>';});
+    app.querySelectorAll('.page[data-page="make"] [data-detail]').forEach(node => node.classList.toggle("is-on", node.dataset.detail === routeMode));
+    app.querySelectorAll('.page[data-page="make"] [data-select-row]').forEach(node => {
+      const selected=node.dataset.selectRow===routeMode; node.classList.toggle("is-on",selected); node.setAttribute("aria-pressed",String(selected));
+    });
+    const sourceSelect=app.querySelector("#src-sel");
+    if(sourceSelect){sourceSelect.id="dpg-source-persona";sourceSelect.innerHTML=renderPersonaSelect(ctx);sourceSelect.value=String(ctx.contextOptions?.selectedPersonaKey||DEFAULT_CONTEXT_OPTIONS.selectedPersonaKey);}
+    const maxChars=app.querySelector("#lia-max-chars"); if(maxChars) maxChars.value=String(ctx.maxChars||DEFAULT_MAX_LORE_CHARS);
+    const rich=app.querySelector("#lia-rich-profile"); if(rich) rich.checked=ctx.contextOptions?.richPersonaMode!==false;
+    const concept=app.querySelector("#random-concept"); if(concept) concept.value=String(preservedRandomConceptText||"");
+    const makeCard=app.querySelector('.page[data-page="make"] .card');
+    if(makeCard&&!makeCard.querySelector("#dpg-user-rewrite-guidance")){
+      const guidance=document.createElement("div");guidance.className="field";guidance.innerHTML='<label for="dpg-user-rewrite-guidance">추가 재작성 지침</label><textarea class="textarea" id="dpg-user-rewrite-guidance" rows="3" maxlength="4000" placeholder="선택 사항 · 기존 생성 모드의 지침 필드"></textarea><span class="hint">기존 Persona 생성 요청에 추가하는 지침입니다. 실제 입력에 포함되며 자동 저장하지 않습니다.</span>';
+      makeCard.append(guidance);
+    }
+    if(makeCard&&!makeCard.querySelector('#lia-context-contract')){const panel=document.createElement('details');panel.id='lia-context-contract';panel.className='details-block';panel.innerHTML='<summary>자료 범위와 세계관</summary><div class="stack stack--sm"><label class="check"><input id="dpg-use-character-lore" type="checkbox"><span>캐릭터 로어북</span></label><label class="check"><input id="dpg-use-chat-lore" type="checkbox"><span>현재 채팅 자료</span></label><label class="check"><input id="dpg-use-module-lore" type="checkbox"><span>활성 모듈 로어</span></label><div class="field"><label>활성 모듈 선택</label><div id="dpg-module-picker" class="stack stack--sm"></div></div><div class="cluster"><button class="btn" type="button" data-lia-refresh-blueprint>세계관 Blueprint 분석·갱신</button></div></div>';makeCard.append(panel);}
+    for(const [id,key] of [['dpg-use-character-lore','characterLore'],['dpg-use-chat-lore','chatLore'],['dpg-use-module-lore','moduleLore']]){const input=app.querySelector(`#${id}`);if(input)input.checked=ctx.contextOptions?.[key]!==false;}
+    const rewriteGuidance=app.querySelector("#dpg-user-rewrite-guidance");if(rewriteGuidance)rewriteGuidance.value=String(preservedUserRewriteGuidanceText||"");
+    if(makeCard&&!makeCard.querySelector('#lia-prompt-inspection')){const details=document.createElement('details');details.id='lia-prompt-inspection';details.className='details-block';details.innerHTML='<summary>실제 생성 요청 프롬프트</summary><div class="stack stack--sm"><textarea class="textarea" id="lia-prompt-inspection-text" rows="10" readonly></textarea><button class="btn btn--sm" type="button" data-lia-copy-prompt>프롬프트 복사</button></div>';rewriteGuidance?.closest('.field')?.after(details);}
+    const inspection=app.querySelector('#lia-prompt-inspection-text');if(inspection)inspection.value=buildGenerationPromptForContext(ctx);
+    const result=getLLMResultOverride();
+    const spec=normalizePersonaSpec(result?.personaSpec||null)||{};
+    const evidenceList=app.querySelector("#sheet-evidence .list");
+    if(evidenceList){
+      const blueprint=normalizeWorldBlueprint(result?.worldBlueprint)||normalizeWorldBlueprint(ctx?.worldBlueprint);
+      const notes=asArray(blueprint?.evidenceNotes).map(item=>String(item||"").trim()).filter(Boolean);
+      evidenceList.innerHTML=notes.length?notes.map((note,index)=>`<div class="row"><div><div class="row__title">${htmlEscape(note)}</div><div class="row__meta">현재 Blueprint 근거 메모 ${index+1}</div></div></div>`).join(""):'<div class="empty"><b>연결된 Blueprint 근거 메모가 없습니다.</b><span>현재 결과 또는 저장된 세계관 Blueprint에 실제 근거가 있을 때 표시합니다.</span></div>';
+    }
+    const resultName=String(result?.personaName||spec.name||"").trim();
+    if(result)preservedPersonaFieldLocks=new Set(normalizePersonaFieldLocks(result.personaFieldLocks));
+    app.querySelectorAll("[data-fill=name]").forEach(node=>node.textContent=resultName||"생성 결과 없음");
+    app.querySelectorAll("[data-key]").forEach(node=>{
+      const key=String(node.dataset.key||"");
+      if(key in spec){if("value" in node) node.value=String(spec[key]??"");else node.textContent=String(spec[key]??"");}
+      else if("value" in node) node.value="";
+    });
+    app.querySelectorAll("[data-lock]").forEach(node=>{node.checked=preservedPersonaFieldLocks.has(String(node.dataset.lock||""));});
+    const densityOrder=["full","standard","compact"];
+    const density=normalizePersonaVariantProfile(preservedPersonaVariantProfile);
+    app.querySelectorAll("#ed-density .choice").forEach((node,index)=>{
+      const selected=densityOrder[index]===density;
+      node.classList.toggle("is-on",selected);
+      node.setAttribute("aria-pressed",String(selected));
+    });
+    const densityLabel=app.querySelector("#ad-density-label");
+    if(densityLabel)densityLabel.textContent=PERSONA_VARIANT_PROFILES[density]?.label||"Standard";
+    app.querySelectorAll("[data-subtabs]").forEach(tabs=>{
+      const group=String(tabs.dataset.subtabs||"");const selected=liaMockupSubtabs[group]||tabs.querySelector('[aria-selected="true"]')?.dataset?.subtab;
+      if(selected)tabs.querySelectorAll("[data-subtab]").forEach(button=>button.setAttribute("aria-selected",String(button.dataset.subtab===selected)));
+      const panelGroup=group==="ed"?"ed":group==="up"?"up":"";
+      if(panelGroup&&selected)app.querySelectorAll(`[data-subpanel][data-group="${panelGroup}"]`).forEach(panel=>panel.classList.toggle("is-active",panel.dataset.subpanel===selected));
+    });
+    const allEditor=app.querySelector('#edit-root [data-subpanel="all"] .card--tight');
+    if(allEditor){
+      allEditor.id="persona-field-editor";
+      if(!allEditor.querySelector("#dpg-persona-preview")){
+        const originalPrompt=document.createElement("div");originalPrompt.className="field";originalPrompt.innerHTML='<label for="dpg-persona-preview">Persona Prompt 원문</label><textarea class="textarea" id="dpg-persona-preview" rows="12" aria-describedby="lia-original-prompt-hint"></textarea><span class="hint" id="lia-original-prompt-hint">기존 채택·저장 기능이 사용하는 원문입니다. 번역본은 별도 탭에서 관리합니다.</span>';
+        allEditor.append(originalPrompt);
+      }
+      const originalPrompt=allEditor.querySelector("#dpg-persona-preview");if(originalPrompt)originalPrompt.value=String(result?.personaPrompt||"");
+      let translationEditor=allEditor.querySelector("#lia-translation-editor");
+      if(!translationEditor){translationEditor=document.createElement("div");translationEditor.id="lia-translation-editor";translationEditor.className="stack stack--sm";translationEditor.innerHTML=`<div class="field"><label for="lia-translation-language">번역 대상</label><select class="select" id="lia-translation-language">${Object.entries(TRANSLATION_LANGUAGES).map(([key,item])=>`<option value="${key}">${htmlEscape(item.label)}</option>`).join("")}</select></div><div class="cluster"><button class="btn btn--sm" id="lia-translate-persona" type="button">현재 원문 번역 만들기</button></div><div class="field"><label for="lia-translation-draft">번역 원문</label><textarea class="textarea" id="lia-translation-draft" rows="12" data-translation-draft></textarea><span class="hint">번역본은 원문과 별도로 보존합니다. 채택할 때 번역본을 선택하기 전까지 RisuAI Persona는 바뀌지 않습니다.</span></div>`;allEditor.append(translationEditor);}
+      const languageTabs=app.querySelectorAll("#ed-lang button");
+      languageTabs.forEach((button,index)=>{button.dataset.language=index===0?"original":"translation";button.setAttribute("aria-pressed",String((index===0?"original":"translation")===liaMockupEditorLanguage));});
+      allEditor.querySelectorAll(".fld").forEach(field=>{field.hidden=liaMockupEditorLanguage==="translation";});
+      translationEditor.hidden=liaMockupEditorLanguage!=="translation";
+      const translationField=translationEditor.querySelector("#lia-translation-draft");if(translationField)translationField.value=preservedTranslationText;
+      const languageSelect=translationEditor.querySelector("#lia-translation-language");if(languageSelect)languageSelect.value=normalizeTranslationLanguage(preservedTranslationLanguage);
+    }
+    const vault=asArray(ctx.savedResultVault);
+    const shelf=app.querySelector("#shelf-list");
+    if(shelf) shelf.innerHTML=vault.length?vault.map((item,index)=>{
+      const name=String(item.personaName||item.title||`Persona ${index+1}`);const itemSpec=normalizePersonaSpec(item.personaSpec)||{};
+      const description=String(itemSpec.role||itemSpec.personality||item.title||"저장된 Persona 초안");
+      return `<button class="row" type="button" data-lia-vault-id="${htmlEscape(item.id)}"><span class="avatar avatar--sm">${htmlEscape(name.slice(0,1))}</span><span><b>${htmlEscape(name)}</b><small>${htmlEscape(generationModeLabel(item.generationMode))} · ${htmlEscape(description)}</small></span><span class="pick">열기</span></button>`;
+    }).join(""):'<div class="empty"><b>보관함이 비어 있습니다.</b><span>실제 저장된 결과가 이곳에 표시됩니다.</span></div>';
+    for(const id of ["shelf-n","nav-shelf-n"]) {const el=app.querySelector(`#${id}`);if(el)el.textContent=String(vault.length);}
+    const empty=app.querySelector("#shelf-empty"); if(empty)empty.hidden=!!vault.length;
+    const shelfSearch=app.querySelector('.page[data-page="shelf"] .search input');if(shelfSearch)shelfSearch.id="lia-shelf-search";
+    app.querySelectorAll('[data-lia-vault-id]').forEach(row=>{row.setAttribute('aria-label',`보관함 결과 열기: ${String(vault.find(item=>item.id===row.dataset.liaVaultId)?.title||'Persona')}`);});
+    const deleteVaultButton=app.querySelector('#sheet-del-vault [data-act="del-vault"]');if(deleteVaultButton){deleteVaultButton.removeAttribute('data-toast');deleteVaultButton.disabled=false;deleteVaultButton.removeAttribute('aria-disabled');deleteVaultButton.id='lia-confirm-delete-vault';}
+    app.querySelector('#sheet-del-vault')?.removeAttribute('data-require');
+    const deleteVaultTitle=app.querySelector('#sdv-t [data-fill="name"]');if(deleteVaultTitle)deleteVaultTitle.textContent=String(vault.find(item=>item.id===preservedResultVaultId)?.personaName||vault.find(item=>item.id===preservedResultVaultId)?.title||'선택한 보관 결과');
+    const deletePersonaButton=app.querySelector('#sheet-del-persona [data-act="del-persona"]');if(deletePersonaButton){deletePersonaButton.removeAttribute('data-toast');deletePersonaButton.disabled=true;deletePersonaButton.setAttribute('aria-disabled','true');}
+    const targetName=resultName||String(ctx.personaInfo?.persona?.name||"");
+    const adopted=findExistingGeneratedPersonaForResult(ctx,result);const panelState=buildPersonaPanelState(ctx);const statusText=adopted?(String(adopted.id||'')===String(panelState.dynamicId||'')?'채택됨 · 이 채팅에 연결됨':String(adopted.id||'')===String(ctx.db?.selectedPersona||'')?'채택됨 · RisuAI 기본 Persona':'채택됨 · 연결되지 않음'):'보관함 초안 · RisuAI Persona 미변경';app.querySelectorAll('#edit-root [data-fill="statusText"]').forEach(node=>node.textContent=statusText);
+    app.querySelectorAll('#edit-root [data-fill="adoptText"]').forEach(node=>node.textContent=adopted?`${statusText} · ${String(adopted.name||'Persona')}`:'아직 채택하지 않은 초안');
+    app.querySelectorAll('#edit-root [data-fill="bindText"]').forEach(node=>node.textContent=panelState.dynamicId?`현재 채팅 연결 · ${String(panelState.effectivePersona?.name||'Persona')}`:'현재 채팅 연결 없음 · 기본 Persona 사용');
+    const outputPanel=app.querySelector('#edit-root [data-subpanel="out"]');
+    if(outputPanel&&!outputPanel.querySelector('[data-lia-editor-writer="vault"]')){
+      const writerCard=document.createElement('div');writerCard.className='target-card';
+      writerCard.innerHTML='<h3>편집 초안 저장 <small>각 저장 대상은 서로 독립적입니다.</small></h3><p class="muted" style="margin:0;font-size:13px">현재 편집 내용을 local_only 보관함에 저장하거나, 별도 확인을 거쳐 RisuAI Persona에 기록합니다. 이 동작은 채팅 연결을 바꾸지 않습니다.</p><div class="cluster" style="margin-top:10px"><button class="btn btn--sm" type="button" data-lia-editor-writer="vault">보관함에 저장</button><button class="btn btn--sm" type="button" data-lia-editor-writer="current">현재 채팅 Persona에 저장</button><button class="btn btn--sm" type="button" data-lia-editor-writer="new">새 RisuAI Persona로 저장</button></div>';
+      outputPanel.querySelector('.stack')?.prepend(writerCard);
+    }
+    outputPanel?.querySelectorAll('[data-lia-editor-writer]').forEach(button=>{button.disabled=!result||!String(result.personaPrompt||'').trim();button.title=button.disabled?'저장할 Persona 초안이 없습니다.':'';});
+    const lineage=normalizePersonaLineage(result?.personaLineage);app.querySelectorAll('#edit-root [data-fill="ver"]').forEach(node=>node.textContent=lineage?`v${lineage.revision}`:'초안');app.querySelectorAll('#edit-root [data-fill="mode"]').forEach(node=>node.textContent=generationModeLabel(result?.generationMode||ctx.contextOptions?.generationMode||DEFAULT_CONTEXT_OPTIONS.generationMode));
+    const versionList=app.querySelector('#ver-list');if(versionList){const history=asArray(lineage?.history);const vaultRows=asArray(ctx.savedResultVault).filter(item=>lineage?.lineageId&&normalizePersonaLineage(item.personaLineage)?.lineageId===lineage.lineageId);const rendered=history.slice().reverse().map((item,index)=>`<div class="ver"><span class="badge ${index===0?'badge--ok':''}">${index===0?'현재':`v${item.revision}`}</span><div><b>v${item.revision} · ${htmlEscape(formatVaultDate(item.at)||'시간 미상')}</b><small>${htmlEscape(item.operation)}${item.detail?` · ${htmlEscape(item.detail)}`:''}</small></div>${index===0?'<span class="muted">현재 초안</span>':''}</div>`);const snapshots=vaultRows.map(item=>`<div class="ver"><span class="badge">v${normalizePersonaLineage(item.personaLineage)?.revision||1}</span><div><b>${htmlEscape(item.title||item.personaName||'저장된 스냅샷')}</b><small>${htmlEscape(formatVaultDate(item.savedAt||item.updatedAt||item.createdAt)||'저장 시각 미상')} · 실제 보관함 스냅샷</small></div><button class="btn btn--sm" type="button" data-lia-version-compare="${htmlEscape(item.id)}">비교</button><button class="btn btn--sm" type="button" data-lia-version-open="${htmlEscape(item.id)}">초안으로 열기</button></div>`);versionList.innerHTML=[...rendered,...snapshots].join('')||'<div class="empty"><b>저장된 버전 이력이 없습니다.</b><span>실제 계보 이력 또는 같은 계보의 보관함 스냅샷이 있을 때 표시합니다.</span></div>';let diff=versionList.parentElement?.querySelector('#lia-version-compare');if(!diff){diff=document.createElement('div');diff.id='lia-version-compare';diff.className='card';diff.hidden=true;diff.innerHTML='<div class="card__head"><h3 class="card__title">실제 스냅샷 비교</h3></div><div class="list"></div>';versionList.after(diff);}let fork=versionList.parentElement?.querySelector('[data-lia-fork-lineage]');if(!fork){fork=document.createElement('button');fork.type='button';fork.className='btn';fork.dataset.liaForkLineage='';fork.textContent='현재 초안에서 파생본 만들기';diff.after(fork);}fork.disabled=!result;}
+    app.querySelectorAll("#spb-target,#spj-target").forEach(node=>node.textContent=targetName?`${targetName} · ${String(result?.generationId||result?.id||"현재 결과")}`:"표시할 Persona 결과가 없습니다.");
+    const bpItems=app.querySelector("#spb-items");
+    const blueprint=normalizeWorldBlueprint(result?.worldBlueprint||ctx.worldBlueprint);
+    if(bpItems)bpItems.innerHTML=blueprint?Object.entries(blueprint).filter(([,v])=>v&&typeof v==="string").slice(0,16).map(([key,value])=>`<div class="row"><div><b>${htmlEscape(key)}</b><small>${htmlEscape(value)}</small></div></div>`).join(""):'<div class="empty"><b>Blueprint를 확인할 수 없습니다.</b></div>';
+    const json=app.querySelector("#spj-content"); if(json)json.textContent=result?JSON.stringify(normalizePersonaSpec(result.personaSpec)||result,null,2):"";
+    hydrateLiaMockupReview(app,result);
+    const adoptButton=app.querySelector("#btn-adopt");if(adoptButton){adoptButton.removeAttribute("data-toast");adoptButton.disabled=!result;}
+    const turnEvidence=collectUserAuthoredConversationEvidence(ctx);
+    const conv=app.querySelector('[data-page="make"] .kv');
+    if(conv){const dds=conv.querySelectorAll("dd");if(dds[0])dds[0].textContent=`${turnEvidence.count}개 중 최근 ${turnEvidence.included}개`;}
+    const contextSummary=app.querySelector('[data-page="make"] details .kv');
+    if(contextSummary){const dds=contextSummary.querySelectorAll("dd");if(dds[0])dds[0].textContent=ctx.contextOptions?.characterLore?`${asArray(ctx.loreCandidates).filter(x=>x.source==="character_lore").length}개` : "사용 안 함";if(dds[1])dds[1].textContent=`${asArray(ctx.allActiveModules).length}개`;if(dds[2])dds[2].textContent=ctx.worldBlueprint?"분석 완료":"분석 전";}
+    app.querySelectorAll('[data-toast]').forEach(button=>{if(button.closest('[data-page=\"assets\"],#sheet-emo,#sheet-bundle-del'))return;button.removeAttribute("data-toast");button.disabled=true;button.setAttribute("aria-disabled","true");button.title="목업 전용 동작은 제품 성공처럼 표시되지 않도록 비활성화했습니다.";});
+    app.querySelectorAll('[data-run-job="job-update"],[data-run-job="job-neutral"],[data-run-job="job-emo"],[data-act]').forEach(button=>{if(button.closest('[data-page=\"assets\"],#sheet-emo,#sheet-bundle-del'))return;button.disabled=true;button.setAttribute("aria-disabled","true");});
+    const text=app.querySelector(".brand__ver"); if(text)text.textContent=`Persona Linker · ${PLUGIN_VERSION} · local_only`;
+    const recovery=app.querySelector('.page[data-page="recover"] .stack');
+    if(recovery)recovery.innerHTML='<div id="liaMemorySuiteServerConnectionPanel" class="card"></div>';
+    hydrateLiaMockupSettings(ctx,app);
+    hydrateLiaMockupUpdate(ctx,app);
+    hydrateLiaMockupAssets(ctx,app);
+  }
+
+  function hydrateLiaMockupReview(app,result) {
+    const panel=app.querySelector('[data-subpanel="rev"]');if(!panel)return;
+    const cards=panel.querySelectorAll('.card');const auditCard=cards[0],fixCard=cards[1];
+    const audit=normalizePersonaAudit(result?.personaAudit||preservedPersonaAudit);
+    if(auditCard){let actions=auditCard.querySelector('#lia-review-actions');if(!actions){actions=document.createElement('div');actions.id='lia-review-actions';actions.className='cluster';auditCard.querySelector('.card__head')?.after(actions);}actions.innerHTML='<button class="btn btn--primary" type="button" data-lia-run-audit>현재 초안 검사</button>';
+      const chips=auditCard.querySelector('#rv-chips');if(chips)chips.innerHTML=audit?`<span class="badge ${audit.verdict==='fail'?'badge--danger':audit.verdict==='warn'?'badge--warn':'badge--ok'}">${htmlEscape(audit.verdict.toUpperCase())} · ${Number(audit.score)||0}/100</span><span class="badge">Hard ${audit.hardConflicts.length}</span><span class="badge">Soft ${audit.softRisks.length}</span><span class="badge">Agency ${audit.agencyRisks.length}</span><span class="badge">누락 ${audit.missingDetails.length}</span>`:'<span class="badge badge--warn">검사 결과 없음</span>';
+      const note=auditCard.querySelector('#rv-note');if(note)note.textContent=audit?String(audit.summary||'실제 Persona Audit 결과입니다. 아래 수정안은 검토 후 초안에 적용하세요.'):'Persona Audit은 선택한 Blueprint와 현재 Persona 초안을 비교하며, 버튼을 누르기 전에는 모델 호출을 하지 않습니다.';
+      let findings=auditCard.querySelector('#lia-review-findings');if(!findings){findings=document.createElement('div');findings.id='lia-review-findings';findings.className='stack stack--sm';auditCard.append(findings);}findings.innerHTML=audit?[['Hard Conflict',audit.hardConflicts],['Soft Risk',audit.softRisks],['Agency',audit.agencyRisks],['추가 검토',audit.missingDetails],['강점',audit.strengths]].filter(([,items])=>items.length).map(([label,items])=>`<div class="note"><b>${label}</b><ul>${items.map(item=>`<li>${htmlEscape(item)}</li>`).join('')}</ul></div>`).join('')+(audit.recommendations.length?`<div class="stack stack--sm"><b>수정 권고 선택</b>${audit.recommendations.map((item,index)=>`<label class="row"><input type="checkbox" data-lia-audit-recommendation="${index}"${preservedPersonaAuditSelection.has(String(index))?' checked':''}><span>${htmlEscape(item)}</span></label>`).join('')}</div>`:''):'<div class="empty"><b>검사 전</b><span>현재 초안을 검사하면 실제 결과와 근거가 여기에 표시됩니다.</span></div>';}
+    if(fixCard){let controls=fixCard.querySelector('#lia-review-fix-controls');if(!controls){controls=document.createElement('div');controls.id='lia-review-fix-controls';controls.className='cluster';fixCard.querySelector('.card__head')?.after(controls);}controls.innerHTML='<button class="btn" type="button" data-lia-build-selected-fix>선택한 권고로 수정안 만들기</button><button class="btn btn--sm" type="button" data-lia-build-hard-fix>Hard Conflict 안전 수정안</button>';
+      const diff=fixCard.querySelector('#rv-diff');const plan=preservedPersonaAuditFixPlan;if(diff){diff.innerHTML=plan?.changes?.length?`<div class="stack stack--sm">${plan.changes.map(change=>`<label class="row"><input type="checkbox" data-lia-audit-fix="${htmlEscape(change.id)}"${preservedPersonaAuditFixSelection.has(change.id)?' checked':''}${currentPersonaFieldLocks().includes(change.field)?' disabled':''}><span><b>${htmlEscape(change.field)}</b><small>${htmlEscape(change.reason||change.riskType||'검토할 수정 제안')}</small><del>${htmlEscape(String(normalizePersonaSpec(result?.personaSpec||{})?.[change.field]||''))}</del><ins>${htmlEscape(String(change.proposedValue||''))}</ins></span></label>`).join('')}</div>`:'<p class="hint">수정안을 만들기 전까지는 Persona 초안이 변경되지 않습니다.</p>';}
+      const acts=fixCard.querySelector('#rv-acts');if(acts){acts.hidden=!plan?.changes?.length;acts.innerHTML='<button class="btn btn--primary" type="button" data-lia-apply-audit-fix>선택 수정안을 초안에 적용</button>';}}
+  }
+
+  function hydrateLiaMockupAssets(ctx,app) {
+    const options=listSelectablePersonaVisualTargets(ctx);const select=app.querySelector('#asset-target');
+    if(select){select.innerHTML=options.map(item=>`<option value="${htmlEscape(item.value)}">${htmlEscape(item.label)}</option>`).join('');select.value=currentVisualTargetSelectionValue();}
+    const target=resolvePersonaVisualTarget(ctx);const bundle=target.bundle||normalizeVisualAssetSet({},target.personaKey);const images=bundle.images||{};const emotionNames=Object.keys(images);const config=normalizeIllustrationConfig(ctx.savedIllustrationConfig||{});
+    const state=app.querySelector('#as-state');if(state)state.textContent=`${emotionNames.length}개 저장됨 · Neutral Master ${images.neutral?'있음':'없음'} · ${target.personaName}`;
+    const summary=app.querySelector('#as-sum');if(summary)summary.textContent=target.identitySummary||target.personaSpec?.appearance||'이 Persona에서 시각 정보를 찾지 못했습니다.';
+    const lock=normalizeVisualGenerationLock(bundle.visualLock||null,{confirmed:true});const candidate=normalizeVisualGenerationLock(bundle.visualLockCandidate||null,{confirmed:false});
+    const badge=app.querySelector('#as-lock');if(badge){badge.textContent=lock?.confirmed?'확정됨':candidate?'확정 대기':'미확정';badge.className=`badge ${lock?.confirmed?'badge--ok':'badge--warn'}`;}
+    const actualLock=lock?.confirmed?lock:candidate;
+    const lockCard=app.querySelector('.lock-card .kv');if(lockCard){const values=lockCard.querySelectorAll('dd');if(values[0])values[0].textContent=actualLock?`seed ${actualLock.seed} · ${actualLock.width}×${actualLock.height} · ${actualLock.steps} steps · ${actualLock.sampler}`:'Neutral 기준이 아직 저장되지 않았습니다.';if(values[1])values[1].textContent=actualLock?`${visualCompositionPresetDefinition(actualLock.compositionPreset).label} · ${actualLock.compositionNotes||''}`:'Neutral 생성 후 확정할 수 있습니다.';if(values[2])values[2].textContent=actualLock?.legacy?'구형 Lock':'';if(values[3])values[3].textContent=actualLock?`Positive/Negative 고정 · ${actualLock.provider||config.provider}`:'확정된 Lock 없음';}
+    const lockFields=app.querySelector('#asset-lock-fields');if(lockFields){lockFields.querySelectorAll('button,textarea').forEach(control=>{control.disabled=!!lock?.confirmed;});const note=lockFields.querySelector('textarea');if(note)note.value=String(actualLock?.stylePrompt||'');}
+    const neutral=app.querySelector('[data-page="assets"] [data-run-job="job-neutral"]');if(neutral){neutral.id='lia-generate-neutral';neutral.disabled=config.enabled===false||!target.personaPrompt&&!target.personaSpec?.appearance;neutral.removeAttribute('aria-disabled');neutral.textContent=images.neutral?'Neutral 다시 만들기':'Neutral 기준 에셋 만들기';}
+    const confirm=app.querySelector('#btn-confirm-visual-lock');if(confirm){confirm.disabled=!candidate||!!lock?.confirmed;confirm.setAttribute('aria-disabled',String(confirm.disabled));}
+    const bundleButton=app.querySelector('[data-page="assets"] [data-run-job="job-emo"]');if(bundleButton){bundleButton.id='lia-generate-bundle';bundleButton.disabled=!lock?.confirmed||config.enabled===false;bundleButton.removeAttribute('aria-disabled');}
+    const count=app.querySelector('#as-n');if(count)count.textContent=`${emotionNames.length} 저장 · ${images.neutral?'Neutral Master 있음':'Neutral Master 없음'}`;
+    const emotionDefaults=['neutral','gentle smile','happy','angry','sad','embarrassed','jealous','surprised','worried','determined','affectionate','exhausted'];
+    if(!preservedVisualEmotionText)preservedVisualEmotionText=emotionDefaults.join('\n');
+    liaVisualEmotionDraftText=preservedVisualEmotionText;
+    const configuredEmotions=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);
+    const assetSteps=app.querySelectorAll('[data-page="assets"] > .steps > .step');
+    if(assetSteps.length>=3){
+      const stage1=assetSteps[0],stage2=assetSteps[1],stage3=assetSteps[2];
+      const neutralReady=!!images.neutral;
+      const lockReady=!!lock?.confirmed;
+      const requestedForSteps=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48).filter(emotion=>normalizeEmotionKey(emotion)!=='neutral');
+      const completedForSteps=requestedForSteps.filter(emotion=>!!images[emotion]).length;
+      const bundleReady=lockReady&&requestedForSteps.length>0&&completedForSteps===requestedForSteps.length;
+      const applyStep=(node,{done,active,label,number})=>{node.classList.toggle('is-done',done);node.classList.toggle('is-active',!done&&active);node.dataset.state=done?'done':active?'active':'pending';const mark=node.querySelector('.step__no');if(mark)mark.textContent=done?'✓':String(number);const title=node.querySelector('b');if(title)title.textContent=label;};
+      applyStep(stage1,{done:neutralReady,active:!neutralReady,number:1,label:neutralReady?'Neutral 생성':'Neutral 생성 필요'});
+      applyStep(stage2,{done:lockReady,active:neutralReady&&!lockReady,number:2,label:lockReady?'기준 확정됨':candidate?'Neutral 기준 확인 필요':'Neutral 기준 미확정'});
+      applyStep(stage3,{done:bundleReady,active:lockReady&&!bundleReady,number:3,label:bundleReady?'감정 묶음 완료':lockReady?`감정 묶음 · ${completedForSteps}/${requestedForSteps.length}`:'감정 묶음 잠김'});
+    }
+    const bundleSteps=app.querySelectorAll('#job-emo .steps .step b');
+    if(bundleSteps.length>=3){
+      const requested=configuredEmotions.filter(emotion=>normalizeEmotionKey(emotion)!=='neutral');
+      const saved=requested.filter(emotion=>!!images[emotion]);
+      bundleSteps[0].textContent=`Neutral 이미지 ${images.neutral?'저장됨':'없음'}`;
+      bundleSteps[1].textContent=`Visual Lock ${lock?.confirmed?'확정됨':candidate?'후보 있음':'미확정'}`;
+      bundleSteps[2].textContent=`감정 설정 ${requested.length}개 · 저장 ${saved.length}개`;
+    }
+    const visibleEmotions=unique([...configuredEmotions,...emotionNames],48);
+    const grid=app.querySelector('#emo-grid');if(grid)grid.innerHTML=visibleEmotions.length?visibleEmotions.map(emotion=>{const entry=images[emotion];const done=!!entry;return `<button class="emo ${done?'is-done':'is-todo'} ${emotion==='neutral'?'is-master':''}" type="button" data-open="sheet-emo" data-visual-asset-path="${htmlEscape(entry?.assetPath||'')}" data-visual-asset-mime="${htmlEscape(entry?.mime||'image/png')}" data-visual-asset-persona-key="${htmlEscape(target.personaKey)}" data-visual-asset-emotion="${htmlEscape(emotion)}" data-visual-asset-backup-id="${htmlEscape(entry?.backupId||'')}" aria-label="${htmlEscape(emotion)} ${done?'저장 이미지':'이미지 없음'}"><span class="avatar ${done?'':'todo'}">${done?htmlEscape(emotion.slice(0,1).toUpperCase()):'?'}</span>${htmlEscape(emotion)}<br><span class="muted">${done?(emotion==='neutral'?'Visual Master':'저장됨'):'아직 없음'}</span></button>`;}).join(''):'<div class="empty"><b>감정 목록이 비어 있습니다</b><span>감정을 추가한 뒤 대상 Persona를 확인하세요.</span></div>';
+    const emotionList=app.querySelector('#emo-list');if(emotionList)emotionList.value=configuredEmotions.join('\n');
+    const presetSelect=app.querySelector('[aria-label="프리셋 선택"]');if(presetSelect){presetSelect.id='lia-asset-preset-select';presetSelect.innerHTML='<option value="">저장된 프리셋 없음</option>';}
+    const emotionSheet=app.querySelector('#sheet-emo');
+    if(emotionSheet){const upload=emotionSheet.querySelector('button[data-toast*="업로드"]');if(upload){upload.removeAttribute('data-toast');upload.dataset.liaAssetUpload='';upload.disabled=false;}const prompt=emotionSheet.querySelector('button[data-toast*="프롬프트"]');if(prompt){prompt.removeAttribute('data-toast');prompt.dataset.liaAssetPrompt='';prompt.disabled=false;}const regenerate=emotionSheet.querySelector('button[data-run-job="job-neutral"]');if(regenerate){regenerate.removeAttribute('data-run-job');regenerate.dataset.liaAssetRegenerate='';regenerate.disabled=false;}const deleteButton=emotionSheet.querySelector('[data-act="emo-del"]');if(deleteButton){deleteButton.removeAttribute('data-toast');deleteButton.removeAttribute('data-act');deleteButton.dataset.liaAssetDelete='';deleteButton.disabled=false;}
+      let restore=emotionSheet.querySelector('[data-lia-asset-restore]');if(!restore){restore=document.createElement('button');restore.type='button';restore.className='btn';restore.dataset.liaAssetRestore='';restore.textContent='저장 이미지 검사·백업 복구';emotionSheet.querySelector('.stack')?.append(restore);}const currentImage=images[liaSelectedVisualAssetEmotion];restore.disabled=!currentImage?.backupId;restore.title=restore.disabled?'이 이미지에는 복구용 백업이 없습니다.':'';
+      if(!emotionSheet.querySelector('#lia-emotion-prompt-editor')){const editor=document.createElement('div');editor.id='lia-emotion-prompt-editor';editor.hidden=true;editor.className='stack stack--sm';editor.innerHTML='<div class="field"><label for="lia-emotion-positive">이 감정의 positive prompt</label><textarea class="textarea" id="lia-emotion-positive" rows="3"></textarea></div><div class="field"><label for="lia-emotion-negative">이 감정의 negative prompt</label><textarea class="textarea" id="lia-emotion-negative" rows="3"></textarea></div><button class="btn btn--primary" type="button" data-lia-save-emotion-prompt>프롬프트 저장</button>';emotionSheet.querySelector('.stack')?.append(editor);}}
+    if(presetSelect){const options=normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore).items;presetSelect.innerHTML='<option value="">저장된 프리셋 선택</option>'+options.map(item=>`<option value="${htmlEscape(item.id)}">${htmlEscape(item.name)}</option>`).join('');presetSelect.value=preservedVisualAssetPresetId;}
+    const presetCard=presetSelect?.closest('.card');if(presetCard){const actions=presetCard.querySelectorAll('button');if(actions[0]){actions[0].removeAttribute('data-toast');actions[0].dataset.liaLoadAssetPreset='';}if(actions[1]){actions[1].removeAttribute('data-toast');actions[1].dataset.liaDeleteAssetPreset='';}if(!presetCard.querySelector('#lia-asset-preset-name')){const cluster=document.createElement('div');cluster.className='cluster';cluster.innerHTML='<input class="input" id="lia-asset-preset-name" maxlength="64" placeholder="프리셋 이름"><button class="btn btn--sm" type="button" data-lia-save-asset-preset>현재 조건 저장</button>';presetCard.querySelector('.cluster')?.after(cluster);}}
+    const zipButtons=app.querySelectorAll('[data-page="assets"] [data-toast]');zipButtons.forEach(button=>{const label=button.textContent||'';button.removeAttribute('data-toast');if(label.includes('ZIP')&&label.includes('내보내기'))button.dataset.liaExportAssets='';else if(label.includes('ZIP')&&label.includes('가져오기'))button.dataset.liaImportAssets='';else{button.disabled=true;button.setAttribute('aria-disabled','true');}});
+    const composition=app.querySelector('#asset-lock-fields .choices');if(composition){const keys=['standard_waist_up','close_portrait','three_quarter'];composition.querySelectorAll('.choice').forEach((button,index)=>{button.dataset.liaCompositionPreset=keys[index]||keys[0];button.setAttribute('aria-pressed',String((keys[index]||keys[0])===preservedVisualCompositionPreset));button.classList.toggle('is-on',(keys[index]||keys[0])===preservedVisualCompositionPreset);});}
+    const style=app.querySelector('#asset-lock-fields textarea');if(style){style.id='lia-asset-style-notes';style.value=preservedVisualStyleNotes;}
+    if(!app.querySelector('#lia-asset-composition-notes')){const note=document.createElement('div');note.className='field';note.innerHTML='<label for="lia-asset-composition-notes">구도 메모</label><textarea class="textarea" id="lia-asset-composition-notes" rows="2"></textarea>';app.querySelector('#asset-lock-fields')?.append(note);}
+    const notes=app.querySelector('#lia-asset-composition-notes');if(notes)notes.value=preservedVisualCompositionNotes;
+    const assetPage=app.querySelector('[data-page="assets"]');if(assetPage&&!assetPage.querySelector('#lia-asset-image-file')){const imageInput=document.createElement('input');imageInput.id='lia-asset-image-file';imageInput.type='file';imageInput.accept='image/png,image/jpeg,image/webp,image/gif';imageInput.hidden=true;const zipInput=document.createElement('input');zipInput.id='lia-asset-zip-file';zipInput.type='file';zipInput.accept='.zip,application/zip';zipInput.hidden=true;assetPage.append(imageInput,zipInput);}
+  }
+
+  function hydrateLiaMockupSettings(ctx,app) {
+    const cards=app.querySelectorAll('.page[data-page="settings"] .card');
+    const textCard=cards[0], imageCard=cards[1];
+    const textStack=textCard?.querySelector('.stack');
+    const cfg=normalizeLLMConfig(ctx.savedLLMConfig||{});
+    const textBadge=textCard?.querySelector('.badge');if(textBadge){textBadge.className=`badge ${cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'badge--ok':'badge--warn'}`;textBadge.textContent=cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'설정 확인됨':'인증 정보 필요';}
+    const providers=[...Object.entries(LIA_DIRECT_LLM_PROVIDER_REGISTRY).map(([key,value])=>[key,value.label]),...[['openai','OpenAI'],['claude','Claude / Anthropic'],['gemini','Gemini API'],['openrouter','OpenRouter'],['deepseek','DeepSeek'],['ollama','Ollama Local'],['ollama_cloud','Ollama Cloud'],['lmstudio','LM Studio'],['nanogpt','NanoGPT'],['vertex','Vertex Gemini'],['vertex-openai','Vertex OpenAI-compatible'],['copilot','GitHub Copilot'],['custom','Custom OpenAI-compatible']]];
+    if(textStack) textStack.innerHTML=`<div class="field"><label for="lia-provider">제공자</label><select class="select" id="lia-provider">${providers.map(([key,label])=>`<option value="${htmlEscape(key)}"${normalizeProviderKey(cfg.provider)===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-endpoint">Endpoint URL</label><input class="input" id="lia-endpoint" value="${htmlEscape(cfg.endpoint)}"></div><div class="field"><label for="lia-model">모델</label><input class="input" id="lia-model" list="dpg-llm-model-list" value="${htmlEscape(cfg.model)}"><datalist id="dpg-llm-model-list"></datalist></div><div class="cluster"><button class="btn btn--sm" type="button" id="dpg-refresh-models">모델 목록 새로 읽기</button><span class="hint">모델 API를 사용해 목록을 조회합니다.</span></div><div class="field"><label for="lia-api-key">API 키</label><input class="input" id="lia-api-key" type="password" value="" autocomplete="new-password" placeholder="${cfg.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><div class="field"><label for="lia-temperature">Temperature</label><input class="input" id="lia-temperature" type="number" min="0" max="2" step="0.05" value="${htmlEscape(cfg.temp)}"></div><div class="details-block"><details><summary>요청 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-max-tokens">Max Tokens</label><input class="input" id="lia-max-tokens" type="number" min="64" value="${cfg.maxCompletionTokens}"></div><div class="field"><label for="lia-timeout">Timeout (ms)</label><input class="input" id="lia-timeout" type="number" min="5000" max="300000" value="${cfg.timeout}"></div><div class="field"><label for="lia-context-window">Context Window</label><input class="input" id="lia-context-window" type="number" min="0" value="${cfg.contextWindow}"></div><div class="field"><label for="lia-request-format">Request Format</label><select class="select" id="lia-request-format"><option value="chat_completions"${cfg.requestFormat==='chat_completions'?' selected':''}>Chat Completions</option><option value="responses"${cfg.requestFormat==='responses'?' selected':''}>Responses</option></select></div><div class="field"><label for="lia-reasoning-preset">Reasoning Preset</label><select class="select" id="lia-reasoning-preset">${Object.entries(LIA_REASONING_PRESETS).map(([key,label])=>`<option value="${htmlEscape(key)}"${cfg.reasoningPreset===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-reasoning-effort">Reasoning Effort</label><select class="select" id="lia-reasoning-effort">${['none','minimal','low','medium','high','xhigh','max'].map(key=>`<option${cfg.reasoningEffort===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field"><label for="lia-reasoning-budget">Reasoning Budget</label><input class="input" id="lia-reasoning-budget" type="number" min="-1" max="200000" value="${cfg.reasoningBudgetTokens}"></div><div class="field"><label for="lia-thinking-type">Thinking</label><select class="select" id="lia-thinking-type"><option value="enabled"${cfg.thinkingType==='enabled'?' selected':''}>Enabled</option><option value="disabled"${cfg.thinkingType==='disabled'?' selected':''}>Disabled</option></select></div><div class="field"><label for="lia-service-tier">Service Tier</label><select class="select" id="lia-service-tier">${['off','auto','default','flex','priority','scale'].map(key=>`<option${cfg.serviceTier===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field"><label for="lia-cache-mode">Prompt Cache</label><select class="select" id="lia-cache-mode">${['auto','off','explicit'].map(key=>`<option${cfg.promptCacheMode===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check"><input id="lia-stream" type="checkbox"${cfg.stream?' checked':''}><span>Streaming 응답 사용</span></label><div class="field"><label for="lia-extra-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-extra-headers">${htmlEscape(cfg.extraHeadersJson)}</textarea></div><div class="field"><label for="lia-extra-body">Extra Body JSON</label><textarea class="textarea" id="lia-extra-body">${htmlEscape(cfg.extraBodyJson)}</textarea></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-provider">텍스트 AI 설정 저장</button><span class="hint" id="lia-provider-state">${cfg.apiKey?'인증 정보 저장됨':'인증 정보 없음'}</span></div><p class="hint">키 값은 화면에 다시 표시하지 않습니다. 저장은 local_only 기기 저장과 기존 pluginStorage 백업 규칙을 사용합니다.</p>`;
+    if(textStack){textStack.querySelector('#lia-save-provider')?.remove();const actions=document.createElement('div');actions.className='cluster';actions.innerHTML='<button class="btn btn--primary" id="lia-save-provider" type="button">텍스트 설정 저장</button><button class="btn" id="dpg-test-llm" type="button">연결 테스트</button>';textStack.append(actions);}
+    const img=normalizeIllustrationConfig(ctx.savedIllustrationConfig||{});
+    const imageBadge=imageCard?.querySelector('.badge');if(imageBadge){imageBadge.className=`badge ${img.enabled?'badge--ok':'badge--warn'}`;imageBadge.textContent=img.enabled?`사용 · ${img.provider}`:'사용 안 함';}
+    const imageStack=imageCard?.querySelector('.stack');
+    if(imageStack) imageStack.innerHTML=`<label class="check"><input id="lia-image-enabled" type="checkbox"${img.enabled?' checked':''}><span>이미지 제공 사용</span></label><div class="field"><label for="lia-image-provider">이미지 제공자</label><select class="select" id="lia-image-provider">${[['wellspring-nai','Wellspring NAI'],['novelai','NovelAI'],['comfyui-local','ComfyUI Local'],['custom-json','Custom JSON']].map(([key,label])=>`<option value="${key}"${img.provider===key?' selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="lia-image-endpoint">Endpoint URL</label><input class="input" id="lia-image-endpoint" value="${htmlEscape(img.endpoint)}"></div><div class="field"><label for="lia-image-model">모델</label><input class="input" id="lia-image-model" value="${htmlEscape(img.model)}"></div><div class="field"><label for="lia-image-key">API 키</label><input class="input" id="lia-image-key" type="password" value="" autocomplete="new-password" placeholder="${img.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-image-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><div class="details-block"><details><summary>이미지 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-image-checkpoint">Checkpoint</label><input class="input" id="lia-image-checkpoint" value="${htmlEscape(img.checkpoint)}"></div><div class="field"><label for="lia-image-width">Width</label><input class="input" id="lia-image-width" type="number" value="${img.width}"></div><div class="field"><label for="lia-image-height">Height</label><input class="input" id="lia-image-height" type="number" value="${img.height}"></div><div class="field"><label for="lia-image-steps">Steps</label><input class="input" id="lia-image-steps" type="number" value="${img.steps}"></div><div class="field"><label for="lia-image-cfg">CFG</label><input class="input" id="lia-image-cfg" type="number" value="${img.cfg}"></div><div class="field"><label for="lia-image-sampler">Sampler</label><input class="input" id="lia-image-sampler" value="${htmlEscape(img.sampler)}"></div><div class="field"><label for="lia-image-seed">Seed (-1 = random)</label><input class="input" id="lia-image-seed" type="number" value="${img.seed}"></div><div class="field"><label for="lia-image-response-path">Response Path</label><input class="input" id="lia-image-response-path" value="${htmlEscape(img.responsePath)}"></div><div class="field"><label for="lia-image-style">Style Prompt</label><textarea class="textarea" id="lia-image-style">${htmlEscape(img.stylePrompt)}</textarea></div><div class="field"><label for="lia-image-negative">Negative Prompt</label><textarea class="textarea" id="lia-image-negative">${htmlEscape(img.negativePrompt)}</textarea></div><div class="field"><label for="lia-image-workflow">Workflow JSON</label><textarea class="textarea" id="lia-image-workflow">${htmlEscape(img.workflowJson)}</textarea></div><div class="field"><label for="lia-image-request">Custom Request Template JSON</label><textarea class="textarea" id="lia-image-request">${htmlEscape(img.requestTemplateJson)}</textarea></div><div class="field"><label for="lia-image-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-image-headers">${htmlEscape(img.headersJson)}</textarea></div><div class="field"><label for="lia-image-advanced">Advanced JSON</label><textarea class="textarea" id="lia-image-advanced">${htmlEscape(img.advancedJson)}</textarea></div><label class="check"><input id="lia-image-runtime-attach" type="checkbox"${img.runtimeAttachEnabled?' checked':''}><span>생성 감정 에셋 자동 첨부</span></label><label class="check"><input id="lia-image-runtime-neutral" type="checkbox"${img.runtimeNeutralFallback?' checked':''}><span>감정 일치 없을 때 Neutral 사용</span></label><div class="field"><label for="lia-image-runtime-score">최소 매칭 점수</label><input class="input" id="lia-image-runtime-score" type="number" min="0.5" max="20" step="0.5" value="${img.runtimeMinScore}"></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-image-provider">이미지 AI 설정 저장</button><span class="hint" id="lia-image-provider-state">${img.apiKey?'인증 정보 저장됨':'인증 정보 없음'}</span></div>`;
+    if(imageStack){imageStack.querySelector('#lia-save-image-provider')?.remove();const tools=document.createElement('div');tools.className='details-block';tools.innerHTML='<div class="field"><label for="lia-image-binding-profile">ComfyUI Workflow 분석 결과</label><textarea class="textarea" id="lia-image-binding-profile" rows="6" readonly></textarea></div><div class="cluster"><button class="btn" type="button" data-lia-analyze-workflow>워크플로 분석</button><button class="btn" type="button" data-lia-test-workflow>이미지 연결 검사</button></div><span class="hint">연결 검사는 설정한 ComfyUI endpoint에 읽기 전용 사전 검사 요청을 보냅니다.</span>';imageStack.append(tools);const profile=imageStack.querySelector('#lia-image-binding-profile');if(profile)profile.value=img.workflowBindingJson||'';const actions=document.createElement('div');actions.className='cluster';actions.innerHTML='<button class="btn btn--primary" id="lia-save-image-provider" type="button">이미지 설정 저장</button>';imageStack.append(actions);syncIllustrationProviderUi();}
+    const settingsPage=app.querySelector('[data-page="settings"]');const diagnostic=settingsPage?.querySelector('.setting button');if(diagnostic){diagnostic.removeAttribute('data-toast');diagnostic.removeAttribute('disabled');diagnostic.removeAttribute('aria-disabled');diagnostic.dataset.liaRunDiagnostic='';if(!settingsPage.querySelector('#lia-diagnostic-result')){const output=document.createElement('pre');output.id='lia-diagnostic-result';output.className='hint';diagnostic.closest('.setting')?.after(output);}}
+    const debugButton=[...settingsPage?.querySelectorAll('button')||[]].find(button=>(button.textContent||'').includes('디버그 JSON'));if(debugButton){debugButton.removeAttribute('data-toast');debugButton.removeAttribute('disabled');debugButton.removeAttribute('aria-disabled');debugButton.id='dpg-export-debug-log';}
+    if(settingsPage&&!settingsPage.querySelector('#dpg-debug-export-fallback')){const fallback=document.createElement('div');fallback.id='dpg-debug-export-fallback';fallback.className='card';fallback.hidden=true;fallback.innerHTML='<div class="field"><label for="dpg-debug-export-text">디버그 JSON</label><textarea class="textarea" id="dpg-debug-export-text" readonly rows="8"></textarea></div><button class="btn btn--sm" id="dpg-close-debug-export-text" type="button">닫기</button>';settingsPage.append(fallback);}
+  }
+
+  function hydrateLiaMockupUpdate(ctx,app) {
+    const plan=ctx.manualViewPlan||manualLivePersonaPlan(ctx,ctx.livePersonaBinding);
+    const start=Number(ctx.livePersonaBinding?.lastProcessedPairCount||ctx.livePersonaBinding?.anchorPairCount||0);
+    const target=app.querySelector('#upd2-target');if(target)target.textContent=ctx.livePersonaBinding?`${ctx.livePersonaBinding.livePersonaName||'Live Persona'} · ${ctx.chat?.name||'현재 채팅'} 소유`:'Live Persona가 연결되지 않았습니다.';
+    const range=app.querySelector('#upd2-range');if(range)range.textContent=plan.range?`TURN ${plan.range[0]}~${plan.range[1]} · 완료된 다음 5쌍`:`완결된 다음 ${plan.pending}쌍 · 시작 기준 ${start}쌍`;
+    const badge=app.querySelector('#upd2-badge');if(badge){badge.textContent=plan.range?'실행 자격 있음':'대기';badge.className=`badge ${plan.range?'badge--ok':'badge--warn'}`;}
+    const button=app.querySelector('#upd-go');if(button){button.disabled=!plan.range||!ctx.livePersonaBinding;button.setAttribute('aria-disabled',String(button.disabled));}
+    const why=app.querySelector('#upd2-why');if(why){why.hidden=!!(plan.range&&ctx.livePersonaBinding);why.textContent=!ctx.livePersonaBinding?'현재 채팅에 소유권이 확인된 Live Persona가 없습니다.':`${Math.max(0,5-plan.pending)}쌍이 더 완결되어야 합니다.`;}
+    const hist=app.querySelector('#upd-hist');if(hist){const ledger=asArray(ctx.livePersonaBinding?.ledgers);hist.innerHTML=ledger.length?ledger.slice().reverse().map(item=>`<div class="row"><span><b>${htmlEscape(item.reason||'수동 갱신')}</b><small>${htmlEscape(item.createdAt||item.completedAt||'')}</small></span><span class="pick">${htmlEscape(item.status||'기록')}</span></div>`).join(''):'<div class="empty"><b>갱신 기록 없음</b><span>실제 Live Persona ledger가 여기에 표시됩니다.</span></div>';}
+    const fullPage=app.querySelector('[data-page="update"] [data-subpanel="full"]');if(fullPage){const evo=normalizePersonaEvolution(getLLMResultOverride()?.personaEvolution||preservedPersonaEvolution);const rows=evo?.suggestions||[];fullPage.innerHTML=`<div class="stack"><div class="note"><b>현재 채팅의 User 작성 메시지만 분석합니다.</b><span>선택한 변화는 Live Persona가 아니라 현재 편집 초안에 적용됩니다.</span></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-run-evolution">전체 대화 변화 후보 찾기</button><button class="btn" type="button" id="lia-apply-evolution"${rows.length?'':' disabled'}>선택 후보를 초안에 반영</button></div><div class="list" id="lia-evolution-results">${rows.length?rows.map(item=>`<label class="row"><input class="lia-mockup-evolution" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id)?' checked':''}><span><b>${htmlEscape(item.field)}</b><small>${htmlEscape(item.reason||item.evidence||'실제 User 대화 근거')} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(structuredPersonaText(item.proposedValue))}</span></span></label>`).join(''):'<div class="empty"><b>변화 후보 없음</b><span>실제 분석을 실행하면 User 메시지 근거 후보가 여기에 표시됩니다.</span></div>'}</div></div>`;}
+  }
+
+  function hydrateLiaMockupIcons(root) {
+    const paths={user:'<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6"/>',spark:'<path d="m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',shelf:'<path d="M5 4h3v16H5zM10 4h3v16h-3z"/><path d="m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z"/>',sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',more:'<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',db:'<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/>',check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.1"/>',search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',back:'<path d="m15 5-7 7 7 7"/>',sparkle:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/>',chat:'<path d="M4 5h16v11H9.5L4.5 20z"/><path d="M8 9h8M8 12.5h5"/>',image:'<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4 17 5-4.5 3.5 3L16 12l4.5 5"/>',link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',arrow:'<path d="m9 5 7 7-7 7"/>',alert:'<path d="M12 8v5M12 16.6v.1"/><path d="M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/>',download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',upload:'<path d="M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14"/>',pen:'<path d="m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z"/>',trash:'<path d="M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7"/>',sync:'<path d="M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5"/>'};
+    for(const icon of root.querySelectorAll("i[data-i]")) {const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("class",`ic${icon.dataset.size?` ic--${icon.dataset.size}`:""}`);svg.setAttribute("aria-hidden","true");const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d","");svg.innerHTML=paths[icon.dataset.i]||paths.user;icon.replaceWith(svg);}
+  }
+
+  function hydrateLiaMockupTabbar(root, activeRoute = "") {
+    const bar = root.querySelector(".tabbar");
+    if (!bar) return;
+    const items = [...root.querySelectorAll(".sidebar .nav-item[data-go]")]
+      .filter(button => button.dataset.tab !== "top");
+    bar.replaceChildren(...items.map(source => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.go = source.dataset.go;
+      if (source.dataset.unsavedFor) button.dataset.unsavedFor = source.dataset.unsavedFor;
+      const icon = source.querySelector("svg.ic");
+      if (icon) button.append(icon.cloneNode(true));
+      button.append(document.createTextNode(source.dataset.short || source.querySelector(".nav-text")?.textContent?.trim() || source.dataset.go));
+      button.setAttribute("aria-current", source.dataset.go === activeRoute ? "page" : "false");
+      return button;
+    }));
   }
 
   function renderPreview(ctx, options = {}) {
     if (!ctx.manualViewPlan) ctx = readLiaViewContext(ctx);
+    liaMockupContext = ctx;
     if (options?.skipCapture !== true) captureGeneratedOutputState();
-    const outputText = preservedLLMResultText;
-    const llmResult = getLLMResultOverride();
-    const llmState = getLLMSaveState(llmResult);
-    const activeOutputPane = ["json", "persona"].includes(preservedOutputPane) ? preservedOutputPane : "persona";
-    const persona = ctx.personaInfo.persona || {};
-    const generationMode = generationModeFor(ctx);
-    const userRewriteGuidance = getUserRewriteGuidance();
-    const randomConcept = getRandomConcept();
-    const worldBlueprint = normalizeWorldBlueprint(ctx.worldBlueprint);
-    const activeResultBlueprint = normalizeWorldBlueprint(llmResult?.worldBlueprint) || worldBlueprint;
-    const personaSpec = normalizePersonaSpec(llmResult?.personaSpec);
-    const personaVariants = normalizePersonaVariants(llmResult?.personaVariants, llmResult?.personaPrompt || "");
-    const activePersonaProfile = normalizePersonaVariantProfile(llmResult?.activePersonaProfile || preservedPersonaVariantProfile);
-    const personaLineage = normalizePersonaLineage(llmResult?.personaLineage);
-    if (llmResult) {
-      const parsedLocks = normalizePersonaFieldLocks(llmResult.personaFieldLocks);
-      if (parsedLocks.length || !preservedPersonaFieldLocks.size) preservedPersonaFieldLocks = new Set(parsedLocks);
-      preservedPersonaAudit = normalizePersonaAudit(llmResult.personaAudit) || preservedPersonaAudit;
-      preservedPersonaEvolution = normalizePersonaEvolution(llmResult.personaEvolution) || preservedPersonaEvolution;
-      preservedPersonaVariantProfile = activePersonaProfile;
+    if (typeof document === "undefined" || typeof document.createElement !== "function") return LIA_MOCKUP_APP_HTML;
+    const template = document.createElement("template");
+    template.innerHTML = LIA_MOCKUP_APP_HTML;
+    const app = template.content.querySelector(".app");
+    if (!app) throw new Error("canonical LIA mockup root is missing");
+    const routes = {home:"mine",generate:"make",vault:"shelf",settings:"settings",edit:"edit",realtime:"update",assets:"assets",server:"recover"};
+    const route = routes[activeWorkspaceTab] || "make";
+    app.querySelectorAll(".page[data-page]").forEach((page) => page.classList.toggle("is-active", page.dataset.page === route));
+    app.querySelectorAll(".sidebar .nav-item[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === route ? "page" : "false"));
+    const mine = app.querySelector('.page[data-page="mine"]');
+    if (mine) renderMockupMine(ctx, app);
+    hydrateLiaMockupLiveState(ctx,app);
+    hydrateLiaMockupApp(ctx, app);
+    const status = document.createElement("div");
+    status.id = "dpg-status";
+    status.className = "sr-only";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    app.querySelector(".toasts")?.append(status);
+    const loreSave=app.querySelector("[data-save]"); if(loreSave) loreSave.setAttribute("data-save-lore-limit","");
+    hydrateLiaMockupIcons(app);
+    hydrateLiaMockupTabbar(app, route);
+    // `innerHTML` serialization drops live form properties set while the
+    // canonical template is detached. Reflect safe UI state back into markup;
+    // password/file fields are deliberately excluded so secrets never enter
+    // generated HTML strings or captured markup.
+    for (const control of app.querySelectorAll("input,textarea,select,button")) {
+      if (control instanceof HTMLInputElement) {
+        if (control.type !== "password" && control.type !== "file") control.setAttribute("value", String(control.value ?? ""));
+        else control.removeAttribute("value");
+        if (control.type === "checkbox" || control.type === "radio") control.toggleAttribute("checked", control.checked);
+      } else if (control instanceof HTMLTextAreaElement) {
+        control.textContent = String(control.value ?? "");
+      } else if (control instanceof HTMLSelectElement) {
+        for (const option of control.options) option.toggleAttribute("selected", option.selected);
+      }
+      if ("disabled" in control) control.toggleAttribute("disabled", control.disabled);
     }
-    if (generationMode === GENERATION_MODE_RANDOM) {
-      const candidateKey = randomCandidateContextKey(ctx, randomConcept, userRewriteGuidance);
-      if (preservedRandomCandidateContextKey && preservedRandomCandidateContextKey !== candidateKey) clearRandomCandidateState();
-      const characterKey = characterCandidateContextKey(ctx);
-      if (preservedCharacterCandidateContextKey && preservedCharacterCandidateContextKey !== characterKey) clearCharacterCandidateState();
-    }
-    const llmPrompt = generationMode === GENERATION_MODE_RANDOM
-      ? buildLLMRandomPersonaPrompt({ ...ctx, userRewriteGuidance, randomConcept, randomCandidate: selectedRandomCandidate() })
-      : generationMode === GENERATION_MODE_CHARACTER
-        ? buildCharacterToPersonaPrompt({ ...ctx, userRewriteGuidance, characterCandidate: selectedCharacterCandidate() })
-        : generationMode === GENERATION_MODE_CONVERSATION
-          ? buildConversationPersonaPrompt({ ...ctx, userRewriteGuidance })
-          : buildLLMRewritePrompt({ ...ctx, userRewriteGuidance });
-    const savedLLMConfig = ctx.savedLLMConfig || normalizeLLMConfig();
-    const savedVault = asArray(ctx.savedResultVault);
-    const outputJson = llmResult ? resultToOutputText(llmResult) : "";
-    const firstMessage = getFirstMessageText(ctx);
-    const currentTab = ["home", "generate", "edit", "realtime", "assets", "vault", "settings", "server"].includes(activeWorkspaceTab) ? activeWorkspaceTab : "generate";
-    if (!["persona", "prompt", "evolution", "audit", "history"].includes(preservedEditorSection)) preservedEditorSection = "persona";
-    const charName = String(ctx.char?.name || "(unknown)");
-    const chatName = String(ctx.chat?.name || `#${ctx.chatIndex + 1}`);
-    const characterLoreCount = asArray(ctx.loreCandidates).filter((item) => item.source === "character_lore").length;
-    const moduleLoreCount = asArray(ctx.loreCandidates).filter((item) => item.source === "module_lore").length;
-    const characterSummary = asArray(ctx.characterDescription)
-      .slice(0, 5)
-      .map((item) => `${item.label}: ${limitText(item.content, 260)}`)
-      .join("\n\n");
-    const compatibilityText = ctx.compatibility.join(", ") || "general_character_lore_fit";
-    const providerSummary = `${providerDisplayLabel(savedLLMConfig.provider)}${savedLLMConfig.model ? ` · ${savedLLMConfig.model}` : ""}`;
-    const resultName = String(llmResult?.personaName || preservedGeneratedPersonaNameText || (generationMode === GENERATION_MODE_CLASSIC ? persona.name : generationMode === GENERATION_MODE_CHARACTER ? selectedCharacterCandidate()?.name : "") || "").trim();
-    const conversationEvidence = collectUserAuthoredConversationEvidence(ctx);
-    const livePersonaBinding = normalizeLivePersonaBinding(ctx.livePersonaBinding);
-    const safeCurrentSaveState = safeEditableCurrentPersonaSnapshot(ctx);
-    const safeCurrentSaveLabel = safeCurrentSaveState.safe ? (safeCurrentSaveState.dynamicPersona?.name || safeCurrentSaveState.dynamicId) : "기본 Persona 직접 덮어쓰기 차단";
-    const liveBindingStatus = ctx.livePersonaBindingStatus || null;
-    const liveBindingStateLabel = !livePersonaBinding ? "미설정" : liveBindingStatus?.state === "binding_change_pending" ? "바인딩 변경 미완료 · 다시 확인 필요" : liveBindingStatus?.state === "connected" ? "정상 연결" : liveBindingStatus?.state === "connected_paused" ? "연결됨 · 수동 갱신" : liveBindingStatus?.state === "external_change" ? "RisuAI에서 변경됨" : liveBindingStatus?.state === "live_missing" ? "Live Persona 없음" : liveBindingStatus?.state === "unavailable" ? "바인딩 API 사용 불가" : "확인 필요";
-    const previousBindingId = String(livePersonaBinding?.previousBinding?.personaId || "").trim();
-    const previousBindingPersona = previousBindingId ? asArray(ctx.db?.personas).find((item) => String(item?.id || "") === previousBindingId) : null;
-    const previousBindingLabel = livePersonaBinding?.previousBinding?.hadExplicitBinding ? (previousBindingPersona?.name || previousBindingId || "삭제된 Persona") : "채팅 전용 바인딩 없음";
-    const liveManualPlan = ctx.manualViewPlan || manualLivePersonaPlan(ctx, livePersonaBinding);
-    const completedTurnPairs = liveManualPlan.pairs;
-    const livePendingTurns = liveManualPlan.pending;
-    const liveLastLedger = livePersonaBinding?.ledgers?.[livePersonaBinding.ledgers.length - 1] || null;
-    const fullMetrics = promptMetrics(personaVariants.full || llmResult?.personaPrompt || "");
-    const standardMetrics = promptMetrics(personaVariants.standard);
-    const compactMetrics = promptMetrics(personaVariants.compact);
-    const currentExistingPersona = llmResult ? findExistingGeneratedPersonaForResult(ctx, llmResult) : null;
-    const existingPromptMetrics = promptMetrics(currentExistingPersona?.personaPrompt || "");
-    const proposedPromptMetrics = promptMetrics(llmResult?.personaPrompt || "");
-    const personaSidePanel = renderPersonaSidePanel(ctx);
-
-    return `
-      <div class="lia-app-layout ${preservedSidebarCollapsed ? "sidebar-collapsed" : ""} ${preservedWorldDrawerOpen ? "world-drawer-open" : ""} ${preservedPersonaPanelOpen ? "persona-panel-open" : ""}" data-page="${htmlEscape(currentTab)}" data-pocket-group="${pocketPrimaryTab(currentTab)}">
-        <nav class="lia-pocket-nav" aria-label="LIA 주요 기능">
-          ${[["home", "내 페르소나", "persona"], ["generate", "만들기", "sparkle"], ["vault", "보관함", "vault"], ["settings", "설정", "settings"]].map(([tab, label, icon]) => `<button id="dpg-tab-${tab}" type="button" data-pocket-tab="${tab}" class="${pocketPrimaryTab(currentTab) === tab ? "active" : ""}" aria-current="${pocketPrimaryTab(currentTab) === tab ? "page" : "false"}">${pocketIcon(icon)}<span>${label}</span></button>`).join("")}
-        </nav>
-        <main class="lia-workspace">
-          <nav class="lia-pocket-subnav" aria-label="상세 기능">
-            ${[["home", "개요"], ["edit", "초안 편집"], ["realtime", "수동 갱신"], ["assets", "이미지·감정 에셋"], ["settings", "AI 연결"], ["server", "저장·이전 자료 복구"]].map(([tab,label]) => `<button type="button" class="dpg-tab-button ${currentTab === tab ? "active" : ""}" data-workspace-tab="${tab}" data-pocket-group="${pocketPrimaryTab(tab)}" aria-current="${currentTab === tab ? "page" : "false"}">${label}</button>`).join("")}
-          </nav>
-          ${renderPocketHome(ctx, currentTab)}
-      <section id="dpg-studio-panel" class="dpg-tab-panel ${["generate", "edit", "realtime"].includes(currentTab) ? "active" : ""}" data-workspace-panel="studio">
-        <section class="lia-mode-stage">
-          <div class="lia-section-eyebrow">GENERATION MODE</div>
-          <div class="lia-mode-head">
-            <div>
-              <h2>새로운 나를 만나요</h2>
-              <p>어떤 이야기에서 시작할까요?</p>
-            </div>
-          </div>
-          <select id="dpg-generation-mode" class="lia-visually-hidden" aria-label="생성 모드">
-            <option value="classic"${generationMode === GENERATION_MODE_CLASSIC ? " selected" : ""}>클래식 생성</option>
-            <option value="random"${generationMode === GENERATION_MODE_RANDOM ? " selected" : ""}>랜덤 신규 생성</option>
-            <option value="character"${generationMode === GENERATION_MODE_CHARACTER ? " selected" : ""}>등장인물 추출</option>
-            <option value="conversation"${generationMode === GENERATION_MODE_CONVERSATION ? " selected" : ""}>대화에서 추출</option>
-          </select>
-          <div class="lia-mode-grid lia-mode-grid-four">
-            <button class="lia-mode-card ${generationMode === GENERATION_MODE_CLASSIC ? "active" : ""}" type="button" data-generation-mode-card="classic">
-              <span class="lia-mode-symbol">${pocketIcon("persona")}</span><span class="lia-mode-copy"><strong>클래식 생성</strong><small>기존 Source Persona를 현재 세계에 맞게 재해석</small></span><span class="lia-mode-check">${generationMode === GENERATION_MODE_CLASSIC ? "선택됨" : "선택"}</span>
-            </button>
-            <button class="lia-mode-card random ${generationMode === GENERATION_MODE_RANDOM ? "active" : ""}" type="button" data-generation-mode-card="random">
-              <span class="lia-mode-symbol">${pocketIcon("sparkle")}</span><span class="lia-mode-copy"><strong>랜덤 신규 생성</strong><small>세계관 안에서 완전히 새로운 인물을 창작</small></span><span class="lia-mode-check">${generationMode === GENERATION_MODE_RANDOM ? "선택됨" : "선택"}</span>
-            </button>
-            <button class="lia-mode-card ${generationMode === GENERATION_MODE_CHARACTER ? "active" : ""}" type="button" data-generation-mode-card="character">
-              <span class="lia-mode-symbol">${pocketIcon("vault")}</span><span class="lia-mode-copy"><strong>등장인물 추출</strong><small>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</small></span><span class="lia-mode-check">${generationMode === GENERATION_MODE_CHARACTER ? "선택됨" : "선택"}</span>
-            </button>
-            <button class="lia-mode-card ${generationMode === GENERATION_MODE_CONVERSATION ? "active" : ""}" type="button" data-generation-mode-card="conversation">
-              <span class="lia-mode-symbol">${pocketIcon("chat")}</span><span class="lia-mode-copy"><strong>대화에서 추출</strong><small>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</small></span><span class="lia-mode-check">${generationMode === GENERATION_MODE_CONVERSATION ? "선택됨" : "선택"}</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="lia-world-summary">
-          <div class="lia-world-summary-copy"><span class="lia-kicker">WORLD CONTEXT</span><strong>${htmlEscape(charName)}</strong><small>Character Lore ${ctx.contextOptions?.characterLore ? "ON" : "OFF"} · Module ${asArray(ctx.activeModules).length}개 · Blueprint ${worldBlueprint ? "✓" : "-"} · Persona Lore ${asArray(ctx.personaLoreSignals).length}개</small></div>
-          <button id="dpg-world-drawer-open" class="btn-soft" type="button">자료 설정</button>
-        </section>
-        <div id="dpg-world-drawer-backdrop" class="lia-drawer-backdrop" aria-hidden="true"></div>
-
-        <section class="lia-workbench">
-          <aside class="lia-side-column" aria-label="세계관 자료 설정">
-            <div class="lia-drawer-head"><div><span class="lia-kicker">SOURCE SETTINGS</span><strong>세계관 자료 설정</strong></div><button id="dpg-world-drawer-close" class="btn-soft" type="button">닫기</button></div>
-            <section class="lia-panel lia-world-card">
-              <div class="lia-panel-title">
-                <div><span class="lia-kicker">WORLD SOURCE</span><h2>생성 기준</h2></div>
-                <span>${htmlEscape(charName)}</span>
-              </div>
-              <div class="lia-field lia-field-full">
-                <label for="dpg-max-lore-chars">자료 항목별 최대 문자 수</label>
-                <input id="dpg-max-lore-chars" name="max_lore_chars" type="number" min="240" max="3000" step="1" value="${ctx.maxChars}">
-                <small>캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</small>
-                <button id="dpg-save-lore-limit" class="btn-soft" type="button">자료 길이 설정 저장</button>
-                <div id="dpg-lore-limit-status" role="status" aria-live="polite">현재 적용값: ${ctx.maxChars}자</div>
-              </div>
-              <div class="lia-context-hero">
-                <strong>${htmlEscape(charName)}</strong>
-                <small>${htmlEscape(chatName)}</small>
-                <p>${generationMode === GENERATION_MODE_RANDOM
-                  ? "이 캐릭터와 로어의 세계 규칙만 참고해 새로운 유저 인물을 만듭니다."
-                  : generationMode === GENERATION_MODE_CHARACTER
-                    ? `캐릭터 카드·로어·최근 대화에서 등장인물을 분리하고, 선택한 한 인물의 직접 근거만 User Persona로 변환합니다.`
-                    : generationMode === GENERATION_MODE_CONVERSATION
-                      ? `현재 채팅의 사용자 작성 메시지 ${conversationEvidence.count}개 중 최근 ${conversationEvidence.included}개를 증거로 Persona를 추출합니다.`
-                      : `선택한 ${htmlEscape(persona.name || "Source Persona")}를 이 세계의 자연스러운 인물로 다시 배치합니다.`}</p>
-              </div>
-
-              ${generationMode === GENERATION_MODE_CLASSIC ? `
-              <label class="lia-field lia-field-full lia-persona-source">
-                <span>Source Persona</span>
-                <select id="dpg-source-persona"${ctx.personaDatabaseReadStatus?.available === false ? " disabled" : ""}>${renderPersonaSelect(ctx)}</select>
-                <small>${ctx.personaDatabaseReadStatus?.available === false ? htmlEscape(personaDatabaseReadFailureMessage()) : "성격·외모·배경의 출발점이 되는 기존 페르소나입니다."}</small>
-              </label>` : `
-              <div class="lia-random-source-note">
-                <b>${generationMode === GENERATION_MODE_CHARACTER ? "캐릭터/로어에서 등장인물 분리" : generationMode === GENERATION_MODE_CONVERSATION ? "사용자 작성 메시지만 사용" : "Source Persona 사용 안 함"}</b>
-                <span>${generationMode === GENERATION_MODE_CHARACTER ? "여러 NPC가 있는 시뮬봇에서도 선택한 한 인물의 직접 근거만 사용하며 다른 인물 설정을 섞지 않습니다." : generationMode === GENERATION_MODE_CONVERSATION ? "AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외합니다." : "현재 선택된 RisuAI Persona의 이름과 설정은 랜덤 생성 근거에 포함되지 않습니다."}</span>
-              </div>
-              <select id="dpg-source-persona" class="lia-visually-hidden" disabled>${renderPersonaSelect(ctx)}</select>`}
-
-              <div class="lia-toggle-stack">
-                <label class="lia-switch-row">
-                  <span><strong>캐릭터 로어북</strong><small>${characterLoreCount}개 항목 사용</small></span>
-                  <input id="dpg-use-character-lore" type="checkbox"${ctx.contextOptions?.characterLore ? " checked" : ""}>
-                  <i></i>
-                </label>
-                <label class="lia-switch-row">
-                  <span><strong>모듈 로어북</strong><small>${ctx.contextOptions?.moduleLore ? `${moduleLoreCount}개 항목 · 모듈 ${asArray(ctx.activeModules).length}개` : "사용 안 함"}</small></span>
-                  <input id="dpg-use-module-lore" type="checkbox"${ctx.contextOptions?.moduleLore ? " checked" : ""}>
-                  <i></i>
-                </label>
-                <label class="lia-switch-row">
-                  <span><strong>상세 프로필</strong><small>행동 루프·관계 아크·장면 후크까지 생성</small></span>
-                  <input id="dpg-rich-persona-mode" type="checkbox"${ctx.contextOptions?.richPersonaMode !== false ? " checked" : ""}>
-                  <i></i>
-                </label>
-              </div>
-            </section>
-
-            <section class="lia-panel lia-blueprint-card ${worldBlueprint ? "is-ready" : "is-empty"}">
-              <div class="lia-panel-title">
-                <div><span class="lia-kicker">WORLD BLUEPRINT</span><h2>세계관 해석</h2></div>
-                <span>${worldBlueprint ? "캐시됨" : "미분석"}</span>
-              </div>
-              ${worldBlueprint ? `
-                <div class="lia-blueprint-summary">${htmlEscape(worldBlueprint.summary)}</div>
-                <div class="lia-blueprint-mini-grid">
-                  <div><b>이름 규칙</b><span>${htmlEscape(limitText(worldBlueprint.namingConventions, 180))}</span></div>
-                  <div><b>종족 규칙</b><span>${htmlEscape(limitText(worldBlueprint.speciesRules, 180))}</span></div>
-                  <div><b>시대/기술</b><span>${htmlEscape(limitText(worldBlueprint.eraTechnology, 180))}</span></div>
-                  <div><b>사회 구조</b><span>${htmlEscape(limitText(worldBlueprint.socialStructure, 180))}</span></div>
-                </div>
-                <details class="lia-inline-fold lia-blueprint-details">
-                  <summary>전체 Blueprint 보기 <span>Hard Constraint · 창작 가능 범위</span></summary>
-                  <textarea class="lia-code-output lia-blueprint-json" readonly>${htmlEscape(JSON.stringify(worldBlueprint, null, 2))}</textarea>
-                </details>` : `
-                <div class="lia-blueprint-empty">
-                  <strong>아직 세계관을 구조화하지 않았습니다.</strong>
-                  <p>페르소나 생성 시 자동 분석합니다. 먼저 확인하고 싶다면 아래 버튼을 누르세요.</p>
-                </div>`}
-              <button id="dpg-world-blueprint-refresh" class="btn-soft lia-blueprint-button" type="button">${worldBlueprint ? "세계관 다시 분석" : "세계관 먼저 분석"}</button>
-            </section>
-
-            <details class="lia-panel lia-fold"${ctx.contextOptions?.moduleLore ? " open" : ""}>
-              <summary><span><b>모듈 선택</b><small>생성에 함께 사용할 활성 모듈</small></span><em>${asArray(ctx.activeModules).length}</em></summary>
-              <div id="dpg-module-picker" class="lia-module-list"></div>
-            </details>
-
-            ${renderLoreRerankerPanel(ctx)}
-
-            <details class="lia-panel lia-fold">
-              <summary><span><b>읽은 세계관 자료</b><small>Persona 리랭커가 최종 채택한 근거</small></span><em>${asArray(ctx.personaLoreSignals).length}</em></summary>
-              <div class="lia-context-stack">
-                <div class="lia-preview-box"><h3>캐릭터 카드</h3><p>${htmlEscape(characterSummary || "캐릭터 설명 없음")}</p></div>
-                <div class="lia-preview-box"><h3>퍼스트 메시지</h3><p>${htmlEscape(limitText(firstMessage || "퍼스트 메시지 없음", 900))}</p></div>
-                <div class="lia-preview-box"><h3>캐릭터 로어북</h3>${renderLoreSignalList(ctx, "character_lore")}</div>
-                <div class="lia-preview-box"><h3>모듈 로어북</h3>${renderLoreSignalList(ctx, "module_lore")}</div>
-              </div>
-            </details>
-          </aside>
-
-          <main class="lia-main-column">
-            <section class="lia-panel lia-compose-card">
-              <div class="lia-panel-title">
-                <div>
-                  <span class="lia-kicker">${generationMode === GENERATION_MODE_RANDOM ? "CREATE FROM WORLD" : generationMode === GENERATION_MODE_CHARACTER ? "EXTRACT CHARACTER" : generationMode === GENERATION_MODE_CONVERSATION ? "EXTRACT FROM PLAY" : "ADAPT PERSONA"}</span>
-                  <h2>${generationMode === GENERATION_MODE_RANDOM ? "새 페르소나의 방향" : generationMode === GENERATION_MODE_CHARACTER ? "등장인물 추출 방향" : generationMode === GENERATION_MODE_CONVERSATION ? "대화 추출 방향" : "재해석할 방향"}</h2>
-                </div>
-                <span>${generationMode === GENERATION_MODE_RANDOM ? "컨셉은 선택 사항" : "추가 지시는 선택 사항"}</span>
-              </div>
-
-              ${generationMode === GENERATION_MODE_RANDOM ? `
-              <label class="lia-field lia-field-full lia-primary-input">
-                <span>페르소나 컨셉</span>
-                <textarea id="dpg-random-concept" class="lia-guidance-textarea lia-concept-textarea" spellcheck="false" placeholder="예: 몰락한 명문가 출신의 낙천적인 야간 우편배달부\n\n비워두면 AI가 세계관 안에서 역할·종족·성격·내적 모순을 적극적으로 창작합니다.">${htmlEscape(randomConcept)}</textarea>
-                <small>종족과 이름도 창작하지만 반드시 세계관의 시대·문화·종족 체계 안에서 결정합니다.</small>
-              </label>
-              <details class="lia-inline-fold"${userRewriteGuidance ? " open" : ""}>
-                <summary>추가 조건 <span>성별·금지 역할·능력 제한 등</span></summary>
-                <label class="lia-field lia-field-full"><textarea id="dpg-user-rewrite-guidance" class="lia-guidance-textarea" spellcheck="false" placeholder="예: 여성으로 생성. 귀족은 제외. 능력은 세계관 평균 이하. 나머지는 자유롭게.">${htmlEscape(userRewriteGuidance)}</textarea></label>
-              </details>` : `
-              <label class="lia-field lia-field-full lia-primary-input">
-                <span>${generationMode === GENERATION_MODE_CHARACTER ? "추출/변환 지시" : generationMode === GENERATION_MODE_CONVERSATION ? "추출 지시" : "추가 재해석 지시"}</span>
-                <textarea id="dpg-user-rewrite-guidance" class="lia-guidance-textarea lia-concept-textarea" spellcheck="false" placeholder="${generationMode === GENERATION_MODE_CHARACTER ? "예: 주요 여성 NPC를 우선 찾아줘. 선택 후에는 말투와 내적 모순을 특히 잘 보존하고 다른 NPC 설정은 섞지 마." : generationMode === GENERATION_MODE_CONVERSATION ? "예: 장기적으로 반복된 성격과 말투만 추출하고, 전투 장면의 일회성 행동은 성격으로 고정하지 마." : "예: 이 세계에서는 왕립 조사관으로 배치. 기존 성격과 외모는 보존하고 직업·배경만 자연스럽게 바꿔줘."}">${htmlEscape(userRewriteGuidance)}</textarea>
-                ${generationMode === GENERATION_MODE_CONVERSATION ? `<small>현재 채팅에서 User가 직접 쓴 ${conversationEvidence.count}개 메시지만 근거로 사용합니다.</small>` : ""}
-              </label>`}
-
-              ${generationMode === GENERATION_MODE_RANDOM ? `
-              <section class="lia-candidate-workshop">
-                <div class="lia-subhead">
-                  <div><span class="lia-kicker">IDEATION</span><h3>후보 3개 비교</h3></div>
-                  <button id="dpg-generate-candidates" class="btn-soft" type="button">${preservedRandomCandidates.length ? "후보 3개 다시 만들기" : "후보 3개 만들기"}</button>
-                </div>
-                <p class="lia-candidate-note">랜덤 신규 생성은 반드시 먼저 서로 다른 후보 3개를 만듭니다. 그중 하나를 선택해야 완성된 PersonaSpec과 프롬프트로 상세 생성할 수 있습니다.</p>
-                <div id="dpg-random-candidate-list" class="lia-candidate-grid">
-                  ${renderRandomCandidateCardsMarkup()}
-                </div>
-              </section>` : ""}
-
-              ${generationMode === GENERATION_MODE_CHARACTER ? `
-              <section class="lia-candidate-workshop lia-character-extractor">
-                <div class="lia-subhead">
-                  <div><span class="lia-kicker">ENTITY SEPARATION</span><h3>등장인물 후보</h3></div>
-                  <button id="dpg-extract-character-candidates" class="btn-soft" type="button">등장인물 찾기</button>
-                </div>
-                <p class="lia-candidate-note">단일 캐릭터 봇이면 보통 1명이 자동 선택됩니다. 거대 시뮬봇이면 캐릭터 카드·로어·최근 대화에서 인물을 분리해 보여주며, 선택한 인물과 직접 연결된 근거만 최종 Persona로 가져옵니다.</p>
-                <div id="dpg-character-candidate-list" class="lia-candidate-grid">
-                  ${preservedCharacterCandidates.length ? preservedCharacterCandidates.map((candidate, index) => `
-                    <button type="button" class="lia-candidate-card ${candidate.id === preservedSelectedCharacterCandidateId ? "active" : ""}" data-character-candidate-id="${htmlEscape(candidate.id)}">
-                      <span class="lia-candidate-number">${String(index + 1).padStart(2, "0")}</span>
-                      <strong>${htmlEscape(candidate.name)}</strong>
-                      <small>${htmlEscape(candidate.aliases.length ? `별칭: ${candidate.aliases.join(", ")}` : "별칭 없음")}</small>
-                      <b>${htmlEscape(candidate.role || "역할 미상")}</b>
-                      <p>${htmlEscape(candidate.identitySummary)}</p>
-                      <dl><dt>근거</dt><dd>${htmlEscape(candidate.evidence.slice(0, 3).join(" / ") || "요약 근거 없음")}</dd><dt>출처</dt><dd>${htmlEscape(candidate.sourceTypes.join(", ") || "source")}</dd><dt>신뢰도</dt><dd>${candidate.confidence}%</dd></dl>
-                      <em>${candidate.id === preservedSelectedCharacterCandidateId ? "선택됨" : "이 인물 선택"}</em>
-                    </button>`).join("") : `<div class="lia-candidate-empty">아직 등장인물을 분리하지 않았습니다. ‘등장인물 찾기’를 누르면 단일 캐릭터인지 다중 NPC 시뮬봇인지 구분하고 후보를 추출합니다.</div>`}
-                </div>
-              </section>` : ""}
-
-              <div class="lia-context-strip">
-                <span><b>대상</b>${htmlEscape(charName)}</span>
-                <span><b>로어</b>${asArray(ctx.personaLoreSignals).length}개 / 후보 ${asArray(ctx.loreCandidates).length}개</span>
-                <span><b>모드</b>${htmlEscape(generationModeLabel(generationMode))}</span>
-                <span><b>태그</b>${htmlEscape(limitText(compatibilityText, 90))}</span>
-              </div>
-
-              <div class="lia-generate-actions">
-                <button id="dpg-run-llm" class="btn-primary lia-generate-button" type="button"${(generationMode === GENERATION_MODE_CHARACTER && !selectedCharacterCandidate()) || (generationMode === GENERATION_MODE_RANDOM && preservedRandomCandidates.length > 0 && !selectedRandomCandidate()) ? " disabled" : ""}>
-                  <span class="lia-generate-icon">✦</span>
-                  <span><strong>${generationMode === GENERATION_MODE_RANDOM ? (!preservedRandomCandidates.length ? "후보 3개 생성" : selectedRandomCandidate() ? "선택 후보 상세 생성" : "후보를 하나 선택") : generationMode === GENERATION_MODE_CHARACTER ? (selectedCharacterCandidate() ? "선택 인물을 Persona로 변환" : "먼저 등장인물을 선택") : generationMode === GENERATION_MODE_CONVERSATION ? "대화에서 Persona 추출" : "페르소나 재해석"}</strong><small>${generationMode === GENERATION_MODE_RANDOM ? (!preservedRandomCandidates.length ? "1단계 · 서로 다른 3개 설계안을 먼저 생성" : selectedRandomCandidate() ? `${htmlEscape(selectedRandomCandidate().name)} · 선택한 설계안 확장` : "위 후보 3개 중 하나를 선택해야 상세 생성할 수 있습니다") : generationMode === GENERATION_MODE_CHARACTER ? (selectedCharacterCandidate() ? `${htmlEscape(selectedCharacterCandidate().name)} · 선택 인물 전용 근거만 사용` : "‘등장인물 찾기’ → 후보 선택이 필요합니다") : generationMode === GENERATION_MODE_CONVERSATION ? `User 작성 메시지 ${conversationEvidence.included}개 분석` : "기존 페르소나 핵심 보존"}</small></span>
-                </button>
-                <button id="dpg-copy-llm-prompt" class="btn-soft lia-icon-button" type="button" title="실제 LLM 프롬프트 복사">프롬프트 복사</button>
-              </div>
-
-              <div class="lia-status lia-generation-status" id="dpg-save-state" data-mode="${htmlEscape(llmState.mode)}">
-                <span class="lia-status-dot"></span>
-                <span id="dpg-save-state-text">${htmlEscape(llmState.result ? "생성 결과를 불러왔습니다." : "생성할 준비가 되었습니다.")}</span>
-                <b id="dpg-save-state-badge">${llmState.result ? "결과 있음" : "준비"}</b>
-              </div>
-
-              <details class="lia-inline-fold lia-prompt-fold">
-                <summary>실제 생성 프롬프트 보기 <span>디버그/검토용</span></summary>
-                <textarea id="dpg-llm-prompt" class="lia-prompt-textarea" readonly>${htmlEscape(llmPrompt)}</textarea>
-              </details>
-            </section>
-
-              <section class="lia-page-hero lia-realtime-hero"><span class="lia-section-eyebrow">REALTIME PERSONA</span><h2>대화와 함께 변화해요</h2><p>현재 채팅의 자동 갱신과 변화를 관리해요.</p></section>
-              <section class="lia-live-sync-panel lia-live-sync-standalone ${livePersonaBinding?.enabled ? "live-on" : livePersonaBinding ? "live-paused" : ""}">
-                <div class="lia-audit-head">
-                  <div><span class="lia-kicker">MANUAL PERSONA UPDATE</span><h3>Persona 수동 갱신</h3><p>버튼 한 번으로 다음 대화 5쌍만 분석하고 채팅 전용 Persona를 갱신해요. 평소에는 대화를 추적하지 않으며 원본 Persona와 기존 연결은 보존됩니다.</p></div>
-                  <strong>${manualLivePersonaAction ? "분석 중" : livePersonaBinding ? "수동" : "미설정"}</strong>
-                </div>
-                <details class="lia-pocket-fold"><summary>갱신 방식 설정<span>원본 페르소나 · 반영 정책</span></summary><div class="lia-live-config-grid">
-                  <label class="lia-field"><span>이 채팅의 원본 Persona</span><select id="dpg-live-persona-select"${Boolean(manualLivePersonaAction) || ctx.personaDatabaseReadStatus?.available === false ? " disabled" : ""}>${renderLivePersonaOptions(ctx, livePersonaBinding)}</select></label>
-                  <label class="lia-field"><span>수동 실행 시 반영 범위</span><select id="dpg-live-policy"><option value="conservative"${livePersonaBinding?.policy !== "auto" ? " selected" : ""}>보수적 · 현재 상태만 반영</option><option value="auto"${livePersonaBinding?.policy === "auto" ? " selected" : ""}>확장 · 반복 검증된 변화도 반영</option></select></label>
-                  <p class="lia-provider-hint">다른 Persona로 연결이 바뀌면 수동 분석을 중단합니다. 자동 따라가기·바인딩 변경은 하지 않습니다.</p>
-                </div>
-                </details><details class="lia-pocket-fold"><summary>연결 상태 자세히 보기<span>현재·이전 바인딩 확인</span></summary><div class="lia-live-status-grid">
-                  <div><b>Live Persona</b><span>${htmlEscape(livePersonaBinding?.livePersonaName || "아직 없음")}</span></div>
-                  <div><b>RisuAI 바인딩</b><span>${htmlEscape(liveBindingStateLabel)}</span></div>
-                  <div><b>현재 RisuAI Persona</b><span>${htmlEscape(liveBindingStatus?.effectivePersonaName || liveBindingStatus?.personaId || "채팅 전용 바인딩 없음")}</span></div>
-                  <div><b>이전 바인딩</b><span>${htmlEscape(previousBindingLabel)}</span></div>
-                  <div><b>완료 턴</b><span>${completedTurnPairs.length}턴</span></div>
-                  <div><b>이번 분석 범위</b><span>${htmlEscape(manualLivePersonaPlanLabel(liveManualPlan))}</span></div>
-                  <div><b>최근 분석</b><span>${liveLastLedger ? `TURN ${liveLastLedger.startPair}~${liveLastLedger.endPair}` : "아직 없음"}</span></div>
-                  <div><b>Binding Manager</b><span>v${PERSONA_BINDING_MANAGER_VERSION} · 수동 실행 시 확인</span></div>
-                </div>
-                </details>
-                ${livePersonaBinding?.legacyNativeMirrorWarning ? `<p class="lia-live-error">이전 LIA 버전에서 RisuAI 기본 Persona 인덱스를 직접 변경한 기록일 수 있습니다. RisuAI Persona 설정에서 원하는 기본 Persona를 한 번 직접 선택해 편집 상태를 재동기화해 주세요.</p>` : ""}${livePersonaBinding?.lastError ? `<p class="lia-live-error">${htmlEscape(livePersonaBinding.lastError)}</p>` : ""}
-                <p class="lia-provider-hint" id="dpg-live-range">${htmlEscape(manualLivePersonaPlanLabel(liveManualPlan))}</p>
-                <div class="lia-live-actions">
-                  <button id="dpg-live-enable" class="btn-primary" type="button"${manualLivePersonaAction ? " disabled" : ""}>${livePersonaBinding ? "연결·정책 저장" : "수동 갱신용 Persona 연결"}</button>
-                  <button id="dpg-live-run-now" class="btn-soft" type="button"${livePersonaBinding && !manualLivePersonaAction ? "" : " disabled"}>다음 5턴 분석·갱신</button>
-                  <button id="dpg-live-cancel" class="btn-soft" type="button"${manualLivePersonaAction && !manualLivePersonaAction.committing ? "" : " disabled"}>이번 분석 취소</button>
-                  <button id="dpg-live-restore" class="btn-danger" type="button"${livePersonaBinding && !manualLivePersonaAction ? "" : " disabled"}>이전 RisuAI 바인딩 복원</button>
-                </div>
-                ${livePersonaBinding ? `<div class="lia-live-state-columns"><div><h4>현재 반영된 상태</h4>${livePersonaBinding.liveState.length ? `<ul>${livePersonaBinding.liveState.map((item) => `<li><b>${htmlEscape(item.category)}</b><span>${htmlEscape(item.value)}</span></li>`).join("")}</ul>` : `<p>현재 상태 항목 없음</p>`}</div><div><h4>꾸준히 이어진 변화</h4>${livePersonaBinding.coreOverlay.length ? `<ul>${livePersonaBinding.coreOverlay.map((item) => `<li><b>${htmlEscape(item.field)}</b><span>${htmlEscape(item.value)}</span></li>`).join("")}</ul>` : `<p>${livePersonaBinding.policy === "auto" ? "수동 분석에서 두 번 이상 연속 확인된 고신뢰 변화만 함께 반영됩니다." : "보수적 모드에서는 현재 상태만 반영합니다."}</p>`}</div></div>` : ""}
-                <details class="lia-inline-fold lia-live-ledger-fold"><summary>대화별 갱신 기록 <span>${livePersonaBinding?.ledgers?.length || 0}개 기록</span></summary>${livePersonaBinding?.ledgers?.length ? `<div class="lia-live-ledger-list">${livePersonaBinding.ledgers.slice(-8).reverse().map((item) => `<div><b>TURN ${item.startPair}~${item.endPair}</b><span>${htmlEscape(item.summary || "분석 완료")}</span></div>`).join("")}</div>` : `<p class="lia-candidate-empty">아직 분석 기록이 없습니다.</p>`}</details>
-              </section>
-
-            <section class="lia-panel lia-result-card ${llmResult?.personaPrompt ? "has-result" : "is-empty"}" data-editor-section="${htmlEscape(preservedEditorSection)}">
-              <div class="lia-panel-title">
-                <div><span class="lia-kicker">RESULT</span><h2>페르소나 다듬기</h2></div>
-                <span>${resultName ? htmlEscape(resultName) : "아직 생성되지 않음"}</span>
-              </div>
-              ${llmResult?.personaPrompt ? `<nav class="lia-editor-tabs" aria-label="편집 섹션">
-                <button type="button" class="lia-editor-tab ${preservedEditorSection === "persona" ? "active" : ""}" data-editor-section="persona">프로필</button>
-                <button type="button" class="lia-editor-tab ${preservedEditorSection === "prompt" ? "active" : ""}" data-editor-section="prompt">본문</button>
-                <button type="button" class="lia-editor-tab ${preservedEditorSection === "evolution" ? "active" : ""}" data-editor-section="evolution">변화</button>
-                <button type="button" class="lia-editor-tab ${preservedEditorSection === "audit" ? "active" : ""}" data-editor-section="audit">검토</button>
-                <button type="button" class="lia-editor-tab ${preservedEditorSection === "history" ? "active" : ""}" data-editor-section="history">버전 기록</button>
-              </nav>` : ""}
-
-              ${!llmResult?.personaPrompt ? `
-              <div class="lia-empty-result">
-                <div class="lia-empty-orb">✦</div>
-                <strong>아직 생성 결과가 없습니다.</strong>
-                <p>만들기에서 생성하거나 보관함에서 페르소나를 열어 주세요.</p>
-              </div>` : ""}
-
-              <details class="lia-pocket-fold"><summary>이름과 번역<span>저장할 이름 · 다른 언어로 번역</span></summary><div class="lia-result-toolbar">
-                <label class="lia-field lia-persona-save-name">
-                  <span>채택할 페르소나명</span>
-                  <input id="dpg-generated-persona-name" type="text" value="${htmlEscape(preservedGeneratedPersonaNameText)}" placeholder="${isIndependentGeneration(ctx, llmResult || { generationMode }) ? `생성 이름 사용: ${htmlEscape(llmResult?.personaName || (generationMode === GENERATION_MODE_CHARACTER ? (selectedCharacterCandidate()?.name || "선택 인물") : "자동"))}` : `생성/원본 이름 사용: ${htmlEscape(llmResult?.personaName || persona.name || "User")}`}">
-                </label>
-                <div class="lia-translation-controls">
-                  <label class="lia-field">
-                    <span>번역 언어</span>
-                    <select id="dpg-translation-language">
-                      <option value="ko"${preservedTranslationLanguage === "ko" ? " selected" : ""}>한국어</option>
-                      <option value="en"${preservedTranslationLanguage === "en" ? " selected" : ""}>영어</option>
-                      <option value="ja"${preservedTranslationLanguage === "ja" ? " selected" : ""}>일본어</option>
-                      <option value="zh"${preservedTranslationLanguage === "zh" ? " selected" : ""}>중국어</option>
-                    </select>
-                  </label>
-                  <button id="dpg-translate-persona" class="btn-soft lia-translate-button" type="button">번역 생성</button>
-                </div>
-              </div>
-
-              </details>
-              ${llmResult?.personaPrompt ? `<details class="lia-edit-save-panel lia-pocket-fold"><summary>저장하기<span>현재 페르소나 · 새 페르소나 · 보관함</span></summary>
-                <div class="lia-edit-save-copy"><span class="lia-kicker">SAVE PERSONA</span><strong>편집 결과 저장</strong><small>현재 채팅 전용 페르소나에 저장하거나 새로 만들 수 있어요. RisuAI 기본 페르소나는 덮어쓰지 않아요.</small></div>
-                <div class="lia-edit-save-actions">
-                  <button id="dpg-save-current-persona" class="btn-primary" type="button"${safeCurrentSaveState.safe ? "" : " disabled"}>현재 Persona에 저장<small>${htmlEscape(safeCurrentSaveLabel)}</small></button>
-                  <button id="dpg-save-new-persona" class="btn-soft" type="button">새로운 Persona로 저장<small>기존 Persona 보존</small></button>
-                  <button id="dpg-edit-vault-save" class="btn-soft" type="button">LIA 보관함에 보관<small>PersonaSpec · Audit · Revision 포함</small></button>
-                </div>
-              </details>` : ""}
-
-              ${personaSpec ? `
-              <section class="lia-compiler-panel" data-editor-block="prompt">
-                <div class="lia-compiler-head">
-                  <div><span class="lia-kicker">PROMPT COMPILER</span><h3>Persona Prompt 밀도</h3><p>같은 PersonaSpec을 서로 다른 컨텍스트 예산으로 렌더링합니다.</p></div>
-                  <button id="dpg-compile-variants" class="btn-soft" type="button">Standard / Compact 생성</button>
-                </div>
-                <div class="lia-variant-grid">
-                  ${Object.values(PERSONA_VARIANT_PROFILES).map((profile) => {
-                    const text = personaVariants[profile.key] || "";
-                    const metrics = profile.key === "full" ? fullMetrics : profile.key === "standard" ? standardMetrics : compactMetrics;
-                    const ready = Boolean(text);
-                    return `<button class="lia-variant-card ${activePersonaProfile === profile.key ? "active" : ""} ${ready ? "ready" : "missing"}" type="button" data-persona-variant="${profile.key}"${ready ? "" : " disabled"}>
-                      <strong>${profile.label}</strong><span>${profile.description}</span><small>${ready ? `${metrics.chars.toLocaleString()}자 · 약 ${metrics.tokens.toLocaleString()}토큰` : "아직 생성되지 않음"}</small><em>${activePersonaProfile === profile.key ? "현재 원본" : ready ? "원본 창으로 전환" : "컴파일 필요"}</em>
-                    </button>`;
-                  }).join("")}
-                </div>
-              </section>` : ""}
-
-              <div class="lia-bilingual-result" data-editor-block="prompt">
-                <section class="lia-language-pane lia-original-pane">
-                  <div class="lia-language-pane-head">
-                    <div><span class="lia-kicker">ORIGINAL</span><h3>생성 결과</h3></div>
-                    <span>원본 프롬프트</span>
-                  </div>
-                  <textarea id="dpg-persona-preview" class="lia-code-output" spellcheck="false" placeholder="생성된 personaPrompt가 표시됩니다.">${htmlEscape(llmResult?.personaPrompt || "")}</textarea>
-                  <button id="dpg-adopt-original" class="btn-primary lia-adopt-button" type="button"><span>이걸로 채택</span><small>왼쪽 원본을 실제 RisuAI Persona로 저장</small></button>
-                </section>
-
-                <section class="lia-language-pane lia-translation-pane">
-                  <div class="lia-language-pane-head">
-                    <div><span class="lia-kicker">TRANSLATION</span><h3>번역 결과</h3></div>
-                    <span>${htmlEscape(TRANSLATION_LANGUAGES[preservedTranslationLanguage]?.label || "한국어")}</span>
-                  </div>
-                  <textarea id="dpg-translation-preview" class="lia-code-output" spellcheck="false" placeholder="위의 번역 언어를 고르고 ‘번역 생성’을 누르면 번역된 Persona가 표시됩니다.">${htmlEscape(preservedTranslationText)}</textarea>
-                  <button id="dpg-adopt-translation" class="btn-primary lia-adopt-button" type="button"${preservedTranslationText ? "" : " disabled"}><span>이걸로 채택</span><small>오른쪽 번역본을 실제 RisuAI Persona로 저장</small></button>
-                </section>
-              </div>
-
-              ${llmResult?.personaPrompt ? `
-              <section class="lia-preflight-panel" data-editor-block="prompt">
-                <div class="lia-preflight-head"><div><span class="lia-kicker">ADOPTION PREFLIGHT</span><h3>채택 전 확인</h3></div><strong class="${preservedPersonaAudit?.verdict === "fail" ? "danger" : preservedPersonaAudit?.verdict === "warn" ? "warn" : "good"}">${preservedPersonaAudit ? `${preservedPersonaAudit.score}/100 ${preservedPersonaAudit.verdict.toUpperCase()}` : "Audit 미실행"}</strong></div>
-                <div class="lia-preflight-grid">
-                  <div><b>저장 동작</b><span>${currentExistingPersona ? `기존 LIA Persona 갱신 · ${htmlEscape(currentExistingPersona.name || resultName)}` : `새 RisuAI Persona 생성 · ${htmlEscape(resultName || "자동 이름")}`}</span></div>
-                  <div><b>현재 Prompt</b><span>${PERSONA_VARIANT_PROFILES[activePersonaProfile].label} · <span id="dpg-preflight-original-metrics">${promptMetrics(llmResult.personaPrompt).chars.toLocaleString()}자 · 약 ${promptMetrics(llmResult.personaPrompt).tokens.toLocaleString()}토큰</span></span></div>
-                  <div><b>번역 Prompt</b><span id="dpg-preflight-translation-metrics">${preservedTranslationText ? `${promptMetrics(preservedTranslationText).chars.toLocaleString()}자 · 약 ${promptMetrics(preservedTranslationText).tokens.toLocaleString()}토큰` : "번역 없음"}</span></div>
-                  <div><b>현재 저장본 비교</b><span>${currentExistingPersona ? `${existingPromptMetrics.chars.toLocaleString()}자 → ${proposedPromptMetrics.chars.toLocaleString()}자 · ${proposedPromptMetrics.chars - existingPromptMetrics.chars >= 0 ? "+" : ""}${(proposedPromptMetrics.chars - existingPromptMetrics.chars).toLocaleString()}자` : "비교할 기존 LIA Persona 없음"}</span></div>
-                  <div><b>정본/세계관</b><span>${personaSpec ? "PersonaSpec 있음" : "PersonaSpec 없음"} · ${activeResultBlueprint ? "World Blueprint 있음" : "Blueprint 없음"}</span></div>
-                </div>
-                ${preservedPersonaAudit?.verdict === "fail" ? `<p class="lia-preflight-warning">Audit이 FAIL입니다. 채택은 차단하지 않지만 Hard Conflict를 먼저 확인하는 것을 권장합니다.</p>` : preservedPersonaAudit?.verdict === "warn" ? `<p class="lia-preflight-warning soft">Audit 경고가 있습니다. 필요하면 PersonaSpec을 부분 리롤한 뒤 채택할 수 있습니다.</p>` : ""}
-              </section>
-
-              <section class="lia-lineage-panel" data-editor-block="history">
-                <div><span class="lia-kicker">LINEAGE</span><h3>버전 / 파생 관계</h3><p>${personaLineage ? `Revision ${personaLineage.revision} · ${htmlEscape(personaLineage.lineageId)}` : "이전 버전 결과입니다. 다음 편집부터 계보를 자동 생성합니다."}</p></div>
-                <div class="lia-lineage-actions"><span>${personaLineage?.history?.length ? `최근: ${htmlEscape(personaLineage.history[personaLineage.history.length - 1]?.operation || "update")}` : "기록 없음"}</span><button id="dpg-fork-lineage" class="btn-soft" type="button">새 파생본으로 분기</button></div>
-              </section>` : ""}
-
-              ${personaSpec ? `
-              <details class="lia-inline-fold lia-spec-fold" data-editor-block="persona" open>
-                <summary>프로필 살펴보기 <span>항목을 눌러 자세히 편집</span></summary>
-                <div class="lia-spec-workshop-head">
-                  <div><b>${currentPersonaFieldLocks().length}개 항목 잠금</b><span>유지하고 싶은 항목은 잠가 주세요.</span></div>
-                  <div class="lia-spec-workshop-actions">
-                    <button id="dpg-reroll-unlocked" class="btn-soft" type="button"${currentPersonaFieldLocks().length >= PERSONA_SPEC_FIELD_KEYS.length ? " disabled" : ""}>잠기지 않은 항목 다시 만들기</button>
-                    <button class="btn-soft lia-run-persona-audit" type="button">프로필 검토</button>
-                  </div>
-                </div>
-                <div class="lia-spec-field-grid">
-                  ${PERSONA_SPEC_FIELD_DEFS.map((def) => {
-                    const locked = preservedPersonaFieldLocks.has(def.key);
-                    const value = personaSpecFieldText(personaSpec, def.key);
-                    return `<details class="lia-spec-field-card lia-pocket-fold ${locked ? "locked" : ""}"><summary><strong>${htmlEscape(def.label)}</strong><span>${htmlEscape(limitText(value || "아직 작성하지 않았어요",60))}</span></summary><div>
-                      <header><b>${htmlEscape(def.label)}</b><label><input class="lia-spec-lock" data-spec-field="${htmlEscape(def.key)}" type="checkbox"${locked ? " checked" : ""}> 잠금</label></header>
-                      <p>${htmlEscape(value || "(비어 있음)")}</p>
-                      <button class="btn-soft lia-spec-reroll" data-spec-reroll="${htmlEscape(def.key)}" type="button"${locked ? " disabled" : ""}>이 항목 다시 생성</button>
-                    </div></details>`;
-                  }).join("")}
-                </div>
-                <details class="lia-inline-fold lia-spec-json-fold">
-                  <summary>PersonaSpec JSON 보기 <span>정본 데이터</span></summary>
-                  <textarea class="lia-code-output lia-spec-json" readonly>${htmlEscape(JSON.stringify(personaSpec, null, 2))}</textarea>
-                </details>
-              </details>
-
-              <section class="lia-evolution-panel ${preservedPersonaEvolution ? "has-evolution" : ""}" data-editor-block="evolution">
-                <div class="lia-audit-head">
-                  <div><span class="lia-kicker">MANUAL EVOLUTION</span><h3>전체 대화 변화 수동 검토</h3><p>채팅 전용 Persona 수동 갱신과 별개로, 현재 채팅의 User 작성 메시지만 PersonaSpec과 비교해 초안의 장기 변화 후보를 검토합니다.</p></div>
-                  <button id="dpg-run-persona-evolution" class="btn-soft" type="button"${conversationEvidence.included ? "" : " disabled"}>대화 변화 분석</button>
-                </div>
-                <div class="lia-evolution-evidence"><b>사용 가능한 User 증거</b><span>${conversationEvidence.count}개 메시지 · 최근 ${conversationEvidence.included}개 / ${conversationEvidence.chars.toLocaleString()}자</span></div>
-                ${preservedPersonaEvolution ? `
-                  <div class="lia-evolution-summary"><strong>${htmlEscape(preservedPersonaEvolution.evidenceQuality.toUpperCase())} evidence</strong><span>${htmlEscape(preservedPersonaEvolution.summary || "변화 제안을 검토하세요.")}</span></div>
-                  <div class="lia-evolution-list">
-                    ${preservedPersonaEvolution.suggestions.map((item) => `<label class="lia-evolution-item"><input class="lia-evolution-select" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id) ? " checked" : ""}><span><b>${htmlEscape(PERSONA_SPEC_FIELD_DEFS.find((def) => def.key === item.field)?.label || item.field)} · ${item.confidence}%</b><em>${htmlEscape(item.proposedValue)}</em><small>${htmlEscape(item.rationale || item.evidence.join(" / "))}</small></span></label>`).join("")}
-                  </div>
-                  <button id="dpg-apply-persona-evolution" class="btn-primary" type="button"${preservedPersonaEvolutionSelection.size ? "" : " disabled"}>선택한 변화 PersonaSpec에 반영</button>` : `<div class="lia-candidate-empty">Persona를 만든 뒤 대화를 진행하면, 실제 플레이에서 새로 굳어진 성격·말투·관계 방식·습관 등을 근거 기반으로 제안합니다.</div>`}
-              </section>
-
-              <section class="lia-audit-panel ${preservedPersonaAudit ? `audit-${preservedPersonaAudit.verdict}` : "audit-empty"}" data-editor-block="audit">
-                <div class="lia-audit-head">
-                  <div><span class="lia-kicker">PERSONA AUDIT</span><h3>세계관·정합성 검사</h3><p>현재 PersonaSpec과 생성 당시 World Blueprint를 다시 대조합니다.</p></div>
-                  <div class="lia-audit-head-actions"><button class="btn-soft lia-run-persona-audit" type="button">${preservedPersonaAudit ? "다시 검사" : "Audit 실행"}</button><strong>${preservedPersonaAudit ? `${preservedPersonaAudit.score}/100${preservedPersonaAudit.scoreDerived ? " · 추정" : ""}` : "미검사"}</strong></div>
-                </div>
-                ${preservedPersonaAudit ? `
-                  <p class="lia-audit-summary">${htmlEscape(preservedPersonaAudit.summary)}</p>
-                  <div class="lia-audit-grid">
-                    <div><b>Hard Conflict</b>${preservedPersonaAudit.hardConflicts.length ? `<ul>${preservedPersonaAudit.hardConflicts.map((x) => `<li>${htmlEscape(x)}</li>`).join("")}</ul>` : `<span>없음</span>`}</div>
-                    <div><b>Soft Risk</b>${preservedPersonaAudit.softRisks.length ? `<ul>${preservedPersonaAudit.softRisks.map((x) => `<li>${htmlEscape(x)}</li>`).join("")}</ul>` : `<span>없음</span>`}</div>
-                    <div><b>Agency</b>${preservedPersonaAudit.agencyRisks.length ? `<ul>${preservedPersonaAudit.agencyRisks.map((x) => `<li>${htmlEscape(x)}</li>`).join("")}</ul>` : `<span>문제 없음</span>`}</div>
-                    <div><b>개선 제안</b>${preservedPersonaAudit.recommendations.length ? `<div class="lia-audit-recommendations">${preservedPersonaAudit.recommendations.map((x, index) => `<label class="lia-audit-recommendation"><input class="lia-audit-recommendation-select" type="checkbox" data-audit-recommendation-index="${index}"${preservedPersonaAuditSelection.has(String(index)) ? " checked" : ""}><span>${htmlEscape(x)}</span></label>`).join("")}</div>` : `<span>없음</span>`}</div>
-                  </div>
-                  <div class="lia-audit-workflow">
-                    <div class="lia-audit-workflow-actions">
-                      <button id="dpg-audit-build-selected-fix" class="btn-primary" type="button"${preservedPersonaAuditSelection.size ? "" : " disabled"}>선택 제안 수정안 만들기</button>
-                      <button id="dpg-audit-build-hard-fix" class="btn-soft" type="button"${preservedPersonaAudit.hardConflicts.length ? "" : " disabled"}>Hard Conflict 안전 수정안 만들기</button>
-                    </div>
-                    ${preservedPersonaAuditFixPlan ? `<div class="lia-audit-fix-plan">
-                      <div class="lia-audit-fix-plan-head"><div><b>PersonaSpec 수정 미리보기</b><span>${htmlEscape(preservedPersonaAuditFixPlan.summary || "수정안을 검토하세요.")}</span></div><em>${preservedPersonaAuditFixPlan.mode === "hard" ? "HARD SAFE" : "SELECTED"}</em></div>
-                      ${preservedPersonaAuditFixPlan.changes.length ? `<div class="lia-audit-fix-list">${preservedPersonaAuditFixPlan.changes.map((item) => { const locked = preservedPersonaFieldLocks.has(item.field); const label = PERSONA_SPEC_FIELD_DEFS.find((def) => def.key === item.field)?.label || item.field; return `<label class="lia-audit-fix-item ${locked ? "locked" : ""}"><input class="lia-audit-fix-select" type="checkbox" data-audit-fix-id="${htmlEscape(item.id)}"${preservedPersonaAuditFixSelection.has(item.id) && !locked ? " checked" : ""}${locked ? " disabled" : ""}><span><b>${htmlEscape(label)} · ${htmlEscape(item.riskType.toUpperCase())} · ${item.confidence}%${locked ? " · 잠김" : ""}</b><small>${htmlEscape(item.rationale || item.sourceFinding || "")}</small><div class="lia-audit-diff"><div><em>현재</em><pre>${htmlEscape(item.currentValue || "(비어 있음)")}</pre></div><div><em>수정</em><pre>${htmlEscape(item.proposedValue || "(비어 있음)")}</pre></div></div></span></label>`; }).join("")}</div><button id="dpg-audit-apply-fixes" class="btn-primary" type="button"${preservedPersonaAuditFixSelection.size ? "" : " disabled"}>선택 수정 PersonaSpec에 반영</button>` : `<div class="lia-candidate-empty">이 Audit 항목에서 안전하게 자동 수정할 수 있는 PersonaSpec 필드를 찾지 못했습니다.</div>`}
-                    </div>` : ""}
-                  </div>` : `<p>PersonaSpec을 생성한 뒤 Audit을 실행하면 세계관 충돌, agency 침해, 약한 설정을 따로 진단합니다.</p>`}
-              </section>` : ""}
-              ${activeResultBlueprint && llmResult?.worldBlueprint ? `
-              <details class="lia-inline-fold lia-result-blueprint-fold" data-editor-block="history">
-                <summary>이 결과가 사용한 World Blueprint <span>생성 당시 스냅샷</span></summary>
-                <textarea class="lia-code-output lia-blueprint-json" readonly>${htmlEscape(JSON.stringify(activeResultBlueprint, null, 2))}</textarea>
-              </details>` : ""}
-              <h2 id="dpg-persona-preview-title" class="lia-hidden-title">LIA Persona 결과</h2>
-
-              <details class="lia-inline-fold lia-json-fold" data-editor-block="history">
-                <summary>원본 JSON 보기 <span>보관/디버그용</span></summary>
-                <textarea id="dpg-llm-result" class="lia-code-output lia-json-output" spellcheck="false" placeholder='${generationMode !== GENERATION_MODE_CLASSIC ? '{"personaName":"...","personaSpec":{},"personaPrompt":"..."}' : '{"personaSpec":{},"personaPrompt":"..."}'}'>${htmlEscape(outputText || outputJson)}</textarea>
-              </details>
-
-              <div class="lia-danger-zone" data-editor-block="history">
-                <button id="dpg-remove" class="btn-danger lia-remove-button" type="button">현재 대상의 LIA 생성 Persona 정리</button>
-              </div>
-            </section>
-          </main>
-        </section>
-      </section>
-
-      <section id="dpg-assets-panel" class="dpg-tab-panel ${currentTab === "assets" ? "active" : ""}" data-workspace-panel="assets">
-        ${renderAssetStudioPanel(ctx)}
-      </section>
-
-      <section id="dpg-vault-panel" class="dpg-tab-panel ${currentTab === "vault" ? "active" : ""}" data-workspace-panel="vault">
-        <section class="lia-page-hero"><span class="lia-section-eyebrow">PERSONA LIBRARY</span><h2>나의 보관함</h2><p>다시 만나고 싶은 페르소나들.</p></section>
-        <section class="lia-panel lia-vault-page">
-          ${renderVaultCards(savedVault)}
-          <details class="lia-pocket-fold lia-vault-tools"><summary>선택한 페르소나 관리<span>편집 · 저장 · 삭제</span></summary><div class="lia-vault-page-toolbar">
-            <label class="lia-field"><span>선택한 결과</span><select id="dpg-result-vault">${renderVaultOptions(savedVault)}</select></label>
-            <div class="lia-vault-actions"><button id="dpg-vault-save" class="btn-soft" type="button">현재 결과 보관</button><button id="dpg-vault-load" class="btn-primary" type="button">편집에서 열기</button><button id="dpg-vault-persona" class="btn-soft" type="button">RisuAI Persona 저장</button><button id="dpg-vault-delete" class="btn-danger" type="button">삭제</button></div>
-          </div>
-          </details>
-          <button class="lia-pocket-new btn-soft" type="button" data-pocket-tab="generate">＋ 새 페르소나 만들기</button>
-        </section>
-      </section>
-
-      <section id="dpg-server-panel" class="dpg-tab-panel ${currentTab === "server" ? "active" : ""}" data-workspace-panel="server"><div id="liaMemorySuiteServerConnectionPanel"><section class="lia-panel"><strong>로컬 저장 및 이전 자료 복구…</strong></section></div></section>
-
-      <section id="dpg-settings-panel" class="dpg-tab-panel ${currentTab === "settings" ? "active" : ""}" data-workspace-panel="settings">
-        <section class="lia-page-hero"><h2>나에게 맞게, 설정</h2><p>연결과 갱신 방식을 한곳에서 관리해요.</p></section>
-        <div class="lia-pocket-settings-profile"><span class="lia-pocket-tile">L</span><div><strong>LIA Persona Studio</strong><small>나의 페르소나를 위한 작은 작업실</small></div></div>
-        <h3 class="lia-pocket-heading">연결</h3>
-        <details class="lia-pocket-fold lia-settings-fold"><summary>${pocketIcon('sparkle')}<span><strong>AI 연결</strong><small>${htmlEscape(providerSummary)}</small></span></summary><section class="lia-panel lia-provider-panel">${renderProviderSettings(savedLLMConfig)}</section></details>
-        <details class="lia-pocket-fold lia-settings-fold"><summary>${pocketIcon('image')}<span><strong>이미지 생성 AI</strong><small>기본 이미지와 표정을 만들어요</small></span></summary><section class="lia-panel lia-provider-panel">${renderIllustrationProviderSettings(ctx.savedIllustrationConfig || {})}</section></details>
-        <button class="lia-pocket-row" data-pocket-tab="server" type="button"><span class="lia-pocket-tile">${pocketIcon('vault')}</span><span><strong>LIA 로컬 저장</strong><small>이전 서버 자료 확인·가져오기</small></span>${pocketIcon('arrow')}</button>
-        <h3 class="lia-pocket-heading">대화와 갱신</h3>
-        <button class="lia-pocket-row" data-pocket-tab="realtime" type="button"><span class="lia-pocket-tile">${pocketIcon('sync')}</span><span><strong>갱신 정책과 바인딩 보호</strong><small>상태 반영 · 페르소나 변경 시 동작</small></span>${pocketIcon('arrow')}</button>
-        <h3 class="lia-pocket-heading">도움과 진단</h3>
-        <details class="lia-pocket-fold lia-settings-fold"><summary>${pocketIcon('settings')}<span><strong>작업 기록과 진단</strong><small>문제가 생겼을 때 확인해요</small></span></summary><section class="lia-panel lia-log-panel">${renderLogDiagnosticsPanel()}</section></details>
-      </section>
-        </main>
-        ${personaSidePanel}
-      </div>
-    `;
+    return app.innerHTML;
   }
 
+  function hydrateLiaMockupLiveState(ctx,app){
+    const root=app.querySelector('#live-persona-state');if(!root)return;
+    const binding=ctx?.livePersonaBinding;const personas=asArray(ctx?.db?.personas);const liveId=String(binding?.livePersonaId||ctx?.chat?.bindedPersona||'').trim();const persona=personas.find(item=>String(item?.id||'').trim()===liveId)||null;
+    if(!binding||!liveId||!persona){root.innerHTML='<div class="empty"><b>현재 채팅 소유 Live Persona가 없습니다.</b><span>채팅 바인딩을 연결해야 실제 상태가 나타납니다. 기본 Persona는 바뀌지 않습니다.</span></div>';return;}
+    const states=asArray(binding.liveState);const last=asArray(binding.ledgers).at(-1);const status=String(binding.bindingStatus||'unknown');
+    root.innerHTML=`<div class="stack stack--sm"><div class="kv"><dt>소유 Persona</dt><dd>${htmlEscape(persona.name||'Persona')} · ${htmlEscape(liveId)}</dd><dt>연결 상태</dt><dd>${htmlEscape(status)}${binding.lastError?` · ${htmlEscape(binding.lastError)}`:''}</dd><dt>처리 범위</dt><dd>${Number(binding.lastProcessedPairCount||0)}쌍 처리 · 마지막 ${htmlEscape(binding.lastProcessedAt||'기록 없음')}</dd><dt>최근 갱신</dt><dd>${last?`${htmlEscape(last.startPair)}–${htmlEscape(last.endPair)} · ${htmlEscape(last.createdAt||'')}`:'갱신 기록 없음'}</dd></div>${states.length?`<div class="list">${states.map(item=>`<div class="row"><span><b>${htmlEscape(item.category)}</b><small>${htmlEscape(item.durability)} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(item.value)}</span></span></div>`).join('')}</div>`:'<div class="empty"><b>임시 상태 기록 없음</b><span>확인된 Live Persona 상태가 현재 없습니다.</span></div>'}</div>`;
+  }
 
   function normalizeIllustrationProviderType(value) {
     const raw = String(value || "").trim().toLowerCase();
@@ -21913,37 +21347,38 @@ ${revisionText}`);
 
   function readIllustrationConfig() {
     const intValue = (id, fallback) => {
-      const raw = Number(document.getElementById(id)?.value);
+      const altId=({"dpg-img-width":"lia-image-width","dpg-img-height":"lia-image-height","dpg-img-steps":"lia-image-steps","dpg-img-timeout":"lia-image-timeout","dpg-img-seed":"lia-image-seed"})[id];
+      const raw = Number(document.getElementById(id)?.value ?? (altId?document.getElementById(altId)?.value:undefined));
       return Number.isFinite(raw) ? raw : fallback;
     };
     return normalizeIllustrationConfig({
-      enabled: document.getElementById("dpg-img-enabled")?.checked !== false,
-      provider: String(document.getElementById("dpg-img-provider")?.value || "wellspring-nai"),
-      endpoint: String(document.getElementById("dpg-img-endpoint")?.value || "").trim(),
-      apiKey: String(document.getElementById("dpg-img-key")?.value || "").trim(),
-      apiKeyHeader: String(document.getElementById("dpg-img-key-header")?.value || "authorization-bearer"),
-      model: String(document.getElementById("dpg-img-model")?.value || "").trim(),
-      checkpoint: String(document.getElementById("dpg-img-checkpoint")?.value || "").trim(),
+      enabled: document.getElementById("dpg-img-enabled")?.checked ?? document.getElementById("lia-image-enabled")?.checked ?? true,
+      provider: String(document.getElementById("dpg-img-provider")?.value || document.getElementById("lia-image-provider")?.value || "wellspring-nai"),
+      endpoint: String(document.getElementById("dpg-img-endpoint")?.value ?? document.getElementById("lia-image-endpoint")?.value ?? "").trim(),
+      apiKey: document.getElementById("lia-image-clear-api-key")?.checked===true?"":String(document.getElementById("dpg-img-key")?.value || document.getElementById("lia-image-key")?.value || normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).apiKey || "").trim(),
+      apiKeyHeader: String(document.getElementById("dpg-img-key-header")?.value || normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).apiKeyHeader || "authorization-bearer"),
+      model: String(document.getElementById("dpg-img-model")?.value ?? document.getElementById("lia-image-model")?.value ?? "").trim(),
+      checkpoint: String(document.getElementById("dpg-img-checkpoint")?.value ?? document.getElementById("lia-image-checkpoint")?.value ?? "").trim(),
       width: intValue("dpg-img-width", 832),
       height: intValue("dpg-img-height", 1216),
       steps: intValue("dpg-img-steps", 28),
-      cfg: Number(document.getElementById("dpg-img-cfg")?.value || 5.5),
-      sampler: String(document.getElementById("dpg-img-sampler")?.value || "k_euler_ancestral").trim(),
+      cfg: Number(document.getElementById("dpg-img-cfg")?.value ?? document.getElementById("lia-image-cfg")?.value ?? 5.5),
+      sampler: String(document.getElementById("dpg-img-sampler")?.value ?? document.getElementById("lia-image-sampler")?.value ?? "k_euler_ancestral").trim(),
       seed: intValue("dpg-img-seed", -1),
-      timeoutMs: intValue("dpg-img-timeout", 120000),
-      responsePath: String(document.getElementById("dpg-img-response-path")?.value || "").trim(),
-      requestTemplateJson: String(document.getElementById("dpg-img-request-template")?.value || "").trim(),
-      workflowJson: String(document.getElementById("dpg-img-workflow")?.value || "").trim(),
-      workflowBindingJson: String(document.getElementById("dpg-img-binding-profile")?.value || "").trim(),
-      headersJson: String(document.getElementById("dpg-img-headers")?.value || "").trim(),
-      stylePrompt: String(document.getElementById("dpg-img-style")?.value || "").trim(),
-      negativePrompt: String(document.getElementById("dpg-img-negative")?.value || "").trim(),
-      extraNegativePrompt: String(document.getElementById("dpg-img-extra-negative")?.value || "").trim(),
+      timeoutMs: intValue("dpg-img-timeout", Number(normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).timeoutMs||120000)),
+      responsePath: String(document.getElementById("dpg-img-response-path")?.value ?? document.getElementById("lia-image-response-path")?.value ?? "").trim(),
+      requestTemplateJson: String(document.getElementById("dpg-img-request-template")?.value ?? document.getElementById("lia-image-request")?.value ?? "").trim(),
+      workflowJson: String(document.getElementById("dpg-img-workflow")?.value ?? document.getElementById("lia-image-workflow")?.value ?? "").trim(),
+      workflowBindingJson: String(document.getElementById("dpg-img-binding-profile")?.value ?? document.getElementById("lia-image-binding-profile")?.value ?? normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).workflowBindingJson ?? "").trim(),
+      headersJson: String(document.getElementById("dpg-img-headers")?.value ?? document.getElementById("lia-image-headers")?.value ?? "").trim(),
+      stylePrompt: String(document.getElementById("dpg-img-style")?.value ?? document.getElementById("lia-image-style")?.value ?? "").trim(),
+      negativePrompt: String(document.getElementById("dpg-img-negative")?.value ?? document.getElementById("lia-image-negative")?.value ?? "").trim(),
+      extraNegativePrompt: String(document.getElementById("dpg-img-extra-negative")?.value ?? normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).extraNegativePrompt ?? "").trim(),
       transparentBackground: false,
-      runtimeAttachEnabled: document.getElementById("dpg-img-runtime-attach")?.checked !== false,
-      runtimeNeutralFallback: document.getElementById("dpg-img-runtime-neutral")?.checked !== false,
-      runtimeMinScore: Number(document.getElementById("dpg-img-runtime-score")?.value || 2.0),
-      advancedJson: String(document.getElementById("dpg-img-advanced")?.value || "").trim(),
+      runtimeAttachEnabled: document.getElementById("dpg-img-runtime-attach")?.checked ?? document.getElementById("lia-image-runtime-attach")?.checked ?? true,
+      runtimeNeutralFallback: document.getElementById("dpg-img-runtime-neutral")?.checked ?? document.getElementById("lia-image-runtime-neutral")?.checked ?? true,
+      runtimeMinScore: Number(document.getElementById("dpg-img-runtime-score")?.value ?? document.getElementById("lia-image-runtime-score")?.value ?? 2.0),
+      advancedJson: String(document.getElementById("dpg-img-advanced")?.value ?? document.getElementById("lia-image-advanced")?.value ?? "").trim(),
     });
   }
 
@@ -22035,14 +21470,14 @@ ${revisionText}`);
   }
 
   function currentVisualAssetPresetInput() {
-    const emotionsRaw = String(document.getElementById("dpg-asset-emotions")?.value || preservedVisualEmotionText || "").trim();
+    const emotionsRaw = String(document.getElementById("dpg-asset-emotions")?.value || document.getElementById("emo-list")?.value || preservedVisualEmotionText || "").trim();
     const emotions = unique(emotionsRaw.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 48);
     if (!emotions.some((item) => normalizeEmotionKey(item) === "neutral")) emotions.unshift("neutral");
     return {
       emotionText: unique(emotions, 48).join("\n"),
-      styleNotes: String(document.getElementById("dpg-asset-style-notes")?.value || preservedVisualStyleNotes || "").trim(),
-      compositionPreset: normalizeVisualCompositionPreset(document.getElementById("dpg-asset-composition-preset")?.value || preservedVisualCompositionPreset || "standard_waist_up"),
-      compositionNotes: String(document.getElementById("dpg-asset-composition-notes")?.value || preservedVisualCompositionNotes || "").trim(),
+      styleNotes: String(document.getElementById("dpg-asset-style-notes")?.value ?? document.getElementById("lia-asset-style-notes")?.value ?? preservedVisualStyleNotes ?? "").trim(),
+      compositionPreset: normalizeVisualCompositionPreset(document.getElementById("dpg-asset-composition-preset")?.value ?? document.getElementById("lia-asset-composition")?.value ?? preservedVisualCompositionPreset ?? "standard_waist_up"),
+      compositionNotes: String(document.getElementById("dpg-asset-composition-notes")?.value ?? document.getElementById("lia-asset-composition-notes")?.value ?? preservedVisualCompositionNotes ?? "").trim(),
     };
   }
 
@@ -24230,6 +23665,9 @@ ${revisionText}`);
     const baseCtx = options.ctx || ctx || await getContext();
     const freshCtx = { ...(baseCtx || {}), visualAssetStore: await readPersonaVisualAssetStore() };
     const target = resolvePersonaVisualTarget(freshCtx);
+    const expectedPersonaKey=String(options.expectedPersonaKey||'').trim();const expectedSelection=String(options.expectedTargetSelection||'').trim();
+    if(expectedPersonaKey&&target.personaKey!==expectedPersonaKey)throw new Error('이미지 작업 대상 Persona가 변경되었습니다. 생성 요청을 중단했습니다.');
+    if(expectedSelection&&currentVisualTargetSelectionValue()!==expectedSelection)throw new Error('이미지 작업 중 대상 선택이 변경되었습니다. 생성 요청을 중단했습니다.');
     if (!target.personaPrompt && !target.personaSpec?.appearance) throw new Error("현재 Persona에서 시각 정보를 찾지 못했습니다.");
     const normalizedEmotion = String(emotion || "neutral").trim() || "neutral";
     const bundle = target.bundle || freshCtx.visualAssetStore?.sets?.[target.personaKey] || null;
@@ -24264,6 +23702,7 @@ ${revisionText}`);
       promptOverride: String(options.promptOverride || "").trim(),
       negativePromptOverride: String(options.negativePromptOverride || "").trim(),
     });
+    if(expectedPersonaKey&&target.personaKey!==expectedPersonaKey||expectedSelection&&currentVisualTargetSelectionValue()!==expectedSelection)throw new Error('이미지 생성 중 작업 대상이 변경되어 결과를 저장하지 않았습니다.');
     if (normalizedEmotion === "neutral" && generated?.comfyExecution) {
       const effective = generated.comfyExecution.effectiveValues || {};
       generationSnapshot = normalizeVisualGenerationLock({
@@ -24990,7 +24429,7 @@ ${revisionText}`);
       const backupId = String(node.getAttribute("data-visual-asset-backup-id") || "").trim();
       if (!assetPath) continue;
       try {
-        const url = await readPersonaVisualAssetUrl(assetPath, mime, { personaKey, emotion, backupId });
+        const url = await readPersonaVisualAssetUrl(assetPath, mime, { personaKey, emotion });
         if (!url) throw new Error("미리보기 URL이 비어 있습니다.");
         node.innerHTML = `<img alt="emotion asset">`;
         const img = node.querySelector("img");
@@ -25009,68 +24448,9 @@ ${revisionText}`);
     await Promise.all(Array.from({ length: Math.min(4, nodes.length) }, () => hydrateNext()));
   }
 
-  function renderAssetPromptEditor(entry) {
-    const rawPositive = String(entry?.prompt || "").trim();
-    const rawNegative = String(entry?.negativePrompt || "").trim();
-    const positive = htmlEscape(rawPositive);
-    const negative = htmlEscape(rawNegative);
-    const positiveHash = htmlEscape(hashText(rawPositive));
-    const negativeHash = htmlEscape(hashText(rawNegative));
-    return `
-      <details class="lia-asset-prompt-details">
-        <summary>사용된 프롬프트 보기</summary>
-        <div class="lia-asset-prompt-editor">
-          <label class="lia-field lia-field-full"><span>Positive Prompt</span><textarea class="lia-guidance-textarea lia-asset-prompt-input" data-visual-asset-prompt-input="1" data-visual-asset-original-hash="${positiveHash}" spellcheck="false">${positive}</textarea></label>
-          <label class="lia-field lia-field-full"><span>Negative Prompt</span><textarea class="lia-guidance-textarea lia-asset-negative-input" data-visual-asset-negative-input="1" data-visual-asset-original-hash="${negativeHash}" spellcheck="false">${negative}</textarea></label>
-          <small>기본으로는 닫혀 있습니다. 수정하지 않고 재생성하면 최신 LIA 자동 프롬프트를 사용하고, 직접 수정한 항목만 사용자 프롬프트로 우선 적용합니다.</small>
-        </div>
-      </details>`;
-  }
 
-  function renderAssetGalleryCards(bundle, emotionOrder = []) {
-    const ordered = emotionOrder.length ? emotionOrder : Object.keys(bundle?.images || {});
-    const cards = [];
-    const seen = new Set();
-    ordered.forEach((emotion) => {
-      const normalizedEmotion = String(emotion || "").trim();
-      if (!normalizedEmotion || seen.has(normalizedEmotion)) return;
-      seen.add(normalizedEmotion);
-      cards.push({ emotion: normalizedEmotion, entry: bundle?.images?.[normalizedEmotion] || null, placeholder: !(bundle?.images?.[normalizedEmotion]) });
-    });
-    Object.values(bundle?.images || {}).forEach((entry) => {
-      const normalizedEmotion = String(entry?.emotion || "").trim();
-      if (!normalizedEmotion || seen.has(normalizedEmotion)) return;
-      seen.add(normalizedEmotion);
-      cards.push({ emotion: normalizedEmotion, entry, placeholder: false });
-    });
-    if (!cards.length) return `<div class="lia-empty-result"><div class="lia-empty-orb">🖼</div><strong>아직 저장된 감정 에셋이 없습니다.</strong><p>Neutral을 먼저 만들고 결과를 확인한 뒤 Generation Lock을 확정하세요.</p></div>`;
-    return cards.map((card) => {
-      if (card.placeholder || !card.entry?.assetPath) {
-        return `
-      <article class="lia-asset-card lia-asset-card-empty" data-visual-asset-card="${htmlEscape(card.emotion)}">
-        <div class="lia-asset-card-top"><strong>${htmlEscape(card.emotion)}</strong><button class="lia-asset-upload-inline" type="button" data-visual-asset-manual-upload="${htmlEscape(card.emotion)}" title="이 감정 칸에 이미지 업로드" aria-label="${htmlEscape(card.emotion)} 이미지 업로드">＋</button></div>
-        <div class="lia-asset-thumb lia-asset-thumb-empty"><span>이미지 없음</span></div>
-        <div class="lia-asset-meta"><small>이미지를 올리거나 새로 만들어 주세요.</small></div>
-        <div class="lia-asset-actions"><button class="btn-soft" type="button" data-visual-asset-manual-upload="${htmlEscape(card.emotion)}">이미지 업로드</button></div>
-      </article>`;
-      }
-      const entry = card.entry;
-      const stale = entry.emotion !== "neutral" && Boolean((bundle?.visualLockCandidate && !bundle?.visualLock?.confirmed) || (bundle?.visualLock?.lockHash && String(entry.lockHash || "") !== String(bundle.visualLock.lockHash || "")));
-      return `
-      <article class="lia-asset-card" data-visual-asset-card="${htmlEscape(entry.emotion)}">
-        <div class="lia-asset-thumb" data-visual-asset-path="${htmlEscape(entry.assetPath)}" data-visual-asset-mime="${htmlEscape(entry.mime || "image/png")}" data-visual-asset-persona-key="${htmlEscape(bundle?.personaKey || "")}" data-visual-asset-emotion="${htmlEscape(entry.emotion)}" data-visual-asset-backup-id="${htmlEscape(entry.backupId || "")}"><span>불러오는 중...</span></div>
-        <div class="lia-asset-meta">
-          <div class="lia-asset-meta-top"><strong>${htmlEscape(entry.emotion)}</strong>${entry.emotion === "neutral" ? `<span class="lia-asset-badge">Neutral Master</span>` : ``}${stale ? `<span class="lia-asset-badge lia-asset-stale">구형 Lock</span>` : ``}</div>
-          <small>${htmlEscape(entry.width && entry.height ? `${entry.width}×${entry.height}` : "")}${entry.seed >= 0 ? `${entry.width && entry.height ? " · " : ""}seed ${entry.seed}` : ""}</small>
-        </div>
-        ${renderAssetPromptEditor(entry)}
-        <div class="lia-asset-actions lia-asset-actions-two">
-          <button class="btn-soft" type="button" data-visual-asset-regenerate="${htmlEscape(entry.emotion)}">재생성</button>
-          <button class="btn-danger" type="button" data-visual-asset-delete="${htmlEscape(entry.emotion)}">삭제</button>
-        </div>
-      </article>`;
-    }).join("");
-  }
+
+
 
 
   function normalizeRisuAdditionalAssets(raw) {
@@ -25466,166 +24846,22 @@ ${revisionText}`);
   }
 
   // Image provider architecture and provider-specific request handling follow the implementation pattern used by Eros Tower, reused with the author's permission for LIA Persona Asset Studio. LIA's default emotion-asset path intentionally uses prompt-only generation locks and does not require reference-image/custom identity nodes.
-  function renderIllustrationProviderSettings(savedConfig = {}) {
-    const config = normalizeIllustrationConfig(savedConfig || {});
-    const provider = normalizeIllustrationProviderType(config.provider);
-    return `
-      <div class="lia-panel-title"><div><span class="lia-kicker">ILLUSTRATION CONNECTION</span><h2>감정 에셋용 삽화 연결</h2></div><span>Persona Asset Studio</span></div>
-      <p class="lia-provider-attribution">이미지 프로바이더는 에로스 타워(Eros Tower)의 구현을 따라 구현했습니다. LIA 감정 에셋의 표준 생성은 Positive/Negative Prompt + Visual Generation Lock만 사용하며 별도 Reference/IPAdapter/FaceID 노드를 요구하지 않습니다.</p>
-      <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-        <label class="lia-illustration-toggle lia-field-full">
-          <span class="lia-illustration-toggle-copy"><strong>삽화 기능 사용</strong><small>LIA 에셋 탭에서 감정 에셋을 생성합니다.</small></span>
-          <span class="lia-switch"><input id="dpg-img-enabled" type="checkbox"${config.enabled ? " checked" : ""}><span class="lia-switch-track" aria-hidden="true"><span class="lia-switch-knob"></span></span></span>
-        </label>
-        <label class="lia-field"><span>Provider</span><select id="dpg-img-provider">
-          <option value="wellspring-nai"${provider === "wellspring-nai" ? " selected" : ""}>Wellspring / 챈섭</option>
-          <option value="novelai"${provider === "novelai" ? " selected" : ""}>NovelAI 공식/호환</option>
-          <option value="comfyui-local"${provider === "comfyui-local" ? " selected" : ""}>ComfyUI 로컬</option>
-          <option value="custom-json"${provider === "custom-json" ? " selected" : ""}>커스텀 JSON</option>
-        </select></label>
-        <label class="lia-field"><span>Model / Preset</span><input id="dpg-img-model" type="text" value="${htmlEscape(config.model)}" placeholder="nai-diffusion-4-5-full"></label>
-        <label class="lia-field lia-field-full"><span>Endpoint URL</span><input id="dpg-img-endpoint" type="text" value="${htmlEscape(config.endpoint)}" placeholder="${htmlEscape(defaultIllustrationEndpointForProvider(provider) || "endpoint")}"></label>
-        <label class="lia-field lia-field-full"><span>API Key</span><input id="dpg-img-key" type="password" value="${htmlEscape(config.apiKey)}" placeholder="API Key"></label>
-        <label class="lia-field"><span>Key Header</span><select id="dpg-img-key-header">${[["authorization-bearer","Bearer"],["authorization-raw","Authorization raw"],["x-api-key","x-api-key"],["none","없음"]].map(([key,label]) => `<option value="${key}"${config.apiKeyHeader === key ? " selected" : ""}>${label}</option>`).join("")}</select></label>
-        <label class="lia-field"><span>Width</span><input id="dpg-img-width" type="number" min="256" step="64" value="${htmlEscape(config.width)}"></label>
-        <label class="lia-field"><span>Height</span><input id="dpg-img-height" type="number" min="256" step="64" value="${htmlEscape(config.height)}"></label>
-        <label class="lia-field"><span>Steps</span><input id="dpg-img-steps" type="number" min="1" max="150" value="${htmlEscape(config.steps)}"></label>
-        <label class="lia-field"><span>CFG</span><input id="dpg-img-cfg" type="number" min="1" max="30" step="0.1" value="${htmlEscape(config.cfg)}"></label>
-        <label class="lia-field"><span>Sampler</span><input id="dpg-img-sampler" type="text" value="${htmlEscape(config.sampler)}"></label>
-        <label class="lia-field"><span>Seed</span><input id="dpg-img-seed" type="number" step="1" value="${htmlEscape(config.seed)}"></label>
-        <label class="lia-field"><span>Timeout (ms)</span><input id="dpg-img-timeout" type="number" min="5000" step="1000" value="${htmlEscape(config.timeoutMs)}"></label>
-        <label class="lia-field"><span>Checkpoint</span><input id="dpg-img-checkpoint" type="text" value="${htmlEscape(config.checkpoint)}" placeholder="선택 사항"></label>
-        <label class="lia-field lia-field-full"><span>Style Prompt</span><textarea id="dpg-img-style" class="lia-provider-json" spellcheck="false">${htmlEscape(config.stylePrompt)}</textarea></label>
-        <label class="lia-field lia-field-full"><span>Negative Prompt</span><textarea id="dpg-img-negative" class="lia-provider-json" spellcheck="false">${htmlEscape(config.negativePrompt)}</textarea></label>
-        <label class="lia-field lia-field-full"><span>Extra Negative</span><textarea id="dpg-img-extra-negative" class="lia-provider-json" spellcheck="false">${htmlEscape(config.extraNegativePrompt)}</textarea></label>
-        <div class="lia-illustration-rule lia-field-full">
-          <span class="lia-illustration-rule-icon" aria-hidden="true">◻</span>
-          <span><strong>배경은 순백색으로 고정</strong><small>Positive에는 pure/plain white background를 강제하고, Negative에는 scenery·colored/gradient/patterned background를 자동 추가합니다.</small></span>
-        </div>
-        <div class="lia-illustration-runtime lia-field-full">
-          <div class="lia-illustration-runtime-head">
-            <span><strong>RP 응답 자동 첨부</strong><small>사전에 만든 감정 에셋만 선택하며 RP 중에는 이미지를 생성하지 않습니다.</small></span>
-          </div>
-          <label class="lia-illustration-toggle lia-illustration-toggle-compact">
-            <span class="lia-illustration-toggle-copy"><strong>감정 에셋 자동 첨부</strong><small>후처리 훅에서 응답의 감정을 판정해 기존 에셋을 첨부합니다.</small></span>
-            <span class="lia-switch"><input id="dpg-img-runtime-attach" type="checkbox"${config.runtimeAttachEnabled ? " checked" : ""}><span class="lia-switch-track" aria-hidden="true"><span class="lia-switch-knob"></span></span></span>
-          </label>
-          <label class="lia-illustration-toggle lia-illustration-toggle-compact">
-            <span class="lia-illustration-toggle-copy"><strong>애매하면 Neutral 사용</strong><small>OFF면 감정 근거가 부족한 응답에는 이미지를 첨부하지 않습니다.</small></span>
-            <span class="lia-switch"><input id="dpg-img-runtime-neutral" type="checkbox"${config.runtimeNeutralFallback ? " checked" : ""}><span class="lia-switch-track" aria-hidden="true"><span class="lia-switch-knob"></span></span></span>
-          </label>
-          <label class="lia-field lia-illustration-score"><span>감정 판정 최소 점수</span><input id="dpg-img-runtime-score" type="number" min="0.5" max="20" step="0.5" value="${htmlEscape(config.runtimeMinScore)}"><small>높을수록 감정 에셋을 더 보수적으로 선택합니다.</small></label>
-        </div>
-      </div>
-      <details class="lia-provider-advanced"${provider === "custom-json" || provider === "comfyui-local" ? " open" : ""}>
-        <summary>Provider 고급 설정</summary>
-        <div class="lia-field-grid lia-settings-grid lia-provider-advanced-grid">
-          <label class="lia-field lia-field-full"><span>Extra Headers JSON</span><textarea id="dpg-img-headers" class="lia-provider-json" spellcheck="false" placeholder='{"X-Custom":"value"}'>${htmlEscape(config.headersJson)}</textarea></label>
-          <label class="lia-field lia-field-full"><span>Response Path (JSON 응답일 때)</span><input id="dpg-img-response-path" type="text" value="${htmlEscape(config.responsePath)}" placeholder="data.0.image"></label>
-          <label class="lia-field lia-field-full"><span>Custom Request Template JSON</span><textarea id="dpg-img-request-template" class="lia-provider-json" spellcheck="false" placeholder='{"prompt":"{{prompt}}","negative_prompt":"{{negative}}"}'>${htmlEscape(config.requestTemplateJson)}</textarea></label>
-          <label class="lia-field lia-field-full"><span>ComfyUI Workflow JSON</span><textarea id="dpg-img-workflow" class="lia-provider-json" spellcheck="false" placeholder='{"prompt":{...},"client_id":"lia"}'>${htmlEscape(config.workflowJson)}</textarea></label>
-          <div class="lia-field lia-field-full lia-comfy-binding-tools"><span>ComfyUI Workflow Binding</span><div class="lia-asset-add-actions"><button id="dpg-img-analyze-workflow" class="btn-soft" type="button">워크플로우 자동 분석</button><button id="dpg-img-test-workflow" class="btn-soft" type="button">연결·노드 검사</button></div><small>특정 커스텀 노드 이름에 의존하지 않고 최종 Output에서 그래프를 역추적합니다. 비워두면 저장/생성 시 자동 분석합니다.</small></div>
-          <label class="lia-field lia-field-full"><span>Binding Profile JSON</span><textarea id="dpg-img-binding-profile" class="lia-provider-json lia-comfy-binding-json" spellcheck="false" placeholder='자동 분석 시 생성됩니다.'>${htmlEscape(config.workflowBindingJson)}</textarea></label>
-          <label class="lia-field lia-field-full"><span>Advanced JSON</span><textarea id="dpg-img-advanced" class="lia-provider-json" spellcheck="false" placeholder='{"sm":true}'>${htmlEscape(config.advancedJson)}</textarea></label>
-        </div>
-      </details>
-      <div class="lia-actions lia-settings-actions lia-provider-actions">
-        <button id="dpg-save-img-config" class="btn-primary" type="button">삽화 설정 저장</button>
-      </div>`;
-  }
-
-  function renderAssetStudioPanel(ctx = {}) {
-    const target = resolvePersonaVisualTarget(ctx);
-    const targetOptions = listSelectablePersonaVisualTargets(ctx);
-    const selectedTargetValue = currentVisualTargetSelectionValue();
-    const bundle = target.bundle || normalizeVisualAssetSet({}, target.personaKey);
-    const emotions = (preservedVisualEmotionText || "").trim() || "neutral\ngentle smile\nhappy\nangry\nsad\nembarrassed\njealous\nsurprised\nworried\ndetermined\naffectionate\nexhausted";
-    const gallery = renderAssetGalleryCards(bundle, unique(emotions.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 48));
-    const canAddCustomEmotion = Boolean(bundle.images?.neutral && bundle.visualLock?.confirmed);
-    const assetPresetStore = normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore || {});
-    const assetPresetOptions = assetPresetStore.items.map((preset) => `<option value="${htmlEscape(preset.id)}"${preset.id === preservedVisualAssetPresetId ? " selected" : ""}>${htmlEscape(preset.name)}</option>`).join("");
-    return `
-      <section class="lia-page-hero lia-asset-hero"><span class="lia-section-eyebrow">PERSONA ASSET STUDIO</span><h2>이미지와 감정 에셋</h2><p>기본 모습을 정하고, 다양한 표정을 더해요.</p></section>
-      <section class="lia-asset-page-grid">
-        <details class="lia-panel lia-asset-config-panel lia-pocket-fold"><summary>이미지 만들기 설정<span>대상 · 스타일 · 구도</span></summary>
-          <div class="lia-panel-title"><div><span class="lia-kicker">TARGET</span><h2>${htmlEscape(target.personaName)}</h2></div><span>${htmlEscape(target.displaySource)}</span></div>
-          <label class="lia-field lia-field-full"><span>에셋 타겟 Persona</span><select id="dpg-asset-target-persona">${targetOptions.map((item) => `<option value="${htmlEscape(item.value)}"${item.value === selectedTargetValue ? " selected" : ""}>${htmlEscape(item.label)}</option>`).join("")}</select><small>기본값은 현재 Source Persona 자동입니다. 여기서 다른 Persona를 직접 골라 해당 Persona 전용 감정 에셋을 만들 수 있습니다.</small></label>
-                      <div class="lia-context-strip"><span><b>대상 ID</b>${htmlEscape(target.personaId ? `persona:${target.personaId}` : target.personaKey)}</span><span><b>Prefix</b>${htmlEscape(target.assetPrefix)}</span></div>
-          <div class="lia-context-stack">
-            <div class="lia-preview-box"><h3>대상 요약</h3><p>${htmlEscape(target.identitySummary || target.personaSpec?.appearance || target.facts?.sourceDigest || "시각 요약을 아직 찾지 못했습니다.")}</p></div>
-            <div class="lia-preview-box"><h3>저장 상태</h3><p>${htmlEscape(Object.keys(bundle.images || {}).length ? `${Object.keys(bundle.images || {}).length}개 저장됨 · Neutral Master ${bundle.images?.neutral ? "있음" : "없음"}` : "저장된 감정 에셋 없음")}</p></div>
-            <div class="lia-preview-box"><h3>Visual Generation Lock</h3><p>${htmlEscape(bundle.visualLock?.confirmed ? `확정됨 · seed ${bundle.visualLock.seed} · ${bundle.visualLock.width}×${bundle.visualLock.height} · ${bundle.visualLock.sampler} · ${visualCompositionPresetDefinition(bundle.visualLock.compositionPreset).label}` : bundle.visualLockCandidate ? `Neutral 생성 완료 · 기준 확정 필요 · ${visualCompositionPresetDefinition(bundle.visualLockCandidate?.compositionPreset).label}` : "미생성 · 먼저 Neutral을 만드세요")}</p></div>
-            <div class="lia-preview-box"><h3>배경 규칙</h3><p>순백색 고정 · Positive/Negative Prompt 양쪽에서 강제 · 투명/장면 배경 사용 안 함</p></div>
-          </div>
-          <div class="lia-asset-preset-box lia-field-full">
-            <div class="lia-asset-preset-head"><div><span class="lia-kicker">ASSET PRESET</span><strong>감정 에셋 프리셋</strong></div><small>Persona 고유 이미지와 Visual Lock은 저장하지 않습니다.</small></div>
-            <label class="lia-field lia-field-full"><span>저장된 프리셋</span><select id="dpg-asset-preset-select"><option value="">프리셋 선택</option>${assetPresetOptions}</select></label>
-            <div class="lia-asset-preset-actions">
-              <button id="dpg-asset-preset-load" class="btn-soft" type="button"${preservedVisualAssetPresetId ? "" : " disabled"}>불러오기</button>
-              <button id="dpg-asset-preset-delete" class="btn-danger" type="button"${preservedVisualAssetPresetId ? "" : " disabled"}>삭제</button>
-            </div>
-            <label class="lia-field lia-field-full"><span>현재 구성을 프리셋으로 저장</span><input id="dpg-asset-preset-name" type="text" maxlength="64" autocomplete="off" placeholder="예: 기본 12감정, 상반신 RP용"></label>
-            <button id="dpg-asset-preset-save" class="btn-primary" type="button">프리셋 저장</button>
-          </div>
-          <label class="lia-field lia-field-full"><span>감정 목록</span><textarea id="dpg-asset-emotions" class="lia-guidance-textarea" spellcheck="false" placeholder="neutral\nhappy\nangry">${htmlEscape(emotions)}</textarea><small>Neutral은 Visual Master입니다. 나머지는 확정된 생성 조건을 그대로 쓰고 표정만 바꿉니다.</small></label>
-          <label class="lia-field lia-field-full"><span>추가 스타일 메모</span><textarea id="dpg-asset-style-notes" class="lia-guidance-textarea" spellcheck="false" placeholder="예: 셀 애니풍, 선이 또렷하게">${htmlEscape(preservedVisualStyleNotes || "")}</textarea><small>Neutral 생성 시 Generation Lock 후보에 포함됩니다. 기준 확정 뒤에는 감정별로 변경되지 않습니다.</small></label>
-          <label class="lia-field"><span>구도 프리셋</span><select id="dpg-asset-composition-preset">${["standard_waist_up","bust_close","half_body"].map((key) => { const def = visualCompositionPresetDefinition(key); return `<option value="${key}"${normalizeVisualCompositionPreset(preservedVisualCompositionPreset || "standard_waist_up") === key ? " selected" : ""}>${htmlEscape(def.label)}</option>`; }).join("")}</select><small>Neutral 기준 확정 시 이 구도가 Visual Generation Lock에 저장되고 모든 감정 에셋에 동일하게 적용됩니다.</small></label>
-          <label class="lia-field lia-field-full"><span>구도 세부 메모</span><textarea id="dpg-asset-composition-notes" class="lia-guidance-textarea" spellcheck="false" placeholder="예: 머리 위 여백은 좁게, 양 어깨가 보이게, 손은 프레임 밖으로">${htmlEscape(preservedVisualCompositionNotes || "")}</textarea><small>필요할 때만 씁니다. Neutral 생성 시 구도 Lock 후보에 포함됩니다.</small></label>
-          <div class="lia-asset-lock-flow">
-            <div class="lia-asset-step ${bundle.images?.neutral ? "done" : "active"}"><b>1</b><span>Neutral 생성</span></div>
-            <div class="lia-asset-step ${bundle.visualLock?.confirmed ? "done" : bundle.visualLockCandidate ? "active" : ""}"><b>2</b><span>기준 확정</span></div>
-            <div class="lia-asset-step ${bundle.visualLock?.confirmed ? "active" : ""}"><b>3</b><span>감정 묶음</span></div>
-          </div>
-          <div class="lia-asset-batch-actions">
-            <button id="dpg-asset-generate-neutral" class="btn-primary" type="button">${bundle.images?.neutral ? "Neutral 다시 만들기" : "Neutral 기준 에셋 만들기"}</button>
-            <button id="dpg-asset-confirm-lock" class="btn-soft" type="button"${bundle.visualLockCandidate ? "" : " disabled"}>Neutral 기준 확정</button>
-            <button id="dpg-asset-generate-batch" class="btn-soft" type="button"${bundle.visualLock?.confirmed ? "" : " disabled"}>감정 묶음 생성</button>
-            <button id="dpg-asset-discard-bundle" class="btn-danger" type="button"${Object.keys(bundle.images || {}).length || bundle.visualLock || bundle.visualLockCandidate ? "" : " disabled"}>감정 묶음 전체 폐기</button>
-          </div>
-        </details>
-        <main class="lia-panel lia-asset-gallery-panel">
-          <div class="lia-panel-title"><div><span class="lia-kicker">GALLERY</span><h2>저장된 감정 에셋</h2></div><span>${htmlEscape(Object.keys(bundle.images || {}).length.toString())}</span></div>
-          <div class="lia-asset-gallery">${gallery}</div>
-          <div class="lia-asset-add-zone">
-            <button id="dpg-asset-add-toggle" class="lia-asset-add-button btn-soft" type="button"${canAddCustomEmotion ? "" : " disabled"}>＋ 감정 에셋 추가</button>
-            <div id="dpg-asset-add-form" class="lia-asset-add-form" hidden>
-              <label class="lia-field lia-field-full"><span>추가할 감정</span><input id="dpg-asset-add-emotion" type="text" maxlength="64" autocomplete="off" placeholder="예: smug, sleepy, delighted, 긴장한 미소"></label>
-              <div class="lia-asset-add-actions">
-                <button id="dpg-asset-add-create" class="btn-primary" type="button">이 감정 에셋 생성</button>
-                <button id="dpg-asset-add-cancel" class="btn-soft" type="button">취소</button>
-              </div>
-              <small>확정된 Neutral Master의 동일성·seed·구도·sampling·스타일 조건을 그대로 사용하고 입력한 감정 표현만 추가합니다.</small>
-            </div>
-            ${canAddCustomEmotion ? "" : `<small class="lia-asset-add-disabled-note">Neutral 에셋을 생성하고 ‘Neutral 기준 확정’을 완료해야 새 감정 에셋을 추가할 수 있습니다.</small>`}
-          </div>
-          <div class="lia-asset-add-zone lia-asset-transfer-zone">
-            <div class="lia-asset-add-actions">
-              <button id="dpg-asset-export-zip" class="btn-soft" type="button"${Object.keys(bundle.images || {}).length ? "" : " disabled"}>ZIP 내보내기</button>
-              <button id="dpg-asset-import-open" class="btn-soft" type="button">ZIP 붙여넣기/복원</button>
-            </div>
-            <input id="dpg-asset-import-zip" class="lia-visually-hidden" type="file" accept=".zip,application/zip">
-            <input id="dpg-asset-manual-upload" class="lia-visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif">
-            <small>내보내기는 현재 선택된 Persona의 감정 에셋 묶음 전체를 ZIP으로 저장합니다. ZIP 복원은 현재 선택된 Persona 타겟에 감정 에셋과 Visual Generation Lock을 복원합니다.</small>
-          </div>
-        </main>
-      </section>`;
-  }
 
   function syncIllustrationProviderUi() {
-    const provider = normalizeIllustrationProviderType(document.getElementById("dpg-img-provider")?.value || "wellspring-nai");
-    const workflow = document.getElementById("dpg-img-workflow")?.closest("label");
-    const bindingProfile = document.getElementById("dpg-img-binding-profile")?.closest("label");
+    const provider = normalizeIllustrationProviderType(document.getElementById("dpg-img-provider")?.value || document.getElementById("lia-image-provider")?.value || "wellspring-nai");
+    const workflow = document.getElementById("dpg-img-workflow")?.closest("label") || document.getElementById("lia-image-workflow")?.closest(".field");
+    const bindingProfile = document.getElementById("dpg-img-binding-profile")?.closest("label") || document.getElementById("lia-image-binding-profile")?.closest(".field");
     const bindingTools = document.querySelector(".lia-comfy-binding-tools");
-    const request = document.getElementById("dpg-img-request-template")?.closest("label");
-    const responsePath = document.getElementById("dpg-img-response-path")?.closest("label");
+    const request = document.getElementById("dpg-img-request-template")?.closest("label") || document.getElementById("lia-image-request")?.closest(".field");
+    const responsePath = document.getElementById("dpg-img-response-path")?.closest("label") || document.getElementById("lia-image-response-path")?.closest(".field");
     if (workflow) workflow.style.display = provider === "comfyui-local" ? "grid" : "none";
     if (bindingProfile) bindingProfile.style.display = provider === "comfyui-local" ? "grid" : "none";
     if (bindingTools) bindingTools.style.display = provider === "comfyui-local" ? "grid" : "none";
     if (request) request.style.display = provider === "custom-json" ? "grid" : "none";
     if (responsePath) responsePath.style.display = provider === "custom-json" ? "grid" : "none";
-    const endpoint = document.getElementById("dpg-img-endpoint");
+    const endpoint = document.getElementById("dpg-img-endpoint") || document.getElementById("lia-image-endpoint");
     if (endpoint && !String(endpoint.value || "").trim()) endpoint.placeholder = defaultIllustrationEndpointForProvider(provider) || "endpoint";
-    const masterEnabled = document.getElementById("dpg-img-enabled")?.checked !== false;
+    const masterEnabled = (document.getElementById("dpg-img-enabled")?.checked ?? document.getElementById("lia-image-enabled")?.checked) !== false;
     for (const id of ["dpg-img-runtime-attach", "dpg-img-runtime-neutral", "dpg-img-runtime-score"]) {
       const el = document.getElementById(id);
       if (el) el.disabled = !masterEnabled;
@@ -25633,436 +24869,6 @@ ${revisionText}`);
     document.querySelectorAll(".lia-illustration-runtime .lia-illustration-toggle, .lia-illustration-runtime .lia-illustration-score").forEach((el) => {
       el.classList.toggle("is-disabled", !masterEnabled);
     });
-  }
-
-  async function bindVisualAssetStudioUi(ctx) {
-    if (activeWorkspaceTab === "assets") void hydrateVisualAssetThumbnails();
-    document.getElementById("dpg-img-provider")?.addEventListener("change", syncIllustrationProviderUi);
-    document.getElementById("dpg-img-enabled")?.addEventListener("change", syncIllustrationProviderUi);
-    document.getElementById("dpg-asset-target-persona")?.addEventListener("change", async (event) => {
-      preservedVisualTargetPersonaId = String(event?.target?.value || "__auto__").trim() || "__auto__";
-      activeWorkspaceTab = "assets";
-      await refreshPreview({ skipCapture: true });
-      const freshCtx = await getContext().catch(() => ctx);
-      const freshTarget = resolvePersonaVisualTarget(freshCtx);
-      setStatus(`감정 에셋 타겟을 '${freshTarget.personaName}'(${freshTarget.displaySource})로 변경했습니다.`, "ok");
-    });
-    const assetPresetSelect = document.getElementById("dpg-asset-preset-select");
-    const assetPresetLoad = document.getElementById("dpg-asset-preset-load");
-    const assetPresetDelete = document.getElementById("dpg-asset-preset-delete");
-    const assetPresetName = document.getElementById("dpg-asset-preset-name");
-    const syncAssetPresetButtons = () => {
-      const id = String(assetPresetSelect?.value || "").trim();
-      preservedVisualAssetPresetId = id;
-      if (assetPresetLoad) assetPresetLoad.disabled = !id;
-      if (assetPresetDelete) assetPresetDelete.disabled = !id;
-    };
-    assetPresetSelect?.addEventListener("change", syncAssetPresetButtons);
-    assetPresetLoad?.addEventListener("click", async () => {
-      const id = String(assetPresetSelect?.value || "").trim();
-      const preset = normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore || {}).items.find((item) => item.id === id);
-      if (!preset) { setStatus("불러올 감정 에셋 프리셋을 선택해 주세요.", "error"); return; }
-      try {
-        const applied = applyVisualAssetPreset(preset);
-        activeWorkspaceTab = "assets";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`감정 에셋 프리셋 '${applied.name}'을 불러왔습니다. Neutral 이미지와 Visual Lock은 변경하지 않았습니다.`, "ok");
-      } catch (error) { setStatus(`감정 에셋 프리셋 불러오기 실패: ${error?.message || error}`, "error"); }
-    });
-    assetPresetDelete?.addEventListener("click", async () => {
-      const id = String(assetPresetSelect?.value || "").trim();
-      const preset = normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore || {}).items.find((item) => item.id === id);
-      if (!preset) { setStatus("삭제할 감정 에셋 프리셋을 선택해 주세요.", "error"); return; }
-      const ok = typeof globalThis.confirm === "function" ? globalThis.confirm(`감정 에셋 프리셋 '${preset.name}'을 삭제할까요?`) : true;
-      if (!ok) return;
-      try {
-        await deleteVisualAssetPreset(id);
-        activeWorkspaceTab = "assets";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`감정 에셋 프리셋 '${preset.name}'을 삭제했습니다.`, "ok");
-      } catch (error) { setStatus(`감정 에셋 프리셋 삭제 실패: ${error?.message || error}`, "error"); }
-    });
-    const saveCurrentAssetPreset = async () => {
-      const name = String(assetPresetName?.value || "").trim();
-      if (!name) { setStatus("저장할 감정 에셋 프리셋 이름을 입력해 주세요.", "error"); assetPresetName?.focus?.(); return; }
-      const existing = normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore || {}).items.find((item) => String(item?.name || "").trim().toLocaleLowerCase("ko") === name.toLocaleLowerCase("ko"));
-      if (existing && typeof globalThis.confirm === "function" && !globalThis.confirm(`'${existing.name}' 프리셋이 이미 있습니다. 현재 설정으로 덮어쓸까요?`)) return;
-      const button = document.getElementById("dpg-asset-preset-save");
-      if (button) button.disabled = true;
-      try {
-        const result = await saveVisualAssetPreset(name);
-        if (assetPresetName) assetPresetName.value = "";
-        activeWorkspaceTab = "assets";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`감정 에셋 프리셋 '${result.preset.name}'을 ${result.updated ? "갱신" : "저장"}했습니다.`, "ok");
-      } catch (error) { setStatus(`감정 에셋 프리셋 저장 실패: ${error?.message || error}`, "error"); }
-      finally { if (button && document.body?.contains(button)) button.disabled = false; }
-    };
-    document.getElementById("dpg-asset-preset-save")?.addEventListener("click", saveCurrentAssetPreset);
-    assetPresetName?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      void saveCurrentAssetPreset();
-    });
-
-    document.getElementById("dpg-asset-emotions")?.addEventListener("input", (event) => { preservedVisualEmotionText = String(event?.target?.value || ""); });
-    document.getElementById("dpg-asset-style-notes")?.addEventListener("input", (event) => { preservedVisualStyleNotes = String(event?.target?.value || ""); });
-    document.getElementById("dpg-asset-composition-preset")?.addEventListener("change", (event) => { preservedVisualCompositionPreset = normalizeVisualCompositionPreset(String(event?.target?.value || "standard_waist_up")); });
-    document.getElementById("dpg-asset-composition-notes")?.addEventListener("input", (event) => { preservedVisualCompositionNotes = String(event?.target?.value || ""); });
-    const analyzeCurrentComfyWorkflow = () => {
-      const config = readIllustrationConfig();
-      if (config.provider !== "comfyui-local") throw new Error("Provider를 ComfyUI 로컬로 선택해 주세요.");
-      const resolved = resolveComfyWorkflowSource(config);
-      if (!looksLikeComfyWorkflowGraph(resolved.workflow)) throw new Error("ComfyUI API Workflow JSON을 먼저 입력해 주세요.");
-      const profile = analyzeComfyWorkflowBinding(resolved.workflow);
-      const profileText = JSON.stringify(profile, null, 2);
-      const area = document.getElementById("dpg-img-binding-profile");
-      if (area) area.value = profileText;
-      return profile;
-    };
-    document.getElementById("dpg-img-analyze-workflow")?.addEventListener("click", () => {
-      try {
-        const profile = analyzeCurrentComfyWorkflow();
-        const controlled = profile.bindings.filter((item) => item.controlled !== false).map((item) => item.slot).join(", ");
-        setStatus(`ComfyUI Workflow 자동 분석 완료 · Output ${profile.output.nodeId} · Sampler ${profile.sampler.nodeId} · 바인딩 ${controlled || "없음"}${profile.analysis?.warnings?.length ? ` · 경고 ${profile.analysis.warnings.length}개` : ""}`, profile.analysis?.warnings?.length ? "info" : "ok");
-      } catch (error) { setStatus(`ComfyUI Workflow 분석 실패: ${error?.message || error}`, "error"); }
-    });
-    document.getElementById("dpg-img-test-workflow")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-img-test-workflow");
-      if (button) button.disabled = true;
-      try {
-        const profile = analyzeCurrentComfyWorkflow();
-        const config = readIllustrationConfig();
-        const base = comfyBaseUrl(config.endpoint);
-        const [statsRes, infoRes] = await Promise.all([
-          fetchWithTimeout(`${base}/system_stats`, { method: "GET", headers: { Accept: "application/json" } }, Math.min(15000, config.timeoutMs), "ComfyUI system_stats"),
-          fetchWithTimeout(`${base}/object_info`, { method: "GET", headers: { Accept: "application/json" } }, Math.min(20000, config.timeoutMs), "ComfyUI object_info"),
-        ]);
-        if (!statsRes.ok) throw new Error(`system_stats ${statsRes.status}`);
-        if (!infoRes.ok) throw new Error(`object_info ${infoRes.status}`);
-        const objectInfo = await infoRes.json();
-        const resolved = resolveComfyWorkflowSource(config);
-        const graph = comfyPromptGraph(resolved.workflow);
-        const types = [...new Set(Object.values(graph || {}).map((node) => String(node?.class_type || "")).filter(Boolean))];
-        const missing = types.filter((type) => !Object.prototype.hasOwnProperty.call(objectInfo || {}, type));
-        appendDebugLog("persona_visual", "comfy_preflight_complete", { nodeTypes: types.length, missingNodeTypes: missing, outputNodeId: profile.output.nodeId, samplerNodeId: profile.sampler.nodeId }, missing.length ? "warn" : "info");
-        if (missing.length) throw new Error(`현재 ComfyUI에 없는 노드 ${missing.length}종: ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? " ..." : ""}`);
-        setStatus(`ComfyUI 연결 및 노드 검사 완료 · 노드 종류 ${types.length}종 확인 · Output ${profile.output.nodeId}`, "ok");
-      } catch (error) { setStatus(`ComfyUI 연결·노드 검사 실패: ${error?.message || error}`, "error"); }
-      finally { if (button && document.body?.contains(button)) button.disabled = false; }
-    });
-    document.getElementById("dpg-save-img-config")?.addEventListener("click", async () => {
-      try {
-        let pending = readIllustrationConfig();
-        if (pending.provider === "comfyui-local" && pending.workflowJson) {
-          const resolved = resolveComfyWorkflowSource(pending);
-          if (!looksLikeComfyWorkflowGraph(resolved.workflow)) throw new Error("ComfyUI API Workflow JSON 형식이 아닙니다.");
-          let profile = null;
-          try { profile = normalizeComfyBindingProfile(parseOptionalJsonObject(pending.workflowBindingJson), resolved.workflow); } catch (_) {}
-          if (!profile) profile = analyzeComfyWorkflowBinding(resolved.workflow);
-          pending = normalizeIllustrationConfig({ ...pending, workflowBindingJson: JSON.stringify(profile, null, 2) });
-          const area = document.getElementById("dpg-img-binding-profile");
-          if (area) area.value = pending.workflowBindingJson;
-        }
-        const saved = await writeStoredIllustrationConfig(pending);
-        syncIllustrationProviderUi();
-        const comfyMode = saved.provider === "comfyui-local" && saved.workflowJson ? " / Workflow: 범용 Binding Engine" : "";
-        setStatus(`삽화 설정을 저장했습니다. Provider: ${saved.provider}${saved.model && !looksLikeComfyWorkflowText(saved.model) ? ` / Model: ${saved.model}` : ""}${comfyMode}`, "ok");
-      } catch (error) {
-        setStatus(`삽화 설정 저장 실패: ${error?.message || error}`, "error");
-      }
-    });
-    document.getElementById("dpg-asset-generate-neutral")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-asset-generate-neutral");
-      if (button) button.disabled = true;
-      activeWorkspaceTab = "assets";
-      try {
-        setStatus("Neutral 기준 감정 에셋을 생성하는 중...", "info");
-        const result = await generatePersonaVisualEmotion(ctx, "neutral");
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Neutral을 저장했습니다: ${result.target.personaName} · neutral. 결과를 확인한 뒤 ‘Neutral 기준 확정’을 눌러 주세요.`, "ok");
-      } catch (error) {
-        setStatus(`Neutral 에셋 생성 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.getElementById("dpg-asset-confirm-lock")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-asset-confirm-lock");
-      if (button) button.disabled = true;
-      activeWorkspaceTab = "assets";
-      try {
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        const bundle = await confirmPersonaVisualGenerationLock(target);
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Neutral 기준을 확정했습니다. seed ${bundle.visualLock?.seed ?? "-"} · 구도 ${visualCompositionPresetDefinition(bundle.visualLock?.compositionPreset).label} · 이후 감정 에셋은 표정만 변경합니다.`, "ok");
-      } catch (error) {
-        setStatus(`Neutral 기준 확정 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.getElementById("dpg-asset-generate-batch")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-asset-generate-batch");
-      if (button) button.disabled = true;
-      activeWorkspaceTab = "assets";
-      const emotions = readVisualEmotionListFromUi();
-      try {
-        const queue = unique(emotions.filter((emotion) => String(emotion || "").trim().toLowerCase() !== "neutral"), 24);
-        if (!queue.length) throw new Error("Neutral 외에 생성할 감정이 없습니다.");
-        for (let index = 0; index < queue.length; index += 1) {
-          const emotion = queue[index];
-          setStatus(`[${index + 1}/${queue.length}] ${emotion} 감정 에셋 생성 중...`, "info");
-          await generatePersonaVisualEmotion(ctx, emotion);
-        }
-        await refreshPreview({ skipCapture: true });
-        setStatus(`감정 에셋 ${queue.length}개를 생성/갱신했습니다.`, "ok");
-      } catch (error) {
-        setStatus(`감정 묶음 생성 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    const customEmotionToggle = document.getElementById("dpg-asset-add-toggle");
-    const customEmotionForm = document.getElementById("dpg-asset-add-form");
-    const customEmotionInput = document.getElementById("dpg-asset-add-emotion");
-    const customEmotionCreate = document.getElementById("dpg-asset-add-create");
-    const customEmotionCancel = document.getElementById("dpg-asset-add-cancel");
-    const setCustomEmotionFormOpen = (open) => {
-      if (!customEmotionForm) return;
-      customEmotionForm.hidden = !open;
-      customEmotionToggle?.classList.toggle("active", open);
-      if (open) queueMicrotask(() => customEmotionInput?.focus?.());
-    };
-    customEmotionToggle?.addEventListener("click", () => {
-      if (customEmotionToggle.disabled) return;
-      setCustomEmotionFormOpen(Boolean(customEmotionForm?.hidden));
-    });
-    customEmotionCancel?.addEventListener("click", () => {
-      if (customEmotionInput) customEmotionInput.value = "";
-      setCustomEmotionFormOpen(false);
-    });
-    const createCustomEmotionAsset = async () => {
-      const rawEmotion = normalizeCustomVisualEmotionLabel(customEmotionInput?.value || "");
-      if (!rawEmotion) {
-        setStatus("추가할 감정을 입력해 주세요.", "error");
-        customEmotionInput?.focus?.();
-        return;
-      }
-      if (normalizeEmotionKey(rawEmotion) === "neutral") {
-        setStatus("Neutral은 Visual Master 전용입니다. 다른 감정 이름을 입력해 주세요.", "error");
-        customEmotionInput?.focus?.();
-        return;
-      }
-      customEmotionToggle && (customEmotionToggle.disabled = true);
-      if (customEmotionCreate) customEmotionCreate.disabled = true;
-      if (customEmotionCancel) customEmotionCancel.disabled = true;
-      activeWorkspaceTab = "assets";
-      try {
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        const bundle = target.bundle || freshCtx.visualAssetStore?.sets?.[target.personaKey] || null;
-        const lock = normalizeVisualGenerationLock(bundle?.visualLock || null, { confirmed: true });
-        if (!bundle?.images?.neutral || !lock?.confirmed) {
-          throw new Error("Neutral 에셋을 생성하고 ‘Neutral 기준 확정’을 완료한 뒤 추가할 수 있습니다.");
-        }
-        const duplicate = Object.keys(bundle.images || {}).find((emotion) => normalizeEmotionKey(emotion) === normalizeEmotionKey(rawEmotion));
-        if (duplicate) throw new Error(`'${duplicate}' 감정 에셋이 이미 있습니다. 기존 카드의 재생성을 사용해 주세요.`);
-        const emotion = rememberCustomVisualEmotionLabel(rawEmotion);
-        setStatus(`${emotion} 사용자 감정 에셋을 Neutral 기준으로 생성하는 중...`, "info");
-        await generatePersonaVisualEmotion(freshCtx, emotion);
-        if (customEmotionInput) customEmotionInput.value = "";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`${emotion} 감정 에셋을 추가했습니다. 확정된 Neutral 기준을 그대로 사용했습니다.`, "ok");
-      } catch (error) {
-        setStatus(`감정 에셋 추가 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (customEmotionToggle && document.body?.contains(customEmotionToggle)) customEmotionToggle.disabled = false;
-        if (customEmotionCreate && document.body?.contains(customEmotionCreate)) customEmotionCreate.disabled = false;
-        if (customEmotionCancel && document.body?.contains(customEmotionCancel)) customEmotionCancel.disabled = false;
-      }
-    };
-    customEmotionCreate?.addEventListener("click", createCustomEmotionAsset);
-    customEmotionInput?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) return;
-      event.preventDefault();
-      void createCustomEmotionAsset();
-    });
-
-    document.getElementById("dpg-asset-export-zip")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-asset-export-zip");
-      if (button) button.disabled = true;
-      activeWorkspaceTab = "assets";
-      try {
-        setStatus("감정 에셋 ZIP을 준비하는 중...", "info");
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        const exported = await exportPersonaVisualAssetBundleZip(target);
-        const ok = downloadBinary(exported.fileName, exported.bytes, "application/zip");
-        if (!ok) throw new Error("파일 저장 API를 사용할 수 없습니다.");
-        setStatus(`${target.personaName} 감정 에셋 ${exported.assetCount}개를 ZIP으로 내보냈습니다.`, "ok");
-      } catch (error) {
-        appendDebugLog("persona_visual", "asset_bundle_export_failed", {
-          selectedTarget: currentVisualTargetSelectionValue(),
-          error: errorForLog(error),
-        }, "error");
-        setStatus(`감정 에셋 ZIP 내보내기 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button && document.body?.contains(button)) button.disabled = false;
-      }
-    });
-
-    const importZipInput = document.getElementById("dpg-asset-import-zip");
-    document.getElementById("dpg-asset-import-open")?.addEventListener("click", () => {
-      if (!importZipInput) return;
-      importZipInput.value = "";
-      importZipInput.click();
-    });
-    importZipInput?.addEventListener("change", async () => {
-      const file = importZipInput.files?.[0];
-      if (!file) return;
-      activeWorkspaceTab = "assets";
-      const openButton = document.getElementById("dpg-asset-import-open");
-      if (openButton) openButton.disabled = true;
-      try {
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        const currentBundle = normalizeVisualAssetSet(target.bundle || {}, target.personaKey);
-        const currentCount = Object.keys(currentBundle.images || {}).length;
-        const confirmed = typeof globalThis.confirm === "function"
-          ? globalThis.confirm(`ZIP 복원을 시작할까요?
-
-현재 타겟: ${target.personaName}
-기존 감정 에셋 ${currentCount}개와 Visual Lock 정보가 있으면 가져온 ZIP 내용으로 덮어씁니다.`)
-          : true;
-        if (!confirmed) {
-          setStatus("ZIP 복원을 취소했습니다.", "info");
-          return;
-        }
-        setStatus("감정 에셋 ZIP을 복원하는 중...", "info");
-        const restored = await importPersonaVisualAssetBundleZip(target, file);
-        await refreshPreview({ skipCapture: true });
-        setStatus(`${target.personaName} 감정 에셋 ${restored.assetCount}개를 ZIP에서 복원했습니다.`, "ok");
-      } catch (error) {
-        setStatus(`감정 에셋 ZIP 복원 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (openButton && document.body?.contains(openButton)) openButton.disabled = false;
-        if (importZipInput) importZipInput.value = "";
-      }
-    });
-
-    const manualAssetInput = document.getElementById("dpg-asset-manual-upload");
-    document.querySelectorAll("[data-visual-asset-manual-upload]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const emotion = String(button.getAttribute("data-visual-asset-manual-upload") || "").trim();
-        if (!emotion || !manualAssetInput) return;
-        manualAssetInput.dataset.emotion = emotion;
-        manualAssetInput.value = "";
-        manualAssetInput.click();
-      });
-    });
-    manualAssetInput?.addEventListener("change", async () => {
-      const file = manualAssetInput.files?.[0];
-      const emotion = String(manualAssetInput.dataset.emotion || "").trim();
-      if (!file || !emotion) return;
-      activeWorkspaceTab = "assets";
-      try {
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        setStatus(`${emotion} 감정 에셋 이미지를 업로드하는 중...`, "info");
-        await importPersonaVisualAssetImage(target, emotion, file);
-        await refreshPreview({ skipCapture: true });
-        setStatus(`${target.personaName}의 ${emotion} 감정 에셋 이미지를 수동으로 붙여넣었습니다.`, "ok");
-      } catch (error) {
-        setStatus(`수동 에셋 업로드 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (manualAssetInput) {
-          manualAssetInput.value = "";
-          delete manualAssetInput.dataset.emotion;
-        }
-      }
-    });
-
-    document.getElementById("dpg-asset-discard-bundle")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-asset-discard-bundle");
-      if (button) button.disabled = true;
-      activeWorkspaceTab = "assets";
-      try {
-        const freshCtx = { ...ctx, visualAssetStore: await readPersonaVisualAssetStore() };
-        const target = resolvePersonaVisualTarget(freshCtx);
-        const bundle = target.bundle || normalizeVisualAssetSet({}, target.personaKey);
-        const count = Object.keys(bundle.images || {}).length;
-        const confirmed = typeof globalThis.confirm === "function"
-          ? globalThis.confirm(`'${target.personaName}'의 감정 에셋 묶음 전체를 폐기할까요?\n\nNeutral, 감정 에셋 ${count}개, Visual Generation Lock 정보가 모두 제거됩니다. 실제 asset 파일 자체는 RisuAI 공개 API 제한으로 삭제되지 않을 수 있습니다.`)
-          : true;
-        if (!confirmed) {
-          setStatus("감정 묶음 전체 폐기를 취소했습니다.", "info");
-          return;
-        }
-        const result = await discardPersonaVisualAssetBundle(target);
-        await refreshPreview({ skipCapture: true });
-        if (result.removed) setStatus(`${target.personaName}의 감정 묶음 전체를 폐기했습니다. 에셋 참조 ${result.assetCount}개와 Visual Lock을 제거했습니다.`, "ok");
-        else setStatus(`${target.personaName}에 폐기할 감정 묶음이 없습니다.`, "info");
-      } catch (error) {
-        setStatus(`감정 묶음 전체 폐기 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button && document.body?.contains(button)) button.disabled = false;
-      }
-    });
-    function readAssetPromptOverridesFromCard(button) {
-      const card = button?.closest?.(".lia-asset-card");
-      if (!card) return { promptOverride: "", negativePromptOverride: "" };
-      const promptEl = card.querySelector("[data-visual-asset-prompt-input]");
-      const negativeEl = card.querySelector("[data-visual-asset-negative-input]");
-      const currentPrompt = String(promptEl?.value || "").trim();
-      const currentNegative = String(negativeEl?.value || "").trim();
-      const originalPromptHash = String(promptEl?.getAttribute("data-visual-asset-original-hash") || "").trim();
-      const originalNegativeHash = String(negativeEl?.getAttribute("data-visual-asset-original-hash") || "").trim();
-      const promptChanged = Boolean(currentPrompt && (!originalPromptHash || hashText(currentPrompt) !== originalPromptHash));
-      const negativeChanged = Boolean(currentNegative && (!originalNegativeHash || hashText(currentNegative) !== originalNegativeHash));
-      return {
-        promptOverride: promptChanged ? currentPrompt : "",
-        negativePromptOverride: negativeChanged ? currentNegative : "",
-      };
-    }
-    document.querySelectorAll("[data-visual-asset-regenerate]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const emotion = String(button.getAttribute("data-visual-asset-regenerate") || "").trim();
-        if (!emotion) return;
-        button.disabled = true;
-        activeWorkspaceTab = "assets";
-        try {
-          const overrides = readAssetPromptOverridesFromCard(button);
-          setStatus(`${emotion} 에셋을 다시 생성하는 중...`, "info");
-          await generatePersonaVisualEmotion(ctx, emotion, overrides);
-          await refreshPreview({ skipCapture: true });
-          setStatus(`${emotion} 감정 에셋을 갱신했습니다.`, "ok");
-        } catch (error) {
-          setStatus(`감정 에셋 재생성 실패: ${error?.message || error}`, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
-    document.querySelectorAll("[data-visual-asset-delete]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const emotion = String(button.getAttribute("data-visual-asset-delete") || "").trim();
-        if (!emotion) return;
-        button.disabled = true;
-        try {
-          const target = resolvePersonaVisualTarget(ctx);
-          await removePersonaVisualAsset(target, emotion);
-          await refreshPreview({ skipCapture: true });
-          setStatus(`${emotion} 감정 에셋 메타데이터를 삭제했습니다.`, "ok");
-        } catch (error) {
-          setStatus(`감정 에셋 삭제 실패: ${error?.message || error}`, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
-    syncIllustrationProviderUi();
   }
 
   function setStatus(message, tone = "info") {
@@ -26394,868 +25200,34 @@ ${revisionText}`);
     return { stage: "result", result };
   }
 
-  function bindFastGenerationStudio(ctx) {
-    bindLoreLimitControl();
-    const syncRewritePrompt = () => {
-      preservedUserRewriteGuidanceText = getUserRewriteGuidance();
-      preservedRandomConceptText = getRandomConcept();
-      const promptEl = document.getElementById("dpg-llm-prompt");
-      if (promptEl) promptEl.value = buildGenerationPromptForContext(ctx);
-    };
-    const layoutEl = document.querySelector(".lia-app-layout");
-    const setWorldDrawer = (open) => {
-      preservedWorldDrawerOpen = open === true;
-      layoutEl?.classList.toggle("world-drawer-open", preservedWorldDrawerOpen);
-    };
-    document.getElementById("dpg-world-drawer-open")?.addEventListener("click", () => setWorldDrawer(true));
-    document.getElementById("dpg-world-drawer-close")?.addEventListener("click", () => setWorldDrawer(false));
-    document.getElementById("dpg-world-drawer-backdrop")?.addEventListener("click", () => setWorldDrawer(false));
 
-    document.getElementById("dpg-world-blueprint-refresh")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-world-blueprint-refresh");
-      if (button) button.disabled = true;
-      setStatus("세계관 Blueprint를 분석하고 있습니다...", "info");
-      try {
-        captureGeneratedOutputState();
-        const freshCtx = await getContext();
-        const state = await generateWorldBlueprint(freshCtx, { force: true, config: readLLMConfig() });
-        await refreshPreview();
-        setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length || 0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length || 0}개`, "ok");
-      } catch (error) {
-        setStatus(`세계관 Blueprint 분석 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
 
-    document.getElementById("dpg-generate-candidates")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-generate-candidates");
-      if (button) button.disabled = true;
-      setStatus("세계관을 바탕으로 서로 다른 페르소나 후보 3개를 만드는 중...", "info");
-      try {
-        const result = await generateRandomCandidates();
-        const freshCtx = await getContext().catch(() => ctx);
-        syncRandomCandidateWorkshopUi(freshCtx);
-        const promptEl = document.getElementById("dpg-llm-prompt");
-        if (promptEl) promptEl.value = buildGenerationPromptForContext(freshCtx);
-        setStatus(`랜덤 후보 3개를 만들었습니다.${result.blueprintGenerated ? " 세계관 Blueprint도 새로 분석했습니다." : ""} 후보 3개 중 하나를 선택하면 상세 생성할 수 있습니다.`, "ok");
-      } catch (error) {
-        setStatus(`후보 생성 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    syncRandomCandidateWorkshopUi(ctx);
 
-    document.getElementById("dpg-extract-character-candidates")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-extract-character-candidates");
-      if (button) button.disabled = true;
-      setStatus("캐릭터 카드·로어·최근 대화에서 독립된 등장인물을 분리하는 중...", "info");
-      try {
-        const result = await generateCharacterCandidates();
-        await refreshPreview({ skipCapture: true });
-        setStatus(`등장인물 ${result.candidates.length}명을 찾았습니다.${result.autoSelected ? " 단일 인물이라 자동 선택했습니다." : " Persona로 만들 인물을 선택하세요."}${result.blueprintGenerated ? " 세계관 Blueprint도 새로 분석했습니다." : ""}`, "ok");
-      } catch (error) {
-        setStatus(`등장인물 추출 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll("[data-character-candidate-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        preservedSelectedCharacterCandidateId = String(button.getAttribute("data-character-candidate-id") || "");
-        preservedLLMResultText = "";
-        preservedTranslationText = "";
-        preservedGeneratedPersonaNameText = "";
-        preservedPersonaFieldLocks = new Set();
-        preservedPersonaAudit = null;
-        await refreshPreview({ skipCapture: true });
-        const candidate = selectedCharacterCandidate();
-        if (candidate) setStatus(`등장인물 '${candidate.name}'을 선택했습니다. 이 인물과 직접 연결된 카드·로어·대화 근거만 사용합니다.`, "ok");
-      });
-    });
 
-    document.getElementById("dpg-extract-character-candidates")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-extract-character-candidates");
-      if (button) button.disabled = true;
-      setStatus("캐릭터 카드·로어·최근 대화에서 독립된 등장인물을 분리하는 중...", "info");
-      try {
-        const result = await generateCharacterCandidates();
-        await refreshPreview({ skipCapture: true });
-        setStatus(`등장인물 ${result.candidates.length}명을 찾았습니다.${result.autoSelected ? " 단일 인물이라 자동 선택했습니다." : " Persona로 만들 인물을 선택하세요."}${result.blueprintGenerated ? " 세계관 Blueprint도 새로 분석했습니다." : ""}`, "ok");
-      } catch (error) {
-        setStatus(`등장인물 추출 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll("[data-character-candidate-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        preservedSelectedCharacterCandidateId = String(button.getAttribute("data-character-candidate-id") || "");
-        preservedLLMResultText = "";
-        preservedTranslationText = "";
-        preservedGeneratedPersonaNameText = "";
-        preservedPersonaFieldLocks = new Set();
-        preservedPersonaAudit = null;
-        await refreshPreview({ skipCapture: true });
-        const candidate = selectedCharacterCandidate();
-        if (candidate) setStatus(`등장인물 '${candidate.name}'을 선택했습니다. 이 인물과 직접 연결된 카드·로어·대화 근거만 사용합니다.`, "ok");
-      });
-    });
-
-    document.getElementById("dpg-generation-mode")?.addEventListener("change", (event) => {
-      switchGenerationModeInstant(ctx, normalizeGenerationMode(event?.target?.value));
-    });
-    document.querySelectorAll("[data-generation-mode-card]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const select = document.getElementById("dpg-generation-mode");
-        const nextMode = normalizeGenerationMode(button.getAttribute("data-generation-mode-card"));
-        if (!select || select.value === nextMode) return;
-        select.value = nextMode;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    });
-
-    document.getElementById("dpg-source-persona")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-use-character-lore")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-use-module-lore")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-rich-persona-mode")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-random-concept")?.addEventListener("input", () => {
-      if (preservedRandomCandidates.length) clearRandomCandidateState();
-      if (preservedCharacterCandidates.length) clearCharacterCandidateState();
-      syncRewritePrompt();
-      setStatus(getRandomConcept() ? "랜덤 페르소나 컨셉을 프롬프트에 반영했습니다." : "컨셉을 비웠습니다. AI 자율 창작 모드로 생성합니다.", "info");
-    });
-    document.getElementById("dpg-user-rewrite-guidance")?.addEventListener("input", () => {
-      if (generationModeFor(ctx) === GENERATION_MODE_RANDOM && preservedRandomCandidates.length) clearRandomCandidateState();
-      if (generationModeFor(ctx) === GENERATION_MODE_CHARACTER && preservedCharacterCandidates.length) clearCharacterCandidateState();
-      syncRewritePrompt();
-      const mode = generationModeFor(ctx);
-      setStatus(mode === GENERATION_MODE_RANDOM ? "랜덤 생성 추가 조건을 프롬프트에 반영했습니다." : mode === GENERATION_MODE_CHARACTER ? "등장인물 추출/변환 지시를 반영했습니다. 후보 목록을 다시 추출해야 합니다." : mode === GENERATION_MODE_CONVERSATION ? "대화 추출 지시를 반영했습니다." : "유저 재해석 메모를 프롬프트에 반영했습니다.", "info");
-    });
-    document.getElementById("dpg-clear-logs")?.addEventListener("click", async () => {
-      const confirmed = typeof globalThis.confirm === "function" ? globalThis.confirm("LIA 작동 로그와 디버그 로그를 모두 지울까요?") : true;
-      if (!confirmed) return;
-      try {
-        await clearLiaLogs();
-        appendOperationLog("log_clear", "작동 로그와 디버그 로그를 초기화했습니다.", {}, "ok");
-        await persistLogStore();
-        await refreshPreview({ skipCapture: true });
-        setStatus("작동 로그와 디버그 로그를 초기화했습니다.", "ok");
-      } catch (error) {
-        setStatus(`로그 초기화 실패: ${error?.message || error}`, "error");
-      }
-    });
-
-    document.getElementById("dpg-copy-llm-prompt")?.addEventListener("click", async () => {
-      syncRewritePrompt();
-      const promptEl = document.getElementById("dpg-llm-prompt");
-      const value = promptEl?.value || "";
-      try {
-        await navigator.clipboard?.writeText(value);
-        setStatus(`${generationModeLabel(generationModeFor(ctx))} 프롬프트를 복사했습니다.`, "ok");
-      } catch (_) {
-        promptEl?.focus();
-        promptEl?.select();
-        setStatus("프롬프트 전체를 선택했습니다. Ctrl+C로 복사해 주세요.", "info");
-      }
-    });
-    document.getElementById("dpg-run-llm")?.addEventListener("click", async () => {
-      syncRewritePrompt();
-      const button = document.getElementById("dpg-run-llm");
-      if (button) button.disabled = true;
-      try {
-        await executePrimaryGenerationFlow(ctx);
-      } catch (error) {
-        setStatus(`${generationModeLabel(generationModeFor(ctx))} 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button && document.body?.contains(button)) button.disabled = false;
-      }
-    });
-  }
-
-  function switchGenerationModeInstant(ctx, mode) {
-    const nextMode = normalizeGenerationMode(mode);
-    if (generationModeFor(ctx) === nextMode) return;
-    resetGenerationModeDraftState();
-    const nextCtx = contextForGenerationMode(ctx, nextMode);
-    const select = document.getElementById("dpg-generation-mode");
-    if (select) select.value = nextMode;
-
-    const html = renderPreview(nextCtx, { skipCapture: true });
-    const template = document.createElement("template");
-    template.innerHTML = String(html || "").trim();
-    const previewRoot = template.content;
-    const nextStudio = previewRoot.querySelector("#dpg-studio-panel");
-    const currentStudio = document.getElementById("dpg-studio-panel");
-    if (!nextStudio || !currentStudio) {
-      void refreshPreview({ skipCapture: true });
-      return;
-    }
-    currentStudio.replaceWith(nextStudio.cloneNode(true));
-    replaceNodeFromPreview(".lia-sidebar-current", previewRoot);
-    const layout = document.querySelector(".lia-app-layout");
-    layout?.setAttribute("data-generation-mode", nextMode);
-    bindFastGenerationStudio(nextCtx);
-    void refreshModulePicker(nextCtx.contextOptions?.selectedModuleIds || [],nextCtx);
-    syncLLMSaveMode();
-    setStatus(generationModeStatusMessage(nextMode), "ok");
-  }
-
-  function bindPreviewTools(ctx) {
-    // Capture what this rendered button actually offered. Host chat objects may
-    // mutate in place while the UI stays open; a click cannot widen that range.
-    const manualActionContext = { ...ctx, manualScopeKey: livePersonaScopeKey(ctx),
-      manualAnalysisRange: (ctx.manualViewPlan || manualLivePersonaPlan(ctx)).range?.slice() || null };
-    bindLoreLimitControl();
-    const syncRewritePrompt = () => {
-      preservedUserRewriteGuidanceText = getUserRewriteGuidance();
-      preservedRandomConceptText = getRandomConcept();
-      const promptEl = document.getElementById("dpg-llm-prompt");
-      if (promptEl) promptEl.value = buildGenerationPromptForContext(ctx);
-    };
-    const syncProviderUi = () => {
-      const provider = String(document.getElementById("dpg-llm-provider")?.value || "openai");
-      const endpoint = document.getElementById("dpg-llm-endpoint");
-      const model = document.getElementById("dpg-llm-model");
-      const format = document.getElementById("dpg-llm-request-format");
-      if (endpoint) endpoint.placeholder = providerDefaultUrl(provider) || "프로바이더 endpoint를 직접 입력";
-      if (model) model.placeholder = providerDefaultModel(provider);
-      if (format) {
-        const responsesOption = format.querySelector('option[value="responses"]');
-        const supported = providerSupportsResponses(provider);
-        if (responsesOption) responsesOption.disabled = !supported;
-        if (!supported && format.value === "responses") format.value = "chat_completions";
-      }
-      const hint = document.getElementById("dpg-provider-endpoint-hint");
-      if (hint && !["vertex", "vertex-openai"].includes(normalizeProviderKey(provider))) hint.textContent = `${providerDisplayLabel(provider)} · 비우면 기본 endpoint를 사용합니다.${normalizeProviderKey(provider) === "cloudflare-ai-gateway" ? " 이 provider는 실제 account 경로 입력이 필요합니다." : ""}`;
-      syncVertexProviderUi();
-      syncReasoningProviderUi();
-      syncServiceProviderUi();
-    };
-    bindAction("dpg-adopt-original", adoptOriginalPersona);
-    bindAction("dpg-adopt-translation", adoptTranslatedPersona);
-    bindAction("dpg-save-current-persona", saveEditedResultToCurrentPersona);
-    bindAction("dpg-save-new-persona", saveEditedResultAsNewPersona);
-    bindAction("dpg-edit-vault-save", saveCurrentResultToVault);
-    bindAction("dpg-remove", removeGenerated);
-    document.getElementById("dpg-world-blueprint-refresh")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-world-blueprint-refresh");
-      if (button) button.disabled = true;
-      setStatus("세계관 Blueprint를 분석하고 있습니다...", "info");
-      try {
-        captureGeneratedOutputState();
-        const freshCtx = await getContext();
-        const state = await generateWorldBlueprint(freshCtx, { force: true, config: readLLMConfig() });
-        await refreshPreview();
-        setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length || 0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length || 0}개`, "ok");
-      } catch (error) {
-        setStatus(`세계관 Blueprint 분석 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.getElementById("dpg-generate-candidates")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-generate-candidates");
-      if (button) button.disabled = true;
-      setStatus("세계관을 바탕으로 서로 다른 페르소나 후보 3개를 만드는 중...", "info");
-      try {
-        const result = await generateRandomCandidates();
-        const freshCtx = await getContext().catch(() => ctx);
-        syncRandomCandidateWorkshopUi(freshCtx);
-        const promptEl = document.getElementById("dpg-llm-prompt");
-        if (promptEl) promptEl.value = buildGenerationPromptForContext(freshCtx);
-        setStatus(`랜덤 후보 3개를 만들었습니다.${result.blueprintGenerated ? " 세계관 Blueprint도 새로 분석했습니다." : ""} 후보 3개 중 하나를 선택하면 상세 생성할 수 있습니다.`, "ok");
-      } catch (error) {
-        setStatus(`후보 생성 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    syncRandomCandidateWorkshopUi(ctx);
-    document.querySelectorAll(".lia-spec-lock[data-spec-field]").forEach((input) => {
-      input.addEventListener("change", () => {
-        const key = String(input.getAttribute("data-spec-field") || "");
-        if (!PERSONA_SPEC_FIELD_KEY_SET.has(key)) return;
-        if (input.checked) preservedPersonaFieldLocks.add(key); else preservedPersonaFieldLocks.delete(key);
-        const result = getLLMResultOverride();
-        if (result) setGeneratedOutputText(resultToOutputText({ ...result, personaFieldLocks: currentPersonaFieldLocks(), personaAudit: preservedPersonaAudit }));
-        const card = input.closest?.(".lia-spec-field-card");
-        card?.classList.toggle("locked", input.checked === true);
-        const reroll = card?.querySelector?.(".lia-spec-reroll");
-        if (reroll) reroll.disabled = input.checked === true;
-        setStatus(`${PERSONA_SPEC_FIELD_DEFS.find((item) => item.key === key)?.label || key} ${input.checked ? "잠금" : "잠금 해제"}`, "info");
-      });
-    });
-    document.querySelectorAll(".lia-spec-reroll[data-spec-reroll]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const key = String(button.getAttribute("data-spec-reroll") || "");
-        button.disabled = true;
-        setStatus(`${PERSONA_SPEC_FIELD_DEFS.find((item) => item.key === key)?.label || key} 필드를 다시 생성하는 중...`, "info");
-        try {
-          const result = await rerollPersonaFields([key]);
-          await refreshPreview({ skipCapture: true });
-          setStatus(`부분 리롤 완료 · 변경 대상: ${result.targets.map((field) => PERSONA_SPEC_FIELD_DEFS.find((item) => item.key === field)?.label || field).join(", ")}${result.repaired ? " · 비대상 변경을 자동 복구했습니다." : ""}`, "ok");
-        } catch (error) {
-          setStatus(`부분 리롤 실패: ${error?.message || error}`, "error");
-        } finally {
-          if (button) button.disabled = false;
-        }
-      });
-    });
-    document.getElementById("dpg-reroll-unlocked")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-reroll-unlocked");
-      if (button) button.disabled = true;
-      setStatus("잠긴 필드를 제외하고 PersonaSpec을 다시 생성하는 중...", "info");
-      try {
-        const result = await rerollPersonaFields(PERSONA_SPEC_FIELD_KEYS);
-        await refreshPreview({ skipCapture: true });
-        setStatus(`잠금 제외 전체 리롤 완료 · ${result.targets.length}개 필드 갱신`, "ok");
-      } catch (error) {
-        setStatus(`전체 리롤 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll(".lia-run-persona-audit").forEach((button) => button.addEventListener("click", async () => {
-      document.querySelectorAll(".lia-run-persona-audit").forEach((item) => { item.disabled = true; });
-      setStatus("PersonaSpec과 세계관의 충돌을 검사하는 중...", "info");
-      try {
-        const audit = await runPersonaAudit();
-        preservedEditorSection = "audit";
-        activeWorkspaceTab = "edit";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Persona Audit 완료 · ${audit.score}/100 · ${audit.verdict.toUpperCase()}`, audit.verdict === "fail" ? "error" : "ok");
-      } catch (error) {
-        setStatus(`Persona Audit 실패: ${error?.message || error}`, "error");
-      } finally {
-        document.querySelectorAll(".lia-run-persona-audit").forEach((item) => { item.disabled = false; });
-      }
-    }));
-    document.querySelectorAll(".lia-audit-recommendation-select").forEach((input) => input.addEventListener("change", () => {
-      const index = String(input.getAttribute("data-audit-recommendation-index") || "");
-      if (input.checked) preservedPersonaAuditSelection.add(index);
-      else preservedPersonaAuditSelection.delete(index);
-      preservedPersonaAuditFixPlan = null;
-      preservedPersonaAuditFixSelection = new Set();
-      document.querySelector(".lia-audit-fix-plan")?.remove();
-      const button = document.getElementById("dpg-audit-build-selected-fix");
-      if (button) button.disabled = preservedPersonaAuditSelection.size === 0;
-    }));
-    document.getElementById("dpg-audit-build-selected-fix")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-audit-build-selected-fix");
-      if (button) button.disabled = true;
-      setStatus("선택한 Audit 개선 제안을 PersonaSpec 수정안으로 변환 중...", "info");
-      try {
-        const plan = await buildPersonaAuditFixPlan("selected");
-        preservedEditorSection = "audit";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Audit 수정안 생성 완료 · ${plan.changes.length}개 필드`, "ok");
-      } catch (error) {
-        setStatus(`Audit 수정안 생성 실패: ${error?.message || error}`, "error");
-      } finally { if (button) button.disabled = false; }
-    });
-    document.getElementById("dpg-audit-build-hard-fix")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-audit-build-hard-fix");
-      if (button) button.disabled = true;
-      setStatus("Hard Conflict만 대상으로 안전 수정안을 만드는 중...", "info");
-      try {
-        const plan = await buildPersonaAuditFixPlan("hard");
-        preservedEditorSection = "audit";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Hard Conflict 안전 수정안 완료 · ${plan.changes.length}개 필드`, "ok");
-      } catch (error) {
-        setStatus(`Hard Conflict 수정안 생성 실패: ${error?.message || error}`, "error");
-      } finally { if (button) button.disabled = false; }
-    });
-    document.querySelectorAll(".lia-audit-fix-select").forEach((input) => input.addEventListener("change", () => {
-      const id = String(input.getAttribute("data-audit-fix-id") || "");
-      if (!id) return;
-      if (input.checked) preservedPersonaAuditFixSelection.add(id);
-      else preservedPersonaAuditFixSelection.delete(id);
-      const apply = document.getElementById("dpg-audit-apply-fixes");
-      if (apply) apply.disabled = preservedPersonaAuditFixSelection.size === 0;
-    }));
-    document.getElementById("dpg-audit-apply-fixes")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-audit-apply-fixes");
-      if (button) button.disabled = true;
-      setStatus("선택한 Audit 수정안을 PersonaSpec에 반영하고 Prompt를 다시 렌더링 중...", "info");
-      try {
-        const result = await applySelectedPersonaAuditFixes();
-        preservedEditorSection = "audit";
-        activeWorkspaceTab = "edit";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Audit 수정 반영 완료 · ${result.fields.join(", ") || "변경 없음"} · 재검사를 권장합니다.`, "ok");
-      } catch (error) {
-        setStatus(`Audit 수정 반영 실패: ${error?.message || error}`, "error");
-      } finally { if (button) button.disabled = false; }
-    });
-
-    document.getElementById("dpg-compile-variants")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-compile-variants");
-      if (button) button.disabled = true;
-      setStatus("PersonaSpec을 Standard / Compact 프롬프트로 컴파일하는 중...", "info");
-      try {
-        const compiled = await compilePersonaPromptVariants();
-        preservedEditorSection = "prompt";
-        activeWorkspaceTab = "edit";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`프롬프트 컴파일 완료 · Standard 약 ${compiled.metrics.standard.tokens}토큰 · Compact 약 ${compiled.metrics.compact.tokens}토큰`, "ok");
-      } catch (error) {
-        setStatus(`프롬프트 컴파일 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll("[data-persona-variant]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        try {
-          const profile = String(button.getAttribute("data-persona-variant") || "full");
-          activatePersonaPromptVariant(profile);
-          await refreshPreview({ skipCapture: true });
-          setStatus(`${PERSONA_VARIANT_PROFILES[normalizePersonaVariantProfile(profile)].label} 프롬프트를 원본 창에 표시합니다.`, "ok");
-        } catch (error) {
-          setStatus(`프롬프트 전환 실패: ${error?.message || error}`, "error");
-        }
-      });
-    });
-    bindAction("dpg-fork-lineage", forkCurrentPersonaLineage);
-    bindAction("dpg-vault-save", saveCurrentResultToVault);
-    bindAction("dpg-vault-load", loadVaultResult);
-    bindAction("dpg-vault-persona", writeVaultPersona);
-    bindAction("dpg-vault-delete", deleteVaultResult);
-    document.getElementById("dpg-result-vault")?.addEventListener("change", (event) => {
-      preservedResultVaultId = String(event?.target?.value || "").trim();
-      syncResultVaultControls();
-    });
-    document.getElementById("dpg-generation-mode")?.addEventListener("change", (event) => {
-      const nextMode = normalizeGenerationMode(event?.target?.value);
-      switchGenerationModeInstant(ctx, nextMode);
-    });
-    document.querySelectorAll("[data-generation-mode-card]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const select = document.getElementById("dpg-generation-mode");
-        const nextMode = normalizeGenerationMode(button.getAttribute("data-generation-mode-card"));
-        if (!select || select.value === nextMode) return;
-        select.value = nextMode;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    });
-    document.getElementById("dpg-source-persona")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-use-character-lore")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-use-module-lore")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-rich-persona-mode")?.addEventListener("change", refreshPreview);
-    document.getElementById("dpg-random-concept")?.addEventListener("input", () => {
-      if (preservedRandomCandidates.length) clearRandomCandidateState();
-      syncRewritePrompt();
-      setStatus(getRandomConcept() ? "랜덤 페르소나 컨셉을 프롬프트에 반영했습니다." : "컨셉을 비웠습니다. AI 자율 창작 모드로 생성합니다.", "info");
-    });
-    document.getElementById("dpg-user-rewrite-guidance")?.addEventListener("input", () => {
-      if (generationModeFor(ctx) === GENERATION_MODE_RANDOM && preservedRandomCandidates.length) clearRandomCandidateState();
-      if (generationModeFor(ctx) === GENERATION_MODE_CHARACTER && preservedCharacterCandidates.length) clearCharacterCandidateState();
-      syncRewritePrompt();
-      const mode = generationModeFor(ctx);
-      setStatus(mode === GENERATION_MODE_RANDOM ? "랜덤 생성 추가 조건을 프롬프트에 반영했습니다." : mode === GENERATION_MODE_CHARACTER ? "등장인물 추출/변환 지시를 반영했습니다. 후보 목록을 다시 추출해야 합니다." : mode === GENERATION_MODE_CONVERSATION ? "대화 추출 지시를 반영했습니다." : "유저 재해석 메모를 프롬프트에 반영했습니다.", "info");
-    });
-    document.getElementById("dpg-generated-persona-name")?.addEventListener("input", (event) => {
-      preservedGeneratedPersonaNameText = String(event?.target?.value || "").trim();
-      setStatus(preservedGeneratedPersonaNameText
-        ? `저장할 페르소나명: ${preservedGeneratedPersonaNameText}`
-        : (isIndependentGeneration(ctx) ? "페르소나명 입력을 비웠습니다. 생성 결과의 이름을 사용합니다." : "페르소나명 입력을 비웠습니다. 생성 결과/원본 페르소나명을 사용합니다."), "info");
-    });
-    document.getElementById("dpg-save-llm-config")?.addEventListener("click", async () => {
-      try {
-        const saved = await writeStoredLLMConfig(readLLMConfig());
-        setStatus(`LLM 설정을 저장했습니다. Provider: ${saved.provider}${saved.model ? ` / Model: ${saved.model}` : ""}`, "ok");
-      } catch (error) {
-        setStatus(`LLM 설정 저장 실패: ${error?.message || error}`, "error");
-      }
-    });
-    document.getElementById("dpg-llm-provider")?.addEventListener("change", () => {
-      syncProviderUi();
-      setStatus(`Provider를 ${providerDisplayLabel(readLLMConfig().provider)}로 변경했습니다. 저장하면 적용됩니다.`, "info");
-    });
-    document.getElementById("dpg-llm-reasoning-preset")?.addEventListener("change", (event) => {
-      const preset = normalizeReasoningPresetKey(event?.target?.value || "auto");
-      const applied = applyReasoningPresetUiDefaults(preset);
-      syncReasoningProviderUi();
-      const config = readLLMConfig();
-      setStatus(`추론 프리셋 ${LIA_REASONING_PRESETS[preset]} 적용 · ${reasoningPayloadSummary(config)}${applied ? ` · effort=${applied.effort} · budget=${applied.budget}` : ""}`, "ok");
-    });
-    for (const id of ["dpg-llm-reasoning-effort", "dpg-llm-reasoning-budget", "dpg-llm-thinking-type", "dpg-llm-request-format"]) {
-      document.getElementById(id)?.addEventListener("change", syncReasoningProviderUi);
-      document.getElementById(id)?.addEventListener("input", syncReasoningProviderUi);
-    }
-    document.getElementById("dpg-llm-model")?.addEventListener("input", syncReasoningProviderUi);
-    document.getElementById("dpg-llm-model")?.addEventListener("change", syncReasoningProviderUi);
-    document.getElementById("dpg-llm-custom-service-tier")?.addEventListener("change", syncServiceProviderUi);
-    document.getElementById("dpg-llm-service-tier")?.addEventListener("change", syncServiceProviderUi);
-    document.getElementById("dpg-llm-vertex-flex")?.addEventListener("change", syncServiceProviderUi);
-    document.getElementById("dpg-llm-key")?.addEventListener("input", syncVertexProviderUi);
-    document.getElementById("dpg-llm-endpoint")?.addEventListener("input", syncVertexProviderUi);
-    document.getElementById("dpg-refresh-models")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-refresh-models");
-      if (button) button.disabled = true;
+  function bindLiaMockupSettingsActions() {
+    const refreshButton = document.getElementById("dpg-refresh-models");
+    refreshButton?.addEventListener("click", async () => {
+      refreshButton.disabled = true;
       setStatus("프로바이더 모델 목록을 불러오는 중...", "info");
       try {
         const models = await listProviderModels(readLLMConfig(), { force: true });
         const list = document.getElementById("dpg-llm-model-list");
-        if (list) list.innerHTML = models.map((item) => `<option value="${htmlEscape(item.id)}">${htmlEscape(item.label || item.id)}</option>`).join("");
-        setStatus(`모델 ${models.length}개를 불러왔습니다. Model 입력칸에서 선택할 수 있습니다.`, "ok");
-      } catch (error) {
-        setStatus(`모델 목록 조회 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
+        if (list) list.innerHTML = models.map(item => `<option value="${htmlEscape(item.id)}">${htmlEscape(item.label || item.id)}</option>`).join("");
+        setStatus(`모델 ${models.length}개를 불러왔습니다. 목록에서 선택할 수 있습니다.`, "ok");
+      } catch (error) { setStatus(`모델 목록 조회 실패: ${error?.message || error}`, "error"); }
+      finally { if (refreshButton.isConnected) refreshButton.disabled = false; }
     });
-    document.getElementById("dpg-test-llm")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-test-llm");
-      if (button) button.disabled = true;
+    const testButton = document.getElementById("dpg-test-llm");
+    testButton?.addEventListener("click", async () => {
+      testButton.disabled = true;
       setStatus("프로바이더 연결을 테스트하는 중...", "info");
       try {
         const response = await testProviderConnection(readLLMConfig());
-        setStatus(`연결 성공 · ${providerDisplayLabel(readLLMConfig().provider)}${response ? ` · ${response}` : ""}`, "ok");
-      } catch (error) {
-        setStatus(`연결 테스트 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
+        const config = readLLMConfig();
+        setStatus(`연결 성공 · ${providerDisplayLabel(config.provider)}${response ? ` · ${response}` : ""}`, "ok");
+      } catch (error) { setStatus(`연결 테스트 실패: ${error?.message || error}`, "error"); }
+      finally { if (testButton.isConnected) testButton.disabled = false; }
     });
-    document.getElementById("dpg-copy-llm-prompt")?.addEventListener("click", async () => {
-      syncRewritePrompt();
-      const promptEl = document.getElementById("dpg-llm-prompt");
-      const text = promptEl?.value || "";
-      try {
-        await navigator.clipboard?.writeText(text);
-        setStatus(`${generationModeLabel(generationModeFor(ctx))} 프롬프트를 복사했습니다.`, "ok");
-      } catch (_) {
-        try {
-          promptEl?.focus();
-          promptEl?.select();
-          const copied = document.execCommand?.("copy");
-          setStatus(copied ? "동적 초안 프롬프트를 복사했습니다." : "프롬프트 전체를 선택했습니다. Ctrl+C로 복사해 주세요.", copied ? "ok" : "info");
-        } catch (fallbackError) {
-          promptEl?.focus();
-          promptEl?.select();
-          setStatus("프롬프트 전체를 선택했습니다. Ctrl+C로 복사해 주세요.", "info");
-        }
-      }
-    });
-    document.getElementById("dpg-translation-language")?.addEventListener("change", (event) => {
-      preservedTranslationLanguage = normalizeTranslationLanguage(event?.target?.value);
-      preservedTranslationText = "";
-      const output = document.getElementById("dpg-translation-preview");
-      if (output) output.value = "";
-      syncLLMSaveMode();
-      setStatus(`번역 언어를 ${TRANSLATION_LANGUAGES[preservedTranslationLanguage].label}(으)로 변경했습니다. 번역 생성을 눌러 주세요.`, "info");
-    });
-    document.getElementById("dpg-translation-preview")?.addEventListener("input", (event) => {
-      preservedTranslationText = String(event?.target?.value || "");
-      syncLLMSaveMode();
-      syncAdoptionPreflightMetrics();
-    });
-    document.getElementById("dpg-persona-preview")?.addEventListener("input", (event) => {
-      const current = getLLMResultOverride();
-      if (!current) return;
-      const editedPrompt = String(event?.target?.value || "");
-      const activeProfile = normalizePersonaVariantProfile(current.activePersonaProfile || preservedPersonaVariantProfile);
-      const variants = normalizePersonaVariants(current.personaVariants, current.personaPrompt);
-      variants[activeProfile] = editedPrompt;
-      const next = { ...current, personaPrompt: editedPrompt, personaVariants: variants, activePersonaProfile: activeProfile };
-      setGeneratedOutputText(resultToOutputText(next));
-      syncAdoptionPreflightMetrics();
-      syncLLMSaveMode(next);
-    });
-    document.getElementById("dpg-translate-persona")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-translate-persona");
-      if (button) button.disabled = true;
-      const language = getTranslationLanguage();
-      setStatus(`${TRANSLATION_LANGUAGES[language].label} 번역을 생성하는 중...`, "info");
-      try {
-        const result = await translateCurrentPersona();
-        syncLLMSaveMode();
-        setStatus(`${result.label} 번역을 생성했습니다. 오른쪽 결과를 검토한 뒤 ‘이걸로 채택’을 누를 수 있습니다.`, "ok");
-      } catch (error) {
-        setStatus(`번역 생성 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-
-    document.getElementById("dpg-run-llm")?.addEventListener("click", async () => {
-      syncRewritePrompt();
-      const button = document.getElementById("dpg-run-llm");
-      if (button) button.disabled = true;
-      try {
-        await executePrimaryGenerationFlow(ctx);
-      } catch (error) {
-        setStatus(`${generationModeLabel(generationModeFor(ctx))} 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button && document.body?.contains(button)) button.disabled = false;
-      }
-    });
-    document.getElementById("dpg-live-enable")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-live-enable");
-      if (button) button.disabled = true;
-      try {
-        const choice = String(document.getElementById("dpg-live-persona-select")?.value || "").trim();
-        const policy = String(document.getElementById("dpg-live-policy")?.value || "conservative").trim();
-        const bindingPolicy = "safe";
-        const currentBinding = choice ? null : await readLivePersonaBindingForContext(ctx);
-        const binding = await configureLivePersonaSync(ctx, choice || (currentBinding?.sourcePersonaId ? `id:${currentBinding.sourcePersonaId}` : ""), policy, bindingPolicy);
-        activeWorkspaceTab = "realtime";
-        await refreshPreview({ skipCapture: true });
-        await refreshPersonaProofIndicator();
-        setStatus(`수동 갱신용 Persona 연결 완료 · ${binding.livePersonaName}. 분석·갱신 버튼을 눌러야 대화를 반영합니다.`, "ok");
-      } catch (error) {
-        setStatus(`Live Persona 설정 실패: ${error?.message || error}`, "error");
-      } finally { if (button) button.disabled = false; }
-    });
-    document.getElementById("dpg-live-run-now")?.addEventListener("click", async () => {
-      if (manualLivePersonaAction) { setStatus("이미 수동 분석 중입니다.", "info"); return; }
-      const button = document.getElementById("dpg-live-run-now");
-      if (button) button.disabled = true;
-      const cancellation = document.getElementById("dpg-live-cancel");
-      if (cancellation) cancellation.disabled = false;
-      setStatus(`Persona 수동 분석 · ${manualLivePersonaPlanLabel(manualLivePersonaPlan(ctx))}`, "info");
-      try {
-        const result = await runManualLivePersonaAnalysis(manualActionContext);
-        await refreshPreview({ skipCapture: true });
-        const reason = result?.reason || "";
-        const message = result?.ok ? `Persona 수동 갱신 완료 · TURN ${result.range[0]}~${result.range[1]} · 남은 대기 ${result.pending}턴`
-          : reason === "insufficient_turns" ? result.message
-          : result?.cancelled ? "이번 분석을 취소했습니다. 결과를 반영하지 않았습니다."
-          : reason === "current_chat_not_configured" ? "먼저 수동 갱신용 Persona를 연결해 주세요."
-          : reason === "binding_change_pending" ? "미완료된 바인딩 변경이 있습니다. 연결·정책 저장에서 먼저 확인해 주세요."
-          : reason === "manual_busy" ? "이미 수동 분석 중입니다."
-          : `현재 채팅·Persona·분석 범위가 바뀌어 반영하지 않았습니다. 새로 확인하고 다시 실행해 주세요. (${reason})`;
-        setStatus(message, result?.ok ? "ok" : "info");
-      } catch (error) { setStatus(`Persona 수동 갱신 실패: ${error?.message || error}`, "error"); }
-      finally {
-        if (button && document.body?.contains(button)) button.disabled = false;
-        const cancel = document.getElementById("dpg-live-cancel");
-        if (cancel) cancel.disabled = true;
-      }
-    });
-    document.getElementById("dpg-live-cancel")?.addEventListener("click", () => {
-      const cancelled = cancelManualLivePersonaAnalysis("user_cancelled");
-      setStatus(cancelled ? "분석 취소를 요청했습니다. 결과는 반영하지 않습니다." : "저장을 마무리 중이거나 진행 중인 분석이 없습니다.", "info");
-    });
-    document.getElementById("dpg-live-restore")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-live-restore");
-      if (button) button.disabled = true;
-      try {
-        const restored = await restoreOriginalLivePersona(ctx);
-        await refreshPreview({ skipCapture: true });
-        await refreshPersonaProofIndicator();
-        const restoreLabel = restored.restoreResult?.targetId ? (restored.restoreResult?.previous?.personaId || "이전 Persona") : "채팅 전용 바인딩 없음";
-        setStatus(`이전 RisuAI 바인딩(${restoreLabel})으로 복원하고 채팅 전용 Live Persona를 제거했습니다.${restored.restoreResult?.fallbackReason ? " 이전 Persona가 없어 바인딩 없음으로 복원했습니다." : ""}`, "ok");
-      } catch (error) { setStatus(`원본 Persona 복원 실패: ${error?.message || error}`, "error"); }
-      finally { if (button) button.disabled = false; }
-    });
-
-    document.getElementById("dpg-run-persona-evolution")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-run-persona-evolution");
-      if (button) button.disabled = true;
-      setStatus("현재 대화에서 Persona 변화 증거를 분석 중...", "info");
-      try {
-        const result = await runPersonaEvolution();
-        activeWorkspaceTab = "edit";
-        preservedEditorSection = "evolution";
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Persona Evolution 분석 완료 · 제안 ${result.evolution.suggestions.length}개 · evidence ${result.evolution.evidenceQuality}`, "ok");
-      } catch (error) {
-        setStatus(`Persona Evolution 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll(".lia-evolution-select").forEach((input) => input.addEventListener("change", () => {
-      const id = String(input.getAttribute("data-evolution-id") || "");
-      if (!id) return;
-      if (input.checked) preservedPersonaEvolutionSelection.add(id);
-      else preservedPersonaEvolutionSelection.delete(id);
-      const apply = document.getElementById("dpg-apply-persona-evolution");
-      if (apply) apply.disabled = preservedPersonaEvolutionSelection.size === 0;
-    }));
-    document.getElementById("dpg-apply-persona-evolution")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-apply-persona-evolution");
-      if (button) button.disabled = true;
-      setStatus("선택한 플레이 변화를 PersonaSpec에 반영 중...", "info");
-      try {
-        const result = await applySelectedPersonaEvolution();
-        await refreshPreview({ skipCapture: true });
-        setStatus(`Persona Evolution 반영 완료 · ${result.fields.join(", ") || "변경 없음"} · Revision 증가`, "ok");
-      } catch (error) {
-        setStatus(`Persona Evolution 반영 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-
-    document.getElementById("dpg-llm-result")?.addEventListener("input", () => {
-      captureGeneratedOutputState();
-      const parsed = getLLMResultOverride();
-      syncLLMSaveMode(parsed);
-      setStatus(parsed ? "동적 초안 JSON을 인식했습니다. 이제 저장할 수 있습니다." : "동적 초안 JSON 대기 중입니다.", parsed ? "ok" : "info");
-    });
-
-    const layoutEl = document.querySelector(".lia-app-layout");
-    const setWorldDrawer = (open) => {
-      preservedWorldDrawerOpen = open === true;
-      layoutEl?.classList.toggle("world-drawer-open", preservedWorldDrawerOpen);
-    };
-    document.getElementById("dpg-world-drawer-open")?.addEventListener("click", () => setWorldDrawer(true));
-    document.getElementById("dpg-world-drawer-close")?.addEventListener("click", () => setWorldDrawer(false));
-    document.getElementById("dpg-world-drawer-backdrop")?.addEventListener("click", () => setWorldDrawer(false));
-    document.getElementById("dpg-sidebar-collapse")?.addEventListener("click", () => {
-      preservedSidebarCollapsed = !preservedSidebarCollapsed;
-      layoutEl?.classList.toggle("sidebar-collapsed", preservedSidebarCollapsed);
-    });
-
-    const setPersonaPanel = (open) => {
-      preservedPersonaPanelOpen = open === true;
-      if (preservedPersonaPanelOpen) {
-        preservedWorldDrawerOpen = false;
-        layoutEl?.classList.remove("world-drawer-open");
-      }
-      layoutEl?.classList.toggle("persona-panel-open", preservedPersonaPanelOpen);
-      syncPocketPersonaDialog(preservedPersonaPanelOpen);
-    };
-    document.getElementById("dpg-persona-panel-close")?.addEventListener("click", () => setPersonaPanel(false));
-    document.getElementById("dpg-persona-panel-backdrop")?.addEventListener("click", () => setPersonaPanel(false));
-    document.getElementById("dpg-persona-panel-refresh")?.addEventListener("click", async () => {
-      setStatus("RisuAI Persona 선택과 현재 채팅 바인딩을 다시 확인 중...", "info");
-      const ctx = await refreshPreview({ skipCapture: true });
-      await refreshPersonaProofIndicator();
-      if (ctx?.personaDatabaseReadStatus?.available === false) {
-        setStatus(personaDatabaseReadFailureMessage(), "error");
-      } else if (ctx) {
-        setStatus("Persona 바인딩 상태를 RisuAI에서 다시 읽었습니다.", "ok");
-      }
-    });
-    document.getElementById("dpg-persona-proof-check")?.addEventListener("click", async () => {
-      setStatus("현재 채팅의 실제 Persona 바인딩을 RisuAI에서 재검증 중...", "info");
-      try {
-        const proof = await verifyCurrentPersonaBindingOnly();
-        await refreshPreview({ skipCapture: true });
-        setStatus(proof?.bindingVerified ? "현재 채팅의 Persona 연결을 확인했습니다." : "현재 동적 Persona 바인딩이 확인되지 않았습니다.", proof?.bindingVerified ? "ok" : "error");
-      } catch (error) {
-        setStatus(`Persona Proof 실패: ${error?.message || error}`, "error");
-      }
-    });
-    document.getElementById("dpg-persona-filter")?.addEventListener("input", (event) => {
-      const query = String(event?.target?.value || "").trim().toLowerCase();
-      document.querySelectorAll("[data-persona-card]").forEach((card) => {
-        const haystack = String(card.getAttribute("data-persona-search") || "");
-        card.style.display = !query || haystack.includes(query) ? "" : "none";
-      });
-    });
-    document.querySelectorAll("[data-persona-apply]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const choice = String(button.getAttribute("data-persona-apply") || "");
-        if (!choice) return;
-        button.disabled = true;
-        setStatus("현재 채팅에 선택한 Persona를 동적 바인딩 중... RisuAI 기본 Persona는 변경하지 않습니다.", "info");
-        try {
-          const runtimeCtx = await getLiveRuntimeContext();
-          const result = await PersonaSelectionManager.applyCard(runtimeCtx, choice);
-          await refreshPreview({ skipCapture: true });
-          await refreshPersonaProofIndicator();
-          setStatus(result.liveReconfigured ? "RisuAI 기본 Persona는 그대로 두고, 현재 채팅을 새 Source의 Live Persona로 다시 연결했습니다." : "RisuAI 기본 Persona는 그대로 두고 현재 채팅에만 Persona를 동적 바인딩했습니다.", "ok");
-        } catch (error) {
-          setStatus(`Persona 적용 실패: ${error?.message || error}`, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
-    document.querySelectorAll("[data-persona-dynamic]").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        event?.stopPropagation?.();
-        const choice = String(button.getAttribute("data-persona-dynamic") || "");
-        if (!choice) return;
-        button.disabled = true;
-        try {
-          const runtimeCtx = await getLiveRuntimeContext();
-          const snapshot = await PersonaSelectionManager.read(runtimeCtx);
-          const resolved = resolvePersonaPanelChoice(snapshot.personas, choice);
-          if (!resolved) throw new Error("선택한 Persona를 찾을 수 없습니다.");
-          const resolvedId = String(resolved.id || "").trim();
-          if (resolvedId && snapshot.dynamicPersonaId === resolvedId) {
-            setStatus("현재 채팅 Persona 바인딩을 해제 중...", "info");
-            await PersonaSelectionManager.clearDynamic(runtimeCtx);
-            await refreshPreview({ skipCapture: true });
-            await refreshPersonaProofIndicator();
-            setStatus("채팅 동적 바인딩을 해제했습니다. 이제 RisuAI 기본 Persona가 사용됩니다.", "ok");
-          } else {
-            setStatus("현재 채팅에 선택한 Persona를 동적 바인딩 중...", "info");
-            const result = await PersonaSelectionManager.setDynamic(runtimeCtx, choice);
-            await refreshPreview({ skipCapture: true });
-            await refreshPersonaProofIndicator();
-            setStatus(result.liveBindingPaused ? "동적 Persona를 변경했습니다. 기존 갱신 연결이 변경되었습니다." : "현재 채팅 동적 Persona를 변경했습니다.", "ok");
-          }
-        } catch (error) {
-          setStatus(`동적 바인딩 변경 실패: ${error?.message || error}`, "error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
-    document.getElementById("dpg-persona-unbind")?.addEventListener("click", async () => {
-      const button = document.getElementById("dpg-persona-unbind");
-      if (button) button.disabled = true;
-      setStatus("현재 채팅 Persona 바인딩을 해제 중...", "info");
-      try {
-        const runtimeCtx = await getLiveRuntimeContext();
-        await PersonaSelectionManager.clearDynamic(runtimeCtx);
-        await refreshPreview({ skipCapture: true });
-        await refreshPersonaProofIndicator();
-        setStatus("채팅 바인딩을 해제했습니다. RisuAI 기본 Persona가 우선됩니다.", "ok");
-      } catch (error) {
-        setStatus(`채팅 바인딩 해제 실패: ${error?.message || error}`, "error");
-      } finally {
-        if (button) button.disabled = false;
-      }
-    });
-    document.querySelectorAll(".lia-editor-tab[data-editor-section]").forEach((button) => {
-      button.addEventListener("click", () => {
-        preservedEditorSection = String(button.getAttribute("data-editor-section") || "persona");
-        const resultCard = document.querySelector(".lia-result-card");
-        if (resultCard) resultCard.setAttribute("data-editor-section", preservedEditorSection);
-        document.querySelectorAll(".lia-editor-tab").forEach((item) => item.classList.toggle("active", item === button));
-      });
-    });
-    document.querySelectorAll("[data-vault-card-id]").forEach((card) => {
-      card.addEventListener("click", () => {
-        const id = String(card.getAttribute("data-vault-card-id") || "");
-        const select = document.getElementById("dpg-result-vault");
-        if (select) select.value = id;
-        preservedResultVaultId = id;
-        document.querySelectorAll("[data-vault-card-id]").forEach((item) => { item.classList.toggle("active", item === card); item.setAttribute("aria-pressed", String(item === card)); });
-        const tools = document.querySelector(".lia-vault-tools");
-        if (tools) { tools.open = true; tools.scrollIntoView({block:"nearest"}); }
-        syncResultVaultControls();
-      });
-    });
-
-    document.querySelectorAll("[data-pocket-tab]").forEach((button) => {
-      button.addEventListener("click", () => activateTab(button.getAttribute("data-pocket-tab")));
-    });
-    document.querySelectorAll('[data-pocket-personas]').forEach(button => button.addEventListener('click', () => document.getElementById('dpg-persona-panel-toggle')?.click()));
-    bindAction('lia-pocket-sync-toggle', async () => {
-      const result = await togglePocketLiveSync(ctx);
-      if (result.needsSetup) activateTab('realtime');
-      return {skipCapture:true};
-    });
-    document.querySelectorAll(".dpg-tab-button[data-workspace-tab]").forEach((button) => {
-      button.addEventListener("click", () => activateTab(String(button.getAttribute("data-workspace-tab") || "generate")));
-    });
-    void bindVisualAssetStudioUi(ctx);
-    syncPocketPersonaDialog(preservedPersonaPanelOpen, preservedPersonaPanelOpen);
-    syncProviderUi();
-    syncLLMSaveMode();
-    keepActiveMobileSidebarTabVisible();
   }
 
   let liaPreviewEpoch = 0;
@@ -27277,7 +25249,11 @@ ${revisionText}`);
       root.innerHTML = renderPreview(ctx);
       await refreshModulePicker(ctx.contextOptions?.selectedModuleIds || [],ctx);
       if (!current()) return null;
-      bindPreviewTools(ctx);
+      if(activeWorkspaceTab==='assets'){
+        try{preservedVisualAssetPresetStore=await readVisualAssetPresetStore();const select=document.getElementById('lia-asset-preset-select');if(select){const selected=preservedVisualAssetPresetId;select.innerHTML='<option value="">불러올 프리셋 선택</option>'+preservedVisualAssetPresetStore.items.map(item=>`<option value="${htmlEscape(item.id)}">${htmlEscape(item.name)}</option>`).join('');select.value=selected;}}
+        catch(error){setStatus(`에셋 프리셋을 읽지 못했습니다: ${error?.message||error}`,'error');}
+      }
+      bindLiaMockupSettingsActions();
       if (activeWorkspaceTab === "server") mountLiaServerConnectionPanel();
       if (ctx.personaDatabaseReadStatus?.available === false) {
         setStatus(personaDatabaseReadFailureMessage(), "error");
@@ -27361,11 +25337,30 @@ ${revisionText}`);
     else setTimeout(sync, 0);
   }
 
+  function hydrateLiaRecoverySteps(phase = "pending") {
+    const root=document.querySelector('#dpg-preview-root [data-page="recover"]');
+    const steps=[...(root?.querySelectorAll(':scope > .steps > .step')||[])];
+    if(steps.length<4)return;
+    const states={
+      pending:[['pending','검사 필요'],['pending','결과 대기'],['pending','가져오기 대기'],['pending','읽기 확인 대기']],
+      checking:[['active','검사 중'],['pending','결과 대기'],['pending','가져오기 대기'],['pending','읽기 확인 대기']],
+      review:[['done','검사 완료'],['active','결과·충돌 확인'],['active','가져오기 준비'],['pending','읽기 확인 대기']],
+      conflict:[['done','검사 완료'],['active','충돌 검토 필요'],['pending','가져오기 차단'],['pending','읽기 확인 대기']],
+      inspectionFailed:[['active','검사 실패'],['pending','결과 대기'],['pending','가져오기 대기'],['pending','읽기 확인 대기']],
+      importing:[['done','검사 완료'],['done','결과 확인됨'],['active','가져오는 중'],['active','읽기 확인 중']],
+      importFailed:[['done','검사 완료'],['done','결과 확인됨'],['active','가져오기 실패'],['active','읽기 확인 필요']],
+      imported:[['done','검사 완료'],['done','결과 확인됨'],['done','가져오기 완료'],['done','읽기 확인 완료']]
+    };
+    const current=states[phase]||states.pending;
+    steps.forEach((step,index)=>{const [state,label]=current[index];step.classList.toggle('is-done',state==='done');step.classList.toggle('is-active',state==='active');step.dataset.state=state;step.setAttribute('aria-current',state==='active'?'step':'false');const mark=step.querySelector('.step__no');if(mark)mark.textContent=state==='done'?'✓':String(index+1);const title=step.querySelector('b');if(title)title.textContent=label;});
+  }
+
   function mountLiaServerConnectionPanel() {
     const root = typeof document !== 'undefined' ? document.getElementById('liaMemorySuiteServerConnectionPanel') : null;
     if (!root) return false;
     LiaLegacyServerRecovery.clear();
-    root.innerHTML = `<section class="lia-panel"><h3>LIA 로컬 저장</h3><p>LIA 자료는 RisuAI pluginStorage에 저장됩니다. 실제 Persona와 원본 이미지는 RisuAI가 관리합니다.</p><p>이전 서버 자료는 그대로 보존됩니다. 자동으로 가져오거나 동기화하지 않습니다. 아래에서 전체 목록·Live Persona·이미지 청크를 먼저 검사한 뒤 가져오세요. 로컬과 다른 자료가 있으면 중단하며 덮어쓰지 않습니다.</p><button type="button" class="btn-soft" data-lia-recovery-preview>이전 서버 자료 검사</button><button type="button" class="btn-primary" data-lia-recovery-publish disabled>검증된 자료를 로컬로 가져오기</button><p data-lia-recovery-status>이전 서버 자료는 아직 확인하지 않았습니다. 서버의 삭제 표식은 로컬에 적용하지 않습니다.</p></section>`;
+    hydrateLiaRecoverySteps("pending");
+    root.innerHTML = `<section class="stack"><div class="card__head"><div><h2 class="card__title">LIA 로컬 저장</h2><p class="card__desc">LIA 자료는 RisuAI pluginStorage에 저장됩니다. 실제 Persona와 원본 이미지는 RisuAI가 관리합니다.</p></div></div><p class="muted">이전 서버 자료는 그대로 보존됩니다. 자동으로 가져오거나 동기화하지 않습니다. 아래에서 전체 목록·Live Persona·이미지 청크를 먼저 검사한 뒤 가져오세요. 로컬과 다른 자료가 있으면 중단하며 덮어쓰지 않습니다.</p><div class="cluster"><button type="button" class="btn" data-lia-recovery-preview>이전 서버 자료 검사</button><button type="button" class="btn btn--primary" data-lia-recovery-publish disabled>검증된 자료를 로컬로 가져오기</button></div><p class="hint" data-lia-recovery-status>이전 서버 자료는 아직 확인하지 않았습니다. 서버의 삭제 표식은 로컬에 적용하지 않습니다.</p></section>`;
     const previewButton = root.querySelector('[data-lia-recovery-preview]');
     const publishButton = root.querySelector('[data-lia-recovery-publish]');
     const status = root.querySelector('[data-lia-recovery-status]');
@@ -27374,63 +25369,495 @@ ${revisionText}`);
     previewButton.addEventListener('click', async () => {
       if (previewButton.disabled) return;
       previewButton.disabled = true; publishButton.disabled = true; preview = null;
+      hydrateLiaRecoverySteps("checking");
       status.textContent = '이전 서버 자료를 읽기 전용으로 검사하고 있습니다…';
       try {
         const found = await LiaLegacyServerRecovery.preview();
         if (!current()) return;
         preview = found;
+        hydrateLiaRecoverySteps(found.conflicts.length>0?"conflict":"review");
         status.textContent = `${found.records}개 자료, 이미지 청크 ${found.imageChunks}개 검증. 로컬 충돌 ${found.conflicts.length}개. 서버에 유지할 미지원 자료 ${found.unsupportedServerRecords.length}개, 삭제 표식 ${found.retainedServerTombstones}개. 인덱스 없는 shard ${found.unindexedShards}개는 보존만 하며 자동 연결하지 않습니다. Persona DB와 원본 이미지 복구는 별도입니다.`;
         publishButton.disabled = found.conflicts.length > 0;
-      } catch (error) { if (current()) status.textContent = `가져오기 준비 중단: ${error?.code || error?.message || error}. 서버와 기존 로컬 자료를 그대로 유지합니다.`; }
+      } catch (error) { if (current()) {hydrateLiaRecoverySteps("inspectionFailed");status.textContent = `가져오기 준비 중단: ${error?.code || error?.message || error}. 서버와 기존 로컬 자료를 그대로 유지합니다.`;} }
       finally { if (current()) previewButton.disabled = false; }
     });
     publishButton.addEventListener('click', async () => {
       if (publishButton.disabled || !preview) return;
       publishButton.disabled = true; previewButton.disabled = true;
+      hydrateLiaRecoverySteps("importing");
       try {
         const result = await LiaLegacyServerRecovery.publish(preview);
-        if (current()) status.textContent = `${result.restored}개 자료를 pluginStorage에 저장하고 다시 확인했습니다. 서버 자료는 그대로 유지됩니다.`;
-      } catch (error) { if (current()) status.textContent = `가져오기 중단: ${error?.code || error?.message || error}${error?.recovery?.manualReviewRequired ? '. 일부 로컬 쓰기 결과를 확인하지 못했습니다. 수동 확인이 필요합니다.' : '. 다시 검사한 뒤 진행하세요.'}`; }
+        if (current()) {hydrateLiaRecoverySteps("imported");status.textContent = `${result.restored}개 자료를 pluginStorage에 저장하고 다시 확인했습니다. 서버 자료는 그대로 유지됩니다.`;}
+      } catch (error) { if (current()) {hydrateLiaRecoverySteps("importFailed");status.textContent = `가져오기 중단: ${error?.code || error?.message || error}${error?.recovery?.manualReviewRequired ? '. 일부 로컬 쓰기 결과를 확인하지 못했습니다. 수동 확인이 필요합니다.' : '. 다시 검사한 뒤 진행하세요.'}`;} }
       finally { preview = null; if (current()) previewButton.disabled = false; }
     });
     return true;
   }
 
   function activateTab(name) {
-    const normalized = ["home", "generate", "edit", "realtime", "assets", "vault", "settings", "server"].includes(name) ? name : "generate";
-    activeWorkspaceTab = normalized;
-    const workspace = document.querySelector(".lia-workspace");
-    if (workspace) workspace.scrollTop = 0;
-    if (normalized !== "generate") preservedWorldDrawerOpen = false;
-    const layout = document.querySelector(".lia-app-layout");
-    if (layout) {
-      layout.dataset.page = normalized;
-      layout.dataset.pocketGroup = pocketPrimaryTab(normalized);
-      layout.classList.toggle("world-drawer-open", preservedWorldDrawerOpen);
+    const toPage = { home: "mine", generate: "make", vault: "shelf", settings: "settings", edit: "edit", realtime: "update", assets: "assets", server: "recover" };
+    const fromPage = { mine: "home", make: "generate", shelf: "vault", settings: "settings", edit: "edit", update: "realtime", assets: "assets", recover: "server" };
+    const page = toPage[name] ? name : fromPage[name] ? name : "generate";
+    activeWorkspaceTab = fromPage[page] || "generate";
+    const root = document.getElementById("dpg-preview-root");
+    root?.querySelectorAll(".page[data-page]").forEach((item) => item.classList.toggle("is-active", item.dataset.page === page));
+    root?.querySelectorAll(".sidebar .nav-item[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === page ? "page" : "false"));
+    root?.querySelectorAll(".tabbar button[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === page ? "page" : "false"));
+    if (page !== "make") preservedWorldDrawerOpen = false;
+    if (page === "recover") mountLiaServerConnectionPanel();
+    if (page === "assets") void hydrateVisualAssetThumbnails();
+    root?.querySelector(".page-body")?.scrollTo?.(0, 0);
+  }
+
+  let liaMockupContext = null;
+  let liaMockupContextOptions = { ...DEFAULT_CONTEXT_OPTIONS };
+  let liaSelectedPersonaChoice = "";
+  let liaMockupSubtabs = { ed: "sum", up: "five" };
+  let liaMockupEditorLanguage = "original";
+  let liaMockupEditorDraftDirty = false;
+  function activateLiaMockupSubtab(group,name) {
+    const root=document.getElementById("dpg-preview-root");
+    const tabs=root?.querySelector(`[data-subtabs="${CSS.escape(String(group))}"]`);
+    if(!tabs)return;
+    const button=tabs.querySelector(`[data-subtab="${CSS.escape(String(name))}"]`);
+    if(!button)return;
+    liaMockupSubtabs[group]=String(name);
+    tabs.querySelectorAll("[data-subtab]").forEach(item=>item.setAttribute("aria-selected",String(item===button)));
+    root.querySelectorAll(`[data-subpanel][data-group="${CSS.escape(String(group))}"]`).forEach(panel=>panel.classList.toggle("is-active",panel.dataset.subpanel===name));
+  }
+  function updateLiaMockupTranslation(value, language = null) {
+    preservedTranslationText=String(value||"");
+    if(language)preservedTranslationLanguage=normalizeTranslationLanguage(language);
+    const field=document.getElementById("lia-translation-draft"); if(field&&field.value!==preservedTranslationText)field.value=preservedTranslationText;
+    return preservedTranslationText;
+  }
+  function markLiaEditorDirty() {
+    liaMockupEditorDraftDirty=true;
+    const bar=document.getElementById("savebar"),save=bar?.querySelector("[data-save]");
+    if(!bar||!save)return;
+    bar.hidden=false;save.disabled=false;
+    const title=bar.querySelector("[data-save-title]"),desc=bar.querySelector("[data-save-desc]");
+    if(title)title.textContent="Persona 초안이 저장되지 않았습니다.";
+    if(desc)desc.textContent="저장하면 편집 결과를 local_only LIA 보관함에 새 버전으로 기록합니다. RisuAI Persona와 채팅 연결은 바뀌지 않습니다.";
+  }
+  let liaMockupFocusedBeforeDialog = null;
+  const LIA_NONCANCELLABLE_JOB_IDS = new Set(["job-cand", "job-gen", "job-neutral", "job-emo"]);
+  function showLiaMockupDialog(id, trigger = null) {
+    const root = document.getElementById("dpg-preview-root");
+    const dialog = root?.querySelector(`#${CSS.escape(String(id || ""))}`);
+    if (!dialog) return false;
+    const requirement = String(dialog.dataset.require || "");
+    const context = liaMockupContext;
+    if (requirement.includes("pid") && !resolvePersonaVisualTarget(context || {}).personaId && !buildPersonaPanelState(context || {}).effectivePersona) {
+      setStatus("대상 Persona를 확인할 수 없어 작업을 열지 않았습니다.", "error");
+      return false;
     }
-    document.querySelectorAll(".dpg-tab-button[data-workspace-tab]").forEach((button) => {
-      button.classList.toggle("active", String(button.getAttribute("data-workspace-tab") || "") === normalized);
-    });
-    document.querySelectorAll("[data-pocket-tab]").forEach((button) => {
-      const selected = button.getAttribute("data-pocket-tab") === pocketPrimaryTab(normalized);
-      button.classList.toggle("active", selected);
-      button.setAttribute("aria-current", selected ? "page" : "false");
-    });
-    document.querySelectorAll("[data-workspace-tab]").forEach((button) => button.setAttribute("aria-current", button.getAttribute("data-workspace-tab") === normalized ? "page" : "false"));
-    const panelState = {
-      "lia-pocket-home": normalized === "home",
-      "dpg-studio-panel": ["generate", "edit", "realtime"].includes(normalized),
-      "dpg-assets-panel": normalized === "assets",
-      "dpg-vault-panel": normalized === "vault",
-      "dpg-settings-panel": normalized === "settings",
-      "dpg-server-panel": normalized === "server",
-    };
-    for (const [panelId, isActive] of Object.entries(panelState)) {
-      document.getElementById(panelId)?.classList.toggle("active", isActive);
+    if(id==="sheet-del-vault"){
+      const item=asArray(context?.savedResultVault).find(entry=>entry.id===preservedResultVaultId);
+      if(!item){setStatus('삭제할 보관함 항목을 먼저 선택해 주세요.','error');return false;}
+      const name=String(item.personaName||item.title||'Persona');
+      const title=dialog.querySelector('#sdv-t [data-fill="name"]');if(title)title.textContent=name;
+      const mode=dialog.querySelector('[data-fill="mode"]');if(mode)mode.textContent=generationModeLabel(item.generationMode);
+      const version=dialog.querySelector('[data-fill="ver"]');if(version)version.textContent=normalizePersonaLineage(item.personaLineage)?.revision?`v${normalizePersonaLineage(item.personaLineage).revision}`:'초안';
     }
-    keepActiveMobileSidebarTabVisible();
-    if (normalized === "server") mountLiaServerConnectionPanel();
-    if (normalized === "assets") void hydrateVisualAssetThumbnails();
+    liaMockupFocusedBeforeDialog = trigger || document.activeElement;
+    if (LIA_NONCANCELLABLE_JOB_IDS.has(String(id))) {
+      dialog.dataset.liaJobActive = "true";
+      const cancel = dialog.querySelector("[data-job-cancel]");
+      if (cancel) {
+        cancel.disabled = true;
+        cancel.textContent = "이 단계는 취소할 수 없음";
+        cancel.title = "현재 제품 작업 API에는 안전한 중단 동작이 없습니다.";
+        cancel.setAttribute("aria-disabled", "true");
+      }
+      const done = dialog.querySelector("[data-job-done]");
+      if (done) {
+        done.hidden = false;
+        done.textContent = "닫기 · 작업 계속";
+        done.title = "진행 중 작업은 계속되며 완료 또는 실패가 상태 알림에 표시됩니다.";
+      }
+    }
+    if (id === "sheet-persona" || id === "sheet-bind") hydrateLiaPersonaDialog(id);
+    dialog.setAttribute("aria-hidden", "false");
+    dialog.classList.add("is-open");
+    const focusable = dialog.querySelector("button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex='0']");
+    focusable?.focus();
+    return true;
+  }
+  function hydrateLiaPersonaDialog(id) {
+    const ctx = liaMockupContext;
+    const state = ctx ? buildPersonaPanelState(ctx) : null;
+    const choice = liaSelectedPersonaChoice;
+    const selected = state?.personas?.find((item, index) => personaPanelChoiceRef(item,index) === choice) || state?.effectivePersona || null;
+    const selectedId = String(selected?.id || "");
+    const defaultPersonaId = String(state?.personas?.[Number(state?.selectedIndex)]?.id || "");
+    const foreignLive = !!selected && isLivePersona(selected) && selectedId !== state?.dynamicId;
+    if (id === "sheet-persona") {
+      const name = document.querySelector("#spm-t [data-fill=name]"); if (name) name.textContent = String(selected?.name || "Persona");
+      const kv = document.getElementById("spm-kv");
+      if (kv) kv.innerHTML = `<dt>RisuAI ID</dt><dd class="mono">${htmlEscape(selectedId || "확인 불가")}</dd><dt>기본 Persona</dt><dd>${selectedId && selectedId === defaultPersonaId ? "이 Persona" : "유지됨"}</dd><dt>현재 채팅</dt><dd>${selectedId && selectedId === state?.dynamicId ? "연결됨" : "연결되지 않음"}</dd><dt>Live 소유</dt><dd>${foreignLive ? "다른 채팅이 소유 · 변경 보호" : isLivePersona(selected) ? "현재 범위" : "Live Persona 아님"}</dd>`;
+      const note = document.getElementById("spm-note"); if (note) note.textContent = foreignLive ? "다른 채팅에서 관리하는 Live Persona는 이 채팅에서 선택·수정할 수 없습니다." : "연결·저장·삭제는 각각 별도 확인을 거칩니다. 기본 Persona 선택은 바꾸지 않습니다.";
+      const actions = document.getElementById("spm-act");
+      const selectedIndex=state?.personas?.indexOf(selected)??-1;
+      const canCleanup=!!selected&&selectedIndex>Number(state?.selectedIndex??-1)&&isGeneratedFallbackPersona(selected,ctx)&&!foreignLive;
+      if (actions) actions.innerHTML = selected ? `<button class="btn btn--primary" data-lia-persona-bind${foreignLive ? " disabled" : ""}>이 채팅에 연결…</button><button class="btn" data-open="sheet-bind">대상 선택</button>${selectedId&&selectedId===state?.dynamicId?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}` : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
+    }
+    if (id === "sheet-bind") {
+      const list = document.getElementById("bind-list");
+      if (list) list.innerHTML = (state?.personas || []).map((item,index) => {
+        const ref=personaPanelChoiceRef(item,index); const itemId=String(item?.id||""); const live=isLivePersona(item); const protectedForeign=live&&itemId!==state.dynamicId; const label=String(item?.name||`Persona ${index+1}`);
+        return `<button class="big-choice${ref===choice?" is-on":""}" type="button" data-lia-bind-choice="${htmlEscape(ref)}"${protectedForeign?" disabled":""}><span><b>${htmlEscape(label)}</b><small>${protectedForeign?"다른 채팅 소유 Live Persona · 선택 보호":itemId===state?.dynamicId?"현재 채팅에 연결됨":itemId===defaultPersonaId?"RisuAI 기본 Persona · 기본값은 변경하지 않음":"연결 가능"}</small></span><span class="pick">${ref===choice?"선택됨":"선택"}</span></button>`;
+      }).join("") || '<div class="empty"><b>Persona 목록이 비어 있습니다.</b></div>';
+      const confirm = document.getElementById("btn-bind-go"); if (confirm) { confirm.disabled = !choice; confirm.removeAttribute("data-toast"); confirm.setAttribute("data-lia-bind-confirm", ""); if(choice){confirm.removeAttribute('aria-disabled');confirm.removeAttribute('title');}else{confirm.setAttribute('aria-disabled','true');} }
+    }
+  }
+  function closeLiaMockupDialog(dialog) {
+    if (!dialog) return;
+    if (dialog.dataset?.liaJobActive === "true") {
+      setStatus("작업 창을 닫았습니다. 제품 작업은 계속되며 완료 또는 실패가 상태 알림에 표시됩니다.", "info");
+    }
+    dialog.setAttribute("aria-hidden", "true");
+    dialog.classList.remove("is-open");
+    liaMockupFocusedBeforeDialog?.focus?.();
+    liaMockupFocusedBeforeDialog = null;
+  }
+  function applyLiaMockupMode(mode) {
+    const normalized = normalizeGenerationMode(mode);
+    const panels = document.querySelectorAll('.page[data-page="make"] [data-detail]');
+    panels.forEach(panel => panel.classList.toggle("is-on", panel.dataset.detail === normalized));
+    document.querySelectorAll('.page[data-page="make"] [data-select-row]').forEach(button => {
+      const selected = button.dataset.selectRow === normalized;
+      button.classList.toggle("is-on", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    liaMockupContextOptions = { ...liaMockupContextOptions, generationMode: normalized };
+    return normalized;
+  }
+  function updateMockupCandidates() {
+    const root = document.getElementById("dlg-cand");
+    const rows = root?.querySelector("[data-detail-root]:not([hidden])");
+    if (!rows) return;
+    const candidates = generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER ? preservedCharacterCandidates : preservedRandomCandidates;
+    const selectedId = generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER ? preservedSelectedCharacterCandidateId : preservedSelectedRandomCandidateId;
+    rows.innerHTML = candidates.length ? candidates.map((candidate, index) => {
+      const name = String(candidate?.name || candidate?.personaName || `후보 ${index + 1}`);
+      const details = String(candidate?.summary || candidate?.description || candidate?.role || "실제 생성 결과");
+      return `<button class="big-choice${candidate.id === selectedId ? " is-on" : ""}" type="button" data-lia-candidate-id="${htmlEscape(candidate.id)}"><span class="avatar avatar--sm">${htmlEscape(name.slice(0,1))}</span><span><b>${htmlEscape(name)}</b><small>${htmlEscape(details)}</small></span><span class="pick">${candidate.id === selectedId ? "선택됨" : "선택"}</span></button>`;
+    }).join("") : '<div class="empty"><b>실제 후보 결과가 없습니다.</b><span>먼저 후보 생성 작업을 완료하세요.</span></div>';
+  }
+  async function runLiaMockupAction(action, trigger) {
+    const button = trigger;
+    if (button) button.disabled = true;
+    let activeJob=null;const openJob=id=>{activeJob=document.getElementById(id);const message=activeJob?.querySelector('[data-job-msg]');if(message)message.textContent='실제 작업을 시작했습니다. 제품 결과를 기다리는 중입니다.';showLiaMockupDialog(id,button);};const closeJob=()=>{if(activeJob){activeJob.dataset.liaJobActive='false';closeLiaMockupDialog(activeJob);activeJob=null;}};
+    try {
+      setStatus("실제 제품 작업 중…", "info");
+      let result;
+      if (action === "candidate") {
+        openJob('job-cand');
+        liaMockupContext = await getContext(readContextOptions());
+        const variant = (() => { try { return JSON.parse(button?.dataset?.ctx || "{}").variant; } catch (_) { return "random"; } })();
+        applyLiaMockupMode(variant === "character" ? "character" : "random");
+        result = variant === "character" ? await generateCharacterCandidates() : await generateRandomCandidates();
+        liaMockupContext = readLiaViewContext(await getContext(readContextOptions()));
+        await refreshPreview({skipCapture:true});
+        updateMockupCandidates();
+        closeJob();showLiaMockupDialog("dlg-cand", button);
+        setStatus(`${asArray(result?.candidates).length}개 후보를 실제 생성 결과에서 불러왔습니다.`, "ok");
+      } else if (action === "generate") {
+        openJob('job-gen');
+        liaMockupContext = await getContext(readContextOptions());
+        result = await runLLMRewrite();
+        closeJob();liaMockupEditorDraftDirty=false;
+        await refreshPreview({skipCapture:true});
+        activateTab("edit");
+        setStatus("Persona 초안을 생성해 실제 결과를 다시 읽었습니다. 아직 RisuAI Persona는 변경하지 않았습니다.", "ok");
+      } else if (action === "save-lore-limit") {
+        const value = await saveLoreCharacterLimit(document.getElementById("lia-max-chars")?.value);
+        setStatus(`자료 길이 설정을 ${value}자로 저장하고 RisuAI ARG에서 다시 확인했습니다.`, "ok");
+        await refreshPreview({skipCapture:true});
+      } else if (action === "save-editor-draft") {
+        const result=await saveCurrentResultToVault();
+        const vault=await readStoredResultVault();
+        if(!vault.some(item=>item.id===preservedResultVaultId)) throw new Error("보관함 저장 후 같은 결과를 다시 읽지 못했습니다.");
+        liaMockupEditorDraftDirty=false;
+        await refreshPreview({skipCapture:true});
+        setStatus(`편집 초안을 LIA 보관함에 저장하고 재확인했습니다: ${result.title}`,"ok");
+      } else if (action === "reroll-field") {
+        const field=String(button?.dataset?.regen||"");
+        if(!PERSONA_SPEC_FIELD_KEY_SET.has(field)) throw new Error("재생성할 Persona 필드를 확인할 수 없습니다.");
+        await rerollPersonaFields([field]);
+        await refreshPreview({skipCapture:true});
+        setStatus(`Persona 필드 ‘${field}’를 실제 생성 결과로 다시 읽었습니다.`,"ok");
+      } else if (action === "translate") {
+        const translated=await translateCurrentPersona();
+        liaMockupEditorLanguage="translation";activateTab("edit");activateLiaMockupSubtab("ed","all");
+        await refreshPreview({skipCapture:true});
+        setStatus(`${translated.label} 번역 결과를 별도 초안으로 저장했습니다.`,"ok");
+      } else if (action === "adopt") {
+        if(liaMockupEditorDraftDirty)throw new Error("보관함에 저장하지 않은 편집이 있습니다. 먼저 편집 초안을 저장하세요.");
+        const source=appAdoptionSource();
+        const result=await adoptPersonaFromPane(source);
+        await refreshPreview({skipCapture:true});
+        setStatus(`RisuAI Persona에 ${source==="translation"?getTranslationLanguage():"원문"} 채택본을 저장하고 Persona DB를 다시 읽었습니다: ${result.personaName}`,"ok");
+      } else if (action === "confirm-visual-lock") {
+        const ctx = await getContext(readContextOptions());
+        const target = resolvePersonaVisualTarget(ctx);
+        result = await confirmPersonaVisualGenerationLock(target);
+        await refreshPreview({skipCapture:true});
+        setStatus("Neutral 기준 Visual Lock을 실제 에셋 저장소에서 다시 읽어 확인했습니다.", "ok");
+      } else if (action === "save-provider") {
+        const saved=await writeStoredLLMConfig(readLLMConfig());
+        const readback=await readStoredLLMConfig();
+        if(readback.provider!==saved.provider||readback.model!==saved.model||readback.apiKey!==saved.apiKey)throw new Error("텍스트 AI 설정 durable readback 불일치");
+        await refreshPreview({skipCapture:true});setStatus(`텍스트 AI 설정을 저장하고 다시 읽었습니다. 인증 정보 ${readback.apiKey?"보존됨":"없음"}.`,"ok");
+      } else if (action === "save-image-provider") {
+        const saved=await writeStoredIllustrationConfig(readIllustrationConfig());
+        const readback=await readStoredIllustrationConfig(true);
+        if(readback.provider!==saved.provider||readback.model!==saved.model||readback.apiKey!==saved.apiKey)throw new Error("이미지 AI 설정 readback 불일치");
+        await refreshPreview({skipCapture:true});setStatus(`이미지 AI 설정을 저장하고 다시 읽었습니다. 인증 정보 ${readback.apiKey?"보존됨":"없음"}.`,"ok");
+      } else if (action === "update-five") {
+        const fresh=await getLiveRuntimeContext();
+        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
+        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding);
+        if(!plan.range||!fresh.livePersonaBinding)throw new Error("현재 채팅의 다음 완결 5쌍을 실행할 자격이 없습니다.");
+        const job=document.getElementById("job-update");
+        const persona=fresh.db?.personas?.find(item=>String(item?.id||"")===String(fresh.livePersonaBinding.livePersonaId||""));
+        const name=job?.querySelector('[data-fill="name"]');if(name)name.textContent=String(persona?.name||"현재 채팅 Persona");
+        const message=job?.querySelector("[data-job-msg]");if(message)message.textContent=`완결된 User+Assistant ${plan.range[0]}~${plan.range[1]}쌍을 처리합니다. 취소 요청은 안전한 저장 전까지 반영됩니다.`;
+        showLiaMockupDialog("job-update",button);
+        const result=await runManualLivePersonaAnalysis({...fresh,manualAnalysisRange:plan.range});
+        closeLiaMockupDialog(job);
+        await refreshPreview({skipCapture:true});
+        if(result?.cancelled||/cancel|abort/i.test(String(result?.reason||""))){setStatus("이번 수동 갱신을 취소했습니다. 분석 결과는 반영하지 않았습니다.","info");return true;}
+        if(!result?.ok)throw new Error(result?.message||result?.reason||"분석 결과를 적용하지 않았습니다.");
+        setStatus(`현재 채팅의 다음 5쌍(TURN ${result.range.join('~')})을 분석·반영했습니다.`,"ok");
+      } else if (action === "run-evolution") {
+        const result=await runPersonaEvolution();
+        await refreshPreview({skipCapture:true});
+        setStatus(`User 작성 메시지 변화 후보 ${result.evolution.suggestions.length}개를 분석했습니다. 아직 초안에는 반영하지 않았습니다.`,"ok");
+      } else if (action === "apply-evolution") {
+        const result=await applySelectedPersonaEvolution();
+        liaMockupEditorDraftDirty=true;
+        await refreshPreview({skipCapture:true});
+        setStatus(`선택한 변화 후보를 Persona 초안에 반영했습니다: ${result.fields.join(', ')||'변경 없음'}. 보관함 저장 전입니다.`,"ok");
+      } else if (action === "generate-neutral") {
+        openJob('job-neutral');const fresh=await getContext();const config=normalizeIllustrationConfig(fresh.savedIllustrationConfig||{});const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});const targetSelection=currentVisualTargetSelectionValue();
+        if(config.enabled===false)throw new Error('이미지 AI 제공이 꺼져 있습니다. 설정에서 켠 뒤 저장하세요.');
+        const name=document.getElementById('job-neutral')?.querySelector('[data-fill="name"]');if(name)name.textContent=target.personaName;
+        const generated=await generatePersonaVisualEmotion(fresh,'neutral',{config,expectedPersonaKey:target.personaKey,expectedTargetSelection:targetSelection});
+        closeJob();await refreshPreview({skipCapture:true});setStatus(`Neutral 이미지를 ${generated.target.personaName} 대상으로 생성·저장하고 확인했습니다. Visual Lock은 별도로 확정해야 합니다.`,"ok");
+      } else if (action === "generate-bundle") {
+        openJob('job-emo');const fresh=await getContext();const config=normalizeIllustrationConfig(fresh.savedIllustrationConfig||{});const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});const targetSelection=currentVisualTargetSelectionValue();
+        const bundle=target.bundle||normalizeVisualAssetSet({},target.personaKey);if(!bundle.visualLock?.confirmed)throw new Error('확정된 Neutral Visual Lock이 없습니다.');
+        const emotions=unique(String(document.getElementById('emo-list')?.value||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48).filter(item=>normalizeEmotionKey(item)!=='neutral');if(!emotions.length)throw new Error('생성할 감정이 없습니다.');
+        const name=activeJob?.querySelector('[data-fill="name"]');if(name)name.textContent=target.personaName;let completed=0;for(const emotion of emotions){const msg=activeJob?.querySelector('[data-job-msg]');if(msg)msg.textContent=`${emotion} 감정 이미지를 제품 API로 생성·저장하는 중입니다. (${completed+1}/${emotions.length})`;await generatePersonaVisualEmotion(fresh,emotion,{config,expectedPersonaKey:target.personaKey,expectedTargetSelection:targetSelection});completed++;}
+        closeJob();await refreshPreview({skipCapture:true});setStatus(`${target.personaName}의 neutral 외 ${completed}개 감정 이미지를 저장했습니다.`,"ok");
+      } else if (action === "delete-visual-asset") {
+        const emotion=liaSelectedVisualAssetEmotion;if(!emotion)throw new Error('삭제할 감정을 다시 선택해 주세요.');
+        const fresh=await getContext();const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});
+        if(target.personaKey!==liaSelectedVisualAssetPersonaKey)throw new Error('작업 대상 Persona가 바뀌었습니다. 이미지를 다시 선택해 주세요.');
+        if(emotion==='neutral')throw new Error('Neutral Master는 감정 개별 삭제를 지원하지 않습니다. 묶음 폐기에서 별도 확인해 주세요.');
+        const entry=target.bundle?.images?.[emotion];if(!entry)throw new Error('선택한 이미지가 이미 제거되었습니다. 다시 읽어 주세요.');
+        const ok=typeof globalThis.confirm==='function'&&globalThis.confirm(`‘${target.personaName}’의 ‘${emotion}’ 이미지 하나를 삭제할까요? 다른 감정과 Persona 연결은 유지됩니다.`);if(!ok)return false;
+        await removePersonaVisualAsset(target,emotion);closeLiaMockupDialog(document.getElementById('sheet-emo'));liaSelectedVisualAssetEmotion='';await refreshPreview({skipCapture:true});setStatus(`${target.personaName}의 ${emotion} 이미지 하나를 삭제하고 저장소를 다시 읽었습니다.`,'ok');
+      } else if (action === "discard-visual-bundle") {
+        const fresh=await getContext();const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});
+        if(target.personaKey!==liaSelectedVisualAssetPersonaKey && liaSelectedVisualAssetPersonaKey)throw new Error('작업 대상 Persona가 바뀌었습니다. 다시 시작해 주세요.');
+        const count=Object.keys(target.bundle?.images||{}).length;if(!count)throw new Error('폐기할 감정 에셋이 없습니다.');
+        const ok=typeof globalThis.confirm==='function'&&globalThis.confirm(`‘${target.personaName}’의 저장된 감정 이미지 ${count}개와 Visual Lock을 모두 폐기할까요?`);if(!ok)return false;
+        const result=await discardPersonaVisualAssetBundle(target);if(!result.removed)throw new Error('폐기 대상 에셋이 바뀌어 변경하지 않았습니다.');await refreshPreview({skipCapture:true});setStatus(`감정 이미지 ${result.assetCount||0}개를 폐기하고 저장소를 다시 읽었습니다.`,'ok');
+      } else {
+        return false;
+      }
+      return result || true;
+    } catch (error) {
+      closeJob();setStatus(`실패 또는 결과 확인 필요: ${error?.message || error}`, "error");
+      return false;
+    } finally { if (button?.isConnected) button.disabled = false; }
+  }
+  async function handleLiaMockupClick(event) {
+    if (event.target?.matches?.(".overlay")) { closeLiaMockupDialog(event.target); return; }
+    const target = event.target?.closest?.("button,[data-go],[data-open],[data-close],input.lia-mockup-evolution,input[data-lia-audit-fix],input[data-lia-audit-recommendation]");
+    if (!target) return;
+    if(target.matches('[data-lia-copy-prompt]')){event.preventDefault();const text=buildGenerationPromptForContext(liaMockupContext||await getContext(readContextOptions()));const area=document.getElementById('lia-prompt-inspection-text');if(area)area.value=text;try{await navigator.clipboard?.writeText(text);setStatus('현재 설정과 자료 선택을 반영한 실제 생성 프롬프트를 복사했습니다.','ok');}catch(error){if(area){area.focus();area.select();setStatus('프롬프트를 선택했습니다. Ctrl+C로 복사해 주세요.','info');}else setStatus(`프롬프트 복사 실패: ${error?.message||error}`,'error');}return;}
+    if(target.matches('[data-lia-version-open]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVersionOpen||'');void(async()=>{try{await loadVaultResult();const saved=await readStoredResultVault();if(!saved.some(item=>item.id===preservedResultVaultId))throw new Error('선택한 저장 스냅샷을 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus('선택한 실제 보관함 스냅샷을 편집 초안으로 열었습니다. RisuAI Persona에는 쓰지 않았습니다.','ok');}catch(error){setStatus(`버전 초안 열기 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-version-compare]')){event.preventDefault();const id=String(target.dataset.liaVersionCompare||'');void(async()=>{try{const rows=await readStoredResultVault();const snapshot=rows.find(item=>item.id===id);if(!snapshot)throw new Error('비교할 보관함 스냅샷이 사라졌습니다.');const current=getLLMResultOverride()||{};const before=normalizePersonaSpec(snapshot.personaSpec)||{},after=normalizePersonaSpec(current.personaSpec)||{};const changes=PERSONA_SPEC_FIELD_DEFS.map(field=>({label:field.label||field.key,before:String(before[field.key]??''),after:String(after[field.key]??'')})).filter(row=>row.before!==row.after);if(String(snapshot.personaPrompt||'')!==String(current.personaPrompt||''))changes.push({label:'Persona Prompt',before:String(snapshot.personaPrompt||''),after:String(current.personaPrompt||'')});const box=document.querySelector('#ver-list')?.parentElement?.querySelector('#lia-version-compare');const list=box?.querySelector('.list');if(list)list.innerHTML=changes.length?changes.map(row=>`<div class="row"><div><b>${htmlEscape(row.label)}</b><small>저장본</small><span>${htmlEscape(limitText(row.before,1000)||'(비어 있음)')}</span><small>현재 초안</small><span>${htmlEscape(limitText(row.after,1000)||'(비어 있음)')}</span></div></div>`).join(''):'<div class="empty"><b>차이가 없습니다.</b><span>선택한 스냅샷과 현재 초안의 지원 필드가 같습니다.</span></div>';if(box)box.hidden=false;setStatus(`보관함 스냅샷과 현재 초안을 비교했습니다: ${changes.length}개 차이.`,'ok');}catch(error){setStatus(`버전 비교 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-refresh-blueprint]')){event.preventDefault();target.disabled=true;void(async()=>{try{captureGeneratedOutputState();const fresh=await getContext(readContextOptions());const state=await generateWorldBlueprint(fresh,{force:true,config:readLLMConfig()});await refreshPreview({skipCapture:true});setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length||0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length||0}개`,'ok');}catch(error){setStatus(`세계관 Blueprint 분석 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-analyze-workflow],[data-lia-test-workflow]')){event.preventDefault();target.disabled=true;void(async()=>{try{const config=readIllustrationConfig();if(config.provider!=='comfyui-local')throw new Error('이미지 제공자를 ComfyUI Local로 선택해 주세요.');const resolved=resolveComfyWorkflowSource(config);if(!looksLikeComfyWorkflowGraph(resolved.workflow))throw new Error('ComfyUI API Workflow JSON을 입력해 주세요.');const profile=analyzeComfyWorkflowBinding(resolved.workflow);const area=document.getElementById('lia-image-binding-profile');if(area)area.value=JSON.stringify(profile,null,2);if(target.matches('[data-lia-test-workflow]')){const base=comfyBaseUrl(config.endpoint);const [stats,info]=await Promise.all([fetchWithTimeout(`${base}/system_stats`,{method:'GET',headers:{Accept:'application/json'}},Math.min(15000,config.timeoutMs),'ComfyUI system_stats'),fetchWithTimeout(`${base}/object_info`,{method:'GET',headers:{Accept:'application/json'}},Math.min(20000,config.timeoutMs),'ComfyUI object_info')]);if(!stats.ok||!info.ok)throw new Error(`ComfyUI 읽기 검사 실패: system_stats ${stats.status}, object_info ${info.status}`);const objectInfo=await info.json();const graph=comfyPromptGraph(resolved.workflow);const types=[...new Set(Object.values(graph||{}).map(node=>String(node?.class_type||'')).filter(Boolean))];const missing=types.filter(type=>!Object.prototype.hasOwnProperty.call(objectInfo||{},type));if(missing.length)throw new Error(`현재 ComfyUI에 없는 노드: ${missing.slice(0,8).join(', ')}`);setStatus(`ComfyUI 연결 사전 검사 완료 · 노드 종류 ${types.length}종 · Output ${profile.output.nodeId}. 생성 요청은 하지 않았습니다.`,'ok');}else{setStatus(`ComfyUI Workflow 분석 완료 · Output ${profile.output.nodeId} · Sampler ${profile.sampler.nodeId}`,'ok');}}catch(error){setStatus(`ComfyUI Workflow 확인 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if (target.matches("[data-go]")) { event.preventDefault(); activateTab(target.dataset.go); return; }
+    if(target.matches('[data-lia-vault-id]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVaultId||'');void (async()=>{try{await loadVaultResult();await refreshPreview({skipCapture:true});activateTab('edit');setStatus('선택한 보관 결과를 편집 화면에서 다시 읽었습니다.','ok');}catch(error){setStatus(`보관 결과 열기 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-fork-lineage]')){event.preventDefault();target.disabled=true;void (async()=>{try{const fork=await forkCurrentPersonaLineage();const vault=await readStoredResultVault();const saved=vault.find(item=>item.id===preservedResultVaultId);if(!saved)throw new Error('파생 결과를 보관함에서 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`현재 초안에서 파생 계보를 만들고 보관함에 저장했습니다: ${fork.title} · revision 1`,'ok');}catch(error){setStatus(`파생 계보 저장 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-visual-asset-emotion]')){event.preventDefault();liaSelectedVisualAssetEmotion=String(target.dataset.visualAssetEmotion||'');liaSelectedVisualAssetPersonaKey=String(target.dataset.visualAssetPersonaKey||'');const title=document.querySelector('#sheet-emo [data-fill="emo"]');if(title)title.textContent=liaSelectedVisualAssetEmotion;const neutral=liaSelectedVisualAssetEmotion==='neutral',hasImage=!!String(target.dataset.visualAssetPath||'');document.querySelectorAll('#sheet-emo [data-variant]').forEach(node=>{const variants=String(node.dataset.variant||'').split(/\s+/);node.hidden=variants.includes('master')? !neutral:variants.includes('none')?hasImage:variants.includes('has')?!hasImage:false;});const actionButtons=document.querySelectorAll('#sheet-emo [data-lia-asset-delete],#sheet-emo [data-lia-asset-regenerate]');actionButtons.forEach(button=>{button.disabled=(neutral&&button.hasAttribute('data-lia-asset-delete'))||(!hasImage&&button.hasAttribute('data-lia-asset-delete'));button.title=button.disabled?(neutral?'Neutral Master는 묶음 폐기에서만 제거할 수 있습니다.':'저장된 이미지가 없습니다.'):'';});const restore=document.querySelector('#sheet-emo [data-lia-asset-restore]');if(restore){restore.disabled=!String(target.dataset.visualAssetBackupId||'');restore.title=restore.disabled?'이 이미지에는 복구용 백업이 없습니다.':'';}showLiaMockupDialog('sheet-emo',target);return;}
+    if(target.matches('[data-lia-asset-upload]')){event.preventDefault();document.getElementById('lia-asset-image-file')?.click();return;}
+    if(target.matches('[data-lia-asset-prompt]')){event.preventDefault();void (async()=>{try{const store=await readPersonaVisualAssetStore();const entry=store.sets?.[liaSelectedVisualAssetPersonaKey]?.images?.[liaSelectedVisualAssetEmotion];if(!entry)throw new Error('이미지 프롬프트를 찾지 못했습니다.');const editor=document.getElementById('lia-emotion-prompt-editor');if(editor)editor.hidden=false;const positive=document.getElementById('lia-emotion-positive');const negative=document.getElementById('lia-emotion-negative');if(positive)positive.value=String(entry.prompt||'');if(negative)negative.value=String(entry.negativePrompt||'');}catch(error){setStatus(`프롬프트 편집을 열지 못했습니다: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-save-emotion-prompt]')){event.preventDefault();void (async()=>{try{const key=liaSelectedVisualAssetPersonaKey,emotion=liaSelectedVisualAssetEmotion;const fresh=await getContext();const current=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:current});if(resolved.personaKey!==key)throw new Error('작업 대상 Persona가 바뀌었습니다. 저장을 중단했습니다.');const entry=current.sets?.[key]?.images?.[emotion];if(!entry)throw new Error('이미지가 저장소에서 사라졌습니다.');current.sets[key].images[emotion]={...entry,prompt:String(document.getElementById('lia-emotion-positive')?.value||''),negativePrompt:String(document.getElementById('lia-emotion-negative')?.value||'')};await writePersonaVisualAssetStore({...current,updatedAt:new Date().toISOString()});const verified=await readPersonaVisualAssetStore();const saved=verified.sets?.[key]?.images?.[emotion];if(saved?.prompt!==current.sets[key].images[emotion].prompt||saved?.negativePrompt!==current.sets[key].images[emotion].negativePrompt)throw new Error('프롬프트 저장 readback이 일치하지 않습니다.');await refreshPreview({skipCapture:true});setStatus(`${emotion} 이미지 프롬프트를 저장하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`프롬프트 저장 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-audit-recommendation]')){const id=String(target.dataset.liaAuditRecommendation||'');if(id)target.checked?preservedPersonaAuditSelection.add(id):preservedPersonaAuditSelection.delete(id);return;}
+    if(target.matches('[data-lia-audit-fix]')){const id=String(target.dataset.liaAuditFix||'');if(id)target.checked?preservedPersonaAuditFixSelection.add(id):preservedPersonaAuditFixSelection.delete(id);return;}
+    if(target.matches('[data-lia-run-audit]')){event.preventDefault();target.disabled=true;void (async()=>{try{const audit=await runPersonaAudit();await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`Persona Audit 완료: ${audit.score}/100 · ${audit.verdict.toUpperCase()}`,'ok');}catch(error){setStatus(`Persona Audit 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-build-selected-fix],[data-lia-build-hard-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const mode=target.matches('[data-lia-build-hard-fix]')?'hard':'selected';const plan=await buildPersonaAuditFixPlan(mode);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`${mode==='hard'?'Hard Conflict 안전':''} 수정안 ${plan.changes.length}개를 만들었습니다. 적용 전 검토하세요.`,'ok');}catch(error){setStatus(`Audit 수정안 생성 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-apply-audit-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const result=await applySelectedPersonaAuditFixes();liaMockupEditorDraftDirty=true;await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`선택한 Audit 수정안을 초안에 적용했습니다: ${result.fields.join(', ')}. 보관함 저장 전입니다.`,'ok');}catch(error){setStatus(`Audit 수정안 적용 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-asset-regenerate]')){event.preventDefault();const emotion=liaSelectedVisualAssetEmotion;const ctx=liaMockupContext;if(!emotion||!ctx||target.disabled)return;target.disabled=true;void (async()=>{let job=null;try{const fresh=await getContext();const store=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});if(resolved.personaKey!==liaSelectedVisualAssetPersonaKey)throw new Error('대상 Persona가 바뀌었습니다. 다시 선택해 주세요.');const targetSelection=currentVisualTargetSelectionValue();const cfg=await readStoredIllustrationConfig(true);if(!cfg.enabled)throw new Error('이미지 제공자가 꺼져 있습니다.');job=document.getElementById('job-neutral');const name=job?.querySelector('[data-fill="name"]');if(name)name.textContent=resolved.personaName;const emo=job?.querySelector('[data-fill="emo"]');if(emo)emo.textContent=emotion;const message=job?.querySelector('[data-job-msg]');showLiaMockupDialog('job-neutral',target);if(message)message.textContent=`${resolved.personaName} · ${emotion} · 실제 이미지 제공자 요청 중`;await generatePersonaVisualEmotion(fresh,emotion,{config:cfg,expectedPersonaKey:resolved.personaKey,expectedTargetSelection:targetSelection});job.dataset.liaJobActive='false';closeLiaMockupDialog(job);job=null;await refreshPreview({skipCapture:true});setStatus(`${emotion} 이미지 생성·저장 후 저장소 readback을 마쳤습니다.`,'ok');}catch(error){if(job){job.dataset.liaJobActive='false';closeLiaMockupDialog(job);}setStatus(`이미지 재생성 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-asset-restore]')){event.preventDefault();target.disabled=true;void(async()=>{try{const key=liaSelectedVisualAssetPersonaKey,emotion=liaSelectedVisualAssetEmotion;const fresh=await getContext();const store=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});if(!key||resolved.personaKey!==key)throw new Error('선택 당시 Persona가 현재 대상과 다릅니다. 복구를 중단했습니다.');const entry=store.sets?.[key]?.images?.[emotion];if(!entry?.assetPath||!entry?.backupId)throw new Error('선택한 이미지에 복구용 백업이 없습니다.');const recovered=await ensurePersonaVisualAssetAvailable(entry,{personaKey:key,emotion,backupId:entry.backupId,mime:entry.mime});const verified=await readPersonaVisualAssetStore();const actual=verified.sets?.[key]?.images?.[emotion];if(!actual||actual.backupId!==entry.backupId||!actual.assetPath)throw new Error('이미지 복구 후 에셋 저장소 readback이 확인되지 않았습니다.');await refreshPreview({skipCapture:true});setStatus(recovered?.restored?`${emotion} 이미지를 백업에서 복구하고 RisuAI 파일 및 LIA 저장소를 다시 확인했습니다.`:`${emotion} 이미지 파일을 검사했습니다. 백업 복구는 필요하지 않았습니다.`,'ok');}catch(error){setStatus(`이미지 복구 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-asset-delete]')){event.preventDefault();void runLiaMockupAction('delete-visual-asset',target);return;}
+    if(target.matches('[data-lia-export-assets]')){event.preventDefault();void (async()=>{try{const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});const exported=await exportPersonaVisualAssetBundleZip(target);const ok=downloadBinary(exported.fileName,exported.bytes,'application/zip');if(!ok)throw new Error('ZIP 다운로드를 시작하지 못했습니다.');setStatus(`${target.personaName} 에셋 ZIP ${exported.fileName}을 생성했습니다.`,'ok');}catch(error){setStatus(`에셋 ZIP 내보내기 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-import-assets]')){event.preventDefault();const targetInfo=resolvePersonaVisualTarget(liaMockupContext||{});liaSelectedVisualAssetPersonaKey=targetInfo.personaKey;document.getElementById('lia-asset-zip-file')?.click();return;}
+    if(target.matches('[data-lia-discard-assets]')){event.preventDefault();const current=resolvePersonaVisualTarget(liaMockupContext||{});liaSelectedVisualAssetPersonaKey=current.personaKey;showLiaMockupDialog('sheet-bundle-del',target);return;}
+    if(target.matches('[data-lia-composition-preset]')){event.preventDefault();if(document.querySelector('#asset-lock-fields textarea')?.disabled){setStatus('확정된 Visual Lock이 있어 구도를 바꿀 수 없습니다. Neutral을 다시 생성한 뒤 새 Lock을 확인하세요.','error');return;}preservedVisualCompositionPreset=normalizeVisualCompositionPreset(target.dataset.liaCompositionPreset);target.parentElement?.querySelectorAll('[data-lia-composition-preset]').forEach(button=>{button.classList.toggle('is-on',button===target);button.setAttribute('aria-pressed',String(button===target));});return;}
+    if(target.matches('[data-lia-save-asset-preset]')){event.preventDefault();void (async()=>{try{const result=await saveVisualAssetPreset(document.getElementById('lia-asset-preset-name')?.value);const store=await readVisualAssetPresetStore();preservedVisualAssetPresetStore=store;await refreshPreview({skipCapture:true});setStatus(`이미지 프리셋을 ${result.updated?'갱신':'저장'}하고 실제 저장소에서 다시 읽었습니다: ${result.preset.name}`,'ok');}catch(error){setStatus(`프리셋 저장 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-load-asset-preset]')){event.preventDefault();void (async()=>{try{const store=await readVisualAssetPresetStore();preservedVisualAssetPresetStore=store;const preset=store.items.find(item=>item.id===document.getElementById('lia-asset-preset-select')?.value);if(!preset)throw new Error('불러올 프리셋을 선택해 주세요.');applyVisualAssetPreset(preset);await refreshPreview({skipCapture:true});setStatus(`프리셋 조건을 불러왔습니다: ${preset.name}. 에셋 작업 전 내용을 확인하세요.`,'ok');}catch(error){setStatus(`프리셋 불러오기 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-lia-delete-asset-preset]')){event.preventDefault();void (async()=>{try{const id=document.getElementById('lia-asset-preset-select')?.value;if(!id)throw new Error('삭제할 프리셋을 선택해 주세요.');const store=await readVisualAssetPresetStore();const item=store.items.find(p=>p.id===id);if(!item)throw new Error('프리셋이 이미 삭제되었습니다.');if(!globalThis.confirm?.(`프리셋 ‘${item.name}’을 삭제할까요? 이미지 에셋은 변경되지 않습니다.`))return;await deleteVisualAssetPreset(id);preservedVisualAssetPresetStore=await readVisualAssetPresetStore();await refreshPreview({skipCapture:true});setStatus(`프리셋 ‘${item.name}’을 삭제하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`프리셋 삭제 실패: ${error?.message||error}`,'error');}})();return;}
+    if(target.matches('[data-act="bundle-del"]')){event.preventDefault();target.disabled=true;void runLiaMockupAction('discard-visual-bundle',target).finally(()=>{if(target.isConnected)target.disabled=false;});return;}
+    if(target.matches("[data-subtab]")){activateLiaMockupSubtab(target.closest("[data-subtabs]")?.dataset?.subtabs||"",target.dataset.subtab);return;}
+    if(target.closest("#ed-lang")){const language=target.dataset.language||"original";liaMockupEditorLanguage=language;const ctx=liaMockupContext;if(ctx){const app=document.getElementById("dpg-preview-root");if(app)hydrateLiaMockupApp(ctx,app);}return;}
+    if(target.closest("#ad-lang")){const group=target.closest("#ad-lang");group.querySelectorAll("button").forEach(button=>button.setAttribute("aria-pressed",String(button===target)));return;}
+    if (target.id === "random-cand-go" || target.matches('[data-run-job="job-cand"]')) { event.preventDefault(); void runLiaMockupAction("candidate", target); return; }
+    if (["mk-classic", "mk-conv", "btn-cand-go"].includes(target.id)) { event.preventDefault(); void runLiaMockupAction("generate", target); return; }
+    if (target.matches("[data-regen]")) { event.preventDefault(); void runLiaMockupAction("reroll-field", target); return; }
+    if (target.id === "btn-confirm-visual-lock") { event.preventDefault(); void runLiaMockupAction("confirm-visual-lock", target); return; }
+    if(target.id==="lia-translate-persona"){event.preventDefault();void runLiaMockupAction("translate",target);return;}
+    if(target.id==="lia-save-provider"){event.preventDefault();void runLiaMockupAction("save-provider",target);return;}
+    if(target.id==="lia-save-image-provider"){event.preventDefault();void runLiaMockupAction("save-image-provider",target);return;}
+    if(target.id==="upd-go"){event.preventDefault();void runLiaMockupAction("update-five",target);return;}
+    if(target.id==="lia-run-evolution"){event.preventDefault();void runLiaMockupAction("run-evolution",target);return;}
+    if(target.id==="lia-apply-evolution"){event.preventDefault();void runLiaMockupAction("apply-evolution",target);return;}
+    if(target.id==="lia-generate-neutral"){event.preventDefault();void runLiaMockupAction("generate-neutral",target);return;}
+    if(target.id==="lia-generate-bundle"){event.preventDefault();void runLiaMockupAction("generate-bundle",target);return;}
+    if(target.id==="lia-confirm-delete-vault"){event.preventDefault();target.disabled=true;void (async()=>{try{const current=await readStoredResultVault();if(!current.some(item=>item.id===preservedResultVaultId))throw new Error('삭제 대상이 이미 바뀌었거나 보관함에서 사라졌습니다. 다시 선택해 주세요.');const result=await deleteVaultResult();closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`보관함 항목만 삭제했습니다: ${result.title}. 채택한 Persona와 채팅 연결은 변경하지 않았습니다.`,'ok');}catch(error){setStatus(`보관함 삭제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-editor-writer]')){event.preventDefault();const mode=String(target.dataset.liaEditorWriter||'');target.disabled=true;void(async()=>{try{captureGeneratedOutputState();let saved;if(mode==='vault'){saved=await saveCurrentResultToVault();const rows=await readStoredResultVault();if(!rows.some(item=>item.id===preservedResultVaultId))throw new Error('저장한 초안을 보관함에서 다시 읽지 못했습니다.');liaMockupEditorDraftDirty=false;setStatus(`편집 초안을 LIA local_only 보관함에 저장하고 다시 읽었습니다: ${saved.title}`,'ok');}else if(mode==='current'){saved=await saveEditedResultToCurrentPersona();setStatus(`현재 채팅이 소유한 RisuAI Persona를 저장하고 다시 읽었습니다: ${saved.personaName}`,'ok');}else if(mode==='new'){saved=await saveEditedResultAsNewPersona();setStatus(`새 RisuAI Persona를 저장하고 다시 읽었습니다: ${saved.personaName}. 기존 Persona와 채팅 연결은 유지됩니다.`,'ok');}else throw new Error('알 수 없는 저장 대상입니다.');await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','out');}catch(error){setStatus(`편집 저장 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches(".lia-mockup-evolution")){const id=String(target.dataset.evolutionId||"");if(id){target.checked?preservedPersonaEvolutionSelection.add(id):preservedPersonaEvolutionSelection.delete(id);const apply=document.getElementById("lia-apply-evolution");if(apply)apply.disabled=!preservedPersonaEvolutionSelection.size;}return;}
+    if(target.id==="btn-adopt"){event.preventDefault();void runLiaMockupAction("adopt",target);return;}
+    if (target.matches("[data-lia-open-bind]")) {
+      const state=buildPersonaPanelState(liaMockupContext||{});
+      liaSelectedPersonaChoice=state.effectivePersona?personaPanelChoiceRef(state.effectivePersona,state.selectedIndex):"";
+      showLiaMockupDialog("sheet-bind",target); return;
+    }
+    if (target.matches("[data-lia-persona-manage]")) { liaSelectedPersonaChoice = target.dataset.liaPersonaManage || ""; showLiaMockupDialog("sheet-persona", target); return; }
+    if(target.matches('[data-lia-restore-previous-only]')){event.preventDefault();const fresh=await getLiveRuntimeContext();const scope=livePersonaScopeKey(fresh);const binding=await readLivePersonaBindingForContext(fresh);if(!binding?.previousBinding){setStatus('이전 Persona 연결 기록이 없습니다.','error');return;}const previous=binding.previousBinding;const beforeDefault=fresh.db?.selectedPersona;const name=previous.personaId?fresh.db?.personas?.find(item=>String(item?.id||'')===String(previous.personaId))?.name||'이전 Persona':'기본 Persona(연결 없음)';if(!globalThis.confirm?.(`현재 채팅 대상만 이전 값으로 바꿀까요?\n대상: ${name}\nLIA Live 연결 기록과 Persona는 유지됩니다.`))return;target.disabled=true;void(async()=>{try{const current=await getLiveRuntimeContext();if(livePersonaScopeKey(current)!==scope)throw new Error('확인 뒤 캐릭터/채팅 범위가 바뀌었습니다.');const liveBinding=await readLivePersonaBindingForContext(current);if(liveBinding?.scopeKey!==binding.scopeKey||liveBinding?.livePersonaId!==binding.livePersonaId||JSON.stringify(liveBinding?.previousBinding)!==JSON.stringify(previous))throw new Error('이전 복구 기록이 확인 뒤 바뀌었습니다.');const result=await PersonaBindingManager.restorePrevious(current,liveBinding,asArray(current.db?.personas));const after=await getLiveRuntimeContext();const expected=previous.hadExplicitBinding?String(previous.personaId||''):'';if(livePersonaScopeKey(after)!==scope||String(after.chat?.bindedPersona||'')!==expected)throw new Error('이전 대상을 저장 후 다시 읽은 값이 일치하지 않습니다.');if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeDefault))throw new Error('RisuAI 기본 Persona 선택이 변경됐습니다.');if(!(await readLivePersonaBindingForContext(after)))throw new Error('현재 Live 연결 기록이 예상치 않게 사라졌습니다.');await refreshPreview({skipCapture:true});setStatus(`현재 채팅 대상을 이전 값으로 복원하고 다시 읽었습니다: ${result.fallbackReason?'이전 Persona 없음 · 연결 해제':name}. Live 연결 기록은 유지했습니다.`,'ok');}catch(error){setStatus(`이전 대상 복원 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-restore-previous]')){event.preventDefault();const initial=await getLiveRuntimeContext();const initialScope=livePersonaScopeKey(initial);const initialBinding=await readLivePersonaBindingForContext(initial);const previous=initialBinding?.previousBinding;if(!initialBinding||!previous){setStatus('이전 Persona 연결 복구 기록이 없습니다.','error');return;}const previousName=previous.personaId?initial.db?.personas?.find(item=>String(item?.id||'')===String(previous.personaId))?.name||'이전 Persona':'기본 Persona(연결 없음)';if(!globalThis.confirm?.(`현재 채팅 연결을 이전 대상으로 복원할까요?\n대상: ${previousName}\nRisuAI 기본 Persona 선택은 변경하지 않습니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(livePersonaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다.');const current=await readLivePersonaBindingForContext(fresh);if(current?.scopeKey!==initialBinding.scopeKey||current?.livePersonaId!==initialBinding.livePersonaId||JSON.stringify(current?.previousBinding||null)!==JSON.stringify(previous))throw new Error('이전 복구 대상이 확인 뒤 바뀌었습니다. 다시 열어 확인하세요.');const defaultBefore=fresh.db?.selectedPersona;const result=await restoreOriginalLivePersona(fresh);const after=await getLiveRuntimeContext();const expected=previous.hadExplicitBinding?String(previous.personaId||''):'';if(livePersonaScopeKey(after)!==initialScope||String(after.chat?.bindedPersona||'')!==expected)throw new Error('복원 후 현재 채팅 대상이 예상한 값과 다릅니다.');if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(defaultBefore))throw new Error('복원 중 기본 Persona 선택이 바뀌었습니다.');if(await readLivePersonaBindingForContext(after))throw new Error('복원 후 현재 범위의 LIA 바인딩 기록이 남아 있습니다.');await refreshPreview({skipCapture:true});setStatus(`이전 연결을 복원하고 다시 읽었습니다: ${result.restoreResult?.fallbackReason?'이전 Persona 없음 · 연결 해제':previousName}. 기본 Persona는 유지했습니다.`,'ok');}catch(error){setStatus(`이전 연결 복구 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-generated-cleanup]')){event.preventDefault();const initial=liaMockupContext;if(!initial)return;const initialScope=livePersonaScopeKey(initial);const getEligible=ctx=>{const state=buildPersonaPanelState(ctx);return state.personas.map((item,index)=>({item,index})).filter(({item,index})=>index>state.selectedIndex&&isGeneratedFallbackPersona(item,ctx)).map(({item})=>String(item?.id||'')).filter(Boolean).sort();};const expected=getEligible(initial);if(!expected.length){setStatus('정리할 수 있는 LIA 생성 Persona가 없습니다.','info');return;}if(!globalThis.confirm?.(`현재 캐릭터/채팅 범위에서 기본 Persona 뒤의 LIA 생성 Persona ${expected.length}개를 정리할까요? 직접 만든 Persona와 기본 Persona는 제외합니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(livePersonaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다. 다시 열어 주세요.');const freshCtx=await getContext();const freshIds=getEligible(freshCtx);if(JSON.stringify(freshIds)!==JSON.stringify(expected))throw new Error('정리 대상 목록이 확인 뒤 바뀌었습니다. 다시 확인해 주세요.');const beforeSelected=fresh.db?.selectedPersona;const result=await removeGenerated();const after=await getLiveRuntimeContext();if(livePersonaScopeKey(after)!==initialScope)throw new Error('작업 도중 범위가 바뀌어 결과를 확인할 수 없습니다.');const remaining=new Set(getEligible(await getContext()));const left=expected.filter(id=>remaining.has(id));if(left.length)throw new Error(`일부 정리 대상이 남아 있습니다: ${left.length}개. 다시 읽어 확인하세요.`);if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeSelected))throw new Error('RisuAI 기본 Persona 선택값 변경이 감지됐습니다. 결과를 확인하세요.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});setStatus(`LIA 생성 Persona 정리를 읽어 확인했습니다: ${result.removedPersonas}개 제거, ${result.protectedPersonas}개 보호. 기본 Persona 선택은 유지했습니다.`,'ok');}catch(error){setStatus(`LIA Persona 정리 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if (target.matches("[data-lia-bind-choice]")) { liaSelectedPersonaChoice = target.dataset.liaBindChoice || ""; hydrateLiaPersonaDialog("sheet-bind"); return; }
+    if (target.matches("[data-lia-persona-bind]")) { closeLiaMockupDialog(target.closest(".overlay")); showLiaMockupDialog("sheet-bind", target); return; }
+    if(target.matches('[data-lia-persona-unbind]')){event.preventDefault();const captured=String(liaSelectedPersonaChoice||'');const confirmed=typeof globalThis.confirm==='function'&&globalThis.confirm('현재 채팅의 동적 Persona 연결을 해제할까요? RisuAI 기본 Persona는 바뀌지 않습니다.');if(!confirmed)return;target.disabled=true;void(async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const before=await PersonaSelectionManager.read(runtimeCtx);const current=before.personas?.find((item,index)=>personaPanelChoiceRef(item,index)===captured)||before.personas?.find(item=>String(item.id||'')===before.dynamicPersonaId);if(!current||String(current.id||'')!==String(before.dynamicPersonaId||''))throw new Error('현재 채팅의 연결 대상이 바뀌었습니다. 다시 열어 확인하세요.');await PersonaSelectionManager.clearDynamic(runtimeCtx);const after=await PersonaSelectionManager.read(await getLiveRuntimeContext());if(after.dynamicPersonaId)throw new Error('연결 해제 후에도 현재 채팅에 동적 Persona가 남아 있습니다.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus('현재 채팅 연결을 해제하고 기본 Persona가 유지되는지 다시 읽었습니다.','ok');}catch(error){setStatus(`채팅 연결 해제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if (target.matches("[data-lia-bind-confirm]")) {
+      const choice = liaSelectedPersonaChoice;
+      if (!choice) { setStatus("연결할 Persona를 먼저 선택하세요.", "error"); return; }
+      target.disabled = true;
+      void (async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const result=await PersonaSelectionManager.applyCard(runtimeCtx,choice);closeLiaMockupDialog(target.closest(".overlay"));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus(result.liveReconfigured?"기본 Persona는 유지하고 현재 채팅의 Live 연결을 다시 읽었습니다.":"기본 Persona는 유지하고 선택한 Persona를 현재 채팅에 연결했습니다.","ok");}catch(error){setStatus(`연결 실패 또는 확인 필요: ${error?.message||error}`,"error");}finally{if(target.isConnected)target.disabled=false;}})();
+      return;
+    }
+    if (target.matches("[data-open]")) { event.preventDefault();if(target.dataset.open==='sheet-bundle-del')liaSelectedVisualAssetPersonaKey=resolvePersonaVisualTarget(liaMockupContext||{}).personaKey; const active=document.querySelector("#dpg-preview-root .overlay.is-open"); if(active) closeLiaMockupDialog(active); showLiaMockupDialog(target.dataset.open, target); return; }
+    if (target.matches("[data-job-cancel]")) { event.preventDefault();const overlay=target.closest('.overlay');if(overlay?.id==='job-update'){const cancelled=cancelManualLivePersonaAnalysis('user_cancelled');setStatus(cancelled?'갱신 취소를 요청했습니다. 결과는 반영하지 않습니다.':'저장을 마무리 중이거나 진행 중인 갱신이 없습니다.','info');}closeLiaMockupDialog(overlay);return; }
+    if (target.matches("[data-close]")) { event.preventDefault(); closeLiaMockupDialog(target.closest(".overlay")); return; }
+    if (target.closest(".overlay") && target === target.closest(".overlay")) { closeLiaMockupDialog(target); return; }
+    if (target.matches("[data-select-row]") && target.closest('[data-page="make"]')) { applyLiaMockupMode(target.dataset.selectRow); return; }
+    const densityChoice=target.closest?.("#ed-density .choice");
+    if(densityChoice){event.preventDefault();const choices=[...document.querySelectorAll("#ed-density .choice")];const index=choices.indexOf(densityChoice);const profile=["full","standard","compact"][index];try{activatePersonaPromptVariant(profile);await refreshPreview({skipCapture:true});activateLiaMockupSubtab("ed","rev");setStatus(`${PERSONA_VARIANT_PROFILES[normalizePersonaVariantProfile(profile)].label} 프롬프트 밀도를 선택했습니다.`,"ok");}catch(error){setStatus(`프롬프트 밀도를 변경하지 못했습니다: ${error?.message||error}`,"error");}return;}
+    if (target.matches("[data-lia-candidate-id]")) {
+      const id = String(target.dataset.liaCandidateId || "");
+      if (generationModeFor(liaMockupContext || {}) === GENERATION_MODE_CHARACTER) preservedSelectedCharacterCandidateId = id;
+      else preservedSelectedRandomCandidateId = id;
+      updateMockupCandidates();
+      const go = document.getElementById("btn-cand-go"); if (go) go.disabled = !id;
+      return;
+    }
+    if (target.matches("[data-save]")) {
+      const page = document.querySelector(".page.is-active")?.dataset?.page;
+      if (page === "make") { void runLiaMockupAction("save-lore-limit", target); return; }
+      if (page === "edit") { void runLiaMockupAction("save-editor-draft", target); return; }
+      setStatus("이 페이지의 저장은 제품 기능과 아직 연결되지 않았습니다.", "error");
+      return;
+    }
+    if(target.matches('[data-lia-run-diagnostic]')){event.preventDefault();target.disabled=true;void (async()=>{try{const rows=await Promise.allSettled([getContext(),readStoredLLMConfig(),readStoredIllustrationConfig(true),readPersonaVisualAssetStore(),readStoredResultVault()]);const [ctx,text,image,assets,vault]=rows;const result={personaDatabase:ctx.status==='fulfilled'?ctx.value.personaDatabaseReadStatus?.available===false?'읽기 실패':'읽기 확인':'읽기 실패',textProvider:text.status==='fulfilled'?`${text.value.provider} · key ${text.value.apiKey?'저장됨':'없음'}`:`읽기 실패: ${text.reason?.message||text.reason}`,imageProvider:image.status==='fulfilled'?`${image.value.enabled?'사용':'중지'} · ${image.value.provider} · key ${image.value.apiKey?'저장됨':'없음'}`:`읽기 실패: ${image.reason?.message||image.reason}`,visualAssets:assets.status==='fulfilled'?`${Object.keys(assets.value.sets||{}).length}개 대상 묶음`:`읽기 실패: ${assets.reason?.message||assets.reason}`,vault:vault.status==='fulfilled'?`${vault.value.length}개 보관 결과`:`읽기 실패: ${vault.reason?.message||vault.reason}`,storageOwner:'local_only'};const output=document.getElementById('lia-diagnostic-result');if(output)output.textContent=Object.entries(result).map(([key,value])=>`${key}: ${value}`).join('\n');setStatus(rows.some(row=>row.status==='rejected')?'LIA 진단에서 일부 저장소를 읽지 못했습니다. 상세 결과를 확인하세요.':'LIA 읽기 전용 진단 완료. 저장·삭제·모델 호출은 수행하지 않았습니다.','ok');}catch(error){setStatus(`LIA 진단 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if (target.hasAttribute("data-toast")) { event.preventDefault(); setStatus("이 목업 동작은 제품 기능과 연결되지 않아 실행하지 않았습니다.", "error"); }
+  }
+  function handleLiaMockupChange(event) {
+    const field = event.target;
+    if (!field) return;
+    if(field.matches('#dpg-use-character-lore,#dpg-use-chat-lore,#dpg-use-module-lore,.dpg-module-choice')){void refreshPreview({skipCapture:true});return;}
+    if(field.id==='lia-image-provider'||field.id==='lia-image-enabled'){syncIllustrationProviderUi();return;}
+    if(field.id==='lia-asset-image-file'&&field.files?.[0]){const file=field.files[0],emotion=liaSelectedVisualAssetEmotion,key=liaSelectedVisualAssetPersonaKey;void (async()=>{try{if(!emotion||!key)throw new Error('업로드 대상을 먼저 선택해 주세요.');const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});if(target.personaKey!==key)throw new Error('선택 당시의 Persona와 현재 대상이 다릅니다. 업로드를 중단했습니다.');await importPersonaVisualAssetImage(target,emotion,file);await refreshPreview({skipCapture:true});closeLiaMockupDialog(document.getElementById('sheet-emo'));setStatus(`${target.personaName} · ${emotion} 업로드 이미지를 저장하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`이미지 업로드 실패: ${error?.message||error}`,'error');}finally{field.value='';}})();return;}
+    if(field.id==='lia-asset-zip-file'&&field.files?.[0]){const file=field.files[0];void (async()=>{try{const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});if(target.personaKey!==liaSelectedVisualAssetPersonaKey&&liaSelectedVisualAssetPersonaKey)throw new Error('선택 당시 Persona와 현재 대상이 달라져 가져오기를 중단했습니다.');const current=target.bundle||normalizeVisualAssetSet({},target.personaKey);const count=Object.keys(current.images||{}).length;if(count&&!globalThis.confirm?.(`‘${target.personaName}’의 현재 감정 에셋 ${count}개를 ZIP 내용으로 교체할까요?`))return;const imported=await importPersonaVisualAssetBundleZip(target,file);await refreshPreview({skipCapture:true});setStatus(`${target.personaName} 에셋 ${imported.assetCount}개를 ZIP에서 가져오고 저장소를 다시 읽었습니다.`,'ok');}catch(error){setStatus(`에셋 ZIP 가져오기 실패: ${error?.message||error}`,'error');}finally{field.value='';}})();return;}
+    if(field.matches(".lia-mockup-evolution")){const id=String(field.dataset.evolutionId||"");if(id){field.checked?preservedPersonaEvolutionSelection.add(id):preservedPersonaEvolutionSelection.delete(id);const apply=document.getElementById("lia-apply-evolution");if(apply)apply.disabled=!preservedPersonaEvolutionSelection.size;}return;}
+    if (field.id === "lia-rich-profile") { liaMockupContextOptions = { ...liaMockupContextOptions, richPersonaMode: field.checked === true }; return; }
+    if (field.id === "lia-max-chars") { field.setCustomValidity(""); markLiaLoreLimitDirty(field); return; }
+    if(field.id==="asset-target"){preservedVisualTargetPersonaId=String(field.value||'__auto__');void refreshPreview({skipCapture:true});return;}
+    if(field.id==='lia-asset-style-notes'){preservedVisualStyleNotes=String(field.value||'');return;}
+    if(field.id==='lia-asset-composition'){preservedVisualCompositionPreset=normalizeVisualCompositionPreset(field.value);return;}
+    if(field.id==='lia-asset-composition-notes'){preservedVisualCompositionNotes=String(field.value||'');return;}
+    if(field.id==='emo-list'){const values=unique(String(field.value||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);if(!values.some(item=>normalizeEmotionKey(item)==='neutral'))values.unshift('neutral');const previous=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);const added=values.some(item=>!previous.includes(item));const selected=resolvePersonaVisualTarget(liaMockupContext||{});if(added&&!selected.bundle?.visualLock?.confirmed){field.setCustomValidity('새 감정은 Neutral Visual Lock 확정 후 추가할 수 있습니다.');field.value=previous.join('\n');liaVisualEmotionDraftText=previous.join('\n');setStatus('Neutral Visual Lock을 확정한 뒤 감정을 추가할 수 있습니다.','error');return;}field.setCustomValidity('');preservedVisualEmotionText=values.join('\n');liaVisualEmotionDraftText=preservedVisualEmotionText;return;}
+    if(field.id==="lia-translation-language"){preservedTranslationLanguage=normalizeTranslationLanguage(field.value);preservedTranslationText="";const draft=document.getElementById("lia-translation-draft");if(draft)draft.value="";return;}
+    if(field.id==="dpg-source-persona"){liaMockupContextOptions={...liaMockupContextOptions,selectedPersonaKey:String(field.value||"auto")};void refreshPreview({skipCapture:true});return;}
+    if (field.matches('[data-lock]')) {
+      const key=String(field.dataset.lock||"");
+      if(PERSONA_SPEC_FIELD_KEY_SET.has(key)){field.checked?preservedPersonaFieldLocks.add(key):preservedPersonaFieldLocks.delete(key);const result=getLLMResultOverride();if(result)setGeneratedOutputText(resultToOutputText({...result,personaFieldLocks:currentPersonaFieldLocks()}));}
+      return;
+    }
+    if (field.matches('[data-key]')) handleLiaMockupInput(event);
+  }
+  function handleLiaMockupInput(event) {
+    const field = event.target;
+    if (!field) return;
+    if(field.id==='dpg-user-rewrite-guidance'){preservedUserRewriteGuidanceText=String(field.value||'');const preview=document.getElementById('lia-prompt-inspection-text');if(preview&&liaMockupContext)preview.value=buildGenerationPromptForContext(liaMockupContext);return;}
+    if(field.id==='dpg-persona-preview'){const current=getLLMResultOverride();if(!current)return;const edited=String(field.value||'');const profile=normalizePersonaVariantProfile(current.activePersonaProfile||preservedPersonaVariantProfile);const variants=normalizePersonaVariants(current.personaVariants,current.personaPrompt);variants[profile]=edited;const next={...current,personaPrompt:edited,personaVariants:variants,activePersonaProfile:profile};setGeneratedOutputText(resultToOutputText(next));markLiaEditorDirty();syncAdoptionPreflightMetrics();return;}
+    if (field.id === "random-concept") { preservedRandomConceptText = normalizeRandomConcept(field.value); return; }
+    if(field.id==='lia-asset-style-notes'){preservedVisualStyleNotes=String(field.value||'');return;}
+    if(field.id==='lia-asset-composition-notes'){preservedVisualCompositionNotes=String(field.value||'');return;}
+    if(field.id==='emo-list'){liaVisualEmotionDraftText=String(field.value||'');return;}
+    if(field.id==="lia-shelf-search"){const query=String(field.value||'').trim().toLocaleLowerCase('ko');document.querySelectorAll('#shelf-list [data-lia-vault-id]').forEach(row=>{row.hidden=!!query&&!String(row.textContent||'').toLocaleLowerCase('ko').includes(query);});return;}
+    if (field.id === "lia-max-chars") {
+      const n = Number(field.value);
+      const valid=!!field.value&&Number.isInteger(n)&&n>=240&&n<=3000;
+      field.setCustomValidity(valid ? "" : "240~3000 사이의 정수를 입력하세요.");
+      markLiaLoreLimitDirty(field,valid);
+      return;
+    }
+    if(field.matches("[data-translation-draft]")){updateLiaMockupTranslation(field.value);return;}
+    if (field.matches('[data-key]')) updateLiaMockupPersonaDraft(String(field.dataset.key||""),String(field.value??field.textContent??""));
+  }
+  function updateLiaMockupPersonaDraft(key,value) {
+    if(!PERSONA_SPEC_FIELD_KEY_SET.has(key)) return false;
+    const result=getLLMResultOverride();
+    const current=normalizePersonaSpec(result?.personaSpec||null);
+    if(!result||!current) {setStatus("편집할 Persona 결과를 찾지 못했습니다.","error");return false;}
+    const next=normalizePersonaSpec({...current,[key]:String(value||"")});
+    if(!next) {setStatus("입력값으로 PersonaSpec을 만들 수 없습니다.","error");return false;}
+    const prompt=renderPersonaSpecLocally(next);
+    const updated={...result,personaName:next.name||result.personaName,personaSpec:next,personaPrompt:prompt,personaVariants:{full:prompt,standard:"",compact:""},activePersonaProfile:"full",personaFieldLocks:currentPersonaFieldLocks()};
+    setGeneratedOutputText(resultToOutputText(updated));
+    markLiaEditorDirty();
+    preservedGeneratedPersonaNameText=updated.personaName;
+    liaMockupEditorDraftDirty=true;
+    return true;
+  }
+  function appAdoptionSource(){
+    const selected=document.querySelector('#ad-lang [aria-pressed="true"]');
+    const label=String(selected?.textContent||"");
+    return /번역/.test(label)?"translation":"original";
+  }
+  function markLiaLoreLimitDirty(field, valid = true) {
+    const bar=document.getElementById("savebar"),save=bar?.querySelector("[data-save]");
+    if(!bar||!save)return;
+    bar.hidden=false; save.disabled=!valid;
+    const title=bar.querySelector("[data-save-title]"),desc=bar.querySelector("[data-save-desc]");
+    if(title)title.textContent=valid?"자료 길이 설정이 저장되지 않았습니다.":"입력값을 확인해 주세요.";
+    if(desc)desc.textContent=valid?"저장하면 RisuAI ARG에 기록하고 다시 읽어 확인합니다.":"240~3000 사이의 정수를 입력해야 저장할 수 있습니다.";
+  }
+  function handleLiaMockupKeydown(event) {
+    const dialog = document.querySelector("#dpg-preview-root .overlay.is-open");
+    if (!dialog) return;
+    if (event.key === "Escape") { event.preventDefault(); closeLiaMockupDialog(dialog); return; }
+    if (event.key !== "Tab") return;
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex]:not([tabindex="-1"])')]
+      .filter(node => !node.hidden && node.getAttribute("aria-hidden") !== "true" && node.getClientRects().length > 0);
+    if (!focusable.length) {
+      event.preventDefault();
+      const roleDialog = dialog.querySelector('[role="dialog"]');
+      if (roleDialog) { roleDialog.tabIndex = -1; roleDialog.focus(); }
+      return;
+    }
+    const first = focusable[0], last = focusable[focusable.length - 1], active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (active === last || !dialog.contains(active))) { event.preventDefault(); first.focus(); }
   }
   function bindAction(id, fn) {
     const button = document.getElementById(id);
@@ -27480,1002 +25907,18 @@ ${revisionText}`);
 
   async function openUI() {
     await api.showContainer("fullscreen");
-    // Repeated host entry is a request to reveal the same draft, not to reload it.
-    if (liaUiVisible && document.querySelector(".lia-shell #dpg-preview-root")) return;
+    if (liaUiVisible && document.querySelector(".frame .app #dpg-status")) return;
     liaUiVisible = true;
-    document.body.innerHTML = `
-      <style>
-        :root {
-          color-scheme: dark;
-          --lia-bg: #0a0d14;
-          --lia-surface: #101621;
-          --lia-surface-2: #151d2b;
-          --lia-surface-3: #1b2535;
-          --lia-line: rgba(196, 210, 235, 0.13);
-          --lia-line-strong: rgba(196, 210, 235, 0.23);
-          --lia-text: #f5f7fb;
-          --lia-soft: #d6deed;
-          --lia-muted: #8e9bb0;
-          --lia-accent: #8aa8ff;
-          --lia-accent-2: #a993ff;
-          --lia-success: #6ee7b7;
-          --lia-warning: #f7c873;
-          --lia-danger: #ff8296;
-          --lia-radius: 18px;
-          font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
-        }
-        * { box-sizing: border-box; }
-        html, body { margin: 0; min-height: 100%; background: transparent !important; background-color: transparent !important; background-image: none !important; color-scheme: normal !important; }
-        body {
-          min-height: 100vh;
-          padding: 12px;
-          display: grid;
-          place-items: center;
-          color: var(--lia-text);
-          overflow: auto;
-        }
-        button, input, select, textarea { font: inherit; }
-        button { cursor: pointer; }
-        button:disabled { opacity: .42; cursor: not-allowed; }
-        .lia-shell {
-          width: min(1440px, calc(100vw - 24px));
-          max-height: min(960px, calc(100vh - 24px));
-          min-height: 620px;
-          overflow: auto;
-          border: 1px solid var(--lia-line);
-          border-radius: 24px;
-          background: linear-gradient(180deg, #f4f0f8 0%, #f4f0f8 100%);
-          box-shadow: 0 28px 90px rgba(0,0,0,.44);
-        }
-        .lia-header {
-          position: sticky;
-          top: 0;
-          z-index: 7;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 16px 20px;
-          border-bottom: 1px solid var(--lia-line);
-          background: #f4f0f8;
-        }
-        .lia-brand-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .lia-brand-icon {
-          width: 42px; height: 42px; border-radius: 13px;
-          display: grid; place-items: center;
-          background: linear-gradient(135deg, rgba(138,168,255,.26), rgba(169,147,255,.22));
-          border: 1px solid rgba(138,168,255,.34);
-          font-size: 21px;
-          flex: 0 0 auto;
-        }
-        .lia-brand-text { min-width: 0; }
-        .lia-brand-title { margin: 0; font-size: 19px; line-height: 1.15; letter-spacing: -.02em; }
-        .lia-brand-subtitle { margin: 3px 0 0; color: var(--lia-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .lia-header-actions { display: flex; gap: 8px; }
-        .lia-header-actions button,
-        .btn-soft,
-        .btn-danger,
-        .btn-primary,
-        .dpg-tab-button,
-        .lia-mode-card,
-        .lia-tab {
-          border: 1px solid var(--lia-line);
-          color: var(--lia-soft);
-          background: rgba(255,255,255,.045);
-          border-radius: 12px;
-          transition: .16s ease;
-        }
-        .lia-header-actions button { padding: 8px 12px; font-size: 12px; font-weight: 750; }
-        button:hover { transform: translateY(-1px); border-color: var(--lia-line-strong); filter: brightness(1.06); }
-        .btn-primary {
-          border-color: transparent;
-          color:var(--lia-soft);
-          background: linear-gradient(135deg, #728ff0, #967ce8);
-          box-shadow: 0 10px 30px rgba(114,143,240,.18);
-        }
-        .btn-danger { color:var(--lia-soft); border-color: rgba(255,130,150,.28); background: rgba(255,130,150,.09); }
-        #dpg-status {
-          position: sticky;
-          top: 75px;
-          z-index: 6;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          min-height: 38px;
-          padding: 9px 20px;
-          border-bottom: 1px solid var(--lia-line);
-          background: #f4f0f8;
-          color: var(--lia-muted);
-          font-size: 12px;
-          background: var(--lia-surface-2);
-          border: 1px solid var(--lia-line);
-        }
-        #dpg-status[data-tone="ok"] { color:var(--lia-soft); }
-        #dpg-status[data-tone="error"] { color:var(--lia-soft); }
-        .lia-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lia-success); box-shadow: 0 0 12px rgba(110,231,183,.65); flex: 0 0 auto; }
-        #dpg-preview-root { padding: 18px 20px 24px; }
-        .dpg-loading { padding: 22px; border: 1px solid var(--lia-line); border-radius: var(--lia-radius); background: var(--lia-surface); color: var(--lia-muted); }
-        .lia-workspace-tabs {
-          display: grid;
-          grid-template-columns: 180px 140px minmax(0,1fr);
-          gap: 8px;
-          align-items: center;
-          margin-bottom: 18px;
-        }
-        .dpg-tab-button { min-height: 42px; padding: 0 14px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 800; }
-        .dpg-tab-button.active { color:var(--lia-soft); background: rgba(138,168,255,.16); border-color: rgba(138,168,255,.35); }
-        .lia-nav-icon { font-size: 13px; color: var(--lia-accent); }
-        .lia-provider-chip { justify-self: end; max-width: 520px; padding: 8px 11px; border-radius: 999px; border: 1px solid var(--lia-line); color: var(--lia-muted); background: rgba(255,255,255,.03); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dpg-tab-panel { display: none; }
-        .dpg-tab-panel.active { display: block; }
-        .lia-mode-stage,
-        .lia-settings-hero { margin-bottom: 16px; padding: 20px; border: 1px solid var(--lia-line); border-radius: var(--lia-radius); background: linear-gradient(145deg, #f4f0f8, #f4f0f8); }
-        .lia-section-eyebrow, .lia-kicker { color: var(--lia-accent); font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
-        .lia-mode-head h2, .lia-settings-hero h2 { margin: 5px 0 5px; font-size: 20px; letter-spacing: -.03em; }
-        .lia-mode-head p, .lia-settings-hero p { margin: 0; color: var(--lia-muted); font-size: 12px; line-height: 1.55; }
-        .lia-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
-        .lia-mode-card { min-height: 82px; padding: 14px; display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: 12px; align-items: center; text-align: left; }
-        .lia-mode-card.active { border-color: rgba(138,168,255,.55); background: linear-gradient(135deg, rgba(116,144,238,.17), rgba(150,124,232,.12)); }
-        .lia-mode-card.random.active { border-color: rgba(169,147,255,.55); }
-        .lia-mode-symbol { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: rgba(138,168,255,.12); color:var(--lia-soft); font-weight: 950; font-size: 16px; }
-        .lia-mode-copy { display: grid; gap: 4px; min-width: 0; }
-        .lia-mode-copy strong { color: var(--lia-text); font-size: 14px; }
-        .lia-mode-copy small { color: var(--lia-muted); font-size: 11px; line-height: 1.45; }
-        .lia-mode-check { color: var(--lia-muted); font-size: 10px; font-weight: 850; }
-        .lia-mode-card.active .lia-mode-check { color:var(--lia-soft); }
-        .lia-mode-grid-four { grid-template-columns: repeat(2, minmax(0,1fr)); }
-        .lia-realtime-hero { display:none; }
-        .lia-app-layout[data-page="generate"] .lia-live-sync-standalone,
-        .lia-app-layout[data-page="edit"] .lia-live-sync-standalone { display:none; }
-        .lia-app-layout[data-page="realtime"] .lia-live-sync-standalone,
-        .lia-app-layout[data-page="realtime"] .lia-realtime-hero { display:block; }
-        .lia-live-sync-panel { margin-top:14px; padding:16px; border:1px solid var(--lia-line); border-radius:18px; background:#f4f0f8; }
-        .lia-live-sync-panel.live-on { border-color:rgba(110,231,183,.3); background:rgba(110,231,183,.045); }
-        .lia-live-sync-panel.live-paused { border-color:rgba(251,191,36,.28); }
-        .lia-live-config-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
-        .lia-live-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:10px; }
-        .lia-live-status-grid > div { display:grid; gap:4px; padding:10px; border:1px solid var(--lia-line); border-radius:12px; background:rgba(255,255,255,.035); }
-        .lia-live-status-grid b { color:var(--lia-muted); font-size:9px; text-transform:uppercase; letter-spacing:.08em; }
-        .lia-live-status-grid span { color:var(--lia-soft); font-size:11px; }
-        .lia-live-actions { display:grid; grid-template-columns:1.35fr 1fr 1fr 1fr; gap:8px; margin-top:10px; }
-        .lia-live-error { margin:10px 0 0; padding:9px 10px; border-radius:10px; color:var(--lia-soft); background:rgba(251,113,133,.1); border:1px solid rgba(251,113,133,.3); font-size:11px; }
-        .lia-live-state-columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
-        .lia-live-state-columns > div { padding:11px; border:1px solid var(--lia-line); border-radius:13px; background:rgba(255,255,255,.025); }
-        .lia-live-state-columns h4 { margin:0 0 8px; color:var(--lia-soft); font-size:11px; }
-        .lia-live-state-columns ul { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
-        .lia-live-state-columns li { display:grid; grid-template-columns:auto 1fr; gap:7px; align-items:start; font-size:10px; }
-        .lia-live-state-columns li b { color:var(--lia-accent); }
-        .lia-live-state-columns li span, .lia-live-state-columns p { margin:0; color:var(--lia-muted); line-height:1.45; }
-        .lia-live-ledger-fold { margin-top:10px; }
-        .lia-live-ledger-list { display:grid; gap:6px; padding-top:8px; }
-        .lia-live-ledger-list div { display:grid; grid-template-columns:auto 1fr; gap:10px; padding:8px 9px; border-radius:10px; background:rgba(255,255,255,.03); }
-        .lia-live-ledger-list b { color:var(--lia-accent); font-size:9px; }
-        .lia-live-ledger-list span { color:var(--lia-muted); font-size:10px; }
-        .lia-evolution-panel { margin-top: 14px; padding: 16px; border: 1px solid var(--lia-line); border-radius: 18px; background: #f4f0f8; }
-        .lia-evolution-evidence, .lia-evolution-summary { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; margin-top:10px; border-radius:12px; background:rgba(255,255,255,.045); color:var(--lia-muted); font-size:12px; }
-        .lia-evolution-evidence b, .lia-evolution-summary strong { color:var(--lia-soft); }
-        .lia-evolution-list { display:grid; gap:8px; margin:12px 0; }
-        .lia-evolution-item { display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:start; padding:11px; border:1px solid var(--lia-line); border-radius:14px; background:rgba(255,255,255,.04); }
-        .lia-evolution-item input { margin-top:4px; accent-color:var(--lia-accent); }
-        .lia-evolution-item span { display:grid; gap:4px; }
-        .lia-evolution-item b { color:var(--lia-soft); font-size:12px; }
-        .lia-evolution-item em { color:var(--lia-text); font-style:normal; font-size:12px; white-space:pre-wrap; }
-        .lia-evolution-item small { color:var(--lia-muted); line-height:1.45; }
-        .lia-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; border: 0 !important; }
-        .lia-workbench { display: grid; grid-template-columns: minmax(300px, .78fr) minmax(600px, 1.72fr); gap: 16px; align-items: start; }
-        .lia-side-column, .lia-main-column { display: grid; gap: 14px; min-width: 0; }
-        .lia-panel { border: 1px solid var(--lia-line); border-radius: var(--lia-radius); background: var(--lia-surface); padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.12); min-width: 0; }
-        .lia-panel-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
-        .lia-panel-title h2 { margin: 3px 0 0; color: var(--lia-text); font-size: 16px; letter-spacing: -.025em; }
-        .lia-panel-title > span { color: var(--lia-muted); font-size: 10px; font-weight: 750; max-width: 50%; text-align: right; overflow-wrap: anywhere; }
-        .lia-context-hero { margin-bottom: 14px; padding: 14px; border: 1px solid var(--lia-line); border-radius: 14px; background: linear-gradient(135deg, rgba(138,168,255,.07), rgba(255,255,255,.018)); }
-        .lia-context-hero strong { display: block; font-size: 15px; }
-        .lia-context-hero small { display: block; margin-top: 2px; color: var(--lia-muted); font-size: 11px; }
-        .lia-context-hero p { margin: 10px 0 0; color: var(--lia-soft); font-size: 11px; line-height: 1.5; }
-        .lia-random-source-note { display: grid; gap: 4px; margin-bottom: 14px; padding: 12px; border: 1px dashed rgba(169,147,255,.28); border-radius: 13px; background: rgba(169,147,255,.055); }
-        .lia-random-source-note b { font-size: 12px; color:var(--lia-soft); }
-        .lia-random-source-note span { color: var(--lia-muted); font-size: 10px; line-height: 1.5; }
-        .lia-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--lia-soft); font-size: 11px; font-weight: 800; }
-        .lia-field-full { width: 100%; }
-        .lia-field input, .lia-field select, .lia-panel textarea, .lia-provider-panel input, .lia-provider-panel select, .lia-provider-panel textarea, .lia-vault-inner select {
-          width: 100%; max-width: 100%; border: 1px solid var(--lia-line); border-radius: 11px; background: #f4f0f8; color: var(--lia-text); padding: 10px 11px; outline: none; transition: .15s ease;
-        }
-        .lia-field input:focus, .lia-field select:focus, .lia-panel textarea:focus, .lia-provider-panel input:focus, .lia-provider-panel select:focus, .lia-provider-panel textarea:focus { border-color: rgba(138,168,255,.6); box-shadow: 0 0 0 3px rgba(138,168,255,.10); }
-        .lia-field small { color: var(--lia-muted); font-size: 10px; line-height: 1.45; font-weight: 600; }
-        .lia-toggle-stack { display: grid; gap: 8px; }
-        .lia-switch-row { position: relative; display: grid; grid-template-columns: minmax(0,1fr) 38px; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--lia-line); border-radius: 13px; background: rgba(255,255,255,.025); cursor: pointer; }
-        .lia-switch-row span { display: grid; gap: 2px; }
-        .lia-switch-row strong { font-size: 11px; color: var(--lia-soft); }
-        .lia-switch-row small { color: var(--lia-muted); font-size: 9px; }
-        .lia-switch-row input { position: absolute; opacity: 0; pointer-events: none; }
-        .lia-switch-row i { position: relative; width: 36px; height: 20px; border-radius: 999px; background: #f4f0f8; border: 1px solid var(--lia-line); transition: .18s ease; }
-        .lia-switch-row i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #a8b2c2; transition: .18s ease; }
-        .lia-switch-row input:checked + i { background: rgba(116,144,238,.55); border-color: rgba(138,168,255,.55); }
-        .lia-switch-row input:checked + i::after { transform: translateX(16px); background: #fff; }
-        details { color: var(--lia-soft); }
-        details > summary { list-style: none; cursor: pointer; }
-        details > summary::-webkit-details-marker { display: none; }
-        .lia-fold { padding: 0; overflow: hidden; }
-        .lia-fold > summary { min-height: 62px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .lia-fold > summary span { display: grid; gap: 3px; }
-        .lia-fold > summary b { font-size: 12px; }
-        .lia-fold > summary small { color: var(--lia-muted); font-size: 9px; }
-        .lia-fold > summary em { min-width: 28px; padding: 5px 8px; border-radius: 999px; background: rgba(138,168,255,.1); color:var(--lia-soft); font-style: normal; font-size: 10px; text-align: center; }
-        .lia-fold[open] > summary { border-bottom: 1px solid var(--lia-line); }
-        .lia-fold > :not(summary) { margin: 14px; }
-        .lia-module-list { display: grid; gap: 7px; max-height: 220px; overflow: auto; }
-        .lia-module-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--lia-line); border-radius: 11px; background: rgba(255,255,255,.025); color: var(--lia-soft); }
-        .lia-module-item input { width: auto; accent-color: var(--lia-accent); }
-        .lia-module-meta { display: grid; gap: 2px; min-width: 0; }
-        .lia-module-meta b { font-size: 10px; overflow-wrap: anywhere; }
-        .lia-module-meta small, .dpg-module-empty { color: var(--lia-muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
-        .lia-context-stack { display: grid; gap: 8px; }
-        .lia-preview-box { border: 1px solid var(--lia-line); border-radius: 12px; padding: 11px; background: #f4f0f8; }
-        .lia-preview-box h3 { margin: 0 0 6px; color: var(--lia-soft); font-size: 10px; }
-        .lia-preview-box p { margin: 0; color: var(--lia-muted); font-size: 9px; line-height: 1.5; white-space: pre-wrap; }
-        .lia-mini-list { display: grid; gap: 6px; }
-        .lia-mini-item { display: grid; gap: 3px; padding: 8px; border-radius: 9px; background: rgba(255,255,255,.025); }
-        .lia-mini-item b { color: var(--lia-soft); font-size: 9px; }
-        .lia-mini-item small { color: var(--lia-muted); font-size: 8px; line-height: 1.4; }
-        .lia-compose-card { padding: 18px; }
-        .lia-primary-input textarea { min-height: 154px; resize: vertical; font-size: 13px; line-height: 1.55; }
-        .lia-guidance-textarea { min-height: 92px; resize: vertical; font-size: 12px; line-height: 1.55; }
-        .lia-inline-fold { margin-top: 12px; border: 1px solid var(--lia-line); border-radius: 12px; background: rgba(255,255,255,.018); overflow: hidden; }
-        .lia-inline-fold > summary { padding: 11px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; color: var(--lia-soft); font-size: 10px; font-weight: 800; }
-        .lia-inline-fold > summary span { color: var(--lia-muted); font-size: 9px; font-weight: 600; }
-        .lia-inline-fold[open] > summary { border-bottom: 1px solid var(--lia-line); }
-        .lia-inline-fold > .lia-field, .lia-inline-fold > textarea, .lia-inline-fold > .lia-vault-inner { margin: 10px; width: calc(100% - 20px); }
-        .lia-context-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-        .lia-context-strip span { max-width: 100%; padding: 6px 8px; border: 1px solid var(--lia-line); border-radius: 999px; color: var(--lia-muted); background: rgba(255,255,255,.025); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .lia-context-strip b { margin-right: 5px; color: var(--lia-soft); }
-        .lia-generate-actions { display: grid; grid-template-columns: minmax(0,1fr) 130px; gap: 8px; margin-top: 14px; }
-        .lia-generate-button { min-height: 58px; padding: 10px 14px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-        .lia-generate-icon { font-size: 18px; }
-        .lia-generate-button > span:last-child { display: grid; gap: 2px; text-align: left; }
-        .lia-generate-button strong { font-size: 13px; }
-        .lia-generate-button small { color:var(--lia-muted); font-size: 9px; }
-        .lia-icon-button { min-height: 58px; padding: 0 12px; font-size: 10px; font-weight: 800; }
-        .lia-generation-status { margin-top: 10px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 9px 11px; border-radius: 11px; border: 1px solid var(--lia-line); background: rgba(110,231,183,.035); color: var(--lia-muted); font-size: 10px; }
-        .lia-generation-status b { color:var(--lia-soft); font-size: 9px; }
-        .lia-prompt-textarea { min-height: 220px; max-height: 420px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: 9px !important; line-height: 1.5 !important; }
-        .lia-result-card { position: relative; }
-        .lia-empty-result { padding: 28px 18px; display: grid; place-items: center; text-align: center; border: 1px dashed var(--lia-line-strong); border-radius: 14px; background: rgba(255,255,255,.018); }
-        .lia-empty-orb { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; margin-bottom: 9px; background: rgba(138,168,255,.10); color:var(--lia-soft); }
-        .lia-empty-result strong { font-size: 12px; }
-        .lia-empty-result p { max-width: 440px; margin: 5px 0 0; color: var(--lia-muted); font-size: 10px; line-height: 1.5; }
-        .lia-output-tabs { display: flex; gap: 6px; margin: 12px 0 8px; }
-        .lia-tab { min-height: 32px; padding: 0 10px; font-size: 9px; font-weight: 850; }
-        .lia-tab.active { color:var(--lia-soft); background: rgba(138,168,255,.14); border-color: rgba(138,168,255,.35); }
-        .lia-code-output { min-height: 360px; max-height: 560px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: 11px !important; line-height: 1.55 !important; white-space: pre-wrap; }
-        .lia-output-pane { display: none; }
-        .lia-output-pane.active { display: block; }
-        .lia-result-card.is-empty .lia-result-toolbar, .lia-result-card.is-empty .lia-bilingual-result, .lia-result-card.is-empty .lia-json-fold { display: none; }
-        .lia-result-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, .85fr); gap: 12px; align-items: end; margin-bottom: 12px; }
-        .lia-translation-controls { display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 9px; align-items: end; }
-        .lia-translate-button { min-height: 42px; white-space: nowrap; }
-        .lia-bilingual-result { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
-        .lia-language-pane { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--lia-line); border-radius: 16px; background: rgba(255,255,255,.035); }
-        .lia-language-pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-        .lia-language-pane-head h3 { margin: 2px 0 0; font-size: 15px; color: var(--lia-text); }
-        .lia-language-pane-head > span { color: var(--lia-muted); font-size: 11px; }
-        .lia-language-pane .lia-code-output { flex: 1 1 auto; min-height: 430px; margin: 0; }
-        .lia-adopt-button { width: 100%; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
-        .lia-adopt-button span { font-size: 14px; font-weight: 900; }
-        .lia-adopt-button small { font-size: 10px; opacity: .76; }
-        .lia-json-fold { margin-top: 12px; }
-        .lia-json-output { min-height: 220px !important; max-height: 420px !important; }
-        .lia-save-main { min-height: 54px; padding: 9px 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; font-weight: 900; }
-        .lia-save-main span { font-size: 11px; }
-        .lia-save-main small { font-size: 8px; color:var(--lia-muted); }
-        .lia-vault-fold { margin-top: 12px; }
-        .lia-vault-inner { display: grid; gap: 8px; }
-        .lia-vault-inner select { font-size: 10px; }
-        .lia-vault-actions { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 6px; }
-        .lia-vault-actions button { min-height: 38px; padding: 6px 7px; font-size: 9px; font-weight: 800; }
-        .lia-danger-zone { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--lia-line); }
-        .lia-remove-button { min-height: 34px; padding: 7px 10px; font-size: 9px; }
-        .lia-hidden-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-        .lia-provider-panel { max-width: 1080px; margin: 0 auto; }
-        .lia-log-panel { max-width:1080px; margin:14px auto 0; }
-        .lia-log-diagnostics { display:grid; gap:12px; }
-        .lia-log-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
-        .lia-log-head h3 { margin:3px 0 4px; color:var(--lia-text); font-size:15px; }
-        .lia-log-head p { margin:0; color:var(--lia-muted); font-size:10px; line-height:1.5; max-width:720px; }
-        .lia-log-counts { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
-        .lia-log-counts span { padding:5px 7px; border:1px solid var(--lia-line); border-radius:999px; color:var(--lia-soft); background:rgba(255,255,255,.03); font-size:9px; font-weight:800; white-space:nowrap; }
-        .lia-log-actions { display:flex; flex-wrap:wrap; gap:8px; }
-        .lia-log-actions button { min-height:36px; padding:7px 10px; font-size:9px; font-weight:800; }
-                .lia-debug-export-fallback { margin-top:12px; padding:12px; border:1px solid var(--lia-line); border-radius:14px; background:#f4f0f8; }
-        .lia-debug-export-fallback[hidden] { display:none !important; }
-        .lia-debug-export-fallback-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
-        .lia-debug-export-fallback textarea { width:100%; min-height:220px; max-height:420px; resize:vertical; box-sizing:border-box; border:1px solid var(--lia-line); border-radius:10px; background:#f4f0f8; color:var(--lia-soft); padding:10px; font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
-.lia-log-recent { display:grid; gap:5px; padding:10px; border:1px solid var(--lia-line); border-radius:12px; background:#f4f0f8; }
-        .lia-log-recent > strong { color:var(--lia-soft); font-size:10px; margin-bottom:2px; }
-        .lia-log-row { display:grid; grid-template-columns:68px 90px minmax(0,1fr); gap:7px; align-items:start; padding:6px 7px; border-radius:8px; background:rgba(255,255,255,.025); font-size:9px; line-height:1.4; }
-        .lia-log-row time { color:var(--lia-muted); font-variant-numeric:tabular-nums; }
-        .lia-log-row b { color:var(--lia-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lia-log-row span { color:var(--lia-muted); overflow-wrap:anywhere; }
-        .lia-log-row.ok { box-shadow:inset 2px 0 rgba(74,222,128,.55); }
-        .lia-log-row.error { box-shadow:inset 2px 0 rgba(248,113,113,.65); }
-        .lia-log-empty { padding:8px; color:var(--lia-muted); font-size:9px; text-align:center; }
-        .lia-settings-hero { max-width: 1080px; margin: 0 auto 14px; }
-        .lia-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
-        .lia-settings-grid { margin-bottom: 10px; }
-        .lia-provider-actions, .lia-settings-actions, .lia-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .lia-provider-actions button, .lia-settings-actions button, .lia-actions button { min-height: 38px; padding: 8px 11px; font-size: 10px; font-weight: 800; }
-        .lia-provider-advanced { margin-top: 12px; border: 1px solid var(--lia-line); border-radius: 12px; padding: 0; overflow: hidden; }
-        .lia-provider-advanced > summary { padding: 11px 12px; font-size: 10px; font-weight: 850; }
-        .lia-provider-advanced[open] > summary { border-bottom: 1px solid var(--lia-line); }
-        .lia-provider-advanced-grid { margin: 10px 0 0; }
-        .lia-provider-section-block { padding: 12px; border-bottom: 1px solid var(--lia-line); }
-        .lia-provider-section-block:last-child { border-bottom: 0; }
-        .lia-provider-section-head { display: grid; gap: 3px; margin-bottom: 8px; }
-        .lia-provider-section-head strong { font-size: 12px; color: var(--lia-text); }
-        .lia-provider-section-head small { font-size: 10px; line-height: 1.45; color: var(--lia-muted); }
-        .lia-provider-service > summary { color:var(--lia-soft); }
-        .lia-provider-json { min-height: 100px !important; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; font-size: 9px !important; }
-        .lia-comfy-binding-json { min-height: 190px !important; }
-        .lia-comfy-binding-tools { gap:8px; }
-        .lia-provider-stream-check { position: relative; display: flex; gap: 9px; padding: 10px; border: 1px solid var(--lia-line); border-radius: 11px; background: rgba(255,255,255,.02); }
-        .lia-provider-stream-check input { width: auto; accent-color: var(--lia-accent); }
-        .lia-provider-stream-check span { display: grid; gap: 3px; }
-        .lia-provider-stream-check strong { font-size: 10px; }
-        .lia-provider-stream-check small { color: var(--lia-muted); font-size: 9px; line-height: 1.4; }
-        .lia-blueprint-card {
-          background: linear-gradient(180deg, rgba(50, 64, 90, 0.98), #f4f0f8);
-        }
-        .lia-blueprint-card.is-ready { border-color: rgba(110, 231, 183, 0.28); }
-        .lia-blueprint-summary {
-          padding: 12px 13px;
-          border: 1px solid rgba(143, 180, 255, 0.2);
-          border-radius: 14px;
-          background: #f4f0f8;
-          color: var(--lia-soft);
-          font-size: 12px;
-          line-height: 1.55;
-        }
-        .lia-blueprint-mini-grid, .lia-spec-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-          margin-top: 10px;
-        }
-        .lia-blueprint-mini-grid > div, .lia-spec-grid > div {
-          display: grid;
-          gap: 4px;
-          padding: 10px;
-          border: 1px solid var(--lia-line);
-          border-radius: 12px;
-          background: #f4f0f8;
-        }
-        .lia-blueprint-mini-grid b, .lia-spec-grid b { color: var(--lia-soft); font-size: 11px; }
-        .lia-blueprint-mini-grid span, .lia-spec-grid span { color: var(--lia-muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
-        .lia-blueprint-empty { padding: 12px; border: 1px dashed rgba(143, 180, 255, 0.3); border-radius: 14px; color: var(--lia-muted); }
-        .lia-blueprint-empty strong { display: block; color: var(--lia-soft); margin-bottom: 5px; font-size: 12px; }
-        .lia-blueprint-empty p { margin: 0; font-size: 11px; line-height: 1.5; }
-        .lia-blueprint-button { width: 100%; margin-top: 10px; }
-        .lia-blueprint-json, .lia-spec-json { min-height: 260px; max-height: 440px; white-space: pre-wrap; }
-        .lia-candidate-workshop { margin-top: 14px; padding: 14px; border: 1px solid rgba(143,180,255,.22); border-radius: 18px; background: rgba(143,180,255,.055); }
-        .lia-subhead { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-        .lia-subhead h3, .lia-audit-head h3 { margin:2px 0 0; color:var(--lia-text); font-size:15px; }
-        .lia-candidate-note { margin:8px 0 12px; color:var(--lia-muted); font-size:11px; line-height:1.55; }
-        .lia-candidate-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-        .lia-candidate-card { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:6px; min-width:0; padding:14px; border:1px solid var(--lia-line); border-radius:16px; background:#f4f0f8; color:var(--lia-text); text-align:left; box-shadow:none; }
-        .lia-candidate-card.active { border-color:rgba(110,231,183,.6); background:rgba(110,231,183,.09); box-shadow:0 0 0 2px rgba(110,231,183,.08) inset; }
-        .lia-candidate-card strong { font-size:15px; }
-        .lia-candidate-card > small { color:var(--lia-muted); font-size:10px; }
-        .lia-candidate-card > b { color:var(--lia-accent); font-size:11px; }
-        .lia-candidate-card > p { margin:2px 0; color:var(--lia-soft); font-size:11px; line-height:1.5; }
-        .lia-candidate-card dl { display:grid; grid-template-columns:34px 1fr; gap:4px 7px; margin:3px 0 0; font-size:10px; }
-        .lia-candidate-card dt { color:var(--lia-accent-2); }
-        .lia-candidate-card dd { margin:0; color:var(--lia-muted); line-height:1.45; }
-        .lia-candidate-card em { margin-top:auto; padding-top:5px; color:var(--lia-success); font-size:10px; font-style:normal; font-weight:800; }
-        .lia-candidate-number { position:absolute; top:10px; right:11px; color:var(--lia-muted); font-size:11px; font-weight:900; }
-        .lia-candidate-empty { grid-column:1/-1; padding:18px; border:1px dashed var(--lia-line); border-radius:14px; color:var(--lia-muted); font-size:11px; text-align:center; }
-        .lia-spec-workshop-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; }
-        .lia-spec-workshop-head > div:first-child { display:grid; gap:3px; }
-        .lia-spec-workshop-head b { color:var(--lia-soft); font-size:12px; }
-        .lia-spec-workshop-head span { color:var(--lia-muted); font-size:10px; }
-        .lia-spec-workshop-actions { display:flex; gap:8px; }
-        .lia-spec-field-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
-        .lia-spec-field-card { display:flex; flex-direction:column; min-width:0; gap:8px; padding:12px; border:1px solid var(--lia-line); border-radius:14px; background:#f4f0f8; }
-        .lia-spec-field-card.locked { border-color:rgba(251,191,36,.38); background:rgba(251,191,36,.055); }
-        .lia-spec-field-card header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .lia-spec-field-card header b { color:var(--lia-soft); font-size:11px; }
-        .lia-spec-field-card header label { display:flex; align-items:center; gap:4px; color:var(--lia-muted); font-size:9px; cursor:pointer; }
-        .lia-spec-field-card header input { width:auto; accent-color:var(--lia-warning); }
-        .lia-spec-field-card p { flex:1; margin:0; color:var(--lia-muted); font-size:10px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
-        .lia-spec-field-card .lia-spec-reroll { width:100%; min-height:34px; padding:7px 9px; font-size:10px; }
-        .lia-audit-panel { margin-top:12px; padding:14px; border:1px solid var(--lia-line); border-radius:18px; background:#f4f0f8; }
-        .lia-audit-panel.audit-pass { border-color:rgba(110,231,183,.35); }
-        .lia-audit-panel.audit-warn { border-color:rgba(251,191,36,.38); }
-        .lia-audit-panel.audit-fail { border-color:rgba(251,113,133,.42); }
-        .lia-audit-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-        .lia-audit-head > strong { color:var(--lia-soft); font-size:18px; }
-        .lia-audit-summary, .lia-audit-panel.audit-empty > p { color:var(--lia-muted); font-size:11px; line-height:1.55; }
-        .lia-audit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:10px; }
-        .lia-audit-grid > div { padding:10px; border:1px solid var(--lia-line); border-radius:12px; background:rgba(255,255,255,.035); }
-        .lia-audit-grid b { display:block; color:var(--lia-soft); font-size:10px; margin-bottom:5px; }
-        .lia-audit-grid ul { margin:0; padding-left:16px; color:var(--lia-muted); font-size:10px; line-height:1.5; }
-        .lia-audit-grid span { color:var(--lia-muted); font-size:10px; }
-        .lia-audit-recommendations { display:grid; gap:6px; }
-        .lia-audit-recommendation { display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px; align-items:start; cursor:pointer; color:var(--lia-muted); font-size:10px; line-height:1.5; }
-        .lia-audit-recommendation input, .lia-audit-fix-item input { margin-top:2px; accent-color:var(--lia-accent); }
-        .lia-audit-workflow { margin-top:12px; padding-top:12px; border-top:1px solid var(--lia-line); }
-        .lia-audit-workflow-actions { display:flex; flex-wrap:wrap; gap:8px; }
-        .lia-audit-fix-plan { margin-top:12px; padding:11px; border:1px solid rgba(129,140,248,.28); border-radius:14px; background:rgba(99,102,241,.055); }
-        .lia-audit-fix-plan-head { display:flex; justify-content:space-between; gap:12px; align-items:start; margin-bottom:9px; }
-        .lia-audit-fix-plan-head b { display:block; color:var(--lia-text); font-size:11px; }
-        .lia-audit-fix-plan-head span { display:block; margin-top:3px; color:var(--lia-muted); font-size:9px; line-height:1.45; }
-        .lia-audit-fix-plan-head em { color:var(--lia-accent-soft); font-size:9px; font-style:normal; font-weight:800; white-space:nowrap; }
-        .lia-audit-fix-list { display:grid; gap:8px; margin-bottom:10px; }
-        .lia-audit-fix-item { display:grid; grid-template-columns:auto minmax(0,1fr); gap:9px; align-items:start; padding:9px; border:1px solid var(--lia-line); border-radius:11px; background:rgba(255,255,255,.025); cursor:pointer; }
-        .lia-audit-fix-item.locked { opacity:.58; cursor:not-allowed; }
-        .lia-audit-fix-item b { display:block; color:var(--lia-soft); font-size:9px; }
-        .lia-audit-fix-item small { display:block; margin-top:3px; color:var(--lia-muted); font-size:9px; line-height:1.45; }
-        .lia-audit-diff { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:8px; }
-        .lia-audit-diff > div { min-width:0; padding:7px; border:1px solid var(--lia-line); border-radius:9px; background:#f4f0f8; }
-        .lia-audit-diff em { display:block; margin-bottom:4px; color:var(--lia-muted); font-size:8px; font-style:normal; font-weight:800; }
-        .lia-audit-diff pre { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--lia-soft); font:500 9px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
-        .lia-spec-fold { margin-top: 14px; }
-        .lia-spec-core { margin-top: 10px; }
-        .lia-spec-core p { white-space: pre-wrap; }
-
-
-        .lia-rerank-panel { border-color: rgba(143,180,255,.18); }
-        .lia-rerank-meta { display:flex; flex-wrap:wrap; gap:7px; margin:12px 14px 0; }
-        .lia-rerank-meta span { padding:6px 8px; border:1px solid var(--lia-line); border-radius:999px; color:var(--lia-muted); font-size:9px; background:rgba(255,255,255,.03); }
-        .lia-rerank-meta b { color:var(--lia-soft); }
-        .lia-rerank-columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-        .lia-rerank-columns > section { min-width:0; padding:11px; border:1px solid var(--lia-line); border-radius:14px; background:#f4f0f8; }
-        .lia-rerank-columns header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
-        .lia-rerank-columns header b { color:var(--lia-soft); font-size:11px; }
-        .lia-rerank-columns header small { color:var(--lia-muted); font-size:9px; }
-        .lia-rerank-list { display:grid; gap:6px; }
-        .lia-rerank-row { display:grid; gap:3px; padding:8px; border:1px solid rgba(255,255,255,.07); border-radius:10px; background:rgba(255,255,255,.025); }
-        .lia-rerank-row.protected { border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.055); }
-        .lia-rerank-row.selected { border-color:rgba(110,231,183,.24); }
-        .lia-rerank-row.rejected { opacity:.48; }
-        .lia-rerank-row-head { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:6px; }
-        .lia-rerank-row-head b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--lia-soft); font-size:10px; }
-        .lia-rerank-row-head strong { color:var(--lia-accent); font-size:9px; }
-        .lia-rerank-badge { padding:3px 5px; border-radius:999px; background:rgba(143,180,255,.12); color:var(--lia-muted); font-size:8px; font-weight:800; }
-        .lia-rerank-row.protected .lia-rerank-badge { color:var(--lia-soft); background:rgba(251,191,36,.12); }
-        .lia-rerank-row.selected .lia-rerank-badge { color:var(--lia-soft); background:rgba(110,231,183,.09); }
-        .lia-rerank-row small { color:var(--lia-muted); font-size:8px; line-height:1.4; overflow-wrap:anywhere; }
-        .lia-rerank-note { margin:0 14px 14px; color:var(--lia-muted); font-size:9px; line-height:1.5; }
-        .lia-rerank-empty { padding:10px; color:var(--lia-muted); font-size:9px; text-align:center; }
-        .lia-lore-protected-mini { margin-left:4px; padding:2px 4px; border-radius:999px; background:rgba(251,191,36,.12); color:var(--lia-soft); font-size:8px; font-style:normal; }
-
-        @media (max-width: 980px) {
-          .lia-bilingual-result { grid-template-columns: 1fr; }
-          .lia-blueprint-mini-grid, .lia-spec-grid { grid-template-columns: 1fr; }
-          .lia-candidate-grid, .lia-spec-field-grid, .lia-rerank-columns { grid-template-columns: 1fr; }
-          .lia-audit-grid { grid-template-columns: 1fr; }
-          .lia-audit-diff { grid-template-columns:1fr; }
-          .lia-spec-workshop-head, .lia-subhead { align-items:stretch; flex-direction:column; }
-          .lia-spec-workshop-actions { display:grid; grid-template-columns:1fr; }
-          .lia-result-toolbar { grid-template-columns: 1fr; }
-          body { padding: 0; place-items: stretch; }
-          .lia-shell { width: 100vw; max-height: none; min-height: 100vh; border-radius: 0; border-left: 0; border-right: 0; }
-          .lia-workbench { grid-template-columns: 1fr; }
-          .lia-edit-save-panel { grid-template-columns:1fr; }
-          .lia-edit-save-actions { grid-template-columns:1fr; }
-          .lia-side-column { grid-template-columns: 1fr 1fr; align-items: start; }
-          .lia-world-card { grid-column: 1 / -1; }
-          .lia-mode-grid { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 680px) {
-          #dpg-preview-root { padding: 12px; }
-          .lia-header { padding: 13px 12px; }
-          #dpg-status { top: 69px; padding: 8px 12px; }
-          .lia-brand-subtitle { display: none; }
-          .lia-workspace-tabs { grid-template-columns: 1fr 1fr; }
-          .lia-provider-chip { grid-column: 1 / -1; justify-self: stretch; text-align: center; }
-          .lia-side-column { grid-template-columns: 1fr; }
-          .lia-result-toolbar, .lia-translation-controls, .lia-bilingual-result, .lia-generate-actions { grid-template-columns: 1fr; }
-          .lia-vault-actions { grid-template-columns: 1fr 1fr; }
-          .lia-field-grid { grid-template-columns: 1fr; }
-          .lia-mode-grid-four { grid-template-columns: 1fr; }
-          .lia-mode-card { grid-template-columns: 38px minmax(0,1fr); }
-          .lia-mode-check { display: none; }
-          .lia-code-output { min-height: 300px; }
-        }
-
-        .lia-compiler-panel, .lia-preflight-panel, .lia-lineage-panel {
-          margin-top: 14px; padding: 15px; border: 1px solid var(--lia-line); border-radius: 18px; background: #f4f0f8;
-        }
-        .lia-compiler-head, .lia-preflight-head, .lia-lineage-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-        .lia-compiler-head h3, .lia-preflight-head h3, .lia-lineage-panel h3 { margin: 2px 0 0; color: var(--lia-text); font-size: 15px; }
-        .lia-compiler-head p, .lia-lineage-panel p { margin: 5px 0 0; color: var(--lia-muted); font-size: 12px; }
-        .lia-variant-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 12px; }
-        .lia-variant-card { display: grid; gap: 5px; text-align: left; border: 1px solid var(--lia-line); background: rgba(255,255,255,.055); color: var(--lia-text); }
-        .lia-variant-card strong { font-size: 14px; } .lia-variant-card span, .lia-variant-card small { color: var(--lia-muted); font-size: 11px; }
-        .lia-variant-card em { color: var(--lia-accent); font-size: 11px; font-style: normal; font-weight: 800; }
-        .lia-variant-card.active { border-color: rgba(143,180,255,.65); background: rgba(143,180,255,.16); }
-        .lia-variant-card.missing { opacity: .5; }
-        .lia-preflight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 11px; }
-        .lia-preflight-grid > div { display: grid; gap: 4px; padding: 10px 11px; border-radius: 12px; background: rgba(255,255,255,.045); }
-        .lia-preflight-grid b { color: var(--lia-soft); font-size: 11px; } .lia-preflight-grid span { color: var(--lia-muted); font-size: 12px; line-height: 1.45; }
-        .lia-preflight-head > strong { padding: 6px 9px; border-radius: 999px; font-size: 11px; border: 1px solid var(--lia-line); }
-        .lia-preflight-head > strong.good { color:var(--lia-soft); border-color: rgba(110,231,183,.35); } .lia-preflight-head > strong.warn { color:var(--lia-soft); border-color: rgba(251,191,36,.35); } .lia-preflight-head > strong.danger { color:var(--lia-soft); border-color: rgba(251,113,133,.4); }
-        .lia-preflight-warning { margin: 10px 0 0; color:var(--lia-soft); font-size: 12px; } .lia-preflight-warning.soft { color:var(--lia-soft); }
-        .lia-lineage-panel > div { min-width: 0; } .lia-lineage-panel p { overflow-wrap: anywhere; } .lia-lineage-actions { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; } .lia-lineage-actions span { color: var(--lia-muted); font-size: 11px; }
-
-        @media (max-width: 920px) {
-          .lia-variant-grid, .lia-preflight-grid { grid-template-columns: 1fr; }
-          .lia-compiler-head, .lia-preflight-head, .lia-lineage-panel { align-items: stretch; flex-direction: column; }
-          .lia-lineage-actions { align-items: stretch; flex-direction: column; }
-        }
-
-        /* v0.17 sidebar workspace */
-        #dpg-preview-root { padding: 0; }
-        .lia-app-layout { display:grid; grid-template-columns:210px minmax(0,1fr) 310px; min-height:720px; }
-        .lia-sidebar { position:sticky; top:113px; align-self:start; height:calc(min(960px, 100vh - 24px) - 113px); min-height:560px; display:flex; flex-direction:column; gap:12px; padding:14px 12px; border-right:1px solid var(--lia-line); background:#f4f0f8; overflow:hidden; }
-        .lia-sidebar-top { display:grid; gap:10px; }
-        .lia-sidebar-collapse { justify-self:end; width:30px; height:30px; padding:0; border:1px solid var(--lia-line); border-radius:9px; background:rgba(255,255,255,.045); color:var(--lia-muted); }
-        .lia-sidebar-nav { display:grid; gap:7px; }
-        .lia-sidebar .dpg-tab-button { justify-content:flex-start; width:100%; min-height:44px; padding:0 12px; border-radius:12px; background:transparent; border-color:transparent; color:var(--lia-muted); }
-        .lia-sidebar .dpg-tab-button:hover { background:rgba(255,255,255,.05); }
-        .lia-sidebar .dpg-tab-button.active { color:var(--lia-soft); background:rgba(138,168,255,.15); border-color:rgba(138,168,255,.28); }
-        .lia-sidebar .lia-nav-icon { width:24px; text-align:center; font-size:16px; }
-        .lia-sidebar-current { margin-top:auto; display:grid; gap:5px; padding:12px; border:1px solid var(--lia-line); border-radius:14px; background:rgba(255,255,255,.035); min-width:0; }
-        .lia-sidebar-caption { color:var(--lia-muted); font-size:9px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-        .lia-sidebar-current strong { color:var(--lia-text); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lia-sidebar-current small { color:var(--lia-muted); font-size:10px; line-height:1.45; overflow-wrap:anywhere; }
-        .lia-sidebar-work-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; }
-        .lia-sidebar-work-meta span { padding:3px 5px; border-radius:999px; border:1px solid var(--lia-line); color:var(--lia-soft); font-size:8px; }
-        .lia-sidebar-provider { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:7px; padding:8px 10px; border-radius:11px; color:var(--lia-muted); background:rgba(255,255,255,.025); }
-        .lia-sidebar-provider span { display:grid; place-items:center; width:22px; height:22px; border-radius:8px; color:var(--lia-accent); background:rgba(138,168,255,.1); font-size:9px; font-weight:900; }
-        .lia-sidebar-provider b { font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lia-app-layout.sidebar-collapsed { grid-template-columns:68px minmax(0,1fr) 310px; }
-        .lia-app-layout.sidebar-collapsed .lia-nav-label, .lia-app-layout.sidebar-collapsed .lia-sidebar-current, .lia-app-layout.sidebar-collapsed .lia-sidebar-provider { display:none; }
-        .lia-app-layout.sidebar-collapsed .lia-sidebar .dpg-tab-button { justify-content:center; padding:0; }
-        .lia-app-layout.sidebar-collapsed .lia-sidebar-collapse { justify-self:center; transform:rotate(180deg); }
-        .lia-workspace { min-width:0; padding:16px 18px 24px; }
-        .lia-workspace > .dpg-tab-panel { display:none; }
-        .lia-workspace > .dpg-tab-panel.active { display:block; }
-        .lia-app-layout[data-page="generate"] .lia-result-card { display:none !important; }
-        .lia-app-layout[data-page="generate"] .lia-workbench { display:block; }
-        .lia-app-layout[data-page="generate"] .lia-main-column { width:min(980px,100%); margin:0 auto; }
-        .lia-app-layout[data-page="edit"] .lia-mode-stage,
-        .lia-app-layout[data-page="edit"] .lia-world-summary,
-        .lia-app-layout[data-page="edit"] .lia-compose-card,
-        .lia-app-layout[data-page="edit"] .lia-side-column,
-        .lia-app-layout[data-page="edit"] .lia-drawer-backdrop { display:none !important; }
-        .lia-app-layout[data-page="edit"] .lia-workbench { display:block; }
-        .lia-app-layout[data-page="edit"] .lia-main-column { width:100%; }
-        .lia-app-layout[data-page="realtime"] .lia-mode-stage,
-        .lia-app-layout[data-page="realtime"] .lia-world-summary,
-        .lia-app-layout[data-page="realtime"] .lia-compose-card,
-        .lia-app-layout[data-page="realtime"] .lia-side-column,
-        .lia-app-layout[data-page="realtime"] .lia-drawer-backdrop { display:none !important; }
-        .lia-app-layout[data-page="realtime"] .lia-workbench { display:block; }
-        .lia-app-layout[data-page="realtime"] .lia-main-column { width:min(1080px,100%); margin:0 auto; }
-        .lia-app-layout[data-page="realtime"] .lia-result-card { display:none !important; }
-        .lia-world-summary { display:flex; align-items:center; justify-content:space-between; gap:14px; width:min(980px,100%); margin:12px auto 16px; padding:12px 14px; border:1px solid var(--lia-line); border-radius:15px; background:rgba(255,255,255,.035); }
-        .lia-world-summary-copy { display:grid; gap:3px; min-width:0; }
-        .lia-world-summary-copy strong { color:var(--lia-text); font-size:13px; }
-        .lia-world-summary-copy small { color:var(--lia-muted); font-size:10px; }
-        .lia-side-column { position:fixed !important; z-index:14; top:12px; right:12px; bottom:12px; width:min(430px, calc(100vw - 36px)); display:block !important; padding:14px; overflow:auto; border:1px solid var(--lia-line-strong); border-radius:22px; background:#f4f0f8; box-shadow:0 30px 90px rgba(0,0,0,.56); transform:translateX(calc(100% + 28px)); opacity:0; pointer-events:none; transition:transform .2s ease, opacity .2s ease; }
-        .lia-app-layout.world-drawer-open .lia-side-column { transform:translateX(0); opacity:1; pointer-events:auto; }
-        .lia-drawer-head { position:sticky; top:-14px; z-index:3; display:flex; align-items:center; justify-content:space-between; gap:12px; margin:-14px -14px 12px; padding:14px; border-bottom:1px solid var(--lia-line); background:#f4f0f8; }
-        .lia-drawer-head > div { display:grid; gap:2px; }
-        .lia-drawer-head strong { color:var(--lia-text); font-size:15px; }
-        .lia-drawer-backdrop { position:fixed; z-index:13; inset:0; display:none; background:rgba(0,0,0,.62); }
-        .lia-app-layout.world-drawer-open .lia-drawer-backdrop { display:block; }
-        .lia-mode-stage { width:min(980px,100%); margin:0 auto; padding:14px 0 2px; }
-        .lia-mode-head { margin-bottom:8px; }
-        .lia-mode-head h2 { font-size:18px; }
-        .lia-mode-head p { display:none; }
-        .lia-editor-tabs { display:flex; gap:6px; overflow:auto; margin:0 0 14px; padding:4px; border:1px solid var(--lia-line); border-radius:13px; background:#f4f0f8; }
-        .lia-editor-tab { flex:0 0 auto; padding:8px 11px; border:0; border-radius:9px; color:var(--lia-muted); background:transparent; font-size:10px; font-weight:800; }
-        .lia-editor-tab.active { color:var(--lia-soft); background:rgba(138,168,255,.16); }
-        .lia-result-card [data-editor-block] { display:none; }
-        .lia-result-card[data-editor-section="persona"] [data-editor-block="persona"],
-        .lia-result-card[data-editor-section="prompt"] [data-editor-block="prompt"],
-        .lia-result-card[data-editor-section="evolution"] [data-editor-block="evolution"],
-        .lia-result-card[data-editor-section="audit"] [data-editor-block="audit"],
-        .lia-result-card[data-editor-section="history"] [data-editor-block="history"] { display:block; }
-        .lia-result-card[data-editor-section="persona"] details[data-editor-block="persona"] { display:block; }
-        .lia-result-toolbar { margin-bottom:12px; }
-        .lia-edit-save-panel { display:grid; grid-template-columns:minmax(220px,.7fr) minmax(0,1.3fr); gap:14px; align-items:center; margin:0 0 14px; padding:13px; border:1px solid rgba(138,168,255,.22); border-radius:15px; background:rgba(138,168,255,.055); }
-        .lia-edit-save-copy { display:grid; gap:3px; }
-        .lia-edit-save-copy strong { color:var(--lia-text); font-size:13px; }
-        .lia-edit-save-copy small { color:var(--lia-muted); font-size:10px; line-height:1.45; }
-        .lia-edit-save-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-        .lia-edit-save-actions button { min-height:48px; display:grid; gap:2px; align-content:center; }
-        .lia-edit-save-actions button small { color:inherit; opacity:.68; font-size:8px; font-weight:650; }
-        .lia-audit-head-actions { display:flex; align-items:center; gap:9px; }
-        .lia-audit-head-actions strong { min-width:62px; text-align:right; }
-        .lia-page-hero { margin:0 0 14px; padding:4px 2px 8px; }
-        .lia-page-hero h2 { margin:3px 0 4px; font-size:22px; }
-        .lia-page-hero p { margin:0; color:var(--lia-muted); font-size:12px; }
-        .lia-vault-page { padding:16px; }
-        .lia-vault-page-toolbar { display:grid; grid-template-columns:minmax(260px,1fr) auto; align-items:end; gap:12px; margin-bottom:14px; }
-        .lia-vault-page-toolbar .lia-vault-actions { margin:0; }
-        .lia-vault-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-        .lia-vault-card { min-width:0; display:grid; gap:8px; padding:13px; text-align:left; border:1px solid var(--lia-line); border-radius:14px; background:rgba(255,255,255,.035); color:var(--lia-text); }
-        .lia-vault-card.active { border-color:rgba(138,168,255,.55); background:rgba(138,168,255,.09); }
-        .lia-vault-card header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .lia-vault-card header strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
-        .lia-vault-card header span { color:var(--lia-accent); font-size:9px; white-space:nowrap; }
-        .lia-vault-card p { min-height:32px; margin:0; color:var(--lia-muted); font-size:10px; line-height:1.45; }
-        .lia-vault-card-meta { display:flex; flex-wrap:wrap; gap:5px; }
-        .lia-vault-card-meta span { padding:3px 5px; border:1px solid var(--lia-line); border-radius:999px; color:var(--lia-muted); font-size:8px; }
-        .lia-vault-card-meta span.good { color:var(--lia-soft); border-color:rgba(110,231,183,.3); }
-        .lia-vault-card-meta span.warn { color:var(--lia-soft); border-color:rgba(251,191,36,.3); }
-        .lia-vault-card-meta span.danger { color:var(--lia-soft); border-color:rgba(251,113,133,.35); }
-        .lia-vault-empty { grid-column:1/-1; display:grid; gap:5px; padding:32px; text-align:center; border:1px dashed var(--lia-line-strong); border-radius:16px; color:var(--lia-muted); }
-        .lia-settings-hero { margin-top:0 !important; }
-
-        /* v0.21 Persona binding side panel */
-        .lia-persona-panel { position:sticky; top:113px; align-self:start; height:calc(min(960px, 100vh - 24px) - 113px); min-height:560px; display:flex; flex-direction:column; gap:10px; padding:14px 12px 12px; overflow:hidden; border-left:1px solid var(--lia-line); background:#f4f0f8; }
-        .lia-persona-panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-        .lia-persona-panel-head > div:first-child { display:grid; gap:2px; }
-        .lia-persona-panel-head strong { color:var(--lia-text); font-size:15px; }
-        .lia-persona-panel-head-actions { display:flex; gap:6px; }
-        .lia-persona-panel-head-actions button { min-width:32px; min-height:30px; padding:5px 7px; font-size:9px; }
-        #dpg-persona-panel-close { display:none; }
-        #dpg-persona-panel-toggle { display:none; }
-        .lia-persona-binding-summary { display:grid; gap:6px; padding:10px; border:1px solid var(--lia-line); border-radius:13px; background:rgba(255,255,255,.035); }
-        .lia-persona-binding-summary > div:not(.effective) { display:grid; grid-template-columns:10px minmax(0,1fr); gap:2px 7px; align-items:center; }
-        .lia-persona-binding-summary > div:not(.effective) b { color:var(--lia-muted); font-size:9px; }
-        .lia-persona-binding-summary > div:not(.effective) strong { grid-column:2; color:var(--lia-soft); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lia-binding-swatch { width:9px; height:9px; border-radius:99px; }
-        .lia-binding-swatch.risu, .lia-persona-legend i.risu { background:#4ea3ff; box-shadow:0 0 0 2px rgba(78,163,255,.12); }
-        .lia-binding-swatch.dynamic, .lia-persona-legend i.dynamic { background:#b06cff; box-shadow:0 0 0 2px rgba(176,108,255,.12); }
-        .lia-persona-binding-summary .effective { display:grid; grid-template-columns:auto minmax(0,1fr); gap:3px 8px; margin-top:3px; padding-top:7px; border-top:1px solid var(--lia-line); }
-        .lia-persona-binding-summary .effective span { color:var(--lia-muted); font-size:9px; }
-        .lia-persona-binding-summary .effective strong { color:var(--lia-soft); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; }
-        .lia-persona-binding-summary .effective em { grid-column:1/-1; color:var(--lia-muted); font-size:8px; font-style:normal; text-align:right; }
-        .lia-persona-proof { display:grid; gap:7px; padding:10px 11px; border:1px solid var(--lia-line); border-radius:13px; background:rgba(255,255,255,.03); }
-        .lia-persona-proof.good { border-color:rgba(110,231,183,.42); background:rgba(110,231,183,.055); }
-        .lia-persona-proof.dynamic { border-color:rgba(176,108,255,.46); background:rgba(176,108,255,.06); }
-        .lia-persona-proof.checking { border-color:rgba(247,200,115,.44); background:rgba(247,200,115,.05); }
-        .lia-persona-proof.danger { border-color:rgba(255,130,150,.5); background:rgba(255,130,150,.055); }
-        .lia-persona-proof-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
-        .lia-persona-proof-head span { color:var(--lia-muted); font-size:7px; font-weight:900; letter-spacing:.14em; }
-        .lia-persona-proof-head strong { color:var(--lia-text); font-size:9px; }
-        .lia-persona-proof-main { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
-        .lia-persona-proof-main b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--lia-text); font-size:11px; }
-        .lia-persona-proof-main em { flex:0 0 auto; color:var(--lia-muted); font-size:7px; font-style:normal; font-weight:850; }
-        .lia-persona-proof p { margin:0; color:var(--lia-muted); font-size:8px; line-height:1.45; }
-        .lia-persona-proof small { color:var(--lia-muted); font-size:7px; }
-        .lia-persona-proof button { min-height:30px; padding:5px 8px; font-size:8px; }
-        .lia-persona-legend { display:flex; flex-wrap:wrap; gap:5px 9px; align-items:center; color:var(--lia-muted); font-size:8px; line-height:1.4; }
-        .lia-persona-legend span { display:inline-flex; gap:5px; align-items:center; }
-        .lia-persona-legend i { width:7px; height:7px; border-radius:99px; }
-        .lia-persona-legend small { width:100%; color:var(--lia-muted); font-size:8px; }
-        .lia-persona-search { display:grid; gap:4px; }
-        .lia-persona-search span { color:var(--lia-muted); font-size:8px; font-weight:800; }
-        .lia-persona-search input { width:100%; min-height:34px; padding:7px 9px; border:1px solid var(--lia-line); border-radius:10px; color:var(--lia-text); background:rgba(255,255,255,.035); font-size:9px; outline:none; }
-        .lia-persona-card-list { flex:1; min-height:0; display:grid; align-content:start; gap:8px; padding:3px; overflow:auto; }
-        .lia-persona-card { position:relative; display:grid; grid-template-columns:minmax(0,1fr) 30px; align-items:stretch; min-width:0; border:2px solid transparent; border-radius:15px; background:rgba(255,255,255,.035); transition:.16s ease; }
-        .lia-persona-card:hover { background:rgba(255,255,255,.055); }
-        .lia-persona-card.is-risu-selected { border-color:#4ea3ff; box-shadow:0 0 0 1px rgba(78,163,255,.12) inset; }
-        .lia-persona-card.is-dynamic-bound { border-color:#b06cff; box-shadow:0 0 0 1px rgba(176,108,255,.14) inset; }
-        .lia-persona-card.is-risu-selected.is-dynamic-bound { border-color:#4ea3ff; box-shadow:0 0 0 3px #0b111c, 0 0 0 5px #b06cff, 0 0 0 1px rgba(78,163,255,.14) inset; margin:3px; }
-        .lia-persona-card.is-effective { background:rgba(255,255,255,.055); }
-        .lia-persona-card.is-live { background:linear-gradient(135deg,rgba(176,108,255,.075),rgba(78,163,255,.045)); }
-        .lia-persona-card-main { min-width:0; display:grid; grid-template-columns:34px minmax(0,1fr); gap:8px; align-items:center; padding:9px 7px 9px 9px; border:0; color:inherit; background:transparent; text-align:left; }
-        .lia-persona-avatar { width:32px; height:32px; display:grid; place-items:center; border-radius:10px; color:var(--lia-soft); background:rgba(255,255,255,.08); font-size:12px; font-weight:900; }
-        .lia-persona-card-copy { min-width:0; display:grid; gap:2px; }
-        .lia-persona-card-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--lia-text); font-size:11px; }
-        .lia-persona-card-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--lia-muted); font-size:8px; }
-        .lia-persona-card-flags { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:4px; margin-left:42px; margin-top:-4px; }
-        .lia-persona-card-flags em { padding:2px 5px; border-radius:999px; font-size:7px; font-style:normal; font-weight:900; letter-spacing:.02em; }
-        .lia-persona-card-flags .flag-risu { color:var(--lia-soft); background:rgba(78,163,255,.14); }
-        .lia-persona-card-flags .flag-dynamic { color:var(--lia-soft); background:rgba(176,108,255,.15); }
-        .lia-persona-card-flags .flag-live { color:var(--lia-soft); background:rgba(110,231,183,.12); }
-        .lia-persona-pin { align-self:stretch; min-width:30px; border:0; border-left:1px solid var(--lia-line); border-radius:0 13px 13px 0; color:var(--lia-muted); background:rgba(255,255,255,.02); font-size:15px; }
-        .lia-persona-pin.active { color:var(--lia-soft); background:rgba(176,108,255,.12); }
-        .lia-persona-empty { padding:18px 10px; border:1px dashed var(--lia-line); border-radius:12px; color:var(--lia-muted); font-size:9px; text-align:center; }
-        .lia-persona-panel-foot { display:grid; gap:6px; padding-top:8px; border-top:1px solid var(--lia-line); }
-        .lia-persona-panel-foot button { min-height:34px; font-size:9px; }
-        .lia-persona-panel-foot small { color:var(--lia-muted); font-size:8px; line-height:1.4; }
-        .lia-persona-panel-backdrop { display:none; }
-
-        @media (max-width: 1180px) {
-          .lia-app-layout, .lia-app-layout.sidebar-collapsed { grid-template-columns:68px minmax(0,1fr); }
-          .lia-app-layout .lia-nav-label, .lia-app-layout .lia-sidebar-current, .lia-app-layout .lia-sidebar-provider { display:none; }
-          .lia-sidebar .dpg-tab-button { justify-content:center; padding:0; }
-          .lia-sidebar-collapse { display:none; }
-          #dpg-persona-panel-toggle { display:inline-flex; }
-          .lia-persona-panel { position:fixed; z-index:16; top:12px; right:12px; bottom:12px; width:min(340px,calc(100vw - 36px)); height:auto; min-height:0; border:1px solid var(--lia-line-strong); border-radius:20px; background:#f4f0f8; box-shadow:0 28px 90px rgba(0,0,0,.58); transform:translateX(calc(100% + 28px)); opacity:0; pointer-events:none; transition:transform .2s ease,opacity .2s ease; }
-          .lia-app-layout.persona-panel-open .lia-persona-panel { transform:translateX(0); opacity:1; pointer-events:auto; }
-          .lia-persona-panel-backdrop { position:fixed; z-index:15; inset:0; background:rgba(0,0,0,.62); }
-          .lia-app-layout.persona-panel-open .lia-persona-panel-backdrop { display:block; }
-          #dpg-persona-panel-close { display:inline-flex; }
-        }
-        @media (max-width: 980px) {
-          .lia-live-status-grid { grid-template-columns:1fr 1fr; }
-          .lia-live-actions { grid-template-columns:1fr 1fr; }
-          .lia-live-config-grid, .lia-live-state-columns { grid-template-columns:1fr; }
-          .lia-app-layout { grid-template-columns:68px minmax(0,1fr); }
-          .lia-app-layout .lia-nav-label, .lia-app-layout .lia-sidebar-current, .lia-app-layout .lia-sidebar-provider { display:none; }
-          .lia-sidebar .dpg-tab-button { justify-content:center; padding:0; }
-          .lia-sidebar-collapse { display:none; }
-          .lia-vault-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-        }
-        @media (max-width: 680px) {
-          .lia-app-layout { grid-template-columns:56px minmax(0,1fr); min-height:100vh; }
-          .lia-sidebar { top:107px; height:calc(100vh - 107px); padding:10px 6px; }
-          .lia-workspace { padding:12px 10px 20px; }
-          .lia-vault-card-grid, .lia-vault-page-toolbar { grid-template-columns:1fr; }
-          .lia-vault-page-toolbar .lia-vault-actions { grid-template-columns:1fr 1fr; }
-          .lia-world-summary { align-items:stretch; flex-direction:column; }
-          .lia-world-summary button { width:100%; }
-          .lia-editor-tabs { gap:3px; }
-          .lia-editor-tab { padding:7px 8px; }
-        }
-
-        /* v0.22.20 final responsive layer. Keep this after the workspace and
-           Persona-panel base rules so later desktop declarations cannot undo it. */
-        @media (max-width: 980px) {
-          .lia-shell { width:100%; max-width:100%; overflow:visible; }
-          .lia-edit-save-panel { grid-template-columns:minmax(0,1fr); align-items:stretch; }
-          .lia-edit-save-actions { min-width:0; grid-template-columns:repeat(3,minmax(0,1fr)); }
-          .lia-edit-save-actions button { min-width:0; overflow-wrap:anywhere; }
-        }
-        @media (min-width: 681px) and (max-width: 980px) {
-          .lia-candidate-grid, .lia-spec-field-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-        }
-        @media (min-width: 681px) and (max-width: 1180px) {
-          .lia-sidebar .lia-nav-icon {
-            width:100%; font-size:0; line-height:1; color:inherit;
-          }
-          .lia-sidebar .lia-nav-icon::after {
-            content:attr(data-compact-label); display:block; width:100%;
-            font-size:11px; font-weight:900; letter-spacing:-.04em;
-            line-height:1.15; text-align:center; white-space:nowrap;
-          }
-        }
-        @media (max-width: 680px) {
-          .lia-header {
-            height:56px; min-height:56px; padding:8px 10px; gap:8px;
-          }
-          .lia-brand-main { flex:1 1 auto; gap:8px; }
-          .lia-brand-icon { width:32px; height:32px; border-radius:10px; font-size:17px; }
-          .lia-brand-title { font-size:15px; white-space:nowrap; }
-          .lia-brand-title > span { display:none; }
-          .lia-header-actions { flex:0 0 auto; gap:4px; }
-          .lia-header-actions button {
-            min-width:0; min-height:34px; padding:6px 7px; font-size:10px; line-height:1; white-space:nowrap;
-          }
-          #dpg-status { top:56px; min-height:38px; padding:8px 10px; overflow-wrap:anywhere; }
-          .lia-app-layout, .lia-app-layout.sidebar-collapsed {
-            grid-template-columns:minmax(0,1fr); min-height:calc(100vh - 94px);
-            padding-bottom:calc(60px + env(safe-area-inset-bottom, 0px));
-          }
-          .lia-workspace { width:100%; padding:12px 10px 20px; }
-          .lia-sidebar {
-            position:fixed; z-index:12; inset:auto 0 0 0; width:100%;
-            height:calc(60px + env(safe-area-inset-bottom, 0px)); min-height:0;
-            display:block; padding:6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-            overflow:hidden; border:0; border-top:1px solid var(--lia-line-strong);
-            background:#f4f0f8; box-shadow:0 -12px 34px rgba(0,0,0,.32);
-          }
-          .lia-sidebar-top { display:block; min-width:0; overflow:hidden; }
-          .lia-sidebar-nav {
-            display:flex; width:100%; min-width:0; gap:4px;
-            overflow-x:auto; overflow-y:hidden;
-            -webkit-overflow-scrolling:touch;
-            scrollbar-width:none; -ms-overflow-style:none;
-            overscroll-behavior-x:contain; touch-action:pan-x;
-          }
-          .lia-sidebar-nav::-webkit-scrollbar { width:0; height:0; display:none; }
-          .lia-sidebar .dpg-tab-button,
-          .lia-app-layout.sidebar-collapsed .lia-sidebar .dpg-tab-button {
-            flex:0 0 64px; width:64px; min-width:64px; min-height:48px; padding:4px 2px; flex-direction:column;
-            justify-content:center; gap:1px; border-radius:10px;
-          }
-          .lia-app-layout .lia-nav-label { display:block; font-size:8px; line-height:1.1; white-space:nowrap; }
-          .lia-sidebar .lia-nav-icon { width:auto; font-size:13px; line-height:1; }
-          .lia-sidebar-collapse, .lia-sidebar-current, .lia-sidebar-provider { display:none !important; }
-          .lia-result-card, .lia-result-card > *, .lia-edit-save-panel, .lia-edit-save-actions { min-width:0; max-width:100%; }
-          .lia-editor-tabs {
-            display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px;
-            overflow:visible;
-          }
-          .lia-editor-tab { min-width:0; padding:7px 4px; white-space:normal; line-height:1.2; }
-          .lia-audit-head { align-items:stretch; flex-direction:column; }
-          .lia-audit-head-actions { justify-content:space-between; }
-        }
-        @media (max-width: 480px) {
-          .lia-edit-save-actions { grid-template-columns:minmax(0,1fr); }
-          .lia-panel-title { align-items:stretch; flex-direction:column; }
-          .lia-panel-title > span { max-width:100%; text-align:left; }
-          .lia-live-status-grid { grid-template-columns:minmax(0,1fr); }
-          .lia-evolution-evidence, .lia-evolution-summary { align-items:stretch; flex-direction:column; }
-        }
-        .lia-provider-attribution { margin: 0 0 14px; color: var(--lia-muted); font-size: 10px; line-height: 1.5; }
-        .lia-asset-page-grid { display:grid; grid-template-columns:minmax(320px, 380px) minmax(0,1fr); gap:14px; }
-        .lia-asset-hero { margin-bottom: 16px; }
-        .lia-asset-config-panel, .lia-asset-gallery-panel { min-height: 200px; }
-        .lia-asset-batch-actions { display:grid; gap:8px; margin-top: 8px; }
-        .lia-asset-preset-box { display:grid; gap:9px; padding:12px; border:1px solid rgba(138,168,255,.22); border-radius:14px; background:rgba(138,168,255,.035); }
-        .lia-asset-preset-head { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; }
-        .lia-asset-preset-head > div { display:grid; gap:3px; }
-        .lia-asset-preset-head strong { font-size:11px; color:var(--lia-text); }
-        .lia-asset-preset-head small { color:var(--lia-muted); font-size:8px; text-align:right; }
-        .lia-asset-preset-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
-        .lia-asset-preset-actions button { min-height:36px; }
-        .lia-asset-gallery { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
-        .lia-asset-card { display:grid; gap:10px; padding:12px; border:1px solid var(--lia-line); border-radius:16px; background: rgba(255,255,255,.03); }
-        .lia-asset-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .lia-asset-card-empty { border-style:dashed; background: rgba(255,255,255,.015); }
-        .lia-asset-upload-inline { width:32px; height:32px; border:none; border-radius:999px; background:rgba(138,168,255,.16); color:var(--lia-soft); font-size:18px; font-weight:900; cursor:pointer; display:grid; place-items:center; }
-        .lia-asset-upload-inline:hover { background:rgba(138,168,255,.26); }
-        .lia-asset-add-zone { display:grid; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--lia-line); }
-        .lia-asset-add-button { width:100%; min-height:48px; border-style:dashed; font-size:12px; font-weight:900; letter-spacing:.01em; }
-        .lia-asset-add-button.active { border-color:rgba(138,168,255,.45); background:rgba(138,168,255,.07); }
-        .lia-asset-add-form { display:grid; gap:10px; padding:12px; border:1px solid rgba(138,168,255,.24); border-radius:14px; background:rgba(138,168,255,.045); }
-        .lia-asset-add-form[hidden] { display:none !important; }
-        .lia-asset-transfer-zone { margin-top:12px; }
-        .lia-asset-add-form input { min-height:40px; }
-        .lia-asset-add-actions { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:8px; }
-        .lia-asset-add-actions button { min-height:38px; }
-        .lia-asset-add-form > small, .lia-asset-add-disabled-note { color:var(--lia-muted); font-size:9px; line-height:1.5; }
-        .lia-asset-prompt-details { border:1px solid rgba(255,255,255,.08); border-radius:12px; background: rgba(255,255,255,.02); overflow:hidden; }
-        .lia-asset-prompt-details > summary { cursor:pointer; list-style:none; padding:10px 12px; font-weight:700; color: var(--lia-text); }
-        .lia-asset-prompt-details > summary::-webkit-details-marker { display:none; }
-        .lia-asset-prompt-details[open] > summary { border-bottom:1px solid rgba(255,255,255,.08); }
-        .lia-asset-prompt-editor { display:grid; gap:10px; padding:12px; }
-        .lia-asset-prompt-editor textarea { min-height: 120px; }
-        .lia-asset-thumb { aspect-ratio: 3 / 4; border-radius:14px; overflow:hidden; border:1px solid var(--lia-line); background:#f4f0f8; display:grid; place-items:center; color:var(--lia-muted); font-size:11px; }
-        .lia-asset-thumb-empty { background:rgba(255,255,255,.025); border-style:dashed; text-align:center; padding:12px; }
-        .lia-asset-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-        .lia-asset-meta { display:grid; gap:4px; }
-        .lia-asset-meta-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .lia-asset-meta strong { font-size:13px; }
-        .lia-asset-meta small { color:var(--lia-muted); font-size:10px; }
-        .lia-asset-badge { padding:4px 8px; border-radius:999px; background:rgba(138,168,255,.16); color:var(--lia-soft); font-size:10px; font-weight:800; border:1px solid rgba(138,168,255,.32); }
-        .lia-asset-actions { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:6px; }
-        .lia-asset-actions-two { grid-template-columns: repeat(2, minmax(0,1fr)); }
-        .lia-asset-actions button { min-height:36px; font-size:10px; font-weight:800; }
-        .lia-asset-stale { border-color: rgba(247,200,115,.35); background: rgba(247,200,115,.10); color:var(--lia-soft); }
-        .lia-asset-lock-flow { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:6px; margin:12px 0 4px; }
-        .lia-asset-step { display:flex; align-items:center; gap:7px; padding:8px; border:1px solid var(--lia-line); border-radius:11px; color:var(--lia-muted); font-size:10px; }
-        .lia-asset-step b { width:20px; height:20px; display:grid; place-items:center; border-radius:50%; background:rgba(255,255,255,.05); }
-        .lia-asset-step.active { border-color:rgba(138,168,255,.38); color:var(--lia-soft); }
-        .lia-asset-step.done { border-color:rgba(110,231,183,.28); color:var(--lia-soft); }
-        .lia-illustration-toggle { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 14px; border:1px solid var(--lia-line); border-radius:14px; background:rgba(255,255,255,.025); cursor:pointer; box-sizing:border-box; }
-        .lia-illustration-toggle:hover { border-color:rgba(138,168,255,.30); background:rgba(138,168,255,.045); }
-        .lia-illustration-toggle-copy { min-width:0; display:grid; gap:4px; }
-        .lia-illustration-toggle-copy strong { color:var(--lia-text); font-size:11px; line-height:1.35; }
-        .lia-illustration-toggle-copy small { color:var(--lia-muted); font-size:9px; line-height:1.45; font-weight:500; }
-        .lia-switch { position:relative; flex:0 0 auto; width:42px; height:24px; display:block; }
-        .lia-switch input { position:absolute; inset:0; width:100%; height:100%; opacity:0; margin:0; cursor:pointer; z-index:2; }
-        .lia-switch-track { position:absolute; inset:0; display:block; border-radius:999px; background:rgba(148,163,184,.20); border:1px solid rgba(148,163,184,.28); transition:.18s ease; }
-        .lia-switch-knob { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#cbd5e1; box-shadow:0 2px 8px rgba(0,0,0,.28); transition:.18s ease; }
-        .lia-switch input:checked + .lia-switch-track { background:rgba(124,145,255,.80); border-color:rgba(157,173,255,.95); }
-        .lia-switch input:checked + .lia-switch-track .lia-switch-knob { transform:translateX(18px); background:#fff; }
-        .lia-switch input:focus-visible + .lia-switch-track { outline:2px solid rgba(138,168,255,.75); outline-offset:2px; }
-        .lia-illustration-rule { display:flex; align-items:flex-start; gap:10px; padding:12px 13px; border:1px solid rgba(110,231,183,.18); border-radius:13px; background:rgba(110,231,183,.045); box-sizing:border-box; }
-        .lia-illustration-rule-icon { flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; border-radius:7px; background:rgba(110,231,183,.10); color:var(--lia-soft); font-size:11px; }
-        .lia-illustration-rule > span:last-child { display:grid; gap:4px; min-width:0; }
-        .lia-illustration-rule strong { color:var(--lia-text); font-size:10px; }
-        .lia-illustration-rule small { color:var(--lia-muted); font-size:9px; line-height:1.45; }
-        .lia-illustration-runtime { display:grid; gap:9px; padding:12px; border:1px solid var(--lia-line); border-radius:14px; background:#f4f0f8; box-sizing:border-box; }
-        .lia-illustration-runtime-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:0 2px 2px; }
-        .lia-illustration-runtime-head > span { display:grid; gap:4px; }
-        .lia-illustration-runtime-head strong { color:var(--lia-text); font-size:11px; }
-        .lia-illustration-runtime-head small { color:var(--lia-muted); font-size:9px; line-height:1.45; }
-        .lia-illustration-toggle-compact { padding:10px 11px; border-radius:12px; background:rgba(255,255,255,.018); }
-        .lia-illustration-score { margin-top:1px; }
-        .lia-illustration-runtime .is-disabled { opacity:.45; pointer-events:none; }
-        .lia-fixed-rule { border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.04); }
-        .lia-inline-emotion-asset img { display:block; width:100%; max-width:100%; height:auto; margin:0 auto; border-radius:12px; }
-        .lia-inline-emotion-asset-frame img { display:block; width:100%; max-width:100%; height:auto; margin:0 auto; border-radius:12px; }
-        @media (max-width: 1080px) { .lia-asset-page-grid { grid-template-columns: 1fr; } }
-
-        /* Pocket Studio v2: compact phone canvas and progressive disclosure. */
-        :root {color-scheme:light;--lia-bg:#f8f7fa;--lia-surface:#fff;--lia-surface-2:#f3eef8;--lia-surface-3:#eee8f4;--lia-line:#eeeaf1;--lia-line-strong:#dcd3e5;--lia-text:#292731;--lia-soft:#5d5369;--lia-muted:#7d7387;--lia-accent:#8066ad;--lia-accent-2:#a68abe;--lia-success:#427461;--lia-warning:#896224;--lia-danger:#ac3654}
-        body{padding:12px;background:#eeedf2;font-size:14px;line-height:1.6;color:var(--lia-text)}
-        .lia-shell{container-type:inline-size;container-name:pocket;width:min(414px,100%);height:min(900px,calc(100dvh - 24px));min-height:0;max-height:none;display:flex;flex-direction:column;overflow:hidden;border:8px solid white;border-radius:38px;background:var(--lia-bg);box-shadow:0 20px 70px #49376015}
-        .lia-shell.pocket-wide{width:min(960px,100%)}
-        .lia-header{flex-shrink:0;position:relative;z-index:12;display:flex;justify-content:space-between;align-items:center;background:var(--lia-bg);padding:20px 24px 14px;border:0;gap:8px}
-        .lia-brand-title{font-size:23px;font-weight:750;letter-spacing:2px;margin:0;color:var(--lia-text)}.lia-brand-title span{font-size:10px;font-weight:400;letter-spacing:0;color:var(--lia-muted);margin-left:4px}
-        .lia-pocket-icon{width:21px;height:21px;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;fill:none;flex-shrink:0}
-        .lia-pocket-menu>summary{display:grid;place-items:center;width:44px;height:44px;background:white;border-radius:50%;color:#927da8;cursor:pointer;list-style:none}.lia-pocket-menu summary::-webkit-details-marker{display:none}
-        .lia-header-actions{position:absolute;right:18px;top:68px;display:grid;width:180px;background:white;padding:8px;border:1px solid var(--lia-line);border-radius:18px;box-shadow:0 10px 35px #49376020}.lia-header-actions button{min-height:44px;background:transparent;border:0;border-radius:12px;text-align:left;color:var(--lia-soft);font-size:12px;padding:10px 12px}.lia-header-actions button:hover{background:var(--lia-surface-2)}
-        #dpg-status{flex-shrink:0;font-size:12px;line-height:1.5;margin:0;padding:9px 24px;background:#f0eaf7;color:var(--lia-soft);border:0;max-height:112px;overflow:auto}#dpg-status[data-idle="true"]{display:none}#dpg-status[data-tone="error"]{background:#fff0f4;color:var(--lia-danger)}
-        #dpg-preview-root{flex:1;min-height:0;padding:0;overflow:hidden}
-        .lia-app-layout,.lia-app-layout.sidebar-collapsed,.lia-app-layout.persona-panel-open{position:relative;display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
-        .lia-workspace{order:0;flex:1;min-height:0;min-width:0;width:100%;padding:4px 23px 25px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#e5deec transparent}
-        .lia-pocket-nav{order:1;display:grid;flex-shrink:0;grid-template-columns:repeat(4,minmax(0,1fr));padding:10px 12px max(16px,env(safe-area-inset-bottom));gap:4px;border-top:1px solid var(--lia-line);background:white}
-        .lia-pocket-nav button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:4px;color:#9b90a6;border-radius:12px;font-size:10px;font-weight:500}.lia-pocket-nav button.active{color:#8066ad;background:transparent}.lia-pocket-nav button .lia-pocket-icon{width:22px;height:22px}
-        .lia-pocket-subnav{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 18px}.lia-pocket-subnav button{display:none;min-height:40px;border:0;border-radius:12px;padding:8px 10px;background:transparent;color:var(--lia-muted);font-size:11px}
-        [data-pocket-group="home"] .lia-pocket-subnav [data-pocket-group="home"],[data-pocket-group="settings"] .lia-pocket-subnav [data-pocket-group="settings"]{display:block}.lia-pocket-subnav button.active{background:#eee7f5;color:#75588f}.lia-app-layout:is([data-page="home"],[data-page="generate"],[data-page="vault"],[data-page="settings"]) .lia-pocket-subnav{display:none}
-        .lia-pocket-title{font-size:25px;font-weight:650;letter-spacing:-1px;margin:8px 0 6px;line-height:1.4}.lia-pocket-chat{display:flex;gap:7px;align-items:center;color:var(--lia-muted);font-size:11px;margin:0;padding:9px 0 17px}.lia-pocket-chat .lia-pocket-icon{width:14px;height:14px}.lia-pocket-chat span{overflow-wrap:anywhere}
-        .lia-pocket-columns{display:block}.lia-pocket-profile{position:relative;border-radius:24px;background:#eee8f4;padding:18px 22px 20px;overflow:hidden}.lia-pocket-profile-top{display:flex;align-items:center;justify-content:space-between;height:28px}.lia-pocket-profile-top button{border:0;background:transparent;color:#a18fb2;padding:10px;min-height:44px;margin-right:-10px}.lia-pocket-profile-top .lia-pocket-icon{width:20px}
-        .lia-pocket-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#82738d;background:#ffffffb5;border-radius:20px;padding:4px 8px}.lia-pocket-badge i{width:5px;height:5px;border-radius:50%;background:#799886}
-        .lia-pocket-person{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:22px 0}.lia-pocket-person>div:first-child{min-width:0}.lia-pocket-person h3{font-size:29px;font-weight:650;margin:0 0 7px;line-height:1.4;letter-spacing:-1px;overflow-wrap:anywhere}.lia-pocket-person p{font-size:11px;color:#87788e;line-height:1.65;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-        .lia-pocket-avatar{height:84px;flex:0 0 84px;border-radius:30px;background:#ddd0eb;overflow:hidden}.lia-pocket-avatar svg{height:100%;width:100%;fill:#f5effa}.lia-pocket-profile-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lia-pocket-profile-actions button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:8px 3px;font-size:11px;color:#756681;background:#ffffffb5;border:0;border-radius:11px}.lia-pocket-profile-actions .lia-pocket-icon{width:14px;height:14px}
-        .lia-pocket-heading{font-size:13px;font-weight:650;margin:24px 0 11px}.lia-pocket-heading-row{display:flex;align-items:center;justify-content:space-between;gap:8px}.lia-pocket-heading-row button{margin-top:12px;background:transparent;border:0;color:#9b90a6;font-size:10px;min-height:44px;padding:6px 0}
-        .lia-pocket-row{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:15px 17px;border:0;border-radius:19px;background:white;text-align:left;color:var(--lia-text);margin:0 0 10px}.lia-pocket-row>span:nth-child(2){flex:1;min-width:0}.lia-pocket-row strong{font-size:12px;font-weight:600;display:block}.lia-pocket-row small{font-size:10px;color:var(--lia-muted);margin-top:3px;display:block}.lia-pocket-row>.lia-pocket-icon{width:12px;height:12px;color:#b8adbf}
-        .lia-pocket-tile{display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;border-radius:12px;background:#f1eaf8;color:#a48bb9}.lia-pocket-tile .lia-pocket-icon{width:18px;height:18px}
-        .lia-pocket-card{background:white;border:0;border-radius:20px;padding:16px}.lia-pocket-sync-head{display:flex;align-items:center;gap:10px}.lia-pocket-sync-head>div{flex:1}.lia-pocket-sync-head strong{display:block;font-size:12px;font-weight:600}.lia-pocket-sync-head small{display:block;color:var(--lia-muted);font-size:10px;margin-top:3px}
-        #lia-pocket-sync-toggle{flex-shrink:0;min-width:52px;min-height:40px;border:0;border-radius:12px;background:#f3eef8;color:#7c678f;padding:8px 10px;cursor:pointer}
-        .lia-pocket-progress{margin:12px 0 0 44px}.lia-pocket-progress progress{display:block;width:100%;height:4px;border:0;border-radius:8px;appearance:none;background:#f0ebf5;accent-color:#b9a5ce;overflow:hidden}.lia-pocket-progress progress::-webkit-progress-bar{background:#f0ebf5}.lia-pocket-progress progress::-webkit-progress-value{background:#b9a5ce;border-radius:8px}.lia-pocket-progress small{display:block;font-size:9px;color:#9a8ba6;margin-top:7px}
-        .lia-pocket-state{list-style:none;padding:0;margin:0}.lia-pocket-state li{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid #f1edf5;line-height:1.6}.lia-pocket-state li:first-child{padding-top:0}.lia-pocket-state li:last-child{border:0;padding-bottom:0}.lia-pocket-state strong{font-size:11px;font-weight:400;display:block;color:#63586d}.lia-pocket-state small{font-size:9px;display:block;color:#aa9db5;margin-top:3px}.lia-pocket-state-dot{flex:0 0 5px;height:5px;border-radius:50%;background:#cbb8df;margin-top:7px}
-        .lia-pocket-fold{display:block;background:white;border:0;border-radius:18px;margin:12px 0;overflow:hidden}.lia-pocket-fold>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none;min-height:60px;padding:16px 18px;color:var(--lia-text);font-size:12px;font-weight:600}.lia-pocket-fold>summary::-webkit-details-marker{display:none}.lia-pocket-fold>summary:after{content:'›';color:#ac9cba;font-size:20px;font-weight:400}.lia-pocket-fold[open]>summary:after{transform:rotate(90deg)}.lia-pocket-fold>summary>span{font-size:10px;color:var(--lia-muted);font-weight:400}.lia-pocket-fold[open]>summary{border-bottom:1px solid var(--lia-line)}.lia-pocket-fold>div:not(.lia-panel){padding:16px}.lia-pocket-fold>summary>svg{color:#a28ab9}
-        .lia-settings-fold>summary{justify-content:flex-start}.lia-settings-fold>summary>span{flex:1}.lia-settings-fold strong{display:block;font-size:12px;font-weight:600;color:var(--lia-text)}.lia-settings-fold small{display:block;font-size:10px;font-weight:400;margin-top:3px;color:var(--lia-muted)}.lia-pocket-settings-profile{display:flex;gap:12px;align-items:center;padding:22px 0 0}.lia-pocket-settings-profile>.lia-pocket-tile{width:44px;height:44px;font-size:20px;font-weight:600}.lia-pocket-settings-profile strong{display:block;font-size:13px;font-weight:600}.lia-pocket-settings-profile small{display:block;font-size:10px;color:var(--lia-muted);margin-top:3px}
-        .lia-shell .lia-section-eyebrow,.lia-shell .lia-kicker{display:none}.lia-shell .lia-page-hero,.lia-shell .lia-settings-hero,.lia-shell .lia-mode-stage{padding:0;background:none;border:0;box-shadow:none;margin:8px 0 22px}.lia-shell :is(.lia-page-hero,.lia-settings-hero,.lia-mode-stage) h2{font-size:25px;letter-spacing:-1px;font-weight:650;line-height:1.4;margin:0 0 8px}.lia-shell :is(.lia-page-hero,.lia-settings-hero,.lia-mode-stage) p{display:block;font-size:12px;line-height:1.65;color:var(--lia-muted);margin:0}
-        .lia-shell .lia-mode-grid-four{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.lia-shell .lia-mode-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px;border:1px solid transparent;border-radius:19px;padding:16px;background:white;min-height:112px;min-width:0;text-align:left}.lia-shell .lia-mode-card.active{background:#f0e9f7;border-color:#d1bee2}.lia-shell .lia-mode-symbol{width:30px;height:30px;border-radius:11px;display:grid;place-items:center;background:#efe6f6;color:#a48aba;font-size:16px}.lia-shell .lia-mode-copy strong{font-size:12px;color:var(--lia-text);display:block}.lia-shell .lia-mode-copy small{font-size:10px;color:var(--lia-muted);display:block;line-height:1.5;margin-top:3px}.lia-shell .lia-mode-check{display:none}
-        .lia-shell .lia-world-summary{padding:15px;background:white;border:0;border-radius:18px;margin:0 0 15px;display:flex;gap:12px;align-items:center}.lia-shell .lia-world-summary-copy small{font-size:10px}.lia-shell .lia-world-summary-copy strong{font-size:13px}.lia-shell .lia-world-summary button{font-size:11px;white-space:nowrap;min-height:40px}
-        .lia-shell .lia-panel,.lia-shell .lia-live-sync-panel,.lia-shell .lia-compiler-panel,.lia-shell .lia-preflight-panel,.lia-shell .lia-lineage-panel,.lia-shell .lia-evolution-panel,.lia-shell .lia-audit-panel{background:white;border:0;box-shadow:none;border-radius:20px;padding:18px}.lia-shell .lia-panel-title h2,.lia-shell .lia-audit-head h3{font-size:16px;font-weight:600}.lia-shell .lia-panel-title span,.lia-shell .lia-audit-head p{font-size:11px;line-height:1.7}.lia-shell .lia-field{gap:6px}.lia-shell .lia-field>span,.lia-shell .lia-field>label{font-size:12px}.lia-shell .lia-field>small{font-size:10px;line-height:1.65;color:var(--lia-muted)}
-        .lia-shell input,.lia-shell textarea,.lia-shell select{background:#faf8fc;color:var(--lia-text);border-color:#e6deed;font-size:13px;border-radius:12px;max-width:100%;min-width:0}.lia-shell textarea{line-height:1.75}.lia-shell .lia-code-output{font-size:12px;line-height:1.7;min-height:240px}.lia-shell .lia-guidance-textarea{min-height:110px}
-        .lia-shell :is(.btn-soft,.btn-primary,.btn-danger){min-height:42px;border-radius:12px;font-size:12px;padding:10px 12px;font-weight:500}.lia-shell .btn-primary{background:#8870af;color:white;border:0}.lia-shell .btn-soft{background:#f3eef8;color:#7c678f;border:0}.lia-shell .btn-danger{background:#fff1f4;color:#a94962;border:0}.lia-shell .lia-primary-cta{border-radius:14px;background:#8870af;color:white;padding:14px}.lia-shell .lia-primary-cta strong{font-size:14px}.lia-shell .lia-primary-cta small{font-size:10px;color:#ede4f7}
-        .lia-shell .lia-live-config-grid,.lia-shell .lia-live-status-grid,.lia-shell .lia-live-state-columns,.lia-shell .lia-provider-grid,.lia-shell .lia-asset-page-grid,.lia-shell .lia-result-toolbar,.lia-shell .lia-edit-save-actions,.lia-shell .lia-live-actions{display:grid;grid-template-columns:1fr;gap:12px}.lia-shell .lia-live-status-grid>div{background:#f7f3fa;border:0;padding:12px;border-radius:12px}.lia-shell .lia-live-status-grid b,.lia-shell .lia-live-state-columns h4{font-size:12px}.lia-shell .lia-live-status-grid span,.lia-shell .lia-live-state-columns p,.lia-shell .lia-live-state-columns li{font-size:12px;line-height:1.65}.lia-shell .lia-live-state-columns>div{background:#f8f5fb;border:0;border-radius:16px}.lia-shell .lia-live-sync-panel .lia-pocket-fold{border:1px solid var(--lia-line)}.lia-shell .lia-live-actions{grid-template-columns:1fr 1fr}.lia-shell .lia-live-actions button{font-size:11px}.lia-shell .lia-live-error{color:var(--lia-danger);font-size:12px}
-        .lia-shell .lia-editor-tabs{background:transparent;border:0;padding:0;gap:5px}.lia-shell .lia-editor-tab{min-height:40px;background:white;border:0;border-radius:11px;color:var(--lia-muted);font-size:11px;padding:8px 12px}.lia-shell .lia-editor-tab.active{background:#eee5f6;color:#775691}.lia-shell .lia-spec-grid{grid-template-columns:1fr}.lia-shell .lia-spec-field-card{border:0;background:#f7f3fa;border-radius:15px}.lia-shell .lia-edit-save-panel{background:#f4eef9;border:0;border-radius:16px}.lia-shell .lia-edit-save-copy small{font-size:10px;line-height:1.6}.lia-shell .lia-edit-save-actions{grid-template-columns:1fr}.lia-shell .lia-edit-save-actions small{font-size:10px}
-        .lia-shell .lia-vault-page{background:none;padding:0}.lia-shell .lia-vault-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lia-shell .lia-vault-card{display:block;min-width:0;padding:18px 15px;background:white;border:1px solid transparent;border-radius:20px;text-align:left}.lia-shell .lia-vault-card.active{border-color:#cbb7dc;background:#fcfaff}.lia-vault-avatar{display:grid;place-items:center;width:62px;height:62px;border-radius:22px;background:#ece3f4;color:#b49bc8;margin-bottom:14px}.lia-vault-avatar .lia-pocket-icon{width:34px;height:34px}.lia-shell .lia-vault-card header{display:block}.lia-shell .lia-vault-card header strong{font-size:14px;font-weight:600}.lia-shell .lia-vault-card header span{display:none}.lia-shell .lia-vault-card p{font-size:10px;color:var(--lia-muted);line-height:1.6;max-height:3.2em;overflow:hidden}.lia-shell .lia-vault-card-meta{display:none}.lia-shell .lia-vault-page-toolbar{display:grid;gap:12px}.lia-shell .lia-vault-actions{display:grid;grid-template-columns:1fr 1fr}.lia-pocket-new{width:100%;margin:12px 0}.lia-shell .lia-vault-empty,.lia-shell .lia-empty-result{background:white;border:0;border-radius:22px;padding:32px 20px}.lia-shell .lia-vault-empty strong,.lia-shell .lia-empty-result strong{font-size:15px}.lia-shell .lia-vault-empty span,.lia-shell .lia-empty-result p{font-size:12px}
-        .lia-shell .lia-asset-config-panel{padding:0}.lia-shell .lia-asset-config-panel>summary{padding:18px}.lia-shell .lia-asset-config-panel[open]{padding:0 16px 16px}.lia-shell .lia-asset-config-panel[open]>summary{margin:0 -16px 16px}.lia-shell .lia-asset-gallery-grid{grid-template-columns:1fr 1fr}.lia-shell .lia-asset-step{font-size:10px}.lia-shell .lia-asset-step.active{color:#77588f}.lia-shell .lia-asset-step.done{color:#427461}.lia-shell .lia-asset-badge{color:#77588f;background:#f1e9f8}.lia-shell .lia-asset-thumb{background:#f1ebf7}.lia-shell .lia-context-strip{font-size:10px;overflow-wrap:anywhere}
-        .lia-shell .lia-side-column{background:#fcfaff;border:0;box-shadow:0 20px 70px #49376025;visibility:hidden}.lia-shell .world-drawer-open .lia-side-column{visibility:visible}.lia-shell .lia-drawer-head{background:#fcfaff}.lia-shell .lia-persona-panel{position:absolute;inset:auto 0 0 auto;width:min(390px,100%);height:auto;min-height:0;max-height:96%;border:0;border-radius:24px 24px 0 0;background:#fcfaff;box-shadow:0 -10px 50px #49376020;z-index:11;display:none;transform:none;opacity:1;pointer-events:auto;overflow:auto;padding:18px}.lia-shell .persona-panel-open .lia-persona-panel{display:flex}.lia-shell .lia-persona-panel-backdrop{display:none;position:absolute;inset:0;z-index:10;background:#30213952}.lia-shell .persona-panel-open .lia-persona-panel-backdrop{display:block}.lia-shell .lia-persona-card-list{overflow:visible;flex:none}.lia-shell .lia-persona-card{background:white;border-radius:18px}.lia-shell .lia-persona-card-copy strong{font-size:13px}.lia-shell .lia-persona-card-copy small,.lia-shell .lia-persona-panel small{font-size:10px}.lia-shell .lia-persona-pin{min-width:40px}.lia-shell .lia-persona-avatar{background:#eee5f6;color:#a58abb}.lia-shell .lia-persona-panel button{min-height:40px}.lia-shell .lia-persona-proof{background:#f4eef9;border:0}.lia-shell .lia-persona-proof-title{font-size:12px}
-        @container pocket (min-width:700px){.lia-pocket-columns{display:grid;grid-template-columns:1fr 1fr;gap:28px}.lia-pocket-columns>div:nth-child(2)>.lia-pocket-heading-row:first-child .lia-pocket-heading{margin-top:0}.lia-pocket-columns>div:nth-child(2)>.lia-pocket-heading-row:first-child button{margin-top:-5px}.lia-workspace{padding:8px 30px 30px}.lia-shell .lia-provider-grid,.lia-shell .lia-spec-grid{grid-template-columns:1fr 1fr}.lia-shell .lia-vault-card-grid{grid-template-columns:repeat(4,1fr)}.lia-shell .lia-mode-grid-four{grid-template-columns:repeat(4,1fr)}.lia-pocket-nav{padding-left:20%;padding-right:20%}.lia-shell .lia-asset-page-grid{grid-template-columns:1fr 1.3fr}}
-        .lia-shell #dpg-persona-panel-close{display:inline-flex}
-        .lia-shell .lia-persona-panel-head{position:sticky;top:0;z-index:2;background:#fcfaff;flex-shrink:0}
-        .lia-shell .lia-vault-page-toolbar{grid-template-columns:minmax(0,1fr);min-width:0}
-        .lia-shell .lia-vault-page-toolbar>*{min-width:0;max-width:100%}
-        .lia-shell .lia-vault-page-toolbar select{width:100%;min-width:0;max-width:100%}
-        .lia-shell .lia-vault-page-toolbar .lia-vault-actions{grid-template-columns:repeat(2,minmax(0,1fr));min-width:0}
-        .lia-shell .lia-vault-page-toolbar button{min-width:0;white-space:normal;overflow-wrap:anywhere}
-        @media(max-width:460px){body{padding:0}.lia-shell,.lia-shell.pocket-wide{width:100%;height:100dvh;border:0;border-radius:0}.lia-header{padding:20px 23px 14px}.lia-brand-title span{display:inline}.lia-workspace{padding:4px 23px 24px}.lia-shell .lia-world-summary{flex-direction:row}.lia-shell .lia-world-summary-copy{flex:1;min-width:0}.lia-shell .lia-world-summary-copy small{display:none}}
-        button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #b29ad6;outline-offset:3px}button:disabled{opacity:.45;cursor:not-allowed}
-        @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
-
-
-        .lia-shell .lia-world-summary button{width:auto;flex:0 0 auto}.lia-shell .lia-world-summary-copy{flex:1;min-width:0}.lia-shell .lia-world-summary-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .lia-shell .lia-compose-card>.lia-context-strip{display:none}.lia-shell .lia-compose-card .lia-context-strip{display:none}
-        .lia-shell .lia-result-card{padding:0;background:transparent}.lia-shell .lia-result-card>.lia-panel-title{padding:0;margin:8px 0 18px}.lia-shell .lia-result-card>.lia-panel-title h2{font-size:25px;font-weight:650;letter-spacing:-1px}.lia-shell .lia-editor-tabs{display:flex;flex-wrap:nowrap;overflow:auto}.lia-shell .lia-editor-tab{flex:1 0 auto}
-        .lia-shell .lia-edit-save-panel{padding:0;background:#eee6f6}.lia-shell .lia-edit-save-panel>.lia-edit-save-copy{padding:16px 16px 0}.lia-shell .lia-edit-save-panel>.lia-edit-save-actions{padding:16px}.lia-shell .lia-edit-save-copy>strong{display:none}
-        .lia-shell .lia-spec-fold{background:transparent;border:0;padding:0}.lia-shell .lia-spec-fold>summary{padding:14px 0}.lia-shell .lia-spec-workshop-head{padding:14px 0;display:grid;gap:10px}.lia-shell .lia-spec-workshop-actions{display:flex;gap:6px}.lia-shell .lia-spec-workshop-head b{font-size:11px}.lia-shell .lia-spec-workshop-head span{font-size:10px}.lia-shell .lia-spec-workshop-actions button{font-size:10px}
-        .lia-shell .lia-spec-field-grid{display:grid;grid-template-columns:1fr;gap:8px}.lia-shell .lia-spec-field-card{padding:0;background:white;margin:0;border:0}.lia-shell .lia-spec-field-card>summary{display:grid;grid-template-columns:70px minmax(0,1fr) 10px;gap:10px;padding:16px;min-height:64px}.lia-shell .lia-spec-field-card>summary strong{font-size:12px}.lia-shell .lia-spec-field-card>summary span{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lia-shell .lia-spec-field-card>div{padding:16px}.lia-shell .lia-spec-field-card p{font-size:12px;line-height:1.7}.lia-shell .lia-spec-field-card label{font-size:11px}
-        .lia-shell .lia-bilingual-result{display:grid;grid-template-columns:1fr;gap:18px}.lia-shell .lia-language-pane{background:white;border:0;border-radius:20px;padding:16px}.lia-shell .lia-language-pane h3{font-size:14px}.lia-shell .lia-variant-grid{grid-template-columns:1fr}.lia-shell .lia-variant-card{padding:12px;background:#f6f1fa;border-color:var(--lia-line);color:var(--lia-soft)}.lia-shell .lia-variant-card.active{border-color:#cbb5db;color:#75528f}.lia-shell .lia-compiler-head{display:block}.lia-shell .lia-compiler-head h3{font-size:14px}.lia-shell .lia-compiler-head p{font-size:11px}.lia-shell .lia-compiler-head button{margin-top:10px}
-        @container pocket (min-width:700px){.lia-shell .lia-bilingual-result,.lia-shell .lia-spec-field-grid{grid-template-columns:1fr 1fr}.lia-shell .lia-variant-grid{grid-template-columns:repeat(3,1fr)}}
-
-        .lia-shell .lia-result-card:not([data-editor-section="persona"]) [data-editor-block="persona"],.lia-shell .lia-result-card:not([data-editor-section="prompt"]) [data-editor-block="prompt"],.lia-shell .lia-result-card:not([data-editor-section="evolution"]) [data-editor-block="evolution"],.lia-shell .lia-result-card:not([data-editor-section="audit"]) [data-editor-block="audit"],.lia-shell .lia-result-card:not([data-editor-section="history"]) [data-editor-block="history"]{display:none!important}
-        .lia-shell .lia-asset-config-panel{min-height:0;height:auto;align-self:start}.lia-shell .lia-asset-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.lia-shell .lia-asset-gallery-panel{padding:0;background:transparent}.lia-shell .lia-asset-card{padding:10px;border:0;border-radius:18px;background:white;gap:8px}.lia-shell .lia-asset-card-top strong{font-size:11px;overflow-wrap:anywhere}.lia-shell .lia-asset-card .lia-asset-thumb{aspect-ratio:1;min-height:0}.lia-shell .lia-asset-card .lia-asset-upload-inline{display:none}.lia-shell .lia-asset-card .lia-asset-meta small{font-size:10px;line-height:1.5}.lia-shell .lia-asset-actions{grid-template-columns:1fr}.lia-shell .lia-asset-actions button{font-size:10px;min-height:40px;padding:8px}
-        .lia-shell .lia-live-sync-panel>.lia-audit-head{display:flex;align-items:flex-start;gap:12px}.lia-shell .lia-live-sync-panel>.lia-audit-head>div{flex:1}.lia-shell .lia-live-sync-panel>.lia-audit-head>strong{flex-shrink:0;border-radius:20px;background:#eee5f6;color:#896aa3;padding:4px 8px;font-size:11px}.lia-shell .lia-realtime-hero{margin-bottom:16px}
-        @container pocket (min-width:700px){.lia-shell .lia-asset-gallery{grid-template-columns:repeat(3,minmax(0,1fr))}}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root{color:var(--lia-text);font-family:inherit;font-size:12px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-card{background:white;border:0;border-radius:22px;padding:20px;gap:16px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root h3{font-size:24px;font-weight:650;letter-spacing:-1px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root .muted{color:var(--lia-muted);font-size:11px;line-height:1.7}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root :is(.scope,.status,.result,.job){background:#f6f1fa;border-color:#e8dfef;border-radius:14px;color:var(--lia-soft);font-size:11px;overflow-wrap:anywhere}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root label.mode{background:#fbf9fd;border-color:#e8dfef;border-radius:15px;padding:14px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root label.mode:has(input:checked){background:#eee5f6;border-color:#c9b5da}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root label.mode small{font-size:11px;color:var(--lia-muted)}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root input{accent-color:#9676b4}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root input:is([type=text],[type=password]){background:#faf7fc;color:var(--lia-text);border-color:#e4daec;border-radius:12px;font-size:12px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root button{background:#f1eaf7;color:#7c6194;border:0;border-radius:12px;font-size:11px;font-weight:500;min-height:42px}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root button.primary{background:#8870af;color:white}
-        #liaMemorySuiteServerConnectionPanel .mscx-scope-root button.danger{background:#fff1f4;color:#ac4965}
-      </style>
-      <main class="lia-shell">
-        ${renderPocketHeader()}
-        <div id="dpg-status" data-tone="info"><span class="lia-status-dot"></span><span>초기화 중...</span></div>
-        <div id="dpg-preview-root"></div>
-      </main>
-    `;
-
-    document.querySelectorAll(".lia-header-actions button").forEach(button => button.addEventListener("click", () => { const menu = document.querySelector(".lia-pocket-menu"); if (menu) menu.open = false; }));
-    bindPersistentDebugExportControls(document.getElementById("dpg-preview-root"));
-
-    document.getElementById("dpg-persona-panel-toggle")?.addEventListener("click", () => {
-      preservedPersonaPanelOpen = !preservedPersonaPanelOpen;
-      if (preservedPersonaPanelOpen) preservedWorldDrawerOpen = false;
-      const layout = document.querySelector(".lia-app-layout");
-      layout?.classList.toggle("world-drawer-open", preservedWorldDrawerOpen);
-      layout?.classList.toggle("persona-panel-open", preservedPersonaPanelOpen);
-      syncPocketPersonaDialog(preservedPersonaPanelOpen);
-    });
-    document.getElementById("dpg-pocket-width")?.addEventListener("click", () => document.querySelector(".lia-shell")?.classList.toggle("pocket-wide"));
-    document.getElementById("dpg-refresh")?.addEventListener("click", async () => {
-      await refreshPreview();
-    });
-    document.getElementById("dpg-close")?.addEventListener("click", async () => { liaUiVisible = false; liaPreviewEpoch += 1; LiaLegacyServerRecovery.clear(); cancelManualLivePersonaAnalysis("ui_closed"); liaHealthRecovery?.clear(); await api.hideContainer(); });
+    document.body.className = "t-lia";
+    document.body.innerHTML = `<style>${LIA_MOCKUP_CSS}</style><div class="stage"><div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div></div>`;
+    const root = document.getElementById("dpg-preview-root");
+    if (root) {
+      root.addEventListener("click", handleLiaMockupClick);
+      root.addEventListener("change", handleLiaMockupChange);
+      root.addEventListener("input", handleLiaMockupInput);
+      root.addEventListener("keydown", handleLiaMockupKeydown);
+    }
+    bindPersistentDebugExportControls(root);
     await refreshPreview();
   }
 

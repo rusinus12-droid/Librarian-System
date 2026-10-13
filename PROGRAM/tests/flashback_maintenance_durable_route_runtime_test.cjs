@@ -1,4 +1,5 @@
 'use strict';
+const { dialogElements } = require('./fixtures/flashback_adopted_dialog.cjs');
 const assert = require('node:assert/strict'), path = require('node:path');
 const { test } = require('node:test');
 const { createFlashback } = require('./fixtures/embedding_contract_harness.cjs');
@@ -205,8 +206,8 @@ for (const mode of ['advanced', 'automatic']) test(`the registered ${mode} maint
     const run = root.nodes.get(mode === 'advanced' ? 'maintenanceRunBtn' : 'maintenanceAutoBtn').click().then(() => { done = true; }, caught => { done = true; error = caught; });
     const dialogs = [], seen = new Set();
     for (let i = 0; i < 1000 && !done; i++) {
-      const button = doc.byClass('vrmDialogOk');
-      if (button && !seen.has(button)) { seen.add(button); dialogs.push(doc.byClass('vrmDialogMessage')?.textContent || ''); await button.click(); }
+      const button = dialogElements(doc).ok;
+      if (button && !seen.has(button)) { seen.add(button); dialogs.push(dialogElements(doc).message?.textContent || ''); await button.click(); }
       await new Promise(resolve => setTimeout(resolve, 5));
     }
     assert(done, 'the actual handler and its completion dialog settle'); await run; if (error) throw error;

@@ -1,0 +1,85 @@
+TAP version 13
+# Subtest: canonical scalar and boundary helpers retain own-property, null, array and default behavior against pinned baseline
+not ok 1 - canonical scalar and boundary helpers retain own-property, null, array and default behavior against pinned baseline
+  ---
+  duration_ms: 123.897395
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:33:1'
+  failureType: 'testCodeFailure'
+  error: 'BLOCKED_HISTORICAL_BASELINE: pinned canonical baseline unavailable: 9ae0719b0b34f6fa69d2d156cfc04614199f7a86, a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e; required source SHA256=55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    readBaselineSource (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:17:8)
+    getBaseline (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:30:66)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:34:8)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: scalar checks every requested field without per-field VM Object lookup
+ok 2 - scalar checks every requested field without per-field VM Object lookup
+  ---
+  duration_ms: 1.035153
+  type: 'test'
+  ...
+# Subtest: boundary checks every requested field without per-field VM Object lookup
+ok 3 - boundary checks every requested field without per-field VM Object lookup
+  ---
+  duration_ms: 0.32475
+  type: 'test'
+  ...
+# Subtest: all canonical packet fields match the fixed base including explicit visibility boundaries
+not ok 4 - all canonical packet fields match the fixed base including explicit visibility boundaries
+  ---
+  duration_ms: 18.658174
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:56:1'
+  failureType: 'testCodeFailure'
+  error: 'BLOCKED_HISTORICAL_BASELINE: pinned canonical baseline unavailable: 9ae0719b0b34f6fa69d2d156cfc04614199f7a86, a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e; required source SHA256=55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    readBaselineSource (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:17:8)
+    getBaseline (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:30:66)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:57:8)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: current runtime admits exact facts and rejects passive replacement and foreign-scope reuse without transport or host mutation
+ok 5 - current runtime admits exact facts and rejects passive replacement and foreign-scope reuse without transport or host mutation
+  ---
+  duration_ms: 1149.208923
+  type: 'test'
+  ...
+# Subtest: canonical helper visits and frozen facts retain exact historical equivalence
+not ok 6 - canonical helper visits and frozen facts retain exact historical equivalence
+  ---
+  duration_ms: 21.074922
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:88:1'
+  failureType: 'testCodeFailure'
+  error: 'BLOCKED_HISTORICAL_BASELINE: pinned canonical baseline unavailable: 9ae0719b0b34f6fa69d2d156cfc04614199f7a86, a7c6e8ac9f88e5a5a5a72dba3e6787e9e587796e; required source SHA256=55c57dbfcf0a5885b81cea7e995ed61d09aaa6c7c5671e13fabceedae2a5d617'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    readBaselineSource (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:17:8)
+    getBaseline (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:30:66)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/hayaku_canonical_builtin_access_runtime_test.cjs:89:22)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: current scalar and boundary helpers preserve own fields, reject inherited fields and handle nonobjects
+ok 7 - current scalar and boundary helpers preserve own fields, reject inherited fields and handle nonobjects
+  ---
+  duration_ms: 0.528114
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 4
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1481.38427

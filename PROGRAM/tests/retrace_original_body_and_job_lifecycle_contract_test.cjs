@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('node:fs'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../plugins/RETRACE.js'),'utf8');
+const overview=source.slice(source.indexOf('  const renderOverviewPanel = () => {'),source.indexOf('  const bindOverviewControls = () => {'));
+const diagnostics=source.slice(source.indexOf('  const renderDiagnosticsPanel = () => {'),source.indexOf('  const setActiveRetraceTab = ('));
+assert.ok(overview.includes('class="relay"')&&overview.includes('class="stats"')&&overview.includes('class="owner"')&&overview.includes('banner__icon'),'Overview uses the mockup relay → stats → owner list → warning structure');
+assert.ok(overview.includes('scopeManagerArray(catalog?.scopes)')&&overview.includes('Runtime.serverControl?.status?.lastBackup'),'Overview summary values read actual manager catalog/status');
+assert.ok(!/사본 12개|후보 2개|확인 불가 1개|41MB|21:40/.test(overview),'Overview does not retain fixed fixture counts or timestamps');
+assert.ok(diagnostics.includes('class="check-item')&&diagnostics.includes('details class="card card--flat"')&&diagnostics.includes('Runtime.serverControl?.status'),'Diagnostics uses the mockup check list/details and live manager status');
+assert.ok(diagnostics.includes('scopeCount===null?\'사용자 조회 전 · 자동 스캔 안 함\''),'Diagnostics does not trigger the full server scan');
+assert.ok(source.includes('if(!resume){')&&source.includes("if(progress)progress.hidden=false")&&source.includes("result.hidden=true;if(kind==='next'||kind==='del'||kind==='backup')result.innerHTML=''")&&source.includes('Runtime.activeJobFinished=true'),'fresh jobs clear stale terminal UI while resumed jobs preserve their state');
+assert.ok(source.includes("openRetraceJob(Runtime.activeJobKind,Runtime.activeJobMessage,{resume:true})"),'task tray reopens a job without resetting real progress/result');
+assert.ok(source.includes("const control=root?.querySelector?.(`[data-server-page=\"${subview||'connection'}\"]`);if(control)control.click()"),'subview shortcuts activate the actual route control');
+assert.ok(source.includes('const hydrateRetraceIcons = root =>')&&source.includes('RETRACE_ICON_PATHS=Object.freeze')&&!source.includes('assets/suite.js'),'icons use product-owned static paths, not suite.js runtime');
+assert.ok(source.includes("menuButton?.addEventListener('click'"),'overflow menu opens and closes in the product UI');
+console.log('retrace_original_body_and_job_lifecycle_contract_test: PASS');

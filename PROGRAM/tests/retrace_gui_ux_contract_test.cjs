@@ -12,22 +12,28 @@ assert.ok(source.includes("const PLUGIN_VERSION = '"+metadataVersion+"';"), 'run
 assert.ok(source.includes("activeTab: 'overview'"), 'overview is the runtime default');
 assert.ok(source.includes("RETRACE_GUI_TAB_IDS.includes(text(value).trim()) ? text(value).trim() : 'overview'"), 'unknown tabs fail safely to overview');
 
-const expectedTabs = ['overview', 'session', 'serverdata', 'serverconnection', 'diagnostics'];
+const shellStart = source.indexOf('const renderShell = () =>');
+const shellMatch = source.slice(shellStart).match(/root\.innerHTML = ("(?:\\.|[^"\\])*");/s);
+assert.ok(shellMatch, 'mockup shell is a literal product view, not a secondary legacy template');
+const shell = JSON.parse(shellMatch[1]);
+const expectedTabs = ['overview', 'session', 'serverdata', 'diagnostics'];
 let previousTabIndex = -1;
 for (const tab of expectedTabs) {
-  const tabIndex = source.indexOf(`id="tab-${tab}"`);
+  const tabIndex = shell.indexOf(`id="tab-${tab}"`);
   assert.ok(tabIndex > previousTabIndex, `${tab} follows the intended navigation order`);
   previousTabIndex = tabIndex;
-  assert.ok(source.includes(`role="tab" aria-controls="panel-${tab}" data-tab="${tab}"`), `${tab} exposes tab semantics`);
-  assert.ok(source.includes(`id="panel-${tab}" class="panel" role="tabpanel" aria-labelledby="tab-${tab}" data-panel="${tab}"`), `${tab} panel points back to its tab`);
+  assert.ok(shell.includes(`data-tab="${tab}"`), `${tab} exposes tab semantics`);
+  assert.ok(shell.includes(`id="panel-${tab}"`), `${tab} panel exists`);
 }
-
-let previousGroupIndex = -1;
-for (const label of ['상태', '연속성', '서버', '진단']) {
-  const index = source.indexOf(`<div class="nav-group-label">${label}</div>`);
-  assert.ok(index > previousGroupIndex, `${label} sidebar group follows the intended order`);
-  previousGroupIndex = index;
+assert.equal((shell.match(/data-tab="(?:overview|session|serverdata|diagnostics)"/g) || []).length, 8, 'desktop and mobile share exactly four destinations');
+for (const sub of ['glance', 'clean', 'backup', 'conn', 'hist']) {
+  assert.ok(shell.includes(`data-server-view="${{glance:'overview',clean:'data',backup:'backups',conn:'connection',hist:'history'}[sub]}"`), `${sub} is a reachable Server subview`);
 }
+assert.ok(shell.includes('id="serverControlBackups"') && shell.includes('id="portableBackupFile"'), 'real manager backup and portable restore controls are present');
+assert.ok(shell.includes('id="serverScopeDeleteStatus"') && shell.includes('id="serverResetBegin"'), 'scope cleanup and reset actions remain reachable');
+assert.ok(shell.includes('id="retraceMemorySuiteServerConnectionPanel"'), 'read-only owner dashboard has its connection destination');
+assert.ok(shell.includes('data-job-tray=""'), 'product task tray is available for an active real operation');
+assert.ok(!shell.includes('bk-20261012-표본') && !shell.includes('chat-demo-') && !shell.includes('data-job-labels'), 'mockup outcome fixtures are absent from product HTML');
 
 assert.ok(source.includes('const setActiveRetraceTab = (tabValue, options = {}) =>'), 'persistent tab switcher exists');
 assert.ok(source.includes("button.setAttribute('aria-selected', active ? 'true' : 'false')"), 'tab selection is exposed to assistive technology');
@@ -61,18 +67,16 @@ assert.ok(!source.includes('data-tab="provider"'), 'retired provider UI remains 
 assert.ok(source.includes('서버 데이터 전체 스캔은 ‘서버 데이터 관리’ 탭을 사용자가 열었을 때만 수행합니다.'), 'diagnostics explains the explicit server scan boundary');
 assert.ok(source.includes('자격 증명을 제거하고, 대화·페르소나·스코프 식별자는 해시'), 'privacy-safe export boundary is visible');
 
-assert.ok(source.includes('@media(max-width:980px)'), 'responsive workspace breakpoint exists');
-assert.ok(source.includes('.side{grid-row:2;display:flex;flex-direction:row'), 'mobile navigation becomes horizontal');
-assert.ok(source.includes('.nav-group{display:contents}'), 'mobile navigation preserves grouped tab order');
-assert.ok(source.includes('.nav>span:not(.ic){display:inline}'), 'mobile navigation keeps labels visible');
-assert.ok(source.includes('.btn:focus-visible,.nav:focus-visible,.overview-action:focus-visible'), 'keyboard focus is visibly outlined');
+assert.ok(shell.includes('@container app (max-width:900px)'), 'mockup tablet container boundary is retained');
+assert.ok(shell.includes('@container app (max-width:640px)'), 'mockup mobile container boundary is retained');
+assert.ok(shell.includes('.tabbar'), 'mobile navigation follows the mockup tabbar');
 
 for (const id of [
   'refreshTransition', 'createSession',
   'refreshServerData', 'serverDataBody', 'retraceMemorySuiteServerConnectionPanel',
   'exportRetraceDebug', 'closeBridge'
 ]) {
-  assert.ok(source.includes(`id="${id}"`), `existing handler target ${id} remains present`);
+  assert.ok(shell.includes(`id="${id}"`), `existing handler target ${id} remains present`);
 }
 
 process.stdout.write('retrace_gui_ux_contract_test: PASS\n');

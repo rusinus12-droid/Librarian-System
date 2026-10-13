@@ -1,0 +1,13 @@
+{
+ "seraBefore": "9 / 12",
+ "jobTitle": "‘세라 하운’ 감정 이미지를 만들고 있어요",
+ "wanderer": "0 / 12",
+ "seraAfter": "12 / 12",
+ "neutralTitle": "‘이름 없는 길손’ · ‘happy’ 이미지를 만들고 있어요",
+ "wHappy": "emo is-done",
+ "ok": {
+  "resultToStartTarget": true,
+  "singleToStartTarget": true
+ },
+ "failed": []
+}

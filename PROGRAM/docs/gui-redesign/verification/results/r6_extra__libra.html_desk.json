@@ -1,0 +1,21 @@
+{
+ "LIB-05b": "전체 버전 · 실행 기록 | verRows hidden=true runs=7",
+ "LIB-13": "empty disabled=true filled disabled=false rows 2->3",
+ "LIB-20b": 1,
+ "LIB-17": "inUse=true afterFirstClick=2 afterSecond=1",
+ "LIB-18": "추가 LLM 0회 · 저장된 기억만 사용 -> 추가 LLM 0회 · 저장된 기억 + 최근 대화 8턴",
+ "LIB-21": "true,true",
+ "LIB-16": "다음 단계(백업 파일 선택·검사)는 이 시안에서 생략했습니다. 아무것도 바뀌지 않았습니다. (시안)",
+ "S-LIB-1": "T121–125 · M-25,T116–120 · M-24,T111–115 · M-23",
+ "ok": {
+  "LIB-05b": true,
+  "LIB-13": true,
+  "LIB-20b": true,
+  "LIB-17": true,
+  "LIB-18": true,
+  "LIB-21": true,
+  "LIB-16": true,
+  "S-LIB-1": true
+ },
+ "failed": []
+}

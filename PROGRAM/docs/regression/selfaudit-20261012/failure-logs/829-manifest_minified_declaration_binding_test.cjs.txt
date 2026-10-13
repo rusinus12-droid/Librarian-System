@@ -1,0 +1,936 @@
+TAP version 13
+# Subtest: readable declarations remain authoritative without a canonical fallback environment
+ok 1 - readable declarations remain authoritative without a canonical fallback environment
+  ---
+  duration_ms: 83.837505
+  type: 'test'
+  ...
+# Subtest: renamed release declarations use the captured current readable pair and preserve plugin bytes
+not ok 2 - renamed release declarations use the captured current readable pair and preserve plugin bytes
+  ---
+  duration_ms: 55.5749
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:98:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+    resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+    Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)
+    Module._compile (node:internal/modules/cjs/loader:1781:14)
+    Object..js (node:internal/modules/cjs/loader:1913:10)
+    Module.load (node:internal/modules/cjs/loader:1505:32)
+    Function._load (node:internal/modules/cjs/loader:1309:12)
+    wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    node:internal/main/run_main_module:36:49
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:102:10
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:98:109)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: a changed canonical fingerprint is resolved dynamically rather than through a stale value table
+not ok 3 - a changed canonical fingerprint is resolved dynamically rather than through a stale value table
+  ---
+  duration_ms: 53.13915
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:114:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+    resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+    Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+    Module._compile (node:internal/modules/cjs/loader:1781:14)
+    Object..js (node:internal/modules/cjs/loader:1913:10)
+    Module.load (node:internal/modules/cjs/loader:1505:32)
+    Function._load (node:internal/modules/cjs/loader:1309:12)
+    wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    node:internal/main/run_main_module:36:49
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:119:33
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:114:111)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: missing fingerprint fails before any write
+not ok 4 - missing fingerprint fails before any write
+  ---
+  duration_ms: 53.237969
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:4'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:131:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:50)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: missing operation fails before any write
+ok 5 - missing operation fails before any write
+  ---
+  duration_ms: 59.134451
+  type: 'test'
+  ...
+# Subtest: fingerprint only inside a larger literal fails before any write
+not ok 6 - fingerprint only inside a larger literal fails before any write
+  ---
+  duration_ms: 56.816421
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:4'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:131:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:50)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: fingerprint only in a comment fails before any write
+not ok 7 - fingerprint only in a comment fails before any write
+  ---
+  duration_ms: 54.361553
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:4'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:131:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:50)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: fingerprint only inside a documentation string fails before any write
+not ok 8 - fingerprint only inside a documentation string fails before any write
+  ---
+  duration_ms: 53.957632
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:4'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:131:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:129:50)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: return regex-only fingerprint fails before any write
+not ok 9 - return regex-only fingerprint fails before any write
+  ---
+  duration_ms: 55.238588
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:138:7
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:77)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: return regex-only operation fails before any write
+not ok 10 - return regex-only operation fails before any write
+  ---
+  duration_ms: 53.653589
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-operation/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:138:7
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:77)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: throw regex-only fingerprint fails before any write
+not ok 11 - throw regex-only fingerprint fails before any write
+  ---
+  duration_ms: 54.335954
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:138:7
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:77)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: throw regex-only operation fails before any write
+not ok 12 - throw regex-only operation fails before any write
+  ---
+  duration_ms: 55.159987
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_release_literal_missing:libra-operation/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:129:10)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:138:7
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:135:77)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an unavailable local tokenizer rejects renamed inputs before any write
+ok 13 - an unavailable local tokenizer rejects renamed inputs before any write
+  ---
+  duration_ms: 54.350765
+  type: 'test'
+  ...
+# Subtest: ordinary readable model-only generation needs no local tokenizer package
+ok 14 - ordinary readable model-only generation needs no local tokenizer package
+  ---
+  duration_ms: 74.67094
+  type: 'test'
+  ...
+# Subtest: a canonical source changed after capture is rejected without re-binding
+not ok 15 - a canonical source changed after capture is rejected without re-binding
+  ---
+  duration_ms: 55.815546
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:160:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_declaration_source_changed:libra/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:162:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:160:87)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: canonical and staged declared versions must match
+not ok 16 - canonical and staged declared versions must match
+  ---
+  duration_ms: 55.528256
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:164:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_declaration_version_mismatch:libra/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:166:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:164:65)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: renamed declarations require an explicit canonical root and captured bindings
+ok 17 - renamed declarations require an explicit canonical root and captured bindings
+  ---
+  duration_ms: 60.456674
+  type: 'test'
+  ...
+# Subtest: a missing canonical root fails before any write
+ok 18 - a missing canonical root fails before any write
+  ---
+  duration_ms: 53.171755
+  type: 'test'
+  ...
+# Subtest: malformed captured binding JSON fails before any write
+ok 19 - malformed captured binding JSON fails before any write
+  ---
+  duration_ms: 54.70903
+  type: 'test'
+  ...
+# Subtest: a missing per-plugin captured binding fails before any write
+ok 20 - a missing per-plugin captured binding fails before any write
+  ---
+  duration_ms: 55.46593
+  type: 'test'
+  ...
+# Subtest: a wrong per-plugin captured SHA fails before any write
+ok 21 - a wrong per-plugin captured SHA fails before any write
+  ---
+  duration_ms: 55.039239
+  type: 'test'
+  ...
+# Subtest: duplicate canonical declarations cannot be chosen by position
+not ok 22 - duplicate canonical declarations cannot be chosen by position
+  ---
+  duration_ms: 59.204129
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:183:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_constant_ambiguous:libra-fingerprint/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:122:8)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:128:8)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:185:39
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:183:77)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: partial named staged declarations cannot use a fallback to conceal corruption
+ok 23 - partial named staged declarations cannot use a fallback to conceal corruption
+  ---
+  duration_ms: 55.161545
+  type: 'test'
+  ...
+# Subtest: a stale renamed Flashback hash pilot cannot be hidden by a model-only canonical source
+not ok 24 - a stale renamed Flashback hash pilot cannot be hidden by a model-only canonical source
+  ---
+  duration_ms: 55.485061
+  type: 'test'
+  location: '/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:191:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /manifest_declaration_absence_mismatch:flashback/. Input:
+    
+    '/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51\n' +
+      "    if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');\n" +
+      '                                      ^\n' +
+      '\n' +
+      'Error: manifest_declaration_parser_unavailable\n' +
+      '    at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)\n' +
+      '    at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:88:38)\n' +
+      '    at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:127:14)\n' +
+      '    at Module._compile (node:internal/modules/cjs/loader:1781:14)\n' +
+      '    at Object..js (node:internal/modules/cjs/loader:1913:10)\n' +
+      '    at Module.load (node:internal/modules/cjs/loader:1505:32)\n' +
+      '    at Function._load (node:internal/modules/cjs/loader:1309:12)\n' +
+      '    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n' +
+      '    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n' +
+      '    at node:internal/main/run_main_module:36:49\n' +
+      '\n' +
+      'Node.js v22.23.3\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    /projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51
+        if (!literalTokenizer?.tokenizer) throw new Error('manifest_declaration_parser_unavailable');
+                                          ^
+    
+    Error: manifest_declaration_parser_unavailable
+        at hasStringLiteral (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:51:45)
+        at resolveComputePilot (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:88:38)
+        at Object.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tools/update_manifest.cjs:127:14)
+        at Module._compile (node:internal/modules/cjs/loader:1781:14)
+        at Object..js (node:internal/modules/cjs/loader:1913:10)
+        at Module.load (node:internal/modules/cjs/loader:1505:32)
+        at Function._load (node:internal/modules/cjs/loader:1309:12)
+        at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+        at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+        at node:internal/main/run_main_module:36:49
+    
+    Node.js v22.23.3
+    
+  operator: 'match'
+  stack: |-
+    rejectWithoutWrites (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:80:10)
+    /projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:193:3
+    withFixture (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:86:16)
+    TestContext.<anonymous> (/projects/sandbox/Librarian-System/PROGRAM/tests/manifest_minified_declaration_binding_test.cjs:191:102)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 10
+# fail 14
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1390.24548

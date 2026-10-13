@@ -1,35 +1,25 @@
 'use strict';
 // Synthetic DOM/host boundary only. Complete product bytes execute without hooks.
 const assert = require('node:assert/strict');
-const { createDocument } = require('./retrace_gui_dom_fixture.cjs');
+const { JSDOM } = require('jsdom');
 const { createLibraVmHarness, waitFor } = require('./libra_vm_harness.cjs');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 function createLibraDocument() {
-  const d = createDocument(), E = Object.getPrototypeOf(d.body);
-  d.head = d.documentElement.appendChild(d.createElement('head')); d.readyState = 'complete';
-  d.getElementById = id => d.querySelector('#' + id);
-  d.createTextNode = text => { const n = d.createElement('#text'); n.textContent = text; return n; };
-  d.createDocumentFragment = () => d.createElement('fragment'); d.contains = n => n.isConnected;
-  if (!E.libraDomInstalled) {
-    E.libraDomInstalled = true;
-    const originalGet = E.getAttribute, originalQuery = E.querySelectorAll;
-    E.getAttribute = function(k) { if (k.startsWith('data-')) { const key = k.slice(5).replace(/-([a-z])/g, (_,c) => c.toUpperCase()); if (Object.prototype.hasOwnProperty.call(this.dataset,key)) return String(this.dataset[key]); } return originalGet.call(this,k); };
-    E.querySelectorAll = function(s) { if (s.startsWith(':scope > ')) return this.children.filter(n => n.matches(s.slice(9))); return originalQuery.call(this,s); };
-    E.replaceWith = function(n) { const p = this.parentNode; if (!p) return; n.remove(); const i=p.children.indexOf(this); p.children[i]=n; n.parentNode=p; this.parentNode=null; };
-    E.append = function(...nodes) { for (const n of nodes) this.appendChild(typeof n === 'string' ? this.ownerDocument.createTextNode(n) : n); };
-    E.replaceChildren = function(...nodes) { for (const c of this.children) c.parentNode=null; this.children=[]; this._text=''; this.append(...nodes); };
-    E.removeChild = function(n) { n.remove(); return n; };
-    E.insertBefore = function(n,ref) { n.remove(); const i=this.children.indexOf(ref); if (i<0) return this.appendChild(n); n.parentNode=this; this.children.splice(i,0,n); return n; };
-    E.contains = function(n) { return n===this || this.children.some(c => c.contains(n)); };
-    E.getBoundingClientRect = () => ({ x:0,y:0,top:0,left:0,right:1200,bottom:900,width:1200,height:900 });
-    E.scrollIntoView = function() {}; E.scrollTo = function() {};
-    E.dispatchEvent = function(e) { e.target ??= this; e.currentTarget ??= this; for (const f of this.listeners.get(e.type)||[]) f(e); return true; };
-    Object.defineProperties(E, {
-      parentElement:{ configurable:true,get(){return this.parentNode;} },firstChild:{configurable:true,get(){return this.children[0]||null;}},
-      childNodes:{configurable:true,get(){return this.children;}},offsetWidth:{configurable:true,get(){return 1200;}},offsetHeight:{configurable:true,get(){return 900;}},
-      open:{configurable:true,get(){return this.attributes.has('open');},set(value){ const changed=this.open !== !!value; if(value)this.setAttribute('open','');else this.removeAttribute('open'); if(changed){clearTimeout(this.toggleTimer);this.toggleTimer=setTimeout(()=>this.dispatchEvent({type:'toggle'}),0);} }}
-    });
-  }
+  const dom=new JSDOM('<!doctype html><html lang="ko"><head></head><body></body></html>',{url:'https://synthetic-ooc.invalid/',pretendToBeVisual:true});
+  const d=dom.window.document,E=dom.window.Element.prototype,handlers=new WeakMap();
+  const add=dom.window.EventTarget.prototype.addEventListener,remove=dom.window.EventTarget.prototype.removeEventListener;
+  dom.window.EventTarget.prototype.addEventListener=function(type,handler,options){let map=handlers.get(this);if(!map)handlers.set(this,map=new Map());const rows=map.get(type)||[];rows.push(handler);map.set(type,rows);return add.call(this,type,handler,options);};
+  dom.window.EventTarget.prototype.removeEventListener=function(type,handler,options){const map=handlers.get(this);if(map)map.set(type,(map.get(type)||[]).filter(row=>row!==handler));return remove.call(this,type,handler,options);};
+  // Preserve the old fixture's Array query API for the maintained assertions,
+  // while using a standards DOM for canonical HTML, SVG, templates and events.
+  for(const proto of [dom.window.Document.prototype,E,dom.window.DocumentFragment.prototype]){const query=proto.querySelectorAll;proto.querySelectorAll=function(selector){return Array.from(query.call(this,selector));};}
+  E.emit=async function(type,values={}){
+    assert.equal(this.disabled===true,false,`${this.id||this.tagName}: action is enabled`);
+    let stopped=false,count=0;const results=[];
+    const event={type,target:this,preventDefault(){},stopPropagation(){stopped=true;},stopImmediatePropagation(){stopped=true;},...values};
+    for(let node=this;node;node=node.parentNode){event.currentTarget=node;const actions=[...(handlers.get(node)?.get(type)||[])];if(typeof node['on'+type]==='function')actions.push(node['on'+type]);count+=actions.length;for(const action of actions)results.push(await action(event));if(stopped)break;}
+    assert.ok(count>0,`${this.id||this.tagName}: production event handler is bound`);return results;
+  };
   return d;
 }
 async function createOocGui(options={}) {
@@ -50,18 +40,28 @@ async function createOocGui(options={}) {
     getColorScheme:async()=> 'dark',getRootContainer:async()=>null,getPluginRoot:async()=>null,
     ...(options.host||{})
   };
-  const globals={document,innerWidth:1400,innerHeight:1000,requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame:clearTimeout,getComputedStyle:()=>({display:'block',visibility:'visible',getPropertyValue:()=>''}),fetch:host.nativeFetch,addEventListener(){},removeEventListener(){},window:undefined};
+  const globals={document,Element:document.defaultView.Element,HTMLElement:document.defaultView.HTMLElement,Event:document.defaultView.Event,MouseEvent:document.defaultView.MouseEvent,MutationObserver:document.defaultView.MutationObserver,innerWidth:1400,innerHeight:1000,requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame:clearTimeout,getComputedStyle:()=>({display:'block',visibility:'visible',getPropertyValue:()=>''}),fetch:host.nativeFetch,addEventListener(){},removeEventListener(){},window:undefined};
   const h=await createLibraVmHarness({enable_gui:'true',...(options.args||{})},host,{contextGlobals:globals,initialValues:options.initialValues,transformSource:options.transformSource}); h.context.window=h.context;
   const button=(label,root=document)=>root.querySelectorAll('button').find(n=>n.textContent===label);
   const disclosure=label=>document.querySelectorAll('summary').find(n=>n.textContent===label)?.parentNode;
   const ooc=()=>document.getElementById('prompt-studio-ooc-builder');
-  async function open(){await waitFor(()=>registered.get('libra-v1-settings-menu'));assert.equal(await registered.get('libra-v1-settings-menu').cb(),true);await waitFor(()=>document.getElementById('sga-rp-gui-root'));await pause(100);}
-  async function memory(){await document.querySelectorAll('button').find(n=>n.dataset.bookPage==='settings').emit('click');await waitFor(()=>document.querySelectorAll('button').find(n=>n.dataset.externalSettings==='memory_analysis'));await document.querySelectorAll('button').find(n=>n.dataset.externalSettings==='memory_analysis').emit('click');await waitFor(()=>disclosure('기억 분석 프롬프트'));disclosure('기억 분석 프롬프트').open=true;await waitFor(()=>disclosure('고급 Prompt Studio · 구역별 직접 편집'));}
+  async function open(){await waitFor(()=>registered.get('libra-v1-settings-menu'));assert.equal(await registered.get('libra-v1-settings-menu').cb(),true);await waitFor(()=>document.getElementById('sga-rp-gui-root'));await waitFor(()=>document.querySelector('.sidebar [data-go="settings"]'));await pause(20);}
+  async function memory(){
+    const route=document.querySelector('.sidebar [data-go="settings"]');assert(route,'canonical Settings destination');await route.emit('click');
+    await waitFor(()=>document.querySelector('.setnav [data-subtab="mem"]'));await document.querySelector('.setnav [data-subtab="mem"]').emit('click');
+    await waitFor(()=>button('기억 분석'));await button('기억 분석').emit('click');
+    await waitFor(()=>document.querySelector('[data-analyzer-field="timeoutMs"]'));
+    await waitFor(()=>button('Prompt Studio 열기'));
+    await button('Prompt Studio 열기').emit('click');
+    await waitFor(()=>document.querySelector('#dlg-prompt.is-open [data-prompt-editor-details]'));
+    document.querySelector('#dlg-prompt [data-prompt-editor-details]').open=true;
+    await waitFor(()=>disclosure('고급 Prompt Studio · 구역별 직접 편집'));
+  }
   async function expandOoc(){const node=disclosure('대화로 기억 지침 만들기 · OOC');assert(node,'shared Prompt Studio mounts the memory OOC disclosure');node.open=true;await waitFor(()=>ooc()?.querySelector('select')?.querySelectorAll('option').length>0);return ooc();}
   return {...h,document,registered,modelCalls,modelQueue,networkCalls,host,button,disclosure,ooc,open,memory,expandOoc,pause,waitFor,
     promptWrites:()=>h.storageWrites.filter(x=>x.key==='libra:v1:prompt-overrides'),
     changeChat:async()=>{currentChatIndex=currentChatIndex===0?1:0;await h.api.getCanonicalMemories();},
-    cleanup:async()=>{await h.api.closeSettingsGui();await h.cleanup();}
+    cleanup:async()=>{await h.api.closeSettingsGui();await h.cleanup();document.defaultView.close();}
   };
 }
 module.exports={createOocGui,createLibraDocument,pause,waitFor};

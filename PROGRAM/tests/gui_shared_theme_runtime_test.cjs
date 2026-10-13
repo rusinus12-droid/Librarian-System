@@ -11,8 +11,18 @@ for(const type of ['light','dark']){assert.equal(bridge.apply({...scheme,type}),
 bridge.setFollowColors(true);bridge.apply({...scheme,type:'light'});assert.equal(attrs['data-risu-theme-colors'],'1');
 bridge.setFollowColors(false);assert.equal(attrs['data-risu-theme-colors'],undefined,'disable must work without a host response');
 const hayaku=fs.readFileSync(path.join(root,'plugins/HAYAKU_Locator_Continuity.js'),'utf8');
-assert.match(hayaku,/@media\(prefers-color-scheme:dark\)\{:root:not\(\[data-risu-theme-type\]\)/,'OS fallback only without host mode');
-assert.ok(hayaku.includes(':root[data-risu-theme-type="dark"]:not([data-risu-theme-colors="1"]) #${LEDGER_VIEWER_ROOT_ID}'),'host dark uses own dark palette');
+// Those selectors targeted the retired HAYAKU owner palette. The approved
+// product now embeds the exact suite/theme/page CSS; SDK host-mode and color
+// bridge behavior above stays covered independently of that visual replacement.
+assert.equal(require('../tools/lib/approved_gui_css.cjs').verifyApprovedCss(root,'HAYAKU_Locator_Continuity.js',hayaku),true);
+// A substituted canonical stylesheet must fail the same adoption gate. This
+// checks rejection without rewriting any source, SDK input, or design asset.
+const approvedSuite=fs.readFileSync(path.join(root,'docs/gui-redesign/assets/suite.css'),'utf8');
+const changedSuite=approvedSuite.replace('--font-sans:', '--test-drift-font-sans:');
+assert.notEqual(changedSuite,approvedSuite,'negative control changes a real design token');
+const drifted=hayaku.split(JSON.stringify(approvedSuite)).join(JSON.stringify(changedSuite));
+assert.notEqual(drifted,hayaku,'negative control changes the embedded suite CSS');
+assert.throws(()=>require('../tools/lib/approved_gui_css.cjs').verifyApprovedCss(root,'HAYAKU_Locator_Continuity.js',drifted),/approved CSS drift/);
 assert.match(source.tokens,/--ms-motion:\.2s;/);assert.ok(!source.tokens.includes('--risu-animation-speed'));
 assert.match(source.tokens,/prefers-reduced-motion:reduce/);
 console.log('GUI shared source and theme runtime PASS');

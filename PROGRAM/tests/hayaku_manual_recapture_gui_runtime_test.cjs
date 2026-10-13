@@ -168,8 +168,8 @@ async function exerciseKeyboardFocusContainment() {
     adopt: async () => ({ ok: true, durable: true, adopted: true })
   });
   const registerDialogs = () => {
-    overlay.children.set('.hv-manual-recapture-dialog[role="dialog"]', list.dialog);
-    overlay.children.set('.hv-manual-recapture-detail[role="dialog"]', details.dialog);
+    overlay.children.set('.dialog[role="dialog"]', list.dialog);
+    overlay.children.set('.detail-view[role="dialog"]', details.dialog);
   };
   const key = async (keyName, target, shiftKey = false) => {
     let prevented = false;
@@ -252,13 +252,13 @@ async function exerciseChoice(choice) {
     await launch.fire('click', { currentTarget: launch });
     await waitFor(() => overlay.innerHTML.includes('T1'), 'manual recapture card list');
     assert.equal(overlay.hidden, false, 'clicking the packet-page button opens the dialog');
-    const toolbar = assertActionButtons(overlay.innerHTML, 'hv-manual-recapture-select', ['select-all', 'select-none']);
-    const footer = assertActionButtons(overlay.innerHTML, 'hv-confirm-actions', ['selected', 'cancel']);
+    const toolbar = assertActionButtons(overlay.innerHTML, 'cluster', ['select-all', 'select-none']);
+    const footer = assertActionButtons(overlay.innerHTML, 'dialog__actions', ['selected', 'cancel']);
     assert.match(toolbar, />모두 선택</);
     assert.match(toolbar, />선택 해제</);
     assert.match(footer, />채택 \(0\)</);
     assert.match(footer, />취소</);
-    const firstCard = overlay.innerHTML.match(/<article class="hv-manual-recapture-card"[\s\S]*?<\/article>/)?.[0] || '';
+    const firstCard = overlay.innerHTML.match(/<article class="[^"]*\brow\b[^"]*"[\s\S]*?<\/article>/)?.[0] || '';
     assert.equal((firstCard.match(/<button\b/g) || []).length, 2, 'selection and packet-view buttons are siblings inside each card');
     assert.doesNotMatch(overlay.innerHTML, /amber compass|silver telescope|packet_type/,
       'the compact list does not eagerly display packet JSON');
@@ -285,7 +285,7 @@ async function exerciseChoice(choice) {
         assert.match(overlay.innerHTML, /role="dialog"[^>]*aria-labelledby="hayakuManualRecaptureTitle"/,
           'packet details open a separately labelled dialog');
         assert.equal((overlay.innerHTML.match(/role="dialog"/g) || []).length, 2, 'the list dialog remains in the DOM behind the detail popup');
-        assert.match(overlay.innerHTML, /class="hv-manual-recapture-detail-overlay"/);
+        assert.match(overlay.innerHTML, /class="[^"]*overlay--bottom[^"]*"/);
         assert.match(overlay.innerHTML, /aria-hidden="true" inert>/, 'the background list is hidden from assistive navigation while details are open');
         assert.ok(overlay.innerHTML.includes('현재 패킷') || overlay.innerHTML.includes('current_snapshot'));
         assert.ok(overlay.innerHTML.includes('recovery_snapshot'), 'detail shows every packet type from T2');
@@ -296,7 +296,7 @@ async function exerciseChoice(choice) {
           'detail shows the full recovery JSON supplied by the preview');
         assert.ok(overlay.innerHTML.includes(visible.visible2));
         assert.doesNotMatch(overlay.innerHTML, /amber compass|green notebook/, 'T2 detail contains no unrelated turn bodies');
-        assertActionButtons(overlay.innerHTML, 'hv-manual-recapture-detail-actions', ['back']);
+        assert.match(overlay.innerHTML, /detail-view[\s\S]*data-hayaku-manual-recapture-action="back"/);
         await overlay.fire('click', { target: action('back') });
         assert.deepEqual(Array.from(state.manualRecapture.selectedTurns), [2], 'returning from detail preserves selection');
         assert.match(overlay.innerHTML, /data-hayaku-manual-recapture-action="select-turn" data-hayaku-manual-recapture-turn="2"[^>]*aria-pressed="true"/,
@@ -372,24 +372,25 @@ async function exerciseLargeList() {
     adopt: async () => ({ ok: true, durable: true, adopted: true })
   });
   await launch.fire('click');
-  await waitFor(() => (overlay.innerHTML.match(/class="hv-manual-recapture-card"/g) || []).length === 600, 'large manual recapture list');
-  assert.equal((overlay.innerHTML.match(/class="hv-manual-recapture-card"/g) || []).length, 600, 'all turns are reachable as compact cards');
+  await waitFor(() => (overlay.innerHTML.match(/data-hayaku-manual-recapture-action="select-turn"/g) || []).length === 600, 'large manual recapture list');
+  assert.equal((overlay.innerHTML.match(/data-hayaku-manual-recapture-action="select-turn"/g) || []).length, 600, 'all turns are reachable as compact cards');
   assert.ok(overlay.innerHTML.includes('data-hayaku-manual-recapture-turn="600"'), 'the last card is present and selectable');
   assert.doesNotMatch(overlay.innerHTML, /SYNTHETIC_FULL_BODY_T1|SYNTHETIC_FULL_BODY_T600|SOURCE_BODY_T600/,
     'the large list never embeds packet bodies');
-  assertActionButtons(overlay.innerHTML, 'hv-manual-recapture-select', ['select-all', 'select-none']);
-  assertActionButtons(overlay.innerHTML, 'hv-confirm-actions', ['selected', 'cancel']);
-  assert.match(source, /\.hv-manual-recapture-turns\{[^}]*min-height:0[^}]*overflow-y:auto/,
-    'production CSS gives the list its own scroll area');
-  assert.ok(source.includes('@media(max-width:680px){.hv-manual-recapture-detail-overlay{padding:8px}'),
-    'production CSS reflows the detail popup for mobile');
-  assert.ok(source.includes('.hv-manual-recapture-turns{grid-template-columns:minmax(0,1fr)}'),
-    'mobile cards use a single-column list');
+  assertActionButtons(overlay.innerHTML, 'cluster', ['select-all', 'select-none']);
+  assertActionButtons(overlay.innerHTML, 'dialog__actions', ['selected', 'cancel']);
+  const suiteCss = fs.readFileSync(path.join(__dirname, '..', 'docs', 'gui-redesign', 'assets', 'suite.css'), 'utf8');
+  assert.match(suiteCss, /\.overlay\{/);
+  assert.match(suiteCss, /\.dialog\{/);
+  assert.match(source, /id=\"hayakuManualRecaptureOverlay\" class=\"overlay\"/,
+    'the recapture dialog uses the adopted suite overlay');
+  assert.match(source, /class=\"dialog dialog--wide/,
+    'packet details use the adopted suite dialog');
 
-  overlay.querySelector('.hv-manual-recapture-turns').scrollTop = 420;
+  overlay.querySelector('.list').scrollTop = 420;
   await overlay.fire('click', { target: action('select-all') });
   assert.equal(boundState.manualRecapture.selectedTurns.length, 600, 'select-all handles a large list');
-  assert.equal(overlay.querySelector('.hv-manual-recapture-turns').scrollTop, 420, 'selection rerender retains list scroll position');
+  assert.equal(overlay.querySelector('.list').scrollTop, 420, 'selection rerender retains list scroll position');
   await overlay.fire('click', { target: action('select-none') });
   assert.deepEqual(Array.from(boundState.manualRecapture.selectedTurns), []);
   await overlay.fire('click', { target: action('select-turn', 600) });
@@ -399,7 +400,7 @@ async function exerciseLargeList() {
   assert.doesNotMatch(overlay.innerHTML, /SYNTHETIC_FULL_BODY_T599/, 'detail view contains only its requested turn');
   await overlay.fire('click', { target: action('back') });
   assert.deepEqual(Array.from(boundState.manualRecapture.selectedTurns), [600], 'last-turn selection survives detail and back');
-  assert.equal(overlay.querySelector('.hv-manual-recapture-turns').scrollTop, 420, 'returning from detail restores the list scroll position');
+  assert.equal(overlay.querySelector('.list').scrollTop, 420, 'returning from detail restores the list scroll position');
   assert.equal(overlay.focusedSelector, '[data-hayaku-manual-recapture-action="view-turn"][data-hayaku-manual-recapture-turn="600"]',
     'returning from detail restores keyboard focus to that turn');
 

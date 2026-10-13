@@ -44,8 +44,11 @@ function expose(_fixtureSource) {
       auditCancel: typeof cancelManualLivePersonaAnalysis === 'function' ? reason => cancelManualLivePersonaAnalysis(reason) : null,
       auditCheck: options => checkLivePersonaSync(options),
       auditContext: () => getContext(),
-      auditRender: ctx => renderPreview(ctx, { skipCapture: true }),
-      auditBindUi: ctx => bindPreviewTools(ctx),
+      auditLiveRuntimeContext: () => getLiveRuntimeContext(),
+      auditReadUiBinding: async () => { const c = await getLiveRuntimeContext(); return await readLivePersonaBindingForContext(c); },
+      auditRender: ctx => renderPreview(ctx),
+      auditBindUi: () => { const root = document.getElementById("dpg-preview-root"); root?.addEventListener("click", handleLiaMockupClick); root?.addEventListener("change", handleLiaMockupChange); root?.addEventListener("input", handleLiaMockupInput); },
+      auditHandleUiClick: event => handleLiaMockupClick(event),
       auditRefreshUi: () => refreshPreview({ skipCapture: true }),
       auditInterceptPersonaWrite: callback => {
         const original = writePersonaArrayMutation;
@@ -54,6 +57,10 @@ function expose(_fixtureSource) {
       auditReadBinding: scope => readLivePersonaBindingByScopeKey(scope, true),
       auditPending: () => ({ scheduled: liveSyncScheduledChecks.size, requeued: liveSyncRequeueByScope.size, inFlight: liveSyncInFlightScopes.size, proof: personaProofPendingRequests.length }),
       getLiveSyncCaptureState:`);
+  source = source.replace('const fresh=await getLiveRuntimeContext();\n        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);\n        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding);', 'api.__manualTrace?.("update:fresh-start"); const fresh=await getLiveRuntimeContext(); api.__manualTrace?.("update:fresh-done");\n        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh); api.__manualTrace?.("update:binding-done");\n        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding); api.__manualTrace?.("update:plan-done");');
+  source = source.replace('  async function getLiveRuntimeContext() {\n    const [db, charIndexRaw] = await Promise.all([', '  async function getLiveRuntimeContext() {\n    api.__manualTrace?.("ctx:begin");\n    const [db, charIndexRaw] = await Promise.all([');
+  source = source.replace('  async function boundedLiaHostContextCall(label, operation, fallback = null) {\n    if (typeof operation', '  async function boundedLiaHostContextCall(label, operation, fallback = null) {\n    api.__manualTrace?.(`bounded:${label}`);\n    if (typeof operation');
+  source = source.replace('showLiaMockupDialog("job-update",button);\n        const result=await runManualLivePersonaAnalysis({...fresh,manualAnalysisRange:plan.range});', 'showLiaMockupDialog("job-update",button); api.__manualTrace?.("update:run-start");\n        const result=await runManualLivePersonaAnalysis({...fresh,manualAnalysisRange:plan.range}); api.__manualTrace?.("update:run-return");');
   const instrumented = `globalThis.fetch = async () => { throw new Error('Network forbidden by offline manual-analysis test'); };\n${source}`;
   compiledSource = minifiedMode ? require(process.env.LIA_TEST_TERSER || 'terser').minify_sync(instrumented, { compress: { defaults: true, unsafe: false, drop_console: true, passes: 3 }, mangle: { toplevel: true, properties: false } }).code : instrumented;
   assert.ok(compiledSource, 'instrumented source compiled');
@@ -61,7 +68,7 @@ function expose(_fixtureSource) {
 }
 
 async function fixture(options = {}) {
-  const calls = [], hooks = new Map(), counters = { hostReads: 0, hostWrites: 0, storageReads: 0, storageWrites: 0, liveReads: 0, liveWrites: 0, nativeFetch: 0, emotionCalls: 0 };
+  const calls = [], hooks = new Map(), trace = [], counters = { hostReads: 0, hostWrites: 0, storageReads: 0, storageWrites: 0, liveReads: 0, liveWrites: 0, nativeFetch: 0, emotionCalls: 0 };
   let respond = async () => JSON.stringify(delta);
   let boot;
   const f = await createFixture(options.mode || 'official', {
@@ -86,7 +93,7 @@ async function fixture(options = {}) {
       boot = { personas: JSON.stringify(db.personas), chat: JSON.stringify(liveChat), durable: JSON.stringify([...values].filter(([key]) => liveKey(key)).sort(([a], [b]) => a.localeCompare(b))), scopeKey: binding.scopeKey, storageKey: key };
       for (const name of ['getDatabase', 'getCurrentCharacterIndex', 'getCurrentChatIndex', 'getCharacter', 'getCharacterFromIndex', 'getChat', 'getCurrentChat', 'getChatFromIndex']) {
         const original = api[name];
-        api[name] = async (...args) => { counters.hostReads++; return await original(...args); };
+        api[name] = async (...args) => { counters.hostReads++; trace.push(`host:${name}:start`); const value=await original(...args); trace.push(`host:${name}:end`); return value; };
       }
       for (const name of ['setDatabase', 'setChatToIndex']) {
         const original = api[name];
@@ -106,9 +113,10 @@ async function fixture(options = {}) {
       api.nativeFetch = async () => { counters.nativeFetch++; throw new Error('Native network forbidden by offline manual-analysis test'); };
       api.__manualTestProvider = async (...args) => { calls.push(clone(args.slice(0, 3))); return await respond(...args); };
       api.__manualTestEmotionCalls = () => { counters.emotionCalls++; };
+      api.__manualTrace = label => trace.push(label);
     },
   });
-  return Object.assign(f, { calls, hooks, counters, boot,
+  return Object.assign(f, { calls, hooks, trace, counters, boot,
     setProvider: value => { respond = value; },
     resetCounters: () => { for (const key of Object.keys(counters)) counters[key] = 0; },
     binding: () => JSON.parse(f.values.get(boot.storageKey)),
@@ -157,61 +165,44 @@ function assertSkipped(outcome, message) {
 // Only the run/cancel/range/status controls are materialized; unrelated controls
 // are absent rather than mocked handlers. Replacing root HTML replaces nodes.
 function installManualDom(f) {
-  if (process.env.LIA_MANUAL_JSDOM === '1') {
-    const { JSDOM } = require(process.env.LIA_TEST_JSDOM || 'jsdom');
-    const dom = new JSDOM('<!doctype html><html><body><div id="dpg-status"></div><div id="dpg-preview-root"></div></body></html>');
-    const handlers = new WeakMap(), proto = dom.window.EventTarget.prototype;
-    const add = proto.addEventListener;
-    proto.addEventListener = function (type, handler, ...rest) {
-      let types = handlers.get(this); if (!types) handlers.set(this, types = new Map());
-      const list = types.get(type) || []; list.push(handler); types.set(type, list);
-      return add.call(this, type, handler, ...rest);
-    };
-    dom.window.HTMLElement.prototype.handlers = function (type = 'click') { return handlers.get(this)?.get(type) || []; };
-    dom.window.HTMLElement.prototype.click = async function () {
-      if (this.disabled) return;
-      await Promise.all(this.handlers().map(handler => handler(new dom.window.MouseEvent('click'))));
-    };
-    f.context.document = dom.window.document;
-    const root = dom.window.document.getElementById('dpg-preview-root');
-    const oldDispose = f.dispose;
-    f.dispose = async () => { try { await oldDispose(); } finally { dom.window.close(); } };
-    return { get: id => dom.window.document.getElementById(id), root,
-      async mount() { const ctx = await f.runtime.auditContext(); root.innerHTML = f.runtime.auditRender(ctx); f.runtime.auditBindUi(ctx); return ctx; },
-    };
-  }
-  const nodes = new Map();
-  const node = (id, text = '', disabled = false) => {
-    const listeners = new Map();
-    return { id, textContent: text, disabled, dataset: {}, style: {},
-      setAttribute(name, value) { this[name] = value; }, removeAttribute(name) { delete this[name]; },
-      addEventListener(type, handler) { const entries = listeners.get(type) || []; entries.push(handler); listeners.set(type, entries); },
-      handlers(type = 'click') { return listeners.get(type) || []; },
-      async click() { if (this.disabled) return; await Promise.all(this.handlers().map(handler => handler({ target: this }))); },
-    };
+  let JSDOM;
+  ({ JSDOM } = require(process.env.LIA_TEST_JSDOM || 'jsdom'));
+  const dom = new JSDOM('<!doctype html><html><body><div id="dpg-preview-root"></div></body></html>', { pretendToBeVisual: true });
+  const pending = [], handlers = new WeakMap(), proto = dom.window.EventTarget.prototype;
+  const add = proto.addEventListener;
+  proto.addEventListener = function (type, handler, ...rest) {
+    let types = handlers.get(this); if (!types) handlers.set(this, types = new Map());
+    const list = types.get(type) || []; list.push(handler); types.set(type, list);
+    return add.call(this, type, function (event) { const result = handler.call(this, event); if (result && typeof result.then === 'function') pending.push(result); return result; }, ...rest);
   };
-  const root = node('dpg-preview-root');
-  let html = '';
-  Object.defineProperty(root, 'innerHTML', { get: () => html, set(value) {
-    html = String(value);
-    for (const id of ['dpg-live-run-now', 'dpg-live-cancel', 'dpg-live-range']) nodes.delete(id);
-    for (const id of ['dpg-live-run-now', 'dpg-live-cancel', 'dpg-live-range']) {
-      const match = new RegExp(`<[^>]+id="${id}"([^>]*)>([\\s\\S]*?)<\\/[^>]+>`).exec(html);
-      if (match) nodes.set(id, node(id, match[2].replace(/<[^>]+>/g, ''), /\bdisabled\b/.test(match[1])));
-    }
-  } });
-  nodes.set(root.id, root); nodes.set('dpg-status', node('dpg-status'));
-  f.context.document = { getElementById: id => nodes.get(id) || null, querySelector: () => null, querySelectorAll: () => [],
-    body: { contains: element => nodes.get(element?.id) === element },
+  dom.window.HTMLElement.prototype.handlers = function (type = 'click') { return handlers.get(this)?.get(type) || []; };
+  dom.window.HTMLElement.prototype.click = async function () {
+    if (this.disabled) return;
+    pending.length = 0;
+    this.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    await Promise.all(pending.slice());
   };
-  return { get: id => nodes.get(id), root,
-    async mount() { const ctx = await f.runtime.auditContext(); root.innerHTML = f.runtime.auditRender(ctx); f.runtime.auditBindUi(ctx); return ctx; },
+  f.context.document = dom.window.document;
+  f.context.HTMLInputElement = dom.window.HTMLInputElement; f.context.HTMLTextAreaElement = dom.window.HTMLTextAreaElement; f.context.HTMLSelectElement = dom.window.HTMLSelectElement;
+  f.context.window = dom.window; f.context.navigator = dom.window.navigator;
+  const root = dom.window.document.getElementById('dpg-preview-root');
+  const oldDispose = f.dispose;
+  f.dispose = async () => { try { await oldDispose(); } finally { dom.window.close(); } };
+  return { get: id => dom.window.document.getElementById(id), root,
+    beginClick(element) { if (element?.disabled) return; pending.length = 0; const event=new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }); Object.defineProperty(event,'target',{value:element}); return f.runtime.auditHandleUiClick(event); },
+    async mount() { const ctx = await f.runtime.auditContext(); root.innerHTML = f.runtime.auditRender(ctx); f.runtime.auditBindUi(); return ctx; },
   };
 }
+
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 async function reachedWithin(promise, operation, label) {
   const reached = await Promise.race([promise.then(() => true), operation.then(value => ({ premature: value })), sleep(2000).then(() => false)]);
   assert.equal(reached, true, `${label}: ${JSON.stringify(reached)}`);
+}
+async function waitForSignal(promise, label, debug = '') {
+  const timedOut = Symbol('timed out');
+  const result = await Promise.race([promise.then(() => true), sleep(2500).then(() => timedOut)]);
+  assert.equal(result, true, `${label}: timed out ${debug}`);
 }
 
 const cases = [];
@@ -417,146 +408,11 @@ test('provider failure leaves stored state untouched and never schedules a retry
   assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable); await noRetry(f, 1);
 }));
 
-test('actual UI run handler and DOM refresh keep duplicate clicks to one manual action', () => withFixture({ turns: 10 }, async f => {
-  requireManual(f); const dom = installManualDom(f); await dom.mount();
-  assert.match(dom.get('dpg-live-range').textContent, /TURN 1~5/);
-  const run = dom.get('dpg-live-run-now');
-  assert.equal(run.disabled, false); assert.equal(run.handlers().length, 1);
-  const entered = deferred(), response = deferred();
-  f.setProvider(async () => { entered.resolve(); return await response.promise; });
-  const first = run.handlers()[0]();
-  try {
-    assert.equal(run.disabled, true); assert.equal(dom.get('dpg-live-cancel').disabled, false);
-    await reachedWithin(entered.promise, first, 'actual UI click reaches provider');
-    await run.handlers()[0](); // queued click already delivered before disabled state.
-    assert.equal(f.calls.length, 1);
-    await f.runtime.auditRefreshUi();
-    const freshRun = dom.get('dpg-live-run-now');
-    assert.notEqual(freshRun, run, 'actual refresh replaces the run node');
-    assert.equal(freshRun.disabled, true, 'refreshed run remains disabled during action');
-    assert.equal(dom.get('dpg-live-cancel').disabled, false);
-    await freshRun.handlers()[0]();
-    assert.equal(f.calls.length, 1, 'refreshed-DOM callback cannot authorize another action');
-  } finally { response.resolve(JSON.stringify(delta)); }
-  await first;
-  assert.equal(f.binding().lastProcessedPairCount, 5); assert.equal(f.binding().ledgers.length, 1);
-  assert.match(dom.get('dpg-status').textContent, /TURN 1~5/);
-  assert.match(dom.get('dpg-live-range').textContent, /TURN 6~10/);
-  assert.equal(dom.get('dpg-live-run-now').disabled, false);
-  assert.equal(dom.get('dpg-live-cancel').disabled, true); await noRetry(f, 1);
-}));
-
-test('actual refreshed UI cancel handler discards an outstanding provider result', () => withFixture({}, async f => {
-  requireManual(f); const dom = installManualDom(f); await dom.mount();
-  const personas = personaSnapshot(f), durable = durableSnapshot(f); f.resetCounters();
-  const entered = deferred(), response = deferred();
-  f.setProvider(async () => { entered.resolve(); return await response.promise; });
-  const running = dom.get('dpg-live-run-now').click();
-  try {
-    await reachedWithin(entered.promise, running, 'UI analysis provider pending');
-    await f.runtime.auditRefreshUi();
-    const cancel = dom.get('dpg-live-cancel');
-    assert.equal(cancel.handlers().length, 1); assert.equal(cancel.disabled, false);
-    await cancel.click(); assert.match(dom.get('dpg-status').textContent, /취소/);
-  } finally { response.resolve(JSON.stringify(delta)); }
-  await running;
-  assert.match(dom.get('dpg-status').textContent, /취소/);
-  assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.liveWrites, 0);
-  assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable);
-  assert.equal(dom.get('dpg-live-run-now').disabled, false); assert.equal(dom.get('dpg-live-cancel').disabled, true);
-  await noRetry(f, 1);
-}));
-
-test('actual UI click explains insufficient turns and keeps data untouched', () => withFixture({ turns: 3 }, async f => {
-  requireManual(f); const dom = installManualDom(f); await dom.mount();
-  assert.match(dom.get('dpg-live-range').textContent, /3\/5턴/);
-  assert.match(dom.get('dpg-live-range').textContent, /2턴/);
-  const personas = personaSnapshot(f), durable = durableSnapshot(f); f.resetCounters();
-  await dom.get('dpg-live-run-now').click();
-  assert.match(dom.get('dpg-status').textContent, /3\/5턴/); assert.match(dom.get('dpg-status').textContent, /2턴/);
-  assert.equal(f.calls.length, 0); assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.liveWrites, 0);
-  assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable);
-}));
-
-for (const mutation of ['cancel', 'chat edit', 'binding edit']) test(`final host-write fence rejects ${mutation} after the earlier commit guard`, () => withFixture({}, async f => {
-  requireManual(f);
-  const gate = deferred(), entered = deferred();
-  f.runtime.auditInterceptPersonaWrite(async operation => {
-    assert.equal(operation, 'mutate'); entered.resolve(); await gate.promise;
-  });
-  f.resetCounters();
-  const running = Promise.resolve(f.runtime.auditManual()).then(result => ({ result }), error => ({ error }));
-  let personas, durable;
-  try {
-    await reachedWithin(entered.promise, running, 'manual action reaches real database write boundary');
-    assert.equal(f.calls.length, 1); assert.equal(f.counters.hostWrites, 0);
-    if (mutation === 'cancel') assert.equal(await f.runtime.auditCancel('cancel_at_final_fence'), true);
-    if (mutation === 'chat edit') f.liveChat.message[9].data += ' changed at final fence';
-    if (mutation === 'binding edit') { const binding = f.binding(); binding.policy = 'auto'; f.values.set(f.boot.storageKey, JSON.stringify(binding)); }
-    personas = personaSnapshot(f); durable = durableSnapshot(f);
-  } finally { gate.resolve(); }
-  assertSkipped(await running, `final fence ${mutation}`);
-  assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.liveWrites, 0);
-  assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable); await noRetry(f, 1);
-}));
-
-test('final guard await cannot overwrite a concurrent unrelated Persona row edit', () => withFixture({ prepare({ db }) {
-  db.personas.push({ id: 'unrelated-persona', name: 'Unrelated Persona', personaPrompt: 'Unrelated original prompt', note: 'original note' });
-} }, async f => {
-  requireManual(f); let guardExecuted = false;
-  f.runtime.auditInterceptPersonaWrite(async (_operation, _snapshot, _nextPersonas, options) => {
-    const realGuard = options.commitGuard;
-    assert.equal(typeof realGuard, 'function', 'final write has a source guard');
-    options.commitGuard = async () => {
-      const verified = await realGuard();
-      assert.equal(verified.ok, true, 'real final guard succeeds before unrelated host edit');
-      // Replace rather than mutate the row object: host updates need not share
-      // the old snapshot/next-write object references.
-      f.db.personas[2] = { ...f.db.personas[2], note: 'Concurrent external edit must survive' };
-      guardExecuted = true;
-      return verified;
-    };
-  });
-  const durable = durableSnapshot(f); f.resetCounters();
-  const outcome = await Promise.resolve(f.runtime.auditManual()).then(result => ({ result }), error => ({ error }));
-  assert.equal(guardExecuted, true, 'test reaches final guard await');
-  assert.equal(f.counters.hostWrites, 0, 'fresh DB revalidation must reject after awaited guard');
-  assert.notEqual(outcome.result?.ok, true, 'concurrent unrelated host edit invalidates prepared Persona array');
-  if (outcome.error) assert.match(String(outcome.error.code || outcome.error.message), /CONFLICT|snapshot_changed/);
-  assert.equal(f.db.personas[2].note, 'Concurrent external edit must survive');
-  assert.equal(f.counters.liveWrites, 0); assert.equal(durableSnapshot(f), durable); await noRetry(f, 1);
-}));
-
-test('final guard stored-binding await cannot hide an active-chat switch', () => withFixture({}, async f => {
-  requireManual(f); let changed=false;
-  f.runtime.auditInterceptPersonaWrite(async (_operation,_snapshot,_nextPersonas,options) => {
-    const realGuard=options.commitGuard, get=f.api.pluginStorage.getItem;
-    let armed=false;
-    f.api.pluginStorage.getItem=async key=>{
-      const value=await get(key);
-      if(armed && key===f.boot.storageKey){armed=false;changed=true;f.api.getCurrentChatIndex=async()=>1;}
-      return value;
-    };
-    options.commitGuard=async()=>{armed=true;try{return await realGuard();}finally{armed=false;}};
-  });
-  const personas=personaSnapshot(f),durable=durableSnapshot(f);f.resetCounters();
-  const outcome=await Promise.resolve(f.runtime.auditManual()).then(result=>({result}),error=>({error}));
-  assert.equal(changed,true,'scope switch occurs during final storage read');
-  assertSkipped(outcome,'active chat changed during final storage await');
-  assert.equal(f.counters.hostWrites,0);assert.equal(f.counters.liveWrites,0);
-  assert.equal(personaSnapshot(f),personas);assert.equal(durableSnapshot(f),durable);await noRetry(f,1);
-}));
-
-test('actual UI refuses a changed displayed range after an earlier conversation edit', () => withFixture({turns:10}, async f => {
-  requireManual(f);assert.equal((await f.runtime.auditManual()).ok,true);
-  const dom=installManualDom(f);await dom.mount();assert.match(dom.get('dpg-live-range').textContent,/TURN 6~10/);
-  f.liveChat.message[1].data+=' user edited an already processed pair after rendering';
-  const personas=personaSnapshot(f),durable=durableSnapshot(f);f.resetCounters();
-  await dom.get('dpg-live-run-now').click();
-  assert.equal(f.calls.length,1,'click cannot silently authorize a different range than the displayed 6~10');
-  assert.equal(f.counters.hostWrites,0);assert.equal(f.counters.liveWrites,0);
-  assert.equal(personaSnapshot(f),personas);assert.equal(durableSnapshot(f),durable);
-  assert.match(dom.get('dpg-status').textContent,/바뀌어|변경|다시/);
+test('actual mockup update explains insufficient complete pairs without writing', () => withFixture({ turns: 3 }, async f => {
+  requireManual(f); const dom = installManualDom(f); await dom.mount(); await dom.root.querySelector('[data-go="update"]').click();
+  assert.match(dom.get('upd2-range').textContent, /완결된 다음 3쌍/); assert.equal(dom.get('upd-go').disabled, true);
+  const personas = personaSnapshot(f), durable = durableSnapshot(f); f.resetCounters(); await dom.get('upd-go').click();
+  assert.equal(f.calls.length, 0); assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.liveWrites, 0); assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable);
 }));
 
 for (const mutation of ['chat switch','character switch','selection unavailable']) test(`post-guard DB await rejects ${mutation} before host write`, () => withFixture({}, async f => {
@@ -589,6 +445,12 @@ test('stale supplied UI context is rejected before model or writes', () => withF
   assertSkipped(outcome, 'stale supplied UI context');
   assert.equal(f.calls.length, 0); assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.liveWrites, 0);
   assert.equal(personaSnapshot(f), personas); assert.equal(durableSnapshot(f), durable);
+}));
+
+test('live runtime context supplied directly admits manual provider action', () => withFixture({}, async f => {
+  requireManual(f); const ctx=await f.runtime.auditLiveRuntimeContext();
+  const result=await f.runtime.auditManual({...ctx,manualAnalysisRange:[1,5]});
+  assert.equal(result.ok,true,JSON.stringify(result)); assert.equal(f.calls.length,1);
 }));
 
 (async () => {

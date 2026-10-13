@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../plugins/LIBRA.js'),'utf8');
 const start=source.indexOf('const buildBookHostLineagePanel =');
-const end=source.indexOf('const buildBookDeskPanel =',start);
+const end=source.indexOf('const recoveryRowIdentity =',start);
 assert.ok(start>=0&&end>start,'host lineage panel source missing');
 const panel=source.slice(start,end);
 assert.ok(panel.includes('snapshot?.manifest?.worldlineMeta'),'panel must read persistent host-worldline metadata');

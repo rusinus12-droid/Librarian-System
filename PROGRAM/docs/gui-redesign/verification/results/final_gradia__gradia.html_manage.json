@@ -1,0 +1,30 @@
+{
+ "builtin": {
+  "name": "긴장 쌓기",
+  "nameRO": true,
+  "bodyRO": true,
+  "prioRO": false,
+  "saveB_visible": true,
+  "saveC_visible": false
+ },
+ "afterPrio": "우선도 150 · SHADOW · 플롯 AIDE에 컴파일",
+ "custom": {
+  "nameRO": false,
+  "bodyRO": false
+ },
+ "calls0": "내부 4회 + 메인 1회 / run=일반 / q=",
+ "callsOff": "내부 0회 + 메인 1회 (파이프라인 실행 안 함) / run=꺼짐",
+ "callsLite": "내부 2회 + 메인 1회 / run=라이트",
+ "turnsFast": "4/4/4/4 q=빠르게",
+ "turnsManual": "q= / 직접 조정",
+ "ok": {
+  "builtinNameRO": true,
+  "builtinBodyRO": true,
+  "builtinPrioEditable": true,
+  "prioSaved": true,
+  "customEditable": true,
+  "builtinROAfterCustom": true,
+  "callsChange": true
+ },
+ "failed": []
+}

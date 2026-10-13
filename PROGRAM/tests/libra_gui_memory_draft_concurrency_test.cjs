@@ -2,10 +2,10 @@
 const assert = require('node:assert/strict'), path = require('node:path');
 const {create,pause,until} = require('./fixtures/libra_gui_memory_dom_host.cjs');
 const pluginPath = process.argv[2] || path.resolve(__dirname,'../plugins/LIBRA.js');
-const field = (s,label) => [...s.doc.querySelectorAll('.sga-main .sga-field')].find(n=>n.querySelector('label')?.textContent===label)?.querySelector('input,select');
+const {goSettings,field}=require('./helpers/libra_approved_gui_navigation.cjs');
 const button = (s,label) => [...s.doc.querySelectorAll('button')].find(n=>n.textContent===label);
 const edit = (s,value) => {const n=field(s,'최대 리콜 메모리 수');n.value=String(value);n.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));};
-async function boot(options={}) {const s=await create('LIBRA','Full',{...options,pluginPath});await s.open();await pause(300);await s.click('[data-book-page="settings"]');await s.click(`[data-external-settings="${options.initialSection||'performance'}"]`);return s;}
+async function boot(options={}) {const s=await create('LIBRA','Full',{...options,pluginPath});await s.open();await pause(300);await goSettings(s,options.initialSection||'memory');return s;}
 async function settled(s){await until(()=>!s.doc.querySelector('[data-settings-room-save]').disabled,'save settled');await pause(100);}
 async function save(s){s.doc.querySelector('[data-settings-room-save]').click();await settled(s);}
 const rows=[];
@@ -13,18 +13,18 @@ async function test(name,body){let s;try{s=await body();rows.push({name,status:'
 async function using(options,fn){const s=await boot(options);try{await fn(s);assert.equal(s.wire.length,0);assert.deepEqual(s.errors,[]);}finally{await s.close();}}
 (async()=>{
  for(const scenario of ['after memory editing','after draft discard','before first performance visit'])await test(`configuration import ${scenario} remains draft-only and saves`,async()=>using({initialSection:scenario==='before first performance visit'?'transfer':'performance'},async s=>{
-   if(scenario!=='before first performance visit'){edit(s,16);await s.click('[data-external-settings="transfer"]');}
+   if(scenario!=='before first performance visit'){edit(s,16);await goSettings(s,'transfer');}
    if(scenario==='after draft discard')await s.click('[data-settings-room-revert]');
-   const area=s.doc.querySelector('.sga-main textarea');area.value=JSON.stringify({runtime:{},memorySettings:{recallMaxMemories:18}});area.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
-   button(s,'JSON 병합 가져오기').click();await pause(100);
+   const area=s.doc.querySelector('[data-configuration-transfer="json"]');area.value=JSON.stringify({runtime:{},memorySettings:{recallMaxMemories:18}});area.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
+   button(s,'병합 가져오기').click();await pause(100);
    assert.equal((await s.api.getLibraMemorySettings()).recallMaxMemories,12,'import must not change runtime before Save');
-   await s.click('[data-external-settings="performance"]');assert.equal(field(s,'최대 리콜 메모리 수').value,'18');
+   await goSettings(s,'memory');assert.equal(field(s,'최대 리콜 메모리 수').value,'18');
    await save(s);assert.equal(s.api.debugGuiSettingsState().dirty,false);assert.equal((await s.api.getLibraMemorySettings()).recallMaxMemories,18);
  }));
  await test('full configuration export includes unsaved recall draft like other GUI fields',async()=>using({},async s=>{
-   edit(s,18);await s.click('[data-external-settings="transfer"]');const scope=field(s,'내보내기 범위');scope.value='all';scope.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await pause(100);
-   button(s,'전체 설정 JSON 만들기').click();await pause(100);
-   assert.equal(JSON.parse(s.doc.querySelector('.sga-main textarea').value).memorySettings.recallMaxMemories,18);
+   edit(s,18);await goSettings(s,'transfer');const scope=field(s,'내보내기 범위');scope.value='all';scope.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await pause(100);
+   button(s,'JSON 만들기').click();await pause(100);
+   assert.equal(JSON.parse(s.doc.querySelector('[data-configuration-transfer="json"]').value).memorySettings.recallMaxMemories,18);
    assert.equal((await s.api.getLibraMemorySettings()).recallMaxMemories,12);
  }));
  for(const fail of [false,true])await test(`external completed memory save survives GUI ${fail?'rollback':'commit attempt'}`,async()=>{
@@ -61,10 +61,10 @@ async function using(options,fn){const s=await boot(options);try{await fn(s);ass
    return using({beforeWrite:async k=>{if(active&&k==='libra:v1:runtime-settings'){active=false;entered=true;await gate;}}},async s=>{
      await save(s);edit(s,17);const live=field(s,'최근 대화 최대 턴');live.value='3';live.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
      const before=s.writes.filter(w=>w.key==='libra:v1:settings-transaction-journal').length;
-     active=true;s.doc.querySelector('[data-settings-room-save]').click();await until(()=>entered,'runtime gate entered');await s.click('.libra-book-quick-button');
+     active=true;s.doc.querySelector('[data-settings-room-save]').click();await until(()=>entered,'runtime gate entered');await s.click('.topbar [data-open="drawer-quick"]');
      try {
        assert.equal(s.doc.querySelector('[data-book-quick-revert]').disabled,true,'newly opened drawer cannot revert an in-flight room save');
-       s.doc.querySelector('.libra-book-drawer [data-gui-save-label]').dispatchEvent(new s.dom.window.MouseEvent('click',{bubbles:true}));await pause(100);
+       s.doc.querySelector('#drawer-quick [data-gui-save-label]').dispatchEvent(new s.dom.window.MouseEvent('click',{bubbles:true}));await pause(100);
        assert.equal(s.writes.filter(w=>w.key==='libra:v1:settings-transaction-journal').length-before,1,'one shared transaction journal');
        assert.equal(s.doc.querySelector('[data-book-quick-revert]').disabled,true);
      } finally {release();await settled(s);}

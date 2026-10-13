@@ -64439,6 +64439,7 @@ ${string(queryBundle?.sceneText || '')}`;
 
     const deleteCurrentScope = async (options = {}) => {
       const context = await resolveContext();
+      if(options.expectedScopeKey&&string(context.scope.scopeKey)!==string(options.expectedScopeKey))throw new Error('scope_delete_scope_changed');
       if((await MemorySuiteStorageBridge.getMode())!=='plugin_only'){
         const saved=await storage.getJson(key.manifest(context.scope),null);
         if((await loadMemorySettings()).memoryEngine!=='legacy'||fullContinuityRefs(saved||{}).some(unifiedRefIsReadableUnified)) {
@@ -69587,7 +69588,14 @@ ${string(queryBundle?.sceneText || '')}`;
   function renderCanonicalJobSurface(jobValue = LibraMemoryCore.state.canonicalJob) {
     if (typeof document === 'undefined' || !Gui.root || !Gui.app) return;
     const job = jobValue || null;
-    if (!job || !['awaiting_choice','awaiting_edit'].includes(String(job.state||''))) {
+    const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
+    if(job?.scopeKey&&scopeKey&&String(job.scopeKey)!==scopeKey){Gui.app.querySelector('[data-canonical-job-portal]')?.remove();Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node=>node.remove());return;}
+    const guard=()=>{
+      const current=LibraMemoryCore.state.canonicalJob||Gui.canonicalJob;
+      if(!job?.jobId||!scopeKey||String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'')!==scopeKey||String(job.scopeKey||'')!==scopeKey||String(current?.jobId||'')!==String(job.jobId)||Gui.app.querySelector('[data-canonical-job-portal]')?.dataset.canonicalJobId!==String(job.jobId)||Gui.app.querySelector('[data-canonical-job-portal]')?.dataset.canonicalJobScope!==scopeKey){guiSetStatus('채팅·scope 또는 정본 작업 대상이 바뀌었습니다. 현재 작업을 다시 확인하세요.',true,true);return false;}
+      return true;
+    };
+    if (!job) {
       Gui.app.querySelector('[data-canonical-job-portal]')?.remove();
       Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node=>node.remove());
       if(Gui.canonicalJobTicker){clearInterval(Gui.canonicalJobTicker);Gui.canonicalJobTicker=null;}
@@ -69597,6 +69605,9 @@ ${string(queryBundle?.sceneText || '')}`;
     }
     let portal = Gui.app.querySelector('[data-canonical-job-portal]');
     if (!portal) { portal = guiEl('div', { dataset: { canonicalJobPortal: 'true' } }); Gui.app.appendChild(portal); }
+    portal.dataset.canonicalJobId=String(job.jobId||'');portal.dataset.canonicalJobScope=String(job.scopeKey||'');
+    portal.className = `overlay${Gui.canonicalJobMinimized ? '' : ' is-open'}`;
+    portal.setAttribute('aria-hidden', String(Gui.canonicalJobMinimized === true));
     if (nativeSelectInteractionActive() && portal.contains(Gui.nativeSelectInteraction)) {
       Gui.canonicalJobPendingSnapshot = job ? cloneJson(job) : null;
       Gui.canonicalJobRenderDeferredForSelect = true;
@@ -69606,7 +69617,7 @@ ${string(queryBundle?.sceneText || '')}`;
     Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node => node.remove());
     if (!job || Gui.canonicalJobDismissedId === job.jobId) {
       if (Gui.canonicalJobTicker) { clearInterval(Gui.canonicalJobTicker); Gui.canonicalJobTicker = null; }
-      return;
+      portal.remove();return;
     }
     const terminal = ['completed', 'completed_with_warnings', 'cancelled', 'failed', 'original_kept'].includes(String(job.state || ''));
     const failedTerminal = String(job.state || '') === 'failed'
@@ -69619,44 +69630,54 @@ ${string(queryBundle?.sceneText || '')}`;
       if (launchedHere) Gui.canonicalJobLaunchPending = false;
     }
     if (!liveProgress && Gui.canonicalJobTicker) { clearInterval(Gui.canonicalJobTicker); Gui.canonicalJobTicker = null; }
-    if (failedTerminal) {
-      Gui.canonicalJobDismissedId = job.jobId;
-      return;
-    }
     // A completed job restored from storage is history, not a new GUI event.
     // Show terminal results only when this GUI session observed the job run or launched it.
     if (terminal && !Gui.canonicalJobObservedIds.has(String(job.jobId || ''))) {
       Gui.canonicalJobDismissedId = job.jobId;
-      return;
+      portal.remove();return;
     }
     const elapsed = canonicalJobElapsed(job);
     const measurable = Math.max(0, Number(job.total || 0));
     const done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
     const percent = measurable ? Math.min(100, Math.round(done / measurable * 100)) : 0;
-    const headActions = Gui.app.querySelector('.sga-head-actions');
+    const headActions = Gui.app.querySelector('.topbar .grow');
     if (Gui.canonicalJobMinimized && headActions) {
-      const chip = guiEl('button', { class: 'sga-btn canonical-job-chip', type: 'button', dataset: { canonicalJobChip: 'true', canonicalJobId: String(job.jobId) }, text: `${terminal ? '완료' : job.currentStage || job.phase || '작업'} · ${measurable ? `${done}/${measurable}` : `${elapsed}초`}`, onClick: () => { Gui.canonicalJobMinimized = false; renderCanonicalJobSurface(job); } });
+      const chip = guiEl('button', { class: 'btn btn--sm canonical-job-chip', type: 'button', dataset: { canonicalJobChip: 'true', canonicalJobId: String(job.jobId) }, text: `${terminal ? '완료' : job.currentStage || job.phase || '작업'} · ${measurable ? `${done}/${measurable}` : `${elapsed}초`}`, onClick: () => { Gui.canonicalJobMinimized = false; renderCanonicalJobSurface(job); } });
       headActions.prepend(chip);
     }
     if (Gui.canonicalJobMinimized) return;
-    const body = guiEl('div', { class: 'canonical-job-window' });
-    body.appendChild(guiEl('div', { class: 'canonical-job-head' }, [
-      guiEl('div', {}, [guiEl('strong', { text: `정본 작업 · ${String(job.kind || '')}` }), guiEl('small', { dataset: { canonicalJobClock: String(job.jobId) }, text: `${String(job.state || '')} · ${elapsed}초` })]),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '최소화', onClick: () => { Gui.canonicalJobMinimized = true; renderCanonicalJobSurface(job); } }),
-        terminal ? guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', onClick: () => { Gui.canonicalJobDismissedId = job.jobId; renderCanonicalJobSurface(job); } }) : null
-      ])
-    ]));
-    body.appendChild(guiEl('div', { class: 'canonical-job-message', text: job.message || '작업 중입니다.' }));
-    if (measurable) body.appendChild(guiEl('div', { class: 'canonical-job-progress' }, [guiEl('i', { style: { width: `${percent}%` } })]));
-    body.appendChild(guiEl('div', { class: 'canonical-job-meta', text: `대상 ${job.currentStart ? `TURN ${job.currentStart}~${Number(job.currentStart) + 4}` : '-'} · 완료 ${job.completed || 0} · 실패 ${job.failed || 0} · 건너뜀 ${job.skipped || 0}${measurable ? ` · ${percent}%` : ''}` }));
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_JOB_DIALOG_HTML;
+    const body=template.content.querySelector('.dialog');
+    portal.id='job-memory';
+    body.setAttribute('aria-label','정본 기억 작업');
+    body.querySelectorAll('[data-fill]').forEach(node=>{node.textContent='';});
+    body.querySelector('#jm-t').textContent=`정본 작업 · ${String(job.kind||'')}`;
+    const targetText=job.currentStart?`T${job.currentStart}–T${Number(job.currentStart)+4}`:guiAsArray(job.ranges?.length?job.ranges:guiAsArray(job.targetStarts).map(start=>({startTurn:start,endTurn:Number(start)+4}))).map(row=>`T${row.startTurn||row.start}–T${row.endTurn||row.end}`).join(' · ')||'대상 범위 확인 중';
+    body.querySelector('[data-fill="target"]').textContent=targetText;
+    body.querySelector('[data-fill="kind"]').textContent=String(job.state||'');
+    const meter=body.querySelector('.progress');meter.hidden=!measurable;meter.querySelector('i').style.setProperty('--v',`${percent}%`);
+    const message=body.querySelector('[data-job-msg]');message.textContent=job.message||job.error||'현재 작업 상태를 확인합니다.';
+    const stage=String(job.currentStage||job.phase||'');
+    const index=/prepar|resolv|inventory/.test(stage)?0:/librarian|generat|analy/.test(stage)?1:/valid|admiss/.test(stage)?2:/sav|commit|persist|adopt/.test(stage)?3:-1;
+    body.querySelectorAll('.step').forEach((node,i)=>{const regen=node.dataset.variant==='regen';if(node.dataset.variant)node.hidden=regen!==(job.kind==='regenerate');node.classList.toggle('is-active',i===index);node.classList.toggle('is-done',terminal&&!failedTerminal&&job.state!=='cancelled');});
+    const result=body.querySelector('[data-job-result]');result.replaceChildren();result.hidden=!terminal;
+    const summary=(label,value,detail='')=>guiEl('div',{class:'res-row'},[guiEl('b',{text:label}),guiEl('span',{text:String(value)}),detail?guiEl('small',{text:detail}):null]);
+    if(terminal){result.append(summary('정본 작업',job.state),summary('완료 / 실패 / 건너뜀',`${job.completed||0} / ${job.failed||0} / ${job.skipped||0}`));
+      if(job.error)result.append(summary('오류',job.error));
+      for(const warning of guiAsArray(job.memoryWarnings))result.append(summary(`T${warning.startTurn}–T${warning.endTurn} 저장 확인`,JSON.stringify(warning.admission||warning)));
+      for(const warning of guiAsArray(job.stateWarnings))result.append(summary('현재 상태 반영',String(warning.reason||warning.message||''),'정본 저장 결과와 별도로 확인합니다.'));
+    }
+    const actions=body.querySelector('.dialog__actions');actions.replaceChildren();
+    actions.appendChild(guiEl('button',{class:'btn',type:'button',text:'최소화',onClick:()=>{Gui.canonicalJobMinimized=true;renderCanonicalJobSurface(job);}}));
+    if(terminal)actions.appendChild(guiEl('button',{class:'btn btn--primary',type:'button',text:'확인',onClick:()=>{Gui.canonicalJobDismissedId=job.jobId;portal.remove();Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node=>node.remove());}}));
+    body.appendChild(guiEl('p',{class:'hint',dataset:{canonicalJobClock:String(job.jobId)},text:`${String(job.state||'')} · ${elapsed}초 · ${measurable?`${done}/${measurable}`:'배치 수 확인 중'}`}));
     if (job.state === 'awaiting_edit' && job.comparison?.candidate) {
-      const textarea = guiEl('textarea', { class: 'sga-textarea tall', dataset: { canonicalEditText: 'true' } }); textarea.value = String(job.comparison.candidate.text || '');
-      body.appendChild(guiEl('div', { class: 'canonical-job-edit' }, [guiEl('h3', { text: '정본 복사본 수정' }), guiEl('div', { class: 'sga-note', text: '원문 U+A, TURN, digest와 provenance는 잠깁니다. 7개 정본 섹션 제목을 유지한 사용자 작성본만 새 후보로 저장됩니다.' }), textarea,
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '수정본 저장', onClick: async () => { try { await LibraMemoryCore.saveCanonicalEditDraft({ candidateId: job.candidateId, text: textarea.value }); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } })]));
+      const textarea = guiEl('textarea', { class: 'textarea tall', dataset: { canonicalEditText: 'true' } }); textarea.value = String(job.comparison.candidate.text || '');
+      body.appendChild(guiEl('div', { class: 'stack' }, [guiEl('h3', { text: '정본 복사본 수정' }), guiEl('div', { class: 'hint', text: '원문 U+A, TURN, digest와 provenance는 잠깁니다. 7개 정본 섹션 제목을 유지한 사용자 작성본만 새 후보로 저장됩니다.' }), textarea,
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수정본 저장', onClick: async () => { try { if(!guard())return;await LibraMemoryCore.saveCanonicalEditDraft({ candidateId: job.candidateId, text: textarea.value }); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } })]));
     }
     if (job.state === 'awaiting_choice' && job.comparison) {
-      const comparison = job.comparison;
+      const comparison = job.comparison;let promoteOverlay=null;const closePromotion=()=>promoteOverlay?.remove();const promotionGuard=()=>guard()&&(!promoteOverlay?.isConnected||(promoteOverlay.dataset.candidateScope===scopeKey&&promoteOverlay.dataset.candidateJobId===String(job.jobId)&&canonicalComparisonTextSignature(LibraMemoryCore.state.canonicalJob||Gui.canonicalJob)===canonicalComparisonTextSignature(job)));
       let comparisonText = Gui.canonicalComparisonTextCache.get(String(job.jobId)) || null;
       const comparisonSignature = canonicalComparisonTextSignature(job);
       if (!comparisonText || comparisonText.signature !== comparisonSignature) {
@@ -69667,43 +69688,48 @@ ${string(queryBundle?.sceneText || '')}`;
       const savedDisposition = comparison.manualStateDisposition || job.manualStateDisposition || comparison.candidate?.manualStateDisposition || null;
       const dispositionMode = savedDisposition?.mode || '';
       const dispositionLocked = comparison.manualStateDispositionLocked === true;
-      const dispositionSelect = guiEl('select', { class: 'sga-select', dataset: { canonicalStateDisposition: 'true' }, value: dispositionMode, disabled: dispositionLocked }, optionNodes([
+      const dispositionSelect = guiEl('select', { class: 'select', dataset: { canonicalStateDisposition: 'true' }, value: dispositionMode, disabled: dispositionLocked }, optionNodes([
         ['', '필수 선택'], ['maintained_by_user', '상태 변화 없음'], ['sparse_correction', '상태 보정 작성']
       ], dispositionMode));
-      const sparseEditor = guiEl('textarea', { class: 'sga-textarea', dataset: { canonicalSparseStatePatch: 'true' }, disabled: dispositionLocked, placeholder: '{\n  "characters": [{ "name": "...", "state": { "appearance": "..." } }]\n}' });
+      const sparseEditor = guiEl('textarea', { class: 'textarea', dataset: { canonicalSparseStatePatch: 'true' }, disabled: dispositionLocked, placeholder: '{\n  "characters": [{ "name": "...", "state": { "appearance": "..." } }]\n}' });
       sparseEditor.value = savedDisposition?.patch ? JSON.stringify(savedDisposition.patch, null, 2) : '';
       sparseEditor.style.display = dispositionMode === 'sparse_correction' ? '' : 'none';
       dispositionSelect.onchange = () => { sparseEditor.style.display = dispositionSelect.value === 'sparse_correction' ? '' : 'none'; };
-      const dispositionPanel = manualCandidate ? guiEl('div', { class: 'canonical-state-disposition' }, [
+      const dispositionPanel = manualCandidate ? guiEl('div', { class: 'stack' }, [
         guiEl('h4', { text: '편집 이후 상태 결정 · 필수' }),
-        guiEl('div', { class: 'sga-note', text: dispositionLocked
+        guiEl('div', { class: 'hint', text: dispositionLocked
           ? '이 과거 사용자 작성본에 내구 저장된 상태 결정입니다. 원본 기록을 바꾸지 않고 새 채택 basis에서 다시 검증·재생합니다.'
           : '후보 단계에서는 State LLM을 실행하지 않습니다. 채택 성공 뒤 새 정본 basis에 상태 유지 또는 희소 보정을 결속합니다.' }),
         dispositionSelect, sparseEditor,
-        guiEl('button', { class: 'sga-btn', type: 'button', text: dispositionLocked ? '저장된 상태 결정' : '상태 결정 저장', disabled: dispositionLocked, onClick: async () => { try {
+        guiEl('button', { class: 'btn', type: 'button', text: dispositionLocked ? '저장된 상태 결정' : '상태 결정 저장', disabled: dispositionLocked, onClick: async () => { try {
           if (!dispositionSelect.value) throw new Error('편집 이후 상태 결정을 선택해 주세요.');
           const parsed = dispositionSelect.value === 'sparse_correction' ? JSON.parse(sparseEditor.value || '{}') : null;
-          await LibraMemoryCore.saveCanonicalManualStateDisposition({ jobId: job.jobId, mode: dispositionSelect.value, patch: parsed });
-          guiSetStatus(dispositionSelect.value === 'maintained_by_user' ? '상태 변화 없음 처분을 저장했습니다.' : '희소 상태 보정을 저장했습니다.');
+          if(!promotionGuard())return;await LibraMemoryCore.saveCanonicalManualStateDisposition({ jobId: job.jobId, mode: dispositionSelect.value, patch: parsed });
+          closePromotion();guiSetStatus(dispositionSelect.value === 'maintained_by_user' ? '상태 변화 없음 처분을 저장했습니다.' : '희소 상태 보정을 저장했습니다.');
         } catch (error) { guiSetStatus(error.message || String(error), true, true); } } })
-      ]) : guiEl('div', { class: 'sga-callout', text: '후보가 정본으로 채택된 뒤 최신 상태 추적 파이프라인을 실행합니다.' });
-      body.appendChild(guiEl('div', { class: 'canonical-compare-grid' }, [
-        guiEl('section', {}, [guiEl('h3', { text: '기존 정본' }), guiEl('pre', { text: comparison.active?.text || '' }), guiEl('h4', { text: '이전 상태 추적' }), guiEl('pre', { text: comparisonText.beforeState })]),
-        guiEl('section', {}, [guiEl('h3', { text: manualCandidate ? '새 후보 · 사용자 작성 정본' : '새 후보' }), guiEl('pre', { text: comparison.candidate?.text || '' }), dispositionPanel])
-      ]));
-      body.appendChild(guiEl('div', { class: 'sga-actions canonical-choice-actions' }, [
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '기존 유지', onClick: async () => { try { await LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'keep' }); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } }),
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '후보 채택', disabled: manualCandidate && !savedDisposition, onClick: async () => { try { await LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'adopt' }); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } }),
-        guiEl('button', { class: 'sga-btn ghost', type: 'button', text: '나중에 결정', onClick: () => { Gui.canonicalJobMinimized = true; void LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'later' }); renderCanonicalJobSurface(job); } })
+      ]) : guiEl('div', { class: 'note', text: '후보가 정본으로 채택된 뒤 최신 상태 추적 파이프라인을 실행합니다.' });
+      const promoteTemplate=document.createElement('template');promoteTemplate.innerHTML=LIBRA_APPROVED_PROMOTE_DIALOG_HTML;
+      promoteOverlay=promoteTemplate.content.firstElementChild;promoteOverlay.dataset.candidateScope=scopeKey;promoteOverlay.dataset.candidateJobId=String(job.jobId);const promote=promoteOverlay.querySelector('.dialog');promote.querySelectorAll('[data-fill]').forEach(node=>{
+        const key=node.dataset.fill;node.textContent=key==='mem'?targetText:key==='ver'?String(comparison.candidate?.revision||comparison.candidate?.variantId||job.candidateId||'후보'):key==='curv'?String(comparison.active?.revision||'정본'):key==='cur'?String(comparison.active?.text||'현재 정본이 없습니다.'):key==='vtext'?String(comparison.candidate?.text||''):'';
+      });
+      promote.querySelector('.dialog__actions').remove();
+      promote.appendChild(guiEl('details',{class:'fold'},[guiEl('summary',{text:'채택 basis · 상태 결정'}),guiEl('div',{class:'fold__body stack'},[guiEl('pre',{text:comparisonText.beforeState}),dispositionPanel])]));
+      body.appendChild(guiEl('button',{class:'btn btn--primary',type:'button',text:'후보 비교 후 정본 채택…',onClick:()=>{if(!guard())return;Gui.app.querySelector('#dlg-promote')?.remove();promoteOverlay.classList.add('is-open');promoteOverlay.setAttribute('aria-hidden','false');Gui.app.appendChild(promoteOverlay);bindApprovedOverlayKeyboard(promoteOverlay,closePromotion);}}));
+      promote.appendChild(guiEl('div', { class: 'dialog__actions canonical-choice-actions' }, [
+        guiEl('button',{class:'btn',type:'button',text:'취소',onClick:closePromotion}),
+        guiEl('button', { class: 'btn', type: 'button', text: '기존 유지', onClick: async () => { try { if(!promotionGuard())return;await LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'keep' });closePromotion(); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } }),
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '후보 채택', disabled: manualCandidate && !savedDisposition, onClick: async () => { try { if(!promotionGuard())return;await LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'adopt' });closePromotion(); } catch (error) { guiSetStatus(error.message || String(error), true, true); } } }),
+        guiEl('button', { class: 'btn', type: 'button', text: '나중에 결정', onClick: () => { if(!promotionGuard())return;closePromotion();Gui.canonicalJobMinimized = true; void LibraMemoryCore.resolveCanonicalCandidate({ jobId: job.jobId, decision: 'later' }); renderCanonicalJobSurface(job); } })
       ]));
     } else if (job.state === 'adopting') {
-      body.appendChild(guiEl('button', { class: 'sga-btn good', type: 'button', text: '중단된 채택 복구', onClick: () => { void LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }).catch(error => guiSetStatus(error.message || String(error), true, true)); } }));
+      body.appendChild(guiEl('button', { class: 'btn btn--primary', type: 'button', text: '중단된 채택 복구', onClick: () => { if(!guard())return;void LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }).catch(error => guiSetStatus(error.message || String(error), true, true)); } }));
     } else if (job.state === 'interrupted') {
-      body.appendChild(guiEl('button', { class: 'sga-btn good', type: 'button', text: '중단된 작업 재개', onClick: () => { void LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }).catch(error => guiSetStatus(error.message || String(error), true, true)); } }));
+      body.appendChild(guiEl('button', { class: 'btn btn--primary', type: 'button', text: '중단된 작업 재개', onClick: () => { if(!guard())return;void LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }).catch(error => guiSetStatus(error.message || String(error), true, true)); } }));
     } else if (!terminal && job.cancellable !== false) {
-      body.appendChild(guiEl('button', { class: 'sga-btn danger', type: 'button', text: '작업 취소', onClick: () => { void LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); } }));
+      body.appendChild(guiEl('button', { class: 'btn btn--danger', type: 'button', text: '작업 취소', onClick: () => { if(!guard())return;void LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); } }));
     }
-    portal.appendChild(guiEl('div', { class: 'canonical-job-overlay' }, [body]));
+    body.querySelectorAll(':scope > button').forEach(node=>actions.appendChild(node));
+    portal.replaceChildren(body);if(!portal.dataset.keyboardBound){portal.dataset.keyboardBound='true';bindApprovedOverlayKeyboard(portal,()=>{Gui.canonicalJobMinimized=true;renderCanonicalJobSurface(LibraMemoryCore.state.canonicalJob||job);});}
     if (liveProgress && !Gui.canonicalJobTicker) {
       Gui.canonicalJobTicker = setInterval(() => {
         if (!Gui.visible || !LibraMemoryCore.state.canonicalJob) return;
@@ -69725,7 +69751,7 @@ ${string(queryBundle?.sceneText || '')}`;
       Gui.root.querySelectorAll('[data-runtime-live]').forEach(node => { node.textContent = liveText; });
       Gui.root.querySelectorAll('[data-runtime-pipeline]').forEach(node => {
         node.textContent = !hookActive ? (permissionDenied ? 'replacer 권한 필요' : '플러그인 훅 비활성') : Runtime.inFlight ? '실행 중' : '대기 중';
-        node.className = `sga-badge ${!hookActive ? 'danger' : Runtime.inFlight ? 'warn' : 'good'}`;
+        node.className = `badge ${!hookActive ? 'danger' : Runtime.inFlight ? 'warn' : 'good'}`;
       });
       const lastRunAt = Number(Runtime.lastPipeline?.at || Runtime.last?.at || 0);
       const lastRunText = lastRunAt ? new Date(lastRunAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '기록 없음';
@@ -69782,46 +69808,16 @@ ${string(queryBundle?.sceneText || '')}`;
 
   const syncGuiNavigationFeedback = () => {
     if (!Gui.app) return;
-    const activePage = SHARED_SIDEBAR_SECTIONS.includes(Gui.sharedSidebarSection) ? Gui.sharedSidebarSection : 'memory';
-    Gui.app.querySelectorAll('button.sga-side-item[data-shared-page]').forEach(node => {
-      const active = node.dataset.sharedPage === activePage;
-      node.dataset.active = String(active);
-      if (active) node.setAttribute('aria-current', 'page');
-      else node.removeAttribute('aria-current');
+    const activePage=normalizeBookPage(Gui.bookPage);
+    Gui.app.querySelectorAll('.sidebar button[data-go],.tabbar button[data-go],[data-libra-more-sheet] button[data-go]').forEach(node=>{
+      const active=node.dataset.go===activePage;
+      node.classList.toggle('is-on',active);node.setAttribute('aria-current',active?'page':'false');
     });
-    Gui.app.querySelectorAll('button[data-mobile-shared-page]').forEach(node => {
-      const active = node.dataset.mobileSharedPage === activePage;
-      node.classList.toggle('active', active);
-      node.setAttribute('aria-pressed', String(active));
-    });
-    const mobileSelect = Gui.app.querySelector('.sga-mobile-nav-select');
-    if (mobileSelect) mobileSelect.value = `flow|${activePage}`;
-    const activeItem = MOBILE_NAV_ITEMS.find(item => item.section === activePage);
-    const mobileTitle = Gui.app.querySelector('.sga-mobile-nav-head strong');
-    if (mobileTitle && activeItem) mobileTitle.textContent = `${activeItem.icon} ${activeItem.label}`;
-    const activeRoom = bookSettingsRoomActiveSection();
-    Gui.app.querySelectorAll('button[data-external-settings]').forEach(node => {
-      const item = BOOK_EXTERNAL_SETTINGS_ITEMS.find(item => item.id === node.dataset.externalSettings);
-      const active = !!item && bookExternalSettingsActive(item);
-      node.dataset.active = String(active);
-      if (active) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
-    });
-    Gui.app.querySelectorAll('button[data-book-settings-room-section]').forEach(node => {
-      const active = node.dataset.bookSettingsRoomSection === activeRoom;
-      node.classList.toggle('active', active);
-      if (active) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
-    });
-    const activeBookPage = normalizeBookPage(Gui.bookPage);
-    Gui.app.querySelectorAll('button[data-book-page]').forEach(node => {
-      const active = node.dataset.bookPage === activeBookPage;
-      node.dataset.active = String(active);
-      if (active) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current');
-    });
-    Gui.app.querySelectorAll('button[data-mobile-book-page]').forEach(node => {
-      const active = node.dataset.mobileBookPage === activeBookPage;
-      node.classList.toggle('active', active);
-      node.setAttribute('aria-pressed', String(active));
-    });
+    const activeRoom=bookSettingsRoomActiveSection();
+    const group=({ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'mem',references:'ref',source_edits:'ref',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'})[activeRoom]||'mem';
+    Gui.app.querySelectorAll('.setnav button[data-subtab]').forEach(node=>{const active=node.dataset.subtab===group;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
+    const currentItem=BOOK_NATIVE_SETTINGS_SECTIONS.find(item=>item.id===activeRoom);
+    Gui.app.querySelectorAll('[data-product-settings-section] > nav.tabs > button').forEach(node=>{const active=node.textContent===currentItem?.label;node.classList.toggle('is-on',active);node.setAttribute('aria-selected',String(active));});
   };
 
   const cancelQueuedGuiFrame = () => {
@@ -70513,822 +70509,36 @@ ${string(queryBundle?.sceneText || '')}`;
     }
   };
 
+  // Exact outer DOM templates from the approved mockup. Sample values and mock actions are stripped at mount.
+  const LIBRA_APPROVED_RANGE_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-range\" aria-hidden=\"true\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dg-t\">\n      <div class=\"eyebrow\">Canonical job</div><h2 id=\"dg-t\">기억 생성 구간 선택</h2>\n      <p class=\"muted\" style=\"font-size:13px;margin-top:0\">완성된 U+A 5턴 구간만 고를 수 있습니다. 사용자 입력과 완료된 AI 응답 한 쌍을 1턴으로 계산합니다.</p><p class=\"hint\" style=\"margin-top:-4px\">저장된 정본이 하나도 없는 채팅에서는 같은 화면이 ‘수동 콜드스타트’로 표시되고, 완성된 5턴이 있으면 기존 세션의 누락 정본을 생성할 수 있습니다.</p>\n      <div class=\"field\"><label for=\"kind-sel\">기억 작업 종류</label>\n        <select class=\"select\" id=\"kind-sel\" data-no-track=\"\"><option value=\"miss\">누락 구간 생성 (기본)</option><option value=\"fail\">실패 구간 새 분석</option><option value=\"reana\">선택 구간 재분석</option><option value=\"regen\">기존 기억 재생성</option></select>\n        <span class=\"hint\" id=\"kind-hint\">누락된 구간의 기억을 새로 만듭니다.</span></div>\n      <div class=\"seglist\" style=\"margin:12px 0\" id=\"seglist\">\n        <label class=\"segrow\" data-kinds=\"\" aria-disabled=\"true\"><input type=\"checkbox\" disabled=\"\" aria-label=\"T126–128 선택 불가\"><div><b>T126–128</b><small>미완료 · 5턴이 채워지지 않아 선택할 수 없음 (마지막 미완성 턴)</small></div><span class=\"badge\">대기</span></label>\n        <label class=\"segrow\" data-kinds=\"regen\"><input type=\"checkbox\" aria-label=\"T121–125 선택\"><div><b>T121–125</b><small>저장됨 · 정본 M-25</small></div><span class=\"badge badge--ok\">저장됨</span></label>\n        <label class=\"segrow\" data-kinds=\"regen\"><input type=\"checkbox\" aria-label=\"T111–115 선택\"><div><b>T111–115</b><small>저장됨 · 정본 M-23</small></div><span class=\"badge badge--ok\">저장됨</span></label>\n        <label class=\"segrow\" data-kinds=\"regen\"><input type=\"checkbox\" aria-label=\"T106–110 선택\"><div><b>T106–110</b><small>저장됨 · 정본 M-22</small></div><span class=\"badge badge--ok\">저장됨</span></label>\n        <label class=\"segrow\" data-kinds=\"regen\"><input type=\"checkbox\" aria-label=\"T101–105 선택\"><div><b>T101–105</b><small>저장됨 · 정본 M-21</small></div><span class=\"badge badge--ok\">저장됨</span></label>\n        <label class=\"segrow\" data-kinds=\"reana regen\"><input type=\"checkbox\" aria-label=\"T116–120 선택\"><div><b>T116–120</b><small>저장됨 · 정본 M-24 · 원문 수정 · 선택 재분석 대기</small></div><span class=\"badge badge--warn\">원문 수정</span></label>\n        <label class=\"segrow\" data-kinds=\"fail\"><input type=\"checkbox\" aria-label=\"T96–100 선택\"><div><b>T96–100</b><small>미완료 · 새 분석 가능 (이전 작업 실패)</small></div><span class=\"badge badge--danger\">실패</span></label>\n        <label class=\"segrow\" data-kinds=\"miss\"><input type=\"checkbox\" aria-label=\"T91–95 선택\"><div><b>T91–95</b><small>미생성 · 누락 구간</small></div><span class=\"badge badge--warn\">미생성</span></label>\n      </div>\n      <p class=\"hint\" id=\"regen-one\" hidden=\"\" style=\"margin:0 0 8px\">재생성 후보는 기억 하나씩 만듭니다. 다른 구간을 고르면 이전 선택이 풀립니다.</p><div class=\"cluster\" style=\"margin-bottom:8px\"><button class=\"btn btn--sm\" id=\"seg-all\">가능한 구간 전체 선택</button><button class=\"btn btn--sm\" id=\"seg-none\">전체 해제</button></div>\n      <dl class=\"cost-table\"><dt>선택</dt><dd><b id=\"range-n\">0</b>개 구간</dd><dt>예상 모델 호출</dt><dd id=\"range-calls\">0회 (구간당 1회 · 모델 사용량이 발생할 수 있습니다)</dd><dt>선택 결과</dt><dd id=\"range-effect\">누락된 구간의 기억을 새로 저장합니다.</dd></dl>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" id=\"range-go\" disabled=\"\" data-close=\"\" data-run-job=\"job-memory\" data-ctx=\"{&quot;title&quot;:&quot;선택한 구간 생성&quot;,&quot;kind&quot;:&quot;누락 구간 생성&quot;}\">선택한 구간 생성</button></div>\n    </div>\n  </div>";
+  const LIBRA_APPROVED_VERSIONS_DRAWER_HTML = "<div class=\"overlay overlay--right\" id=\"drawer-versions\" data-require=\"mem\" aria-hidden=\"true\">\n    <aside class=\"drawer\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dv-t\">\n      <div class=\"drawer__head\"><div><div class=\"eyebrow\">Versions &amp; runs</div><h2 id=\"dv-t\"><span data-fill=\"mem\">M-25</span> 버전 · 실행 기록</h2></div><button class=\"btn btn--icon btn--ghost\" data-close=\"\" aria-label=\"닫기\"><i data-i=\"x\"></i></button></div>\n      <div class=\"drawer__body stack\">\n        <div class=\"list\" id=\"ver-rows\"></div>\n        <div><div class=\"section-title\"><h2>실행 기록</h2></div><div class=\"list\" id=\"run-rows\"></div></div></div>\n      </aside></div>";
+  const LIBRA_APPROVED_PROMOTE_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-promote\" data-require=\"mem ver\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dpm-t\"><div class=\"eyebrow\">Compare</div><h2 id=\"dpm-t\"><span data-fill=\"mem\">M-25</span> · 후보 <span data-fill=\"ver\">v2</span> — 정본으로 올릴까요?</h2><div class=\"grid g2\"><div class=\"note\"><b>현재 정본 <span data-fill=\"curv\">v3</span></b><span data-fill=\"cur\">열쇠의 문양은 잠금장치와 일치했으나, 문은 보름달 전까지 열리지 않는다.</span></div><div class=\"note\"><b>후보 <span data-fill=\"ver\">v2</span></b><span data-fill=\"vtext\">열쇠의 문양은 잠금장치와 일치했고, 정원사의 경고가 아직 유효하다.</span></div></div><p class=\"hint\">올리면 후보가 새 정본이 되고, 이전 정본은 비활성 버전으로 남습니다.</p><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-act=\"ver-promote\" data-toast=\"{mem} {ver} 정본 승격: 다시 읽어 확인했습니다. 이전 정본 {curv} 버전은 비활성으로 남습니다. (시안)\">정본으로 올리기</button></div></div></div>";
+  const LIBRA_APPROVED_DELETE_VERSION_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-del-version\" data-require=\"mem ver\" aria-hidden=\"true\"><div class=\"dialog dialog--danger\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ddv-t\"><div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete inactive version</div><h2 id=\"ddv-t\"><span data-fill=\"mem\">M-25</span> · 비활성 버전 <span data-fill=\"ver\">v2</span> — 이 버전과 벡터·상태 delta를 삭제할까요?</h2><div class=\"note note--danger\"><b>되돌릴 수 없습니다.</b> 현재 정본은 바뀌지 않습니다.</div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"ver-delete\" data-toast=\"{mem} {ver} 삭제 완료. 현재 정본은 그대로입니다. (시안)\">삭제</button></div></div></div>";
+  const LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-margin-reset\" aria-hidden=\"true\"><div class=\"dialog dialog--danger\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dmr-t\"><div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Reset</div><h2 id=\"dmr-t\">사서의 여백을 초기화할까요?</h2><p>목표·완료 조건·강제하지 말아야 할 전개·부드러운 선호가 모두 지워집니다. 잠금도 해제됩니다. 비운 내용은 ‘여백에 기록’을 눌러야 저장됩니다.</p><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"margin-reset\" data-toast=\"여백을 비웠습니다. ‘여백에 기록’을 눌러야 저장됩니다. (시안)\">초기화</button></div></div></div>";
+  const LIBRA_APPROVED_RECOVERY_JOB_HTML = "<div class=\"overlay\" id=\"job-recover\" data-require=\"kind\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"범위와 대상을 확인하는 중|작업을 실행하는 중|결과를 다시 읽어 확인하는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jrc-t\"><div class=\"eyebrow\" data-fill=\"kind\">복구</div><h2 id=\"jrc-t\" data-fill=\"title\">작업</h2><div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>실행</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>readback</b></div></div>\n      <div class=\"list\" data-job-result=\"\" hidden=\"\" style=\"margin-top:12px\">\n        <div data-variant=\"default state\"><div class=\"res-row\"><b>정본 기억</b><span class=\"badge\">변경 없음</span></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge badge--ok\">정본 기준으로 다시 반영</span><small>모델 호출 0회 (표본 결과)</small></div></div>\n        <div data-variant=\"rebuild\" hidden=\"\"><div class=\"res-row\"><b>상태 반영</b><span class=\"badge badge--ok\"><span data-fill=\"boundary\">T120</span> 경계로 되돌린 뒤 재구축</span></div><div class=\"res-row\"><b>원문 채팅 · 정본 기억</b><span class=\"badge\">변경 없음</span><small>(표본 결과)</small></div></div>\n        <div data-variant=\"receipt\" hidden=\"\"><div class=\"res-row\"><b>원문 기록</b><span class=\"badge badge--ok\">영수증과 일치하는 2건 복구</span></div><div class=\"res-row\"><b>모델 호출</b><span>0회</span><small>(표본 결과)</small></div></div>\n        <div data-variant=\"micro\" hidden=\"\"><div class=\"res-row\"><b>Micro 기억</b><span class=\"badge badge--ok\">재처리 저장됨</span></div><div class=\"res-row\"><b>모델 호출</b><span>1회</span><small>이전 호출 결과가 불명확했다면 중복 비용이 있었을 수 있습니다.</small></div><div class=\"res-row\"><b>발행 확인 (publish_ready)</b><span class=\"badge badge--info\">별도 확인 필요</span><small>저장 성공과 발행 확인은 서로 다른 상태입니다. (표본 결과)</small></div></div>\n      </div>\n      <div class=\"dialog__actions\"><button class=\"btn btn--danger\" data-job-cancel=\"\" data-close=\"\">중단 요청</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\">확인</button></div></div></div>";
+  const LIBRA_APPROVED_STATE_DIALOG_HTML = "<div class=\"overlay\" id=\"dialog-state\" aria-hidden=\"true\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ds-t\">\n      <div class=\"eyebrow\">Memory Status</div><h2 id=\"ds-t\">기억 상태</h2>\n      <dl class=\"kv\"><dt>현재 U+A</dt><dd><span data-status-current-turns=\"\">128</span>턴</dd><dt>저장된 기억</dt><dd><span id=\"state-mem-n\">25</span>개 (정본 · T<span data-status-committed-turn=\"\">125</span>까지)</dd><dt>대기</dt><dd><span data-status-pending-turns=\"\">3</span>턴 (5턴 미만)</dd><dt>상태 반영</dt><dd>T<span data-status-committed-turn=\"\">125</span>까지</dd><dt>부분 저장</dt><dd><span data-status-partial=\"\">0</span>개 구간</dd><dt>대기 중 반영</dt><dd><span data-status-awaiting=\"\">0</span>개 구간</dd></dl>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-toast=\"전체 상태를 읽기 전용으로 확인했습니다. (시안)\">전체 상태 확인</button><button class=\"btn btn--primary\" data-close=\"\" data-autofocus=\"\">닫기</button></div>\n    </div>\n  </div>";
+  const LIBRA_APPROVED_MERGE_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-merge\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dmg-t\"><div class=\"eyebrow\">Same entity</div><h2 id=\"dmg-t\">같은 항목 병합 · 분리 · <span data-fill=\"target\">인물 · 아스텔</span></h2><p class=\"muted\" style=\"font-size:13px\">인물·세계 항목이 같은 대상인지 지정합니다. 정본 기억 본문을 합치는 기능이 아닙니다.</p><div class=\"choices\" id=\"mg-mode\"><button class=\"choice is-on\"><b>병합</b><span>두 항목을 같은 대상으로 취급</span></button><button class=\"choice\"><b>분리</b><span>이전에 병합한 항목을 다시 나눔</span></button></div><div class=\"field\" id=\"mg-partner-f\" style=\"margin-top:10px\"><label for=\"mg-partner\">같은 대상으로 볼 항목</label><select class=\"select\" id=\"mg-partner\" data-no-track=\"\"></select></div><div class=\"field\" id=\"mg-split-f\" hidden=\"\" style=\"margin-top:10px\"><label for=\"mg-split\">다시 나눌 병합 기록</label><select class=\"select\" id=\"mg-split\" data-no-track=\"\"></select><span class=\"hint\" id=\"mg-split-hint\"></span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" id=\"mg-go\" data-close=\"\" data-act=\"merge-apply\" data-toast=\"{mgmsg} readback으로 확인했습니다. (시안)\">적용</button></div></div></div>";
+  const LIBRA_APPROVED_PENDING_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-pending\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dpd-t\"><div class=\"eyebrow\">Pending evidence</div><h2 id=\"dpd-t\">보류 근거 해결 · <span data-fill=\"person\">전체</span></h2><div class=\"stack stack--sm\" id=\"pend-list\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">닫기</button><button class=\"btn btn--primary\" id=\"pend-go\" data-close=\"\" data-act=\"pend-resolve\" data-toast=\"‘{ptitle}’ 보류를 선택한 근거({pchoice})로 해결하고 readback으로 확인했습니다. (시안)\">해결</button></div></div></div>";
+  const LIBRA_APPROVED_RECOVERY_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-recover\" data-require=\"kind\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"drc-t\"><div class=\"eyebrow\" data-fill=\"kind\">복구</div><h2 id=\"drc-t\" data-fill=\"title\">작업</h2>\n    <dl class=\"cost-table\"><dt>비용</dt><dd data-fill=\"cost\">-</dd><dt>영향</dt><dd data-fill=\"impact\">-</dd></dl><div class=\"field\" data-variant=\"rebuild\" hidden=\"\" style=\"margin-top:10px\"><label for=\"rb-bound\">되돌릴 5턴 경계</label><select class=\"select\" id=\"rb-bound\" data-no-track=\"\"><option value=\"T120\">T120 이후 (M-25 반영분)</option><option value=\"T115\">T115 이후 (M-24부터)</option><option value=\"T110\">T110 이후 (M-23부터)</option><option value=\"T105\">T105 이후 (M-22부터)</option></select><span class=\"hint\" id=\"rb-hint\">모델 호출 0회 · 저장된 정본 1개를 다시 반영합니다.</span></div>\n    <div class=\"note note--warn\" style=\"margin-top:10px\">채팅·분기·scope가 바뀐 경우 이전 기억·근거·작업 상태를 새 범위의 사실로 재사용하지 않습니다. 이전 호출 결과가 불명확하면 중복 비용이 발생할 수 있습니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-run-job=\"job-recover\">실행</button></div></div></div>";
+  const LIBRA_APPROVED_CORRECTIONS_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-corr-life\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dcl-t\"><div class=\"eyebrow\">Corrections</div><h2 id=\"dcl-t\">교정 목록</h2><div class=\"list\" id=\"corr-list\"><div class=\"row\"><div><div class=\"row__title\">아스텔 → 정원사: 신뢰 ↑</div><div class=\"row__meta\">상태: <span class=\"badge badge--ok\">적용 중</span></div></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"재검토를 시작합니다. (시안)\">재검토</button><button class=\"btn btn--sm btn--danger\" data-toast=\"교정을 삭제했습니다. (시안)\">삭제</button></div></div><div class=\"row\"><div><div class=\"row__title\">기록관 소속 정정</div><div class=\"row__meta\">상태: <span class=\"badge\">휴면</span> · 롤백 뒤 비활성</div></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"다시 적용합니다. (시안)\">다시 적용</button><button class=\"btn btn--sm\" data-toast=\"보류로 전환합니다. (시안)\">보류</button><button class=\"btn btn--sm\" data-toast=\"수정 화면을 엽니다. (시안)\">수정</button></div></div></div><div class=\"dialog__actions\"><button class=\"btn btn--primary\" data-close=\"\" data-autofocus=\"\">닫기</button></div></div></div>";
+  const LIBRA_APPROVED_JOB_DIALOG_HTML = "<div class=\"overlay\" id=\"job-memory\" data-require=\"kind\" data-start-from=\"range-go\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"대상 TURN과 구간을 확인하는 중|Librarian이 5턴 구간을 분석하는 중|정본 후보를 검증하는 중|결과를 저장하고 다시 읽는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jm-t\">\n      <div class=\"split\"><div><div class=\"eyebrow\">Canonical Job</div><h2 id=\"jm-t\" data-fill=\"title\">선택한 구간 생성</h2><p class=\"muted\" style=\"margin:2px 0 0;font-size:12.5px\">대상 구간: <b data-fill=\"target\">T91–95</b></p></div><span class=\"badge badge--info\" data-fill=\"kind\">누락 구간 생성</span></div>\n      <div class=\"progress\" style=\"margin:14px 0\"><i style=\"--v:0%\"></i></div>\n      <p data-job-msg=\"\" class=\"muted\">작업을 준비합니다.</p>\n      <div class=\"steps\" style=\"margin-top:14px\"><div class=\"step\"><span class=\"step__no\">1</span><b>대상 확인</b><span>TURN 범위</span></div><div class=\"step\"><span class=\"step__no\">2</span><b>분석</b><span>Librarian</span></div><div class=\"step\"><span class=\"step__no\">3</span><b>검증</b><span>근거 대조</span></div><div class=\"step\" data-variant=\"default miss fail reana\"><span class=\"step__no\">4</span><b>저장</b><span>readback</span></div><div class=\"step\" data-variant=\"regen\" hidden=\"\"><span class=\"step__no\">4</span><b>후보 보관</b><span>정본 변경 없음</span></div></div>\n      <div class=\"list\" data-job-result=\"\" hidden=\"\" style=\"margin-top:12px\">\n        <div data-variant=\"default miss\"><div class=\"res-row\"><b>정본 기억 · <span data-fill=\"target\">T91–95</span></b><span class=\"badge badge--ok\">새로 저장됨</span><small>누락 구간의 기억을 새로 만들었습니다. (표본 결과)</small></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge badge--ok\">앞 구간부터 순서대로 반영</span></div></div>\n        <div data-variant=\"fail\" hidden=\"\"><div class=\"res-row\"><b>이전 실패 작업</b><span class=\"badge\">폐기됨</span></div><div class=\"res-row\"><b>정본 기억 · <span data-fill=\"target\">T96–100</span></b><span class=\"badge badge--ok\">새로 분석·저장</span><small>(표본 결과)</small></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge badge--warn\">일부 보류</span><small>빈 구간이나 확인할 내용이 있으면 반영을 보류하고 앞 구간부터 순서대로 반영합니다.</small></div></div>\n        <div data-variant=\"reana\" hidden=\"\"><div class=\"res-row\"><b>정본 기억 · <span data-fill=\"target\">T116–120</span></b><span class=\"badge badge--ok\">재분석 성공 → 기존 기억 교체</span><small>실패했다면 기존 기억을 그대로 유지합니다. (표본 결과)</small></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge badge--ok\">교체된 기억으로 다시 반영</span></div></div>\n        <div data-variant=\"regen\" hidden=\"\"><div class=\"res-row\"><b>재생성 후보 · <span data-fill=\"target\">T121–125</span></b><span class=\"badge badge--info\">후보 생성됨 (비활성)</span><small>정본 작업 목록에서 비교한 뒤 채택해야 정본이 됩니다. (표본 결과)</small></div><div class=\"res-row\"><b>정본 기억</b><span class=\"badge\">변경 없음</span></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge\">변경 없음</span></div></div>\n      </div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">최소화</button><button class=\"btn btn--danger\" data-job-cancel=\"\" data-close=\"\">작업 중단</button><span data-variant=\"regen\" hidden=\"\"><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-open=\"drawer-versions\">후보 비교하러 가기</button></span><span data-variant=\"default miss fail reana\"><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\">확인</button></span></div>\n    </div>\n  </div>";
+  const LIBRA_APPROVED_PROMPT_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-prompt\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dps-t\"><div class=\"eyebrow\">Prompt Studio</div><h2 id=\"dps-t\">분석기 · 지침</h2><div class=\"field\"><label for=\"ps-an\">분석기</label><select class=\"select\" id=\"ps-an\" data-no-track><option>기본 기억 분석기</option></select></div><div class=\"field\" style=\"margin-top:10px\"><label for=\"ps-in\">지침</label><textarea class=\"textarea\" id=\"ps-in\" rows=\"5\" data-no-track aria-describedby=\"ps-state\">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class=\"hint\" id=\"ps-state\">저장된 지침입니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button><button class=\"btn\" id=\"ps-default\">기본값 채우기</button><button class=\"btn btn--primary\" id=\"ps-save\" data-close data-act=\"prompt-save\" data-toast=\"지침을 저장했습니다. (시안)\">저장</button></div></div></div>";
+  const LIBRA_APPROVED_CORRECTION_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-correct\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dco-t\"><div class=\"eyebrow\">Correction</div><h2 id=\"dco-t\">교정 · <span data-fill=\"target\">M-25 · 북쪽 정원의 기록실</span></h2><p class=\"muted\" style=\"font-size:13px\">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class=\"field\"><label for=\"co-in\">교정 내용</label><textarea class=\"textarea\" id=\"co-in\" rows=\"3\" data-no-track data-fill=\"text\" aria-describedby=\"co-hint\">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea><span class=\"hint\" id=\"co-hint\">교정할 내용을 적어야 기록할 수 있습니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" id=\"co-go\" data-close data-act=\"corr-add\" data-toast=\"‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)\">교정 기록</button></div></div></div>";
+
+  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>서버 · 백업 · 설정 이동</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>복구 · 진단</b><small>상태 · 교정 · 재구축</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
+  // SVG path data only for the mockup icons; no suite.js behavior is loaded.
+  const LIBRA_APPROVED_ICON_PATHS = {"home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "grid": "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "shelf": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3z\"/><path d=\"m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6\"/>", "users": "<circle cx=\"9\" cy=\"8.5\" r=\"3.2\"/><circle cx=\"17\" cy=\"9.5\" r=\"2.5\"/><path d=\"M3 19c.5-3.3 3-5 6-5s5.5 1.7 6 5M16 14.2c2.6 0 4.5 1.4 5 4.3\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.6 2.5 3.8 5.3 3.8 8.5S14.6 18 12 20.5C9.4 18 8.2 15.2 8.2 12S9.4 6 12 3.5z\"/>", "timeline": "<path d=\"M5 6h9M5 12h14M5 18h7\"/><circle cx=\"17\" cy=\"6\" r=\"2\"/><circle cx=\"9\" cy=\"18\" r=\"2\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.2 1.3L10 21h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z\"/>", "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5M12 8v.1\"/>", "x": "<path d=\"m6 6 12 12M18 6 6 18\"/>", "more": "<circle cx=\"5.5\" cy=\"12\" r=\"1.2\"/><circle cx=\"12\" cy=\"12\" r=\"1.2\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.2\"/>", "refresh": "<path d=\"M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "save": "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>", "db": "<ellipse cx=\"12\" cy=\"6\" rx=\"7.5\" ry=\"3\"/><path d=\"M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6\"/>", "server": "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"2\"/><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"2\"/><path d=\"M7.5 7.2v.1M7.5 16.8v.1\"/>", "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>", "shield": "<path d=\"M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z\"/><path d=\"m9 12 2.2 2.2L15.2 10\"/>", "bolt": "<path d=\"M13 3 5 13.5h6L10 21l9-11h-6z\"/>", "film": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"14\" rx=\"2\"/><path d=\"M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "pen": "<path d=\"m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z\"/>", "image": "<rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\"/><circle cx=\"9\" cy=\"10\" r=\"1.8\"/><path d=\"m4 17 5-4.5 3.5 3L16 12l4.5 5\"/>", "sync": "<path d=\"M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4.5 20z\"/><path d=\"M8 9h8M8 12.5h5\"/>", "arrow": "<path d=\"m9 5 7 7-7 7\"/>", "back": "<path d=\"m15 5-7 7 7 7\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "trash": "<path d=\"M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "route": "<circle cx=\"6\" cy=\"17\" r=\"2.2\"/><circle cx=\"18\" cy=\"7\" r=\"2.2\"/><path d=\"M8.2 17H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8\"/>", "pin": "<path d=\"m14 4 6 6-3 1-4 4-1 4-2.5-2.5L5 20l3.5-3.5L6 14l4-1 4-4z\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "flag": "<path d=\"M6 21V4M6 5h11l-2 4 2 4H6\"/>", "eye": "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "bookmark": "<path d=\"M7 4h10v16l-5-3.5L7 20z\"/>", "lamp": "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z\"/>"};
+  // Exact approved LIBRA app structure; its demo handlers/data are never loaded.
+  const LIBRA_APPROVED_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"bookmark\" data-size=\"lg\"></i></div>\n      <div><div class=\"brand__name\">LIBRA</div><div class=\"brand__ver\">사서 · v2.3.149</div></div></div>\n    <div class=\"scope\"><b>현재 채팅</b><span>›</span><span></span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\" title=\"기억이 저장되고 현재 상태까지 반영되었습니다.\"><i></i>기억 정상 · T<span data-status-committed-turn></span> 저장</span>\n    <button class=\"btn\" data-open=\"drawer-quick\"><i data-i=\"sliders\"></i><span class=\"hide-narrow\">빠른 설정</span></button>\n    <button class=\"btn btn--icon\" data-go=\"settings\" aria-label=\"설정\"><i data-i=\"gear\"></i></button>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu aria-label=\"더 보기\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button><i data-i=\"refresh\"></i>새로고침</button><button><i data-i=\"download\"></i>디버그 로그 내보내기</button><button data-close-gui><i data-i=\"x\"></i>닫기</button></div></div>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"LIBRA 메뉴\">\n    <div class=\"nav-label\">서고</div>\n    <button class=\"nav-item\" data-go=\"desk\" data-short=\"열람대\"><i data-i=\"lamp\"></i><span class=\"nav-text\">현재 열람대</span></button>\n    <button class=\"nav-item\" data-go=\"memory\" data-short=\"서가\"><i data-i=\"shelf\"></i><span class=\"nav-text\">기억 서가</span><span class=\"count\" id=\"nav-mem-n\"></span></button>\n    <button class=\"nav-item\" data-go=\"people\" data-short=\"인물\"><i data-i=\"users\"></i><span class=\"nav-text\">인물 카드함</span></button>\n    <button class=\"nav-item\" data-go=\"world\" data-short=\"세계\"><i data-i=\"globe\"></i><span class=\"nav-text\">세계 도감</span></button>\n    <button class=\"nav-item\" data-go=\"story\" data-short=\"서사\"><i data-i=\"timeline\"></i><span class=\"nav-text\">서사 연감</span></button>\n    <div class=\"nav-label\">관리</div>\n    <button class=\"nav-item\" data-go=\"settings\" data-tab=\"top\"><i data-i=\"gear\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>사서 모드</b><span id=\"foot-delivery\"></span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  <!-- ===== 열람대 ===== -->\n  <section class=\"page is-active\" data-page=\"desk\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Reading Desk</div><h1 class=\"page-title\">현재 열람대</h1><p class=\"page-desc\">이번 턴에 읽은 기록과 다음 응답에 전달되는 자료를 한 펼침면에서 봅니다.</p></div>\n      <div class=\"page-actions\"><button class=\"btn btn--primary\" data-open=\"dlg-range\"><i data-i=\"pen\"></i>기억 생성 구간 선택</button></div></div>\n\n    </section>\n\n  <!-- ===== 기억 서가 ===== -->\n  <section class=\"page\" data-page=\"memory\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Canonical Archive</div><h1 class=\"page-title\">기억 서가</h1><p class=\"page-desc\">기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" id=\"seg-mode\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 인물 카드함 ===== -->\n  <section class=\"page\" data-page=\"people\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Character Introduction</div><h1 class=\"page-title\">인물 카드함</h1><p class=\"page-desc\">인물을 고르면 소개·선호·경계·현재 상황·관계·지식·소속을 한 장에서 봅니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 세계 도감 ===== -->\n  <section class=\"page\" data-page=\"world\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">World Reference</div><h1 class=\"page-title\">세계 도감</h1><p class=\"page-desc\">지금 장면에 작동하는 장소·세력·규칙·사물·환경·조건을 세계관 소개 페이지처럼 읽고, 서로 연결된 항목으로 이동합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 서사 연감 ===== -->\n  <section class=\"page\" data-page=\"story\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Narrative Almanac</div><h1 class=\"page-title\">서사 연감</h1><p class=\"page-desc\">확인된 사건과 아직 남은 과제를 구분해 목차처럼 읽습니다. 방향 정보는 현재 사실이 아닙니다.</p></div></div>\n    </section>\n\n  <!-- ===== 설정 ===== -->\n  <section class=\"page\" data-page=\"settings\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings Room</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">목록은 하나, 저장 버튼도 하나입니다. 바꾼 값은 아래 바에서 한 번에 저장합니다.</p></div></div>\n    </section>\n\n  </div>\n\n  <footer class=\"savebar\" id=\"savebar-settings\" hidden>\n    <div class=\"savebar__copy\"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert disabled>되돌리기</button><button class=\"btn btn--primary\" data-save disabled>설정 저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIBRA 하단 메뉴\"></nav>\n\n  <!-- 빠른 설정 드로어: 탭 2개(응답/기억), 저장 1곳 -->\n  <!-- 근거 서랍: 원문 → 정본 사실 → 상태 연결 → 로컬 적용 영수증 → 현재 필드 -->\n  <!-- 버전 · 실행 기록 -->\n  </div>\n\n  "
+
+  // Exact source styles from the approved LIBRA mockup (suite.css, themes.css, and libra.html).
+  const LIBRA_APPROVED_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* LIBRA 전용: 책 컨셉 (페이지 / 책갈피 / 주석 / 색인) — 모두 불투명 면 + 1px 선 */\n.spread{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--border2);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.leaf{padding:26px 28px 28px;min-width:0}\n.leaf+.leaf{border-left:1px solid var(--border2);background:linear-gradient(90deg,var(--surface3) 0,var(--surface) 22px)}\n.leaf h2{margin:4px 0 12px;font:700 23px/1.35 var(--font-display)}\n.leaf .lead{font:15px/1.9 var(--font-display);color:var(--text)}\n.leaf .lead.muted{color:var(--text2)}\n.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0}\n.fact{padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.fact b{display:block;font:700 22px/1.2 var(--font-display);color:var(--accent-ink)}\n.fact span{font-size:12px;color:var(--text2)}\n.anno{padding:14px 16px;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--r-sm);background:var(--surface2)}\n.anno+.anno{margin-top:12px}\n.anno__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.anno__kicker{font:700 11.5px/1 var(--font-mono);letter-spacing:.12em;color:var(--accent)}\n.anno h3{margin:4px 0 6px;font:700 15px/1.4 var(--font-display)}\n.anno p{margin:0;font-size:13px;color:var(--text2)}\n.anno--final{border-left-color:var(--ok)}\n.linkbtn{border:0;background:none;color:var(--accent-ink);font:650 12.5px var(--font-sans);text-decoration:underline;text-underline-offset:3px;padding:2px 0}\n.bookmark{display:inline-block;width:11px;height:20px;background:#8c3b32;clip-path:polygon(0 0,100% 0,100% 100%,50% 76%,0 100%);vertical-align:-4px;margin-right:6px}\n.rail{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);overflow:hidden;min-height:0}\n.rail__search{padding:10px;border-bottom:1px solid var(--border)}\n.rail__list{overflow:auto;padding:8px;display:grid;gap:3px;align-content:start;max-height:520px}\n.rail__ep{padding:10px 8px 4px;font:700 11.5px var(--font-mono);letter-spacing:.14em;color:var(--text3)}\n.chapter{display:grid;gap:2px;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;text-align:left;color:var(--text)}\n.chapter:hover{background:var(--surface2)}\n.chapter.is-on{background:var(--accent-soft);border-color:var(--accent-line);box-shadow:inset 3px 0 0 var(--accent)}\n.chapter small{font:11.5px var(--font-mono);color:var(--accent-ink)}\n.chapter b{font:650 13px/1.5 var(--font-display)}\n.chapter span{font-size:12px;color:var(--text3)}\n.sheet-page{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);padding:30px clamp(20px,4vw,48px)}\n.sheet-page h2{margin:6px 0 4px;font:700 28px/1.4 var(--font-display)}\n.sheet-page .deck{font:italic 14px/1.8 var(--font-display);color:var(--text2);margin:0 0 20px}\n.sheet-page .prose{font:15.5px/2 var(--font-display);max-width:46em}\n.margin-notes{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:26px;padding-top:18px;border-top:1px solid var(--border)}\n.margin-notes h3{margin:0 0 8px;font:700 11.5px var(--font-mono);letter-spacing:.1em;color:var(--accent)}\n.pager{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);color:var(--text3);font-size:12px}\n.manage-only{display:none}[data-mode=manage] .manage-only{display:flex}[data-mode=manage] .read-only{display:none}\n.profile dt{font-weight:650;color:var(--accent-ink)}\n.rel{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.rel__arrow{color:var(--accent);font-weight:800}\n.settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}\n.setnav{display:grid;gap:3px;position:sticky;top:0}\n.setnav button{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:center;text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.setnav button .ic{grid-row:span 2;color:var(--text3)}\n.setnav button b{font-size:13.5px}.setnav button small{font-size:12px;color:var(--text3)}\n.setnav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.setnav button[aria-selected=true] .ic{color:var(--accent)}\n.preset-meter{display:flex;gap:3px;margin-top:6px}.preset-meter i{width:18px;height:6px;border-radius:3px;background:var(--border2)}.choice.is-on .preset-meter i.on{background:var(--accent)}.preset-meter i.on{background:var(--text3)}\n@container app (max-width:900px){\n  .spread{grid-template-columns:1fr}.leaf+.leaf{border-left:0;border-top:1px solid var(--border2);background:var(--surface)}\n  .facts{grid-template-columns:repeat(2,1fr)}\n  .settings-layout{grid-template-columns:1fr}.setnav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}\n  .setnav button small{display:none}.setnav button{grid-template-columns:auto}.setnav button .ic{grid-row:auto;display:none}\n  .margin-notes{grid-template-columns:1fr}\n  .rail__list{max-height:230px}\n}\n.manage-block{display:none}[data-mode=manage] .manage-block{display:block}\n.detail-pane[hidden]{display:none}\n.seglist{display:grid;gap:0;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.segrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border)}\n.segrow:first-child{border-top:0}.segrow b{font-size:13.5px}.segrow small{display:block;color:var(--text3);font-size:12.5px}\n.segrow input{width:20px;height:20px;accent-color:var(--accent)}\n.segrow[aria-disabled=true]{background:var(--surface2);color:var(--text3)}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.chain{display:grid;gap:0;border-left:3px solid var(--accent);margin-left:8px}\n.chain>div{position:relative;padding:8px 0 8px 16px}.chain>div::before{content:\"\";position:absolute;left:-8px;top:14px;width:11px;height:11px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.chain b{font-size:13px}.chain small{display:block;color:var(--text3);font-size:12.5px}\n.three-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.three-status>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}.three-status b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.act-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.act-card b{font-size:14px}.act-card small{display:block;color:var(--text3);font-size:12.5px;margin-top:2px}\n.cardlet.is-focus{outline:3px solid var(--accent);outline-offset:2px}\n.margin-form{display:grid;gap:10px}\n@container app (max-width:640px){.three-status{grid-template-columns:1fr}.cost-table{grid-template-columns:1fr}.act-card{grid-template-columns:1fr}}\n";
+
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
     const style = document.createElement('style');
     style.id = 'sga-rp-gui-style';
-    style.textContent = `
-:root{color-scheme:normal;--sga-vh:100vh;--sga-bg:#090d14;--sga-surface:#111827;--sga-surface2:#172033;--sga-surface3:#202b40;--sga-line:#2b3850;--sga-text:#eef2ff;--sga-muted:#9aa8bf;--sga-accent:#7c9cff;--sga-good:#4ade80;--sga-warn:#fbbf24;--sga-danger:#fb7185}
-    /* Host theme mapping for the technical surfaces (the .sga-* shell, settings and
-       diagnostics). Only active once __memorySuiteTheme has published a complete palette.
-       The Book reader's paper aesthetic below is a deliberate design and is NOT remapped --
-       its colours are coordinated across dozens of rules, so following the host theme there
-       would mean redesigning the reader rather than syncing it. */
-    :root[data-risu-theme-colors="1"]{
-      --sga-bg:var(--risu-theme-bgcolor);
-      --sga-surface:color-mix(in srgb,var(--risu-theme-bgcolor) 94%,var(--risu-theme-textcolor));
-      --sga-surface2:color-mix(in srgb,var(--risu-theme-bgcolor) 89%,var(--risu-theme-textcolor));
-      --sga-surface3:color-mix(in srgb,var(--risu-theme-bgcolor) 83%,var(--risu-theme-textcolor));
-      --sga-line:color-mix(in srgb,var(--risu-theme-bgcolor) 77%,var(--risu-theme-textcolor));
-      --sga-text:var(--risu-theme-textcolor);
-      --sga-muted:var(--risu-theme-textcolor2);
-      --sga-accent:color-mix(in srgb,#7c9cff 84%,var(--risu-theme-textcolor));
-      --sga-danger:var(--risu-theme-draculared);
-    }
-    :root[data-risu-theme-type="light"]{color-scheme:light}
-    :root[data-risu-theme-type="dark"]{color-scheme:dark}
-    :root[data-risu-theme-colors="1"] .sga-app{color-scheme:inherit;background:var(--sga-bg);border-color:var(--sga-line)}
-
-@supports (height:100dvh){:root{--sga-vh:100dvh}}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:transparent;color:var(--sga-text);font-family:Inter,Pretendard,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit}
-#sga-rp-gui-root{min-height:var(--sga-vh);background:var(--sga-bg)}
-.sga-app{min-height:var(--sga-vh)}.sga-top{position:sticky;top:0;z-index:7;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-bottom:1px solid var(--sga-line);background:#090d14;user-select:auto;-webkit-user-select:auto}.sga-top button{cursor:pointer}
-.sga-brand h1{font-size:20px;line-height:1.2;margin:0}.sga-brand p{margin:5px 0 0;color:var(--sga-muted);font-size:12px}.sga-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.sga-dirty{font-size:11px;color:var(--sga-muted);padding:6px 9px;border:1px solid var(--sga-line);border-radius:999px}.sga-dirty[data-dirty="true"]{color:#fde68a;border-color:#8a6b1e;background:rgba(251,191,36,.08)}
-.sga-tabs{position:sticky;top:77px;z-index:5;display:flex;gap:7px;overflow:auto;padding:10px 24px;border-bottom:1px solid var(--sga-line);background:#090d14;scrollbar-width:thin}.sga-tab{white-space:nowrap;border:1px solid var(--sga-line);border-radius:999px;background:var(--sga-surface);color:#cbd5e1;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer}.sga-tab:hover{background:var(--sga-surface2)}.sga-tab[data-active="true"]{background:var(--sga-text);border-color:var(--sga-text);color:#09101d}.sga-tab .sga-tab-short{display:none}
-.sga-main{max-width:1320px;margin:0 auto;padding:22px 24px 80px}.sga-status{min-height:24px;margin-bottom:10px;padding:0 2px;color:#bbf7d0;font-size:12px}.sga-status.err{color:#fecdd3}
-.sga-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sga-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-card{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.92),rgba(17,24,39,.92));padding:16px;box-shadow:0 18px 45px rgba(0,0,0,.13)}.libra-home-default-route{margin:14px 0 12px;padding:12px 14px;border:1px solid rgba(124,156,255,.2);border-radius:14px;background:rgba(8,13,22,.72)}.libra-home-default-route .sga-field{margin:0}.libra-home-pipeline-grid{display:grid;grid-template-columns:1fr;gap:10px}.libra-response-mode-grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}.libra-response-mode-grid .libra-home-stage-card{min-width:0;min-height:122px}.libra-home-stage-card{border:1px solid rgba(74,222,128,.38);border-radius:16px;background:linear-gradient(135deg,rgba(12,35,39,.72),rgba(8,18,28,.92));padding:14px 16px;transition:border-color .16s ease,background .16s ease}.libra-home-stage-card.active{border-color:rgba(74,222,128,.88);background:linear-gradient(135deg,rgba(20,83,63,.38),rgba(8,28,34,.95));box-shadow:0 0 0 2px rgba(74,222,128,.08)}.libra-home-stage-card .sga-agent-head{margin-bottom:10px}.libra-home-stage-title{display:flex;min-width:0;flex-direction:column;gap:4px}.libra-home-stage-title strong{font-size:13px}.libra-home-stage-title span{color:var(--sga-muted);font-size:11px;line-height:1.5}.libra-home-stage-model{margin-top:7px}.libra-home-stage-card .sga-select{min-height:44px}.sga-card.wide{grid-column:1/-1}.sga-card h2,.sga-card h3{margin:0 0 8px}.sga-card h2{font-size:17px}.sga-card h3{font-size:14px}.sga-note{color:var(--sga-muted);font-size:12px;line-height:1.55}.sga-section-title{margin-bottom:14px}.sga-section-title h2{margin:0;font-size:18px}.sga-section-title p{margin:6px 0 0;color:var(--sga-muted);font-size:12px}
-.libra-response-family-grid,.libra-response-submode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.libra-response-family-grid{margin-top:12px}.libra-response-family-card{min-height:104px;border-color:rgba(96,165,250,.48);background:linear-gradient(145deg,rgba(25,65,115,.38),rgba(13,22,39,.97));color:var(--sga-text)}.libra-response-family-card:hover{border-color:rgba(125,211,252,.74);background:linear-gradient(145deg,rgba(30,86,142,.48),rgba(15,26,47,.98))}.libra-response-family-card.active{border-color:#60a5fa;background:linear-gradient(145deg,rgba(37,99,235,.38),rgba(30,41,78,.98));box-shadow:0 0 0 2px rgba(96,165,250,.13)}.libra-response-mode-card{min-height:104px;border-color:rgba(139,92,246,.5);background:linear-gradient(145deg,rgba(66,45,112,.42),rgba(16,20,38,.96));color:var(--sga-text)}.libra-response-mode-card:hover{border-color:rgba(167,139,250,.78);background:linear-gradient(145deg,rgba(83,55,142,.5),rgba(18,23,43,.98))}.libra-response-mode-card.active{border-color:#a78bfa;background:linear-gradient(145deg,rgba(91,61,170,.58),rgba(24,29,58,.98));box-shadow:0 0 0 2px rgba(139,92,246,.13)}
-.libra-home-quick-stage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-home-quick-stage-card{min-width:0}.libra-home-quick-stage-card.off{border-color:rgba(100,116,139,.3);background:linear-gradient(135deg,rgba(15,23,38,.66),rgba(8,13,22,.9))}.libra-home-quick-stage-card.off .sga-agent-head{opacity:.78}.libra-home-quick-stage-actions{display:grid;grid-template-columns:minmax(128px,.42fr) minmax(190px,.58fr);align-items:end;gap:10px}.libra-home-quick-stage-actions>.sga-btn{min-height:44px}.libra-home-quick-stage-actions>.sga-field{margin:0}
-.libra-substage-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:14px 2px 7px}.libra-substage-heading strong{color:#d7deed;font-size:11px}.libra-substage-heading span{color:#71819a;font-size:9px}.libra-substage-grid{gap:7px;padding:9px;border:1px solid rgba(100,116,139,.18);border-radius:14px;background:rgba(4,9,17,.48)}
-.libra-substage-card{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(340px,1.18fr);align-items:start;gap:14px;min-height:0;padding:12px 14px;border:1px solid rgba(100,116,139,.27);border-left:3px solid #475569;border-radius:11px;background:linear-gradient(180deg,rgba(15,23,38,.9),rgba(9,15,25,.92));box-shadow:none}.libra-substage-card.on{border-left-color:#3ddc84}.libra-substage-card.off{border-left-color:#475569;background:rgba(9,15,25,.72)}.libra-substage-card.active{border-color:rgba(74,222,128,.38);border-left-color:#4ade80;background:rgba(15,36,35,.72);box-shadow:none}.libra-substage-left,.libra-substage-right{min-width:0}.libra-substage-left{display:flex;flex-direction:column;gap:10px}.libra-substage-left>.sga-agent-head{margin:0}.libra-substage-card.off .libra-substage-left>.sga-agent-head{opacity:.72}.libra-substage-controls{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}.libra-substage-controls>.sga-check{flex:1 1 150px;min-width:0;min-height:38px;margin:0;padding:5px 0}.libra-substage-order{display:flex;flex:0 0 auto;gap:6px;margin-left:auto}.libra-substage-order .sga-btn{min-width:64px;min-height:36px;padding:7px 10px}.libra-substage-right>.sga-field{margin:0 0 8px}.libra-substage-right>.sga-advanced{margin-top:8px}.libra-substage-card .libra-home-stage-title{gap:2px}.libra-substage-card .libra-home-stage-title strong{font-size:12px}.libra-substage-card .libra-home-stage-title span{font-size:10px;line-height:1.35}.libra-substage-card .sga-badge{padding:3px 7px;font-size:9px}.libra-inline-transfer-choice{margin-top:14px;padding:14px;border:1px solid rgba(124,156,255,.18);border-radius:14px;background:rgba(7,12,21,.5)}.libra-inline-transfer-head{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.libra-inline-transfer-head strong{font-size:12px}.libra-inline-transfer-head span{color:var(--sga-muted);font-size:10px;line-height:1.45}
-.sga-stat{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sga-stat-value{font-size:28px;font-weight:900}.sga-stat-label{color:var(--sga-muted);font-size:12px}.sga-badge{display:inline-flex;align-items:center;border:1px solid var(--sga-line);border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}.sga-badge.good{color:#bbf7d0;border-color:#166534;background:rgba(34,197,94,.08)}.sga-badge.warn{color:#fde68a;border-color:#854d0e;background:rgba(251,191,36,.08)}.sga-badge.danger{color:#fecdd3;border-color:#9f1239;background:rgba(244,63,94,.09)}.sga-badge.off{color:#cbd5e1}.sga-flow{display:flex;align-items:stretch;gap:8px;overflow:auto;padding:8px 0}.sga-flow-node{min-width:150px;flex:1;border:1px solid var(--sga-line);border-radius:13px;padding:12px;background:#0d1421}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node span{display:block;color:var(--sga-muted);font-size:11px;margin-top:5px;line-height:1.4}.sga-arrow{display:flex;align-items:center;color:var(--sga-muted)}
-.sga-count-badge{align-self:flex-start;flex:0 0 auto;min-width:max-content;justify-content:center;white-space:nowrap;line-height:1.2;padding:6px 10px}
-.sga-split{display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:14px}.sga-list{border:1px solid var(--sga-line);border-radius:14px;background:#0d1421;overflow:hidden}.sga-list-head{display:flex;gap:7px;padding:10px;border-bottom:1px solid var(--sga-line)}.sga-list-items{max-height:620px;overflow:auto;padding:8px}.sga-list-item{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;color:var(--sga-text);padding:10px;cursor:pointer}.sga-list-item:hover{background:var(--sga-surface2)}.sga-list-item[data-selected="true"]{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.45)}.sga-list-item strong{display:block;font-size:12px}.sga-list-item span{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sga-field{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}.sga-field label{font-size:11px;font-weight:800;color:#cbd5e1}.sga-field small{color:var(--sga-muted);font-size:10px;line-height:1.45}.sga-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sga-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.sga-input,.sga-select,.sga-textarea{width:100%;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:9px 10px;font-size:12px;outline:none}.sga-input:focus,.sga-select:focus,.sga-textarea:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}.sga-textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}.sga-textarea.tall{min-height:310px}.sga-textarea.preview{min-height:270px;color:#cbd5e1;background:#060a11}.sga-check{display:flex;align-items:center;gap:8px;font-size:12px;color:#dbe4f3}.sga-check input{width:17px;height:17px;accent-color:var(--sga-accent)}
-.sga-actions{display:flex;gap:8px;flex-wrap:wrap}.sga-btn{border:1px solid var(--sga-line);border-radius:10px;background:var(--sga-surface3);color:var(--sga-text);padding:8px 11px;font-size:11px;font-weight:800;cursor:pointer}.sga-btn:hover{filter:brightness(1.15)}.sga-btn.primary{background:#4f67d8;border-color:#6f86f5}.sga-btn.good{background:#165c34;border-color:#25894f}.sga-btn.danger{background:#641f31;border-color:#9f3450}.sga-btn.ghost{background:transparent}.sga-btn:disabled{opacity:.45;cursor:not-allowed}
-.canonical-job-chip{border-color:#7c9cff!important;background:#24345f!important}.canonical-job-overlay{position:fixed;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,14,.72)}.canonical-job-window{width:min(1180px,calc(100vw - 32px));max-height:calc(var(--sga-vh) - 40px);overflow:auto;border:1px solid #526893;border-radius:18px;background:#0b111d;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.58)}.canonical-job-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.canonical-job-head strong,.canonical-job-head small{display:block}.canonical-job-head small,.canonical-job-meta{color:var(--sga-muted);font-size:11px}.canonical-job-message{margin:14px 0 8px;font-size:13px}.canonical-job-progress{height:9px;overflow:hidden;border-radius:999px;background:#202b40}.canonical-job-progress i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#5d72e8,#4ade80);transition:width .2s ease}.canonical-job-meta{margin:8px 0 14px}.canonical-compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.canonical-compare-grid section{min-width:0;border:1px solid var(--sga-line);border-radius:13px;padding:12px;background:#080d16}.canonical-compare-grid pre{max-height:30vh;overflow:auto;white-space:pre-wrap;color:#dce6f6;font-size:11px}.canonical-job-edit{display:flex;flex-direction:column;gap:10px}.canonical-choice-actions{justify-content:flex-end;margin-top:14px}@media(max-width:760px){.canonical-compare-grid{grid-template-columns:1fr}.canonical-job-overlay{padding:8px}.canonical-job-window{width:100%;max-height:calc(var(--sga-vh) - 16px)}}
-.sga-agent{display:flex;flex-direction:column;gap:11px;min-height:225px}.sga-agent-head{display:flex;justify-content:space-between;gap:10px}.sga-agent-index{display:inline-flex;width:25px;height:25px;align-items:center;justify-content:center;border-radius:8px;background:rgba(124,156,255,.14);color:#c7d2fe;font-size:11px;font-weight:900}.sga-agent-title{display:flex;align-items:center;gap:8px}.sga-agent-title h3{margin:0}.sga-agent-desc{color:var(--sga-muted);font-size:11px;line-height:1.5;min-height:48px}.sga-prompt-mode{margin-left:auto}
-.sga-callout{border:1px solid #725815;border-radius:12px;background:rgba(251,191,36,.07);color:#fde68a;padding:11px;font-size:11px;line-height:1.5}.sga-callout.good{border-color:#166534;background:rgba(34,197,94,.07);color:#bbf7d0}.sga-callout.danger{border-color:#881337;background:rgba(244,63,94,.07);color:#fecdd3}.sga-divider{height:1px;background:var(--sga-line);margin:14px 0}.sga-code{white-space:pre-wrap;word-break:break-word;border:1px solid var(--sga-line);border-radius:12px;background:#060a11;padding:12px;color:#cbd5e1;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:430px;overflow:auto}.sga-hidden{display:none!important}
-.sga-phase{border:1px solid var(--sga-line);border-radius:16px;background:linear-gradient(180deg,rgba(23,32,51,.55),rgba(13,20,33,.55));padding:14px 14px 12px}.sga-phase+.sga-phase{margin-top:12px}.sga-phase-label{display:flex;align-items:center;gap:9px;margin-bottom:11px}.sga-phase-label .sga-phase-tag{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#09101d;background:var(--sga-text);border-radius:999px;padding:3px 9px}.sga-phase-label .sga-phase-title{font-size:13px;font-weight:800;color:#dbe4f3}.sga-phase-label .sga-phase-sub{font-size:11px;color:var(--sga-muted);margin-left:auto}
-.sga-flow-chain{display:flex;align-items:stretch;gap:0;overflow:auto;padding:4px 0}.sga-flow-chain .sga-flow-node{min-width:158px;flex:1;margin:0 6px}.sga-flow-chain .sga-arrow{font-size:18px;padding:0 2px;opacity:.65}.sga-flow-node{position:relative;border:1px solid var(--sga-line);border-radius:13px;padding:11px 12px;background:#0d1421;transition:border-color .15s,background .15s}.sga-flow-node .sga-flow-status{position:absolute;top:9px;right:9px}.sga-flow-node.state-ok{border-color:rgba(74,222,128,.55);background:rgba(74,222,128,.06)}.sga-flow-node.state-fallback{border-color:rgba(251,113,133,.55);background:rgba(251,113,133,.06)}.sga-flow-node.state-skip{border-color:rgba(154,168,191,.35);background:rgba(154,168,191,.04)}.sga-flow-node.state-run{border-color:rgba(124,156,255,.65);background:rgba(124,156,255,.08)}.sga-flow-node.state-run::after{content:'';position:absolute;inset:-2px;border-radius:15px;border:1.5px solid rgba(124,156,255,.55);animation:sga-pulse 1.4s ease-in-out infinite;pointer-events:none}@keyframes sga-pulse{0%,100%{opacity:.25}50%{opacity:.85}}.sga-flow-node.dim{opacity:.42}.sga-flow-node strong{display:block;font-size:12px}.sga-flow-node .sga-flow-meta{display:block;color:var(--sga-muted);font-size:10px;margin-top:4px;line-height:1.4}.sga-flow-node .sga-flow-elapsed{display:block;color:#7c9cff;font-size:10px;margin-top:3px;font-variant-numeric:tabular-nums}
-.sga-handoff{display:flex;align-items:center;gap:8px;margin:-2px 0;padding:0 20px;color:var(--sga-muted);font-size:10px;font-weight:700}.sga-handoff::before{content:'';width:2px;height:14px;background:linear-gradient(180deg,transparent,var(--sga-line));border-radius:2px}.sga-handoff span{padding:2px 7px;border:1px dashed var(--sga-line);border-radius:999px;white-space:nowrap}
-.sga-advanced{border:1px solid var(--sga-line);border-radius:12px;background:#080d16;margin-top:12px}.sga-advanced>summary{cursor:pointer;list-style:none;padding:10px 13px;font-size:11px;font-weight:800;color:#cbd5e1;display:flex;align-items:center;gap:7px}.sga-advanced>summary::-webkit-details-marker{display:none}.sga-advanced>summary::before{content:'▸';transition:transform .15s;color:var(--sga-muted)}.sga-advanced[open]>summary::before{transform:rotate(90deg)}.sga-advanced>summary .sga-advanced-hint{margin-left:auto;color:var(--sga-muted);font-weight:600;font-size:10px}.sga-advanced-body{padding:0 13px 13px}
-.sga-summary-panel{border:1px solid var(--sga-line);border-radius:14px;background:rgba(13,20,33,.6);padding:12px 14px;margin-bottom:14px;display:flex;flex-direction:column;gap:6px}.sga-summary-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:0}.sga-summary-row+.sga-summary-row{margin-top:4px}.sga-summary-label{font-size:10px;font-weight:900;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em;margin-right:2px}.sga-summary-empty{color:var(--sga-muted);font-size:11px;font-style:italic}.sga-summary-pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--sga-line);border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700;background:#0d1421}.sga-summary-pill .sga-summary-name{color:var(--sga-text)}.sga-summary-pill .sga-summary-state{font-size:10px;font-weight:900;padding:1px 6px;border-radius:999px;color:#cbd5e1;background:rgba(154,168,191,.12)}.sga-summary-pill.ok{border-color:rgba(34,197,94,.3)}.sga-summary-pill.ok .sga-summary-state{color:#bbf7d0;background:rgba(34,197,94,.12)}.sga-summary-pill.fallback{border-color:rgba(251,191,36,.3)}.sga-summary-pill.fallback .sga-summary-state{color:#fde68a;background:rgba(251,191,36,.12)}.sga-summary-pill.skip{border-color:rgba(244,63,94,.3)}.sga-summary-pill.skip .sga-summary-state{color:#fecdd3;background:rgba(244,63,94,.12)}.sga-summary-elapsed{color:#7c9cff;font-variant-numeric:tabular-nums;font-size:10px}.sga-inflight{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#c7d2fe;border:1px solid rgba(124,156,255,.5);border-radius:999px;padding:4px 9px;background:rgba(124,156,255,.08);align-self:flex-start}.sga-inflight::before{content:'';width:7px;height:7px;border-radius:50%;background:#7c9cff;animation:sga-pulse 1.2s ease-in-out infinite}
-.sga-summary-pill.skip{border-color:rgba(148,163,184,.24)}.sga-summary-pill.skip .sga-summary-state{color:#cbd5e1;background:rgba(148,163,184,.11)}.sga-summary-pill.error{border-color:rgba(244,63,94,.3)}.sga-summary-pill.error .sga-summary-state{color:#fecdd3;background:rgba(244,63,94,.12)}
-.sga-agent-run-meta{display:flex;align-items:flex-start;justify-content:flex-end;gap:6px;flex-wrap:wrap;min-width:150px}.sga-mini-badge{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--sga-line);border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;line-height:1.2;background:#080d16;color:#cbd5e1;white-space:nowrap}.sga-mini-badge.good{color:#bbf7d0;border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.08)}.sga-mini-badge.warn{color:#fde68a;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.08)}.sga-mini-badge.danger{color:#fecdd3;border-color:rgba(251,113,133,.45);background:rgba(251,113,133,.08)}.sga-mini-badge.run{color:#c7d2fe;border-color:rgba(124,156,255,.5);background:rgba(124,156,255,.08)}.sga-mini-badge.off{color:var(--sga-muted);background:rgba(154,168,191,.05)}.sga-mini-badge .sga-mini-time{font-variant-numeric:tabular-nums;color:#93c5fd}.sga-stage-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}.sga-stage-controls{display:flex;flex-direction:column;gap:14px;min-width:0}.sga-stage-result{order:-1;width:100%;min-width:0;overflow:hidden;border:1px solid var(--sga-line);border-radius:13px;background:rgba(8,13,22,.66);padding:12px}.sga-stage-result-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.sga-stage-result-title{font-size:11px;font-weight:900;color:#dbe4f3}.sga-stage-result-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;min-width:0}.sga-result-row{min-width:0;margin:0;padding:9px 10px;border:1px solid rgba(43,56,80,.62);border-radius:11px;background:rgba(6,10,17,.56)}.sga-result-row.wide{grid-column:1/-1}.sga-result-label{display:block;font-size:9px;font-weight:900;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}.sga-result-value{font-size:11px;line-height:1.55;color:#dbe4f3;overflow-wrap:anywhere}.sga-result-code{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(43,56,80,.72);border-radius:10px;background:#060a11;padding:9px;color:#cbd5e1;font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:210px;overflow:auto}.sga-result-empty{grid-column:1/-1;color:var(--sga-muted);font-size:11px;line-height:1.5}.sga-stage-result details{margin-top:10px;border-top:1px dashed var(--sga-line);padding-top:9px}.sga-stage-result summary{cursor:pointer;color:#c7d2fe;font-size:10px;font-weight:800}.sga-stage-result details .sga-result-code{margin-top:7px;max-height:180px}
-.sga-list-search{margin:8px;border:1px solid var(--sga-line);border-radius:10px;background:#080d16;color:var(--sga-text);padding:8px 10px;font-size:12px;outline:none;width:calc(100% - 16px)}.sga-list-search:focus{border-color:var(--sga-accent);box-shadow:0 0 0 3px rgba(124,156,255,.12)}
-.sga-stack{display:flex;flex-direction:column;gap:0}.sga-stack .sga-card.sga-agent{margin:0}.sga-stack .sga-card.sga-agent+.sga-handoff{margin:0;padding:0 20px}.sga-stack .sga-card.sga-agent.dim{opacity:.5}
-.sga-row4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.sga-provider-editor{min-width:0}.sga-provider-panels{display:flex;flex-direction:column;gap:12px}.sga-provider-panel{border:1px solid var(--sga-line);border-radius:14px;background:rgba(8,13,22,.7);padding:14px}.sga-provider-panel.global-default{margin-bottom:14px;border-color:rgba(124,156,255,.38);background:linear-gradient(135deg,rgba(76,87,180,.12),rgba(8,13,22,.76))}.sga-provider-panel.vertex{border-color:rgba(124,156,255,.5);background:rgba(124,156,255,.055)}.sga-provider-panel.reasoning{border-color:rgba(74,222,128,.32)}.sga-provider-panel.flex{border-color:rgba(251,191,36,.36);background:rgba(251,191,36,.035)}.sga-provider-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.sga-provider-panel-head h3{margin:0;font-size:14px}.sga-provider-panel-head p{margin:4px 0 0;color:var(--sga-muted);font-size:11px;line-height:1.5}.sga-provider-actions{margin-top:14px;padding-top:14px;border-top:1px solid var(--sga-line)}.sga-provider-note-box{display:flex;flex-direction:column;gap:4px;border:1px solid var(--sga-line);border-radius:11px;background:#080d16;padding:10px 12px;min-width:0}.sga-provider-note-box strong{font-size:10px;color:var(--sga-muted);text-transform:uppercase;letter-spacing:.04em}.sga-provider-note-box span{font-size:12px;color:#dbe4f3;overflow-wrap:anywhere}
-.sga-flow-page{display:flex;flex-direction:column;gap:24px}.sga-flow-page-title{margin-bottom:-8px}.sga-flow-overview{display:grid;grid-template-columns:repeat(9,minmax(115px,1fr));gap:7px;overflow:auto;padding:2px 0 8px;scrollbar-width:thin}.sga-flow-mini{position:relative;border:1px solid rgba(74,222,128,.35);border-radius:12px;background:rgba(74,222,128,.045);padding:9px 10px;min-width:115px}.sga-flow-mini:not(:last-child)::after{content:'›';position:absolute;right:-7px;top:50%;transform:translateY(-50%);z-index:2;color:var(--sga-muted);font-size:16px}.sga-flow-mini.main{border-color:rgba(124,156,255,.58);background:rgba(124,156,255,.08)}.sga-flow-mini.analysis{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.06)}.sga-flow-mini.off{opacity:.42;border-color:var(--sga-line);background:#080d16}.sga-flow-mini strong{display:block;font-size:10px;white-space:nowrap}.sga-flow-mini span{display:block;margin-top:4px;color:var(--sga-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-flow-section{scroll-margin-top:190px}.sga-flow-section+.sga-flow-section{margin-top:4px}.sga-flow-major-handoff{justify-content:center;margin:-10px 0;padding:0}.sga-flow-major-handoff::before{height:28px}.sga-flow-major-handoff span{font-size:11px;color:#c7d2fe;border-color:rgba(124,156,255,.45);background:rgba(124,156,255,.05)}.sga-flow-handoff{justify-content:center}.sga-debug-fold{margin-top:2px}.sga-debug-fold>.sga-advanced-body{padding-top:4px}
-.sga-agent-expanded{min-height:0;padding:18px;gap:14px}.sga-agent-desc.compact{min-height:0}.sga-agent-expanded.dim{opacity:.52}.sga-analysis-agent{border-color:rgba(251,191,36,.36);background:rgba(251,191,36,.035)}.sga-stage-primary{display:grid;grid-template-columns:minmax(150px,.65fr) minmax(220px,1.2fr) minmax(220px,1.2fr);gap:12px;align-items:start;border-top:1px solid var(--sga-line);padding-top:13px}.sga-stage-primary>.sga-check{padding-top:27px}.sga-stage-detail{border:1px solid var(--sga-line);border-radius:13px;background:rgba(8,13,22,.62);padding:13px}.sga-stage-detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}.sga-stage-detail-head strong{font-size:12px}.sga-stage-detail-head span{font-size:10px;color:var(--sga-muted)}.sga-reference-box{border-top:1px dashed var(--sga-line);margin-top:2px;padding-top:12px}.sga-reference-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.sga-reference-head strong{font-size:11px}.sga-reference-head span{font-size:10px;color:var(--sga-muted)}.sga-reference-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 12px;margin-bottom:8px}.sga-prompt-builtin{display:flex;flex-direction:column;gap:2px}.sga-textarea.stage-prompt{min-height:230px}.sga-main-response-card{border-color:rgba(124,156,255,.56);background:linear-gradient(180deg,rgba(37,51,85,.9),rgba(17,24,39,.94))}.sga-agent-index.main{background:rgba(124,156,255,.28);color:#eef2ff}.sga-main-response-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:3px 0 10px}.sga-runtime-legacy{margin-top:14px}
-@media(max-width:1100px){.sga-stage-layout{grid-template-columns:1fr}.sga-agent-run-meta{justify-content:flex-start}}
-.libra-recall-viewer{overflow:hidden}.libra-recall-head{align-items:flex-start}.libra-recall-query{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;border:1px solid var(--sga-line);border-radius:12px;background:#080d16;padding:10px 12px}.libra-recall-query span{color:var(--sga-muted);font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.libra-recall-query p{margin:0;color:#dbe4f3;font-size:11px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.libra-recall-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.libra-recall-metric{display:flex;flex-direction:column;gap:3px;border:1px solid rgba(43,56,80,.72);border-radius:10px;background:rgba(6,10,17,.56);padding:8px 10px}.libra-recall-metric span{color:var(--sga-muted);font-size:9px;font-weight:850}.libra-recall-metric strong{font-size:14px;font-variant-numeric:tabular-nums}.libra-recall-list,.libra-recall-subsection{display:flex;flex-direction:column;gap:8px}.libra-recall-subsection>h3{margin:6px 0 0;font-size:12px}.libra-recall-row{border:1px solid var(--sga-line);border-radius:12px;background:rgba(8,13,22,.72);overflow:hidden}.libra-recall-row.injected{border-color:rgba(74,222,128,.28)}.libra-recall-row.dropped{opacity:.72;border-style:dashed}.libra-recall-row-head{display:grid;grid-template-columns:auto minmax(130px,1fr) auto minmax(80px,.7fr);align-items:center;gap:8px;cursor:pointer;padding:10px 12px;list-style:none}.libra-recall-row-head::-webkit-details-marker{display:none}.libra-recall-row-labels{overflow:hidden;color:var(--sga-muted);font-size:10px;text-align:right;text-overflow:ellipsis;white-space:nowrap}.libra-recall-row-meta{padding:0 12px 8px;color:#91a2bd;font-size:10px;overflow-wrap:anywhere}.libra-recall-exact-label{padding:8px 12px 0;border-top:1px dashed var(--sga-line);color:#9daeff;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.libra-recall-text{margin:8px 12px 12px;max-height:300px}.libra-recall-dropped{border:1px dashed var(--sga-line);border-radius:12px;padding:10px}.libra-recall-dropped>summary{cursor:pointer;color:#fde68a;font-size:10px;font-weight:850}.libra-recall-dropped[open]>summary{margin-bottom:8px}.libra-run-summary{display:flex;align-items:center;gap:10px;cursor:pointer}.libra-run-summary>strong{min-width:0;flex:1}.libra-run-summary>span{color:var(--sga-muted);font-size:10px;white-space:nowrap}.libra-run-summary>.sga-btn{margin-left:auto;white-space:nowrap}
-@media(max-width:760px){.libra-recall-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-recall-row-head{grid-template-columns:auto minmax(0,1fr) auto}.libra-recall-row-labels{grid-column:1/-1;text-align:left}.libra-recall-query{grid-template-columns:1fr}.libra-recall-text{max-height:240px}}
-html{scroll-behavior:smooth}
-.sga-app{position:relative}
-.sga-top{padding:22px 28px;border-bottom:1px solid rgba(124,156,255,.18);background:linear-gradient(180deg,rgba(8,12,21,.96),rgba(8,12,21,.9));box-shadow:0 16px 50px rgba(0,0,0,.22)}
-.sga-brand h1{font-size:28px;font-weight:900;letter-spacing:-.03em}.sga-brand p{margin-top:7px;font-size:13px;color:#a8b5cc}
-.sga-head-actions .sga-btn{padding:10px 14px;border-radius:12px}.sga-head-actions .sga-btn.good{background:linear-gradient(135deg,#7c5cff,#6b7cff);border-color:#8a79ff}.sga-dirty{padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.03)}
-.sga-tabs{top:95px;gap:10px;padding:14px 28px;border-bottom:0;background:transparent}.sga-tab{padding:10px 16px;border-radius:14px;background:rgba(17,24,39,.9);border-color:rgba(124,156,255,.16);box-shadow:0 10px 24px rgba(0,0,0,.12)}.sga-tab[data-active="true"]{background:linear-gradient(135deg,#7c5cff,#4d7dff);border-color:rgba(255,255,255,.12);color:#fff}
-.sga-main{max-width:1440px;padding:26px 28px 88px}.sga-status{margin-bottom:14px;padding:10px 14px;border:1px solid rgba(124,156,255,.14);border-radius:14px;background:linear-gradient(180deg,var(--sga-surface2),var(--sga-surface));box-shadow:0 6px 18px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.03);backdrop-filter:none;-webkit-backdrop-filter:none}.sga-status:empty{display:none}
-.sga-card{border:1px solid rgba(124,156,255,.14);border-radius:20px;background:linear-gradient(180deg,rgba(18,25,40,.95),rgba(10,16,27,.92));padding:18px;box-shadow:0 18px 48px rgba(0,0,0,.18)}
-.sga-section-title h2{font-size:24px;letter-spacing:-.02em}.sga-section-title p{font-size:13px;color:#a9b6cd}
-.sga-flow-page{gap:20px}
-.sga-glance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.sga-glance-card{position:relative;overflow:hidden;padding:18px 18px 16px;border:1px solid rgba(124,156,255,.16);border-radius:18px;background:linear-gradient(180deg,rgba(16,24,38,.95),rgba(11,17,28,.92));box-shadow:0 14px 34px rgba(0,0,0,.16)}.sga-glance-card::after{content:'';position:absolute;inset:auto -18% -52% auto;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(124,156,255,.24),transparent 62%);pointer-events:none}.sga-glance-card.accent-purple::after{background:radial-gradient(circle,rgba(124,92,255,.28),transparent 62%)}.sga-glance-card.accent-green::after{background:radial-gradient(circle,rgba(16,185,129,.24),transparent 62%)}.sga-glance-card.accent-amber::after{background:radial-gradient(circle,rgba(245,158,11,.22),transparent 62%)}.sga-glance-card.accent-blue::after{background:radial-gradient(circle,rgba(77,125,255,.24),transparent 62%)}
-.sga-glance-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.sga-glance-title{font-size:12px;font-weight:800;color:#dbe4f3}.sga-glance-kicker{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;padding:5px 9px;border-radius:999px;background:rgba(124,156,255,.1);border:1px solid rgba(124,156,255,.18)}.sga-glance-value{font-size:34px;line-height:1;font-weight:900;letter-spacing:-.03em;margin-bottom:8px}.sga-glance-label{font-size:12px;color:#9fb0cb;line-height:1.5}.sga-glance-meta{margin-top:12px;font-size:11px;color:#d7e0f1}
-.sga-quicknav{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 2px}.sga-quicknav-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border-radius:13px;border:1px solid rgba(124,156,255,.14);background:rgba(13,20,33,.76);color:#d8e2f2;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 12px 28px rgba(0,0,0,.12)}.sga-quicknav-btn:hover{background:rgba(124,156,255,.12);border-color:rgba(124,156,255,.28)}
-.sga-flow-overview-card{padding:16px 16px 14px}.sga-flow-overview-card .sga-agent-head{margin-bottom:10px}.sga-flow-overview{grid-template-columns:repeat(9,minmax(120px,1fr));gap:8px;padding:0}.sga-flow-mini{border-radius:14px;padding:11px 12px;min-width:120px}.sga-flow-mini strong{font-size:11px}.sga-flow-mini span{font-size:10px}
-.sga-flow-section{scroll-margin-top:210px}.sga-flow-major-handoff span,.sga-flow-handoff span{background:rgba(124,156,255,.06);border-color:rgba(124,156,255,.25)}
-.sga-provider-panel,.sga-stage-detail,.sga-stage-result,.sga-provider-note-box{border-color:rgba(124,156,255,.12);border-radius:16px}
-.sga-input,.sga-select,.sga-textarea,.sga-list-search{border-color:rgba(124,156,255,.14);border-radius:12px;background:rgba(5,10,18,.9);padding:10px 12px}.sga-field label{font-size:11px;letter-spacing:.02em}.sga-btn{border-radius:12px;padding:9px 12px}.sga-btn.primary{background:linear-gradient(135deg,#7c5cff,#4d7dff);border-color:#7f8fff}.sga-btn.good{background:linear-gradient(135deg,#256b45,#2d8a58);border-color:#43b072}.sga-btn.danger{background:linear-gradient(135deg,#6d2134,#953150);border-color:#b94d6e}
-.sga-stage-layout{gap:16px}.sga-agent-expanded{padding:20px;border-radius:20px}.sga-main-response-card{border-radius:20px}
-.sga-order-card{border-color:rgba(124,92,255,.32);background:linear-gradient(180deg,rgba(28,22,54,.72),rgba(10,16,27,.94))}.sga-order-list{display:grid;gap:9px;margin-top:14px}.sga-order-item{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 12px;border:1px solid rgba(124,156,255,.14);border-radius:14px;background:rgba(6,11,19,.7)}.sga-order-item.fixed{border-color:rgba(74,222,128,.28);background:rgba(34,197,94,.055)}.sga-order-number{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;background:rgba(124,156,255,.14);color:#d8e1ff;font-size:12px;font-weight:900}.sga-order-copy{display:flex;flex-direction:column;gap:3px;min-width:0}.sga-order-copy strong{font-size:12px}.sga-order-copy span{font-size:10px;color:var(--sga-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sga-order-actions{display:flex;gap:6px}.sga-order-actions .sga-btn{padding:7px 10px}
-.sga-module-lore-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-top:14px;max-height:460px;overflow:auto;padding:2px 5px 2px 2px;scrollbar-width:thin}.sga-module-lore-item{display:grid;grid-template-columns:24px minmax(0,1fr);align-items:start;gap:12px;min-width:0;min-height:126px;padding:16px;border:1px solid rgba(124,156,255,.16);border-radius:16px;background:linear-gradient(145deg,rgba(10,17,29,.94),rgba(7,12,21,.86));cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease,box-shadow .16s ease}.sga-module-lore-item:hover{border-color:rgba(124,156,255,.42);background:linear-gradient(145deg,rgba(20,30,52,.94),rgba(8,14,24,.9));transform:translateY(-1px)}.sga-module-lore-item.selected{border-color:rgba(74,222,128,.48);background:linear-gradient(145deg,rgba(22,56,43,.46),rgba(8,19,22,.92));box-shadow:inset 0 0 0 1px rgba(74,222,128,.08)}.sga-module-lore-item.excluded{border-color:rgba(251,113,133,.5);background:linear-gradient(145deg,rgba(74,20,40,.45),rgba(25,10,20,.92));box-shadow:inset 0 0 0 1px rgba(251,113,133,.1)}.sga-module-lore-check{width:18px;height:18px;margin:3px 0 0;accent-color:var(--sga-good);cursor:pointer}.sga-character-lore-exclusion-check{accent-color:var(--sga-danger)}.sga-module-lore-copy{display:flex;flex-direction:column;gap:9px;min-width:0}.sga-module-lore-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}.sga-module-lore-head strong{min-width:0;color:#eef2ff;font-size:13px;line-height:1.45;overflow-wrap:anywhere}.sga-module-lore-head .sga-badge{flex:0 0 auto}.sga-module-lore-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.sga-module-lore-meta>span{max-width:100%;border:1px solid rgba(124,156,255,.16);border-radius:999px;background:rgba(124,156,255,.055);padding:4px 8px;color:#b7c3d8;font-size:10px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sga-module-lore-description{display:-webkit-box;margin:0;color:var(--sga-muted);font-size:11px;line-height:1.55;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}.sga-module-lore-description.empty{opacity:.55;font-style:italic}.sga-module-lore-browser{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(250px,.75fr);gap:14px;margin-top:14px;min-width:0}.sga-module-browser-pane{min-width:0;border:1px solid rgba(124,156,255,.16);border-radius:16px;background:rgba(7,12,21,.72);overflow:hidden}.sga-module-browser-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid rgba(124,156,255,.14);background:rgba(124,156,255,.045)}.sga-module-browser-title strong{color:#eef2ff;font-size:13px}.sga-module-browser-title span{color:var(--sga-muted);font-size:10px}.sga-module-entry-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid rgba(124,156,255,.1)}.sga-module-entry-list,.sga-module-list{display:flex;flex-direction:column;gap:7px;max-height:540px;overflow:auto;padding:10px;scrollbar-width:thin}.sga-module-entry-item,.sga-module-list-row{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:11px 12px;border:1px solid rgba(124,156,255,.14);border-radius:12px;background:rgba(10,17,29,.78);transition:border-color .16s ease,background .16s ease}.sga-module-entry-item:hover,.sga-module-list-row:hover{border-color:rgba(124,156,255,.38);background:rgba(20,30,52,.76)}.sga-module-entry-item.selected,.sga-module-list-row.selected{border-color:rgba(74,222,128,.42);background:rgba(22,56,43,.32)}.sga-module-list-row.focused{box-shadow:inset 0 0 0 1px rgba(124,156,255,.58)}.sga-module-entry-item.disabled{opacity:.55}.sga-module-list-copy,.sga-module-entry-copy{display:flex;flex-direction:column;gap:5px;min-width:0;cursor:pointer;background:transparent;border:0;padding:0;text-align:left;color:inherit}.sga-module-list-head,.sga-module-entry-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.sga-module-list-head strong,.sga-module-entry-head strong{min-width:0;color:#eef2ff;font-size:12px;line-height:1.4;overflow-wrap:anywhere}.sga-module-entry-preview,.sga-module-list-description{margin:0;color:var(--sga-muted);font-size:10px;line-height:1.5;overflow-wrap:anywhere}.sga-module-entry-meta,.sga-module-list-meta{display:flex;gap:5px;flex-wrap:wrap;color:#aebbd0;font-size:9px}.sga-module-browser-empty{padding:18px;color:var(--sga-muted);font-size:11px;line-height:1.6;text-align:center}
-.sga-simple-settings{border-color:rgba(124,156,255,.34);background:linear-gradient(180deg,rgba(24,30,52,.97),rgba(12,18,31,.96))}.sga-simple-head{margin-bottom:14px}.sga-simple-step{padding:16px 0;border-top:1px solid rgba(124,156,255,.12)}.sga-simple-step:first-of-type{border-top:0}.sga-simple-step-head{display:flex;align-items:flex-start;gap:11px;margin-bottom:11px}.sga-simple-step-head>b{display:flex;align-items:center;justify-content:center;width:25px;height:25px;flex:0 0 auto;border-radius:9px;background:rgba(124,156,255,.16);color:#dce5ff;font-size:12px}.sga-simple-step-head>div{display:flex;flex-direction:column;gap:3px}.sga-simple-step-head strong{font-size:13px}.sga-simple-step-head span{font-size:11px;color:var(--sga-muted);line-height:1.45}.sga-simple-choice-grid{display:grid;gap:10px}.sga-simple-choice-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-simple-choice-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.sga-simple-choice-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.sga-simple-choice-grid.five{grid-template-columns:repeat(5,minmax(0,1fr))}.sga-simple-choice{min-height:112px;display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:13px 14px;border:1px solid rgba(124,156,255,.18);border-radius:15px;background:rgba(7,12,21,.7);color:var(--sga-text);cursor:pointer;text-align:left;transition:border-color .14s ease,background .14s ease,transform .14s ease}.sga-simple-choice:hover{transform:translateY(-1px);border-color:rgba(124,156,255,.45);background:rgba(124,156,255,.08)}.sga-simple-choice.active{border-color:#7c9cff;background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(77,125,255,.15));box-shadow:0 0 0 1px rgba(124,156,255,.14) inset}.sga-simple-choice-top{width:100%;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}.sga-simple-choice-top>strong{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.sga-simple-choice strong{font-size:13px}.sga-simple-choice-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:34px;white-space:nowrap;word-break:keep-all;line-height:1.2;font-size:9px;font-weight:900;color:#dbe5ff;padding:4px 8px;border-radius:999px;background:rgba(124,156,255,.15);border:1px solid rgba(124,156,255,.2)}.sga-simple-choice-desc{font-size:11px;line-height:1.5;color:#d6deed}.sga-simple-choice small{font-size:10px;line-height:1.4;color:var(--sga-muted)}.sga-simple-stage-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sga-simple-stage-provider{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;padding:12px;border:1px solid rgba(124,156,255,.15);border-radius:14px;background:rgba(7,12,21,.62)}.sga-simple-stage-provider>.sga-badge{margin-bottom:21px}.sga-simple-provider-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:11px}.sga-simple-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:4px;padding:14px;border:1px solid rgba(74,222,128,.28);border-radius:15px;background:rgba(34,197,94,.055)}.sga-simple-summary.warn{border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.055)}.sga-simple-summary>div:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}.sga-simple-summary strong{font-size:12px}.sga-simple-summary span{font-size:11px;color:#cbd5e1;line-height:1.5}.sga-simple-summary-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.sga-stage-advanced{margin-top:0;background:rgba(8,13,22,.48)}.sga-stage-advanced>.sga-advanced-body{padding-top:4px}
-@media(max-width:1100px){.sga-stage-layout{grid-template-columns:1fr}.sga-agent-run-meta{justify-content:flex-start}.sga-glance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:680px){.sga-simple-choice-grid.two,.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid,.libra-response-family-grid,.libra-response-submode-grid{grid-template-columns:1fr}.sga-simple-summary{align-items:flex-start;flex-direction:column}.sga-simple-summary-actions{width:100%;justify-content:stretch}.sga-simple-summary-actions .sga-btn{flex:1}.sga-simple-stage-provider{grid-template-columns:1fr}.sga-simple-stage-provider>.sga-badge{margin:0;justify-self:start}.sga-simple-provider-actions{align-items:stretch;flex-direction:column}}
-.sga-simple-summary{display:grid;grid-template-columns:minmax(0,1fr) 205px;align-items:stretch;gap:18px;padding:17px 18px}.sga-simple-summary-copy{justify-content:center}.sga-simple-summary-main{font-size:11px;line-height:1.65}.sga-simple-summary-ai{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px;margin-top:5px;padding-top:8px;border-top:1px dashed rgba(124,156,255,.16)}.sga-simple-summary-ai b{color:#9fb0ca;font-size:10px;white-space:nowrap}.sga-simple-summary-ai span{min-width:0;color:#9eacc0;font-size:10px;line-height:1.5;overflow-wrap:anywhere}.sga-simple-summary-actions{display:grid;grid-template-columns:minmax(0,1fr);align-content:center;gap:10px;width:205px}.sga-simple-summary-actions .sga-btn{width:100%;min-height:44px;padding:10px 14px;border-radius:12px;white-space:nowrap;line-height:1.2}.sga-simple-summary-actions .sga-btn:first-child{border-color:rgba(124,156,255,.28);background:linear-gradient(180deg,rgba(37,48,75,.92),rgba(27,36,57,.92))}.sga-simple-summary-actions .sga-btn.good{background:linear-gradient(180deg,rgba(28,103,67,.92),rgba(21,80,52,.92))}
-@media(max-width:840px){.sga-simple-summary{grid-template-columns:minmax(0,1fr)}.sga-simple-summary-actions{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.sga-simple-summary-actions .sga-btn{min-width:0}}
-@media(max-width:560px){.sga-simple-summary-actions{grid-template-columns:minmax(0,1fr)}}
-html{scroll-behavior:smooth}
-@media(max-width:900px){.sga-grid,.sga-grid.three,.sga-row3,.sga-row4,.sga-reference-grid,.sga-main-response-grid,.sga-glance-grid{grid-template-columns:1fr}.sga-stage-primary{grid-template-columns:1fr}.sga-stage-primary>.sga-check{padding-top:0}.sga-flow-overview{grid-template-columns:repeat(9,135px)}.sga-split{grid-template-columns:1fr}.sga-row2{grid-template-columns:1fr}.sga-top{align-items:flex-start;padding:18px}.sga-tabs{top:112px;padding:10px 18px}.sga-main{padding:18px 18px 72px}.sga-flow-node{min-width:135px}.sga-tabs .sga-tab{padding:8px 12px;font-size:11px}.sga-tab .sga-tab-full{display:none}.sga-tab .sga-tab-short{display:inline}.sga-phase-label .sga-phase-sub{display:none}.sga-brand h1{font-size:21px}.sga-brand p{font-size:11px}}
-@media(max-width:560px){.sga-provider-panel-head{flex-direction:column}.sga-brand h1{font-size:18px}.sga-brand p{font-size:10px}.sga-head-actions{flex-wrap:wrap}.sga-summary-pill{font-size:10px;padding:4px 7px}.sga-quicknav{overflow:auto;flex-wrap:nowrap;padding-bottom:2px}.sga-order-item{grid-template-columns:32px minmax(0,1fr)}.sga-order-actions{grid-column:1/-1;justify-content:flex-end}.sga-order-copy span{white-space:normal}.sga-stage-result-body{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:720px){.sga-module-lore-grid{grid-template-columns:minmax(0,1fr);max-height:520px}.sga-module-lore-item{min-height:0;padding:14px}.sga-module-lore-head{gap:8px}.sga-module-lore-meta>span{white-space:normal}.sga-module-lore-browser{grid-template-columns:minmax(0,1fr)}.sga-module-browser-modules{order:-1}.sga-module-entry-list,.sga-module-list{max-height:420px}}
-
-/* v0.12.4 full dashboard shell */
-#sga-rp-gui-root{padding:1px;background:transparent}
-.sga-app{min-height:calc(var(--sga-vh) - 2px);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 11% 0%,rgba(124,92,255,.14),transparent 29%),radial-gradient(circle at 91% 5%,rgba(77,125,255,.09),transparent 26%),#070b13}
-.sga-top{position:sticky;top:0;z-index:9;min-height:96px;padding:24px 30px;border-bottom:1px solid rgba(124,156,255,.12);background:rgba(7,11,19,.97)}
-.sga-brand h1{font-size:29px}.sga-brand p{max-width:700px}
-.sga-shell{display:grid;grid-template-columns:228px minmax(0,1fr) 248px;gap:14px;max-width:1620px;margin:0 auto;padding:16px 16px 30px}
-.sga-sidebar,.sga-insight-rail{position:sticky;top:112px;align-self:start;height:calc(var(--sga-vh) - 130px);overflow:auto;scrollbar-width:thin}
-.sga-sidebar{display:flex;flex-direction:column;min-height:0;overflow:hidden;border:1px solid rgba(124,156,255,.14);border-radius:18px;background:linear-gradient(180deg,rgba(14,21,35,.96),rgba(9,15,25,.95));padding:12px;box-shadow:0 24px 56px rgba(0,0,0,.22)}
-.sga-side-label{min-width:0;white-space:nowrap;line-height:1.2}.sga-side-item.sub[data-stage="input_assist"]{gap:7px;padding-left:8px;padding-right:8px;font-size:10.5px;letter-spacing:-.015em}
-.sga-side-nav{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;gap:3px;padding:2px 4px 8px 0;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(124,156,255,.42) transparent;overscroll-behavior:contain}.sga-side-nav::-webkit-scrollbar{width:6px}.sga-side-nav::-webkit-scrollbar-track{background:transparent}.sga-side-nav::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(124,156,255,.34)}.sga-side-nav::-webkit-scrollbar-thumb:hover{background:rgba(124,156,255,.56)}.sga-side-group{margin-top:11px;padding:0 9px;color:#71829e;font-size:9px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.sga-side-item{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:1px solid transparent;border-radius:11px;background:transparent;color:#c5d0e1;text-align:left;font-size:11px;font-weight:760;cursor:pointer}.sga-side-item:hover{background:rgba(124,156,255,.07);color:#fff}.sga-side-item[data-active="true"]{border-color:rgba(124,156,255,.2);background:linear-gradient(90deg,rgba(124,92,255,.22),rgba(77,125,255,.12));color:#fff;box-shadow:inset 3px 0 #8b5cff}.sga-side-item.sub{padding-left:33px;font-weight:650;color:#aab8cd}.sga-side-icon{display:grid;place-items:center;width:18px;min-width:18px;color:#9daeff;font-size:13px}.sga-side-bottom{flex:0 0 auto;margin-top:10px;padding:11px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(6,11,19,.68)}.sga-side-status-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#9dadc5}.sga-side-status-row+.sga-side-status-row{margin-top:7px}.sga-live-dot{display:inline-flex;align-items:center;gap:6px;color:#a7f3d0;font-weight:800}.sga-live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#36c977;box-shadow:0 0 10px rgba(54,201,119,.55)}
-.sga-main{max-width:none;margin:0;padding:0;min-width:0}.sga-main>.sga-status{margin:0 0 12px}.sga-insight-rail{display:flex;flex-direction:column;gap:11px}.sga-rail-card{border:1px solid rgba(124,156,255,.14);border-radius:16px;background:linear-gradient(180deg,rgba(15,23,38,.94),rgba(9,15,25,.92));padding:14px;box-shadow:0 18px 40px rgba(0,0,0,.16)}.sga-rail-card h3{margin:0 0 10px;font-size:12px;color:#a990ff}.sga-rail-stat{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid rgba(124,156,255,.08);font-size:10px;color:#93a4bf}.sga-rail-stat:last-child{border-bottom:0}.sga-rail-stat strong{max-width:128px;color:#dbe5f5;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sga-rail-log{display:grid;grid-template-columns:9px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid rgba(124,156,255,.08)}.sga-rail-log:last-child{border-bottom:0}.sga-rail-log-dot{width:7px;height:7px;margin-top:4px;border-radius:50%;background:#37c978}.sga-rail-log-dot.warn{background:#ffb020}.sga-rail-log-dot.off{background:#71809a}.sga-rail-log strong{display:block;font-size:10px;color:#dbe5f5}.sga-rail-log span{display:block;margin-top:3px;color:#8698b4;font-size:9px;line-height:1.4}.sga-rail-tip{display:flex;gap:9px;padding:8px 0;color:#9dadc5;font-size:10px;line-height:1.5}.sga-rail-tip+.sga-rail-tip{border-top:1px solid rgba(124,156,255,.08)}.sga-rail-tip b{color:#9a80ff}
-.sga-tabs{display:none!important}.sga-flow-page{gap:14px}.sga-section-title.sga-flow-page-title{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:4px 4px 1px}.sga-section-title.sga-flow-page-title h2{font-size:20px}.sga-section-title.sga-flow-page-title p{max-width:640px;margin:4px 0 0}
-.sga-prompt-injection-nav{display:flex;align-items:center;justify-content:space-between;gap:18px}.sga-prompt-injection-nav-copy{min-width:0}.sga-prompt-injection-nav-copy h3{margin:0}.sga-prompt-injection-nav-copy p{margin:5px 0 0;color:var(--sga-muted);font-size:11px;line-height:1.55}.sga-prompt-injection-tabs{display:grid;grid-template-columns:repeat(3,minmax(132px,1fr));gap:8px;flex:0 1 520px}.sga-prompt-injection-tabs.libra-hub-tabs.cols-4{grid-template-columns:repeat(4,minmax(0,1fr));flex-basis:760px}.sga-prompt-injection-tabs .sga-btn{width:100%;justify-content:center;white-space:nowrap}.sga-prompt-injection-content{min-width:0}
-.sga-glance-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.sga-glance-card{min-height:132px;padding:14px;border-radius:15px}.sga-glance-value{font-size:25px}.sga-glance-label{font-size:10px}.sga-glance-meta{font-size:9px}.sga-glance-title{font-size:10px}.sga-glance-kicker{font-size:8px;padding:4px 7px}
-.sga-dashboard-lower{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:10px}.sga-summary-table{display:grid;grid-template-columns:minmax(120px,.9fr) minmax(0,1.2fr);font-size:10px}.sga-summary-table span,.sga-summary-table strong{padding:7px 0;border-bottom:1px solid rgba(124,156,255,.08)}.sga-summary-table span{color:#8fa0ba}.sga-summary-table strong{color:#dce5f4;text-align:right;font-weight:700}.sga-summary-table span:nth-last-child(-n+2),.sga-summary-table strong:nth-last-child(-n+2){border-bottom:0}.sga-recent-log-list{display:flex;flex-direction:column;gap:6px}.sga-recent-log-item{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:8px;align-items:start;padding:9px;border:1px solid rgba(124,156,255,.1);border-radius:10px;background:rgba(7,12,20,.55)}.sga-recent-log-item i{width:7px;height:7px;margin-top:4px;border-radius:50%;background:#36c978}.sga-recent-log-item i.warn{background:#ffb020}.sga-recent-log-item i.off{background:#72809a}.sga-recent-log-item strong{display:block;font-size:10px}.sga-recent-log-item span{display:block;margin-top:3px;color:#8798b2;font-size:9px}.sga-recent-log-item em{color:#9eb0ca;font-size:9px;font-style:normal;font-variant-numeric:tabular-nums}
-.sga-card,.sga-agent-expanded,.sga-main-response-card{border-radius:16px}.sga-flow-overview-card{padding:15px}.sga-flow-overview{grid-template-columns:repeat(9,minmax(112px,1fr))}.sga-flow-mini{min-width:112px}.sga-flow-section{scroll-margin-top:116px}
-@media(max-width:1320px){.sga-shell{grid-template-columns:210px minmax(0,1fr)}.sga-insight-rail{grid-column:1/-1;position:static;height:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible}.sga-glance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:980px){#sga-rp-gui-root{padding:0}.sga-app{border-radius:0}.sga-top{min-height:auto;padding:17px}.sga-shell{display:block;padding:10px}.sga-sidebar{position:sticky;top:88px;z-index:8;height:auto;margin-bottom:10px;padding:7px;overflow:visible}.sga-side-bottom,.sga-side-group{display:none}.sga-side-nav{display:flex;flex-direction:row;overflow:auto;gap:5px;padding:0;scrollbar-width:thin}.sga-side-item,.sga-side-item.sub{width:auto;min-width:max-content;padding:8px 11px}.sga-side-item.sub{padding-left:11px}.sga-insight-rail{grid-template-columns:1fr;margin-top:10px}.sga-glance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-dashboard-lower{grid-template-columns:1fr}.sga-brand h1{font-size:20px}.sga-brand p{font-size:10px}}
-@media(max-width:600px){.sga-glance-grid{grid-template-columns:1fr}.sga-glance-card{min-height:110px}.sga-shell{padding:7px}.sga-top{align-items:flex-start}.sga-head-actions{width:100%;justify-content:flex-start}.sga-head-actions .sga-dirty{order:3}.sga-insight-rail{display:block}.sga-rail-card+.sga-rail-card{margin-top:8px}.sga-summary-table{grid-template-columns:1fr}.sga-summary-table strong{text-align:left;padding-top:0}}
-
-/* v0.12.8 centered settings window */
-html,body{width:100%;height:100%;overflow:hidden;background:transparent!important;background-color:transparent!important;background-image:none!important}
-#sga-rp-gui-root{position:fixed;inset:0;z-index:28;display:grid;place-items:center;min-height:0;padding:24px;background:rgba(6,8,14,.38)!important;background-image:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;overflow:hidden}
-.sga-app{color-scheme:dark;display:flex;flex-direction:column;width:min(1280px,calc(100vw - 48px));height:min(820px,calc(var(--sga-vh) - 48px));min-height:0;max-height:820px;border:1px solid rgba(124,156,255,.28);border-radius:22px;overflow:hidden;background:radial-gradient(circle at 10% 0%,rgba(124,92,255,.13),transparent 28%),#070b13;box-shadow:0 24px 72px rgba(0,0,0,.42)}
-.sga-top{position:relative;top:auto;flex:0 0 auto;min-height:78px;padding:17px 21px}.sga-brand h1{font-size:22px}.sga-brand p{font-size:10px}
-.libra-header-status{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:0 0 auto;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(124,156,255,.16);background:rgba(7,12,21,.92)}
-.libra-header-status-cell{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 9px;min-width:0;padding:8px 10px;border:1px solid rgba(124,156,255,.14);border-radius:11px;background:linear-gradient(180deg,rgba(17,25,41,.9),rgba(10,16,27,.86))}.libra-header-status-cell>span{min-width:0;overflow:hidden;color:#9eacc2;font-size:9px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.libra-header-status-cell>strong{grid-row:1/3;grid-column:2;color:#eef2ff;font-size:15px;font-weight:900;white-space:nowrap}.libra-header-status-cell>small{min-width:0;overflow:hidden;color:#72839d;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
-.sga-shell{flex:1;min-height:0;width:100%;max-width:none;margin:0;padding:12px;grid-template-columns:200px minmax(0,1fr) 215px;overflow:hidden}
-.sga-sidebar{position:static;top:auto;align-self:stretch;height:100%;min-height:0;max-height:none;overflow:hidden}.sga-insight-rail{position:static;top:auto;height:auto;min-height:0;max-height:none;overflow:auto}
-.sga-main{height:100%;min-height:0;overflow:auto;padding:0 4px 18px;scrollbar-width:thin}
-.sga-app[data-tab="providers"] .sga-shell{grid-template-columns:200px minmax(0,1fr)}
-.sga-app[data-tab="providers"] .sga-insight-rail{display:none}
-.sga-app[data-tab="providers"] .sga-split{grid-template-columns:220px minmax(0,1fr)}
-.sga-app[data-tab="providers"] .sga-list-items{max-height:none}
-.sga-app[data-tab="providers"] #sga-provider-page{min-width:0}
-.sga-provider-editor{overflow:hidden}.sga-provider-panels{min-width:0}
-.sga-render-error{border:1px solid rgba(251,113,133,.55);border-radius:16px;background:rgba(100,20,40,.18);padding:18px}.sga-render-error h2{margin:0 0 8px;font-size:16px;color:#fecdd3}.sga-render-error pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#fda4af;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
-@media(max-width:1320px){.sga-app{width:min(1120px,calc(100vw - 36px));height:calc(var(--sga-vh) - 36px)}.sga-shell{grid-template-columns:190px minmax(0,1fr)}.sga-insight-rail{display:none}.sga-app[data-tab="providers"] .sga-shell{grid-template-columns:190px minmax(0,1fr)}}
-@media(max-width:980px){#sga-rp-gui-root{padding:10px}.sga-app{width:calc(100vw - 20px);height:calc(var(--sga-vh) - 20px);max-height:none;border-radius:17px}.sga-shell{display:flex;flex-direction:column;padding:8px}.sga-sidebar{position:static;flex:0 0 auto;align-self:auto;width:100%;height:auto;overflow:hidden}.sga-main{flex:1}.sga-app[data-tab="providers"] .sga-split{grid-template-columns:1fr}.sga-app[data-tab="providers"] .sga-list-items{max-height:220px}}
-@media(max-width:600px){#sga-rp-gui-root{padding:0}.sga-app{width:100vw;height:var(--sga-vh);border:0;border-radius:0}.sga-top{padding:13px}.sga-brand h1{font-size:17px}.sga-head-actions .sga-btn{padding:8px 10px}}
-@media(max-width:760px){.sga-prompt-injection-nav{align-items:stretch;flex-direction:column}.sga-prompt-injection-tabs{grid-template-columns:1fr;flex-basis:auto}.sga-prompt-injection-tabs.libra-hub-tabs.cols-4{display:flex;overflow-x:auto;flex-basis:auto;scroll-snap-type:x proximity}.sga-prompt-injection-tabs.libra-hub-tabs.cols-4 .sga-btn{min-width:124px;scroll-snap-align:start}.sga-prompt-injection-tabs .sga-btn{min-height:42px}}
-
-
-/* v0.12.17 visible execution results */
-.sga-execution-results{scroll-margin-top:116px;border-color:rgba(124,156,255,.34);background:linear-gradient(180deg,rgba(18,27,47,.98),rgba(9,15,26,.98))}
-.sga-result-stage-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0 12px}
-.sga-result-stage-tab{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:11px 12px;border:1px solid rgba(124,156,255,.16);border-radius:13px;background:rgba(5,10,18,.72);color:#dce5f4;text-align:left;cursor:pointer}
-.sga-result-stage-tab:hover{border-color:rgba(124,156,255,.42);background:rgba(124,156,255,.08)}
-.sga-result-stage-tab.active{border-color:#7c9cff;background:linear-gradient(135deg,rgba(124,92,255,.22),rgba(77,125,255,.13));box-shadow:inset 0 0 0 1px rgba(124,156,255,.12)}
-.sga-result-stage-tab span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:850}
-.sga-result-stage-tab small{flex:0 0 auto;font-size:9px;color:#9eb0ca}.sga-result-stage-tab small.good{color:#86efac}.sga-result-stage-tab small.warn,.sga-result-stage-tab small.danger{color:#fbbf24}.sga-result-stage-tab small.off{color:#7f8da4}.sga-result-stage-tab small.run{color:#9bb4ff}
-.sga-result-selected-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;padding:11px 12px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(5,10,18,.48)}
-.sga-result-selected-head strong{display:block;font-size:13px}.sga-result-selected-head span{display:block;margin-top:4px;color:#8fa0ba;font-size:10px;line-height:1.45}
-.sga-live-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sga-live-result-card{min-width:0;border:1px solid rgba(124,156,255,.12);border-radius:14px;background:rgba(5,10,18,.58);padding:12px}.sga-live-result-card.wide{grid-column:1/-1}
-.sga-live-result-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}.sga-live-result-card-head h4{margin:0;font-size:11px;color:#dce5f4}
-.sga-live-result-text,.sga-live-result-code{white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid rgba(124,156,255,.09);border-radius:10px;background:#050910;padding:11px;color:#cdd8ea;font-size:10px;line-height:1.58;max-height:520px;overflow:auto}
-.sga-live-result-text{font-family:inherit}.sga-live-result-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.sga-live-result-code.final{max-height:620px;min-height:120px}
-.sga-result-empty.prominent{margin:12px 0;padding:24px;border:1px dashed rgba(124,156,255,.28);border-radius:14px;background:rgba(5,10,18,.45);color:#aab8cd;text-align:center;line-height:1.65}
-.sga-result-raw-details{margin-top:12px;border:1px solid rgba(124,156,255,.12);border-radius:13px;background:rgba(5,10,18,.42);padding:10px 12px}.sga-result-raw-details>summary{cursor:pointer;color:#aab8cd;font-size:10px;font-weight:800}.sga-result-raw-details[open]>summary{margin-bottom:10px}
-.sga-final-draft-result{margin-top:12px;padding:13px;border:1px solid rgba(74,222,128,.24);border-radius:15px;background:linear-gradient(180deg,rgba(24,70,48,.16),rgba(5,10,18,.62))}
-@media(max-width:900px){.sga-result-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.sga-live-result-grid{grid-template-columns:1fr}.sga-live-result-card.wide{grid-column:auto}}
-@media(max-width:560px){.sga-result-stage-tabs{grid-template-columns:1fr}}
-
-/* v0.12.22 lightweight GUI paint path */
-.sga-main,.sga-sidebar,.sga-insight-rail,.sga-list-items,.sga-live-result-text,.sga-live-result-code{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.sga-list-items>.sga-card,.sga-module-lore-item{content-visibility:auto;contain-intrinsic-size:180px}
-.sga-list-more{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px}
-.sga-top,.sga-tabs{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-.sga-flow-node.state-run::after{display:none!important;animation:none!important}
-.sga-card,.sga-glance-card,.sga-quicknav-btn,.sga-simple-choice,.sga-insight-rail,.sga-sidebar,.sga-rail-card{box-shadow:none!important}
-.sga-flow-node,.sga-simple-choice,.sga-advanced>summary::before{transition:none!important}
-.libra-memory-restore-card{display:grid;gap:12px;max-width:820px}.libra-memory-restore-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.libra-memory-restore-title h3{margin:0}.libra-json-badge{display:inline-flex;align-items:center;justify-content:center;min-width:48px;padding:4px 9px;border:1px solid rgba(124,156,255,.26);border-radius:999px;background:rgba(124,92,255,.1);color:#b9c7ff;font-size:9px;font-weight:900;letter-spacing:.12em}.libra-portable-backup-host{min-height:39px}.libra-portable-memory-controls{display:grid;gap:8px}.libra-portable-memory-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.libra-portable-memory-actions .sga-btn{width:100%;justify-content:center;min-height:39px}.libra-portable-memory-status{min-height:16px;color:#91a2bd;font-size:10px}.libra-memory-restore-note{padding-top:9px;border-top:1px solid rgba(124,156,255,.1);color:#7f91ad;font-size:10px}
-.response-family-switch{display:grid;grid-template-columns:repeat(2,minmax(92px,1fr));gap:5px;padding:4px;border:1px solid rgba(124,156,255,.2);border-radius:14px;background:rgba(4,8,15,.72)}
-.response-family-switch button{min-height:38px;padding:8px 14px;border:0;border-radius:10px;background:transparent;color:#8fa0ba;font-size:11px;font-weight:900;letter-spacing:.04em;white-space:nowrap}
-.response-family-switch button:hover{background:rgba(124,156,255,.09);color:#dce5f4}.response-family-switch button.active{background:linear-gradient(135deg,#7458ff,#4c7dff);color:#fff;box-shadow:0 5px 18px rgba(72,80,220,.26)}
-.sga-app[data-response-family="gradia"]{background:radial-gradient(circle at 76% 0%,rgba(236,72,153,.12),transparent 30%),radial-gradient(circle at 10% 0%,rgba(139,92,246,.13),transparent 28%),#080a12}
-.sga-app[data-response-family="gradia"] .sga-top{border-bottom-color:rgba(236,72,153,.18);background:linear-gradient(180deg,rgba(12,9,20,.98),rgba(8,10,18,.94))}
-.sga-app[data-response-family="gradia"] .response-family-switch{border-color:rgba(236,72,153,.24)}
-.sga-app[data-response-family="gradia"] .response-family-switch button.active{background:linear-gradient(135deg,#a855f7,#ec4899)}
-.sga-app[data-response-family="gradia"] .gradia-sidebar{border-color:rgba(236,72,153,.14);background:linear-gradient(180deg,rgba(18,12,29,.98),rgba(9,12,21,.98))}
-.sga-app[data-response-family="gradia"] .gradia-sidebar .sga-side-item[data-active="true"]{border-color:rgba(236,72,153,.38);background:linear-gradient(135deg,rgba(168,85,247,.22),rgba(236,72,153,.14));color:#fff}
-.sga-app[data-response-family="gradia"] .gradia-flow-page>.sga-flow-page-title h2{color:#f3e8ff}
-.sga-app[data-response-family="gradia"] .gradia-header-status{border-bottom-color:rgba(236,72,153,.12)}
-.sga-writing-switch{display:flex;gap:5px}.gradia-home .libra-response-mode-card{min-height:132px}
-.sga-mobile-nav{display:none}
-@media(max-width:760px){
-html,body{width:100%;height:100%;overflow:hidden}
-#sga-rp-gui-root{display:block;width:100%;height:100%;padding:0}
-.sga-app{width:100vw;height:var(--sga-vh);max-height:none;border:0;border-radius:0;background:radial-gradient(circle at 50% 0%,rgba(124,92,255,.1),transparent 24%),#070b13}
-.sga-top{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;min-height:58px;padding:9px 11px;border-bottom-color:rgba(124,156,255,.14)}
-.response-family-switch{grid-template-columns:repeat(2,minmax(62px,1fr));padding:3px}.response-family-switch button{min-height:34px;padding:6px 8px;font-size:9px}
-.libra-header-status{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:6px 8px}.libra-header-status-cell{min-height:38px;padding:6px 8px}.libra-header-status-cell>strong{font-size:13px}.libra-header-status-cell>small{display:none}
-.libra-response-mode-grid{grid-template-columns:repeat(3,minmax(220px,1fr));overflow-x:auto;padding-bottom:4px;scroll-snap-type:x proximity}.libra-response-mode-grid .libra-home-stage-card{scroll-snap-align:start}
-.libra-home-quick-stage-grid{grid-template-columns:1fr}.libra-home-quick-stage-actions{grid-template-columns:1fr}
-.libra-substage-heading{align-items:flex-start;flex-direction:column;gap:2px}.libra-substage-card{display:block;padding:10px}.libra-substage-left{margin-bottom:10px}.libra-substage-controls{align-items:stretch;flex-direction:column}.libra-substage-controls>.sga-check{width:100%;margin:0}.libra-substage-order{width:100%;margin-left:0}.libra-substage-order .sga-btn{flex:1 1 0}.libra-substage-right>.sga-field{margin-bottom:8px}
-.sga-brand h1{font-size:17px;line-height:1.1}.sga-brand p,.sga-dirty{display:none}
-.sga-head-actions{gap:6px;flex-wrap:nowrap;justify-content:flex-end}.sga-head-actions .sga-btn{min-height:38px;padding:8px 10px;font-size:10px;white-space:nowrap}
-.sga-mobile-nav{display:grid;flex:0 0 auto;gap:8px;padding:9px 10px 10px;border-bottom:1px solid rgba(124,156,255,.16);background:linear-gradient(180deg,rgba(12,19,32,.98),rgba(8,14,24,.96))}
-.sga-mobile-nav-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.sga-mobile-nav-head>div{display:flex;min-width:0;flex-direction:column;gap:2px}.sga-mobile-nav-head small{color:#7f91ad;font-size:9px;font-weight:800}.sga-mobile-nav-head strong{overflow:hidden;color:#e7edfb;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-.sga-mobile-quick-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.sga-mobile-quick-btn{display:flex;min-width:0;min-height:50px;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid rgba(124,156,255,.14);border-radius:11px;background:rgba(5,10,18,.62);color:#b8c5d9;cursor:pointer}.sga-mobile-quick-btn>span{color:#9daeff;font-size:14px}.sga-mobile-quick-btn>small{max-width:100%;overflow:hidden;font-size:9px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.sga-mobile-quick-btn.active{border-color:rgba(124,156,255,.62);background:linear-gradient(135deg,rgba(124,92,255,.25),rgba(77,125,255,.15));color:#fff;box-shadow:inset 0 -2px rgba(139,92,255,.7)}
-.sga-mobile-nav-select-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:9px}.sga-mobile-nav-select-wrap>span{color:#91a2bd;font-size:10px;font-weight:850}.sga-mobile-nav-select{min-height:42px;padding:8px 11px;font-size:12px}
-.sga-shell,.sga-app[data-tab="providers"] .sga-shell{display:block;flex:1;min-height:0;padding:0;overflow:hidden}.sga-sidebar,.sga-insight-rail{display:none!important}
-.sga-main{width:100%;height:100%;min-height:0;padding:10px 10px 84px;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}
-.sga-main>.sga-status{margin:0 0 9px;padding:9px 11px;border-radius:11px}.sga-flow-page{gap:14px}.sga-flow-page-title{margin:0}.sga-flow-page-title h2{font-size:17px}.sga-flow-page-title p{font-size:11px;line-height:1.5}
-.sga-card,.sga-agent-expanded,.sga-main-response-card{padding:14px;border-radius:14px}.sga-card h2{font-size:16px}.sga-card h3{font-size:13px}.sga-agent-head{align-items:flex-start;gap:8px}.sga-agent-run-meta{min-width:0;justify-content:flex-start}
-.libra-portable-memory-actions{grid-template-columns:minmax(0,1fr)}
-.sga-grid,.sga-grid.three,.sga-row2,.sga-row3,.sga-row4,.sga-glance-grid,.sga-dashboard-lower,.sga-main-response-grid,.sga-simple-choice-grid.two,.sga-simple-choice-grid.three,.sga-simple-choice-grid.four,.sga-simple-choice-grid.five,.sga-simple-stage-provider-grid{grid-template-columns:minmax(0,1fr)}
-.sga-stage-layout,.sga-stage-primary,.sga-stage-result-body,.sga-live-result-grid,.sga-module-lore-grid,.sga-reference-grid{grid-template-columns:minmax(0,1fr)}.sga-stage-primary>.sga-check{padding-top:0}.sga-stage-result{padding:11px}.sga-stage-result-body{gap:7px}.sga-result-row{padding:9px}
-.sga-field{margin-bottom:10px}.sga-input,.sga-select,.sga-list-search{min-height:44px;padding:10px 11px;font-size:13px}.sga-textarea{min-height:138px;padding:11px;font-size:12px}.sga-textarea.tall,.sga-textarea.stage-prompt{min-height:240px}.sga-textarea.preview{min-height:210px}
-.sga-check{min-height:42px;align-items:flex-start;padding:8px 0;line-height:1.45}.sga-check input{flex:0 0 auto;width:20px;height:20px}.sga-actions{gap:7px}.sga-actions .sga-btn{min-height:44px;flex:1 1 132px;padding:10px 12px}.sga-btn{touch-action:manipulation}
-.sga-advanced{border-radius:12px}.sga-advanced>summary{min-height:46px;padding:11px 12px}.sga-advanced-body{padding:0 11px 12px}
-.sga-provider-panel,.sga-stage-detail,.sga-provider-note-box{padding:12px;border-radius:13px}.sga-provider-panel-head,.sga-stage-detail-head,.sga-simple-provider-actions{align-items:stretch;flex-direction:column}.sga-provider-actions{padding-top:11px}
-.sga-result-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.sga-result-stage-tab{min-height:48px;padding:9px}.sga-result-selected-head{flex-direction:column}.sga-live-result-card{padding:10px}.sga-live-result-text,.sga-live-result-code{max-height:440px;padding:10px}
-.sga-flow-overview{grid-template-columns:repeat(9,128px);padding-bottom:8px}.sga-flow-mini{min-width:128px}.sga-summary-table{grid-template-columns:minmax(0,1fr)}.sga-summary-table strong{text-align:left;padding-top:0}.sga-glance-card{min-height:108px}
-.sga-module-lore-grid{max-height:none;overflow:visible;padding:0}.sga-module-lore-item{min-height:0;padding:13px}.sga-module-lore-meta>span{white-space:normal}.sga-order-item{grid-template-columns:32px minmax(0,1fr)}.sga-order-actions{grid-column:1/-1;justify-content:flex-start}
-.sga-app[data-tab="providers"] .sga-split{grid-template-columns:minmax(0,1fr)}.sga-app[data-tab="providers"] .sga-list-items{max-height:180px}.sga-app[data-tab="providers"] .sga-provider-editor{overflow:visible}
-}
-@media(max-width:420px){
-.sga-top{grid-template-columns:minmax(0,1fr) auto auto;padding:8px}.sga-brand h1{font-size:15px}.response-family-switch{grid-template-columns:1fr}.response-family-switch button{min-height:25px;padding:3px 6px;font-size:8px}.sga-head-actions .sga-btn{padding:7px 8px;font-size:9px}.sga-mobile-nav{padding:8px}.sga-mobile-quick-nav{gap:4px}.sga-mobile-quick-btn{min-height:46px}.sga-mobile-quick-btn>small{font-size:8px}.sga-main{padding:8px 8px 76px}.sga-result-stage-tabs{grid-template-columns:minmax(0,1fr)}.sga-card,.sga-agent-expanded{padding:12px}.sga-actions .sga-btn{flex-basis:100%}
-}
-/* v2.2.13 work-first shell: no home dashboard, persistent status strip, or summary rail. */
-.libra-header-status,.sga-insight-rail{display:none!important}
-.sga-shell,.sga-app[data-tab="providers"] .sga-shell{grid-template-columns:200px minmax(0,1fr)}
-/* Unified literary workspace: a reading surface, not an operational dashboard. */
-:root{--sga-bg:#0f0e0c;--sga-surface:#181612;--sga-surface2:#211e19;--sga-surface3:#2a261f;--sga-line:#3b342a;--sga-text:#f2eadc;--sga-muted:#a99d8a;--sga-accent:#c7a36a;--sga-good:#8fb996;--sga-warn:#d6ad64;--sga-danger:#d98278}
-#sga-rp-gui-root{background:radial-gradient(circle at 78% -8%,rgba(142,102,54,.13),transparent 34%),linear-gradient(150deg,#0f0e0c,#12110e 54%,#0c0b0a)}
-.sga-app{border-color:rgba(199,163,106,.22);background:rgba(15,14,12,.98);box-shadow:0 28px 88px rgba(0,0,0,.5)}
-.sga-top{border-bottom-color:rgba(199,163,106,.16);background:rgba(17,15,12,.98)}
-.sga-brand h1,.sga-flow-page-title h2,.libra-current-article h3,.libra-reader-intro h2{font-family:Georgia,"Noto Serif KR",serif;letter-spacing:.015em}
-.sga-brand h1{font-size:23px;letter-spacing:.12em}.sga-brand p{color:#8f8474;letter-spacing:.04em}
-.response-family-switch{border-color:rgba(199,163,106,.22);background:#0d0c0a}.response-family-switch button{color:#9e9382}.response-family-switch button:hover{background:rgba(199,163,106,.08);color:#f3eadb}.response-family-switch button.active,.sga-app[data-response-family="gradia"] .response-family-switch button.active{background:linear-gradient(135deg,#8f6c3d,#b28a52);color:#fffaf0;box-shadow:0 5px 18px rgba(94,61,25,.28)}
-.sga-sidebar{border-color:rgba(199,163,106,.16);background:linear-gradient(180deg,rgba(25,22,17,.98),rgba(15,14,11,.98));padding:14px 12px}
-.sga-side-group{margin:15px 8px 5px;color:#796e5e;font-size:8px;letter-spacing:.17em}.sga-side-group:first-child{margin-top:4px}
-.sga-side-item{color:#b9ad9b;border-radius:9px}.sga-side-icon{color:#a88a5d}.sga-side-item:hover{background:rgba(199,163,106,.07);color:#f5ecdf}.sga-side-item[data-active="true"]{border-color:rgba(199,163,106,.24);background:linear-gradient(90deg,rgba(143,108,61,.22),rgba(71,54,33,.08));color:#fff8eb;box-shadow:inset 2px 0 #c7a36a}
-.sga-main{padding:22px 26px 80px}.sga-section-title.sga-flow-page-title{align-items:flex-start;padding:8px 4px 5px;border-bottom:1px solid rgba(199,163,106,.13)}.sga-section-title.sga-flow-page-title h2{font-size:29px;font-weight:650}.sga-section-title.sga-flow-page-title p{max-width:760px;color:#9d9180;font-size:12px;line-height:1.65}
-.sga-card{border-color:rgba(199,163,106,.16);background:linear-gradient(165deg,rgba(29,26,21,.95),rgba(20,18,15,.96));box-shadow:none}.sga-card h2,.sga-card h3{color:#f4ebdc}.sga-note{color:#a99d8a}
-.sga-prompt-injection-nav{padding:7px;background:rgba(13,12,10,.7)}.libra-hub-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:5px}.libra-hub-tabs .sga-btn{border-color:transparent;background:transparent;color:#9f9381}.libra-hub-tabs .sga-btn:hover{background:rgba(199,163,106,.07)}.libra-hub-tabs .sga-btn.primary{border-color:rgba(199,163,106,.3);background:#2a241b;color:#fff2df}
-.sga-callout{border-color:#6b5430;background:rgba(154,111,51,.08);color:#d9b97e}.sga-callout.good{border-color:#345c42;background:rgba(69,126,83,.08);color:#a9d0ae}
-.sga-input,.sga-select,.sga-textarea{border-color:#433a2f;background:#100f0d;color:#eee5d7}.sga-input:focus,.sga-select:focus,.sga-textarea:focus{border-color:#b58f57;box-shadow:0 0 0 3px rgba(181,143,87,.1)}
-.libra-memory-layout{gap:18px}.libra-memory-list-panel{background:rgba(16,14,12,.7)}.libra-memory-card{border-color:transparent;background:transparent}.libra-memory-card:hover{background:rgba(199,163,106,.06)}.libra-memory-card.selected{border-color:rgba(199,163,106,.28);background:rgba(143,108,61,.13)}
-.libra-current-article{display:flex;min-width:0;flex-direction:column;gap:16px}.libra-current-article-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:15px;border-bottom:1px solid rgba(199,163,106,.15)}.libra-current-article-head h3{margin:5px 0 4px;font-size:25px;font-weight:650}.libra-current-article-head p{margin:0;color:#a99d8a;font-size:11px}.libra-article-eyebrow{color:#b9945f;font-size:9px;font-weight:900;letter-spacing:.14em}.libra-current-article-meta{display:flex;flex-wrap:wrap;gap:8px}.libra-current-article-meta span{padding:5px 8px;border:1px solid rgba(199,163,106,.17);border-radius:999px;color:#a99d8a;font-size:9px}.libra-current-article-lead{margin:0;color:#e7ddce;font:15px/1.85 Georgia,"Noto Serif KR",serif}.libra-current-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0;border-top:1px solid rgba(199,163,106,.13)}.libra-current-facts>div{padding:11px 10px;border-bottom:1px solid rgba(199,163,106,.1)}.libra-current-facts dt{color:#8e826f;font-size:9px;font-weight:850;letter-spacing:.04em}.libra-current-facts dd{margin:5px 0 0;color:#e5dbca;font-size:12px;line-height:1.55}.libra-current-evidence{padding:14px 16px;border-left:2px solid #9b7643;background:rgba(143,108,61,.08)}.libra-current-evidence strong{font-family:Georgia,"Noto Serif KR",serif;font-size:13px}.libra-current-evidence p{margin:7px 0;color:#cbbda9;font-size:11px;line-height:1.65}.libra-current-raw{margin-top:0}
-.libra-reader-intro{padding:20px 21px}.libra-reader-intro h2{margin:6px 0 7px;font-size:22px}.libra-reader-intro p{margin:0;color:#ab9f8d;line-height:1.7}
-.libra-state-agent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.libra-state-slot{min-height:190px}.libra-state-slot.pending{opacity:.78}.libra-state-slot-contract{margin-top:auto;padding:10px;border-top:1px solid rgba(199,163,106,.12);color:#a89b88;font-size:10px;line-height:1.55}
-.libra-reader-layout{display:grid;grid-template-columns:minmax(230px,280px) minmax(0,1fr);min-height:620px;border:1px solid rgba(199,163,106,.16);border-radius:16px;overflow:hidden;background:rgba(14,13,11,.66)}
-.libra-chapter-rail{display:flex;min-width:0;flex-direction:column;border-right:1px solid rgba(199,163,106,.15);background:rgba(11,10,8,.72)}.libra-chapter-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:12px;border-bottom:1px solid rgba(199,163,106,.12)}.libra-chapter-search .sga-input{min-width:0}.libra-chapter-list{display:flex;flex:1 1 auto;min-height:0;flex-direction:column;gap:3px;max-height:690px;padding:9px;overflow:auto;scrollbar-width:thin}.libra-chapter-episode{padding:11px 8px 5px;color:#806f59;font-size:8px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.libra-chapter-item{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:5px;padding:11px 10px;border:1px solid transparent;border-radius:10px;background:transparent;color:#c5b9a8;text-align:left;cursor:pointer}.libra-chapter-item:hover{background:rgba(199,163,106,.06)}.libra-chapter-item.active{border-color:rgba(199,163,106,.3);background:rgba(143,108,61,.14);color:#fff3e1}.libra-chapter-item>span{color:#977b54;font-size:8px;font-weight:900;letter-spacing:.12em}.libra-chapter-item>strong{max-width:100%;font:600 12px/1.5 Georgia,"Noto Serif KR",serif;overflow-wrap:anywhere}.libra-chapter-item>small{color:#817565;font-size:8px}.libra-chapter-more{margin:7px 10px}.libra-chapter-count{padding:8px 12px 12px;color:#796e5e;font-size:8px;text-align:center}
-.libra-reader-article{display:flex;min-width:0;flex-direction:column;gap:22px;padding:34px clamp(22px,4vw,58px) 28px}.libra-reader-article.empty{align-items:center;justify-content:center;min-height:540px}.libra-reader-article-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding-bottom:18px;border-bottom:1px solid rgba(199,163,106,.16)}.libra-reader-article-head h2{max-width:780px;margin:7px 0 7px;color:#f5ead9;font:650 clamp(23px,3vw,34px)/1.35 Georgia,"Noto Serif KR",serif}.libra-reader-article-head p{margin:0;color:#867a69;font-size:9px;letter-spacing:.04em}.libra-reader-deck{max-width:780px;margin:0;color:#c4b49f;font:italic 13px/1.7 Georgia,"Noto Serif KR",serif}.libra-reader-prose{max-width:790px;white-space:pre-wrap;overflow-wrap:anywhere;color:#e7ddcf;font:15px/1.95 Georgia,"Noto Serif KR",serif;user-select:text;-webkit-user-select:text}.libra-reader-margin{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;padding-top:18px;border-top:1px solid rgba(199,163,106,.14)}.libra-reader-margin h3{margin:0 0 10px;color:#aa895d;font-size:10px;letter-spacing:.08em}.libra-reader-link-list{display:flex;flex-wrap:wrap;gap:6px}.libra-reader-link-list span{padding:5px 8px;border:1px solid rgba(199,163,106,.18);border-radius:999px;color:#c9baa5;font-size:9px}.libra-change-list{display:grid;gap:6px;margin:0;padding-left:17px;color:#cabba6;font-size:10px;line-height:1.55}.libra-reader-pager{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding-top:17px;border-top:1px solid rgba(199,163,106,.14)}.libra-reader-pager>*:last-child{justify-self:end}.libra-reader-pager>span{color:#7f7464;font-size:9px}
-.libra-evidence-chain{display:flex;flex-direction:column;gap:0}.libra-evidence-node{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding:12px 0}.libra-evidence-node:not(:last-child)::after{content:'';position:absolute;left:16px;top:45px;bottom:-5px;width:1px;background:rgba(199,163,106,.25)}.libra-evidence-node-index{display:grid;place-items:center;width:32px;height:32px;border:1px solid rgba(199,163,106,.28);border-radius:50%;background:#17130e;color:#b89563;font-size:8px;font-weight:900}.libra-evidence-node-copy{min-width:0;padding:11px 13px;border:1px solid rgba(199,163,106,.14);border-radius:11px;background:rgba(27,24,19,.85)}.libra-evidence-node-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.libra-evidence-node-head strong{font:600 12px Georgia,"Noto Serif KR",serif}.libra-evidence-node-copy p{margin:8px 0;color:#cfbfaa;font-size:11px;line-height:1.65;white-space:pre-wrap}.libra-evidence-node-copy small{display:block;overflow:hidden;color:#756a5b;font-size:8px;text-overflow:ellipsis;white-space:nowrap}
-.libra-evidence-drawer-backdrop{position:fixed;inset:0;z-index:18;display:flex;justify-content:flex-end;background:rgba(3,3,3,.62)}.libra-evidence-drawer{display:flex;width:min(620px,92vw);height:100%;flex-direction:column;border-left:1px solid rgba(199,163,106,.28);background:linear-gradient(165deg,#1b1813,#100f0c);box-shadow:-28px 0 70px rgba(0,0,0,.45)}.libra-evidence-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px;border-bottom:1px solid rgba(199,163,106,.16)}.libra-evidence-drawer-head h2{margin:6px 0 0;font:650 22px/1.4 Georgia,"Noto Serif KR",serif}.libra-evidence-drawer-body{flex:1;min-height:0;padding:18px 22px 36px;overflow:auto}
-@media(max-width:980px){.sga-main{padding:16px 16px 72px}.sga-section-title.sga-flow-page-title h2{font-size:24px}.libra-state-agent-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){.libra-reader-layout{grid-template-columns:minmax(0,1fr)}.libra-chapter-rail{border-right:0;border-bottom:1px solid rgba(199,163,106,.15)}.libra-chapter-list{display:flex;max-height:none;flex-direction:row;padding:9px;overflow-x:auto;overflow-y:hidden}.libra-chapter-episode{display:none}.libra-chapter-item{flex:0 0 200px}.libra-reader-article{padding:24px 18px}.libra-reader-margin{grid-template-columns:minmax(0,1fr)}.libra-evidence-drawer{width:100vw}.libra-evidence-drawer-head{padding:16px}.libra-evidence-drawer-body{padding:14px}}
-@media(max-width:640px){.sga-main{padding:12px 10px 68px}.libra-current-article-head,.libra-reader-article-head{flex-direction:column}.libra-current-facts{grid-template-columns:minmax(0,1fr)}.libra-current-article-head h3{font-size:21px}.libra-hub-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.libra-reader-pager{grid-template-columns:1fr 1fr}.libra-reader-pager>span{display:none}}
-.sga-input-confirm-app{display:flex;min-height:0;flex-direction:column;width:min(1180px,calc(100vw - 48px));height:min(760px,calc(var(--sga-vh) - 48px));overflow:hidden;border:1px solid rgba(124,156,255,.32);border-radius:22px;background:radial-gradient(circle at 86% 0%,rgba(124,92,255,.14),transparent 28%),#070b13;box-shadow:0 24px 72px rgba(0,0,0,.48);color:#e7edfb}
-.sga-input-confirm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px 22px;border-bottom:1px solid rgba(124,156,255,.17);background:rgba(9,14,24,.96)}.sga-input-confirm-head h2{margin:0 0 6px;font-size:20px}.sga-input-confirm-head p{margin:0;color:#9aabc4;font-size:12px;line-height:1.55}.sga-input-confirm-close{flex:0 0 auto;min-width:42px;min-height:38px;padding:7px 12px;border:1px solid rgba(124,156,255,.24);border-radius:11px;background:#111a2b;color:#dce5f7;font-size:18px;cursor:pointer}
-.sga-input-confirm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;flex:1;min-height:0;padding:16px 18px}.sga-input-confirm-pane{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;border:1px solid rgba(124,156,255,.19);border-radius:16px;background:rgba(7,12,21,.76)}.sga-input-confirm-pane.expanded{border-color:rgba(124,92,255,.42);box-shadow:inset 0 2px rgba(139,92,255,.55)}.sga-input-confirm-pane-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-bottom:1px solid rgba(124,156,255,.14)}.sga-input-confirm-pane-head strong{font-size:14px}.sga-input-confirm-pane-head span{color:#8497b4;font-size:10px}.sga-input-confirm-pane-tools{display:flex;align-items:center;justify-content:flex-end;gap:7px}.sga-input-confirm-edit-badge{padding:3px 7px;border:1px solid rgba(139,92,255,.34);border-radius:999px;background:rgba(124,92,255,.12);color:#cbbcff!important}.sga-input-confirm-translation-row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px;padding:8px 12px 0}.sga-input-confirm-translate{min-height:30px;padding:5px 9px;border:1px solid rgba(124,156,255,.22);border-radius:9px;background:#111a2b;color:#cbd7eb;font-size:10px;cursor:pointer}.sga-input-confirm-text{flex:1;min-height:0;margin:0;padding:16px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#cfd9eb;font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;user-select:text;-webkit-user-select:text}.sga-input-confirm-text.editable{box-sizing:border-box;width:100%;border:0;resize:none;background:rgba(5,9,17,.58);outline:none;caret-color:#a999ff}.sga-input-confirm-text.editable:focus{background:rgba(8,12,23,.9);box-shadow:inset 0 0 0 1px rgba(139,92,255,.38)}.sga-input-confirm-text.editable:disabled{opacity:.7}.sga-input-confirm-empty{color:#73839d;font-style:italic}.sga-input-confirm-actions{display:flex;gap:8px;padding:13px 15px;border-top:1px solid rgba(124,156,255,.14)}.sga-input-confirm-actions .sga-btn{flex:1;min-height:42px}.sga-input-confirm-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 18px 17px}.sga-input-confirm-status{min-width:0;color:#8fa1bd;font-size:11px;line-height:1.45}.sga-input-confirm-status.err{color:#ff9eb3}.sga-input-confirm-regenerate{flex:0 0 auto;min-width:122px}.sga-input-confirm-app.busy button{opacity:.55;pointer-events:none}
-.sga-input-confirm-app.libra-input-writer-modal{height:auto;max-height:calc(var(--sga-vh) - 40px);margin:auto;overflow:auto}.libra-input-writer-modal>.sga-input-confirm-head{padding:16px 18px}.libra-input-writer-modal>.sga-input-confirm-head h2{font-size:18px}.libra-input-writer-modal>.sga-input-confirm-head p{font-size:11px}.libra-input-writer-modal.composer{width:min(780px,calc(100vw - 40px))}.libra-input-writer-modal.composer>.sga-card{margin:14px 16px 0;padding:0;overflow:hidden}.libra-input-writer-modal.composer>.sga-actions{justify-content:flex-end;padding:12px 16px 16px}.libra-input-writer-modal.composer .sga-input-confirm-text{min-height:150px;max-height:36vh}.libra-input-writer-modal.choices{width:min(1320px,calc(100vw - 40px))}.libra-input-writer-choice-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))!important;gap:10px;max-height:calc(var(--sga-vh) - 220px);padding:12px 14px;overflow:auto}.libra-input-writer-choice-grid>.sga-card{display:flex;min-width:0;flex-direction:column;padding:12px}.libra-input-writer-choice-grid .sga-agent-head{margin-bottom:8px}.libra-input-writer-choice-grid .sga-input-confirm-text{min-height:150px;max-height:34vh;padding:12px;border:1px solid rgba(124,156,255,.12);border-radius:10px}.libra-input-writer-choice-grid .sga-actions{margin-top:8px}.libra-input-writer-modal.choices>.sga-input-confirm-footer{padding:10px 14px 14px;border-top:1px solid rgba(124,156,255,.12)}.libra-input-writer-modal.delivery{width:min(860px,calc(100vw - 40px))}.libra-input-writer-modal.delivery>.sga-input-confirm-text{min-height:170px;max-height:42vh;margin:10px 14px 12px;width:calc(100% - 28px)!important;border:1px solid rgba(124,156,255,.12);border-radius:12px;padding:14px}.libra-input-writer-modal.delivery>.sga-input-confirm-footer{padding:0 14px 14px}
-@media(max-width:760px){.sga-input-confirm-app{width:100vw;height:var(--sga-vh);border:0;border-radius:0}.sga-input-confirm-head{padding:14px}.sga-input-confirm-head h2{font-size:17px}.sga-input-confirm-grid{grid-template-columns:minmax(0,1fr);overflow:auto;padding:10px}.sga-input-confirm-pane{min-height:330px}.sga-input-confirm-footer{padding:0 10px 12px;align-items:stretch;flex-direction:column}.sga-input-confirm-regenerate{width:100%;min-height:44px}}
-@media(hover:none) and (pointer:coarse){.sga-simple-choice:hover,.sga-quicknav-btn:hover{transform:none}}
-
-/* v2.3.7 pointer-stable controls for embedded RisuAI WebViews. A hover target
-   must never move away from its pointer or create a transient filter layer. */
-.sga-app .sga-side-item,.sga-app .libra-hub-tabs .sga-btn,.sga-app .sga-prompt-injection-tabs .sga-btn,.sga-app .libra-chapter-item,.sga-app .libra-memory-card,.sga-app .sga-result-stage-tab,.sga-app .sga-list-item,.sga-app .sga-simple-choice,.sga-app .sga-quicknav-btn,.sga-app .sga-mobile-quick-btn,.sga-app .response-family-switch button{transition:none!important;transform:none!important;filter:none!important}
-.sga-app .sga-side-item:hover{transform:none!important;filter:none!important;background:#1b1813!important}
-.sga-app .libra-hub-tabs .sga-btn:hover,.sga-app .sga-prompt-injection-tabs .sga-btn:hover{transform:none!important;filter:none!important;background:#1b1812!important}
-.sga-app .libra-chapter-item:hover,.sga-app .libra-memory-card:hover,.sga-app .sga-result-stage-tab:hover,.sga-app .sga-list-item:hover,.sga-app .sga-simple-choice:hover,.sga-app .sga-quicknav-btn:hover,.sga-app .sga-mobile-quick-btn:hover{transform:none!important;filter:none!important}
-.sga-app button:active{transform:none!important;filter:none!important}
-
-/* v2.3.8 GRADIA Skill Router owns a vertical card layout. The generic
-   sga-module-lore-item grid is reserved for checkbox + copy module rows. */
-.gradia-skill-router-page{min-width:0}
-.gradia-skill-router-page>.sga-card{min-width:0}
-.gradia-skill-stage-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(130px,1fr))!important;flex:1 1 720px!important;min-width:0}
-.gradia-skill-search{flex:0 1 460px;min-width:260px}
-.gradia-skill-card-grid,.gradia-custom-skill-grid,.gradia-skill-route-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
-.gradia-skill-card-grid{max-height:min(640px,62vh);overflow:auto;padding:2px 7px 2px 2px}
-.sga-module-lore-item.gradia-skill-card,.sga-module-lore-item.gradia-skill-route-summary{display:flex!important;grid-template-columns:none!important;align-items:stretch!important;flex-direction:column;gap:12px!important;min-width:0;min-height:0;cursor:default}
-.gradia-skill-card>.sga-agent-head{align-items:flex-start;width:100%;min-width:0;margin:0}
-.gradia-skill-card>.sga-agent-head>strong{min-width:0;color:#f4ebdc;font-size:16px;line-height:1.35;overflow-wrap:anywhere;word-break:normal}
-.gradia-skill-card>.sga-note,.gradia-skill-route-summary>.sga-note{width:100%;min-width:0;margin:0;overflow-wrap:anywhere;word-break:keep-all}
-.gradia-skill-card>.sga-field{width:100%;min-width:0;margin:0;padding-top:10px;border-top:1px solid rgba(199,163,106,.12)}
-.gradia-skill-card>.sga-field>.sga-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;width:100%;min-width:0}
-.gradia-skill-card input[type="range"]{width:100%;min-width:0;accent-color:#b58f57}
-.gradia-skill-card>.gradia-skill-details{width:100%;min-width:0;margin:0;padding:11px 12px}
-.gradia-skill-card>.gradia-skill-details>summary{display:block;min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:keep-all}
-.gradia-skill-card>.gradia-skill-details .sga-live-result-code{max-width:100%;overflow:auto}
-.gradia-skill-save-actions{justify-content:flex-end;margin-top:14px}
-.gradia-skill-save-actions>.sga-btn{flex:0 0 auto;min-width:150px}
-.gradia-custom-skill-card>.sga-actions{margin-top:auto}
-@media(max-width:1180px){.gradia-skill-stage-tabs{grid-template-columns:repeat(2,minmax(150px,1fr))!important;flex-basis:560px!important}.gradia-skill-search{flex-basis:320px}.gradia-skill-card-grid,.gradia-custom-skill-grid,.gradia-skill-route-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){.gradia-skill-router-page .sga-agent-head{flex-wrap:wrap}.gradia-skill-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;flex-basis:auto!important;width:100%}.gradia-skill-search{flex:1 1 100%;width:100%;min-width:0}.gradia-skill-card-grid{max-height:none;overflow:visible;padding:0}.gradia-skill-card>.sga-field>.sga-actions{grid-template-columns:minmax(0,1fr)}.gradia-skill-save-actions>.sga-btn{width:100%}}
-
-/* v2.3.9 secondary page navigation. Category hubs use a vertical rail on
-   desktop; compact view switches remain one non-wrapping row. */
-.libra-section-layout{display:grid;grid-template-columns:minmax(176px,208px) minmax(0,1fr);align-items:start;gap:14px;min-width:0}
-.libra-section-rail{position:sticky;top:0;display:flex;min-width:0;flex-direction:column;gap:4px;padding:7px;border:1px solid rgba(199,163,106,.16);border-radius:14px;background:rgba(13,12,10,.72)}
-.libra-section-rail .sga-btn{display:block;width:100%;min-width:0;overflow:hidden;border-color:transparent;background:transparent;color:#a99d8a;text-align:left;text-overflow:ellipsis;white-space:nowrap;transition:none!important;transform:none!important;filter:none!important}
-.libra-section-rail .sga-btn:hover{background:#1b1812!important;color:#f5ecdf;transform:none!important;filter:none!important}
-.libra-section-rail .sga-btn.primary{border-color:rgba(199,163,106,.3);background:#2a241b;color:#fff2df;box-shadow:inset 2px 0 #c7a36a}
-.libra-section-content{min-width:0}
-.libra-hub-tabs{display:flex!important;min-width:0;flex-wrap:nowrap!important;grid-template-columns:none!important;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
-.libra-hub-tabs .sga-btn{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:900px){.libra-section-layout{display:block}.libra-section-rail{position:static;flex-direction:row;overflow-x:auto;overflow-y:hidden;margin-bottom:12px;scroll-snap-type:x proximity;overscroll-behavior-x:contain}.libra-section-rail .sga-btn{flex:0 0 auto;width:auto;max-width:min(78vw,260px);scroll-snap-align:start}.libra-section-rail .sga-btn.primary{box-shadow:inset 0 -2px #c7a36a}}
-@media(max-width:640px){.libra-hub-tabs{grid-template-columns:none!important}.libra-hub-tabs .sga-btn{flex:0 0 auto;min-width:118px;max-width:min(72vw,220px);scroll-snap-align:start}}
-
-/* v2.3.24 · Librarian Book UX presentation layer */
-.libra-range-overlay{position:fixed;inset:0;z-index:30;display:flex;justify-content:flex-end;background:rgba(30,23,17,.3);font:inherit;color:#35271c}.libra-range-drawer{box-sizing:border-box;width:min(880px,100vw);height:100%;display:flex;flex-direction:column;background:#f3eadc;border-left:1px solid #c9b79c;box-shadow:-10px 0 32px rgba(30,23,17,.18)}.libra-range-head,.libra-range-footer{padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid #c9b79c}.libra-range-footer{border-top:1px solid #c9b79c;border-bottom:0}.libra-range-head h2{margin:4px 0;font-size:24px}.libra-range-head small{color:#78644f;font-weight:700}.libra-range-body{padding:20px 24px;overflow:auto;min-height:0;flex:1}.libra-range-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:18px}.libra-range-tile{display:flex;flex-direction:column;gap:8px;align-items:flex-start;background:#fff9f0;border:1px solid #c9b79c;border-radius:12px;color:#35271c;padding:16px;font:inherit;cursor:pointer}.libra-range-tile span{font-size:12px;color:#68503b}.libra-range-tile.selected{background:#e2c79e;border:2px solid #99632f;padding:15px}.libra-range-tile:disabled{background:#e9e1d4;color:#776852;cursor:default}.libra-range-drawer .sga-btn,.libra-range-drawer select{font:inherit;background:#fff9f0;color:#4e3623;border:1px solid #c9b79c;border-radius:10px;padding:10px 14px;min-height:40px}.libra-range-drawer .sga-btn.primary{background:#986530;color:#fff9f0}.libra-range-drawer .sga-btn:disabled{opacity:.55}.libra-range-drawer .sga-actions{display:flex;gap:10px;flex-wrap:wrap}.libra-range-drawer .sga-callout{border:1px solid #c9b79c;border-radius:12px;padding:14px;margin-top:14px;line-height:1.6;background:#eadcc7;color:#4e3623}.libra-memory-progress .sga-badge{white-space:nowrap;flex-shrink:0}.libra-memory-progress pre{white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:540px){.libra-range-head,.libra-range-footer,.libra-range-body{padding:14px}.libra-range-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-range-drawer select{width:100%;min-width:0}.libra-range-footer .sga-btn{width:100%}}
-.libra-book-app{--book-desk:#17120e;--book-paper:#f3eadc;--book-paper-2:#eadcc7;--book-line:#c9b79c;--book-ink:#35271c;--book-muted:#78644f;--book-accent:#9a6938;--book-gold:#c39a62;background:var(--book-desk);color:#efe5d8}
-.libra-book-top{padding:10px 16px;background:linear-gradient(180deg,#1c1510,#120e0b);border-color:#3d2c20;min-height:62px}
-.libra-book-brand-wrap{position:relative;min-width:0}.libra-book-brand-button{display:flex;align-items:center;gap:9px;border:1px solid transparent;border-radius:12px;background:transparent;color:#f2e7d9;padding:6px 8px;text-align:left;cursor:pointer}.libra-book-brand-button:hover{background:rgba(255,255,255,.04);border-color:rgba(195,154,98,.18)}
-.libra-book-bookmark{display:grid;width:32px;height:38px;place-items:center;border-radius:6px;background:linear-gradient(180deg,#9b6b36,#6b4323);color:#fff2df;font:700 15px Georgia,"Noto Serif KR",serif}.libra-book-brand-copy{display:grid;gap:2px}.libra-book-brand-copy strong{font:700 16px Georgia,"Noto Serif KR",serif;letter-spacing:.04em}.libra-book-brand-copy small{font-size:9px;color:#9f8d79}.libra-book-chevron{color:#bfa079}
-.libra-book-family-menu{position:absolute;z-index:21;top:calc(100% + 6px);left:0;display:grid;min-width:270px;padding:7px;border:1px solid #b79e7c;border-radius:12px;background:#ecdfca;box-shadow:0 20px 45px rgba(0,0,0,.35)}.libra-book-family-menu button{display:grid;gap:3px;border:0;border-radius:9px;background:transparent;color:#4c3928;padding:10px;text-align:left;cursor:pointer}.libra-book-family-menu button.active,.libra-book-family-menu button:hover{background:#ddc5a1}.libra-book-family-menu strong{font:700 13px Georgia,"Noto Serif KR",serif}.libra-book-family-menu small{font-size:9px;color:#77634d}
-.libra-book-current-page{color:#a99885;font:12px Georgia,"Noto Serif KR",serif;letter-spacing:.06em}.libra-book-head-actions{gap:7px}.libra-book-settings-button{display:none}.libra-book-quick-button{border-color:#735334!important;background:#2b1f16!important;color:#f0e3d2!important}
-.libra-book-sidebar{width:220px;background:linear-gradient(180deg,#18110d,#100c09);border-color:#3b2b20;padding:14px 11px}.libra-book-side-label{padding:2px 10px 10px;color:#786959;font:9px Georgia,"Noto Serif KR",serif;letter-spacing:.18em}.libra-book-side-divider{height:1px;margin:10px 9px 6px;background:rgba(199,163,106,.14)}.libra-book-side-item{border-radius:12px!important;color:#c8b8a6!important}.libra-book-side-item[data-active="true"]{background:#261b13!important;color:#f4e7d5!important;box-shadow:inset 3px 0 #a06b35}.libra-book-side-item .sga-side-icon{color:#bd996e!important;border-color:#4d392b!important}
-.libra-book-stage{min-width:0}.libra-book-page{--sga-bg:#f3eadc;--sga-surface:#f7efe3;--sga-surface2:#eee1cf;--sga-surface3:#e8d8c1;--sga-line:#c9b79c;--sga-text:#392b20;--sga-muted:#796550;--sga-accent:#966334;--sga-good:#58715c;--sga-warn:#9b6b36;--sga-danger:#8a5148;max-width:1220px;min-height:calc(var(--sga-vh) - 110px);margin:0 auto;padding:28px;border:1px solid #bca98e;border-radius:18px;background:linear-gradient(180deg,#f5eddf,#efe4d2);color:var(--sga-text);box-shadow:0 26px 60px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.5)}
-.libra-book-page .sga-card{background:var(--sga-surface);border-color:var(--sga-line);color:var(--sga-text);box-shadow:none}.libra-book-page .sga-note,.libra-book-page .sga-section-title p{color:var(--sga-muted)}.libra-book-page .sga-input,.libra-book-page .sga-select,.libra-book-page .sga-textarea{background:#fbf5eb;border-color:#c8b69b;color:#3b2b20}.libra-book-page .sga-btn{border-color:#c5ae8e;background:#f3e8d8;color:#5e4630}.libra-book-page .sga-btn.primary{background:#dfc39d;border-color:#a97947;color:#53341c}.libra-book-page .sga-btn.good{background:#dbe3d5;border-color:#819078;color:#405241}.libra-book-page .sga-btn.danger{background:#ecd9d4;border-color:#b98076;color:#713d37}
-.libra-book-page-head{padding:0 2px 10px;margin-bottom:10px;border-bottom:1px solid #d3c1a8}.libra-book-page-title-row{display:flex;align-items:baseline;gap:10px;flex-wrap:nowrap;min-width:0}.libra-book-page-title-row h1{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.libra-book-page-title-row .libra-book-eyebrow{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}.libra-book-page-note{margin:6px 0 0}.libra-book-page-note summary{cursor:pointer;color:#9a6634;font:600 11px Georgia,"Noto Serif KR",serif;letter-spacing:.04em}.libra-book-page-note p{margin:4px 0 0}.libra-book-page-head h1{margin:0;min-width:0;color:#33261c;font:700 24px/1.25 Georgia,"Noto Serif KR",serif}.libra-book-page-head p{max-width:900px;margin:0;color:#6d5844;font:14px/1.7 Georgia,"Noto Serif KR",serif}.libra-book-eyebrow{color:#9a6634;font:700 10px Georgia,"Noto Serif KR",serif;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
-.libra-book-metric-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-bottom:16px}.libra-book-metric{display:grid;gap:2px;border:1px solid #cab79b;border-radius:12px;background:#eee2d1;color:#4c3928;padding:12px;text-align:left;cursor:pointer}.libra-book-metric strong{color:#8b5c2f;font:700 22px Georgia,"Noto Serif KR",serif}.libra-book-metric span{font-size:10px;color:#725e49}.libra-book-reading-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}.libra-book-reading-column{min-width:0}.libra-book-section-title{display:grid;gap:4px;margin:2px 0 10px}.libra-book-section-title span{color:#956433;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.15em}.libra-book-section-title h2{margin:0;color:#3b2c20;font:700 18px Georgia,"Noto Serif KR",serif}
-
-/* v2.3.24 Book UX reader projections — v5.10 fidelity pass */
-.libra-book-spread{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);max-width:1120px;margin:0 auto;filter:drop-shadow(0 18px 32px rgba(74,51,30,.13))}
-.libra-book-leaf{position:relative;min-width:0;min-height:620px;padding:30px 30px 34px;border:1px solid #c2af92;background:linear-gradient(90deg,#ecdfcb,#f9f1e6 8%,#f8efe3 94%,#e8d7c0);color:#392b20;box-shadow:inset 0 1px rgba(255,255,255,.6)}
-.libra-book-leaf.left{border-radius:18px 2px 2px 18px;border-right-color:#d5c2a5}.libra-book-leaf.right{border-radius:2px 18px 18px 2px;border-left-color:#d9c8ad;background:linear-gradient(90deg,#e8d8c1,#f8efe3 8%,#f7eddf 96%,#e3d0b7)}
-.libra-book-leaf.left::after,.libra-book-leaf.right::before{content:'';position:absolute;top:0;bottom:0;width:18px;pointer-events:none}.libra-book-leaf.left::after{right:-1px;background:linear-gradient(90deg,transparent,rgba(78,55,34,.10))}.libra-book-leaf.right::before{left:-1px;background:linear-gradient(90deg,rgba(78,55,34,.12),transparent)}
-.libra-book-leaf h2{margin:8px 0 14px;color:#33251a;font:700 25px/1.25 Georgia,"Noto Serif KR",serif}.libra-book-leaf h3{color:#3b2c20}.libra-book-prose-lead{margin:0 0 16px;color:#493829;font:14px/1.84 Georgia,"Noto Serif KR",serif;word-break:keep-all}.libra-book-prose-lead.muted{color:#796650}
-.libra-book-margin-note{margin:16px 0;padding:13px 14px;border-left:3px solid #aa7540;background:#f0e3d1;color:#5b4633}.libra-book-margin-note strong{display:block;margin-bottom:6px;color:#563b22}.libra-book-margin-note p{margin:0;color:#654f3b;line-height:1.7}
-.libra-book-inline-links{display:flex;flex-wrap:wrap;gap:7px 13px;margin:14px 0}.libra-book-inline-action{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#744c27;padding:0;font:700 11px/1.35 Georgia,"Noto Serif KR",serif;cursor:pointer;text-decoration:underline;text-decoration-color:#c6a16f;text-underline-offset:3px;-webkit-text-fill-color:currentColor}.libra-book-inline-action:hover{color:#4f3018;text-decoration-color:#8e5d2e}.libra-book-inline-action.strong{color:#5e3518}
-.libra-book-desk-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:18px}.libra-book-desk-facts>div{display:grid;gap:2px;padding:11px 12px;border:1px solid #d1bea2;border-radius:12px;background:#f3e7d6}.libra-book-desk-facts strong{color:#82562c;font:700 20px Georgia,"Noto Serif KR",serif}.libra-book-desk-facts span{color:#77634d;font-size:10px}
-.libra-book-note-section{padding:15px 0;border-top:1px solid #d6c3a8}.libra-book-note-section:first-of-type{border-top:0}.libra-book-note-section>header{display:grid;gap:3px;margin-bottom:10px}.libra-book-note-section>header>span{color:#956433;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.14em}.libra-book-note-section>header>h3{margin:0;font:700 16px Georgia,"Noto Serif KR",serif}
-.libra-book-profile-index{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}.libra-book-profile-index button{flex:0 0 auto;display:grid;gap:2px;min-width:120px;padding:9px 12px;border:1px solid transparent;border-bottom:2px solid transparent;background:transparent;color:#78634d;text-align:left;cursor:pointer}.libra-book-profile-index button.active{border-bottom-color:#a46a32;color:#3e2d1e}.libra-book-profile-index strong{font:700 13px Georgia,"Noto Serif KR",serif}.libra-book-profile-index small{color:#8c755c;font-size:9px}
-.libra-book-character-spread{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(280px,.92fr);gap:14px;align-items:start}.libra-book-character-sheet,.libra-book-relations-sheet{min-width:0;padding:20px;border:1px solid #ccb99e;border-radius:16px;background:linear-gradient(180deg,#faf2e7,#f4e8d8);color:#3b2c20;box-shadow:inset 0 1px rgba(255,255,255,.55)}
-.libra-book-character-browser{display:grid;grid-template-columns:190px minmax(0,1fr);gap:20px;align-items:start;container-type:inline-size}
-.libra-book-character-index{min-width:0;border:1px solid #ccb99e;border-radius:14px;background:#f3e7d6;overflow:hidden}
-.libra-book-character-index>summary{padding:14px;color:#89633e;font:700 11px/1.5 Georgia,"Noto Serif KR",serif;letter-spacing:.06em;cursor:pointer}
-.libra-book-character-browser .libra-book-profile-index{display:flex;flex-direction:column;gap:4px;margin:0;padding:0 8px 8px;max-height:60vh;overflow-x:hidden;overflow-y:auto;scrollbar-width:thin}
-.libra-book-character-browser .libra-book-profile-index button{width:100%;min-width:0;min-height:44px;padding:12px;border:1px solid transparent;border-left:3px solid transparent;border-radius:8px;white-space:normal;overflow-wrap:anywhere}
-.libra-book-character-browser .libra-book-profile-index button.active{border-color:#d2b58e;border-left-color:#a46a32;background:#e8d2af;color:#3e2d1e}
-.libra-book-character-browser .libra-book-profile-index button:hover{background:#ecdcc4}
-.libra-book-character-browser .libra-book-profile-index button:focus-visible{outline:2px solid #a46a32;outline-offset:-2px}
-.libra-book-character-browser .libra-book-profile-index strong{line-height:1.5}.libra-book-character-browser .libra-book-profile-index small{line-height:1.5}
-.libra-book-character-browser>.libra-book-character-spread{min-width:0;grid-template-columns:minmax(0,1fr)}
-@container(min-width:1100px){.libra-book-character-browser>.libra-book-character-spread{grid-template-columns:minmax(0,1.08fr) minmax(280px,.92fr)}}
-@media(max-width:760px){.libra-book-character-browser{grid-template-columns:minmax(0,1fr);gap:14px}.libra-book-character-browser .libra-book-profile-index{max-height:32vh}}
-.libra-book-character-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:13px;border-bottom:1px solid #d8c6ad}.libra-book-character-head h2{margin:5px 0 0;color:#33251a;font:700 27px/1.25 Georgia,"Noto Serif KR",serif}.libra-book-subtitle{margin:5px 0 0;color:#79634d;font-size:11px;line-height:1.6}
-.libra-book-character-sheet .libra-book-character-head{flex-direction:column;align-items:stretch;gap:12px}
-.libra-book-source-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-width:0}
-.libra-book-source-meta>.libra-book-subtitle{margin:0;font-size:10px;line-height:1.6}
-.libra-book-relation-card .libra-book-card-meta{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin:14px 0 12px;padding-top:10px;border-top:1px solid #ddcbb2}
-.libra-book-profile-facts{display:grid;grid-template-columns:minmax(0,1fr);margin:16px 0 0;border-top:1px solid #dbcab3}.libra-book-profile-facts>div{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:14px 0;border-bottom:1px solid #e2d3bf}.libra-book-profile-facts dt{color:#8b6843;font-size:11px;line-height:1.5}.libra-book-profile-facts dd{min-width:0;margin:0;color:#4d3a2b;font-size:13px;line-height:1.85;word-break:keep-all;overflow-wrap:anywhere}
-.libra-book-relations-sheet>h3{margin:5px 0 4px;color:#33251a;font:700 20px Georgia,"Noto Serif KR",serif}.libra-book-relation-list{display:grid;gap:9px;margin-top:12px}.libra-book-relation-card{padding:12px;border:1px solid #d0bda1;border-radius:13px;background:#f4e8d7;color:#463426}.libra-book-relation-card h4{margin:5px 0 7px;color:#38281c;font:700 14px Georgia,"Noto Serif KR",serif}.libra-book-relation-card p{margin:0 0 8px;color:#584331;line-height:1.65}.libra-book-card-kicker{color:#a06b36;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.14em}.libra-book-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;color:#806b55;font-size:9px}
-.libra-book-world-guide{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}.libra-book-world-overview,.libra-book-world-index{min-width:0;padding:20px;border:1px solid #ccb99e;border-radius:16px;background:linear-gradient(180deg,#faf2e7,#f4e8d8);color:#3b2c20}.libra-book-world-overview{display:grid;grid-template-columns:minmax(0,1fr);align-content:start}.libra-book-world-overview h2,.libra-book-world-index h3{margin:6px 0 12px;color:#33251a;font:700 21px Georgia,"Noto Serif KR",serif}.libra-book-world-overview p{margin:0 0 8px;color:#4d3a2b;font:14px/1.78 Georgia,"Noto Serif KR",serif}.libra-book-world-overview .libra-book-subtitle{margin-top:4px}.libra-book-world-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.libra-book-world-card{display:flex;min-width:0;min-height:190px;padding:14px;flex-direction:column;align-items:flex-start;border:1px solid #d0bda1;border-radius:13px;background:#f4e8d7;color:#463426}.libra-book-world-card h3{margin:5px 0 7px;color:#38281c;font:700 16px Georgia,"Noto Serif KR",serif}.libra-book-world-card p{margin:0 0 10px;color:#584331;line-height:1.65;word-break:keep-all;overflow-wrap:anywhere}.libra-book-world-card .libra-book-card-meta{display:flex;width:100%;flex-wrap:wrap;justify-content:flex-start;gap:6px 10px;margin-top:auto;padding-top:10px;border-top:1px solid #ddcbb2}.libra-book-world-card .libra-book-card-meta .libra-book-subtitle{min-width:0;margin:0;white-space:normal;word-break:keep-all;overflow-wrap:anywhere}.libra-book-world-card>.libra-book-inline-action{margin-top:10px}
-.libra-book-toc-sheet{padding:22px;border:1px solid #ccb99e;border-radius:16px;background:linear-gradient(180deg,#faf2e7,#f4e8d8);color:#392b20}.libra-book-toc-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #d8c6ad}.libra-book-toc-head h2{margin:6px 0 4px;color:#33251a;font:700 22px Georgia,"Noto Serif KR",serif}.libra-book-toc-head p{margin:0;color:#6a5541}.libra-book-turn-chip{display:inline-flex;padding:5px 9px;border:1px solid #d0b99b;border-radius:999px;background:#efe1cd;color:#79542f;font:700 10px Georgia,"Noto Serif KR",serif}
-.libra-book-toc-list{display:grid;margin-top:6px}.libra-book-toc-row{display:grid;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:14px 2px;border-top:1px solid #deceb8}.libra-book-toc-row:first-child{border-top:0}.libra-book-toc-no{color:#ad7c45;font:700 20px Georgia,"Noto Serif KR",serif}.libra-book-toc-copy>span{color:#91673b;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.12em}.libra-book-toc-copy h3{margin:3px 0 5px;color:#392a1e;font:700 15px Georgia,"Noto Serif KR",serif}.libra-book-toc-copy p{margin:0;color:#584432;line-height:1.65}
-.libra-book-librarian-margin{margin-top:16px;padding:15px 16px;border:1px dashed #c9aa83;border-radius:14px;background:#f1e4d2}.libra-book-librarian-margin h3{margin:5px 0 8px;color:#53371f;font:700 16px Georgia,"Noto Serif KR",serif}.libra-book-margin-field{margin-top:10px;padding-top:10px;border-top:1px solid #dbc7aa}.libra-book-margin-field strong{color:#765331;font-size:10px}.libra-book-margin-field p{margin:4px 0 0;color:#594532;line-height:1.65}
-
-.libra-book-drawer-backdrop{position:fixed;inset:0;z-index:19;display:flex;justify-content:flex-end;background:rgba(7,5,3,.55)}.libra-book-drawer{--sga-surface:#f7efe3;--sga-surface2:#eee1cf;--sga-surface3:#e8d8c1;--sga-line:#c9b79c;--sga-text:#392b20;--sga-muted:#796550;--sga-accent:#966334;display:flex;width:min(780px,96vw);height:100%;min-width:0;flex-direction:column;background:#eee2d0;color:var(--sga-text);border-left:1px solid #bda689;box-shadow:-30px 0 70px rgba(0,0,0,.4)}.libra-book-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid #c7b398;background:#e7d6bd}.libra-book-drawer-head h2{margin:3px 0 0;font:700 22px Georgia,"Noto Serif KR",serif}.libra-book-drawer-tabs{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid #c9b79c;overflow-x:auto;background:#eadcc7}.libra-book-drawer-tabs .sga-btn{flex:0 0 auto}.libra-book-drawer-body{flex:1;min-height:0;padding:14px 16px 32px;overflow:auto}.libra-book-drawer .sga-card{background:#f5ecdf;border-color:#cab89e;color:#392b20}.libra-book-drawer .sga-note{color:#76624c}.libra-book-drawer .sga-input,.libra-book-drawer .sga-select,.libra-book-drawer .sga-textarea{background:#fbf5eb;border-color:#c8b69b;color:#3b2b20}
-.libra-book-drawer .sga-status[data-book-quick-save-status]{min-height:24px;padding:10px 14px;border:1px solid #c7b394;border-radius:14px;background:#f0e3d1;color:#4b3829;-webkit-text-fill-color:#4b3829;line-height:1.5;box-sizing:border-box}.libra-book-drawer .sga-status[data-book-quick-save-status].err{border-color:#b77c71;background:#efdad5;color:#793f37;-webkit-text-fill-color:#793f37}
-.libra-book-settings-mobile-picker{display:none}@media(max-width:980px){.libra-book-settings-mobile-picker{display:flex;gap:12px;align-items:center;margin-bottom:16px}.libra-book-settings-mobile-picker select{min-width:0;flex:1}}
-.libra-book-mobile-nav{display:none}
-@media(max-width:980px){.libra-book-metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.libra-book-reading-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){.libra-book-current-page{display:none}.libra-book-page{min-height:auto;margin:0 8px 76px;padding:20px 16px;border-radius:16px}.libra-book-page-head h1{font-size:25px}.libra-book-page-head p{font-size:13px}.libra-book-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-book-sidebar{display:none!important}.libra-book-mobile-nav{position:fixed;z-index:17;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));height:64px;padding-bottom:env(safe-area-inset-bottom,0);border-top:1px solid #3b2a1f;background:#15100c}.libra-book-mobile-nav button{display:grid;place-items:center;align-content:center;gap:2px;border:0;border-bottom:3px solid transparent;background:transparent;color:#9f8d7a}.libra-book-mobile-nav button.active{border-color:#b57d3f;background:#21170f;color:#f0dfca}.libra-book-mobile-nav span{font:15px Georgia,"Noto Serif KR",serif}.libra-book-mobile-nav small{font-size:9px;white-space:nowrap}.libra-book-drawer{width:100%}.libra-book-drawer-head{display:grid}.libra-book-top{grid-template-columns:minmax(0,1fr) auto!important}.libra-book-top>.libra-book-current-page{display:none}.libra-book-brand-copy small{display:none}.libra-book-head-actions .sga-btn:not(.libra-book-quick-button):not(.libra-book-settings-button):not(.libra-book-close-button){display:none}.libra-book-close-button{display:inline-flex!important;align-items:center;justify-content:center;min-width:44px!important;min-height:44px!important;padding:6px!important;flex-shrink:0}.libra-book-settings-button{display:inline-flex!important}.sga-shell{grid-template-columns:minmax(0,1fr)!important}.sga-main{padding:10px 0 70px!important}.libra-section-layout{display:block}.libra-book-page .libra-reader-layout,.libra-book-page .libra-world-manager-layout,.libra-book-page .sga-grid.two,.libra-book-page .sga-grid.three{grid-template-columns:minmax(0,1fr)!important}.libra-book-page .libra-chapter-list{display:flex!important;max-height:none!important;overflow-x:auto!important;overflow-y:hidden!important}.libra-book-page .libra-chapter-item{flex:0 0 min(78vw,260px)!important}.libra-book-page pre,.libra-book-page .sga-live-result-code{max-width:100%;overflow:auto}.libra-book-page *{min-width:0}}
-
-/* Book UX v5.9 · iOS contrast + mobile reading parity */
-.libra-book-page,.libra-book-drawer,.libra-book-family-menu{color-scheme:light}
-.libra-book-page button,.libra-book-drawer button,.libra-book-family-menu button{-webkit-appearance:none;appearance:none;-webkit-text-fill-color:currentColor;opacity:1}
-.libra-book-page .sga-card h2,.libra-book-page .sga-card h3,.libra-book-page .sga-card h4,.libra-book-page .sga-card strong,.libra-book-page .sga-card label,.libra-book-page .sga-card summary{color:var(--sga-text);-webkit-text-fill-color:currentColor}
-.libra-book-page .sga-card p,.libra-book-page .sga-card li,.libra-book-page .sga-card dd{color:#594735;-webkit-text-fill-color:currentColor}
-.libra-book-page .sga-card small,.libra-book-page .sga-card dt,.libra-book-page .sga-note{color:#77634e;-webkit-text-fill-color:currentColor}
-.libra-book-page .sga-callout{border-color:#c7aa7d;background:#f0e2cd;color:#654a2e}.libra-book-page .sga-callout.good{border-color:#9cac91;background:#e5eadf;color:#425541}.libra-book-page .sga-callout.danger{border-color:#c49a90;background:#f0dfda;color:#713f39}
-.libra-book-page .libra-reader-layout{border-color:#cbb99e;background:#f5ecdf;box-shadow:inset 0 1px rgba(255,255,255,.5)}
-.libra-book-page .libra-chapter-rail{border-color:#cfbea4;background:#eee1cf}
-.libra-book-page .libra-chapter-search{border-color:#d5c3aa;background:#f3e9db}
-.libra-book-page .libra-chapter-episode{color:#8f6638;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-chapter-item{border-color:transparent;background:transparent;color:#594633;-webkit-text-fill-color:currentColor;opacity:1}
-.libra-book-page .libra-chapter-item:hover{background:#f6eee3;border-color:#d8c6ad}
-.libra-book-page .libra-chapter-item.active{border-color:#c7a578;background:#e8d8c1;color:#3e2d1e;box-shadow:inset 3px 0 #a86f36}
-.libra-book-page .libra-chapter-item>span{color:#956839;-webkit-text-fill-color:currentColor}.libra-book-page .libra-chapter-item>strong{color:#3e2d1e;-webkit-text-fill-color:currentColor}.libra-book-page .libra-chapter-item>small{color:#75614c;-webkit-text-fill-color:currentColor}.libra-book-page .libra-chapter-count{color:#75614c}
-.libra-book-page .libra-reader-article{background:linear-gradient(180deg,#faf3e9,#f4e9d9);color:#3a2b20}
-.libra-book-page .libra-reader-article-head{border-color:#d6c4ab}.libra-book-page .libra-reader-article-head h2{color:#33251a;-webkit-text-fill-color:currentColor}.libra-book-page .libra-reader-article-head p{color:#79634d;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-reader-deck{color:#6e5841;-webkit-text-fill-color:currentColor}.libra-book-page .libra-reader-prose{color:#453427;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-reader-margin{border-color:#d6c4ab}.libra-book-page .libra-reader-margin h3{color:#8b5d2f;-webkit-text-fill-color:currentColor}.libra-book-page .libra-reader-link-list span{border-color:#d1bda0;background:#f2e5d3;color:#5d4732;-webkit-text-fill-color:currentColor}.libra-book-page .libra-change-list{color:#5c4936;-webkit-text-fill-color:currentColor}.libra-book-page .libra-reader-pager{border-color:#d6c4ab}.libra-book-page .libra-reader-pager>span{color:#75624d}
-.libra-book-page .libra-current-article-head{border-color:#d6c4ab}.libra-book-page .libra-current-article-head h3{color:#33251a;-webkit-text-fill-color:currentColor}.libra-book-page .libra-current-article-head p{color:#79634d;-webkit-text-fill-color:currentColor}.libra-book-page .libra-article-eyebrow{color:#966334;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-current-article-meta span{border-color:#d1bda0;background:#f2e5d3;color:#67513d;-webkit-text-fill-color:currentColor}.libra-book-page .libra-current-article-lead{color:#483729;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-current-facts{border-color:#d6c4ab}.libra-book-page .libra-current-facts>div{border-color:#dfcfba}.libra-book-page .libra-current-facts dt{color:#8b6843;-webkit-text-fill-color:currentColor}.libra-book-page .libra-current-facts dd{color:#4f3b2b;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-current-evidence{border-color:#ad7841;background:#f0e2cf}.libra-book-page .libra-current-evidence strong{color:#533a24;-webkit-text-fill-color:currentColor}.libra-book-page .libra-current-evidence p{color:#67513d;-webkit-text-fill-color:currentColor}.libra-book-page .libra-reader-intro h2{color:#33251a}.libra-book-page .libra-reader-intro p{color:#6f5944;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-evidence-node-index{border-color:#c6a877;background:#ead8bc;color:#60411f;-webkit-text-fill-color:currentColor}.libra-book-page .libra-evidence-node:not(:last-child)::after{background:#ccb18b}.libra-book-page .libra-evidence-node-copy{border-color:#d5c3aa;background:#f8efe3;color:#3f2f22}.libra-book-page .libra-evidence-node-head strong{color:#443123;-webkit-text-fill-color:currentColor}.libra-book-page .libra-evidence-node-copy p{color:#604c39;-webkit-text-fill-color:currentColor}.libra-book-page .libra-evidence-node-copy small{color:#816b55;-webkit-text-fill-color:currentColor}
-.libra-book-page .sga-summary-table span,.libra-book-page .sga-summary-table strong,.libra-book-page .sga-agent-head,.libra-book-page .sga-agent-head h3,.libra-book-page .sga-agent-head div{color:#4d3929;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-state-slot-contract{color:#6f5b46;border-color:#d7c6ad;-webkit-text-fill-color:currentColor}
-.libra-book-drawer{color-scheme:light}.libra-book-drawer .sga-label{color:#715537;-webkit-text-fill-color:#715537}.libra-book-drawer .sga-card h2,.libra-book-drawer .sga-card h3,.libra-book-drawer .sga-card strong,.libra-book-drawer .sga-card label,.libra-book-drawer .sga-card summary{color:#3c2c20;-webkit-text-fill-color:currentColor}.libra-book-drawer .sga-card p,.libra-book-drawer .sga-card li,.libra-book-drawer .sga-card dd{color:#594735;-webkit-text-fill-color:currentColor}.libra-book-drawer .sga-card small,.libra-book-drawer .sga-card dt,.libra-book-drawer .sga-note{color:#77634e;-webkit-text-fill-color:currentColor}
-.libra-book-page .sga-input,.libra-book-page .sga-select,.libra-book-page .sga-textarea,.libra-book-drawer .sga-input,.libra-book-drawer .sga-select,.libra-book-drawer .sga-textarea{color-scheme:light;-webkit-text-fill-color:#3b2b20;opacity:1}.libra-book-page .sga-input::placeholder,.libra-book-page .sga-textarea::placeholder,.libra-book-drawer .sga-input::placeholder,.libra-book-drawer .sga-textarea::placeholder{color:#967f66;opacity:1}
-@media(max-width:760px){
-  .libra-book-app{overflow-x:hidden}.libra-book-stage,.libra-book-page,.libra-book-page>*,.libra-book-page .sga-flow-section,.libra-book-page .sga-card{min-width:0;max-width:100%}
-  .libra-book-page{margin:0 8px calc(76px + env(safe-area-inset-bottom,0));padding:20px 16px 24px;border-radius:22px 22px 12px 12px;overflow-x:hidden}
-  .libra-book-page-head{padding-bottom:14px;margin-bottom:14px}.libra-book-page-head h1{font-size:26px;line-height:1.22}.libra-book-page-head p{font-size:13px;line-height:1.72}
-  .libra-book-reading-grid,.libra-book-page .libra-reader-layout,.libra-book-page .libra-world-manager-layout,.libra-book-page .sga-grid.two,.libra-book-page .sga-grid.three,.libra-book-page .sga-form-grid,.libra-book-page .sga-summary-grid,.libra-book-page .libra-current-facts{grid-template-columns:minmax(0,1fr)!important}
-  .libra-book-page .libra-reader-layout{display:block!important;min-height:0;border-radius:18px;overflow:hidden}
-  .libra-book-page .libra-chapter-rail{border-right:0;border-bottom:1px solid #d4c1a6}
-  .libra-book-page .libra-chapter-list{display:flex!important;flex-direction:column!important;max-height:min(42vh,360px)!important;overflow-x:hidden!important;overflow-y:auto!important;gap:6px;padding:10px!important}
-  .libra-book-page .libra-chapter-episode{display:block;padding:8px 8px 2px}
-  .libra-book-page .libra-chapter-item{flex:0 0 auto!important;width:100%!important;max-width:100%!important;padding:12px!important;border-radius:14px;word-break:keep-all;overflow-wrap:anywhere}
-  .libra-book-page .libra-chapter-item>strong{font-size:13px;line-height:1.5}.libra-book-page .libra-chapter-item>small{font-size:9px;line-height:1.45}
-  .libra-book-page .libra-reader-article{padding:24px 18px 28px;gap:18px}.libra-book-page .libra-reader-article-head{flex-direction:column;gap:10px}.libra-book-page .libra-reader-article-head h2{font-size:clamp(24px,7vw,31px);line-height:1.32;word-break:keep-all}.libra-book-page .libra-reader-prose{font-size:14px;line-height:1.9;overflow-wrap:anywhere;word-break:keep-all}.libra-book-page .libra-reader-deck{font-size:12px;line-height:1.7}.libra-book-page .libra-reader-margin{grid-template-columns:minmax(0,1fr);gap:12px}.libra-book-page .libra-reader-link-list{gap:7px}.libra-book-page .libra-reader-link-list span{white-space:normal}
-  .libra-book-page .libra-current-article-head{flex-direction:column;gap:10px}.libra-book-page .libra-current-article-head h3{font-size:22px;line-height:1.3}.libra-book-page .libra-current-article-lead{font-size:14px;line-height:1.8}.libra-book-page .libra-current-facts>div{padding:11px 6px}.libra-book-page .libra-current-facts dd{font-size:12px;line-height:1.65;overflow-wrap:anywhere;word-break:keep-all}
-  .libra-book-page .sga-card{border-radius:14px;padding:14px}.libra-book-page .sga-card h2,.libra-book-page .sga-card h3{line-height:1.35;word-break:keep-all}.libra-book-page .sga-card p,.libra-book-page .sga-card li,.libra-book-page .sga-note{line-height:1.65;overflow-wrap:anywhere;word-break:keep-all}
-  .libra-book-page .sga-actions,.libra-book-drawer .sga-actions{display:flex;flex-wrap:wrap;gap:7px}.libra-book-page .sga-btn,.libra-book-drawer .sga-btn{max-width:100%;white-space:normal;line-height:1.35}
-  .libra-book-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.libra-book-metric{padding:11px}.libra-book-metric strong{font-size:20px}
-  .libra-book-drawer-head{display:grid;gap:10px;padding:14px 14px 12px}.libra-book-drawer-tabs{padding:9px 10px}.libra-book-drawer-body{padding:12px 12px calc(24px + env(safe-area-inset-bottom,0))}.libra-book-drawer .sga-card{padding:13px}
-  .libra-book-mobile-nav{height:calc(64px + env(safe-area-inset-bottom,0));padding-bottom:env(safe-area-inset-bottom,0)}.libra-book-mobile-nav button{min-width:0;padding:5px 2px 7px}.libra-book-mobile-nav span{font-size:14px}.libra-book-mobile-nav small{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:9px}
-  .libra-book-spread,.libra-book-character-spread,.libra-book-world-guide{grid-template-columns:minmax(0,1fr)!important;filter:none}
-  .libra-book-leaf{min-height:0;padding:22px 18px 26px;border-radius:18px!important}.libra-book-leaf.left::after,.libra-book-leaf.right::before{display:none}.libra-book-leaf.right{border-top:0}
-  .libra-book-leaf h2{font-size:23px}.libra-book-prose-lead{font-size:14px;line-height:1.82}
-  .libra-book-profile-index{gap:10px}.libra-book-profile-index button{min-width:110px;padding:8px 8px}
-  .libra-book-character-sheet,.libra-book-relations-sheet,.libra-book-world-overview,.libra-book-world-index,.libra-book-toc-sheet{padding:17px 15px;border-radius:16px}
-  .libra-book-character-head,.libra-book-toc-head{display:grid;gap:8px}.libra-book-character-head h2{font-size:24px}
-  .libra-book-profile-facts{grid-template-columns:minmax(0,1fr)}.libra-book-profile-facts>div{grid-template-columns:minmax(0,1fr)}
-  .libra-book-world-card-grid{grid-template-columns:minmax(0,1fr)}
-  .libra-book-toc-row{grid-template-columns:42px minmax(0,1fr)}.libra-book-toc-copy h3{font-size:14px}
-  .libra-book-desk-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-
-/* v2.3.24 Book UX v5.11 — native Quick Settings + technical workbench */
-.libra-book-drawer-region{position:relative;z-index:20}.libra-book-drawer-backdrop{overscroll-behavior:contain}.libra-book-drawer{color-scheme:light}.libra-book-drawer-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
-.libra-book-tool-stack{display:grid;gap:12px;min-width:0;color:#392b20;-webkit-text-fill-color:currentColor}.libra-book-tool-section{display:grid;gap:12px;padding:16px;border:1px solid #cbb89d;border-radius:16px;background:linear-gradient(180deg,#f8f0e5,#f3e8d8);color:#392b20;box-shadow:inset 0 1px rgba(255,255,255,.55)}.libra-book-tool-section.compact{gap:9px;padding:14px}.libra-book-tool-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.libra-book-tool-section-head h3{margin:0;color:#35271c;font:700 16px Georgia,"Noto Serif KR",serif}.libra-book-tool-section-head p{margin:5px 0 0;color:#725e49;font-size:11px;line-height:1.55}.libra-book-tool-status{display:inline-flex;align-items:center;flex:0 0 auto;padding:5px 8px;border:1px solid #c7ae8b;border-radius:999px;background:#efe1ce;color:#6b5037;font-size:9px;font-weight:800;white-space:nowrap}.libra-book-tool-status.good{border-color:#87977e;background:#e3eadf;color:#405241}
-.libra-book-tool-choice-grid{display:grid;gap:9px}.libra-book-tool-choice-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-book-tool-choice-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.libra-book-tool-choice-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.libra-book-tool-choice{display:flex;min-width:0;min-height:92px;flex-direction:column;align-items:flex-start;gap:7px;padding:12px 13px;border:1px solid #d0bda3;border-radius:14px;background:#fbf5eb;color:#5a4632;text-align:left;cursor:pointer;box-shadow:none}.libra-book-tool-choice:hover{border-color:#b88d5c;background:#f5eadc}.libra-book-tool-choice.active{border-color:#aa7540;background:linear-gradient(180deg,#ead8bd,#e5cfaf);box-shadow:inset 0 0 0 1px rgba(154,105,56,.14)}.libra-book-tool-choice:disabled{opacity:.5;cursor:not-allowed}.libra-book-tool-choice-head{display:flex;width:100%;align-items:flex-start;justify-content:space-between;gap:8px}.libra-book-tool-choice strong{color:#35271c;font:700 13px Georgia,"Noto Serif KR",serif}.libra-book-tool-badge{flex:0 0 auto;padding:3px 7px;border:1px solid #c2a078;border-radius:999px;background:#f0dfc7;color:#6a4726;font-size:8px;font-weight:900;white-space:nowrap}.libra-book-tool-choice.active .libra-book-tool-badge{background:#a46e38;border-color:#8e5c2d;color:#fff3df}.libra-book-tool-desc{color:#5d4936;font-size:11px;line-height:1.5}.libra-book-tool-meta{color:#8a7158;font-size:9px;line-height:1.4}
-.libra-book-tool-form{display:grid;gap:10px}.libra-book-tool-form.two{grid-template-columns:repeat(2,minmax(0,1fr))}.libra-book-tool-field{display:grid;min-width:0;gap:5px}.libra-book-tool-label{color:#715a43;font-size:10px;font-weight:800}.libra-book-tool-field>small{color:#8b745b;font-size:9px;line-height:1.4}.libra-book-tool-field .sga-select,.libra-book-tool-field .sga-input,.libra-book-tool-field input,.libra-book-tool-field select{width:100%;min-width:0;background:#fffaf2!important;border-color:#cbb89d!important;color:#3d2d20!important;-webkit-text-fill-color:#3d2d20!important}.libra-book-tool-subtitle{padding-top:2px;color:#6e4c2c;font:700 11px Georgia,"Noto Serif KR",serif;letter-spacing:.04em}.libra-book-tool-nested{display:grid;gap:9px;padding-top:10px;border-top:1px solid #d8c5aa}.libra-book-tool-toggle-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.libra-book-tool-toggle{display:flex;align-items:flex-start;gap:9px;padding:10px 11px;border:1px solid #d1bea4;border-radius:12px;background:#fbf5eb;color:#4e3c2b}.libra-book-tool-toggle input{flex:0 0 auto;width:auto;margin-top:2px;accent-color:#9a6938}.libra-book-tool-toggle span{display:grid;gap:2px}.libra-book-tool-toggle strong{font-size:11px}.libra-book-tool-toggle small{color:#816b54;font-size:9px;line-height:1.45}.libra-book-tool-callout{display:grid;gap:3px;padding:11px 12px;border-left:3px solid #a97947;border-radius:0 10px 10px 0;background:#eee0cc;color:#66513d;font-size:11px;line-height:1.55}.libra-book-tool-callout strong{color:#4b3828}.libra-book-tool-callout span{color:#715b45}
-.libra-book-tool-agent-list{display:grid;gap:8px}.libra-book-tool-agent-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(108px,.32fr) minmax(190px,.65fr);gap:10px;align-items:center;padding:11px 12px;border:1px solid #d0bda3;border-radius:14px;background:#fbf5eb}.libra-book-tool-agent-row.active{border-color:#b99a73;background:#f5ebde}.libra-book-tool-agent-copy{display:grid;grid-template-columns:32px minmax(0,1fr);gap:9px;align-items:start;min-width:0}.libra-book-tool-agent-no{display:grid;width:30px;height:30px;place-items:center;border:1px solid #c8ae89;border-radius:10px;background:#efe1ce;color:#86572c;font:700 10px Georgia,"Noto Serif KR",serif}.libra-book-tool-agent-copy strong{display:block;color:#35271c;font:700 12px Georgia,"Noto Serif KR",serif}.libra-book-tool-agent-copy small{display:block;margin-top:3px;color:#7e6851;font-size:9px;line-height:1.45}.libra-book-tool-agent-row>.libra-book-tool-toggle{padding:8px 9px}.libra-book-tool-actions{display:flex;flex-wrap:wrap;gap:8px;padding:4px 2px 0}.libra-book-tool-button{min-height:38px;padding:8px 12px;border:1px solid #c7ae8b;border-radius:999px;background:#f4eadc;color:#5b432d;font-weight:800;cursor:pointer}.libra-book-tool-button.primary{background:#a06a36;border-color:#895729;color:#fff1dd}.libra-book-tool-button:disabled{opacity:.48;cursor:not-allowed}.libra-book-tool-link{border:0;background:transparent;color:#744b26;padding:8px 4px;font:700 10px Georgia,"Noto Serif KR",serif;text-decoration:underline;text-decoration-color:#c4a071;text-underline-offset:3px;cursor:pointer}
-.libra-book-technical-panel{min-width:0;color:#392b20;-webkit-text-fill-color:currentColor}.libra-book-technical-panel #sga-provider-page>.sga-section-title,.libra-book-technical-panel #libra-embedding-provider>.sga-agent-head{padding:4px 2px 12px}.libra-book-technical-panel .sga-split{gap:12px}.libra-book-technical-panel .sga-list,.libra-book-technical-panel .sga-list-items{border-color:#c7b397!important;background:#e7d7bf!important}.libra-book-technical-panel .sga-list-item{background:transparent!important;color:#5b4632!important;border-color:transparent!important}.libra-book-technical-panel .sga-list-item:hover,.libra-book-technical-panel .sga-list-item.active{background:#ddc5a1!important;color:#3b2b20!important;border-color:#b78e5e!important}.libra-book-technical-panel .sga-provider-editor,.libra-book-technical-panel .sga-provider-panel,.libra-book-technical-panel .sga-provider-note-box,.libra-book-technical-panel .sga-live-result-card,.libra-book-technical-panel .sga-card{color-scheme:light!important;background:#f8f0e5!important;border-color:#cbb89d!important;color:#392b20!important;-webkit-text-fill-color:currentColor!important;box-shadow:none!important}.libra-book-technical-panel .sga-provider-panel.global-default{background:#f3e7d6!important;border-color:#b99a73!important}.libra-book-technical-panel .sga-provider-panel.vertex,.libra-book-technical-panel .sga-provider-panel.reasoning,.libra-book-technical-panel .sga-provider-panel.flex{background:#f6ecdf!important;border-color:#c4aa84!important}.libra-book-technical-panel .sga-provider-note-box,.libra-book-technical-panel .sga-live-result-text,.libra-book-technical-panel .sga-live-result-code{background:#fffaf2!important;color:#584533!important;border-color:#d2c0a6!important;-webkit-text-fill-color:#584533!important}.libra-book-technical-panel .sga-provider-note-box strong,.libra-book-technical-panel .sga-provider-note-box span,.libra-book-technical-panel .sga-live-result-card-head h4{color:#4a3829!important;-webkit-text-fill-color:#4a3829!important}.libra-book-technical-panel .sga-badge{background:#efe1ce!important;border-color:#c4aa84!important;color:#674b31!important;-webkit-text-fill-color:#674b31!important}.libra-book-technical-panel .sga-badge.good{background:#e3eadf!important;border-color:#87977e!important;color:#405241!important}.libra-book-technical-panel .sga-badge.warn{background:#f1e1c8!important;border-color:#c09b6b!important;color:#775020!important}.libra-book-technical-panel .sga-badge.danger{background:#ecd9d4!important;border-color:#b98076!important;color:#713d37!important}.libra-book-technical-panel .sga-input,.libra-book-technical-panel .sga-select,.libra-book-technical-panel .sga-textarea,.libra-book-technical-panel input,.libra-book-technical-panel select,.libra-book-technical-panel textarea{background:#fffaf2!important;border-color:#cbb89d!important;color:#3d2d20!important;-webkit-text-fill-color:#3d2d20!important}.libra-book-technical-panel .sga-btn{background:#f3e8d8!important;border-color:#c5ae8e!important;color:#5e4630!important;-webkit-text-fill-color:#5e4630!important}.libra-book-technical-panel .sga-btn.good,.libra-book-technical-panel .sga-btn.primary{background:#dfc39d!important;border-color:#a97947!important;color:#53341c!important}.libra-book-technical-panel .sga-btn.danger{background:#ecd9d4!important;border-color:#b98076!important;color:#713d37!important}
-@media(max-width:820px){.libra-book-tool-choice-grid.two,.libra-book-tool-choice-grid.three,.libra-book-tool-choice-grid.four,.libra-book-tool-form.two,.libra-book-tool-toggle-grid{grid-template-columns:minmax(0,1fr)}.libra-book-tool-agent-row{grid-template-columns:minmax(0,1fr)}.libra-book-tool-agent-row>.libra-book-tool-toggle{width:100%}.libra-book-tool-section{padding:14px 12px}.libra-book-technical-panel .sga-split{grid-template-columns:minmax(0,1fr)!important}.libra-book-technical-panel .sga-list-items{max-height:220px}}
-
-.libra-book-profile-group{min-width:0;margin-top:22px}.libra-book-profile-group>h3{margin:0 0 8px;color:#765331;font:700 15px/1.5 Georgia,"Noto Serif KR",serif}.libra-book-profile-group>.libra-book-profile-facts{margin-top:0}
-
-/* v2.3.24 Book UX v5.13 — true reader view-layer replacement */
-.libra-book-sidebar{width:230px}
-.libra-book-side-copy{display:grid;gap:2px;min-width:0}.libra-book-side-copy strong{color:inherit;font-size:12px;line-height:1.3}.libra-book-side-copy small{color:#75685a;font-size:9px;line-height:1.35;font-weight:500}.libra-book-side-item[data-active="true"] .libra-book-side-copy small{color:#9b8a77}
-.libra-book-boot-status{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border:1px solid #50634d;border-radius:999px;background:rgba(255,255,255,.035);color:#dce9d7;font:800 9px/1 system-ui,sans-serif;letter-spacing:.08em;white-space:nowrap}.libra-book-boot-status::before{content:'';width:6px;height:6px;border-radius:50%;background:#6f8b69;box-shadow:0 0 0 3px rgba(111,139,105,.13)}
-
-.libra-book-state-popover{margin-left:auto;flex:0 0 auto;position:relative}.libra-book-state-summary{list-style:none;cursor:pointer}.libra-book-state-summary::-webkit-details-marker{display:none}.libra-book-state-summary .libra-book-state-button{display:inline-flex;align-items:center;min-height:32px;padding:4px 10px;font-size:12px;font-weight:600;white-space:nowrap}.libra-book-state-popover[open] .libra-book-state-summary .libra-book-state-button{border-color:var(--book-accent)}.libra-book-state-detail{margin-top:8px;padding:10px 12px;border:1px solid var(--book-line);border-radius:10px;background:var(--book-paper-2)}.libra-book-state-body{display:grid;gap:6px}.libra-diag-controls{align-items:center;gap:8px}.libra-diag-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,520px);gap:12px;align-items:start}.libra-diag-left{display:grid;gap:8px;min-width:0}.libra-diag-list{display:grid;gap:4px;max-height:62vh;overflow:auto}.libra-diag-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px;align-items:baseline;text-align:left;padding:8px 10px;border:1px solid var(--sga-border);border-radius:8px;background:transparent;cursor:pointer}.libra-diag-row.active{border-color:var(--sga-accent);background:rgba(124,156,255,.06)}.libra-diag-row>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.libra-diag-row>small{grid-column:2;color:var(--sga-muted);font-size:11px}.libra-diag-right{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--sga-border);border-radius:10px;min-width:0}.libra-diag-detail-head{display:grid;gap:2px}.libra-diag-detail-body{max-height:58vh;overflow:auto;margin:0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.18);font:11px/1.5 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:760px){.libra-diag-layout{grid-template-columns:minmax(0,1fr)}.libra-diag-list{max-height:52vh}.libra-diag-detail-body{max-height:48vh}}.libra-book-state-line{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}.libra-book-state-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.libra-book-state-line strong{font-size:13px;overflow-wrap:anywhere}.libra-book-state-line>span{color:var(--book-muted);font-size:12px}.libra-book-state-line .sga-btn{margin-left:auto;flex:0 0 auto;padding:5px 12px;font-size:12px;min-height:44px}.libra-book-state-line .sga-btn.libra-book-state-button{margin-left:0;font-weight:600;min-height:44px}.libra-book-state-line .sga-btn[disabled]{opacity:.6;cursor:default}
-/* 기억 분석 엔진: 네 버튼이 고유 폭으로 줄바꿈돼 오른쪽이 비어 보였다. 같은 폭으로 채운다. */
-.libra-unified-engine-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px}
-.libra-unified-engine-actions>.sga-btn{width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;text-align:center}
-/* 통합 저장 지원 확인: 상태를 버튼과 같은 줄에 두고 남는 폭을 상태가 갖는다. */
-.libra-unified-storage-status{align-items:center;gap:10px}
-.libra-unified-storage-status>.sga-note{margin-left:auto;text-align:right}
-@media(max-width:620px){.libra-unified-engine-actions{grid-template-columns:minmax(0,1fr)}.libra-unified-storage-status>.sga-note{margin-left:0;text-align:left;flex-basis:100%}}
-/* Saved model summary in the reading desk. */
-.libra-memory-model-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}.libra-memory-model-item{display:grid;align-content:start;gap:5px;min-width:0;padding:12px 14px;border:1px solid #4c3e2e;border-radius:12px;background:rgba(181,148,104,.055)}.libra-memory-model-label{color:#bda17e;font:700 10px/1.4 system-ui,sans-serif;letter-spacing:.03em}.libra-memory-model-item strong{color:#ecdfcc;font:600 13px/1.5 system-ui,sans-serif;overflow-wrap:anywhere}.libra-memory-model-item small{color:#b5a48e;font:10px/1.5 system-ui,sans-serif;overflow-wrap:anywhere}.libra-memory-model-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:6px}.libra-memory-model-controls .sga-select{min-width:0}.libra-memory-model-controls .sga-btn{white-space:nowrap}@media(max-width:520px){.libra-memory-model-summary{grid-template-columns:minmax(0,1fr)}.libra-memory-model-item{padding:11px 12px}.libra-memory-model-controls{grid-template-columns:minmax(0,1fr)}}
-/* Dismissible failure notices; detailed records remain accessible in the desk. */
-.libra-memory-failure-notice{margin-top:12px}.libra-memory-failure-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.libra-memory-failure-head .sga-btn{flex:0 0 auto;padding:5px 10px;font-size:11px}.libra-memory-failure-summary{margin-top:12px;color:#c7b49b;font-size:11px}.libra-memory-failure-summary>summary{width:fit-content;max-width:100%;padding:5px 0;cursor:pointer}.libra-memory-failure-summary>summary:focus-visible{outline:2px solid #c7a271;outline-offset:3px}.libra-memory-failure-record{margin-top:10px;padding:12px;border:1px solid #514334;border-radius:10px;color:#dacbb7;font-size:12px;overflow-wrap:anywhere}.libra-memory-failure-record p{margin:8px 0;line-height:1.6}.libra-memory-failure-record pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
-/* Book worldline card: local presentation; shared lineage SDK remains unchanged. */
-.libra-book-lineage{margin:14px 0 20px;padding:20px 22px;border:1px solid #493c2e;border-radius:16px;background:linear-gradient(115deg,#251f18,#1c1915);color:#e7dac7;box-shadow:inset 0 1px rgba(231,218,199,.035);min-width:0;font:12px/1.65 system-ui,sans-serif;-webkit-text-fill-color:currentColor}
-.libra-book-lineage-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.libra-book-lineage-seal{display:grid;place-items:center;flex:0 0 36px;height:42px;border:1px solid #655038;border-radius:5px 5px 12px 12px;color:#c7a271;background:#2d241a;font:24px Georgia,serif}.libra-book-lineage-copy{flex:1;min-width:110px}.libra-book-lineage-kicker{display:block;margin-bottom:3px;color:#baa184;font:700 9px/1.3 Georgia,serif;letter-spacing:.16em}.libra-book-lineage .libra-book-lineage-copy h3{margin:0;color:#eddfcb;font:700 17px/1.4 Georgia,"Noto Serif KR",serif}.libra-book-lineage-status{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid #5d4c38;border-radius:999px;background:#30271e;color:#cfb896;font-size:10px;line-height:1.5}.libra-book-lineage-status::before{content:'';width:5px;height:5px;flex:0 0 5px;border-radius:50%;background:#b59a75}.libra-book-lineage[data-lineage-status="verified"] .libra-book-lineage-status{border-color:#54614a;color:#c2cfb7}.libra-book-lineage[data-lineage-status="verified"] .libra-book-lineage-status::before{background:#9eaf8e}.libra-book-lineage[data-lineage-status="diverged"] .libra-book-lineage-status{border-color:#806242;color:#e2bd88}
-.libra-book-lineage .libra-book-lineage-description{margin:12px 0 0;color:#c9bba7;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.libra-book-lineage-details{margin-top:14px;padding-top:10px;border-top:1px solid #423629}.libra-book-lineage-details summary{width:fit-content;max-width:100%;padding:3px 0;color:#baa184;font-size:11px;cursor:pointer}.libra-book-lineage-details summary:hover{color:#eddfcb}.libra-book-lineage-details summary:focus-visible{outline:2px solid #c7a271;outline-offset:4px;border-radius:2px}.libra-book-lineage-details dl{display:grid;gap:9px;margin:14px 0 0}.libra-book-lineage-details dl>div{display:grid;grid-template-columns:135px minmax(0,1fr);gap:12px}.libra-book-lineage-details dt{color:#b5a087;font-size:11px}.libra-book-lineage-details dd{margin:0;color:#d6c9b7;font-size:11px;overflow-wrap:anywhere}.libra-book-lineage .libra-book-lineage-footnote{margin:12px 0 0;color:#baa184;font-size:10px;line-height:1.65}
-@media(max-width:520px){.libra-book-lineage{padding:16px;border-radius:14px}.libra-book-lineage-heading{gap:10px}.libra-book-lineage-status{margin-left:46px}.libra-book-lineage-details dl>div{grid-template-columns:minmax(0,1fr);gap:2px}}
-/* End Book worldline card. */
-
-.libra-book-desk-view{max-width:1220px;margin:0 auto;padding:2px 8px 28px}.libra-book-desk-label{margin:2px 0 10px 7px;color:#8d7965;font:700 10px Georgia,"Noto Serif KR",serif;letter-spacing:.14em;text-transform:uppercase}
-.libra-book-desk-status-row{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 4px}.libra-book-desk-slip{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border:1px solid #c9b79c;border-radius:999px;background:#f1e5d4;color:#6b5743;font-size:9px}.libra-book-desk-slip.good::before{content:'';width:6px;height:6px;border-radius:50%;background:#74836f}.libra-book-desk-reading-block{padding:15px 0;border-top:1px solid #d8c7af}.libra-book-desk-reading-block h3{margin:0;color:#392a1e;font:700 15px Georgia,"Noto Serif KR",serif}.libra-book-desk-reading-block small{display:block;margin-top:3px;color:#846e57;font-size:9px}.libra-book-desk-reading-block p{margin:9px 0 0;color:#4d3b2c;font:13px/1.72 Georgia,"Noto Serif KR",serif}.libra-book-desk-note-card{padding:15px 0;border-top:1px solid #d8c6ad}.libra-book-desk-note-card>header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.libra-book-desk-note-card h3{margin:3px 0 2px;color:#38291d;font:700 16px Georgia,"Noto Serif KR",serif}.libra-book-desk-note-card small{color:#836e58;font-size:9px}.libra-book-desk-note-card>p{margin:10px 0 0;color:#4f3c2d;font:13px/1.72 Georgia,"Noto Serif KR",serif;word-break:keep-all}.libra-book-desk-note-card blockquote{margin:10px 0 0;padding:11px 13px;border-left:3px solid #aa7540;background:#f0e4d4;color:#4e3a2a;font:13px/1.72 Georgia,"Noto Serif KR",serif}.libra-book-more-action{flex:0 0 auto;border:0;background:transparent;color:#7a5431;padding:0;font:700 10px Georgia,"Noto Serif KR",serif;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.libra-book-memory-reader{display:grid;grid-template-columns:245px minmax(0,1fr);gap:18px;align-items:start}.libra-book-memory-rail{min-width:0;padding:16px;border:1px solid #c9b89d;border-radius:16px;background:#f1e4d1;color:#3b2c20;box-shadow:0 10px 24px rgba(64,46,28,.05),inset 0 1px rgba(255,255,255,.5)}.libra-book-rail-intro{padding:0 2px 10px}.libra-book-rail-label{display:block;margin-bottom:5px;color:#946332;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.14em;text-transform:uppercase}.libra-book-rail-intro h2{margin:0;color:#39291e;font:700 16px Georgia,"Noto Serif KR",serif}.libra-book-rail-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin:0 0 10px}.libra-book-rail-search input{min-width:0;padding:8px 9px;border:1px solid #cbb89c;border-radius:10px;background:#f9f1e5;color:#493629;font-size:10px;outline:none}.libra-book-rail-search input:focus{border-color:#a87948;box-shadow:0 0 0 2px rgba(168,121,72,.12)}.libra-book-rail-search button{padding:8px 9px;border:1px solid #c5ad8d;border-radius:10px;background:#f6ebdc;color:#694c31;font:700 9px Georgia,"Noto Serif KR",serif;cursor:pointer}.libra-book-rail-separator{margin:13px 4px 5px;color:#936838;font:700 9px Georgia,"Noto Serif KR",serif;letter-spacing:.12em;text-transform:uppercase}.libra-book-memory-chapter{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;width:100%;padding:10px 8px;border:1px solid transparent;border-radius:13px;background:transparent;color:#4f3c2d;text-align:left;cursor:pointer}.libra-book-memory-chapter:hover{background:#f5eadb;border-color:#d9c7ad}.libra-book-memory-chapter.active{background:#efe2d1;border-color:#cbae88;box-shadow:inset 0 1px rgba(255,255,255,.55)}.libra-book-memory-no{display:grid;place-items:center;width:32px;height:32px;border:1px solid #d1baa0;border-radius:50%;background:#f3e6d3;color:#8b5d31;font:700 11px Georgia,"Noto Serif KR",serif}.libra-book-memory-copy{display:grid;gap:3px;min-width:0}.libra-book-memory-copy strong{color:#3c2b1e;font:700 12px/1.45 Georgia,"Noto Serif KR",serif;word-break:keep-all}.libra-book-memory-copy small{color:#826d57;font-size:9px;line-height:1.4}.libra-book-rail-empty{padding:14px 8px;color:#796650;font-size:11px;line-height:1.6}.libra-book-rail-error{margin:4px 0 9px;padding:9px;border:1px solid #c9968d;border-radius:10px;background:#f0dbd6;color:#773f38;font-size:10px;line-height:1.5}.libra-book-rail-count{margin-top:10px;color:#8a755e;font-size:9px;text-align:center}
-.libra-book-reading-sheet{min-width:0;padding:24px 26px;border:1px solid #c9b89d;border-radius:16px;background:linear-gradient(180deg,#faf3e8,#f5eadb);color:#392b20;box-shadow:0 10px 24px rgba(64,46,28,.05),inset 0 1px rgba(255,255,255,.55)}.libra-book-reading-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding-bottom:15px;border-bottom:1px solid #d8c6ad}.libra-book-reading-kicker{display:block;margin-bottom:7px;color:#9a6634;font:700 10px Georgia,"Noto Serif KR",serif;letter-spacing:.04em}.libra-book-reading-head h2{margin:0;color:#322419;font:700 25px/1.25 Georgia,"Noto Serif KR",serif;word-break:keep-all}.libra-book-reading-head p{margin:7px 0 0;color:#7a654f;font-size:10px}.libra-book-reading-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px 14px;align-items:center}.libra-book-reading-actions .libra-book-inline-action+.libra-book-inline-action{position:relative;padding-left:14px}.libra-book-reading-actions .libra-book-inline-action+.libra-book-inline-action::after{content:'';position:absolute;left:0;top:2px;bottom:2px;width:1px;background:#d9c7ac}.libra-book-reader-columns{display:grid;grid-template-columns:minmax(0,1fr) 235px;gap:22px;margin-top:18px}.libra-book-memory-prose{min-width:0}.libra-book-memory-text{white-space:pre-wrap;color:#493829;font:14px/1.88 Georgia,"Noto Serif KR",serif;word-break:keep-all;overflow-wrap:anywhere}.libra-book-memory-text::first-letter{float:left;padding:5px 8px 0 0;color:#8c5f2d;font:700 45px/.82 Georgia,"Noto Serif KR",serif}.libra-book-memory-margin{display:grid;gap:12px;align-content:start}.libra-book-memory-margin-card{padding:13px;border:1px solid #cdb99a;border-radius:12px;background:#f3e7d5}.libra-book-memory-margin-card h3{margin:0 0 7px;color:#5b3e22;font:700 12px Georgia,"Noto Serif KR",serif}.libra-book-memory-margin-card p,.libra-book-memory-margin-card li{color:#584432;font-size:11px;line-height:1.65}.libra-book-memory-margin-card p{margin:0}.libra-book-memory-margin-card ul{margin:0;padding-left:17px}.libra-book-reader-footer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px;padding-top:14px;border-top:1px solid #d8c6ad}.libra-book-reader-footer>div{display:grid;gap:4px}.libra-book-reader-footer strong{color:#8a6841;font:700 10px Georgia,"Noto Serif KR",serif}.libra-book-reader-footer span{color:#554230;font-size:11px;line-height:1.55}.libra-book-reader-pager{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid #e0d1bd}.libra-book-reader-pager>*:last-child{justify-self:end}.libra-book-reader-pager>span{color:#856f58;font-size:9px}
-.libra-book-empty-state{display:grid;align-content:start;min-width:0;min-height:220px;padding:22px;border:1px solid #cdb99a;border-radius:16px;background:linear-gradient(180deg,#faf2e7,#f4e8d8);color:#392b20}.libra-book-empty-state.compact{min-height:0}.libra-book-empty-state h2{margin:7px 0 8px;color:#33251a;font:700 20px/1.3 Georgia,"Noto Serif KR",serif}.libra-book-empty-state p{max-width:68ch;margin:0;color:#705b46;font:12px/1.7 Georgia,"Noto Serif KR",serif}
-.libra-book-aux-workbench{min-width:0;padding:18px;border:1px solid #c9b89d;border-radius:16px;background:#f5eadd}.libra-book-aux-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:2px 2px 14px;margin-bottom:14px;border-bottom:1px solid #d6c4aa}.libra-book-aux-head h2{margin:6px 0 5px;color:#33251a;font:700 21px Georgia,"Noto Serif KR",serif}.libra-book-aux-head p{max-width:760px;margin:0;color:#735f4a;font-size:11px;line-height:1.6}.libra-book-back-action{flex:0 0 auto;border:1px solid #c5ad8d;border-radius:999px;background:#f6ecdf;color:#694c31;padding:8px 11px;font:700 10px Georgia,"Noto Serif KR",serif;cursor:pointer}.libra-book-back-action:hover{background:#ead8c1}.libra-book-back-action.subtle{width:100%;margin-top:8px}.libra-book-aux-body{min-width:0}.libra-book-aux-body>.sga-flow-section{margin:0}
-.libra-book-inline-action{text-decoration:none;letter-spacing:.035em}.libra-book-inline-action::before{content:'§';color:#ad7a44;font:700 10px/1 Georgia,"Noto Serif KR",serif}.libra-book-inline-action:hover{text-decoration:none}
-@media(max-width:900px){.libra-book-memory-reader{grid-template-columns:minmax(0,1fr)}.libra-book-reader-columns{grid-template-columns:minmax(0,1fr)}.libra-book-memory-rail{position:static}.libra-book-reader-footer{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){.libra-book-desk-view{padding:2px 8px calc(80px + env(safe-area-inset-bottom,0))}.libra-book-desk-label{margin-left:4px}.libra-book-memory-rail,.libra-book-reading-sheet{padding:18px 16px;border-radius:20px}.libra-book-memory-chapter{padding:11px 9px}.libra-book-reading-head,.libra-book-aux-head,.libra-book-desk-note-card>header{display:grid}.libra-book-reading-actions{justify-content:flex-start;margin-top:10px}.libra-book-memory-text{font-size:14px;line-height:1.82}.libra-book-memory-text::first-letter{font-size:39px}.libra-book-empty-state{min-height:180px;padding:18px 16px}.libra-book-reader-pager{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}.libra-book-boot-status{display:none}.libra-book-side-copy small{display:none}}
-@media(prefers-color-scheme:dark){.libra-book-memory-rail,.libra-book-reading-sheet,.libra-book-empty-state,.libra-book-aux-workbench{color-scheme:light!important;color:#392b20!important;-webkit-text-fill-color:#392b20!important}.libra-book-memory-copy strong,.libra-book-reading-head h2,.libra-book-memory-text,.libra-book-memory-margin-card,.libra-book-empty-state h2,.libra-book-empty-state p{opacity:1!important}}
-
-/* v2.3.24 Book UX v5.12 — full visible shell replacement */
-.libra-book-settings-room-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;margin-top:16px;align-items:start}
-.libra-book-settings-index{display:grid;align-content:start;gap:8px;padding:10px;border:1px solid #c3b096;border-radius:14px;background:#e9dcc8;position:sticky;top:10px;box-shadow:inset 0 1px rgba(255,255,255,.5)}
-.libra-book-settings-index-group{display:grid;gap:6px}.libra-book-settings-index-divider{display:flex;align-items:center;gap:8px;margin:4px 2px;padding:8px 2px 4px;border-top:1px solid #ccb99e;color:#9a6a34;font:700 8px Georgia,"Noto Serif KR",serif;letter-spacing:.16em}
-.libra-book-settings-index-item{display:grid;grid-template-columns:32px minmax(0,1fr);gap:9px;align-items:start;width:100%;padding:10px;border:1px solid transparent;border-radius:11px;background:transparent;color:#5e4a37;text-align:left;cursor:pointer}
-.libra-book-settings-index-item:hover{background:#e3d2ba;border-color:#d1b491}.libra-book-settings-index-item.active{background:#dac09b;border-color:#aa8255;box-shadow:inset 3px 0 #8f6030}
-.libra-book-settings-index-no{padding-top:1px;color:#a06e36;font:700 10px Georgia,"Noto Serif KR",serif}.libra-book-settings-index-copy{display:grid;gap:2px;min-width:0}.libra-book-settings-index-copy strong{color:#4a3828;font:700 12px Georgia,"Noto Serif KR",serif}.libra-book-settings-index-copy small{color:#7b6853;font-size:9px;line-height:1.35}
-.libra-book-settings-workbench{min-width:0;padding:16px;border:1px solid #c2af94;border-radius:14px;background:#f5ecdf;box-shadow:inset 0 1px rgba(255,255,255,.55)}
-.libra-book-settings-workbench-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding-bottom:13px;margin-bottom:13px;border-bottom:1px solid #d0bea2}.libra-book-settings-workbench-head h2{margin:3px 0 4px;color:#392b20;font:700 22px Georgia,"Noto Serif KR",serif}.libra-book-settings-workbench-head p{margin:0;color:#74614c;font-size:11px}
-.libra-book-settings-workbench-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:7px}.libra-book-settings-dirty{max-width:min(420px,100%);padding:6px 9px;border:1px solid #c6b397;border-radius:999px;background:#efe3d1;color:#806a52;font-size:9px;font-weight:800;line-height:1.45;overflow-wrap:anywhere}.libra-book-settings-dirty.dirty{border-color:#bd945f;background:#f0e0c7;color:#775020}.libra-book-settings-dirty.err{border-color:#b77c71;background:#efdad5;color:#793f37}
-.libra-book-settings-action{min-height:36px;padding:7px 11px;border:1px solid #c8b397;border-radius:999px;background:#f6ecdf;color:#604932;font-weight:800;cursor:pointer}.libra-book-settings-action.primary{background:#9b6835;border-color:#815327;color:#fff1dd}.libra-book-settings-action:disabled{opacity:.45;cursor:not-allowed}
-.libra-book-settings-native-content{min-width:0;color:#392b20;-webkit-text-fill-color:currentColor}.libra-book-settings-native-content>.sga-flow-section{display:grid;gap:12px}.libra-book-settings-native-content .sga-section-title{padding:0 2px 5px}.libra-book-settings-native-content .sga-section-title h2{color:#3d2d20!important;-webkit-text-fill-color:#3d2d20!important;font:700 18px Georgia,"Noto Serif KR",serif!important}.libra-book-settings-native-content .sga-section-title p{color:#78634e!important;-webkit-text-fill-color:#78634e!important}
-.libra-book-settings-native-content .sga-card,.libra-book-settings-native-content .sga-provider-panel,.libra-book-settings-native-content .sga-provider-editor,.libra-book-settings-native-content .sga-provider-note-box,.libra-book-settings-native-content .sga-live-result-card,.libra-book-settings-native-content .sga-simple-choice,.libra-book-settings-native-content .sga-simple-choice-card,.libra-book-settings-native-content .libra-substage-card,.libra-book-settings-native-content .sga-stage-card,.libra-book-settings-native-content .libra-response-mode-card,.libra-book-settings-native-content .sga-callout,.libra-book-settings-native-content .readonly-card,.libra-book-settings-native-content .setting-section{color-scheme:light!important;background:#f8f0e5!important;border-color:#cbb89d!important;color:#392b20!important;-webkit-text-fill-color:currentColor!important;box-shadow:none!important}
-.libra-book-settings-native-content .sga-provider-note-box,.libra-book-settings-native-content .sga-live-result-text,.libra-book-settings-native-content .sga-live-result-code{background:#fffaf2!important;color:#584533!important;-webkit-text-fill-color:#584533!important;border-color:#d2c0a6!important}
-.libra-book-settings-native-content .sga-simple-choice.active,.libra-book-settings-native-content .sga-simple-choice-card.active,.libra-book-settings-native-content [data-active="true"].sga-simple-choice,.libra-book-settings-native-content .libra-substage-card.active,.libra-book-settings-native-content .libra-response-mode-card.active{background:#dfc39d!important;border-color:#a97947!important;color:#3f2c1d!important;-webkit-text-fill-color:#3f2c1d!important;box-shadow:0 0 0 2px rgba(169,121,71,.12)!important}
-.libra-book-settings-native-content .libra-response-mode-card:hover:not(.active){background:#f1e3d0!important;border-color:#b58b5d!important}
-.libra-book-settings-native-content h1,.libra-book-settings-native-content h2,.libra-book-settings-native-content h3,.libra-book-settings-native-content h4,.libra-book-settings-native-content strong{color:#3a2a1e!important;-webkit-text-fill-color:#3a2a1e!important}.libra-book-settings-native-content p,.libra-book-settings-native-content span,.libra-book-settings-native-content small,.libra-book-settings-native-content label,.libra-book-settings-native-content .sga-note{color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
-.libra-book-settings-native-content .sga-input,.libra-book-settings-native-content .sga-select,.libra-book-settings-native-content .sga-textarea,.libra-book-settings-native-content input,.libra-book-settings-native-content select,.libra-book-settings-native-content textarea{color-scheme:light!important;background:#fffaf2!important;border-color:#cbb89d!important;color:#3d2d20!important;-webkit-text-fill-color:#3d2d20!important}
-.libra-book-settings-native-content .sga-btn{background:#f3e8d8!important;border-color:#c5ae8e!important;color:#5e4630!important;-webkit-text-fill-color:#5e4630!important}.libra-book-settings-native-content .sga-btn.primary,.libra-book-settings-native-content .sga-btn.good{background:#dfc39d!important;border-color:#a97947!important;color:#53341c!important;-webkit-text-fill-color:#53341c!important}.libra-book-settings-native-content .sga-btn.danger{background:#ecd9d4!important;border-color:#b98076!important;color:#713d37!important;-webkit-text-fill-color:#713d37!important}
-.libra-book-settings-native-content .sga-list,.libra-book-settings-native-content .sga-list-items{background:#eee1cf!important;border-color:#c7b397!important}.libra-book-settings-native-content .sga-list-item{background:transparent!important;color:#5b4632!important;-webkit-text-fill-color:#5b4632!important}.libra-book-settings-native-content .sga-list-item.active,.libra-book-settings-native-content .sga-list-item:hover{background:#ddc5a1!important;border-color:#b78e5e!important;color:#392b20!important;-webkit-text-fill-color:#392b20!important}
-.libra-book-drawer-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:7px}.libra-book-drawer-dirty{padding:6px 9px;border:1px solid #c6b397;border-radius:999px;background:#efe3d1;color:#806a52;font-size:9px;font-weight:800}.libra-book-drawer-dirty.dirty{border-color:#bd945f;background:#f0e0c7;color:#775020}.libra-book-drawer-action{min-height:34px;padding:7px 10px;border:1px solid #c8b397;border-radius:999px;background:#f6ecdf;color:#604932;font-weight:800}.libra-book-drawer-action.primary{background:#9b6835;border-color:#815327;color:#fff1dd}.libra-book-drawer-action:disabled{opacity:.45}
-.libra-book-drawer-tabs{gap:7px!important;padding:10px 14px!important}.libra-book-drawer-tab{flex:0 0 auto;padding:8px 12px;border:1px solid #c8b397;border-radius:999px;background:#f4eadc;color:#654d36;font-weight:800;cursor:pointer}.libra-book-drawer-tab.active{background:#d9bd96;border-color:#a87845;color:#4d321e}
-.libra-book-technical-panel *{color-scheme:light}.libra-book-technical-panel .sga-simple-choice,.libra-book-technical-panel .sga-simple-choice-card,.libra-book-technical-panel .libra-substage-card,.libra-book-technical-panel .sga-stage-card{background:#f8f0e5!important;border-color:#cbb89d!important;color:#392b20!important;-webkit-text-fill-color:#392b20!important}.libra-book-technical-panel .sga-simple-choice.active,.libra-book-technical-panel .sga-simple-choice-card.active,.libra-book-technical-panel .libra-substage-card.active{background:#ead9c2!important;border-color:#b48757!important;color:#3f2c1d!important;-webkit-text-fill-color:#3f2c1d!important}.libra-book-technical-panel h1,.libra-book-technical-panel h2,.libra-book-technical-panel h3,.libra-book-technical-panel h4,.libra-book-technical-panel strong{color:#3a2a1e!important;-webkit-text-fill-color:#3a2a1e!important}.libra-book-technical-panel p,.libra-book-technical-panel span,.libra-book-technical-panel small,.libra-book-technical-panel label,.libra-book-technical-panel .sga-note{color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
-@media(max-width:980px){.libra-book-settings-room-shell{grid-template-columns:minmax(0,1fr)}.libra-book-settings-index{position:static;grid-template-columns:repeat(2,minmax(0,1fr))}.libra-book-settings-index-divider{grid-column:1/-1}.libra-book-settings-index-group{display:contents}}
-@media(max-width:760px){.libra-book-settings-workbench{padding:12px}.libra-book-settings-workbench-head{display:grid}.libra-book-settings-workbench-actions{justify-content:flex-start}.libra-book-settings-index{grid-template-columns:minmax(0,1fr)}.libra-book-settings-index-divider{grid-column:auto}.libra-book-drawer-head{grid-template-columns:minmax(0,1fr)}.libra-book-drawer-actions{justify-content:flex-start}.libra-book-drawer-tabs{overflow-x:auto;scrollbar-width:none}.libra-book-drawer-tabs::-webkit-scrollbar{display:none}}
-@media(prefers-color-scheme:dark){.libra-book-page,.libra-book-drawer,.libra-book-family-menu{color-scheme:light}.libra-book-page{background:linear-gradient(180deg,#f5eddf,#efe4d2);color:#392b20}.libra-book-drawer{background:#eee2d0;color:#392b20}}
-
-
-/* BOOK_UX 5.19: complete paper components, semantic status contrast and intrinsic-width layouts. */
-:is(.libra-book-page,.libra-book-drawer){--sga-good:#405b40;--sga-warn:#765020;--sga-danger:#793f37;color-scheme:light}
-:is(.libra-book-page,.libra-book-drawer) .sga-btn.libra-book-librarian-save{background:#dfc39d;border-color:#a97947;color:#53341c;-webkit-text-fill-color:#53341c;box-shadow:0 1px 0 rgba(255,255,255,.45) inset}
-:is(.libra-book-page,.libra-book-drawer) .sga-btn.libra-book-librarian-save:hover:not(:disabled){background:#d5b385;border-color:#936235;filter:none}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-stage-result,.sga-stage-detail,.sga-advanced,.sga-module-browser-pane,.sga-module-list-row,.sga-module-entry-item,.sga-module-lore-item){background:#f8f0e5;border-color:#cbb89d;color:#392b20;box-shadow:none}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-advanced>summary,.sga-module-browser-title,.sga-module-entry-toolbar){background:#eee1cf;color:#4b3827;border-color:#cbb89d}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-stage-result-title,.sga-result-empty,.sga-result-row,.sga-result-code,.sga-result-text,.sga-stage-detail-head span,.sga-reference-head span){color:#63503c;-webkit-text-fill-color:currentColor}
-:is(.libra-book-page,.libra-book-drawer) .sga-result-label{color:#725a42!important;-webkit-text-fill-color:#725a42!important}
-:is(.libra-book-page,.libra-book-drawer) .sga-result-value{color:#4a3829!important;-webkit-text-fill-color:#4a3829!important}
-:is(.libra-book-page,.libra-book-drawer) .sga-stage-result details>summary{color:#744b26!important;-webkit-text-fill-color:#744b26!important}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-result-row,.sga-result-code,.sga-advanced-body){background:#fffaf2;border-color:#d2c0a6}
-:is(.libra-book-page,.libra-book-drawer) .sga-module-lore-item.excluded{background:#f1dfd9;border-color:#b77c71}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-module-list-row.selected,.sga-module-entry-item.selected){background:#e6ecdf;border-color:#91a184}
-:is(.libra-book-page,.libra-book-drawer) .sga-module-list-row.focused{border-color:#a77742;box-shadow:inset 3px 0 #a77742}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-module-entry-item.disabled,.sga-agent-expanded.dim){opacity:1;background:#eee6db}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-module-list-copy,.sga-module-lore-description,.sga-module-entry-preview,.sga-module-list-description){color:#63503c;-webkit-text-fill-color:currentColor}
-:is(.libra-book-page,.libra-book-drawer) .sga-module-lore-meta>span{background:#e7d8c2;border-color:#c7b394;color:#5f4b34;-webkit-text-fill-color:#5f4b34}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-badge,.sga-mini-badge){display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;align-self:flex-start;width:auto;max-width:100%;height:auto;min-height:0;white-space:nowrap;word-break:normal;overflow-wrap:normal;line-height:1.4;padding:5px 9px;background:#eee1cd!important;border-color:#bba17c!important;color:#604930!important;-webkit-text-fill-color:#604930!important;opacity:1}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-badge.good,.sga-mini-badge.good,.sga-mini-badge.ok){background:#e3eadc!important;border-color:#829673!important;color:#405b40!important;-webkit-text-fill-color:#405b40!important}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-panel{background:#efe3d1;border-color:#c7b394;color:#493729;-webkit-text-fill-color:currentColor}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-label{color:#725a42;-webkit-text-fill-color:#725a42}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill{background:#fffaf1;border-color:#baa486;color:#3b2c21;-webkit-text-fill-color:currentColor}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill .sga-summary-name{color:#3b2c21;-webkit-text-fill-color:#3b2c21}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill .sga-summary-state{background:#e7dbca;color:#594536;-webkit-text-fill-color:#594536}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.ok{border-color:#829673}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.ok .sga-summary-state{background:#e3eadc;color:#405b40;-webkit-text-fill-color:#405b40}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.fallback{border-color:#b28c56}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.fallback .sga-summary-state{background:#f1e1c6;color:#765020;-webkit-text-fill-color:#765020}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.skip{border-color:#aa9a86}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.skip .sga-summary-state{background:#e8dfd3;color:#675541;-webkit-text-fill-color:#675541}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.error{border-color:#b77c71}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-pill.error .sga-summary-state{background:#efdad5;color:#793f37;-webkit-text-fill-color:#793f37}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-elapsed{color:#765020;-webkit-text-fill-color:#765020}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-badge.warn,.sga-mini-badge.warn,.sga-mini-badge.run){background:#f1e1c6!important;border-color:#b28c56!important;color:#765020!important;-webkit-text-fill-color:#765020!important}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-badge.danger,.sga-mini-badge.danger,.sga-mini-badge.err){background:#efdad5!important;border-color:#b77c71!important;color:#793f37!important;-webkit-text-fill-color:#793f37!important}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-card,.sga-field,.sga-stage-controls,.sga-stage-primary,.sga-stage-detail,.sga-stage-result,.sga-agent-title,.sga-agent-title>div,.sga-prompt-builtin,.sga-provider-editor,.sga-module-lore-copy,.sga-module-entry-copy,.sga-module-list-copy){min-width:0;max-width:100%}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-input,.sga-select,.sga-textarea){min-width:0;max-width:100%}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-grid,.sga-grid.three){grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-row2,.sga-row3,.sga-row4){grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))}
-:is(.libra-book-page,.libra-book-drawer) .sga-stage-layout{grid-template-columns:minmax(0,1fr)}
-:is(.libra-book-page,.libra-book-drawer) .sga-stage-primary{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
-:is(.libra-book-page,.libra-book-drawer) .sga-stage-primary>.sga-check{grid-column:1/-1;padding-top:0}
-:is(.libra-book-page,.libra-book-drawer) .sga-reference-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr))}
-:is(.libra-book-page,.libra-book-drawer) .sga-agent-head{align-items:flex-start;flex-wrap:wrap;gap:10px}
-:is(.libra-book-page,.libra-book-drawer) .sga-agent-head>div:first-child{flex:1 1 200px;min-width:0;max-width:100%}
-:is(.libra-book-page,.libra-book-drawer) .sga-agent-run-meta{min-width:0;flex:0 1 auto;max-width:100%;flex-wrap:wrap}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-stage-detail-head,.sga-reference-head,.sga-module-lore-head,.sga-module-list-head,.sga-module-entry-head,.sga-module-browser-title){flex-wrap:wrap;gap:8px}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-module-lore-head,.sga-module-list-head,.sga-module-entry-head)>strong{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-table{grid-template-columns:minmax(0,.9fr) minmax(0,1.2fr);column-gap:12px;align-items:start}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-table :is(span,strong){min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:normal}
-:is(.libra-book-page,.libra-book-drawer) .sga-summary-table strong{text-align:right}
-:is(.libra-book-page,.libra-book-drawer) :is(.sga-field small,.sga-note,.sga-stage-detail-head span){overflow-wrap:anywhere;word-break:normal}
-:is(.libra-book-page,.libra-book-drawer) .sga-list-item[hidden]{display:none!important}
-:is(.libra-book-page,.libra-book-drawer) .sga-list-item[data-selected="true"]{background:#ddc5a1!important;border-color:#a77742!important;color:#392b20!important}
-.libra-book-settings-workbench{container-type:inline-size;container-name:libra-workbench}
-@container libra-workbench (max-width:680px){.sga-module-lore-browser{grid-template-columns:minmax(0,1fr)}.sga-module-browser-modules{order:-1}.sga-module-list{max-height:280px}.sga-module-entry-list{max-height:440px}.sga-simple-choice-grid.two,.sga-simple-choice-grid.three,.sga-simple-choice-grid.four{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:540px){:is(.libra-book-page,.libra-book-drawer) .sga-summary-table{grid-template-columns:minmax(0,1fr)}:is(.libra-book-page,.libra-book-drawer) .sga-summary-table strong{text-align:left;padding-top:0}.libra-book-settings-workbench-head{flex-wrap:wrap}.libra-book-settings-workbench-actions{justify-content:flex-start}}
-
-
-/* BOOK_UX V5.21: the explicit chat-menu writer owns its own compact paper surface. */
-#sga-rp-gui-root.libra-input-writer-surface{display:grid;place-items:center;padding:16px;box-sizing:border-box;overflow:auto}
-.libra-input-writer-modal{--sga-surface:#f7efe3;--sga-line:#c9b79c;--sga-text:#392b20;--sga-muted:#796550;--sga-accent:#966334;color-scheme:light;background:#f7efe3;color:#392b20;border-color:#c9b79c;font-family:inherit;max-width:100%;box-sizing:border-box}
-.libra-input-writer-modal .sga-card,.libra-input-writer-modal .sga-input-confirm-head{background:#f7efe3;color:#392b20;border-color:#c9b79c}
-.libra-input-writer-modal .sga-input-confirm-head{flex-wrap:wrap}.libra-input-writer-modal .sga-input-confirm-head>div{min-width:0;flex:1 1 240px}
-.libra-input-writer-modal h2,.libra-input-writer-modal h3,.libra-input-writer-modal strong{color:#392b20}.libra-input-writer-modal p,.libra-input-writer-modal .sga-note,.libra-input-writer-modal .sga-input-confirm-status{color:#796550}
-.libra-input-writer-modal .sga-input-confirm-text.editable{background:#fffaf1;color:#392b20;-webkit-text-fill-color:#392b20;caret-color:#966334;border:1px solid #c9b79c;font:inherit;line-height:1.65;min-width:0;box-sizing:border-box}
-.libra-input-writer-modal .sga-input-confirm-text.editable:focus{background:#fffaf1;box-shadow:inset 0 0 0 1px #966334}.libra-input-writer-modal .sga-input-confirm-text::placeholder{color:#796550;opacity:1}
-.libra-input-writer-modal .sga-btn{background:#f2e5d2;color:#65492f;border-color:#b99162;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;min-width:0;line-height:1.5}
-.libra-input-writer-modal .sga-btn.primary{background:#966334;color:#fffaf1;border-color:#966334}.libra-input-writer-modal .sga-btn.ghost{background:#fffaf1;color:#65492f}.libra-input-writer-modal .sga-btn:hover{filter:brightness(.97)}
-.libra-input-writer-modal .sga-badge{flex:0 0 auto;white-space:nowrap;word-break:keep-all;height:auto;background:#e8eddf;color:#435c42;border-color:#6c8261}.libra-input-writer-modal .sga-input-confirm-status.err{color:#913b37}
-.libra-input-writer-modal .libra-input-writer-choice-grid{grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr))!important;box-sizing:border-box}.libra-input-writer-modal .sga-input-confirm-footer{flex-wrap:wrap}
-@media(max-width:760px){#sga-rp-gui-root.libra-input-writer-surface{padding:10px}.sga-input-confirm-app.libra-input-writer-modal{width:100%;max-height:calc(var(--sga-vh) - 20px);border:1px solid #c9b79c;border-radius:16px}.libra-input-writer-modal .sga-actions{flex-wrap:wrap}.libra-input-writer-modal>.sga-input-confirm-head h2{font-size:18px}}
-/* 2.3.86: task-oriented Book layout, using the existing paper and ink palette. */
-.libra-book-writing-content .sga-label{color:#705439}.libra-book-save-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 16px;border-top:1px solid #ceb899;background:#f3e8d7;z-index:4;flex-wrap:wrap}.libra-book-save-bar>[role=status]{margin-right:auto}
-.libra-book-settings-workbench{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:calc(82dvh - 270px);min-height:320px;overflow:hidden;padding-bottom:0}.libra-book-settings-native-content{overflow:auto;min-height:0;padding-bottom:20px}.libra-book-settings-workbench-head{margin-bottom:12px}.libra-book-settings-native-content [data-gui-save-label]{display:none}
-.libra-book-writing-workspace{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:calc(82dvh - 270px);min-height:350px;border:1px solid #cdb797;border-radius:16px;overflow:hidden}.libra-book-writing-content{overflow:auto;padding:18px}.libra-book-writing-workspace .libra-book-tool-actions > .libra-book-tool-button{display:none}.libra-book-writing-tabs{display:flex;gap:5px;padding:10px;overflow-x:auto;border-bottom:1px solid #cfbb9e}.libra-book-writing-tabs button{padding:10px 15px;white-space:nowrap;border:1px solid transparent;border-radius:9px;background:transparent;color:inherit}.libra-book-writing-tabs button.active{background:#e3c99f;border-color:#aa783f}.libra-book-writing-content [data-gui-save-label]{display:none}
-.libra-memory-model-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.libra-book-lineage-compact{font-size:13px;margin:0 0 12px}.libra-book-lineage-compact>summary{cursor:pointer;color:#ac9474}.libra-book-job-summary{margin:16px 0 0;padding:14px;border:1px solid #65533b;border-radius:12px}.libra-book-job-summary progress{display:block;width:100%;height:8px;accent-color:#a77c47;margin:10px 0}.libra-book-job-summary p{font-size:13px;margin:8px 0}.libra-book-mobile-back{display:none}
-.libra-book-browse,.libra-book-character-browser{display:grid;grid-template-columns:minmax(210px,28%) minmax(0,1fr);gap:20px;align-items:start}.libra-book-browse-list,.libra-book-character-index{border:1px solid #cdb797;border-radius:14px;padding:14px;max-height:calc(100dvh - 250px);overflow:auto;background:#f1e5d3}.libra-book-browse-list nav,.libra-book-profile-index{display:flex;flex-direction:column;gap:7px}.libra-book-browse-list nav button,.libra-book-profile-index button{width:100%;text-align:left;padding:12px;border:1px solid transparent;background:transparent;color:#493626;border-radius:9px}.libra-book-browse-list nav button.active,.libra-book-profile-index button.active{background:#e5cfaa;border-color:#ae7942}.libra-book-browse-list nav strong,.libra-book-browse-list nav small{display:block}.libra-book-browse-list nav small{font-size:11px;margin-bottom:6px}.libra-book-browse-list select,.libra-book-character-index input{box-sizing:border-box;width:100%;padding:10px;margin-bottom:12px;border:1px solid #ccb697;border-radius:9px;background:#fff9f0;color:#473523}.libra-book-browse-detail{padding:25px;background:#fbf3e6;border:1px solid #ccb697;border-radius:16px;min-height:300px;line-height:1.8;overflow-wrap:anywhere;word-break:keep-all}.libra-book-browse-detail h2{margin:6px 0 22px}.libra-book-character-browser>.libra-book-character-spread{display:flex;flex-direction:column}.libra-book-character-spread>*{width:100%;box-sizing:border-box}.libra-book-memory-detail-wrap{min-width:0}.libra-book-settings-native-content,.libra-book-writing-content{scrollbar-gutter:stable}.libra-book-page [hidden]{display:none!important}
-@media(max-width:760px){.libra-memory-model-summary{grid-template-columns:minmax(0,1fr)}.libra-book-browse,.libra-book-character-browser{display:block}.libra-book-browse-list,.libra-book-character-index{max-height:none}.libra-book-mobile-back{display:inline-flex;align-self:flex-start;padding:10px 12px;margin-bottom:14px;background:#f3e5cf;border:1px solid #c5ac89;border-radius:8px;color:#493626}.libra-book-browse[data-reader-detail=false]>.libra-book-browse-detail,.libra-book-browse[data-reader-detail=true]>.libra-book-browse-list,.libra-book-character-browser[data-reader-detail=false]>.libra-book-character-spread,.libra-book-character-browser[data-reader-detail=true]>.libra-book-character-index,.libra-book-memory-reader[data-reader-detail=false]>.libra-book-memory-detail-wrap,.libra-book-memory-reader[data-reader-detail=true]>.libra-book-memory-rail{display:none!important}.libra-book-settings-workbench,.libra-book-writing-workspace{height:calc(100dvh - 330px);min-height:280px}.libra-book-save-bar{padding:9px;gap:6px}.libra-book-save-bar [role=status]{width:100%;font-size:11px}.libra-book-mobile-nav{grid-template-columns:repeat(6,minmax(0,1fr))!important}.libra-book-writing-content{padding:10px}.libra-book-browse-detail{padding:18px}}
-
-/* Fill the actual dialog body so notices and mobile headers cannot push Save offscreen. */
-.sga-main:has(.libra-book-writing-workspace),.sga-main:has(.libra-book-settings-workbench){display:flex;flex-direction:column;overflow:hidden;padding-bottom:12px!important}
-.sga-main:has(.libra-book-writing-workspace)>.libra-book-stage,.sga-main:has(.libra-book-settings-workbench)>.libra-book-stage{display:flex;flex:1;min-height:0}
-.libra-book-page:has(.libra-book-writing-workspace),.libra-book-page:has(.libra-book-settings-workbench){display:flex;flex-direction:column;flex:1;min-height:0!important;height:auto;box-sizing:border-box}
-.libra-book-page:has(.libra-book-save-bar)>.libra-book-page-head{flex-shrink:0}
-.libra-book-settings-room-shell,.libra-book-writing-workspace{flex:1;min-height:0!important;height:auto}
-.libra-book-settings-room-shell>.libra-book-settings-workbench{height:100%;min-height:0}
-.libra-book-writing-tabs button{flex:0 0 auto;min-width:max-content}
-.libra-book-writing-content .sga-label,.libra-book-writing-content label{color:#715537}
-.libra-book-writing-content{--sga-text:#463321;--sga-muted:#765c42;--sga-border:#cfb897;--sga-accent:#99662f}
-.libra-book-writing-content .sga-simple-choice,.libra-book-writing-content .libra-home-stage-card,.libra-book-writing-content .sga-module-lore-item{background:#fbf3e6;border-color:#cfb897;color:#463321}
-.libra-book-writing-content .sga-simple-choice.active,.libra-book-writing-content .sga-simple-choice:hover{background:#e7cfaa;border-color:#a5733b;color:#463321}
-.libra-book-writing-content .sga-simple-choice-desc,.libra-book-writing-content .sga-simple-choice small,.libra-book-writing-content .sga-note,.libra-book-writing-content .gradia-skill-card>.sga-agent-head>strong{color:#6b5037}
-.libra-book-writing-content .sga-simple-choice-badge{color:#604221;background:#ecdcbe;border-color:#bd9863}
-.libra-book-writing-content .libra-section-rail{background:#f2e5d0;border-color:#cfb897}
-.libra-book-writing-content .sga-check{background:#faf1e2;border-color:#cfb897;color:#463321}
-
-.libra-book-gradia-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:8px;background:#f4e8d6;border:1px solid #cfb897;border-radius:12px}
-.libra-book-gradia-tabs button{display:block;min-width:0;padding:10px 6px;background:#fcf4e8;color:#503923;border:1px solid #cfb897;border-radius:9px;font:inherit;cursor:pointer}
-.libra-book-gradia-tabs button[aria-selected=true]{background:#e4c99f;color:#463321;border-color:#a5733b;font-weight:700}
-.libra-book-gradia-tabs button:focus-visible{outline:2px solid #956127;outline-offset:2px}
-.libra-book-gradia-advanced .libra-home-pipeline-grid{background:transparent!important;border-color:#cfb897}
-@media(max-width:760px){.libra-book-gradia-tabs button{font-size:12px;padding:10px 4px;white-space:nowrap}}
-.libra-book-gradia-advanced,.libra-book-input-prompts{min-width:0;display:flex;flex-direction:column;gap:16px}
-.libra-book-gradia-advanced .sga-prompt-injection-tabs{flex:1;grid-template-columns:repeat(4,minmax(0,1fr))}
-.libra-book-gradia-advanced .sga-prompt-injection-tabs .sga-btn{color:#503923;background:#f9efdf;border-color:#cfb897}
-.libra-book-gradia-advanced .sga-prompt-injection-tabs .sga-btn.active,.libra-book-gradia-advanced .sga-prompt-injection-tabs .sga-btn.primary{background:#e4c99f;border-color:#a5733b;color:#463321}
-.libra-book-writing-content .gradia-skill-stage-tabs{min-width:0;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-@media(max-width:760px){.libra-book-gradia-advanced .sga-prompt-injection-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible}.libra-book-gradia-advanced .sga-prompt-injection-tabs .sga-btn{min-width:0;padding:9px 5px}.libra-book-writing-content .gradia-skill-stage-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important}.libra-book-writing-content .gradia-skill-search{min-width:0}.libra-book-writing-content .libra-substage-grid{grid-template-columns:minmax(0,1fr)}}
-
-
-.libra-book-setting-group summary{padding:10px 8px;color:#bca587;font-size:12px;cursor:pointer}.libra-book-setting-group .libra-book-side-item{padding:8px 12px}.libra-book-setting-group strong{font-size:12px}.libra-book-setting-group[open]{padding-bottom:6px}.libra-book-sidebar{overflow-y:auto}
-
-@media(max-width:760px){.sga-main:has(.libra-book-save-bar){padding-bottom:70px!important}}
-@media(max-width:760px),(max-width:980px) and (max-height:600px){
- .libra-book-app .sga-main:has(.libra-book-settings-workbench){display:block;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:90px!important}
- .libra-book-app .sga-main:has(.libra-book-settings-workbench)>.libra-book-stage{display:block;min-height:0;height:auto;overflow:visible}
- .libra-book-app .libra-book-page:has(.libra-book-settings-workbench){display:block;flex:none;height:auto;min-height:0!important;overflow:visible}
- .libra-book-app .libra-book-settings-room-shell{display:block;flex:none;height:auto;min-height:0!important;overflow:visible}
- .libra-book-app .libra-book-settings-room-shell>.libra-book-settings-workbench{display:block;height:auto;max-height:none;min-height:0;overflow:visible}
- .libra-book-app .libra-book-settings-native-content{height:auto;max-height:none;min-height:0;overflow:visible}
- .libra-book-app .libra-book-settings-workbench .libra-book-save-bar{position:static}
-}
-
-
-/* Book navigation: medium screens use a full-width wrapping menu, not a desktop-width strip. */
-@media(min-width:761px) and (max-width:980px){
- .libra-book-app>.sga-shell{display:flex!important;flex-direction:column;min-width:0}
- .libra-book-app .libra-book-sidebar{width:100%;max-width:none;height:auto;max-height:38vh;flex:0 0 auto;align-self:stretch;overflow-x:hidden;overflow-y:auto;padding:10px}
- .libra-book-app .libra-book-side-label{display:none}
- .libra-book-app .libra-book-side-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-height:0;overflow:visible;padding:0}
- .libra-book-app .libra-book-side-item{width:100%;min-width:0;min-height:44px;white-space:normal;margin:0;padding:8px}
- .libra-book-app .libra-book-side-copy small{display:none}
- .libra-book-app .libra-book-side-divider{grid-column:1/-1;margin:2px 0}
- .libra-book-app .libra-book-setting-group{grid-column:1/-1;min-width:0}
- .libra-book-app>.sga-shell>.sga-main{min-width:0;min-height:0;flex:1 1 auto}
-}
-
-
-
-  /* --- MemorySuite shared design tokens -------------------------------------------------------------
-     One scale shared by Flashback, HAYAKU and LIBRA so the three panels read as one
-     product. Colours are NOT declared here: those come from the host theme bridge.
-     Every token has a literal fallback, so a plugin still renders if this block is
-     ever dropped. */
-  :root{
-    --ms-font-sans:Pretendard,"Pretendard Variable","Pretendard JP","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    --ms-font-mono:ui-monospace,SFMono-Regular,"D2Coding",Menlo,Consolas,"Malgun Gothic",monospace;
-
-    /* type scale: eyebrow / title / subtitle / body / note */
-    --ms-fs-eyebrow:12px;
-    --ms-fs-title:19px;
-    --ms-fs-subtitle:15px;
-    --ms-fs-body:13px;
-    --ms-fs-note:12px;
-
-    /* Hangul is a full-width square script and needs more leading than Latin. */
-    --ms-lh-tight:1.35;
-    --ms-lh-body:1.65;
-    --ms-ls-eyebrow:0;
-    --ms-ls-title:-.01em;
-
-    /* 4px spacing grid */
-    --ms-sp-1:4px;--ms-sp-2:8px;--ms-sp-3:12px;--ms-sp-4:16px;--ms-sp-5:24px;--ms-sp-6:32px;
-
-    /* radius scale -- the three plugins used 9/12, 24/9 and 22/16 before this */
-    --ms-r-sm:8px;--ms-r-md:12px;--ms-r-lg:16px;--ms-r-xl:20px;
-
-    /* elevation scale */
-    --ms-sh-1:0 1px 2px rgba(0,0,0,.18);
-    --ms-sh-2:0 4px 14px rgba(0,0,0,.20);
-    --ms-sh-3:0 12px 36px rgba(0,0,0,.28);
-    --ms-sh-4:0 24px 72px rgba(0,0,0,.36);
-
-    /* Local fallback: iframe host animation speed is not transported. */
-    --ms-motion:.2s;
-  }
-  @media(prefers-reduced-motion:reduce){:root{--ms-motion:0s}}
-  /* Hangul must not break mid-word. keep-all fixes that; overflow-wrap:anywhere keeps
-     long unbreakable tokens (hashes, scope keys, URLs) from overflowing their box.
-     Deliberately NOT applied to code/pre/textarea, where character breaking is correct. */
-  .ms-typo,.ms-typo *:not(pre):not(code):not(textarea):not(kbd){word-break:keep-all;overflow-wrap:anywhere}
-  .ms-typo pre,.ms-typo code,.ms-typo textarea,.ms-typo kbd{font-family:var(--ms-font-mono);word-break:break-all;overflow-wrap:anywhere}
-
-  /* Shared hierarchy utilities. Plugin-specific classes are mapped onto these below. */
-  .ms-eyebrow{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.7}
-  .ms-title{font-size:var(--ms-fs-title);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  .ms-subtitle{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650}
-  .ms-body{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body)}
-  .ms-note{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);opacity:.82}
-  /* Counts and turn numbers stop jittering when digits share one advance width. */
-  .ms-num,.ms-typo table,.ms-typo time,.ms-typo .nav-count{font-variant-numeric:tabular-nums}
-
-  /* --- LIBRA mapping onto the shared scale --- */
-  /* The technical (.sga-*) surfaces adopt the shared scale. The Book reader's paper
-     aesthetic is a deliberate design and keeps its own serif face; only its Hangul
-     line-breaking and leading are corrected here. */
-  html,body,.sga-app{font-family:var(--ms-font-sans)}
-  .sga-app{font-size:var(--ms-fs-body);line-height:var(--ms-lh-body);word-break:keep-all;overflow-wrap:anywhere}
-  .sga-app pre,.sga-app code,.sga-app textarea{font-family:var(--ms-font-mono);word-break:break-all}
-  .sga-app .libra-article-eyebrow,.sga-app .sga-label{font-size:var(--ms-fs-eyebrow);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-eyebrow);text-transform:uppercase;font-weight:700;opacity:.72}
-  .sga-app .sga-card h2,.sga-app .sga-flow-section>h2{font-size:var(--ms-fs-title);line-height:var(--ms-lh-tight);letter-spacing:var(--ms-ls-title);font-weight:700}
-  .sga-app .sga-card h3,.sga-app .sga-flow-section>h3,.sga-app .sga-section-title h3{font-size:var(--ms-fs-subtitle);line-height:var(--ms-lh-tight);font-weight:650}
-  .sga-app .sga-note,.sga-app small,.sga-app .sga-advanced-hint{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);opacity:.85}
-  .sga-app .sga-summary-table strong,.sga-app .sga-badge,.sga-app time{font-variant-numeric:tabular-nums}
-  .sga-app .sga-btn,.sga-app .sga-input,.sga-app .sga-select{transition:background-color var(--ms-motion) ease,border-color var(--ms-motion) ease,color var(--ms-motion) ease}
-  /* Book reader: keep the serif paper face, fix Hangul breaking and leading only. */
-  .libra-book-page,.libra-book-drawer,.libra-book-reading-sheet{word-break:keep-all;overflow-wrap:anywhere;line-height:var(--ms-lh-body)}
-  .libra-book-reading-sheet{border-radius:var(--ms-r-lg)}
-
-  /* --- MemorySuite contrast, empty states and skeletons -------------------------------------------------------------
-     Muted text is derived from the active text and background colours rather than taken
-     from the host verbatim: RisuAI's own secondary colour measures 2.99:1 on its own
-     background, below WCAG AA. 62% clears 4.5:1 on both a dark and a light host. */
-  :root{
-    --ms-mix-muted:62%;
-    --ms-skeleton-base:color-mix(in srgb,currentColor 10%,transparent);
-    --ms-skeleton-shine:color-mix(in srgb,currentColor 22%,transparent);
-  }
-  @keyframes ms-shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
-  @keyframes ms-pulse{0%,100%{opacity:.6}50%{opacity:1}}
-
-  /* Shimmer bar. Width/height are set by the caller; three of these read as a loading card. */
-  .ms-skeleton{
-    border-radius:var(--ms-r-sm);
-    background:linear-gradient(90deg,var(--ms-skeleton-base) 0%,var(--ms-skeleton-shine) 45%,var(--ms-skeleton-base) 90%);
-    background-size:220% 100%;
-    animation:ms-shimmer 1.5s linear infinite;
-  }
-  .ms-loading{animation:ms-pulse 1.5s ease-in-out infinite}
-  @media(prefers-reduced-motion:reduce){
-    .ms-skeleton{animation:none;background:var(--ms-skeleton-base)}
-    .ms-loading{animation:none;opacity:.8}
-  }
-
-  /* Empty state. The icon is a mask filled with currentColor, so it never fights the theme. */
-  .ms-empty-face{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);
-    text-align:center;text-wrap:balance;
-  }
-  .ms-empty-face::before{
-    content:'';width:32px;height:32px;flex:0 0 auto;opacity:.55;
-    background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  .ms-empty-face[data-ms-empty-icon="search"]::before{-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat}
-  .ms-empty-face>strong{font-size:var(--ms-fs-subtitle);font-weight:650}
-  .ms-empty-face>span,.ms-empty-face>div{font-size:var(--ms-fs-note);line-height:var(--ms-lh-body);max-width:34ch}
-
-  /* --- LIBRA: contrast + empty states --- */
-  :root[data-risu-theme-colors="1"]{
-    --sga-muted:color-mix(in srgb,var(--risu-theme-textcolor) var(--ms-mix-muted),var(--risu-theme-bgcolor));
-  }
-  .sga-app .libra-article-eyebrow,.sga-app .sga-label{opacity:1;color:var(--sga-muted)}
-  .sga-app .sga-note,.sga-app small,.sga-app .sga-advanced-hint{opacity:1;color:var(--sga-muted)}
-  /* Empties authored with data-ms-empty get the icon treatment; the Book pages are excluded
-     because their paper surface has its own illustrated empty state. */
-  .sga-app [data-ms-empty]{
-    display:grid;place-items:center;gap:var(--ms-sp-3);
-    padding:var(--ms-sp-6) var(--ms-sp-4);text-align:center;
-    border:1px dashed var(--sga-line);border-radius:var(--ms-r-md);
-    background:color-mix(in srgb,var(--sga-text) 2%,transparent);color:var(--sga-muted);
-  }
-  .sga-app [data-ms-empty]::before{
-    content:'';width:32px;height:32px;opacity:.55;background:currentColor;
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4.5' width='18' height='15' rx='3'/%3E%3Cpath d='M7 10h10M7 14h6'/%3E%3C/svg%3E") center/contain no-repeat;
-  }
-  .sga-app [data-ms-empty="search"]::before{-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='M16 16l4.5 4.5'/%3E%3C/svg%3E") center/contain no-repeat}
-  .sga-app [data-ms-loading]{animation:ms-pulse 1.5s ease-in-out infinite}
-  @media(prefers-reduced-motion:reduce){.sga-app [data-ms-loading]{animation:none}}
-
-
-
-`;
-
-    style.textContent += `
-/* Associative recall graph shared by Recall, World Manager and Evidence. */
-.libra-assoc-panel{min-width:0;padding:0;border-color:#4a3b29;border-radius:22px;background:#15120f;color:#f2eadc;overflow:hidden}
-.libra-assoc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px 22px 16px;background:radial-gradient(circle at 85% 0%,rgba(105,76,41,.18),transparent 43%),#1b1712}
-.libra-assoc-head small{display:block;color:#c8a678;font-size:11px;letter-spacing:.08em}
-.sga-app .libra-assoc-panel .libra-assoc-head h3{margin:5px 0 4px;color:#fff4e4;font:500 22px/1.25 Georgia,"Noto Serif KR",serif}
-.libra-assoc-head p{margin:0;color:#a99d8a;font-size:12px;line-height:1.5}
-.libra-assoc-mode{flex:0 0 auto;border:1px solid #755a34;border-radius:999px;padding:5px 10px;color:#e9c994;font-size:11px}
-.libra-assoc-stage{position:relative;isolation:isolate;min-width:0;padding:18px 22px 22px;background:radial-gradient(ellipse at 50% 35%,rgba(59,45,30,.55),transparent 62%),#17130f}
-.libra-assoc-wires{position:absolute;inset:0;z-index:0;width:100%;height:100%;overflow:visible;pointer-events:none}
-.libra-assoc-edge{fill:none;stroke:#755a3b;stroke-width:1.6;opacity:.65;transition:stroke .2s,opacity .2s,stroke-width .2s}
-.libra-assoc-edge.active{stroke:#d9b276;stroke-width:2.6;opacity:1}
-.libra-assoc-edge.omitted{stroke-dasharray:5 5}
-.libra-assoc-layer{position:relative;z-index:1;min-width:0}
-.libra-assoc-layer+.libra-assoc-layer{margin-top:45px}
-.libra-assoc-layer>span{display:block;margin:0 0 10px 2px;color:#ac9475;font-size:11px}
-.libra-assoc-nodes{display:grid;gap:10px}
-.libra-assoc-layer.source .libra-assoc-nodes{grid-template-columns:minmax(0,1fr);max-width:300px;margin:auto}
-.libra-assoc-layer.bridge .libra-assoc-nodes{grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));max-width:550px;margin:auto}
-.libra-assoc-layer.memory .libra-assoc-nodes{grid-template-columns:repeat(3,minmax(0,1fr))}
-.libra-assoc-node{display:flex;min-width:0;min-height:76px;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;padding:11px 13px;border:1px solid #72583a;border-radius:14px;background:#2b241b;color:#f4e8d8;text-align:left;font:inherit;cursor:pointer;overflow-wrap:anywhere;transition:background .16s,border-color .16s,box-shadow .16s,transform .16s}
-.libra-assoc-node:hover{transform:translateY(-2px);background:#382d21}
-.libra-assoc-node:focus-visible{outline:2px solid #e1b875;outline-offset:2px}
-.libra-assoc-node.selected{border-color:#e1b875;box-shadow:0 0 0 2px rgba(225,184,117,.33),0 0 24px rgba(215,167,96,.16)}
-.libra-assoc-node-type{display:flex;align-items:center;gap:6px;color:#c4a779;font-size:11px}
-.libra-assoc-node-type:before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#c4a779}
-.libra-assoc-node strong{color:#fbf1e1;font-size:13px;font-weight:600;line-height:1.35}
-.libra-assoc-node small{color:#aa987f;font-size:11px;line-height:1.3}
-.libra-assoc-node.memory.added{border-color:#648b68;background:#1e3026}
-.libra-assoc-node.memory.added .libra-assoc-node-type{color:#b2d6b3}
-.libra-assoc-node.memory.added .libra-assoc-node-type:before{background:#8ac592}
-.libra-assoc-node.memory.agreed{border-color:#8e714b}
-.libra-assoc-node.memory.omitted{border-style:dashed;border-color:#73695e;background:#211e1a}
-.libra-assoc-node.memory.omitted .libra-assoc-node-type{color:#b3a79b}
-.libra-assoc-node.memory.omitted .libra-assoc-node-type:before{background:#9c9187}
-.libra-assoc-detail{padding:17px 22px;border-top:1px solid #453626;background:#211b15}
-.libra-assoc-detail-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;color:#c19e70;font-size:11px}
-.libra-assoc-detail-status{color:#d4c1a6;font-size:12px}
-.libra-assoc-detail h4{margin:4px 0 5px;color:#fff1df;font:500 18px/1.3 Georgia,"Noto Serif KR",serif}
-.libra-assoc-detail p{margin:0 0 8px;color:#d0bfa9;font-size:13px;line-height:1.55}
-.libra-assoc-detail-path{color:#b9a48a;font-size:12px;overflow-wrap:anywhere}
-.libra-assoc-technical{margin-top:9px;color:#9c8a73;font-size:11px}
-.libra-assoc-technical summary{width:max-content;cursor:pointer}
-.libra-assoc-detail-ref{display:block;margin-top:7px;color:#8e806e;font-size:11px;overflow-wrap:anywhere}
-.libra-assoc-cost{padding:10px 22px 12px;border-top:1px solid #3c3023;background:#1a1511;color:#a99d8a;font-size:11px}
-.libra-assoc-panel.compact .libra-assoc-head{padding:15px 17px 12px}
-.libra-assoc-panel.compact .libra-assoc-stage{padding:14px 17px 17px}
-.libra-book-page .sga-card.libra-assoc-panel,.libra-book-drawer .sga-card.libra-assoc-panel{padding:0;border-radius:22px;background:#15120f;color:#f2eadc;border-color:#4a3b29}
-.libra-book-page .libra-assoc-panel :is(h3,h4,strong),.libra-book-drawer .libra-assoc-panel :is(h3,h4,strong){color:#fff1df;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-assoc-panel p,.libra-book-drawer .libra-assoc-panel p{color:#d0bfa9;-webkit-text-fill-color:currentColor}
-.libra-book-page .libra-assoc-panel small,.libra-book-drawer .libra-assoc-panel small{color:#c8a678;-webkit-text-fill-color:currentColor}
-@media(max-width:520px){.libra-assoc-head{padding:16px 14px 14px}.sga-app .libra-assoc-panel .libra-assoc-head h3{font-size:20px}.libra-assoc-stage{padding:13px 11px 18px}.libra-assoc-layer+.libra-assoc-layer{margin-top:40px}.libra-assoc-nodes{gap:6px}.libra-assoc-node{min-height:82px;padding:9px;font-size:12px}.libra-assoc-node strong{font-size:12px}.libra-assoc-mode{padding:4px 7px}.libra-assoc-detail{padding:15px 14px}.libra-assoc-cost{padding:10px 14px 12px}}
-`;
-
+    style.textContent = LIBRA_APPROVED_MOCKUP_STYLE;
     document.head.appendChild(style);
   };
 
@@ -71429,7 +70639,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         appendGuiChildren(node, children);
         hydrated = true;
       } catch (error) {
-        errorNode = guiEl('div', { class: 'sga-callout danger', text: `상세 내용을 표시하지 못했습니다. 닫았다가 다시 열어 재시도하세요. · ${compact(error?.message || error, 300)}` });
+        errorNode = guiEl('div', { class: 'note danger', text: `상세 내용을 표시하지 못했습니다. 닫았다가 다시 열어 재시도하세요. · ${compact(error?.message || error, 300)}` });
         node.appendChild(errorNode);
         warn('LIBRA lazy GUI hydration failed', error);
       } finally {
@@ -71469,12 +70679,12 @@ html,body{width:100%;height:100%;overflow:hidden}
     const pageSize = Number(GUI_LIST_PAGE_SIZES[key] || 20);
     const remaining = total - limit;
     return guiEl('div', {
-      class: 'sga-card wide sga-list-more',
+      class: 'card cluster',
       dataset: { guiLoadMore: key }
     }, [
-      guiEl('div', { class: 'sga-note', text: `${total}개 중 ${limit}개 표시 · ${remaining}개 남음` }),
+      guiEl('div', { class: 'hint', text: `${total}개 중 ${limit}개 표시 · ${remaining}개 남음` }),
       guiEl('button', {
-        class: 'sga-btn',
+        class: 'btn',
         type: 'button',
         text: `${noun} ${Math.min(pageSize, remaining)}개 더 보기`,
         onClick: async () => {
@@ -71535,7 +70745,7 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const inputNode = (value, onInput, options = {}) => guiEl(options.tag || 'input', {
     type: options.type || (options.tag === 'textarea' ? null : 'text'),
-    class: options.tag === 'textarea' ? `sga-textarea ${options.class || ''}` : 'sga-input',
+    class: options.tag === 'textarea' ? `textarea ${options.class || ''}` : 'input',
     value: value ?? '',
     placeholder: options.placeholder || '',
     min: options.min,
@@ -71559,7 +70769,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       markGuiDirty({ affectsQuickProfile: options.affectsQuickProfile === true });
     };
     const node = guiEl('select', {
-      class: 'sga-select',
+      class: 'select',
       value: selectedValue,
       onChange: commit
     }, optionNodes(items, selectedValue));
@@ -71567,7 +70777,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     return node;
   };
 
-  const checkboxNode = (checked, label, onChange, options = {}) => guiEl('label', { class: 'sga-check' }, [
+  const checkboxNode = (checked, label, onChange, options = {}) => guiEl('label', { class: 'check' }, [
     guiEl('input', { type: 'checkbox', checked, onChange: event => {
       onChange(!!event.target.checked, event);
       markGuiDirty({ affectsQuickProfile: options.affectsQuickProfile === true });
@@ -71581,7 +70791,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (input && !input.id) input.id = `libra-settings-field-${++guiFieldSequence}`;
     const noteId = input && note ? `${input.id}-description` : '';
     if (noteId) input.setAttribute('aria-describedby', [input.getAttribute('aria-describedby'), noteId].filter(Boolean).join(' '));
-    return guiEl('div', { class: 'sga-field' }, [
+    return guiEl('div', { class: 'field' }, [
       guiEl('label', { text: label, for: input?.id || null }), control,
       note ? guiEl('small', { text: note, id: noteId || null }) : null
     ]);
@@ -71590,11 +70800,11 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
 
-  
 
 
 
-  
+
+
 
 
 
@@ -71665,9 +70875,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     return normalizeProviderPresetBindingName(runtimePreset || slot.presetName || Gui.state?.runtime?.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
   };
 
-  
 
-  
+
+
 
   const uniquePresetName = (base = '새 프리셋') => {
     const bank = Gui.state?.providers || {};
@@ -71781,400 +70991,11 @@ html,body{width:100%;height:100%;overflow:hidden}
     return { kind: parsed.access_token || parsed.token ? 'access_token_json' : 'service_account_json', projectId, location };
   };
 
-  const providerPanel = (title, note, children, className = '') => guiEl('section', { class: `sga-provider-panel ${className}`.trim() }, [
-    guiEl('div', { class: 'sga-provider-panel-head' }, [
-      guiEl('h3', { text: title }),
-      note ? guiEl('p', { text: note }) : null
-    ]),
-    ...children
-  ]);
 
-  const buildReasoningPanel = (preset) => {
-    const effective = inferReasoningFamily(preset);
-    const kimiK3 = effective === 'kimi' && isKimiK3Model(preset.model);
-    const effortChoices = effective === 'gemini'
-      ? [['none','기본값'],['minimal','최소'],['low','낮음'],['medium','중간'],['high','높음']]
-      : kimiK3
-        ? [['none','기본값(max)'],['low','낮음'],['high','높음'],['max','최대']]
-        : ['gpt','openrouter','claude'].includes(effective)
-          ? [['none','기본값'],['low','낮음'],['medium','중간'],['high','높음'],['xhigh','매우 높음'],['max','최대']]
-          : [['none','없음'],['low','낮음'],['medium','중간'],['high','높음']];
-    const compatibilityNote = isGpt56Model(preset.model)
-      ? 'GPT-5.6은 none~max를 지원합니다. 추론·도구 사용에는 Responses API가 권장됩니다.'
-      : isClaudeOpus5Model(preset.model)
-        ? 'Claude Opus 5는 low~max를 지원하며, xhigh/max에서는 thinking을 끌 수 없습니다.'
-        : kimiK3
-          ? 'Kimi K3는 항상 추론합니다. low/high/max만 지원하며 끄기 요청은 low로 안전하게 변환됩니다.'
-          : isGemini3Model(preset.model)
-            ? 'Gemini 3.x는 minimal~high를 사용하며 temperature/top_p/top_k/candidate_count를 보내지 않습니다.'
-            : '';
-    const quickButton = (label, patch) => guiEl('button', {
-      class: 'sga-btn ghost',
-      text: label,
-      onClick: () => { Object.assign(preset, patch); markGuiDirty(); renderProviderEditorGui(); }
-    });
-    const choices = REASONING_PRESET_KEYS.map(key => [key, REASONING_PRESETS[key].label]);
-    const fields = [
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('추론 프리셋', 'reasoning_preset', { choices }),
-        guiEl('div', { class: 'sga-note sga-provider-note-box', text: `실제 적용: ${effective.toUpperCase()} · ${REASONING_PRESETS[effective]?.hint || ''}` })
-      ])
-    ];
-    if (['gpt','openrouter','claude','gemini','ollama'].includes(effective) || kimiK3) {
-      fields.push(providerEditorField('Reasoning effort', 'reasoning_effort', { choices: effortChoices }));
-    }
-    if (['openrouter','claude_budget','gemini_budget'].includes(effective)) {
-      fields.push(providerEditorField('Thinking / Reasoning 예산 토큰', 'reasoning_budget_tokens', { number: true, note: effective === 'gemini_budget' ? '-1은 dynamic, 0은 off입니다.' : '출력 토큰 상한 안에서 최종 답변 공간을 남기도록 자동 제한합니다.' }));
-    }
-    if (['openrouter','claude','claude_budget','gemini','gemini_budget','kimi','glm','ollama'].includes(effective) && !kimiK3) {
-      fields.push(providerEditorField('Thinking type', 'thinking_type', { choices: [['enabled','사용'],['disabled','사용 안 함']] }));
-    }
-    if (compatibilityNote) fields.push(guiEl('div', { class: 'sga-note sga-provider-note-box', text: compatibilityNote }));
-    const quickActions = [
-      quickButton('추론 끔', { reasoning_preset: 'off', reasoning_effort: 'none', reasoning_budget_tokens: 0, thinking_type: 'disabled', glm_thinking_type: 'disabled' }),
-      quickButton('자동', { reasoning_preset: 'auto', thinking_type: 'enabled', glm_thinking_type: 'enabled' })
-    ];
-    for (const [effort, label] of effortChoices) {
-      if (effort === 'none') continue;
-      quickActions.push(quickButton(label, { reasoning_effort: effort, thinking_type: 'enabled', glm_thinking_type: 'enabled' }));
-    }
-    fields.push(guiEl('div', { class: 'sga-actions' }, quickActions));
-    return providerPanel('프로바이더별 추론 프리셋', '프로바이더별 추론 Body와 출력 토큰 상한을 자동 구성합니다.', fields, 'reasoning');
-  };
 
-  const legacyBuildProvidersTab = () => {
-    let names = presetNamesFromState();
-    if (!Gui.state.providers[Gui.selectedPreset]) Gui.selectedPreset = names[0];
-    const preset = Gui.state.providers[Gui.selectedPreset];
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const configuredDefaultName = normalizeProviderPresetBindingName(runtime.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
-    const effectiveDefaultName = Gui.state.providers[configuredDefaultName]
-      ? configuredDefaultName
-      : (Gui.state.providers[RISUAI_AUX_PRESET_NAME]
-          ? RISUAI_AUX_PRESET_NAME
-          : names[0]);
-    const defaultPresetMissing = configuredDefaultName !== effectiveDefaultName;
-    const orphanBindings = [
-      ...(configuredDefaultName && !Gui.state.providers[configuredDefaultName] ? [{ stage: '전역 기본', name: configuredDefaultName }] : []),
-      ...PERSISTED_AGENT_STAGE_DEFS.map(def => ({ stage: def.label || def.id, name: text(Gui.state.agents?.[def.id]?.presetName || '') }))
-        .filter(row => row.name && !Gui.state.providers[row.name])
-    ];
-    const effectiveDefaultPreset = Gui.state.providers[effectiveDefaultName] || {};
-    const provider = canonicalProvider(preset.provider);
-    const risuAux = provider === RISUAI_AUX_PROVIDER;
-    const vertex = isVertexProvider(provider);
-    const filter = text(Gui.providerFilter || '').trim().toLowerCase();
-    const visibleNames = filter ? names.filter(name => name.toLowerCase().includes(filter) || text(Gui.state.providers[name]?.model || '').toLowerCase().includes(filter) || text(Gui.state.providers[name]?.provider || '').toLowerCase().includes(filter)) : names;
-    const list = guiEl('div', { class: 'sga-list' }, [
-      guiEl('div', { class: 'sga-list-head' }, [
-        guiEl('button', { class: 'sga-btn primary', text: '추가', onClick: addGuiPreset }),
-        guiEl('button', { class: 'sga-btn', text: '복제', onClick: () => {
-          const name = uniquePresetName(`${Gui.selectedPreset} 복사본`);
-          Gui.state.providers[name] = { ...cloneJson(preset), preset_id: `libra-preset-${stableDraftHash(`${Date.now()}:${Math.random()}:${name}`).slice(0, 20)}` };
-          Gui.selectedPreset = name;
-          markGuiDirty();
-          renderProviderEditorGui();
-        }, disabled: risuAux })
-      ]),
-      guiEl('input', { class: 'sga-list-search', type: 'search', placeholder: '프리셋 이름 · 모델 · 프로바이더 검색', value: Gui.providerFilter || '', onInput: event => {
-        Gui.providerFilter = event.target.value;
-        const query = text(Gui.providerFilter || '').trim().toLowerCase();
-        for (const item of event.currentTarget.closest('.sga-list').querySelectorAll('.sga-list-item')) {
-          item.hidden = !!query && !String(item.dataset.providerSearch || '').includes(query);
-        }
-      } }),
-      guiEl('div', { class: 'sga-list-items' }, names.map(name => {
-        const item = Gui.state.providers[name];
-        return guiEl('button', { class: 'sga-list-item', hidden: !visibleNames.includes(name), dataset: { selected: String(name === Gui.selectedPreset), providerSearch: `${name} ${text(item.model || '')} ${text(item.provider || '')}`.toLowerCase() }, onClick: () => { Gui.selectedPreset = name; renderProviderEditorGui(); } }, [
-          guiEl('strong', { text: presetDisplayName(name) }),
-          guiEl('span', { text: `${providerDisplayLabel(item.provider)} · ${presetModelDisplay(item)}` })
-        ]);
-      }))
-    ]);
 
-    const secretStatus = preset.key ? '저장된 비밀 키가 있습니다.' : '비밀 키가 설정되지 않았습니다.';
-    const secretField = inputNode('', next => { preset.key = next; preset.secret_deleted = false; }, { type: 'password', placeholder: preset.key ? '새 값을 입력하면 기존 키를 교체합니다' : 'API 키 / 토큰', autocomplete: 'new-password' });
-    const connectionChildren = [
-      guiEl('div', { class: 'sga-row2' }, [
-        fieldNode('프리셋 이름', guiEl('div', { class: 'sga-actions' }, [
-          inputNode(Gui.selectedPreset, () => {}, { placeholder: '프리셋 이름' }),
-          guiEl('button', { class: 'sga-btn', text: '이름 변경', onClick: event => {
-            try { renameGuiPreset(event.currentTarget.parentElement.querySelector('input').value); renderProviderEditorGui(); } catch (error) { guiSetStatus(error.message, true); }
-          } })
-        ])),
-        providerEditorField('프로바이더 종류', 'provider', { choices: providerChoices() })
-      ]),
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('API 주소 / Base URL', 'url', { placeholder: defaultUrlForProvider(preset.provider), note: '전체 endpoint 또는 base URL을 입력할 수 있습니다.' }),
-        providerEditorField('모델 이름', 'model', { placeholder: '프로바이더 모델 ID' })
-      ])
-    ];
-    const latestModelSuggestions = suggestedModelsForProvider(provider);
-    if (latestModelSuggestions.length) {
-      connectionChildren.push(fieldNode('최신 공식 모델 빠른 선택', selectNode(
-        preset.model,
-        [['', '(직접 입력 유지)'], ...latestModelSuggestions.map(model => [model, model])],
-        next => {
-          if (!next) return;
-          preset.model = next;
-          markGuiDirty();
-          renderProviderEditorGui();
-        }
-      ), '공식 API에 공개된 현재 모델 ID입니다. 계정별 실제 사용 권한은 모델 목록 조회 결과가 우선합니다.'));
-    }
-    const modelMeta = providerModelMetadata(provider, preset.url);
-    const modelCacheKey = `${provider}|${String(preset.url || '')}|${providerCredentialCacheFingerprint(preset.key)}`;
-    const fetchedModels = Array.isArray(Gui.providerModels[modelCacheKey]) ? Gui.providerModels[modelCacheKey] : [];
-    if (modelMeta?.modelsUrl) {
-      connectionChildren.push(fieldNode('프로바이더 모델 목록', guiEl('div', {}, [
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn', text: Gui.providerModelLoading ? '불러오는 중…' : '모델 목록 불러오기', disabled: Gui.providerModelLoading, onClick: async () => {
-            try {
-              Gui.providerModelLoading = true;
-              guiSetStatus(`${modelMeta.label} 모델 목록을 불러오는 중…`, false, true);
-              const models = await listProviderModels(preset, { force: true });
-              Gui.providerModels[modelCacheKey] = models;
-              Gui.providerModelLoading = false;
-              await renderProviderEditorGui();
-              guiSetStatus(`${modelMeta.label} 모델 ${models.length}개를 불러왔습니다.`);
-            } catch (error) {
-              Gui.providerModelLoading = false;
-              await renderProviderEditorGui();
-              guiSetStatus(error.message || String(error), true, true);
-            }
-          } }),
-          guiEl('span', { class: `sga-badge ${fetchedModels.length ? 'good' : 'off'}`, text: fetchedModels.length ? `${fetchedModels.length}개 로드됨` : '직접 입력 가능' })
-        ]),
-        fetchedModels.length ? selectNode(preset.model, [['','(현재 직접 입력 유지)'], ...fetchedModels.map(item => [item.id, item.label === item.id ? item.id : `${item.label} · ${item.id}`])], next => {
-          if (!next) return;
-          const selectedModel = fetchedModels.find(item => item.id === next);
-          preset.model = next;
-          preset.metadata_model_id = next;
-          preset.catalog_context_window = Number(selectedModel?.contextWindow || 0);
-          preset.catalog_max_output_tokens = Number(selectedModel?.maxOutputTokens || 0);
-          markGuiDirty();
-          renderProviderEditorGui();
-        }) : null
-      ]), 'Ariadne 모델 카탈로그를 지원하는 프로바이더에서 최신 모델 ID를 조회합니다.'));
-    }
 
-    if (!vertex) connectionChildren.push(fieldNode('API 키 / 토큰', guiEl('div', {}, [secretField, guiEl('div', { class: 'sga-actions', style: { marginTop: '7px' } }, [
-      guiEl('span', { class: `sga-badge ${preset.key ? 'good' : 'off'}`, text: secretStatus }),
-      guiEl('button', { class: 'sga-btn danger', text: '저장된 키 삭제', onClick: () => { preset.key = ''; preset.secret_deleted = true; markGuiDirty(); renderProviderEditorGui(); } })
-    ])]), '비밀값은 가능한 경우 기기 로컬 저장소에 보관합니다.'));
 
-    const panels = [providerPanel('기본 연결', '프리셋 이름, 프로바이더, endpoint와 모델을 설정합니다.', connectionChildren, 'connection')];
-
-    if (vertex) {
-      const draft = Gui.vertexCredentialDrafts[Gui.selectedPreset] || '';
-      const vertexArea = inputNode(draft, next => {
-        Gui.vertexCredentialDrafts[Gui.selectedPreset] = next;
-        const parsed = tryJsonParse(next, null);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          try {
-            const applied = applyVertexCredentialsToPreset(preset, next, false);
-            renderProviderEditorGui().then(() => guiSetStatus(`Vertex JSON 자동 적용 · ${applied.projectId || '프로젝트 ID는 URL에서 확인'} / ${applied.location || 'global'}`));
-          } catch (_) {}
-        }
-      }, { tag: 'textarea', class: 'vertex-json', placeholder: '{\n  "type": "service_account",\n  "project_id": "...",\n  "private_key": "...",\n  "client_email": "..."\n}\n\n또는 {"access_token":"...","project_id":"...","location":"global"}' });
-      panels.push(providerPanel('Vertex 설정', 'Vertex 계열을 선택했을 때만 표시됩니다. 서비스 계정 JSON을 붙여넣으면 자격 증명과 URL을 즉시 채웁니다.', [
-        vertexArea,
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn primary', text: '붙여넣은 JSON 적용', onClick: () => {
-            try {
-              const applied = applyVertexCredentialsToPreset(preset, Gui.vertexCredentialDrafts[Gui.selectedPreset] || '', true);
-              markGuiDirty();
-              renderProviderEditorGui().then(() => guiSetStatus(`Vertex 자격 증명 적용 완료 · ${applied.projectId || '토큰 방식'} / ${applied.location || 'URL 유지'}`));
-            } catch (error) { guiSetStatus(error.message, true, true); }
-          } }),
-          guiEl('button', { class: 'sga-btn', text: '기본 Vertex URL로 재생성', onClick: () => {
-            try {
-              const credential = preset.key || Gui.vertexCredentialDrafts[Gui.selectedPreset] || '';
-              const parsed = tryJsonParse(credential, null);
-              let applied;
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                applied = applyVertexCredentialsToPreset(preset, credential, false);
-              } else {
-                preset.url = defaultUrlForProvider(preset.provider);
-                applied = applyVertexCredentialsToPreset(preset, credential, true);
-              }
-              markGuiDirty(); renderProviderEditorGui().then(() => guiSetStatus(`Vertex URL 재생성 · ${applied.projectId || 'PROJECT_ID 확인 필요'}`));
-            } catch (error) { guiSetStatus(error.message, true, true); }
-          } }),
-          guiEl('span', { class: `sga-badge ${preset.key ? 'good' : 'warn'}`, text: preset.key ? '자격 증명 저장됨' : '자격 증명 필요' }),
-          guiEl('button', { class: 'sga-btn danger', text: 'Vertex 자격 증명 삭제', onClick: () => { preset.key = ''; preset.secret_deleted = true; Gui.vertexCredentialDrafts[Gui.selectedPreset] = ''; markGuiDirty(); renderProviderEditorGui(); } })
-        ]),
-        guiEl('div', { class: 'sga-note', text: '붙여넣은 JSON의 project_id와 location/region 값을 이용해 Vertex Gemini 또는 Vertex OpenAI endpoint를 자동 구성합니다.' })
-      ], 'vertex') );
-    }
-
-    panels.push(providerPanel('생성 설정', '일반 생성 파라미터와 스트리밍을 설정합니다.', [
-      guiEl('div', { class: 'sga-row3' }, [
-        providerEditorField('Temperature', 'temp', { number: true }),
-        providerEditorField('최대 출력 토큰', 'max_tokens', { number: true }),
-        providerEditorField('모델 문맥 크기(토큰)', 'context_window', { number: true, note: '모델 목록에서 문맥 크기를 확인할 수 없을 때 참조 자료 안전 예산 계산에 사용합니다. 0이면 속도·품질 프로필 상한을 사용합니다.' }),
-        providerEditorField('기본 타임아웃(ms)', 'timeout_ms', { number: true, note: '실행 흐름의 단계별 타임아웃이 우선합니다. 직접 연결한 AI의 정본 기억 분석은 최소 10분 동안 응답을 기다립니다.' })
-      ]),
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('요청 형식', 'request_format', { choices: providerSupportsResponses(provider) ? [['chat_completions','Chat Completions'],['responses','Responses API']] : [['chat_completions','Chat Completions (이 프로바이더의 지원 형식)']], note: providerSupportsResponses(provider) ? 'Ariadne 호환 형식 라우팅을 사용합니다.' : '선택한 프로바이더는 Responses endpoint가 등록되지 않았습니다.' }),
-        checkboxNode(!!preset.stream, '스트리밍 응답 사용', next => { preset.stream = next; }),
-        providerEditorField('프롬프트 캐시', 'prompt_cache', { choices: [['auto','자동 (GPT · Claude · Gemini)'],['off','사용 안 함']], note: '같은 provider/model이 여러 Ariadne 기억 단계에서 재사용될 때 native cache를 자동 적용합니다. 지원하지 않거나 이득이 없는 경우 fail-open으로 일반 요청을 사용합니다.' })
-      ])
-    ], 'generation'));
-
-    panels.push(buildReasoningPanel(preset));
-
-    const flexChildren = [
-      guiEl('div', { class: vertex ? 'sga-row2' : 'sga-row2' }, [
-        providerAllowsServiceTier(provider, preset)
-          ? providerEditorField('서비스 티어', 'service_tier', { choices: [['off','사용 안 함'],['auto','자동'],['default','default'],['flex','flex'],['priority','priority'],['scale','scale']] })
-          : guiEl('div', { class: 'sga-note sga-provider-note-box', text: '이 프로바이더에는 service_tier를 자동 전달하지 않습니다. 필요하면 추가 요청 Body에서 명시하세요.' }),
-        vertex
-          ? providerEditorField('Vertex Flex 모드', 'vertex_flex_mode', { choices: [['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']] })
-          : guiEl('div', { class: 'sga-note sga-provider-note-box', text: 'Flex/priority/scale 지원 여부는 선택한 API와 모델 정책에 따릅니다.' })
-      ])
-    ];
-    if (provider === 'custom') flexChildren.push(checkboxNode(!!preset.custom_service_tier_passthrough, 'Custom provider 요청 Body에 service_tier 전달', next => { preset.custom_service_tier_passthrough = next; }));
-    panels.push(providerPanel('Flex 서비스', '일반 추론 옵션과 분리된 서비스 등급·Vertex Flex 전용 설정입니다.', flexChildren, 'flex'));
-
-    panels.push(providerPanel('추가 요청 데이터', '필요한 경우에만 헤더와 Body JSON을 추가합니다.', [
-      guiEl('div', { class: 'sga-row2' }, [
-        providerEditorField('추가 HTTP 헤더 JSON', 'extra_headers_json', { textarea: true, placeholder: '{"HTTP-Referer":"..."}' }),
-        providerEditorField('추가 요청 Body JSON', 'extra_body_json', { textarea: true, placeholder: '{"top_p":0.9}', note: 'messages·contents·system 등 핵심 필드는 덮어쓰지 않는 것을 권장합니다.' })
-      ])
-    ], 'extra'));
-
-    const directEditor = guiEl('div', { class: 'sga-card sga-provider-editor' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [guiEl('h2', { text: Gui.selectedPreset }), guiEl('div', { class: 'sga-note', text: '연결·추론·Flex 설정을 용도별로 나눠 표시합니다.' })]),
-        guiEl('span', { class: `sga-badge ${providerConfigured(preset) ? 'good' : 'warn'}`, title: providerConfigurationIssues(preset).join(', '), text: providerConfigured(preset) ? '사용 가능' : `설정 필요: ${providerConfigurationIssues(preset).join(', ')}` })
-      ]),
-      guiEl('div', { class: 'sga-provider-panels' }, panels),
-      guiEl('div', { class: 'sga-actions sga-provider-actions' }, [
-        guiEl('button', { class: 'sga-btn good', text: '연결 테스트', onClick: async () => {
-          try {
-            guiSetStatus('연결을 테스트하고 있습니다…', false, true);
-            const result = await testProviderPreset(preset);
-            if (!result.ok) throw new Error(result.reason || '빈 응답');
-            guiSetStatus(`연결 성공 · ${result.provider} / ${result.model} · ${result.elapsedMs}ms · ${compact(result.content, 100)}`);
-          } catch (error) { guiSetStatus(`연결 실패: ${error.message || error}`, true, true); }
-        } }),
-        guiEl('button', { class: 'sga-btn danger', text: '프리셋 삭제', disabled: names.length <= 1, onClick: () => { try { deleteGuiPreset(); renderProviderEditorGui(); } catch (error) { guiSetStatus(error.message, true); } } })
-      ])
-    ]);
-
-    const risuResolution = risuAux ? resolveRisuRunLlmApi() : { api: null, source: 'not_selected' };
-    const risuAvailable = !!risuResolution.api;
-    const risuProbeTitle = guiEl('strong', { text: '호출 테스트 기록 없음' });
-    const risuProbeMeta = guiEl('span', { text: '버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.' });
-    const risuProbeResponse = guiEl('span', { text: '' });
-    const risuProbeCard = guiEl('div', {
-      class: 'sga-provider-note-box',
-      dataset: { risuAuxiliaryCallProbe: 'unverified' }
-    }, [risuProbeTitle, risuProbeMeta, risuProbeResponse]);
-    const renderRisuAuxiliaryProbe = probe => {
-      const status = text(probe?.status || 'unverified');
-      risuProbeCard.dataset.risuAuxiliaryCallProbe = status;
-      risuProbeTitle.textContent = status === 'success' ? '최근 호출 성공' : status === 'failed' ? '최근 호출 실패' : '호출 테스트 기록 없음';
-      risuProbeMeta.textContent = probe
-        ? `${probe.transport || 'risuai.runLLMModel'} · mode ${probe.mode || 'otherAx'} · ${probe.apiSource || 'API 불명'} · ${Number(probe.elapsedMs || 0)}ms · ${probe.submitted ? '요청 제출됨' : '요청 미제출'}`
-        : '버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.';
-      risuProbeResponse.textContent = probe
-        ? (probe.ok ? `응답: ${probe.responsePreview || '(빈 미리보기)'}` : `오류: ${probe.error || '알 수 없는 오류'}`)
-        : '';
-    };
-    renderRisuAuxiliaryProbe(Runtime.risuAuxiliary.lastProbe);
-    const risuEditor = guiEl('div', { class: 'sga-card sga-provider-editor' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h2', { text: 'RisuAI 보조 모델' }),
-          guiEl('div', { class: 'sga-note', text: 'RisuAI에 설정된 보조 모델을 Plugin API v3 runLLMModel · otherAx 경로로 사용합니다.' }),
-          guiEl('div', { class: 'sga-note', text: '이 경로는 RisuAI가 생성 파라미터를 소유하므로 LIBRA가 출력 토큰 예산·스트리밍·타임아웃을 지정할 수 없습니다. 설정 없이 바로 동작하는 기본 연결이 필요할 때 사용하고, 직접 연결을 설정하면 스트리밍과 출력 예산, 타임아웃을 LIBRA가 직접 제어합니다.' })
-        ]),
-        guiEl('span', {
-          class: `sga-badge ${risuAvailable ? 'good' : 'warn'}`,
-          text: risuAvailable ? 'API 사용 가능' : 'runLLMModel 사용 불가'
-        })
-      ]),
-      providerPanel('RisuAI 관리 연결', '모델과 생성 파라미터는 RisuAI가 소유하며 LIBRA에는 URL, API 키 또는 모델명을 저장하지 않습니다.', [
-        guiEl('div', { class: 'sga-provider-note-box' }, [
-          guiEl('strong', { text: '호출 계약' }),
-          guiEl('span', { text: 'mode: otherAx · staticModel: 지정 안 함' }),
-          guiEl('span', { text: `API 소스: ${risuResolution.source}` }),
-          guiEl('span', { text: '전송 타임아웃 자동 재시도 없음 · 구조화 결과는 LIBRA가 로컬 검증' })
-        ]),
-        checkboxNode(runtime.risuAuxAllowPlugins === true, '플러그인 제공 보조 모델 허용', next => {
-          runtime.risuAuxAllowPlugins = next === true;
-        }),
-        guiEl('div', {
-          class: 'sga-note',
-          text: '기본값은 ON이며 RisuAI가 선택한 일반 모델과 pluginmodel 계열을 모두 허용합니다. 명시적으로 OFF로 저장하면 플러그인 제공 모델을 차단하며, 여러 에이전트 요청은 물리 호출이 겹치지 않도록 직렬화합니다.'
-        }),
-        risuProbeCard
-      ], 'risuai-auxiliary'),
-      guiEl('div', { class: 'sga-actions sga-provider-actions' }, [
-        guiEl('button', { class: 'sga-btn good', text: '보조 모델 호출 테스트', disabled: !risuAvailable, onClick: async event => {
-          const button = event?.currentTarget || null;
-          if (button) button.disabled = true;
-          try {
-            guiSetStatus('RisuAI 보조 모델에 실제 호출을 1회 전송하고 있습니다…', false, true);
-            const probe = await LibraProviderBridge.testRisuAuxiliary({ risuAuxAllowPlugins: runtime.risuAuxAllowPlugins === true });
-            renderRisuAuxiliaryProbe(probe);
-            if (!probe.ok) throw new Error(probe.error || '빈 응답');
-            guiSetStatus(`호출 성공 · RisuAI 보조 모델 · ${probe.elapsedMs}ms · ${probe.responsePreview}`);
-          } catch (error) {
-            renderRisuAuxiliaryProbe(Runtime.risuAuxiliary.lastProbe);
-            guiSetStatus(`호출 실패: ${error.message || error}`, true, true);
-          } finally {
-            if (button?.isConnected) button.disabled = !resolveRisuRunLlmApi().api;
-          }
-        } })
-      ])
-    ]);
-    const editor = risuAux ? risuEditor : directEditor;
-
-    const globalDefaultPanel = providerPanel(
-      '전역 기본 AI 연결',
-      '단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다.',
-      [
-        fieldNode('기본 AI 연결', selectNode(
-          effectiveDefaultName,
-          names.map(name => [name, presetDisplayName(name)]),
-          next => {
-            runtime.defaultPresetName = next;
-            queueGuiRender(0);
-          }
-        ), "LIBRA memory recall"),
-        guiEl('div', { class: 'sga-provider-note-box' }, [
-          guiEl('strong', { text: '현재 적용 연결' }),
-          guiEl('span', { text: `${presetDisplayName(effectiveDefaultName)} · ${providerDisplayLabel(effectiveDefaultPreset.provider)} · ${presetModelDisplay(effectiveDefaultPreset)}` }),
-          guiEl('span', { class: `sga-badge ${providerConfigured(effectiveDefaultPreset) ? 'good' : 'warn'}`, text: providerConfigured(effectiveDefaultPreset) ? '사용 가능' : '연결 설정 필요' })
-        ]),
-        orphanBindings.length ? guiEl('div', { class: 'sga-callout warn', dataset: { orphanPresetBindings: String(orphanBindings.length) } }, [
-          guiEl('strong', { text: `고아 AI 연결 ${orphanBindings.length}개` }),
-          guiEl('div', { class: 'sga-note', text: orphanBindings.map(row => `${row.stage}: ${row.name}`).join(' · ') }),
-          guiEl('div', { class: 'sga-note', text: '삭제되거나 찾을 수 없는 결속입니다. 실행 시 사용 가능한 fail-open 연결을 쓸 수 있지만, 저장된 결속을 RisuAI 보조 모델로 조용히 덮어쓰지는 않습니다.' })
-        ]) : null,
-        defaultPresetMissing ? guiEl('div', { class: 'sga-callout' }, [
-          guiEl('span', { text: `저장된 기본 연결 '${configuredDefaultName}'을 찾을 수 없어 '${effectiveDefaultName}'을 사용 중입니다.` }),
-          guiEl('button', { class: 'sga-btn', text: '현재 연결로 정리', onClick: () => {
-            runtime.defaultPresetName = effectiveDefaultName;
-            markGuiDirty();
-            renderProviderEditorGui();
-          } })
-        ]) : null
-      ],
-      'global-default'
-    );
-
-    return guiEl('div', { id: 'sga-provider-page' }, [
-      // 제목은 설정 셸 헤더가 이미 표시한다. 여기서 다시 그리면 '설정 → AI 연결 → AI 연결'이
-      // 되어 첫 필드 전에 같은 제목을 두 번 읽는다. 설명만 남긴다.
-      guiEl('p', { class: 'sga-note', text: '기본값은 RisuAI 보조 모델입니다. 필요할 때만 단계별 직접 연결이나 API 키 프리셋을 추가하세요.' }),
-      globalDefaultPanel,
-      guiEl('div', { class: 'sga-split' }, [list, editor])
-    ]);
-  };
 
   const latestTraceForStage = (stageId) => {
     const traces = Runtime.stageTrace;
@@ -72221,18 +71042,18 @@ html,body{width:100%;height:100%;overflow:hidden}
     return { label: '실패', className: 'danger', elapsed, title: reason || '최근 실행이 실패했습니다.' };
   };
 
-  const traceBadgeNode = (info) => guiEl('span', { class: `sga-mini-badge ${info.className}`, title: info.title || '' }, [
+  const traceBadgeNode = (info) => guiEl('span', { class: `badge ${info.className}`, title: info.title || '' }, [
     guiEl('span', { text: info.label }),
-    info.elapsed ? guiEl('span', { class: 'sga-mini-time', text: info.elapsed }) : null
+    info.elapsed ? guiEl('span', { class: 'hint', text: info.elapsed }) : null
   ]);
 
   const resultLineNode = (label, value, options = {}) => {
     const max = Object.prototype.hasOwnProperty.call(options, 'max') ? options.max : 900;
     const body = resultText(value, max);
     if (!body) return null;
-    return guiEl('div', { class: `sga-result-row${options.wide ? ' wide' : ''}` }, [
-      guiEl('span', { class: 'sga-result-label', text: label }),
-      guiEl('div', { class: options.code ? 'sga-result-code' : 'sga-result-value', text: body })
+    return guiEl('div', { class: `setting${options.wide ? ' wide' : ''}` }, [
+      guiEl('span', { class: 'setting__name', text: label }),
+      guiEl('div', { class: options.code ? 'code' : 'setting__desc', text: body })
     ]);
   };
 
@@ -72302,17 +71123,17 @@ html,body{width:100%;height:100%;overflow:hidden}
         rows.push(resultLineNode('초안 결과', draftText, { max: 0, code: true, wide: true }));
       }
     }
-    return guiEl('aside', { class: 'sga-stage-result' }, [
-      guiEl('div', { class: 'sga-stage-result-head' }, [
-        guiEl('span', { class: 'sga-stage-result-title', text: '최근 결과' }),
+    return guiEl('aside', { class: 'card' }, [
+      guiEl('div', { class: 'split' }, [
+        guiEl('span', { class: 'card__title', text: '최근 결과' }),
         traceBadgeNode(statusInfo)
       ]),
-      guiEl('div', { class: 'sga-stage-result-body' }, trace
+      guiEl('div', { class: 'stack' }, trace
         ? rows
-        : [guiEl('div', { class: 'sga-result-empty', text: statusInfo.className === 'run' ? '실행 중입니다. 결과가 기록되면 자동으로 갱신됩니다.' : '아직 이 단계의 실행 기록이 없습니다.' })]),
+        : [guiEl('div', { class: 'empty', text: statusInfo.className === 'run' ? '실행 중입니다. 결과가 기록되면 자동으로 갱신됩니다.' : '아직 이 단계의 실행 기록이 없습니다.' })]),
       trace ? guiEl('details', {}, [
         guiEl('summary', { text: '실제 값 JSON' }),
-        guiEl('div', { class: 'sga-result-code', text: resultText(traceJsonForDisplay(def, trace, parsed), 0) })
+        guiEl('div', { class: 'code', text: resultText(traceJsonForDisplay(def, trace, parsed), 0) })
       ]) : null
     ]);
   };
@@ -72324,46 +71145,9 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const GUI_RESULT_INLINE_CHAR_LIMIT = 48000;
   const GUI_RESULT_PREVIEW_CHAR_LIMIT = 12000;
-  const resultContentBlock = (title, value, options = {}) => {
-    const body = typeof value === 'string'
-      ? value.trim()
-      : value == null
-        ? ''
-        : JSON.stringify(value, null, 2);
-    if (!body) return null;
-    const large = body.length > GUI_RESULT_INLINE_CHAR_LIMIT;
-    const bodyClass = options.code === false ? 'sga-live-result-text' : 'sga-live-result-code';
-    const preview = large
-      ? `${body.slice(0, GUI_RESULT_PREVIEW_CHAR_LIMIT)}
 
-[초기 렌더링은 ${GUI_RESULT_PREVIEW_CHAR_LIMIT.toLocaleString()}자로 제한되었습니다 · 전체 ${body.length.toLocaleString()}자]`
-      : body;
-    const children = [
-      guiEl('div', { class: 'sga-live-result-card-head' }, [
-        guiEl('h4', { text: title }),
-        options.copy ? guiEl('button', {
-          class: 'sga-btn ghost',
-          type: 'button',
-          text: '복사',
-          onClick: async () => {
-            const result = await copyTextWithFallback(body);
-            guiSetStatus(result.ok ? `${title}을 복사했습니다.` : `복사하지 못했습니다: ${result.error || 'unknown error'}`, !result.ok, true);
-          }
-        }) : null
-      ]),
-      guiEl('div', { class: bodyClass, text: preview })
-    ];
-    if (large) {
-      children.push(guiLazyDetails(
-        { class: 'sga-card wide', style: { marginTop: '10px' } },
-        guiEl('summary', { text: `전체 내용 펼치기 · ${body.length.toLocaleString()}자` }),
-        () => [guiEl('div', { class: bodyClass, text: body })]
-      ));
-    }
-    return guiEl('section', { class: `sga-live-result-card${options.wide ? ' wide' : ''}` }, children);
-  };
 
-  
+
   /* LIBRA PROMPT STUDIO OOC BUILDER START
    * User-invoked only. Conversation and preview are runtime-only; no Prompt Studio
    * setting is changed until the user explicitly presses the save button.
@@ -73264,19 +72048,19 @@ html,body{width:100%;height:100%;overflow:hidden}
     const statusClass = state.statusState === 'error' ? 'warn' : state.statusState === 'saved' ? 'good' : state.busy ? 'warn' : preview ? 'good' : 'off';
     const targetOptions = visibleTargets.map(item => [item.id, item.label]);
     const conversationNodes = messages.length
-      ? messages.map(item => guiEl('div', { class: 'sga-card', style: 'margin:6px 0;padding:10px;' }, [
+      ? messages.map(item => guiEl('div', { class: 'card', style: 'margin:6px 0;padding:10px;' }, [
           guiEl('div', {
-            class: 'sga-note',
+            class: 'hint',
             text: item?.guide === true ? `${familyLabel} OOC · 시작 안내` : item.role === 'assistant' ? `${familyLabel} OOC` : 'USER'
           }),
           guiEl('div', { text: promptStudioOocCompact(item.content, 7000) })
         ]))
-      : [guiEl('div', { class: 'sga-provider-note-box' }, [
+      : [guiEl('div', { class: 'note' }, [
           guiEl('strong', { text: '무엇부터 말해야 할지 모르겠나요?' }),
-          guiEl('div', { class: 'sga-note', style: 'margin-top:6px;', text: `대화 시작을 누르면 현재 선택한 구역에 맞는 예시와 첫 질문을 ${familyLabel} OOC가 먼저 보여줍니다. 이 안내는 지침으로 저장되지 않습니다.` }),
-          guiEl('div', { class: 'sga-actions', style: 'margin-top:10px;' }, [
+          guiEl('div', { class: 'hint', style: 'margin-top:6px;', text: `대화 시작을 누르면 현재 선택한 구역에 맞는 예시와 첫 질문을 ${familyLabel} OOC가 먼저 보여줍니다. 이 안내는 지침으로 저장되지 않습니다.` }),
+          guiEl('div', { class: 'cluster', style: 'margin-top:10px;' }, [
             guiEl('button', {
-              class: 'sga-btn primary', text: '대화 시작', disabled: state.busy || !target,
+              class: 'btn btn--primary', text: '대화 시작', disabled: state.busy || !target,
               onClick: async () => {
                 if (!currentView()) return;
                 try { startPromptStudioOocConversation(); await refreshPromptStudioOocBuilder(state); }
@@ -73285,19 +72069,19 @@ html,body{width:100%;height:100%;overflow:hidden}
             })
           ])
         ])];
-    const root = guiEl('section', { class: 'sga-flow-section', id: 'prompt-studio-ooc-builder' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
+    const root = guiEl('section', { class: 'stack', id: 'prompt-studio-ooc-builder' }, [
+      guiEl('div', { class: 'card' }, [
+        guiEl('div', { class: 'split' }, [
           guiEl('div', {}, [
             guiEl('h3', { text: '커스텀 프롬프트 만들기 · OOC' }),
-            guiEl('div', { class: 'sga-note', text: `원하는 취향을 ${familyLabel}와 대화하고, 특정 Prompt Studio 구역에 들어갈 안전한 추가 지침을 미리보기로 만듭니다. 대화와 미리보기만으로는 설정이 바뀌지 않으며, 마지막 저장 버튼을 눌러야 반영됩니다.` })
+            guiEl('div', { class: 'hint', text: `원하는 취향을 ${familyLabel}와 대화하고, 특정 Prompt Studio 구역에 들어갈 안전한 추가 지침을 미리보기로 만듭니다. 대화와 미리보기만으로는 설정이 바뀌지 않으며, 마지막 저장 버튼을 눌러야 반영됩니다.` })
           ]),
-          guiEl('span', { class: `sga-badge ${statusClass}`, text: state.busy ? '작업 중' : preview?.saved ? '저장됨' : preview ? '미리보기 준비' : '대화 전' })
+          guiEl('span', { class: `badge ${statusClass}`, text: state.busy ? '작업 중' : preview?.saved ? '저장됨' : preview ? '미리보기 준비' : '대화 전' })
         ]),
         fieldNode(
           '적용할 프리셋 · 구역',
           guiEl('select', {
-            class: 'sga-select', value: state.targetId, disabled: state.busy || !visibleTargets.length,
+            class: 'select', value: state.targetId, disabled: state.busy || !visibleTargets.length,
             onChange: async event => {
               if (!currentView()) return;
               promptStudioOocInvalidate(state);
@@ -73312,9 +72096,9 @@ html,body{width:100%;height:100%;overflow:hidden}
             ? `${target.keyQuestion}${target.isDefaultProfile ? ` 기본 프롬프트는 직접 수정하지 않습니다. 최종 저장 시 “${promptStudioOocManagedProfileName(target.domain)}” 사용자 프리셋을 만들거나 갱신해 활성화합니다.` : ''}`
             : state.loading ? 'Prompt Studio 편집 구역을 찾고 있습니다…' : '편집 구역이 보이지 않으면 구역 새로고침을 누르세요.'
         ),
-        guiEl('div', { class: 'sga-actions' }, [
+        guiEl('div', { class: 'cluster' }, [
           guiEl('button', {
-            class: 'sga-btn', text: state.loading ? '조회 중…' : '구역 새로고침', disabled: state.busy || state.loading,
+            class: 'btn', text: state.loading ? '조회 중…' : '구역 새로고침', disabled: state.busy || state.loading,
             onClick: async () => {
                 if (!currentView()) return;
               await promptStudioOocLoadTargets();
@@ -73324,21 +72108,21 @@ html,body{width:100%;height:100%;overflow:hidden}
         ]),
         target?.existingText ? guiEl('details', {}, [
           guiEl('summary', { text: '현재 이 구역의 추가 지침 보기' }),
-          guiEl('pre', { class: 'sga-code', text: target.existingText })
+          guiEl('pre', { class: 'code', text: target.existingText })
         ]) : null,
-        guiEl('div', { class: 'sga-card', style: 'margin-top:10px;' }, conversationNodes),
+        guiEl('div', { class: 'card', style: 'margin-top:10px;' }, conversationNodes),
         fieldNode(
           `${familyLabel}와 이야기하기`,
           guiEl('textarea', {
-            class: 'sga-textarea', value: state.draft, disabled: state.busy || !target,
+            class: 'textarea', value: state.draft, disabled: state.busy || !target,
             placeholder: '원하는 창작 취향, 지금 불편한 점, 반드시 지켰으면 하는 기준을 평소 말하듯 적으세요.',
             onInput: event => { if (!currentView()) return; state.draft = String(event.target.value || ''); }
           }),
           '질문에 답하며 방향을 다듬을 수 있습니다. 이 단계에서는 저장하지 않습니다.'
         ),
-        guiEl('div', { class: 'sga-actions' }, [
+        guiEl('div', { class: 'cluster' }, [
           guiEl('button', {
-            class: 'sga-btn primary', text: 'OOC 보내기', disabled: state.busy || !target,
+            class: 'btn btn--primary', text: 'OOC 보내기', disabled: state.busy || !target,
             onClick: async () => {
                 if (!currentView()) return;
               const draft = String(state.draft || '').trim();
@@ -73356,7 +72140,7 @@ html,body{width:100%;height:100%;overflow:hidden}
             }
           }),
           guiEl('button', {
-            class: 'sga-btn', text: '지침 미리보기 만들기', disabled: state.busy || !canCompile,
+            class: 'btn', text: '지침 미리보기 만들기', disabled: state.busy || !canCompile,
             onClick: async () => {
                 if (!currentView()) return;
               try { const task = compilePromptStudioOocPreview(); refreshPromptStudioOocBuilder(state); await task; await refreshPromptStudioOocBuilder(state); }
@@ -73364,7 +72148,7 @@ html,body{width:100%;height:100%;overflow:hidden}
             }
           }),
           guiEl('button', {
-            class: 'sga-btn', text: '현재 대화 지우기', disabled: state.busy || (!messages.length && !preview),
+            class: 'btn', text: '현재 대화 지우기', disabled: state.busy || (!messages.length && !preview),
             onClick: async () => {
                 if (!currentView()) return;
               clearPromptStudioOocConversation();
@@ -73372,12 +72156,12 @@ html,body{width:100%;height:100%;overflow:hidden}
             }
           })
         ]),
-        state.interruptedSave ? guiEl('div', { class: 'sga-callout warn', text: '저장 도중 화면이 바뀌어 결과 확인이 필요합니다. 저장이 완료됐을 수도 있으므로, 작성 중인 설정을 먼저 보관한 뒤 되돌리기로 저장값을 다시 읽어 확인하세요. 이전 저장 미리보기는 폐기했습니다.' }) : null,
-        state.statusText ? guiEl('div', { class: `sga-note ${state.statusState === 'error' ? 'warn' : ''}`, text: state.statusText }) : null,
-        preview ? guiEl('div', { class: 'sga-card wide', style: 'margin-top:12px;' }, [
+        state.interruptedSave ? guiEl('div', { class: 'note warn', text: '저장 도중 화면이 바뀌어 결과 확인이 필요합니다. 저장이 완료됐을 수도 있으므로, 작성 중인 설정을 먼저 보관한 뒤 되돌리기로 저장값을 다시 읽어 확인하세요. 이전 저장 미리보기는 폐기했습니다.' }) : null,
+        state.statusText ? guiEl('div', { class: `hint ${state.statusState === 'error' ? 'warn' : ''}`, text: state.statusText }) : null,
+        preview ? guiEl('div', { class: 'card', style: 'margin-top:12px;' }, [
           guiEl('h4', { text: preview.title || '맞춤 창작 지침 미리보기' }),
-          preview.summary ? guiEl('div', { class: 'sga-note', text: preview.summary }) : null,
-          guiEl('pre', { class: 'sga-code', text: preview.appendText }),
+          preview.summary ? guiEl('div', { class: 'hint', text: preview.summary }) : null,
+          guiEl('pre', { class: 'code', text: preview.appendText }),
           preview.checks?.length ? guiEl('details', {}, [
             guiEl('summary', { text: '이 지침이 잘 적용됐는지 확인할 기준' }),
             ...preview.checks.map(item => guiEl('div', { text: `• ${item}` }))
@@ -73386,16 +72170,16 @@ html,body{width:100%;height:100%;overflow:hidden}
             guiEl('summary', { text: '주의할 점' }),
             ...preview.warnings.map(item => guiEl('div', { text: `• ${item}` }))
           ]) : null,
-          guiEl('label', { class: 'sga-note' }, [
+          guiEl('label', { class: 'hint' }, [
             guiEl('input', {
               type: 'checkbox', checked: state.mergeExisting === true, disabled: state.busy,
               onChange: event => { if (!currentView()) return; state.mergeExisting = event.target.checked === true; }
             }),
             guiEl('span', { text: ' 기존 추가 지침을 지우지 않고 뒤에 이어붙이기' })
           ]),
-          guiEl('div', { class: 'sga-actions' }, [
+          guiEl('div', { class: 'cluster' }, [
             guiEl('button', {
-              class: 'sga-btn primary',
+              class: 'btn btn--primary',
               text: preview.saved ? '저장 완료' : '이 구역의 추가 지침으로 저장',
               disabled: state.busy || preview.saved === true,
               onClick: async () => {
@@ -73405,7 +72189,7 @@ html,body{width:100%;height:100%;overflow:hidden}
               }
             })
           ]),
-          guiEl('div', { class: 'sga-note', text: `저장할 때도 replace를 사용하지 않습니다. 선택한 구역의 append만 갱신하며 다른 단계·구역·프리셋과 ${familyLabel} 잠금 계약은 그대로 유지됩니다.` })
+          guiEl('div', { class: 'hint', text: `저장할 때도 replace를 사용하지 않습니다. 선택한 구역의 append만 갱신하며 다른 단계·구역·프리셋과 ${familyLabel} 잠금 계약은 그대로 유지됩니다.` })
         ]) : null
       ].filter(Boolean))
     ]);
@@ -73438,15 +72222,15 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
 
-  
-  
-  
-  
+
+
+
+
   const simpleLengthChoiceForRange = (min, max) => SIMPLE_LENGTH_CHOICES.find(choice =>
     Number(min) === choice.min && Number(max) === choice.max
   ) || null;
 
-  
+
   const applySimpleLengthToGui = choiceId => {
     const choice = SIMPLE_LENGTH_CHOICES.find(item => item.id === choiceId);
     if (!choice) return;
@@ -73459,9 +72243,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     renderSettingsGui();
   };
 
-  
-  
-  
+
+
+
   const applyInternalDraftLanguageToGui = language => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
     runtime.internalDraftLanguage = normalizeInternalDraftLanguage(language);
@@ -73511,20 +72295,9 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
 
-  const simpleChoiceCard = ({ active = false, title = '', description = '', meta = '', badge = '', onClick = null, className = '' } = {}) => guiEl('button', {
-    class: `sga-simple-choice${active ? ' active' : ''}${className ? ` ${className}` : ''}`,
-    type: 'button',
-    onClick
-  }, [
-    guiEl('div', { class: 'sga-simple-choice-top' }, [
-      guiEl('strong', { text: title }),
-      badge ? guiEl('span', { class: 'sga-simple-choice-badge', text: badge }) : null
-    ]),
-    description ? guiEl('span', { class: 'sga-simple-choice-desc', text: description }) : null,
-    meta ? guiEl('small', { text: meta }) : null
-  ]);
 
-  
+
+
   const saveSimpleSettingsFromGui = async () => {
     try {
       guiSetStatus('선택한 설정을 저장하고 있습니다…', false, true);
@@ -73536,8 +72309,8 @@ html,body{width:100%;height:100%;overflow:hidden}
     }
   };
 
-  
-  
+
+
 
 
 
@@ -73549,21 +72322,21 @@ html,body{width:100%;height:100%;overflow:hidden}
     const formKey=scope+':'+preview.sourceDigest;
     if(Gui.librarianReviewForm?.key!==formKey)Gui.librarianReviewForm={key:formKey,selected:[],busy:false,error:''};
     const form=Gui.librarianReviewForm;
-    return guiEl('section',{class:'sga-card wide',dataset:{librarianConfigReview:preview.pendingReview?'pending':'acknowledged'}},[
+    return guiEl('section',{class:'card',dataset:{librarianConfigReview:preview.pendingReview?'pending':'acknowledged'}},[
       guiEl('h3',{text:preview.pendingReview?'이전 사용자 기억 지침 확인':'이전 사용자 기억 지침 · 보존됨'}),
-      guiEl('p',{class:'sga-note',text:'이전 지침의 원본은 보존합니다. 선택한 지침만 Librarian에 가져오며, 가져오기 자체는 모델을 호출하지 않습니다.'}),
-      ...(preview.candidates || []).map(row=>guiLazyDetails({class:'sga-advanced'},guiEl('summary',{text:row.label}),()=>[
+      guiEl('p',{class:'hint',text:'이전 지침의 원본은 보존합니다. 선택한 지침만 Librarian에 가져오며, 가져오기 자체는 모델을 호출하지 않습니다.'}),
+      ...(preview.candidates || []).map(row=>guiLazyDetails({class:'fold'},guiEl('summary',{text:row.label}),()=>[
         checkboxNode(form.selected.includes(row.id),'이 지침 가져오기',checked=>{form.selected=checked?[...new Set([...form.selected,row.id])]:form.selected.filter(id=>id!==row.id);}),
-        guiEl('pre',{class:'sga-live-result-code',text:row.text})
+        guiEl('pre',{class:'code',text:row.text})
       ])),
-      form.error?guiEl('div',{class:'sga-callout danger',text:form.error}):null,
-      guiEl('div',{class:'sga-actions'},[
-        guiEl('button',{class:'sga-btn good',type:'button',text:form.busy?'저장 확인 중…':'선택한 지침 가져오기',disabled:form.busy,dataset:{librarianReviewAccept:'selected'},onClick:async()=>{
+      form.error?guiEl('div',{class:'note danger',text:form.error}):null,
+      guiEl('div',{class:'cluster'},[
+        guiEl('button',{class:'btn btn--primary',type:'button',text:form.busy?'저장 확인 중…':'선택한 지침 가져오기',disabled:form.busy,dataset:{librarianReviewAccept:'selected'},onClick:async()=>{
           if(form.busy)return;form.busy=true;form.error='';
           try{await acceptLibrarianConfiguration({sourceDigest:preview.sourceDigest,selectedIds:form.selected.slice()});await ensureGuiState(true);guiSetStatus('선택한 지침을 저장했습니다. 이전 지침 원본은 보존됩니다.');}
           catch(error){form.error=String(error.message||error);}finally{form.busy=false;queueGuiNavigationRender();}
         }}),
-        guiEl('button',{class:'sga-btn',type:'button',text:'가져오지 않고 원본만 보존',disabled:form.busy,dataset:{librarianReviewAccept:'none'},onClick:async()=>{
+        guiEl('button',{class:'btn',type:'button',text:'가져오지 않고 원본만 보존',disabled:form.busy,dataset:{librarianReviewAccept:'none'},onClick:async()=>{
           if(form.busy)return;form.busy=true;form.error='';
           try{await acceptLibrarianConfiguration({sourceDigest:preview.sourceDigest,selectedIds:[]});await ensureGuiState(true);guiSetStatus('이전 지침은 읽기 전용으로 보존하고 Librarian 통합 지침을 사용합니다.');}
           catch(error){form.error=String(error.message||error);}finally{form.busy=false;queueGuiNavigationRender();}
@@ -73571,448 +72344,64 @@ html,body{width:100%;height:100%;overflow:hidden}
       ])
     ]);
   };
+  const buildApprovedInstructionFields = () => {
+    const runtime=Gui.state.runtime||(Gui.state.runtime={}),profile=normalizeResponseImprovementProfile(runtime.responseImprovementProfile),toggles=normalizeResponseImprovementToggles(runtime.responseImprovementToggles,profile),mode=normalizeNsfwMode(runtime.nsfwMode);
+    const controls=[fieldNode('NSFW 지침 주입',checkboxNode(runtime.nsfwGuidanceEnabled!==false,'사용',applyNsfwGuidanceEnabledToGui)),fieldNode('NSFW 모드',selectNode(mode,Object.entries(NSFW_MODE_DEFS).map(([key,def])=>[key,def.label]),applyNsfwModeToGui)),fieldNode('응답 개선 지시 프로필',selectNode(profile,[['off','사용 안 함'],['recommended','권장 설정'],['all','전체 활성화'],['custom','직접 선택']],applyResponseImprovementProfileToGui))];
+    for(const [categoryId,category] of Object.entries(RESPONSE_IMPROVEMENT_CATEGORY_DEFS))controls.push(guiEl('details',{class:'fold'},[guiEl('summary',{text:category.label}),guiEl('div',{class:'fold__body stack'},[guiEl('p',{class:'hint',text:category.description}),...RESPONSE_IMPROVEMENT_INSTRUCTION_IDS.filter(id=>RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id].category===categoryId).map(id=>{const def=RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id],check=checkboxNode(!!toggles[id],'이 지시 사용',value=>applyResponseImprovementToggleToGui(id,value));check.querySelector('input').dataset.instructionField=id;return fieldNode(def.label,check,def.description);})])]));
+    controls.push(guiEl('details',{class:'fold'},[guiEl('summary',{text:'현재 작성 지침 미리보기'}),guiEl('div',{class:'fold__body'},[guiEl('textarea',{class:'textarea',readonly:true,value:buildNsfwGuidanceBlock({nsfwMode:mode,nsfwGuidanceEnabled:runtime.nsfwGuidanceEnabled!==false},'writing')||'현재 지침 주입이 꺼져 있습니다.'})])]));
+    return guiEl('details',{class:'fold',dataset:{instructionSettings:'true'}},[guiEl('summary',{text:'기존 작성 지침 · 내부 응답 개선'}),guiEl('div',{class:'fold__body stack'},controls)]);
+  };
   const buildLibrarianAnalyzerPanel = (compactView=false, advancedOnly=false) => {
-    if(!Gui.state)return guiEl('div',{class:'sga-note',text:'Librarian 설정을 읽는 중입니다.'});
-    const agents=Gui.state.agents||(Gui.state.agents={});
-    const settings=Runtime.settings || {};
-    const slot=agents.librarian || (agents.librarian=guiSlotFromSettings(settings,LIBRARIAN_STAGE_ID,settings.enableLibrarian));
-    slot.turnWindow=5;slot.executionMode='draft_only';
-    slot.risuRefs=normalizeRisuReferences(slot.risuRefs,defaultRisuReferencesForStage(LIBRARIAN_STAGE_ID));
-    const prompt=Gui.state.prompts.librarian || (Gui.state.prompts.librarian={mode:'builtin',customPrompt:'',extraPrompt:''});
+    if(!Gui.state)return guiEl('p',{class:'hint',text:'Librarian 설정을 읽는 중입니다.'});
+    const agents=Gui.state.agents||(Gui.state.agents={}),settings=Runtime.settings||{};
+    const slot=agents.librarian||(agents.librarian=guiSlotFromSettings(settings,LIBRARIAN_STAGE_ID,settings.enableLibrarian));
+    slot.turnWindow=5;slot.executionMode='draft_only';slot.risuRefs=normalizeRisuReferences(slot.risuRefs,defaultRisuReferencesForStage(LIBRARIAN_STAGE_ID));
+    const prompt=Gui.state.prompts.librarian||(Gui.state.prompts.librarian={mode:'builtin',customPrompt:'',extraPrompt:''});
     const change=fn=>value=>{fn(value);markGuiDirty();};
-    const trace=latestTraceForStage(LIBRARIAN_STAGE_ID);
-    return guiEl('section',{class:'sga-flow-section',dataset:{librarianAnalyzer:'single',memoryStage:LIBRARIAN_STAGE_ID}},[
-      guiEl('div',{class:'sga-card wide'},[
-        guiEl('div',{class:'sga-agent-head'},[guiEl('div',{},[guiEl('h2',{text:'Librarian'}),guiEl('p',{class:'sga-note',text:'통합 기억 분석기 · 사건·인물·관계·세계·현재 서사의 공통 사실을 한 번에 기록합니다.'})]),libraStatusBadge(slot.enabled!==false?'사용':'꺼짐',slot.enabled!==false?'good':'off')]),
-        guiEl('div',{class:'sga-summary-table',dataset:{librarianCallContract:'true'}},[
-          guiEl('span',{text:'분석 단위'}),guiEl('strong',{text:'완료된 5 U+A'}),
-          guiEl('span',{text:'정상 기억 생성'}),guiEl('strong',{text:'LLM 1회'}),
-          guiEl('span',{text:'월드 매니저 적용'}),guiEl('strong',{text:'로컬 · 추가 LLM 0회'}),
-          guiEl('span',{text:'자동 추가 분석'}),guiEl('strong',{text:'0회 · 실패는 명시 재시도'}),
-          guiEl('span',{text:'임베딩·응답 작성'}),guiEl('strong',{text:'별도 요청·별도 집계'})
+    const analyzerField=(key,label,control,note='')=>{control.dataset.analyzerField=key;return fieldNode(label,control,note);};
+    return guiEl('div',{class:'stack',dataset:{librarianAnalyzer:'single',memoryStage:LIBRARIAN_STAGE_ID}},[
+      guiEl('div',{class:'card'},[
+        guiEl('div',{class:'card__head'},[
+          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'분석기 · 지침 (Prompt Studio)'}),guiEl('p',{class:'card__desc',text:'완료된 5턴의 사건·인물·관계·세계·서사를 한 번에 기록합니다.'})]),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'Prompt Studio 열기',onClick:()=>openApprovedPromptDialog()})
         ]),
-        advancedOnly?buildAgentQuickSettingsSummary():guiEl('div',{class:'sga-row2'},[
-          checkboxNode(slot.enabled!==false,'Librarian 기억 분석 사용',change(value=>{slot.enabled=value;})),
-          fieldNode('AI 연결',selectNode(slot.presetName||'',presetChoicesFromState(true),change(value=>{slot.presetName=value;slot.preset=value;})),`실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}`)
+        guiEl('div',{class:'setting'},[
+          guiEl('div',{},[guiEl('div',{class:'setting__name',text:'Librarian 기억 분석'}),guiEl('div',{class:'setting__desc',text:'완료된 5 U+A · 정상 기억 생성 LLM 1회 · 로컬 상태 적용 추가 호출 0회'})]),
+          checkboxNode(slot.enabled!==false,'사용',change(value=>{slot.enabled=value;}))
         ]),
-        !compactView?guiEl('div',{class:'sga-row2'},[
-          fieldNode('참고 자료 상한',inputNode(slot.maxChars,next=>{slot.maxChars=Number(next);markGuiDirty();},{type:'number',min:1000,max:REFERENCE_BUDGET_CUSTOM_MAX_CHARS})),
-          fieldNode('최대 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),next=>{slot.timeoutMs=Math.max(5,Number(next)||5)*1000;markGuiDirty();},{type:'number',min:5,max:300}))
-        ]):null,
-        !compactView?guiEl('div',{class:'sga-reference-grid'},[
-          ...[['persona','페르소나'],['characterDescription','캐릭터 설명'],['characterLorebook','캐릭터 로어북'],['moduleLorebook','선택 모듈 로어북']].map(([key,label])=>checkboxNode(slot.risuRefs[key]===true,label,change(value=>{slot.risuRefs[key]=value;})))
-        ]):null,
-        !compactView&&!advancedOnly?fieldNode('Librarian 추가 지침',inputNode(prompt.customPrompt||'',change(value=>{prompt.customPrompt=value;prompt.extraPrompt='';prompt.mode=value.trim()?'replace':'builtin';}),{tag:'textarea',class:'stage-prompt',placeholder:'기억에 남길 판단 기준을 입력하세요. 원문 근거와 단일 산출물 계약은 유지됩니다.'})):null,
-        !compactView?guiLazyDetails({class:'sga-advanced'},guiEl('summary',{text:'통합된 분야별 지침'}),()=>LIBRARIAN_PROMPT_LENSES.map(row=>guiEl('section',{},[guiEl('h4',{text:row.label}),guiEl('p',{text:row.text})]))):null,
-        guiEl('div',{class:'sga-actions'},[guiEl('button',{class:'sga-btn libra-book-librarian-save',type:'button',text:Gui.dirty?'Librarian 설정 저장':'저장됨',disabled:!Gui.dirty,dataset:{librarianSave:'true',guiSaveLabel:'Librarian 설정 저장'},onClick:async()=>{try{await saveGuiState();await renderSettingsGui();guiSetStatus('Librarian 설정을 저장했습니다.');}catch(error){guiSetStatus(String(error.message||error),true);}}})])
+        analyzerField('presetName','AI 연결',selectNode(slot.presetName||'',presetChoicesFromState(true),change(value=>{slot.presetName=value;slot.preset=value;})),`실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}`)
       ]),
-      buildLibrarianConfigurationReviewPanel(),
-      !compactView?buildStageResultPanel(STAGE_DEF_MAP.librarian,trace,{enabled:slot.enabled!==false,isLiteSkip:false}):null
+      guiEl('details',{class:'fold'},[
+        guiEl('summary',{},['기억 분석 상세 설정 ',guiEl('span',{class:'hint',text:'분석 한도 · 참고 자료 · 분야별 지침'})]),
+        guiEl('div',{class:'fold__body stack'},[
+          guiEl('div',{class:'grid g2'},[
+            analyzerField('maxChars','참고 자료 상한',inputNode(slot.maxChars,change(value=>{slot.maxChars=Number(value);}),{type:'number',min:1000,max:REFERENCE_BUDGET_CUSTOM_MAX_CHARS})),
+            analyzerField('timeoutMs','최대 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),change(value=>{slot.timeoutMs=Math.max(5,Number(value)||5)*1000;}),{type:'number',min:5,max:300}))
+          ]),
+          guiEl('div',{class:'grid g2'},[['persona','페르소나'],['characterDescription','캐릭터 설명'],['characterLorebook','캐릭터 로어북'],['moduleLorebook','선택 모듈 로어북']].map(([key,label])=>{
+            const node=checkboxNode(slot.risuRefs[key]===true,label,change(value=>{slot.risuRefs[key]=value;}));node.querySelector('input').dataset.analyzerReference=key;return node;
+          })),
+          analyzerField('customPrompt','Librarian 추가 지침',inputNode(prompt.customPrompt||'',change(value=>{prompt.customPrompt=value;prompt.extraPrompt='';prompt.mode=value.trim()?'replace':'builtin';}),{tag:'textarea',placeholder:'기억에 남길 판단 기준'})),
+          ...LIBRARIAN_PROMPT_LENSES.map(row=>guiEl('div',{class:'note'},[guiEl('b',{text:row.label}),guiEl('p',{text:row.text})])),
+          buildGenerationPolicyPanel(),
+          buildApprovedInstructionFields(),
+          buildLibrarianConfigurationReviewPanel(),
+          buildStageResultPanel(STAGE_DEF_MAP.librarian,latestTraceForStage(LIBRARIAN_STAGE_ID),{enabled:slot.enabled!==false,isLiteSkip:false})
+        ])
+      ]),
+      guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--primary',type:'button',text:Gui.dirty?'Librarian 설정 저장':'저장됨',disabled:!Gui.dirty,dataset:{librarianSave:'true',guiSaveLabel:'Librarian 설정 저장'},onClick:async()=>{try{await saveGuiState();await renderSettingsGui();guiSetStatus('Librarian 설정을 저장했습니다.');}catch(error){guiSetStatus(String(error.message||error),true);}}})])
     ]);
   };
 
 
-  
 
 
-  
-  
-  
-  
-  
-  
 
 
-  const buildCharacterLoreExclusionPanel = () => {
-    const runtime = Gui.state.runtime;
-    const excludedIds = normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds);
-    runtime.excludedCharacterLoreIds = excludedIds;
-    const excluded = new Set(excludedIds);
-    const catalog = Array.isArray(Gui.characterLoreCatalog) ? Gui.characterLoreCatalog : [];
-    const currentExcludedCount = catalog.filter(item => excluded.has(item.key)).length;
-    const setExcluded = (item, checked) => {
-      const next = new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));
-      if (checked) next.add(item.key);
-      else next.delete(item.key);
-      runtime.excludedCharacterLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const visibleCatalog = catalog.slice(0, guiListLimit('characterLore'));
-    const rows = visibleCatalog.map(item => {
-      const checked = excluded.has(item.key);
-      return guiEl('label', {
-        class: `sga-module-lore-item${checked ? ' excluded' : ''}`,
-        title: checked ? `${item.name} · Ariadne 참고 자료에서 제외` : item.name
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check sga-character-lore-exclusion-check',
-          type: 'checkbox',
-          checked,
-          'aria-label': `${item.name} 캐릭터 로어북 제외`,
-          onChange: event => setExcluded(item, event.target.checked)
-        }),
-        guiEl('div', { class: 'sga-module-lore-copy' }, [
-          guiEl('div', { class: 'sga-module-lore-head' }, [
-            guiEl('strong', { text: item.name }),
-            guiEl('span', { class: `sga-badge ${checked ? 'danger' : 'off'}`, text: checked ? 'Ariadne 제외' : '읽기 가능' })
-          ]),
-          guiEl('div', { class: 'sga-module-lore-meta' }, [
-            item.activationKey ? guiEl('span', { text: `키 · ${item.activationKey}` }) : guiEl('span', { text: '활성화 키 없음' }),
-            item.localAlwaysActive ? guiEl('span', { text: '현재 챗 활성' }) : item.alwaysActive ? guiEl('span', { text: '항상 활성' }) : null,
-            item.mode ? guiEl('span', { text: `mode · ${item.mode}` }) : null,
-            Number.isFinite(Number(item.insertorder)) ? guiEl('span', { text: `순서 · ${item.insertorder}` }) : null
-          ]),
-          item.contentPreview
-            ? guiEl('p', { class: 'sga-module-lore-description', text: item.contentPreview })
-            : guiEl('p', { class: 'sga-module-lore-description empty', text: '내용 미리보기 없음' })
-        ])
-      ]);
-    });
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '캐릭터 로어북 제외' }),
-          guiEl('div', { class: 'sga-note', text: '체크한 캐릭터 로어북은 Ariadne와 세 ito의 5턴 메모리 로어 후보 풀에서 제거됩니다. 체크를 해제하기 전에는 어떤 단계의 리랭커에도 들어가지 않습니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${currentExcludedCount ? 'danger' : 'good'}`, text: `${currentExcludedCount}/${catalog.length} 배제` })
-      ]),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-        guiEl('button', {
-          class: 'sga-btn danger',
-          text: '현재 캐릭터 전체 배제',
-          disabled: !catalog.length || currentExcludedCount === catalog.length,
-          onClick: () => {
-            runtime.excludedCharacterLoreIds = normalizeExcludedCharacterLoreIds([...excludedIds, ...catalog.map(item => item.key)]);
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn',
-          text: '현재 캐릭터 배제 해제',
-          disabled: !currentExcludedCount,
-          onClick: () => {
-            const currentKeys = new Set(catalog.map(item => item.key));
-            runtime.excludedCharacterLoreIds = excludedIds.filter(key => !currentKeys.has(key));
-            markGuiDirty();
-            renderSettingsGui();
-          }
-        }),
-        guiEl('button', {
-          class: 'sga-btn ghost',
-          text: Gui.characterLoreCatalogLoading ? '불러오는 중…' : '목록 새로고침',
-          disabled: Gui.characterLoreCatalogLoading,
-          onClick: () => { void refreshCharacterLoreCatalog(true); }
-        })
-      ]),
-      Gui.characterLoreCatalogLoading ? guiEl('div', { class: 'sga-callout', text: '현재 캐릭터의 로어북 목록을 불러오고 있습니다.' }) : null,
-      Gui.characterLoreCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `캐릭터 로어북 목록을 불러오지 못했습니다: ${Gui.characterLoreCatalogError}` }) : null,
-      !Gui.characterLoreCatalogLoading && !catalog.length ? guiEl('div', { class: 'sga-callout', text: '현재 캐릭터에 선택 가능한 캐릭터 로어북이 없습니다.' }) : null,
-      rows.length ? guiEl('div', { class: 'sga-module-lore-grid' }, rows) : null,
-      guiLoadMoreControl('characterLore', catalog.length, '로어북'),
-      guiEl('div', { class: 'sga-note', text: `배제 목록은 설정에 영구 저장됩니다. 현재 다른 캐릭터에서 저장된 배제 항목을 포함한 전체 저장 수는 ${excludedIds.length}개입니다. 채팅 로어북은 이 창의 배제 대상에 포함하지 않습니다.` })
-    ]);
-  };
 
-  const buildModuleLoreSelectionPanel = () => {
-    const runtime = Gui.state.runtime;
-    const selectedIds = normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds);
-    runtime.selectedModuleLoreIds = selectedIds;
-    const excludedIds = normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds);
-    runtime.excludedModuleLoreIds = excludedIds;
-    const selected = new Set(selectedIds);
-    const excluded = new Set(excludedIds);
-    const catalog = Array.isArray(Gui.moduleCatalog) ? Gui.moduleCatalog : [];
-    const activeModules = catalog.filter(item => item.active && item.loreCount > 0);
-    const matchedKeys = new Set(catalog.flatMap(item => item.aliases || [item.key]).filter(Boolean));
-    const unavailableSelected = selectedIds.filter(key => !matchedKeys.has(key));
-    const moduleIsSelected = item => selected.has(item.key) || (item.aliases || []).some(alias => selected.has(alias));
-    if (!activeModules.some(item => item.key === Gui.moduleCatalogFocusedKey)) Gui.moduleCatalogFocusedKey = activeModules.find(moduleIsSelected)?.key || activeModules[0]?.key || '';
-    const focusedModule = activeModules.find(item => item.key === Gui.moduleCatalogFocusedKey) || null;
-    const setFocused = item => {
-      Gui.moduleCatalogFocusedKey = item?.key || '';
-      renderSettingsGui();
-    };
-    const setModuleSelected = (item, checked) => {
-      const next = new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds));
-      const nextExcluded = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      const aliases = Array.from(new Set([item.key, ...(item.aliases || [])].filter(Boolean)));
-      aliases.forEach(alias => next.delete(alias));
-      if (checked) next.add(item.key);
-      (item.loreEntries || []).forEach(entry => nextExcluded.delete(entry.key));
-      runtime.selectedModuleLoreIds = Array.from(next);
-      runtime.excludedModuleLoreIds = Array.from(nextExcluded);
-      Gui.moduleCatalogFocusedKey = item.key;
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setEntrySelected = (entry, checked) => {
-      const next = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      if (checked) next.delete(entry.key);
-      else next.add(entry.key);
-      runtime.excludedModuleLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setAllFocusedEntries = checked => {
-      if (!focusedModule || !moduleIsSelected(focusedModule)) return;
-      const next = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      (focusedModule.loreEntries || []).forEach(entry => checked ? next.delete(entry.key) : next.add(entry.key));
-      runtime.excludedModuleLoreIds = Array.from(next);
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const setAllModules = checked => {
-      const activeEntryKeys = activeModules.flatMap(item => (item.loreEntries || []).map(entry => entry.key));
-      const nextExcluded = new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
-      activeEntryKeys.forEach(key => nextExcluded.delete(key));
-      runtime.selectedModuleLoreIds = checked ? activeModules.map(item => item.key) : [];
-      runtime.excludedModuleLoreIds = Array.from(nextExcluded);
-      if (!Gui.moduleCatalogFocusedKey && activeModules[0]) Gui.moduleCatalogFocusedKey = activeModules[0].key;
-      markGuiDirty();
-      renderSettingsGui();
-    };
-    const moduleRows = activeModules.map(item => {
-      const checked = moduleIsSelected(item);
-      const enabledEntries = checked ? (item.loreEntries || []).filter(entry => !excluded.has(entry.key)).length : 0;
-      const focused = item.key === Gui.moduleCatalogFocusedKey;
-      return guiEl('div', {
-        class: `sga-module-list-row${checked ? ' selected' : ''}${focused ? ' focused' : ''}`,
-        title: item.description || item.name,
-        'data-module-lore-module': item.key
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check',
-          type: 'checkbox',
-          checked,
-          'data-module-lore-module-toggle': item.key,
-          'aria-label': `${item.name} 모듈 로어북 선택`,
-          onChange: event => setModuleSelected(item, event.target.checked)
-        }),
-        guiEl('button', {
-          class: 'sga-module-list-copy',
-          type: 'button',
-          'data-module-lore-module-focus': item.key,
-          onClick: () => setFocused(item)
-        }, [
-          guiEl('div', { class: 'sga-module-list-head' }, [
-            guiEl('strong', { text: item.name }),
-            guiEl('span', { class: `sga-badge ${checked ? 'good' : 'off'}`, text: checked ? `${enabledEntries}/${item.loreCount}` : '미선택' })
-          ]),
-          guiEl('div', { class: 'sga-module-list-meta' }, [
-            guiEl('span', { text: `로어 ${item.loreCount}개` }),
-            item.namespace ? guiEl('span', { text: item.namespace }) : null,
-            item.embedded ? guiEl('span', { text: '페르소나 내장' }) : null
-          ]),
-          item.description ? guiEl('p', { class: 'sga-module-list-description', text: item.description }) : null
-        ])
-      ]);
-    });
-    const focusedSelected = !!focusedModule && moduleIsSelected(focusedModule);
-    const focusedEntries = focusedModule?.loreEntries || [];
-    const enabledFocusedCount = focusedSelected ? focusedEntries.filter(entry => !excluded.has(entry.key)).length : 0;
-    const entryRows = focusedEntries.map(entry => {
-      const checked = focusedSelected && !excluded.has(entry.key);
-      return guiEl('label', {
-        class: `sga-module-entry-item${checked ? ' selected' : ''}${focusedSelected ? '' : ' disabled'}`,
-        title: entry.contentPreview || entry.name,
-        'data-module-lore-entry': entry.key
-      }, [
-        guiEl('input', {
-          class: 'sga-module-lore-check',
-          type: 'checkbox',
-          checked,
-          disabled: !focusedSelected,
-          'data-module-lore-entry-toggle': entry.key,
-          'aria-label': `${entry.name} 로어 선택`,
-          onChange: event => setEntrySelected(entry, event.target.checked)
-        }),
-        guiEl('div', { class: 'sga-module-entry-copy' }, [
-          guiEl('div', { class: 'sga-module-entry-head' }, [
-            guiEl('strong', { text: entry.name }),
-            entry.alwaysActive ? guiEl('span', { class: 'sga-badge good', text: '상시' }) : null
-          ]),
-          guiEl('div', { class: 'sga-module-entry-meta' }, [
-            entry.activationKey ? guiEl('span', { text: `키 · ${entry.activationKey}` }) : guiEl('span', { text: '활성화 키 없음' }),
-            Number.isFinite(Number(entry.priority)) ? guiEl('span', { text: `우선순위 ${entry.priority}` }) : null,
-            entry.position ? guiEl('span', { text: entry.position }) : null
-          ]),
-          guiEl('p', { class: 'sga-module-entry-preview', text: entry.contentPreview || '본문 미리보기 없음' })
-        ])
-      ]);
-    });
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '모듈 로어북 선택' }),
-          guiEl('div', { class: 'sga-note', text: '오른쪽에서 활성 모듈을 고르고, 왼쪽에서 그 안의 로어를 확인하거나 개별 해제합니다. 모듈을 새로 선택하면 내부 로어는 모두 선택됩니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${selectedIds.length ? 'good' : 'off'}`, text: `${selectedIds.length}개 선택` })
-      ]),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-        guiEl('button', { class: 'sga-btn', text: '활성 모듈 전체 선택', disabled: !activeModules.length, onClick: () => setAllModules(true) }),
-        guiEl('button', { class: 'sga-btn danger', text: '모듈 선택 전체 해제', disabled: !selectedIds.length, onClick: () => setAllModules(false) }),
-        guiEl('button', { class: 'sga-btn ghost', text: Gui.moduleCatalogLoading ? '불러오는 중…' : '모듈 목록 새로고침', disabled: Gui.moduleCatalogLoading, onClick: () => { void refreshModuleLoreCatalog(true); } })
-      ]),
-      Gui.moduleCatalogLoading ? guiEl('div', { class: 'sga-callout', text: 'RisuAI의 모듈 목록을 불러오고 있습니다.' }) : null,
-      Gui.moduleCatalogError ? guiEl('div', { class: 'sga-callout danger', text: `모듈 목록을 불러오지 못했습니다: ${Gui.moduleCatalogError}` }) : null,
-      !Gui.moduleCatalogLoading && !activeModules.length ? guiEl('div', { class: 'sga-callout', text: '현재 활성 상태이며 로어북을 가진 모듈이 없습니다.' }) : null,
-      activeModules.length ? guiEl('div', { class: 'sga-module-lore-browser', 'data-module-lore-browser': '' }, [
-        guiEl('section', { class: 'sga-module-browser-pane', 'data-module-lore-entries-pane': '' }, [
-          guiEl('div', { class: 'sga-module-browser-title' }, [
-            guiEl('strong', { text: focusedModule ? focusedModule.name : '내부 로어북' }),
-            guiEl('span', { text: focusedModule ? (focusedSelected ? `${enabledFocusedCount}/${focusedEntries.length}개 선택` : '모듈 미선택') : '모듈을 선택하세요' })
-          ]),
-          guiEl('div', { class: 'sga-module-entry-toolbar' }, [
-            guiEl('button', { class: 'sga-btn', text: '로어 전체 선택', 'data-module-lore-select-all': '', disabled: !focusedSelected || !focusedEntries.length || enabledFocusedCount === focusedEntries.length, onClick: () => setAllFocusedEntries(true) }),
-            guiEl('button', { class: 'sga-btn danger', text: '로어 전체 해제', 'data-module-lore-clear-all': '', disabled: !focusedSelected || !enabledFocusedCount, onClick: () => setAllFocusedEntries(false) })
-          ]),
-          entryRows.length ? guiEl('div', { class: 'sga-module-entry-list' }, entryRows) : guiEl('div', { class: 'sga-module-browser-empty', text: focusedModule ? '표시할 로어가 없습니다.' : '오른쪽 목록에서 모듈을 선택하면 내부 로어가 여기에 표시됩니다.' })
-        ]),
-        guiEl('section', { class: 'sga-module-browser-pane sga-module-browser-modules', 'data-module-lore-modules-pane': '' }, [
-          guiEl('div', { class: 'sga-module-browser-title' }, [
-            guiEl('strong', { text: '활성 모듈' }),
-            guiEl('span', { text: `${activeModules.length}개` })
-          ]),
-          guiEl('div', { class: 'sga-module-list' }, moduleRows)
-        ])
-      ]) : null,
-      unavailableSelected.length ? guiEl('div', { class: 'sga-note', text: `현재 찾을 수 없거나 비활성인 선택값: ${unavailableSelected.join(', ')}. 이 값들은 실행 시 읽지 않습니다.` }) : null,
-      guiEl('div', { class: 'sga-note', text: '개별 해제한 로어는 후보 수집 단계에서 제외됩니다. 남은 항목은 Ariadne·인물 ito·세계 ito·플롯 ito가 동일 후보 풀에서 각자 관련도 상위 8개를 선택합니다. 조건부 CBS가 현재 상태에서 비거나 해석 불가능한 항목은 리랭킹 전에 제외됩니다.' })
-    ]);
-  };
 
-  const buildNsfwInternalImprovementCard = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const mode = normalizeNsfwMode(runtime.nsfwMode);
-    const enabled = runtime.nsfwGuidanceEnabled !== false;
-    runtime.nsfwMode = mode;
-    runtime.nsfwGuidanceEnabled = enabled;
-    return guiEl('section', { class: 'sga-card wide', id: 'sga-nsfw-guidance-settings' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: 'NSFW 모드와 지침' }),
-          guiEl('div', { class: 'sga-note', text: 'Ariadne와 세 ito의 분석·작성·부분 수정에 공통으로 적용할 표현 강도를 선택합니다.' })
-        ]),
-        guiEl('span', {
-          class: `sga-badge ${!enabled || mode === 'off' ? 'off' : 'good'}`,
-          text: !enabled ? '지침 주입 꺼짐' : `NSFW ${NSFW_MODE_DEFS[mode]?.label || 'OFF'}`
-        })
-      ]),
-      fieldNode(
-        'NSFW 지침 주입',
-        checkboxNode(enabled, '선택한 NSFW 모드 지침을 네 단계 프롬프트에 포함', next => applyNsfwGuidanceEnabledToGui(next)),
-        '꺼도 일반적인 장면 프롬프트와 사용자 창작 지침은 그대로 유지됩니다.'
-      ),
-      guiEl('div', { class: 'sga-simple-choice-grid four', style: { marginTop: '12px' } }, Object.entries(NSFW_MODE_DEFS).map(([modeId, def]) => simpleChoiceCard({
-        active: mode === modeId,
-        title: def.label,
-        description: def.description,
-        meta: def.meta,
-        badge: modeId === 'off' ? '기본' : modeId === 'direct' ? '균형' : modeId === 'explicit' ? '최고 강도' : '',
-        onClick: () => applyNsfwModeToGui(modeId)
-      }))),
-      guiEl('div', { class: 'sga-callout', text: 'NSFW 모드는 성인 장면을 새로 만들거나 동의를 추정하는 지시가 아닙니다. 현재 장면, 관계, 명시된 동의·거부·경계와 연속성이 뒷받침할 때 표현 방식과 직접성만 조절합니다.' }),
-      mode !== 'off' ? guiEl('details', { class: 'sga-advanced', style: { marginTop: '12px' } }, [
-        guiEl('summary', {}, [
-          guiEl('span', { text: '현재 NSFW 지침 미리보기' }),
-          guiEl('span', { class: 'sga-advanced-hint', text: `${NSFW_MODE_DEFS[mode]?.label || mode} · 작성 단계 기준` })
-        ]),
-        guiEl('div', { class: 'sga-advanced-body' }, [
-          guiEl('textarea', {
-            class: 'sga-textarea preview',
-            value: buildNsfwGuidanceBlock({ nsfwMode: mode, nsfwGuidanceEnabled: enabled }, 'writing') || '(현재 지침 주입이 꺼져 있습니다.)',
-            readonly: true
-          })
-        ])
-      ]) : null
-    ]);
-  };
 
-  const buildResponseImprovementExpertCard = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const profile = normalizeResponseImprovementProfile(runtime.responseImprovementProfile);
-    const toggles = normalizeResponseImprovementToggles(runtime.responseImprovementToggles, profile);
-    runtime.responseImprovementProfile = profile;
-    runtime.responseImprovementToggles = toggles;
-    const categoryCards = Object.entries(RESPONSE_IMPROVEMENT_CATEGORY_DEFS).map(([categoryId, category]) => {
-      const rows = RESPONSE_IMPROVEMENT_INSTRUCTION_IDS
-        .filter(id => RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id].category === categoryId)
-        .map(id => {
-          const def = RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id];
-          const stageLabels = def.stages
-            .map(stageId => stageId === 'final' ? '최종 응답' : (STAGE_DEF_MAP[stageId]?.label || stageId))
-            .join(' · ');
-          return fieldNode(
-            def.label,
-            checkboxNode(!!toggles[id], '이 지시 사용', next => applyResponseImprovementToggleToGui(id, next)),
-            `${def.description} 적용: ${stageLabels}`
-          );
-        });
-      return guiEl('div', { class: 'sga-card' }, [
-        guiEl('h3', { text: category.label }),
-        guiEl('div', { class: 'sga-note', text: category.description }),
-        ...rows
-      ]);
-    });
-    return guiEl('div', { class: 'sga-card wide', id: 'sga-response-improvement-settings' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '내부 응답 개선 지시' }),
-          guiEl('div', { class: 'sga-note', text: '선택한 지시를 기존 작성·부분 수정·최종 주입 프롬프트에만 합성합니다. 별도 분석 호출, 검증 게이트, 자동 재생성은 추가하지 않습니다.' })
-        ]),
-        guiEl('span', { class: `sga-badge ${profile === 'off' ? 'off' : profile === 'custom' ? 'warn' : 'good'}`, text: RESPONSE_IMPROVEMENT_PROFILE_DEFS[profile]?.label || '권장 설정' })
-      ]),
-      fieldNode(
-        '지시 프로필',
-        selectNode(profile, [
-          ['off', '사용 안 함'],
-          ['recommended', '권장 설정'],
-          ['all', '전체 활성화'],
-          ['custom', '직접 선택']
-        ], next => applyResponseImprovementProfileToGui(next)),
-        '고정 계약과 단계 OOC는 이 프로필과 무관하게 유지됩니다. 개별 스위치를 바꾸면 직접 선택으로 전환됩니다.'
-      ),
-      guiEl('div', { class: 'sga-callout', text: '권위 순서: 고정 출력·정본·주도권 계약 → 해당 단계 OOC 창작 지침 → 활성화된 응답 개선 지시 → 참고 문맥. 개선 지시는 OOC를 덮어쓰지 않습니다.' }),
-      guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, categoryCards)
-    ]);
-  };
 
-  const buildInternalResponseImprovementPanel = () => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const profile = normalizeResponseImprovementProfile(runtime.responseImprovementProfile);
-    const mode = normalizeNsfwMode(runtime.nsfwMode);
-    const nsfwActive = runtime.nsfwGuidanceEnabled !== false && mode !== 'off';
-    return guiEl('section', { class: 'sga-flow-section', id: 'sga-internal-response-improvement' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '내부 응답 개선' }),
-            guiEl('div', { class: 'sga-note', text: '응답을 새로 분석하는 기능이 아니라, 이미 실행되는 단계의 작성 지시를 선택적으로 보강하는 설정 계층입니다.' })
-          ]),
-          guiEl('span', { class: 'sga-badge good', text: '지시 계층' })
-        ]),
-        guiEl('div', { class: 'sga-summary-table' }, [
-          guiEl('span', { text: '응답 개선' }), guiEl('strong', { text: RESPONSE_IMPROVEMENT_PROFILE_DEFS[profile]?.label || '권장 설정' }),
-          guiEl('span', { text: 'NSFW 모드' }), guiEl('strong', { text: NSFW_MODE_DEFS[mode]?.label || 'OFF' }),
-          guiEl('span', { text: 'NSFW 지침 적용' }), guiEl('strong', { text: nsfwActive ? '활성' : '비활성' }),
-          guiEl('span', { text: '추가 AI 호출' }), guiEl('strong', { text: '없음' })
-        ])
-      ]),
-      buildNsfwInternalImprovementCard(),
-      buildResponseImprovementExpertCard(),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', {
-          class: 'sga-btn good',
-          type: 'button',
-          text: Gui.dirty ? '내부 응답 개선 저장' : '저장됨',
-          disabled: !Gui.dirty,
-          onClick: saveSimpleSettingsFromGui
-        })
-      ])
-    ]);
-  };
 
 
   const exportConfiguration = async (includeSecrets = false) => {
@@ -74332,64 +72721,36 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
 
   const buildTransferTab = () => {
-    const isFullExport = Gui.exportScope === 'all';
-    const textarea = inputNode(Gui.importText, next => { Gui.importText = next; }, { tag: 'textarea', class: 'tall', placeholder: '실행 흐름 프리셋 또는 전체 설정 JSON을 붙여넣으세요.' });
-    const fileInput = guiEl('input', { type: 'file', accept: 'application/json,.json', class: 'sga-hidden', onChange: async event => {
-      const file = event.target.files?.[0];
-      event.target.value = '';
-      if (!file) return;
-      try { Gui.importText = await file.text(); renderSettingsGui(); guiSetStatus(`${file.name} 파일을 읽었습니다.`); } catch (error) { guiSetStatus(error.message, true); }
-    } });
-    const scopeControls = guiEl('div', { class: 'sga-row2' }, [
-      fieldNode('내보내기 범위', selectNode(Gui.exportScope || 'flow', [
-        ['flow','실행 흐름 프리셋 · 에이전트/프롬프트/후속/런타임'],
-        ['all','전체 설정 · 실행 흐름 + 프로바이더 + 메모리/임베딩']
-      ], next => { Gui.exportScope = next; renderSettingsGui(); }), isFullExport ? '프로바이더, 리콜·Story Arc, 임베딩 설정을 함께 이동합니다. 임베딩 재생성 진행상태는 참고용으로만 포함됩니다.' : 'API 키와 프로바이더 정의는 제외하며, 대상 환경의 같은 이름 프리셋을 참조합니다.'),
-      isFullExport
-        ? fieldNode('비밀값', checkboxNode(Gui.includeSecretsInExport, 'API 키 / 토큰 / Vertex JSON 포함', next => { Gui.includeSecretsInExport = next; renderSettingsGui(); }), '체크하지 않으면 프로바이더 메타데이터만 내보냅니다.')
-        : guiEl('div', { class: 'sga-provider-note-box' }, [
-            guiEl('strong', { text: '기본 권장' }),
-            guiEl('span', { text: '실행 흐름 프리셋은 비밀값을 포함하지 않습니다.' })
-          ])
-    ]);
-    const downloadCurrent = async () => {
-      const payload = await selectedExportPayload();
-      const date = new Date().toISOString().slice(0, 10);
-      const name = isFullExport ? `libra-config-${date}.json` : `libra-flow-${date}.json`;
-      downloadJson(name, payload);
-      guiSetStatus(isFullExport ? '전체 설정 JSON 파일을 생성했습니다.' : '실행 흐름 프리셋 JSON 파일을 생성했습니다.');
-    };
-    return guiEl('div', {}, [
-      guiEl('div', { class: 'sga-section-title' }, [
-        guiEl('h2', { text: 'JSON 프리셋 가져오기 / 내보내기' }),
-        guiEl('p', { text: '실행 흐름만 재사용하거나, 필요할 때 프로바이더까지 포함한 전체 설정을 이동합니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        scopeControls,
-        isFullExport && Gui.includeSecretsInExport ? guiEl('div', { class: 'sga-callout danger', text: '내보낸 JSON에 API 키, 토큰 또는 Vertex 서비스 계정 JSON이 평문으로 포함됩니다. 안전한 장소에서만 사용하세요.', style: { marginBottom: '10px' } }) : null,
-        textarea,
-        fileInput,
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-          guiEl('button', { class: 'sga-btn primary', text: isFullExport ? '전체 설정 JSON 만들기' : '실행 흐름 JSON 만들기', onClick: async () => { Gui.importText = JSON.stringify(await selectedExportPayload(), null, 2); renderSettingsGui(); } }),
-          guiEl('button', { class: 'sga-btn', text: 'JSON 파일로 저장', onClick: downloadCurrent }),
-          guiEl('button', { class: 'sga-btn', text: '파일 열기', onClick: () => fileInput.click() }),
-          guiEl('button', { class: 'sga-btn good', text: 'JSON으로 교체 가져오기', onClick: () => { try { applyImportedConfiguration(JSON.parse(Gui.importText), false); renderSettingsGui(); guiSetStatus('가져온 전체/흐름 설정을 GUI 상태에 반영했습니다. 메모리·임베딩 설정이 포함된 경우 함께 반영되며 상단 저장 버튼을 눌러 적용하세요.'); } catch (error) { guiSetStatus(error.message, true, true); } } }),
-          guiEl('button', { class: 'sga-btn', text: 'JSON 병합 가져오기', onClick: () => { try { applyImportedConfiguration(JSON.parse(Gui.importText), true); renderSettingsGui(); guiSetStatus('가져온 전체/흐름 설정을 현재 GUI 상태에 병합했습니다. 메모리·임베딩 설정이 포함된 경우 함께 병합되며 상단 저장 버튼을 눌러 적용하세요.'); } catch (error) { guiSetStatus(error.message, true, true); } } })
-        ]),
-        guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '실행 흐름 프리셋을 가져왔을 때 같은 이름의 프로바이더 프리셋이 없으면 해당 단계 카드에 “프리셋 확인”이 표시됩니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide', style: { marginTop: '14px' } }, [
-        guiEl('h3', { text: '초기화' }),
-        guiEl('div', { class: 'sga-note', text: 'GUI 저장 설정을 삭제하면 다시 //@arg 설정과 내장 기본값을 사용합니다.' }),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-          guiEl('button', { class: 'sga-btn danger', text: 'GUI 설정 초기화(비밀 유지)', onClick: async () => {
-            await clearStructuredSettings(false); await ensureGuiState(true); await renderSettingsGui(); guiSetStatus('GUI 설정을 초기화했습니다. 기기 로컬 비밀 키는 유지했습니다.');
-          } }),
-          guiEl('button', { class: 'sga-btn danger', text: '모든 설정과 비밀 키 초기화', onClick: async () => {
-            await clearStructuredSettings(true); await ensureGuiState(true); await renderSettingsGui(); guiSetStatus('모든 저장 설정과 비밀 키를 초기화했습니다.');
-          } })
+    const all=Gui.exportScope==='all';
+    const rerender=()=>void renderSettingsGui();
+    const area=guiEl('textarea',{class:'textarea',rows:8,value:Gui.importText||'',placeholder:'설정 JSON',dataset:{configurationTransfer:'json'},onInput:event=>{Gui.importText=event.target.value;}});
+    const file=guiEl('input',{type:'file',accept:'application/json,.json',hidden:true,onChange:async event=>{
+      const selected=event.target.files?.[0];event.target.value='';if(!selected)return;
+      try{Gui.importText=await selected.text();rerender();guiSetStatus(`${selected.name} 파일을 읽었습니다.`);}catch(error){guiSetStatus(error.message,true);}
+    }});
+    const importSettings=merge=>{try{applyImportedConfiguration(JSON.parse(Gui.importText),merge);rerender();guiSetStatus('가져온 설정을 편집 상태에 반영했습니다. 설정 저장으로 적용하세요.');}catch(error){guiSetStatus(error.message,true,true);}};
+    return guiEl('div',{class:'stack',dataset:{configurationTransfer:'settings'}},[
+      guiEl('div',{class:'card'},[
+        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'설정 가져오기 · 내보내기'}),guiEl('p',{class:'card__desc',text:'기억 데이터와 별도로 연결·분석·검색 설정을 이동합니다.'})])]),
+        fieldNode('내보내기 범위',guiEl('select',{class:'select',value:Gui.exportScope||'flow',dataset:{configurationTransfer:'scope'},onChange:event=>{Gui.exportScope=event.target.value;rerender();}},optionNodes([['flow','실행 흐름 프리셋'],['all','전체 설정']],Gui.exportScope||'flow'))),
+        all?checkboxNode(Gui.includeSecretsInExport,'API 키 / 토큰 / Vertex JSON 포함',value=>{Gui.includeSecretsInExport=value;rerender();}):guiEl('p',{class:'hint',text:'실행 흐름 프리셋에는 비밀값을 포함하지 않습니다.'}),
+        all&&Gui.includeSecretsInExport?guiEl('div',{class:'note note--warn',text:'내보낸 JSON에 비밀값이 평문으로 포함됩니다.'}):null,
+        fieldNode('설정 JSON',area),file,
+        guiEl('div',{class:'cluster'},[
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'JSON 만들기',onClick:async()=>{Gui.importText=JSON.stringify(await selectedExportPayload(),null,2);rerender();}}),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'JSON 파일로 저장',onClick:async()=>{downloadJson(`libra-${all?'config':'flow'}-${new Date().toISOString().slice(0,10)}.json`,await selectedExportPayload());guiSetStatus('설정 JSON 파일을 생성했습니다.');}}),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'파일 열기',onClick:()=>file.click()}),
+          guiEl('button',{class:'btn btn--primary btn--sm',type:'button',text:'교체 가져오기',onClick:()=>importSettings(false)}),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'병합 가져오기',onClick:()=>importSettings(true)})
         ])
-      ])
+      ]),
+      guiEl('details',{class:'fold'},[guiEl('summary',{text:'설정 초기화'}),guiEl('div',{class:'fold__body stack'},[
+        guiEl('p',{class:'hint',text:'GUI 저장 설정을 삭제하면 인수 설정과 내장 기본값을 사용합니다.'}),
+        guiEl('div',{class:'cluster'},[
+          guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'GUI 설정 초기화(비밀 유지)',onClick:async()=>{await clearStructuredSettings(false);await ensureGuiState(true);await renderSettingsGui();guiSetStatus('GUI 설정을 초기화했습니다. 기기 로컬 비밀 키는 유지했습니다.');}}),
+          guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'모든 설정과 비밀 키 초기화',onClick:async()=>{await clearStructuredSettings(true);await ensureGuiState(true);await renderSettingsGui();guiSetStatus('모든 저장 설정과 비밀 키를 초기화했습니다.');}})
+        ])
+      ])])
     ]);
   };
 
@@ -74576,10 +72937,10 @@ html,body{width:100%;height:100%;overflow:hidden}
       const state = info.className === 'good' ? 'ok' : info.className === 'warn' ? 'fallback' : info.className === 'danger' ? 'error' : 'skip';
       const label = stageLabel(t.stage);
       const elapsed = info.elapsed;
-      return guiEl('div', { class: `sga-summary-pill ${state}` }, [
-        guiEl('span', { class: 'sga-summary-name', text: label }),
-        guiEl('span', { class: 'sga-summary-state', text: info.label }),
-        elapsed ? guiEl('span', { class: 'sga-summary-elapsed', text: elapsed }) : null
+      return guiEl('div', { class: `chip ${state}` }, [
+        guiEl('span', { class: 'setting__name', text: label }),
+        guiEl('span', { class: 'badge', text: info.label }),
+        elapsed ? guiEl('span', { class: 'hint', text: elapsed }) : null
       ]);
     };
     const beforeTraceLimit = Math.max(16, BEFORE_STAGE_DEFS.length);
@@ -74587,15 +72948,15 @@ html,body{width:100%;height:100%;overflow:hidden}
     const summaryBlocks = [];
     const canonicalReferenceBudget = canonicalReferenceBudgetForDisplay();
     const formatChars = value => `${Number(value || 0).toLocaleString('ko-KR')}자`;
-    if (Runtime.inFlight) summaryBlocks.push(guiEl('div', { class: 'sga-inflight', text: '● 파이프라인 실행 중…' }));
-    if (beforeTraces.length) summaryBlocks.push(guiEl('div', { class: 'sga-summary-row' }, [guiEl('span', { class: 'sga-summary-label', text: '직렬 단계' }), ...beforeTraces.map(t => tracePill(t))]));
-    if (!summaryBlocks.length) summaryBlocks.push(guiEl('div', { class: 'sga-summary-empty', text: '아직 실행 기록이 없습니다. 응답을 한 번 생성하면 요약이 표시됩니다.' }));
+    if (Runtime.inFlight) summaryBlocks.push(guiEl('div', { class: 'note', text: '● 파이프라인 실행 중…' }));
+    if (beforeTraces.length) summaryBlocks.push(guiEl('div', { class: 'setting' }, [guiEl('span', { class: 'setting__name', text: '직렬 단계' }), ...beforeTraces.map(t => tracePill(t))]));
+    if (!summaryBlocks.length) summaryBlocks.push(guiEl('div', { class: 'empty', text: '아직 실행 기록이 없습니다. 응답을 한 번 생성하면 요약이 표시됩니다.' }));
     return guiEl('div', {}, [
-      guiEl('div', { class: 'sga-section-title' }, [guiEl('h2', { text: '디버그' }), guiEl('p', { text: '네 단계 직렬 처리 상태, 단계별 프리셋, 경고와 최종 주입 초안을 확인합니다.' })]),
+      guiEl('div', { class: 'card__head' }, [guiEl('h2', { text: '디버그' }), guiEl('p', { text: '네 단계 직렬 처리 상태, 단계별 프리셋, 경고와 최종 주입 초안을 확인합니다.' })]),
       buildCanonicalJobsPanel(),
-      guiEl('div', { class: 'sga-actions', style: { marginBottom: '12px' } }, [
-        guiEl('button', { class: 'sga-btn', text: '새로고침', onClick: () => renderSettingsGui() }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 복사', onClick: async () => {
+      guiEl('div', { class: 'cluster', style: { marginBottom: '12px' } }, [
+        guiEl('button', { class: 'btn', text: '새로고침', onClick: () => renderSettingsGui() }),
+        guiEl('button', { class: 'btn', text: '디버그 JSON 복사', onClick: async () => {
           await MemorySuiteStorageBridge.refreshDiagnostics({ limit: 500 }).catch(() => null);
           const payload = debugPayloadText();
           const result = await copyTextWithFallback(payload);
@@ -74609,33 +72970,33 @@ html,body{width:100%;height:100%;overflow:hidden}
             guiSetStatus(`클립보드 복사가 차단되어 아래 텍스트 영역에 표시했습니다. ${result.error}`, true, true);
           }
         } }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 파일로 저장', onClick: async () => {
+        guiEl('button', { class: 'btn', text: '디버그 JSON 파일로 저장', onClick: async () => {
           await MemorySuiteStorageBridge.refreshDiagnostics({ limit: 500 }).catch(() => null);
           const ok = downloadJson(`libra-debug-${new Date().toISOString().slice(0,10)}.json`, runtimeForDisplay());
           if (ok) guiSetStatus('디버그 JSON 파일을 생성했습니다.');
           else await showDebugExportText('파일 저장 API를 사용할 수 없어 아래 텍스트 영역에 표시했습니다.', true);
         } }),
-        guiEl('button', { class: 'sga-btn', text: '디버그 JSON 표시', onClick: async () => {
+        guiEl('button', { class: 'btn', text: '디버그 JSON 표시', onClick: async () => {
           await showDebugExportText();
         } }),
-        guiEl('button', { class: 'sga-btn danger', text: '경고 로그 지우기', onClick: () => { Runtime.warnings.length = 0; renderSettingsGui(); } })
+        guiEl('button', { class: 'btn btn--danger', text: '경고 로그 지우기', onClick: () => { Runtime.warnings.length = 0; renderSettingsGui(); } })
       ]),
-      Gui.debugExportText ? guiEl('div', { class: 'sga-card wide', style: { marginBottom: '12px' } }, [
+      Gui.debugExportText ? guiEl('div', { class: 'card', style: { marginBottom: '12px' } }, [
         guiEl('h3', { text: '디버그 JSON 내보내기' }),
-        guiEl('div', { class: 'sga-note', text: '클립보드가 차단된 환경에서는 아래 내용을 직접 선택해서 복사하거나 파일 저장 버튼을 사용하세요.' }),
-        guiEl('textarea', { class: 'sga-textarea tall', readonly: true, value: Gui.debugExportText })
+        guiEl('div', { class: 'hint', text: '클립보드가 차단된 환경에서는 아래 내용을 직접 선택해서 복사하거나 파일 저장 버튼을 사용하세요.' }),
+        guiEl('textarea', { class: 'textarea tall', readonly: true, value: Gui.debugExportText })
       ]) : null,
-      guiEl('div', { class: 'sga-summary-panel' }, summaryBlocks),
-      guiEl('div', { class: 'sga-grid' }, [
-        guiEl('div', { class: 'sga-card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'sga-code', text: JSON.stringify({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, hookRuntime: hookRuntimeSnapshot(), recallRuntime: LibraMemoryCore.state.lastRecallRuntime || null, storageWriteStats: LibraMemoryCore.state.storageWriteStats || {}, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }, null, 2) })]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'sga-code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
-        guiEl('div', { class: 'sga-card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'sga-code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
-        guiEl('div', { class: 'sga-card wide' }, [
+      guiEl('div', { class: 'card' }, summaryBlocks),
+      guiEl('div', { class: 'grid g2' }, [
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'code', text: JSON.stringify({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, hookRuntime: hookRuntimeSnapshot(), recallRuntime: LibraMemoryCore.state.lastRecallRuntime || null, storageWriteStats: LibraMemoryCore.state.storageWriteStats || {}, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }, null, 2) })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
+        guiEl('div', { class: 'card' }, [
           guiEl('h3', { text: '정본 참조 예산' }),
           canonicalReferenceBudget
             ? guiEl('div', {}, [
                 guiEl('div', {
-                  class: 'sga-note',
+                  class: 'hint',
                   style: { marginBottom: '10px' },
                   text: [
                     `요구 ${formatChars(canonicalReferenceBudget.demandChars)}`,
@@ -74645,27 +73006,27 @@ html,body{width:100%;height:100%;overflow:hidden}
                     `제외 ${formatChars(canonicalReferenceBudget.omittedChars)}`
                   ].join(' · ')
                 }),
-                guiEl('div', { class: 'sga-code', text: JSON.stringify(canonicalReferenceBudget, null, 2) })
+                guiEl('div', { class: 'code', text: JSON.stringify(canonicalReferenceBudget, null, 2) })
               ])
-            : guiEl('div', { class: 'sga-note', text: '아직 정본 참조 패킷의 예산 기록이 없습니다.' })
+            : guiEl('div', { class: 'hint', text: '아직 정본 참조 패킷의 예산 기록이 없습니다.' })
         ]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '마지막 Ariadne RisuAI 참조' }), guiEl('div', { class: 'sga-code', text: Runtime.lastRisuContext ? JSON.stringify(Runtime.lastRisuContext, null, 2) : '(아직 참조 기록 없음)' })]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '확장 모드 RisuAI식 엔진 기록' }), guiEl('div', { class: 'sga-code', text: Runtime.risuEngine ? JSON.stringify(Runtime.risuEngine, null, 2) : '(아직 확장 모드 실행 기록 없음)' })]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: 'Ariadne 최종 응답 초안' }), guiEl('div', { class: 'sga-code', text: Runtime.finalDraft || (Runtime.finalDraftMeta?.skipped ? `실행 안 됨: ${Runtime.finalDraftMeta.reason || 'unknown'}` : '(아직 최종 초안 없음)') })]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '응답 전 에이전트 원문 추적' }), guiEl('div', { class: 'sga-code', text: JSON.stringify(Runtime.stageTrace.slice(-32), null, 2) || '(아직 실행 기록 없음)' })]),
-        guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '마지막 메인 모델 주입 draft' }), guiEl('div', { class: 'sga-code', text: Runtime.lastInjection || '(아직 주입 기록 없음)' })])
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Ariadne RisuAI 참조' }), guiEl('div', { class: 'code', text: Runtime.lastRisuContext ? JSON.stringify(Runtime.lastRisuContext, null, 2) : '(아직 참조 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '확장 모드 RisuAI식 엔진 기록' }), guiEl('div', { class: 'code', text: Runtime.risuEngine ? JSON.stringify(Runtime.risuEngine, null, 2) : '(아직 확장 모드 실행 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: 'Ariadne 최종 응답 초안' }), guiEl('div', { class: 'code', text: Runtime.finalDraft || (Runtime.finalDraftMeta?.skipped ? `실행 안 됨: ${Runtime.finalDraftMeta.reason || 'unknown'}` : '(아직 최종 초안 없음)') })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '응답 전 에이전트 원문 추적' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.stageTrace.slice(-32), null, 2) || '(아직 실행 기록 없음)' })]),
+        guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 메인 모델 주입 draft' }), guiEl('div', { class: 'code', text: Runtime.lastInjection || '(아직 주입 기록 없음)' })])
       ])
     ]);
   };
 
-  
-  
-  
-  
-  
 
 
-  
+
+
+
+
+
+
 
 
 
@@ -74786,7 +73147,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     const target = targetValue && typeof targetValue === 'object' ? targetValue : { pageId: Gui.sharedSidebarSection || 'memory' };
     const pageId = SHARED_SIDEBAR_SECTIONS.includes(target.pageId) ? target.pageId : 'memory';
     if (Gui.bookPage === 'memory' && pageId !== 'memory' && !['ai', 'embedding'].includes(pageId)) resetCanonicalReaderView({ preserveQuery: true });
-    if (pageId === 'pipeline' && Gui.pipelineHubSection === 'response_generation') { Gui.bookPage='writing'; return Gui.bookPage; }
     if (pageId === 'memory') Gui.bookPage = 'memory';
     else if (pageId === 'characters' || pageId === 'relationships') {
       Gui.bookPage = 'people';
@@ -74821,7 +73181,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     else if (page === 'people') { Gui.bookPeopleSection = 'profile'; applySharedNavigationTarget({ pageId: 'characters' }); }
     else if (page === 'world') { Gui.bookWorldSection = 'guide'; applySharedNavigationTarget({ pageId: 'world' }); }
     else if (page === 'story') { Gui.bookStorySection = 'toc'; applySharedNavigationTarget({ pageId: 'narrative', narrativeHubSection: 'current' }); }
-    else if (page === 'writing') { applySharedNavigationTarget({pageId:'pipeline',pipelineHubSection:Gui.pipelineHubSection||'response_generation'}); }
+    else if (page === 'writing') { Gui.bookPage='settings'; Gui.pipelineHubSection='response_generation'; Gui.bookSettingsWorkbenchSection='pipeline'; applySharedNavigationTarget({pageId:'pipeline',pipelineHubSection:'response_generation'}); }
     else if (page === 'settings') {
       if (['input_writer','pipeline','agents','custom'].includes(bookSettingsRoomActiveSection())) { Gui.bookSettingsWorkbenchSection='settings'; Gui.settingsHubSection='ai'; }
       const internal = normalizeHubChoice(Gui.bookSettingsWorkbenchSection, BOOK_SETTINGS_WORKBENCH_SECTIONS, 'settings');
@@ -74865,7 +73225,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     queueGuiNavigationRender();
   };
 
-  
+
 
   const queueBookDrawerRender = () => {
     Gui.invalidations.add('book-drawer');
@@ -74877,7 +73237,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     Gui.bookQuickOpen = false;
     Gui.bookQuickFocusPending = false;
     Gui.app?.querySelector('[data-book-quick-drawer]')?.remove?.();
-    Gui.app?.querySelector('.libra-book-quick-button')?.focus?.();
+    Gui.app?.querySelector('[data-open="drawer-quick"]')?.focus?.();
     if (refreshBody) Gui.invalidations.add('body');
     queueBookDrawerRender();
   };
@@ -74936,9 +73296,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     catch (_) { return String(value || ''); }
   };
 
-  const libraStatusBadge = (textValue, kind = '') => guiEl('span', { class: `sga-badge ${kind}`.trim(), text: textValue });
+  const libraStatusBadge = (textValue, kind = '') => guiEl('span', { class: `badge ${{good:'badge--ok',warn:'badge--warn',danger:'badge--danger',info:'badge--info'}[kind]||''}`.trim(), text: textValue });
 
-  
+
 
   const libraEmbeddingDisplayForMemory = (memory, rebuildIndex = null) => {
     const rebuild = LibraMemoryCore.peekEmbeddingRebuildState();
@@ -74969,21 +73329,21 @@ html,body{width:100%;height:100%;overflow:hidden}
     const active = libraGuiText(delivery.route || Runtime.lastInjectionMode) === 'classic';
     const count = Number(delivery.classicMemories || delivery.injectedMemories || 0);
     const chars = Number(delivery.classicChars || delivery.blockChars || Runtime.lastClassicInjectionMeta?.chars || 0);
-    return guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
+    return guiEl('div', { class: 'card' }, [
+      guiEl('div', { class: 'split' }, [
         guiEl('div', {}, [
           guiEl('h3', { text: '이번 턴 사서 모드 전달' }),
-          guiEl('div', { class: 'sga-note', text: active && delivery.at ? `${libraFormatTime(delivery.at)} · 추가 LLM 호출 없음` : '현재 선택된 리콜 발췌를 그대로 전달하는 경로입니다.' })
+          guiEl('div', { class: 'hint', text: active && delivery.at ? `${libraFormatTime(delivery.at)} · 추가 LLM 호출 없음` : '현재 선택된 리콜 발췌를 그대로 전달하는 경로입니다.' })
         ]),
         libraStatusBadge(active ? (count ? '직접 전달 완료' : '선택된 기억 없음') : '대기', active && count ? 'good' : '')
       ]),
-      guiEl('div', { class: 'sga-note', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." }),
-      active ? guiEl('div', { class: 'libra-recall-metrics' }, [
-        guiEl('div', { class: 'libra-recall-metric' }, [guiEl('span', { text: '직접 전달 기억' }), guiEl('strong', { text: String(count) })]),
-        guiEl('div', { class: 'libra-recall-metric' }, [guiEl('span', { text: '전달 문자' }), guiEl('strong', { text: String(chars) })]),
-        guiEl('div', { class: 'libra-recall-metric' }, [guiEl('span', { text: '추가 LLM' }), guiEl('strong', { text: '0회' })])
+      guiEl('div', { class: 'hint', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." }),
+      active ? guiEl('div', { class: "stack" }, [
+        guiEl('div', { class: "stack" }, [guiEl('span', { text: '직접 전달 기억' }), guiEl('strong', { text: String(count) })]),
+        guiEl('div', { class: "stack" }, [guiEl('span', { text: '전달 문자' }), guiEl('strong', { text: String(chars) })]),
+        guiEl('div', { class: "stack" }, [guiEl('span', { text: '추가 LLM' }), guiEl('strong', { text: '0회' })])
       ]) : null,
-      compactView && active ? guiEl('div', { class: 'sga-actions' }, [guiEl('button', { class: 'sga-btn', type: 'button', text: '실제 전달 근거 보기', onClick: () => libraGuiNavigate('recall') })]) : null
+      compactView && active ? guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn', type: 'button', text: '실제 전달 근거 보기', onClick: () => libraGuiNavigate('recall') })]) : null
     ]);
   };
 
@@ -74992,7 +73352,7 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
   const libraRuntimeNumberInput = (value, min, max, step, onValue) => guiEl('input', {
-    class: 'sga-input', type: 'number', value, min, max, step,
+    class: 'input', type: 'number', value, min, max, step,
     onInput: event => { onValue(Number(event.target.value)); markGuiDirty(); }
   });
 
@@ -75030,13 +73390,13 @@ html,body{width:100%;height:100%;overflow:hidden}
   const buildLibraLiveContextSettingsPanel = () => {
     const runtime = normalizeLibraLiveContextRuntime(Gui.state.runtime || (Gui.state.runtime = {}));
     const mode = normalizeResponseInjectionMode(runtime.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
-    return guiEl('details', { class: 'sga-advanced', id: 'libra-live-context-settings', open: false }, [
+    return guiEl('details', { class: 'fold', id: 'libra-live-context-settings', open: false }, [
       guiEl('summary', {}, [
         guiEl('span', { text: '최근 대화·초기 배경 설정' }),
-        guiEl('span', { class: 'sga-advanced-hint', text: `${LIBRA_RESPONSE_MODE_UI[mode].label} 기준` })
+        guiEl('span', { class: 'hint', text: `${LIBRA_RESPONSE_MODE_UI[mode].label} 기준` })
       ]),
-      guiEl('div', { class: 'sga-advanced-body' }, [
-        guiEl('div', { class: 'sga-note', text: '사서 모드는 기본적으로 현재 채팅 원문을 중복 주입하지 않습니다. 최근 대화 직접 주입은 컨텍스트 압축 환경을 위한 고급 선택입니다.' }),
+      guiEl('div', { class: 'fold__body' }, [
+        guiEl('div', { class: 'hint', text: '사서 모드는 기본적으로 현재 채팅 원문을 중복 주입하지 않습니다. 최근 대화 직접 주입은 컨텍스트 압축 환경을 위한 고급 선택입니다.' }),
         checkboxNode(runtime.liveContextEnabled !== false, '최근 대화 원문 사용', next => { runtime.liveContextEnabled = next; markGuiDirty(); queueGuiRender(0); }),
         fieldNode('최근 대화 최대 턴', libraRuntimeNumberInput(runtime.liveTailMaxTurns, 1, 4, 1, value => { runtime.liveTailMaxTurns = clampInt(value, 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS); }), '사용자 입력과 AI 응답을 한 턴으로 셉니다. 기억 저장 전후에 같은 범위를 유지하며, 별도 장면 문맥과 중복해서 전달하지 않습니다.'),
         fieldNode('최근 대화 최대 문자', libraRuntimeNumberInput(runtime.liveTailMaxChars, LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, 1000, value => { runtime.liveTailMaxChars = clampInt(value, LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS); }), '호스트 정규화와 내부 carrier 제거를 거친 각 U+A를 그대로 유지하며, 예산을 넘으면 더 오래된 쌍부터 제외합니다.'),
@@ -75047,56 +73407,32 @@ html,body{width:100%;height:100%;overflow:hidden}
     ]);
   };
 
-  const buildLibraResponseMaterialSettingsPanel = () => {
-    const runtime = normalizeLibraResponseMaterialRuntime(Gui.state.runtime || (Gui.state.runtime = {}));
-    return guiEl('section', { class: 'sga-card wide', id: 'libra-reference-response-materials' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '통합 로어 검색 · 작가노트' }),
-          guiEl('div', { class: 'sga-note', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." })
-        ]),
-        libraStatusBadge(runtime.responseLoreEnabled ? '로어 검색 사용 중' : '로어 검색 꺼짐', runtime.responseLoreEnabled ? 'good' : 'off')
-      ]),
-      checkboxNode(runtime.responseLoreEnabled, "LIBRA memory recall", next => { runtime.responseLoreEnabled = next; markGuiDirty(); queueGuiRender(0); }),
-      runtime.responseLoreEnabled ? guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
-        fieldNode('Adaptive Frontier 시작 개수', libraRuntimeNumberInput(runtime.responseLoreStartCount, MIN_RESPONSE_LORE_START_COUNT, MAX_RESPONSE_LORE_ITEMS, 1, value => { runtime.responseLoreStartCount = clampInt(value, MIN_RESPONSE_LORE_START_COUNT, MAX_RESPONSE_LORE_ITEMS, DEFAULT_RESPONSE_LORE_START_COUNT); runtime.responseLoreMaxItems = Math.max(runtime.responseLoreStartCount, runtime.responseLoreMaxItems); }), '정확한 키·엔티티·host 선택·미포함 앵커·평탄한 점수 군집이 있으면 이 개수를 넘어 동적으로 확장합니다.'),
-        fieldNode('단계별 최대 로어 개수', libraRuntimeNumberInput(runtime.responseLoreMaxItems, runtime.responseLoreStartCount, MAX_RESPONSE_LORE_ITEMS, 1, value => { runtime.responseLoreMaxItems = clampInt(value, runtime.responseLoreStartCount, MAX_RESPONSE_LORE_ITEMS, DEFAULT_RESPONSE_LORE_MAX_ITEMS); }), '보호 자료는 필요할 때 시작 개수를 넘을 수 있지만 이 안전 상한과 문자 예산을 함께 지킵니다.'),
-        fieldNode('단계별 로어 최대 문자', libraRuntimeNumberInput(runtime.responseLoreMaxChars, MIN_RESPONSE_LORE_CHARS, MAX_RESPONSE_LORE_CHARS, 1000, value => { runtime.responseLoreMaxChars = clampInt(value, MIN_RESPONSE_LORE_CHARS, MAX_RESPONSE_LORE_CHARS, DEFAULT_RESPONSE_LORE_MAX_CHARS); }), '긴 로어는 앞부분 고정 절단이 아니라 질의 관련 offset 보존 구간으로 전달됩니다.')
-      ]) : null,
-      guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
 
-      ]),
-      guiEl('div', { class: 'sga-callout', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." }),
-      guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, [
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '참고 자료 설정 저장', onClick: () => { void saveLibraRuntimeGuiSettings('통합 로어와 작가노트 설정'); } })
-      ])
-    ]);
-  };
 
-  
-  
-  
+
+
+
   const buildGenerationPolicyPanel = () => {
     const runtime=Gui.state.runtime;
     const policy=Object.assign(runtime.generationPolicy||{},MemorySuiteExecutionContract.normalizeGenerationPolicy(runtime.generationPolicy));
     runtime.generationPolicy=policy;
-    const status=guiEl('div',{class:'sga-note',style:{whiteSpace:'pre-line',overflowWrap:'anywhere'}});
+    const status=guiEl('div',{class:'hint',style:{whiteSpace:'pre-line',overflowWrap:'anywhere'}});
     const policyLabel=value=>value.enabled?'LIBRA 권장 한도 사용':'프리셋 설정 사용';
     const retryLabel=value=>value.extraCalls===1?'출력이 잘리면 최대 1회 다시 요청':'추가 요청 없음';
     const previewText=()=>{const p=MemorySuiteExecutionContract.generationPolicyPreview(Runtime.settings?.generationPolicy,policy);return `저장된 설정: ${policyLabel(p.previous)} · ${retryLabel(p.previous)}\n변경 후: ${policyLabel(p.next)} · ${retryLabel(p.next)}\n작업 전체 한도: 최대 요청 ${p.maxPhysicalCalls}회 · 출력 ${p.next.aggregateOutput}토큰 · 입력 ${p.next.aggregateInput}토큰 · 재요청 판단 ${p.next.wallMs/1000}초\n${p.changed?'아직 저장하지 않은 변경사항입니다.':'현재 저장된 설정과 같습니다.'}`;};
     status.dataset.generationPolicyPreview='true';
     status.refreshGenerationPolicyPreview=()=>{status.textContent=previewText();};
     const refresh=()=>{Gui.state.runtime.generationPolicy=policy;status.textContent=previewText();markGuiDirty();};
-    const panel=guiEl('section',{class:'sga-card wide',dataset:{generationPolicy:'v1'}},[
+    const panel=guiEl('div',{class:'stack',dataset:{generationPolicy:'v1'}},[
       guiEl('h3',{text:'정본 분석 요청 한도'}),
       fieldNode('출력 한도 계산 방식',selectNode(policy.enabled?'1':'0',[['0','프리셋 설정 사용'],['1','LIBRA 권장 한도 사용']],v=>{policy.enabled=v==='1';refresh();}),'LIBRA 권장 한도는 최초 요청에 최대 65,536토큰을 배정합니다. 프리셋·모델·남은 컨텍스트 한도가 더 작으면 그 값을 사용합니다.'),
       fieldNode('출력이 잘렸을 때',selectNode(String(policy.extraCalls),[['0','다시 요청하지 않음'],['1','최대 1회 다시 요청']],v=>{policy.extraCalls=Number(v);refresh();}),'직접 API가 출력 한도 때문에 응답을 끝냈고 더 큰 한도를 실제로 사용할 수 있을 때만 같은 원문으로 다시 요청합니다. 두 번째 요청은 최대 98,304토큰이며 OtherAx에는 적용하지 않습니다.'),
       fieldNode('직접 API 스트림',selectNode(policy.streaming?'1':'0',[['0','사용 안 함'],['1','종료 이벤트 검증 수신']],v=>{policy.streaming=v==='1';refresh();}),'프리셋 스트림 설정도 켜져 있어야 합니다. OtherAx는 호스트 설정을 따릅니다.'),
-      status,guiEl('div',{class:'sga-note',text:'이 설정은 출력 한도와 추가 요청 여부만 바꿉니다. 분석 모델과 프롬프트는 바꾸지 않으며, 저장 시 실제 저장값을 다시 읽어 확인합니다.'})]);
+      status,guiEl('div',{class:'hint',text:'이 설정은 출력 한도와 추가 요청 여부만 바꿉니다. 분석 모델과 프롬프트는 바꾸지 않으며, 저장 시 실제 저장값을 다시 읽어 확인합니다.'})]);
     status.textContent=previewText();
     return panel;
   };
-  const buildResponseConsumerPolicyPanel = () => null;
+
 
 
   const libraRecallScoreTone = score => {
@@ -75129,7 +73465,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     return `TURN ${start}~${end}`;
   };
 
-  
+
   /* LIBRA ASSOCIATIVE RECALL GUI V1 START
      Stage 6. The research note is explicit about the order: "검색에 쓰이는 link/trace 구조를 먼저
      만든 뒤 GUI가 이를 읽도록 한다." Stages 1-4 built the structure; this reads it.
@@ -75228,20 +73564,20 @@ html,body{width:100%;height:100%;overflow:hidden}
     const sourceTitle = view.sourceText ? compact(view.sourceText.replace(/\s+/gu, ' '), 70) : '이번 회상의 직접 검색';
     const nodeButtons = new Map();
     const edgeRows = [];
-    const detailStatus = guiEl('span', { class: 'libra-assoc-detail-status' });
+    const detailStatus = guiEl('span', { class: "badge" });
     const detailTitle = guiEl('h4');
     const detailText = guiEl('p');
-    const detailPath = guiEl('div', { class: 'libra-assoc-detail-path' });
-    const detailRef = guiEl('small', { class: 'libra-assoc-detail-ref' });
-    const detail = guiEl('div', { class: 'libra-assoc-detail', 'aria-live': 'polite', dataset: { associativeDetail: 'true' } }, [
-      guiEl('div', { class: 'libra-assoc-detail-head' }, [guiEl('span', { text: '선택한 노드' }), detailStatus]),
+    const detailPath = guiEl('div', { class: "hint" });
+    const detailRef = guiEl('small', { class: "hint" });
+    const detail = guiEl('div', { class: "stack", 'aria-live': 'polite', dataset: { associativeDetail: 'true' } }, [
+      guiEl('div', { class: "cluster" }, [guiEl('span', { text: '선택한 노드' }), detailStatus]),
       detailTitle, detailText, detailPath,
-      guiEl('details', { class: 'libra-assoc-technical' }, [guiEl('summary', { text: '기술 정보' }), detailRef])
+      guiEl('details', { class: "stack" }, [guiEl('summary', { text: '기술 정보' }), detailRef])
     ]);
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'libra-assoc-wires');
     svg.setAttribute('aria-hidden', 'true');
-    const stage = guiEl('div', { class: 'libra-assoc-stage', dataset: { associativeGraph: 'true' } });
+    const stage = guiEl('div', { class: "hint", dataset: { associativeGraph: 'true' } });
     let selectedId = candidates[0]?.ref || bridgeRows[0]?.id || 'source';
     const statusLabel = { added: '추가됨', agreed: '이미 있음', omitted: '제외됨' };
     const choose = id => {
@@ -75282,10 +73618,10 @@ html,body{width:100%;height:100%;overflow:hidden}
     };
     const node = (id, type, title, extra = '', attrs = {}) => {
       const button = guiEl('button', {
-        class: `libra-assoc-node ${type}${attrs.outcome ? ` ${attrs.outcome}` : ''}`,
+        class: `row ${type}${attrs.outcome ? ` ${attrs.outcome}` : ''}`,
         type: 'button', 'aria-pressed': 'false',
         dataset: { associativeNode: id, ...(attrs.dataset || {}) }, onClick: () => choose(id)
-      }, [guiEl('span', { class: 'libra-assoc-node-type', text: type === 'memory' ? statusLabel[attrs.outcome] : type === 'bridge' ? '연결' : '대화' }),
+      }, [guiEl('span', { class: "hint", text: type === 'memory' ? statusLabel[attrs.outcome] : type === 'bridge' ? '연결' : '대화' }),
         guiEl('strong', { text: title }), extra ? guiEl('small', { text: extra }) : null].filter(Boolean));
       nodeButtons.set(id, button);
       return button;
@@ -75310,16 +73646,16 @@ html,body{width:100%;height:100%;overflow:hidden}
       if (bridges.has(id)) addEdge(id, candidate.ref, candidate.outcome);
     }
     stage.appendChild(svg);
-    stage.appendChild(guiEl('div', { class: 'libra-assoc-layer source' }, [guiEl('span', { text: '이번 대화의 단서' }), guiEl('div', { class: 'libra-assoc-nodes' }, [sourceNode])]));
-    if (bridgeNodes.length) stage.appendChild(guiEl('div', { class: 'libra-assoc-layer bridge' }, [guiEl('span', { text: '경유한 연결' }), guiEl('div', { class: 'libra-assoc-nodes' }, bridgeNodes)]));
-    if (memoryNodes.length) stage.appendChild(guiEl('div', { class: 'libra-assoc-layer memory' }, [guiEl('span', { text: '떠오른 기억' }), guiEl('div', { class: 'libra-assoc-nodes' }, memoryNodes)]));
-    const panel = guiEl('section', { class: `sga-card wide libra-assoc-panel${compactView ? ' compact' : ''}`, dataset: { associativeRecallPanel: 'true' } }, [
-      guiEl('div', { class: 'libra-assoc-head' }, [
+    stage.appendChild(guiEl('div', { class: "stack source" }, [guiEl('span', { text: '이번 대화의 단서' }), guiEl('div', { class: "row" }, [sourceNode])]));
+    if (bridgeNodes.length) stage.appendChild(guiEl('div', { class: "stack bridge" }, [guiEl('span', { text: '경유한 연결' }), guiEl('div', { class: "row" }, bridgeNodes)]));
+    if (memoryNodes.length) stage.appendChild(guiEl('div', { class: "stack memory" }, [guiEl('span', { text: '떠오른 기억' }), guiEl('div', { class: "row" }, memoryNodes)]));
+    const panel = guiEl('section', { class: `card wide stack${compactView ? ' compact' : ''}`, dataset: { associativeRecallPanel: 'true' } }, [
+      guiEl('div', { class: "cluster" }, [
         guiEl('div', {}, [guiEl('small', { text: 'LIBRA · 이번 턴의 회상' }), guiEl('h3', { text: '연상 연결' }), guiEl('p', { text: '단서에서 기억까지 이어진 길을 따라가 보세요' })]),
-        guiEl('span', { class: 'libra-assoc-mode', text: view.mode === 'participation' ? '참여' : '관측만' })
+        guiEl('span', { class: "stack", text: view.mode === 'participation' ? '참여' : '관측만' })
       ]),
       stage, detail,
-      guiEl('div', { class: 'libra-assoc-cost', dataset: { associativeCost: 'true' }, text: `모델 호출 ${view.providerCalls}회 · 회상 예산 ${view.budgetUnchanged ? '변화 없음' : '변경됨'}` })
+      guiEl('div', { class: "hint", dataset: { associativeCost: 'true' }, text: `모델 호출 ${view.providerCalls}회 · 회상 예산 ${view.budgetUnchanged ? '변화 없음' : '변경됨'}` })
     ]);
     const redraw = () => {
       if (typeof stage.getBoundingClientRect !== 'function' || !stage.isConnected) return;
@@ -75364,14 +73700,14 @@ html,body{width:100%;height:100%;overflow:hidden}
     const current = recall && libraRecallScopeIsCurrent(recall) ? recall : null;
     if (!current && !libraGuiText(delivery.scopeKey)) {
       if (hideWhenEmpty) return null;
-      return guiEl('div', { class: 'sga-card wide libra-recall-viewer' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), libraStatusBadge('대기', '')]),
-        guiEl('div', { class: 'sga-note', text: '아직 현재 채팅에서 실행된 LIBRA 리콜이 없습니다.' })
+      return guiEl('div', { class: "card stack" }, [
+        guiEl('div', { class: 'split' }, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), libraStatusBadge('대기', '')]),
+        guiEl('div', { class: 'hint', text: '아직 현재 채팅에서 실행된 LIBRA 리콜이 없습니다.' })
       ]);
     }
     if (delivery.scopeKey && !libraRecallScopeIsCurrent({ scopeKey: delivery.scopeKey, scope: delivery.scope })) {
       if (hideWhenEmpty) return null;
-      return guiEl('div', { class: 'sga-card wide libra-recall-viewer' }, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'sga-note', text: '현재 채팅에서는 아직 실행된 LIBRA 리콜이 없습니다.' })]);
+      return guiEl('div', { class: "card stack" }, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'hint', text: '현재 채팅에서는 아직 실행된 LIBRA 리콜이 없습니다.' })]);
     }
     const route = normalizeResponseInjectionMode(delivery.route || Runtime.lastInjectionMode || Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
     const routeDef = LIBRA_RESPONSE_MODE_UI[route];
@@ -75423,7 +73759,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       );
     }
 
-    const metrics = guiEl('div', { class: 'libra-recall-metrics' }, metricsItems.map(([label, value]) => guiEl('div', { class: 'libra-recall-metric' }, [guiEl('span', { text: String(label) }), guiEl('strong', { text: String(value) })])));
+    const metrics = guiEl('div', { class: "stack" }, metricsItems.map(([label, value]) => guiEl('div', { class: "stack" }, [guiEl('span', { text: String(label) }), guiEl('strong', { text: String(value) })])));
     const makeRow = row => {
       const score = Number(row.relevance || 0);
       const scoreText = Number.isFinite(score) ? score.toFixed(3) : '0.000';
@@ -75444,41 +73780,41 @@ html,body{width:100%;height:100%;overflow:hidden}
       const evidenceBadgeText = used && route === 'classic' && row.classicEvidenceRole === 'latest_relevant'
         ? '최신 관련 정본'
         : used ? `${routeDef.label} 근거` : '선택 제외';
-      return guiLazyDetails({ class: `libra-recall-row${used ? ' injected' : ' dropped'}` }, guiEl('summary', { class: 'libra-recall-row-head' }, [
-        guiEl('span', { class: `sga-badge ${used ? 'good' : 'warn'}`, text: evidenceBadgeText }),
-        guiEl('strong', { text: libraRecallTurnLabel(row) }), guiEl('span', { class: `sga-badge ${libraRecallScoreTone(score)}`, text: scoreText }),
-        guiEl('span', { class: 'libra-recall-row-labels', text: libraGuiArray(row.labels).join(' · ') || '종합' })
+      return guiLazyDetails({ class: `row${used ? ' injected' : ' dropped'}` }, guiEl('summary', { class: "cluster" }, [
+        guiEl('span', { class: `badge ${used ? 'good' : 'warn'}`, text: evidenceBadgeText }),
+        guiEl('strong', { text: libraRecallTurnLabel(row) }), guiEl('span', { class: `badge ${libraRecallScoreTone(score)}`, text: scoreText }),
+        guiEl('span', { class: "cluster", text: libraGuiArray(row.labels).join(' · ') || '종합' })
       ]), () => [
-        guiEl('div', { class: 'libra-recall-row-meta', text: [`revision ${Number(row.revision || 0)}`, signalText, libraGuiArray(row.recallLayers).length ? `계층 ${libraGuiArray(row.recallLayers).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
-        guiEl('div', { class: 'libra-recall-exact-label', text: used ? usedDescription : `선택됐지만 ${routeDef.label} 처리에는 사용되지 않은 발췌` }),
-        guiEl('div', { class: 'sga-live-result-text libra-recall-text', text: previewText || '(빈 발췌)' })
+        guiEl('div', { class: "hint", text: [`revision ${Number(row.revision || 0)}`, signalText, libraGuiArray(row.recallLayers).length ? `계층 ${libraGuiArray(row.recallLayers).join(' · ')}` : ''].filter(Boolean).join(' · ') }),
+        guiEl('div', { class: "setting__name", text: used ? usedDescription : `선택됐지만 ${routeDef.label} 처리에는 사용되지 않은 발췌` }),
+        guiEl('div', { class: "muted", text: previewText || '(빈 발췌)' })
       ]);
     };
     const visibleUsed = compactView ? usedRows.slice(0, 3) : usedRows;
     const statusText = error ? '리콜 실패' : skipped ? '리콜 건너뜀' : routeFailed ? `${routeDef.label} 실패` : usedRows.length ? `${routeDef.label} 전달 완료` : '선택된 기억 없음';
-    return guiEl('div', { class: 'sga-card wide libra-recall-viewer' }, [
-      guiEl('div', { class: 'sga-agent-head libra-recall-head' }, [
-        guiEl('div', {}, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'sga-note', text: [at ? libraFormatTime(at) : '', `mode ${routeDef.label}`, `query type ${queryType}`, `input ${inputSource} / ${inputConfidence}`].filter(Boolean).join(' · ') })]),
+    return guiEl('div', { class: "card stack" }, [
+      guiEl('div', { class: "split cluster" }, [
+        guiEl('div', {}, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'hint', text: [at ? libraFormatTime(at) : '', `mode ${routeDef.label}`, `query type ${queryType}`, `input ${inputSource} / ${inputConfidence}`].filter(Boolean).join(' · ') })]),
         libraStatusBadge(statusText, error || routeFailed ? 'danger' : skipped ? 'warn' : usedRows.length ? 'good' : '')
       ]),
-      queryText ? guiEl('div', { class: 'libra-recall-query' }, [guiEl('span', { text: '현재 인풋' }), guiEl('p', { text: compact(queryText, compactView ? 420 : 1600) })]) : null,
-      error ? guiEl('div', { class: 'sga-callout danger', text: error }) : null,
-      skipped ? guiEl('div', { class: 'sga-callout warn', text: skipReason === 'no_safe_current_user_input' ? '안전하게 식별된 현재 사용자 입력이 없어 이번 리콜을 건너뛰었습니다.' : `리콜 건너뜀: ${skipReason || 'unspecified'}` }) : null,
-      routeFailed ? guiEl('div', { class: 'sga-callout danger', text: ('' || 'SGA 실패') }) : null,
+      queryText ? guiEl('div', { class: "search" }, [guiEl('span', { text: '현재 인풋' }), guiEl('p', { text: compact(queryText, compactView ? 420 : 1600) })]) : null,
+      error ? guiEl('div', { class: 'note danger', text: error }) : null,
+      skipped ? guiEl('div', { class: 'note warn', text: skipReason === 'no_safe_current_user_input' ? '안전하게 식별된 현재 사용자 입력이 없어 이번 리콜을 건너뛰었습니다.' : `리콜 건너뜀: ${skipReason || 'unspecified'}` }) : null,
+      routeFailed ? guiEl('div', { class: 'note danger', text: ('' || 'SGA 실패') }) : null,
       metrics,
-      visibleUsed.length ? guiEl('div', { class: 'libra-recall-list' }, visibleUsed.map(makeRow)) : guiEl('div', { class: 'sga-note', text: error ? '오류 때문에 이번 요청에는 기억을 사용하지 않았습니다.' : skipped ? '현재 사용자 입력을 확정하지 못해 검색을 실행하지 않았습니다.' : `이번 요청에서 ${routeDef.label}가 사용할 정본 기억이 없습니다.` }),
-      !compactView && droppedRows.length ? guiLazyDetails({ class: 'libra-recall-dropped' }, guiEl('summary', { text: `선택됐지만 ${routeDef.label}가 사용하지 않은 기억 ${droppedRows.length}개` }), () => droppedRows.map(makeRow)) : null,
+      visibleUsed.length ? guiEl('div', { class: "list" }, visibleUsed.map(makeRow)) : guiEl('div', { class: 'hint', text: error ? '오류 때문에 이번 요청에는 기억을 사용하지 않았습니다.' : skipped ? '현재 사용자 입력을 확정하지 못해 검색을 실행하지 않았습니다.' : `이번 요청에서 ${routeDef.label}가 사용할 정본 기억이 없습니다.` }),
+      !compactView && droppedRows.length ? guiLazyDetails({ class: "stack" }, guiEl('summary', { text: `선택됐지만 ${routeDef.label}가 사용하지 않은 기억 ${droppedRows.length}개` }), () => droppedRows.map(makeRow)) : null,
       // Stage 6: the associative connection behind this turn's recall. It renders only when the stage
       // actually reached something, so an ordinary turn keeps this card exactly as it was.
       buildAssociativeRecallPanel({ hideWhenEmpty: true, compact: compactView }),
-      compactView ? guiEl('div', { class: 'sga-actions' }, [guiEl('button', { class: 'sga-btn', type: 'button', text: '이번 턴 리콜 전체 보기', onClick: () => libraGuiNavigate('recall') })]) : null
+      compactView ? guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn', type: 'button', text: '이번 턴 리콜 전체 보기', onClick: () => libraGuiNavigate('recall') })]) : null
     ]);
   };
 
   const buildLibraRecallPanel = (options = {}) => buildLibraRecallViewerPanel({ compact: false, ...options });
 
-  
-  
+
+
   // Notice visibility belongs to this GUI session, never to canonical failure storage.
   const bookMemoryFailureKey = row => JSON.stringify([
     row.startTurn, row.endTurn, row.runId, row.providerOperationId,
@@ -75537,96 +73873,63 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
 
   const closeCanonicalRangeDrawer = () => { try { Gui.canonicalRangeDrawerClose?.(); } catch (_) {} };
-  const showCanonicalRangeDrawer = async (mode = 'missing') => {
-    closeCanonicalRangeDrawer();
-    if (!Gui.root || !Gui.visible) return;
-    const overlay = guiEl('div', { class: 'libra-range-overlay', dataset: { canonicalRangeDrawer: 'true' } });
-    const panel = guiEl('section', { class: 'libra-range-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': '기억 생성 구간 선택' });
-    const body = guiEl('div', { class: 'libra-range-body' });
-    const notice = guiEl('p', { class: 'sga-note', text: '현재 채팅의 완성된 U+A 구간을 확인하고 있습니다.' });
-    const tiles = guiEl('div', { class: 'libra-range-grid' });
-    const selection = new Set();
-    let inventory = null, alive = true, currentMode = mode, running = false;
-    const status = guiEl('div', { class: 'sga-callout', role: 'status' });
-    const count = guiEl('span', { class: 'sga-note' });
-    const submit = guiEl('button', { class: 'sga-btn primary', type: 'button', text: '선택한 구간 생성', disabled: true });
-    const close = ({ completed = false } = {}) => {
-      if (!alive) return; alive = false;
-      
-      document.removeEventListener('keydown', keydown, true); overlay.remove();
-      if (Gui.canonicalRangeDrawerClose === close) Gui.canonicalRangeDrawerClose = null;
+  const showCanonicalRangeDrawer = async (mode='missing') => {
+    closeCanonicalRangeDrawer();if(!Gui.root||!Gui.visible)return;
+    const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_RANGE_DIALOG_HTML;
+    const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.canonicalRangeDrawer='true';overlay.dataset.canonicalRangeScope=binding.scopeKey;
+    const panel=overlay.querySelector('.dialog');panel.setAttribute('aria-label','기억 생성 구간 선택');
+    const list=overlay.querySelector('#seglist');list.replaceChildren();
+    const choices=overlay.querySelector('#kind-sel');choices.setAttribute('aria-label','기억 작업 종류');choices.replaceChildren(...optionNodes([['missing','누락 구간 생성 (기본)'],['failed','실패 구간 새 분석'],['source_edit','선택 구간 재분석'],['regenerate','기존 기억 재생성']],mode==='latest'?'missing':mode));
+    const submit=overlay.querySelector('#range-go'),status=overlay.querySelector('#kind-hint'),count=overlay.querySelector('#range-n'),calls=overlay.querySelector('#range-calls'),effect=overlay.querySelector('#range-effect');
+    submit.removeAttribute('data-close');submit.removeAttribute('data-run-job');submit.removeAttribute('data-ctx');
+    let inventory=null,alive=true,running=false,currentMode=mode==='latest'?'missing':mode;const selected=new Set();
+    const valid=()=>alive&&bindingKey===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.canonicalRangeScope===binding.scopeKey;
+    const close=()=>{if(!alive)return;alive=false;document.removeEventListener('keydown',escape,true);overlay.remove();if(Gui.canonicalRangeDrawerClose===close)Gui.canonicalRangeDrawerClose=null;};
+    const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}};Gui.canonicalRangeDrawerClose=close;
+    const eligible=row=>currentMode==='source_edit'?true:currentMode==='regenerate'?row.status==='saved':currentMode==='failed'?row.status==='failed':row.status==='missing';
+    const paint=()=>{
+      if(!alive||!inventory)return;
+      for(const start of [...selected])if(!inventory.ranges.some(row=>row.startTurn===start&&eligible(row)))selected.delete(start);
+      const labels={saved:'저장됨',missing:'미생성 · 누락 구간',failed:'미완료 · 새 분석 가능',source_changed:'원문 수정 · 선택 재분석 대기'};
+      list.replaceChildren(...inventory.ranges.map(row=>guiEl('label',{class:'segrow','aria-disabled':String(running||!eligible(row)),dataset:{startTurn:String(row.startTurn),rangeStatus:row.status}},[
+        guiEl('input',{type:'checkbox',checked:selected.has(row.startTurn),disabled:running||!eligible(row),'aria-label':`T${row.startTurn}–T${row.endTurn} 선택`,onChange:event=>{if(event.target.checked){if(currentMode==='regenerate')selected.clear();selected.add(row.startTurn);}else selected.delete(row.startTurn);paint();}}),
+        guiEl('div',{},[guiEl('b',{text:`T${row.startTurn}–T${row.endTurn}`}),guiEl('small',{text:labels[row.status]||row.status})]),libraStatusBadge(labels[row.status]||row.status,row.status==='saved'?'good':row.status==='failed'?'danger':'warn')
+      ])));
+      if(Number(inventory.pendingTurns)>0)list.prepend(guiEl('label',{class:'segrow','aria-disabled':'true'},[
+        guiEl('input',{type:'checkbox',disabled:true,'aria-label':'마지막 미완성 턴 선택 불가'}),guiEl('div',{},[guiEl('b',{text:`T${Number(inventory.completeBatches)*5+1}–T${inventory.observedTurns}`}),guiEl('small',{text:'미완료 · 5턴이 채워지지 않아 선택할 수 없음'})]),guiEl('span',{class:'badge',text:'대기'})
+      ]));
+      count.textContent=String(selected.size);calls.textContent=`${selected.size}회 (구간당 정상 생성 1회 · 모델 사용량이 발생할 수 있습니다)`;
+      const explanation=currentMode==='source_edit'?'성공하면 선택한 기존 기억을 교체하고 실패하면 기존 기억을 보존합니다.':currentMode==='regenerate'?'기존 정본을 보존하고 비활성 후보를 만듭니다. 비교 후 별도 채택해야 정본이 됩니다.':currentMode==='failed'?'실패 구간을 새로 분석하며 이미 저장된 정본은 보존합니다.':'완료된 5턴 누락 구간의 정본을 새로 저장합니다.';
+      status.textContent=explanation;effect.textContent=explanation;overlay.querySelector('#regen-one').hidden=currentMode!=='regenerate';
+      choices.disabled=running;submit.disabled=running||!selected.size;submit.textContent=currentMode==='source_edit'?'선택한 구간 재분석':currentMode==='regenerate'?'선택한 기억의 재생성 후보 만들기':'선택한 구간 생성';
+      overlay.querySelector('#seg-all').disabled=running;overlay.querySelector('#seg-none').disabled=running;
     };
-    const keydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } };
-    Gui.canonicalRangeDrawerClose = close;
-    const eligible = row => currentMode === 'source_edit' ? true : currentMode === 'regenerate' ? row.status === 'saved' : currentMode === 'failed' ? row.status === 'failed' : row.status === 'missing';
-    const paint = () => {
-      if (!alive || !inventory) return;
-      const rows = inventory.ranges;
-      for (const start of [...selection]) if (!rows.some(row => row.startTurn === start && eligible(row))) selection.delete(start);
-      const labels = { saved: '저장됨', missing: '미생성', failed: '미완료 · 새 분석 가능', source_changed: '원문 수정 · 선택 재분석 대기' };
-      tiles.replaceChildren(...rows.map(row => guiEl('button', {
-        type: 'button', class: `libra-range-tile${selection.has(row.startTurn) ? ' selected' : ''}`,
-        disabled: running || !eligible(row), 'aria-pressed': String(selection.has(row.startTurn)),
-        dataset: { startTurn: String(row.startTurn), rangeStatus: row.status },
-        onClick: event => { selection.has(row.startTurn) ? selection.delete(row.startTurn) : selection.add(row.startTurn); paint(); tiles.querySelector(`[data-start-turn="${row.startTurn}"]`)?.focus({ preventScroll: true }); }
-      }, [guiEl('strong', { text: `${row.startTurn}–${row.endTurn}턴` }), guiEl('span', { text: labels[row.status] || row.status })])));
-      count.textContent = `${selection.size}개 구간 선택 · ${selection.size * 5} U+A턴`;
-      submit.disabled = !selection.size || running;
-      choices.disabled = running;
-      controls.querySelectorAll('button').forEach(button => { button.disabled = running; });
-      submit.textContent = currentMode === 'source_edit' ? '선택한 구간 재분석' : currentMode === 'regenerate' ? '선택한 기억의 재생성 후보 만들기' : '선택한 구간 기억 생성';
-      status.textContent = currentMode === 'source_edit'
-        ? '현재 채팅의 선택한 구간을 다시 분석합니다. 성공하면 기존 기억을 바꾸고, 실패하면 기존 기억을 유지합니다. 모델 사용량이 발생할 수 있습니다.'
-        : currentMode === 'regenerate'
-        ? '기존 정본은 그대로 두고 새 후보를 만듭니다. 각 구간의 후보는 정본 작업 목록에서 비교한 뒤 채택합니다.'
-        : '선택한 구간은 이전 실패 작업을 폐기하고 새로 분석·저장합니다. 현재 상태는 빈 구간이나 확인할 내용이 있으면 보류하고 앞 구간부터 순서대로 반영합니다.';
-    };
-    const choices = guiEl('select', { 'aria-label': '기억 작업 종류', onChange: event => { currentMode = event.target.value; selection.clear(); paint(); } }, [
-      guiEl('option', { value: 'missing', text: '누락 구간 생성 (기본)', selected: mode === 'missing' || mode === 'latest' }),
-      guiEl('option', { value: 'failed', text: '실패 구간 새 분석', selected: mode === 'failed' }),
-      guiEl('option', { value: 'source_edit', text: '선택 구간 재분석', selected: mode === 'source_edit' }),
-      guiEl('option', { value: 'regenerate', text: '기존 기억 재생성', selected: mode === 'regenerate' })
-    ]);
-    const controls = guiEl('div', { class: 'sga-actions' }, [choices,
-      guiEl('button', { type: 'button', class: 'sga-btn', text: '전체 선택', onClick: () => { inventory?.ranges.filter(eligible).forEach(row => selection.add(row.startTurn)); paint(); } }),
-      guiEl('button', { type: 'button', class: 'sga-btn', text: '전체 해제', onClick: () => { selection.clear(); paint(); } })
-    ]);
-    panel.append(guiEl('div', { class: 'libra-range-head' }, [guiEl('div', {}, [guiEl('small', { text: 'MEMORY WORKBENCH' }), guiEl('h2', { text: '기억 생성 구간 선택' })]), guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', onClick: close })]));
-    body.append(notice, controls, status, tiles); panel.append(body, guiEl('div', { class: 'libra-range-footer' }, [count, submit])); overlay.append(panel);
-    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-    submit.addEventListener('click', async () => {
-      if (!alive || running || !inventory || !selection.size) return;
-      const request = { scopeKey: inventory.scopeKey, mode: currentMode, ranges: inventory.ranges.filter(row => selection.has(row.startTurn)).map(row => ({ startTurn: row.startTurn, sourceDigest: row.sourceDigest, identityDigest: row.identityDigest })) };
-      running = true; submit.disabled = true;
-      if (currentMode === 'source_edit') {
-        paint();
-        try {
-          await runCanonicalGuiCommand('선택한 수정 구간을 다시 분석합니다.', async () => {
-            const result = await LibraMemoryCore.startSelectedCanonicalBatches(request);
-            if (result?.ok !== true) throw new Error(result?.reason || 'SOURCE_EDIT_REANALYSIS_INCOMPLETE');
-            return result;
-          });
-          if (alive) close({ completed:true });
-        } catch (error) {
-          
-          if (alive) { running = false; paint(); status.textContent = String(error?.message || error); }
-        }
-        return;
-      }
-      close();
-      void runCanonicalGuiCommand('선택한 구간의 기억을 처리합니다.', () => LibraMemoryCore.startSelectedCanonicalBatches(request)).catch(() => null);
+    choices.addEventListener('change',event=>{currentMode=event.target.value;selected.clear();paint();});
+    overlay.querySelector('#seg-all').addEventListener('click',()=>{const rows=inventory?.ranges.filter(eligible)||[];selected.clear();for(const row of currentMode==='regenerate'?rows.slice(0,1):rows)selected.add(row.startTurn);paint();});
+    overlay.querySelector('#seg-none').addEventListener('click',()=>{selected.clear();paint();});
+    overlay.querySelector('.dialog__actions [data-close]').addEventListener('click',close);overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
+    submit.addEventListener('click',async()=>{
+      if(!valid()||!inventory||inventory.scopeKey!==binding.scopeKey){status.textContent='채팅·분기·scope가 바뀌었습니다. 구간 목록을 다시 열어 확인하세요.';submit.disabled=true;return;}
+      if(running||!selected.size)return;
+      const request={scopeKey:inventory.scopeKey,mode:currentMode,ranges:inventory.ranges.filter(row=>selected.has(row.startTurn)&&eligible(row)).map(row=>({startTurn:row.startTurn,sourceDigest:row.sourceDigest,identityDigest:row.identityDigest}))};
+      if(!request.ranges.length)return;running=true;paint();
+      if(currentMode==='source_edit'){
+        try{await runCanonicalGuiCommand('선택한 수정 구간을 다시 분석합니다.',async()=>{const result=await LibraMemoryCore.startSelectedCanonicalBatches(request);if(result?.ok!==true)throw new Error(result?.reason||'SOURCE_EDIT_REANALYSIS_INCOMPLETE');return result;});if(alive)close();}
+        catch(error){if(alive){running=false;paint();status.textContent=String(error.message||error);}}
+      }else{close();void runCanonicalGuiCommand('선택한 구간의 기억을 처리합니다.',()=>LibraMemoryCore.startSelectedCanonicalBatches(request)).catch(()=>null);}
     });
-    Gui.root.append(overlay); document.addEventListener('keydown', keydown, true);
-    try {
-      inventory = await LibraMemoryCore.listCanonicalBatchRanges();
-      if (!alive) return;
-      notice.textContent = `현재 ${inventory.observedTurns} U+A턴 · 완성 구간 ${inventory.completeBatches}개${inventory.pendingTurns ? ` · 마지막 ${inventory.pendingTurns}턴은 5턴이 될 때까지 선택할 수 없습니다.` : ''}`;
-      if (mode === 'latest') { currentMode = 'missing'; const last = inventory.ranges.filter(eligible).at(-1); if (last) selection.add(last.startTurn); }
-      if (mode === 'failed') inventory.ranges.filter(eligible).forEach(row => selection.add(row.startTurn));
-      paint();
-      if (!inventory.ranges.length) status.textContent = '아직 완성된 U+A 5턴 구간이 없습니다. 사용자 입력과 완료된 AI 응답 한 쌍을 1턴으로 계산합니다.';
-    } catch (error) { if (alive) { const d = libraMemoryFailureDiagnostic(error); notice.textContent = d.title; status.textContent = d.message; } }
+    Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);
+    try{
+      inventory=await LibraMemoryCore.listCanonicalBatchRanges();if(!valid())return;
+      if(inventory.scopeKey!==binding.scopeKey)throw new Error('CANONICAL_READER_SCOPE_CHANGED');
+      panel.querySelector('#dg-t').textContent=Object.values(LibraMemoryCore.peekSnapshot()?.manifest?.memories||{}).some(row=>row.status==='committed')?'기억 생성 구간 선택':'수동 콜드스타트 · 기억 생성 구간 선택';
+      status.textContent=`현재 ${inventory.observedTurns} U+A턴 · 완성 구간 ${inventory.completeBatches}개`;
+      if(mode==='latest'){const row=inventory.ranges.filter(eligible).at(-1);if(row)selected.add(row.startTurn);}if(mode==='failed')inventory.ranges.filter(eligible).forEach(row=>selected.add(row.startTurn));paint();
+      if(!inventory.ranges.length)status.textContent='아직 완성된 U+A 5턴 구간이 없습니다. 사용자 입력과 완료된 AI 응답 한 쌍을 1턴으로 계산합니다.';
+    }catch(error){status.textContent=String(error.message||error);submit.disabled=true;}
   };
+
   const buildBookMemoryModelSummary = () => {
     const settings = Runtime.settings;
     const resolved = settings ? resolvePreset(settings, LIBRARIAN_STAGE_ID) : null;
@@ -75650,18 +73953,18 @@ html,body{width:100%;height:100%;overflow:hidden}
       embed.enabled === false ? '사용 안 함' : '',
       EmbeddingProviderRegistry.getCapabilities(embed.provider).label
     ].filter(Boolean).join(' · ');
-    const item = (kind, label, model, meta, controls = null) => guiEl('div', { class: 'libra-memory-model-item', dataset: { memoryModel: kind } }, [
-      guiEl('span', { class: 'libra-memory-model-label', text: label }),
+    const item = (kind, label, model, meta, controls = null) => guiEl('div', { class: "row", dataset: { memoryModel: kind } }, [
+      guiEl('span', { class: "setting__name", text: label }),
       guiEl('strong', { text: model }), guiEl('small', { text: meta }), controls
     ]);
-    const analysisControls = slot ? guiEl('div', { class: 'libra-memory-model-controls' }, [
+    const analysisControls = slot ? guiEl('div', { class: "cluster" }, [
       selectNode(selectedBinding, presetChoicesFromState(true), value => {
         slot.presetName = value;
         slot.preset = value;
         queueGuiRender(0, 'body');
       }),
       guiEl('button', {
-        class: 'sga-btn', type: 'button', dataset: { guiSaveLabel: 'AI 프리셋 저장', memoryModelSave: 'analysis' },
+        class: 'btn', type: 'button', dataset: { guiSaveLabel: 'AI 프리셋 저장', memoryModelSave: 'analysis' },
         text: Gui.dirty ? 'AI 프리셋 저장' : '저장됨', disabled: !Gui.dirty,
         onClick: async () => {
           try {
@@ -75672,9 +73975,9 @@ html,body{width:100%;height:100%;overflow:hidden}
         }
       })
     ]) : null;
-    return guiEl('div', { class: 'libra-memory-model-summary', 'aria-label': '기억 작성 모델 설정' }, [
+    return guiEl('div', { class: "stack", 'aria-label': '기억 작성 모델 설정' }, [
       item('analysis', 'AI 분석 · Librarian', analysisModel, analysisMeta, analysisControls),
-      item('embedding', '임베딩', embeddingModel, embeddingMeta, guiEl('button',{class:'sga-btn',type:'button',text:'모델 설정',onClick:()=>selectBookSettingsRoomSection('embedding')}))
+      item('embedding', '임베딩', embeddingModel, embeddingMeta, guiEl('button',{class:'btn',type:'button',text:'모델 설정',onClick:()=>selectBookSettingsRoomSection('embedding')}))
     ]);
   };
 
@@ -75692,28 +73995,28 @@ html,body{width:100%;height:100%;overflow:hidden}
     const partialMemories=savedMemories.filter(ref=>ref.pipelineStatus==='partial').length;
     const stateThrough=Number(snapshot?.continuityState?.throughTurn||0);
     const stateWaiting=savedMemories.filter(ref=>Number(ref.turnRange?.end||0)>stateThrough).length;
-    return guiEl('section', { class: 'sga-card wide libra-memory-progress', dataset: { memoryProgress: 'true' } }, [
-      guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: '기억 작성 현황' }), guiEl('span', { class: 'sga-badge', text: turns == null ? '채팅 확인 중' : `현재 U+A ${turns}턴` })]),
-      guiEl('div', {class:'sga-note',dataset:{memoryStateProgress:'true'},text:'저장된 기억 '+savedMemories.length+'개'+(partialMemories?' · '+partialMemories+'개 구간 부분 저장':'')+' · 상태 반영 '+stateThrough+'턴까지'+(stateWaiting?' · '+stateWaiting+'개 구간 상태 반영 대기':snapshot?.continuityState?.status==='partial'?' · 일부 상태 확인 필요':'')}),
+    return guiEl('section', { class: "card", dataset: { memoryProgress: 'true' } }, [
+      guiEl('div', { class: 'split' }, [guiEl('h3', { text: '기억 작성 현황' }), guiEl('span', { class: 'badge', text: turns == null ? '채팅 확인 중' : `현재 U+A ${turns}턴` })]),
+      guiEl('div', {class:'hint',dataset:{memoryStateProgress:'true'},text:'저장된 기억 '+savedMemories.length+'개'+(partialMemories?' · '+partialMemories+'개 구간 부분 저장':'')+' · 상태 반영 '+stateThrough+'턴까지'+(stateWaiting?' · '+stateWaiting+'개 구간 상태 반영 대기':snapshot?.continuityState?.status==='partial'?' · 일부 상태 확인 필요':'')}),
       guiEl('p', { text: turns == null ? '채팅을 읽은 뒤 현재 턴과 다음 기억 생성 시점을 표시합니다.' : `현재 ${turns}턴 · 다음 기억 생성까지 ${next - turns}턴 · 생성 가능한 구간 ${complete}개` }),
       buildBookMemoryModelSummary(),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn primary', type: 'button', text: '기억 생성', dataset:{bookMemoryCreate:'true'}, disabled:!available, onClick: () => void showCanonicalRangeDrawer('missing') }),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '재분석', dataset:{bookMemoryReanalyze:'true'}, disabled:!available||complete===0, onClick: () => void showCanonicalRangeDrawer('source_edit') })
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '기억 생성', dataset:{bookMemoryCreate:'true'}, disabled:!available, onClick: () => void showCanonicalRangeDrawer('missing') }),
+        guiEl('button', { class: 'btn', type: 'button', text: '재분석', dataset:{bookMemoryReanalyze:'true'}, disabled:!available||complete===0, onClick: () => void showCanonicalRangeDrawer('source_edit') })
       ]),
       guiEl('div',{dataset:{bookDeskJob:'true'}},[buildBookJobSummary()]),
-      diagnostic ? guiEl('div', { class: 'sga-callout danger libra-memory-failure-notice', role: 'status', dataset: { memoryFailureNotice: 'true' } }, [
-        guiEl('div', { class: 'libra-memory-failure-head' }, [
+      diagnostic ? guiEl('div', { class: "note danger banner banner--warn", role: 'status', dataset: { memoryFailureNotice: 'true' } }, [
+        guiEl('div', { class: "split" }, [
           guiEl('strong', { text: diagnostic.title + (diagnostic.code === 'MODEL_DECLINED' ? ' · ' + String(lastFailure.startTurn || '?') + '–' + String(lastFailure.endTurn || Number(lastFailure.startTurn || 0) + 4) + '턴 미생성' : '') }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', 'aria-label': '기억 생성 실패 안내 닫기', onClick: () => dismissBookMemoryFailureNotice(snapshot) })
+          guiEl('button', { class: 'btn', type: 'button', text: '닫기', 'aria-label': '기억 생성 실패 안내 닫기', onClick: () => dismissBookMemoryFailureNotice(snapshot) })
         ]),
         guiEl('p', { text: diagnostic.message })
       ]) : null,
-      failures.length ? guiLazyDetails({ class: 'libra-memory-failure-summary', dataset: { memoryFailureSummary: 'true' } },
+      failures.length ? guiLazyDetails({ class: "split", dataset: { memoryFailureSummary: 'true' } },
         guiEl('summary', { text: '미완료 구간 ' + failures.length + '개 · 상세 진단' }),
         () => failures.map(row => {
           const info = libraMemoryFailureDiagnostic([row.errorCode,row.error || row.reason || row.message].filter(Boolean).join(': '));
-          return guiEl('div', { class: 'libra-memory-failure-record' }, [
+          return guiEl('div', { class: "note" }, [
             guiEl('strong', { text: String(row.startTurn || '?') + '–' + String(row.endTurn || Number(row.startTurn || 0) + 4) + '턴 · ' + info.title }),
             guiEl('p', { text: info.message }), guiEl('pre', { text: info.raw })
           ]);
@@ -75721,14 +74024,14 @@ html,body{width:100%;height:100%;overflow:hidden}
     ]);
   };
 
-  const buildCanonicalActionPanel = () => guiEl('section', { class: 'sga-card wide canonical-action-panel' }, [
+  const buildCanonicalActionPanel = () => guiEl('section', { class: 'card canonical-action-panel' }, [
     guiEl('h3', { text: '정본 수동 작업' }),
-    guiEl('button', { class: 'sga-btn primary', type: 'button', text: '5턴 구간 선택 · 다중 분석', onClick: () => void showCanonicalRangeDrawer('missing') }),
-    guiEl('div', { class: 'sga-note', text: '모든 작업은 중앙 작업창에 실제 단계와 배치 수를 표시합니다. 창을 최소화하면 헤더 진행 칩으로 계속 추적할 수 있습니다.' }),
-    guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, [
-      guiEl('button', { class: 'sga-btn good', type: 'button', text: '수동 콜드스타트', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } }),
-      guiEl('button', { class: 'sga-btn primary', type: 'button', text: '현재 5턴 분석', onClick: () => { void runCanonicalGuiCommand('현재 완성된 5턴을 분석합니다.', () => LibraMemoryCore.startManualCanonicalScan({})).catch(() => null); } }),
-      guiEl('button', { class: 'sga-btn', type: 'button', text: '실패 구간 새 분석', onClick: () => { void runCanonicalGuiCommand('실패 배치를 다시 처리합니다.', () => LibraMemoryCore.startFailedRetry({})).catch(() => null); } })
+    guiEl('button', { class: 'btn btn--primary', type: 'button', text: '5턴 구간 선택 · 다중 분석', onClick: () => void showCanonicalRangeDrawer('missing') }),
+    guiEl('div', { class: 'hint', text: '모든 작업은 중앙 작업창에 실제 단계와 배치 수를 표시합니다. 창을 최소화하면 헤더 진행 칩으로 계속 추적할 수 있습니다.' }),
+    guiEl('div', { class: 'cluster', style: { marginTop: '10px' } }, [
+      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } }),
+      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '현재 5턴 분석', onClick: () => { void runCanonicalGuiCommand('현재 완성된 5턴을 분석합니다.', () => LibraMemoryCore.startManualCanonicalScan({})).catch(() => null); } }),
+      guiEl('button', { class: 'btn', type: 'button', text: '실패 구간 새 분석', onClick: () => { void runCanonicalGuiCommand('실패 배치를 다시 처리합니다.', () => LibraMemoryCore.startFailedRetry({})).catch(() => null); } })
     ])
   ]);
 
@@ -75739,36 +74042,37 @@ html,body{width:100%;height:100%;overflow:hidden}
     const valid = () => Gui.visible && (!Gui.bookPage || Gui.bookPage === 'memory') && serial === Gui.canonicalVariantDialogSerial && canonicalReaderBindingKey(binding) === canonicalReaderBindingKey(canonicalReaderBinding());
     let host = Gui.app?.querySelector('[data-canonical-variant-dialog]');
     if (host) host.remove();
-    host = guiEl('div', { class: 'canonical-job-overlay', dataset: { canonicalVariantDialog: 'true' } });
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_VERSIONS_DRAWER_HTML;
+    host=template.content.firstElementChild;host.classList.add('is-open');host.setAttribute('aria-hidden','false');host.dataset.canonicalVariantDialog='true';host.dataset.variantScope=binding.scopeKey;
     const close = () => { if (serial === Gui.canonicalVariantDialogSerial) Gui.canonicalVariantDialogSerial += 1; host.remove(); };
-    const body = guiEl('div', { class: 'sga-list-items' }, [guiEl('p', { text: '버전 기록을 읽는 중입니다.' })]);
-    const pager = guiEl('div', { class: 'sga-actions' });
-    host.appendChild(guiEl('div', { class: 'canonical-job-window' }, [
-      guiEl('div', { class: 'canonical-job-head' }, [guiEl('strong', { text: `TURN ${startTurn}~${Number(startTurn) + 4} 버전 기록` }), guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', onClick: close })]), body, pager
-    ]));
-    Gui.app?.appendChild(host);
+    host.querySelector('[data-fill="mem"]').textContent=startTurn>0?`T${startTurn}–T${Number(startTurn)+4}`:'현재 범위';
+    host.querySelector('[data-close]').removeAttribute('data-close');host.querySelector('.drawer__head button').onclick=close;host.querySelector('.drawer__head button').textContent='×';
+    const body=host.querySelector('#ver-rows'),pager=guiEl('div',{class:'cluster'});
+    body.replaceChildren(guiEl('p',{class:'hint',text:'버전 기록을 읽는 중입니다.'}));body.after(pager);
+    host.querySelector('#run-rows').replaceChildren(buildSharedExecutionLogsPanel());
+    host.addEventListener('click',event=>{if(event.target===host)close();});Gui.app?.appendChild(host);bindApprovedOverlayKeyboard(host,close);
     try {
       const listing = await LibraMemoryCore.listCanonicalVariants({ startTurn, page: requestedPage, pageSize: 10, expectedScopeKey: binding.scopeKey });
       if (!valid()) { host.remove(); return; }
       const pageCount = Math.max(1, Math.ceil(Number(listing.total || 0) / 10));
       if (requestedPage > pageCount) return await showCanonicalVariantDialog(startTurn, pageCount);
       const mutate = async command => { if (!valid()) return; try { await command(); if (valid()) await showCanonicalVariantDialog(startTurn, requestedPage); } catch (error) { if (valid()) guiSetStatus(String(error?.message || error), true, true); } };
-      const rows = guiAsArray(listing.variants).map(variant => guiEl('div', { class: 'sga-card' }, [
+      const rows = guiAsArray(listing.variants).map(variant => guiEl('div', { class: 'ver-row',dataset:{variantId:String(variant.variantId)} }, [
         guiEl('strong', { text: `revision ${variant.revision} · ${variant.status}` }),
-        guiEl('div', { class: 'sga-note', text: `${variant.variantId} · ${libraFormatTime(variant.updatedAt)}` }),
-        guiEl('div', { class: 'sga-actions' }, [
-          variant.status !== 'active' ? guiEl('button', { class: 'sga-btn good', type: 'button', text: '비교 후 정본으로 올리기', onClick: () => mutate(async () => { await LibraMemoryCore.selectCanonicalVariant({ variantId: variant.variantId, expectedScopeKey: binding.scopeKey }); if (valid()) close(); }) }) : null,
-          variant.status !== 'active' ? guiEl('button', { class: 'sga-btn danger', type: 'button', text: '삭제', onClick: () => { if (typeof confirm === 'function' && !confirm('이 비활성 버전과 벡터·상태 delta를 삭제할까요?')) return; return mutate(() => LibraMemoryCore.deleteCanonicalVariant({ variantId: variant.variantId, expectedScopeKey: binding.scopeKey })); } }) : null
+        guiEl('div', { class: 'hint', text: `${variant.variantId} · ${libraFormatTime(variant.updatedAt)}` }),
+        guiEl('div', { class: 'cluster' }, [
+          variant.status !== 'active' ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: '비교 후 정본으로 올리기', onClick: () => mutate(async () => { await LibraMemoryCore.selectCanonicalVariant({ variantId: variant.variantId, expectedScopeKey: binding.scopeKey }); if (valid()) close(); }) }) : null,
+          variant.status !== 'active' ? guiEl('button', { class: 'btn btn--danger', type: 'button', text: '삭제', onClick: async () => { if (!(await confirmApprovedOperation('이 비활성 버전과 벡터·상태 delta를 삭제할까요?',{title:'비활성 버전 삭제',target:variant.variantId,validate:valid,template:LIBRA_APPROVED_DELETE_VERSION_DIALOG_HTML,actionLabel:'삭제'}))) return; return mutate(() => LibraMemoryCore.deleteCanonicalVariant({ variantId: variant.variantId, expectedScopeKey: binding.scopeKey })); } }) : null
         ])
       ]));
       body.replaceChildren(...(rows.length ? rows : [guiEl('p', { text: '버전 기록이 없습니다.' })]));
       pager.replaceChildren(
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '이전 페이지', disabled: requestedPage <= 1, onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage - 1) }),
+        guiEl('button', { class: 'btn', type: 'button', text: '이전 페이지', disabled: requestedPage <= 1, onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage - 1) }),
         guiEl('span', { text: `${requestedPage} / ${pageCount} · ${listing.total}개` }),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '다음 페이지', disabled: requestedPage >= pageCount, onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage + 1) })
+        guiEl('button', { class: 'btn', type: 'button', text: '다음 페이지', disabled: requestedPage >= pageCount, onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage + 1) })
       );
     } catch (error) {
-      if (valid()) body.replaceChildren(guiEl('p', { text: String(error?.message || error) }), guiEl('button', { class: 'sga-btn', type: 'button', text: '다시 읽기', onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage) }));
+      if (valid()) body.replaceChildren(guiEl('p', { class: 'banner banner--warn', text: String(error?.message || error) }), guiEl('button', { class: 'btn', type: 'button', text: '다시 읽기', onClick: () => valid() && void showCanonicalVariantDialog(startTurn, requestedPage) }));
     }
   };
 
@@ -75779,7 +74083,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     const memories = (snapshot.memories || []).slice();
     if (worldManagerCanonicalMemoryFocus?.memory && !memories.some(row => String(row?.memoryId || '') === String(worldManagerCanonicalMemoryFocus.memoryId || '') && Number(row?.revision || 0) === Number(worldManagerCanonicalMemoryFocus.revision || 0))) memories.push(worldManagerCanonicalMemoryFocus.memory);
     const total = Math.max(Number(snapshot.totals?.memories ?? memories.length), memories.length);
-    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'sga-note', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'sga-card wide' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'sga-note', text: '완성된 5턴이 있다면 수동 콜드스타트로 기존 세션의 누락 정본을 생성할 수 있습니다.' }), guiEl('button', { class: 'sga-btn good', type: 'button', text: '수동 콜드스타트 실행', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } })])]);
+    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'card' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'hint', text: '완성된 5턴이 있다면 수동 콜드스타트로 기존 세션의 누락 정본을 생성할 수 있습니다.' }), guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트 실행', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } })])]);
     const ordered = memories.slice().reverse();
     if (worldManagerCanonicalMemoryFocus) ordered.sort((left,right) => {
       const leftFocused=String(left?.memoryId||'')===String(worldManagerCanonicalMemoryFocus.memoryId||'')&&Number(left?.revision||0)===Number(worldManagerCanonicalMemoryFocus.revision||0);
@@ -75799,7 +74103,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         .map(([stage, value]) => `${LibraMemoryCore.STAGE_LABELS[stage] || stage}: ${value.profileName}${value.customAddendumApplied ? ' + 추가 지시' : ''}`)
         .join(' · ') || '기본';
       const worldManagerFocused = !!worldManagerCanonicalMemoryFocus && String(memory?.memoryId||'')===String(worldManagerCanonicalMemoryFocus.memoryId||'') && Number(memory?.revision||0)===Number(worldManagerCanonicalMemoryFocus.revision||0);
-      return guiLazyDetails({ class: 'sga-card wide', open: worldManagerFocused, dataset: { canonicalMemoryId: memory.memoryId || '', canonicalRevision: String(Number(memory.revision || 0)), worldManagerFocus: String(worldManagerFocused) } }, guiEl('summary', {}, [
+      return guiLazyDetails({ class: 'card', open: worldManagerFocused, dataset: { canonicalMemoryId: memory.memoryId || '', canonicalRevision: String(Number(memory.revision || 0)), worldManagerFocus: String(worldManagerFocused) } }, guiEl('summary', {}, [
         guiEl('strong', { text: `TURN ${memory.turnRange.start}~${memory.turnRange.end}` }),
         guiEl('span', { text: `revision ${memory.revision} · ${memory.pipeline?.status === 'partial' ? '부분 정본 · ' : ''}${embeddingDisplay.text}` })
       ]), async () => {
@@ -75808,232 +74112,63 @@ html,body{width:100%;height:100%;overflow:hidden}
         failedItoStages = Array.isArray(memory?.pipeline?.failedItoStages) ? memory.pipeline.failedItoStages : [];
         promptProfileSummary = Object.entries(memory.promptProvenance?.stages || {}).filter(([, value]) => value?.profileName).map(([stage, value]) => `${LibraMemoryCore.STAGE_LABELS[stage] || stage}: ${value.profileName}${value.customAddendumApplied ? ' + 추가 지시' : ''}`).join(' · ') || '기본';
         return [
-        guiEl('div', { class: 'sga-summary-table', style: { marginTop: '12px' } }, [
-          guiEl('span', { text: '메모리 ID' }), guiEl('strong', { text: memory.memoryId }),
-          guiEl('span', { text: '정본 상태' }), guiEl('strong', { text: memory.status }),
-          guiEl('span', { text: '파이프라인' }), guiEl('strong', { text: memory.artifactValidation?.admission?.status==='partial' ? '부분 저장 · 정상 항목 보존, 제외 항목 확인 필요' : memory.pipeline?.status === 'partial' ? `부분 정본 · ${failedItoStages.map(item => LibraMemoryCore.STAGE_LABELS[item?.stage] || item?.stage).filter(Boolean).join(', ') || '일부 확인 필요'}` : '완료' }),
-          guiEl('span', { text: '원문 digest' }), guiEl('strong', { text: memory.sourceDigest }),
-          guiEl('span', { text: '생성 시각' }), guiEl('strong', { text: libraFormatTime(memory.updatedAt) }),
-          guiEl('span', { text: '임베딩' }), guiEl('strong', { text: embeddingDisplay.text }),
-          guiEl('span', { text: '검색 인덱스' }), guiEl('strong', { text: memory.retrieval?.version || memory.embedding?.projectionVersion || 'legacy' }),
-          guiEl('span', { text: '프롬프트 프로필' }), guiEl('strong', { text: promptProfileSummary })
+        guiEl('dl', { class: 'kv', style: { marginTop: '12px' } }, [
+          guiEl('dt', { text: '메모리 ID' }), guiEl('dd', { text: memory.memoryId }),
+          guiEl('dt', { text: '정본 상태' }), guiEl('dd', { text: memory.status }),
+          guiEl('dt', { text: '파이프라인' }), guiEl('dd', { text: memory.artifactValidation?.admission?.status==='partial' ? '부분 저장 · 정상 항목 보존, 제외 항목 확인 필요' : memory.pipeline?.status === 'partial' ? `부분 정본 · ${failedItoStages.map(item => LibraMemoryCore.STAGE_LABELS[item?.stage] || item?.stage).filter(Boolean).join(', ') || '일부 확인 필요'}` : '완료' }),
+          guiEl('dt', { text: '원문 digest' }), guiEl('dd', { text: memory.sourceDigest }),
+          guiEl('dt', { text: '생성 시각' }), guiEl('dd', { text: libraFormatTime(memory.updatedAt) }),
+          guiEl('dt', { text: '임베딩' }), guiEl('dd', { text: embeddingDisplay.text }),
+          guiEl('dt', { text: '검색 인덱스' }), guiEl('dd', { text: memory.retrieval?.version || memory.embedding?.projectionVersion || 'legacy' }),
+          guiEl('dt', { text: '프롬프트 프로필' }), guiEl('dd', { text: promptProfileSummary })
         ]),
-        ...(memory.artifactValidation?.admission?.status==='partial' ? [guiLazyDetails({},guiEl('summary',{text:'부분 저장 · 제외 항목과 사유'}),()=>guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(memory.artifactValidation.admission,null,2)}))] : []),
+        ...(memory.artifactValidation?.admission?.status==='partial' ? [guiLazyDetails({},guiEl('summary',{text:'부분 저장 · 제외 항목과 사유'}),()=>guiEl('pre',{class:'code',text:JSON.stringify(memory.artifactValidation.admission,null,2)}))] : []),
         guiEl('h4', { text: '최종 종합 메모리' }),
-        guiEl('pre', { class: 'sga-live-result-code', text: memory.text }),
-        guiLazyDetails({}, guiEl('summary', { text: '검색 영역·anchor·원문 U+A' }), () => guiEl('pre', { class: 'sga-live-result-code', text: JSON.stringify({ sourcePairs: memory.sourcePairs, promptProvenance: memory.promptProvenance || null, recallKeys: memory.recallKeys, sections: memory.sections, anchors: memory.anchors, retrieval: memory.retrieval, embedding: memory.embedding }, null, 2) })),
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn primary', type: 'button', text: '재생성', onClick: () => { void runCanonicalGuiCommand('정본 재생성 후보를 만듭니다.', () => LibraMemoryCore.regenerateCanonicalMemory({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '수정', onClick: () => { void runCanonicalGuiCommand('정본 수정용 복사본을 만듭니다.', () => LibraMemoryCore.createCanonicalEditDraft({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '버전 기록', onClick: () => { void showCanonicalVariantDialog(Number(memory.turnRange.start)).catch(error => guiSetStatus(error.message || String(error), true, true)); } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '실행 기록', onClick: () => { Gui.libraSelectedRunId = memory.runId; libraGuiNavigate('runs'); } })
+        guiEl('pre', { class: 'code', text: memory.text }),
+        guiLazyDetails({}, guiEl('summary', { text: '검색 영역·anchor·원문 U+A' }), () => guiEl('pre', { class: 'code', text: JSON.stringify({ sourcePairs: memory.sourcePairs, promptProvenance: memory.promptProvenance || null, recallKeys: memory.recallKeys, sections: memory.sections, anchors: memory.anchors, retrieval: memory.retrieval, embedding: memory.embedding }, null, 2) })),
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '재생성', onClick: () => { void runCanonicalGuiCommand('정본 재생성 후보를 만듭니다.', () => LibraMemoryCore.regenerateCanonicalMemory({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '수정', onClick: () => { void runCanonicalGuiCommand('정본 수정용 복사본을 만듭니다.', () => LibraMemoryCore.createCanonicalEditDraft({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '버전 기록', onClick: () => { void showCanonicalVariantDialog(Number(memory.turnRange.start)).catch(error => guiSetStatus(error.message || String(error), true, true)); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '실행 기록', onClick: () => { Gui.libraSelectedRunId = memory.runId; libraGuiNavigate('runs'); } })
         ])
         ];
       });
     });
     return guiEl('div', {}, [
       buildCanonicalActionPanel(),
-      guiEl('div', { class: 'sga-note', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }),
+      guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }),
       // Stage 6: the link path behind the current recall, on the World Manager detail surface. It sits
       // above the memory cards because it explains why a memory may be there at all — the same reason the
       // Evidence surface renders it after the verified chain rather than before it.
       buildAssociativeRecallPanel({ hideWhenEmpty: true, compact: true }),
-      guiEl('div', { class: 'sga-list-items' }, [...cards, guiLoadMoreControl('memories', total, '기억')])
+      guiEl('div', { class: 'list' }, [...cards, guiLoadMoreControl('memories', total, '기억')])
     ]);
   };
 
-  
-  
-  
-  const buildUnifiedStorageStatusPanel = () => {
-    const result=guiEl('span',{class:'sga-note',dataset:{unifiedStorageResult:'true'},text:'미확인',style:{whiteSpace:'pre-line',overflowWrap:'anywhere'}});
-    // 버튼과 상태를 한 줄에 둔다. 이전에는 버튼 아래에 상태가 따로 떨어져 '미확인'만
-    // 홀로 남아 어느 버튼의 결과인지 읽히지 않았다.
-    const panel=guiEl('div',{class:'sga-actions libra-unified-storage-status',dataset:{unifiedStorageStatus:'true'}},[
-      guiEl('button',{class:'sga-btn',type:'button',text:'통합 저장 지원 확인',onClick:async()=>{
-        const serial=Gui.openSerial;
-        try{const status=await LibraMemoryCore.getUnifiedStorageStatus();if(Gui.openSerial!==serial||!result.isConnected)return;
-          result.textContent=status.summary+(['server_only','mirror'].includes(status.mode)&&status.eligible?'\n정본·상태·교정·임베딩: 조건부 저장\n분기·승계·구형 전환·다중 writer: 이 모드에서는 차단':'')+(!status.eligible?'\n'+status.blocked.join(', '):'');
-          result.dataset.status=status.eligible?'supported':'blocked';result.dataset.mode=status.mode;
-        }catch(error){if(Gui.openSerial===serial&&result.isConnected){result.textContent=String(error.message||error);result.dataset.status='error';}}
-      }}),result]);
-    return panel;
-  };
 
-  const buildLibraMemorySettingsPanel = () => {
-    if (!Gui.memorySettingsDraft) {
-      Gui.memorySettingsDraft = LibraMemoryCore.getSettings();
-      Gui.memorySettingsBasisHash = LibraMemoryCore.memorySettingsHash(Gui.memorySettingsDraft);
-    }
-    const settings = Gui.memorySettingsDraft;
-    const presets = LibraMemoryCore.listPerformancePresets();
-    const activePreset = settings.performancePreset || 'custom';
-    const activePresetMeta = presets.find(preset => preset.id === activePreset) || presets.find(preset => preset.id === 'custom');
-    const performanceFieldSet = new Set([
-      'recallMaxMemories', 'candidateLimit', 'gateHighCosine', 'gateSparse', 'recallMaxChars',
-      'excerptSentenceWindow', 'maxSectionsPerMemory', 'maxSpansPerSection', 'semanticSpanScoreFloorRatio'
-    ]);
-    const update = patch => {
-      const nextPatch = { ...patch };
-      if (Object.keys(nextPatch).some(key => performanceFieldSet.has(key))) nextPatch.performancePreset = 'custom';
-      Gui.memorySettingsDraft = { ...Gui.memorySettingsDraft, ...nextPatch };
-      markGuiDirty();
-    };
-    const toggle = (key, label) => checkboxNode(settings[key] !== false, label, value => update({ [key]: value }));
-    const numberInput = (key, value, min, max, step = 1) => guiEl('input', {
-      class: 'sga-input', type: 'number', value, min, max, step,
-      onInput: event => update({ [key]: Number(event.target.value) })
-    });
-    const current = Gui.memorySettingsDraft;
-    const recallBlendPercent = () => {
-      const similarity = Math.max(0, Number(Gui.memorySettingsDraft.recallSimilarityWeight || 0));
-      const recency = Math.max(0, Number(Gui.memorySettingsDraft.recallRecencyWeight || 0));
-      const total = similarity + recency || 1;
-      return { similarity: Math.round(similarity / total * 100), recency: Math.round(recency / total * 100) };
-    };
-    const updateRecallBlend = (side, rawValue) => {
-      const value = Math.max(0, Math.min(100, Number(rawValue) || 0));
-      const similarityPct = side === 'similarity' ? value : 100 - value;
-      update({
-        recallSimilarityWeight: Number((similarityPct / 100).toFixed(4)),
-        recallRecencyWeight: Number(((100 - similarityPct) / 100).toFixed(4))
-      });
-      renderSettingsGui();
-    };
-    const blend = recallBlendPercent();
-    return guiEl('div', { class: 'sga-flow-section' }, [
-      guiEl('div', { class: 'sga-card wide' }, [
-        // 제목은 하나만 h3 로 두고, 구현 주체는 라벨(eyebrow)로 내린다. 두 줄을 모두 h3 로 두면
-        // 폰트 크기·굵기·색·여백이 전부 같아 위계가 사라지고 한 제목처럼 읽힌다. 이 문자열은
-        // 'Librarian 단일 분석기로 통합됐다'는 계약 선언이라 지우지 않고 라벨로 유지한다.
-        guiEl('span', { class: 'libra-article-eyebrow', text: 'Librarian · 단일 통합 분석기' }),
-        guiEl('h3', { text: '기억 분석 엔진' }),
-        guiEl('p',{text:'완료 5 U+A당 생성 1회 · 월드 매니저 로컬 적용 0회 · 임베딩과 응답 작성은 별도'}),
-        buildLibrarianConfigurationReviewPanel(),
-        guiEl('div',{class:'sga-actions libra-unified-engine-actions'},[
-          guiEl('button',{class:'sga-btn',type:'button',text:'기존 기억 보존 전환',dataset:{unifiedLegacyTransition:'true'},onClick:async()=>{try{
-            const preview=await LibraMemoryCore.previewUnifiedMigration();
-            if(!preview.legacyRefs.length){guiSetStatus('전환할 구형 정본이 없습니다.');return;}
-            if(typeof confirm!=='function'||!confirm(`구형 정본 ${preview.legacyRefs.length}개를 과거 기억과 리콜에 보존하고 새 통합 분석을 이어갈까요?\n구형 본문을 구조화 사실로 자동 변환하지 않습니다. 이전 상태는 미재구성으로 표시하며 새 구간에서 확인된 상태만 추적합니다.\n이전 원문 증거가 없는 구간 ${preview.missingEvidenceKeys.length}개. 자동 재분석·벡터 재생성은 하지 않습니다.`))return;
-            await LibraMemoryCore.beginUnifiedMigration({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,mode:'preserve_legacy_readonly',acknowledgedMissingKeys:preview.missingEvidenceKeys});
-            guiSetStatus('전환 경계를 저장했습니다. 다음 신규 구간부터 Librarian으로 분석합니다.');
-          }catch(error){guiSetStatus(String(error.message||error),true);}}}),
-          guiEl('button',{class:'sga-btn',type:'button',text:'통합 상태 적용 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(),{force:true,unifiedOnly:true});guiSetStatus(`상태 재시도 ${result.recovered || 0}개 완료 · ${result.remaining || 0}개 보류`,!result.ok);}catch(error){guiSetStatus(String(error.message || error),true);}}}),
-          guiEl('button',{class:'sga-btn',type:'button',text:'통합 임베딩 후처리 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true});guiSetStatus(`임베딩 ${result.completed || 0}/${result.attempted || 0} 처리`,!result.ok);}catch(error){guiSetStatus(String(error.message || error),true);}}})
-        ]),
-        buildUnifiedStorageStatusPanel(),
-        buildUnifiedLegacySelectionPanel(),
-        buildUnifiedRetentionPanel()
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [
-            guiEl('h3', { text: '성능 프리셋' }),
-            guiEl('div', { class: 'sga-note', text: '검색 후보 수·증거 문턱·정본 내부 발췌 깊이·동적 리콜 예산을 한 번에 조절합니다. Provider·모델·정본 메모리·임베딩 벡터는 변경하지 않습니다.' })
-          ]),
-          libraStatusBadge(activePresetMeta?.label || 'Custom', activePreset === 'custom' ? 'warn' : 'good')
-        ]),
-        guiEl('div', { class: 'sga-actions', style: { marginTop: '12px' } }, presets.map(preset => guiEl('button', {
-          class: `sga-btn ${activePreset === preset.id ? 'good' : ''}`,
-          type: 'button', text: preset.label,
-          onClick: async () => { Gui.memorySettingsDraft = LibraMemoryCore.normalizeMemorySettings({ ...Gui.memorySettingsDraft, ...preset.values, performancePreset: preset.id }); markGuiDirty(); await renderSettingsGui(); }
-        }))),
-        guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: activePresetMeta?.description || '아래 수치를 직접 조정합니다.' }),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
-          fieldNode('최대 리콜 메모리 수', numberInput('recallMaxMemories', current.recallMaxMemories, 1, 20)),
-          fieldNode('후보 재랭킹 한도', numberInput('candidateLimit', current.candidateLimit, 8, 320)),
-          fieldNode('Dense 증거 문턱', numberInput('gateHighCosine', current.gateHighCosine, 0, 1, 0.01)),
-          fieldNode('Sparse 증거 문턱', numberInput('gateSparse', current.gateSparse, 0, 1, 0.01)),
-          fieldNode('동적 리콜 최대 예산', numberInput('recallMaxChars', current.recallMaxChars, 3000, LibraMemoryCore.recallMaxDynamicChars)),
-          fieldNode('발췌 문장 반경', numberInput('excerptSentenceWindow', current.excerptSentenceWindow, 0, 5)),
-          fieldNode('메모리당 최대 영역', numberInput('maxSectionsPerMemory', current.maxSectionsPerMemory, 1, 5)),
-          fieldNode('영역당 최대 발췌 span', numberInput('maxSpansPerSection', current.maxSpansPerSection, 1, 8)),
-          fieldNode('추가 span 관련성 비율', numberInput('semanticSpanScoreFloorRatio', current.semanticSpanScoreFloorRatio, 0.10, 0.60, 0.01))
-        ]),
-        guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '가벼운: 3k · 반경2 · 영역3 · span3 / 적당한: 3k→5k · 반경3 · 영역4 · span4 / 무거운: 3k→5k→8k · 반경4 · 영역5 · span6 / 최대: 3k→5k→8k→12k · 반경5 · 영역5 · span8. 동적 예산은 고정 계약문과 별도이며, 관련 근거가 없으면 빈 공간을 억지로 채우지 않습니다.' })
-      ]),
-      guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('h3', { text: '세부 리콜 · 작동 설정' }),
-        guiEl('div', { class: 'sga-grid' }, [
-          toggle('enabled', '새 LIBRA 사용'),
-          toggle('autoAnalyze', 'AI 응답 저장 후 자동 분석'),
-          guiEl('div',{class:'sga-note',text:'추가 기억 분석은 자동 재호출하지 않습니다. 실패 항목을 확인한 뒤 명시적으로 재시도하세요.'}),
-          toggle('lexicalFallback', 'BM25F·anchor 검색 사용'),
-          toggle('sectionVectors', '영역별 임베딩 투영'),
-          toggle('evidenceGate', '증거 게이트'),
-          toggle('mmrEnabled', 'MMR 중복 억제'),
-          toggle('forceCurrentScene', '연속 입력에서 최근 장면 후보 보호'),
-          toggle('autoCatchUpEnabled', '활성 세션의 누락 5턴 자동 따라잡기')
-        ]),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
-          fieldNode('리콜 토큰 예산', guiEl('input', { class: 'sga-input', type: 'text', value: '자동', disabled: true })),
-          fieldNode('유사 기억 비율(%)', guiEl('input', { class: 'sga-input', type: 'number', value: blend.similarity, min: 0, max: 100, step: 1, onChange: event => updateRecallBlend('similarity', event.target.value) }), '증거 게이트를 통과한 후보 안에서 Dense·Sparse·Exact 관련성이 차지하는 비중입니다.'),
-          fieldNode('최근 기억 비율(%)', guiEl('input', { class: 'sga-input', type: 'number', value: blend.recency, min: 0, max: 100, step: 1, onChange: event => updateRecallBlend('recency', event.target.value) }), '유사 기억 비율과 합계 100으로 연동됩니다. 과거 회상 질의에서는 자동으로 영향이 줄어듭니다.'),
-          fieldNode('유사도 쿼리 최근 채팅 수', numberInput('recallQueryMessages', current.recallQueryMessages || current.continuationTailMessages, 1, 20), '총 N개 기준입니다. 현재 사용자 입력 1개를 항상 포함하고, 남은 최대 N-1개는 직전 사용자·AI 메시지에서 시간순으로 구성합니다.'),
-          fieldNode('RRF k', numberInput('rrfK', current.rrfK, 1, 200)),
-          fieldNode('Exact anchor 문턱', numberInput('gateExactAnchor', current.gateExactAnchor, 0, 1, 0.01)),
-          fieldNode('MMR 관련성 비율', numberInput('mmrLambda', current.mmrLambda, 0.05, 0.98, 0.01)),
-          fieldNode('자동 따라잡기 최대 배치', numberInput('autoCatchUpMaxBatches', current.autoCatchUpMaxBatches, 1, 6), '한 번의 자동 스캔에서 처리할 전체 5턴 배치 상한입니다. 현재 경계 처리도 이 수에 포함되며, Librarian 정본이 하나도 없는 세션에서는 자동 콜드스타트를 시작하지 않습니다.'),
-          fieldNode('상세 실행 기록 보관 수', numberInput('runDetailRetention', current.runDetailRetention, 5, 200))
-        ]),
-        guiEl('div', { class: 'sga-note', text: '유사/최근 비율은 관련성 증거 게이트를 없애지 않습니다. Exact anchor와 현재 장면 강제 후보는 보호되고, “예전·당시·처음” 같은 과거 회상 질의에서는 최근성 비중이 자동 완화됩니다. 자동 따라잡기는 이미 Librarian를 사용 중인 세션에서 놓친 5턴 경계만 제한적으로 복구하며, 사용 이력이 없는 세션은 계속 수동 콜드스타트만 허용합니다. 5턴당 정본 하나라는 저장 계약은 그대로 유지됩니다.' }),
-        buildLibraLiveContextSettingsPanel(),
-        buildLibraServerScopeHealthPanel(),
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn good', type: 'button', text: '리콜 · 최근 대화 설정 저장', disabled: Gui.settingsRoomSaving === true, onClick: () => { void saveSettingsRoom(); } }),
-          guiEl('button', { class: 'sga-btn danger', type: 'button', text: '현재 채팅 LIBRA 데이터 삭제', onClick: async () => {
-            if (typeof confirm === 'function' && !confirm('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?')) return;
-            let deletion;
-            try { deletion=await LibraMemoryCore.deleteCurrentScope({ suppressGuiSchedule: true, snapshotLimits: guiSnapshotLimits(), trackGuiLimits: true }); }
-            catch(error) { if(typeof alert==='function')alert('삭제하지 못했습니다: '+string(error?.message||error)); return; }
-            if(deletion?.reloadRequired){if(typeof alert==='function')alert('현재 채팅의 서버 자료를 삭제하고 백업을 보존했습니다. 이전 작업과 로컬 자료의 재업로드를 차단했습니다. RisuAI를 새로고침해 주세요.');return;}
-            if (Gui.refreshTimer) { clearTimeout(Gui.refreshTimer); Gui.refreshTimer = null; }
-            await renderSettingsGui();
-          } })
-        ])
-      ])
-    ]);
-  };
+
+
+
+
+
 
   const buildLibraServerScopeHealthPanel = () => {
-    const output=guiEl('pre',{class:'sga-note',id:'libraServerScopeHealthResult',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'},text:'읽기 전용 검사입니다. 기억·원문·비교 기준을 변경하거나 자동 재분석하지 않습니다.'});
+    const output=guiEl('pre',{class:'hint',id:'libraServerScopeHealthResult',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'},text:'읽기 전용 검사입니다. 기억·원문·비교 기준을 변경하거나 자동 재분석하지 않습니다.'});
     let last=null;
-    const inspect=guiEl('button',{class:'sga-btn',type:'button',id:'libraServerScopeHealthInspect',text:'현재 서버 scope 건강 검사',onClick:async()=>{
+    const inspect=guiEl('button',{class:'btn',type:'button',id:'libraServerScopeHealthInspect',text:'현재 서버 scope 건강 검사',onClick:async()=>{
       inspect.disabled=true;copy.disabled=true;output.textContent='현재 채팅의 서버 기록을 검사 중입니다. 아직 정상으로 확정하지 않았습니다.';
       try{last=await LibraMemoryCore.getServerScopeHealth();output.textContent=JSON.stringify(last,null,2);copy.disabled=false;}
       catch(error){last=null;output.textContent='검사 미완료: '+string(error?.message||error)+'\nDATA를 삭제하지 말고 저장 연결과 진단을 확인하세요.';}
       finally{inspect.disabled=false;}
     }});
-    const copy=guiEl('button',{class:'sga-btn',type:'button',disabled:true,text:'건강 검사 진단 복사',onClick:async()=>{
+    const copy=guiEl('button',{class:'btn',type:'button',disabled:true,text:'건강 검사 진단 복사',onClick:async()=>{
       if(!last)return;const text=JSON.stringify(last,null,2);try{await navigator.clipboard.writeText(text);}catch(_){guiSetStatus('복사 권한이 없습니다. 아래 진단 텍스트를 선택해 복사해 주세요.');}
     }});
-    return guiEl('div',{class:'sga-card wide'},[guiEl('h3',{text:'서버 기억 상태 진단'}),guiEl('div',{class:'sga-actions'},[inspect,copy]),output,guiEl('div',{class:'sga-note',text:'미완료 TX와 Head/Registry의 불일치를 관찰합니다. 검사 정상은 원문·벡터·모델 의미까지 전부 검증했다는 뜻이 아닙니다. 자동 초기화나 자동 수리를 수행하지 않습니다.'})]);
+    return guiEl('div',{class:'card'},[guiEl('h3',{text:'서버 기억 상태 진단'}),guiEl('div',{class:'cluster'},[inspect,copy]),output,guiEl('div',{class:'hint',text:'미완료 TX와 Head/Registry의 불일치를 관찰합니다. 검사 정상은 원문·벡터·모델 의미까지 전부 검증했다는 뜻이 아닙니다. 자동 초기화나 자동 수리를 수행하지 않습니다.'})]);
   };
 
-  const buildLibraProviderPanel = () => {
-    const last=Runtime.lastGenerationInvocation;
-    const shown=value=>value==null?'미확인':String(value);
-    const plan=last?.plan;
-    const completion=last?.completion?.state || last?.errorCode || '대기';
-    const rows=plan ? [
-      `요청 가시 여유: ${shown(plan.requested.visibleHeadroom)} · 총출력: ${shown(plan.requested.total)} · 사용자 상한: ${shown(plan.requested.hardCap)}`,
-      plan.route.otherAx ? '적용 출력·추론 예산: 호스트 관리 (플러그인 적용값 없음)' : `적용 출력 상한: ${shown(plan.effective.outputCap)} · 추론 강도: ${shown(plan.effective.effort)}`,
-      `실제 요청: ${shown(last.operation?.requestCount)} / ${shown(last.operation?.maxRequests)} · 종료: ${completion}`
-    ] : ['최근 호출 없음 · 기존 예산과 프리셋은 유지됩니다.'];
-    rows.push('자동 추가 호출 기본 0회 · 명시적 1회는 종료가 확인된 순수 형식 오류에만 적용됩니다.');
-    rows.push('직접 연결은 비스트리밍으로 요청합니다. OtherAx의 적용 설정과 내부 재시도는 호스트 관리입니다.');
-    const summary=plan
-      ? `최근 호출 · ${plan.taskKind} · ${completion} · 요청 ${shown(last.operation?.requestCount)}/${shown(last.operation?.maxRequests)}`
-      : '최근 호출 없음';
-    const card=guiLazyDetails({class:'sga-advanced',dataset:{executionContract:'v1'}},guiEl('summary',{},[
-      guiEl('strong',{text:summary}),
-      guiEl('span',{class:'sga-advanced-hint',text:'호출 예산 상세'})
-    ]),()=>guiEl('div',{class:'sga-advanced-body'},[
-      ...rows.map(line=>guiEl('div',{text:line,style:'overflow-wrap:anywhere;line-height:1.65;'}))
-    ]));
-    const panel=legacyBuildProvidersTab();
-    return Array.isArray(panel)?[card,...panel]:[card,panel];
-  };
+
 
   const syncEmbeddingMigrationControls = () => {
     Gui.app?.querySelectorAll('[data-embedding-migration-status]').forEach(node => {
@@ -76072,254 +74207,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       syncEmbeddingMigrationControls();
     }
   };
-  const buildLibraEmbeddingPanel = () => {
-    const cfg = LibraMemoryCore.getEmbeddingSettings();
-    const providers = LibraMemoryCore.listEmbeddingProviders();
-    const ollamaVisible = EmbeddingProviderRegistry.normalizeProvider(cfg.provider) === 'ollama';
-    const ollamaDiscovery = EmbeddingProviderRegistry.getOllamaDiscovery();
-    const ollamaModelNames = [...new Set([
-      ...EmbeddingProviderRegistry.ollamaSuggestedModelNames(),
-      ...(Array.isArray(ollamaDiscovery?.models) ? ollamaDiscovery.models.map(item => item?.name) : [])
-    ].map(value => String(value || '').trim()).filter(Boolean))];
-    const ollamaModelListId = 'libra-ollama-embedding-models';
-    const update = patch => {
-      const next = { ...cfg, ...(LibraMemoryCore.state.embeddingSettings || {}), ...patch };
-      LibraMemoryCore.state.embeddingSettings = next;
-    };
-    const directInput = (value, onInput, options = {}) => guiEl(options.tag || 'input', {
-      class: options.tag === 'textarea' ? 'sga-textarea' : 'sga-input', type: options.type || 'text', value: value ?? '', placeholder: options.placeholder || '',
-      min: options.min, max: options.max, step: options.step, list: options.list,
-      onInput: event => onInput(event.target.value),
-      onChange: options.onChange
-    });
-    return guiEl('section', { class: 'sga-card wide', id: 'libra-embedding-provider' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [guiEl('h3', { text: 'LIBRA 임베딩 provider' }), guiEl('div', { class: 'sga-note', text: 'Provider·모델·query/document task·Custom HTTP 설정과 벡터 저장 방식을 관리합니다.' })]),
-        libraStatusBadge(cfg.enabled ? '사용' : '꺼짐', cfg.enabled ? 'good' : 'off')
-      ]),
-      guiEl('div', { class: 'sga-grid' }, [
-        checkboxNode(cfg.enabled !== false, '임베딩 사용', value => update({ enabled: value })),
-        fieldNode('Provider', (() => {
-          const node = guiEl('select', { class: 'sga-select', value: cfg.provider, onChange: event => {
-            LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);
-            queueGuiRender(0);
-          } }, providers.map(item => guiEl('option', { value: item.provider, selected: item.provider === cfg.provider, text: item.label })));
-          try { node.value = cfg.provider; } catch (_) {}
-          return node;
-        })()),
-        fieldNode('Endpoint / URL', directInput(cfg.url, value => update({ url: value }))),
-        fieldNode('API Key', directInput(cfg.key, value => update({ key: value }), { type: 'password' })),
-        fieldNode('Model', guiEl('div', {}, [
-          directInput(cfg.model, value => {
-            const allowed = EmbeddingProviderRegistry.allowedDimensionsFor(cfg.provider, value);
-            const currentDimensions = Number((LibraMemoryCore.state.embeddingSettings || cfg).dimensions || 0);
-            update({ model: value, ...(allowed.length && currentDimensions && !allowed.includes(currentDimensions) ? { dimensions: 'auto' } : {}) });
-          }, { list: ollamaVisible ? ollamaModelListId : undefined }),
-          ollamaVisible ? guiEl('datalist', { id: ollamaModelListId }, ollamaModelNames.map(model => guiEl('option', { value: model }))) : null
-        ].filter(Boolean))),
-        fieldNode('Dimensions', (() => {
-          const allowed = EmbeddingProviderRegistry.allowedDimensionsFor(cfg.provider, cfg.model);
-          const currentValue = Number(cfg.dimensions || 0) || 'auto';
-          if (!allowed.length) return directInput(cfg.dimensions || 'auto', value => update({ dimensions: value }), { placeholder: 'auto' });
-          const node = guiEl('select', { class: 'sga-select', value: String(currentValue), onChange: event => update({ dimensions: event.target.value }) }, [
-            guiEl('option', { value: 'auto', selected: currentValue === 'auto', text: 'auto · provider 기본값' }),
-            ...allowed.map(value => guiEl('option', { value: String(value), selected: Number(currentValue) === value, text: String(value) }))
-          ]);
-          try { node.value = String(currentValue); } catch (_) {}
-          return node;
-        })()),
-        fieldNode('Batch size', directInput(cfg.batchSize || 'auto', value => update({ batchSize: value }))),
-        fieldNode('Timeout ms', directInput(cfg.timeoutMs, value => update({ timeoutMs: Number(value) }), { type: 'number' })),
-        fieldNode('Query task', directInput(cfg.queryTask, value => update({ queryTask: value }))),
-        fieldNode('Document task', directInput(cfg.documentTask, value => update({ documentTask: value }))),
-        fieldNode('Query prefix', directInput(cfg.queryPrefix, value => update({ queryPrefix: value }))),
-        fieldNode('Document prefix', directInput(cfg.documentPrefix, value => update({ documentPrefix: value })))
-      ]),
-      ollamaVisible ? (() => {
-        const policy = EmbeddingProviderRegistry.ollamaModelPolicy(cfg.model);
-        const discoveredCount = Array.isArray(ollamaDiscovery?.models) ? ollamaDiscovery.models.length : 0;
-        const discoveryText = ollamaDiscovery?.at
-          ? `Ollama ${ollamaDiscovery.version || '버전 미상'} · 설치 ${ollamaDiscovery.checked || 0}개 확인 · 임베딩 ${discoveredCount}개`
-          : '아직 설치 모델을 검색하지 않았습니다.';
-        const queryPrefix = EmbeddingProviderRegistry.effectiveEmbeddingPrefix(EmbeddingProviderRegistry.normalizeConfig(cfg), 'query');
-        const documentPrefix = EmbeddingProviderRegistry.effectiveEmbeddingPrefix(EmbeddingProviderRegistry.normalizeConfig(cfg), 'document');
-        return guiEl('div', { class: 'sga-callout', style: { marginTop: '12px' } }, [
-          guiEl('div', { class: 'sga-agent-head' }, [
-            guiEl('div', {}, [
-              guiEl('strong', { text: 'Ollama 임베딩 계약' }),
-              guiEl('div', { class: 'sga-note', text: `${discoveryText} · 로컬 주소에는 API Key를 보내지 않으며 truncate:false로 요청합니다.` })
-            ]),
-            guiEl('button', { class: 'sga-btn', type: 'button', text: 'Ollama 모델 검색', onClick: async () => {
-              guiSetStatus('Ollama 설치 모델과 embedding capability를 확인하고 있습니다…', false, true);
-              try {
-                const draft = { ...cfg, ...(LibraMemoryCore.state.embeddingSettings || {}), provider: 'ollama' };
-                const result = await EmbeddingProviderRegistry.discoverOllamaModels(draft, { force: true });
-                await renderSettingsGui();
-                guiSetStatus(`Ollama ${result.version || '버전 미상'} · 설치 ${result.checked}개 중 임베딩 모델 ${result.models.length}개를 찾았습니다.`, false, true);
-              }
-              catch (error) {
-                guiSetStatus(`${EmbeddingProviderRegistry.classifyError(error)}: ${String(error?.message || error || 'Ollama 모델 검색 실패')}`, true, true);
-              }
-            } })
-          ]),
-          policy ? guiEl('div', { class: 'sga-note', style: { marginTop: '8px' }, text: `안전 입력 한도 ${policy.safeInputTokens || '자동'} tokens · query prefix ${queryPrefix ? JSON.stringify(queryPrefix) : '없음'} · document prefix ${documentPrefix ? JSON.stringify(documentPrefix) : '없음'}` }) : null
-        ].filter(Boolean));
-      })() : null,
-      guiEl('details', {}, [
-        guiEl('summary', { text: 'Custom HTTP 및 고급 설정' }),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
-          fieldNode('Custom method', directInput(cfg.customMethod || 'POST', value => update({ customMethod: value }))),
-          fieldNode('Response vector path', directInput(cfg.customResponsePath || 'data[*].embedding', value => update({ customResponsePath: value }))),
-          fieldNode('Error path', directInput(cfg.customErrorPath || 'error.message', value => update({ customErrorPath: value }))),
-          fieldNode('Custom headers JSON', directInput(JSON.stringify(cfg.customHeaders || {}, null, 2), value => { try { update({ customHeaders: JSON.parse(value || '{}') }); } catch (_) {} }, { tag: 'textarea' })),
-          fieldNode('Custom request template', directInput(cfg.customRequestTemplate || '', value => update({ customRequestTemplate: value }), { tag: 'textarea' }))
-        ]),
-        checkboxNode(cfg.normalizeVectors !== false, '벡터 정규화', value => update({ normalizeVectors: value }))
-      ]),
-      (() => {
-        const rebuild = LibraMemoryCore.getEmbeddingRebuildState();
-        const counts = rebuild.counts || {};
-        const statusLabels = {
-          ready: '최신 벡터 준비됨',
-          rebuild_required: '재생성 필요',
-          rebuilding: '재생성 중',
-          paused: '일시 중지됨',
-          rebuild_partial: '일부 미완료',
-          rebuild_failed: '실패 항목 있음'
-        };
-        const statusTone = rebuild.status === 'ready' ? 'good' : rebuild.status === 'rebuilding' ? 'warn' : rebuild.status === 'rebuild_failed' ? 'danger' : 'off';
-        const sourceModel = rebuild.sourceProfile?.model || '-';
-        const targetModel = rebuild.targetProfile?.model || cfg.model || '-';
-        const migration = LibraMemoryCore.getLastEmbeddingMigration?.() || null;
-        return guiEl('div', { class: 'sga-card', style: { marginTop: '14px' } }, [
-          guiEl('div', { class: 'sga-agent-head' }, [
-            guiEl('div', {}, [
-              guiEl('h3', { text: '임베딩 벡터 재생성' }),
-              ...[['preview','검증된 같은 공간 이전 미리보기'],['recover','중단된 메타데이터 이전 복구'],['apply','미리본 메타데이터 이전 적용']].map(([kind,label]) => guiEl('button', {class:'sga-btn',type:'button',text:label,dataset:{embeddingMigrationAction:kind},disabled:!!Gui.embeddingMigrationBusy || (kind==='apply'&&!Gui.embeddingMigrationPreview),onClick:()=>runEmbeddingMigrationAction(kind)})),
-              guiEl('div',{class:'sga-note',role:'status','aria-live':'polite',dataset:{embeddingMigrationStatus:'true'},style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',marginTop:'10px'},text:Gui.embeddingMigrationStatus || '미리보기를 실행하면 이전 가능 항목과 결과가 여기에 표시됩니다.'}),
-              guiEl('div', { class: 'sga-note', text: '같은 실제 임베딩 공간의 이전 벡터는 provider 호출 없이 자동 마이그레이션해 그대로 사용합니다. 모델·task·prefix·차원처럼 임베딩 공간 자체가 달라진 경우에만 기존 벡터를 격리하며, 새 임베딩 생성은 이 버튼을 눌렀을 때만 시작됩니다.' })
-            ]),
-            libraStatusBadge(statusLabels[rebuild.status] || rebuild.status || '대기', statusTone)
-          ]),
-          guiEl('div', { class: 'sga-summary-table', style: { marginTop: '12px' } }, [
-            guiEl('span', { text: '이전 모델' }), guiEl('strong', { text: sourceModel }),
-            guiEl('span', { text: '현재 모델' }), guiEl('strong', { text: targetModel }),
-            guiEl('span', { text: '전체 정본' }), guiEl('strong', { text: String(counts.total || 0) }),
-            guiEl('span', { text: '완료' }), guiEl('strong', { text: String(counts.completed || 0) }),
-            guiEl('span', { text: '대기' }), guiEl('strong', { text: String(counts.pending || 0) }),
-            guiEl('span', { text: '실패' }), guiEl('strong', { text: String(counts.failed || 0) }),
-            guiEl('span', { text: '격리 벡터' }), guiEl('strong', { text: `${counts.quarantined || 0}개 · ${rebuild.quarantineDays || 7}일 보관` })
-          ]),
-          migration ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: migration.skipped
-            ? '이 기기의 이전 벡터 자동 마이그레이션 검사가 이미 완료되었습니다.'
-            : `이전 벡터 자동 마이그레이션 · 검사 ${Number(migration.scanned || 0)} · 승격 ${Number(migration.migrated || 0)} · 재임베딩 호출 0 · 본체 누락 ${Number(migration.missingPayload || 0)} · 실제 공간 불일치 ${Number(migration.incompatibleSpace || 0)}` }) : null,
-          rebuild.lastError ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: `마지막 오류: ${rebuild.lastError}` }) : null,
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('button', { class: 'sga-btn good', type: 'button', text: rebuild.status === 'paused' ? '임베딩 벡터 재생성 재개' : '임베딩 벡터 재생성', disabled: rebuild.status === 'rebuilding', onClick: async () => {
-              guiSetStatus('정본은 유지하고 새 임베딩 벡터 생성을 시작합니다…', false, true);
-              await LibraMemoryCore.startEmbeddingRebuild();
-              await renderSettingsGui();
-            } }),
-            guiEl('button', { class: 'sga-btn', type: 'button', text: '중지', disabled: rebuild.status !== 'rebuilding', onClick: async () => {
-              await LibraMemoryCore.stopEmbeddingRebuild();
-              await renderSettingsGui();
-              guiSetStatus('임베딩 벡터 재생성을 중지했습니다. 완료된 항목은 유지됩니다.');
-            } }),
-            guiEl('button', { class: 'sga-btn', type: 'button', text: '실패 항목 재시도', disabled: !(counts.failed > 0), onClick: async () => {
-              await LibraMemoryCore.retryFailedEmbeddingRebuild();
-              await renderSettingsGui();
-            } }),
-            guiEl('button', { class: 'sga-btn danger', type: 'button', text: '격리 벡터 즉시 삭제', disabled: !(counts.quarantined > 0), onClick: async () => {
-              if (typeof confirm === 'function' && !confirm('격리 중인 이전 임베딩 벡터를 즉시 삭제할까요? 정본 메모리는 삭제되지 않습니다.')) return;
-              await LibraMemoryCore.cleanupQuarantinedVectors(true);
-              await renderSettingsGui();
-              guiSetStatus('격리된 이전 벡터를 삭제했습니다. 정본 메모리는 그대로 유지됩니다.');
-            } })
-          ])
-        ].filter(Boolean));
-      })(),
-      (() => {
-        const probe = LibraMemoryCore.getLastMultilingualEmbeddingProbe?.() || null;
-        const status = String(probe?.status || 'unverified');
-        const labels = { supported: '지원', partial: '부분 지원', failed: '실패', unverified: '미검증' };
-        const tone = status === 'supported' ? 'good' : status === 'partial' ? 'warn' : status === 'failed' ? 'danger' : 'off';
-        const languageLabels = { ko: '한국어', en: 'English', ja: '日本語', zh: '中文' };
-        return guiEl('div', { class: 'sga-card', dataset: { multilingualRecallProbe: status } }, [
-          guiEl('div', { class: 'sga-agent-head' }, [
-            guiEl('div', {}, [
-              guiEl('h3', { text: '다국어 리콜 진단' }),
-              guiEl('div', { class: 'sga-note', text: '한국어↔영어·일본어·중국어 6방향의 의미 순위와 현재 Dense 문턱 통과 여부를 분리해 검사합니다. 모델 이름만으로 지원을 추정하지 않습니다.' })
-            ]),
-            libraStatusBadge(labels[status] || status, tone)
-          ]),
-          probe ? guiEl('div', { class: 'sga-summary-table', style: { marginTop: '12px' } }, [
-            guiEl('span', { text: '의미 순위' }), guiEl('strong', { text: `${Number(probe.directionPassCount || 0)}/${Number(probe.directionCount || 6)} 방향` }),
-            guiEl('span', { text: 'Dense 문턱' }), guiEl('strong', { text: `${Number(probe.gatePassedConcepts || 0)}/${Number(probe.totalConcepts || 18)} 개념 · ${String(probe.gateReadiness || '미검증')}` }),
-            guiEl('span', { text: '문턱값' }), guiEl('strong', { text: Number.isFinite(Number(probe.gateHighCosine)) ? Number(probe.gateHighCosine).toFixed(2) : '-' })
-          ]) : guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '아직 실제 provider 호출을 하지 않았습니다. 아래 실제 연결 테스트를 눌러야만 진단합니다.' }),
-          Array.isArray(probe?.directions) && probe.directions.length ? guiEl('div', { class: 'libra-home-pipeline-grid libra-home-quick-stage-grid', style: { marginTop: '10px' } }, probe.directions.map(direction => guiEl('div', { class: 'libra-home-stage-card' }, [
-            guiEl('strong', { text: `${languageLabels[direction.queryLanguage] || direction.queryLanguage} → ${languageLabels[direction.documentLanguage] || direction.documentLanguage}` }),
-            guiEl('div', { class: 'sga-note', text: `순위 ${Number(direction.matchedCount || 0)}/${Number(direction.conceptCount || 3)} · 문턱 ${Number(direction.gatePassedCount || 0)}/${Number(direction.conceptCount || 3)} · ${direction.status}` })
-          ]))) : null,
-          probe?.error ? guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: `진단 오류: ${probe.errorType || 'UNKNOWN'} · ${probe.error}` }) : null
-        ].filter(Boolean));
-      })(),
-      (() => {
-        const registry = LibraProviderBridge.embeddingRegistry;
-        let diagnostics = {};
-        try {
-          const normalized = registry.normalizeConfig(cfg);
-          const profile = registry.profileFor(normalized);
-          diagnostics = {
-            profile,
-            requestFingerprint: registry.requestFingerprintFor(normalized),
-            queryCache: registry.getQueryCacheStats(),
-            preprocessingVersion: profile?.preprocessingVersion || registry.PREPROCESS_VERSION,
-            contextGroupingVersion: profile?.contextGroupingVersion || '',
-            safeInputTokenLimit: registry.providerSafeInputTokenLimit(normalized.provider, normalized)
-          };
-        } catch (error) { diagnostics = { error: String(error?.message || error) }; }
-        return guiLazyDetails({ class: 'sga-advanced', open: false, dataset: { embeddingAdapterDiagnostics: 'v514' } }, guiEl('summary', {}, [
-          guiEl('span', { text: 'Embedding Adapter 고급 진단' }),
-          guiEl('span', { class: 'sga-advanced-hint', text: 'fingerprint · query cache · preprocess' })
-        ]), () => [
-          guiEl('pre', { class: 'sga-live-result-code', text: JSON.stringify(diagnostics, null, 2) }),
-          guiEl('div', { class: 'sga-actions' }, [
-            guiEl('button', { class: 'sga-btn', type: 'button', text: 'Query cache 비우기', onClick: async () => { registry.clearQueryCache(); await renderSettingsGui(); guiSetStatus('Embedding query cache를 비웠습니다. 정본 벡터는 삭제되지 않습니다.'); } }),
-            guiEl('button', { class: 'sga-btn', type: 'button', text: '이전 벡터 마이그레이션 재검사', onClick: async () => { try { guiSetStatus('이전 벡터 호환성을 다시 검사합니다…', false, true); await LibraMemoryCore.runAutomaticLegacyVectorMigration({ force: true, reason: 'gui_manual_migration_rescan' }); await renderSettingsGui(); guiSetStatus('이전 벡터 마이그레이션 재검사를 완료했습니다. 새 임베딩 호출은 하지 않습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
-          ])
-        ]);
-      })(),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '선택 provider 기본값', onClick: async () => {
-          LibraMemoryCore.resetEmbeddingProviderDefaults((LibraMemoryCore.state.embeddingSettings || cfg).provider);
-          await renderSettingsGui();
-          guiSetStatus('API Key는 유지하고 선택한 provider의 URL·모델·차원(auto)·배치(8)·task 기본값을 복원했습니다.');
-        } }),
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '임베딩 설정 저장', onClick: async () => {
-          const savedEmbed = await LibraMemoryCore.saveEmbeddingSettings(LibraMemoryCore.state.embeddingSettings || cfg);
-          LibraMemoryCore.state.embeddingSettings = savedEmbed;
-          await LibraMemoryCore.refreshEmbeddingRebuildInventory();
-          await renderSettingsGui();
-          const rebuild = LibraMemoryCore.getEmbeddingRebuildState();
-          guiSetStatus(rebuild.status === 'rebuild_required'
-            ? `임베딩 설정을 저장했습니다. 기존 벡터 ${rebuild.counts?.quarantined || 0}개를 격리했으며, 재생성 버튼을 눌러야 새 벡터가 생성됩니다.`
-            : '임베딩 설정을 저장했습니다.');
-        } }),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '실제 연결 테스트', onClick: async () => {
-          guiSetStatus('임베딩 provider에 실제 테스트 요청을 보내고 있습니다…', false, true);
-          const result = await LibraMemoryCore.testEmbeddingConnection(LibraMemoryCore.state.embeddingSettings || cfg);
-          const ollamaDetail = result.ok && result.modelMetadata
-            ? ` · context ${result.modelMetadata.contextLength || '?'} · embedding ${result.modelMetadata.embeddingLength || result.dimensions}`
-            : '';
-          const probe = result.multilingualProbe || null;
-          await renderSettingsGui();
-          const probeDetail = probe ? ` · 다국어 ${probe.status} ${Number(probe.directionPassCount || 0)}/${Number(probe.directionCount || 6)} · Dense 문턱 ${Number(probe.gatePassedConcepts || 0)}/${Number(probe.totalConcepts || 18)}` : '';
-          guiSetStatus(result.ok ? `${result.provider} / ${result.model} · ${result.dimensions}차원 · ${result.durationMs}ms${ollamaDetail}${probeDetail}` : `${result.errorType}: ${result.error}`, !result.ok || probe?.status === 'failed', true);
-        } })
-      ])
-    ]);
-  };
+
 
 
   const promptStudioProfiles = () => {
@@ -76469,7 +74357,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     const domain = promptStudioNormalizeDomain(Gui.promptStudioDomain);
     const name = Gui.promptStudioProfileName;
     if (!name || name === PROMPT_PROFILE_DEFAULT_NAME) throw new Error('기본 프롬프트는 삭제할 수 없습니다.');
-    if (typeof confirm === 'function' && !confirm(`프롬프트 프리셋 “${name}”을 삭제할까요?`)) return;
+    if (!(await confirmApprovedOperation(`프롬프트 프리셋 “${name}”을 삭제할까요?`,{title:'프롬프트 프리셋 삭제',target:name,validate:()=>Gui.promptStudioProfileName===name&&promptStudioNormalizeDomain(Gui.promptStudioDomain)===domain}))) return;
     const profiles = promptStudioProfiles();
     const bank = promptStudioBankForDomain(profiles, domain);
     delete bank[name];
@@ -76739,32 +74627,32 @@ html,body{width:100%;height:100%;overflow:hidden}
       ? '예: 관계가 변하면 이전 상태와 변화 계기를 함께 남겨 줘.'
       : (('예: 사용자가 쓴 의도는 그대로 두고 문장만 자연스럽게 다듬어 줘.'));
 
-    const easyCard = guiEl('div', { class: 'sga-card wide' }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
+    const easyCard = guiEl('div', { class: 'card' }, [
+      guiEl('div', { class: 'split' }, [
         guiEl('div', {}, [
           guiEl('h3', { text: '간편 프롬프트 설정' }),
-          guiEl('div', { class: 'sga-note', text: `프롬프트 문법을 몰라도 됩니다. 원하는 결과만 고르면 ${familyLabel}가 기본 프롬프트 뒤에 안전한 추가 지시로 변환합니다. 기본 근거·주체·출력 계약은 바뀌지 않습니다.` })
+          guiEl('div', { class: 'hint', text: `프롬프트 문법을 몰라도 됩니다. 원하는 결과만 고르면 ${familyLabel}가 기본 프롬프트 뒤에 안전한 추가 지시로 변환합니다. 기본 근거·주체·출력 계약은 바뀌지 않습니다.` })
         ]),
         libraStatusBadge(activeName === EASY_PROMPT_PROFILE_NAME ? '간편 설정 적용 중' : activeName === PROMPT_PROFILE_DEFAULT_NAME ? '기본값 사용 중' : `고급 프리셋: ${activeName}`, activeName === EASY_PROMPT_PROFILE_NAME ? 'good' : '')
       ]),
-      guiEl('div', { class: 'sga-actions' }, allowedDomains.map(domainId => guiEl('button', {
-        class: `sga-btn ${domain === domainId ? 'good' : ''}`,
+      guiEl('div', { class: 'cluster' }, allowedDomains.map(domainId => guiEl('button', {
+        class: `btn ${domain === domainId ? 'good' : ''}`,
         type: 'button',
         text: ({ memory: '기억 생성' })[domainId],
         onClick: () => chooseDomain(domainId)
       }))),
-      domain === 'memory' ? guiEl('div', { class: `sga-callout${activeMemoryStageAddendum ? ' warn' : ''}`, style: { marginTop: '10px' } }, [
+      domain === 'memory' ? guiEl('div', { class: `note${activeMemoryStageAddendum ? ' warn' : ''}`, style: { marginTop: '10px' } }, [
         guiEl('strong', { text: `실제 기억 생성 조합 · Profile ${activeName}` }),
-        guiEl('div', { class: 'sga-note', text: `${STAGE_DEF_MAP[Gui.promptStudioStage]?.label || Gui.promptStudioStage} 단계 추가 지시: ${activeMemoryStageAddendum ? 'ON · Profile 뒤에 함께 적용' : 'OFF'}` })
+        guiEl('div', { class: 'hint', text: `${STAGE_DEF_MAP[Gui.promptStudioStage]?.label || Gui.promptStudioStage} 단계 추가 지시: ${activeMemoryStageAddendum ? 'ON · Profile 뒤에 함께 적용' : 'OFF'}` })
       ]) : null,
-      guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
+      guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
         easyTargetChoices.length ? fieldNode(easyTargetLabel, selectNode(Gui.promptStudioStage, easyTargetChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
         fieldNode(domain === 'memory' ? '기억 스타일' : (('입력 후보 스타일')), selectNode(easyCfg.style, easyPromptStyleOptions(domain), value => { easyCfg.style = value; queueGuiRender(0); }), easyPromptStyleDescription(domain, easyCfg.style)),
         domain === 'memory' ? fieldNode('사실 판정', selectNode(easyCfg.strictness, [['strict', '보수적으로'], ['normal', '일반']], value => { easyCfg.strictness = value; queueGuiRender(0); }), easyCfg.strictness === 'strict' ? '감정·관계명·성공 여부·지식·현재 상태를 근거 없이 확정하지 않습니다.' : '기본 LIBRA의 확정/불확실성 판정 규칙을 사용합니다.') : null
       ].filter(Boolean)),
-      domain === 'memory' ? guiEl('div', { class: 'sga-card', style: { marginTop: '12px' } }, [
+      domain === 'memory' ? guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
         guiEl('h4', { text: '특히 중요하게 볼 내용' }),
-        guiEl('div', { class: 'sga-actions' }, [
+        guiEl('div', { class: 'cluster' }, [
           checkboxNode(easyCfg.emphasis.character, '인물과 관계', value => { easyCfg.emphasis.character = value; queueGuiRender(0); }),
           checkboxNode(easyCfg.emphasis.chronology, '사건과 시간 순서', value => { easyCfg.emphasis.chronology = value; queueGuiRender(0); }),
           checkboxNode(easyCfg.emphasis.world, '세계·장소·설정', value => { easyCfg.emphasis.world = value; queueGuiRender(0); }),
@@ -76774,13 +74662,13 @@ html,body{width:100%;height:100%;overflow:hidden}
       (null),
       (null),
       fieldNode('AI에게 추가로 바라는 점' , inputNode(easyCfg.addendum || '', value => { easyCfg.addendum = compact(value, 6000); }, { tag: 'textarea', class: 'stage-prompt', placeholder: easyExample }), '한국어로 평소 말하듯 적으면 됩니다. 이 내용은 기본 프롬프트를 지우지 않고 마지막에 추가됩니다.'),
-      guiEl('div', { class: 'sga-card', style: { marginTop: '12px' } }, [
+      guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
         guiEl('h4', { text: '적용될 내용' }),
-        guiEl('pre', { class: 'sga-live-result-code', text: easyPromptSummaryLines(domain, easyCfg, runtime, familyLabel).join('\n') })
+        guiEl('pre', { class: 'code', text: easyPromptSummaryLines(domain, easyCfg, runtime, familyLabel).join('\n') })
       ]),
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn good', type: 'button', text: '간편 설정 적용', onClick: async () => { try { await easyPromptApply(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '기본 프롬프트 사용', onClick: async () => { try { await easyPromptUseDefault(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '간편 설정 적용', onClick: async () => { try { await easyPromptApply(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
+        guiEl('button', { class: 'btn', type: 'button', text: '기본 프롬프트 사용', onClick: async () => { try { await easyPromptUseDefault(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
       ])
     ].filter(Boolean));
 
@@ -76792,15 +74680,15 @@ html,body{width:100%;height:100%;overflow:hidden}
     const compiledPreview = promptStudioCompiledPreview(draft);
     const sectionCards = sectionDefs.map(definition => {
       const override = normalizePromptSectionOverride(overrides[definition.id] || {});
-      return guiEl('div', { class: 'sga-card wide' }, [
-        guiEl('div', { class: 'sga-agent-head' }, [guiEl('h3', { text: definition.label }), libraStatusBadge(override.mode === 'inherit' ? '기본 상속' : override.mode === 'append' ? '기본 + 추가' : '구역 대체', override.mode === 'replace' ? 'warn' : 'good')]),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
+      return guiEl('div', { class: 'card' }, [
+        guiEl('div', { class: 'split' }, [guiEl('h3', { text: definition.label }), libraStatusBadge(override.mode === 'inherit' ? '기본 상속' : override.mode === 'append' ? '기본 + 추가' : '구역 대체', override.mode === 'replace' ? 'warn' : 'good')]),
+        guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
           fieldNode('적용 방식', selectNode(override.mode, [['inherit', '기본 상속'], ['append', '기본 뒤에 추가'], ['replace', '이 구역 대체']], value => {
             overrides[definition.id] = { ...override, mode: value };
             Gui.promptStudioPreviewText = '';
             queueGuiRender(0);
           })),
-          fieldNode('기본 내용', guiEl('textarea', { class: 'sga-textarea preview', value: definition.text, readonly: true }))
+          fieldNode('기본 내용', guiEl('textarea', { class: 'textarea preview', value: definition.text, readonly: true }))
         ]),
         fieldNode('사용자 프롬프트', inputNode(override.text || '', value => {
           overrides[definition.id] = { ...normalizePromptSectionOverride(overrides[definition.id] || {}), text: value };
@@ -76812,61 +74700,61 @@ html,body{width:100%;height:100%;overflow:hidden}
       ? MEMORY_PROMPT_PROFILE_STAGE_IDS.map(stage => [stage, STAGE_DEF_MAP[stage]?.label || stage])
       : (([]));
 
-    const advancedEditor = guiEl('details', { class: 'sga-card wide' }, [
+    const advancedEditor = guiEl('details', { class: 'card' }, [
       guiEl('summary', { text: '고급 Prompt Studio · 구역별 직접 편집' }),
-      promptStudioOocDraftConflictText() ? guiEl('div', { class: 'sga-callout warn', text: promptStudioOocDraftConflictText() }) : null,
-      guiEl('div', { class: 'sga-note', style: { marginTop: '10px' }, text: '기존 Prompt Studio 전체 기능입니다. inherit / append / replace와 프리셋을 직접 관리하려는 경우에만 사용하세요. 간편 설정 프리셋을 여기서 수정한 뒤 다시 “간편 설정 적용”을 누르면 해당 단계는 간편 설정 내용으로 다시 컴파일됩니다.' }),
-      guiEl('div', { class: 'sga-card wide', style: { marginTop: '12px' } }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [guiEl('h3', { text: '고급 프리셋 관리' }), guiEl('div', { class: 'sga-note', text: '내부 프롬프트 구역을 직접 상속·추가·대체합니다.' })]),
+      promptStudioOocDraftConflictText() ? guiEl('div', { class: 'note warn', text: promptStudioOocDraftConflictText() }) : null,
+      guiEl('div', { class: 'hint', style: { marginTop: '10px' }, text: '기존 Prompt Studio 전체 기능입니다. inherit / append / replace와 프리셋을 직접 관리하려는 경우에만 사용하세요. 간편 설정 프리셋을 여기서 수정한 뒤 다시 “간편 설정 적용”을 누르면 해당 단계는 간편 설정 내용으로 다시 컴파일됩니다.' }),
+      guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
+        guiEl('div', { class: 'split' }, [
+          guiEl('div', {}, [guiEl('h3', { text: '고급 프리셋 관리' }), guiEl('div', { class: 'hint', text: '내부 프롬프트 구역을 직접 상속·추가·대체합니다.' })]),
           libraStatusBadge(isActive ? '활성 프리셋' : '편집 중', isActive ? 'good' : 'warn')
         ]),
-        guiEl('div', { class: 'sga-grid', style: { marginTop: '12px' } }, [
+        guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
           fieldNode('프리셋', selectNode(Gui.promptStudioProfileName, names.map(name => [name, name === PROMPT_PROFILE_DEFAULT_NAME ? 'default · 내장 기본' : name]), value => { Gui.promptStudioProfileName = value; Gui.promptStudioDraftKey = ''; renderSettingsGui(); })),
           stageChoices.length ? fieldNode((('기억 단계')), selectNode(Gui.promptStudioStage, stageChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
           fieldNode('저장할 이름', inputNode(draft.name || '', value => { draft.name = value; }, { placeholder: (('예: 관계 추적 강화')) }), isDefault ? 'default를 직접 덮어쓰지 않습니다. 다른 이름으로 저장하면 새 프리셋이 됩니다.' : '같은 이름으로 저장하면 현재 프리셋을 갱신합니다.')
         ].filter(Boolean)),
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn good', type: 'button', text: '저장하고 활성화', onClick: async () => { try { await savePromptStudioDraft(true); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '저장만', onClick: async () => { try { await savePromptStudioDraft(false); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: isActive ? '현재 활성' : '이 프리셋 활성화', disabled: isActive, onClick: async () => { try { await activatePromptStudioProfile(Gui.promptStudioProfileName); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '새 프리셋', onClick: () => { Gui.promptStudioProfileName = PROMPT_PROFILE_DEFAULT_NAME; Gui.promptStudioDraft = promptStudioNewProfile(domain); Gui.promptStudioDraftKey = `${domain}|${PROMPT_PROFILE_DEFAULT_NAME}`; renderSettingsGui(); } }),
-          guiEl('button', { class: 'sga-btn danger', type: 'button', text: '삭제', disabled: isDefault, onClick: async () => { try { await deletePromptStudioProfile(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '저장하고 활성화', onClick: async () => { try { await savePromptStudioDraft(true); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '저장만', onClick: async () => { try { await savePromptStudioDraft(false); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
+          guiEl('button', { class: 'btn', type: 'button', text: isActive ? '현재 활성' : '이 프리셋 활성화', disabled: isActive, onClick: async () => { try { await activatePromptStudioProfile(Gui.promptStudioProfileName); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '새 프리셋', onClick: () => { Gui.promptStudioProfileName = PROMPT_PROFILE_DEFAULT_NAME; Gui.promptStudioDraft = promptStudioNewProfile(domain); Gui.promptStudioDraftKey = `${domain}|${PROMPT_PROFILE_DEFAULT_NAME}`; renderSettingsGui(); } }),
+          guiEl('button', { class: 'btn btn--danger', type: 'button', text: '삭제', disabled: isDefault, onClick: async () => { try { await deletePromptStudioProfile(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
         ])
       ]),
       ...sectionCards
     ]);
 
-    const technicalTools = guiEl('details', { class: 'sga-card wide' }, [
+    const technicalTools = guiEl('details', { class: 'card' }, [
       guiEl('summary', { text: '고급 도구 · 최종 프롬프트 / JSON' }),
-      guiEl('details', { class: 'sga-card wide', style: { marginTop: '12px' } }, [guiEl('summary', { text: '컴파일된 최종 프롬프트 보기' }), guiEl('pre', { class: 'sga-live-result-code', text: compiledPreview })]),
-      guiEl('div', { class: 'sga-card wide', style: { marginTop: '12px' } }, [
+      guiEl('details', { class: 'card', style: { marginTop: '12px' } }, [guiEl('summary', { text: '컴파일된 최종 프롬프트 보기' }), guiEl('pre', { class: 'code', text: compiledPreview })]),
+      guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
         guiEl('h3', { text: '프롬프트 JSON 가져오기 / 내보내기' }),
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '현재 프리셋 JSON', onClick: () => { Gui.promptStudioExportScope = 'selected'; Gui.promptStudioExportText = JSON.stringify(promptStudioExportPayload('selected'), null, 2); renderSettingsGui(); } }),
-          allowedDomains.length < PROMPT_STUDIO_OOC_DOMAIN_IDS.length ? null : guiEl('button', { class: 'sga-btn', type: 'button', text: '전체 프리셋 JSON', onClick: () => { Gui.promptStudioExportScope = 'all'; Gui.promptStudioExportText = JSON.stringify(promptStudioExportPayload('all'), null, 2); renderSettingsGui(); } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: 'JSON 파일 저장', onClick: () => { const scope = allowedDomains.length === PROMPT_STUDIO_OOC_DOMAIN_IDS.length && Gui.promptStudioExportScope === 'all' ? 'all' : 'selected'; const payload = promptStudioExportPayload(scope); Gui.promptStudioExportText = JSON.stringify(payload, null, 2); downloadJson(`${familyLabel}_prompt_profiles_${scope}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`, payload); } }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '복사', disabled: !Gui.promptStudioExportText, onClick: async () => { const result = await copyTextWithFallback(Gui.promptStudioExportText); guiSetStatus(result.ok ? '프롬프트 JSON을 복사했습니다.' : result.error, !result.ok, true); } })
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn', type: 'button', text: '현재 프리셋 JSON', onClick: () => { Gui.promptStudioExportScope = 'selected'; Gui.promptStudioExportText = JSON.stringify(promptStudioExportPayload('selected'), null, 2); renderSettingsGui(); } }),
+          allowedDomains.length < PROMPT_STUDIO_OOC_DOMAIN_IDS.length ? null : guiEl('button', { class: 'btn', type: 'button', text: '전체 프리셋 JSON', onClick: () => { Gui.promptStudioExportScope = 'all'; Gui.promptStudioExportText = JSON.stringify(promptStudioExportPayload('all'), null, 2); renderSettingsGui(); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: 'JSON 파일 저장', onClick: () => { const scope = allowedDomains.length === PROMPT_STUDIO_OOC_DOMAIN_IDS.length && Gui.promptStudioExportScope === 'all' ? 'all' : 'selected'; const payload = promptStudioExportPayload(scope); Gui.promptStudioExportText = JSON.stringify(payload, null, 2); downloadJson(`${familyLabel}_prompt_profiles_${scope}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`, payload); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '복사', disabled: !Gui.promptStudioExportText, onClick: async () => { const result = await copyTextWithFallback(Gui.promptStudioExportText); guiSetStatus(result.ok ? '프롬프트 JSON을 복사했습니다.' : result.error, !result.ok, true); } })
         ]),
         fieldNode('내보낸 JSON', inputNode(Gui.promptStudioExportText || '', value => { Gui.promptStudioExportText = value; }, { tag: 'textarea', class: 'stage-prompt', placeholder: '위 버튼으로 JSON을 생성하세요.' })),
         fieldNode('붙여넣을 JSON', inputNode(Gui.promptStudioImportText || '', value => { Gui.promptStudioImportText = value; }, { tag: 'textarea', class: 'stage-prompt', placeholder: '현재 화면에서 허용된 프롬프트 프리셋 JSON을 붙여넣으세요.' })),
-        guiEl('div', { class: 'sga-actions' }, [guiEl('button', { class: 'sga-btn good', type: 'button', text: '붙여넣은 JSON 가져오기', onClick: async () => { try { await importPromptStudioJson({ allowedDomains }); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })])
+        guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--primary', type: 'button', text: '붙여넣은 JSON 가져오기', onClick: async () => { try { await importPromptStudioJson({ allowedDomains }); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })])
       ].filter(Boolean))
     ]);
 
     const memoryOocEditor = guiLazyDetails(
-      { class: 'sga-card wide', id: 'libra-memory-ooc-editor', open: Gui.memoryOocExpanded === true },
+      { class: 'card', id: 'libra-memory-ooc-editor', open: Gui.memoryOocExpanded === true },
       guiEl('summary', { text: '대화로 기억 지침 만들기 · OOC' }),
       () => renderPromptStudioOocBuilder()
     );
     memoryOocEditor.addEventListener('toggle', () => { if (memoryOocEditor.isConnected) Gui.memoryOocExpanded = memoryOocEditor.open; });
-    return guiEl('div', { class: 'sga-flow-section', dataset: { memoryPromptStudio: 'true' } }, [easyCard, memoryOocEditor, advancedEditor, technicalTools]);
+    return guiEl('div', { class: 'stack', dataset: { memoryPromptStudio: 'true' } }, [easyCard, memoryOocEditor, advancedEditor, technicalTools]);
   };
 
 
   const buildLibraServerConnectionPanel = () => {
     const bookTheme = true; // Both visible entry points belong to BOOK_UX.
-    const storageHost = guiEl('div', { id: 'libraMemorySuiteServerConnectionPanel', class: 'sga-card sga-wide' }, [
+    const storageHost = guiEl('div', { id: 'libraMemorySuiteServerConnectionPanel', class: 'card' }, [
       guiEl('strong', { text: '저장 및 연산 설정을 불러오는 중…' })
     ]);
     setTimeout(() => {
@@ -76879,7 +74767,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         ...(computeBridge ? { computeBridge: computeBridge } : {})
       }).catch(error => guiSetStatus(`서버 연결 화면 오류: ${error?.message || error}`, true, true));
     }, 0);
-    return guiEl('div', { class: 'sga-flow-section' }, [storageHost]);
+    return guiEl('div', { class: 'stack' }, [storageHost]);
   };
 
   const scheduleLibraPortableMemoryBackupMount = host => {
@@ -76892,31 +74780,29 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const buildLibraMemoryRestorePanel = () => {
     const host = guiEl('div', {
-      class: 'libra-portable-backup-host',
+      class: "stack",
       dataset: { portableBackupHost: 'libra' },
       'aria-label': 'JSON 기억 백업 및 복원'
     });
     scheduleLibraPortableMemoryBackupMount(host);
-    return guiEl('section', { class: 'sga-card wide libra-memory-restore-card', dataset: { recoverySection: 'memory_restore' } }, [
-      guiEl('div', { class: 'libra-memory-restore-title' }, [
+    return guiEl('section', { class: 'card', dataset: { recoverySection: 'memory_restore' } }, [
+      guiEl('div', { class: 'split' }, [
         guiEl('h3', { text: '기억 복원' }),
-        guiEl('span', { class: 'libra-json-badge', text: 'JSON', title: 'JSON 백업 파일' })
+        guiEl('span', { class: 'badge', text: 'JSON', title: 'JSON 백업 파일' })
       ]),
-      guiEl('div', { class: 'sga-note', text: '현재 채팅의 영구 기억과 복원에 필요한 관련 데이터를 JSON 파일로 내려받습니다. 불러올 때는 같은 채팅 복원, 새 채팅으로 기억 이사, 복사된 채팅의 기억 복구 중 안전하게 가능한 방식만 안내합니다.' }),
+      guiEl('p', { class: 'muted', text: '현재 채팅의 영구 기억과 복원에 필요한 관련 데이터를 JSON 파일로 내려받습니다. 불러올 때는 같은 채팅 복원, 새 채팅으로 기억 이사, 복사된 채팅의 기억 복구 중 안전하게 가능한 방식만 안내합니다.' }),
       host,
-      guiEl('div', { class: 'libra-memory-restore-note', text: '현재 채팅을 백업 · 같은 채팅은 정확히 교체 · 다른 채팅은 검증 후 이사 또는 복사 복구' })
+      guiEl('p', { class: 'hint', text: '현재 채팅을 백업 · 같은 채팅은 정확히 교체 · 다른 채팅은 검증 후 이사 또는 복사 복구' })
     ]);
   };
 
-  const buildLibraRecoveryPanel = () => guiEl('div', { class: 'sga-flow-section', dataset: { recoveryHubSection: 'memory_restore' } }, [
-    buildLibraMemoryRestorePanel()
-  ]);
+
 
   const MOBILE_NAV_ITEMS = Object.freeze(SHARED_SIDEBAR_PAGE_REGISTRY.map(page => Object.freeze({
     value: `flow|${page.id}`, section: page.id, tab: 'flow', label: page.label, icon: page.icon
   })));
 
-  
+
 
 
 
@@ -76925,23 +74811,23 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (!tablist) return;
     tablist.querySelectorAll(':scope > button[role="tab"]').forEach(node => {
       const active = node === button;
-      node.classList.toggle('primary', active);
+      node.classList.toggle('is-on', active);
       node.setAttribute('aria-selected', String(active));
       node.tabIndex = active ? 0 : -1;
     });
   };
 
   const buildLibraHubTabs = (definitions, selected, onSelect, ariaLabel) => guiEl('section', {
-    class: 'sga-card sga-wide sga-prompt-injection-nav'
+    class: 'card tabs'
   }, [
     guiEl('div', {
-    class: `sga-prompt-injection-tabs libra-hub-tabs cols-${Math.max(1, definitions.length)}`,
+    class: `tabs tabs cols-${Math.max(1, definitions.length)}`,
       role: 'tablist',
       'aria-label': ariaLabel
     }, definitions.map(definition => {
       const active = definition.id === selected;
       return guiEl('button', {
-        class: `sga-btn${active ? ' primary' : ''}`,
+        class: `tab${active ? ' is-on' : ''}`,
         type: 'button',
         role: 'tab',
         'aria-selected': String(active),
@@ -76958,35 +74844,9 @@ html,body{width:100%;height:100%;overflow:hidden}
   ]);
 
 
-  const buildLibraSectionRail = (definitions, selected, onSelect, ariaLabel) => guiEl('nav', {
-    class: 'libra-section-rail',
-    role: 'tablist',
-    'aria-label': ariaLabel
-  }, definitions.map(definition => {
-    const active = definition.id === selected;
-    return guiEl('button', {
-      class: `sga-btn${active ? ' primary' : ''}`,
-      type: 'button',
-      role: 'tab',
-      title: definition.label,
-      'aria-selected': String(active),
-      tabIndex: active ? 0 : -1,
-      text: definition.label,
-      onClick: event => {
-        if (definition.id === selected) return;
-        onSelect(definition.id);
-        syncGuiTabSelectionFeedback(event.currentTarget);
-        queueGuiNavigationRender();
-      }
-    });
-  }));
 
-  const buildLibraSectionLayout = (definitions, selected, onSelect, ariaLabel, panel) => guiEl('div', {
-    class: 'libra-section-layout'
-  }, [
-    buildLibraSectionRail(definitions, selected, onSelect, ariaLabel),
-    guiEl('div', { class: 'libra-section-content', role: 'tabpanel' }, [panel])
-  ]);
+
+
   const canonicalReaderIdentityKey = value => `${text(value?.memoryId || '')}:r${Number(value?.revision || 0)}:w:${text(value?.worldlineId || 'main')}`;
   const canonicalReaderSelectedKey = () => canonicalReaderIdentityKey(Gui.canonicalReaderSelected);
   const canonicalReaderBinding = () => {
@@ -77174,16 +75034,16 @@ html,body{width:100%;height:100%;overflow:hidden}
   const buildCanonicalEvidenceChainView = chainValue => {
     const chain = guiAsObject(chainValue);
     const nodes = guiAsArray(chain.nodes);
-    if (!nodes.length) return guiEl('div', { class: 'sga-note', text: '연결할 수 있는 검증된 Evidence node가 없습니다.' });
-    return guiEl('div', { class: 'libra-evidence-chain', dataset: { evidenceStatus: text(chain.status || 'unknown') } }, [
+    if (!nodes.length) return guiEl('div', { class: 'hint', text: '연결할 수 있는 검증된 Evidence node가 없습니다.' });
+    return guiEl('div', { class: "chain", dataset: { evidenceStatus: text(chain.status || 'unknown') } }, [
       ...nodes.map((node, index) => {
       const payload = guiAsObject(node?.payload);
       const quote = text(payload.quote || '');
       const summary = quote || text(payload.title || payload.summary || payload.field || payload.status || payload.domain || payload.ref || '');
-      return guiEl('article', { class: `libra-evidence-node layer-${text(node?.layer || 'unknown')}` }, [
-        guiEl('div', { class: 'libra-evidence-node-index', text: String(index + 1).padStart(2, '0') }),
-        guiEl('div', { class: 'libra-evidence-node-copy' }, [
-          guiEl('div', { class: 'libra-evidence-node-head' }, [guiEl('strong', { text: canonicalEvidenceLayerCopy(node?.layer) }), libraStatusBadge(text(node?.status || 'available'), node?.status === 'current' || node?.status === 'exact' ? 'good' : '')]),
+      return guiEl('article', { class: `note layer-${text(node?.layer || 'unknown')}` }, [
+        guiEl('div', { class: "chip", text: String(index + 1).padStart(2, '0') }),
+        guiEl('div', { class: "stack" }, [
+          guiEl('div', { class: "split" }, [guiEl('strong', { text: canonicalEvidenceLayerCopy(node?.layer) }), libraStatusBadge(text(node?.status || 'available'), node?.status === 'current' || node?.status === 'exact' ? 'good' : '')]),
           summary ? guiEl('p', { text: summary }) : null,
           guiEl('small', { text: text(node?.id || '') })
         ])
@@ -77198,61 +75058,85 @@ html,body{width:100%;height:100%;overflow:hidden}
   const buildCanonicalEvidenceDrawer = () => {
     if (!Gui.evidenceDrawerOpen) return null;
     const chain = Gui.evidenceDrawerChain || Gui.canonicalReaderEvidence;
-    return guiEl('div', { class: 'libra-evidence-drawer-backdrop', role: 'presentation', onClick: event => {
+    return guiEl('div', { class: 'overlay overlay--right is-open', role: 'presentation', 'aria-hidden': 'false', onClick: event => {
       if (event.target === event.currentTarget) { Gui.evidenceDrawerOpen = false; Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1; Gui.canonicalReaderEvidenceLoading = false; queueGuiNavigationRender(); }
-    } }, [guiEl('aside', { class: 'libra-evidence-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': '정본 근거 계보' }, [
-      guiEl('header', { class: 'libra-evidence-drawer-head' }, [
-        guiEl('div', {}, [guiEl('span', { class: 'libra-article-eyebrow', text: 'EVIDENCE · READ ONLY' }), guiEl('h2', { text: Gui.evidenceDrawerTitle || '정본 근거' })]),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '닫기', onClick: () => { Gui.evidenceDrawerOpen = false; Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1; Gui.canonicalReaderEvidenceLoading = false; queueGuiNavigationRender(); } })
+    } }, [guiEl('aside', { class: 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': '정본 근거 계보' }, [
+      guiEl('div', { class: 'drawer__head' }, [
+        guiEl('div', {}, [guiEl('div', { class: 'eyebrow', text: 'Evidence · read only' }), guiEl('h2', { text: Gui.evidenceDrawerTitle || '정본 근거' })]),
+        guiEl('button', { class: 'btn btn--icon btn--ghost', type: 'button', text: '×', 'aria-label': '닫기', onClick: () => { Gui.evidenceDrawerOpen = false; Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1; Gui.canonicalReaderEvidenceLoading = false; queueGuiNavigationRender(); } })
       ]),
-      guiEl('div', { class: 'libra-evidence-drawer-body' }, [
-        Gui.canonicalReaderEvidenceError ? guiEl('div', { class: 'sga-callout danger' }, [guiEl('p', { text: Gui.canonicalReaderEvidenceError }), guiEl('button', { class: 'sga-btn', type: 'button', text: '근거 다시 읽기', onClick: () => void loadCanonicalReaderEvidence({ openDrawer: Gui.evidenceDrawerOpen }) })]) : null,
-        Gui.canonicalReaderEvidenceLoading && !chain ? guiEl('div', { class: 'sga-note', text: '정본에서 Current Head까지 계보를 검증하는 중입니다.' }) : buildCanonicalEvidenceChainView(chain)
+      guiEl('div', { class: 'drawer__body stack' }, [
+        Gui.canonicalReaderEvidenceError ? guiEl('div', { class: 'note danger' }, [guiEl('p', { text: Gui.canonicalReaderEvidenceError }), guiEl('button', { class: 'btn', type: 'button', text: '근거 다시 읽기', onClick: () => void loadCanonicalReaderEvidence({ openDrawer: Gui.evidenceDrawerOpen }) })]) : null,
+        Gui.canonicalReaderEvidenceLoading && !chain ? guiEl('div', { class: 'hint', text: '정본에서 Current Head까지 계보를 검증하는 중입니다.' }) : buildCanonicalEvidenceChainView(chain)
       ])
     ])]);
   };
-  
-  
-  
-  const buildCanonicalContextPanel = () => {
-    const detail = guiAsObject(Gui.canonicalReaderDetail);
-    ensureCanonicalReaderPage();
-    if (detail.memoryId && !Gui.canonicalReaderEvidence && !Gui.canonicalReaderEvidenceLoading && !Gui.canonicalReaderEvidenceError) queueMicrotask(() => void loadCanonicalReaderEvidence());
-    return guiEl('div', { class: 'sga-flow-section', dataset: { canonicalContext: 'true' } }, [
-      guiEl('section', { class: 'sga-card wide libra-reader-intro' }, [guiEl('span', { class: 'libra-article-eyebrow', text: 'EVIDENCE → CURRENT STATE' }), guiEl('h2', { text: detail.title || '근거와 상태 반영' }), guiEl('p', { text: '원문 U+A에서 정본 사실·로컬 적용·현재 필드까지 이어지는 검증된 경로를 한 화면에 표시합니다. 구형 기록은 당시의 출처를 유지합니다.' })]),
-      Gui.canonicalReaderEvidenceError ? guiEl('div', { class: 'sga-callout danger' }, [guiEl('p', { text: Gui.canonicalReaderEvidenceError }), guiEl('button', { class: 'sga-btn', type: 'button', text: '근거 다시 읽기', onClick: () => void loadCanonicalReaderEvidence({ openDrawer: Gui.evidenceDrawerOpen }) })]) : null,
-      Gui.canonicalReaderEvidenceLoading ? guiEl('div', { class: 'sga-card wide sga-note', text: '근거 digest와 현재 Head 연결을 검증하는 중입니다.' }) : buildCanonicalEvidenceChainView(Gui.canonicalReaderEvidence)
+
+
+
+
+
+
+
+
+
+  const buildLibraReferenceHubPanel = () => {
+    const runtime=Gui.state.runtime;
+    const selected=new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds));
+    const excludedModules=new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
+    const excludedCharacters=new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));
+    const modules=guiAsArray(Gui.moduleCatalog).filter(item=>item.active&&item.loreCount>0),characters=guiAsArray(Gui.characterLoreCatalog);
+    const mark=()=>{markGuiDirty();void renderSettingsGui();};
+    const choose=kind=>{Gui.referenceEditSection=kind;Gui.app?.querySelectorAll('[data-reference-controls]').forEach(node=>{node.open=node.dataset.referenceControls===kind;});if(kind==='modules')void refreshModuleLoreCatalog(false);if(kind==='characters')void refreshCharacterLoreCatalog(false);void renderSettingsGui();};
+    const button=(label,action)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,onClick:action});
+    const row=(label,desc,action)=>guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:label}),guiEl('div',{class:'setting__desc',text:desc})]),action]);
+    const changeModule=(item,value)=>{
+      const next=new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),excluded=new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
+      [item.key,...guiAsArray(item.aliases)].forEach(key=>next.delete(key));if(value)next.add(item.key);
+      guiAsArray(item.loreEntries).forEach(entry=>excluded.delete(entry.key));runtime.selectedModuleLoreIds=[...next];runtime.excludedModuleLoreIds=[...excluded];mark();
+    };
+    const changeEntry=(key,value)=>{const next=new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));value?next.delete(key):next.add(key);runtime.excludedModuleLoreIds=[...next];mark();};
+    const changeCharacter=(key,value)=>{const next=new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));value?next.add(key):next.delete(key);runtime.excludedCharacterLoreIds=[...next];mark();};
+    const fold=(id,title,builder)=>guiLazyDetails({class:'fold',open:Gui.referenceEditSection===id,dataset:{referenceControls:id}},guiEl('summary',{text:title}),()=>guiEl('div',{class:'fold__body stack'},builder()));
+    return guiEl('div',{class:'stack',dataset:{referenceSettings:'current'}},[
+      guiEl('div',{class:'card'},[
+        guiEl('h2',{class:'card__title',text:'참고 자료'}),guiEl('p',{class:'card__desc',text:'분석과 리콜에 함께 읽을 자료만 켭니다.'}),
+        row('모듈 로어북',`활성 모듈 ${modules.length}개 · 선택 ${selected.size}개`,button('선택…',()=>choose('modules'))),
+        row('캐릭터 로어북',`제외한 항목 ${excludedCharacters.size}개`,button('제외 관리…',()=>choose('characters')))
+      ]),
+      fold('modules','모듈 · 로어 선택',()=>[
+        guiEl('div',{class:'cluster'},[
+          button('모듈 목록 새로고침',()=>void refreshModuleLoreCatalog(true)),
+          button('활성 모듈 전체 선택',()=>{runtime.selectedModuleLoreIds=modules.map(item=>item.key);runtime.excludedModuleLoreIds=[...excludedModules].filter(key=>!modules.some(item=>guiAsArray(item.loreEntries).some(entry=>entry.key===key)));mark();}),
+          button('모듈 선택 전체 해제',()=>{runtime.selectedModuleLoreIds=[];mark();})
+        ]),
+        Gui.moduleCatalogError?guiEl('p',{class:'note note--danger',text:Gui.moduleCatalogError}):null,
+        ...modules.map(item=>{
+          const checked=selected.has(item.key)||guiAsArray(item.aliases).some(key=>selected.has(key));
+          return guiEl('div',{class:'stack stack--sm'},[
+            guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked,dataset:{moduleLoreModuleToggle:item.key},onChange:event=>changeModule(item,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:`로어 ${item.loreCount}개 · ${item.description||''}`})])]),
+            guiEl('details',{class:'fold'},[guiEl('summary',{text:`${item.name} 내부 로어`}),guiEl('div',{class:'fold__body stack'},[
+              guiEl('div',{class:'cluster'},[button('로어 전체 선택',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.delete(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();}),button('로어 전체 해제',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.add(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();})]),
+              ...guiAsArray(item.loreEntries).map(entry=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',disabled:!checked,checked:checked&&!excludedModules.has(entry.key),dataset:{moduleLoreEntryToggle:entry.key},onChange:event=>changeEntry(entry.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:entry.name}),guiEl('small',{class:'hint',text:[entry.activationKey,entry.position,entry.contentPreview].filter(Boolean).join(' · ')})])]))
+            ])])
+          ]);
+        }),
+        modules.length?null:guiEl('p',{class:'hint',text:Gui.moduleCatalogLoading?'목록을 읽는 중입니다.':'활성 로어 모듈이 없습니다.'})
+      ]),
+      fold('characters','캐릭터 로어북 제외',()=>[
+        guiEl('div',{class:'cluster'},[button('목록 새로고침',()=>void refreshCharacterLoreCatalog(true)),button('현재 캐릭터 전체 배제',()=>{runtime.excludedCharacterLoreIds=[...new Set([...excludedCharacters,...characters.map(item=>item.key)])];mark();}),button('현재 캐릭터 배제 해제',()=>{runtime.excludedCharacterLoreIds=[...excludedCharacters].filter(key=>!characters.some(item=>item.key===key));mark();})]),
+        Gui.characterLoreCatalogError?guiEl('p',{class:'note note--danger',text:Gui.characterLoreCatalogError}):null,
+        ...characters.slice(0,guiListLimit('characterLore')).map(item=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:excludedCharacters.has(item.key),dataset:{characterLoreExclude:item.key},onChange:event=>changeCharacter(item.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:[item.activationKey,item.contentPreview].filter(Boolean).join(' · ')})])])),guiLoadMoreControl('characterLore',characters.length,'로어북')
+      ]),
+      fold('materials','통합 로어 · 작가노트 상세',()=>[
+        checkboxNode(runtime.responseLoreEnabled!==false,'응답에 로어 참고 자료 사용',value=>{runtime.responseLoreEnabled=value;markGuiDirty();}),
+        fieldNode('단계별 시작 로어 개수',inputNode(runtime.responseLoreStartCount,value=>{runtime.responseLoreStartCount=clampInt(value,1,MAX_RESPONSE_LORE_ITEMS,DEFAULT_RESPONSE_LORE_START_COUNT);},{type:'number',min:1,max:MAX_RESPONSE_LORE_ITEMS})),
+        fieldNode('단계별 최대 로어 개수',inputNode(runtime.responseLoreMaxItems,value=>{runtime.responseLoreMaxItems=clampInt(value,runtime.responseLoreStartCount,MAX_RESPONSE_LORE_ITEMS,DEFAULT_RESPONSE_LORE_MAX_ITEMS);},{type:'number',min:1,max:MAX_RESPONSE_LORE_ITEMS})),
+        fieldNode('단계별 로어 최대 문자',inputNode(runtime.responseLoreMaxChars,value=>{runtime.responseLoreMaxChars=clampInt(value,MIN_RESPONSE_LORE_CHARS,MAX_RESPONSE_LORE_CHARS,DEFAULT_RESPONSE_LORE_MAX_CHARS);},{type:'number',min:MIN_RESPONSE_LORE_CHARS,max:MAX_RESPONSE_LORE_CHARS}))
+      ])
     ]);
   };
 
-  
-
-  
-  
-  const buildLibraReferenceHubPanel = ({ showTabs = true } = {}) => {
-    Gui.referenceHubSection = normalizeHubChoice(Gui.referenceHubSection, LIBRA_REFERENCE_HUB_SECTIONS, 'modules');
-    const definitions = [
-      Object.freeze({ id: 'modules', label: '모듈 로어북' }),
-      Object.freeze({ id: 'character_lore_exclusions', label: '캐릭터 로어북 제외' }),
-      Object.freeze({ id: 'response_materials', label: '통합 로어 · 작가노트' })
-    ];
-    const panel = Gui.referenceHubSection === 'response_materials'
-      ? buildLibraResponseMaterialSettingsPanel()
-      : Gui.referenceHubSection === 'character_lore_exclusions'
-        ? buildCharacterLoreExclusionPanel()
-        : buildModuleLoreSelectionPanel();
-    return guiEl('div', { class: 'sga-flow-section' }, [
-      showTabs ? buildLibraHubTabs(definitions, Gui.referenceHubSection, sectionId => {
-        Gui.referenceHubSection = sectionId;
-        if (sectionId === 'modules') void refreshModuleLoreCatalog(false);
-        else if (sectionId === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
-      }, '참고 자료 내부 페이지') : null,
-      panel
-    ]);
-  };
-
-  
-  
 
 
 
@@ -77265,19 +75149,21 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
 
-  
-  
-  
-    
-
-
-  
-  
 
 
 
 
-  
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -77294,7 +75180,6 @@ html,body{width:100%;height:100%;overflow:hidden}
   // Stable name used by the GRADIA Skill contract and external GUI audits.
 
 
-  
 
 
 
@@ -77316,11 +75201,12 @@ html,body{width:100%;height:100%;overflow:hidden}
 
 
 
-  
-  
-  
-  
-  
+
+
+
+
+
+
 
 
   const worldManagerSnapshotView = () => {
@@ -77346,7 +75232,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     return { label, status, turn, reason: text(row.reason || ''), ready: row.status === 'ready' };
   };
 
-                  
+
   const worldManagerCorrectionId = row => text(row?.correctionProvenance?.correctionId || '');
   // Corrections that BUILD identity/worldline structure. A profile edit layers on
   // top of these; it must never supersede them, or the structure that produced
@@ -77422,17 +75308,17 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const buildWorldManagerSnapshotNotice = (view, domain, label, count) => {
     const copy = worldManagerDomainCopy(view, domain, label);
-    if (!view.head) return guiEl('div', { class: 'sga-callout', dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
+    if (!view.head) return guiEl('div', { class: 'note', dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
       guiEl('strong', { text: `아직 ${label} Current Head가 없습니다.` }),
       guiEl('div', { text: '다음 5턴 정본 분석이 완료되면 이 화면에 표시됩니다.' })
     ]);
     const sourceRow = domain === 'narrative' ? view.narrative : {};
-    return guiEl('div', { class: `sga-callout${copy.ready ? '' : ' warn'}`, dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
-      guiEl('div', { class: 'sga-agent-head' }, [guiEl('strong', { text: `${label} · ${copy.status} · ${Number(count || 0)}개` }), worldManagerSourceBadge(domain, sourceRow, view)]),
+    return guiEl('div', { class: `note${copy.ready ? '' : ' warn'}`, dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
+      guiEl('div', { class: 'split' }, [guiEl('strong', { text: `${label} · ${copy.status} · ${Number(count || 0)}개` }), worldManagerSourceBadge(domain, sourceRow, view)]),
       guiEl('div', { text: `정본 기준 T${copy.turn || view.throughTurn} · ${libraFormatTime(view.head.updatedAt)}` }),
-      copy.reason ? guiEl('div', { class: 'sga-note', text: copy.reason }) : null,
-      view.head?.unifiedCoverage?.legacyCount ? guiEl('div',{class:'sga-callout warn',text:`과거 정본 ${view.head.unifiedCoverage.legacyCount}개는 기존 형식으로 보존 중입니다. 그 구간의 상태는 미해석이며 빈값을 부재로 판단하지 않습니다.`}) : null,
-      guiEl('div', { class: 'sga-note', text: '이 읽기 화면은 현재 snapshot만 사용합니다. 정본 근거와 Correction Journal은 해당 탭을 열 때 조회합니다.' })
+      copy.reason ? guiEl('div', { class: 'hint', text: copy.reason }) : null,
+      view.head?.unifiedCoverage?.legacyCount ? guiEl('div',{class:'note warn',text:`과거 정본 ${view.head.unifiedCoverage.legacyCount}개는 기존 형식으로 보존 중입니다. 그 구간의 상태는 미해석이며 빈값을 부재로 판단하지 않습니다.`}) : null,
+      guiEl('div', { class: 'hint', text: '이 읽기 화면은 현재 snapshot만 사용합니다. 정본 근거와 Correction Journal은 해당 탭을 열 때 조회합니다.' })
     ]);
   };
 
@@ -77526,22 +75412,22 @@ html,body{width:100%;height:100%;overflow:hidden}
     return state;
   };
   const worldManagerInput = (value, onInput, options = {}) => guiEl('input', {
-    class: 'sga-input', type: options.type || 'text', value: value ?? '', disabled: options.disabled === true,
+    class: 'input', type: options.type || 'text', value: value ?? '', disabled: options.disabled === true,
     placeholder: options.placeholder || '', dataset:options.dataset||{}, onInput: event => onInput(event.target.value)
   });
   const worldManagerTextarea = (value, onInput, options = {}) => guiEl('textarea', {
-    class: 'sga-textarea ' + (options.tall ? 'tall' : 'preview'), value: value ?? '', disabled: options.disabled === true,
+    class: 'textarea' + (options.tall ? 'tall' : 'preview'), value: value ?? '', disabled: options.disabled === true,
     placeholder: options.placeholder || '', dataset:options.dataset||{}, onInput: event => onInput(event.target.value)
   });
   const worldManagerSelect = (value, items, onInput, options={}) => {
-    const node=guiEl('select',{class:'sga-select',value:String(value ?? ''),dataset:options.dataset||{},onChange:event=>onInput(event.target.value)},optionNodes(items,String(value ?? '')));
+    const node=guiEl('select',{class:'select',value:String(value ?? ''),dataset:options.dataset||{},onChange:event=>onInput(event.target.value)},optionNodes(items,String(value ?? '')));
     try { node.value=String(value ?? ''); } catch (_) {}
     return node;
   };
 
   const openWorldManagerCorrectionEditor = (domain, row, view) => {
     const common={
-      key:worldManagerDraftKey(domain,row),domain,recordId:text(row?.id||''),anchorTurn:Number(view?.throughTurn||0),
+      key:worldManagerDraftKey(domain,row),domain,recordId:text(row?.id||''),scopeKey:text(view?.scopeKey||view?.scope?.scopeKey||LibraMemoryCore.state?.snapshot?.scope?.scopeKey||''),anchorTurn:Number(view?.throughTurn||0),
       basisFingerprint:text(view?.basis?.sourceFingerprint||''),supersedes:worldManagerSupersedableProfileCorrectionId(row,domain),values:{},
       unified:worldManagerIsUnified(view),originalName:text(row?.name||''),resolvePendingFacts:[],
       profileCollectionEdits:{boundaries:cloneJson(guiAsArray(row?.state?.boundaries))},
@@ -77561,6 +75447,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     else if (domain==='narrative_thread') common.values={arcId:text(row?.arcId||''),type:text(row?.kind||row?.type||'other'),status:text(row?.status||'open'),summary:text(row?.summary||''),interpretation:text(row?.interpretation||''),participants:worldManagerListText(row?.participants)};
     else if (domain==='narrative_lock') common.values={status:text(row?.status||'active'),summary:text(row?.summary||'')};
     Gui.worldManagerEditDraft=common; Gui.worldManagerEditError=''; queueGuiNavigationRender();
+    if (typeof openApprovedCorrectionDialog === 'function') void openApprovedCorrectionDialog(domain,row,view);
   };
 
   const worldManagerCorrectionRequest = draft => {
@@ -77612,6 +75499,11 @@ html,body{width:100%;height:100%;overflow:hidden}
     const draft=cloneJson(Gui.worldManagerEditDraft); Gui.worldManagerSaving=true; Gui.worldManagerEditError='';
     let success='';
     try {
+      if (text(draft.scopeKey)!==text(LibraMemoryCore.state?.snapshot?.scope?.scopeKey||'')) throw new Error('채팅 또는 scope가 바뀌었습니다. 교정 대상을 다시 열어 확인해 주세요.');
+      const correctionOverlay=Gui.app?.querySelector('#dlg-correct');
+      if (correctionOverlay && (text(correctionOverlay.dataset.correctionDraftKey)!==text(draft.key)
+        || text(correctionOverlay.dataset.correctionRecordId)!==text(draft.recordId)
+        || text(correctionOverlay.dataset.correctionDomain)!==text(draft.domain))) throw new Error('교정 대상이 열었던 기록과 달라졌습니다. 다시 확인해 주세요.');
       const request=worldManagerCorrectionRequest(draft); const api=globalThis.__LIBRA__;
       if (!api) throw new Error('LIBRA 공개 API가 준비되지 않았습니다.');
       const result=request.method==='narrative'
@@ -77627,8 +75519,14 @@ html,body{width:100%;height:100%;overflow:hidden}
       Gui.worldManagerEditError=(error?.code?String(error.code)+' · ':'')+String(error?.message||error);
     } finally {
       Gui.worldManagerSaving=false; await renderSettingsGui();
-      if (success) guiSetStatus(success,false);
-      else if (Gui.worldManagerEditError) guiSetStatus(Gui.worldManagerEditError,true,true);
+      if (success) { if (typeof closeApprovedMockupDialog === 'function') closeApprovedMockupDialog('dlg-correct'); guiSetStatus(success,false); }
+      else if (Gui.worldManagerEditError) {
+        const error=Gui.app?.querySelector('#dlg-correct [data-correction-error]');
+        if(error){error.hidden=false;error.textContent=Gui.worldManagerEditError;}
+        const save=Gui.app?.querySelector('#dlg-correct [data-correction-save]');
+        if(save){save.disabled=false;save.textContent='교정 저장';}
+        guiSetStatus(Gui.worldManagerEditError,true,true);
+      }
     }
   };
 
@@ -77654,9 +75552,9 @@ html,body{width:100%;height:100%;overflow:hidden}
           };
           const allChoices=guiAsArray(draft.profileEntityChoices).map(row=>[row.id,row.name]);
           const rendered=boundaryRows.map((row,index)=>{
-            if(typeof row==='string')return guiEl('section',{class:'sga-form-grid',dataset:{worldProfileBoundaryRow:String(index)}},[
-              fieldNode('이전 형식 경계',guiEl('p',{class:'sga-note',text:row})),
-              guiEl('button',{class:'sga-btn',type:'button',text:'이전 경계 제거',dataset:{worldProfileBoundaryRemove:String(index)},onClick:()=>{draft.profileCollectionEdits.boundaries=guiAsArray(draft.profileCollectionEdits.boundaries).filter((_,i)=>i!==index);queueGuiNavigationRender();}})
+            if(typeof row==='string')return guiEl('section',{class:'grid g2',dataset:{worldProfileBoundaryRow:String(index)}},[
+              fieldNode('이전 형식 경계',guiEl('p',{class:'hint',text:row})),
+              guiEl('button',{class:'btn',type:'button',text:'이전 경계 제거',dataset:{worldProfileBoundaryRemove:String(index)},onClick:()=>{draft.profileCollectionEdits.boundaries=guiAsArray(draft.profileCollectionEdits.boundaries).filter((_,i)=>i!==index);queueGuiNavigationRender();}})
             ]);
             const scope=guiAsObject(row?.scope),targetRef=String(scope.targetRef||'');
             const targetOptions=[['','대상 미기재'],...allChoices];
@@ -77668,11 +75566,11 @@ html,body{width:100%;height:100%;overflow:hidden}
               fieldNode('대상',worldManagerSelect(targetRef,targetOptions,value=>updateBoundary(index,'targetRef',value),{dataset:{worldProfileBoundaryTarget:String(index)}})),
               fieldNode('행위',worldManagerInput(scope.act,value=>updateBoundary(index,'act',value),{dataset:{worldProfileBoundaryAct:String(index)}})),
               fieldNode('시점',worldManagerInput(scope.when,value=>updateBoundary(index,'when',value),{dataset:{worldProfileBoundaryWhen:String(index)}})),
-              guiEl('button',{class:'sga-btn',type:'button',text:'경계 제거',dataset:{worldProfileBoundaryRemove:String(index)},onClick:()=>{draft.profileCollectionEdits.boundaries=guiAsArray(draft.profileCollectionEdits.boundaries).filter((_,i)=>i!==index);queueGuiNavigationRender();}})
+              guiEl('button',{class:'btn',type:'button',text:'경계 제거',dataset:{worldProfileBoundaryRemove:String(index)},onClick:()=>{draft.profileCollectionEdits.boundaries=guiAsArray(draft.profileCollectionEdits.boundaries).filter((_,i)=>i!==index);queueGuiNavigationRender();}})
             ];
-            return guiEl('section',{class:'sga-form-grid',dataset:{worldProfileBoundaryRow:String(index)}},controls);
+            return guiEl('section',{class:'grid g2',dataset:{worldProfileBoundaryRow:String(index)}},controls);
           });
-          rendered.push(guiEl('button',{class:'sga-btn',type:'button',text:'경계 추가',dataset:{worldProfileBoundaryAdd:'true'},onClick:()=>{
+          rendered.push(guiEl('button',{class:'btn',type:'button',text:'경계 추가',dataset:{worldProfileBoundaryAdd:'true'},onClick:()=>{
             draft.profileCollectionEdits.boundaries=[...guiAsArray(draft.profileCollectionEdits.boundaries),{content:'',topic:'',kind:'boundary',scope:{subjectRef:draft.recordId,targetRef:'',act:'',when:''}}];queueGuiNavigationRender();
           }}));
           return fieldNode(worldManagerArticleFieldLabel(field),guiEl('div',{dataset:{worldProfileCollectionEditor:field}},rendered),'기존 Registry 대상은 이름으로 표시합니다. 대상 변경은 목록에서 새로 선택한 경우에만 적용됩니다.');
@@ -77682,22 +75580,28 @@ html,body{width:100%;height:100%;overflow:hidden}
       }
       const list=field==='knowledge'||(draft.domain==='characters'&&profileFields.includes(field));
       return fieldNode(worldManagerArticleFieldLabel(field),worldManagerTextarea(list?worldManagerListText(current[field]):text(current[field]||''),value=>update(field,list?String(value).split('\n').map(v=>v.trim()).filter(Boolean):value)),list?'한 줄에 한 항목씩 입력합니다.':'' );
-    }).concat(guiLazyDetails({class:'sga-advanced'},guiEl('summary',{text:'고급 · 구조화 상태 편집'}),()=>fieldNode('상태 JSON',worldManagerTextarea(draft.values.state,value=>{draft.values.state=value;},{tall:true}),'소속·접근 권한·규칙 예외는 구조를 유지해서 편집합니다. 비워진 필드는 명시적 해제로 저장됩니다.')));
+    }).concat(guiLazyDetails({class:'fold'},guiEl('summary',{text:'고급 · 구조화 상태 편집'}),()=>fieldNode('상태 JSON',worldManagerTextarea(draft.values.state,value=>{draft.values.state=value;},{tall:true}),'소속·접근 권한·규칙 예외는 구조를 유지해서 편집합니다. 비워진 필드는 명시적 해제로 저장됩니다.')));
   };
   const buildWorldManagerIdentityMerge = (domain,row,view) => {
     if(!worldManagerIsUnified(view)||!['characters','world'].includes(domain))return null;
     const targets=guiAsArray(view[domain]).filter(r=>r.id!==row.id&&(domain==='characters'||r.kind===row.kind));
     if(!targets.length)return null;
-    return guiLazyDetails({class:'sga-advanced',style:{flex:'1 0 100%',width:'100%',minWidth:'0',boxSizing:'border-box',marginTop:'8px'},dataset:{worldIdentityMerge:domain}},guiEl('summary',{text:'동일 항목 병합'}),()=>{
+    return guiEl('button',{class:'btn btn--sm',type:'button',text:'같은 항목 병합 · 분리…',onClick:()=>{
+      const binding=canonicalReaderBinding();Gui.app.querySelector('#dlg-merge')?.remove();
+      const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_MERGE_DIALOG_HTML;
+      const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.identityTarget=String(row.id);overlay.dataset.identityScope=binding.scopeKey;
+      overlay.querySelector('[data-fill="target"]').textContent=row.name||row.id;
+      const guard=()=>Gui.visible&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.identityTarget===String(row.id)&&overlay.dataset.identityScope===binding.scopeKey;
+      const close=()=>overlay.remove();
       let selected='',preview=null,busy=false;const choices={},relations={};
-      const status=guiEl('div',{class:'sga-note',text:'같은 인물이나 사물이 잘못 나뉜 경우에만 병합합니다. 원문·정본은 보존하며 현재 참조와 다음 분석의 식별을 함께 고칩니다.'});
-      const fields=guiEl('div',{class:'sga-form-grid'});
+      const status=guiEl('div',{class:'hint',text:'같은 인물이나 사물이 잘못 나뉜 경우에만 병합합니다. 원문·정본은 보존하며 현재 참조와 다음 분석의 식별을 함께 고칩니다.'});
+      const fields=guiEl('div',{class:'grid g2'});
       const select=worldManagerSelect('',[['','남길 항목 선택'],...targets.map(r=>[r.id,r.name])],v=>{selected=v;preview=null;fields.replaceChildren();apply.disabled=true;});
       select.setAttribute('aria-label','병합 후 남길 항목');
-      const review=guiEl('button',{class:'sga-btn',type:'button',text:'병합 내용 확인',onClick:async()=>{
-        if(busy||!selected)return;busy=true;review.disabled=true;apply.disabled=true;
+      const review=guiEl('button',{class:'btn',type:'button',text:'병합 내용 확인',onClick:async()=>{
+        if(busy||!selected||!guard())return;busy=true;review.disabled=true;apply.disabled=true;
         try{
-          preview=await globalThis.__LIBRA__.previewWorldManagerIdentityMerge({sourceId:row.id,targetId:selected});
+          preview=await globalThis.__LIBRA__.previewWorldManagerIdentityMerge({sourceId:row.id,targetId:selected});if(!guard())throw new Error('채팅 또는 병합 대상이 바뀌었습니다.');
           fields.replaceChildren();for(const k of Object.keys(choices))delete choices[k];for(const k of Object.keys(relations))delete relations[k];
           status.textContent=`${preview.sourceName} → ${preview.targetName}. 충돌 ${preview.fieldConflicts.length+preview.relationConflicts.length}개를 모두 선택한 뒤 확정하세요.`;
           for(const conflict of preview.fieldConflicts){
@@ -77709,16 +75613,22 @@ html,body{width:100%;height:100%;overflow:hidden}
           apply.disabled=false;
         }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
       }});
-      const apply=guiEl('button',{class:'sga-btn primary',type:'button',text:'선택한 내용으로 병합 확정',disabled:true,onClick:async()=>{
-        if(busy||!preview)return;busy=true;review.disabled=true;apply.disabled=true;
+      const apply=guiEl('button',{class:'btn btn--primary',type:'button',text:'선택한 내용으로 병합 확정',disabled:true,onClick:async()=>{
+        if(busy||!preview||!guard())return;busy=true;review.disabled=true;apply.disabled=true;
         try{
           const result=await globalThis.__LIBRA__.mergeWorldManagerIdentity({sourceId:preview.sourceId,targetId:preview.targetId,previewDigest:preview.previewDigest,fieldChoices:choices,relationChoices:relations});
           if(result?.ok!==true)throw new Error(result?.reason||'병합 저장 확인 실패');
           await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('동일 항목 병합과 참조 재결속을 저장했습니다. 기록·교정에서 병합 교정을 일시 중지하면 이전 식별을 다시 재생합니다.',false);
         }catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);apply.disabled=false;}finally{busy=false;review.disabled=false;}
       }});
-      return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px',minWidth:'0'}},[status,select,guiEl('div',{class:'sga-actions',style:{alignItems:'flex-start'}},[review]),fields,guiEl('div',{class:'sga-actions',style:{alignItems:'flex-start'}},[apply])]);
-    });
+      const partner=overlay.querySelector('#mg-partner');partner.replaceWith(select);select.id='mg-partner';select.className='select';
+      const conflictFold=guiEl('details',{class:'fold'},[guiEl('summary',{text:'충돌 검토 · 기존 식별과 근거'}),guiEl('div',{class:'fold__body stack'},[status,review,fields])]);
+      overlay.querySelector('#mg-partner-f').after(conflictFold);
+      const split=buildWorldManagerIdentitySplit(domain,row,view);const splitField=overlay.querySelector('#mg-split-f');splitField.replaceChildren(split||guiEl('p',{class:'hint',text:'이 항목에는 분리 작업을 제공하지 않습니다.'}));
+      const modes=[...overlay.querySelectorAll('#mg-mode button')];modes.forEach((button,i)=>button.onclick=()=>{if(!guard())return;modes.forEach((node,j)=>node.classList.toggle('is-on',j===i));overlay.querySelector('#mg-partner-f').hidden=i===1;conflictFold.hidden=i===1;splitField.hidden=i!==1;apply.hidden=i===1;});
+      overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'취소',onClick:close}),apply);
+      overlay.addEventListener('click',event=>{if(event.target===overlay)close();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);
+    }});
   };
 
   // Keep explicit review forms stable across background snapshot/body refreshes.
@@ -77739,10 +75649,10 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
   const createWorldManagerIdentitySplit = (domain,row,view) => {
     if(!worldManagerIsUnified(view)||domain!=='characters')return null;
-    return guiLazyDetails({class:'sga-advanced',style:{flex:'1 0 100%',width:'100%',minWidth:'0',boxSizing:'border-box',marginTop:'8px'},dataset:{worldIdentitySplit:domain}},guiEl('summary',{text:'서로 다른 인물 분리'}),()=>{
+    return guiLazyDetails({class:'fold',style:{flex:'1 0 100%',width:'100%',minWidth:'0',boxSizing:'border-box',marginTop:'8px'},dataset:{worldIdentitySplit:domain}},guiEl('summary',{text:'서로 다른 인물 분리'}),()=>{
       let preview=null,busy=false,page=0;const assignments=new Map(),targets=[{key:'person_1',name:'',aliases:[]},{key:'person_2',name:'',aliases:[]}];
-      const status=guiEl('div',{class:'sga-note',text:'하나로 잘못 기록된 인물의 사실별 역할을 나눕니다. 원문·정본은 보존하며 자동 배정하지 않습니다.'});
-      const targetFields=guiEl('div',{class:'sga-form-grid',style:{minWidth:'0'}}),facts=guiEl('div',{style:{display:'grid',gap:'10px',minWidth:'0'}}),paging=guiEl('div',{class:'sga-actions'});
+      const status=guiEl('div',{class:'hint',text:'하나로 잘못 기록된 인물의 사실별 역할을 나눕니다. 원문·정본은 보존하며 자동 배정하지 않습니다.'});
+      const targetFields=guiEl('div',{class:'grid g2',style:{minWidth:'0'}}),facts=guiEl('div',{style:{display:'grid',gap:'10px',minWidth:'0'}}),paging=guiEl('div',{class:'cluster'});
       const complete=()=>!!preview&&targets.every(t=>t.name.trim())&&assignments.size===preview.occurrences.length&&targets.every(t=>[...assignments.values()].includes(t.key));
       const updateStatus=()=>{if(preview)status.textContent=`${preview.sourceName} · 역할 ${assignments.size}/${preview.occurrences.length}개 배정 · 모델 호출 없음 · 정본 변경 없음`;apply.disabled=busy||!complete();};
       const renderFacts=()=>{
@@ -77751,12 +75661,12 @@ html,body{width:100%;height:100%;overflow:hidden}
           const label=o.path==='subjectTempRef'?'행위·상태의 주체':o.path==='targetTempRef'?'관계의 대상':o.path.replace(/^values\./,'값 · ');
           const choose=worldManagerSelect(assignments.get(o.occurrenceId)||'',[['','인물 선택 필요'],...targets.map(t=>[t.key,t.name.trim()||`인물 ${targets.indexOf(t)+1}`])],v=>{if(v)assignments.set(o.occurrenceId,v);else assignments.delete(o.occurrenceId);updateStatus();});
           choose.setAttribute('aria-label',`사실 ${o.factId} ${o.path}의 인물`);choose.dataset.splitOccurrence=o.occurrenceId;choose.dataset.splitFact=o.factId;choose.dataset.splitPath=o.path;
-          facts.appendChild(guiEl('div',{class:'sga-card',style:{minWidth:'0',overflowWrap:'anywhere'}},[
+          facts.appendChild(guiEl('div',{class:'card',style:{minWidth:'0',overflowWrap:'anywhere'}},[
             guiEl('strong',{text:`T${o.turnRange.start}–${o.turnRange.end} · ${label}`}),guiEl('div',{text:o.text}),choose,
             guiLazyDetails({},guiEl('summary',{text:'원문 근거'}),()=>guiEl('div',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'},text:o.evidenceSpans.map(e=>`${e.ref}\n${e.quote}`).join('\n\n')}))
           ]));
         }
-        if(total>1)paging.append(guiEl('button',{type:'button',class:'sga-btn',text:'이전 역할',disabled:page===0,onClick:()=>{page--;renderFacts();}}),guiEl('span',{text:`${page+1}/${total}`}),guiEl('button',{type:'button',class:'sga-btn',text:'다음 역할',disabled:page+1>=total,onClick:()=>{page++;renderFacts();}}));
+        if(total>1)paging.append(guiEl('button',{type:'button',class:'btn',text:'이전 역할',disabled:page===0,onClick:()=>{page--;renderFacts();}}),guiEl('span',{text:`${page+1}/${total}`}),guiEl('button',{type:'button',class:'btn',text:'다음 역할',disabled:page+1>=total,onClick:()=>{page++;renderFacts();}}));
         updateStatus();
       };
       const renderTargets=()=>{
@@ -77766,32 +75676,32 @@ html,body{width:100%;height:100%;overflow:hidden}
           targetFields.append(fieldNode(`인물 ${i+1} 이름`,name),fieldNode(`인물 ${i+1} 별칭`,aliases));
         });
       };
-      const review=guiEl('button',{type:'button',class:'sga-btn',text:'분리할 사실과 근거 확인',onClick:async()=>{
+      const review=guiEl('button',{type:'button',class:'btn',text:'분리할 사실과 근거 확인',onClick:async()=>{
         if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
         try{preview=await globalThis.__LIBRA__.previewWorldManagerIdentitySplit({sourceId:row.id});assignments.clear();page=0;renderFacts();}
         catch(e){preview=null;facts.replaceChildren();status.textContent=String(e.code||'')+' '+String(e.message||e);}
         finally{busy=false;review.disabled=false;apply.disabled=!complete();}
       }});
-      const add=guiEl('button',{type:'button',class:'sga-btn',text:'분리 인물 추가',onClick:()=>{if(busy||targets.length>=8)return;targets.push({key:`person_${targets.length+1}`,name:'',aliases:[]});renderTargets();renderFacts();add.disabled=targets.length>=8;}});
-      const apply=guiEl('button',{type:'button',class:'sga-btn primary',text:'전체 배정을 확인하고 분리 저장',disabled:true,onClick:async()=>{
+      const add=guiEl('button',{type:'button',class:'btn',text:'분리 인물 추가',onClick:()=>{if(busy||targets.length>=8)return;targets.push({key:`person_${targets.length+1}`,name:'',aliases:[]});renderTargets();renderFacts();add.disabled=targets.length>=8;}});
+      const apply=guiEl('button',{type:'button',class:'btn btn--primary',text:'전체 배정을 확인하고 분리 저장',disabled:true,onClick:async()=>{
         if(busy||!complete())return;busy=true;apply.disabled=true;review.disabled=true;add.disabled=true;
         try{const out=await globalThis.__LIBRA__.splitWorldManagerIdentity({sourceId:row.id,previewDigest:preview.previewDigest,targets,assignments:[...assignments].map(([occurrenceId,targetKey])=>({occurrenceId,targetKey}))});
           if(out?.ok!==true)throw new Error(out?.reason||'인물 분리 저장 확인 실패');await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('인물 분리와 참조 배정을 저장했습니다. 원문·정본은 보존했습니다.');}
         catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}
         finally{busy=false;review.disabled=false;add.disabled=targets.length>=8;apply.disabled=!complete();}
       }});
-      renderTargets();return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px',minWidth:'0'}},[status,targetFields,guiEl('div',{class:'sga-actions'},[add,review]),facts,paging,apply]);
+      renderTargets();return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px',minWidth:'0'}},[status,targetFields,guiEl('div',{class:'cluster'},[add,review]),facts,paging,apply]);
     });
   };
 
   const buildUnifiedLegacySelectionPanel = () => guiUnifiedScopedReviewForm('legacy','current',createUnifiedLegacySelectionPanel);
-  const createUnifiedLegacySelectionPanel = () => guiLazyDetails({class:'sga-advanced',dataset:{unifiedLegacyRebuild:'true'}},guiEl('summary',{text:'과거 기억 선택 전환'}),()=>{
+  const createUnifiedLegacySelectionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedLegacyRebuild:'true'}},guiEl('summary',{text:'과거 기억 선택 전환'}),()=>{
     let preview=null,busy=false;const selected=new Set();
-    const status=guiEl('div',{class:'sga-note',text:'승인 원문 증거가 있는 구형 구간만 선택해 재분석합니다. 선택하지 않은 기억과 이전 버전은 보존합니다.'});
+    const status=guiEl('div',{class:'hint',text:'승인 원문 증거가 있는 구형 구간만 선택해 재분석합니다. 선택하지 않은 기억과 이전 버전은 보존합니다.'});
     const rows=guiEl('div',{style:{display:'grid',gap:'8px',maxHeight:'440px',overflow:'auto'}});
     const reasons={UNIFIED_LEGACY_REBUILD_SOURCE_SESSION_REQUIRED:'원본 세션에서 전환 필요',UNIFIED_LEGACY_SOURCE_REVIEW_REQUIRED:'변경된 원문 확인 필요',UNIFIED_LEGACY_EVIDENCE_MISSING:'승인 원문 증거 없음',UNIFIED_LEGACY_EVIDENCE_MISMATCH:'원문 증거 불일치'};
     const update=()=>{apply.disabled=busy||!selected.size;if(preview)status.textContent=`전환 가능 ${preview.rows.filter(r=>r.available).length}개 · 선택 ${selected.size}/32개 · 선택한 구간의 모델·임베딩 요청이 발생합니다.`;};
-    const review=guiEl('button',{class:'sga-btn',type:'button',text:'구간과 원문 증거 확인',onClick:async()=>{
+    const review=guiEl('button',{class:'btn',type:'button',text:'구간과 원문 증거 확인',onClick:async()=>{
       if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
       try{preview=await globalThis.__LIBRA__.previewLegacyMemoryRebuild();selected.clear();rows.replaceChildren();
         for(const row of preview.rows){
@@ -77799,43 +75709,44 @@ html,body{width:100%;height:100%;overflow:hidden}
           const evidence=guiEl('div',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}});
           const details=guiEl('details',{},[guiEl('summary',{text:'저장된 승인 원문'}),evidence]);let loaded=false;
           details.addEventListener('toggle',async()=>{if(!details.open||loaded||!row.available)return;loaded=true;evidence.textContent='원문을 확인하고 있습니다.';try{const result=await globalThis.__LIBRA__.getLegacyMemoryRebuildEvidence({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,key:row.key});evidence.textContent=result.rows.map(r=>`T${r.turn} · 사용자\n${r.userText}\n\nT${r.turn} · 응답\n${r.assistantText}`).join('\n\n');}catch(e){loaded=false;evidence.textContent=String(e.code||e.message||e);}});
-          rows.appendChild(guiEl('div',{class:'sga-card',style:{minWidth:'0'}},[guiEl('label',{style:{display:'flex',gap:'8px',alignItems:'center'}},[choice,guiEl('span',{text:`T${row.turnRange.start}–${row.turnRange.end} · ${row.available?'전환 가능':reasons[row.reason]||row.reason}`})]),row.available?details:null]));
+          rows.appendChild(guiEl('div',{class:'card',style:{minWidth:'0'}},[guiEl('label',{style:{display:'flex',gap:'8px',alignItems:'center'}},[choice,guiEl('span',{text:`T${row.turnRange.start}–${row.turnRange.end} · ${row.available?'전환 가능':reasons[row.reason]||row.reason}`})]),row.available?details:null]));
         }update();if(!preview.rows.length)status.textContent='전환할 구형 기억이 없습니다.';
       }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;apply.disabled=!selected.size;}
     }});
-    const apply=guiEl('button',{class:'sga-btn primary',type:'button',text:'선택 구간의 재분석 승인·실행',disabled:true,onClick:async()=>{
+    const apply=guiEl('button',{class:'btn btn--primary',type:'button',text:'선택 구간의 재분석 승인·실행',disabled:true,onClick:async()=>{
       if(busy||!preview||!selected.size)return;busy=true;review.disabled=true;apply.disabled=true;
       try{const out=await globalThis.__LIBRA__.rebuildSelectedLegacyMemories({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,selectedKeys:[...selected]});status.textContent=`전환 ${out.completed}개 완료 · ${out.remaining}개 미완료. 기존 정본은 보존했습니다.`;selected.clear();preview=null;rows.replaceChildren();await refreshGuiSnapshot(false);}
       catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;apply.disabled=true;}
     }});
-    return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px'}},[status,review,rows,apply]);
+    return guiEl('div',{class:'fold__body stack'},[status,guiEl('div',{class:'cluster'},[review,apply]),rows]);
   });
 
   const buildUnifiedRetentionPanel = () => guiUnifiedScopedReviewForm('retention','current',createUnifiedRetentionPanel);
-  const createUnifiedRetentionPanel = () => guiLazyDetails({class:'sga-advanced',dataset:{unifiedRetention:'true'}},guiEl('summary',{text:'보관 자료 점검·임시 자료 정리'}),()=>{
+  const createUnifiedRetentionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedRetention:'true'}},guiEl('summary',{text:'보관 자료 점검·임시 자료 정리'}),()=>{
     let preview=null,busy=false;const selected=new Set();
-    const status=guiEl('div',{class:'sga-note',text:'정본·원문 증거·아카이브는 삭제하지 않습니다. 7일이 지난 미참조 임시 스냅샷만 명시 선택으로 정리합니다.'});
-    const rows=guiEl('div',{style:{display:'grid',gap:'8px',maxHeight:'360px',overflow:'auto'}});
-    const review=guiEl('button',{type:'button',class:'sga-btn',text:'보관 참조 점검',onClick:async()=>{
+    const status=guiEl('div',{class:'hint',text:'정본·원문 증거·아카이브는 삭제하지 않습니다. 7일이 지난 미참조 임시 스냅샷만 명시 선택으로 정리합니다.'});
+    const rows=guiEl('div',{class:'stack stack--sm'});
+    const review=guiEl('button',{type:'button',class:'btn',text:'보관 참조 점검',onClick:async()=>{
       if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
       try{preview=await globalThis.__LIBRA__.previewMemoryRetention();selected.clear();rows.replaceChildren();const eligible=preview.rows.filter(r=>r.lifecycle==='GC_ELIGIBLE');
         status.textContent=`확인 ${preview.scannedKeys}/${preview.totalKeys}개 · 보호/보존 ${preview.rows.length-eligible.length}개 · 정리 가능 ${eligible.length}개${preview.complete?'':' · 조회 미완료: 삭제 차단'}`;
-        for(const row of eligible){const check=guiEl('input',{type:'checkbox',disabled:!preview.complete,'aria-label':`임시 자료 ${row.key} 선택`,dataset:{retentionKey:row.key},onChange:e=>{if(e.target.checked&&selected.size>=64){e.target.checked=false;return;}if(e.target.checked)selected.add(row.key);else selected.delete(row.key);apply.disabled=!selected.size;}});rows.appendChild(guiEl('label',{style:{display:'flex',gap:'8px',overflowWrap:'anywhere',minWidth:'0'}},[check,guiEl('span',{text:`${row.key}\n${row.createdAt} · ${row.bytes.toLocaleString()} bytes`})]));}
+        for(const row of eligible){const check=guiEl('input',{type:'checkbox',disabled:!preview.complete,'aria-label':`임시 자료 ${row.key} 선택`,dataset:{retentionKey:row.key},onChange:e=>{if(e.target.checked&&selected.size>=64){e.target.checked=false;return;}if(e.target.checked)selected.add(row.key);else selected.delete(row.key);apply.disabled=!selected.size;}});rows.appendChild(guiEl('label',{class:'check'},[check,guiEl('span',{text:`${row.key}\n${row.createdAt} · ${row.bytes.toLocaleString()} bytes`})]));}
       }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
     }});
-    const apply=guiEl('button',{class:'sga-btn',type:'button',text:'선택한 임시 자료 삭제',disabled:true,onClick:async()=>{
+    const apply=guiEl('button',{class:'btn',type:'button',text:'선택한 임시 자료 삭제',disabled:true,onClick:async()=>{
       if(busy||!preview||!selected.size)return;busy=true;apply.disabled=true;review.disabled=true;
       try{const out=await globalThis.__LIBRA__.collectMemoryRetention({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,selectedKeys:[...selected]});status.textContent=`임시 자료 ${out.removed}개 삭제 · ${out.retained}개 보존 · 정본/원문/아카이브 삭제 0개`;rows.replaceChildren();selected.clear();preview=null;}
       catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
     }});
-    return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px'}},[status,review,rows,apply]);
+    return guiEl('div',{class:'fold__body stack'},[status,guiEl('div',{class:'cluster'},[review,apply]),rows]);
   });
 
-  const buildWorldManagerCorrectionEditor = (domain, row, view) => {
+  const buildWorldManagerCorrectionEditor = (domain, row, view, renderInDialog = false) => {
     const keyValue=worldManagerDraftKey(domain,row); const draft=Gui.worldManagerEditDraft?.key===keyValue?Gui.worldManagerEditDraft:null;
-    if (!draft) return guiEl('div',{class:'sga-actions',style:{alignItems:'flex-start'},dataset:{worldCorrectionAction:domain}},[
+    if (draft && !renderInDialog) return null;
+    if (!draft) return guiEl('div',{class:'cluster',style:{alignItems:'flex-start'},dataset:{worldCorrectionAction:domain}},[
       worldManagerSourceBadge(domain, row, view),
-      guiEl('button',{class:'sga-btn',type:'button',text:worldManagerCorrectionId(row)?'교정 수정':'수정',disabled:!view?.head,onClick:()=>openWorldManagerCorrectionEditor(domain,row,view)}),
+      guiEl('button',{class:'btn',type:'button',text:worldManagerCorrectionId(row)?'교정 수정':'수정',disabled:!view?.head,onClick:()=>openWorldManagerCorrectionEditor(domain,row,view)}),
       buildWorldManagerIdentityMerge(domain,row,view),
       buildWorldManagerIdentitySplit(domain,row,view)
     ]);
@@ -77884,24 +75795,58 @@ html,body{width:100%;height:100%;overflow:hidden}
       fieldNode('상태',worldManagerSelect(values.status,[['active','active'],['released','released']],value=>set('status',value))),
       fieldNode('Lock',worldManagerTextarea(values.summary,value=>set('summary',value),{tall:true}))
     );
-    if(draft.unified&&draft.pending?.length)fields.push(guiEl('fieldset',{class:'sga-callout warn'},[
+    if(draft.unified&&draft.pending?.length)fields.push(guiEl('fieldset',{class:'note warn'},[
       guiEl('legend',{text:'이 교정으로 해결할 보류 항목'}),
       ...draft.pending.map(p=>guiEl('label',{},[
         guiEl('input',{type:'checkbox',checked:guiAsArray(draft.resolvePendingFacts).some(r=>r.memoryId===p.memoryId&&r.revision===p.revision&&r.fact===p.fact),onChange:event=>{
           draft.resolvePendingFacts=guiAsArray(draft.resolvePendingFacts).filter(r=>!(r.memoryId===p.memoryId&&r.revision===p.revision&&r.fact===p.fact));
           if(event.target.checked)draft.resolvePendingFacts.push({memoryId:p.memoryId,revision:p.revision,fact:p.fact});
         }}),guiEl('span',{text:` ${worldManagerArticleFieldLabel(p.field)} · ${p.fact} · ${p.reason}`})
-      ])),guiEl('p',{class:'sga-note',text:'선택한 항목의 해당 필드를 실제로 교정해야 보류가 해제됩니다. 선택하지 않은 보류는 유지됩니다.'})
+      ])),guiEl('p',{class:'hint',text:'선택한 항목의 해당 필드를 실제로 교정해야 보류가 해제됩니다. 선택하지 않은 보류는 유지됩니다.'})
     ]));
-    return guiEl('section',{class:'sga-card wide',dataset:{worldCorrectionEditor:domain,draftKey:keyValue}},[
-      guiEl('div',{class:'sga-agent-head'},[guiEl('div',{},[guiEl('h3',{text:'사용자 교정'}),guiEl('div',{class:'sga-note',text:'Correction Journal append → replay → Current Head readback이 모두 확인된 뒤에만 완료됩니다.'})]),libraStatusBadge('T'+String(draft.anchorTurn),'warn')]),
-      guiEl('div',{class:'sga-form-grid'},fields),
-      Gui.worldManagerEditError?guiEl('div',{class:'sga-callout danger',text:Gui.worldManagerEditError}):null,
-      guiEl('div',{class:'sga-actions'},[
-        guiEl('button',{class:'sga-btn good',type:'button',text:Gui.worldManagerSaving?'저장·Replay 확인 중…':'교정 저장',disabled:Gui.worldManagerSaving,onClick:()=>void saveWorldManagerCorrectionDraft()}),
-        guiEl('button',{class:'sga-btn ghost',type:'button',text:'취소',disabled:Gui.worldManagerSaving,onClick:()=>{Gui.worldManagerEditDraft=null;Gui.worldManagerEditError='';queueGuiNavigationRender();}})
+    return guiEl('section',{class:'card',dataset:{worldCorrectionEditor:domain,draftKey:keyValue}},[
+      guiEl('div',{class:'split'},[guiEl('div',{},[guiEl('h3',{text:'사용자 교정'}),guiEl('div',{class:'hint',text:'Correction Journal append → replay → Current Head readback이 모두 확인된 뒤에만 완료됩니다.'})]),libraStatusBadge('T'+String(draft.anchorTurn),'warn')]),
+      guiEl('div',{class:'grid g2'},fields),
+      Gui.worldManagerEditError?guiEl('div',{class:'note danger',text:Gui.worldManagerEditError}):null,
+      guiEl('div',{class:'cluster'},[
+        guiEl('button',{class:'btn btn--primary',type:'button',text:Gui.worldManagerSaving?'저장·Replay 확인 중…':'교정 저장',disabled:Gui.worldManagerSaving,onClick:()=>void saveWorldManagerCorrectionDraft()}),
+        guiEl('button',{class:'btn',type:'button',text:'취소',disabled:Gui.worldManagerSaving,onClick:()=>{Gui.worldManagerEditDraft=null;Gui.worldManagerEditError='';queueGuiNavigationRender();}})
       ])
     ]);
+  };
+
+  const openApprovedCorrectionDialog = (domain,row,view) => {
+    const overlay=Gui.app?.querySelector('#dlg-correct'),dialog=overlay?.querySelector('.dialog');
+    if(!overlay||!dialog)return false;
+    const original=document.createElement('template');original.innerHTML=LIBRA_APPROVED_CORRECTION_DIALOG_HTML;dialog.replaceChildren(...original.content.querySelector('.dialog').childNodes);dialog.querySelectorAll('[data-fill]').forEach(node=>node.textContent='');
+    overlay.dataset.correctionDraftKey=text(Gui.worldManagerEditDraft?.key||'');
+    overlay.dataset.correctionRecordId=text(Gui.worldManagerEditDraft?.recordId||'');
+    overlay.dataset.correctionDomain=text(Gui.worldManagerEditDraft?.domain||'');
+    const target=text(row?.name||row?.title||row?.id||row?.recordId||'선택한 기록');
+    const targetNode=dialog.querySelector('[data-fill="target"]'); if(targetNode)targetNode.textContent=target;
+    const title=dialog.querySelector('#dco-t'); if(title)title.setAttribute('aria-label',`교정 · ${target}`);
+    const draft=Gui.worldManagerEditDraft;const primaryKey=Object.prototype.hasOwnProperty.call(draft?.values||{},'state')?'state':Object.prototype.hasOwnProperty.call(draft?.values||{},'summary')?'summary':'interpretation';
+    const primary=dialog.querySelector('#co-in');primary.value=String(draft?.values?.[primaryKey]||'');primary.textContent='';primary.removeAttribute('data-no-track');primary.removeAttribute('data-fill');primary.oninput=()=>{if(Gui.worldManagerEditDraft===draft)draft.values[primaryKey]=primary.value;};
+    dialog.querySelector('#co-hint').textContent=primaryKey==='state'?'기록된 상태·관계 내용입니다. 인물·세계 상태는 JSON 객체 형식을 유지하세요.':'현재 기록의 해당 내용을 교정합니다. 세부 필드는 아래에서 검토할 수 있습니다.';
+    dialog.querySelector('.dialog__actions')?.remove();
+    dialog.querySelectorAll('[data-product-correction-body]').forEach(node=>node.remove());
+    const body=document.createElement('details');body.className='fold';body.dataset.productCorrectionBody='true';body.appendChild(guiEl('summary',{text:'상세 · 필드·근거·보류 해결 검토'}));const expert=guiEl('div',{class:'fold__body stack'});body.appendChild(expert);
+    const editor=buildWorldManagerCorrectionEditor(domain,row,view,true);
+    if(editor){
+      const form=editor.querySelector('.grid.g2');if(form){for(const field of [...form.children]){const control=field.querySelector('textarea');if(control&&control.value===primary.value&&field.textContent.includes(primaryKey==='state'?'상태':'내용'))continue;expert.appendChild(field);}}
+      editor.querySelectorAll('.note').forEach(node=>{expert.appendChild(node);});
+    }
+    const error=document.createElement('div');error.className='note note--danger';error.dataset.correctionError='true';error.hidden=!Gui.worldManagerEditError;error.textContent=Gui.worldManagerEditError||'';expert.appendChild(error);
+    dialog.insertBefore(body,dialog.querySelector('.dialog__actions'));
+    const actions=document.createElement('div');actions.className='dialog__actions';
+    const cancel=document.createElement('button');cancel.type='button';cancel.className='btn';cancel.textContent='취소';cancel.dataset.correctionCancel='true';
+    cancel.onclick=()=>{if(Gui.worldManagerSaving)return;Gui.worldManagerEditDraft=null;Gui.worldManagerEditError='';closeApprovedMockupDialog('dlg-correct');void renderSettingsGui();};
+    const save=document.createElement('button');save.type='button';save.className='btn btn--primary';save.textContent=Gui.worldManagerSaving?'저장·확인 중…':'교정 저장';save.disabled=Gui.worldManagerSaving;save.dataset.correctionSave='true';save.onclick=()=>{save.disabled=true;save.textContent='저장·확인 중…';void saveWorldManagerCorrectionDraft();};
+    actions.append(cancel,save);dialog.appendChild(actions);
+    overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');
+    bindApprovedOverlayKeyboard(overlay,()=>cancel.click());
+    dialog.querySelector('input:not([disabled]),textarea,select')?.focus();
+    return true;
   };
 
   const worldManagerArticleFieldLabel = keyValue => ({
@@ -77963,68 +75908,55 @@ html,body{width:100%;height:100%;overflow:hidden}
     const pending=guiAsArray(view?.head?.unifiedApplied?.pending).filter(p=>p.recordId===row?.id);
     const memoryId = text(evidence.memoryId || provenance.memoryId || row?.memoryId || '');
     const revision = Number(evidence.revision || provenance.revision || row?.revision || 0);
-    return guiEl('article', { class: 'libra-current-article', dataset: { currentHeadArticle: domain } }, [
-      guiEl('header', { class: 'libra-current-article-head' }, [
+    return guiEl('article', { class: "stack", dataset: { currentHeadArticle: domain } }, [
+      guiEl('header', { class: "split" }, [
         guiEl('div', {}, [
-          guiEl('span', { class: 'libra-article-eyebrow', text: 'CURRENT HEAD · LAST-KNOWN' }),
+          guiEl('span', { class: "eyebrow", text: 'CURRENT HEAD · LAST-KNOWN' }),
           guiEl('h3', { text: title }),
           guiEl('p', { text: subtitle })
         ]),
         worldManagerSourceBadge(domain, row, view)
       ]),
-      guiEl('div', { class: 'libra-current-article-meta' }, [
+      guiEl('div', { class: "cluster hint" }, [
         guiEl('span', { text: changedTurn > 0 ? `마지막 실제 변경 T${changedTurn}` : '마지막 실제 변경 근거 미제공' }),
         guiEl('span', { text: reviewedTurn > 0 ? `정본 검토 기준 T${reviewedTurn}` : '검토 기준 대기' })
       ]),
-      lead ? guiEl('p', { class: 'libra-current-article-lead', text: lead }) : null,
-      cleared.length?guiEl('p',{class:'sga-note',text:'명시적으로 해제된 값 · '+cleared.map(worldManagerArticleFieldLabel).join(', ')}):null,
-      pending.length?guiEl('div',{class:'sga-callout warn',text:`보류 ${pending.length}건 · ${pending.map(p=>worldManagerArticleFieldLabel(p.field||p.domain)).join(', ')}. 마지막 유효값을 표시합니다.`}):null,
-      facts.length ? guiEl('dl', { class: 'libra-current-facts' }, facts.map(item => guiEl('div', {}, [
-        guiEl('dt', { text: item.label }), guiEl('dd', { text: item.value })
-      ]))) : guiEl('p', { class: 'sga-note', text: '아직 표시할 현재 정보가 없습니다. 아래에서 근거와 관리 기능을 확인할 수 있습니다.' }),
-      guiEl('aside', { class: 'libra-current-evidence' }, [
+      lead ? guiEl('p', { class: "deck", text: lead }) : null,
+      cleared.length?guiEl('p',{class:'hint',text:'명시적으로 해제된 값 · '+cleared.map(worldManagerArticleFieldLabel).join(', ')}):null,
+      pending.length?guiEl('div',{class:'note warn',text:`보류 ${pending.length}건 · ${pending.map(p=>worldManagerArticleFieldLabel(p.field||p.domain)).join(', ')}. 마지막 유효값을 표시합니다.`}):null,
+      facts.length ? guiEl('dl', { class: 'kv profile' }, facts.flatMap(item => [guiEl('dt', { text: item.label }), guiEl('dd', { text: item.value })])) : guiEl('p', { class: 'hint', text: '아직 표시할 현재 정보가 없습니다. 아래에서 근거와 관리 기능을 확인할 수 있습니다.' }),
+      guiEl('aside', { class: "note" }, [
         guiEl('strong', { text: row?.correctionProvenance?'교정 전 정본 근거':'정본 근거' }),
-        row?.correctionProvenance?guiEl('p',{class:'sga-note',text:'현재 표시값에는 사용자 교정이 적용되어 있습니다. 아래 원문은 교정으로 바뀌지 않습니다.'}):null,
+        row?.correctionProvenance?guiEl('p',{class:'hint',text:'현재 표시값에는 사용자 교정이 적용되어 있습니다. 아래 원문은 교정으로 바뀌지 않습니다.'}):null,
         guiEl('p', { text: evidenceText || '필드 단위 정본 근거는 현재 런타임 snapshot에 포함되지 않았습니다.' }),
-        memoryId ? guiEl('span', { class: 'sga-note', text: `${memoryId}${revision > 0 ? ` · revision ${revision}` : ''}` }) : null
+        memoryId ? guiEl('span', { class: 'hint', text: `${memoryId}${revision > 0 ? ` · revision ${revision}` : ''}` }) : null
       ]),
-      guiLazyDetails({ class: 'sga-advanced libra-current-raw', open: false }, guiEl('summary', {}, [
-        guiEl('span', { text: '세부 정보' }), guiEl('span', { class: 'sga-advanced-hint', text: '읽기 전용' })
-      ]), () => guiEl('dl', { class: 'libra-current-facts' }, worldManagerArticleFacts(detail,view,Infinity).map(item=>guiEl('div',{},[guiEl('dt',{text:item.label}),guiEl('dd',{text:item.value})])))),
+      guiLazyDetails({ class: "fold", open: false }, guiEl('summary', {}, [
+        guiEl('span', { text: '세부 정보' }), guiEl('span', { class: 'hint', text: '읽기 전용' })
+      ]), () => guiEl('div',{class:'fold__body'},[guiEl('dl', { class: 'kv' }, worldManagerArticleFacts(detail,view,Infinity).flatMap(item=>[guiEl('dt',{text:item.label}),guiEl('dd',{text:item.value})]))])),
       buildWorldManagerCorrectionEditor(editorDomain, row, view)
     ]);
   };
 
-  const buildWorldManagerRecordBrowser = ({ domain, rows, selectionKey, titleFor, subtitleFor, detailFor, editorDomain = domain, view }) => {
-    const normalized = guiAsArray(rows);
-    if (!normalized.length) return guiEl('section', { class: 'sga-card wide', dataset: { worldDomainList: domain, snapshotOnly: 'true' } }, [guiEl('div', { class: 'sga-note', text: '현재 기록 없음' })]);
-    const identities = normalized.map((row, index) => worldManagerRowIdentity(domain, row, index));
-    let selectedId = String(Gui[selectionKey] || '');
-    if (!identities.includes(selectedId)) selectedId = identities[0];
-    Gui[selectionKey] = selectedId;
-    const selectedIndex = Math.max(0, identities.indexOf(selectedId));
-    const selected = normalized[selectedIndex];
-    return guiEl('div', { class: 'libra-memory-layout', dataset: { worldDomainBrowser: domain, snapshotOnly: 'true' } }, [
-      guiEl('section', { class: 'sga-card libra-memory-list-panel' }, [
-        guiEl('div', { class: 'sga-list-items' }, normalized.map((row, index) => guiEl('button', {
-          class: 'sga-card libra-memory-card' + (identities[index] === selectedId ? ' selected' : ''), type: 'button',
-          dataset: { selected: String(identities[index] === selectedId), worldRecordId: identities[index], corrected: String(!!worldManagerCorrectionId(row)) },
-          'aria-pressed': String(identities[index] === selectedId),
-          onClick: () => { Gui[selectionKey] = identities[index]; queueGuiNavigationRender(); }
-        }, [guiEl('strong', { text: titleFor(row, index) }), guiEl('small', { class: 'sga-note', text: subtitleFor(row, index) }), guiEl('small', { class: 'sga-note', text: worldManagerSourceDescriptor(domain, row, view).label })])))
-      ]),
-      guiEl('section', { class: 'sga-card libra-memory-detail-panel', dataset: { worldRecordDetail: selectedId } }, [
-        buildWorldManagerArticleDetail({
-          domain, row: selected, detail: detailFor(selected, selectedIndex), view, editorDomain,
-          title: titleFor(selected, selectedIndex), subtitle: subtitleFor(selected, selectedIndex)
-        })
+  const buildWorldManagerRecordBrowser = ({domain,rows,selectionKey,titleFor,subtitleFor,detailFor,editorDomain=domain,view}) => {
+    const normalized=guiAsArray(rows);
+    if(!normalized.length)return guiEl('div',{class:'empty',dataset:{worldDomainList:domain,snapshotOnly:'true'}},[guiEl('b',{text:'현재 기록 없음'})]);
+    const ids=normalized.map((row,index)=>worldManagerRowIdentity(domain,row,index));
+    let selected=text(Gui[selectionKey]||'');if(!ids.includes(selected))selected=ids[0];Gui[selectionKey]=selected;
+    const index=ids.indexOf(selected),row=normalized[index];
+    return guiEl('div',{class:'grid g-side',dataset:{worldDomainBrowser:domain,snapshotOnly:'true'}},[
+      guiEl('aside',{class:'rail'},[guiEl('div',{class:'rail__list'},normalized.map((item,i)=>guiEl('button',{class:`chapter${ids[i]===selected?' is-on':''}`,type:'button','aria-pressed':String(ids[i]===selected),dataset:{selected:String(ids[i]===selected),worldRecordId:ids[i],corrected:String(!!worldManagerCorrectionId(item))},onClick:()=>{Gui[selectionKey]=ids[i];queueGuiNavigationRender();}},[
+        guiEl('b',{text:titleFor(item,i)}),guiEl('small',{text:subtitleFor(item,i)}),guiEl('span',{class:'hint',text:worldManagerSourceDescriptor(domain,item,view).label})
+      ])))]),
+      guiEl('article',{class:'sheet-page detail-pane',dataset:{worldRecordDetail:selected}},[
+        buildWorldManagerArticleDetail({domain,row,detail:detailFor(row,index),view,editorDomain,title:titleFor(row,index),subtitle:subtitleFor(row,index)})
       ])
     ]);
   };
 
   const buildWorldManagerCharactersCurrentPanel = () => {
     const view = worldManagerSnapshotView();
-    return guiEl('div', { class: 'sga-flow-section', dataset: { worldManagerDomain: 'characters', snapshotOnly: 'true' } }, [
+    return guiEl('div', { class: 'stack', dataset: { worldManagerDomain: 'characters', snapshotOnly: 'true' } }, [
       buildWorldManagerSnapshotNotice(view, 'characters', '인물', view.characters.length),
       buildWorldManagerRecordBrowser({
         domain: 'characters', rows: view.characters, selectionKey: 'worldManagerSelectedCharacterId', view,
@@ -78037,7 +75969,7 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const buildWorldManagerRelationshipsCurrentPanel = () => {
     const view = worldManagerSnapshotView();
-    return guiEl('div', { class: 'sga-flow-section', dataset: { worldManagerDomain: 'relationships', snapshotOnly: 'true' } }, [
+    return guiEl('div', { class: 'stack', dataset: { worldManagerDomain: 'relationships', snapshotOnly: 'true' } }, [
       buildWorldManagerSnapshotNotice(view, 'relationships', '관계', view.relationships.length),
       buildWorldManagerRecordBrowser({
         domain: 'relationships', rows: view.relationships, selectionKey: 'worldManagerSelectedRelationshipId', view,
@@ -78050,7 +75982,7 @@ html,body{width:100%;height:100%;overflow:hidden}
 
   const buildWorldManagerWorldCurrentPanel = () => {
     const view = worldManagerSnapshotView();
-    return guiEl('div', { class: 'sga-flow-section', dataset: { worldManagerDomain: 'world', snapshotOnly: 'true' } }, [
+    return guiEl('div', { class: 'stack', dataset: { worldManagerDomain: 'world', snapshotOnly: 'true' } }, [
       buildWorldManagerSnapshotNotice(view, 'world', '세계', view.world.length),
       buildWorldManagerRecordBrowser({
         domain: 'world', rows: view.world, selectionKey: 'worldManagerSelectedWorldId', view,
@@ -78123,9 +76055,9 @@ html,body{width:100%;height:100%;overflow:hidden}
   const worldManagerHistoryStateDomain = domain => ({characters:'character',relationships:'relationship',world:'world',narrative:'narrative'}[String(domain||'')]||'narrative');
   const buildWorldManagerHistoryDetailView = (detailValue,domainValue) => {
     const detail=guiAsObject(detailValue); const mode=text(detail?.recordMode||detail?.provenance?.mode||'');
-    if (mode!=='state_pipeline_v3') return guiEl('div',{class:'sga-flow-section'},[
-      guiEl('div',{class:'sga-callout warn',text:'이 기록은 v1/v2 이전 데이터의 Continuity Delta입니다. 현행 Current Head 권위가 아니라 migration/호환 근거로만 표시합니다.'}),
-      guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(detail?.delta||detail?.patch||detail,null,2)})
+    if (mode!=='state_pipeline_v3') return guiEl('div',{class:'stack'},[
+      guiEl('div',{class:'note warn',text:'이 기록은 v1/v2 이전 데이터의 Continuity Delta입니다. 현행 Current Head 권위가 아니라 migration/호환 근거로만 표시합니다.'}),
+      guiEl('pre',{class:'code',text:JSON.stringify(detail?.delta||detail?.patch||detail,null,2)})
     ]);
     const provenance=guiAsObject(detail.provenance); const pipeline=guiAsObject(provenance.statePipeline); const receipt=guiAsObject(pipeline.receipt);
     const stateDomain=worldManagerHistoryStateDomain(domainValue); const domainDetail=guiAsObject(provenance?.domains?.[stateDomain]);
@@ -78133,9 +76065,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     const reviews=guiAsArray(domainDetail.reviews); const patches=guiAsArray(domainDetail.patches); const assertions=guiAsArray(domainDetail.canonicalAssertions); const diagnostics=guiAsArray(domainDetail.diagnostics);
     const semanticTimeline=guiAsObject(detail.semanticTimeline);const semanticEvents=guiAsArray(semanticTimeline.events);
     const statusCopy=worldManagerHistoryStatusCopy(domainReceipt.status||receipt.status||'missing');
-    const semanticTimelineView=semanticTimeline.schema==='libra.semantic_lifecycle_timeline.v1'?guiEl('section',{class:'sga-card',dataset:{worldHistorySemanticTimeline:'true'}},[
+    const semanticTimelineView=semanticTimeline.schema==='libra.semantic_lifecycle_timeline.v1'?guiEl('section',{class:'card',dataset:{worldHistorySemanticTimeline:'true'}},[
       guiEl('h3',{text:'선호·경계·서사 이력 · '+semanticEvents.length+'건'}),
-      (semanticTimeline.partial===true||semanticTimeline.complete===false)?guiEl('div',{class:'sga-callout warn',text:`일부 이력만 표시합니다 · ${text(semanticTimeline.partialReason||'범위 제한')} · ${Number(semanticTimeline.scannedCanonicalRefs||0)}/${Number(semanticTimeline.availableCanonicalRefs||0)} 정본 참조`}):null,
+      (semanticTimeline.partial===true||semanticTimeline.complete===false)?guiEl('div',{class:'note warn',text:`일부 이력만 표시합니다 · ${text(semanticTimeline.partialReason||'범위 제한')} · ${Number(semanticTimeline.scannedCanonicalRefs||0)}/${Number(semanticTimeline.availableCanonicalRefs||0)} 정본 참조`}):null,
       ...semanticEvents.map(event=>{
         const item=guiAsObject(event.item),scope=guiAsObject(item.scope);const evidenceRefs=guiAsArray(event.evidenceRefs).map(text).filter(Boolean);
         const evidenceQuotes=guiAsArray(event.evidenceSpans).map(span=>text(span?.quote)).filter(Boolean);
@@ -78143,31 +76075,31 @@ html,body{width:100%;height:100%;overflow:hidden}
         const threadResolutionCopy=({fulfilled:'종결 사유 · 약속 이행',broken:'종결 사유 · 약속 파기',cancelled:'종결 사유 · 합의 취소',superseded:'종결 사유 · 다른 약속으로 대체',completed:'종결 사유 · 완료',withdrawn:'종결 사유 · 철회'})[text(item.resolution)]||'';
         const threadStateCopy=item.status==='blocked'?'현재 상태 · 장애로 막힘 · 미종결':item.status==='open'?'현재 상태 · 약속 열려 있음':item.status==='uncertain'?'현재 상태 · 불확실':'';
         const threadOutcomeCopy=event.field==='threads'?(threadResolutionCopy||threadStateCopy):'';
-        return guiEl('article',{class:'sga-flow-row',dataset:{worldHistorySemanticEvent:text(event.type||'unknown')}},[
+        return guiEl('article',{class:'cluster',dataset:{worldHistorySemanticEvent:text(event.type||'unknown')}},[
           guiEl('strong',{text:text(event.label||event.type||'이력')}),
           event.content?guiEl('div',{text:text(event.content)}):null,
-          threadOutcomeCopy?guiEl('div',{class:'sga-note',text:threadOutcomeCopy}):null,
-          event.topic?guiEl('div',{class:'sga-note',text:'주제 · '+text(event.topic)}):null,
-          axis?guiEl('div',{class:'sga-note',text:'경계 범위 · '+axis}):null,
-          correction?guiEl('div',{class:'sga-note',text:correction}):null,
-          event.note?guiEl('div',{class:'sga-note',text:text(event.note)}):null,
-          evidenceQuotes.length?guiEl('div',{class:'sga-note',text:'근거 문구 · '+evidenceQuotes.join(' · ')}):null,
-          evidenceRefs.length?guiEl('div',{class:'sga-note',text:'근거 · '+evidenceRefs.join(' · ')}):guiEl('div',{class:'sga-note',text:'근거 참조 미확인'})
+          threadOutcomeCopy?guiEl('div',{class:'hint',text:threadOutcomeCopy}):null,
+          event.topic?guiEl('div',{class:'hint',text:'주제 · '+text(event.topic)}):null,
+          axis?guiEl('div',{class:'hint',text:'경계 범위 · '+axis}):null,
+          correction?guiEl('div',{class:'hint',text:correction}):null,
+          event.note?guiEl('div',{class:'hint',text:text(event.note)}):null,
+          evidenceQuotes.length?guiEl('div',{class:'hint',text:'근거 문구 · '+evidenceQuotes.join(' · ')}):null,
+          evidenceRefs.length?guiEl('div',{class:'hint',text:'근거 · '+evidenceRefs.join(' · ')}):guiEl('div',{class:'hint',text:'근거 참조 미확인'})
         ]);
       })
     ]):null;
-    return guiEl('div',{class:'sga-flow-section',dataset:{worldHistoryProvenance:'state_pipeline_v3'}},[
-      guiEl('div',{class:'sga-callout '+(receipt.authority==='target_canonical_chain'?'good':'warn'),text:'State Pipeline v3 · '+statusCopy[0]+' · '+worldManagerHistoryAuthorityCopy(receipt.authority||detail?.item?.stateAuthority)+' · '+text(provenance.worldlineId||'main')}),
-      guiEl('div',{class:'sga-grid two'},[
-        guiEl('section',{class:'sga-card'},[guiEl('h3',{text:'검토 결과'}),guiEl('div',{class:'sga-note',text:'reviews '+String(reviews.length)+' · patches '+String(patches.length)+' · applied '+String(Number(domainReceipt.appliedPatches||0))+' · rejected '+String(Number(domainReceipt.rejectedPatches||0))})]),
-        guiEl('section',{class:'sga-card'},[guiEl('h3',{text:'신규 인물 승인'}),guiEl('div',{class:'sga-note',text:admission.schema?text(admission.status||'기록됨')+' · 승인 '+String(guiAsArray(admission.approvedPersonAssertionIds).length):text(receipt?.entityAdmission?.status||'해당 없음')})])
+    return guiEl('div',{class:'stack',dataset:{worldHistoryProvenance:'state_pipeline_v3'}},[
+      guiEl('div',{class:'note'+(receipt.authority==='target_canonical_chain'?'good':'warn'),text:'State Pipeline v3 · '+statusCopy[0]+' · '+worldManagerHistoryAuthorityCopy(receipt.authority||detail?.item?.stateAuthority)+' · '+text(provenance.worldlineId||'main')}),
+      guiEl('div',{class:'grid g2 two'},[
+        guiEl('section',{class:'card'},[guiEl('h3',{text:'검토 결과'}),guiEl('div',{class:'hint',text:'reviews '+String(reviews.length)+' · patches '+String(patches.length)+' · applied '+String(Number(domainReceipt.appliedPatches||0))+' · rejected '+String(Number(domainReceipt.rejectedPatches||0))})]),
+        guiEl('section',{class:'card'},[guiEl('h3',{text:'신규 인물 승인'}),guiEl('div',{class:'hint',text:admission.schema?text(admission.status||'기록됨')+' · 승인 '+String(guiAsArray(admission.approvedPersonAssertionIds).length):text(receipt?.entityAdmission?.status||'해당 없음')})])
       ]),
-      assertions.length?guiLazyDetails({class:'sga-card',open:true},guiEl('summary',{text:'정본 assertion · '+String(assertions.length)}),()=>[guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(assertions,null,2)})]):null,
-      reviews.length?guiLazyDetails({class:'sga-card'},guiEl('summary',{text:'Observer review · '+String(reviews.length)}),()=>[guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(reviews,null,2)})]):null,
-      patches.length?guiLazyDetails({class:'sga-card',open:true},guiEl('summary',{text:'희소 상태 patch · '+String(patches.length)}),()=>[guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(patches,null,2)})]):null,
-      diagnostics.length?guiLazyDetails({class:'sga-card'},guiEl('summary',{text:'진단 · '+String(diagnostics.length)}),()=>[guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(diagnostics,null,2)})]):null,
+      assertions.length?guiLazyDetails({class:'card',open:true},guiEl('summary',{text:'정본 assertion · '+String(assertions.length)}),()=>[guiEl('pre',{class:'code',text:JSON.stringify(assertions,null,2)})]):null,
+      reviews.length?guiLazyDetails({class:'card'},guiEl('summary',{text:'Observer review · '+String(reviews.length)}),()=>[guiEl('pre',{class:'code',text:JSON.stringify(reviews,null,2)})]):null,
+      patches.length?guiLazyDetails({class:'card',open:true},guiEl('summary',{text:'희소 상태 patch · '+String(patches.length)}),()=>[guiEl('pre',{class:'code',text:JSON.stringify(patches,null,2)})]):null,
+      diagnostics.length?guiLazyDetails({class:'card'},guiEl('summary',{text:'진단 · '+String(diagnostics.length)}),()=>[guiEl('pre',{class:'code',text:JSON.stringify(diagnostics,null,2)})]):null,
       semanticTimelineView,
-      !domainDetail.domain?guiEl('div',{class:'sga-callout',text:'이 정본에 대해 선택한 도메인의 State Observation이 없습니다. 값이 거짓이라는 뜻이 아니라 해당 도메인이 적용 불필요·미실행·재구축 대기 상태일 수 있습니다.'}):null
+      !domainDetail.domain?guiEl('div',{class:'note',text:'이 정본에 대해 선택한 도메인의 State Observation이 없습니다. 값이 거짓이라는 뜻이 아니라 해당 도메인이 적용 불필요·미실행·재구축 대기 상태일 수 있습니다.'}):null
     ]);
   };
   const worldManagerHeadContainsCorrection = (headValue,correctionId) => {
@@ -78178,7 +76110,7 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
   const setWorldManagerCorrectionLifecycle = async (correction,status) => {
     const correctionId=text(correction?.correctionId||''); if (!correctionId||Gui.worldManagerCorrectionMutationId) return;
-    if (status==='deleted'&&typeof confirm==='function'&&!confirm('이 사용자 교정을 삭제 상태로 전환할까요? 정본 기억과 Delta는 변경되지 않습니다.')) return;
+    if (status==='deleted'&&!(await confirmApprovedOperation('이 사용자 교정을 삭제 상태로 전환할까요? 정본 기억과 Delta는 변경되지 않습니다.',{title:'사용자 교정 삭제',target:correctionId}))) return;
     Gui.worldManagerCorrectionMutationId=correctionId; Gui.worldManagerCorrectionError='';
     try {
       const api=globalThis.__LIBRA__; if (!api?.setWorldManagerCorrectionStatus) throw new Error('Correction lifecycle API가 준비되지 않았습니다.');
@@ -78253,68 +76185,45 @@ html,body{width:100%;height:100%;overflow:hidden}
   const buildWorldManagerStalledCorrectionNotice = () => {
     const stalled=worldManagerStalledCorrectionCount();
     if (!stalled) return null;
-    return guiEl('div',{class:'sga-callout danger',dataset:{worldCorrectionStalled:String(stalled)}},[
+    return guiEl('div',{class:'note danger',dataset:{worldCorrectionStalled:String(stalled)}},[
       guiEl('strong',{text:'내가 고친 내용 '+String(stalled)+'건이 지금 적용되지 않습니다.'}),
       guiEl('div',{text:'5턴 재분석이나 되돌리기로 근거가 바뀌면 교정 적용이 자동으로 멈춥니다. 설정 → 상태 추적에서 확인하고 다시 적용할 수 있습니다.'})
     ]);
   };
   const buildWorldManagerCorrectionsPanel = () => {
-    // Mirrors the history panel's lazy-load pattern, but stops retrying once an error is recorded.
-    if (!Gui.worldManagerCorrectionsLoaded&&!Gui.worldManagerCorrectionsLoading&&!text(Gui.worldManagerCorrectionError||'')) queueMicrotask(()=>void loadWorldManagerCorrectionsPage(false));
-    const rows=guiAsArray(Gui.worldManagerCorrectionItems);
-    const stalled=rows.filter(worldManagerCorrectionStalled);
+    if(!Gui.worldManagerCorrectionsLoaded&&!Gui.worldManagerCorrectionsLoading&&!text(Gui.worldManagerCorrectionError||''))queueMicrotask(()=>void loadWorldManagerCorrectionsPage(false));
+    const binding=canonicalReaderBinding(),key=canonicalReaderBindingKey(binding),rows=guiAsArray(Gui.worldManagerCorrectionItems);
     const cards=rows.map(row=>{
-      const correctionId=text(row?.correctionId||'');
-      const statusCopy=worldManagerCorrectionStatusCopy(row?.status);
-      const reason=worldManagerCorrectionReasonCopy(row?.suspensionReason);
-      const busy=text(Gui.worldManagerCorrectionMutationId||'')===correctionId;
-      const isStalled=worldManagerCorrectionStalled(row);
-      const summary=worldManagerCorrectionSummaryText(row);
-      return guiEl('section',{class:'sga-card wide',dataset:{worldCorrection:correctionId,worldCorrectionStatus:text(row?.status||'')}},[
-        guiEl('div',{class:'sga-agent-head'},[
-          guiEl('div',{},[
-            guiEl('h3',{text:worldManagerCorrectionTargetCopy(row)+(summary?' · '+summary:'')}),
-            guiEl('div',{class:'sga-note',text:'T'+String(Number(row?.anchor?.throughTurn||0))+' 기준 · '+libraFormatTime(row?.updatedAt||row?.createdAt)})
-          ]),
-          libraStatusBadge(statusCopy[0],statusCopy[1])
+      const id=text(row.correctionId||''),status=worldManagerCorrectionStatusCopy(row.status),stalled=worldManagerCorrectionStalled(row),busy=text(Gui.worldManagerCorrectionMutationId||'')===id;
+      const action=(label,fn,danger=false)=>guiEl('button',{class:danger?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:label,disabled:busy,dataset:{correctionActionTarget:id},onClick:event=>{
+        if(canonicalReaderBindingKey(canonicalReaderBinding())!==key||event.currentTarget.dataset.correctionActionTarget!==id||event.currentTarget.closest('[data-world-correction]')?.dataset.worldCorrection!==id){guiSetStatus('교정의 scope 또는 대상이 바뀌었습니다. 목록을 다시 열어 확인하세요.',true,true);return;}
+        void fn();
+      }});
+      return guiEl('div',{class:'row',dataset:{worldCorrection:id,worldCorrectionStatus:text(row.status||'')}},[
+        guiEl('div',{},[
+          guiEl('div',{class:'row__title',text:worldManagerCorrectionTargetCopy(row)+(worldManagerCorrectionSummaryText(row)?' · '+worldManagerCorrectionSummaryText(row):'')}),
+          guiEl('div',{class:'row__meta'},['상태: ',libraStatusBadge(status[0],status[1]),` · T${Number(row.anchor?.throughTurn||0)} · ${libraFormatTime(row.updatedAt||row.createdAt)}`]),
+          stalled?guiEl('p',{class:'hint',text:'이 교정은 지금 적용되지 않습니다. '+worldManagerCorrectionReasonCopy(row.suspensionReason)}):null,
+          guiLazyDetails({class:'fold'},guiEl('summary',{text:'교정 내용 · 읽기 전용'}),()=>guiEl('div',{class:'fold__body'},[guiEl('pre',{text:JSON.stringify(guiAsObject(row.after),null,2)})]))
         ]),
-        isStalled?guiEl('div',{class:'sga-callout danger',text:'이 교정은 지금 적용되지 않습니다.'+(reason?' '+reason:'')}):(reason?guiEl('div',{class:'sga-note',text:reason}):null),
-        guiEl('div',{class:'sga-actions'},[
-          isStalled?guiEl('button',{class:'sga-btn primary',type:'button',text:busy?'다시 적용하는 중…':'다시 적용',disabled:busy,onClick:()=>void setWorldManagerCorrectionLifecycle(row,'active')}):null,
-          String(row?.status||'')==='active'?guiEl('button',{class:'sga-btn',type:'button',text:busy?'보류하는 중…':'잠시 보류',disabled:busy,onClick:()=>void setWorldManagerCorrectionLifecycle(row,'suspended')}):null,
-          isStalled?guiEl('button',{class:'sga-btn',type:'button',text:'다시 수정하기',disabled:busy,onClick:()=>openWorldManagerReplacementCorrection(row)}):null,
-          String(row?.status||'')!=='deleted'?guiEl('button',{class:'sga-btn danger',type:'button',text:'삭제',disabled:busy,onClick:()=>void setWorldManagerCorrectionLifecycle(row,'deleted')}):null
-        ].filter(Boolean)),
-        guiLazyDetails({class:'sga-advanced',id:'libra-correction-raw-'+correctionId},guiEl('summary',{text:'교정 내용 원본 · 읽기 전용'}),()=>guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(guiAsObject(row?.after),null,2)}))
+        guiEl('div',{class:'cluster'},[
+          stalled?action('다시 적용',()=>setWorldManagerCorrectionLifecycle(row,'active')):null,
+          row.status==='active'?action('잠시 보류',()=>setWorldManagerCorrectionLifecycle(row,'suspended')):null,
+          stalled?action('다시 수정하기',()=>openWorldManagerReplacementCorrection(row)):null,
+          row.status!=='deleted'?action('삭제',()=>setWorldManagerCorrectionLifecycle(row,'deleted'),true):null
+        ])
       ]);
     });
-    return guiEl('section',{class:'sga-flow-section',dataset:{worldManagerCorrections:'true'}},[
-      guiEl('h3',{text:'내가 고친 내용'}),
-      guiEl('p',{class:'sga-note',text:'직접 고친 내용이 지금 반영되고 있는지 보여 줍니다. 5턴 재분석이나 되돌리기로 근거가 달라지면 적용이 자동으로 멈추며, 그 사실과 이유가 아래에 표시됩니다.'}),
-      stalled.length?guiEl('div',{class:'sga-callout danger'},[
-        guiEl('strong',{text:'적용이 멈춘 교정 '+String(stalled.length)+'건'}),
-        guiEl('div',{text:'내용을 확인한 뒤 "다시 적용"을 누르거나, "다시 수정하기"로 새로 고쳐 주십시오.'})
-      ]):null,
-      guiEl('label',{class:'sga-field'},[guiEl('span',{text:'보기'}),worldManagerSelect(String(Gui.worldManagerCorrectionFilter||'all'),[['all','전체'],['active','적용 중'],['suspended','재검토 필요'],['dormant_after_rollback','롤백 뒤 휴면'],['superseded','대체됨'],['deleted','삭제됨']],value=>{
-        Gui.worldManagerCorrectionFilter=String(value||'all'); Gui.worldManagerCorrectionCursor=''; Gui.worldManagerCorrectionHasMore=false;
-        Gui.worldManagerCorrectionsLoaded=false; Gui.worldManagerCorrectionError=''; queueGuiNavigationRender();
-      })]),
-      Gui.worldManagerCorrectionError?guiEl('div',{class:'sga-callout danger'},[
-        guiEl('div',{text:Gui.worldManagerCorrectionError}),
-        guiEl('button',{class:'sga-btn',type:'button',text:'다시 읽기',onClick:()=>{Gui.worldManagerCorrectionError='';Gui.worldManagerCorrectionsLoaded=false;queueGuiNavigationRender();}})
-      ]):null,
-      guiEl('div',{class:'sga-list-items'},[
-        ...(cards.length?cards:[Gui.worldManagerCorrectionsLoading
-          ? guiEl('div',{class:'sga-card wide sga-note',dataset:{msLoading:'true'},text:'교정 목록을 읽는 중입니다.'})
-          : guiEl('div',{class:'sga-card wide sga-note',dataset:{msEmpty:'search'}},[
-            guiEl('strong',{text:'표시할 교정이 없습니다.'}),
-            guiEl('div',{text:'보기를 "전체"로 바꾸면 보류·대체·삭제된 교정까지 함께 볼 수 있습니다.'})
-          ])]),
-        Gui.worldManagerCorrectionHasMore?guiEl('button',{class:'sga-btn',type:'button',text:'교정 더 보기',disabled:Gui.worldManagerCorrectionsLoading===true,onClick:()=>void loadWorldManagerCorrectionsPage(true)}):null
-      ].filter(Boolean))
-    ].filter(Boolean));
+    return guiEl('div',{class:'stack',dataset:{worldManagerCorrections:'true'}},[
+      Gui.worldManagerCorrectionError?guiEl('div',{class:'note note--danger'},[guiEl('p',{text:Gui.worldManagerCorrectionError}),guiEl('button',{class:'btn btn--sm',type:'button',text:'다시 읽기',onClick:()=>{Gui.worldManagerCorrectionError='';Gui.worldManagerCorrectionsLoaded=false;queueGuiNavigationRender();}})]):null,
+      guiEl('div',{class:'list'},cards.length?cards:[guiEl('div',{class:'empty',dataset:Gui.worldManagerCorrectionsLoading?{msLoading:'true'}:{msEmpty:'search'},text:Gui.worldManagerCorrectionsLoading?'교정 목록을 읽는 중입니다.':'표시할 교정이 없습니다.'})]),
+      Gui.worldManagerCorrectionHasMore?guiEl('button',{class:'btn btn--sm',type:'button',text:'교정 더 보기',disabled:Gui.worldManagerCorrectionsLoading,onClick:()=>void loadWorldManagerCorrectionsPage(true)}):null,
+      guiEl('details',{class:'fold'},[guiEl('summary',{text:'교정 상태별 보기'}),guiEl('div',{class:'fold__body'},[
+        fieldNode('보기',worldManagerSelect(String(Gui.worldManagerCorrectionFilter||'all'),[['all','전체'],['active','적용 중'],['suspended','재검토 필요'],['dormant_after_rollback','롤백 뒤 휴면'],['superseded','대체됨'],['deleted','삭제됨']],value=>{Gui.worldManagerCorrectionFilter=String(value||'all');Gui.worldManagerCorrectionCursor='';Gui.worldManagerCorrectionHasMore=false;Gui.worldManagerCorrectionsLoaded=false;Gui.worldManagerCorrectionError='';queueGuiNavigationRender();}))
+      ])])
+    ]);
   };
-  // Compatibility name retained; the visible diagnostics list contains analysis history only.
+
   const buildWorldManagerHistoryCorrectionsPanel = domainValue => {
     const domain=ensureWorldManagerPagedDomain(domainValue);
     Gui.worldManagerHistoryTab='history';
@@ -78324,39 +76233,39 @@ html,body{width:100%;height:100%;overflow:hidden}
         const detailState=guiAsObject(Gui.worldManagerHistoryDetails?.[worldManagerHistoryDetailKey(item)]); const detail=detailState.detail;
         const domains=guiAsObject(item?.domains); const selected=guiAsObject(domains[domain]);
         const historyStatus=worldManagerHistoryStatusCopy(selected.status||item?.statePipelineStatus||item?.deltaStatus||'missing');
-        return guiEl('section',{class:'sga-card wide',dataset:{worldHistoryMemory:item?.memoryId||'',worldHistoryMode:item?.recordMode||'legacy_delta_v1',worldHistoryAuthority:item?.stateAuthority||''}},[
-          guiEl('div',{class:'sga-agent-head'},[guiEl('div',{},[guiEl('h3',{text:'TURN '+String(Number(item?.turnRange?.start||0))+'~'+String(Number(item?.turnRange?.end||0))}),guiEl('div',{class:'sga-note',text:'revision '+String(Number(item?.revision||0))+' · '+text(item?.status||'committed')+' · '+(item?.recordMode==='state_pipeline_v3'?'State Pipeline v3':'이전 Delta')})]),libraStatusBadge(historyStatus[0],historyStatus[1])]),
+        return guiEl('section',{class:'card',dataset:{worldHistoryMemory:item?.memoryId||'',worldHistoryMode:item?.recordMode||'legacy_delta_v1',worldHistoryAuthority:item?.stateAuthority||''}},[
+          guiEl('div',{class:'split'},[guiEl('div',{},[guiEl('h3',{text:'TURN '+String(Number(item?.turnRange?.start||0))+'~'+String(Number(item?.turnRange?.end||0))}),guiEl('div',{class:'hint',text:'revision '+String(Number(item?.revision||0))+' · '+text(item?.status||'committed')+' · '+(item?.recordMode==='state_pipeline_v3'?'State Pipeline v3':'이전 Delta')})]),libraStatusBadge(historyStatus[0],historyStatus[1])]),
           item?.narrativeSummary?guiEl('div',{text:text(item.narrativeSummary)}):null,
-          guiEl('div',{class:'sga-note',text:'실제 patch '+String(Number(selected.applied??selected.count??selected.changed??0))+' · '+worldManagerHistoryAuthorityCopy(item?.stateAuthority||'legacy_derived')+' · '+libraFormatTime(item?.updatedAt)}),
-          detailState.error?guiEl('div',{class:'sga-callout danger',text:detailState.error}):null,
+          guiEl('div',{class:'hint',text:'실제 patch '+String(Number(selected.applied??selected.count??selected.changed??0))+' · '+worldManagerHistoryAuthorityCopy(item?.stateAuthority||'legacy_derived')+' · '+libraFormatTime(item?.updatedAt)}),
+          detailState.error?guiEl('div',{class:'note danger',text:detailState.error}):null,
           detail?buildWorldManagerHistoryDetailView(detail,domain):null,
-          guiEl('div',{class:'sga-actions'},[
-            guiEl('button',{class:'sga-btn',type:'button',text:detailState.loading?'상세 읽는 중…':'변화 상세',disabled:detailState.loading===true,dataset:{worldHistoryDetailAction:'true'},onClick:()=>void loadWorldManagerHistoryDetail(item)}),
-            detail?guiEl('button',{class:'sga-btn primary',type:'button',text:'정본 메모리 보기',dataset:{worldHistoryCanonicalJump:'true'},onClick:()=>void jumpToWorldManagerCanonicalMemory(item)}):null
+          guiEl('div',{class:'cluster'},[
+            guiEl('button',{class:'btn',type:'button',text:detailState.loading?'상세 읽는 중…':'변화 상세',disabled:detailState.loading===true,dataset:{worldHistoryDetailAction:'true'},onClick:()=>void loadWorldManagerHistoryDetail(item)}),
+            detail?guiEl('button',{class:'btn btn--primary',type:'button',text:'정본 메모리 보기',dataset:{worldHistoryCanonicalJump:'true'},onClick:()=>void jumpToWorldManagerCanonicalMemory(item)}):null
           ])
         ]);
       });
-      body=guiEl('div',{class:'sga-list-items'},[
-        Gui.worldManagerHistoryError?guiEl('div',{class:'sga-callout danger',text:Gui.worldManagerHistoryError}):null,
+      body=guiEl('div',{class:'list'},[
+        Gui.worldManagerHistoryError?guiEl('div',{class:'note danger',text:Gui.worldManagerHistoryError}):null,
         ...(cards.length?cards:[Gui.worldManagerHistoryLoading
-          ? guiEl('div',{class:'sga-card wide sga-note',dataset:{msLoading:'true'},text:'변화 기록을 읽는 중입니다.'})
-          : guiEl('div',{class:'sga-card wide sga-note',dataset:{msEmpty:'true'}},[
+          ? guiEl('div',{class:'card hint',dataset:{msLoading:'true'},text:'변화 기록을 읽는 중입니다.'})
+          : guiEl('div',{class:'card hint',dataset:{msEmpty:'true'}},[
             guiEl('strong',{text:'아직 기록된 상태 변화가 없습니다.'}),
             guiEl('div',{text:'5턴 정본 분석이 끝나면 반영 내역이 여기에 남습니다.'})
           ])]),
-        Gui.worldManagerHistoryHasMore?guiEl('button',{class:'sga-btn',type:'button',text:'변화 기록 더 보기',disabled:Gui.worldManagerHistoryLoading,onClick:()=>void loadWorldManagerHistoryPage(true)}):null
+        Gui.worldManagerHistoryHasMore?guiEl('button',{class:'btn',type:'button',text:'변화 기록 더 보기',disabled:Gui.worldManagerHistoryLoading,onClick:()=>void loadWorldManagerHistoryPage(true)}):null
       ]);
 
-    return guiEl('section',{class:'sga-flow-section',dataset:{worldManagerHistoryDomain:domain}},[guiEl('h3',{text:'분석 반영 기록'}),body]);
+    return guiEl('section',{class:'stack',dataset:{worldManagerHistoryDomain:domain}},[guiEl('h3',{text:'분석 반영 기록'}),body]);
   };
 
   const buildWorldManagerDiagnosticsPanel = () => {
     const domain=ensureWorldManagerPagedDomain(Gui.worldManagerHistoryDomain);
-    return guiEl('section',{class:'sga-flow-section',dataset:{worldManagerDiagnostics:'true'}},[
-      guiEl('p',{class:'sga-note',text:'구간별 분석 결과와 현재 정보에 반영된 내용을 확인합니다.'}),
-      guiEl('label',{class:'sga-field'},[guiEl('span',{text:'확인할 정보'}),worldManagerSelect(domain,[['characters','인물'],['relationships','관계'],['world','세계'],['narrative','서사']],value=>{ensureWorldManagerPagedDomain(value);queueGuiNavigationRender();})]),
+    return guiEl('section',{class:'stack',dataset:{worldManagerDiagnostics:'true'}},[
+      guiEl('p',{class:'hint',text:'구간별 분석 결과와 현재 정보에 반영된 내용을 확인합니다.'}),
+      guiEl('label',{class:'field'},[guiEl('span',{text:'확인할 정보'}),worldManagerSelect(domain,[['characters','인물'],['relationships','관계'],['world','세계'],['narrative','서사']],value=>{ensureWorldManagerPagedDomain(value);queueGuiNavigationRender();})]),
       buildWorldManagerHistoryCorrectionsPanel(domain),
-      guiLazyDetails({class:'sga-advanced',id:'libra-state-raw-'+domain},guiEl('summary',{text:'현재 정보 원본 · 읽기 전용'}),()=>guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(worldManagerSnapshotView()[domain],null,2)}))
+      guiLazyDetails({class:'fold',id:'libra-state-raw-'+domain},guiEl('summary',{text:'현재 정보 원본 · 읽기 전용'}),()=>guiEl('pre',{class:'code',text:JSON.stringify(worldManagerSnapshotView()[domain],null,2)}))
     ]);
   };
 
@@ -78364,7 +76273,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     Gui.worldManagerDomainSections=guiAsObject(Gui.worldManagerDomainSections);
     // Legacy selections converge on one detail view without loading diagnostics.
     Gui.worldManagerDomainSections[domain]='current';
-    return guiEl('div',{class:'sga-flow-section',dataset:{worldHeadView:'current',worldDetailManagement:domain}},[buildWorldManagerStalledCorrectionNotice(),currentBuilder()]);
+    return guiEl('div',{class:'stack',dataset:{worldHeadView:'current',worldDetailManagement:domain}},[buildWorldManagerStalledCorrectionNotice(),currentBuilder()]);
   };
   const buildWorldManagerCharactersPanel = () => buildWorldManagerDomainShell('characters',buildWorldManagerCharactersCurrentPanel);
   const buildWorldManagerRelationshipsPanel = () => buildWorldManagerDomainShell('relationships',buildWorldManagerRelationshipsCurrentPanel);
@@ -78376,21 +76285,21 @@ html,body{width:100%;height:100%;overflow:hidden}
     const arcs = guiAsArray(narrative.arcs);
     const threads = guiAsArray(narrative.threads).slice().sort((a,b)=>(a?.status==='open'?-1:1)-(b?.status==='open'?-1:1));
     const locks = guiAsArray(narrative.locks).slice().sort((a,b)=>(a?.status==='active'?-1:1)-(b?.status==='active'?-1:1));
-    if(worldManagerIsUnified(view))return guiEl('div',{class:'sga-flow-section',dataset:{worldManagerDomain:'narrative',snapshotOnly:'true',unifiedNarrative:'current'}},[
+    if(worldManagerIsUnified(view))return guiEl('div',{class:'stack',dataset:{worldManagerDomain:'narrative',snapshotOnly:'true',unifiedNarrative:'current'}},[
       buildWorldManagerSnapshotNotice(view,'narrative','현재 내러티브',threads.length),
-      guiEl('section',{class:'sga-card wide'},[guiEl('h3',{text:'지금 이어지고 있는 이야기'}),guiEl('p',{class:'libra-current-article-lead',text:narrative.summary||'현재 확인된 미해결 서사가 없습니다.'}),guiEl('p',{class:'sga-note',text:'열린 갈등·약속·질문과 현재 의미를 보여 줍니다. 해결된 과거는 정본 기억에 남고, 앞으로의 서사 방향은 별도로 관리합니다.'})]),
+      guiEl('section',{class:'card'},[guiEl('h3',{text:'지금 이어지고 있는 이야기'}),guiEl('p',{class:"deck",text:narrative.summary||'현재 확인된 미해결 서사가 없습니다.'}),guiEl('p',{class:'hint',text:'열린 갈등·약속·질문과 현재 의미를 보여 줍니다. 해결된 과거는 정본 기억에 남고, 앞으로의 서사 방향은 별도로 관리합니다.'})]),
       buildWorldManagerRecordBrowser({domain:'narrative_threads',editorDomain:'narrative_thread',rows:threads,selectionKey:'worldManagerSelectedThreadId',view,titleFor:row=>text(row.title||row.summary||'현재 서사'),subtitleFor:row=>({conflict:'갈등',promise:'약속',question:'질문',task:'과제',other:'미해결 상황'}[row.kind]||'미해결 상황')+' · '+({open:'진행 중',blocked:'막힘',uncertain:'미확정'}[row.status]||row.status),detailFor:row=>row})
     ]);
-    return guiEl('div', { class: 'sga-flow-section', dataset: { worldManagerDomain: 'narrative', snapshotOnly: 'true' } }, [
+    return guiEl('div', { class: 'stack', dataset: { worldManagerDomain: 'narrative', snapshotOnly: 'true' } }, [
       buildWorldManagerSnapshotNotice(view, 'narrative', '내러티브', arcs.length + threads.length),
-      guiEl('section', { class: 'sga-card wide', dataset: { narrativeCurrentHead: 'true', readOnly: 'true' } }, [
-        guiEl('div',{class:'sga-agent-head'},[guiEl('div',{},[guiEl('h3', { text: '현재까지 실제로 성립한 이야기' }),guiEl('div', { text: text(narrative.summary || '현재 내러티브 요약 없음') })]),worldManagerSourceBadge('narrative', narrative, view)]),
-        narrative.momentum ? guiEl('div', { class: 'sga-callout', text: '현재 압력 / 모멘텀 · ' + text(narrative.momentum) }) : null,
-        guiEl('div', { class: 'sga-summary-table' }, [
-          guiEl('span', { text: '활성 Arc' }), guiEl('strong', { text: String(arcs.filter(item => item?.status === 'active').length) }),
-          guiEl('span', { text: '열린 Thread' }), guiEl('strong', { text: String(threads.filter(item => item?.status === 'open').length) }),
-          guiEl('span', { text: '활성 Lock' }), guiEl('strong', { text: String(locks.filter(item => item?.status !== 'released').length) }),
-          guiEl('span', { text: '갱신 Turn' }), guiEl('strong', { text: 'T' + String(Number(narrative.updatedThroughTurn || view.throughTurn || 0)) })
+      guiEl('section', { class: 'card', dataset: { narrativeCurrentHead: 'true', readOnly: 'true' } }, [
+        guiEl('div',{class:'split'},[guiEl('div',{},[guiEl('h3', { text: '현재까지 실제로 성립한 이야기' }),guiEl('div', { text: text(narrative.summary || '현재 내러티브 요약 없음') })]),worldManagerSourceBadge('narrative', narrative, view)]),
+        narrative.momentum ? guiEl('div', { class: 'note', text: '현재 압력 / 모멘텀 · ' + text(narrative.momentum) }) : null,
+        guiEl('dl', { class: 'kv' }, [
+          guiEl('dt', { text: '활성 Arc' }), guiEl('dd', { text: String(arcs.filter(item => item?.status === 'active').length) }),
+          guiEl('dt', { text: '열린 Thread' }), guiEl('dd', { text: String(threads.filter(item => item?.status === 'open').length) }),
+          guiEl('dt', { text: '활성 Lock' }), guiEl('dd', { text: String(locks.filter(item => item?.status !== 'released').length) }),
+          guiEl('dt', { text: '갱신 Turn' }), guiEl('dd', { text: 'T' + String(Number(narrative.updatedThroughTurn || view.throughTurn || 0)) })
         ])
       ]),
       guiEl('h3',{text:'Arc'}),
@@ -78460,7 +76369,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (Gui.narrativeDirectionSaving) return;
     const scopeKey=narrativeDirectionScopeKey();
     if (!scopeKey||Gui.narrativeDirectionDraftKey!==scopeKey) { Gui.narrativeDirectionError='Narrative Direction 편집 scope가 현재 채팅과 일치하지 않습니다.'; queueGuiNavigationRender(); return; }
-    if (typeof confirm==='function'&&!confirm('앞으로의 서사 방향을 초기화할까요? 현재 Narrative 사실은 변경되지 않습니다.')) return;
+    if (!(await confirmApprovedOperation('목표·완료 조건·강제하지 말아야 할 전개·부드러운 선호와 잠금을 초기화하고 저장 결과를 다시 읽어 확인합니다. 현재 Narrative 사실은 변경되지 않습니다.',{title:'사서의 여백을 초기화할까요?',target:scopeKey,validate:()=>narrativeDirectionScopeKey()===scopeKey,template:LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML,questionSelector:'.dialog > p',actionLabel:'초기화'}))) return;
     Gui.narrativeDirectionSaving=true; Gui.narrativeDirectionError='';
     try {
       const api=globalThis.__LIBRA__; if (!api?.clearNarrativeDirection||!api?.getNarrativeDirection) throw new Error('Narrative Direction API가 준비되지 않았습니다.');
@@ -78472,33 +76381,11 @@ html,body{width:100%;height:100%;overflow:hidden}
     } catch(error) { Gui.narrativeDirectionError=(error?.code?String(error.code)+' · ':'')+String(error?.message||error); guiSetStatus(Gui.narrativeDirectionError,true,true); }
     finally { Gui.narrativeDirectionSaving=false; await renderSettingsGui(); }
   };
-  const buildNarrativeDirectionPanel = () => {
-    const scopeKey=narrativeDirectionScopeKey(); const draft=Gui.narrativeDirectionDraftKey===scopeKey?Gui.narrativeDirectionDraft:null;
-    if (!draft&&!Gui.narrativeDirectionLoading) Promise.resolve().then(()=>loadNarrativeDirectionDraft());
-    const setDraft=(name,value)=>{if(!Gui.narrativeDirectionDraft)return;Gui.narrativeDirectionDraft[name]=value;Gui.narrativeDirectionDraft.dirty=true;};
-    return guiEl('div',{class:'sga-flow-section',dataset:{narrativeDirection:'shared'}},[
-      guiEl('div',{class:'sga-callout'},[guiEl('strong',{text:'앞으로의 방향'}),guiEl('div',{text:'이 페이지는 앞으로 원하는 방향을 지정합니다.'}),guiEl('div',{text:'현재까지 실제로 일어난 내용은 내러티브 > 현재 내러티브에서 관리합니다.'})]),
-      Gui.narrativeDirectionError?guiEl('div',{class:'sga-callout danger',text:Gui.narrativeDirectionError}):null,
-      draft?guiEl('section',{class:'sga-card wide'},[
-        guiEl('div',{class:'sga-agent-head'},[guiEl('div',{},[guiEl('h3',{text:'사용자 서사 방향'}),guiEl('div',{class:'sga-note',text:'현재 사실과 분리된 scope별 사용자 권위입니다.'})]),libraStatusBadge(draft.locked?'잠금':'편집 가능',draft.locked?'warn':'good')]),
-        guiEl('div',{class:'sga-form-grid'},[
-          fieldNode('원하는 서사 방향',inputNode(draft.goal,value=>setDraft('goal',value))),
-          fieldNode('완료 조건',guiEl('textarea',{class:'sga-textarea preview',value:draft.completionConditions,onInput:event=>setDraft('completionConditions',event.target.value)}),'줄바꿈 또는 쉼표로 구분합니다.'),
-          fieldNode('피해야 할 강제 전개',guiEl('textarea',{class:'sga-textarea preview',value:draft.doNotForce,onInput:event=>setDraft('doNotForce',event.target.value)})),
-          fieldNode('Soft Preferences',guiEl('textarea',{class:'sga-textarea preview',value:draft.softPreferences,onInput:event=>setDraft('softPreferences',event.target.value)})),
-          checkboxNode(draft.locked,'잠금',value=>setDraft('locked',value))
-        ]),
-        guiEl('div',{class:'sga-actions'},[
-          guiEl('button',{class:'sga-btn good',type:'button',text:Gui.narrativeDirectionSaving?'저장 확인 중…':'방향 저장',disabled:Gui.narrativeDirectionSaving,onClick:()=>void saveNarrativeDirectionDraft()}),
-          guiEl('button',{class:'sga-btn danger',type:'button',text:'방향 초기화',disabled:Gui.narrativeDirectionSaving,onClick:()=>void clearNarrativeDirectionDraft()})
-        ])
-      ]):guiEl('div',{class:'sga-card wide sga-note',text:Gui.narrativeDirectionLoading?'앞으로의 방향을 읽는 중입니다.':'앞으로의 방향을 불러오지 못했습니다.'})
-    ]);
-  };
+
 
   const buildWorldManagerNarrativePanel = () => {
     Gui.narrativeHubSection='current';
-    return guiEl('div',{class:'sga-flow-section',dataset:{narrativeHeadView:'current',worldDetailManagement:'narrative'}},[buildWorldManagerNarrativeCurrentPanel()]);
+    return guiEl('div',{class:'stack',dataset:{narrativeHeadView:'current',worldDetailManagement:'narrative'}},[buildWorldManagerNarrativeCurrentPanel()]);
   };
 
 
@@ -78613,10 +76500,10 @@ html,body{width:100%;height:100%;overflow:hidden}
     // bypass the cooldown. Closing the GUI invalidates all in-flight results.
     return cached;
   };
-  const operationalHealthCard = ({ title, status, tone = '', note = '', rows = [], actions = [] } = {}) => guiEl('article', { class: 'sga-card' }, [
-    guiEl('div', { class: 'sga-agent-head' }, [guiEl('div', {}, [guiEl('h3', { text: title }), note ? guiEl('div', { class: 'sga-note', text: note }) : null]), libraStatusBadge(status || '대기', tone)]),
-    rows.length ? guiEl('div', { class: 'sga-summary-table', style: { marginTop: '10px' } }, rows.flatMap(([label, value]) => [guiEl('span', { text: String(label) }), guiEl('strong', { text: String(value ?? '-') })])) : null,
-    actions.length ? guiEl('div', { class: 'sga-actions', style: { marginTop: '10px' } }, actions) : null
+  const operationalHealthCard = ({ title, status, tone = '', note = '', rows = [], actions = [] } = {}) => guiEl('article', { class: 'card' }, [
+    guiEl('div', { class: 'split' }, [guiEl('div', {}, [guiEl('h3', { text: title }), note ? guiEl('div', { class: 'hint', text: note }) : null]), libraStatusBadge(status || '대기', tone)]),
+    rows.length ? guiEl('dl', { class: 'kv', style: { marginTop: '10px' } }, rows.flatMap(([label, value]) => [guiEl('dt', { text: String(label) }), guiEl('dd', { text: String(value ?? '-') })])) : null,
+    actions.length ? guiEl('div', { class: 'cluster', style: { marginTop: '10px' } }, actions) : null
   ].filter(Boolean));
   const captureBackendLabel = backend => ({ CHAT_OUTPUT_V3: 'CHAT OUTPUT V3', SCRIPT_OUTPUT_LEGACY: 'LEGACY OUTPUT', AFTER_REQUEST_RECONCILE: 'AFTER REQUEST' }[text(backend)] || text(backend || '미등록'));
   const buildLibraSafeHealthControls = () => {
@@ -78627,25 +76514,25 @@ html,body{width:100%;height:100%;overflow:hidden}
     const current = () => Gui.safeHealthState === view && Gui.root === root && operationalScopeKey() === scopeKey;
     const show = message => { if (!current()) return; view.message = message; const node = root?.querySelector('#libraSafeHealthStatus'); if (node) node.textContent = message; };
     const enabled = () => { const node = root?.querySelector('#libraSafeHealthApply'); if (node && current()) node.disabled = view.busy || view.ticket?.allowed !== true; };
-    const output = guiEl('div', { id: 'libraSafeHealthStatus', class: 'sga-note', role: 'status', text: view.message });
-    const apply = guiEl('button', { id: 'libraSafeHealthApply', class: 'sga-btn', type: 'button', disabled: view.busy || view.ticket?.allowed !== true, text: '캐시 복구 실행', onClick: async () => {
+    const output = guiEl('div', { id: 'libraSafeHealthStatus', class: 'hint', role: 'status', text: view.message });
+    const apply = guiEl('button', { id: 'libraSafeHealthApply', class: 'btn', type: 'button', disabled: view.busy || view.ticket?.allowed !== true, text: '캐시 복구 실행', onClick: async () => {
       if (!current() || view.busy || !view.ticket) return; view.busy = true; apply.disabled = true;
       try { const result = await LibraMemoryCore.healthRecovery.repair(view.ticket);
         show(result.reason === 'derived_cache_refilled' ? '캐시가 다시 구성되어 이전 완료 확인은 만료되었습니다. 필요하면 새 미리보기 후 실행하세요.' : result.status === 'verified' ? '캐시 복구 검증 완료 · 정본 변경 없음' : result.status === 'uncertain' ? '복구 결과 미확인 · 자동 재시도 중지' : '범위 또는 정본 변경 · 다시 검사해 주세요.');
       } finally { view.busy = false; enabled(); }
     } });
-    const inspect = guiEl('button', { id: 'libraSafeHealthInspect', class: 'sga-btn', type: 'button', text: '읽기 전용 건강 검사', onClick: async () => {
+    const inspect = guiEl('button', { id: 'libraSafeHealthInspect', class: 'btn', type: 'button', text: '읽기 전용 건강 검사', onClick: async () => {
       if (!current() || view.busy) return; view.busy = true; view.ticket = null; apply.disabled = true;
       try { const report = await LibraMemoryCore.healthRecovery.inspect(); show(report.known ? '메타데이터 읽기 검증 완료 · 전체 원문·벡터·아카이브는 미검사입니다. 정상으로 확정하지 않습니다.' : '검사 미완료 · 현재 범위 또는 정본 메타데이터를 확인할 수 없습니다.'); }
       finally { view.busy = false; enabled(); }
     } });
-    const preview = guiEl('button', { id: 'libraSafeHealthPreview', class: 'sga-btn', type: 'button', text: '안전 복구 미리보기', onClick: async () => {
+    const preview = guiEl('button', { id: 'libraSafeHealthPreview', class: 'btn', type: 'button', text: '안전 복구 미리보기', onClick: async () => {
       if (!current() || view.busy) return; view.busy = true; apply.disabled = true;
       try { view.ticket = await LibraMemoryCore.healthRecovery.preview(); apply.disabled = view.ticket.allowed !== true;
         show(view.ticket.allowed ? '현재 범위의 검색 카탈로그 메모리 캐시만 비웁니다. 원문·정본·벡터 변경 0회, 모델 호출 0회. 다음 정상 검색에서 필요할 때 재구성합니다.' : '현재 범위 검증이 불충분하거나 서버 모드입니다. 캐시 복구를 시작하지 않았습니다.');
       } finally { view.busy = false; enabled(); }
     } });
-    return guiEl('div', { class: 'sga-card wide' }, [guiEl('div', { class: 'sga-actions' }, [inspect, preview, apply]), output]);
+    return guiEl('div', { class: 'card' }, [guiEl('div', { class: 'cluster' }, [inspect, preview, apply]), output]);
   };
   const buildOperationalHealthPanel = () => {
     const cached = ensureOperationalDiagnostics();
@@ -78667,18 +76554,18 @@ html,body{width:100%;height:100%;overflow:hidden}
     const laneActive = lane.active === true;
     const captureTone = capture.registered === true && !capture.fallbackReason ? 'good' : capture.registered === true ? 'warn' : 'danger';
     const replayTone = !cached.worldManager ? 'off' : replayError.rollbackIncomplete === true ? 'danger' : cached.fieldStatus?.worldManager === 'stale' || replayError.code ? 'warn' : 'good';
-    return guiEl('section', { class: 'sga-flow-section', dataset: { operationalHealth: 'v514' } }, [
+    return guiEl('section', { class: 'stack', dataset: { operationalHealth: 'v514' } }, [
       buildLibraSafeHealthControls(),
-      guiEl('section', { class: 'sga-card wide libra-reader-intro' }, [
-        guiEl('span', { class: 'libra-article-eyebrow', text: 'LIBRARIAN SYSTEM HEALTH · READ ONLY' }),
+      guiEl('section', { class: "card stack" }, [
+        guiEl('span', { class: "eyebrow", text: 'LIBRARIAN SYSTEM HEALTH · READ ONLY' }),
         guiEl('h2', { text: '사서 시스템 상태' }),
         guiEl('p', { text: '기억 엔진이 실제로 출력·5턴 경계·검색 레인·State 재생·복사 연속성·장기 채팅 캐시를 정상적으로 유지하는지 한 화면에서 확인합니다.' }),
-        Gui.operationalDiagnosticsError ? guiEl('div', { class: 'sga-callout danger', text: Gui.operationalDiagnosticsError }) : null,
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn', type: 'button', disabled: Gui.operationalDiagnosticsLoading, text: Gui.operationalDiagnosticsLoading ? '상태 읽는 중…' : '상태 새로고침', onClick: () => void refreshOperationalDiagnostics({ force: true }) })
+        Gui.operationalDiagnosticsError ? guiEl('div', { class: 'note danger', text: Gui.operationalDiagnosticsError }) : null,
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn', type: 'button', disabled: Gui.operationalDiagnosticsLoading, text: Gui.operationalDiagnosticsLoading ? '상태 읽는 중…' : '상태 새로고침', onClick: () => void refreshOperationalDiagnostics({ force: true }) })
         ])
       ]),
-      guiEl('div', { class: 'sga-grid' }, [
+      guiEl('div', { class: 'grid g2' }, [
         operationalHealthCard({
           title: '출력 감지', status: capture.registered === true ? captureBackendLabel(capture.backend) : '미등록', tone: captureTone,
           note: '확정 Assistant 출력의 권위 있는 capture backend와 자동 failover 상태입니다.',
@@ -78698,7 +76585,7 @@ html,body{width:100%;height:100%;overflow:hidden}
             ['최근 recovery', text(LibraMemoryCore.state.lastPendingBoundaryRecovery?.reason || '-')]
           ] : [['최근 arm', text(LibraMemoryCore.state.lastPendingBoundaryArm?.reason || '-')], ['최근 recovery', text(LibraMemoryCore.state.lastPendingBoundaryRecovery?.reason || '-')]],
           actions: [
-            guiEl('button', { class: 'sga-btn', type: 'button', text: '복구 가능 여부 확인', onClick: async () => {
+            guiEl('button', { class: 'btn', type: 'button', text: '복구 가능 여부 확인', onClick: async () => {
               try { const context = await LibraMemoryCore.resolveContext(); const result = await LibraMemoryCore.recoverPendingLiveBoundaryAtStartup(context, { schedule: false }); await refreshOperationalDiagnostics({ force: true }); guiSetStatus(`경계 복구 확인 · ${result.reason || '완료'}${result.eligible === true ? ' · 복구 가능' : ''}`); }
               catch (error) { guiSetStatus(error?.message || String(error), true, true); }
             } })
@@ -78769,7 +76656,7 @@ html,body{width:100%;height:100%;overflow:hidden}
           title: 'Canonical Jobs', status: !cached.canonicalJobs ? '미조회' : cached.fieldStatus?.canonicalJobs === 'stale' ? '이전 결과 · 조회 실패' : activeJobs.length ? `${activeJobs.length}개 진행/대기` : `${Number(canonicalJobs.total || jobs.length || 0)}개 기록`, tone: activeJobs.length ? 'warn' : 'good',
           note: '재생성·수동 스캔·채택 같은 durable Canonical 작업 inventory입니다.',
           rows: jobs.slice(0, 3).map(job => [`${text(job.kind || 'job')} · ${text(job.state || '-')}`, job.currentStart ? `T${job.currentStart} · ${job.message || ''}` : text(job.message || '')]),
-          actions: [guiEl('button', { class: 'sga-btn', type: 'button', disabled: Gui.canonicalJobsLoading, text: '정본 작업 목록 새로고침', onClick: () => void loadCanonicalJobsPage() })]
+          actions: [guiEl('button', { class: 'btn', type: 'button', disabled: Gui.canonicalJobsLoading, text: '정본 작업 목록 새로고침', onClick: () => void loadCanonicalJobsPage() })]
         })
       ])
     ]);
@@ -78800,106 +76687,60 @@ html,body{width:100%;height:100%;overflow:hidden}
     return result;
   };
   const buildStateReplayMaintenancePanel = () => {
-    const cached = ensureOperationalDiagnostics();
-    const wm = guiAsObject(cached.worldManager);
-    const meta = guiAsObject(cached.worldlineMeta);
-    const scopeKey = text(cached.scopeKey || '');
-    const activeId = text(meta.activeWorldlineId || wm.worldline?.activeWorldlineId || 'main');
-    const lines = guiAsObject(meta.worldlines);
-    const ids = Object.keys(lines);
-    const ready = !!scopeKey && scopeKey === operationalScopeKey() && ids.length > 0
-      && (!cached.fieldStatus || cached.fieldStatus.worldlineMeta === 'ready');
-    if (!Gui.worldlineTargetId || !ids.includes(Gui.worldlineTargetId)) Gui.worldlineTargetId = activeId;
-    let switchButton = null; let rollbackButton = null;
-    const validTurn = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) % LibraMemoryCore.BATCH_SIZE === 0;
-    const refreshActionButtons = () => {
-      if (switchButton) switchButton.disabled = !ready || Gui.worldManagerRuntimeMetaRebuilding || Gui.worldlineTargetId === activeId;
-      if (rollbackButton) rollbackButton.disabled = !ready || Gui.worldManagerRuntimeMetaRebuilding || !validTurn(Gui.worldlineRollbackTurn);
+    const cached=ensureOperationalDiagnostics(),wm=guiAsObject(cached.worldManager),meta=guiAsObject(cached.worldlineMeta);
+    const scopeKey=text(cached.scopeKey||''),activeId=text(meta.activeWorldlineId||wm.worldline?.activeWorldlineId||'main');
+    const lines=guiAsObject(meta.worldlines),ids=Object.keys(lines),ready=!!scopeKey&&scopeKey===operationalScopeKey()&&ids.length>0&&(!cached.fieldStatus||cached.fieldStatus.worldlineMeta==='ready');
+    if(!ids.includes(Gui.worldlineTargetId))Gui.worldlineTargetId=activeId;
+    const valid=value=>Number.isSafeInteger(Number(value))&&Number(value)>0&&Number(value)%LibraMemoryCore.BATCH_SIZE===0;
+    const execute=async(kind,id,turn=null)=>{
+      if(!ready||Gui.worldManagerRuntimeMetaRebuilding)return;
+      if(kind==='rollback'&&!valid(turn)){guiSetStatus('저장이 완료된 T5 · T10 · T15 경계를 선택하세요.',true,true);return;}
+      if(!(await confirmApprovedOperation(kind==='rollback'?`${id} 분기를 T${turn} 상태로 되돌릴까요? 이후 기억 원문은 보존되고 이후 교정은 휴면 상태가 됩니다.`:kind==='set'?`${id} 분기로 전환하고 현재 상태를 다시 구성할까요?`:'저장된 기억과 교정으로 현재 상태를 다시 구성할까요?',{title:'상태 작업 확인',target:`${scopeKey} · ${id}`,validate:()=>scopeKey===operationalScopeKey()})))return;
+      Gui.worldManagerRuntimeMetaRebuilding=true;queueGuiNavigationRender();
+      try{await runStateReplayMaintenance({kind,scopeKey,worldlineId:id,throughTurn:turn});guiSetStatus('현재 상태 재생과 readback을 확인했습니다.');}
+      catch(error){guiSetStatus(operationalReadError(error),true,true);}
+      finally{Gui.worldManagerRuntimeMetaRebuilding=false;queueGuiNavigationRender();}
     };
-    const execute = async (kind, worldlineId, throughTurn = null) => {
-      if (!ready || Gui.worldManagerRuntimeMetaRebuilding) return;
-      Gui.worldManagerRuntimeMetaRebuilding = true; refreshActionButtons(); queueGuiNavigationRender();
-      try {
-        await runStateReplayMaintenance({ kind, scopeKey, worldlineId, throughTurn });
-        guiSetStatus(kind === 'rollback' ? `Worldline ${worldlineId}를 T${throughTurn} 기준으로 rollback했습니다.`
-          : kind === 'set' ? `Worldline ${worldlineId} 전환과 State replay를 완료했습니다.` : 'Current Head 재구축을 완료했습니다.');
-      } catch (error) { guiSetStatus(operationalReadError(error), true, true); }
-      finally { Gui.worldManagerRuntimeMetaRebuilding = false; refreshActionButtons(); if (Gui.visible) queueGuiNavigationRender(); }
-    };
-    return guiEl('section', { class: 'sga-card wide', dataset: { stateReplayMaintenance: 'v515' } }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
-        guiEl('div', {}, [guiEl('h3', { text: '대화 분기와 상태 복구' }), guiEl('div', { class: 'sga-note', text: '저장된 기억과 직접 수정한 기록으로 현재 상태를 다시 구성합니다. 기억 원문은 삭제하지 않습니다.' })]),
-        libraStatusBadge(Gui.worldManagerRuntimeMetaRebuilding ? '작업 중' : !ready ? '미조회' : wm.lastReplayError?.code ? '확인 필요' : 'Ready', !ready ? 'off' : wm.lastReplayError?.code ? 'warn' : 'good')
-      ]),
-      ids.length ? guiEl('div', { class: 'sga-row2' }, [
-        fieldNode('대화 분기', selectNode(Gui.worldlineTargetId, ids.map(idValue => [idValue, `${idValue}${idValue === activeId ? ' · 현재' : ''}`]), value => { Gui.worldlineTargetId = value; refreshActionButtons(); })),
-        fieldNode('반영할 마지막 턴', guiEl('input', { class: 'sga-input', type: 'text', value: lines[activeId]?.cutoffTurn == null ? '저장된 최신 기억까지' : `T${Number(lines[activeId].cutoffTurn || 0)}`, disabled: true }))
-      ]) : guiEl('div', { class: 'sga-note', text: Gui.operationalDiagnosticsLoading ? 'Worldline 정보를 읽는 중입니다.' : 'Worldline 정보를 아직 읽지 못했습니다.' }),
-      guiEl('div', { class: 'sga-actions' }, [
-        ids.length ? (switchButton = guiEl('button', { class: 'sga-btn', type: 'button', disabled: !ready || Gui.worldlineTargetId === activeId || Gui.worldManagerRuntimeMetaRebuilding, text: '선택한 분기로 전환', onClick: async () => {
-          const target = Gui.worldlineTargetId;
-          if (typeof confirm !== 'function' || !confirm(`${target} 분기로 전환하고 그 분기의 기억으로 현재 상태를 다시 구성할까요? 저장된 기억 원문은 유지됩니다.`)) return;
-          await execute('set', target);
-        } })) : null,
-        guiEl('button', { class: 'sga-btn good', type: 'button', disabled: !ready || Gui.worldManagerRuntimeMetaRebuilding, text: '저장된 기억으로 상태 다시 만들기', onClick: async () => {
-          if (typeof confirm !== 'function' || !confirm('현재 분기의 저장된 기억과 수정 기록으로 상태를 다시 구성할까요? 기억 원문은 삭제하지 않으며 새 AI 분석을 요청하지 않습니다.')) return;
-          await execute('rebuild', activeId);
-        } }),
-        guiEl('button', { class: 'sga-btn', type: 'button', disabled: Gui.operationalDiagnosticsLoading, text: '상태 확인', onClick: () => void refreshOperationalDiagnostics({ force: true }) })
-      ].filter(Boolean)),
-      guiLazyDetails({ class: 'sga-advanced', open: false }, guiEl('summary', {}, [guiEl('span', { text: '이전 대화 시점으로 되돌리기' }), guiEl('span', { class: 'sga-advanced-hint', text: '저장이 완료된 T5 · T10 · T15… 선택 가능' })]), () => [
-        fieldNode('반영할 마지막 턴', guiEl('input', { class: 'sga-input', type: 'number', min: 5, step: 5, value: Gui.worldlineRollbackTurn, placeholder: '예: 120', onInput: event => { Gui.worldlineRollbackTurn = event.target.value; refreshActionButtons(); } }), '선택한 턴까지의 기억으로 상태를 구성합니다. 이후 기억 원문도 삭제하지 않고 보존합니다.'),
-        guiEl('div', { class: 'sga-actions' }, [(rollbackButton = guiEl('button', { class: 'sga-btn danger', type: 'button', disabled: !ready || Gui.worldManagerRuntimeMetaRebuilding || !validTurn(Gui.worldlineRollbackTurn), text: '변경 내용 확인', onClick: async () => {
-          const turn = Number(Gui.worldlineRollbackTurn);
-          if (!validTurn(turn)) { guiSetStatus('rollback turn은 커밋된 5턴 경계(T5/T10/T15…)여야 합니다.', true, true); return; }
-          if (typeof confirm !== 'function' || !confirm(`${activeId} Worldline을 T${turn} 상태로 rollback할까요? 정본 메모리는 삭제되지 않습니다.\n\nT${turn} 이후에 직접 고친 내용은 "롤백 뒤 휴면" 상태가 되어 더 이상 반영되지 않습니다. 되돌린 뒤 설정 → 상태 추적의 "내가 고친 내용"에서 확인하고 다시 적용할 수 있습니다.`)) return;
-          await execute('rollback', activeId, turn);
-        } }))])
-      ])
+    const action=(label,fn,disabled=false)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,disabled:disabled||Gui.worldManagerRuntimeMetaRebuilding,onClick:fn});
+    return guiEl('div',{class:'stack',dataset:{stateReplayMaintenance:'v515'}},[
+      guiEl('details',{class:'fold'},[guiEl('summary',{text:'대화 분기 · 이전 시점 상세'}),guiEl('div',{class:'fold__body stack'},[
+        fieldNode('대화 분기',guiEl('select',{class:'select',value:Gui.worldlineTargetId,dataset:{stateMaintenanceField:'worldline'},onChange:event=>{Gui.worldlineTargetId=event.target.value;queueGuiNavigationRender();}},optionNodes(ids.map(id=>[id,`${id}${id===activeId?' · 현재':''}`]),Gui.worldlineTargetId))),
+        fieldNode('현재 반영 기준',guiEl('input',{class:'input',disabled:true,value:lines[activeId]?.cutoffTurn==null?'저장된 최신 기억까지':`T${lines[activeId].cutoffTurn}`})),
+        action('선택한 분기로 전환',()=>void execute('set',Gui.worldlineTargetId),!ready||Gui.worldlineTargetId===activeId),
+        fieldNode('반영할 마지막 턴',guiEl('input',{class:'input',type:'number',min:5,step:5,value:Gui.worldlineRollbackTurn,dataset:{stateMaintenanceField:'throughTurn'},onInput:event=>{Gui.worldlineRollbackTurn=event.target.value;}}),'저장이 완료된 5턴 경계만 선택합니다. 이후 기억 원문은 보존됩니다.'),
+        action('변경 내용 확인',()=>void execute('rollback',activeId,Number(Gui.worldlineRollbackTurn)),!ready)
+      ])]),
+      action(Gui.operationalDiagnosticsLoading?'상태 확인 중…':'상태 확인',()=>void refreshOperationalDiagnostics({force:true}),Gui.operationalDiagnosticsLoading)
     ]);
   };
 
   const buildStateTrackingAvailabilityPanel = (surface='pipeline') => {
- const view=worldManagerSnapshotView();
- return guiEl('section',{class:'sga-flow-section',dataset:{stateRuntimeSurface:surface,librarianLocalState:'true'}},[
-  guiEl('section',{class:'sga-card wide'},[
-   guiEl('h2',{text:'월드 매니저 · 현재 상태 적용'}),
-   guiEl('p',{text:'Librarian의 정본 사실과 상태 연결을 로컬에서 적용합니다. 별도 기억 에이전트를 호출하지 않습니다.'}),
-   guiEl('div',{class:'sga-summary-table'},[guiEl('span',{text:'추가 생성 호출'}),guiEl('strong',{text:'0회'}),guiEl('span',{text:'현재 적용 기준'}),guiEl('strong',{text:'T'+String(Number(view.throughTurn||0))})]),
-   guiEl('p',{class:'sga-note',text:'정본 저장·현재 상태·임베딩의 완료는 별개입니다. 구형 기록은 검증된 저장 근거로만 재생하며 근거가 없으면 미해석으로 남깁니다.'})
-  ]),
-  buildWorldManagerCorrectionsPanel(),
-  surface==='settings'?buildStateReplayMaintenancePanel():null,
-  guiLazyDetails({class:'sga-advanced'},guiEl('summary',{text:'이전 상태 분석 설정 · 읽기 전용'}),()=>guiEl('pre',{class:'sga-live-result-code',text:JSON.stringify(stateTrackingSettingsForGui(),null,2)}))
- ]);
-};
-
-  const buildAgentQuickSettingsSummary = () => {
-    return guiEl('section', { class: 'sga-card wide', dataset: { agentQuickSettingsSummary: 'memory' } }, [
-      guiEl('h3', { text: '기억 분석 AI: ' + resolvedPresetNameForStage(LIBRARIAN_STAGE_ID) }),
-      guiEl('p', { class: 'sga-note', text: '모델과 기본 모드는 빠른 설정에서 변경합니다. 이 화면에서는 호출 한도와 참고 자료, 고급 지침을 설정합니다.' }),
-      guiEl('button', { class: 'sga-btn', type: 'button', text: '기억 Agent 빠른 설정 열기', onClick: () => bookOpenQuickSettings('memory_agents') })
+    const view=worldManagerSnapshotView(),snapshot=LibraMemoryCore.peekSnapshot()||{},embedding=LibraMemoryCore.getEmbeddingRebuildState();
+    const committed=Object.values(snapshot.manifest?.memories||{}).filter(row=>row?.status==='committed');
+    const saved=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
+    return guiEl('div',{class:'stack',dataset:{stateRuntimeSurface:surface,librarianLocalState:'true'}},[
+      guiEl('div',{class:'three-status'},[
+        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),saved?`T${saved}까지 · ${committed.length}개`:'저장된 기억 없음']),
+        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),Number(view.throughTurn)>0?`T${view.throughTurn}까지`:'반영 기준 미확인']),
+        guiEl('div',{},[guiEl('b',{text:'임베딩'}),`${embedding.status||'미확인'} · 최신 ${Number(embedding.counts?.ready||0)}개`])
+      ]),
+      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적입니다. 현재 상태 적용은 추가 AI 호출 0회로 실행됩니다.'}),
+      buildApprovedRecoveryActions(),
+      buildStateReplayMaintenancePanel(),
+      guiLazyDetails({class:'fold'},guiEl('summary',{text:'이전 상태 분석 설정 · 읽기 전용'}),()=>guiEl('div',{class:'fold__body'},[guiEl('pre',{text:JSON.stringify(stateTrackingSettingsForGui(),null,2)})]))
     ]);
   };
 
-  const buildMemoryPipelineWorkspacePanel = () => buildLibrarianAnalyzerPanel(false, true);
 
-  const buildMemoryPipelinePanel = () => buildMemoryPipelineWorkspacePanel();
 
-  const buildSharedPipelineShellPanel = () => {Gui.pipelineHubSection='memory_pipeline';Gui.agentHubSection='memory';return buildSharedAgentShellPanel();};
 
-  const buildMemoryPromptStudioDisclosure = (label, id) => {
-    const node = guiLazyDetails(
-      { class: 'sga-advanced', id, open: Gui.memoryPromptStudioExpanded === true },
-      guiEl('summary', { text: label }),
-      () => { setSharedCustomPromptDomain('memory'); return buildLibraPromptStudioPanel({ allowedDomains: ['memory'] }); }
-    );
-    node.addEventListener('toggle', () => { if (node.isConnected) Gui.memoryPromptStudioExpanded = node.open; });
-    return node;
-  };
-  const buildSharedAgentShellPanel = () => {Gui.agentHubSection='memory';return guiEl('div',{class:'sga-flow-section libra-agent-workspace',dataset:{agentFamily:'libra',agentHub:'memory'}},[
-    buildMemoryPipelinePanel(), buildMemoryPromptStudioDisclosure('Memory analysis prompts', 'libra-agent-prompts-memory-libra')
-  ]);};
+
+
+
+
+
+
+
 
 
   const setSharedCustomPromptDomain = domain => {
@@ -78924,10 +76765,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     Gui.bookSettingsWorkbenchSection='pipeline';
     return section;
   };
-  const buildSharedCustomShellPanel = () => {
-    const section=migrateCustomWorkshopSelection();
-    return section==='state'?buildSharedSettingsShellPanel():buildSharedAgentShellPanel();
-  };
+
 
   const executionReceiptCacheKey = kindValue => text(kindValue || 'memory');
   const ensureExecutionReceiptScope = () => {
@@ -78992,7 +76830,7 @@ html,body{width:100%;height:100%;overflow:hidden}
   const deleteFailedExecutionRun = async row => {
     const runId = text(row?.id || '');
     if (!runId) return;
-    if (typeof confirm === 'function' && !confirm(`실패한 실행 ${runId} 기록만 삭제할까요? 정본 메모리와 채팅은 삭제되지 않습니다.`)) return;
+    if (!(await confirmApprovedOperation(`실패한 실행 ${runId} 기록만 삭제할까요? 정본 메모리와 채팅은 삭제되지 않습니다.`,{title:'실패 실행 기록 삭제',target:runId}))) return;
     try {
       await LibraMemoryCore.deleteFailedRun({ runId });
       Gui.executionReceiptPages = { ...guiAsObject(Gui.executionReceiptPages), memory: {} };
@@ -79046,99 +76884,76 @@ html,body{width:100%;height:100%;overflow:hidden}
       queueMicrotask(() => { Gui.canonicalJobsQueued = false; if (Gui.visible !== false) void loadCanonicalJobsPage({ force: false }); });
     }
     const page = guiAsObject(Gui.canonicalJobsPage); const jobs = guiAsArray(page.jobs);
-    return guiEl('div', { class: 'sga-flow-section', dataset: { canonicalJobsArchive: 'debug-recent' } }, [
-      guiEl('section', { class: 'sga-card wide' }, [
+    return guiEl('div', { class: 'stack', dataset: { canonicalJobsArchive: 'debug-recent' } }, [
+      guiEl('section', { class: 'card' }, [
         guiEl('h3', { text: '최근 정본 작업' }),
         guiEl('p', { text: '디버그 확인용 최근 완료 작업만 최대 12개 보관합니다. 진행 중이거나 복구가 필요한 작업은 완료될 때까지 보호합니다.' }),
-        Gui.canonicalJobsError ? guiEl('div', { class: 'sga-callout danger', text: Gui.canonicalJobsError }) : null,
-        guiEl('div', { class: 'sga-actions' }, [guiEl('button', { class: 'sga-btn', type: 'button', disabled: Gui.canonicalJobsLoading, text: Gui.canonicalJobsLoading ? '읽는 중…' : '목록 새로고침', onClick: () => void loadCanonicalJobsPage() })])
+        Gui.canonicalJobsError ? guiEl('div', { class: 'note danger', text: Gui.canonicalJobsError }) : null,
+        guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn', type: 'button', disabled: Gui.canonicalJobsLoading, text: Gui.canonicalJobsLoading ? '읽는 중…' : '목록 새로고침', onClick: () => void loadCanonicalJobsPage() })])
       ]),
       ...(jobs.length ? jobs.map(job => {
         const stateValue = text(job.state || 'pending');
         const canResume = ['interrupted','adopting'].includes(stateValue);
         const canCancel = job.cancellable === true && ['preparing','running'].includes(stateValue);
-        return guiEl('section', { class: 'sga-card wide', dataset: { canonicalJobArchiveId: text(job.jobId || '') } }, [
-          guiEl('div', { class: 'sga-agent-head' }, [
-            guiEl('div', {}, [guiEl('h3', { text: `${text(job.kind || 'canonical job')} · ${text(job.jobId || '')}` }), guiEl('div', { class: 'sga-note', text: `${libraFormatTime(job.updatedAt || job.startedAt)} · ${job.currentStart ? `T${job.currentStart}–T${Number(job.currentStart) + 4}` : '대상 확인 중'}` })]),
+        return guiEl('section', { class: 'card', dataset: { canonicalJobArchiveId: text(job.jobId || '') } }, [
+          guiEl('div', { class: 'split' }, [
+            guiEl('div', {}, [guiEl('h3', { text: `${text(job.kind || 'canonical job')} · ${text(job.jobId || '')}` }), guiEl('div', { class: 'hint', text: `${libraFormatTime(job.updatedAt || job.startedAt)} · ${job.currentStart ? `T${job.currentStart}–T${Number(job.currentStart) + 4}` : '대상 확인 중'}` })]),
             libraStatusBadge(stateValue, canonicalJobTone(stateValue))
           ]),
-          guiEl('div', { class: 'sga-summary-table' }, [
-            guiEl('span', { text: '진행' }), guiEl('strong', { text: `${Number(job.completed || 0)}/${Number(job.total || 0)} · 실패 ${Number(job.failed || 0)} · 생략 ${Number(job.skipped || 0)}` }),
-            guiEl('span', { text: '현재 단계' }), guiEl('strong', { text: text(job.currentStage || job.phase || '-') }),
-            guiEl('span', { text: '메시지' }), guiEl('strong', { text: text(job.message || job.error || '-') })
+          guiEl('dl', { class: 'kv' }, [
+            guiEl('dt', { text: '진행' }), guiEl('dd', { text: `${Number(job.completed || 0)}/${Number(job.total || 0)} · 실패 ${Number(job.failed || 0)} · 생략 ${Number(job.skipped || 0)}` }),
+            guiEl('dt', { text: '현재 단계' }), guiEl('dd', { text: text(job.currentStage || job.phase || '-') }),
+            guiEl('dt', { text: '메시지' }), guiEl('dd', { text: text(job.message || job.error || '-') })
           ]),
-          guiEl('div', { class: 'sga-actions' }, [
-            canResume ? guiEl('button', { class: 'sga-btn good', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : job.kind === 'regenerate' ? '작업 재개' : '새 분석', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
-            canCancel ? guiEl('button', { class: 'sga-btn danger', type: 'button', text: '취소 요청', onClick: async () => { if (typeof confirm === 'function' && !confirm('현재 정본 작업을 취소할까요? 이미 완료된 항목은 유지됩니다.')) return; try { await LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 취소를 요청했습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
-            guiEl('button', { class: 'sga-btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 일반 · 진단에 표시했습니다.'); } })
+          guiEl('div', { class: 'cluster' }, [
+            canResume ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : job.kind === 'regenerate' ? '작업 재개' : '새 분석', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
+            canCancel ? guiEl('button', { class: 'btn btn--danger', type: 'button', text: '취소 요청', onClick: async () => { if (!(await confirmApprovedOperation('현재 정본 작업을 취소할까요? 이미 완료된 항목은 유지됩니다.',{title:'정본 작업 취소',target:job.jobId}))) return; try { await LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 취소를 요청했습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
+            guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 일반 · 진단에 표시했습니다.'); } })
           ].filter(Boolean))
         ]);
-      }) : [guiEl('section', { class: 'sga-card wide sga-note', text: Gui.canonicalJobsLoading ? '최근 정본 작업을 읽는 중입니다.' : Gui.canonicalJobsError ? '조회에 실패했습니다. 저장된 작업이 없다는 뜻은 아닙니다.' : '최근 정본 작업이 없습니다.' })])
+      }) : [guiEl('section', { class: 'card hint', text: Gui.canonicalJobsLoading ? '최근 정본 작업을 읽는 중입니다.' : Gui.canonicalJobsError ? '조회에 실패했습니다. 저장된 작업이 없다는 뜻은 아닙니다.' : '최근 정본 작업이 없습니다.' })])
     ]);
   };
 
   const executionReceiptStatusCopy = status => ({ complete: ['완료', 'good'], partial: ['부분 완료', 'warn'], pending: ['진행 중', 'warn'], not_required: ['불필요', ''], skipped: ['생략', ''], stale: ['오래됨', 'warn'], failed: ['실패', 'danger'] }[text(status)] || [text(status || '대기'), '']);
   const buildExecutionReceiptPanel = kindValue => {
-    const scopeKey = ensureExecutionReceiptScope();
-    const kind = executionReceiptCacheKey(kindValue);
-    const page = guiAsObject(Gui.executionReceiptPages?.[kind]);
-    const loading = Gui.executionReceiptLoading?.[kind] === true;
-    if (scopeKey && !page.loaded && !loading && !Gui.executionReceiptErrors?.[kind]) queueMicrotask(() => void loadExecutionReceiptPage(kind, false));
-    const cards = guiAsArray(page.items).map(row => {
-      const cacheKey = `${kind}:${text(row?.id || '')}`;
-      const detailState = guiAsObject(Gui.executionReceiptDetails?.[cacheKey]);
-      const statusCopy = executionReceiptStatusCopy(row?.status);
-      const usage = guiAsObject(row?.usage);
-      const providerBudget = guiAsObject(row?.providerBudget);
-      const provider = text(row?.provider || row?.model || '');
-      return guiEl('section', { class: 'sga-card wide', dataset: { executionReceiptKind: kind, executionReceiptId: text(row?.id || ''), receiptDurability: row?.sessionOnly ? 'session-only' : 'durable' } }, [
-        guiEl('div', { class: 'sga-agent-head' }, [
-          guiEl('div', {}, [guiEl('h3', { text: text(row?.id || `${kind} 기록`) }), guiEl('div', { class: 'sga-note', text: `${row?.sessionOnly ? 'session-only runtime' : 'durable receipt'} · ${libraFormatTime(row?.finishedAt || row?.startedAt)} · ${Number(row?.latencyMs || 0)}ms` })]),
-          libraStatusBadge(statusCopy[0], statusCopy[1])
-        ]),
-        guiEl('div', { class: 'sga-note', text: `${provider ? `${provider} · ` : ''}${usage.available === false ? 'token 사용량 미측정' : `token in ${Number(usage.inputTokens || 0)} / out ${Number(usage.outputTokens || 0)} / reasoning ${Number(usage.reasoningTokens || 0)} / cached ${Number(usage.cachedInputTokens || 0)} / total ${Number(usage.totalTokens || 0)}${usage.estimated === true ? ' (추정)' : ' (실측)'}`} · retry ${Object.keys(guiAsObject(row?.retry)).length}${Object.keys(providerBudget).length ? ` · call ${Number(providerBudget.totalCalls || 0)}/${Number(providerBudget.maxPhysicalCalls || 0)}${providerBudget.exhaustedReason ? ` · budget ${providerBudget.exhaustedReason}` : ''}` : ''}` }),
-        row?.error ? guiEl('div', { class: 'sga-callout danger', text: text(row.error) }) : null,
-        detailState.error ? guiEl('div', { class: 'sga-callout danger', text: detailState.error }) : null,
-        detailState.detail ? guiLazyDetails({ class: 'sga-advanced', open: true }, guiEl('summary', {}, [guiEl('span', { text: '정규화된 영수증 상세' }), guiEl('span', { class: 'sga-advanced-hint', text: text(detailState.detail.schema || '') })]), () => [guiEl('pre', { class: 'sga-live-result-code', text: JSON.stringify(detailState.detail, null, 2) })]) : null,
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn', type: 'button', disabled: detailState.loading === true, text: detailState.loading ? '상세 읽는 중…' : detailState.detail ? '상세 다시 읽기' : '상세 읽기', onClick: () => void loadExecutionReceiptDetail(row) }),
-          kind === 'memory' && row?.status === 'failed' && row?.sessionOnly !== true ? guiEl('button', { class: 'sga-btn danger', type: 'button', text: '실패 기록 삭제', onClick: () => void deleteFailedExecutionRun(row) }) : null
-        ].filter(Boolean))
+    const scopeKey=ensureExecutionReceiptScope(),kind=executionReceiptCacheKey(kindValue),page=guiAsObject(Gui.executionReceiptPages?.[kind]);
+    const loading=Gui.executionReceiptLoading?.[kind]===true;
+    if(scopeKey&&!page.loaded&&!loading&&!Gui.executionReceiptErrors?.[kind])queueMicrotask(()=>void loadExecutionReceiptPage(kind,false));
+    const cards=guiAsArray(page.items).map(row=>{
+      const detailState=guiAsObject(Gui.executionReceiptDetails?.[`${kind}:${text(row?.id||'')}`]),status=executionReceiptStatusCopy(row?.status),usage=guiAsObject(row?.usage),budget=guiAsObject(row?.providerBudget);
+      return guiEl('div',{class:'card',dataset:{executionReceiptKind:kind,executionReceiptId:text(row?.id||''),receiptDurability:row?.sessionOnly?'session-only':'durable'}},[
+        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h3',{class:'card__title',text:text(row.id||`${kind} 기록`)}),guiEl('p',{class:'card__desc',text:`${row.sessionOnly?'session-only runtime':'durable receipt'} · ${libraFormatTime(row.finishedAt||row.startedAt)} · ${Number(row.latencyMs||0)}ms`})]),libraStatusBadge(status[0],status[1])]),
+        guiEl('div',{class:'res-row'},[guiEl('span',{text:text(row.provider||row.model||'연결 미기록')}),guiEl('span',{text:usage.available===false?'token 사용량 미측정':`in ${Number(usage.inputTokens||0)} / out ${Number(usage.outputTokens||0)} / total ${Number(usage.totalTokens||0)}`}),guiEl('small',{text:`reasoning ${Number(usage.reasoningTokens||0)} · cached ${Number(usage.cachedInputTokens||0)} · ${usage.estimated?'추정':'실측'} · retry ${Object.keys(guiAsObject(row.retry)).length} · call ${Number(budget.totalCalls||0)}/${Number(budget.maxPhysicalCalls||0)}`})]),
+        row.error||detailState.error?guiEl('p',{class:'note note--danger',text:text(detailState.error||row.error)}):null,
+        detailState.detail?guiEl('details',{class:'fold',open:true},[guiEl('summary',{text:'정규화된 영수증 상세'}),guiEl('div',{class:'fold__body'},[guiEl('pre',{text:JSON.stringify(detailState.detail,null,2)})])]):null,
+        guiEl('div',{class:'cluster'},[
+          guiEl('button',{class:'btn btn--sm',type:'button',disabled:detailState.loading===true,text:detailState.loading?'상세 읽는 중…':detailState.detail?'상세 다시 읽기':'상세 읽기',onClick:()=>void loadExecutionReceiptDetail(row)}),
+          kind==='memory'&&row.status==='failed'&&row.sessionOnly!==true?guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'실패 기록 삭제',onClick:()=>void deleteFailedExecutionRun(row)}):null
+        ])
       ]);
     });
-    return guiEl('div', { class: 'sga-flow-section', dataset: { normalizedExecutionReceipts: kind } }, [
-      Gui.executionReceiptErrors?.[kind] ? guiEl('div', { class: 'sga-callout danger' }, [guiEl('p', { text: text(Gui.executionReceiptErrors[kind]) }), guiEl('button', { class: 'sga-btn', type: 'button', disabled: loading, text: '영수증 조회 재시도', onClick: () => void loadExecutionReceiptPage(kind, false) })]) : null,
-      ...(cards.length ? cards : [guiEl('section', { class: 'sga-card wide sga-note', text: loading ? '실행 영수증을 읽는 중입니다.' : kind === 'state' ? '독립 State receipt가 없습니다. Memory run을 State 기록으로 대신 표시하지 않습니다.' : '표시할 실행 기록이 없습니다.' })]),
-      page?.hasMore ? guiEl('button', { class: 'sga-btn', type: 'button', disabled: loading, text: '기록 더 보기', onClick: () => void loadExecutionReceiptPage(kind, true) }) : null
+    return guiEl('div',{class:'stack',dataset:{normalizedExecutionReceipts:kind}},[
+      Gui.executionReceiptErrors?.[kind]?guiEl('div',{class:'note note--danger'},[guiEl('p',{text:Gui.executionReceiptErrors[kind]}),guiEl('button',{class:'btn btn--sm',type:'button',disabled:loading,text:'영수증 조회 재시도',onClick:()=>void loadExecutionReceiptPage(kind,false)})]):null,
+      ...(cards.length?cards:[guiEl('div',{class:'empty',text:loading?'실행 영수증을 읽는 중입니다.':kind==='state'?'독립 State receipt가 없습니다.':'표시할 실행 기록이 없습니다.'})]),
+      page.hasMore?guiEl('button',{class:'btn btn--sm',type:'button',disabled:loading,text:'기록 더 보기',onClick:()=>void loadExecutionReceiptPage(kind,true)}):null
     ]);
   };
 
-
-
   const buildSharedExecutionLogsPanel = () => {
-    Gui.executionLogSection = normalizeHubChoice(Gui.executionLogSection, SHARED_EXECUTION_LOG_SECTIONS, 'memory');
-    const family = activeGuiResponseFamily();
-    const definitions = [
-      { id: 'memory', label: '기억 작성' }, { id: 'state', label: '상태 추적' },
-      { id: 'draft', label: ('LIBRA 응답') },
-      { id: 'recall', label: '리콜' }, { id: 'embedding', label: '임베딩' }, { id: 'rebuild', label: '재구축' }
-    ];
-    const receiptPanel = buildExecutionReceiptPanel(Gui.executionLogSection);
-    const currentRecall = Gui.executionLogSection === 'recall' ? buildLibraRecallPanel({ hideWhenEmpty: true }) : null;
-    const panel = currentRecall
-      ? guiEl('div', { class: 'sga-flow-section', dataset: { currentRecallExecution: 'true' } }, [
-        currentRecall,
-        guiEl('div', { class: 'sga-section-title' }, [guiEl('h3', { text: '리콜 실행 이력' }), guiEl('p', { text: '현재 턴 요약과 별도로 저장된 리콜 영수증을 시간순으로 확인합니다.' })]),
-        receiptPanel
-      ])
-      : receiptPanel;
-    return guiEl('div', { class: 'sga-flow-section', dataset: { executionLogs: Gui.executionLogSection } }, [
-      buildLibraSectionLayout(definitions, Gui.executionLogSection, value => { Gui.executionLogSection = value; }, '실행 기록 종류', panel)
+    Gui.executionLogSection=normalizeHubChoice(Gui.executionLogSection,SHARED_EXECUTION_LOG_SECTIONS,'memory');
+    const kinds=[['memory','기억 작성'],['state','상태 추적'],['draft','LIBRA 응답'],['recall','리콜'],['embedding','임베딩'],['rebuild','재구축']];
+    return guiEl('div',{class:'stack',dataset:{executionLogs:Gui.executionLogSection}},[
+      guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'실행 기록'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 저장된 실행 영수증을 확인합니다.'})])]),
+        guiEl('div',{class:'tabs',role:'tablist','aria-label':'실행 기록 종류'},kinds.map(([id,label])=>guiEl('button',{class:`tab${Gui.executionLogSection===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(Gui.executionLogSection===id),dataset:{executionKind:id},text:label,onClick:()=>{Gui.executionLogSection=id;queueGuiNavigationRender();}})))
+      ]),
+      Gui.executionLogSection==='recall'?guiLazyDetails({class:'fold'},guiEl('summary',{text:'현재 턴 리콜 상세'}),()=>guiEl('div',{class:'fold__body'},[buildLibraRecallPanel({hideWhenEmpty:true})])):null,
+      buildExecutionReceiptPanel(Gui.executionLogSection)
     ]);
   };
 
   const buildAnalysisInputPanel = () => {
-    const card=guiEl('section',{class:'sga-card wide'});
+    const card=guiEl('section',{class:'card'});
     LibraMemoryCore.mountSourceInputControls(card);return card;
   };
   // Renders the shared swallowed-error recorder (globalThis.__librarianDiag) so these
@@ -79147,27 +76962,27 @@ html,body{width:100%;height:100%;overflow:hidden}
     let rows = [];
     try { rows = globalThis.__librarianDiag?.snapshot?.() || []; } catch (_e) { rows = []; }
     if (!Array.isArray(rows)) rows = [];
-    const cards = rows.slice(0, 60).map(row => guiEl('div', { class: 'sga-card wide', dataset: { swallowedDiagTag: text(row?.tag || '') } }, [
-      guiEl('div', { class: 'sga-agent-head' }, [
+    const cards = rows.slice(0, 60).map(row => guiEl('div', { class: 'card', dataset: { swallowedDiagTag: text(row?.tag || '') } }, [
+      guiEl('div', { class: 'split' }, [
         guiEl('div', {}, [
           guiEl('h3', { text: text(row?.tag || '알 수 없는 위치') }),
-          guiEl('div', { class: 'sga-note', text: text(row?.plugin || '') + ' · 최근 ' + libraFormatTime(row?.lastAt) })
+          guiEl('div', { class: 'hint', text: text(row?.plugin || '') + ' · 최근 ' + libraFormatTime(row?.lastAt) })
         ]),
         libraStatusBadge(String(Number(row?.count || 0)) + '회', 'warn')
       ]),
-      row?.lastMessage ? guiEl('div', { class: 'sga-note', text: text(row.lastMessage) }) : null
+      row?.lastMessage ? guiEl('div', { class: 'hint', text: text(row.lastMessage) }) : null
     ]));
-    return guiEl('section', { class: 'sga-flow-section', dataset: { swallowedDiag: 'true' } }, [
-      guiEl('section', { class: 'sga-card wide' }, [
+    return guiEl('section', { class: 'stack', dataset: { swallowedDiag: 'true' } }, [
+      guiEl('section', { class: 'card' }, [
         guiEl('h2', { text: '조용히 무시된 오류' }),
-        guiEl('p', { class: 'sga-note', text: '동작을 멈추지는 않았지만 내부에서 무시된 오류를 위치별로 모아 셉니다. 같은 위치가 반복해서 쌓이면 그 기능이 조용히 실패하고 있다는 신호입니다.' }),
-        guiEl('div', { class: 'sga-summary-table' }, [guiEl('span', { text: '기록된 위치' }), guiEl('strong', { text: String(rows.length) + '개' })]),
-        guiEl('div', { class: 'sga-actions' }, [
-          guiEl('button', { class: 'sga-btn primary', type: 'button', text: '새로고침', onClick: () => queueGuiNavigationRender() }),
-          guiEl('button', { class: 'sga-btn', type: 'button', text: '기록 비우기', onClick: () => { try { globalThis.__librarianDiag?.reset?.(); } catch (_e) {} queueGuiNavigationRender(); } })
+        guiEl('p', { class: 'hint', text: '동작을 멈추지는 않았지만 내부에서 무시된 오류를 위치별로 모아 셉니다. 같은 위치가 반복해서 쌓이면 그 기능이 조용히 실패하고 있다는 신호입니다.' }),
+        guiEl('dl', { class: 'kv' }, [guiEl('dt', { text: '기록된 위치' }), guiEl('dd', { text: String(rows.length) + '개' })]),
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '새로고침', onClick: () => queueGuiNavigationRender() }),
+          guiEl('button', { class: 'btn', type: 'button', text: '기록 비우기', onClick: () => { try { globalThis.__librarianDiag?.reset?.(); } catch (_e) {} queueGuiNavigationRender(); } })
         ])
       ]),
-      guiEl('div', { class: 'sga-list-items' }, cards.length ? cards : [guiEl('div', { class: 'sga-card wide sga-note', dataset: { msEmpty: 'true' } }, [
+      guiEl('div', { class: 'list' }, cards.length ? cards : [guiEl('div', { class: 'card hint', dataset: { msEmpty: 'true' } }, [
         guiEl('strong', { text: '조용히 무시된 오류가 없습니다.' }),
         guiEl('div', { text: '내부에서 무시된 오류가 생기면 위치별로 여기에 쌓입니다.' })
       ])])
@@ -79271,22 +77086,22 @@ html,body{width:100%;height:100%;overflow:hidden}
       || filtered.find(row => row.id === Gui.diagnosticLogSelectedId)
       || visible[0] || null;
     const levelClass = level => (level === 'error' ? 'danger' : level === 'warn' ? 'warn' : 'good');
-    const controls = guiEl('div', { class: 'sga-actions libra-diag-controls' }, [
+    const controls = guiEl('div', { class: "cluster" }, [
       guiEl('input', {
-        class: 'sga-input', type: 'search', placeholder: '로그 검색', value: String(Gui.diagnosticLogQuery || ''),
+        class: 'input', type: 'search', placeholder: '로그 검색', value: String(Gui.diagnosticLogQuery || ''),
         'aria-label': '디버그 로그 검색',
         onInput: event => { Gui.diagnosticLogQuery = event.target.value; queueGuiRender(120, 'body'); }
       }),
       guiEl('select', {
-        class: 'sga-select', 'aria-label': '로그 종류', value: kind,
+        class: 'select', 'aria-label': '로그 종류', value: kind,
         onChange: event => { Gui.diagnosticLogKind = event.target.value; queueGuiRender(0, 'body'); }
       }, [['all', '전체'], ['event', '실행 이벤트'], ['snapshot', '현재 상태 스냅샷']].map(([value, label]) =>
         guiEl('option', { value, text: label, selected: String(kind === value) }))),
-      guiEl('span', { class: 'sga-note', text: `${visible.length} / ${filtered.length}건` })
+      guiEl('span', { class: 'hint', text: `${visible.length} / ${filtered.length}건` })
     ]);
-    const list = guiEl('div', { class: 'libra-diag-list', role: 'listbox', 'aria-label': '디버그 로그 목록' },
+    const list = guiEl('div', { class: "list", role: 'listbox', 'aria-label': '디버그 로그 목록' },
       visible.length ? visible.map(row => guiEl('button', {
-        class: `libra-diag-row${selected && row.id === selected.id ? ' active' : ''}`,
+        class: `row${selected && row.id === selected.id ? ' active' : ''}`,
         type: 'button', role: 'option', 'aria-selected': String(!!selected && row.id === selected.id),
         dataset: { logRowId: row.id },
         onClick: () => { Gui.diagnosticLogSelectedId = row.id; queueGuiRender(0, 'body'); }
@@ -79294,40 +77109,40 @@ html,body{width:100%;height:100%;overflow:hidden}
         libraStatusBadge(row.kind === 'snapshot' ? '스냅샷' : '이벤트', levelClass(row.level)),
         guiEl('strong', { text: row.title }),
         guiEl('small', { text: `${row.source} · ${libraFormatTime(row.at)}` })
-      ])) : [guiEl('div', { class: 'sga-card wide sga-note', dataset: { msEmpty: 'true' } }, [
+      ])) : [guiEl('div', { class: 'card hint', dataset: { msEmpty: 'true' } }, [
         guiEl('strong', { text: query || kind !== 'all' ? '조건에 맞는 로그가 없습니다.' : '기록된 로그가 없습니다.' }),
         guiEl('div', { text: '기록이 쌓이면 종류·시간·출처와 함께 여기에 표시됩니다.' })
       ])]);
     const more = filtered.length > visible.length
-      ? guiEl('div', { class: 'sga-actions' }, [guiEl('button', {
-          class: 'sga-btn', type: 'button', text: `더 보기 (${filtered.length - visible.length}건)`,
+      ? guiEl('div', { class: 'cluster' }, [guiEl('button', {
+          class: 'btn', type: 'button', text: `더 보기 (${filtered.length - visible.length}건)`,
           onClick: () => { Gui.diagnosticLogLimit += 60; queueGuiRender(0, 'body'); }
         })]) : null;
     const detailRows = selected ? [
-      guiEl('div', { class: 'libra-diag-detail-head' }, [
+      guiEl('div', { class: "split" }, [
         libraStatusBadge(selected.kind === 'snapshot' ? '스냅샷' : '이벤트', levelClass(selected.level)),
         guiEl('strong', { text: selected.title }),
         guiEl('small', { text: `${selected.source} · ${libraFormatTime(selected.at)}` })
       ]),
-      guiEl('pre', { class: 'libra-diag-detail-body', text: selected.detail || '(추가 정보 없음)' }),
+      guiEl('pre', { class: "stack", text: selected.detail || '(추가 정보 없음)' }),
       // 복구·재분석을 로그 문구에서 자동 실행하지 않는다. 관련 설정 화면으로만 연결한다.
-      guiEl('div', { class: 'sga-actions' }, [
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '복사', onClick: () => {
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn', type: 'button', text: '복사', onClick: () => {
           try { navigator.clipboard?.writeText(`${selected.title}\n\n${selected.detail}`); guiSetStatus('로그를 복사했습니다.', false, true); } catch (_e) {}
         } }),
-        guiEl('button', { class: 'sga-btn', type: 'button', text: '관련 설정 열기',
+        guiEl('button', { class: 'btn', type: 'button', text: '관련 설정 열기',
           onClick: () => { bookNavigate('settings'); selectBookSettingsRoomSection?.('general'); } })
       ])
-    ] : [guiEl('div', { class: 'sga-note', text: '왼쪽 목록에서 항목을 선택하면 상세가 표시됩니다.' })];
-    return guiEl('div', { class: 'libra-diag-layout' }, [
-      guiEl('div', { class: 'libra-diag-left' }, [
-        guiEl('div', { class: 'sga-section-title' }, [
+    ] : [guiEl('div', { class: 'hint', text: '왼쪽 목록에서 항목을 선택하면 상세가 표시됩니다.' })];
+    return guiEl('div', { class: "grid g-side" }, [
+      guiEl('div', { class: "rail" }, [
+        guiEl('div', { class: 'card__head' }, [
           guiEl('h3', { text: '디버그 로그' }),
           guiEl('p', { text: '실행 이벤트와 현재 상태 스냅샷을 한 곳에서 봅니다. 스냅샷은 조회 시점 값이며 과거에 발생한 기록이 아닙니다.' })
         ]),
         controls, list, more
       ].filter(Boolean)),
-      guiEl('div', { class: 'libra-diag-right', role: 'region', 'aria-label': '선택한 로그 상세' }, detailRows)
+      guiEl('div', { class: "card", role: 'region', 'aria-label': '선택한 로그 상세' }, detailRows)
     ]);
   };
 
@@ -79342,58 +77157,28 @@ html,body{width:100%;height:100%;overflow:hidden}
     return buildDiagnosticLogList();
   };
 
-  const buildDiagnosticLogPanel = () => {
-    const sections = DIAGNOSTIC_LOG_SECTIONS.map(row => row.id);
-    Gui.diagnosticLogSection = sections.includes(Gui.diagnosticLogSection) ? Gui.diagnosticLogSection : sections[0];
-    const active = DIAGNOSTIC_LOG_SECTIONS.find(row => row.id === Gui.diagnosticLogSection) || DIAGNOSTIC_LOG_SECTIONS[0];
-    // 무거운 분류는 펼칠 때 만든다. 스냅샷과 실행 이벤트는 종류를 문구로 구분한다 — 조회 시점
-    // 정보를 과거에 발생한 로그처럼 보이게 하지 않는다.
-    const panel = guiLazyDetails({ class: 'sga-advanced', id: 'libra-diagnostic-log-body' },
-      guiEl('summary', { text: active.label + ' · ' + active.note }),
-      () => [buildDiagnosticLogSection(Gui.diagnosticLogSection)]);
-    return guiEl('div', { class: 'sga-flow-section', dataset: { diagnosticLog: Gui.diagnosticLogSection } }, [
-      buildLibraSectionLayout(
-        DIAGNOSTIC_LOG_SECTIONS.map(row => ({ id: row.id, label: row.label })),
-        Gui.diagnosticLogSection,
-        value => { Gui.diagnosticLogSection = value; },
-        '진단 로그 분류',
-        panel)
+
+
+  const buildGeneralSettingsPanel = () => {
+    const sections=DIAGNOSTIC_LOG_SECTIONS;
+    const active=sections.some(row=>row.id===Gui.diagnosticLogSection)?Gui.diagnosticLogSection:'log';
+    return guiEl('div',{class:'stack',dataset:{diagnosticSettings:active}},[
+      guiEl('div',{class:'card'},[
+        guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'복구 · 진단'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 실제 기록과 실행 상태를 확인합니다.'})])]),
+        fieldNode('확인할 기록',guiEl('select',{class:'select',value:active,dataset:{diagnosticField:'section'},onChange:event=>{Gui.diagnosticLogSection=event.target.value;queueGuiNavigationRender();}},optionNodes(sections.map(row=>[row.id,`${row.label} · ${row.note}`]),active)))
+      ]),
+      guiLazyDetails({class:'fold',dataset:{diagnosticLog:active}},guiEl('summary',{text:`${sections.find(row=>row.id===active).label} 상세`}),()=>guiEl('div',{class:'fold__body stack'},[buildDiagnosticLogSection(active)]))
     ]);
   };
 
-  const buildGeneralSettingsPanel = () => guiEl('div', { class: 'sga-flow-section' }, [
-    // 중복 헤더 카드를 두지 않는다. 이 화면은 이미 페이지 헤더('설정' + SETTINGS ROOM)와
-    // 설정실 섹션 헤더('일반 · 진단' + 08 · GENERAL & DIAGNOSTICS)를 갖고 있어, 카드가 같은 제목을
-    // 세 번째로 반복하면 정보 영역만 줄어든다. 화면 목적은 섹션 정의의 note('실행 상태 · Debug')와
-    // 진단 창의 각 분류 설명이 이미 담당한다.
-    buildDiagnosticLogPanel()
-  ]);
-
-  const buildSharedSettingsShellPanel = () => {
-    Gui.settingsHubSection = normalizeHubChoice(Gui.settingsHubSection, SHARED_SETTINGS_HUB_SECTIONS, 'memory');
-    const definitions = [
-      { id: 'references', label: '참고 자료' },
-      { id: 'memory', label: '기억 · 리콜' }, { id: 'state', label: '상태 추적' },
-      { id: 'server', label: '서버 · 저장' }, { id: 'recovery', label: '백업 · 복구' },
-      { id: 'transfer', label: '데이터 이동' }, { id: 'general', label: '일반 · 진단' }
-    ];
-    const panel = Gui.settingsHubSection === 'references' ? buildLibraReferenceHubPanel()
-        : Gui.settingsHubSection === 'memory' ? buildLibraMemorySettingsPanel()
-          : Gui.settingsHubSection === 'server' ? buildLibraServerConnectionPanel()
-            : Gui.settingsHubSection === 'recovery' ? buildLibraRecoveryPanel()
-              : Gui.settingsHubSection === 'transfer' ? buildTransferTab()
-                : Gui.settingsHubSection === 'state' ? buildStateTrackingAvailabilityPanel('settings')
-                  : buildGeneralSettingsPanel();
-    return guiEl('div', { class: 'sga-flow-section' }, [buildLibraSectionLayout(definitions, Gui.settingsHubSection, value => { Gui.settingsHubSection = value; }, '설정 내부 페이지', panel)]);
-  };
-
-  
 
 
-  
 
-  
-  const renderActiveTab = () => { if (Gui.activeTab !== 'flow') Gui.activeTab = 'flow'; return buildBookExecutionFlowTab(); };
+
+
+
+
+
 
   // Reader status is derived from each domain's receipt, never the global Head cursor.
   const bookStateProgress = (page, snapshot = {}, job = null) => {
@@ -79447,91 +77232,9 @@ html,body{width:100%;height:100%;overflow:hidden}
   // §32.3: 상태는 헤더 오른쪽의 작은 버튼이다. 카드는 상시 표시하지 않고, 상세는 열었을 때만 만든다.
   // 실패를 숨기지 않는다 — 문제가 있으면 버튼 라벨이 확인 필요/조회 실패이고, 열면 전체 문장과
   // 재시도, 반영 결과, 고급 관리가 그대로 있다.
-  const buildBookStateDetail = (progress, message) => {
-    const busy = Gui.bookStateApplying === true;
-    const retry = progress.retry ? guiEl('button', { class: 'sga-btn', type: 'button', text: busy ? '갱신 중…' : '상태 다시 갱신', disabled: busy,
-      onClick: async (event) => {
-        const target = event?.currentTarget || null;
-        if (Gui.bookStateApplying) return;
-        Gui.bookStateApplying = true; if (target) { target.disabled = true; target.textContent = '적용 중…'; }
-        try {
-          const context = await LibraMemoryCore.resolveContext();
-          if (context.scope?.scopeKey !== progress.scopeKey) throw new Error('채팅이 변경되었습니다. 현재 화면을 다시 열어 주세요.');
-          const result = await LibraMemoryCore.recoverPendingStateTrackingJournal(context, { force: true, unifiedOnly: true });
-          await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
-          guiSetStatus(`상태 ${result.recovered || 0}개 작업 적용 · ${result.remaining || 0}개 대기`, !result.ok, true);
-          queueGuiRender(0, 'body');
-        } catch (error) { message.textContent = `적용하지 못했습니다. ${String(error.message || error)}`; }
-        finally { Gui.bookStateApplying = false; if (target) { target.disabled = false; target.textContent = '상태 다시 갱신'; } }
-      }
-    }) : null;
-    const problem = ['failed', 'pending', 'partial', 'unavailable'].includes(progress.state);
-    return guiEl('div', { class: 'libra-book-state-body' }, [
-      guiEl('div', { class: 'libra-book-state-line' }, [
-        guiEl('span', { class: 'libra-book-state-label', text: progress.label }),
-        // 조회 전용: 스냅샷을 다시 읽기만 한다. 재분석·복구·추가 LLM 호출을 시작하지 않는다.
-        guiEl('button', {
-          class: 'sga-btn', type: 'button', text: busy ? '확인 중…' : '전체 상태 확인', disabled: busy,
-          onClick: async () => {
-            if (Gui.bookStateApplying) return;
-            Gui.bookStateApplying = true;
-            try { await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true }); queueGuiRender(0, 'body'); }
-            catch (error) { message.textContent = `상태를 확인하지 못했습니다. ${String(error.message || error)}`; }
-            finally { Gui.bookStateApplying = false; }
-          }
-        }),
-        retry
-      ]),
-      problem ? guiEl('p', { text: progress.state === 'partial' ? '기억은 저장됐으며, 일부 상태 정보의 반영 범위가 제한됩니다.' : progress.state === 'failed' ? '저장된 기억의 상태 갱신을 완료하지 못했습니다.' : progress.state === 'unavailable' ? '현재 상태를 읽지 못했습니다.' : '저장된 기억을 현재 상태에 반영할 차례입니다.' }) : null,
-      retry ? guiEl('p', { class: 'sga-note', text: '저장된 기억만 사용 · 새 AI 분석 없음' }) : null,
-      problem ? guiLazyDetails({ open: false }, guiEl('summary', { text: '반영 결과 자세히 보기' }), () => [
-        guiEl('p', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }, text: progress.detail })
-      ]) : null,
-      guiLazyDetails({ class: 'sga-advanced', open: false }, guiEl('summary', { text: '고급 관리 · 대화 분기와 상태 복구' }), () => [buildStateReplayMaintenancePanel()])
-    ]);
-  };
 
-  const buildBookStateButton = page => {
-    const progress = bookStateProgress(page, LibraMemoryCore.peekSnapshot() || {}, LibraMemoryCore.state.canonicalJob);
-    if (!progress) return null;
-    const message = guiEl('small', { role: 'status', 'aria-live': 'polite' });
-    const wrap = guiEl('details', {
-      class: 'libra-book-state-popover',
-      dataset: { bookStateProgress: page, state: progress.state }
-    }, [
-      guiEl('summary', { class: 'libra-book-state-summary' }, [
-        guiEl('span', {
-          class: 'sga-btn libra-book-state-button', role: 'button', tabindex: '0',
-          dataset: { stateButton: progress.state },
-          'aria-label': `현재 상태 · ${bookStateVerdict(progress.state)}`,
-          text: `현재 상태 · ${bookStateVerdict(progress.state)}`
-        })
-      ]),
-      // 지연 생성: 열기 전에는 상세를 만들지 않는다.
-      guiLazyDetails({ class: 'libra-book-state-detail', open: false },
-        guiEl('summary', { class: 'sga-note', text: '상세 · 전체 상태 확인' }),
-        () => [buildBookStateDetail(progress, message)]),
-      message
-    ]);
-    return wrap;
-  };
 
-  const buildBookPage = (eyebrow, title, description, children = [], options = {}) => guiEl('section', {
-    class: `libra-book-page${options.compact ? ' compact' : ''}`,
-    dataset: { bookPage: options.pageId || Gui.bookPage }
-  }, [
-    guiEl('header', { class: 'libra-book-page-head' }, [
-      // §32.3: 제목 행은 「제목 + 분류 … 상태 버튼」이다. 상태는 헤더 오른쪽에 붙고, 카드가 아니다.
-      guiEl('div', { class: 'libra-book-page-title-row' }, [
-        guiEl('h1', { text: title }),
-        eyebrow ? guiEl('span', { class: 'libra-book-eyebrow', text: eyebrow }) : null,
-        buildBookStateButton(options.pageId || Gui.bookPage)
-      ]),
-      description ? guiLazyDetails({ class: 'libra-book-page-note', open: false },
-        guiEl('summary', { text: '이 화면에 대해' }), () => [guiEl('p', { text: description })]) : null
-    ]),
-    ...guiAsArray(children)
-  ]);
+
 
   const bookProjectionStateValue = (row, keys = []) => {
     const source = guiAsObject(row);
@@ -79550,126 +77253,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     ? text(row?.subjectName || row?.subjectId || '?')
     : text(row?.targetName || row?.targetId || '?');
 
-  const buildBookEmptyState = (eyebrow, title, description, options = {}) => guiEl('section', {
-    class: `libra-book-empty-state${options.compact ? ' compact' : ''}`,
-    dataset: options.dataset || {}
-  }, [
-    guiEl('span', { class: 'libra-book-eyebrow', text: eyebrow }),
-    guiEl('h2', { text: title }),
-    guiEl('p', { text: description }),
-    options.action || null
-  ]);
-
-  const buildBookAuxWorkbench = (eyebrow, title, description, backLabel, onBack, panel) => guiEl('section', {
-    class: 'libra-book-aux-workbench', dataset: { bookWorkbench: 'true' }
-  }, [
-    guiEl('header', { class: 'libra-book-aux-head' }, [
-      guiEl('div', {}, [
-        guiEl('span', { class: 'libra-book-eyebrow', text: eyebrow }),
-        guiEl('h2', { text: title }),
-        description ? guiEl('p', { text: description }) : null
-      ]),
-      guiEl('button', { class: 'libra-book-back-action', type: 'button', text: `← ${backLabel}`, onClick: onBack })
-    ]),
-    guiEl('div', { class: 'libra-book-aux-body' }, [panel])
-  ]);
-
-  const buildBookDeskReaderProjection = () => {
-    const family = activeGuiResponseFamily();
-    const view = worldManagerSnapshotView();
-    const narrative = guiAsObject(view.narrative);
-    const characters = guiAsArray(view.characters);
-    const relationships = guiAsArray(view.relationships);
-    const world = guiAsArray(view.world);
-    const openThreads = guiAsArray(narrative.threads).filter(item => item?.status === 'open');
-    const sceneSummary = text(narrative.summary || '').trim();
-    const momentum = text(narrative.momentum || '').trim();
-
-    const recall = LibraMemoryCore.getLastRecall();
-    const currentRecall = recall && libraRecallScopeIsCurrent(recall) ? recall : null;
-    const delivery = libraGuiObject(currentRecall?.delivery || Runtime.lastMemoryRecallViewer);
-    const deliveryCurrent = !delivery.scopeKey || libraRecallScopeIsCurrent({ scopeKey: delivery.scopeKey, scope: delivery.scope });
-    const route = normalizeResponseInjectionMode(deliveryCurrent ? (delivery.route || Runtime.lastInjectionMode || Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE) : (Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE));
-    const routeDef = LIBRA_RESPONSE_MODE_UI[route] || LIBRA_RESPONSE_MODE_UI.classic;
-    const recallRows = deliveryCurrent ? libraGuiArray(delivery.rows) : [];
-    const rowUsed = row => row.classicUsed === true || row.injected === true;
-    const usedRows = recallRows.filter(rowUsed);
-    const recallCount = Number(delivery[`${route}Memories`] ?? delivery.classicMemories ?? delivery.injectedMemories ?? usedRows.length) || usedRows.length;
-    const recallPreview = usedRows.slice(0, 3).map(row => compact(libraGuiText(row.text || row.selectedText || ''), 360)).filter(Boolean).join('  ');
-    const recallEmpty = deliveryCurrent && (currentRecall || delivery.scopeKey)
-      ? `이번 요청에서 ${routeDef.label}가 사용할 정본 기억이 선택되지 않았습니다.`
-      : '이번 턴 리콜 기록이 아직 없습니다.';
 
 
 
-    let writerTitle = '이번 턴 작성 기록';
-    let writerSub = '아직 작성 결과가 없습니다.';
-    let writerPreview = '';
-    let finalPreview = '';
-    let writerTarget = (('recall'));
-    {
-      const chars = Number(delivery.classicChars || delivery.blockChars || Runtime.lastClassicInjectionMeta?.chars || 0);
-      writerTitle = '사서 모드 전달';
-      writerSub = "LIBRA memory recall";
-      writerPreview = recallCount ? `${recallCount}개의 정본 기억이 시간순 근거로 선택되었습니다. 최종 응답 모델에는 재가공된 계획이 아니라 선택된 실제 기억 발췌가 직접 전달됩니다.` : '이번 요청에서 직접 전달할 정본 기억이 선택되지 않았습니다.';
-      finalPreview = recallCount ? `${recallCount}개 정본 근거 · ${chars}자 직접 전달 · 추가 LLM 0회` : '이번 턴 사서 모드 전달 근거가 없습니다.';
-    }
-
-    const currentStateLinks = [
-      characters.length ? guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: `인물 ${characters.length}`, onClick: () => { Gui.bookPeopleSection = 'profile'; bookNavigate('people'); } }) : null,
-      relationships.length ? guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: `관계 ${relationships.length}`, onClick: () => { Gui.bookPeopleSection = 'profile'; bookNavigate('people'); } }) : null,
-      world.length ? guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: `세계 ${world.length}`, onClick: () => { Gui.bookWorldSection = 'guide'; bookNavigate('world'); } }) : null,
-      openThreads.length ? guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: `열린 Thread ${openThreads.length}`, onClick: () => { Gui.bookStorySection = 'toc'; bookNavigate('story'); } }) : null
-    ].filter(Boolean);
-    return guiEl('div', { class: 'libra-book-spread', dataset: { bookDeskProjection: 'reader' } }, [
-      guiEl('article', { class: 'libra-book-leaf left', dataset: { deskLeaf: 'scene' } }, [
-        guiEl('span', { class: 'libra-book-eyebrow', text: 'CURRENT SCENE' }),
-        guiEl('h2', { text: '현재 장면의 기록' }),
-        sceneSummary
-          ? guiEl('p', { class: 'libra-book-prose-lead', text: sceneSummary })
-          : guiEl('p', { class: 'libra-book-prose-lead muted', text: '아직 Current Narrative 요약이 없습니다. 정본과 최신 상태가 생성되면 이 페이지에 현재 장면이 기록됩니다.' }),
-        guiEl('div', { class: 'libra-book-desk-status-row' }, [
-          guiEl('span', { class: 'libra-book-desk-slip good', text: view.head ? 'Current Head 정상' : 'Current Head 대기' }),
-          guiEl('span', { class: 'libra-book-desk-slip', text: `T${Number(view.throughTurn || 0)}` }),
-          guiEl('span', { class: 'libra-book-desk-slip', text: (`LIBRA · ${routeDef.label}`) })
-        ]),
-        guiEl('div', { class: 'libra-book-desk-facts' }, [
-          guiEl('div', {}, [guiEl('strong', { text: String(recallCount) }), guiEl('span', { text: '호출된 기억' })]),
-          guiEl('div', {}, [guiEl('strong', { text: String(relationships.length) }), guiEl('span', { text: '관계 영향' })]),
-          guiEl('div', {}, [guiEl('strong', { text: String(world.length) }), guiEl('span', { text: '세계 항목' })]),
-          guiEl('div', {}, [guiEl('strong', { text: String(openThreads.length) }), guiEl('span', { text: '열린 줄기' })])
-        ]),
-        guiEl('section', { class: 'libra-book-desk-reading-block' }, [
-          guiEl('h3', { text: '최근 장면' }),
-          guiEl('small', { text: 'Current Narrative · 최신 상태' }),
-          guiEl('p', { text: sceneSummary || '현재 장면 요약이 아직 없습니다.' })
-        ]),
-        momentum ? guiEl('section', { class: 'libra-book-desk-reading-block' }, [
-          guiEl('h3', { text: '중요한 변화' }),
-          guiEl('small', { text: 'Narrative · Momentum' }),
-          guiEl('p', { text: momentum })
-        ]) : null,
-        guiEl('div', { class: 'libra-book-inline-links', 'aria-label': '현재 상태 바로가기' }, currentStateLinks)
-      ]),
-      guiEl('article', { class: 'libra-book-leaf right', dataset: { deskLeaf: 'notes' } }, [
-        guiEl('span', { class: 'libra-book-eyebrow', text: "LIBRARIAN'S NOTES" }),
-        guiEl('h2', { text: ('이번 턴의 사서 주석') }),
-        guiEl('p', { class: 'libra-book-prose-lead muted', text: '선택된 기억과 작성 결과는 먼저 짧게 읽고, 필요할 때만 전체 기록을 엽니다.' }),
-        guiEl('section', { class: 'libra-book-desk-note-card' }, [
-          guiEl('header', {}, [guiEl('div', {}, [guiEl('span', { class: 'libra-book-card-kicker', text: 'RECALL' }), guiEl('h3', { text: '이번 리콜' }), guiEl('small', { text: recallCount ? `관련 정본 기억 ${recallCount}개` : '선택된 기억 없음' })]), guiEl('button', { class: 'libra-book-more-action', type: 'button', text: '전체 보기 →', onClick: () => libraGuiNavigate('recall') })]),
-          guiEl('p', { text: recallPreview || recallEmpty })
-        ]),
-        guiEl('section', { class: 'libra-book-desk-note-card' }, [
-          guiEl('header', {}, [guiEl('div', {}, [guiEl('span', { class: 'libra-book-card-kicker', text: ('LIBRA') }), guiEl('h3', { text: writerTitle }), guiEl('small', { text: writerSub })]), guiEl('button', { class: 'libra-book-more-action', type: 'button', text: '전체 보기 →', onClick: () => libraGuiNavigate(writerTarget) })]),
-          guiEl('p', { text: writerPreview || '아직 작성 결과가 없습니다.' })
-        ]),
-        guiEl('section', { class: 'libra-book-desk-note-card final' }, [
-          guiEl('header', {}, [guiEl('div', {}, [guiEl('span', { class: 'libra-book-card-kicker', text: 'FINAL HANDOFF' }), guiEl('h3', { text: '최종 주입' }), guiEl('small', { text: '최종 응답 모델에 전달되는 자료' })]), guiEl('button', { class: 'libra-book-more-action', type: 'button', text: '전체 보기 →', onClick: () => libraGuiNavigate(writerTarget) })]),
-          guiEl('blockquote', { text: finalPreview })
-        ])
-      ])
-    ]);
-  };
 
   const bookReaderCrossReference = link => {
     const view = worldManagerSnapshotView();
@@ -79679,65 +77265,44 @@ html,body{width:100%;height:100%;overflow:hidden}
     const named = exact.length ? exact : rows.filter(row => [row.name, ...guiAsArray(row.aliases)].some(name => name && text(name) === text(link?.label)));
     const label = text(link?.label || link?.id || '연결');
     if (named.length !== 1) return guiEl('span', { text: label, title: '현재 상태에서 유일하게 확인된 연결 대상이 없습니다.' });
-    return guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: label, onClick: () => {
+    return guiEl('button', { class: 'chip', type: 'button', text: label, onClick: () => {
       const id = bookProjectionIdentity(domain, named[0], rows.indexOf(named[0]));
       if (domain === 'world') { Gui.worldManagerSelectedWorldId = id; bookSelectWorldSection('details'); }
       else if (domain === 'relationships') { Gui.worldManagerSelectedRelationshipId = id; bookSelectPeopleSection('relationships'); }
       else { Gui.bookSelectedCharacterId = id; Gui.worldManagerSelectedCharacterId = id; bookNavigate('people'); }
     } });
   };
-  const bookDomainFreshness = (view, domain) => {
-    const copy = worldManagerDomainCopy(view, domain, domain);
-    return guiEl('span', { class: 'libra-book-subtitle', dataset: { stateFreshness: domain }, text: `${copy.status} · 기준 T${copy.turn}`, title: copy.reason });
-  };
+
 
   const buildBookMemoryRail = () => {
-    const groups = [];
-    for (const item of guiAsArray(Gui.canonicalReaderItems)) {
-      const episodeId = text(item?.episode?.id || 'episode');
-      let group = groups.find(row => row.id === episodeId);
-      if (!group) { group = { id: episodeId, label: text(item?.episode?.label || '기억'), items: [] }; groups.push(group); }
-      group.items.push(item);
+    ensureCanonicalReaderPage();
+    const groups=[];
+    for(const item of guiAsArray(Gui.canonicalReaderItems)){
+      const id=text(item?.episode?.id||'current');let group=groups.find(row=>row.id===id);
+      if(!group){group={id,label:text(item?.episode?.label||'기억'),items:[]};groups.push(group);}group.items.push(item);
     }
-    return guiEl('aside', { class: 'libra-book-memory-rail', 'aria-label': '기억 목차' }, [
-      guiEl('div', { class: 'libra-book-rail-intro' }, [
-        guiEl('span', { class: 'libra-book-rail-label', text: groups[0]?.label || '현재 에피소드' }),
-        guiEl('h2', { text: '기억 목차' })
+    const chapters=groups.flatMap(group=>[
+      guiEl('div',{class:'rail__ep',text:group.label}),
+      ...group.items.map(item=>{
+        const active=canonicalReaderIdentityKey(item)===canonicalReaderSelectedKey();
+        const start=Number(item?.turnRange?.start||0),end=Number(item?.turnRange?.end||0);
+        return guiEl('button',{class:`chapter${active?' is-on':''}`,type:'button','aria-current':active?'true':null,
+          dataset:{memoryId:text(item.memoryId),revision:String(Number(item.revision||0))},
+          onClick:()=>{Gui.bookMemoryDetail=true;void loadCanonicalReaderDetail(item);}},[
+          guiEl('b',{text:text(item.title||`TURN ${start}–${end}`)}),guiEl('small',{text:`T${start}–T${end} · r${Number(item.revision||0)}`})
+        ]);
+      })
+    ]);
+    return guiEl('aside',{class:'rail','aria-label':'기억 목차'},[
+      guiEl('div',{class:'rail__search'},[
+        guiEl('input',{class:'input',type:'search',value:Gui.canonicalReaderQuery,placeholder:'정본 기억 찾기','aria-label':'정본 기억 검색',
+          onInput:event=>{Gui.canonicalReaderQuery=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();applyCanonicalReaderSearch();}}}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'찾기',onClick:applyCanonicalReaderSearch})
       ]),
-      guiEl('div', { class: 'libra-book-rail-search' }, [
-        guiEl('input', { type: 'search', value: Gui.canonicalReaderQuery, placeholder: '정본 기억 찾기', 'aria-label': '정본 기억 검색', onInput: event => { Gui.canonicalReaderQuery = event.target.value; }, onKeyDown: event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); applyCanonicalReaderSearch(); } } }),
-        guiEl('button', { type: 'button', text: '찾기', onClick: applyCanonicalReaderSearch })
-      ]),
-      Gui.canonicalReaderError ? guiEl('div', { class: 'libra-book-rail-error' }, [
-        guiEl('p', { text: Gui.canonicalReaderError }),
-        guiEl('button', { type: 'button', text: '목차 다시 읽기', onClick: () => void loadCanonicalReaderPage(false) })
-      ]) : null,
-      guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: '정본 관리', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; bookSelectMemorySection('manage'); } }),
-      Gui.canonicalReaderLoaded && !Gui.canonicalReaderItems.length && !Gui.canonicalReaderAppliedQuery ? guiEl('button', { class: 'libra-book-back-action', type: 'button', text: '기존 대화로 기억 만들기', onClick: () => {
-        bookSelectMemorySection('manage');
-        void runCanonicalGuiCommand('수동 콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null);
-      } }) : null,
-      groups.length ? groups.flatMap((group, groupIndex) => [
-        groupIndex > 0 ? guiEl('div', { class: 'libra-book-rail-separator', text: group.label }) : null,
-        ...group.items.map(item => {
-          const active = canonicalReaderIdentityKey(item) === canonicalReaderSelectedKey();
-          const start = Number(item?.turnRange?.start || 0);
-          const finish = Number(item?.turnRange?.end || 0);
-          return guiEl('button', {
-            class: `libra-book-memory-chapter${active ? ' active' : ''}`, type: 'button',
-            dataset: { memoryId: text(item.memoryId), revision: String(Number(item.revision || 0)) },
-            onClick: () => { Gui.bookMemoryDetail=true; void loadCanonicalReaderDetail(item); }
-          }, [
-            guiEl('span', { class: 'libra-book-memory-no', text: String(Number(item.chapterNumber || 0)).padStart(2, '0') }),
-            guiEl('span', { class: 'libra-book-memory-copy' }, [
-              guiEl('strong', { text: text(item.title || `TURN ${start}–${finish}`) }),
-              guiEl('small', { text: `T${start}–T${finish} · r${Number(item.revision || 0)}` })
-            ])
-          ]);
-        })
-      ]) : guiEl('div', { class: 'libra-book-rail-empty', text: Gui.canonicalReaderLoading ? '기억 목차를 읽는 중입니다.' : '아직 펼칠 정본 기억이 없습니다.' }),
-      Gui.canonicalReaderHasMore ? guiEl('button', { class: 'libra-book-back-action subtle', type: 'button', disabled: Gui.canonicalReaderLoading, text: 'Chapter 더 보기', onClick: () => void loadCanonicalReaderPage(true) }) : null,
-      Gui.canonicalReaderLoaded ? guiEl('div', { class: 'libra-book-rail-count', text: `${guiAsArray(Gui.canonicalReaderItems).length} / ${Number(Gui.canonicalReaderTotal || 0)} Chapter` }) : null
+      Gui.canonicalReaderError?guiEl('div',{class:'note note--danger'},[guiEl('p',{text:Gui.canonicalReaderError}),guiEl('button',{class:'btn btn--sm',type:'button',text:'목차 다시 읽기',onClick:()=>void loadCanonicalReaderPage(false)})]):null,
+      guiEl('div',{class:'rail__list'},chapters.length?chapters:[guiEl('div',{class:'empty',text:Gui.canonicalReaderLoading?'기억 목차를 읽는 중입니다.':'아직 펼칠 정본 기억이 없습니다.'})]),
+      Gui.canonicalReaderHasMore?guiEl('button',{class:'btn btn--sm',type:'button',disabled:Gui.canonicalReaderLoading,text:'Chapter 더 보기',onClick:()=>void loadCanonicalReaderPage(true)}):null,
+      Gui.canonicalReaderLoaded?guiEl('div',{class:'hint',text:`${guiAsArray(Gui.canonicalReaderItems).length} / ${Number(Gui.canonicalReaderTotal||0)} Chapter`}):null
     ]);
   };
 
@@ -79753,19 +77318,19 @@ html,body{width:100%;height:100%;overflow:hidden}
       : guiAsObject(row).sourceOnly === true;
     const start = Number(detail?.turnRange?.start || evidence.start || 0);
     const end = Number(detail?.turnRange?.end || evidence.end || 0);
-    return guiEl('section', { class: 'libra-book-turn-evidence',
+    return guiEl('section', { class: "fold",
       dataset: { bookTurnEvidence: text(detail?.memoryId || ''), turnStart: String(start), turnEnd: String(end) } }, [
       guiEl('h3', { text: `턴별 근거 (T${start}–T${end})` }),
-      guiEl('p', { class: 'libra-book-turn-evidence-note',
+      guiEl('p', { class: "hint",
         text: '정본은 다섯 턴을 종합한 기록이고, 아래 항목은 각 턴에 실제로 남은 근거입니다.' }),
-      ...turns.map(row => guiEl('details', { class: 'libra-book-turn-evidence-item',
+      ...turns.map(row => guiEl('details', { class: "note",
         dataset: { microTurn: String(Number(row.turn || 0)), analysisStatus: text(row.analysisStatus || '') } }, [
         guiEl('summary', {}, [
           guiEl('strong', { text: `T${Number(row.turn || 0)}` }),
           guiEl('span', { text: isSourceOnly(row) ? ' · 원문 근거만 (분석 미완)' : ' · 단일 턴 근거' })
         ]),
-        guiEl('div', { class: 'libra-book-turn-evidence-body' }, [
-          isSourceOnly(row) ? guiEl('p', { class: 'libra-book-turn-evidence-pending',
+        guiEl('div', { class: "fold__body" }, [
+          isSourceOnly(row) ? guiEl('p', { class: "note note--warn",
             text: '이 턴은 분석이 아직 끝나지 않아 원문 인용만 남아 있습니다. 정본의 종합 근거로 쓰이지 않았습니다.' }) : null,
           guiEl('p', { text: text(row.text || '') }),
           ...guiAsArray(row.sourceSpans).map(span => guiEl('blockquote', {
@@ -79777,276 +77342,56 @@ html,body{width:100%;height:100%;overflow:hidden}
   };
 
   const buildBookMemoryReadingSheet = () => {
-    const detail = guiAsObject(Gui.canonicalReaderDetail);
-    if (Gui.canonicalReaderDetailLoading) return buildBookEmptyState('CANONICAL ARCHIVE', '기억을 펼치는 중입니다', '선택한 Canonical Memory 한 건을 읽고 있습니다.', { dataset: { bookMemoryLoading: 'true' } });
-    if (Gui.canonicalReaderDetailError) return guiEl('div', {}, [buildBookEmptyState('CANONICAL ARCHIVE', '기억을 열지 못했습니다', Gui.canonicalReaderDetailError, { dataset: { bookMemoryError: 'true' } }), guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: '기억 다시 읽기', onClick: () => void loadCanonicalReaderDetail(Gui.canonicalReaderSelected) })]);
-    if (!detail.memoryId) return buildBookEmptyState('CANONICAL ARCHIVE', '아직 펼칠 기억이 없습니다', Gui.canonicalReaderLoaded ? '정본 기억이 생성되면 왼쪽 기억 목차에서 장을 선택해 읽을 수 있습니다.' : '정본 기억 목차를 준비하고 있습니다.', { dataset: { bookMemoryEmpty: 'true' } });
-    const changes = guiAsArray(detail.actualChanges);
-    const links = guiAsArray(detail.links);
-    const start = Number(detail?.turnRange?.start || 0);
-    const finish = Number(detail?.turnRange?.end || 0);
-    const changeTrail = changes.slice(0, 8).map(change => `${text(change.domain || 'state')} · ${text(change.entityId || '현재 상태')} · ${guiAsArray(change.fields).map(text).filter(Boolean).join(', ')}`).filter(Boolean);
-    const linkLabels = links.slice(0, 12).map(link => `${text(link.kind || '연결')} · ${text(link.label || link.id || '')}`).filter(Boolean);
-    const bodyText = text(detail.text || detail.summary || '').trim();
-    const move = (target, label) => target ? guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: label, onClick: () => void loadCanonicalReaderDetail(target) }) : null;
-    return guiEl('article', { class: 'libra-book-reading-sheet', dataset: { canonicalChapter: text(detail.memoryId), detailLoaded: 'true' } }, [
-      guiEl('header', { class: 'libra-book-reading-head' }, [
-        guiEl('div', {}, [
-          guiEl('span', { class: 'libra-book-reading-kicker', text: `Chapter ${String(Number(detail.chapterNumber || 0)).padStart(2, '0')}` }),
-          guiEl('h2', { text: text(detail.title || '제목 없는 기억') }),
-          guiEl('p', { text: `T${start}–T${finish} · revision ${Number(detail.revision || 0)} · ${text(detail.worldlineId || 'main')}` })
-        ]),
-        guiEl('div', { class: 'libra-book-reading-actions' }, [
-          guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: Gui.canonicalReaderEvidenceLoading ? '근거 확인 중…' : '근거와 상태 반영', disabled: Gui.canonicalReaderEvidenceLoading, onClick: () => bookSelectMemorySection('context') }),
-          guiEl('button', { class: 'libra-book-inline-action strong', type: 'button', text: '교정', onClick: () => void openCanonicalReaderCorrection() })
-        ])
+    const detail=guiAsObject(Gui.canonicalReaderDetail);
+    const empty=(title,message,dataset)=>guiEl('article',{class:'sheet-page detail-pane',dataset},[guiEl('div',{class:'empty'},[guiEl('b',{text:title}),guiEl('p',{text:message})])]);
+    if(Gui.canonicalReaderDetailLoading)return empty('기억을 펼치는 중입니다','선택한 정본 기억을 읽고 있습니다.',{bookMemoryLoading:'true'});
+    if(Gui.canonicalReaderDetailError)return guiEl('div',{class:'stack'},[empty('기억을 열지 못했습니다',Gui.canonicalReaderDetailError,{bookMemoryError:'true'}),guiEl('button',{class:'btn btn--sm',type:'button',text:'기억 다시 읽기',onClick:()=>void loadCanonicalReaderDetail(Gui.canonicalReaderSelected)})]);
+    if(!detail.memoryId)return empty('아직 펼칠 기억이 없습니다',Gui.canonicalReaderLoaded?'왼쪽 목차에서 정본 기억을 선택하세요.':'기억 목차를 준비하고 있습니다.',{bookMemoryEmpty:'true'});
+    const start=Number(detail.turnRange?.start||0),end=Number(detail.turnRange?.end||0),links=guiAsArray(detail.links),changes=guiAsArray(detail.actualChanges);
+    const move=(target,label)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,disabled:!target,onClick:()=>{if(target)void loadCanonicalReaderDetail(target);}});
+    return guiEl('article',{class:'sheet-page detail-pane',dataset:{canonicalChapter:text(detail.memoryId),detailLoaded:'true'}},[
+      guiEl('div',{class:'eyebrow',text:`Chapter ${String(Number(detail.chapterNumber||0)).padStart(2,'0')} · ${text(detail.memoryId)} · T${start}–T${end}`}),
+      guiEl('h2',{text:text(detail.title||'제목 없는 기억')}),
+      guiEl('p',{class:'deck',text:`revision ${Number(detail.revision||0)} · ${text(detail.worldlineId||'main')}`}),
+      guiEl('div',{class:'prose'},[guiEl('p',{text:text(detail.text||detail.summary||'이 기억에는 표시할 본문이 없습니다.')})]),
+      guiEl('div',{class:'manage-only cluster'},[
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'수정용 복사본으로 교정',onClick:()=>void openCanonicalReaderCorrection()}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'재생성 후보 만들기…',onClick:()=>void showCanonicalRangeDrawer('regenerate')}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'버전 · 실행 기록',onClick:()=>void showCanonicalVariantDialog(start)}),
+        guiEl('span',{class:'hint',text:'원문과 정본은 보존됩니다. 수정용 복사본과 후보는 별도로 검토하고 승인합니다.'})
       ]),
-      guiEl('div', { class: 'libra-book-reader-columns' }, [
-        guiEl('div', { class: 'libra-book-memory-prose' }, [
-          bodyText ? guiEl('div', { class: 'libra-book-memory-text', text: bodyText }) : guiEl('p', { class: 'sga-note', text: '이 정본 기억에는 표시할 본문이 없습니다.' })
-        ]),
-        guiEl('aside', { class: 'libra-book-memory-margin' }, [
-          guiEl('section', { class: 'libra-book-memory-margin-card' }, [
-            guiEl('h3', { text: detail.changesMeaning==='current_evidence_links'?'현재 필드의 정본 근거':'현재 상태로 이어진 흔적' }),
-            changeTrail.length ? guiEl('ul', {}, changeTrail.map(value => guiEl('li', { text: value }))) : guiEl('p', { text: detail.changesMeaning==='current_evidence_links'?'현재 필드에 직접 연결된 근거가 없습니다. 과거의 상태 연결은 근거와 상태 반영에서 확인할 수 있습니다.':'이 정본에서 별도의 상태 변경 필드는 기록되지 않았습니다.' })
-          ])
-        ])
+      guiEl('div',{class:'margin-notes'},[
+        guiEl('div',{},[guiEl('h3',{text:'연결된 장면'}),guiEl('div',{class:'cluster'},links.length?links.map(bookReaderCrossReference):[guiEl('span',{class:'hint',text:'연결된 항목이 없습니다.'})])]),
+        guiEl('div',{},[guiEl('h3',{text:detail.changesMeaning==='current_evidence_links'?'현재 필드의 정본 근거':'이 기억이 바꾼 값'}),guiEl('ul',{},changes.map(change=>guiEl('li',{text:`${text(change.domain||'state')} · ${text(change.entityId||'현재 상태')} · ${guiAsArray(change.fields).map(text).join(', ')}`}))),changes.length?null:guiEl('p',{class:'hint',text:'별도의 상태 변경 필드가 없습니다.'})])
       ]),
-      buildBookTurnEvidenceSection(detail, Gui.bookTurnEvidence),
-      guiEl('footer', { class: 'libra-book-reader-footer' }, [
-        guiEl('div', {}, [guiEl('strong', { text: '연결 항목' }), links.length ? guiEl('div', { class: 'libra-book-inline-links' }, links.map(bookReaderCrossReference)) : guiEl('span', { text: '직접 연결 없음' })]),
-        guiEl('div', {}, [guiEl('strong', { text: detail.changesMeaning==='current_evidence_links'?'현재 근거 연결':'상태 변경' }), guiEl('span', { text: detail.changesMeaning==='current_evidence_links'?`${changes.length}개 현재 필드 · ${Number(detail.bindingCount||0)}개 원래 상태 연결`:changes.length ? `${changes.length}개 변경 기록` : '변경 기록 없음' })]),
-        guiEl('div', {}, [guiEl('strong', { text: '기록 범위' }), guiEl('span', { text: `T${start}–T${finish}` })])
+      guiEl('div',{class:'pager'},[
+        move(detail.previous,'← 이전'),guiEl('span',{class:'read-only',text:`Chapter ${Number(detail.chapterNumber||0)}`}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:Gui.canonicalReaderEvidenceLoading?'근거 확인 중…':'원문 근거',disabled:Gui.canonicalReaderEvidenceLoading,onClick:()=>bookSelectMemorySection('context')}),move(detail.next,'다음 →')
       ]),
-      guiEl('div', { class: 'libra-book-reader-pager' }, [
-        move(detail.previous, '← 이전 Chapter'),
-        guiEl('span', { text: `${Number(detail.chapterNumber || 0)} / ${Number(Gui.canonicalReaderTotal || 0)}` }),
-        move(detail.next, '다음 Chapter →')
-      ])
+      buildBookTurnEvidenceSection(detail,Gui.bookTurnEvidence)
     ]);
   };
 
   const buildBookMemoryReaderProjection = () => {
     ensureCanonicalReaderPage();
-    return guiEl('div', { class: 'libra-book-memory-reader', dataset: { readerDetail:String(Gui.bookMemoryDetail===true), canonicalReader: 'book', hydration: Gui.canonicalReaderDetail?.detailLoaded === true ? 'one' : 'zero' } }, [
+    return guiEl('div',{class:'grid g-side',dataset:{readerDetail:String(Gui.bookMemoryDetail===true),canonicalReader:'book',hydration:Gui.canonicalReaderDetail?.detailLoaded===true?'one':'zero'}},[
       buildBookMemoryRail(),
-      guiEl('div',{class:'libra-book-memory-detail-wrap'},[guiEl('button',{class:'libra-book-mobile-back',type:'button',text:'← 기억 목록',onClick:()=>{Gui.bookMemoryDetail=false;queueGuiNavigationRender();}}),buildBookMemoryReadingSheet()])
+      buildBookMemoryReadingSheet()
     ]);
   };
 
-  const bookCharacterEvidence = (row,field='') => {
-    const correction=field?row?.fieldCorrectionProvenance?.[field]:row?.correctionProvenance;
-    const records=field?[row?.fieldEvidence?.[field]]:[row?.identityEvidence,row?.evidence,...Object.values(guiAsObject(row?.fieldEvidence))];
-    const quotes=new Map();let turn=0;
-    for(const record of records.filter(Boolean)){
-      turn=Math.max(turn,Number(record.sourceTurnRange?.end||record.turnRange?.end||0));
-      for(const span of guiAsArray(record.evidenceSpans))if(span?.quote){quotes.set(text(span.ref)+'|'+text(span.quote),span);turn=Math.max(turn,Number(/^t(\d+)-/.exec(span.ref||'')?.[1]||0));}
-    }
-    const label=(correction?'사용자 교정 · ':'')+(turn>0?'T'+turn+' · ':'');
-    return quotes.size?guiEl('details',{class:'cabinet-evidence'},[guiEl('summary',{text:label+'근거 보기'}),...Array.from(quotes.values()).map(span=>guiEl('div',{},[guiEl('blockquote',{text:text(span.quote)}),guiEl('small',{text:text(span.ref||'원문 위치 미기록')})]))]):guiEl('small',{class:'cabinet-note',text:label+(field?'인용 원문 미연결':'인용 근거 미연결')});
-  };
-  const bookCharacterWorldLinks = (row,view) => {
-    if(!row.id)return [];
-    const links=new Map(),state=guiAsObject(row.state);
-    const add=(ref,label)=>{const target=guiAsArray(view.world).find(w=>w.id===ref);if(!target)return;const entry=links.get(ref)||{row:target,labels:[]};if(!entry.labels.includes(label))entry.labels.push(label);links.set(ref,entry);};
-    add(state.locationRef,'기록된 위치');
-    for(const m of guiAsArray(state.affiliations))add(m.organizationRef,({member:'현재 소속',former:'이전 소속'}[m.status]||'소속 상태 미확인')+(m.role?' · '+text(m.role):''));
-    for(const w of guiAsArray(view.world))for(const [field,label] of [['ownerRef','소유'],['holderRef','현재 소지'],['managerRef','관리']])if(w.state?.[field]===row.id)add(w.id,label);
-    return [...links.values()];
-  };
-
-  // Shared typography for the three reference pages, based on World Atlas.
-  const bookReferenceTypographyCss = `
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac){--ref-body:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;--ref-heading:Batang,Georgia,serif;--ref-ink:#493626;--ref-muted:#705b46;font:14px/1.8 var(--ref-body);color:var(--ref-ink);letter-spacing:normal}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(h2,.al-title){font:500 30px/1.4 var(--ref-heading)!important;letter-spacing:normal!important;color:var(--ref-ink);word-break:keep-all;overflow-wrap:anywhere}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(h3,.al-section){font:500 17px/1.6 var(--ref-heading)!important;letter-spacing:normal!important;color:var(--ref-ink)}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(p,dd,blockquote,.al-timeline li,.al-context,.libra-book-prose-lead){font:400 14px/1.85 var(--ref-body)!important;letter-spacing:normal!important;color:var(--ref-ink)}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(button,input){font-family:var(--ref-body)!important;font-size:13px;line-height:1.6;letter-spacing:normal}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(.libra-book-profile-index strong,.atlas-entry strong,.al-entry strong,.atlas-link strong,.cabinet-world-link strong){font:500 14px/1.65 var(--ref-body)!important;letter-spacing:normal!important;color:var(--ref-ink)}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(small,dt,summary,.cabinet-note,.atlas-rail-note,.atlas-breadcrumb,.atlas-footer,.atlas-aliases,.al-note,.al-bread,.al-rail-title,.al-entry span,.atlas-link span,.al-tags span,.cabinet-evidence,.al-evidence){font:400 12px/1.75 var(--ref-body)!important;letter-spacing:normal!important;color:var(--ref-muted)}
-  :is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(.cabinet-tabs button,.al-tab,.atlas-category){font-size:13px!important}
-  .libra-almanac .al-now h2{font-size:22px!important}
-  @media(max-width:600px){:is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) :is(h2,.al-title){font-size:26px!important}:is(.libra-book-character-browser,.libra-world-atlas,.libra-almanac) input{font-size:16px!important}}
-  `;
-  const bookCharacterCabinetCss = `
-  .libra-book-character-browser{--cc-paper:#f5eddf;--cc-page:#fffaf0;--cc-line:#d9c8b0;--cc-ink:#382e29;--cc-muted:#7c6d61;--cc-accent:#875750;--cc-soft:#eee0d5;display:grid!important;grid-template-columns:190px minmax(0,1fr);gap:0!important;border:1px solid var(--cc-line);border-radius:9px;overflow:hidden;color:var(--cc-ink);background:var(--cc-paper)}
-  .libra-book-character-browser *{box-sizing:border-box}.libra-book-character-browser [hidden]{display:none!important}.libra-book-character-browser .libra-book-character-index{border:0!important;border-radius:0!important;background:var(--cc-paper)!important;padding:20px 13px!important;border-right:1px solid var(--cc-line)!important;margin:0!important}.libra-book-character-browser .libra-book-character-index summary{font-size:12px;color:var(--cc-accent);margin-bottom:12px}.libra-book-character-browser .libra-book-character-index input{width:100%;min-width:0;background:var(--cc-page);border:1px solid var(--cc-line);border-radius:5px;padding:9px;font:13px 'Malgun Gothic',sans-serif;color:var(--cc-ink)}.libra-book-character-browser .libra-book-profile-index{display:grid!important;grid-template-columns:1fr!important;gap:6px!important;margin-top:15px}.libra-book-character-browser .libra-book-profile-index button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:12px 9px;background:transparent;color:var(--cc-ink);border:1px solid transparent;border-radius:6px;min-width:0;overflow-wrap:anywhere}.libra-book-character-browser .libra-book-profile-index button.active{background:var(--cc-page);border-color:var(--cc-line)}.libra-book-character-browser .libra-book-profile-index strong{font:500 16px/1.6 Batang,serif}.libra-book-character-browser .libra-book-profile-index small{display:block;font-size:11px;color:var(--cc-muted)}.libra-book-character-browser .cabinet-initial{display:grid;place-items:center;flex-shrink:0;width:30px;height:38px;border-radius:4px;background:var(--cc-soft);color:var(--cc-accent);font:18px Batang,serif}
-  .libra-book-character-browser .libra-book-character-spread{display:block!important;min-width:0;margin:0!important}.libra-book-character-browser .libra-book-character-sheet{border:0!important;border-radius:0!important;padding:28px!important;background:var(--cc-page)!important;min-width:0;overflow-wrap:anywhere}.libra-book-character-browser .libra-book-character-head{display:flex!important;flex-direction:row!important;justify-content:flex-start;align-items:center!important;gap:20px;text-align:left}.libra-book-character-browser .cabinet-monogram{display:grid;place-content:center;width:70px;height:88px;flex-shrink:0;border:1px solid var(--cc-line);outline:1px solid var(--cc-line);outline-offset:4px;background:var(--cc-soft);color:var(--cc-accent);font:34px Batang,serif;text-align:center}.libra-book-character-browser .cabinet-monogram small{font:9px Georgia,serif;letter-spacing:2px;margin-top:10px}.libra-book-character-browser h2{font:500 32px/1.4 Batang,serif;margin:5px 0}.libra-book-character-browser .libra-book-eyebrow{color:var(--cc-accent)}.libra-book-character-browser .cabinet-now{padding:14px 16px;margin:20px 0 16px;border-left:2px solid var(--cc-accent);background:var(--cc-soft);border-radius:2px 6px 6px 2px}.libra-book-character-browser .cabinet-now small{font-size:11px;color:var(--cc-accent)}.libra-book-character-browser .libra-book-prose-lead{font-size:13px;line-height:1.8;margin:5px 0;white-space:pre-wrap}.libra-book-character-browser .cabinet-tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--cc-line);margin-bottom:20px}.libra-book-character-browser .cabinet-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;padding:11px 9px;color:var(--cc-muted);font:12px 'Malgun Gothic',sans-serif;cursor:pointer}.libra-book-character-browser .cabinet-tabs button[aria-pressed=true]{color:var(--cc-accent);border-bottom-color:var(--cc-accent)}.libra-book-character-browser .libra-book-profile-facts{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.libra-book-character-browser .libra-book-profile-facts>div{display:block;padding:11px 0;border-bottom:1px solid var(--cc-line);min-width:0}.libra-book-character-browser dt{font-size:11px;color:var(--cc-muted);margin-bottom:5px}.libra-book-character-browser dd{font-size:13px;line-height:1.8;margin:0;white-space:pre-wrap}.libra-book-character-browser h3{font:500 18px/1.6 Batang,serif;margin:18px 0 10px}.libra-book-character-browser .cabinet-evidence{margin-top:7px;font-size:11px;color:var(--cc-muted)}.libra-book-character-browser summary{cursor:pointer;color:var(--cc-accent)}.libra-book-character-browser blockquote{margin:9px 0;border-left:2px solid var(--cc-line);padding-left:10px;font:13px/1.8 Batang,serif;white-space:pre-wrap}.libra-book-character-browser .cabinet-note{font-size:12px;color:var(--cc-muted);line-height:1.8}.libra-book-character-browser .libra-book-relations-sheet{border:0!important;background:transparent!important;padding:0!important}.libra-book-character-browser .libra-book-relation-card{background:var(--cc-paper);border:1px solid var(--cc-line);border-radius:6px;padding:15px;margin:12px 0}.libra-book-character-browser .libra-book-relation-card h4{font:500 18px Batang,serif}.libra-book-character-browser .cabinet-world-links{display:grid;grid-template-columns:1fr 1fr;gap:10px}.libra-book-character-browser .cabinet-world-link{background:var(--cc-paper);border:1px solid var(--cc-line);border-radius:5px;padding:13px;text-align:left;color:var(--cc-ink);cursor:pointer}.libra-book-character-browser .cabinet-world-link small{display:block;color:var(--cc-accent);font-size:11px}.libra-book-character-browser .cabinet-world-link strong{font:500 16px/1.6 Batang,serif}.libra-book-character-browser .libra-book-inline-links{margin-top:22px;padding-top:14px;border-top:1px solid var(--cc-line)}.libra-book-character-browser .libra-book-source-meta .sga-badge{color:#70443e!important;background:var(--cc-soft)!important;border-color:var(--cc-line)!important}.libra-book-character-browser button:focus-visible{outline:3px solid #927241;outline-offset:2px}
-  .libra-book-character-browser .libra-book-profile-index button>span:last-child{flex:1;min-width:0}.libra-book-character-browser .libra-book-profile-index strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;word-break:keep-all;overflow-wrap:anywhere;line-height:1.5}.libra-book-character-browser .libra-book-profile-index small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.libra-book-character-browser .libra-book-profile-index button{min-height:64px;align-items:center}.libra-book-character-browser .cabinet-initial{width:26px;height:34px}
-  @media(max-width:900px){.libra-book-character-browser{grid-template-columns:195px minmax(0,1fr)}.libra-book-character-browser .libra-book-character-sheet{padding:23px 18px!important}}
-  @media(max-width:600px){.libra-book-character-browser{display:block!important}.libra-book-character-browser .libra-book-character-index{display:block!important;border-right:0!important;border-bottom:1px solid var(--cc-line)!important}.libra-book-character-browser .libra-book-profile-index{grid-template-columns:repeat(3,minmax(0,1fr))!important}.libra-book-character-browser .cabinet-initial{display:none}.libra-book-character-browser .libra-book-profile-index button{padding:8px 5px}.libra-book-character-browser .libra-book-profile-index strong{font-size:14px}.libra-book-character-browser .libra-book-character-spread{display:block!important}.libra-book-character-browser .libra-book-profile-facts,.libra-book-character-browser .cabinet-world-links{grid-template-columns:1fr}.libra-book-character-browser .libra-book-character-index input{font-size:16px}.libra-book-character-browser .cabinet-monogram{width:55px;height:74px}.libra-book-character-browser .libra-book-character-head{gap:16px}.libra-book-character-browser .cabinet-tabs button{padding:11px 7px}.libra-book-character-browser .libra-book-mobile-back{display:none!important}}
-  `;
-  const buildBookCharacterProfileProjection = () => {
-    const view = worldManagerSnapshotView();
-    const rows = guiAsArray(view.characters);
-    if (!rows.length) return guiEl('div', { class: 'libra-book-character-spread', dataset: { bookCharacterProjection: 'empty' } }, [
-      buildBookEmptyState('CHARACTER ENTRY', '아직 인물 기록이 없습니다', '기억에서 확인된 인물 정보가 이곳에 정리됩니다.'),
-      buildBookEmptyState('RELATIONSHIPS', '관계 소개를 기다리고 있습니다', '인물과 연결된 방향성 Relationship Head가 생기면 같은 소개 페이지에서 함께 읽을 수 있습니다.')
-    ]);
-    const characterQuery=text(Gui.bookCharacterQuery||'').toLowerCase();
-    const identities = rows.map((row, index) => bookProjectionIdentity('characters', row, index));
-    let selectedId = text(Gui.bookSelectedCharacterId || Gui.worldManagerSelectedCharacterId || '');
-    if (!identities.includes(selectedId)) selectedId = identities[0];
-    Gui.bookSelectedCharacterId = selectedId;
-    Gui.worldManagerSelectedCharacterId = selectedId;
-    const selectedIndex = Math.max(0, identities.indexOf(selectedId));
-    const row = rows[selectedIndex];
-    const name = bookCharacterName(row);
-    const state = guiAsObject(row?.state);
-    const facts = worldManagerArticleFacts({ id: row?.id || '', name, state },view,Number.MAX_SAFE_INTEGER);
-    const groupDefs=[
-      {id:'profile',label:'기본 정보',keys:['appearance','background','personality','speech','habits','abilities']},
-      // T08: the typed current items the main-memory work produces. A preference and
-      // a boundary are deliberately SEPARATE groups: a boundary constrains what may
-      // be done and must not read as a matter of taste, which is the distinction the
-      // analysis contract draws (`01` section 8, `03` A08).
-      {id:'preferences',label:'선호',keys:['preferences']},
-      {id:'boundaries',label:'경계',keys:['boundaries']},
-      {id:'current',label:'현재 상태',keys:['locationRef','condition','goal']},
-      {id:'knowledge',label:'지식',keys:['knowledge']},
-      {id:'affiliations',label:'소속',keys:['affiliations']}
-    ];
-    const groupedKeys=new Set(groupDefs.flatMap(group=>group.keys));
-    const groups=groupDefs.map(group=>({...group,facts:group.keys.flatMap(key=>facts.filter(fact=>fact.key===key))}));
-    // The reading page shows fields produced by unified analysis; stored legacy fields remain in management.
-    const leadParts=['condition','goal','locationRef'].flatMap(key=>facts.filter(fact=>fact.key===key)).slice(0,3);
-    const lead=leadParts.length?bookProjectionReadable(leadParts.map(fact=>`${fact.label}: ${fact.value}`).join(' · '),760)
-      :'';
-    const rowId = text(row?.id || '');
-    const aliases = guiAsArray(row?.aliases).map(text).filter(Boolean);
-    const related = guiAsArray(view.relationships).map((relation, index) => ({ relation, index, id: bookProjectionIdentity('relationships', relation, index) })).filter(item => {
-      const rel = item.relation;
-      const subjectMatch = rowId ? text(rel?.subjectId || '') === rowId : bookRelationshipEndpointName(rel, 'subject') === name;
-      const targetMatch = rowId ? text(rel?.targetId || '') === rowId : bookRelationshipEndpointName(rel, 'target') === name;
-      return subjectMatch || targetMatch;
-    });
-    const relationCards = related.slice(0, 10).map(item => {
-      const rel = item.relation;
-      const subject = text(rows.find(r=>r.id===rel.subjectId)?.name||bookRelationshipEndpointName(rel, 'subject'));
-      const target = text(rows.find(r=>r.id===rel.targetId)?.name||bookRelationshipEndpointName(rel, 'target'));
-      const relationState = bookProjectionReadable(worldManagerRelationshipDefinition(rel), 420) || '(현재 값 없음)';
-      const direction = `${subject} → ${target}`;
-      const peerId=rel.subjectId===rowId?rel.targetId:rel.subjectId;
-      const peer=rows.find(r=>r.id===peerId);
-      return guiEl('article', { class: 'libra-book-relation-card', dataset: { relationshipId: item.id } }, [
-        guiEl('span', { class: 'libra-book-card-kicker', text: worldManagerDisplayReferences(text(rel?.dimension || 'relationship'),view,'dimension') }),
-        guiEl('h4', { text: direction }),
-        guiEl('p', { text: relationState }),
-        bookCharacterEvidence(rel),
-        peer?guiEl('button',{type:'button',class:'libra-book-inline-action',text:bookCharacterName(peer)+'의 카드 펼치기 →',onClick:()=>{Gui.bookSelectedCharacterId=peer.id;Gui.worldManagerSelectedCharacterId=peer.id;queueGuiNavigationRender();}}):null,
-        guiEl('div', { class: 'libra-book-card-meta' }, [
-          guiEl('span', { text: `확실성 · ${worldManagerDisplayReferences(text(rel?.certainty || 'unknown'),view,'certainty')}` }),
-          guiEl('div', { class: 'libra-book-source-meta' }, [worldManagerSourceBadge('relationships', rel, view), bookDomainFreshness(view, 'relationships')])
-        ]),
-        guiEl('button', { class: 'libra-book-inline-action', type: 'button', text: '관계 상세 · 관리', onClick: () => {
-          Gui.worldManagerSelectedRelationshipId = item.id;
-          bookSelectPeopleSection('relationships');
-        } })
-      ]);
-    });
-    // T08: a preference and a boundary get their own tabs -- the sheet draws one
-    // panel per tab, so a group without a tab is never rendered. They stay separate
-    // from each other because a boundary constrains what may be done and is not a
-    // matter of taste (`01` section 8, `03` A08).
-    const tabDefs=[['profile','인물 소개'],['preferences','선호'],['boundaries','경계'],['current','현재 상황'],['relationships','관계'],['knowledge','지식'],['affiliations','소속·사물']];
-    const active=tabDefs.some(([id])=>id===Gui.bookCharacterTab)?Gui.bookCharacterTab:'profile';
-    const worldLinks=bookCharacterWorldLinks(row,view);
-    const renderGroup=group=>group.facts.length?guiEl('section',{class:'libra-book-profile-group',dataset:{characterProfileGroup:group.id}},[
-      guiEl('h3',{text:group.label}),guiEl('dl',{class:'libra-book-profile-facts'},group.facts.map(fact=>guiEl('div',{dataset:{characterProfileField:fact.key}},[guiEl('dt',{text:fact.label}),guiEl('dd',{text:fact.value}),bookCharacterEvidence(row,fact.key)])))
-    ]):null;
-    const cleared=[...new Set([...Object.keys(guiAsObject(row.clearedFieldEvidence)),...Object.keys(guiAsObject(row.clearedFieldCorrectionProvenance))])].filter(key=>groupedKeys.has(key));
-    return guiEl('div', { class: 'libra-book-character-browser', dataset: { bookCharacterProjection: 'profile', selectedCharacter: selectedId } }, [
-      guiEl('style',{text:bookCharacterCabinetCss+bookReferenceTypographyCss}),
-      guiEl('details', { class: 'libra-book-character-index', open: true }, [
-        guiEl('summary',{text:'인물 색인 · '+rows.length+'명'}),
-        guiEl('input',{type:'search','aria-label':'이름 또는 별칭 검색',placeholder:'이름 · 별칭 검색',value:Gui.bookCharacterQuery||'',onInput:event=>{Gui.bookCharacterQuery=event.target.value;const q=event.target.value.toLowerCase();let count=0;Gui.app?.querySelectorAll('[data-character-search]').forEach(node=>{node.hidden=!node.dataset.characterSearch.includes(q);if(!node.hidden)count++;});const empty=Gui.app?.querySelector('[data-character-search-empty]');if(empty)empty.hidden=count>0;}}),
-        guiEl('nav',{class:'libra-book-profile-index','aria-label':'인물 색인'},rows.map((item,index)=>guiEl('button',{
-          class:identities[index]===selectedId?'active':'',type:'button',hidden:!!characterQuery&&![bookCharacterName(item),...guiAsArray(item.aliases)].join(' ').toLowerCase().includes(characterQuery),dataset:{characterSearch:[bookCharacterName(item),...guiAsArray(item.aliases)].join(' ').toLowerCase()},'aria-pressed':String(identities[index]===selectedId),onClick:()=>{Gui.bookSelectedCharacterId=identities[index];Gui.worldManagerSelectedCharacterId=identities[index];queueGuiNavigationRender();}
-        },[guiEl('span',{class:'cabinet-initial','aria-hidden':'true',text:bookCharacterName(item).slice(0,1)}),guiEl('span',{},[guiEl('strong',{text:bookCharacterName(item)}),guiAsArray(item.aliases).length?guiEl('small',{text:item.aliases.slice(0,2).join(' · ')}):null])]))),
-        guiEl('p',{class:'cabinet-note',dataset:{characterSearchEmpty:'true'},hidden:rows.some(item=>[bookCharacterName(item),...guiAsArray(item.aliases)].join(' ').toLowerCase().includes(characterQuery)),text:'일치하는 인물이 없습니다.'})
-      ]),
-      guiEl('div',{class:'libra-book-character-spread'},[guiEl('article',{class:'libra-book-character-sheet'},[
-        guiEl('header',{class:'libra-book-character-head'},[
-          guiEl('div',{class:'cabinet-monogram','aria-hidden':'true'},[guiEl('span',{text:name.slice(0,1)}),guiEl('small',{text:'PERSON'})]),
-          guiEl('div',{},[guiEl('span',{class:'libra-book-eyebrow',text:'CHARACTER ENTRY'}),guiEl('h2',{text:name}),aliases.length?guiEl('p',{class:'libra-book-subtitle',text:'별칭 · '+aliases.join(' · ')}):null,guiEl('div',{class:'libra-book-source-meta'},[worldManagerSourceBadge('characters',row,view),bookDomainFreshness(view,'characters')])])
-        ]),
-        lead?guiEl('section',{class:'cabinet-now'},[guiEl('small',{text:'기록된 상황 · 상태와 목표'}),guiEl('p',{class:'libra-book-prose-lead',text:lead})]):null,
-        guiEl('nav',{class:'cabinet-tabs','aria-label':'인물 기록 분류'},tabDefs.map(([id,label])=>guiEl('button',{type:'button',dataset:{characterTab:id},'aria-pressed':String(active===id),text:label,onClick:()=>{Gui.bookCharacterTab=id;queueGuiNavigationRender();}}))),
-        ...tabDefs.map(([id,label])=>guiEl('section',{hidden:id!==active,dataset:{characterTabPanel:id},'aria-label':label},id==='relationships'?[
-          guiEl('aside',{class:'libra-book-relations-sheet'},[guiEl('h3',{text:'서로를 향한 관계'}),guiEl('p',{class:'cabinet-note',text:'한쪽의 신뢰가 상대의 신뢰를 뜻하지 않습니다.'}),...relationCards,related.length>relationCards.length?guiEl('button',{type:'button',class:'libra-book-inline-action',text:'관계 '+(related.length-relationCards.length)+'개 더 보기',onClick:()=>bookSelectPeopleSection('relationships')}):null,!related.length?guiEl('p',{class:'cabinet-note',text:'아직 기록된 관계가 없습니다.'}):null])
-        ]:[
-          renderGroup(groups.find(g=>g.id===id)),
-
-          !groups.find(g=>g.id===id).facts.length?guiEl('p',{class:'cabinet-note',text:id==='knowledge'?'이 인물이 알고 있는 내용으로 기록된 정보가 없습니다.':id==='affiliations'?'명시된 소속 기록이 없습니다.':id==='preferences'?'기록된 선호가 없습니다.':id==='boundaries'?'기록된 경계가 없습니다.':'이 분류의 정보는 아직 기록되지 않았습니다.'}):null,
-          id==='knowledge'?guiEl('p',{class:'cabinet-note',text:'대화에서 확인된 지식을 표시합니다. 기록이 없다는 이유로 모른다고 단정하지 않습니다.'}):null,
-          id==='affiliations'?guiEl('div',{},[guiEl('h3',{text:'연결된 세계 기록'}),guiEl('div',{class:'cabinet-world-links'},worldLinks.map(link=>guiEl('button',{type:'button',class:'cabinet-world-link',dataset:{characterWorldLink:link.row.id},onClick:()=>{Gui.bookBrowse_world={query:'',kind:'',selected:link.row.id};Gui.bookWorldSection='guide';bookNavigate('world');}},[guiEl('small',{text:link.labels.join(' · ')}),guiEl('strong',{text:text(link.row.name||'이름 없는 항목')}),guiEl('small',{text:'세계 도감에서 펼치기 →'})]))),!worldLinks.length?guiEl('p',{class:'cabinet-note',text:'연결된 세계 항목이 없습니다.'}):null]):null
-        ])),
-        cleared.length?guiEl('p',{class:'cabinet-note',text:'명시적으로 해제된 정보 · '+cleared.map(worldManagerArticleFieldLabel).join(' · ')}):null,
-        guiEl('div',{class:'libra-book-inline-links'},[guiEl('button',{class:'libra-book-inline-action strong',type:'button',text:'인물 상세 · 관리',onClick:()=>bookSelectPeopleSection('characters')}),guiEl('p',{class:'cabinet-note',text:'원문이 확인해 준 정보만 · 인물의 특징과 현재 상황을 나누어 기록'})])
-      ])])
-    ]);
-  };
-
-  const BOOK_WORLD_KIND_LABELS = Object.freeze({
-    location: 'LOCATION', organization: 'FACTION', faction: 'FACTION', rule: 'RULE', object: 'OBJECT', environment: 'ENVIRONMENT', condition: 'CONDITION', other: 'WORLD'
-  });
-
-  const buildBookSaveBar = () => guiEl('footer', { class: 'libra-book-save-bar', dataset: { bookSaveBar: 'true' } }, [
-    guiEl('span', { class: 'libra-book-settings-dirty', dataset: { settingsRoomSaveStatus: 'true' }, role: 'status', 'aria-live': 'polite', text: Gui.settingsRoomSaveStatus || (Gui.dirty ? '저장하지 않은 변경' : '변경 없음') }),
-    guiEl('button', { class: 'libra-book-settings-action', type: 'button', dataset: { settingsRoomRevert: 'true' }, text: '되돌리기', disabled: Gui.settingsRoomSaving === true || !Gui.dirty, onClick: () => void revertGuiStateFromStorage() }),
-    guiEl('button', { class: 'libra-book-settings-action primary', type: 'button', dataset: { settingsRoomSave: 'true' }, text: Gui.settingsRoomSaving ? '저장 중…' : '설정 저장', disabled: Gui.settingsRoomSaving === true, onClick: () => void saveSettingsRoom() })
+  const buildBookSaveBar = () => guiEl('footer',{class:'savebar',dataset:{bookSaveBar:'true'}},[
+    guiEl('span',{class:'hint',dataset:{settingsRoomSaveStatus:'true'},role:'status','aria-live':'polite',text:Gui.settingsRoomSaveStatus||(Gui.dirty?'저장되지 않은 변경':'저장됨')}),
+    guiEl('div',{class:'cluster'},[
+      guiEl('button',{class:'btn',type:'button',dataset:{settingsRoomRevert:'true'},text:'되돌리기',disabled:Gui.settingsRoomSaving===true||!Gui.dirty,onClick:()=>void revertGuiStateFromStorage()}),
+      guiEl('button',{class:'btn btn--primary',type:'button',dataset:{settingsRoomSave:'true'},text:Gui.settingsRoomSaving?'저장 중…':'설정 저장',disabled:Gui.settingsRoomSaving===true,onClick:()=>void saveSettingsRoom()})
+    ])
   ]);
-
-  const resetBookWritingScroll = () => { const body = Gui.app?.querySelector('.libra-book-writing-content'); if (body) body.scrollTop = 0; };
-
-
-
-
-
-  const buildBookInputPromptEditor = () => {
-    setSharedCustomPromptDomain('input_writer');
-    return guiEl('div', { class: 'libra-book-input-prompts', dataset: { bookInputPrompts: 'true' } }, [
-      guiEl('button', { class: 'libra-book-tool-link', type: 'button', text: '← 인풋 작성 설정', onClick: () => { Gui.bookInputPromptOpen = false; resetBookWritingScroll(); queueGuiNavigationRender(); } }),
-      buildLibraPromptStudioPanel({ family: activeGuiResponseFamily(), allowedDomains: ['input_writer'] })
-    ]);
-  };
-
-
-
-
-
-
-
-  const buildBookLibraAdvancedPanel = () => guiEl('div', {}, [buildLibraLiveContextSettingsPanel(),buildLibraRecallViewerPanel()]);
 
   const openBookMemoryAdvancedSettings = () => { Gui.pipelineHubSection = 'memory_pipeline'; selectBookSettingsRoomSection('pipeline'); };
-  const buildBookMemoryAdvancedSettings = () => guiEl('div', { dataset: { bookMemoryAdvanced: 'true' } }, [
-    buildLibrarianAnalyzerPanel(false, true), buildGenerationPolicyPanel(),
-    buildMemoryPromptStudioDisclosure('기억 분석 프롬프트', 'libra-book-memory-prompts')
-  ]);
-  const openBookInputAdvancedSettings = () => {
-    closeBookQuickSettings(false); Gui.bookInputPromptOpen = false; Gui.bookInputAdvancedOpen = true;
-    Gui.bookWritingTab = 'input'; resetBookWritingScroll(); bookNavigate('writing');
-  };
-  const buildBookInputAdvancedSettings = () => guiEl('div', { class: 'libra-book-tool-stack', dataset: { bookInputAdvanced: 'true' } }, [
-    guiEl('button', { class: 'libra-book-tool-link', type: 'button', text: '← 인풋 작성 설정', onClick: () => { Gui.bookInputAdvancedOpen = false; resetBookWritingScroll(); queueGuiNavigationRender(); } }),
-    buildResponseConsumerPolicyPanel('input_writer'), buildInputAssistSettingsPanel({ family: activeGuiResponseFamily() })
-  ]);
-
-
-  const bookWritingResultCss = `
-  .libra-book-writing-workspace :is(.libra-recall-metric,.sga-result-stage-tab,.sga-result-selected-head,.sga-result-empty.prominent,.sga-live-result-card,.sga-final-draft-result){background:#f6ecdc!important;border-color:#ccb28f!important;color:#493626!important;opacity:1}
-  .libra-book-writing-workspace :is(.libra-recall-metric,.sga-result-stage-tab,.sga-result-selected-head,.sga-live-result-card,.sga-final-draft-result) :is(strong,h4){color:#493626!important}
-  .libra-book-writing-workspace .sga-result-stage-tab span{color:#493626!important}
-  .libra-book-writing-workspace :is(.libra-recall-metric span,.sga-result-stage-tab small,.sga-result-selected-head span,.sga-result-empty,.sga-live-result-card .sga-note){color:#644f3d!important;font-size:12px;line-height:1.7}
-  .libra-book-writing-workspace .sga-result-stage-tab.active{background:#e5d2ae!important;border-color:#946037!important;box-shadow:inset 0 -2px #946037}
-  .libra-book-writing-workspace :is(.sga-live-result-text,.sga-live-result-code,.sga-result-code){background:#fffaf0!important;color:#493626!important;border-color:#d5b996!important}
-  .libra-book-writing-workspace .sga-result-stage-tab small.good{color:#31583d!important}.libra-book-writing-workspace .sga-result-stage-tab small.warn{color:#795019!important}.libra-book-writing-workspace .sga-result-stage-tab small.danger{color:#922e32!important}.libra-book-writing-workspace .sga-result-stage-tab small.run{color:#354f85!important}
-  `;
-
 
   const buildBookJobSummary = (job = LibraMemoryCore.state.canonicalJob) => {
-    if (!job) return guiEl('p',{class:'sga-note',text:'기억 생성 작업이 없습니다.'});
+    if (!job) return guiEl('p',{class:'hint',text:'기억 생성 작업이 없습니다.'});
     const running=['preparing','running','adopting','cancel_requested'].includes(job.state);
     const failedCount=Math.max(0,Number(job.failed||0)),savedCount=Math.max(0,Number(job.completed||0));
     const warningTitle=failedCount>0?'일부 구간 저장 미완료':savedCount>0?'기억 저장 완료 · 참고 사항 있음':'작업 완료 · 결과 확인 필요';
@@ -80059,39 +77404,17 @@ html,body{width:100%;height:100%;overflow:hidden}
     }
     if(guiAsArray(job.stateWarnings).length)notices.push(`상태 추적 참고 사항 ${job.stateWarnings.length}구간 · 기억 저장 결과와 별도입니다. 상태 상세에서 반영 범위를 확인할 수 있습니다.`);
     const total=Math.max(0,Number(job.total||0)),done=Number(job.completed||0)+Number(job.failed||0)+Number(job.skipped||0);
-    return guiEl('section',{class:'libra-book-job-summary',dataset:{bookJobSummary:job.state},role:'status'},[
+    return guiEl('section',{class:"stack",dataset:{bookJobSummary:job.state},role:'status'},[
       guiEl('strong',{text:labels[job.state]||'최근 기억 작업'}),
       guiEl('p',{text:`저장 완료 ${savedCount}구간${failedCount?' · 저장 미완료 '+failedCount+'구간':''}${Number(job.skipped||0)>0?' · 건너뜀 '+Number(job.skipped)+'구간':''}`}),
       notices.length?guiEl('details',{},[guiEl('summary',{text:'저장 결과 자세히 보기'}),...notices.map(note=>guiEl('p',{text:note}))]):null,
       total?guiEl('progress',{max:total,value:Math.min(total,done),'aria-label':'기억 생성 진행률'}):null,
-      running?guiEl('button',{class:'sga-btn',type:'button',text:job.state==='cancel_requested'?'취소 요청됨':'작업 취소',disabled:job.state==='cancel_requested',onClick:()=>void LibraMemoryCore.cancelCanonicalJob({jobId:job.jobId}).catch(error=>guiSetStatus(String(error.message||error),true))}):null
+      running?guiEl('button',{class:'btn',type:'button',text:job.state==='cancel_requested'?'취소 요청됨':'작업 취소',disabled:job.state==='cancel_requested',onClick:()=>void LibraMemoryCore.cancelCanonicalJob({jobId:job.jobId}).catch(error=>guiSetStatus(String(error.message||error),true))}):null
     ]);
   };
 
   // One list/detail interaction shared by World and Story; draft selection is GUI-only.
-  const buildBookBrowse = ({id,items,renderDetail,kinds=[]}) => {
-    const key='bookBrowse_'+id;
-    const state=Gui[key]||(Gui[key]={query:'',kind:'',selected:'',detail:false});
-    const filtered=items.filter(item=>(!state.kind||item.kind===state.kind)&&(!state.query||[item.title,item.body,item.kind].join(' ').toLowerCase().includes(state.query.toLowerCase())));
-    const selected=filtered.find(item=>item.id===state.selected)||filtered[0];
-    if(selected)state.selected=selected.id;
-    const refresh=()=>queueGuiNavigationRender();
-    return guiEl('div',{class:'libra-book-browse',dataset:{bookBrowse:id,readerDetail:String(state.detail)}},[
-      guiEl('aside',{class:'libra-book-browse-list'},[
-        guiEl('div',{class:'libra-book-rail-search'},[
-          guiEl('input',{type:'search',value:state.query,placeholder:'검색', 'aria-label':id==='world'?'세계 도감 검색':'서사 연감 검색',onInput:event=>{state.query=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();refresh();}}}),
-          guiEl('button',{type:'button',text:'찾기',onClick:event=>{event.currentTarget.parentElement.querySelector('input').blur();refresh();}})
-        ]),
-        kinds.length?guiEl('select',{'aria-label':'종류 필터',onChange:event=>{state.kind=event.target.value;refresh();}},optionNodes([['','전체 종류'],...kinds.map(k=>[k,k])],state.kind)):null,
-        guiEl('nav',{'aria-label':'항목 목록'},filtered.map(item=>guiEl('button',{type:'button',class:item.id===selected?.id?'active':'','aria-current':item.id===selected?.id?'true':null,onClick:()=>{state.selected=item.id;state.detail=true;refresh();}},[guiEl('small',{text:item.kind}),guiEl('strong',{text:item.title})]))),
-        !filtered.length?guiEl('p',{text:'일치하는 기록이 없습니다.'}):null
-      ]),
-      guiEl('article',{class:'libra-book-browse-detail'},[
-        guiEl('button',{type:'button',class:'libra-book-mobile-back',text:'← 목록으로',onClick:()=>{state.detail=false;refresh();}}),
-        selected?renderDetail(selected):guiEl('p',{text:'목록에서 기록을 선택해 주세요.'})
-      ])
-    ]);
-  };
+
 
   // World-only read model. Never writes State, infers relations from prose, or calls a model.
   const BOOK_WORLD_KINDS = Object.freeze({location:'장소',organization:'세력',faction:'세력',rule:'규칙',object:'사물',environment:'환경',condition:'조건',other:'기타'});
@@ -80162,68 +77485,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         cleared:[...new Set([...Object.keys(guiAsObject(row.clearedFieldEvidence)),...Object.keys(guiAsObject(row.clearedFieldCorrectionProvenance))])].filter(key=>BOOK_WORLD_AUTO_FIELDS.has(key)).map(worldManagerArticleFieldLabel)};
     });
   };
-  const bookWorldAtlasCss = `
-  .libra-world-atlas{--atlas-ink:#493626;--atlas-muted:#806a50;--atlas-line:#d5b996;--atlas-paper:#f2e7d4;--atlas-page:#fcf4e6;--atlas-accent:#946037;display:grid;grid-template-columns:210px minmax(0,1fr);border:1px solid var(--atlas-line);border-radius:10px;background:var(--atlas-page);color:var(--atlas-ink);overflow:hidden;min-width:0}
-  .libra-world-atlas *{box-sizing:border-box}.libra-world-atlas button{font:inherit;cursor:pointer;color:inherit}.libra-world-atlas button:focus-visible,.libra-world-atlas input:focus-visible{outline:3px solid var(--atlas-accent);outline-offset:2px}.libra-world-atlas h2,.libra-world-atlas h3,.libra-world-atlas p{margin:0}.libra-world-atlas small{font-size:11px;color:var(--atlas-muted)}
-  .libra-world-atlas .atlas-rail{padding:20px 14px;background:var(--atlas-paper);border-right:1px solid var(--atlas-line);min-width:0}.libra-world-atlas .atlas-search{display:flex;gap:5px;margin-bottom:20px}.libra-world-atlas .atlas-search input{width:100%;min-width:0;font:inherit;font-size:13px;border:1px solid var(--atlas-line);border-radius:5px;background:var(--atlas-page);color:var(--atlas-ink);padding:8px}.libra-world-atlas .atlas-search button{border:1px solid var(--atlas-line);border-radius:5px;background:var(--atlas-page);padding:5px;font-size:12px;white-space:nowrap}.libra-world-atlas .atlas-kicker{color:var(--atlas-accent);font:11px Georgia,serif;letter-spacing:2px;margin-bottom:10px}
-  .libra-world-atlas .atlas-categories{display:grid;gap:3px}.libra-world-atlas .atlas-category{border:0;background:transparent;display:flex;justify-content:space-between;gap:8px;text-align:left;padding:8px 10px;border-radius:5px;font-size:13px}.libra-world-atlas .atlas-category[aria-pressed=true]{background:#e5d2ae;color:#75481e}.libra-world-atlas .atlas-index{border-top:1px solid var(--atlas-line);margin-top:20px;padding-top:16px}.libra-world-atlas .atlas-entry{display:block;width:100%;text-align:left;border:0;border-left:2px solid transparent;background:transparent;margin:3px 0;padding:9px 10px;overflow-wrap:anywhere}.libra-world-atlas .atlas-entry[aria-current=true]{background:var(--atlas-page);border-left-color:var(--atlas-accent)}.libra-world-atlas .atlas-entry strong{display:block;font-weight:500;font-size:13px}.libra-world-atlas .atlas-rail-note{font-size:11px;color:var(--atlas-muted);margin-top:20px;line-height:1.7}
-  .libra-world-atlas .atlas-article{padding:25px 28px;min-width:0;overflow-wrap:anywhere}.libra-world-atlas .atlas-breadcrumb,.libra-world-atlas .atlas-footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--atlas-muted)}.libra-world-atlas .atlas-breadcrumb{margin-bottom:20px}.libra-world-atlas .atlas-heading{display:flex;align-items:center;justify-content:space-between;gap:15px}.libra-world-atlas h2{font:500 30px/1.4 Batang,Georgia,serif;margin:5px 0 12px}.libra-world-atlas .atlas-seal{border:1px solid var(--atlas-line);outline:1px solid var(--atlas-line);outline-offset:4px;border-radius:50%;width:62px;height:62px;flex-shrink:0;display:grid;place-items:center;color:var(--atlas-accent);font:15px Batang,serif}.libra-world-atlas .atlas-lead{font-size:14px;line-height:1.9;color:var(--atlas-muted);white-space:pre-wrap}.libra-world-atlas .atlas-aliases{font-size:12px;color:var(--atlas-muted);margin-top:10px}.libra-world-atlas .atlas-section-title{display:flex;align-items:center;gap:12px;margin:24px 0 12px}.libra-world-atlas .atlas-section-title h3{font:500 17px Batang,Georgia,serif;white-space:nowrap}.libra-world-atlas .atlas-section-title:after{content:'';height:1px;background:var(--atlas-line);flex:1}
-  .libra-world-atlas .atlas-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 22px;margin:0}.libra-world-atlas .atlas-fact{border-bottom:1px solid var(--atlas-line);padding:10px 0}.libra-world-atlas .atlas-fact dt{font-size:11px;color:var(--atlas-muted);margin-bottom:4px}.libra-world-atlas .atlas-fact dd{margin:0;font-size:13px;line-height:1.8;white-space:pre-wrap}.libra-world-atlas .atlas-fact[data-world-field=rule]{grid-column:1/-1}.libra-world-atlas .atlas-empty{font-size:13px;line-height:1.8;color:var(--atlas-muted);padding:12px 0}.libra-world-atlas .atlas-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.libra-world-atlas .atlas-link{border:1px solid var(--atlas-line);border-radius:6px;background:var(--atlas-paper);text-align:left;padding:13px;display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}.libra-world-atlas .atlas-link:hover{border-color:var(--atlas-accent)}.libra-world-atlas .atlas-link strong{font:500 16px/1.5 Batang,serif}.libra-world-atlas .atlas-link small{color:var(--atlas-accent)}.libra-world-atlas .atlas-link span{font-size:11px;color:var(--atlas-muted)}
-  .libra-world-atlas .atlas-evidence-grid{display:grid;grid-template-columns:1fr 1.15fr;gap:22px}.libra-world-atlas .atlas-timeline{padding:0;list-style:none;margin:0}.libra-world-atlas .atlas-timeline li{border-left:1px solid var(--atlas-line);padding:0 0 13px 13px;font-size:12px}.libra-world-atlas .atlas-timeline time{display:block;color:var(--atlas-accent);font-size:11px}.libra-world-atlas blockquote{border-left:2px solid var(--atlas-line);margin:0;padding-left:13px;font:13px/1.9 Batang,serif;color:var(--atlas-muted);white-space:pre-wrap}.libra-world-atlas details{margin-top:12px;font-size:12px;color:var(--atlas-muted)}.libra-world-atlas summary{cursor:pointer;color:var(--atlas-accent)}.libra-world-atlas details blockquote{margin-top:12px}.libra-world-atlas .atlas-footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--atlas-line);align-items:center}.libra-world-atlas .atlas-action{border:0;background:transparent;padding:4px 0;color:var(--atlas-accent);text-align:left;font-size:12px}.libra-world-atlas .atlas-notice{margin:12px 0;padding:10px;border-left:3px solid #b3874a;background:var(--atlas-paper);font-size:12px}.libra-world-atlas .atlas-more{margin-top:10px}
-  @media(max-width:900px){.libra-world-atlas{grid-template-columns:175px minmax(0,1fr)}.libra-world-atlas .atlas-article{padding:22px 18px}.libra-world-atlas .atlas-evidence-grid{grid-template-columns:1fr}.libra-world-atlas .atlas-seal{display:none}}
-  @media(max-width:600px){.libra-world-atlas{display:block}.libra-world-atlas .atlas-rail{border-right:0;border-bottom:1px solid var(--atlas-line)}.libra-world-atlas .atlas-categories{grid-template-columns:repeat(3,minmax(0,1fr))}.libra-world-atlas .atlas-category{padding:8px 6px;font-size:12px}.libra-world-atlas .atlas-index nav{display:grid;grid-template-columns:1fr 1fr}.libra-world-atlas .atlas-index{margin-top:12px;padding-top:12px}.libra-world-atlas .atlas-rail-note{display:none}.libra-world-atlas .atlas-article{padding:20px 16px}.libra-world-atlas .atlas-links{grid-template-columns:1fr}.libra-world-atlas h2{font-size:26px}.libra-world-atlas .atlas-category,.libra-world-atlas .atlas-action,.libra-world-atlas summary{min-height:38px}.libra-world-atlas .atlas-search input{font-size:16px}}
-  `;
-  const buildBookWorldGuideProjection = () => {
-    const view=worldManagerSnapshotView(),items=bookWorldAtlasModel(view);
-    const state=Gui.bookBrowse_world||(Gui.bookBrowse_world={query:'',kind:'',selected:''});
-    const refresh=()=>queueGuiNavigationRender();
-    const query=text(state.query||'').trim().toLocaleLowerCase();
-    const filtered=items.filter(item=>(!state.kind||item.kind===state.kind)&&(!query||[item.title,item.lead,...item.aliases,...item.facts.map(f=>f.value)].join(' ').toLocaleLowerCase().includes(query)));
-    const selected=filtered.find(item=>item.id===state.selected)||filtered[0];
-    if(selected)state.selected=selected.id;
-    const section=title=>guiEl('div',{class:'atlas-section-title'},[guiEl('h3',{text:title})]);
-    const open=target=>{
-      if(target.domain==='world'){state.selected=target.id;state.kind='';state.query='';state.limit=40;refresh();}
-      else {Gui.bookSelectedCharacterId=target.id;Gui.worldManagerSelectedCharacterId=target.id;Gui.bookCharacterDetail=true;bookNavigate('people');}
-    };
-    const linkNode=edge=>guiEl('button',{class:'atlas-link',type:'button',dataset:{worldLink:edge.target.id},onClick:()=>open(edge.target)},[
-      guiEl('small',{text:edge.label}),guiEl('strong',{text:text(edge.target.row.name||'이름 없는 항목')}),guiEl('span',{text:(edge.target.domain==='characters'?'인물':BOOK_WORLD_KINDS[edge.target.row.kind]||'기타')+' 항목 펼치기 ↗'})
-    ]);
-    const renderArticle=item=>{
-      const facts=item.facts;
-      const lead=item.lead||(facts.length?facts.slice(0,2).map(f=>f.label+' · '+f.value).join('\n'):'이름이 확인된 세계 항목입니다. 상태와 연결 정보는 아직 기록되지 않았습니다.');
-      const evidence=item.evidence,confirmations=evidence.length?evidence:item.confirmations;
-      const corrected=Boolean(item.row.correctionProvenance||Object.keys(guiAsObject(item.row.fieldCorrectionProvenance)).length);
-      return [
-        guiEl('div',{class:'atlas-breadcrumb'},[guiEl('span',{text:'세계 도감 / '+item.kind}),guiEl('span',{text:'항목 '+(items.indexOf(item)+1)+' / '+items.length})]),
-        guiEl('div',{class:'atlas-heading'},[guiEl('div',{},[guiEl('div',{class:'atlas-kicker',text:'WORLD REFERENCE'}),guiEl('h2',{text:item.title})]),guiEl('div',{class:'atlas-seal','aria-hidden':'true',text:item.kind})]),
-        guiEl('p',{class:'atlas-lead',text:lead}),item.aliases.length?guiEl('p',{class:'atlas-aliases',text:'다른 이름 · '+item.aliases.join(' · ')}):null,
-        item.pending.length?guiEl('p',{class:'atlas-notice',text:'일부 상태 확인 필요 · '+item.pending.map(p=>worldManagerArticleFieldLabel(p.field||p.domain)).join(' · ')+'. 마지막으로 확인된 값을 표시합니다.'}):null,
-        item.cleared.length?guiEl('p',{class:'atlas-notice',text:'명시적으로 해제됨 · '+item.cleared.join(' · ')}):null,
-        section('기록된 사실'),facts.length?guiEl('dl',{class:'atlas-facts'},facts.map(f=>guiEl('div',{class:'atlas-fact',dataset:{worldField:f.key}},[guiEl('dt',{text:f.label}),guiEl('dd',{text:f.value})]))):guiEl('p',{class:'atlas-empty',text:'확인된 세부 정보가 생기면 이곳에 함께 정리됩니다.'}),
-        section('이 항목과 이어지는 세계'),item.links.length?guiEl('div',{class:'atlas-links'},item.links.slice(0,6).map(linkNode)):guiEl('p',{class:'atlas-empty',text:'아직 연결된 장소·세력·인물이 기록되지 않았습니다.'}),
-        item.links.length>6?guiLazyDetails({class:'atlas-more'},guiEl('summary',{text:'연결된 항목 '+(item.links.length-6)+'개 더 보기'}),()=>guiEl('div',{class:'atlas-links'},item.links.slice(6).map(linkNode))):null,
-        guiEl('div',{class:'atlas-evidence-grid'},[
-          guiEl('section',{},[section('확인된 기록'),confirmations.length?guiEl('ol',{class:'atlas-timeline'},confirmations.slice(0,4).map(e=>guiEl('li',{},[guiEl('time',{text:e.turn?'T'+e.turn:'턴 미상'}),guiEl('span',{text:e.fields.filter(f=>f!=='기록').join(' · ')||'항목 근거'})]))):guiEl('p',{class:'atlas-empty',text:'현재 항목에 연결된 확인 턴이 없습니다.'}),guiEl('small',{text:'현재 정보의 근거입니다. 전체 변경 이력은 관리 화면에서 확인할 수 있습니다.'})]),
-          guiEl('section',{},[section('기록의 출처'),corrected?guiEl('p',{class:'atlas-notice',text:'사용자 교정이 포함되어 있습니다. 원문 인용과 현재 교정값은 다를 수 있습니다.'}):null,evidence.length?guiEl('blockquote',{text:evidence[0].quote}):guiEl('p',{class:'atlas-empty',text:confirmations.length?'연결된 기억의 확인 시점은 왼쪽에 표시됩니다. 원문은 근거 보기에서 확인하세요.':'아직 인용 근거가 없습니다. 근거 보기에서 저장된 기록을 확인할 수 있습니다.'}),evidence.length?guiLazyDetails({},guiEl('summary',{text:'인용 근거 '+evidence.length+'개 펼치기'}),()=>guiEl('div',{},evidence.map(e=>guiEl('section',{},[guiEl('small',{text:(e.turn?'T'+e.turn:'턴 미상')+' · '+e.fields.join(' · ')}),guiEl('blockquote',{text:e.quote})])))):null])
-        ]),
-        guiEl('footer',{class:'atlas-footer'},[bookDomainFreshness(view,'world'),guiEl('button',{class:'atlas-action',type:'button',text:'근거 보기 · 관리 ↗',onClick:()=>{Gui.worldManagerSelectedWorldId=item.recordId||item.id;bookSelectWorldSection('details');}})])
-      ];
-    };
-    const limit=Math.max(40,Number(state.limit)||40);
-    return guiEl('section',{class:'libra-world-atlas',dataset:{bookWorldAtlas:'true'}},[
-      guiEl('style',{text:bookWorldAtlasCss+bookReferenceTypographyCss}),
-      guiEl('aside',{class:'atlas-rail'},[
-        guiEl('div',{class:'atlas-search'},[guiEl('input',{type:'search',value:state.query||'',placeholder:'도감에서 찾기','aria-label':'세계 도감 검색',onInput:event=>{state.query=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();state.limit=40;refresh();}}}),guiEl('button',{type:'button',text:'찾기',onClick:()=>{state.limit=40;refresh();}})]),
-        guiEl('div',{class:'atlas-kicker',text:'COLLECTIONS'}),guiEl('nav',{class:'atlas-categories','aria-label':'세계 도감 분류'},['',...new Set(Object.values(BOOK_WORLD_KINDS))].map(kind=>guiEl('button',{class:'atlas-category',type:'button','aria-pressed':String((state.kind||'')===kind),onClick:()=>{state.kind=kind;state.limit=40;refresh();}},[guiEl('span',{text:kind||'전체'}),guiEl('small',{text:String(kind?items.filter(i=>i.kind===kind).length:items.length)})]))),
-        guiEl('div',{class:'atlas-index'},[guiEl('div',{class:'atlas-kicker',text:'ENTRIES · '+filtered.length}),guiEl('nav',{'aria-label':'세계 도감 항목'},filtered.slice(0,limit).map(item=>guiEl('button',{class:'atlas-entry',type:'button','aria-current':String(item===selected),dataset:{worldEntry:item.id},onClick:()=>{state.selected=item.id;refresh();}},[guiEl('small',{text:item.kind}),guiEl('strong',{text:item.title})]))),filtered.length>limit?guiEl('button',{class:'atlas-action',type:'button',text:'항목 더 보기 ('+limit+'/'+filtered.length+')',onClick:()=>{state.limit=limit+40;refresh();}}):null]),
-        guiEl('p',{class:'atlas-rail-note',text:'기록된 사실은 서로 연결됩니다. 항목을 골라 한 페이지씩 읽어보세요.'})
-      ]),
-      guiEl('article',{class:'atlas-article','aria-label':'세계 도감 상세'},selected?renderArticle(selected):[
-        guiEl('div',{class:'atlas-kicker',text:'WORLD REFERENCE'}),guiEl('h2',{text:items.length?'일치하는 기록이 없습니다':'아직 세계 기록이 없습니다'}),guiEl('p',{class:'atlas-empty',text:items.length?'다른 검색어나 분류를 선택해 주세요.':'기억에서 확인된 장소·세력·규칙·사물·환경이 이곳에 정리됩니다.'})
-      ])
-    ]);
-  };
+
 
   // Read-only almanac. Historical assertions never replace current State.
   // T09: `arcs` carries the story-flow, turning-point and motif entries the model
@@ -80348,65 +77610,6 @@ html,body{width:100%;height:100%;overflow:hidden}
     }catch(error){if(state===bookNarrativeHistoryState())state.error=String(error?.message||error);}
     finally{state.loading=false;queueGuiNavigationRender();}
   };
-  const bookAlmanacCss = `
-  .libra-almanac{--al-paper:#f5eddf;--al-page:#fffaf0;--al-line:#d8cbb4;--al-ink:#342f27;--al-muted:#796e5d;--al-accent:#466452;--al-soft:#e8ebde;color:var(--al-ink);min-width:0}
-  .libra-almanac *{box-sizing:border-box}.libra-almanac button{cursor:pointer;font:inherit;color:inherit}.libra-almanac .al-now{background:var(--al-soft);border:1px solid var(--al-line);border-left:3px solid var(--al-accent);border-radius:3px 9px 9px 3px;padding:20px 24px;margin-bottom:22px}.libra-almanac .al-now small{color:var(--al-accent)}.libra-almanac .al-now h2{font:500 22px/1.5 Batang,serif;margin:6px 0 12px}.libra-almanac .al-now p{font-size:14px;line-height:1.8;white-space:pre-wrap}.libra-almanac .al-tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--al-line);gap:5px}.libra-almanac .al-tab{background:none;border:0;border-bottom:3px solid transparent;padding:12px 13px;font-size:13px;color:var(--al-muted)}.libra-almanac .al-tab[aria-pressed=true]{border-bottom-color:var(--al-accent);color:var(--al-accent)}
-  .libra-almanac .al-layout{display:grid;grid-template-columns:210px minmax(0,1fr);border:1px solid var(--al-line);border-top:0;border-radius:0 0 9px 9px;overflow:hidden}.libra-almanac .al-rail{padding:20px 12px;background:var(--al-paper);border-right:1px solid var(--al-line);min-width:0}.libra-almanac .al-rail-title{padding:0 10px 12px;font-size:11px;color:var(--al-muted)}.libra-almanac .al-entry{display:block;width:100%;text-align:left;background:transparent;border:1px solid transparent;border-radius:6px;padding:12px 10px;margin:0 0 7px;overflow-wrap:anywhere}.libra-almanac .al-entry[aria-pressed=true]{background:var(--al-page);border-color:var(--al-line)}.libra-almanac .al-entry small,.libra-almanac .al-entry span{display:block;font-size:11px;color:var(--al-muted)}.libra-almanac .al-entry small{color:var(--al-accent);margin-bottom:5px}.libra-almanac .al-entry strong{display:block;font:500 16px/1.6 Batang,serif;margin-bottom:5px}.libra-almanac .al-article{background:var(--al-page);padding:28px;min-width:0;overflow-wrap:anywhere}.libra-almanac .al-bread{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--al-muted)}.libra-almanac .al-title{font:500 30px/1.5 Batang,serif;margin:14px 0}.libra-almanac .al-lead{color:var(--al-muted);font-size:14px;line-height:1.8;white-space:pre-wrap}.libra-almanac .al-tags{display:flex;gap:6px;flex-wrap:wrap;margin:15px 0 20px}.libra-almanac .al-tags span{background:var(--al-soft);padding:3px 9px;border-radius:3px;font-size:11px;color:var(--al-accent)}.libra-almanac .al-section{display:flex;gap:12px;align-items:center;font:500 17px/1.5 Batang,serif;margin:24px 0 12px}.libra-almanac .al-section:after{content:'';height:1px;background:var(--al-line);flex:1}.libra-almanac .al-context{background:var(--al-soft);border-left:2px solid var(--al-accent);padding:10px 14px;font-size:13px;line-height:1.8;white-space:pre-wrap}.libra-almanac .al-timeline{list-style:none;padding:0;margin:0}.libra-almanac .al-timeline li{padding:0 0 17px 14px;border-left:1px solid var(--al-line);font-size:13px;line-height:1.8;white-space:pre-wrap}.libra-almanac .al-timeline small{display:block;color:var(--al-accent);font-size:11px}.libra-almanac .al-action{border:1px solid var(--al-line);border-radius:4px;background:var(--al-paper);padding:7px 10px;margin:4px 6px 4px 0;font-size:12px}.libra-almanac .al-evidence{border-top:1px solid var(--al-line);padding-top:14px;margin-top:18px;font-size:12px;color:var(--al-muted)}.libra-almanac summary{cursor:pointer;color:var(--al-accent)}.libra-almanac blockquote{border-left:2px solid var(--al-line);margin:12px 0;padding-left:12px;font:13px/1.8 Batang,serif;white-space:pre-wrap}.libra-almanac .al-note{font-size:12px;color:var(--al-muted);line-height:1.8}.libra-almanac .al-foot{border-top:1px solid var(--al-line);padding-top:16px;margin-top:20px}.libra-almanac .al-history{padding:16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:10px}.libra-almanac .al-error{width:100%;color:#a13c31;overflow-wrap:anywhere}.libra-almanac button:focus-visible,.libra-almanac summary:focus-visible{outline:3px solid #927241;outline-offset:2px}
-  @media(max-width:900px){.libra-almanac .al-layout{grid-template-columns:195px minmax(0,1fr)}.libra-almanac .al-article{padding:22px 18px}}
-  @media(max-width:600px){.libra-almanac .al-layout{display:block}.libra-almanac .al-rail{border-right:0;border-bottom:1px solid var(--al-line)}.libra-almanac .al-entries{display:grid;grid-template-columns:1fr 1fr;gap:5px}.libra-almanac .al-entry{margin:0;padding:9px}.libra-almanac .al-entry strong{font-size:14px}.libra-almanac .al-tab{padding:10px 8px;font-size:12px}.libra-almanac .al-title{font-size:26px}.libra-almanac .al-now{padding:17px}.libra-almanac .al-action,.libra-almanac summary{min-height:38px}}
-  `;
-  const buildBookNarrativeTocProjection = () => {
-    const view=worldManagerSnapshotView(),n=view.narrative,history=bookNarrativeHistoryState(),groups=bookNarrativeModel(view,history.chapters);
-    const active=BOOK_NARRATIVE_GROUPS.some(g=>g[0]===Gui.bookNarrativeTab)?Gui.bookNarrativeTab:(groups.threads.length?'threads':'events');
-    const query=text(Gui.bookNarrativeQuery||'').trim().toLowerCase();
-    const rows=groups[active].filter(r=>!query||[r.title,r.body,r.kind,r.status,...guiAsArray(r.rows).map(e=>e.text)].join(' ').toLowerCase().includes(query)),item=rows.find(r=>r.id===Gui.bookNarrativeSelected)||rows[0];
-    const choose=(group,id='')=>{Gui.bookNarrativeTab=group;Gui.bookNarrativeSelected=id;if(id)Gui.bookNarrativeQuery='';queueGuiNavigationRender();};
-    const action=(label,fn)=>guiEl('button',{type:'button',class:'al-action',text:label,onClick:fn});
-    const section=title=>guiEl('h3',{class:'al-section',text:title});
-    const turnLabel=t=>t>0?'T'+t:'턴 미상';
-    const info=[];
-    if(item?.row){
-      const r=item.row;
-      for(const [field,label] of [['introducedTurn','처음 기록'],['firstTurn','흐름 시작'],['resolvedTurn','해결 기록'],['updatedTurn','최근 변경'],['lastTurn','마지막 기록']])if(Number(r[field])>0)info.push([label,turnLabel(r[field])]);
-    }
-    const managementKey=!item?.historical&&item?.row?.id?(item.id.startsWith('thread-')?'worldManagerSelectedThreadId':!worldManagerIsUnified(view)&&item.id.startsWith('arc-')?'worldManagerSelectedArcId':!worldManagerIsUnified(view)&&item.id.startsWith('lock-')?'worldManagerSelectedLockId':''):'';
-    return guiEl('div',{class:'libra-almanac',dataset:{bookNarrativeAlmanac:'true'}},[
-      guiEl('style',{text:bookAlmanacCss+bookReferenceTypographyCss}),
-      guiEl('section',{class:'al-now'},[guiEl('small',{text:'지금 남아 있는 이야기'}),guiEl('h2',{text:groups.threads.length?'이어지는 이야기':'현재 이야기'}),guiEl('p',{text:text(n.summary||'아직 현재 이야기 요약이 없습니다.')}),bookDomainFreshness(view,'narrative')]),
-      guiEl('nav',{class:'al-tabs','aria-label':'서사 연감 분류'},BOOK_NARRATIVE_GROUPS.map(([id,label])=>guiEl('button',{type:'button',class:'al-tab',dataset:{narrativeGroup:id},'aria-pressed':String(active===id),text:label+' · '+groups[id].length,onClick:()=>choose(id)}))),
-      guiEl('div',{class:'al-history'},[
-        guiEl('input',{type:'search',value:Gui.bookNarrativeQuery||'',placeholder:'현재 분류에서 찾기','aria-label':'서사 연감 검색',style:'min-width:0;max-width:100%;padding:9px;color:var(--al-ink);background:var(--al-page);border:1px solid var(--al-line);border-radius:4px',onInput:event=>{Gui.bookNarrativeQuery=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();Gui.bookNarrativeSelected='';queueGuiNavigationRender();}}}),
-        guiEl('button',{type:'button',class:'al-action',text:'찾기',onClick:()=>{Gui.bookNarrativeSelected='';queueGuiNavigationRender();}}),query?action('검색 지우기',()=>{Gui.bookNarrativeQuery='';queueGuiNavigationRender();}):null
-      ]),
-      guiEl('div',{class:'al-layout'},[
-        guiEl('aside',{class:'al-rail'},[guiEl('div',{class:'al-rail-title',text:BOOK_NARRATIVE_GROUPS.find(g=>g[0]===active)[1]+' · 표시된 기록'}),guiEl('nav',{class:'al-entries','aria-label':'서사 기록 목록'},rows.map(r=>guiEl('button',{type:'button',class:'al-entry',dataset:{narrativeEntry:r.id},'aria-pressed':String(r===item),onClick:()=>choose(active,r.id)},[guiEl('small',{text:r.status}),guiEl('strong',{text:r.title}),guiEl('span',{text:r.kind+' · '+turnLabel(r.turn)})])))]),
-        guiEl('article',{class:'al-article','aria-live':'polite'},item?[
-          guiEl('div',{class:'al-bread'},[guiEl('span',{text:item.kind+' / '+item.status}),guiEl('span',{text:(item.historical?'당시 기록 · ':'기록 기준 · ')+turnLabel(item.turn)})]),
-          guiEl('h2',{class:'al-title',text:item.title}),
-          item.body&&item.group!=='threads'?guiEl('p',{class:'al-lead',text:item.body}):null,
-          guiEl('div',{class:'al-tags'},[guiEl('span',{text:item.status}),...info.map(([label,value])=>guiEl('span',{text:label+' · '+value}))]),
-          ...(item.group==='threads'&&item.body?[section('현재 의미'),guiEl('p',{class:'al-context',text:item.body})]:[]),
-          item.historical?guiEl('p',{class:'al-context',text:'정본 기억에 남은 당시 기록입니다. 이후 다시 열린 과제나 현재 State를 대신하지 않습니다.'}):null,
-          ...(item.rows?[section('이 턴에 일어난 일'),guiEl('ol',{class:'al-timeline'},item.rows.map((r,i)=>guiEl('li',{},[guiEl('small',{text:'기록 '+(i+1)+(r.historical?' · 기억 이력':'')}),guiEl('span',{text:r.text}),r.legacyRefs?.length?guiEl('small',{text:'근거 위치 · '+r.legacyRefs.join(', ')}):null])))]:[]),
-          ...(item.links.length?[section('함께 읽을 기록'),...item.links.map(link=>action(link.title+' →',()=>choose(link.group,link.id)))]:[]),
-          item.evidence.length?guiEl('details',{class:'al-evidence'},[guiEl('summary',{text:'근거 원문 · '+item.evidence.length+'개 펼치기'}),...item.evidence.map(e=>guiEl('div',{},[guiEl('blockquote',{text:e.quote}),guiEl('small',{text:e.ref||'원문 위치 미기록'})]))]):guiEl('p',{class:'al-note',text:'이 항목에 연결된 인용 원문이 없습니다. 기록되지 않은 근거는 만들어 표시하지 않습니다.'}),
-          guiEl('footer',{class:'al-foot'},[managementKey?action('근거 보기 · 관리 ↗',()=>{
-            Gui[managementKey]=item.row.id;
-            bookSelectStorySection('structure');
-          }):action('기억 서가에서 원본 찾기 ↗',()=>bookNavigate('memory')),action('서사 방향 작성 ↗',()=>{Gui.bookWritingTab='direction';bookNavigate('writing');}),guiEl('p',{class:'al-note',text:active==='locks'?'세계의 일반 규칙은 세계 도감에서, 이후에도 유지할 서사 맥락은 여기에서 읽습니다.':'앞으로 원하는 전개는 집필의 서사 방향에서 별도로 관리합니다.'})])
-        ]:[guiEl('h2',{class:'al-title',text:BOOK_NARRATIVE_GROUPS.every(([id])=>!groups[id].length)?'아직 서사 기록이 없습니다':'이 분류에 표시할 기록이 없습니다'}),guiEl('p',{class:'al-note',text:active==='closed'?'현재 목록에 남아 있는 종결 항목과 불러온 기억의 당시 해결 기록을 표시합니다.':active==='arcs'?'이야기 흐름·전환점·반복 소재가 저장된 경우 표시됩니다.':active==='locks'?'유지할 사실과 해제 상태가 기록된 경우 표시됩니다.':'기록된 사건과 현재 과제를 이곳에서 읽습니다.'})])
-      ]),
-      ['events','closed'].includes(active)?guiEl('div',{class:'al-history'},[
-        guiEl('p',{class:'al-note',text:'구조화된 사건과 종결 기록을 추려 표시합니다. 원래 기억 전체는 기억 서가에서 읽을 수 있습니다.'}),
-        action('기억 서가 열기 ↗',()=>bookNavigate('memory')),
-        guiEl('span',{class:'al-note',text:history.loaded?'정본 기억 '+history.chapters.length+'묶음 조회'+(history.hasMore?' · 추가 기록 있음':' · 조회 끝'):'현재 State의 사건은 최근 기록입니다. 오래된 사건·당시 해결 기록은 기억 이력에서 읽습니다.'}),
-        !history.loaded||history.hasMore?guiEl('button',{type:'button',class:'al-action',disabled:history.loading,text:history.loading?'기억 읽는 중…':history.loaded?'기억 이력 더 읽기':'기억 이력 불러오기',onClick:()=>void loadBookNarrativeHistory()}):null,
-        history.loaded||history.error?action('처음부터 새로 읽기',()=>void loadBookNarrativeHistory(true)):null,
-        history.error?guiEl('p',{class:'al-error',role:'alert',text:'기억 이력을 읽지 못했습니다: '+history.error}):null
-      ]):null
-    ]);
-  };
-
   const buildBookHostLineagePanel = () => {
     const snapshot = LibraMemoryCore.peekSnapshot();
     const candidate = MemorySuiteHostLineage.normalize(snapshot?.hostLineage);
@@ -80425,22 +77628,22 @@ html,body{width:100%;height:100%;overflow:hidden}
     const copyState = snapshot?.manifest?.nativeChatCopy;
     const hostWorldline = snapshot?.manifest?.worldlineMeta;
     // 열람대 렌더링 회귀(화면 4): `string()`은 메모리 코어 클로저의 지역 helper라 이 GUI 범위에서는
-    // 접근할 수 없다. 이 builder는 buildBookDeskPanel이 children 배열을 만드는 동안 즉시 호출되므로,
+    // 접근할 수 없다. 이 helper는 desk destination detail을 만드는 동안 즉시 호출되므로,
     // 접힌 <details> 안에 있어도 ReferenceError가 열람대 전체 렌더링을 막았다.
     // 이 범위에서 쓸 수 있는 내장 변환을 사용한다 — helper를 주입해 덮지 않는다.
     // 검증: tests/libra_book_lineage_panel_execution_test.cjs (helper 없이 패널을 실제 실행).
     const isHostBranch = !!String(hostWorldline?.parentWorldlineId ?? '').trim() || lineage?.kind === 'native_branch';
-    return guiEl('section', { class: 'libra-book-lineage', dataset: { bookSection: 'host-lineage', lineageStatus: status }, 'aria-label': '현재 세계선' }, [
-      guiEl('div', { class: 'libra-book-lineage-heading' }, [
-        guiEl('span', { class: 'libra-book-lineage-seal', text: '§', 'aria-hidden': 'true' }),
-        guiEl('div', { class: 'libra-book-lineage-copy' }, [
-          guiEl('span', { class: 'libra-book-lineage-kicker', text: 'STORY LINEAGE' }),
+    return guiEl('section', { class: "card", dataset: { bookSection: 'host-lineage', lineageStatus: status }, 'aria-label': '현재 세계선' }, [
+      guiEl('div', { class: "split" }, [
+        guiEl('span', { class: "badge", text: '§', 'aria-hidden': 'true' }),
+        guiEl('div', { class: "stack" }, [
+          guiEl('span', { class: "eyebrow", text: 'STORY LINEAGE' }),
           guiEl('h3', { text: '현재 세계선' })
         ]),
-        guiEl('span', { class: 'libra-book-lineage-status', text: copy[0] })
+        guiEl('span', { class: "badge", text: copy[0] })
       ]),
-      guiEl('p', { class: 'libra-book-lineage-description', text: copy[1] }),
-      lineage ? guiEl('details', { class: 'libra-book-lineage-details' }, [
+      guiEl('p', { class: "muted", text: copy[1] }),
+      lineage ? guiEl('details', { class: "fold" }, [
         guiEl('summary', { text: '세계선 기록 보기' }),
         guiEl('dl', {}, [
           field('현재 채팅', lineage.hostChatId),
@@ -80457,7 +77660,7 @@ html,body{width:100%;height:100%;overflow:hidden}
           copyState ? field('정본 승계 저장', copyState.durableVerified === true ? '저장 확인됨 · 상태 재구성 결과는 별도 확인' : '저장 미확정') : null,
           field('진단 코드', lineage.reason)
         ]),
-        lineage.kind === 'native_branch' ? guiEl('p', { class: 'libra-book-lineage-footnote', text: '승계 가능한 범위와 실제 저장이 완료된 정본 수는 다릅니다.' }) : null
+        lineage.kind === 'native_branch' ? guiEl('p', { class: "hint", text: '승계 가능한 범위와 실제 저장이 완료된 정본 수는 다릅니다.' }) : null
       ]) : null
     ]);
   };
@@ -80550,13 +77753,13 @@ html,body{width:100%;height:100%;overflow:hidden}
       const busy=!!state.busy['receipt:'+row.turn];
       const retryable=['missing','failed','pending_write','queued','paused','unavailable','running'].includes(row.status)
         && row.reason!=='journal_read_unavailable';
-      return guiEl('div',{class:'libra-book-receipt-stage',dataset:{receiptTurn:String(row.turn),receiptStatus:row.status}},[
+      return guiEl('div',{class:"note",dataset:{receiptTurn:String(row.turn),receiptStatus:row.status}},[
         guiEl('strong',{text:`T${row.turn} 원문 영수증`}),
         guiEl('span',{text:receiptLabel[row.status]||row.status}),
         row.reason?guiEl('small',{text:row.reason}):null,
         retryable?guiEl('button',{type:'button',disabled:busy||row.status==='running',
           text:busy?'저장 확인 중':row.status==='running'?'복구 진행 중':'저장 다시 확인',
-          onClick:()=>void runBookReceiptRecoveryAction('receipt',row)}):null
+          onClick:()=>void openApprovedRecoveryDialog('receipt',row)}):null
       ]);
     };
     const microCard=row=>{
@@ -80564,7 +77767,7 @@ html,body{width:100%;height:100%;overflow:hidden}
         :row.status==='publish_ready'?'micro_publish':'micro_retry';
       const busy=!!state.busy[kind+':'+row.turn];
       const retryable=['never_started','failed','unknown'].includes(row.status);
-      return guiEl('div',{class:'libra-book-micro-stage',dataset:{microTurn:String(row.turn),microStatus:row.status}},[
+      return guiEl('div',{class:"note",dataset:{microTurn:String(row.turn),microStatus:row.status}},[
         guiEl('strong',{text:`T${row.turn} Micro 분석`}),
         guiEl('span',{text:microLabel[row.status]||row.status}),
         retryable?guiEl('small',{text:'모델 호출 비용이 발생할 수 있음'}):null,
@@ -80573,10 +77776,10 @@ html,body{width:100%;height:100%;overflow:hidden}
           text:row.status==='publish_ready'?(busy?'발행 확인 중':'Micro 발행 다시 확인')
             :busy||row.status==='queued'?'분석 진행 중'
             :row.status==='never_started'?'Micro 분석 계속':'Micro 분석 다시 시도',
-          onClick:()=>void runBookReceiptRecoveryAction(kind,row)}):null
+          onClick:()=>void openApprovedRecoveryDialog('micro',row)}):null
       ]);
     };
-    return guiEl('section',{class:'libra-book-receipt-recovery',dataset:{receiptRecoveryScope:state.scopeKey}},[
+    return guiEl('section',{class:"card",dataset:{receiptRecoveryScope:state.scopeKey}},[
       guiEl('h3',{text:'대화 저장 · Micro 분석'}),
       state.loading?guiEl('p',{text:'상태 확인 중'}):null,
       state.error?guiEl('p',{class:'al-error',text:'상태를 확인하지 못했습니다: '+state.error}):null,
@@ -80586,80 +77789,6 @@ html,body{width:100%;height:100%;overflow:hidden}
       ...receiptRows.map(receiptCard),...microRows.map(microCard)
     ]);
   };
-  const buildBookDeskPanel = () => guiEl('section', { class: 'libra-book-desk-view', dataset: { bookPage: 'desk' } }, [
-    guiEl('div', { class: 'libra-book-desk-label', text: 'READING DESK · 현재 열람대' }),
-    guiEl('details',{class:'libra-book-lineage-compact'},[guiEl('summary',{text:'현재 채팅 · 세계선 정보'}),buildBookHostLineagePanel()]),
-    buildBookMemoryProgressPanel(),
-    buildBookReceiptRecoveryPanel(),
-    buildBookDeskReaderProjection()
-  ]);
-
-  const buildBookMemoryPanel = () => {
-    Gui.memoryHubSection = normalizeSharedMemoryHubChoice(Gui.memoryHubSection);
-    if (Gui.memoryHubSection === 'read') return buildBookPage('CANONICAL ARCHIVE', '기억 서가', '기억은 단순 데이터가 아니라, 현재를 설명하는 이야기의 한 장처럼 읽습니다.', [
-      buildBookMemoryReaderProjection(), buildCanonicalEvidenceDrawer()
-    ], { pageId: 'memory' });
-    const panel = Gui.memoryHubSection === 'context' ? buildCanonicalContextPanel() : buildLibraMemoriesPanel();
-    return buildBookPage('CANONICAL ARCHIVE', '기억 서가', '읽기 화면에서 요청한 작업만 별도의 작업대로 엽니다. 닫으면 즉시 기억의 장으로 돌아갑니다.', [
-      buildBookAuxWorkbench(
-        Gui.memoryHubSection === 'context' ? 'EVIDENCE FLOW' : 'CORRECTION WORKBENCH',
-        Gui.memoryHubSection === 'context' ? '근거와 상태 반영' : '기억 상세 · 관리',
-        Gui.memoryHubSection === 'context' ? '원문 U+A·정본 사실·로컬 적용·Current Head의 실제 연결을 한 화면에서 확인합니다.' : '정본의 저장·교정 기능은 읽기 화면과 분리된 작업대에서만 표시합니다.',
-        '기억 서가로 돌아가기', () => bookSelectMemorySection('read'), panel
-      ),
-      buildCanonicalEvidenceDrawer()
-    ], { pageId: 'memory' });
-  };
-
-  const buildBookPeoplePanel = () => {
-    Gui.bookPeopleSection = normalizeHubChoice(Gui.bookPeopleSection, BOOK_PEOPLE_SECTIONS, 'profile');
-    if (Gui.bookPeopleSection === 'profile') return buildBookPage('CHARACTER INTRODUCTION', '인물 카드함', '인물을 선택하면 소개, 현재 상태, 지식과 관계를 함께 볼 수 있습니다.', [
-      buildBookCharacterProfileProjection()
-    ], { pageId: 'people' });
-    const panel = Gui.bookPeopleSection === 'characters' ? buildWorldManagerCharactersPanel() : buildWorldManagerRelationshipsPanel();
-    return buildBookPage('CHARACTER GUIDE', '인물 카드함', '인물 소개에서 명시적으로 연 상세·관리 작업만 이 작업대에 표시합니다.', [
-      buildBookAuxWorkbench(
-        Gui.bookPeopleSection === 'characters' ? 'CHARACTER WORKBENCH' : 'RELATIONSHIP WORKBENCH',
-        Gui.bookPeopleSection === 'characters' ? '인물 상세 · 관리' : '관계 상세 · 관리',
-        Gui.bookPeopleSection === 'characters' ? '인물의 현재 정보와 근거를 확인하고, 병합·분리 등 필요한 관리를 할 수 있습니다.' : '관계의 방향과 현재 내용을 확인하고 관리합니다.',
-        '인물 카드함으로 돌아가기', () => bookSelectPeopleSection('profile'), panel
-      )
-    ], { pageId: 'people' });
-  };
-
-  const buildBookWorldPanel = () => {
-    Gui.bookWorldSection = normalizeHubChoice(Gui.bookWorldSection, BOOK_WORLD_SECTIONS, 'guide');
-    if (Gui.bookWorldSection === 'guide') return buildBookPage('WORLD REFERENCE', '세계 도감', '장면에 실제로 작동하는 무대, 세력, 규칙을 세계관 소개 페이지처럼 읽습니다.', [
-      buildBookWorldGuideProjection()
-    ], { pageId: 'world' });
-    return buildBookPage('WORLD REFERENCE', '세계 도감', '세계 소개에서 선택한 항목의 상세 정보와 근거를 별도 작업대로 엽니다.', [
-      buildBookAuxWorkbench('WORLD WORKBENCH', '상세 · 관리', '장소·세력·규칙의 현재 정보와 근거를 확인하고 관리합니다.', '세계 도감으로 돌아가기', () => bookSelectWorldSection('guide'), buildWorldManagerWorldPanel())
-    ], { pageId: 'world' });
-  };
-
-  const buildBookStoryPanel = () => {
-    Gui.bookStorySection = normalizeHubChoice(Gui.bookStorySection, BOOK_STORY_SECTIONS, 'toc');
-    if (Gui.bookStorySection === 'toc') return buildBookPage('NARRATIVE ALMANAC', '서사 연감', '확인된 사건과 아직 남아 있는 과제를 함께 읽습니다. 사건 기록과 현재의 미해결 상황은 구분해 표시합니다.', [
-      buildBookNarrativeTocProjection()
-    ], { pageId: 'story' });
-    let panel;
-    let eyebrow;
-    let title;
-    let description;
-    if (Gui.bookStorySection === 'direction') {
-      eyebrow = "LIBRARIAN'S MARGIN"; title = '사서의 여백'; description = '사용자가 원하는 다음 서사 방향을 현재 사실과 분리해 기록합니다.'; panel = buildNarrativeDirectionPanel();
-    } else {
-      Gui.bookStorySection='structure';
-      eyebrow='NARRATIVE DETAILS'; title='상세 · 관리'; description='현재 이야기와 미해결 상황, 근거를 함께 확인하고 관리합니다.';
-      panel=buildWorldManagerNarrativePanel();
-    }
-    return buildBookPage('TABLE OF CONTENTS', '서사 연감', '목차에서 명시적으로 연 보조 작업만 별도 작업대로 표시합니다.', [
-      buildBookAuxWorkbench(eyebrow, title, description, '서사 연감으로 돌아가기', () => bookSelectStorySection('toc'), panel)
-    ], { pageId: 'story' });
-  };
-
-
-
   const BOOK_NATIVE_SETTINGS_SECTIONS = Object.freeze([
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'분석할 내용',note:'선택 사항 · 분석 입력 규칙',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
@@ -80718,102 +77847,283 @@ html,body{width:100%;height:100%;overflow:hidden}
     queueGuiNavigationRender();
   };
 
-  const buildBookSettingsNativeInnerPanel = section => {
-    const family = activeGuiResponseFamily();
-
-    if (section === 'references') return buildLibraReferenceHubPanel({ showTabs: false });
-    if (section === 'memory') return buildLibraMemorySettingsPanel();
-    if (section === 'state') return buildStateTrackingAvailabilityPanel('settings');
-    if (section === 'server') return buildLibraServerConnectionPanel();
-    if (section === 'ai') return buildLibraProviderPanel();
-    if (section === 'embedding') return buildLibraEmbeddingPanel();
-    if (section === 'recovery') return buildLibraRecoveryPanel();
-    if (section === 'transfer') return buildTransferTab();
-    if (section === 'source_edits') return buildAnalysisInputPanel();
-    if (section === 'general') return buildGeneralSettingsPanel();
-    if (section === 'pipeline') return Gui.pipelineHubSection === 'memory_pipeline' ? buildBookMemoryAdvancedSettings() : buildSharedPipelineShellPanel();
-    if (section === 'agents') return buildSharedAgentShellPanel();
-    if (section === 'custom') return buildSharedCustomShellPanel();
-    if (section === 'logs') return buildSharedExecutionLogsPanel();
-    return buildLibraMemorySettingsPanel();
+  const buildApprovedAuxiliaryConnection = names => {
+    const runtime=Gui.state.runtime,resolution=resolveRisuRunLlmApi();
+    const probe=Runtime.risuAuxiliary.lastProbe;
+    return guiEl('details',{class:'fold'},[guiEl('summary',{text:'RisuAI 보조 모델 · 연결 상세'}),guiEl('div',{class:'fold__body stack'},[
+      fieldNode('기본 연결',selectNode(runtime.defaultPresetName||'',[['','공용 기본값'],...names.map(name=>[name,presetDisplayName(name)])],value=>{runtime.defaultPresetName=value;markGuiDirty();})),
+      guiEl('div',{class:'note'},[guiEl('b',{text:resolution.api?'API 사용 가능':'runLLMModel 사용 불가'}),guiEl('p',{text:`mode: otherAx · API 소스: ${resolution.source} · staticModel 지정 안 함`})]),
+      guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다.'}),
+      checkboxNode(runtime.risuAuxAllowPlugins===true,'플러그인 제공 보조 모델 허용',value=>{runtime.risuAuxAllowPlugins=value===true;markGuiDirty();}),
+      guiEl('div',{class:'note',dataset:{risuAuxiliaryCallProbe:probe?.status||'unverified'}},[guiEl('b',{text:probe?(probe.ok?'최근 호출 성공':'최근 호출 실패'):'호출 테스트 기록 없음'}),guiEl('p',{text:probe?`${probe.apiSource||'API 불명'} · ${Number(probe.elapsedMs||0)}ms · ${probe.ok?probe.responsePreview||'':probe.error||''}`:'버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.'})]),
+      guiEl('button',{class:'btn btn--sm',type:'button',disabled:!resolution.api,text:'보조 모델 호출 테스트',onClick:async event=>{event.currentTarget.disabled=true;try{const result=await LibraProviderBridge.testRisuAuxiliary({risuAuxAllowPlugins:runtime.risuAuxAllowPlugins===true});if(!result.ok)throw new Error(result.error||'빈 응답');guiSetStatus('RisuAI 보조 모델 호출을 확인했습니다.');}catch(error){guiSetStatus(String(error.message||error),true,true);}finally{await renderSettingsGui();}}})
+    ])]);
   };
 
-  const buildBookNativeSettingsRoom = ({ showIndex = true } = {}) => {
-    const active = bookSettingsRoomActiveSection();
-    const activeDef = BOOK_NATIVE_SETTINGS_SECTIONS.find(item => item.id === active) || BOOK_NATIVE_SETTINGS_SECTIONS[0];
-    const settingsItems = BOOK_NATIVE_SETTINGS_SECTIONS.filter(item => item.group === 'settings');
-    const workbenchItems = BOOK_NATIVE_SETTINGS_SECTIONS.filter(item => item.group === 'workbench');
-    const indexButton = def => guiEl('button', {
-      class: `libra-book-settings-index-item${active === def.id ? ' active' : ''}`,
-      type: 'button', dataset: { bookSettingsRoomSection: def.id }, 'aria-current': active === def.id ? 'page' : null,
-      onClick: () => selectBookSettingsRoomSection(def.id)
-    }, [
-      guiEl('span', { class: 'libra-book-settings-index-no', text: def.no }),
-      guiEl('span', { class: 'libra-book-settings-index-copy' }, [
-        guiEl('strong', { text: def.label }), guiEl('small', { text: def.note })
-      ])
+  const buildApprovedProviderExpertFields = preset => {
+    const provider=canonicalProvider(preset.provider),family=inferReasoningFamily(preset),kimiK3=family==='kimi'&&isKimiK3Model(preset.model);
+    const vertex=['vertex','vertex-openai'].includes(provider);
+    const field=(key,label,options={})=>fieldNode(label,guiEl(options.choices?'select':options.textarea?'textarea':'input',{
+      class:options.choices?'select':options.textarea?'textarea':'input',type:options.number?'number':'text',value:preset[key]??'',dataset:{providerField:key},
+      onInput:event=>{if(options.choices)return;preset[key]=options.number?Number(event.target.value):event.target.value;markGuiDirty();},
+      onChange:event=>{if(!options.choices)return;preset[key]=event.target.value;markGuiDirty();}
+    },options.choices?optionNodes(options.choices,preset[key]):[]),options.note||'');
+    const button=(label,fn)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,onClick:fn});
+    const efforts=family==='gemini'?[['none','기본값'],['minimal','최소'],['low','낮음'],['medium','중간'],['high','높음']]:kimiK3?[['none','기본값(max)'],['low','낮음'],['high','높음'],['max','최대']]:['gpt','openrouter','claude'].includes(family)?[['none','기본값'],['low','낮음'],['medium','중간'],['high','높음'],['xhigh','매우 높음'],['max','최대']]:[['none','없음'],['low','낮음'],['medium','중간'],['high','높음']];
+    const modelKey=`${provider}|${String(preset.url||'')}|${providerCredentialCacheFingerprint(preset.key)}`;
+    const models=guiAsArray(Gui.providerModels?.[modelKey]),meta=providerModelMetadata(provider,preset.url),suggested=suggestedModelsForProvider(provider);
+    const setModel=value=>{if(!value)return;const found=models.find(item=>item.id===value);preset.model=value;if(found){preset.metadata_model_id=value;preset.catalog_context_window=Number(found.contextWindow||0);preset.catalog_max_output_tokens=Number(found.maxOutputTokens||0);}markGuiDirty();void renderSettingsGui();};
+    return guiEl('details',{class:'fold'},[guiEl('summary',{text:'연결 · 생성 · 추론 · 서비스 상세'}),guiEl('div',{class:'fold__body stack'},[
+      suggested.length?fieldNode('공식 모델 빠른 선택',selectNode(preset.model,[['','직접 입력 유지'],...suggested.map(id=>[id,id])],setModel)):null,
+      meta?.modelsUrl?guiEl('div',{class:'stack stack--sm'},[
+        button(Gui.providerModelLoading?'불러오는 중…':'모델 목록 불러오기',async()=>{if(Gui.providerModelLoading)return;Gui.providerModelLoading=true;try{Gui.providerModels[modelKey]=await listProviderModels(preset,{force:true});}catch(error){guiSetStatus(String(error.message||error),true,true);}finally{Gui.providerModelLoading=false;await renderSettingsGui();}}),
+        models.length?fieldNode('프로바이더 모델 목록',selectNode(preset.model,[['','직접 입력 유지'],...models.map(item=>[item.id,item.label||item.id])],setModel)):null
+      ]):null,
+      field('context_window','모델 문맥 크기(토큰)',{number:true}),
+      field('request_format','요청 형식',{choices:providerSupportsResponses(provider)?[['chat_completions','Chat Completions'],['responses','Responses API']]:[['chat_completions','Chat Completions']]}),
+      checkboxNode(!!preset.stream,'스트리밍 응답 사용',value=>{preset.stream=value;markGuiDirty();}),
+      field('prompt_cache','프롬프트 캐시',{choices:[['auto','자동'],['off','사용 안 함']]}),
+      field('reasoning_preset','추론 프리셋',{choices:REASONING_PRESET_KEYS.map(key=>[key,REASONING_PRESETS[key].label])}),
+      ['gpt','openrouter','claude','gemini','ollama'].includes(family)||kimiK3?field('reasoning_effort','Reasoning effort',{choices:efforts}):null,
+      ['openrouter','claude_budget','gemini_budget'].includes(family)?field('reasoning_budget_tokens','Thinking / Reasoning 예산 토큰',{number:true}):null,
+      ['openrouter','claude','claude_budget','gemini','gemini_budget','kimi','glm','ollama'].includes(family)&&!kimiK3?field('thinking_type','Thinking type',{choices:[['enabled','사용'],['disabled','사용 안 함']]}):null,
+      guiEl('div',{class:'cluster'},[
+        button('추론 끔',()=>{Object.assign(preset,{reasoning_preset:'off',reasoning_effort:'none',reasoning_budget_tokens:0,thinking_type:'disabled',glm_thinking_type:'disabled'});markGuiDirty();void renderSettingsGui();}),
+        button('자동',()=>{Object.assign(preset,{reasoning_preset:'auto',thinking_type:'enabled',glm_thinking_type:'enabled'});markGuiDirty();void renderSettingsGui();}),
+        ...efforts.filter(([effort])=>effort!=='none').map(([effort,label])=>button(label,()=>{Object.assign(preset,{reasoning_effort:effort,thinking_type:'enabled',glm_thinking_type:'enabled'});markGuiDirty();void renderSettingsGui();}))
+      ]),
+      providerAllowsServiceTier(provider,preset)?field('service_tier','서비스 티어',{choices:[['off','사용 안 함'],['auto','자동'],['default','default'],['flex','flex'],['priority','priority'],['scale','scale']]}):null,
+      vertex?field('vertex_flex_mode','Vertex Flex 모드',{choices:[['off','사용 안 함'],['provisioned_then_flex','Provisioned → Flex'],['flex_only','Flex only']]}):null,
+      provider==='custom'?checkboxNode(!!preset.custom_service_tier_passthrough,'service_tier 전달',value=>{preset.custom_service_tier_passthrough=value;markGuiDirty();}):null,
+      field('extra_headers_json','추가 HTTP 헤더 JSON',{textarea:true}),field('extra_body_json','추가 요청 Body JSON',{textarea:true}),
+      vertex?guiEl('div',{class:'stack'},[
+        fieldNode('Vertex 자격 증명 JSON',guiEl('textarea',{class:'textarea',rows:4,value:'',placeholder:'새 자격 증명을 입력할 때만 적용',dataset:{vertexCredentialDraft:'true'},onInput:event=>{Gui.vertexCredentialDrafts[Gui.selectedPreset]=event.target.value;}})),
+        button('붙여넣은 JSON 적용',()=>{try{applyVertexCredentialsToPreset(preset,Gui.vertexCredentialDrafts[Gui.selectedPreset]||'',true);markGuiDirty();void renderSettingsGui();}catch(error){guiSetStatus(error.message,true,true);}}),
+        button('기본 Vertex URL로 재생성',()=>{try{const credential=preset.key||Gui.vertexCredentialDrafts[Gui.selectedPreset]||'';if(!tryJsonParse(credential,null))preset.url=defaultUrlForProvider(provider);applyVertexCredentialsToPreset(preset,credential,true);markGuiDirty();void renderSettingsGui();}catch(error){guiSetStatus(error.message,true,true);}})
+      ]):null,
+      button('연결 테스트',async()=>{try{const result=await testProviderPreset(preset);if(!result.ok)throw new Error(result.reason||'빈 응답');guiSetStatus(`연결 성공 · ${result.provider} / ${result.model} · ${result.elapsedMs}ms`);}catch(error){guiSetStatus(`연결 실패: ${error.message}`,true,true);}}),
+      button(vertex?'Vertex 자격 증명 삭제':'저장된 키 삭제',()=>{preset.key='';preset.secret_deleted=true;Gui.vertexCredentialDrafts[Gui.selectedPreset]='';markGuiDirty();void renderSettingsGui();})
+    ])]);
+  };
+
+  const buildApprovedEmbeddingOperations = cfg => {
+    const rebuild=LibraMemoryCore.getEmbeddingRebuildState(),counts=rebuild.counts||{},registry=LibraProviderBridge.embeddingRegistry;
+    const action=(label,fn,disabled=false)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,disabled,onClick:async()=>{try{await fn();await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}});
+    return guiEl('details',{class:'fold',dataset:{embeddingOperations:'true'}},[guiEl('summary',{text:'벡터 작업 · 이전 · 진단 상세'}),guiEl('div',{class:'fold__body stack'},[
+      guiEl('p',{class:'hint',text:`${rebuild.status||'미확인'} · 전체 ${Number(counts.total||0)} · 완료 ${Number(counts.completed||0)} · 대기 ${Number(counts.pending||0)} · 실패 ${Number(counts.failed||0)} · 격리 ${Number(counts.quarantined||0)}`}),
+      guiEl('div',{class:'cluster'},[
+        action(rebuild.status==='paused'?'임베딩 벡터 재생성 재개':'임베딩 벡터 재생성',()=>LibraMemoryCore.startEmbeddingRebuild(),rebuild.status==='rebuilding'),
+        action('중지',()=>LibraMemoryCore.stopEmbeddingRebuild(),rebuild.status!=='rebuilding'),
+        action('실패 항목 재시도',()=>LibraMemoryCore.retryFailedEmbeddingRebuild(),!(counts.failed>0)),
+        action('격리 벡터 즉시 삭제',async()=>{if(!(await confirmApprovedOperation('격리 중인 이전 임베딩 벡터를 즉시 삭제할까요? 정본 메모리는 삭제되지 않습니다.',{title:'격리 벡터 삭제'})))return;await LibraMemoryCore.cleanupQuarantinedVectors(true);},!(counts.quarantined>0)),
+        ...[['preview','검증된 같은 공간 이전 미리보기'],['recover','중단된 메타데이터 이전 복구'],['apply','미리본 메타데이터 이전 적용']].map(([kind,label])=>action(label,()=>runEmbeddingMigrationAction(kind),!!Gui.embeddingMigrationBusy||(kind==='apply'&&!Gui.embeddingMigrationPreview))),
+        action('Query cache 비우기',()=>registry.clearQueryCache()),
+        action('이전 벡터 마이그레이션 재검사',()=>LibraMemoryCore.runAutomaticLegacyVectorMigration({force:true,reason:'gui_manual_migration_rescan'})),
+        action('선택 provider 기본값',()=>LibraMemoryCore.resetEmbeddingProviderDefaults((LibraMemoryCore.state.embeddingSettings||cfg).provider)),
+        EmbeddingProviderRegistry.normalizeProvider(cfg.provider)==='ollama'?action('Ollama 모델 검색',()=>EmbeddingProviderRegistry.discoverOllamaModels({...cfg,...LibraMemoryCore.state.embeddingSettings,provider:'ollama'},{force:true})):null
+      ]),
+      guiEl('p',{class:'hint',role:'status',dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'미리보기를 실행하면 이전 가능 항목과 결과가 여기에 표시됩니다.'}),
+      guiLazyDetails({class:'fold'},guiEl('summary',{text:'다국어 · Adapter 진단 결과'}),()=>guiEl('div',{class:'fold__body'},[guiEl('pre',{text:JSON.stringify({probe:LibraMemoryCore.getLastMultilingualEmbeddingProbe?.(),profile:registry.profileFor(registry.normalizeConfig(cfg)),queryCache:registry.getQueryCacheStats(),migration:LibraMemoryCore.getLastEmbeddingMigration?.()},null,2)})]))
+    ])]);
+  };
+
+  const buildApprovedMockupSettingsPanel = (groupId, sectionId) => {
+    const runtime=Gui.state.runtime||(Gui.state.runtime={});
+    const card=(title,description,children=[])=>guiEl('div',{class:'card'},[
+      guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:title}),description?guiEl('p',{class:'card__desc',text:description}):null])]),...children
     ]);
-    return guiEl('div', { class: 'libra-book-settings-room-shell', style: showIndex ? {} : { gridTemplateColumns: 'minmax(0, 1fr)' }, dataset: { nativeSettingsRoom: 'true', activeSection: active } }, [
-      showIndex ? guiEl('aside', { class: 'libra-book-settings-index', 'aria-label': '설정실 목차' }, [
-        guiEl('div', { class: 'libra-book-settings-index-group' }, settingsItems.map(indexButton)),
-        guiEl('div', { class: 'libra-book-settings-index-divider' }, [guiEl('span', { text: 'WORKBENCH' })]),
-        guiEl('div', { class: 'libra-book-settings-index-group' }, workbenchItems.map(indexButton))
-      ]) : null,
-      guiEl('section', { class: 'libra-book-settings-workbench' }, [
-        guiEl('header', { class: 'libra-book-settings-workbench-head' }, [
-          guiEl('div', { class: 'libra-book-page-title-row' }, [
-            guiEl('h2', { text: activeDef.label }),
-            guiEl('span', { class: 'libra-book-eyebrow', text: `${activeDef.no} · ${activeDef.eyebrow}` })
-          ])
+    const setting=(label,description,control)=>guiEl('div',{class:'setting'},[
+      guiEl('div',{},[guiEl('div',{class:'setting__name',text:label}),description?guiEl('div',{class:'setting__desc',text:description}):null]),control
+    ]);
+    const toggle=(checked,label,onChange)=>guiEl('label',{class:'switch'},[
+      guiEl('input',{type:'checkbox',checked:checked===true,'aria-label':label,onChange:event=>onChange(event.target.checked===true)}),
+      guiEl('span',{class:'switch__track'}),guiEl('span',{class:'sr-only',text:label})
+    ]);
+    const field=(label,control,note='')=>fieldNode(label,control,note);
+    const routeButton=(label,section)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,onClick:()=>selectBookSettingsRoomSection(section)});
+    const runtimeToggle=(key,label,description)=>setting(label,description,toggle(runtime[key]===true,label,value=>{runtime[key]=value;markGuiDirty();}));
+    // Each destination mounts its actual controls rather than a category overview.
+    if(sectionId==='pipeline')return buildLibrarianAnalyzerPanel(false,false);
+    if(sectionId==='logs')return buildSharedExecutionLogsPanel();
+    if(sectionId==='references')return buildLibraReferenceHubPanel();
+    if(sectionId==='source_edits')return buildAnalysisInputPanel();
+    if(sectionId==='state')return buildStateTrackingAvailabilityPanel('settings');
+    if(sectionId==='transfer')return buildTransferTab();
+    if(sectionId==='general')return buildGeneralSettingsPanel();
+    if(groupId==='store'&&sectionId==='recovery')return guiEl('div',{class:'stack',dataset:{settingsCategory:'store'}},[buildLibraMemoryRestorePanel()]);
+    if(groupId==='store'&&sectionId==='server')return buildLibraServerConnectionPanel();
+    if(groupId==='mem'){
+      if(!Gui.memorySettingsDraft){Gui.memorySettingsDraft=LibraMemoryCore.getSettings();Gui.memorySettingsBasisHash=LibraMemoryCore.memorySettingsHash(Gui.memorySettingsDraft);}
+      const settings=Gui.memorySettingsDraft,presets=LibraMemoryCore.listPerformancePresets();
+      const active=settings.performancePreset||'custom';
+      const performanceFields=new Set(['recallMaxMemories','candidateLimit','gateHighCosine','gateSparse','recallMaxChars','excerptSentenceWindow','maxSectionsPerMemory','maxSpansPerSection','semanticSpanScoreFloorRatio']);
+      const patch=value=>{const custom=Object.keys(value).some(key=>performanceFields.has(key));Gui.memorySettingsDraft=LibraMemoryCore.normalizeMemorySettings({...Gui.memorySettingsDraft,...value,...(custom?{performancePreset:'custom'}:{})});markGuiDirty();};
+      const memoryToggle=(key,label)=>setting(label,'',toggle(settings[key]!==false,label,value=>patch({[key]:value})));
+      const inputs=[
+        ['recallMaxMemories','최대 리콜 메모리 수',1,20,1],['candidateLimit','후보 재랭킹 한도',8,320,1],
+        ['gateHighCosine','Dense 증거 문턱',0,1,.01],['gateSparse','Sparse 증거 문턱',0,1,.01]
+      ];
+      const currentInputs=inputs.map(([key,label,min,max,step])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})})));
+      const presetChoices=guiEl('div',{class:'choices','aria-label':'성능 프리셋'},presets.filter(p=>p.id!=='custom').map(p=>guiEl('button',{class:`choice${active===p.id?' is-on':''}`,type:'button','aria-pressed':String(active===p.id),dataset:{performancePreset:p.id},onClick:()=>{Gui.memorySettingsDraft=LibraMemoryCore.normalizeMemorySettings({...Gui.memorySettingsDraft,...p.values,performancePreset:p.id});markGuiDirty();void renderSettingsGui();}},[guiEl('b',{text:p.label}),guiEl('span',{text:p.description||''})])));
+      const extraDetails=[
+guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'기억 전환 · 상태 재시도 · 저장 상세'}),()=>guiEl('div',{class:'fold__body stack'},[
+          guiEl('div',{class:'cluster'},[
+            guiEl('button',{class:'btn btn--sm',type:'button',text:'기존 기억 보존 전환',onClick:async()=>{try{const preview=await LibraMemoryCore.previewUnifiedMigration();if(!preview.legacyRefs.length){guiSetStatus('전환할 구형 정본이 없습니다.');return;}if(!(await confirmApprovedOperation(`구형 정본 ${preview.legacyRefs.length}개를 보존하고 새 통합 분석을 이어갈까요? 이전 원문 증거가 없는 구간 ${preview.missingEvidenceKeys.length}개. 자동 재분석은 하지 않습니다.`,{title:'기존 기억 보존 전환',target:preview.scopeKey,validate:()=>canonicalReaderBinding().scopeKey===preview.scopeKey})))return;await LibraMemoryCore.beginUnifiedMigration({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,mode:'preserve_legacy_readonly',acknowledgedMissingKeys:preview.missingEvidenceKeys});guiSetStatus('전환 경계를 저장했습니다.');}catch(error){guiSetStatus(String(error.message||error),true);}}}),
+            guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 상태 적용 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(),{force:true,unifiedOnly:true});guiSetStatus(`상태 재시도 ${result.recovered||0}개 완료 · ${result.remaining||0}개 보류`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}}),
+            guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 임베딩 후처리 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true});guiSetStatus(`임베딩 ${result.completed||0}/${result.attempted||0} 처리`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}})
+          ]),
+          buildUnifiedLegacySelectionPanel(),buildUnifiedRetentionPanel(),buildLibraServerScopeHealthPanel(),
+          guiEl('button',{class:'btn btn--primary btn--sm',type:'button',text:'리콜 · 최근 대화 설정 저장',disabled:Gui.settingsRoomSaving===true,onClick:()=>void saveSettingsRoom()}),
+          guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
+        ])),
+guiEl('details',{class:'fold'},[guiEl('summary',{text:'최근 대화 문자 한도 상세'}),guiEl('div',{class:'fold__body'},[field('최근 대화 최대 문자',guiEl('input',{class:'input',type:'number',min:LIVE_TAIL_MIN_CHARS,max:LIVE_TAIL_MAX_CHARS,step:1000,value:runtime.liveTailMaxChars||DEFAULT_LIVE_TAIL_MAX_CHARS,onInput:event=>{runtime.liveTailMaxChars=clampInt(event.target.value,LIVE_TAIL_MIN_CHARS,LIVE_TAIL_MAX_CHARS,DEFAULT_LIVE_TAIL_MAX_CHARS);markGuiDirty();},onChange:event=>{runtime.liveTailMaxChars=clampInt(event.target.value,LIVE_TAIL_MIN_CHARS,LIVE_TAIL_MAX_CHARS,DEFAULT_LIVE_TAIL_MAX_CHARS);markGuiDirty();}}))])]),
+guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
+          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('lexicalFallback','BM25F·anchor 검색 사용'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('evidenceGate','증거 게이트'),memoryToggle('mmrEnabled','MMR 중복 억제'),memoryToggle('forceCurrentScene','연속 입력에서 최근 장면 후보 보호'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
+        ])])
+];
+      const advanced=guiEl('details',{class:'fold'},[
+        guiEl('summary',{},['세부 리콜 값 ',guiEl('span',{class:'hint',text:'제품 전용 상세 설정'})]),
+        guiEl('div',{class:'fold__body grid g2'},[
+...currentInputs,
+...[['similarity','유사 기억 비율(%)'],['recency','최근 기억 비율(%)']].map(([side,label])=>field(label,guiEl('input',{class:'input',type:'number',min:0,max:100,step:1,value:Math.round(Number(settings[side==='similarity'?'recallSimilarityWeight':'recallRecencyWeight']||0)*100),dataset:{memoryBlend:side},onChange:event=>{const value=Math.max(0,Math.min(100,Number(event.target.value)||0));const similarity=side==='similarity'?value:100-value;patch({recallSimilarityWeight:similarity/100,recallRecencyWeight:(100-similarity)/100});void renderSettingsGui();}}))),
+...[['recallMaxChars','동적 리콜 최대 예산',3000,LibraMemoryCore.recallMaxDynamicChars],['excerptSentenceWindow','발췌 문장 반경',0,5],['maxSectionsPerMemory','메모리당 최대 영역',1,5],['maxSpansPerSection','영역당 최대 발췌 span',1,8],['semanticSpanScoreFloorRatio','추가 span 관련성 비율',.1,.6]].map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:key==='semanticSpanScoreFloorRatio'?.01:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})}))),
+...[['recallQueryMessages','유사도 쿼리 최근 채팅 수',1,20],['rrfK','RRF k',1,200],['gateExactAnchor','Exact anchor 문턱',0,1],['mmrLambda','MMR 관련성 비율',.05,.98],['autoCatchUpMaxBatches','자동 따라잡기 최대 배치',1,6],['runDetailRetention','상세 실행 기록 보관 수',5,200]].map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:['gateExactAnchor','mmrLambda'].includes(key)?.01:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})}))),
+...extraDetails
+])
+      ]);
+      return guiEl('div',{class:'stack',dataset:{settingsCategory:'mem',settingsReadback:'LibraMemoryCore'}},[
+card('성능 프리셋','검색 후보 수·증거 문턱·발췌 깊이를 실제 LIBRA 설정에 적용합니다.',[presetChoices]),
+card('최근 대화','최근 대화 입력은 응답 계약과 함께 저장됩니다.',[
+          runtimeToggle('liveContextEnabled','최근 대화 원문 사용','응답 요청에 최근 대화를 함께 전달합니다.'),
+          setting('최근 대화 최대 턴','사용자 입력과 AI 응답 한 쌍을 한 턴으로 셉니다.',guiEl('input',{class:'input',type:'number',min:1,max:4,step:1,value:runtime.liveTailMaxTurns||DEFAULT_LIVE_TAIL_MAX_TURNS,onInput:event=>{runtime.liveTailMaxTurns=clampInt(event.target.value,1,4,DEFAULT_LIVE_TAIL_MAX_TURNS);markGuiDirty();},onChange:event=>{runtime.liveTailMaxTurns=clampInt(event.target.value,1,4,DEFAULT_LIVE_TAIL_MAX_TURNS);markGuiDirty();}})),
+          runtimeToggle('classicLiveTailEnabled','사서 모드에도 최근 대화 직접 주입','끄면 저장된 기억만 전달합니다.')
+
         ]),
-        guiEl('div', { class: `libra-book-settings-native-content section-${active}` }, [buildBookSettingsNativeInnerPanel(active)]),
-        buildBookSaveBar()
-      ])
+guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[
+          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'분석기 · 지침 (Prompt Studio)'}),guiEl('p',{class:'card__desc',text:'기억을 분석하는 지침을 보고 고칩니다. 기본값으로 되돌릴 수 있습니다.'})]),
+          guiEl('button',{class:'btn btn--sm',type:'button',dataset:{open:'dlg-prompt'},text:'Prompt Studio 열기',onClick:()=>openApprovedPromptDialog()})
+        ])]),
+advanced
+]);
+    }
+    if(groupId==='ai'){
+      if(sectionId==='embedding'){
+        const cfg=LibraMemoryCore.getEmbeddingSettings(),providers=LibraMemoryCore.listEmbeddingProviders();
+        const updateEmbedding=patch=>{
+          if(Object.prototype.hasOwnProperty.call(patch,'customHeaders')&&typeof patch.customHeaders==='string'){
+            try{patch.customHeaders=JSON.parse(patch.customHeaders||'{}');if(!patch.customHeaders||typeof patch.customHeaders!=='object'||Array.isArray(patch.customHeaders))throw new Error('HTTP 헤더는 JSON 객체여야 합니다.');}
+            catch(error){guiSetStatus(error.message,true);return;}
+          }
+          if(Object.prototype.hasOwnProperty.call(patch,'model')){
+            const allowed=EmbeddingProviderRegistry.allowedDimensionsFor(cfg.provider,patch.model),current=Number((LibraMemoryCore.state.embeddingSettings||cfg).dimensions||0);if(allowed.length&&current&&!allowed.includes(current))patch.dimensions='auto';
+          }
+          LibraMemoryCore.state.embeddingSettings={...cfg,...(LibraMemoryCore.state.embeddingSettings||{}),...patch};markGuiDirty();
+        };
+        const embeddingField=(key,label,options={})=>field(label,guiEl(options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',{class:options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',type:options.type||'text',value:options.value??cfg[key]??'',min:options.min,max:options.max,step:options.step,placeholder:options.placeholder||'',dataset:{embeddingField:key},onInput:event=>updateEmbedding({[key]:options.type==='number'?Number(event.target.value):event.target.value}),onChange:event=>updateEmbedding({[key]:options.type==='number'?Number(event.target.value):event.target.value})}),options.note||'');
+        const embedState=LibraMemoryCore.getEmbeddingRebuildState(),status=guiEl('p',{class:'hint',dataset:{embeddingStatus:'true'},text:`${embedState.status||'unknown'} · 현재 ${embedState.counts?.current||0} · 최신 ${embedState.counts?.ready||0} · 미완료 ${embedState.counts?.stale||0}`});
+        const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
+        return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'embedding-settings'}},[
+          card('임베딩','검색에 쓰는 실제 vector provider·model 공간을 설정합니다.',[
+            guiEl('div',{class:'grid g2'},[field('임베딩 사용',toggle(cfg.enabled!==false,'임베딩 사용',value=>updateEmbedding({enabled:value}))),field('임베딩 모델',embeddingField('model','임베딩 모델',{placeholder:'provider model ID'})),field('Provider',providerSelect),field('Endpoint URL',embeddingField('url','Endpoint URL',{placeholder:'기본값'}))]),
+            guiEl('div',{class:'three-status'},[guiEl('div',{},[guiEl('b',{text:'작업'}),status]),guiEl('div',{},[guiEl('b',{text:'이전'}),guiEl('span',{dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'같은 공간 이전 가능 여부 확인 전'})]),guiEl('div',{},[guiEl('b',{text:'격리 벡터'}),guiEl('span',{text:String(embedState.counts?.quarantined||0)+'개 · 읽기 전용'})])]),
+            guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'연결 테스트',onClick:async()=>{try{const result=await LibraMemoryCore.testEmbeddingConnection(LibraMemoryCore.state.embeddingSettings||cfg);guiSetStatus(`임베딩 연결 결과 · ${text(result?.status||'응답 확인')}`,result?.ok===false);}catch(error){guiSetStatus(String(error.message||error),true);}}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'작업 상태',onClick:()=>{Gui.embeddingMigrationStatus=`${embedState.status||'unknown'} · ${JSON.stringify(embedState.counts||{})}`;void renderSettingsGui();}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'격리 벡터 진단',onClick:()=>{Gui.embeddingMigrationStatus=`읽기 전용 진단 · ${Number(embedState.counts?.quarantined||0)}개 격리`;void renderSettingsGui();}})])
+          ]),
+          guiEl('details',{class:'fold'},[guiEl('summary',{},['임베딩 상세 설정 ',guiEl('span',{class:'hint',text:'task·차원·저장 옵션'})]),guiEl('div',{class:'fold__body grid g2'},[
+            embeddingField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장'}),embeddingField('dimensions','Dimensions',{placeholder:'auto'}),embeddingField('batchSize','Batch size'),embeddingField('timeoutMs','Timeout ms',{type:'number'}),embeddingField('queryTask','Query task'),embeddingField('documentTask','Document task'),embeddingField('queryPrefix','Query prefix'),embeddingField('documentPrefix','Document prefix'),embeddingField('customMethod','Custom method'),embeddingField('customResponsePath','Response vector path'),embeddingField('customErrorPath','Error path'),embeddingField('customHeaders','Custom headers JSON',{tag:'textarea',value:JSON.stringify(cfg.customHeaders||{},null,2)}),embeddingField('customRequestTemplate','Custom request template',{tag:'textarea'}),field('벡터 정규화',toggle(cfg.normalizeVectors!==false,'벡터 정규화',value=>updateEmbedding({normalizeVectors:value})))
+          ])]),
+          buildApprovedEmbeddingOperations(cfg),
+          buildBookSaveBar()
+        ]);
+      }
+      const providers=Gui.state.providers||{};
+      const names=Object.keys(providers);
+      const configuredDefaultName=normalizeProviderPresetBindingName(runtime.defaultPresetName)||RISUAI_AUX_PRESET_NAME;
+      const effectiveDefaultName=providers[configuredDefaultName]?configuredDefaultName:providers[RISUAI_AUX_PRESET_NAME]?RISUAI_AUX_PRESET_NAME:names[0]||'';
+      const defaultName=effectiveDefaultName,defaultPresetMissing=configuredDefaultName!==effectiveDefaultName;
+      const orphanBindings=[...(configuredDefaultName&&!providers[configuredDefaultName]?[{stage:'전역 기본',name:configuredDefaultName}]:[]),...PERSISTED_AGENT_STAGE_DEFS.map(def=>({stage:def.label||def.id,name:text(Gui.state.agents?.[def.id]?.presetName||'')})).filter(row=>row.name&&!providers[row.name])];
+      const defaultPanel=guiEl('details',{class:'fold',dataset:{defaultConnectionSettings:'true'}},[guiEl('summary',{text:'전역 기본 AI 연결'}),guiEl('div',{class:'fold__body stack'},[
+        field('기본 AI 연결',selectNode(effectiveDefaultName,names.map(name=>[name,presetDisplayName(name)]),next=>{runtime.defaultPresetName=next;markGuiDirty();queueGuiRender(0);}),'단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다.'),
+        guiEl('p',{class:'hint',text:effectiveDefaultName?`${presetDisplayName(effectiveDefaultName)} · ${providerDisplayLabel(providers[effectiveDefaultName]?.provider)} · ${presetModelDisplay(providers[effectiveDefaultName]||{})}`:'사용 가능한 기본 연결이 없습니다.'}),
+        orphanBindings.length?guiEl('div',{class:'note note--warn',dataset:{orphanPresetBindings:String(orphanBindings.length)}},[guiEl('b',{text:`고아 AI 연결 ${orphanBindings.length}개`}),guiEl('p',{text:orphanBindings.map(row=>`${row.stage}: ${row.name}`).join(' · ')}),guiEl('p',{text:'실행 중 사용 가능한 폴백을 사용할 수 있지만 저장된 이름을 자동으로 덮어쓰지는 않습니다.'})]):null,
+        defaultPresetMissing?guiEl('div',{class:'note'},[guiEl('p',{text:`저장된 기본 연결 '${configuredDefaultName}'을 찾을 수 없어 '${effectiveDefaultName}'을 사용 중입니다.`}),guiEl('button',{class:'btn btn--sm',type:'button',text:'현재 연결로 정리',disabled:!effectiveDefaultName,onClick:()=>{runtime.defaultPresetName=effectiveDefaultName;markGuiDirty();void renderSettingsGui();}})]):null
+      ])]);
+      if(!names.includes(Gui.selectedPreset))Gui.selectedPreset=names[0]||'';
+      const preset=providers[Gui.selectedPreset]||null;
+      const presetField=(key,label,options={})=>field(label,guiEl(options.tag==='textarea'?'textarea':'input',{class:options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',type:options.type||'text',value:options.value??preset?.[key]??'',placeholder:options.placeholder||'',min:options.min,max:options.max,step:options.step,dataset:{providerField:key},onInput:event=>{if(!preset)return;preset[key]=options.type==='number'?Number(event.target.value):event.target.value;if(key==='model'||key==='max_tokens')preset[key]=event.target.value;markGuiDirty();}}),options.note||'');
+      const editPanel=preset?(canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER?buildApprovedAuxiliaryConnection(names):guiEl('details',{class:'fold',open:true,dataset:{providerEditor:Gui.selectedPreset}},[
+        guiEl('summary',{},['선택한 연결 상세 ',guiEl('span',{class:'hint',text:Gui.selectedPreset})]),
+        guiEl('div',{class:'fold__body grid g2'},[
+          field('프리셋 이름',guiEl('input',{class:'input',type:'text',value:Gui.selectedPreset,dataset:{providerField:'name'},placeholder:'프리셋 이름'})),
+          field('기본 연결',guiEl('select',{class:'select',value:runtime.defaultPresetName||'',dataset:{providerField:'defaultPresetName'},onChange:event=>{runtime.defaultPresetName=event.target.value;markGuiDirty();}},[['','공용 기본값'],...names.map(name=>[name,name])].map(([value,label])=>guiEl('option',{value,selected:value===(runtime.defaultPresetName||''),text:label})))),
+          field('프로바이더 종류',guiEl('select',{class:'select',value:preset.provider||'openai',dataset:{providerField:'provider'},onChange:event=>{const next=event.target.value,old=canonicalProvider(preset.provider);preset.provider=canonicalProvider(next);if(!preset.url||preset.url===defaultUrlForProvider(old))preset.url=defaultUrlForProvider(next);markGuiDirty();void renderSettingsGui();}},providerChoices().map(([value,label])=>guiEl('option',{value,selected:value===preset.provider,text:label})))),
+          presetField('url','API 주소 / Base URL',{placeholder:defaultUrlForProvider(preset.provider)}),
+          presetField('model','모델 이름',{placeholder:'프로바이더 모델 ID'}),
+          presetField('temp','Temperature',{type:'number',step:.01}),
+          presetField('max_tokens','최대 출력 토큰',{type:'number',min:1}),
+          presetField('timeout_ms','기본 타임아웃(ms)',{type:'number',min:1}),
+          buildApprovedProviderExpertFields(preset),
+          presetField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장',note:preset.key?'저장된 키가 있습니다. 값을 읽거나 표시하지 않습니다.':'키가 설정되지 않았습니다.'}),
+          guiEl('div',{class:'cluster'},[
+            guiEl('button',{class:'btn btn--sm',type:'button',text:'이름 변경',onClick:()=>{try{renameGuiPreset(Gui.app?.querySelector('[data-provider-field="name"]')?.value);void renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true);}}}),
+            guiEl('button',{class:'btn btn--sm',type:'button',text:'복제',disabled:canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER,onClick:()=>{const name=uniquePresetName(`${Gui.selectedPreset} 복사본`);Gui.state.providers[name]={...cloneJson(preset),preset_id:`libra-preset-${stableDraftHash(`${Date.now()}:${Math.random()}:${name}`).slice(0,20)}`};Gui.selectedPreset=name;markGuiDirty();void renderSettingsGui();}}),
+            guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'삭제…',disabled:canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER||names.length<=1,onClick:async()=>{const targetName=Gui.selectedPreset,targetId=Gui.state.providers[targetName]?.preset_id;if(!(await confirmApprovedOperation(`프리셋 ${targetName}을 삭제할까요? 참조된 연결 이름은 자동으로 바꾸지 않습니다.`,{title:'연결 프리셋 삭제',target:targetName,validate:()=>Gui.selectedPreset===targetName&&Gui.state.providers[targetName]?.preset_id===targetId})))return;try{deleteGuiPreset();void renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true);}}})
+          ])
+        ])
+      ])):guiEl('div',{class:'empty',text:'편집할 연결 프리셋이 없습니다.'});
+      return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
+        card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
+          guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
+          guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})]),defaultPanel,editPanel
+        ]),
+        card('임베딩','모델 공간과 연결 상태는 저장된 임베딩 설정에서 확인합니다.',[routeButton('임베딩 연결 설정…','embedding')])
+      ]);
+    }
+    if(groupId==='ref')return guiEl('div',{class:'stack',dataset:{settingsCategory:'ref'}},[
+      card('참고 자료','현재 저장된 로어·작가 노트 설정으로 이동합니다.',[guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:'모듈 로어북'}),guiEl('div',{class:'setting__desc',text:'현재 채팅에서 선택한 실제 모듈 목록을 읽습니다.'})]),routeButton('선택…','references')]),guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:'캐릭터 로어북'}),guiEl('div',{class:'setting__desc',text:'현재 저장된 제외 항목을 관리합니다.'})]),routeButton('제외 관리…','references')])]),
+      card('분석 입력 규칙','현행 분석 입력 필터를 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('분석할 내용 설정…','source_edits')])])
+    ]);
+    if(groupId==='store')return guiEl('div',{class:'stack',dataset:{settingsCategory:'store'}},[
+      card('서버 연결','정본 저장 위치와 Recall 연산 위치를 각각 확인합니다.',[routeButton('서버 연결 설정…','server')]),
+      card('기억 백업 · 복원','Portable JSON 검증과 scope 확인 후 기존 복원 절차를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('기억 백업 · 복원…','recovery')])]),
+      card('설정 이동','기억 데이터와 분리된 설정 JSON 이동 기능을 사용합니다.',[routeButton('설정 가져오기 · 내보내기…','transfer')])
+    ]);
+    const snap=LibraMemoryCore.peekSnapshot()||{};
+    const memories=Object.values(snap.manifest?.memories||{}).filter(row=>row?.status==='committed').length;
+    const turn=Number(snap.continuityState?.throughTurn||snap.manifest?.frontiers?.committedTurn||0);
+    return guiEl('div',{class:'stack',dataset:{settingsCategory:'adv',settingsReadback:'snapshot'}},[
+      guiEl('div',{class:'three-status'},[
+        guiEl('div',{},[guiEl('b',{text:'정본 저장'}),turn?`T${turn}까지 · ${memories}개`:'저장된 기억 없음']),
+        guiEl('div',{},[guiEl('b',{text:'현재 상태'}),turn?`T${turn}까지`:'미확인']),
+        guiEl('div',{},[guiEl('b',{text:'임베딩'}),guiEl('span',{text:'실제 저장 상태 확인 필요'})])
+      ]),
+      guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
+      card('복구 · 진단','기존 확인·복구 조건과 대상 보호를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('현재 상태 적용…','state'),routeButton('교정 관리…','general'),routeButton('분기 · 재구축…','recovery'),routeButton('실행 기록…','logs')])])
     ]);
   };
 
-  const buildBookSettingsPanel = () => buildBookPage(
-    'SETTINGS ROOM',
-    '설정',
-    '필요한 항목을 선택하고, 아래 저장 버튼으로 변경 내용을 적용합니다.',
-    [guiEl('label', { class: 'libra-book-settings-mobile-picker' }, [guiEl('span', { text: '설정 선택' }), guiEl('select', { class: 'sga-select', disabled: Gui.bookQuickSaving === true, onChange: event => selectBookExternalSettings(event.target.value) }, optionNodes(BOOK_EXTERNAL_SETTINGS_ITEMS.map(item => [item.id, item.group + ' · ' + item.label]), BOOK_EXTERNAL_SETTINGS_ITEMS.find(bookExternalSettingsActive)?.id || 'input_writer'))]), buildBookNativeSettingsRoom({ showIndex: false })],
-    { pageId: 'settings' }
-  );
 
-
-  const bookQuickChoiceCard = ({ active = false, title = '', description = '', meta = '', badge = '', disabled = false, onClick = null } = {}) => guiEl('button', {
-    class: `libra-book-tool-choice${active ? ' active' : ''}`,
-    type: 'button', disabled, onClick
-  }, [
-    guiEl('div', { class: 'libra-book-tool-choice-head' }, [
-      guiEl('strong', { text: title }),
-      badge ? guiEl('span', { class: 'libra-book-tool-badge', text: badge }) : null
-    ]),
-    description ? guiEl('span', { class: 'libra-book-tool-desc', text: description }) : null,
-    meta ? guiEl('small', { class: 'libra-book-tool-meta', text: meta }) : null
-  ]);
 
   const bookQuickSection = (titleValue, noteValue, children = [], options = {}) => guiEl('section', {
-    class: `libra-book-tool-section${options.compact ? ' compact' : ''}`
+    class: `stack${options.compact ? ' compact' : ''}`
   }, [
-    guiEl('div', { class: 'libra-book-tool-section-head' }, [
+    guiEl('div', { class: "split" }, [
       guiEl('div', {}, [guiEl('h3', { text: titleValue }), noteValue ? guiEl('p', { text: noteValue }) : null]),
-      options.badge ? guiEl('span', { class: `libra-book-tool-status ${options.tone || ''}`.trim(), text: options.badge }) : null
+      options.badge ? guiEl('span', { class: `badge ${options.tone || ''}`.trim(), text: options.badge }) : null
     ]),
     ...children
   ]);
 
-  const bookQuickField = (labelValue, control, noteValue = '') => guiEl('label', { class: 'libra-book-tool-field' }, [
-    guiEl('span', { class: 'libra-book-tool-label', text: labelValue }), control,
+  const bookQuickField = (labelValue, control, noteValue = '') => guiEl('label', { class: "field" }, [
+    guiEl('span', { class: "setting__name", text: labelValue }), control,
     noteValue ? guiEl('small', { text: noteValue }) : null
   ]);
 
-  const bookQuickToggle = (checked, titleValue, noteValue, onChange) => guiEl('label', { class: 'libra-book-tool-toggle' }, [
+  const bookQuickToggle = (checked, titleValue, noteValue, onChange) => guiEl('label', { class: "check" }, [
     guiEl('input', { type: 'checkbox', checked, onChange: event => onChange?.(event.target.checked === true) }),
     guiEl('span', {}, [guiEl('strong', { text: titleValue }), noteValue ? guiEl('small', { text: noteValue }) : null])
   ]);
 
-  const bookQuickActionRow = children => guiEl('div', { class: 'libra-book-tool-actions' }, children);
+
 
   const buildBookQuickLibraResponsePanel = () => guiEl('div', {dataset:{bookQuickResponse:'true'}}, [buildLibraClassicPanel({compact:true}),buildLibraLiveContextSettingsPanel()]);
 
@@ -80825,12 +78135,12 @@ html,body{width:100%;height:100%;overflow:hidden}
     const agents = Gui.state.agents || (Gui.state.agents = {});
     const settings = Runtime.settings || {};
     const slot = agents.librarian || (agents.librarian = guiSlotFromSettings(settings, LIBRARIAN_STAGE_ID, settings.enableLibrarian));
-    return guiEl('div', { class: 'libra-book-tool-stack', dataset: { bookQuickNative: 'memory-agents' } }, [
+    return guiEl('div', { class: "stack", dataset: { bookQuickNative: 'memory-agents' } }, [
       bookQuickSection('기억 생성', '완료된 5턴 단위로 기억을 분석합니다. 저장된 기억은 기억 서가에서 확인할 수 있습니다.', [
         bookQuickToggle(slot.enabled !== false, '기억 분석 사용', 'Librarian 분석기의 사용 여부입니다.', value => { slot.enabled = value; markGuiDirty(); }),
         bookQuickField('기억 분석 AI', selectNode(slot.presetName || '', presetChoicesFromState(true), value => { slot.presetName = value; slot.preset = value; markGuiDirty(); }))
       ]),
-      guiEl('button', { class: 'libra-book-tool-link', type: 'button', text: '기억 분석 고급 설정 →', onClick: openBookMemoryAdvancedSettings })
+      guiEl('button', { class: "btn btn--sm", type: 'button', text: '기억 분석 고급 설정 →', onClick: openBookMemoryAdvancedSettings })
     ]);
   };
 
@@ -80867,40 +78177,33 @@ html,body{width:100%;height:100%;overflow:hidden}
     const section = Gui.bookQuickSection;
     const panel = (section === 'memory_agents' ? buildBookQuickMemoryAgentsPanel()
           : buildBookRecallSettingsPanel());
-    return guiEl('div', {
-      class: 'libra-book-drawer-backdrop',
-      dataset: { bookQuickDrawer: 'true' },
+    const closeIcon=document.createElementNS('http://www.w3.org/2000/svg','svg');closeIcon.setAttribute('class','ic');closeIcon.setAttribute('aria-hidden','true');closeIcon.setAttribute('viewBox','0 0 24 24');closeIcon.innerHTML=LIBRA_APPROVED_ICON_PATHS.x;
+    const overlay = guiEl('div', {
+      class: 'overlay overlay--right is-open', id: 'drawer-quick', dataset: { bookQuickDrawer: 'true' },
+      role: 'presentation', 'aria-hidden': 'false',
       onClick: event => { if (event.target === event.currentTarget) closeBookQuickSettings(true); },
       onKeyDown: event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeBookQuickSettings(true); } }
-    }, [guiEl('aside', { class: 'libra-book-drawer', 'aria-label': '빠른 설정' }, [
-      guiEl('header', { class: 'libra-book-drawer-head' }, [
-        guiEl('div', {}, [guiEl('span', { class: 'libra-book-eyebrow', text: 'LIBRARIAN TOOLKIT' }), guiEl('h2', { text: '빠른 설정' })]),
-        guiEl('div', { class: 'libra-book-drawer-actions' }, [
-          guiEl('span', { class: `libra-book-drawer-dirty${Gui.dirty ? ' dirty' : ''}`, dataset: { dirty: String(Gui.dirty), dirtyBadge: 'true' }, text: Gui.dirty ? '저장되지 않은 변경' : '저장됨' }),
-          guiEl('button', { class: 'libra-book-drawer-action', type: 'button', text: '되돌리기', dataset: { bookQuickRevert: 'true' }, disabled: Gui.bookQuickSaving === true || !Gui.dirty, onClick: async () => { await revertGuiStateFromStorage(); } }),
-          guiEl('button', { class: 'libra-book-drawer-action primary', type: 'button', dataset: { guiSaveLabel: '저장' }, text: Gui.bookQuickSaving === true ? '저장 중…' : Gui.dirty ? '저장' : '저장됨', disabled: Gui.bookQuickSaving === true || !Gui.dirty, onClick: saveBookQuickSettings }),
-          guiEl('button', { class: 'libra-book-drawer-action', type: 'button', text: '닫기', dataset: { bookQuickClose: 'true' }, onClick: () => closeBookQuickSettings(true) })
-        ])
+    }, [guiEl('aside', { class: 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'libra-quick-title' }, [
+      guiEl('div', { class: 'drawer__head' }, [
+        guiEl('div', {}, [guiEl('div', { class: 'eyebrow', text: 'Librarian Toolkit' }), guiEl('h2', { id: 'libra-quick-title', text: '빠른 설정' })]),
+        guiEl('button', { class: 'btn btn--icon btn--ghost', type: 'button', dataset: { bookQuickClose: 'true' }, 'aria-label': '닫기', onClick: () => closeBookQuickSettings(true) }, [closeIcon])
       ]),
-      guiEl('div', { class: 'sga-status' + (Gui.bookQuickSaveError ? ' err' : ''), style: { margin: '12px 20px 0', overflowWrap: 'anywhere' }, dataset: { bookQuickSaveStatus: 'true' }, role: 'status', 'aria-live': 'polite', hidden: !Gui.bookQuickSaveStatus, text: Gui.bookQuickSaveStatus || '' }),
-      guiEl('div', { class: 'libra-book-drawer-tabs', dataset: { bookQuickSaveLock: 'true' }, inert: Gui.bookQuickSaving === true, role: 'tablist', 'aria-label': '빠른 설정 종류' }, definitions.map(def => guiEl('button', {
-        class: `libra-book-drawer-tab${section === def.id ? ' active' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(section === def.id), text: def.label,
-        onClick: () => { Gui.bookQuickSection = def.id; const body = Gui.app?.querySelector('.libra-book-drawer-body'); if (body) body.scrollTop = 0; queueBookDrawerRender(); }
-      }))),
-      guiEl('div', { class: 'libra-book-drawer-body', dataset: { bookQuickSaveLock: 'true' }, inert: Gui.bookQuickSaving === true }, [panel])
+      guiEl('div', { class: 'drawer__body page', style: { display: 'block' }, dataset: { bookQuickSaveLock: 'true' }, inert: Gui.bookQuickSaving === true }, [
+        guiEl('div', { class: 'tabs', role: 'tablist', 'aria-label': '빠른 설정 종류' }, definitions.map(def => guiEl('button', {
+          class: `tab${section === def.id ? ' is-on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(section === def.id), text: def.label,
+          onClick: () => { Gui.bookQuickSection = def.id; const body = Gui.app?.querySelector('#drawer-quick .drawer__body'); if (body) body.scrollTop = 0; queueBookDrawerRender(); }
+        }))),
+        Gui.bookQuickSaveStatus ? guiEl('div', { class: `banner${Gui.bookQuickSaveError ? ' banner--warn' : ' banner--ok'}`, dataset: { bookQuickSaveStatus: 'true' }, role: 'status', 'aria-live': 'polite', text: Gui.bookQuickSaveStatus }) : null,
+        panel
+      ].filter(Boolean)),
+      guiEl('div', { class: 'drawer__foot savebar', style:'border-top:1px solid var(--border)' }, [
+        guiEl('div', { class: 'savebar__copy' }, [guiEl('b', { text: Gui.bookQuickSaving ? '설정을 저장하고 다시 읽는 중입니다' : Gui.dirty ? '저장되지 않은 변경이 있습니다' : '모든 변경이 저장되어 있습니다' }), guiEl('span', { text: '저장 후 설정 저장소에서 값을 다시 읽어 확인합니다.' })]),
+        guiEl('button', { class: 'btn', type: 'button', text: '되돌리기', dataset: { bookQuickRevert: 'true' }, disabled: Gui.bookQuickSaving === true || !Gui.dirty, onClick: async () => { await revertGuiStateFromStorage(); } }),
+        guiEl('button', { class: 'btn btn--primary', type: 'button', dataset:{guiSaveLabel:'저장'}, text: Gui.bookQuickSaving === true ? '저장 중…' : '저장', disabled: Gui.bookQuickSaving === true || !Gui.dirty, onClick: saveBookQuickSettings })
+      ])
     ])]);
-  };
-
-  const buildBookExecutionFlowTab = () => {
-    const page = normalizeBookPage(Gui.bookPage);
-    Gui.bookPage = page;
-    const content = page === 'memory' ? buildBookMemoryPanel()
-      : page === 'people' ? buildBookPeoplePanel()
-        : page === 'world' ? buildBookWorldPanel()
-          : page === 'story' ? buildBookStoryPanel()
-            : (page === 'settings' ? buildBookSettingsPanel()
-              : buildBookDeskPanel());
-    return guiEl('div', { class: 'libra-book-stage', dataset: { activeBookPage: page } }, [content]);
+    overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeBookQuickSettings(true); } });
+    return overlay;
   };
 
   const BOOK_EXTERNAL_SETTINGS_ITEMS = Object.freeze([
@@ -80935,41 +78238,9 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (item.reference === 'modules') void refreshModuleLoreCatalog(false);
     else if (item.reference === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
   };
-  const buildBookExternalSettingsNavigation = () => [...new Set(BOOK_EXTERNAL_SETTINGS_ITEMS.map(item=>item.group))].map(group=> {
-    const items=BOOK_EXTERNAL_SETTINGS_ITEMS.filter(item=>item.group===group);
-    return guiEl('details',{class:'libra-book-setting-group',open:items.some(bookExternalSettingsActive)},[
-      guiEl('summary',{text:group}),
-      ...items.map(item=>guiEl('button',{class:'sga-side-item libra-book-side-item',type:'button',dataset:{externalSettings:item.id,active:String(bookExternalSettingsActive(item))},'aria-current':bookExternalSettingsActive(item)?'page':null,disabled:Gui.bookQuickSaving===true,onClick:()=>selectBookExternalSettings(item.id)},[guiEl('span',{class:'libra-book-side-copy'},[guiEl('strong',{text:item.label})])]))
-    ]);
-  });
-  const buildBookSidebar = () => {
-    const active = normalizeBookPage(Gui.bookPage);
-    const primaryNavigation = BOOK_SIDEBAR_PAGE_REGISTRY.map(page => guiEl('button', {
-      class: 'sga-side-item libra-book-side-item', type: 'button', dataset: { active: String(active === page.id), bookPage: page.id },
-      'aria-current': active === page.id ? 'page' : null, onClick: () => bookNavigate(page.id)
-    }, [guiEl('span', { class: 'sga-side-icon', text: page.icon }), guiEl('span', { class: 'libra-book-side-copy' }, [guiEl('strong', { text: page.label }), guiEl('small', { text: page.note || '' })])]));
-    return guiEl('aside', { class: 'sga-sidebar libra-book-sidebar', 'aria-label': 'LIBRA Librarian 메뉴' }, [
-      guiEl('div', { class: 'libra-book-side-label', text: 'LIBRARIAN' }),
-      guiEl('nav', { class: 'sga-side-nav libra-book-side-nav', 'aria-label': 'LIBRA Librarian 메뉴' }, [
-        ...primaryNavigation,
-        guiEl('div', { class: 'libra-book-side-divider', 'aria-hidden': 'true' }),
-        ...(active === 'settings' ? buildBookExternalSettingsNavigation() : [])
-      ])
-    ]);
-  };
-
-  const BOOK_MOBILE_ITEMS = Object.freeze(BOOK_SIDEBAR_PAGE_REGISTRY.filter(page => page.id !== 'settings'));
-  const buildBookMobileNavigation = () => {
-    const active = normalizeBookPage(Gui.bookPage);
-    return guiEl('nav', { class: 'libra-book-mobile-nav', 'aria-label': 'LIBRA Librarian 모바일 메뉴' }, BOOK_MOBILE_ITEMS.map(page => guiEl('button', {
-      class: active === page.id ? 'active' : '', type: 'button', dataset: { mobileBookPage: page.id }, 'aria-pressed': String(active === page.id), onClick: () => bookNavigate(page.id)
-    }, [guiEl('span', { text: page.icon }), guiEl('small', { text: page.label.replace('현재 ', '').replace(' 서가', '').replace(' 카드함', '').replace(' 도감', '').replace(' 연감', '') })])));
-  };
-
 
   const GUI_SCROLL_SELECTORS = Object.freeze([
-    '.sga-main', '.sga-sidebar', '.sga-list-items', '.sga-live-result-text', '.sga-live-result-code',
-    '.libra-book-drawer-body', '.libra-book-drawer .sga-list-items', '.libra-book-browse-list', '.libra-book-character-index', '.libra-book-memory-rail', '.libra-book-settings-native-content', '.libra-book-writing-content'
+    '.main', '.sidebar', '.rail__list', '.drawer__body', '.sheet-page', '.setnav', '.page-body'
   ]);
 
   const guiDisclosureStateKey = (node, index = 0) => {
@@ -80985,7 +78256,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     if (!node) return '';
     if (node.id) return `id:${node.id}`;
     const owner = node.parentElement?.closest?.('[id]');
-    const field = node.closest?.('.sga-field');
+    const field = node.closest?.('.field');
     const label = compact(field?.querySelector?.('label')?.textContent || '', 120);
     return `control:${owner?.id || 'root'}:${node.tagName || ''}:${node.type || ''}:${label}:${index}`;
   };
@@ -81005,11 +78276,11 @@ html,body{width:100%;height:100%;overflow:hidden}
   const captureGuiViewportState = () => {
     if (!Gui.root || typeof document === 'undefined') return null;
     const targetViewKey = guiBodyViewKey();
-    const navigation = Gui.app?.querySelector('[data-render-region="main"]')?.dataset.guiViewKey !== targetViewKey;
-    const stateRoot = navigation ? Gui.app?.querySelector('[data-render-region="book-drawer"]') : Gui.root;
+    const navigation = Gui.app?.querySelector('.main > .page-body')?.dataset.guiViewKey !== targetViewKey;
+    const stateRoot = navigation ? Gui.app?.querySelector('#drawer-quick[data-book-quick-drawer]') : Gui.root;
     const scroll = {};
     for (const selector of GUI_SCROLL_SELECTORS) {
-      if (navigation && !selector.startsWith('.libra-book-drawer')) continue;
+      if (navigation && !selector.startsWith('.drawer')) continue;
       const node = Gui.root.querySelector(selector);
       if (node) scroll[selector] = { top: Number(node.scrollTop || 0), left: Number(node.scrollLeft || 0) };
     }
@@ -81055,7 +78326,7 @@ html,body{width:100%;height:100%;overflow:hidden}
     const apply = () => {
       try {
         if (!Gui.visible || state.targetViewKey !== guiBodyViewKey()) return;
-        const stateRoot = state.navigation ? Gui.app?.querySelector('[data-render-region="book-drawer"]') : Gui.root;
+        const stateRoot = state.navigation ? Gui.app?.querySelector('#drawer-quick[data-book-quick-drawer]') : Gui.root;
         Array.from(stateRoot?.querySelectorAll('details') || []).forEach((node, index) => {
           const key = guiDisclosureStateKey(node, index);
           if (Object.prototype.hasOwnProperty.call(state.disclosures || {}, key)) {
@@ -81107,7 +78378,7 @@ html,body{width:100%;height:100%;overflow:hidden}
       return false;
     }
     const activeControl = typeof document !== 'undefined' ? document.activeElement : null;
-    if (activeControl && Gui.app?.contains(activeControl) && /^(INPUT|TEXTAREA)$/.test(activeControl.tagName || '')) return false;
+    if (activeControl && Gui.app?.contains(activeControl) && (activeControl.tagName === 'TEXTAREA' || (activeControl.tagName === 'INPUT' && !['checkbox','radio','range','button','submit','file'].includes(activeControl.type)))) return false;
     if (GuiRenderPromise) {
       GuiRenderQueued = true;
       return await GuiRenderPromise;
@@ -81128,121 +78399,781 @@ html,body{width:100%;height:100%;overflow:hidden}
     return await GuiRenderPromise;
   }
 
+  const bindApprovedOverlayKeyboard = (overlay, decline) => {
+    const returnFocus=document.activeElement;
+    const key=event=>{
+      const open=[...Gui.app.querySelectorAll('.overlay.is-open')].filter(node=>!node.hidden);
+      if(open.at(-1)!==overlay)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();decline();return;}
+      if(event.key!=='Tab')return;
+      const nodes=[...overlay.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(node=>!node.disabled&&node.tabIndex>=0&&node.getClientRects().length);
+      if(!nodes.length){event.preventDefault();overlay.querySelector('[role="dialog"]')?.focus();return;}
+      const first=nodes[0],last=nodes.at(-1);
+      if(event.shiftKey&&(document.activeElement===first||!overlay.contains(document.activeElement))){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&(document.activeElement===last||!overlay.contains(document.activeElement))){event.preventDefault();first.focus();}
+    };
+    document.addEventListener('keydown',key,true);
+    const observer=new MutationObserver(()=>{if(overlay.isConnected&&overlay.classList.contains('is-open')&&overlay.getAttribute('aria-hidden')!=='true')return;document.removeEventListener('keydown',key,true);observer.disconnect();if(returnFocus?.isConnected)returnFocus.focus();});
+    observer.observe(Gui.app,{childList:true,subtree:true,attributes:true,attributeFilter:['class','aria-hidden']});
+    queueMicrotask(()=>overlay.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')?.focus());
+  };
+  const createApprovedRecoveryOverlay = id => {
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_RECOVERY_DIALOG_HTML;
+    const overlay=template.content.firstElementChild;overlay.id=id;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');
+    overlay.querySelectorAll('[data-fill]').forEach(node=>{node.textContent='';});
+    overlay.querySelector('#rb-bound').replaceChildren();overlay.querySelector('#rb-hint').textContent='';
+    overlay.querySelector('[data-variant="rebuild"]').hidden=true;
+    overlay.querySelector('.dialog__actions').replaceChildren();
+    overlay.querySelectorAll('[data-run-job],[data-close],[data-no-track]').forEach(node=>{node.removeAttribute('data-run-job');node.removeAttribute('data-close');node.removeAttribute('data-no-track');});
+    return overlay;
+  };
+  const confirmApprovedOperation = (question,options={}) => new Promise(resolve=>{
+    if(!Gui.app||!Gui.visible||Gui.app.querySelector('#dlg-product-confirm')){resolve(false);return;}
+    const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
+    let overlay;if(options.template){const template=document.createElement('template');template.innerHTML=options.template;overlay=template.content.firstElementChild;overlay.id='dlg-product-confirm';overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.querySelectorAll('[data-fill]').forEach(node=>node.textContent=options.target||'');overlay.querySelectorAll('[data-act],[data-toast],[data-close]').forEach(node=>{node.removeAttribute('data-act');node.removeAttribute('data-toast');node.removeAttribute('data-close');});overlay.querySelector('.dialog__actions').replaceChildren();overlay.querySelector('h2').textContent=options.title||'변경 내용 확인';if(options.questionSelector)overlay.querySelector(options.questionSelector).textContent=question;}else overlay=createApprovedRecoveryOverlay('dlg-product-confirm');overlay.dataset.operationConfirm='true';overlay.dataset.operationScope=binding.scopeKey;
+    if(!options.template)overlay.querySelector('#drc-t').textContent=options.title||'변경 내용 확인';
+    if(!options.template)overlay.querySelector('[data-fill="kind"]').textContent=options.kind||'확인';
+    if(!options.template)overlay.querySelector('[data-fill="cost"]').textContent=options.cost||'새 모델 요청을 보내지 않습니다.';
+    if(!options.template)overlay.querySelector('[data-fill="impact"]').textContent=question;
+    const status=guiEl('p',{class:'hint',role:'status',dataset:{operationConfirmStatus:'true'},text:options.target?`대상 · ${options.target}`:`현재 범위 · ${binding.scopeKey||'전역 설정'}`});
+    (overlay.querySelector('.cost-table')||overlay.querySelector('.dialog__actions')).before(status);
+    let finished=false;
+    const close=result=>{if(finished)return;finished=true;document.removeEventListener('keydown',escape,true);overlay.remove();resolve(result);};
+    const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(false);}};
+    const cancel=guiEl('button',{class:'btn',type:'button',text:'취소',onClick:()=>close(false)});
+    const execute=guiEl('button',{class:'btn btn--primary',type:'button',text:options.actionLabel||'확인',dataset:{operationConfirmExecute:'true'},onClick:()=>{
+      if(!Gui.visible||canonicalReaderBindingKey(canonicalReaderBinding())!==bindingKey||overlay.dataset.operationScope!==binding.scopeKey||(options.validate&&!options.validate())){status.textContent='채팅·분기·scope 또는 작업 대상이 바뀌었습니다. 다시 열어 확인하세요.';execute.disabled=true;return;}
+      close(true);
+    }});
+    overlay.querySelector('.dialog__actions').append(cancel,execute);overlay.addEventListener('click',event=>{if(event.target===overlay)close(false);});
+    Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>close(false));cancel.focus();
+  });
+
+  const openApprovedPendingDialog = (domain,row,view) => {
+    Gui.app.querySelector('#dlg-pending')?.remove();const binding=canonicalReaderBinding();
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_PENDING_DIALOG_HTML;
+    const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.pendingScope=binding.scopeKey;overlay.dataset.pendingTarget=String(row?.id||'');overlay.querySelector('[data-fill="person"]').textContent=row?.name||'전체';
+    const pending=guiAsArray(view.head?.unifiedApplied?.pending).filter(item=>item.recordId===row?.id&&['missing_current_binding','same_source_order_conflict','dependency_pending'].includes(item.reason));
+    const selected=new Set(),list=overlay.querySelector('#pend-list');list.replaceChildren();
+    const status=guiEl('p',{class:'hint',role:'status',text:'해결할 근거를 선택한 뒤 해당 필드를 실제로 교정하세요. Journal, replay, Current Head readback으로 해제를 확인합니다.'});list.appendChild(status);
+    const key=item=>JSON.stringify([item.memoryId,item.revision,item.fact]);
+    const apply=guiEl('button',{class:'btn btn--primary',type:'button',text:'교정 작성',disabled:true,onClick:()=>{
+      if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding())||overlay.dataset.pendingScope!==binding.scopeKey||overlay.dataset.pendingTarget!==String(row.id)){status.textContent='채팅·분기 또는 보류 대상이 바뀌었습니다. 다시 열어 확인하세요.';apply.disabled=true;return;}
+      const actual=guiAsArray(worldManagerSnapshotView().head?.unifiedApplied?.pending);
+      if(pending.filter(item=>selected.has(key(item))).some(item=>!actual.some(current=>key(current)===key(item)))){status.textContent='보류 근거가 바뀌었습니다. 다시 읽어 확인하세요.';return;}
+      overlay.remove();openWorldManagerCorrectionEditor(domain,row,view);Gui.worldManagerEditDraft.resolvePendingFacts=pending.filter(item=>selected.has(key(item))).map(item=>({memoryId:item.memoryId,revision:item.revision,fact:item.fact}));openApprovedCorrectionDialog(domain,row,view);
+    }});
+    for(const item of pending)list.appendChild(guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',onChange:event=>{if(event.target.checked)selected.add(key(item));else selected.delete(key(item));apply.disabled=!selected.size;}}),guiEl('span',{},[guiEl('b',{text:worldManagerArticleFieldLabel(item.field)}),guiEl('small',{text:`${item.fact} · ${item.reason} · ${item.memoryId} r${item.revision}`})])]));
+    if(!pending.length)list.appendChild(guiEl('p',{class:'muted',text:'현재 항목에서 해결할 수 있는 보류 근거가 없습니다.'}));
+    overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>overlay.remove()}),apply);overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
+  };
+  const openApprovedStateDialog = () => {
+    Gui.app.querySelector('#dialog-state')?.remove();const binding=canonicalReaderBinding();
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_STATE_DIALOG_HTML;const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');
+    const snap=LibraMemoryCore.peekSnapshot()||{},view=worldManagerSnapshotView(),refs=Object.values(guiAsObject(snap.manifest?.memories));
+    const committed=refs.filter(row=>row.status==='committed'),current=Array.isArray(snap.pairs)?snap.pairs.length:null,last=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
+    const dl=overlay.querySelector('.kv');dl.replaceChildren();
+    for(const [label,value] of [['현재 U+A',current==null?'확인 불가':`${current}턴`],['저장된 기억',`${committed.length}개 · T${last}까지`],['대기',current==null?'확인 불가':`${Math.max(0,current-last)}턴`],['상태 반영',view.head?`T${Number(view.throughTurn||0)} · ${view.head.status||'확인 필요'}`:'Current Head 없음'],['부분 저장',`${committed.filter(row=>row.pipelineStatus==='partial').length}개 구간`],['대기 중 반영',`${committed.filter(row=>Number(row.turnRange?.end||0)>Number(view.throughTurn||0)).length}개 구간`]])dl.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
+    const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren(guiEl('button',{class:'btn',type:'button',text:'전체 상태 확인',onClick:()=>{if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding()))return;void refreshGuiSnapshot(false).then(()=>openApprovedStateDialog());}}),guiEl('button',{class:'btn btn--primary',type:'button',text:'닫기',onClick:()=>overlay.remove()}));
+    overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
+  };
+  const openApprovedRecoveryJob = (kind,title,binding) => {
+    Gui.app.querySelector('#job-recover')?.remove();
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_RECOVERY_JOB_HTML;
+    const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.recoveryKind=kind;overlay.dataset.recoveryScope=binding.scopeKey;
+    overlay.querySelectorAll('[data-fill]').forEach(node=>node.textContent='');overlay.querySelector('[data-fill="kind"]').textContent=kind;overlay.querySelector('#jrc-t').textContent=title;
+    overlay.querySelector('.progress').hidden=true;
+    const result=overlay.querySelector('[data-job-result]');result.replaceChildren();result.hidden=true;
+    overlay.querySelector('[data-job-msg]').textContent='확인한 범위에서 실제 작업을 실행합니다.';
+    const steps=[...overlay.querySelectorAll('.step')];steps[0].classList.add('is-done');steps[1].classList.add('is-active');
+    const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren();
+    const minimize=()=>{overlay.hidden=true;let chip=Gui.app.querySelector('[data-recovery-job-chip]');if(!chip){chip=guiEl('button',{class:'btn btn--sm',type:'button',dataset:{recoveryJobChip:'true'},text:title,onClick:()=>{overlay.hidden=false;chip.remove();}});Gui.app.appendChild(chip);}};
+    actions.appendChild(guiEl('button',{class:'btn',type:'button',text:'최소화',onClick:minimize}));
+    overlay.addEventListener('click',event=>{if(event.target===overlay)minimize();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,minimize);
+    return (message,error=false)=>{
+      if(!overlay.isConnected)return;
+      steps.forEach(node=>node.classList.remove('is-active'));steps[1].classList.add(error?'is-fail':'is-done');if(!error)steps[2].classList.add('is-done');
+      overlay.querySelector('[data-job-msg]').textContent=error?'작업 결과를 확인하세요.':'실제 처리 결과와 readback을 확인했습니다.';
+      result.hidden=false;result.replaceChildren(guiEl('div',{class:'res-row'},[guiEl('b',{text:error?'오류':'처리 결과'}),guiEl('span',{text:message})]));
+      actions.replaceChildren(guiEl('button',{class:'btn btn--primary',type:'button',text:'확인',onClick:()=>{overlay.remove();Gui.app.querySelector('[data-recovery-job-chip]')?.remove();}}));
+    };
+  };
+  const openApprovedRecoveryDialog = async (kind,row=null) => {
+    if(kind==='correction')return openApprovedCorrectionsDialog();
+    const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
+    Gui.app?.querySelector('#dlg-recover')?.remove();
+    const overlay=createApprovedRecoveryOverlay('dlg-recover');overlay.dataset.recoveryKind=kind;overlay.dataset.recoveryScope=binding.scopeKey;overlay.dataset.recoveryWorldline=binding.worldlineId;
+    const defs={state:['현재 상태 다시 적용','상태 반영','모델 호출 0회 · 저장된 정본과 교정으로 현재 상태를 다시 구성합니다.'],rebuild:['5턴 경계로 rollback 후 상태 재구축','분기 · 재구축','모델 호출 0회 · 선택한 정본 5턴 경계 이후의 상태를 되돌립니다. 기억 원문은 보존합니다.'],receipt:['원문 저장 영수증 복구','영수증 복구','모델 호출 0회 · 영수증과 일치하는 원문 저장을 다시 확인합니다.'],micro:['Micro 재시도','Micro 재시도','분석 재시도는 모델 사용량이 발생할 수 있습니다. 이전 결과가 unknown이면 중복 비용이 발생할 수 있습니다.']};
+    if(!defs[kind])return false;
+    const [title,label,impact]=defs[kind];overlay.querySelector('#drc-t').textContent=title;overlay.querySelector('[data-fill="kind"]').textContent=label;overlay.querySelector('[data-fill="impact"]').textContent=impact;
+    overlay.querySelector('[data-fill="cost"]').textContent=kind==='micro'?'선택한 실제 작업의 상태에 따라 표시합니다.':'모델 호출 0회';
+    const status=guiEl('p',{class:'hint',role:'status',dataset:{recoveryStatus:'true'},text:`현재 범위 · ${binding.scopeKey||'미확인'} · 분기 ${binding.worldlineId}`});
+    overlay.querySelector('.cost-table').after(status);
+    let closed=false,busy=false,selected=null,options=[];
+    const valid=()=>!closed&&Gui.visible&&bindingKey===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.recoveryScope===binding.scopeKey&&overlay.dataset.recoveryKind===kind;
+    const close=()=>{if(busy)return;closed=true;overlay.remove();document.removeEventListener('keydown',escape,true);};
+    const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}};
+    const selector=overlay.querySelector('#rb-bound'),field=overlay.querySelector('[data-variant="rebuild"]');
+    field.hidden=kind==='state';field.querySelector('label').textContent=kind==='rebuild'?'되돌릴 5턴 경계':'복구할 실제 작업';
+    const update=()=>{
+      selected=options.find(item=>item.key===selector.value)||null;
+      execute.disabled=busy||!binding.scopeKey||(kind!=='state'&&!selected);
+      overlay.dataset.recoveryTarget=selected?.key||binding.worldlineId;
+      if(kind==='micro'&&selected)overlay.querySelector('[data-fill="cost"]').textContent=selected.row.status==='publish_ready'?'발행 확인 · 모델 호출 0회':`모델 호출 발생 가능${selected.row.status==='unknown'?' · 이전 결과 불명확, 중복 비용 가능':''}`;
+    };
+    const execute=guiEl('button',{class:kind==='micro'?'btn btn--danger':'btn btn--primary',type:'button',text:'실행',disabled:true,dataset:{recoveryExecute:'true'},onClick:async()=>{
+      if(busy)return;
+      if(!valid()||overlay.dataset.recoveryTarget!==(selected?.key||binding.worldlineId)){status.textContent='채팅·분기·scope 또는 작업 대상이 바뀌었습니다. 다시 열어 확인하세요.';execute.disabled=true;return;}
+      busy=true;execute.disabled=true;const finishJob=openApprovedRecoveryJob(kind,title,binding);
+      try{
+        if(kind==='state'||kind==='rebuild'){
+          await runStateReplayMaintenance({kind:kind==='state'?'rebuild':'rollback',scopeKey:binding.scopeKey,worldlineId:binding.worldlineId,throughTurn:kind==='rebuild'?selected.turn:null});
+          status.textContent='현재 상태 재생과 readback을 확인했습니다.';
+        }else{
+          const current=bookReceiptRecoveryState();const rows=kind==='receipt'?guiAsArray(current.status?.receiptStages):guiAsArray(current.status?.microJobs);
+          const same=rows.find(item=>recoveryRowIdentity(kind,item)===selected.key);
+          if(current.scopeKey!==binding.scopeKey||!same||same.status!==selected.row.status)throw new Error('복구 작업의 상태나 대상이 바뀌었습니다. 다시 읽어 확인하세요.');
+          const action=kind==='receipt'?'receipt':same.status==='never_started'?'micro_resume':same.status==='publish_ready'?'micro_publish':'micro_retry';
+          const result=await runBookReceiptRecoveryAction(action,same);
+          if(!valid())return;
+          status.textContent=result?`실제 처리 결과 · ${String(result.status||result.state||(result.ok===true?'확인됨':'결과 확인 필요'))}${result.reason?' · '+result.reason:''}`:'작업을 실행하지 못했습니다. 범위와 대상을 다시 확인하세요.';
+        }
+        finishJob(status.textContent);execute.hidden=true;
+      }catch(error){status.textContent=String(error.message||error);finishJob(status.textContent,true);}finally{busy=false;if(!execute.hidden)update();}
+    }});
+    overlay.querySelector('.dialog__actions').append(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:close}),execute);
+    overlay.addEventListener('click',event=>{if(event.target===overlay)close();});selector.addEventListener('change',update);Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);
+    try{
+      if(!binding.scopeKey)throw new Error('현재 채팅 범위를 확인하지 못했습니다.');
+      if(kind==='receipt'||kind==='micro'){
+        await loadBookReceiptRecoveryStatus(true);if(!valid())return;
+        const state=bookReceiptRecoveryState(),rows=kind==='receipt'?guiAsArray(state.status?.receiptStages):guiAsArray(state.status?.microJobs);
+        const eligible=item=>item.scopeKey===binding.scopeKey&&(kind==='receipt'?['missing','failed','pending_write','queued','paused','unavailable'].includes(item.status)&&item.reason!=='journal_read_unavailable':['never_started','failed','unknown','publish_ready'].includes(item.status));
+        options=rows.filter(eligible).filter(item=>!row||recoveryRowIdentity(kind,item)===recoveryRowIdentity(kind,row)).map(item=>({key:recoveryRowIdentity(kind,item),row:cloneJson(item),label:`T${Number(item.turn||0)} · ${item.status}`}));
+      }else if(kind==='rebuild'){
+        const snap=LibraMemoryCore.peekSnapshot()||{};options=Object.values(snap.manifest?.memories||{}).filter(item=>item.status==='committed'&&Number(item.turnRange?.end)>0&&Number(item.turnRange?.end)%LibraMemoryCore.BATCH_SIZE===0).map(item=>({key:String(item.turnRange.end),turn:Number(item.turnRange.end),label:`T${item.turnRange.end}까지`}));
+        options=[...new Map(options.map(item=>[item.key,item])).values()].sort((a,b)=>b.turn-a.turn);
+      }
+      selector.replaceChildren(...optionNodes([['','실제 대상을 선택하세요'],...options.map(item=>[item.key,item.label])],''));
+      if(row&&options.length===1)selector.value=options[0].key;
+      overlay.querySelector('#rb-hint').textContent=kind==='rebuild'?'저장이 완료된 5턴 경계만 선택할 수 있습니다.':options.length?'기록된 상태와 scope가 일치하는 작업만 표시합니다.':'현재 범위에 복구할 수 있는 작업이 없습니다.';
+      if(kind==='state'&&!Object.values(LibraMemoryCore.peekSnapshot()?.manifest?.memories||{}).some(item=>item.status==='committed'))throw new Error('반영할 저장된 정본 기억이 없습니다.');
+      update();
+    }catch(error){status.textContent=String(error.message||error);execute.disabled=true;}
+    return overlay;
+  };
+  const recoveryRowIdentity = (kind,row) => JSON.stringify([kind,row?.scopeKey,Number(row?.turn||0),row?.receiptRef,row?.revisionId,row?.sourceDigest]);
+  const openApprovedCorrectionsDialog = () => {
+    const binding=canonicalReaderBinding();Gui.app?.querySelector('#dlg-corr-life')?.remove();
+    const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_CORRECTIONS_DIALOG_HTML;
+    const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.correctionsScope=binding.scopeKey;overlay.dataset.correctionsWorldline=binding.worldlineId;
+    overlay.querySelector('#corr-list').replaceChildren(buildWorldManagerCorrectionsPanel());overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn btn--primary',type:'button',text:'닫기',dataset:{correctionsClose:'true'},onClick:()=>overlay.remove()}));
+    overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();return;}if(event.target.closest('button:not([data-corrections-close])')&&(canonicalReaderBindingKey(canonicalReaderBinding())!==canonicalReaderBindingKey(binding)||overlay.dataset.correctionsScope!==binding.scopeKey||overlay.dataset.correctionsWorldline!==binding.worldlineId)){event.preventDefault();event.stopImmediatePropagation();overlay.querySelector('#corr-list').replaceChildren(guiEl('p',{class:'note note--danger',text:'채팅 또는 scope가 바뀌었습니다. 다시 열어 확인하세요.'}));}},true);
+    Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
+  };
+  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'five'}},[
+    ...[['state','현재 상태 다시 적용','저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.'],['correction','교정 관리','적용 중 · 재검토 · 휴면 · 대체 · 삭제 상태를 확인합니다.'],['rebuild','분기 · 재구축','저장이 완료된 5턴 경계로 상태를 되돌립니다. 원문은 보존합니다.'],['receipt','원문 저장 영수증 복구','실제 영수증과 일치하는 원문 저장을 확인합니다. 모델 호출 0회입니다.'],['micro','Micro 재시도','모델 사용량이 발생할 수 있으며 unknown 결과에는 중복 비용이 발생할 수 있습니다.']].map(([kind,title,description])=>guiEl('div',{class:'act-card'},[guiEl('div',{},[guiEl('b',{text:title}),guiEl('small',{text:description})]),guiEl('button',{class:kind==='micro'?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:kind==='correction'?'교정 목록 열기':'실행…',dataset:{recoveryKind:kind},onClick:()=>void openApprovedRecoveryDialog(kind)})]))
+  ]);
+
+  const createApprovedMockupApp = () => {
+    const template = document.createElement('template');
+    template.innerHTML = LIBRA_APPROVED_MOCKUP_APP_HTML;
+    const app = template.content.querySelector('.app');
+    if (!app) throw new Error('Approved LIBRA mockup app template is unavailable.');
+    app.classList.add('t-libra');
+    app.dataset.responseFamily = 'libra';
+    for (const html of [LIBRA_APPROVED_PROMPT_DIALOG_HTML, LIBRA_APPROVED_CORRECTION_DIALOG_HTML]) {
+      const modalTemplate = document.createElement('template');
+      modalTemplate.innerHTML = html;
+      const modal = modalTemplate.content.firstElementChild;
+      if (!modal) continue;
+      modal.querySelectorAll('[data-act],[data-toast]').forEach(node => { node.removeAttribute('data-act'); node.removeAttribute('data-toast'); });
+      modal.querySelectorAll('[data-fill]').forEach(node=>{node.textContent='';if('value' in node)node.value='';});
+      modal.querySelectorAll('textarea').forEach(node => { node.value = ''; node.textContent = ''; });
+      app.appendChild(modal);
+    }
+    app.querySelectorAll('[data-act],[data-toast],[data-ctx]').forEach(node=>{node.removeAttribute('data-act');node.removeAttribute('data-toast');node.removeAttribute('data-ctx');});
+    // The mockup interaction script and all fixed data are intentionally absent.
+    // Keep only its destination headings/actions; each product view is populated below.
+    app.querySelectorAll('.overlay:not(#dlg-prompt):not(#dlg-correct)').forEach(node => node.remove());
+    app.querySelector('#savebar-settings')?.remove();
+    app.querySelectorAll('.page').forEach(page => {
+      const head = page.querySelector(':scope > .page-head');
+      page.replaceChildren();
+      if (head) page.appendChild(head);
+    });
+    app.querySelectorAll('[data-i]').forEach(icon => {
+      const name = icon.dataset.i;
+      const path = LIBRA_APPROVED_ICON_PATHS[name];
+      if (!path) return;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', `ic${icon.dataset.size ? ` ic--${icon.dataset.size}` : ''}`);
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.innerHTML = path; icon.replaceWith(svg);
+    });
+    const tabbar = app.querySelector('.tabbar');
+    const sideItems = Array.from(app.querySelectorAll('.sidebar .nav-item[data-go]'));
+    const primary = sideItems.filter(node => node.dataset.tab !== 'top');
+    const cap = primary.length > 5 ? 4 : primary.length;
+    const iconFor = node => {
+      const existing = node.querySelector('svg.ic');
+      if (existing) return existing.cloneNode(true);
+      const key = node.querySelector('[data-i]')?.dataset.i || 'grid';
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'ic'); svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('aria-hidden','true');
+      svg.innerHTML=LIBRA_APPROVED_ICON_PATHS[key]||LIBRA_APPROVED_ICON_PATHS.grid; return svg;
+    };
+    if (tabbar) {
+      tabbar.replaceChildren();
+      primary.slice(0,cap).forEach(node=>{const button=document.createElement('button');button.type='button';button.dataset.go=node.dataset.go;button.append(iconFor(node),document.createTextNode(node.dataset.short||node.textContent.trim()));tabbar.appendChild(button);});
+      if (primary.length>cap) { const more=document.createElement('button');more.type='button';more.dataset.more='true';more.append(iconFor({querySelector:selector=>selector==='[data-i]'?{dataset:{i:'more'}}:null}),document.createTextNode('더보기'));tabbar.appendChild(more); }
+    }
+    if (primary.length>cap) {
+      const overlay=document.createElement('div');overlay.id='sheet-more';overlay.className='overlay overlay--bottom';overlay.dataset.libraMoreSheet='true';overlay.setAttribute('aria-hidden','true');
+      const sheet=document.createElement('div');sheet.className='sheet';sheet.setAttribute('role','dialog');sheet.setAttribute('aria-modal','true');sheet.setAttribute('aria-label','더보기');
+      const list=document.createElement('div');list.dataset.moreList='';sheet.appendChild(list);
+      primary.slice(cap).forEach(node=>{const button=document.createElement('button');button.type='button';button.className='row';button.dataset.go=node.dataset.go;button.dataset.close='';const icon=document.createElement('span');icon.className='row__icon';icon.appendChild(iconFor(node));const label=document.createElement('span');const title=document.createElement('span');title.className='row__title';title.textContent=node.querySelector('.nav-text')?.textContent||node.dataset.go;label.appendChild(title);const arrow=iconFor({querySelector:selector=>selector==='[data-i]'?{dataset:{i:'arrow'}}:null});arrow.setAttribute('class','ic ic--sm faint');button.append(icon,label,arrow);list.appendChild(button);});
+      overlay.appendChild(sheet);app.appendChild(overlay);
+      overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.classList.remove('is-open');});
+    }
+    return app;
+  };
+
+  const closeApprovedMockupDialog = id => {
+    const overlay = Gui.app?.querySelector(`#${id}`);
+    if (!overlay) return;
+    overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden', 'true');
+  };
+  const openApprovedPromptDialog = (options = {}) => {
+    const overlay = Gui.app?.querySelector('#dlg-prompt');
+    const dialog = overlay?.querySelector('.dialog');
+    if (!overlay || !dialog) return false;
+    const wasOpen=overlay.classList.contains('is-open'),refresh=options.refresh===true;
+    if(refresh&&!wasOpen)return false;
+    const oldDetail=dialog.querySelector('[data-prompt-editor-details]');
+    const detailOpen=refresh&&oldDetail?.open===true;
+    const oldPanel=dialog.querySelector('[data-product-prompt-studio]');
+    const disclosures=new Map([...oldPanel?.querySelectorAll('details')||[]].map((node,index)=>[guiDisclosureStateKey(node,index),node.open]));
+    const active=document.activeElement,focusLabel=oldPanel?.contains(active)?active.closest('.field')?.querySelector('label')?.textContent:null;
+    const focusTag=active?.tagName,focusText=active?.tagName==='BUTTON'?active.textContent:null;
+    setSharedCustomPromptDomain('memory');
+    const existing = dialog.querySelector('[data-product-prompt-studio]'); existing?.remove();
+    dialog.querySelectorAll('[data-prompt-readback],[data-prompt-editor-details]').forEach(node=>node.remove());
+    dialog.querySelectorAll('.field,#ps-save,#ps-default').forEach(node => node.remove());
+    const panel = buildLibraPromptStudioPanel({ allowedDomains: ['memory'] });
+    panel.dataset.productPromptStudio = 'true';
+    const title=dialog.querySelector('#dps-t'); if(title)title.textContent='기억 분석 지침 · 프리셋';
+    const summary=document.createElement('div');summary.className='note';summary.dataset.promptReadback='true';
+    const activeName=promptStudioActiveName(promptStudioProfiles(),'memory');
+    summary.textContent=`현재 활성 프리셋 · ${activeName} · 기억 분석 설정 저장소에서 읽음`;
+    const detail=document.createElement('details');detail.className='fold';detail.dataset.promptEditorDetails='true';
+    detail.open=detailOpen;
+    const detailSummary=document.createElement('summary');detailSummary.textContent='상세 · 기존 Prompt Studio 전체 설정';
+    detail.append(detailSummary,panel);
+    const actions = dialog.querySelector('.dialog__actions') || document.createElement('div');
+    actions.className = 'dialog__actions'; actions.replaceChildren();
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'btn'; close.textContent = '닫기'; close.dataset.mockupClose = 'true';
+    actions.appendChild(close);
+    dialog.insertBefore(summary, actions);dialog.insertBefore(detail,actions);
+    if (!actions.parentElement) dialog.appendChild(actions);
+    overlay.classList.add('is-open'); overlay.setAttribute('aria-hidden', 'false');
+    if(!wasOpen)bindApprovedOverlayKeyboard(overlay,()=>{overlay.classList.remove('is-open');overlay.setAttribute('aria-hidden','true');});
+    if(refresh){
+      panel.querySelectorAll('details').forEach((node,index)=>{const key=guiDisclosureStateKey(node,index);if(disclosures.has(key))node.open=disclosures.get(key);});
+      const field=focusLabel?[...panel.querySelectorAll('.field')].find(node=>node.querySelector('label')?.textContent===focusLabel):null;
+      const target=field?.querySelector(String(focusTag||'').toLowerCase())||(focusText?[...panel.querySelectorAll('button')].find(node=>node.textContent===focusText):null);
+      target?.focus();
+    }else close.focus();
+    return true;
+  };
+
+  const buildApprovedMockupDesk = () => {
+    const snapshot = LibraMemoryCore.peekSnapshot() || {};
+    const view = worldManagerSnapshotView();
+    const narrative = guiAsObject(view.narrative);
+    const characters = guiAsArray(view.characters);
+    const relationships = guiAsArray(view.relationships);
+    const world = guiAsArray(view.world);
+    const threads = guiAsArray(narrative.threads).filter(row => row?.status === 'open');
+    const refs = Object.values(guiAsObject(snapshot.manifest?.memories)).filter(row => row?.status === 'committed');
+    const committedTurn = Number(snapshot.continuityState?.throughTurn || snapshot.manifest?.frontiers?.committedTurn || 0);
+    const currentTurn = Array.isArray(snapshot.pairs) ? snapshot.pairs.length : null;
+    const pending = currentTurn == null ? null : Math.max(0, currentTurn - committedTurn);
+    const recall = LibraMemoryCore.getLastRecall();
+    const current = recall && libraRecallScopeIsCurrent(recall) ? recall : null;
+    const delivery = libraGuiObject(current?.delivery || Runtime.lastMemoryRecallViewer);
+    const deliveryCurrent = !delivery.scopeKey || libraRecallScopeIsCurrent({ scopeKey: delivery.scopeKey, scope: delivery.scope });
+    const route = normalizeResponseInjectionMode(deliveryCurrent ? (delivery.route || Runtime.lastInjectionMode || Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE) : (Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE));
+    const mode = LIBRA_RESPONSE_MODE_UI[route] || LIBRA_RESPONSE_MODE_UI.classic;
+    const rows = deliveryCurrent ? libraGuiArray(delivery.rows) : [];
+    const used = rows.filter(row => row.classicUsed === true || row.injected === true);
+    const count = Number(delivery[`${route}Memories`] ?? delivery.classicMemories ?? delivery.injectedMemories ?? used.length) || used.length;
+    const chars = Number(delivery.classicChars || delivery.blockChars || Runtime.lastClassicInjectionMeta?.chars || 0);
+    const text = (value, fallback) => String(value || '').trim() || fallback;
+    const link = (label, page) => guiEl('button', { class: 'linkbtn', type: 'button', text: label, onClick: () => bookNavigate(page) });
+    const fact = (n, label) => guiEl('div', { class: 'fact' }, [guiEl('b', { text: String(n) }), guiEl('span', { text: label })]);
+    const note = (kicker, title, body, action = null) => guiEl('div', { class: 'anno' }, [
+      guiEl('div', { class: 'anno__head' }, [guiEl('span', { class: 'anno__kicker', text: kicker }), action]),
+      guiEl('h3', { text: title }), guiEl('p', { text: body })
+    ]);
+    const statusLabel = committedTurn > 0 ? `T${committedTurn}까지 정본 상태 반영` : '정본 상태 반영 대기';
+    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'desk' } }, [
+      guiEl('div', { class: committedTurn > 0 ? 'banner banner--ok' : 'banner banner--warn', dataset: { productReadback: 'desk-status' } }, [
+        guiEl('div', { class: 'banner__icon', text: committedTurn > 0 ? '✓' : '!' }),
+        guiEl('div', {}, [guiEl('b', { text: statusLabel }), guiEl('span', { text: `${currentTurn == null ? '현재 대화 턴 확인 불가' : `현재 ${currentTurn}턴 · 저장 대기 ${pending}턴`} · 정본 기억 ${refs.length}개` })]),
+        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '상태 자세히', onClick: () => { openApprovedStateDialog(); } })
+      ]),
+      guiEl('div', { class: 'spread' }, [
+        guiEl('article', { class: 'leaf' }, [
+          guiEl('div', { class: 'eyebrow' }, [guiEl('span', { class: 'bookmark' }), document.createTextNode('Current Scene')]),
+          guiEl('h2', { text: '현재 장면의 기록' }),
+          guiEl('p', { class: `lead${narrative.summary ? '' : ' muted'}`, text: text(narrative.summary, '현재 저장소에서 확인된 Current Narrative 요약이 없습니다.') }),
+          guiEl('div', { class: 'facts' }, [fact(count, '호출된 기억'), fact(relationships.length, '관계 영향'), fact(world.length, '세계 항목'), fact(threads.length, '열린 줄기')]),
+          guiEl('div', { class: 'cluster' }, [characters.length ? link(`인물 ${characters.length} →`, 'people') : null, relationships.length ? link(`관계 ${relationships.length} →`, 'people') : null, world.length ? link(`세계 ${world.length} →`, 'world') : null, threads.length ? link(`열린 줄기 ${threads.length} →`, 'story') : null].filter(Boolean))
+        ]),
+        guiEl('article', { class: 'leaf' }, [
+          guiEl('div', { class: 'eyebrow', text: "Librarian's Notes" }), guiEl('h2', { text: '이번 턴의 사서 주석' }),
+          note('RECALL', `이번 리콜 · 정본 기억 ${count}개`, used.slice(0, 3).map(row => compact(libraGuiText(row.text || row.selectedText || ''), 360)).filter(Boolean).join('  ') || '현재 채팅에서 확인된 이번 턴 리콜 기록이 없습니다.', link('서가에서 보기 →', 'memory')),
+          note('DELIVERY', `사서 모드 전달 · ${mode.label}`, count ? `${count}개 정본 근거 · ${chars}자 직접 전달 · 추가 LLM 호출 0회` : '현재 요청에서 직접 전달된 정본 기억이 확인되지 않았습니다.'),
+          guiEl('div', { class: 'anno anno--final' }, [guiEl('div', { class: 'anno__head' }, [guiEl('span', { class: 'anno__kicker', text: 'FINAL' }), guiEl('button', { class: 'linkbtn', type: 'button', text: '전달 근거 보기 →', onClick: () => bookSelectMemorySection('context') })]), guiEl('h3', { text: '최종 주입' }), guiEl('p', { text: '이 화면은 현재 채팅 범위의 실제 전달 영수증만 표시합니다. 전달 기록이 없으면 성공으로 추정하지 않습니다.' })])
+        ])
+      ]),
+
+      buildBookMemoryProgressPanel(), buildBookReceiptRecoveryPanel(), buildBookHostLineagePanel()
+    ].filter(Boolean));
+  };
+
+  const buildApprovedMockupMemory = () => {
+    ensureCanonicalReaderPage();
+    if (!Gui.canonicalReaderLoaded && !Gui.canonicalReaderLoading) void loadCanonicalReaderPage(false);
+    const reader = buildBookMemoryReaderProjection();
+    reader.id='memory-root'; reader.dataset.productReadback='canonical-memory-reader';
+    const manage = guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
+      guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석 후보와 수정용 복사본은 검토 후 별도 승인해야 정본에 반영됩니다.' })]),
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
+        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '버전 · 실행 기록', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); } }),
+        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '복구 · 재구축', onClick: () => selectBookSettingsRoomSection('recovery') })
+      ])
+    ]), guiEl('section', { class: 'card', dataset: { productMemoryManagement: 'true' } }, [buildLibraMemoriesPanel(), buildCanonicalEvidenceDrawer()])]);
+    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [manage, reader]);
+  };
+
+  const buildApprovedMockupSettings = () => {
+    const active = bookSettingsRoomActiveSection();
+    const items = BOOK_NATIVE_SETTINGS_SECTIONS;
+    const groups = [
+      { id:'ai', label:'AI 연결', note:'생성 AI · 임베딩', icon:'cpu', sections:['ai','embedding'] },
+      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','logs'] },
+      { id:'ref', label:'참고 자료', note:'로어 · 분석 입력 규칙', icon:'book', sections:['references','source_edits'] },
+      { id:'store', label:'저장과 백업', note:'서버 · 백업 · 설정 이동', icon:'db', sections:['server','recovery','transfer'] },
+      { id:'adv', label:'복구 · 진단', note:'상태 · 교정 · 재구축', icon:'wrench', sections:['state','general'] }
+    ];
+    const groupFor = id => groups.find(group=>group.sections.includes(id))||groups[1];
+    const activeGroup=groupFor(active);
+    const icon = name => {
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','ic');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+      svg.innerHTML=LIBRA_APPROVED_ICON_PATHS[name]||LIBRA_APPROVED_ICON_PATHS.gear;return svg;
+    };
+    const layoutTemplate=document.createElement('template');layoutTemplate.innerHTML=LIBRA_APPROVED_SETTINGS_LAYOUT_HTML;
+    const layout=layoutTemplate.content.firstElementChild||document.createElement('div');
+    layout.className='settings-layout';
+    const nav=layout.querySelector('.setnav')||guiEl('div',{class:'setnav'});
+    nav.setAttribute('aria-label','설정 항목');
+    const groupAliases={ai:'ai',mem:'mem',ref:'ref',store:'store',adv:'adv'};
+    for(const button of Array.from(nav.querySelectorAll('button[data-subtab]'))){
+      const group=groups.find(item=>item.id===groupAliases[button.dataset.subtab]);
+      if(!group){button.remove();continue;}
+      button.setAttribute('aria-selected',String(activeGroup.id===group.id));button.setAttribute('role','tab');
+      const oldIcon=button.querySelector('[data-i]');if(oldIcon)oldIcon.replaceWith(icon(group.icon));
+      button.onclick=()=>selectBookSettingsRoomSection(group.sections[0]);
+    }
+    nav.querySelectorAll('[data-subpanel]').forEach(node=>node.remove());
+    nav.querySelectorAll('[data-subtab]').forEach(button=>button.hidden=false);
+    const panel = buildApprovedMockupSettingsPanel(activeGroup.id, active);
+    const sectionTabs=activeGroup.sections.length>1?guiEl('nav',{class:'tabs',role:'tablist','aria-label':`${activeGroup.label} 상세 설정`},activeGroup.sections.map(id=>{
+      const item=BOOK_NATIVE_SETTINGS_SECTIONS.find(section=>section.id===id);
+      return guiEl('button',{class:`tab${active===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===id),text:item?.label||id,onClick:()=>selectBookSettingsRoomSection(id)});
+    })):null;
+    const content = guiEl('section', { class: 'stack', dataset: { productSettingsSection: active } }, [
+      guiEl('div', { class: 'split' }, [guiEl('h2', { class: 'card__title', text: items.find(item => item.id === active)?.label || '설정' }), guiEl('span', { class: 'badge', dataset: { dirtyBadge: 'true' }, text: Gui.dirty ? '저장되지 않은 변경' : '저장됨' })]),
+      sectionTabs,
+      panel,
+      buildBookSaveBar()
+    ]);
+    const contentHost=layout.querySelector(':scope > .stack')||guiEl('div',{class:'stack'});
+    contentHost.replaceChildren(content);
+    if(!contentHost.parentElement)layout.appendChild(contentHost);
+    if(!nav.parentElement)layout.insertBefore(nav,contentHost);
+    layout.dataset.libraProductDetail='settings';
+    return layout;
+  };
+
+  // LIBRA uses the original Character Introduction structure as its product DOM.
+  // The mockup's sample rows are intentionally never mounted; every rail row,
+  // field, relationship and evidence count comes from the live read model.
+  const buildApprovedMockupPeople = () => {
+    const view = worldManagerSnapshotView();
+    const rows = guiAsArray(view.characters);
+    const identities = rows.map((row,index)=>bookProjectionIdentity('characters',row,index));
+    let selectedId=text(Gui.bookSelectedCharacterId||Gui.worldManagerSelectedCharacterId||'');
+    if(!identities.includes(selectedId))selectedId=identities[0]||'';
+    Gui.bookSelectedCharacterId=selectedId;Gui.worldManagerSelectedCharacterId=selectedId;
+    const selectedIndex=Math.max(0,identities.indexOf(selectedId));
+    const row=rows[selectedIndex]||null,name=row?bookCharacterName(row):'';
+    const state=guiAsObject(row?.state);
+    const facts=row?worldManagerArticleFacts({id:row.id||'',name,state},view,Number.MAX_SAFE_INTEGER):[];
+    const search=text(Gui.bookCharacterQuery||'').trim().toLocaleLowerCase();
+    const tabs=[['intro','소개','profile'],['pref','선호','preferences'],['bound','경계','boundaries'],['now','현재 상황','current'],['rel','관계','relationships'],['know','지식','knowledge'],['own','소속·사물','affiliations']];
+    const active=tabs.some(([id,,key])=>key===Gui.bookCharacterTab)?Gui.bookCharacterTab:'profile';
+    const selectedName=row?bookCharacterName(row):'';
+    const matching=rows.map((item,index)=>({item,index,id:identities[index],name:bookCharacterName(item)})).filter(entry=>!search||[entry.name,...guiAsArray(entry.item.aliases)].join(' ').toLocaleLowerCase().includes(search));
+    const rail=guiEl('aside',{class:'rail'},[
+      guiEl('div',{class:'rail__search'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',placeholder:'인물 검색','aria-label':'인물 검색',value:Gui.bookCharacterQuery||'',onInput:event=>{Gui.bookCharacterQuery=event.target.value;const q=event.target.value.trim().toLocaleLowerCase();let n=0;Gui.app?.querySelectorAll('[data-character-search]').forEach(node=>{node.hidden=!node.dataset.characterSearch.includes(q);if(!node.hidden)n++;});const empty=Gui.app?.querySelector('[data-character-search-empty]');if(empty)empty.hidden=n>0;}})])]),
+      guiEl('div',{class:'rail__list'},matching.length?matching.map(({item,id,name:n})=>{
+        const factsFor=worldManagerArticleFacts({id:item.id||'',name:n,state:guiAsObject(item.state)},view,Number.MAX_SAFE_INTEGER);
+        const present=factsFor.filter(f=>['locationRef','condition'].includes(f.key)).map(f=>f.value).filter(Boolean).join(' · ');
+        const aliases=guiAsArray(item.aliases).map(text).filter(Boolean);
+        const queryText=[n,...aliases].join(' ').toLocaleLowerCase();
+        return guiEl('button',{class:`chapter${id===selectedId?' is-on':''}`,type:'button',dataset:{characterSearch:queryText,selectRow:id},'aria-pressed':String(id===selectedId),onClick:()=>{Gui.bookSelectedCharacterId=id;Gui.worldManagerSelectedCharacterId=id;Gui.bookCharacterDetail=true;queueGuiNavigationRender();}},[
+          guiEl('small',{text:'인물'}),guiEl('b',{text:n}),guiEl('span',{text:present?`현재: ${present}`:'현재 상황 기록 없음'})
+        ]);
+      }):[guiEl('div',{class:'empty',dataset:{characterSearchEmpty:'true'},text:rows.length?'일치하는 인물이 없습니다.':'현재 저장소에 인물 기록이 없습니다.'})])
+    ]);
+    if(!rail.querySelector('[data-character-search-empty]'))rail.querySelector('.rail__list').appendChild(guiEl('div',{class:'empty',hidden:true,dataset:{characterSearchEmpty:'true'},text:'일치하는 인물이 없습니다.'}));
+    const evidenceSummary=record=>{
+      const spans=guiAsArray(record?.evidenceSpans).filter(s=>text(s?.quote||'').trim());
+      const turns=[record?.sourceTurnRange?.end,record?.turnRange?.end,...spans.map(s=>Number(/^t(\\d+)-/.exec(text(s.ref||''))?.[1]||0))].map(Number).filter(n=>n>0);
+      return {count:spans.length,turn:Math.max(0,...turns),spans};
+    };
+    if(!row)return guiEl('div',{class:'grid g-side',dataset:{libraProductDetail:'people',productReadback:'people'}},[rail,guiEl('article',{class:'sheet-page detail-pane'},[guiEl('div',{class:'eyebrow',text:'Character Introduction'}),guiEl('h2',{text:'인물 기록 없음'}),guiEl('p',{class:'deck',text:'현재 LIBRA 저장소에서 인물 기록을 읽지 못했습니다.'}),guiEl('div',{class:'empty',text:'표본 인물은 표시하지 않습니다.'})])]);
+    const evidence=evidenceSummary(row.identityEvidence||row.evidence);
+    const groupKeys={intro:['appearance','background','personality','speech','habits','abilities'],pref:['preferences'],bound:['boundaries'],now:['locationRef','condition','goal'],know:['knowledge'],own:['affiliations']};
+    const groupFactNodes=key=>{
+      const keys=groupKeys[key]||[],matched=facts.filter(f=>keys.includes(f.key));
+      const factNodes=list=>guiEl('dl',{class:`kv${key==='intro'?' profile':''}`},list.flatMap(f=>{
+        const info=evidenceSummary(row.fieldEvidence?.[f.key]);
+        return [guiEl('dt',{text:f.label}),guiEl('dd',{dataset:{characterField:f.key},text:f.value}),info.count?guiEl('details',{},[guiEl('summary',{text:`근거 ${info.count}개 · T${info.turn||'?'}`}),...info.spans.map(span=>guiEl('blockquote',{text:text(span.quote)}))]):guiEl('small',{class:'hint',text:'연결된 인용 근거 없음'})];
+      }));
+      const nodes=matched.length?[factNodes(matched)]:[guiEl('p',{class:'muted',text:key==='know'?'기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.':'이 분류에는 현재 기록된 항목이 없습니다.'})];
+      if(key==='intro'){
+        const known=new Set(Object.values(groupKeys).flat()),extra=facts.filter(f=>!known.has(f.key));
+        if(extra.length)nodes.push(guiEl('details',{class:'fold',dataset:{characterExtraFields:'true'}},[guiEl('summary',{text:'상세 · 추가 기록'}),guiEl('div',{class:'fold__body'},[factNodes(extra)])]));
+      }
+      return nodes;
+    };
+    const relRows=guiAsArray(view.relationships).filter(rel=>text(rel.subjectId||'')===text(row.id||'')||text(rel.targetId||'')===text(row.id||''));
+    const relContent=relRows.length?guiEl('div',{class:'stack stack--sm'},relRows.map(rel=>{
+      const from=rows.find(person=>person.id===rel.subjectId),to=rows.find(person=>person.id===rel.targetId);
+      const summary=evidenceSummary(rel.evidence||rel.identityEvidence);
+      return guiEl('div',{class:'rel',dataset:{relationshipId:bookProjectionIdentity('relationships',rel,relRows.indexOf(rel))}},[
+        guiEl('b',{text:from?bookCharacterName(from):bookRelationshipEndpointName(rel,'subject')}),guiEl('span',{},[guiEl('span',{class:'rel__arrow',text:'→'}),` ${to?bookCharacterName(to):bookRelationshipEndpointName(rel,'target')} `,guiEl('span',{class:'chip',text:[worldManagerArticleValue(worldManagerDisplayReferences(rel.dimension,view,'dimension')),bookProjectionReadable(worldManagerRelationshipDefinition(rel),240)||'상태 미기록'].filter(Boolean).join(' · ')})]),
+        guiEl('button',{class:'linkbtn',type:'button',text:`근거${summary.count?` ${summary.count}개`:''}`,onClick:()=>{Gui.worldManagerSelectedRelationshipId=bookProjectionIdentity('relationships',rel,relRows.indexOf(rel));bookSelectPeopleSection('relationships');}})
+      ]);
+    })):guiEl('p',{class:'muted',text:'현재 인물과 연결된 관계 기록이 없습니다.'});
+    const peerRows=rows.filter(person=>person.id!==row.id&&relRows.some(rel=>rel.subjectId===person.id||rel.targetId===person.id));
+    const peerLinks=peerRows.length?guiEl('details',{class:'fold'},[guiEl('summary',{text:'상세 · 연결된 인물'}),guiEl('div',{class:'fold__body cluster'},peerRows.map(person=>guiEl('button',{class:'chip',type:'button',dataset:{characterPeer:person.id},text:bookCharacterName(person),onClick:()=>{Gui.bookSelectedCharacterId=person.id;Gui.worldManagerSelectedCharacterId=person.id;queueGuiNavigationRender();}})))]):null;
+    const worldLinks=bookWorldAtlasModel(view).flatMap(item=>item.links.filter(edge=>edge.target.domain==='characters'&&edge.target.id===selectedId).map(edge=>({item,label:edge.label.replace('현재 소지자','현재 소지').replace('소유 주체','소유').replace('현재 구성원','현재 소속').replace('이전 구성원','이전 소속')})));
+    const linkedWorld=worldLinks.length?guiEl('details',{class:'fold'},[guiEl('summary',{text:'상세 · 연결된 세계 항목'}),guiEl('div',{class:'fold__body cluster'},worldLinks.map(({item,label})=>guiEl('button',{class:'chip',type:'button',dataset:{characterWorldLink:item.id},text:`${label} · ${item.title}`,onClick:()=>{Gui.bookBrowse_world={...(Gui.bookBrowse_world||{}),selected:item.id,query:''};bookNavigate('world');}})))]):null;
+    const panels=tabs.map(([id,label,key])=>guiEl('div',{hidden:key!==active?'':null,dataset:{subpanel:id,group:'people'},class:key===active?'is-active':''},key==='relationships'?[relContent,guiEl('p',{class:'hint',text:'관계는 주체에서 대상으로 향하는 별도 기록입니다.'}),peerLinks].filter(Boolean):[...groupFactNodes(id),...(id==='own'&&linkedWorld?[linkedWorld]:[])]));
+    const primary=guiEl('article',{class:'sheet-page detail-pane',dataset:{detail:selectedId}},[
+      guiEl('div',{class:'eyebrow',dataset:{characterEvidence:'true',evidenceCount:String(evidence.count),evidenceTurn:String(evidence.turn)},text:`Character · 근거 ${evidence.count} · ${evidence.turn?`T${evidence.turn}`:'기준 턴 미상'} 기준`}),
+      guiEl('h2',{text:selectedName}),guiAsArray(row.aliases).length?guiEl('p',{class:'deck',text:'별칭 · '+guiAsArray(row.aliases).map(text).join(' · ')}):null,
+      guiEl('div',{class:'tabs',role:'tablist',dataset:{subtabs:'people'},style:'margin-top:14px'},tabs.map(([id,label,key])=>guiEl('button',{class:`tab${active===key?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===key),dataset:{subtab:id},text:label,onClick:()=>{Gui.bookCharacterTab=key;queueGuiNavigationRender();}}))),
+      guiEl('div',{class:'stack'},panels),
+      guiEl('div',{class:'manage-block'},[guiEl('div',{class:'note',style:'margin-top:14px'},[guiEl('b',{text:'관리 도구'}),' · 교정은 정본이 아닌 도메인 교정으로 기록됩니다.']),guiEl('div',{class:'cluster',style:'margin-top:8px'},[
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'인물·관계 교정',dataset:{open:'dlg-correct'},onClick:()=>openWorldManagerCorrectionEditor('characters',row,view)}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'인물 상세 · 관리',onClick:()=>bookSelectPeopleSection('characters')}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'보류 근거 해결…',onClick:()=>{openApprovedPendingDialog('characters',row,view);}})
+      ])]),
+      guiEl('div',{class:'cluster',style:'margin-top:12px'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'인물 상세 · 관리',onClick:()=>bookSelectPeopleSection('characters')}),guiEl('button',{class:'linkbtn',type:'button',text:'관계 이력 · 관리',onClick:()=>bookSelectPeopleSection('relationships')})])
+    ].filter(Boolean));
+    return guiEl('div',{class:'grid g-side',dataset:{libraProductDetail:'people',productReadback:'world-manager-snapshot',selectedCharacter:selectedId}},[rail,primary]);
+  };
+
+  const buildApprovedMockupWorld = () => {
+    const view = worldManagerSnapshotView();
+    const items = bookWorldAtlasModel(view);
+    const state = Gui.bookBrowse_world || (Gui.bookBrowse_world = { query: '', kind: '', selected: '' });
+    const query = text(state.query || '').trim().toLocaleLowerCase();
+    const kinds = [...new Set(items.map(item => item.kind))];
+    const filtered = items.filter(item => (!state.kind || item.kind === state.kind) && (!query || [item.title, item.lead, ...guiAsArray(item.aliases), ...guiAsArray(item.facts).map(fact => fact.value)].join(' ').toLocaleLowerCase().includes(query)));
+    const read = item => {
+      const start = Math.max(0, guiAsArray(item.facts).length ? Number(item.confirmations?.[0]?.turn || item.evidence?.[0]?.turn || 0) : 0);
+      const body = item.lead || guiAsArray(item.facts).slice(0, 2).map(fact => `${fact.label} · ${fact.value}`).join(' · ') || '저장된 세부 정보가 없습니다.';
+      return guiEl('article', { class: 'card cardlet', dataset: { worldEntry: item.id } }, [
+        guiEl('div', { class: 'split' }, [guiEl('span', { class: 'badge badge--info', text: item.kind }), guiEl('span', { class: 'hint', text: start ? `T${start}` : '기준 턴 미확인' })]),
+        guiEl('h3', { class: 'card__title', text: item.title }), guiEl('p', { class: 'muted', text: body }),
+        item.aliases?.length ? guiEl('p', { class: 'hint', text: `별칭 · ${item.aliases.join(' · ')}` }) : null,
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'linkbtn', type: 'button', text: `근거 ${guiAsArray(item.evidence).length}개 →`, onClick: () => { Gui.worldManagerSelectedWorldId = item.recordId || item.id; bookSelectWorldSection('details'); } }),
+          ...guiAsArray(item.links).slice(0, 3).map(edge => guiEl('button', { class: 'chip', type: 'button', dataset:{worldLink:edge.target.id}, text: `${edge.label} · ${edge.target.title||edge.target.row?.name||edge.target.id} →`, onClick: () => {
+            if (edge.target.domain === 'world') { state.selected = edge.target.id; state.query = ''; queueGuiNavigationRender(); }
+            else { Gui.bookSelectedCharacterId = edge.target.id; Gui.worldManagerSelectedCharacterId = edge.target.id; bookNavigate('people'); }
+          } }))
+        ]),
+        guiEl('details',{class:'fold',dataset:{worldDetail:item.id}},[guiEl('summary',{text:'상세 · 기록과 인용 근거'}),guiEl('div',{class:'fold__body stack'},[
+          guiAsArray(item.facts).length?guiEl('dl',{class:'kv'},guiAsArray(item.facts).flatMap(fact=>[guiEl('dt',{text:fact.label}),guiEl('dd',{text:fact.value})])):guiEl('p',{class:'muted',text:'상태와 연결 정보는 아직 기록되지 않았습니다.'}),
+          guiAsArray(item.cleared).length?guiEl('p',{class:'hint',text:'명시적으로 해제됨 · '+item.cleared.join(' · ')}):null,
+          item.row?.correctionProvenance?guiEl('p',{class:'hint',text:'사용자 교정이 적용된 기록입니다.'}):null,
+          ...guiAsArray(item.evidence).map(record=>guiEl('blockquote',{},[guiEl('p',{text:record.quote}),guiEl('small',{class:'hint',text:`${record.ref} · ${record.fields.join(' · ')}`})])),
+          ...guiAsArray(item.links).slice(3).map(edge=>guiEl('button',{class:'chip',type:'button',dataset:{worldLink:edge.target.id},text:`${edge.label} · ${edge.target.row?.name||edge.target.id}`,onClick:()=>{if(edge.target.domain==='world'){state.selected=edge.target.id;state.query='';queueGuiNavigationRender();}else{Gui.bookSelectedCharacterId=edge.target.id;Gui.worldManagerSelectedCharacterId=edge.target.id;bookNavigate('people');}}}))
+        ].filter(Boolean))]),
+        guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '근거 · 상세', onClick: () => { Gui.worldManagerSelectedWorldId = item.recordId || item.id; bookSelectWorldSection('details'); } }),
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '수정용 복사본 교정', onClick: () => { Gui.worldManagerSelectedWorldId = item.recordId || item.id; bookSelectWorldSection('details'); } })
+        ])]),
+      ].filter(Boolean));
+    };
+    const categoryButton = kind => guiEl('button', { class: `chip wchip${state.kind === kind ? ' is-on' : ''}`, type: 'button', 'aria-pressed': String(state.kind === kind), text: `${kind || '전체'} ${kind ? items.filter(item => item.kind === kind).length : items.length}`, onClick: () => { state.kind = kind; queueGuiNavigationRender(); } });
+    const search = guiEl('div', { class: 'search' }, [guiEl('input', { class: 'input', type: 'search', value: state.query || '', placeholder: '도감에서 찾기', 'aria-label': '세계 도감 검색', onInput: event => { state.query = event.target.value; }, onKeyDown: event => { if (event.key === 'Enter') {event.preventDefault();event.currentTarget.blur();queueGuiNavigationRender();} } }), guiEl('button', { class: 'btn btn--sm', type: 'button', text: '찾기', onClick: () => queueGuiNavigationRender() })]);
+    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'world', productReadback: 'world-manager-snapshot' } }, [
+      search,
+      guiEl('div', { class: 'cluster', role: 'group', 'aria-label': '분류' }, [categoryButton(''), ...kinds.map(categoryButton)]),
+      guiEl('div', { class: 'grid g3', id: 'world-grid' }, filtered.length ? filtered.map(read) : [guiEl('div', { class: 'empty card', 'aria-live': 'polite' }, [guiEl('b', { text: items.length ? '일치하는 세계 기록이 없습니다' : '아직 세계 기록이 없습니다' }), guiEl('p', { text: items.length ? '검색어나 분류를 바꿔 다시 확인하세요.' : '기억에서 확인된 장소·세력·규칙·사물이 이곳에 정리됩니다.' })])])
+    ]);
+  };
+
+  const buildApprovedMockupStory = () => {
+    const view=worldManagerSnapshotView(),history=bookNarrativeHistoryState(),groups=bookNarrativeModel(view,history.chapters);
+    const tabs=[['open','남은 이야기','threads'],['chron','사건 연대기','events'],['flow','흐름 · 전환','arcs'],['motif','반복 소재','motifs'],['mile','관계 이정표','relations'],['done','마무리된 이야기','closed']];
+    const active=tabs.some(([id])=>id===Gui.approvedStoryTab)?Gui.approvedStoryTab:'open';
+    const groupKey=tabs.find(([id])=>id===active)?.[2]||'threads';
+    const all=groupKey==='motifs'?groups.arcs.filter(item=>item.kind==='반복 소재'):groupKey==='arcs'?groups.arcs.filter(item=>item.kind!=='반복 소재'):groups[groupKey]||[];
+    const query=text(Gui.bookNarrativeQuery||'').trim().toLocaleLowerCase();
+    const rows=all.filter(item=>!query||[item.title,item.body,item.kind,item.status,...guiAsArray(item.rows).map(r=>r.text)].join(' ').toLocaleLowerCase().includes(query));
+    const item=rows.find(row=>row.id===Gui.bookNarrativeSelected)||rows[0];
+    const choose=next=>{Gui.approvedStoryTab=next;Gui.bookNarrativeSelected='';Gui.bookNarrativeQuery='';queueGuiNavigationRender();};
+    const chooseRow=id=>{Gui.bookNarrativeSelected=id;queueGuiNavigationRender();};
+    const directionScope=narrativeDirectionScopeKey();
+    const draft=Gui.narrativeDirectionDraftKey===directionScope?Gui.narrativeDirectionDraft:null;
+    if(!draft&&!Gui.narrativeDirectionLoading)Promise.resolve().then(()=>loadNarrativeDirectionDraft());
+    const setDirection=(key,value)=>{if(!Gui.narrativeDirectionDraft)return;Gui.narrativeDirectionDraft[key]=value;Gui.narrativeDirectionDraft.dirty=true;};
+    const list=rows.length?rows.map(row=>guiEl('button',{class:'row',type:'button',dataset:{narrativeEntry:row.id},'aria-current':String(row===item),onClick:()=>chooseRow(row.id)},[
+      guiEl('span',{class:'row__icon',text:row.turn?String(row.turn):'·'}),guiEl('span',{},[guiEl('span',{class:'row__title',text:row.title}),guiEl('span',{class:'row__meta',text:`${row.kind} · ${row.turn?`T${row.turn}`:'기준 턴 미상'}`})]),guiEl('span',{class:`badge${['미해결','진행 막힘','미확정'].includes(row.status)?' badge--warn':''}`,text:row.status})
+    ])): [guiEl('div',{class:'empty'},[guiEl('b',{text:all.length?'검색 결과가 없습니다':'기록된 서사 항목이 없습니다'}),guiEl('span',{text:'현재 저장된 상태와 기억 이력에서만 표시합니다.'})])];
+    const evidence=guiAsArray(item?.evidence||[]);
+    const narrativeList=guiEl('div',{class:'list',id:'story-open-list','aria-live':'polite'},list);
+    const selected=item?guiEl('div',{class:'stack'},[
+      guiEl('div',{class:'split'},[guiEl('span',{class:'badge badge--info',text:item.kind}),guiEl('span',{class:'hint',text:item.turn?`T${item.turn}`:'기준 턴 미상'})]),
+      guiEl('h2',{class:'card__title',text:item.title}),item.body?guiEl('p',{class:'card__desc',text:item.body}):null,
+      item.rows?.length?guiEl('ol',{class:'plain'},item.rows.map(row=>guiEl('li',{text:row.text}))):null,
+      item.links?.length?guiEl('details',{class:'fold',dataset:{narrativeLinks:'true'}},[guiEl('summary',{text:'상세 · 연결된 서사 기록'}),guiEl('div',{class:'fold__body cluster'},item.links.map(link=>guiEl('button',{class:'chip',type:'button',dataset:{narrativeLink:link.id},text:link.title+' →',onClick:()=>{Gui.approvedStoryTab=({threads:'open',events:'chron',arcs:'flow',relations:'mile',closed:'done'})[link.group]||'open';Gui.bookNarrativeSelected=link.id;Gui.bookNarrativeQuery='';queueGuiNavigationRender();}})))]):null,
+      evidence.length?guiEl('details',{class:'fold'},[guiEl('summary',{text:`근거 원문 ${evidence.length}개`}),guiEl('div',{class:'fold__body'},evidence.map(row=>guiEl('blockquote',{},[guiEl('p',{text:row.quote}),guiEl('small',{class:'hint',text:row.ref||'원문 위치 미기록'})]))) ]):guiEl('p',{class:'hint',text:'연결된 인용 원문이 없습니다.'}),
+      guiEl('div',{class:'cluster'},[guiEl('button',{class:'linkbtn',type:'button',text:'서사 구조 관리 →',onClick:()=>{if(item.row?.id){const key=item.id.startsWith('thread-')?'worldManagerSelectedThreadId':item.id.startsWith('arc-')?'worldManagerSelectedArcId':item.id.startsWith('lock-')?'worldManagerSelectedLockId':'';if(key)Gui[key]=item.row.id;}bookSelectStorySection('structure');}}),guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가에서 원본 찾기 →',onClick:()=>bookNavigate('memory')})])
+    ].filter(Boolean)):guiEl('div',{class:'empty'},[guiEl('b',{text:'목록에서 기록을 선택하세요'}),guiEl('span',{text:'표본 내러티브는 표시하지 않습니다.'})]);
+    const direction=draft?[
+      guiEl('div',{class:'field'},[guiEl('label',{text:'목표'}),guiEl('textarea',{class:'textarea',rows:2,value:draft.goal||'',dataset:{directionField:'goal'},onInput:event=>setDirection('goal',event.target.value)})]),
+      guiEl('div',{class:'field'},[guiEl('label',{text:'완료 조건'}),guiEl('textarea',{class:'textarea',rows:2,value:draft.completionConditions||'',dataset:{directionField:'completionConditions'},onInput:event=>setDirection('completionConditions',event.target.value)})]),
+      guiEl('div',{class:'field'},[guiEl('label',{text:'강제하지 말아야 할 전개'}),guiEl('textarea',{class:'textarea',rows:2,value:draft.doNotForce||'',dataset:{directionField:'doNotForce'},onInput:event=>setDirection('doNotForce',event.target.value)})]),
+      guiEl('div',{class:'field'},[guiEl('label',{text:'부드러운 선호 (soft preferences)'}),guiEl('textarea',{class:'textarea',rows:2,value:draft.softPreferences||'',dataset:{directionField:'softPreferences'},onInput:event=>setDirection('softPreferences',event.target.value)})]),
+      guiEl('label',{class:'switch'},[guiEl('input',{type:'checkbox',checked:draft.locked===true,dataset:{directionField:'locked'},onChange:event=>setDirection('locked',event.target.checked===true)}),guiEl('span',{class:'switch__track'}),guiEl('span',{class:'switch__text'},[guiEl('b',{text:'잠금'}),guiEl('small',{text:'잠그면 자동 갱신이 이 방향을 바꾸지 않습니다.'})])])
+    ]:[guiEl('p',{class:'hint',role:'status',text:Gui.narrativeDirectionLoading?'앞으로의 방향을 읽는 중입니다.':Gui.narrativeDirectionError||'앞으로의 방향을 불러오지 못했습니다.'})];
+    const margin=guiEl('aside',{class:'card card--accent'},[
+      guiEl('div',{class:'eyebrow',text:"Librarian's Margin"}),guiEl('h3',{class:'card__title',text:'사서의 여백'}),guiEl('p',{class:'card__desc',text:'원하는 다음 방향을 저장합니다. 현재 사실과 권위가 다르며 사실로 저장되지 않습니다.'}),
+      guiEl('div',{class:'margin-form',id:'margin-form'},direction),
+      Gui.narrativeDirectionError?guiEl('p',{class:'hint',role:'alert',text:Gui.narrativeDirectionError}):guiEl('p',{class:'hint',id:'margin-state',text:draft?.dirty?'저장되지 않은 변경이 있습니다.':'기록된 값과 같습니다.'}),
+      guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--primary btn--sm',type:'button',id:'margin-save',disabled:!draft||Gui.narrativeDirectionSaving,text:Gui.narrativeDirectionSaving?'저장 확인 중…':'여백에 기록',onClick:()=>void saveNarrativeDirectionDraft()}),guiEl('button',{class:'btn btn--sm',type:'button',id:'margin-revert',disabled:!draft||Gui.narrativeDirectionSaving,text:'기록된 값으로',onClick:()=>{Gui.narrativeDirectionDraft=null;Gui.narrativeDirectionDraftKey='';void loadNarrativeDirectionDraft();}}),guiEl('button',{class:'btn btn--sm btn--danger',type:'button',id:'margin-reset',disabled:Gui.narrativeDirectionSaving,text:'초기화…',onClick:()=>void clearNarrativeDirectionDraft()})])
+    ]);
+    return guiEl('div',{class:'grid g-side g-side--r',dataset:{libraProductDetail:'story',productReadback:'narrative-snapshot'}},[
+      guiEl('article',{class:'card'},[
+        guiEl('div',{class:'tabs',role:'tablist',dataset:{subtabs:'s'}},tabs.map(([id,label,key])=>guiEl('button',{class:`tab${active===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===id),dataset:{subtab:id},text:label+` ${id==='open'?groups.threads.length:all.length}`,onClick:()=>choose(id)}))),
+        guiEl('div',{class:'stack'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',value:Gui.bookNarrativeQuery||'',placeholder:'현재 분류에서 찾기','aria-label':'서사 연감 검색',onInput:event=>{Gui.bookNarrativeQuery=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();queueGuiNavigationRender();}}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'찾기',onClick:()=>queueGuiNavigationRender()})]),narrativeList,selected,
+          guiEl('details',{class:'fold',dataset:{narrativeHistory:'true'}},[guiEl('summary',{text:'상세 · 정본 기억 이력'}),guiEl('div',{class:'fold__body stack'},[
+            guiEl('p',{class:'hint',role:'status',text:history.error|| (history.loading?'정본 기억 이력을 읽는 중입니다.':history.loaded?`정본 이력 ${history.chapters.length}개를 읽었습니다. 당시 기록은 현재 상태를 변경하지 않습니다.`:'기억 이력을 명시적으로 읽어 당시 해결된 이야기와 사건을 확인합니다.')}),
+            guiEl('button',{class:'btn btn--sm',type:'button',disabled:history.loading,text:history.loaded&&history.hasMore?'기억 이력 더 불러오기':'기억 이력 불러오기',onClick:()=>void loadBookNarrativeHistory(false)})
+          ])])
+        ])
+      ]),margin
+    ]);
+  };
+
+  const buildApprovedMockupDestinationDetail = page => {
+    switch (page) {
+      case 'desk': return buildApprovedMockupDesk();
+      case 'memory': return buildApprovedMockupMemory();
+      case 'people': {
+        const body=buildApprovedMockupPeople();
+        if(Gui.bookPeopleSection!=='profile')(body.querySelector('.sheet-page')||body).appendChild(guiLazyDetails({class:'fold',dataset:{productManagement:'people'}},guiEl('summary',{text:'인물 · 관계 상세 관리'}),()=>guiEl('div',{class:'fold__body stack'},[
+          buildLibraHubTabs([{id:'characters',label:'인물'},{id:'relationships',label:'관계'}],Gui.bookPeopleSection,value=>bookSelectPeopleSection(value),'인물 관계 관리'),
+          Gui.bookPeopleSection==='relationships'?buildWorldManagerRelationshipsPanel():buildWorldManagerCharactersPanel()
+        ])));
+        return body;
+      }
+      case 'world': {
+        const body=buildApprovedMockupWorld();
+        if(Gui.bookWorldSection!=='guide')body.appendChild(guiLazyDetails({class:'fold',dataset:{productManagement:'world'}},guiEl('summary',{text:'세계 상세 · 교정 관리'}),()=>guiEl('div',{class:'fold__body'},[buildWorldManagerWorldPanel()])));
+        return body;
+      }
+      case 'story': {
+        const body=buildApprovedMockupStory();
+        if(Gui.bookStorySection!=='toc')(body.firstElementChild||body).appendChild(guiLazyDetails({class:'fold',dataset:{productManagement:'story'}},guiEl('summary',{text:'서사 구조 상세 · 교정 관리'}),()=>guiEl('div',{class:'fold__body'},[buildWorldManagerNarrativePanel()])));
+        return body;
+      }
+      case 'settings': return buildApprovedMockupSettings();
+      default: return buildApprovedMockupDesk();
+    }
+  };
+
+  const syncApprovedMockupShell = app => {
+    const snapshot = LibraMemoryCore.peekSnapshot() || {};
+    const count = Object.values(snapshot.manifest?.memories || {}).filter(row => row?.status === 'committed').length;
+    const turn = Number(snapshot.continuityState?.throughTurn || snapshot.manifest?.frontiers?.committedTurn || 0);
+    const version = app.querySelector('.brand__ver'); if (version) version.textContent = `사서 · v${PLUGIN_VERSION}`;
+    const navCount = app.querySelector('#nav-mem-n'); if (navCount) navCount.textContent = String(count);
+    const scope = app.querySelector('.scope');
+    if (scope) {
+      const labels = scope.querySelectorAll('b,span');
+      if (labels[0]) labels[0].textContent = '현재 채팅';
+      if (labels[2]) labels[2].textContent = `${count}개 정본 기억`;
+    }
+    const health = app.querySelector('.health');
+    if (health) {
+      health.classList.toggle('health--ok', turn > 0);
+      health.classList.toggle('health--warn', turn <= 0);
+      const indicator = health.querySelector('i');
+      health.replaceChildren(...[indicator, document.createTextNode(turn > 0 ? `정본 읽음 · T${turn}` : '저장된 정본 기억 없음')].filter(Boolean));
+      health.title = '현재 LIBRA 저장소에서 다시 읽은 정본 기준';
+    }
+    const foot = app.querySelector('.side-foot span');
+    if (foot) {
+      const runtime = Gui.state?.runtime || {};
+      const mode = normalizeResponseInjectionMode(runtime.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
+      foot.textContent = `${count}개 정본 기억 · ${LIBRA_RESPONSE_MODE_UI[mode]?.label || '사서 모드'}`;
+    }
+    const menu = app.querySelector('.topbar .menu');
+    if (menu && !menu.dataset.productActionsBound) {
+      menu.dataset.productActionsBound = 'true';
+      menu.addEventListener('click', event => {
+        const button = event.target.closest('button'); if (!button) return;
+        if (button.matches('[data-menu]')) { event.preventDefault(); menu.classList.toggle('is-open'); return; }
+        if (button.matches('[data-close-gui]')) { event.preventDefault(); void hideSettingsGui(); return; }
+        if (/디버그 로그/.test(button.textContent || '')) { event.preventDefault(); downloadJson(`libra-debug-${new Date().toISOString().slice(0,10)}.json`, runtimeForDisplay()); menu.classList.remove('is-open'); return; }
+        if (/새로고침/.test(button.textContent || '')) { event.preventDefault(); menu.classList.remove('is-open'); Gui.invalidations.add('all'); queueGuiRender(0, 'all'); }
+      });
+    }
+  };
+
   async function renderSettingsGuiOnce() {
     if (typeof document === 'undefined') return false;
-    // Once hydrated, do not cross an async boundary before a navigation paint.
-    // This lets a click build and swap the requested main page in the same task.
     if (!Gui.state) await ensureGuiState();
-    if (LibraMemoryCore.state.disposed) return false;
-    if (!Gui.root) return false;
-    if (!LibraMemoryCore.state.canonicalJob && !Gui.canonicalJobProbePromise
-      && (!Gui.canonicalJobProbeCheckedAt || Date.now() - Gui.canonicalJobProbeCheckedAt >= 5000)) {
-      Gui.canonicalJobProbeCheckedAt = Date.now();
-      const probe = LibraMemoryCore.getCanonicalJobStatus({})
-        .then(job => {
-          if (Gui.visible && job) renderCanonicalJobSurface(job);
-          return job;
-        })
-        .catch(() => null)
-        .finally(() => { if (Gui.canonicalJobProbePromise === probe) Gui.canonicalJobProbePromise = null; });
-      Gui.canonicalJobProbePromise = probe;
-      void probe;
-    }
+    if (LibraMemoryCore.state.disposed || !Gui.root) return false;
     ensureCanonicalReaderLifetime();
+    const measureRegion=(name,builder)=>{
+      const started=guiNowMs(),node=builder(),elapsed=Math.max(0,guiNowMs()-started);
+      const previous=Gui.renderMetrics.regionTimesMs[name]||{count:0,totalMs:0,lastMs:0,maxMs:0};
+      Gui.renderMetrics.regionTimesMs[name]={count:previous.count+1,totalMs:Math.round((previous.totalMs+elapsed)*100)/100,lastMs:Math.round(elapsed*100)/100,maxMs:Math.max(Number(previous.maxMs||0),Math.round(elapsed*100)/100)};
+      Gui.renderMetrics.regionRenders[name]=Number(Gui.renderMetrics.regionRenders[name]||0)+1;return node;
+    };
+    const requestedRegions=new Set(Gui.invalidations);Gui.invalidations.clear();
     const viewportState = captureGuiViewportState();
     forceTransparentGuiSurface();
-    const previousApp = Gui.app && Gui.root.contains(Gui.app) ? Gui.app : null;
-    if (!['flow', 'providers'].includes(Gui.activeTab)) Gui.activeTab = 'flow';
-    if (!Gui.sidebarSection || Gui.sidebarSection === 'home') Gui.sidebarSection = 'memory';
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    Object.assign(runtime, resolveResponseModeState(runtime));
-    const responseFamily = runtime.responseFamily;
-    const app = guiEl('div', { class: 'sga-app libra-book-app', dataset: { tab: Gui.activeTab, section: Gui.sidebarSection, responseFamily } });
-    const topBar = guiEl('header', { class: 'sga-top libra-book-top' }, [
-      guiEl('div', { class: 'libra-book-compat-actions', style: { display: 'none' }, 'aria-hidden': 'true' }, [
-        guiEl('button', { type: 'button', text: '저장값으로 되돌리기', onClick: () => { void revertGuiStateFromStorage(); } }),
-        guiEl('button', { type: 'button', text: '설정 저장', onClick: () => { void saveGuiState(); } })
-      ]),
-      guiEl('div', { class: 'libra-book-current-page', text: '사서의 열람대 · 현재 기록을 읽고 다음 응답을 준비합니다' }),
-      guiEl('div', { class: 'sga-head-actions libra-book-head-actions' }, [
-        guiEl('span', { class: 'libra-book-boot-status', text: 'JS ACTIVE', title: `LIBRA v${PLUGIN_VERSION}` }),
-        guiEl('button', { class: 'sga-btn libra-book-settings-button', type: 'button', text: '설정실', onClick: () => bookNavigate('settings') }),
-        guiEl('button', { class: 'sga-btn libra-book-quick-button', type: 'button', text: '빠른 설정', onClick: () => bookOpenQuickSettings(Gui.bookQuickSection || 'response') }),
-        guiEl('button', { class: 'sga-btn libra-book-close-button', type: 'button', text: '닫기', 'aria-label': '설정 화면 닫기', onClick: async () => { await hideSettingsGui(); } })
-      ])
-    ]);
-    const requestedRegions = new Set(Gui.invalidations);
-    const implicitBodyRender = !!previousApp && requestedRegions.size === 0;
-    const fullRender = !previousApp || ['all', 'shell', 'navigation', 'family'].some(reason => requestedRegions.has(reason));
-    const bodyRender = fullRender || implicitBodyRender || ['body', 'canonical-job-complete', 'snapshot', 'select_commit'].some(reason => requestedRegions.has(reason));
-    const headerRender = fullRender || requestedRegions.has('header');
-    const mobileRender = fullRender || requestedRegions.has('mobile-navigation');
-    const sidebarRender = fullRender || requestedRegions.has('sidebar');
-    const drawerRender = !previousApp || requestedRegions.has('book-drawer') || requestedRegions.has('family');
-    const measureRegion = (name, builder) => {
-      const started = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-      const node = builder();
-      const elapsed = Math.max(0, (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()) - started);
-      const previous = Gui.renderMetrics.regionTimesMs[name] || { count: 0, totalMs: 0, lastMs: 0, maxMs: 0 };
-      Gui.renderMetrics.regionTimesMs[name] = {
-        count: previous.count + 1,
-        totalMs: Math.round((previous.totalMs + elapsed) * 100) / 100,
-        lastMs: Math.round(elapsed * 100) / 100,
-        maxMs: Math.max(Number(previous.maxMs || 0), Math.round(elapsed * 100) / 100)
-      };
-      Gui.renderMetrics.regionRenders[name] = Number(Gui.renderMetrics.regionRenders[name] || 0) + 1;
-      return node;
-    };
-    const buildMobileRegion = () => measureRegion('mobile-navigation', () => {
-      const node = buildBookMobileNavigation(); node.dataset.renderRegion = 'mobile-navigation'; return node;
-    });
-    const buildSidebarRegion = () => measureRegion('sidebar', () => {
-      const node = buildBookSidebar(); node.dataset.renderRegion = 'sidebar'; return node;
-    });
-    const buildMainRegion = () => measureRegion('main', () => {
-      let activeContent;
-      try {
-        activeContent = renderActiveTab();
-      } catch (error) {
-        warn('settings_gui_tab_render_failed', error);
-        activeContent = guiEl('section', { class: 'sga-render-error' }, [
-          guiEl('h2', { text: '설정 화면을 불러오지 못했습니다.' }),
-          guiEl('div', { class: 'sga-note', text: '빈 화면으로 덮지 않고 오류 내용을 표시했습니다. 디버그 로그에서 상세 원인을 확인할 수 있습니다.' }),
-          guiEl('pre', { text: error?.stack || error?.message || String(error) })
-        ]);
-      }
-      return guiEl('main', { class: 'sga-main', dataset: { renderRegion: 'main', guiViewKey: guiBodyViewKey() } }, [
-        guiEl('div', { class: 'sga-status', dataset: { guiStatus: 'true' } }), activeContent
-      ]);
-    });
-    const buildBookDrawerRegion = () => {
-      const region = measureRegion('book-drawer', () => guiEl('div', { class: 'libra-book-drawer-region', dataset: { renderRegion: 'book-drawer' } }, [buildBookQuickSettingsDrawer()]));
-      return region;
-    };
-    if (!previousApp) {
-      app.appendChild(topBar);
-      Gui.renderMetrics.regionRenders.header = Number(Gui.renderMetrics.regionRenders.header || 0) + 1;
-      app.appendChild(buildMobileRegion());
-      app.appendChild(guiEl('div', { class: 'sga-shell', dataset: { renderRegion: 'shell' } }, [buildSidebarRegion(), buildMainRegion()]));
-      app.appendChild(buildBookDrawerRegion());
-      Gui.root.replaceChildren(app);
-      Gui.app = app;
-      Gui.renderMetrics.rootMounts += 1;
-    } else {
-      previousApp.dataset.tab = Gui.activeTab;
-      previousApp.dataset.section = Gui.sidebarSection;
-      previousApp.dataset.responseFamily = responseFamily;
-
-      if (headerRender) { previousApp.querySelector(':scope > .sga-top')?.replaceWith(topBar); Gui.renderMetrics.regionRenders.header = Number(Gui.renderMetrics.regionRenders.header || 0) + 1; }
-      if (mobileRender) previousApp.querySelector(':scope > [data-render-region="mobile-navigation"]')?.replaceWith(buildMobileRegion());
-      const liveShell = previousApp.querySelector(':scope > [data-render-region="shell"]');
-      if (sidebarRender) liveShell?.querySelector(':scope > [data-render-region="sidebar"]')?.replaceWith(buildSidebarRegion());
-      if (bodyRender) liveShell?.querySelector(':scope > [data-render-region="main"]')?.replaceWith(buildMainRegion());
-      if (drawerRender) previousApp.querySelector(':scope > [data-render-region="book-drawer"]')?.replaceWith(buildBookDrawerRegion());
-      Gui.app = previousApp;
+    if (!Gui.mockupApp || !Gui.root.contains(Gui.mockupApp)) {
+      const stage = document.createElement('div'); stage.className = 'stage t-libra';
+      stage.style.setProperty('background-color','var(--page-bg)');
+      stage.style.setProperty('width', '100vw', 'important');
+      stage.style.setProperty('height', '100vh', 'important');
+      const frame = document.createElement('div'); frame.className = 'frame'; frame.dataset.device = 'desktop';
+      frame.style.setProperty('width', 'min(1200px, calc(100vw - 28px))', 'important');
+      frame.style.setProperty('height', 'min(830px, calc(100dvh - 78px))', 'important');
+      Gui.mockupApp = createApprovedMockupApp();
+      frame.appendChild(Gui.mockupApp); stage.appendChild(frame); Gui.root.replaceChildren(stage);
+      Gui.app = Gui.mockupApp;
+      Gui.app.addEventListener('click', event => {
+        const dialogClose = event.target.closest('[data-mockup-close]');
+        if (dialogClose) { event.preventDefault(); const overlay=dialogClose.closest('.overlay'); if (overlay) { overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden','true'); } return; }
+        const openedOverlay = event.target.closest('.overlay.is-open');
+        if(openedOverlay?.dataset.canonicalJobPortal && event.target===openedOverlay){Gui.canonicalJobMinimized=true;renderCanonicalJobSurface();return;}
+        if (openedOverlay && event.target === openedOverlay) { openedOverlay.classList.remove('is-open'); openedOverlay.setAttribute('aria-hidden','true'); if (openedOverlay.id==='dlg-correct') { Gui.worldManagerEditDraft=null; Gui.worldManagerEditError=''; void renderSettingsGui(); } return; }
+        if (event.target.closest('[data-more]')) { event.preventDefault(); const overlay=Gui.app?.querySelector('[data-libra-more-sheet]'); if(overlay){overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');bindApprovedOverlayKeyboard(overlay,()=>{overlay.classList.remove('is-open');overlay.setAttribute('aria-hidden','true');});} return; }
+        const nav = event.target.closest('[data-go]');
+        if (nav) { event.preventDefault(); const more=Gui.app?.querySelector('[data-libra-more-sheet]');more?.classList.remove('is-open');more?.setAttribute('aria-hidden','true'); bookNavigate(nav.dataset.go); return; }
+        const modeButton = event.target.closest('.page-head .seg button[data-val]');
+        if (modeButton) {
+          const section = modeButton.closest('.page'), targetPage = section?.dataset.page, manage = modeButton.dataset.val === 'manage';
+          if (targetPage === 'memory') { event.preventDefault(); bookSelectMemorySection(manage ? 'manage' : 'read'); return; }
+          if (targetPage === 'people') { event.preventDefault(); bookSelectPeopleSection(manage ? 'characters' : 'profile'); return; }
+          if (targetPage === 'world') { event.preventDefault(); bookSelectWorldSection(manage ? 'details' : 'guide'); return; }
+        }
+        const action = event.target.closest('.topbar [data-open],.page-head [data-open]');
+        if (!action) return;
+        event.preventDefault();
+        const id = action.dataset.open;
+        if (id === 'drawer-quick') bookOpenQuickSettings(Gui.bookQuickSection || 'response');
+        else if (id === 'dlg-range') void showCanonicalRangeDrawer('missing');
+        else if (id === 'drawer-versions') { Gui.worldManagerCanonicalMemoryFocus = null;void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start||0)); }
+        else if (id === 'drawer-evidence') bookSelectMemorySection('context');
+        else if(id==='dialog-state')openApprovedStateDialog();
+        else if (id === 'dlg-recover') void openApprovedRecoveryDialog('state');
+        else if(id==='dlg-corr-life')openApprovedCorrectionsDialog();
+        else if(id==='dlg-restore-mode')selectBookExternalSettings('recovery');
+        else if (id === 'dlg-prompt') openApprovedPromptDialog();
+        else if (id === 'dlg-input-preview') selectBookExternalSettings('source_edits');
+        else if(id==='dlg-pending'){const view=worldManagerSnapshotView(),row=guiAsArray(view.characters).find(item=>item.id===(Gui.bookSelectedCharacterId||Gui.worldManagerSelectedCharacterId));if(row)openApprovedPendingDialog('characters',row,view);}
+        else if(id==='dlg-merge'){const view=worldManagerSnapshotView(),row=guiAsArray(view.characters).find(item=>item.id===(Gui.bookSelectedCharacterId||Gui.worldManagerSelectedCharacterId));const action=row&&buildWorldManagerIdentityMerge('characters',row,view);action?.click();}
+      });
+      Gui.app.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const overlay=Gui.app?.querySelector('.overlay.is-open#dlg-prompt,.overlay.is-open#dlg-correct');
+        if (!overlay) return;
+        event.preventDefault(); overlay.classList.remove('is-open'); overlay.setAttribute('aria-hidden','true');
+        if (overlay.id==='dlg-correct') { Gui.worldManagerEditDraft=null; Gui.worldManagerEditError=''; void renderSettingsGui(); }
+      });
     }
-    Gui.invalidations.clear();
+    const app = Gui.mockupApp; Gui.app = app;
+    const page = normalizeBookPage(Gui.bookPage);
+    Gui.bookPage = page;
+    const manageMode = page === 'memory' ? Gui.memoryHubSection !== 'read'
+      : page === 'people' ? Gui.bookPeopleSection !== 'profile'
+        : page === 'world' ? Gui.bookWorldSection !== 'guide' : false;
+    app.dataset.mode = manageMode ? 'manage' : 'read';
+    app.querySelectorAll('.page[data-page]').forEach(section => {
+      const active = section.dataset.page === page;
+      section.classList.toggle('is-active', active);
+      section.hidden = !active;
+    });
+    app.querySelectorAll('.nav-item[data-go]').forEach(item => {
+      const selected = item.dataset.go === page;
+      item.setAttribute('aria-current', selected ? 'page' : 'false');
+    });
+    app.querySelectorAll('.tabbar [data-go]').forEach(item => {
+      const selected = item.dataset.go === page;
+      item.setAttribute('aria-current', selected ? 'page' : 'false');
+    });
+    const current = app.querySelector(`.page[data-page="${page}"]`);
+    if (!current) throw new Error(`Approved LIBRA mockup destination not found: ${page}`);
+    current.querySelectorAll('.page-head .seg button[data-val]').forEach(button => button.setAttribute('aria-pressed', String((button.dataset.val === 'manage') === manageMode)));
+    const head = current.querySelector(':scope > .page-head');
+    current.replaceChildren(); if (head) current.appendChild(head);
+    const status = document.createElement('div');
+    status.className = 'hint'; status.dataset.guiStatus = 'true'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
+    current.appendChild(status);
+    current.appendChild(measureRegion('main',()=>buildApprovedMockupDestinationDetail(page)));
+    const existingDrawer=app.querySelector('#drawer-quick[data-book-quick-drawer]');
+    if (Gui.bookQuickOpen === true) {
+      if(!existingDrawer||requestedRegions.has('book-drawer')||requestedRegions.has('all')){
+        existingDrawer?.remove();
+        const drawer=measureRegion('book-drawer',()=>buildBookQuickSettingsDrawer());
+        if(drawer){app.appendChild(drawer);bindApprovedOverlayKeyboard(drawer,()=>closeBookQuickSettings(true));}
+      }
+    }else existingDrawer?.remove();
+    const correctionList=app.querySelector('#dlg-corr-life.is-open #corr-list');
+    if(correctionList&&correctionList.closest('.overlay').dataset.correctionsScope===canonicalReaderBinding().scopeKey)correctionList.replaceChildren(buildWorldManagerCorrectionsPanel());
+    syncApprovedMockupShell(app);
+    if(app.querySelector('#dlg-prompt.is-open'))openApprovedPromptDialog({refresh:true});
     renderCanonicalJobSurface(LibraMemoryCore.state.canonicalJob);
+    const jobProbeScope=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
+    const jobProbeKey=`${Gui.openSerial}:${jobProbeScope}`;
+    if(jobProbeScope&&Gui.canonicalJobProbeKey!==jobProbeKey&&!Gui.canonicalJobProbePromise){
+      const probeOpenSerial=Gui.openSerial;Gui.canonicalJobProbeKey=jobProbeKey;
+      const probe=Promise.resolve().then(()=>LibraMemoryCore.getCanonicalJobStatus({})).then(job=>{
+        if(!Gui.visible||Gui.openSerial!==probeOpenSerial||String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'')!==jobProbeScope)return;
+        Gui.canonicalJob=job||null;renderCanonicalJobSurface(job||null);
+      }).catch(error=>{if(Gui.visible&&Gui.openSerial===probeOpenSerial)guiSetStatus(`정본 작업 상태를 읽지 못했습니다. · ${compact(error?.message||error,300)}`,true);}).finally(()=>{if(Gui.canonicalJobProbePromise===probe)Gui.canonicalJobProbePromise=null;});
+      Gui.canonicalJobProbePromise = probe;void probe;
+    }
+    app.querySelector('.main > .page-body').dataset.guiViewKey=guiBodyViewKey();
     restoreGuiViewportState(viewportState);
     syncGuiSaveControls();
     return true;
@@ -81335,8 +79266,13 @@ html,body{width:100%;height:100%;overflow:hidden}
         else if (oldRoot.parentElement) oldRoot.parentElement.removeChild?.(oldRoot);
       }
       const root = guiEl('div', { id: 'sga-rp-gui-root' });
+      root.style.setProperty('display', 'block', 'important');
+      root.style.setProperty('width', '100%', 'important');
+      root.style.setProperty('height', '100%', 'important');
+      root.style.setProperty('padding', '0', 'important');
       body.appendChild(root);
       Gui.root = root;
+      Gui.mockupApp = null;
       try {
         if (typeof PerformanceObserver === 'function' && !Gui.longTaskObserver) {
           Gui.longTaskObserver = new PerformanceObserver(list => {
@@ -84350,38 +82286,43 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       };
       return runtime.lastExport;
     };
+    const bindPortableModalKeyboard = (overlay,decline) => {
+      const before=document.activeElement;
+      const key=event=>{if(!overlay.isConnected)return;if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();decline();return;}if(event.key!=='Tab')return;const nodes=[...overlay.querySelectorAll('button,input,select,textarea,[tabindex]')].filter(node=>!node.disabled&&node.tabIndex>=0&&node.getClientRects().length);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&(document.activeElement===first||!overlay.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&(document.activeElement===last||!overlay.contains(document.activeElement))){event.preventDefault();first.focus();}};
+      document.addEventListener('keydown',key,true);const observer=new MutationObserver(()=>{if(overlay.isConnected)return;document.removeEventListener('keydown',key,true);observer.disconnect();if(before?.isConnected)before.focus();});observer.observe(document.body,{childList:true,subtree:true});overlay.querySelector('button:not(:disabled)')?.focus();
+    };
     const modal = ({ title, body, confirmLabel = '확인', cancelLabel = '취소', danger = false, confirm = true }) => new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.setAttribute('data-portable-backup-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;';
+      overlay.className = 'overlay is-open'; overlay.setAttribute('role', 'presentation'); overlay.setAttribute('aria-hidden', 'false');
       const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(560px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#151820;color:#edf1f7;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.6);font:13px/1.55 system-ui,sans-serif;';
-      const heading = document.createElement('h3');
+      panel.className = `dialog${danger ? ' dialog--danger' : ''}`; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', title);
+      const heading = document.createElement('h2');
       heading.textContent = title;
-      heading.style.cssText = 'margin:0 0 12px;font-size:17px;';
+      const eyebrow = document.createElement('div'); eyebrow.className = 'eyebrow'; eyebrow.textContent = config.pluginName + ' · 확인';
       const content = document.createElement('div');
-      content.style.cssText = 'white-space:pre-wrap;color:#c8d0dc;';
+      content.className = danger ? 'note note--danger' : 'note'; content.style.whiteSpace = 'pre-wrap';
       content.textContent = body;
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:18px;';
+      actions.className = 'dialog__actions';
       if (confirm) {
         const cancelButton = document.createElement('button');
         cancelButton.textContent = cancelLabel;
-        cancelButton.style.cssText = 'border:1px solid #465066;background:#222838;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;';
+        cancelButton.className = 'btn';
         cancelButton.onclick = () => { overlay.remove(); resolve(false); };
         actions.appendChild(cancelButton);
       }
       const okayButton = document.createElement('button');
       okayButton.textContent = confirm ? confirmLabel : '닫기';
-      okayButton.style.cssText = `border:1px solid ${danger ? '#8e3e45' : '#436aa6'};background:${danger ? '#6f2830' : '#31578f'};color:#fff;border-radius:7px;padding:7px 12px;cursor:pointer;`;
+      okayButton.className = danger ? 'btn btn--danger-solid' : 'btn btn--primary';
       okayButton.onclick = () => { overlay.remove(); resolve(true); };
       actions.appendChild(okayButton);
-      panel.append(heading, content, actions);
+      panel.append(eyebrow, heading, content, actions);
       overlay.appendChild(panel);
       overlay.addEventListener('click', event => {
         if (event.target === overlay) { overlay.remove(); resolve(false); }
       });
-      document.body.appendChild(overlay);
+      (document.querySelector('#sga-rp-gui-root .app[data-response-family="libra"]')||document.body).appendChild(overlay);bindPortableModalKeyboard(overlay,()=>{overlay.remove();resolve(false);});
     });
     const notice = async (title, body, danger = false) => await modal({ title, body, danger, confirm: false });
     const portableCanonicalJobBusy = () => {
@@ -84480,17 +82421,17 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     const restoreModeModal = (envelope, preview) => new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.setAttribute('data-portable-restore-mode-modal', config.pluginId);
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:32;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:18px;';
+      overlay.className = 'overlay is-open'; overlay.setAttribute('role', 'presentation'); overlay.setAttribute('aria-hidden', 'false');
       const panel = document.createElement('div');
-      panel.style.cssText = 'width:min(720px,96vw);max-height:88vh;overflow:auto;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:#151820;color:#edf1f7;padding:20px;box-shadow:0 28px 90px rgba(0,0,0,.65);font:13px/1.55 system-ui,sans-serif;';
-      const heading = document.createElement('h3');
+      panel.className = 'dialog dialog--wide dialog--danger'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-labelledby', 'libra-restore-mode-title');
+      const eyebrow = document.createElement('div'); eyebrow.className = 'eyebrow'; eyebrow.textContent = 'Memory Restore';
+      const heading = document.createElement('h2'); heading.id = 'libra-restore-mode-title';
       heading.textContent = '기억 복원 방식 선택';
-      heading.style.cssText = 'margin:0 0 6px;font-size:18px;';
       const summary = document.createElement('div');
-      summary.style.cssText = 'white-space:pre-wrap;color:#aeb8c8;margin-bottom:14px;';
+      summary.className = 'note'; summary.style.whiteSpace = 'pre-wrap';
       summary.textContent = `백업: ${envelope.source?.characterName || envelope.source?.characterId || '-'} / ${envelope.source?.chatTitle || envelope.source?.chatId || '-'}\n현재: ${preview.target?.characterName || preview.target?.characterId || '-'} / ${preview.target?.chatTitle || preview.target?.chatId || '-'}\n백업 정본 ${Number(preview.sourceMemories || 0).toLocaleString('ko-KR')}개 · 과거 기억 ${Number(preview.sourceInheritedMemories || 0).toLocaleString('ko-KR')}개`;
       const list = document.createElement('div');
-      list.style.cssText = 'display:grid;gap:9px;';
+      list.className = 'choices';
       const definitions = [
         { mode: 'restore_same_scope', title: '같은 채팅 되돌리기', description: '현재 기억을 백업 시점으로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.', detail: '같은 chatId에서만 사용' },
         { mode: 'import_as_predecessor_archive', title: '새 채팅으로 기억 이사', description: '이전 기억을 영구 과거 아카이브로 연결하고 현재 채팅의 TURN은 새로 시작합니다.', detail: '다른 chatId · 비어 있는 새 채팅' },
@@ -84501,28 +82442,28 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         const button = document.createElement('button');
         button.type = 'button';
         button.disabled = availability.available !== true;
-        button.style.cssText = `text-align:left;border:1px solid ${availability.available ? '#46699c' : '#343b48'};background:${availability.available ? '#202b3d' : '#1b1e25'};color:${availability.available ? '#eef4ff' : '#737b88'};border-radius:10px;padding:12px 14px;cursor:${availability.available ? 'pointer' : 'not-allowed'};`;
+        button.className = 'choice'; button.setAttribute('aria-disabled', String(availability.available !== true));
         const title = document.createElement('strong');
         title.textContent = definition.title;
-        title.style.cssText = 'display:block;font-size:14px;margin-bottom:3px;';
+        title.className = 'choice__title';
         const description = document.createElement('span');
         description.textContent = definition.description;
-        description.style.cssText = 'display:block;';
+        description.className = 'choice__description';
         const detail = document.createElement('small');
         detail.textContent = availability.available ? definition.detail : `사용 불가 · ${restoreModeReasonText(availability.reason)}`;
-        detail.style.cssText = 'display:block;margin-top:5px;color:#929dad;';
+        detail.className = 'hint';
         button.append(title, description, detail);
         button.onclick = () => { overlay.remove(); resolve(definition.mode); };
         list.appendChild(button);
       }
       const cancel = document.createElement('button');
-      cancel.type = 'button'; cancel.textContent = '취소';
-      cancel.style.cssText = 'margin-top:14px;border:1px solid #465066;background:#222838;color:#dbe2ee;border-radius:7px;padding:7px 12px;cursor:pointer;float:right;';
+      cancel.type = 'button'; cancel.textContent = '취소'; cancel.className = 'btn';
       cancel.onclick = () => { overlay.remove(); resolve(''); };
-      panel.append(heading, summary, list, cancel);
+      const actions = document.createElement('div'); actions.className = 'dialog__actions'; actions.append(cancel);
+      panel.append(eyebrow, heading, summary, list, actions);
       overlay.appendChild(panel);
       overlay.addEventListener('click', event => { if (event.target === overlay) { overlay.remove(); resolve(''); } });
-      document.body.appendChild(overlay);
+      (document.querySelector('#sga-rp-gui-root .app[data-response-family="libra"]')||document.body).appendChild(overlay);bindPortableModalKeyboard(overlay,()=>{overlay.remove();resolve('');});
     });
     const modeConfirmationText = (mode, envelope, preview) => {
       if (mode === 'import_as_predecessor_archive') return [
@@ -84626,7 +82567,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       if (runtime.unloaded || typeof document === 'undefined' || !document?.getElementById || !document?.querySelector) return null;
       const ownerRoot = Gui.app?.dataset?.responseFamily === 'libra'
         ? Gui.app
-        : document.querySelector('#sga-rp-gui-root .sga-app[data-response-family="libra"]');
+        : document.querySelector('#sga-rp-gui-root .app[data-response-family="libra"]');
       const dedicatedHost = hostOverride?.getAttribute?.('data-portable-backup-host') === config.pluginId
         ? hostOverride
         : ownerRoot?.querySelector?.(`[data-portable-backup-host="${config.pluginId}"]`);
@@ -84642,20 +82583,20 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const root = document.createElement('div');
       root.id = config.uiId;
       root.setAttribute('data-memory-suite-portable-backup', config.pluginId);
-      root.className = 'libra-portable-memory-controls';
+      root.className = 'stack';
       const actions = document.createElement('div');
-      actions.className = 'libra-portable-memory-actions';
+      actions.className = 'cluster';
       const backup = document.createElement('button');
       backup.setAttribute('data-portable-backup', '');
       backup.setAttribute('type', 'button');
       backup.setAttribute('aria-label', '현재 채팅 기억을 JSON 백업 파일로 다운로드');
-      backup.className = 'sga-btn primary';
+      backup.className = 'btn btn--primary';
       backup.textContent = '↓ JSON 백업 다운로드';
       const restore = document.createElement('button');
       restore.setAttribute('data-portable-restore', '');
       restore.setAttribute('type', 'button');
       restore.setAttribute('aria-label', 'JSON 백업 파일을 선택하여 현재 채팅 기억 복원');
-      restore.className = 'sga-btn';
+      restore.className = 'btn';
       restore.textContent = '↑ JSON 백업에서 복원';
       actions.append(backup, restore);
       const input = document.createElement('input');
@@ -84666,7 +82607,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       status.setAttribute('data-portable-status', '');
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
-      status.className = 'libra-portable-memory-status';
+      status.className = 'banner banner--info';
       root.append(actions, input, status);
       dedicatedHost.appendChild(root);
       runtime.uiRoot = root;

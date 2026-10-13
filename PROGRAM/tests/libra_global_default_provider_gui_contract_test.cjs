@@ -24,22 +24,16 @@ assert.match(source, /libra\.risuai_auxiliary_call_probe\.v1/,
 assert.match(source, /testRisuAuxiliaryCall/,
   'the auxiliary-model call probe is available to runtime diagnostics');
 
-const providerGui = between('const legacyBuildProvidersTab = () => {', 'const latestTraceForStage =');
-assert.match(providerGui, /'전역 기본 AI 연결'/,
-  'AI Connections must expose the shared default connection');
-assert.match(providerGui, /const configuredDefaultName = normalizeProviderPresetBindingName\(runtime\.defaultPresetName\) \|\| RISUAI_AUX_PRESET_NAME/,
-  'the selector must normalize the retired default binding to the built-in auxiliary authority');
-assert.match(providerGui, /const effectiveDefaultName = Gui\.state\.providers\[configuredDefaultName\][\s\S]*Gui\.state\.providers\[RISUAI_AUX_PRESET_NAME\][\s\S]*names\[0\]/,
-  'an unavailable saved name must fall back without reviving the retired default row');
-assert.doesNotMatch(providerGui, /providers\.default|\? 'default'/,
-  'the AI connection page must never select or display the retired default row');
-assert.match(providerGui, /selectNode\([\s\S]*effectiveDefaultName[\s\S]*names\.map\(name => \[name, presetDisplayName\(name\)\]\)[\s\S]*runtime\.defaultPresetName = next[\s\S]*queueGuiRender\(0\)/,
-  'the selector must offer only saved presets and update the shared runtime field');
-assert.match(providerGui, /단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다/,'the GUI explains the current shared fallback scope without retired draft families');
-assert.doesNotMatch(providerGui, /LIBRA·GRADIA 초안, 인풋 작성기/,'retired response consumers must not be advertised');
-assert.match(providerGui, /defaultPresetMissing[\s\S]*현재 연결로 정리[\s\S]*markGuiDirty\(\)/,
-  'a stale saved default must have an explicit repair action');
-
+const approved=require('./helpers/libra_approved_gui_contract.cjs');
+const providerGui=approved.extract(source,'buildApprovedMockupSettingsPanel');
+assert.match(providerGui,/전역 기본 AI 연결/,'actual canonical default fold remains reachable');
+assert.match(providerGui,/configuredDefaultName=normalizeProviderPresetBindingName\(runtime\.defaultPresetName\)\|\|RISUAI_AUX_PRESET_NAME/,'retired default binding normalizes to concrete auxiliary authority');
+assert.match(providerGui,/providers\[configuredDefaultName\][\s\S]*providers\[RISUAI_AUX_PRESET_NAME\][\s\S]*names\[0\]/,'missing saved names retain the established fallback');
+assert.doesNotMatch(providerGui,/providers\.default|\? 'default'/,'reserved default row stays retired');
+assert.match(providerGui,/selectNode\(effectiveDefaultName,names\.map\(name=>\[name,presetDisplayName\(name\)\]\),next=>\{runtime\.defaultPresetName=next;markGuiDirty\(\);queueGuiRender\(0\)/,'selection uses saved names and participates in draft/save');
+assert.match(providerGui,/단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다/);
+assert.doesNotMatch(providerGui,/LIBRA·GRADIA 초안, 인풋 작성기/,'retired consumers are not advertised');
+assert.match(providerGui,/defaultPresetMissing[\s\S]*현재 연결로 정리[\s\S]*markGuiDirty\(\)/,'stale binding has explicit repair, never silent overwrite');
 const selectHelper = between('const selectNode =', 'const checkboxNode =');
 assert.match(selectHelper, /onChange\(nextValue, event\)[\s\S]*markGuiDirty/,
   'select changes must participate in the existing unsaved-change contract');
@@ -62,15 +56,13 @@ assert.match(presetChoices, /return `\$\{presetDisplayName\(name\)\} \(기본\)`
 assert.doesNotMatch(presetChoices, /전역 기본 프리셋 사용/,
   'the misleading generic stage-option label must not return');
 
-const risuEditor = between('const risuEditor =', 'const editor = risuAux');
-assert.match(risuEditor, /RisuAI 보조 모델/);
-assert.match(risuEditor, /mode: otherAx · staticModel: 지정 안 함/);
-assert.match(risuEditor, /플러그인 제공 보조 모델 허용/);
-assert.match(risuEditor, /LibraProviderBridge\.testRisuAuxiliary\(\{ risuAuxAllowPlugins:/);
-assert.ok(!risuEditor.includes('providerEditorField('),
-  'the host-owned auxiliary route must not expose URL, key, model, or generation fields');
-assert.match(providerGui, /disabled: risuAux/,
-  'the built-in auxiliary route cannot be copied into a mutable HTTP preset');
+const risuEditor=approved.extract(source,'buildApprovedAuxiliaryConnection');
+assert.match(risuEditor,/RisuAI 보조 모델/);
+assert.match(risuEditor,/mode: otherAx[\s\S]*staticModel 지정 안 함/);
+assert.match(risuEditor,/플러그인 제공 보조 모델 허용/);
+assert.match(risuEditor,/LibraProviderBridge\.testRisuAuxiliary\(\{risuAuxAllowPlugins:/);
+assert.doesNotMatch(risuEditor,/providerField:['"](?:url|key|model)['"]/,'host-owned route cannot expose HTTP/key/model editing');
+assert.match(providerGui,/disabled:canonicalProvider\(preset\.provider\)===RISUAI_AUX_PROVIDER/,'built-in auxiliary cannot be copied or deleted as HTTP preset');
 assert.match(source, /RisuAI 보조 모델은 LIBRA 내장 연결이므로 이름을 바꿀 수 없습니다/);
 assert.match(source, /RisuAI 보조 모델은 LIBRA 내장 연결이므로 삭제할 수 없습니다/);
 assert.doesNotMatch(source, /bank\.default\s*=/,

@@ -23,22 +23,23 @@ async function fixture(t,options={}){
  const localStorage={getItem:async k=>{const value=local.get(k)??null;if(options.disconnectDuringRead&&firstPreferenceRead&&k===PREF){firstPreferenceRead=false;await capturedPlugin.unbindLibReadOnlyClient();}return value;},setItem:async(k,v)=>{locals.push(k);if(failRevocation>0&&JSON.parse(v).explicit===false){failRevocation--;throw Error('SYNTHETIC_LOCAL_WRITE_FAILURE');}if(options.delayPreference&&JSON.parse(v).explicit===true)await new Promise(r=>releasePreference=r);local.set(k,v);},removeItem:async k=>{locals.push(k);local.delete(k);}};
  const transport=async(u,init)=>{requests.push({url:String(u),headers:init?.headers});if(options.delayBootstrap&&String(u).endsWith('/bootstrap'))await new Promise(r=>release=r);if(options.deny)throw Error('SYNTHETIC_DENIED');return mockFetch(u,init);};
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'});
- const host=await load({transformSource:s=>(options.disconnectDuringRead||options.disconnectBeforeStart)?`{let value;Object.defineProperty(globalThis,'__SerialGradationAgentsForRP',{configurable:true,get:()=>value,set:v=>{value=v;__captureApi(v);}});}`+s:s,api:{pluginStorage:storage,getLocalPluginStorage:async()=>localStorage,nativeFetch:transport,fetch:transport,onUnload:async fn=>unloads.push(fn),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>currentIndex,getCharacterFromIndex:async()=>{if(options.delayFinalNative&&++nativeReads===2)await new Promise(r=>releaseNative=r);return {chaId:'c',chats:Object.values(chatRows)};},getCharacter:async()=>({chaId:'c',chats:[currentChat]}),getChatFromIndex:async(_c,index)=>chatRows[index]},testGlobals:{__captureApi:value=>{capturedPlugin=value;if(options.disconnectBeforeStart)void value.unbindLibReadOnlyClient().catch(()=>{});},crypto:crypto.webcrypto,Response,window:dom.window,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
+ const host=await load({transformSource:s=>(options.disconnectDuringRead||options.disconnectBeforeStart)?`{let value;Object.defineProperty(globalThis,'__SerialGradationAgentsForRP',{configurable:true,get:()=>value,set:v=>{value=v;__captureApi(v);}});}`+s:s,api:{pluginStorage:storage,getLocalPluginStorage:async()=>localStorage,nativeFetch:transport,fetch:transport,onUnload:async fn=>unloads.push(fn),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>currentIndex,getCharacterFromIndex:async()=>{if(options.delayFinalNative&&++nativeReads===2)await new Promise(r=>releaseNative=r);return {chaId:'c',chats:Object.values(chatRows)};},getCharacter:async()=>({chaId:'c',chats:[currentChat]}),getChatFromIndex:async(_c,index)=>chatRows[index]},testGlobals:{__captureApi:value=>{capturedPlugin=value;if(options.disconnectBeforeStart)void value.unbindLibReadOnlyClient().catch(()=>{});},crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
  t.after(async()=>{release?.();releasePreference?.();releaseNative?.();await host.plugin.closeSettingsGui();for(const fn of unloads)await fn();dom.window.close();await app.close();fs.rmSync(dir,{recursive:true,force:true});});
  const initial={writes:[...writes],locals:[...locals],requests:[...requests]};
- await host.plugin.openSettingsGui();await host.plugin.debugNavigateGui('references','flow');
+ await host.plugin.openSettingsGui();dom.window.document.querySelector('.sidebar [data-go="sources"]').click();
  const doc=dom.window.document;
  const node=selector=>{const n=doc.querySelector(selector);assert.ok(n,selector);return n;};
- const editUrl=v=>{const n=node('[data-lib-read-url]');n.value=v;n.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
- const click=action=>node(`[data-lib-read-${action}]`).click();
+ const editUrl=v=>{const n=node('#lib-url');n.value=v;n.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
+ const click=action=>node(action==='inspect'?'#lib-check':`#lib-${action}`).click();
  const status=()=>host.plugin.getLibReadOnlyStatus();
  const connect=async()=>{editUrl(url);click('connect');await wait(()=>['connected','error'].includes(status().connection?.state));return status();};
- return {...host,app,url,values,local,writes,locals,requests,initial,doc,node,editUrl,click,connect,status,release:()=>release?.(),waiting:()=>!!release,failRevokeOnce:()=>{failRevocation=1;},releasePreference:()=>releasePreference?.(),preferenceWaiting:()=>!!releasePreference,setChat:id=>{currentChat={id,message:[]};chatRows[currentIndex]=currentChat;},switchIndex:()=>{currentIndex=1;currentChat=chatRows[1];},nativeWaiting:()=>!!releaseNative,releaseNative:()=>releaseNative?.(),unload:async()=>{for(const fn of unloads)await fn();},rows:()=>app.repositories.libra.database.prepare('SELECT * FROM kv ORDER BY key').all()};
+ const importPayload=async()=>{node('[data-manage-action="import-replace"]').click();const confirm=await wait(()=>doc.querySelector('.overlay.is-open .dialog button.btn--primary'));confirm.click();};
+ return {...host,app,url,values,local,writes,locals,requests,initial,doc,node,editUrl,click,connect,importPayload,status,release:()=>release?.(),waiting:()=>!!release,failRevokeOnce:()=>{failRevocation=1;},releasePreference:()=>releasePreference?.(),preferenceWaiting:()=>!!releasePreference,setChat:id=>{currentChat={id,message:[]};chatRows[currentIndex]=currentChat;},switchIndex:()=>{currentIndex=1;currentChat=chatRows[1];},nativeWaiting:()=>!!releaseNative,releaseNative:()=>releaseNative?.(),unload:async()=>{for(const fn of unloads)await fn();},rows:()=>app.repositories.libra.database.prepare('SELECT * FROM kv ORDER BY key').all()};
 }
 test('fresh startup and unapproved saved URL perform no connection writes or transport',async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:false}});
  assert.deepEqual(h.initial.requests,[]);assert.deepEqual(h.initial.locals,[]);assert.deepEqual(h.initial.writes,[]);
- assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-lib-read-model-status]').textContent.includes('gpt-4o-mini-2024-07-18'));
+ assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('gpt-4o-mini-2024-07-18'));
 });
 test('actual Connect and inspect handlers use only bootstrap/capture/current and leave SQLite unchanged',async t=>{
  const h=await fixture(t),before=h.rows(),start=h.writes.length;assert.equal((await h.connect()).connection.state,'connected');
@@ -78,16 +79,16 @@ test('canceling pending preference persistence cannot restore startup consent',a
  assert.equal(JSON.parse(h.local.get(PREF)).explicit,false,cancel);assert.notEqual(h.status().status,'bound');}
 });
 test('connection card reports native invalidation as it occurs',async t=>{
- const h=await fixture(t);await h.connect();await wait(()=>h.node('[data-lib-read-status]').textContent.includes('connected'));
- h.setChat('other');await wait(()=>h.node('[data-lib-read-status]').textContent.includes('LIB_READ_NATIVE_SCOPE_CHANGED'));
- assert.equal(h.node('[data-lib-read-inspect]').disabled,true);
+ const h=await fixture(t);await h.connect();await wait(()=>h.node('#lib-state').textContent.includes('connected'));
+ h.setChat('other');await wait(()=>h.node('#lib-state').textContent.includes('LIB_READ_NATIVE_SCOPE_CHANGED'));
+ assert.equal(h.node('#lib-check').disabled,true);
 });
 test('settings import never imports or retains automatic connection consent',async t=>{
  const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('transfer','flow');
- const box=h.doc.querySelector('textarea.tall');assert.ok(box);
+ const box=h.doc.querySelector('#mockup-import-text');assert.ok(box);
  box.value=JSON.stringify({runtime:{mode:'off',libReadConnection:{url:h.url,explicit:true}},providerPresets:{offline:{provider:'openai',model:'test-offline',url:'https://api.openai.com/v1/chat/completions'}}});
  box.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
- const button=[...h.doc.querySelectorAll('button')].find(b=>b.textContent==='JSON으로 교체 가져오기');assert.ok(button);button.click();
+ await h.importPayload();
  await wait(()=>h.local.get(PREF)&&JSON.parse(h.local.get(PREF)).explicit===false);
  assert.notEqual(h.status().status,'bound');assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
 });
@@ -135,8 +136,8 @@ test('native selection changing during final fixed-index reads is rejected befor
 });
 test('import reports a failed auto-connect revocation instead of silently accepting it',async t=>{
  const h=await fixture(t);await h.connect();h.failRevokeOnce();await h.plugin.debugNavigateGui('transfer','flow');
- const box=h.doc.querySelector('textarea.tall');box.value=JSON.stringify({runtime:{mode:'off'},providerPresets:{offline:{provider:'openai',model:'test-offline',url:'https://api.openai.com/v1/chat/completions'}}});box.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
- [...h.doc.querySelectorAll('button')].find(b=>b.textContent==='JSON으로 교체 가져오기').click();
+ const box=h.doc.querySelector('#mockup-import-text');box.value=JSON.stringify({runtime:{mode:'off'},providerPresets:{offline:{provider:'openai',model:'test-offline',url:'https://api.openai.com/v1/chat/completions'}}});box.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
+ await h.importPayload();
  await wait(()=>h.doc.body.textContent.includes('LIB_READ_PREFERENCE_UNAVAILABLE'));
  assert.notEqual(h.status().status,'bound');assert.equal(JSON.parse(h.local.get(PREF)).explicit,true);
 });
