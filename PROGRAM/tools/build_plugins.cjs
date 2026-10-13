@@ -1094,6 +1094,8 @@ async function buildPlugins(options = {}) {
   const list = only ? [only] : TARGETS;
   for (const p of list) if (!PLUGINS[p]) throw new Error(`unknown_plugin:${p}`);
 
+  if (list.includes('libra')) require('./sync_libra_memory_network.cjs').sync({ target: path.join(programDir, 'plugins/LIBRA.js'), check: true });
+
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ultralight-build-'));
   const report = { schema: 'librarian.ultralight.build.v1', at: new Date().toISOString(), profile, variant:profile==='source'?'Full':'Min', outDir: path.relative(programDir, outDir).split(path.sep).join('/'), rows: [] };
   fs.mkdirSync(outDir, { recursive: true });
