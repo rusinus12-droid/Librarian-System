@@ -4,12 +4,12 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {createLibraVmHarness,expose}=require('./fixtures/libra_retained_contract_probe.cjs');
 const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');
-assert.match(source,/sga-prompt-injection-tabs\.libra-hub-tabs\.cols-4\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-const start=source.indexOf('const buildLibraHubTabs ='),end=source.indexOf('const buildLibraSectionRail =',start);assert(start>=0&&end>start);
+const approved=require('./helpers/libra_approved_gui_contract.cjs');approved.identity(source);assert.match(approved.literal(source,'LIBRA_APPROVED_MOCKUP_STYLE'),/\.tabs\{[^}]*display:flex/);
+const tabSource=approved.extract(source,'buildLibraHubTabs');
 const clicks=[],c=vm.createContext({guiEl:(tag,attrs={},children=[])=>({tag,attrs,children}),syncGuiTabSelectionFeedback:()=>clicks.push('feedback'),queueGuiNavigationRender:()=>clicks.push('render')});
-vm.runInContext(source.slice(start,end)+'\nthis.tabs=buildLibraHubTabs;',c);
+vm.runInContext(tabSource+'\nthis.tabs=buildLibraHubTabs;',c);
 const defs=['one','two','three','four'].map(id=>({id,label:id})),tabs=c.tabs(defs,'one',id=>clicks.push(id),'memory stages'),nav=tabs.children[0];
-assert.equal(nav.attrs.role,'tablist');assert.equal(nav.attrs['aria-label'],'memory stages');assert.match(nav.attrs.class,/cols-4/);assert.equal(nav.children.length,4);
+assert.equal(nav.attrs.role,'tablist');assert.equal(nav.attrs['aria-label'],'memory stages');assert.match(nav.attrs.class,/tabs/);assert.equal(nav.children.length,4);
 nav.children.forEach((n,i)=>{assert.equal(n.attrs.role,'tab');assert.equal(n.attrs['aria-selected'],String(i===0));assert.equal(n.attrs.tabIndex,i===0?0:-1);});
 nav.children[0].attrs.onClick({currentTarget:nav.children[0]});assert.deepEqual(clicks,[]);
 nav.children[1].attrs.onClick({currentTarget:nav.children[1]});assert.deepEqual(clicks,['two','feedback','render']);

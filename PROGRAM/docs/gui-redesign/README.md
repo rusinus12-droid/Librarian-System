@@ -144,3 +144,8 @@
 - 레이아웃은 모바일(360/373px)·태블릿·데스크톱 프레임에서 전 페이지 가로 넘침 0건을 자동 점검했습니다(탭 줄·필름 스트립은 의도된 내부 가로 스크롤). 글꼴에 따라 줄바꿈은 달라질 수 있으니 실제 브라우저에서 확인해 주세요.
 - 감사 본문을 근거로 반영했으나 제품 코드와 직접 대조하지 못한 항목이 있습니다. 목록은 `AUDIT-RESPONSE.md` §9를 참고하세요.
 - 접근성은 기본 원칙(포커스 링, 대비 높은 팔레트, 라벨)만 반영했습니다. 스크린리더 실측과 대비 계산은 구현 단계에서 필요합니다.
+
+
+## Product GUI application
+
+The finalized design is now applied to the six product assembly inputs. See [GUI-APPLICATION.md](GUI-APPLICATION.md) and the product function mappings for real API/storage connections, preserved safety contracts and the limited host verification scope. Mockup sample stores/timers are not product functionality.

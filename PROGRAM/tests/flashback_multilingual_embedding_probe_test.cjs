@@ -215,7 +215,7 @@ const resultEnvelope = (settings, vectors, purpose, api) => ({
     assert.equal((guiHtml.match(/id="multilingualProbeBtn"/g) || []).length, 1);
     assert.equal((guiHtml.match(/id="cancelMultilingualProbeBtn"/g) || []).length, 1);
     assert.equal((guiHtml.match(/id="multilingualProbeMaintenanceBtn"/g) || []).length, 1);
-    assert.match(guiHtml, /사용자 대화는 사용하지 않습니다/);
+    assert.match(guiHtml, /고정된 비개인 문장을 쓰지만/);
     assert.match(guiHtml, /id="multilingualProbeBtn"[^>]*disabled/, 'hash default is explicitly outside the provider probe');
 
     const first = await api._test.runMultilingualEmbeddingProbe(settings);

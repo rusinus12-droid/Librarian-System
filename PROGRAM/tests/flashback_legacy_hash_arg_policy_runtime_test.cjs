@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { JSDOM } = require('jsdom');
 const {test} = require('node:test');
 const {createFlashback} = require('./fixtures/embedding_contract_harness.cjs');
 const PROGRAM = path.resolve(__dirname, '..');
@@ -16,7 +17,7 @@ test('legacy hash dimensions have explicit read-only policy in the actual rows a
     assert.equal(row.value, 256); assert.equal(row.editable, false); assert.equal(row.controlId, '');
     assert.equal(row.note, policy.note); assert.match(row.note, /레거시/); assert.match(row.note, /새.*(?:생성|벡터)/);
     const html = await t.buildUiHtml();
-    const rendered = html.match(/<tr data-argument-row="hash_dimensions">[\s\S]*?<\/tr>/)?.[0];
+    const rendered = new JSDOM(html).window.document.querySelector('[data-argument-row="hash_dimensions"]')?.outerHTML;
     assert.ok(rendered, 'the real settings audit renders the legacy row');
     assert.match(rendered, /읽기 전용/); assert.ok(rendered.includes(policy.note));
     assert.doesNotMatch(html, /id="(?:argSetting_)?hashDimensions"/);
@@ -49,7 +50,7 @@ test('retired fallback flag is read-only while normal lexical weighting remains 
     assert.equal(row.note,policy.note);assert.match(row.note,/레거시/);
     const lexical=rows.find(row=>row.name==='lexical_weight');assert.equal(lexical.editable,true);
     const html=await t.buildUiHtml();
-    const rendered=html.match(/<tr data-argument-row="fallback_hash_embedding">[\s\S]*?<\/tr>/)?.[0];
+    const rendered=new JSDOM(html).window.document.querySelector('[data-argument-row="fallback_hash_embedding"]')?.outerHTML;
     assert.ok(rendered);assert.match(rendered,/읽기 전용/);assert.ok(rendered.includes(policy.note));
     assert.doesNotMatch(html,/id="(?:embeddingFallbackProvider|argSetting_fallbackHashEmbedding)"/);
     assert.ok(html.includes('id="'+lexical.controlId+'"'),'nonretired lexical control stays rendered');

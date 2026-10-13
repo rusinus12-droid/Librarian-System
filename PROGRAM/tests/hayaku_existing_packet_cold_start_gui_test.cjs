@@ -43,148 +43,11 @@ const responder = async call => {
   return { type: 'success', result: JSON.stringify({ schema, ...output(turn) }) };
 };
 
-class FakeElement {
-  constructor(tagName, ownerDocument) {
-    this.tagName = String(tagName || 'div').toUpperCase();
-    this.ownerDocument = ownerDocument;
-    this.parentNode = null;
-    this.children = [];
-    this.attributes = new Map();
-    this.dataset = {};
-    this.style = { setProperty() {} };
-    this.listeners = new Map();
-    this.id = '';
-    this._className = '';
-    this._textContent = '';
-    this._innerHTML = '';
-    this.disabled = false;
-    this.hidden = false;
-    this.value = '';
-    this.checked = false;
-  }
-
-  get className() { return this._className; }
-  set className(value) { this._className = String(value || ''); }
-  get textContent() { return this._textContent + this.children.map(child => child.textContent).join(''); }
-  set textContent(value) { this._textContent = String(value ?? ''); this.children = []; }
-  get innerHTML() { return this._innerHTML; }
-  set innerHTML(markup) {
-    this._innerHTML = String(markup || '');
-    this._textContent = '';
-    this.children = [];
-    const tags = /<([a-zA-Z][\w-]*)\b([^>]*)>/g;
-    let match;
-    while ((match = tags.exec(this._innerHTML))) {
-      const child = this.ownerDocument.createElement(match[1]);
-      const attrs = match[2];
-      const attrPattern = /([:\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
-      let attr;
-      while ((attr = attrPattern.exec(attrs))) {
-        if (attr[0].startsWith('/')) continue;
-        const name = attr[1];
-        const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
-        child.setAttribute(name, value);
-      }
-      this.appendChild(child);
-    }
-  }
-
-  get classList() {
-    const element = this;
-    return {
-      contains(name) { return element.className.split(/\s+/).includes(String(name)); },
-      add(name) { if (!this.contains(name)) element.className = [...element.className.split(/\s+/).filter(Boolean), String(name)].join(' '); },
-      remove(name) { element.className = element.className.split(/\s+/).filter(value => value && value !== String(name)).join(' '); },
-      toggle(name, force) {
-        const shouldAdd = force === undefined ? !this.contains(name) : force === true;
-        if (shouldAdd) this.add(name); else this.remove(name);
-        return shouldAdd;
-      }
-    };
-  }
-
-  setAttribute(name, value) {
-    const key = String(name);
-    const normalized = String(value);
-    this.attributes.set(key, normalized);
-    if (key === 'id') this.id = normalized;
-    if (key === 'class') this.className = normalized;
-    if (key === 'type') this.type = normalized;
-    if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = normalized;
-  }
-
-  getAttribute(name) { return this.attributes.has(String(name)) ? this.attributes.get(String(name)) : null; }
-  appendChild(child) {
-    if (child.parentNode) child.remove();
-    child.parentNode = this;
-    this.children.push(child);
-    return child;
-  }
-  prepend(...children) { for (const child of children.reverse()) { if (child.parentNode) child.remove(); child.parentNode=this; this.children.unshift(child); } }
-  replaceChildren(...children) { for (const child of [...this.children]) child.remove(); this.append(...children); }
-  append(...children) { for (const child of children) this.appendChild(child); }
-  remove() {
-    if (!this.parentNode) return;
-    const siblings = this.parentNode.children;
-    const index = siblings.indexOf(this);
-    if (index >= 0) siblings.splice(index, 1);
-    this.parentNode = null;
-  }
-  focus() {}
-  addEventListener(type, handler) {
-    const listeners = this.listeners.get(String(type)) || [];
-    listeners.push(handler);
-    this.listeners.set(String(type), listeners);
-  }
-  async fire(type, event = {}) {
-    if (type === 'click' && this.disabled) return undefined;
-    let result;
-    for (const handler of this.listeners.get(String(type)) || []) {
-      result = handler({ target: this, currentTarget: this, preventDefault() {}, ...event });
-    }
-    return await result;
-  }
-  matches(selector) {
-    if (selector === '*') return true;
-    if (selector.startsWith('#')) return this.id === selector.slice(1);
-    if (selector.startsWith('.')) return selector.slice(1).split('.').every(name => this.classList.contains(name));
-    if (selector === 'button') return this.tagName === 'BUTTON';
-    const attribute = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
-    if (attribute) return this.attributes.has(attribute[1]) && (attribute[2] === undefined || this.getAttribute(attribute[1]) === attribute[2]);
-    const inputType = selector.match(/^input\[type=([^\]]+)\]$/);
-    if (inputType) return this.tagName === 'INPUT' && this.type === inputType[1].replace(/["']/g, '');
-    return this.tagName.toLowerCase() === selector.toLowerCase();
-  }
-  querySelectorAll(selector) {
-    const found = [];
-    const visit = node => {
-      for (const child of node.children) {
-        if (child.matches(selector)) found.push(child);
-        visit(child);
-      }
-    };
-    visit(this);
-    return found;
-  }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
-}
-
-class FakeDocument {
-  constructor() {
-    this.documentElement = new FakeElement('html', this);
-    this.body = new FakeElement('body', this);
-    this.documentElement.appendChild(this.body);
-  }
-  createElement(tagName) { return new FakeElement(tagName, this); }
-  getElementById(id) { return this.body.querySelector(`#${id}`); }
-  querySelector(selector) { return this.body.querySelector(selector); }
-  addEventListener() {}
-  removeEventListener() {}
-}
+const { createColdStartGuiDocument } = require('./fixtures/hayaku_cold_start_gui_dom_fixture.cjs');
 
 const startGuiRuntime = async ({ storedOnly = false } = {}) => {
   const originalTranscript = transcript();
-  const runtime = await createHayakuRuntime({ autoRepair: false, messages: originalTranscript, llmResponder: responder });
+  const runtime = await createHayakuRuntime({ pluginSourceFile: process.env.HAYAKU_COLD_START_SOURCE_FILE, autoRepair: false, messages: originalTranscript, llmResponder: responder });
   const storageWrites = [];
   const setItem = runtime.pluginStorage.setItem.bind(runtime.pluginStorage);
   runtime.pluginStorage.setItem = async (key, value) => {
@@ -198,17 +61,25 @@ const startGuiRuntime = async ({ storedOnly = false } = {}) => {
     withoutInlineCarrier[1].data = 'Alice kept the brass key on the table.';
     runtime.setMessages(withoutInlineCarrier);
   }
-  const doc = new FakeDocument();
-  runtime.context.document = doc;
-  assert.equal(await runtime.hayaku.showUi(), true, 'the real public viewer entry point should mount in a fake host document');
+  const gui = createColdStartGuiDocument();
+  const doc = gui.document;
+  Object.assign(runtime.context,{document:doc,window:gui.dom.window,Event:gui.dom.window.Event,HTMLElement:gui.dom.window.HTMLElement,MutationObserver:gui.dom.window.MutationObserver,getComputedStyle:gui.dom.window.getComputedStyle.bind(gui.dom.window)});
+  const dispose = runtime.dispose;
+  runtime.dispose = async () => {try{await dispose();}finally{gui.dom.window.close();}};
+  try {
+  assert.equal(await runtime.hayaku.showUi(), true, 'the real public viewer entry point should mount in the test host document');
   const root = doc.getElementById('hayaku-ledger-viewer-root');
-  await waitFor(() => /조회·관리|조회 실패/.test(root?.querySelector('#hayakuViewerStatus')?.textContent || ''), 'initial viewer refresh');
+  await waitFor(() => root?.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy') && /records/.test(root.querySelector('#hayakuViewerScopeMeta')?.textContent || ''), 'initial current-scope ledger publication');
+  await root.querySelector('[data-hayaku-viewer-goto="recovery"]').fire('click');
+  await root.querySelector('[data-recovery-view="cold"]').fire('click');
+  assert.equal(root.querySelector('[data-recovery-panel="cold"]').hidden,false,'actual cold-start recovery tab is visible');
   await root.querySelector('#refreshHayakuRecovery').fire('click');
   await waitFor(() => /완료 턴|기록 없음/.test(root.querySelector('#hayakuNativeCoverageSummary')?.textContent || ''), 'recovery coverage refresh');
   return { runtime, doc, root, storageWrites };
+  } catch(error) {await runtime.dispose();throw error;}
 };
 
-const textNodeWithExactText = (root, text) => root.querySelectorAll('*').find(node => node.textContent === text) || null;
+const textNodeWithExactText = (root, text) => Array.from(root.querySelectorAll('*')).find(node => node.textContent === text) || null;
 const storageSnapshot = storage => JSON.stringify(Array.from(storage.values.entries()));
 
 const openConfirmation = async ({ runtime, root }) => {
@@ -217,7 +88,15 @@ const openConfirmation = async ({ runtime, root }) => {
   const overlay = await waitFor(() => root.querySelector('#hayakuColdStartConfirmOverlay'), 'existing-packet confirmation dialog');
   assert.equal(textNodeWithExactText(overlay, CONFIRM_TEXT)?.textContent, CONFIRM_TEXT,
     'existing packets must show the exact Korean confirmation text');
-  assert.match(overlay.textContent, /설정된 Provider.*비용이 발생할 수 있습니다/, 'the confirmation states that Other Ax uses the configured provider and may incur cost');
+  // Approved mockup wording names Provider cost; the actual configured host route
+  // is independently asserted on every accepted model call below.
+  assert.match(overlay.querySelector('.note')?.textContent || '', /Provider.*비용이 발생할 수 있습니다/, 'the canonical confirmation discloses provider cost');
+  assert.match(overlay.textContent, /Other Ax 호출/, 'the confirmation identifies the Other Ax host-model route');
+  const costRows=Array.from(overlay.querySelectorAll('.cost-table dd'),node=>node.textContent);
+  assert.equal(costRows.length,4,'canonical confirmation retains all four cost fields');
+  assert.equal(costRows[0],'완료 U+A 2턴','confirmation counts both completed U+A evidence units, including existing covered packets');
+  assert.equal(costRows[1],'2묶음','one-turn batch gives two explicit bundles');
+  assert.equal(costRows[2],'2회','base model calls reflect both explicit bundles');
   return { overlay, pendingRun };
 };
 
@@ -261,6 +140,7 @@ const openConfirmation = async ({ runtime, root }) => {
     const result = await pendingRun;
     assert.equal(result?.ok, true, JSON.stringify(result));
     assert.ok(accepted.runtime.llmCalls.length > 0, 'affirmative confirmation permits the Cold Start run');
+    assert(accepted.runtime.llmCalls.every(call=>call.mode==='otherAx'),'every accepted call uses the configured Other Ax host provider');
     assert.equal(accepted.runtime.chat.message[1].data, originalPacketText, 'the original active inline packet remains intact');
     const afterLedger = await accepted.runtime.hayaku.ledger.inspect({ includeRecords: true });
     const afterIds = new Set(afterLedger.records.map(record => `${record.recordId}:${record.hash}`));

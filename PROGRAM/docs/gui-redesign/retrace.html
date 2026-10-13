@@ -147,16 +147,16 @@ html[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[d
 
       <!-- 마지막 실행 결과 (표본) -->
       <div class="card" aria-live="polite">
-        <div class="card__head"><div><h2 class="card__title">마지막 실행 결과 <span class="muted" style="font-weight:500;font-size:13px">(표본)</span></h2><p class="card__desc mono">transferId tr-20261012-0042</p></div>
+        <div class="card__head"><div><h2 class="card__title">마지막 실행 결과 <span class="muted" style="font-weight:500;font-size:13px">(표본)</span></h2><p class="card__desc mono">transferId <span id="handoff-transfer-id"></span> · 대상 <span id="handoff-target-id"></span></p></div>
           <span class="badge badge--warn" data-scenario-show="partial">새 세션 생성됨 · 승계 미완료</span><span class="badge badge--ok" data-scenario-show="ok">승계 완료</span></div>
         <div class="list">
-          <div class="res"><b>Flashback 기억 승계</b><span class="badge badge--ok">확인 1,248개</span></div>
-          <div class="res"><b>HAYAKU 패킷 승계</b><span class="badge badge--ok">패킷 147 · Recovery Vault 3</span><small>승계 표식을 저장하고 즉시 검증했습니다.</small></div>
-          <div class="res"><b>LIBRA 데이터 승계</b><span class="badge badge--warn" data-scenario-show="partial">영속 검증 실패</span><span class="badge badge--ok" data-scenario-show="ok">확인 412개</span><small data-scenario-show="partial">승계 표식은 저장되었으나 영속 검증을 통과하지 못했습니다.</small></div>
-          <div class="res"><b>LIA Live Persona Fork</b><span class="badge badge--ok">새 채팅 전용 Fork 확인</span></div>
+          <div class="res"><b>Flashback 기억 승계</b><span class="badge badge--ok" id="handoff-flashback-result">확인 1,248개</span></div>
+          <div class="res"><b>HAYAKU 패킷 승계</b><span class="badge badge--ok" id="handoff-hayaku-result">패킷 147 · Recovery Vault 3</span><small id="handoff-hayaku-detail">승계 표식을 저장하고 즉시 검증했습니다.</small></div>
+          <div class="res"><b>LIBRA 데이터 승계</b><span class="badge badge--warn" id="handoff-libra-result">영속 검증 실패</span><small id="handoff-libra-detail">승계 표식은 저장되었으나 영속 검증을 통과하지 못했습니다.</small></div>
+          <div class="res"><b>LIA Live Persona Fork</b><span class="badge badge--ok" id="handoff-lia-result">새 채팅 전용 Fork 확인</span></div>
         </div>
-        <div class="note" data-scenario-show="partial" style="margin-top:12px"><b>새 채팅은 보존되었습니다.</b> 일부 owner의 승계가 아직 미완료입니다. 같은 target/transfer로 다시 확인할 수 있으며 새 채팅을 추가로 만들지 않습니다.</div>
-        <div class="cluster" style="margin-top:12px" data-scenario-show="partial"><button class="btn btn--primary" data-open="dlg-retry">미완료 승계 재검증</button></div>
+        <div class="note" id="handoff-libra-failed-note" data-scenario-show="partial" style="margin-top:12px"><b>새 채팅은 보존되었습니다.</b> 일부 owner의 승계가 아직 미완료입니다. 같은 target/transfer로 다시 확인할 수 있으며 새 채팅을 추가로 만들지 않습니다.</div>
+        <div class="cluster" id="handoff-retry-action" style="margin-top:12px" data-scenario-show="partial"><button class="btn btn--primary" data-open="dlg-retry">미완료 승계 재검증</button></div>
         <p class="hint" style="margin-top:10px">원본 세션 데이터는 변경하지 않았습니다.</p>
       </div>
 
@@ -307,7 +307,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
   <div class="overlay" id="dlg-retry" aria-hidden="true"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dtr-t">
     <div class="eyebrow">Retry</div><h2 id="dtr-t">미완료 승계를 재검증할까요?</h2>
     <p>미완료 다음 세션 handoff를 <b>같은 target/transfer</b>로 다시 검증합니다. 새 채팅은 추가로 만들지 않습니다.</p><p class="hint" id="retry-none" hidden style="color:var(--danger-ink)">미완료 승계가 없어 재검증할 대상이 없습니다.</p>
-    <dl class="kv"><dt>transferId</dt><dd class="mono">tr-20261012-0042</dd><dt>저장 모드</dt><dd>서버 · 참여 4종</dd></dl>
+    <dl class="kv"><dt>transferId · 대상</dt><dd class="mono"><span id="retry-transfer-id"></span><br><span id="retry-target-id"></span></dd><dt>저장 모드</dt><dd>서버 · 참여 4종</dd></dl>
     <div class="dialog__actions"><button class="btn" data-close data-autofocus>취소</button><button class="btn btn--primary" id="retry-go" data-close data-act="retry">재검증</button></div></div></div>
 
   <!-- 사본 삭제 (대상별 내용은 data-ctx 로 채움) -->
@@ -346,12 +346,12 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
 
   <!-- 작업: 사본 삭제 -->
   <div class="overlay" id="job-del" data-start-from="btn-del" data-require="name" aria-hidden="true" data-inherit-ctx data-job-labels="로컬 보존을 확인하는 중|백업 및 삭제 조건을 확인하는 중|서버 사본을 삭제하는 중|삭제 결과를 다시 읽어 검증하는 중|처리 완료 · 목록을 다시 읽었습니다.">
-    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jd-t"><div class="split"><div><div class="eyebrow">Server copy delete</div><h2 id="jd-t">서버 사본 삭제 · <span data-fill="cnt">1개</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jd-t"><div class="split"><div><div class="eyebrow">Server copy delete</div><h2 id="jd-t">서버 사본 삭제 · <span data-fill="cnt">1개</span></h2></div><span class="badge badge--info">창을 닫아도 계속됩니다 · 작업 트레이에서 다시 열 수 있습니다</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>로컬 보존</b></div><div class="step"><span class="step__no">2</span><b>백업·조건</b></div><div class="step"><span class="step__no">3</span><b>삭제</b></div><div class="step"><span class="step__no">4</span><b>검증</b></div></div>
       <div class="list" data-job-result hidden style="margin-top:12px"><div class="res"><b data-fill="name">아스텔 / 에피소드 40</b><span class="badge badge--ok">삭제 완료</span><small>로컬 보존 확인 → 백업 → 삭제 → 검증 (표본 결과)</small></div></div>
       <p class="hint" style="margin-top:10px">진행 중 작업을 중단해도 <b>이미 완료된 삭제는 유지</b>됩니다. 결과가 불명확한 항목은 작업 이력에서 다시 확인하세요.</p>
-      <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>진행 중 작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden data-go="server" data-go-sub="hist">작업 이력 보기</button></div></div></div>
+    <div class="dialog__actions"><button class="btn btn--danger" data-job-cancel data-close>진행 중 작업 중단</button><button class="btn btn--primary" data-job-done data-close hidden data-go="server" data-go-sub="hist">작업 이력 보기</button></div></div></div>
 
   <!-- 작업: 백업 -->
   <div class="overlay" id="job-backup" aria-hidden="true" data-job-labels="서버 상태를 확인하는 중|백업을 만드는 중|백업 파일을 검증하는 중|백업을 만들었습니다. (bk-20261012-표본)">
@@ -363,7 +363,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
 
   <!-- 작업: 복원 -->
   <div class="overlay" id="job-restore" data-start-from="btn-restore" data-require="bk" aria-hidden="true" data-inherit-ctx data-job-labels="백업 파일을 검사하는 중|선택한 플러그인 서버 자료를 되돌리는 중|복원 결과를 다시 읽어 검증하는 중|복원했습니다. 각 플러그인의 서버 연결 설정에서 재연결 방식을 고르고 RisuAI를 새로고침하세요.">
-    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t"><div class="split"><div><div class="eyebrow">Restore</div><h2 id="jr-t">서버 자료 복원 · <span data-fill="targets">LIBRA · HAYAKU</span></h2></div><span class="badge badge--info" data-fill="bk">bk-20261011-2140 · 어제 21:40</span></div>
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jr-t"><div class="split"><div><div class="eyebrow">Restore</div><h2 id="jr-t">서버 자료 복원 · <span data-fill="targets">LIBRA · HAYAKU</span></h2></div><span class="badge badge--info" data-fill="bk">bk-20261011-2140 · 어제 21:40</span><span class="badge badge--info">창을 닫아도 계속됩니다 · 작업 트레이에서 다시 열 수 있습니다</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>검사</b></div><div class="step"><span class="step__no">2</span><b>복원</b></div><div class="step"><span class="step__no">3</span><b>검증</b></div></div>
       <div class="list" data-job-result hidden style="margin-top:12px"><div class="res"><b>복원한 플러그인</b><span data-fill="targets">LIBRA · HAYAKU</span><small>각 플러그인의 서버 연결 설정에서 재연결 방식(서버 자료 사용 · 로컬 업로드 안 함)을 고른 뒤 RisuAI를 새로고침하세요.</small></div><div class="res"><b>변경하지 않은 플러그인</b><span data-fill="kept">Flashback · LIA · RE:TRACE</span></div></div>
@@ -371,7 +371,7 @@ scopes: active=1 ancestor=4 orphan=2 unverified=1</pre></details>
 
   <!-- 작업: 초기화 -->
   <div class="overlay" id="job-reset" data-start-from="btn-reset" data-require="target" aria-hidden="true" data-inherit-ctx data-job-labels="초기화 계획을 확인하는 중|서버 백업을 만드는 중|서버 기억을 비우는 중|빈 상태를 다시 읽어 확인하는 중|초기화 및 빈 상태 확인 완료. 각 플러그인의 서버 연결 설정에서 재연결 방식을 선택하세요.">
-    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jx-t"><div class="split"><div><div class="eyebrow">Reset</div><h2 id="jx-t">서버 기억 초기화 · <span data-fill="target">전체 5개 플러그인</span></h2></div><span class="badge badge--info">창을 닫지 마세요</span></div>
+    <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="jx-t"><div class="split"><div><div class="eyebrow">Reset</div><h2 id="jx-t">서버 기억 초기화 · <span data-fill="target">전체 5개 플러그인</span></h2></div><span class="badge badge--info">창을 닫아도 계속됩니다 · 작업 트레이에서 다시 열 수 있습니다</span></div>
       <div class="progress" style="margin:14px 0"><i style="--v:0%"></i></div><p class="muted" data-job-msg>준비하는 중</p>
       <div class="steps" style="margin-top:12px"><div class="step"><span class="step__no">1</span><b>계획</b></div><div class="step" data-variant="default backup"><span class="step__no">2</span><b>백업</b></div><div class="step"><span class="step__no">3</span><b>비우기</b></div><div class="step"><span class="step__no">4</span><b>확인</b></div></div>
       <p class="hint" style="margin-top:10px" data-variant="default backup">백업이 실패하면 초기화는 시작되지 않습니다. 로컬 데이터와 기존 백업은 지우지 않습니다.</p>
@@ -476,11 +476,26 @@ var BKN=0;
 document.addEventListener('suite:jobdone',function(e){var id='bk-20261012-'+String(2300+(++BKN));
   if(e.detail.id==='job-backup'){addBackup(id);var m=document.querySelector('#job-backup [data-job-msg]');if(m)m.textContent='백업을 만들었습니다. ('+id+')';}
   if(e.detail.id==='job-reset'&&e.detail.ctx&&e.detail.ctx.variant!=='nobackup')addBackup(id);});
-/* 재검증: 결과를 시나리오(승계 상태)에 반영 */
-document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-retry')return;var none=document.documentElement.dataset.scenario!=='partial';$id('retry-go').disabled=none;$id('retry-none').hidden=!none;});
-document.addEventListener('click',function(e){if(!e.target.closest('[data-act="retry"]')||$id('retry-go').disabled)return;document.documentElement.dataset.scenario='ok';
-  document.querySelectorAll('button[data-scenario]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.scenario==='ok'));});
-  window.suiteToast('재검증을 마쳤습니다. LIBRA 영속 검증을 통과해 모든 owner의 승계가 완료되었습니다. (시안)');});
+/* 승계 demo state: each new simulated run gets one identity; retry keeps its target and transfer. */
+var handoffRunSeq=0;
+function makeHandoffRun(){var suffix=Date.now().toString(36)+'-'+(++handoffRunSeq).toString(36);return {transferId:'tr-demo-'+suffix,sourceChatId:'chat-demo-source',targetChatId:'chat-demo-'+suffix,status:document.documentElement.dataset.scenario==='ok'?'ok':'partial'};}
+var handoffRun=makeHandoffRun();
+function renderHandoffRun(){
+  var partial=handoffRun.status==='partial';
+  $id('handoff-transfer-id').textContent=handoffRun.transferId;$id('handoff-target-id').textContent=handoffRun.targetChatId;
+  $id('retry-transfer-id').textContent=handoffRun.transferId;$id('retry-target-id').textContent=handoffRun.targetChatId;
+  var badge=$id('handoff-libra-result'),detail=$id('handoff-libra-detail');
+  badge.textContent=partial?'영속 검증 실패':'확인 412개';badge.className='badge '+(partial?'badge--warn':'badge--ok');
+  detail.textContent=partial?'승계 표식은 저장되었으나 영속 검증을 통과하지 못했습니다.':'승계 표식과 target 원장 readback을 확인했습니다.';
+  $id('handoff-libra-failed-note').hidden=!partial;$id('handoff-retry-action').hidden=!partial;
+}
+document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-retry')return;var none=handoffRun.status!=='partial';$id('retry-go').disabled=none;$id('retry-none').hidden=!none;});
+document.addEventListener('click',function(e){var scenario=e.target.closest('button[data-scenario]');if(scenario){handoffRun.status=scenario.dataset.scenario;renderHandoffRun();}
+  if(e.target.closest('[data-act="retry"]')&&!$id('retry-go').disabled){handoffRun.status='ok';renderHandoffRun();
+    document.querySelectorAll('button[data-scenario]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.scenario==='ok'));});
+    document.documentElement.dataset.scenario='ok';window.suiteToast('같은 target/transfer의 재검증이 완료되었습니다. (시안)');}});
+document.addEventListener('suite:jobdone',function(e){if(e.detail.id!=='job-next')return;handoffRun=makeHandoffRun();renderHandoffRun();});
+document.addEventListener('suite:ready',renderHandoffRun);
 /* 복원 미리보기 문구: 조사를 이름 뒤에 붙이지 않음 */
 var _rs=syncRestore;syncRestore=function(){_rs();var all=[].slice.call(document.querySelectorAll('.rs-ns')),on=all.filter(function(c){return c.checked;}).map(function(c){return c.value;}),off=all.filter(function(c){return !c.checked;}).map(function(c){return c.value;});
   var p=$id('btn-rs-preview');p.setAttribute('data-toast','미리보기: '+$id('rs-bk').value+' → '+(on.join(' · ')||'없음')+' 플러그인의 서버 자료가 바뀝니다. '+(off.length?off.join(' · ')+' 플러그인의 자료는 그대로입니다.':'다른 플러그인은 없습니다.')+' (시안)');};

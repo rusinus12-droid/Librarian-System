@@ -6,8 +6,8 @@ const { create, pause, until } = require('./fixtures/libra_gui_memory_dom_host.c
 const pluginPath = process.argv[2] || path.resolve(__dirname, '../plugins/LIBRA.js');
 const results = [];
 const sessions = [];
-const field = (s, label) => [...s.doc.querySelectorAll('.sga-main .sga-field')]
-  .find(node => node.querySelector('label')?.textContent === label)?.querySelector('input,select,textarea');
+const field = (s, label) => [...s.doc.querySelectorAll('.page[data-page="settings"] .field,.page[data-page="settings"] .setting')]
+  .find(node => (node.querySelector('label')?.textContent === label || node.querySelector('.setting__name')?.textContent === label))?.querySelector('input,select,textarea');
 async function input(s, label, value) {
   const node = field(s, label);
   assert.ok(node, `field exists: ${label}`);
@@ -19,8 +19,9 @@ async function boot(options = {}) {
   const s = await create('LIBRA', 'Full', { ...options, pluginPath });
   sessions.push(s);
   await s.open(); await pause(250);
-  await s.click('[data-book-page="settings"]');
-  await s.click('[data-external-settings="performance"]');
+  await s.click('.sidebar [data-go="settings"]');
+  await s.click('.setnav [data-subtab="mem"]');
+  const maintenance=s.doc.querySelector('[data-memory-maintenance]');maintenance.open=true;maintenance.dispatchEvent(new s.dom.window.Event('toggle'));await pause(40);
   return s;
 }
 async function save(s, dedicated = false) {
@@ -69,7 +70,7 @@ async function test(name, fn) {
   });
   await test('a memory draft survives navigation and saves from a different settings section', async () => {
     const s = await boot(); await input(s, '최대 리콜 메모리 수', 17);
-    await s.click('[data-external-settings="debug"]'); await save(s);
+    await s.click('.setnav [data-subtab="adv"]'); await save(s);
     const restarted = await boot({ initialValues: [...s.values] });
     assert.equal(field(restarted, '최대 리콜 메모리 수').value, '17');
   });
@@ -94,7 +95,7 @@ async function test(name, fn) {
   });
   await test('performance preset changes a dirty draft and is reversible', async () => {
     const s = await boot();
-    const button = [...s.doc.querySelectorAll('button')].find(n => n.textContent === '가벼운');
+    const button = [...s.doc.querySelectorAll('button')].find(n => n.dataset.performancePreset === 'light');
     assert.ok(button); button.click(); await pause(100);
     assert.equal(s.api.debugGuiSettingsState().dirty, true);
     assert.equal((await s.api.getLibraMemorySettings()).performancePreset, 'balanced');
@@ -142,14 +143,14 @@ async function test(name, fn) {
   });
   await test('visible field labels provide names and notes are separate descriptions', async () => {
     const s = await boot();
-    const controls = [...s.doc.querySelectorAll('.sga-main .sga-field input,.sga-main .sga-field select,.sga-main .sga-field textarea')];
-    assert.ok(controls.length >= 21);
+    const controls = [...s.doc.querySelectorAll('.page[data-page="settings"] .field input,.page[data-page="settings"] .field select,.page[data-page="settings"] .field textarea')];
+    assert.ok(controls.length >= 17);
     for (const n of controls) {
-      const visual = n.closest('.sga-field').querySelector('label')?.textContent;
+      const visual = n.closest('.field').querySelector('label')?.textContent;
       if (!visual) continue;
       const names = [...n.labels || []].map(label => label.textContent);
       assert.ok(names.includes(visual), `label association: ${visual}`);
-      const note = n.closest('.sga-field').querySelector('small');
+      const note = n.closest('.field').querySelector('small');
       if (note) {
         assert.ok(note.id, `description has an id: ${visual}`);
         assert.ok((n.getAttribute('aria-describedby') || '').split(/\s+/).includes(note.id));

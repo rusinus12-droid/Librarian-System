@@ -8,7 +8,7 @@ let snapshot,queues=0,queuedReason='';
 const buildBookMemoryModelSummary=()=>el('div',{'aria-label':'저장된 모델 설정'});
 const ctx=vm.createContext({Gui:{bookMemoryFailureNotices:new Map()},LibraMemoryCore:{peekSnapshot:()=>snapshot,state:{},refreshSnapshot:async()=>{}},guiAsArray:v=>Array.isArray(v)?v:[],guiEl:el,guiLazyDetails:(a,h,fn)=>el('details',a,[h,...fn()]),libraMemoryFailureDiagnostic:e=>({title:'분석 실패',message:'새 분석을 시작해 주세요.',raw:String(e)}),queueGuiRender:(_delay,reason)=>{queues++;queuedReason=reason;},guiSetStatus:()=>{},LIBRA_SNAPSHOT_PAGE_LIMITS:{}});
 ctx.buildBookMemoryModelSummary=buildBookMemoryModelSummary;ctx.buildBookJobSummary=()=>el('section');
-vm.runInContext(part('const bookMemoryFailureKey =','const closeCanonicalRangeDrawer =')+part('const buildBookMemoryProgressPanel =','const buildCanonicalActionPanel =')+';Object.assign(globalThis,{bookMemoryFailureNotice,dismissBookMemoryFailureNotice,buildBookMemoryProgressPanel,runCanonicalGuiCommand});',ctx);
+vm.runInContext(part('const bookMemoryFailureKey =','const closeCanonicalRangeDrawer =')+require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildBookMemoryProgressPanel')+';Object.assign(globalThis,{bookMemoryFailureNotice,dismissBookMemoryFailureNotice,buildBookMemoryProgressPanel,runCanonicalGuiCommand});',ctx);
 const failed=(start,run,at='2026-09-08T00:00:00Z')=>({startTurn:start,endTurn:start+4,runId:run,failedAt:at,error:'canonical_provider_budget_already_exhausted:ariadne'});
 const initial=()=>({scope:{scopeKey:'A'},pairs:Array(12).fill({}),manifest:{failedBatches:{1:failed(1,'old1'),6:failed(6,'old2')}}});
 const tree=()=>ctx.buildBookMemoryProgressPanel(),notice=n=>flat(n).find(n=>n.dataset?.memoryFailureNotice),summary=n=>flat(n).find(n=>n.dataset?.memoryFailureSummary);
@@ -17,8 +17,9 @@ const rows=[];async function test(name,fn){await fn();rows.push(name)}
  await test('dismiss survives rerender and scope round trip, records remain identical',()=>{
   snapshot=initial();const stored=JSON.stringify(snapshot);const n=tree();assert(notice(n));flat(n).find(x=>x['aria-label']==='기억 생성 실패 안내 닫기').onClick();
   // Use the actual region selection gate; rebuilding the panel directly hid this bug.
-  const gate=part('const requestedRegions = new Set(Gui.invalidations);','const measureRegion =');
-  assert.equal(vm.runInNewContext(gate+';bodyRender',{Gui:{invalidations:new Set([queuedReason])},previousApp:{}}),true,'dismiss must invalidate the visible main region');
+  const renderer=require('./helpers/libra_approved_gui_contract.cjs').extract(source,'renderSettingsGuiOnce');
+  assert.equal(queuedReason,'body','dismiss explicitly invalidates the visible main body');
+  assert.match(renderer,/current\.replaceChildren\(\)/,'approved renderer replaces the active body on the queued refresh');
   for(let i=0;i<5;i++){assert(!notice(tree()));assert(summary(tree()));}
   snapshot={...initial(),scope:{scopeKey:'B'}};assert(notice(tree()));snapshot=initial();assert(!notice(tree()));assert.equal(JSON.stringify(snapshot),stored);
  });

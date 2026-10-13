@@ -9,9 +9,24 @@ const vm = require('node:vm');
 const Module = require('node:module');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const sourcePlans = require('./archive_issued_tail_plans.json');
+// A distinct reviewed plan admits GUI-adopted source bytes. Historical inputs
+// and their independent output pins stay untouched. The scheduler callback
+// fingerprints must remain identical to those historical plans.
+const guiSourcePlans = require('./archive_issued_tail_gui_plans.json');
 assert.equal(sourcePlans.schema, 'root085.source-observer-plans.v1');
 assert.equal(sourcePlans.offsetUnit, 'javascript-utf16-code-unit');
 assert.equal(sourcePlans.plans.length, 3);
+assert.equal(guiSourcePlans.schema, 'gui-adoption.source-observer-plans.v1');
+assert.equal(guiSourcePlans.offsetUnit, sourcePlans.offsetUnit);
+assert.equal(guiSourcePlans.plans.length, 3);
+for (const plan of guiSourcePlans.plans) {
+  const historical = sourcePlans.plans.find(row => row.name === plan.name);
+  assert(historical, 'GUI plan has a reviewed historical variant');
+  const fingerprints = row => row.callsites.map(site => site.family + ':' + site.callbackSha256).sort();
+  assert.deepEqual(fingerprints(plan), fingerprints(historical), 'all reviewed scheduler callbacks unchanged');
+  assert.equal(plan.expressionCount, historical.expressionCount);
+  assert.deepEqual(plan.anchors.map(anchor => anchor.before), historical.anchors.map(anchor => anchor.before));
+}
 const crypto = require('node:crypto');
 const key = '__root085IssuedStartupObserver';
 const origin = new AsyncLocalStorage();
@@ -35,7 +50,7 @@ const replaceOnce = (source, before, after) => {
 function observeProduct(source) {
   const hash = digest(source);
   if (sourceCache.has(hash)) return sourceCache.get(hash);
-  const plan = sourcePlans.plans.find(row => row.sourceSha256 === hash);
+  const plan = [...sourcePlans.plans, ...guiSourcePlans.plans].find(row => row.sourceSha256 === hash);
   assert(plan, 'source observer requires an exact statically verified input');
   assert.equal(Buffer.byteLength(source), plan.sourceBytes);
   assert.equal(source.length, plan.sourceCodeUnits, 'source offsets are JavaScript UTF-16 code units');
@@ -181,13 +196,28 @@ function installControl(state, control) {
   control.assigned = true;
   control.context = state.id;
   state.control = control;
+  // Resolve the reviewed callback by its stable family + fingerprint. Source
+  // GUI edits can move a callback to another UTF-16 offset while preserving
+  // its body; matching the old stack label would then wait forever for a
+  // callsite that no longer exists.
+  const baseline = sourcePlans.plans.find(plan =>
+    plan.sourceSha256 === 'd9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be');
+  assert(baseline, 'pinned historical source observer plan exists');
+  const baselineLabel = control.kind === 'native' ? 'scheduleTimer:24453' : 'scheduleLifecycleTimeout:9675';
+  const accepted = baseline.callsites.filter(site => site.label === baselineLabel);
+  assert.equal(accepted.length, 1, 'mandatory callback is uniquely identified in the pinned historical plan');
+  const reviewedCallback = accepted[0];
+  const matches = state.source.callsites.filter(site => site.family === reviewedCallback.family &&
+    site.callbackSha256 === reviewedCallback.callbackSha256);
+  assert.equal(matches.length, 1, 'mandatory startup control resolves to one reviewed callback fingerprint');
+  control.targetLabel = matches[0].label;
   const host = state.sandbox.risuai, original = host.getCharacter;
   assert.equal(typeof original, 'function');
   host.getCharacter = function (...args) {
     const value = Reflect.apply(original, this, args);
     const caller = origin.getStore();
-    const native = caller?.state === state && caller.label.startsWith('scheduleTimer:') && caller.label === 'scheduleTimer:24453';
-    const sdk = caller?.state === state && caller.label === 'scheduleLifecycleTimeout:9675';
+    const native = caller?.state === state && control.kind === 'native' && caller.label === control.targetLabel;
+    const sdk = caller?.state === state && control.kind === 'sdk' && caller.label === control.targetLabel;
     if (control.entered || !(control.kind === 'native' ? native : sdk)) return value;
     control.entered = true;
     control.enteredAtMs = clock();

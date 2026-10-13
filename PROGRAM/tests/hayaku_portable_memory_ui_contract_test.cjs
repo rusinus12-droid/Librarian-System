@@ -10,11 +10,9 @@ const pluginPath = path.resolve(__dirname, '..', 'plugins', 'HAYAKU_Locator_Cont
 const source = fs.readFileSync(pluginPath, 'utf8');
 
 assert.match(source, releasePattern("^\\/\\/@version {hayaku}\\s*$", "m"));
-assert.match(source, /class="hv-recovery-card hv-portable-memory-card"/);
-assert.match(source, /<h3>기억 복원<\/h3><span class="hv-portable-json-badge">JSON<\/span>/);
-assert.match(source, /현재 채팅의 영구 기억을 JSON으로 보관하고, 같은 채팅을 되돌리거나 새 채팅으로 이사하거나 복사된 대화의 월드라인을 복구합니다\./);
-assert.match(source, /data-portable-backup-host="hayaku_locator_continuity" aria-label="JSON 기억 백업 및 복원"/);
-assert.match(source, /같은 채팅은 교체 복원 · 다른 채팅은 format v3의 이사\/복사 모드만 허용 · 작업 전 대상 기억 자동 안전 백업/);
+assert.match(source, /<h2 class="card__title">기억 복원 · Portable JSON<\/h2>/);
+assert.match(source, /data-portable-backup-host="hayaku_locator_continuity"/);
+assert.match(source, /같은 채팅은 교체 복원, 다른 채팅은 이사\/복사 모드만 허용됩니다\. 작업 전 대상 기억을 자동 백업합니다\./);
 assert.match(source, /백업 파일에는 역할극 원문과 비공개 기억이 포함될 수 있습니다/);
 assert.match(source, /↓ JSON 백업 다운로드/);
 assert.match(source, /↑ JSON 백업에서 복원/);
@@ -44,16 +42,19 @@ assert.doesNotMatch(source, /anchor === document\.body/);
 assert.doesNotMatch(source, /position:fixed;right:14px;bottom:14px/);
 assert.doesNotMatch(source, />💾 기억 백업<\/button>/);
 assert.doesNotMatch(source, />📥 기억 복원<\/button>/);
-assert.match(source, /\.portable-memory-actions\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-assert.match(source, /@media\(max-width:680px\)\{.{0,180}\.portable-memory-actions\{grid-template-columns:1fr\}/);
-assert.match(source, /class="hv-job-overlay"/);
+assert.match(source, /className = 'portable-memory-controls'/);
+assert.match(source, /className = 'overlay is-open'/);
+assert.match(source, /overlay\.setAttribute\('data-hayaku-portable-job', 'true'\)/);
 assert.match(source, /data-portable-job-minimize/);
 assert.match(source, /data-portable-job-cancel/);
-assert.match(source, /hv-job-chip/);
-assert.match(source, />원장 JSON 내보내기<\/button>/);
-assert.match(source, /조회·진단용 JSON이며 기억 복원용 백업 파일이 아닙니다/);
+assert.match(source, /chip\.className = 'btn btn--sm'/);
+assert.match(source, /id="exportHayakuViewer"[^>]*>[^<]*원장 JSON/);
+assert.match(source, /addEventListener\('click', \(\) => downloadLedgerViewerJson\(\)\)/,
+  'packet-ledger export remains a separate read-only export action, not a portable restore source');
+assert.match(source, /input type="file" accept="\.json,application\/json" hidden/,
+  'restore accepts a selected JSON backup file only');
 
-const recoveryStart = source.indexOf('data-hayaku-viewer-panel="recovery"');
+const recoveryStart = source.indexOf('const recoveryPage = `');
 const portableHost = source.indexOf('data-portable-backup-host', recoveryStart);
 const serverStart = source.indexOf('data-hayaku-viewer-panel="server"', recoveryStart);
 assert.ok(recoveryStart >= 0 && portableHost > recoveryStart && serverStart > portableHost, 'portable memory card must live inside the Recovery panel');

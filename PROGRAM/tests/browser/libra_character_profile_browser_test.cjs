@@ -14,7 +14,7 @@ const check=(name,value)=>{assert.ok(value,name);results.push(name);};
   try {
     const page=await browser.newPage({viewport:{width:1440,height:1100}});
     page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(error.message));
-    await page.setContent('<html lang="ko"><body></body></html>');
+    await page.route('http://localhost/libra-synthetic-host',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="ko"><body></body></html>'}));await page.goto('http://localhost/libra-synthetic-host');await page.setContent('<html lang="ko"><body></body></html>');
     await page.addScriptTag({path:path.join(__dirname,'libra_writer_host.js')});
     const a=artifact(), rows=structuredClone(input.sourceRows);
     for(const [kind,field,value] of [
@@ -37,22 +37,22 @@ const check=(name,value)=>{assert.ok(value,name);results.push(name);};
     let source=fs.readFileSync(process.env.LIBRA_TEST_PLUGIN||path.join(program,'plugins/LIBRA.js'),'utf8');
     const needle='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
     check('audit injection marker found',source.includes(needle));
-    source=source.replace(needle,'  globalThis.__audit={Gui,LibraMemoryCore,bookNavigate,renderSettingsGui,worldManagerSnapshotView,buildBookCharacterProfileProjection};\n'+needle);
-    await page.addScriptTag({content:source});await page.waitForFunction(()=>!!window.__LIBRA__);
+    source=source.replace(needle,'  globalThis.__audit={Gui,LibraMemoryCore,bookNavigate,renderSettingsGui,worldManagerSnapshotView,buildApprovedMockupPeople};\n'+needle);
+    await page.addScriptTag({content:source});await page.waitForFunction(()=>!!window.__LIBRA__);await page.evaluate(async()=>{const settings=await __LIBRA__.getLibraMemorySettings();await __LIBRA__.saveLibraMemorySettings({...settings,memoryEngine:'unified'});await __LIBRA__.saveLibraProviderConfig({enableLibrarian:true});});
     const job=await page.evaluate(async()=>await __LIBRA__.runManualColdStart());
     check('analysis committed',job.completed===1);
     await page.evaluate(async()=>await __LIBRA__.openSettingsGui());
-    const jobDialog=page.locator('.canonical-job-overlay');
+    const jobDialog=page.locator('#job-memory[data-canonical-job-portal]');
     if(await jobDialog.count())await jobDialog.getByRole('button',{name:'닫기',exact:true}).click();
     await page.evaluate(()=>__audit.bookNavigate('people'));
-    await page.locator('[data-character-profile-group="profile"]').waitFor();
-    const profile=page.locator('.libra-book-character-sheet');
+    await page.locator('[data-subpanel="intro"]').waitFor();
+    const profile=page.locator('.sheet-page');
     for(const key of ['appearance','background','personality','speech','habits','abilities','goal','condition','locationRef','knowledge'])
-      check('visible '+key,await profile.locator(`[data-character-profile-field="${key}"]`).count()===1);
+      check('visible '+key,await profile.locator(`[data-character-field="${key}"]`).count()===1);
     check('no obsolete missing-summary notice',!(await profile.innerText()).includes('별도 소개 요약은'));
-    check('introduction uses actual condition and goal',/휴식 중/.test(await profile.locator('.libra-book-prose-lead').innerText())&&/지도 전달/.test(await profile.locator('.libra-book-prose-lead').innerText()));
-    check('reference is resolved to place name',/서재/.test(await profile.locator('[data-character-profile-field="locationRef"]').innerText()));
-    check('empty affiliations group hidden',await profile.locator('[data-character-profile-group="affiliations"]').count()===0);
+    await profile.locator('[data-subtab="now"]').click();check('current tab uses actual condition and goal',/휴식 중/.test(await profile.locator('[data-subpanel="now"]').innerText())&&/지도 전달/.test(await profile.locator('[data-subpanel="now"]').innerText()));
+    check('reference is resolved to place name',/서재/.test(await profile.locator('[data-character-field="locationRef"]').innerText()));
+    check('empty affiliations group hidden',await profile.locator('[data-subpanel="own"] [data-character-field]').count()===0);
     for(const width of [1440,1024,390]){
       await page.setViewportSize({width,height:1100});
       await page.screenshot({path:path.join(output,`character-${width}.png`),fullPage:true});
@@ -65,10 +65,10 @@ const check=(name,value)=>{assert.ok(value,name);results.push(name);};
         const snapshot=structuredClone(before);
         snapshot.continuityState.characters=[{id:'legacy',name:'예전 인물',state:{summary:'기존 소개',appearance:'회색 눈',customNote:'기존 추가 정보'}}];
         __audit.LibraMemoryCore.state.snapshot=snapshot;
-        const legacy=__audit.buildBookCharacterProfileProjection().textContent;
+        const legacy=__audit.buildApprovedMockupPeople().textContent;
         snapshot.continuityState.characters=[{id:'identity',name:'이름만 확인된 인물',state:{}}];
-        const identity=__audit.buildBookCharacterProfileProjection();
-        return {legacy,emptyGroups:identity.querySelectorAll('[data-character-profile-group]').length,emptyText:identity.textContent};
+        const identity=__audit.buildApprovedMockupPeople();
+        return {legacy,emptyGroups:identity.querySelectorAll('[data-character-field]').length,emptyText:identity.textContent};
       } finally {__audit.LibraMemoryCore.state.snapshot=before;}
     });
     check('legacy scalar and extra fields remain readable',/기존 소개/.test(compatibility.legacy)&&/회색 눈/.test(compatibility.legacy)&&/기존 추가 정보/.test(compatibility.legacy));

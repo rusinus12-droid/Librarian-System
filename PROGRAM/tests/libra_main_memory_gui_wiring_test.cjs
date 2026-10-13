@@ -32,7 +32,7 @@ const between = (a, b) => {
   return source.slice(i, j);
 };
 
-const el = (tag, attrs = {}, children = []) => ({ tag, ...attrs, children: children.filter(Boolean) });
+const el = (tag, attrs = {}, children = []) => {const node={tag,...attrs,children:children.filter(Boolean)};node.appendChild=child=>{node.children.push(child);return child;};node.querySelector=selector=>flat(node).slice(1).find(n=>selector.startsWith('.')?String(n.class||'').split(' ').includes(selector.slice(1)):selector==='[data-character-search-empty]'&&n.dataset?.characterSearchEmpty!==undefined)||null;return node;};
 const flat = n => [n, ...(n.children || []).flatMap(flat)];
 const textOf = node => flat(node).map(n => String(n.text ?? '')).join(' ');
 const byData = (node, attr) => flat(node).filter(n => n.dataset && n.dataset[attr] !== undefined);
@@ -50,7 +50,7 @@ const buildSheet = state => {
     characters: [{ id: 'ce_person_mina', name: '민아', state }],
     relationships: [],
     domainStatus: {},
-    head: { throughTurn: 5 }
+    head: { throughTurn: 5 },scopeKey:'scope-a',throughTurn:5
   };
   const Gui = { bookSelectedCharacterId: 'ce_person_mina', worldManagerSelectedCharacterId: 'ce_person_mina', bookCharacterTab: 'profile' };
   const ctx = vm.createContext({
@@ -62,7 +62,7 @@ const buildSheet = state => {
     bookProjectionIdentity: (domain, row, index) => String(row?.id || `${domain}:${index}`),
     bookCharacterName: row => String(row?.name || ''),
     bookCharacterEvidence: () => null,
-    bookCharacterWorldLinks: () => [],
+    bookCharacterWorldLinks: () => [],bookWorldAtlasModel: () => [],
     bookProjectionReadable: value => String(value ?? ''),
     bookRelationshipEndpointName: () => '',
     bookSelectPeopleSection: () => {},
@@ -74,16 +74,17 @@ const buildSheet = state => {
     worldManagerDisplayReferences: value => value,
     worldManagerRelationshipDefinition: () => '',
     worldManagerSourceBadge: () => null,
+    LibraMemoryCore:{state:{snapshot:{scope:{scopeKey:'scope-a'}}}},
     Gui, Object, Array, String, Number, Set, Math, JSON,
     console
   });
   vm.runInContext(
     `${between('const worldManagerArticleFieldLabel =', 'const buildWorldManagerArticleDetail =')}
-     ${between('const buildBookCharacterProfileProjection =', 'const BOOK_WORLD_KIND_LABELS =')}
-     Object.assign(globalThis, { buildBookCharacterProfileProjection });`,
+     ${require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildApprovedMockupPeople')}
+     Object.assign(globalThis, { buildApprovedMockupPeople });`,
     ctx
   );
-  return ctx.buildBookCharacterProfileProjection();
+  return ctx.buildApprovedMockupPeople();
 };
 
 // A Head state using every field the analysis can produce for a character.
@@ -105,10 +106,10 @@ const fullState = () => ({
 
 record('A33 every analysed field reaches the existing character sheet', () => {
   const page = buildSheet(fullState());
-  const groups = byData(page, 'characterProfileGroup').map(node => node.dataset.characterProfileGroup);
+  const groups = byData(page, 'subpanel').map(node => node.dataset.subpanel);
   assert.ok(groups.length > 0, 'the sheet renders at least one group');
   // Every field the analysis can produce must be visible in some group.
-  const rendered = new Set(byData(page, 'characterProfileField').map(node => node.dataset.characterProfileField));
+  const rendered = new Set(byData(page, 'characterField').map(node => node.dataset.characterField));
   const expected = ['locationRef', 'condition', 'goal', 'knowledge', 'affiliations',
     'appearance', 'background', 'personality', 'speech', 'habits', 'abilities', 'preferences', 'boundaries'];
   const missing = expected.filter(key => !rendered.has(key));
@@ -119,10 +120,10 @@ record('A33 every analysed field reaches the existing character sheet', () => {
 
 record('a preference and a boundary are separate groups, so a boundary never reads as taste', () => {
   const page = buildSheet(fullState());
-  const groups = byData(page, 'characterProfileGroup').map(node => node.dataset.characterProfileGroup);
-  assert.ok(groups.includes('preferences'), 'the preference group exists');
-  assert.ok(groups.includes('boundaries'), 'the boundary group exists');
-  assert.notEqual(groups.indexOf('preferences'), groups.indexOf('boundaries'),
+  const groups = byData(page, 'subpanel').map(node => node.dataset.subpanel);
+  assert.ok(groups.includes('pref'), 'the preference group exists');
+  assert.ok(groups.includes('bound'), 'the boundary group exists');
+  assert.notEqual(groups.indexOf('pref'), groups.indexOf('bound'),
     'they are different groups, not one merged list');
   // The boundary text itself must be present, not a generic label.
   const pageText = textOf(page);
@@ -132,7 +133,7 @@ record('a preference and a boundary are separate groups, so a boundary never rea
 
 record('A34 an absent field is simply absent, never invented', () => {
   const page = buildSheet({ locationRef: 'ce_world_study' });
-  const rendered = new Set(byData(page, 'characterProfileField').map(node => node.dataset.characterProfileField));
+  const rendered = new Set(byData(page, 'characterField').map(node => node.dataset.characterField));
   assert.ok(rendered.has('locationRef'), 'the field that exists is rendered');
   assert.ok(!rendered.has('preferences'), 'a field with no value renders nothing');
   assert.ok(!rendered.has('boundaries'), 'a boundary with no value renders nothing');
@@ -151,10 +152,10 @@ record('A34 the empty projection states what is missing instead of a blank page'
     bookProjectionIdentity: () => '', Gui: {}, Object, Array, String, Number, Set, Math, JSON
   });
   vm.runInContext(
-    `${between('const buildBookCharacterProfileProjection =', 'const BOOK_WORLD_KIND_LABELS =')}
-     Object.assign(globalThis, { buildBookCharacterProfileProjection });`, ctx);
-  const page = ctx.buildBookCharacterProfileProjection();
-  assert.equal(page.dataset.bookCharacterProjection, 'empty', 'the empty state is labelled as empty');
+    `${require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildApprovedMockupPeople')}
+     Object.assign(globalThis, { buildApprovedMockupPeople });`, ctx);
+  const page = ctx.buildApprovedMockupPeople();
+  assert.equal(page.dataset.libraProductDetail,'people','empty state retains the approved People destination');assert.equal(byData(page,'characterField').length,0,'empty state cannot invent a field');
   const pageText = textOf(page);
   assert.ok(pageText.length > 0, 'the empty state explains itself rather than rendering a blank page');
 });
@@ -162,7 +163,7 @@ record('A34 the empty projection states what is missing instead of a blank page'
 record('A35 no GUI-only canon: the sheet reads the same Head the response path uses', () => {
   // The builder takes its rows from `worldManagerSnapshotView()`, which is the same
   // view the management screens use. There is no second source of truth here.
-  const projection = between('const buildBookCharacterProfileProjection =', 'const BOOK_WORLD_KIND_LABELS =');
+  const projection = require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildApprovedMockupPeople');
   assert.ok(/worldManagerSnapshotView\(\)/.test(projection),
     'the sheet reads the shared Head view');
   assert.ok(!/getUnifiedStateReadProjection|unifiedStateReadProjection/.test(projection)
@@ -173,7 +174,7 @@ record('A35 no GUI-only canon: the sheet reads the same Head the response path u
 });
 
 record('A35 the reading page offers no World Maker mode switch of its own', () => {
-  const projection = between('const buildBookCharacterProfileProjection =', 'const BOOK_WORLD_KIND_LABELS =');
+  const projection = require('./helpers/libra_approved_gui_contract.cjs').extract(source,'buildApprovedMockupPeople');
   assert.ok(!/worldMaker|World Maker/.test(projection.replace(/worldManager[A-Za-z]*/g, '')),
     'no separate World Maker surface is introduced');
   const tabs = projection.match(/tabDefs=\[([^\]]+)\]/)?.[1] ?? '';
@@ -218,6 +219,7 @@ record('BOOK History renders semantic lifecycle events and partial coverage', ()
 
 record('structured profile correction editor displays names and round-trips typed scope', () => {
   const ctx=vm.createContext({
+    LibraMemoryCore:{state:{snapshot:{scope:{scopeKey:'scope-a'}}}},
     guiEl:el,guiAsArray:value=>Array.isArray(value)?value:[],guiAsObject:value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{},
     text:value=>String(value??'').trim(),cloneJson:value=>JSON.parse(JSON.stringify(value)),
     worldManagerIsUnified:()=>true,worldManagerSupersedableProfileCorrectionId:()=>'',

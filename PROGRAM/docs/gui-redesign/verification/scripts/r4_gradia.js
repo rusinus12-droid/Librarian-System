@@ -16,13 +16,19 @@
   q('#sk-save-c').click(); await wait(120);
   var row = qa('.skill-row').filter(function(r){return r.textContent.indexOf('새 테스트 Skill')>-1})[0];
   out.rowAdded = !!row; out.afterAdd = stitle();
-  ok.addNotDirty = /저장되어/.test(stitle());
+  // G2 GR-S3: product Skill edits are a draft until the shared savebar commits.
+  ok.addIsDraft = /1개 변경/.test(stitle());
+  bar().querySelector('[data-save]').click(); await wait();
+  ok.addSaved = /저장되어/.test(stitle());
   // 처음 끄기 → 1개 변경
   var sw = row.querySelector('input[type=checkbox]'); sw.click(); await wait();
   out.firstOff = 'checked=' + sw.checked + ' / ' + stitle();
   ok.firstToggleCounts = !sw.checked && /1개 변경/.test(stitle());
   // 되돌리기 → 다시 켜짐
   bar().querySelector('[data-revert]').click(); await wait();
+  // Revert reconstructs rows; read the current control, not the detached old node.
+  row = qa('.skill-row').filter(function(r){return r.textContent.indexOf('새 테스트 Skill')>-1})[0];
+  sw = row.querySelector('input[type=checkbox]');
   out.reverted = 'checked=' + sw.checked + ' / ' + stitle();
   ok.revertRestoresOn = sw.checked && /저장되어/.test(stitle());
   // 끄고 저장 → 다시 켜면 변경

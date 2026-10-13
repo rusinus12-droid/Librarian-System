@@ -17,9 +17,9 @@ const seedRoots=name=>Array.from({length:2},(_,i)=>{
 async function settleOwnerStore(s){let before=JSON.stringify([...s.values]),stable=0;for(let i=0;i<30;i++){await pause(100);const next=JSON.stringify([...s.values]);stable=next===before?stable+1:0;if(stable===3)return;before=next;}throw Error('owner startup store did not settle');}
 async function openPanel(s){
  await s.open();await pause(180);
- if(s.name==='LIBRA'){await s.click('[data-book-page="settings"]');await s.click('[data-external-settings="server"]');}
- else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-tab="server"]');
- else await s.click('[data-tab="server"]');
+ if(s.name==='LIBRA'){await s.click('[data-go="settings"]');await s.click('.setnav [data-subtab="store"]');}
+ else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
+ else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);
  assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');await settleOwnerStore(s);
 }

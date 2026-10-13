@@ -40,17 +40,18 @@ const currentPanel = between('const buildWorldManagerNarrativeCurrentPanel =', '
 assert.doesNotMatch(currentPanel, /앞으로의 서사 방향 설정|Gui\.narrativeHubSection\s*=\s*'direction'/,
   'Current Narrative must remain a latest-state reader, not a future-direction editor');
 
-const directionBlock = between('const narrativeDirectionScopeKey =', 'const buildWorldManagerNarrativePanel =');
+const approved=require('./helpers/libra_approved_gui_contract.cjs');
+const directionBlock=['narrativeDirectionScopeKey','narrativeDirectionPersistedShape','narrativeDirectionSemanticallyEqual','narrativeDirectionDraftFromRecord','narrativeDirectionDraftList','loadNarrativeDirectionDraft','saveNarrativeDirectionDraft','clearNarrativeDirectionDraft'].map(name=>approved.extract(source,name)).join('\n');
 const loadBlock = between('const loadNarrativeDirectionDraft =', 'const saveNarrativeDirectionDraft =');
 const saveBlock = between('const saveNarrativeDirectionDraft =', 'const clearNarrativeDirectionDraft =');
-const clearBlock = between('const clearNarrativeDirectionDraft =', 'const buildNarrativeDirectionPanel =');
-const panelBlock = between('const buildNarrativeDirectionPanel =', 'const buildWorldManagerNarrativePanel =');
+const clearBlock=approved.extract(source,'clearNarrativeDirectionDraft');
+const panelBlock=approved.extract(source,'buildApprovedMockupStory');
 
 for (const label of [
-  '원하는 서사 방향', '완료 조건', '피해야 할 강제 전개', 'Soft Preferences', '잠금'
+  '목표', '완료 조건', '강제하지 말아야 할 전개', '부드러운 선호 (soft preferences)', '잠금'
 ]) assert.ok(panelBlock.includes(label), `missing Narrative Direction field: ${label}`);
-assert.match(panelBlock, /이 페이지는 앞으로 원하는 방향을 지정합니다\./);
-assert.match(panelBlock, /현재까지 실제로 일어난 내용은 내러티브 > 현재 내러티브에서 관리합니다\./);
+assert.match(panelBlock, /원하는 다음 방향을 저장합니다\./);
+assert.match(panelBlock, /현재 사실과 권위가 다르며 사실로 저장되지 않습니다\./);
 assert.doesNotMatch(directionBlock,
   /LibraMemoryCore\.setStoryArcDestination|storyArcDestinationDraft|planner-narrative-direction:v1|:story-arc/,
   'the shared GUI must use the public Direction API, not a legacy object or storage key');
@@ -84,8 +85,8 @@ assert.doesNotMatch(narrativePanel, /narrativeDirectionPending/,
   'the Commit 2 Direction placeholder must be retired');
 
 assert.doesNotMatch(source,/const buildLibraDraftWorkspacePanel\s*=|const buildGradiaDraftWorkspacePanel\s*=/,'retired draft-family workspaces stay removed');
-const storyOwner=require('./helpers/libra_navigation_contract.cjs').declaration(source,'buildBookStoryPanel');
-assert.match(storyOwner,/buildNarrativeDirectionPanel\(/,'the active story owner retains the explicit user direction editor');
+const storyOwner=approved.extract(source,'buildApprovedMockupStory');
+assert.match(storyOwner,/saveNarrativeDirectionDraft\(/,'the active story owner retains the explicit user direction editor');
 
 require('./helpers/libra_active_book_routes.cjs')(source);
 const baseDirection = (patch = {}) => ({
@@ -144,7 +145,8 @@ const makeGuiHarness = () => {
     inputNode: (value, onInput, options) => ({ value, onInput, options }),
     checkboxNode: (value, label, onInput) => ({ value, label, onInput }),
     libraStatusBadge: (label, kind) => ({ label, kind }),
-    confirm: () => true,
+    confirmApprovedOperation:async()=>true,
+    LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML:approved.literal(source,'LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML'),
     __LIBRA__: {
       getNarrativeDirection: async options => {
         state.getCalls += 1;
@@ -175,8 +177,7 @@ const makeGuiHarness = () => {
     narrativeDirectionSemanticallyEqual,
     loadNarrativeDirectionDraft,
     saveNarrativeDirectionDraft,
-    clearNarrativeDirectionDraft,
-    buildNarrativeDirectionPanel
+    clearNarrativeDirectionDraft
   };`, context);
   return { state, context, api: context.directionApi };
 };

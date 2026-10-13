@@ -1,6 +1,6 @@
-"""Full shipped plugin request-boundary reconciliation in Chromium for all owners."""
+"""Shipped owner input edits require explicit selected execution; Chromium synthetic host."""
 from pathlib import Path
-import json, sys, shutil, subprocess
+import json, sys, shutil, subprocess, hashlib
 try:
     from playwright.sync_api import sync_playwright
 except ModuleNotFoundError as error:
@@ -9,7 +9,7 @@ except ModuleNotFoundError as error:
     print(json.dumps({'test': 'source_review_owner_end_to_end_browser', 'result': 'NOT_RUN', 'reason': 'Python Playwright is not installed'}))
     raise SystemExit(77)
 
-P = Path(sys.argv[1])
+P = Path(sys.argv[1]).resolve()
 E = Path(sys.argv[2])
 E.mkdir(parents=True, exist_ok=True)
 packet_data = json.loads(subprocess.check_output(['node', '-e', r'''
@@ -32,6 +32,7 @@ console.log(JSON.stringify({packets,originals,replies}));
 ''', str(P / 'tests/fixtures/hayaku_runtime_harness.cjs')]))
 results = []
 errors = []
+source_hashes = {}
 
 
 def check(name, ok, detail=None):
@@ -48,7 +49,8 @@ try:
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.set_default_timeout(12000)
-            page.set_content('<!doctype html><html lang="ko"><meta charset="utf-8"><body style="margin:0"></body></html>')
+            page.route('http://localhost/**', lambda route: route.fulfill(body='<!doctype html><html lang="ko"><meta charset="utf-8"><body style="margin:0"></body></html>', content_type='text/html'))
+            page.goto('http://localhost/source-owner')
             page.add_script_tag(content=(P / 'tests/browser/hayaku_browser_host.js').read_text())
             page.evaluate('''({owner,packetData})=>{
               window.__modelRequests=[];window.__reviewHooks={};window.__hayakuRepairCount=0;
@@ -68,10 +70,7 @@ try:
             }''', {'owner': owner, 'packetData': packet_data})
 
             plugin_source = (P / 'plugins' / filename).read_text()
-            if owner == 'flashback':
-                marker = 'const getFlashbackSourceEdits ='
-                assert plugin_source.count(marker) == 1
-                plugin_source = plugin_source.replace(marker, marker + ' globalThis.__testSourceEdits =', 1)
+            source_hashes[owner] = hashlib.sha256(plugin_source.encode()).hexdigest()
             page.add_script_tag(content=plugin_source)
 
             if owner == 'libra':
@@ -88,34 +87,45 @@ try:
                 check('Flashback ordinary capture is ready before source edits', len(setup.get('records', [])) >= 2, len(setup.get('records', [])))
 
             initial_calls = page.evaluate('__hostCalls.llm')
-            mode = page.evaluate('async()=>{await product.setSourceEditTrackingMode(\'auto\');return product.getSourceEditSyncStatus().mode;}')
-            check(owner + ' defaults to automatic tracking', mode == 'auto', mode)
+            original_visible = page.evaluate('JSON.stringify(__chat.message)')
+            check(owner + ' source rules are exposed through current public input API', isinstance(page.evaluate('product.getSourceEditRules()'), dict))
             page.evaluate('''()=>{const second=testOwner==='libra'?11:3;__chat.message[1].data=testOwner==='hayaku'?hidden('Alice did not sign the office agreement.',testPackets.packets[0]):'Alice did not sign the office agreement.';__chat.message[second].data=testOwner==='hayaku'?hidden('Alice found a green ribbon.',testPackets.packets[1]):'Alice found a green ribbon.';}''')
 
-            if owner == 'libra':
-                page.evaluate("async()=>{await __reviewHooks.beforeRequest([{role:'user',content:'Continue.'}],'model');await __reviewHooks.afterRequest('Next response.','model');}")
-            elif owner == 'hayaku':
-                page.evaluate("async()=>{const test=product._test,scope=await test.currentChatScope();await test.reconcileObservedChatTopology(scope,test.authoritativeChatSnapshot(scope.chatMessages,scope),'browser-source-edits');await test.handleBeforeRequest([{role:'user',content:'Continue.'}],'model');test.getHayakuSourceEdits().afterRequest();}")
-            else:
-                page.evaluate("async()=>{await __testSourceEdits().beforeRequest();__testSourceEdits().afterRequest();}")
-
-            state = page.evaluate('product.getSourceEditSyncStatus()')
-            check(owner + ' detected owner and current chat scope', state.get('owner') == owner and bool(state.get('scopeKey')), {'owner': state.get('owner'), 'scopeKey': state.get('scopeKey')})
-            check(owner + ' both changed source units are automatically applied', len(state.get('events', [])) == 2 and len(state.get('tasks', [])) == 2 and all(task.get('state') == 'applied' for task in state.get('tasks', [])), {'events': len(state.get('events', [])), 'states': [task.get('state') for task in state.get('tasks', [])]})
+            edited_visible = page.evaluate('JSON.stringify(__chat.message)')
+            # An actual registered request boundary must not start source reconciliation.
+            check(owner + ' actual before/after request hooks are registered', page.evaluate("typeof __reviewHooks.beforeRequest==='function'&&typeof __reviewHooks.afterRequest==='function'"))
+            page.evaluate("async()=>{await __reviewHooks.beforeRequest([{role:'user',content:'Continue.'}],'model');await __reviewHooks.afterRequest(__chat.message.at(-1).data,'model');}")
+            check(owner + ' request boundary starts no source model work', page.evaluate('__hostCalls.llm') == initial_calls, {'before':initial_calls,'after':page.evaluate('__hostCalls.llm')})
             check(owner + ' beforeRequest opens no consent dialog or dock', page.locator('#memorySuiteSourceReview, [x-memory-suite-source-review-dock], [x-memory-suite-source-edit-dialog]').count() == 0)
-            check(owner + ' automatic reconciliation does not request the host root document', page.evaluate('__mainDomCalls') == 0, page.evaluate('__mainDomCalls'))
-
-            prompt_result = page.evaluate('async()=>product.reviewSourceEdits()')
-            check(owner + ' legacy manual review entry point is disabled', prompt_result.get('reason') == 'automatic_before_request_only', prompt_result)
-            check(owner + ' manual entry also leaves the host UI unchanged', page.locator('#memorySuiteSourceReview, [x-memory-suite-source-review-dock], [x-memory-suite-source-edit-dialog]').count() == 0 and page.evaluate('__mainDomCalls') == 0)
-            if owner == 'flashback':
-                check('Flashback automatic reconciliation uses no model call', page.evaluate('__hostCalls.llm') == initial_calls, page.evaluate('__hostCalls.llm'))
+            check(owner + ' request boundary does not request the host root document', page.evaluate('__mainDomCalls') == 0, page.evaluate('__mainDomCalls'))
+            check(owner + ' request boundary preserves edited original bytes', page.evaluate('JSON.stringify(__chat.message)') == edited_visible)
+            if owner == 'libra':
+                inventory = page.evaluate('async()=>product.listCanonicalBatchRanges()')
+                selected = {'scopeKey':inventory['scopeKey'],'mode':'source_edit','ranges':inventory['ranges']}
             else:
-                check(owner + ' source reanalysis is caused by the request boundary', page.evaluate('__hostCalls.llm') > initial_calls, {'before': initial_calls, 'after': page.evaluate('__hostCalls.llm')})
+                inventory = page.evaluate('async()=>product.listReanalysisRanges()')
+                selected = {'scopeKey':inventory['scopeKey'],'topology':inventory['topology'],'ranges':inventory['ranges']}
+            check(owner + ' detects exact current chat scope and two source ranges', bool(inventory.get('scopeKey')) and len(inventory.get('ranges',[])) == 2, inventory)
+            check(owner + ' inventory refresh starts no model or popup', page.evaluate('__hostCalls.llm') == initial_calls and page.locator('#memorySuiteSourceReview, [x-memory-suite-source-review-dock], [x-memory-suite-source-edit-dialog]').count() == 0)
+            # Capture the selected target, switch chats, and prove the public operation refuses it.
+            refused = page.evaluate("""async({owner,selected})=>{const ids={id:__chat.id,chatId:__chat.chatId};__chat.id=__chat.chatId='wrong-current-chat';try{const result=owner==='libra'?await product.startSelectedCanonicalBatches(selected):await product.reanalyzeSelectedRanges(selected);return {ok:result.ok,reason:result.reason||''};}catch(e){return {ok:false,reason:e.message};}finally{Object.assign(__chat,ids);}}""", {'owner':owner,'selected':selected})
+            check(owner + ' explicit selected stale target is refused', refused.get('ok') is not True, refused)
+            check(owner + ' refused target starts no model and preserves originals', page.evaluate('__hostCalls.llm') == initial_calls and page.evaluate('JSON.stringify(__chat.message)') == edited_visible)
+            # Returning from a different chat requires a fresh inventory, exactly as the GUI does.
+            fresh_inventory = page.evaluate('async owner=>owner==="libra"?await product.listCanonicalBatchRanges():await product.listReanalysisRanges()', owner)
+            check(owner + ' restored target refresh preserves scope and starts no model', fresh_inventory.get('scopeKey') == inventory.get('scopeKey') and page.evaluate('__hostCalls.llm') == initial_calls)
+            selected = {'scopeKey':fresh_inventory['scopeKey'],'ranges':fresh_inventory['ranges'], **({'mode':'source_edit'} if owner=='libra' else {'topology':fresh_inventory['topology']})}
+            outcome = page.evaluate("""async({owner,selected})=>owner==='libra'?await product.startSelectedCanonicalBatches(selected):await product.reanalyzeSelectedRanges(selected)""", {'owner':owner,'selected':selected})
+            check(owner + ' explicitly selected two source ranges finish', outcome.get('ok') is True, outcome)
+            check(owner + ' explicit action leaves edited original host messages unchanged', page.evaluate('JSON.stringify(__chat.message)') == edited_visible)
+            if owner == 'flashback':
+                check('Flashback explicit raw reconciliation uses no model call', page.evaluate('__hostCalls.llm') == initial_calls, page.evaluate('__hostCalls.llm'))
+            else:
+                check(owner + ' source reanalysis is caused only by explicit selection', page.evaluate('__hostCalls.llm') > initial_calls, {'before':initial_calls,'after':page.evaluate('__hostCalls.llm')})
 
             if owner == 'libra':
                 memories = page.evaluate('async()=>product.getCanonicalMemories()')
-                check('LIBRA both edited replacements are persisted automatically', any('did not sign' in memory.get('text', '') for memory in memories) and any('green ribbon' in memory.get('text', '') for memory in memories))
+                check('LIBRA both edited replacements are persisted after explicit selection', any('did not sign' in memory.get('text', '') for memory in memories) and any('green ribbon' in memory.get('text', '') for memory in memories))
             elif owner == 'hayaku':
                 ledger = page.evaluate('async()=>product.ledger.inspect({includeRecords:true})')
                 check('HAYAKU both edited source packets are retained', any('did not sign' in str(record) for record in ledger.get('records', [])) and any('green ribbon' in str(record) for record in ledger.get('records', [])), len(ledger.get('records', [])))
@@ -123,8 +133,8 @@ try:
                 scope = page.evaluate('async()=>product.resolveCurrentScope()')
                 stored = page.evaluate('async scopeKey=>product._test.loadScopeRecords(scopeKey)', scope.get('scopeKey'))
                 records = stored.get('records', [])
-                check('Flashback both edited raw turns are stored automatically', any('did not sign' in record.get('text', '') for record in records) and any('green ribbon' in record.get('text', '') for record in records), len(records))
-            check(owner + ' visible host messages remain the edited source', page.evaluate("__chat.message[1].data.includes('did not sign') && __chat.message[3].data.includes('green ribbon')"))
+                check('Flashback both edited raw turns are stored after explicit selection', any('did not sign' in record.get('text', '') for record in records) and any('green ribbon' in record.get('text', '') for record in records), len(records))
+            check(owner + ' visible host messages remain the edited source', page.evaluate("__chat.message[1].data.includes('did not sign') && __chat.message[testOwner==='libra'?11:3].data.includes('green ribbon')"))
             page.close()
         browser.close()
 except Exception as error:
@@ -132,6 +142,6 @@ except Exception as error:
     raise
 finally:
     payload = {'test': 'source_review_owner_end_to_end_browser', 'environment': 'entire shipped plugins in Chromium; synthetic host/model/storage, no user database',
-               'passed': sum(result['ok'] for result in results), 'total': len(results), 'errors': errors, 'results': results}
+               'passed': sum(result['ok'] for result in results), 'total': len(results), 'errors': errors, 'sourceSha256':source_hashes, 'results': results}
     (E / 'RESULTS.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     print(json.dumps({key: value for key, value in payload.items() if key != 'results'}, ensure_ascii=False))

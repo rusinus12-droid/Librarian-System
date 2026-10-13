@@ -124,13 +124,13 @@ const run = async () => {
     'navigation selection feedback must be visible before deferred page hydration');
   assert.doesNotMatch(navigationRender, /if \(Gui\.visible\) void renderSettingsGui\(\);/,
     'navigation must not synchronously rebuild the page in the click task');
-  assert.match(source, /'aria-current': active === page\.id \? 'page' : null/,
+  assert.match(source, /node\.setAttribute\('aria-current',active\?'page':'false'\)/,
     'the selected shared sidebar item must be announced immediately');
 
   assert.match(source, /if \(ok === false\) \{[\s\S]*?setPipelineWorkPanel\('', 'working', 0, terminalRequestId\)/,
     'a terminal pipeline failure must explicitly close the shared host dashboard');
-  assert.match(source, /const failedTerminal = String\(job\.state \|\| ''\) === 'failed'[\s\S]*?Gui\.canonicalJobDismissedId = job\.jobId/,
-    'the central canonical dashboard and minimized chip must auto-dismiss on terminal failure');
+  assert.match(source, /if\(terminal\)\{result\.append[\s\S]*job\.error[\s\S]*text:'확인'[\s\S]*Gui\.canonicalJobDismissedId=job\.jobId/,
+    'approved terminal failure/results remain inspectable until explicit dismissal; replacing the retired automatic-dismiss UX');
   assert.match(source, /canonical_failed_run_delete_terminal_failure_only/,
     'the storage API must reject deletion of non-failed execution records');
   assert.match(source, /text: '실패 구간 새 분석'/,

@@ -32,15 +32,15 @@ assert.match(navigationQueue, /const serial = \+\+Gui\.navigationRenderSerial;[\
   'rapid navigation must coalesce stale body renders');
 assert.doesNotMatch(navigationQueue, /if \(Gui\.visible\) void renderSettingsGui\(\);/,
   'large pages must not rebuild in the originating click task');
-assert.match(navigationQueue, /button\.sga-side-item\[data-shared-page\]/,
+assert.match(navigationQueue, /\.sidebar button\[data-go\]/,
   'desktop sidebar selection updates in place');
-assert.match(navigationQueue, /button\[data-mobile-shared-page\]/,
+assert.match(navigationQueue, /\.tabbar button\[data-go\]/,
   'mobile navigation selection updates in place');
 
 const hubTabs = between('const syncGuiTabSelectionFeedback =', 'const canonicalReaderIdentityKey =');
 assert.match(hubTabs, /syncGuiTabSelectionFeedback\(event\.currentTarget\);\s*queueGuiNavigationRender\(\);/,
   'internal tab selection changes before its page is rebuilt');
-assert.match(hubTabs, /classList\.toggle\('primary', active\)/);
+assert.match(hubTabs, /classList\.toggle\('is-on', ?active\)/);
 assert.match(hubTabs, /setAttribute\('aria-selected', String\(active\)\)/);
 
 const nativeSelectGuard = between('const nativeSelectInteractionActive =', 'const guiEl =');
@@ -73,12 +73,10 @@ assert.match(renderer, /if \(!Gui\.state\) await ensureGuiState\(\);/,
 assert.doesNotMatch(renderer, /^\s*await ensureGuiState\(\);/m,
   'every navigation must not await an already-hydrated state');
 
-assert.match(source, /\.sga-app \.sga-side-item[^{}]*\{[^}]*transition:none!important;[^}]*transform:none!important;[^}]*filter:none!important/s,
-  'sidebar hover targets do not animate, move, or create filter layers');
-assert.match(source, /\.sga-app \.sga-side-item:hover\{[^}]*transform:none!important;[^}]*filter:none!important;[^}]*background:#1b1813!important/s,
-  'sidebar hover uses a stable solid repaint');
-assert.match(source, /\.sga-app \.libra-chapter-item:hover[^{}]*\{[^}]*transform:none!important;[^}]*filter:none!important/s,
-  'reader and internal clickable panels stay under the pointer');
+// The prior paper hover overrides are obsolete; original approved navigation
+// and chapter rules repaint colors without moving the target or adding filters.
+const css=require('./helpers/libra_approved_gui_contract.cjs').literal(source,'LIBRA_APPROVED_MOCKUP_STYLE');
+for(const selector of ['nav-item:hover','chapter:hover']){const rule=css.slice(css.indexOf('.'+selector),css.indexOf('}',css.indexOf('.'+selector))+1);assert.ok(rule.includes('background'),selector+' repaints a solid background');assert.doesNotMatch(rule,/transform:|filter:/,selector+' keeps pointer geometry stable');}
 assert.match(source, /if \(Gui\.navigationRenderTimer\) \{ clearTimeout\(Gui\.navigationRenderTimer\); Gui\.navigationRenderTimer = null; \}/,
   'closing the GUI cancels deferred navigation work');
 

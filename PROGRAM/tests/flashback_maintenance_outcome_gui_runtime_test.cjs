@@ -1,4 +1,5 @@
 'use strict';
+const { dialogElements } = require('./fixtures/flashback_adopted_dialog.cjs');
 const assert=require('node:assert/strict'),path=require('node:path');
 const {test}=require('node:test');
 const {createFlashback}=require('./fixtures/embedding_contract_harness.cjs');
@@ -32,7 +33,7 @@ async function actualAuto(h,ui){
  const run=ui.root.nodes.get('maintenanceAutoBtn').click().then(()=>{done=true;},error=>{done=true;caught=error;});
  // Same bound as the established real GUI maintenance fixture, not enlarged.
  for(let i=0;i<1000&&!done;i++){
-  const button=ui.doc.byClass('vrmDialogOk');if(button&&!seen.has(button)){seen.add(button);dialogs.push({title:ui.doc.byClass('vrmDialogTitle')?.textContent||'',body:ui.doc.byClass('vrmDialogMessage')?.textContent||''});await button.click();}
+  const button=dialogElements(ui.doc).ok;if(button&&!seen.has(button)){seen.add(button);dialogs.push({title:dialogElements(ui.doc).title?.textContent||'',body:dialogElements(ui.doc).message?.textContent||''});await button.click();}
   await new Promise(resolve=>setTimeout(resolve,5));
  }
  assert(done,'actual GUI executor/dialog settles');await run;if(caught)throw caught;

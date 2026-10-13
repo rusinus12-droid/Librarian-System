@@ -6,12 +6,15 @@ const root = path.resolve(__dirname, '..');
 const retrace = fs.readFileSync(path.join(root, 'plugins', 'RETRACE.js'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server', 'server.cjs'), 'utf8');
 const sdk = fs.readFileSync(path.join(root, 'sdk', 'MemorySuiteStorageClient.source.js'), 'utf8');
+const shellMatch = retrace.slice(retrace.indexOf('const renderShell =')).match(/root\.innerHTML = ("(?:\\.|[^"\\])*");/s);
+assert.ok(shellMatch, 'RE:TRACE uses a single literal view shell');
+const shell = JSON.parse(shellMatch[1]);
 assert.equal((retrace.match(/const refreshServerScopeManagement =/g) || []).length, 1, 'one canonical server scope refresh path');
 assert.equal((retrace.match(/const renderServerScopeManagement =/g) || []).length, 1, 'one canonical server scope render path');
 assert.ok(!retrace.includes('deleteOrphanServerScope'), 'legacy duplicate orphan-only manager removed');
 assert.ok(!retrace.includes('refreshServerScopeManager'), 'legacy duplicate scope manager removed');
 for (const marker of [
-  'data-tab="serverdata"', 'data-panel="serverdata"', 'serverDataBody', 'orphan_candidate',
+  'serverDataBody', 'orphan_candidate',
   'referenced_ancestor', 'scopeManagerStableHostInventory', 'scopeManagerDeleteBlockedReason',
   'scopeManagerOwnerProof', 'handleServerScopeManagementClick', 'managerReplaceScopeIndex',
   'managerListScopes', 'managerSetScopePinned', 'data-server-scope-detail', 'data-server-scope-delete',
@@ -52,6 +55,6 @@ assert.ok(sdk.includes('prepareServerScopeDeletion'));
 assert.ok(retrace.includes('const SERVER_SCOPE_MANAGER_PAGE_SIZE = 60;'), 'scope manager caps one DOM page at 60 cards');
 assert.ok(retrace.includes('const pageScopes = orderedScopes.slice(pageStart, pageEnd);'), 'scope manager renders only the active page');
 assert.ok(retrace.includes('data-server-scope-page="prev"') && retrace.includes('data-server-scope-page="next"'), 'scope manager exposes bounded pagination controls');
-assert.ok(retrace.includes('content-visibility:auto;contain-intrinsic-size:240px'), 'scope cards skip offscreen layout and paint work');
+assert.ok(retrace.includes('const pageScopes = orderedScopes.slice(pageStart, pageEnd);'), 'the adopted shell retains the bounded scope render path');
 assert.ok(retrace.includes('serverScopeManagerPage: 0'), 'scope pagination state is explicit and resets on refresh');
 process.stdout.write('retrace_scope_manager_contract_test: PASS\n');

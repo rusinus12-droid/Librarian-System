@@ -5,14 +5,14 @@ const {create,pause,until}=require('./fixtures/libra_gui_memory_dom_host.cjs');
 const {createHandlerFixture}=require('./fixtures/shared_reanalysis_handler_fixture.cjs');
 const pluginPath=process.argv[2]||path.resolve(__dirname,'../plugins/LIBRA.js');
 const key='libra:v1:memory-settings';
-const field=(s,label)=>[...s.doc.querySelectorAll('.sga-main .sga-field')].find(n=>n.querySelector('label')?.textContent===label)?.querySelector('input');
+const {goSettings,field}=require('./helpers/libra_approved_gui_navigation.cjs');
 async function open(mode,handler,values=[]){
  const seeded = values.length ? values : [
   ['libra:v1:scope-registry:v1', JSON.stringify({'audit-character::audit-chat':{scopeKey:'gui-settings-scope',characterId:'audit-character',chatId:'audit-chat',source:'synthetic_explicit_scope'}})],
   ['__memory_suite_internal_scope_routes_v1__:libra', JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',legacyGlobalModeImported:true,entries:{'gui-settings-scope':{scopeId:'gui-settings-scope',scopeKey:'gui-settings-scope',characterId:'audit-character',chatId:'audit-chat',mode,origin:'user_explicit'}}})]
  ];
  const s=await create('LIBRA','Full',{pluginPath,initialValues:seeded,args:{memory_suite_server_mode:mode,memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
- await s.open();await pause(400);await s.click('[data-book-page="settings"]');await s.click('[data-external-settings="performance"]');return s;
+ await s.open();await pause(400);await goSettings(s,'memory');return s;
 }
 async function save(s){s.doc.querySelector('[data-settings-room-save]').click();await until(()=>!s.doc.querySelector('[data-settings-room-save]').disabled,'save settles',10000);await pause(100)}
 (async()=>{

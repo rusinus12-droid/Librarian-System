@@ -172,18 +172,18 @@ const context = vm.createContext({
   assert.equal(legacySourceCandidate?.source?.scopeKey, personaScopeA.legacyPersonaScopeKey, 'one exact legacy Persona scope is discoverable as the lossless migration source');
   const guiHtml = await flashback._test.buildUiHtml();
   checkGuiInventory({api:flashback,html:guiHtml,source});
-  assert.match(guiHtml, /id="tab-overview"[^>]*aria-selected="true"/, 'rendered GUI opens on overview');
-  assert.match(guiHtml, /id="panel-overview" class="panel active"/, 'rendered overview panel is visible');
+  assert.match(guiHtml, /data-go="lab"[^>]*aria-current="page"/, 'rendered GUI opens on overview');
+  assert.match(guiHtml, /class="page is-active" data-page="lab"/, 'rendered overview panel is visible');
   assert.equal((guiHtml.match(/id="lastRecallPanel"/g) || []).length, 1, 'rendered GUI has one recall detail');
   assert.equal((guiHtml.match(/<div data-portable-backup-host="flashback_memory"/g) || []).length, 1, 'rendered GUI has one Portable Memory host');
-  assert.ok(guiHtml.indexOf('id="tab-overview"') < guiHtml.indexOf('id="tab-import"'), 'rendered navigation starts with overview');
-  assert.match(guiHtml, /id="tab-worldline"/, 'worldline has its own navigation entry');
-  assert.match(guiHtml, /id="openResponseRecordsBtn"[^>]*data-open-manual-editor="response"/, 'rendered Storage toolbar opens response records directly');
+  assert.ok(guiHtml.indexOf('data-go="lab"') < guiHtml.indexOf('data-go="care"'), 'rendered navigation starts with overview');
+  assert.match(guiHtml, /data-subtab="wl" data-group="v"/, 'worldline has its own navigation entry');
+  assert.match(guiHtml, /data-open-manual-editor="response"/, 'rendered Storage toolbar opens response records directly');
   assert.match(guiHtml, /응답 원문 목록 열기/, 'rendered empty editor exposes an in-panel entry action');
   assert.doesNotMatch(guiHtml, /왼쪽 분포 카테고리를 누르면/, 'rendered GUI does not reference a nonexistent left distribution category');
-  assert.match(guiHtml, /data-edit-source-type="response"/, 'response distribution remains an editable entry point');
+  assert.match(guiHtml, /data-open-manual-editor="response"/, 'response distribution remains an editable entry point');
   assert.doesNotMatch(guiHtml, /data-edit-source-type="episode_index"/, 'derived episode index is not presented as editable');
-  assert.match(guiHtml, /class="type-row type-row-readonly"[^>]*응답 파생 인덱스: 자동 생성·관리되는 읽기 전용 데이터/, 'derived episode index remains visible as read-only data');
+  assert.match(guiHtml, /응답 파생 인덱스는 자동 생성되는 읽기 전용 데이터/, 'derived episode index remains visible as read-only data');
   const recalledMemoryHtml = flashback._test.renderLastRecallPanel({
     at: Date.now(),
     selected: [{
@@ -196,14 +196,14 @@ const context = vm.createContext({
       components: { anchor: 0.81 }
     }]
   }, '');
-  assert.match(recalledMemoryHtml, /<details class="recall-card-item" id="fb-recall-frame-0">/, 'recalled memory renders as an expandable detail');
-  assert.match(recalledMemoryHtml, /<summary class="recall-card-summary">/, 'the compact recall card remains the disclosure control');
-  assert.match(recalledMemoryHtml, /<div class="recall-card-detail">[\s\S]*?<div>첫 번째 줄 전체\n두 번째 줄도 잘리지 않음<\/div>/, 'expanded recall renders the complete multiline text');
+  assert.match(recalledMemoryHtml, /<details class="frame-card" id="fb-recall-frame-0">/, 'recalled memory renders as an expandable detail');
+  assert.match(recalledMemoryHtml, /<summary>/, 'the compact recall card remains the disclosure control');
+  assert.match(recalledMemoryHtml, /<div class="frame-card__detail">[\s\S]*?<p>첫 번째 줄 전체\n두 번째 줄도 잘리지 않음<\/p>/, 'expanded recall renders the complete multiline text');
   const argumentRows = flashback._test.flashbackArgumentSettingRows();
   for (const label of ['일반 동작', '리콜 세부 조정', '장면·엔티티 보강', '저장·에피소드·인덱스', '전문가·진단']) {
-    assert.match(guiHtml, new RegExp(`<span>${label}<\\/span>`), `${label} group heading is visible in rendered HTML`);
+    assert.match(guiHtml, new RegExp(`<h3 class="card__title">${label}<\\/h3>`), `${label} group heading is visible in rendered HTML`);
   }
-  assert.match(guiHtml, /id="argumentSettingsAuditPanel"/, 'rendered GUI includes the argument source audit');
+  assert.match(guiHtml, /ARG 및 설정 출처/, 'rendered GUI includes the argument source audit');
   assert.match(guiHtml, /data-argument-row="enable_gui"[\s\S]*?ARG 해제/, 'an explicit read-only ARG is visible and can release its override');
   assert.doesNotMatch(guiHtml, /id="argSetting_enableGui"/, 'the GUI cannot disable its own only recovery surface');
   const enabledRow = argumentRows.find(row => row.name === 'enable_gui');

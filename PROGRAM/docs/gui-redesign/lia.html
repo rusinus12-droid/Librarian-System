@@ -67,6 +67,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 .ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}
 .ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}
 @container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}
+@container app (max-width:640px){.topbar .brand__ver{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 </style>
 </head>
 <body class="t-lia">
@@ -120,7 +121,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   </section>
 
   <!-- ===== 2. 만들기 ===== -->
-  <section class="page" data-page="make">
+  <section class="page" data-page="make" data-track>
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Create</div><h1 class="page-title">Persona 만들기</h1><p class="page-desc">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>
     <div class="stack" data-detail-root>
       <div class="stack stack--sm" role="group" aria-label="생성 모드">
@@ -137,9 +138,9 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
           <div class="cluster"><button class="btn btn--primary" id="mk-classic" data-run-job="job-gen"><i data-i="spark"></i><span>Persona 만들기</span></button></div></div></div>
         <div class="mode-panel" data-detail="random"><div class="stack stack--sm">
           <p class="muted" style="margin:0;font-size:13px">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>
-          <div class="field"><label>컨셉 (선택)</label><textarea class="textarea" rows="2" data-no-track placeholder="예) 북쪽 항구 도시의 약재상 견습생"></textarea></div>
+          <div class="field"><label for="random-concept">컨셉 (선택)</label><textarea class="textarea" id="random-concept" rows="2" data-no-track placeholder="예) 북쪽 항구 도시의 약재상 견습생"></textarea></div>
           <div class="note"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>
-          <div class="cluster"><button class="btn btn--primary" data-run-job="job-cand" data-ctx='{"variant": "random", "mode": "랜덤 신규 생성"}'><i data-i="spark"></i>후보 3개 만들기</button></div></div></div>
+          <div class="cluster"><button class="btn btn--primary" id="random-cand-go" data-run-job="job-cand" data-ctx='{"variant": "random", "mode": "랜덤 신규 생성"}'><i data-i="spark"></i>후보 3개 만들기</button></div></div></div>
         <div class="mode-panel" data-detail="character"><div class="stack stack--sm">
           <p class="muted" style="margin:0;font-size:13px">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>
           <div class="cluster"><button class="btn btn--primary" data-run-job="job-cand" data-ctx='{"variant": "character", "mode": "등장인물 추출"}'><i data-i="users"></i>등장인물 후보 찾기</button></div></div></div>
@@ -151,8 +152,8 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
       <details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">사용할 자료 · 세계관 분석 (고급)</summary>
         <div class="stack stack--sm" style="margin-top:12px">
           <dl class="kv"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>
-          <div class="field"><label>자료 항목별 최대 문자 수</label><input class="input" type="number" min="240" max="3000" step="1" value="1200" data-no-track><span class="hint">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>
-          <label class="check"><input type="checkbox" data-no-track checked><span>상세 프로필 사용 <span class="hint">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>
+          <div class="field"><label for="lia-max-chars">자료 항목별 최대 문자 수</label><input class="input" id="lia-max-chars" type="number" min="240" max="3000" step="1" value="1200"><span class="hint" id="lia-max-chars-hint">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>
+          <label class="check"><input id="lia-rich-profile" type="checkbox" checked><span>상세 프로필 사용 <span class="hint">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>
           <div class="cluster"><button class="btn btn--sm" data-toast="세계관을 분석합니다. (시안)">세계관 분석</button><button class="btn btn--sm" data-toast="세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)">재분석</button><button class="btn btn--sm" data-open="sheet-evidence">근거 검토</button></div>
         </div></details>
 
@@ -200,6 +201,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
 
   <!-- ===== 서브: 편집 ===== -->
   <section class="page" data-page="edit" data-track id="edit-root">
+    <input type="hidden" id="ed-view-dirty" value="0" data-dirty-key="view-drafts">
     <button class="back" data-go="mine"><i data-i="back" data-size="sm"></i>내 페르소나</button>
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Edit · <span data-fill="ver">v3</span> · <span data-fill="mode">클래식 생성</span></div><h1 class="page-title" data-fill="name">세라 하운</h1><p class="page-desc">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill="statusText">채택됨 · 이 채팅에 연결됨</b></p></div></div>
     <div class="tabs" role="tablist" data-subtabs="ed"><button class="tab" role="tab" aria-selected="true" data-subtab="sum">요약</button><button class="tab" role="tab" aria-selected="false" data-subtab="all">전체 23개 항목</button><button class="tab" role="tab" aria-selected="false" data-subtab="rev">검토</button><button class="tab" role="tab" aria-selected="false" data-subtab="ver">버전·기록</button><button class="tab" role="tab" aria-selected="false" data-subtab="out">채택·연결·삭제</button></div>
@@ -213,11 +215,11 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
             <div class="field"><label>말투</label><textarea class="textarea" rows="2" data-key="speech">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>
           </div></div>
         <div class="card card--flat"><div class="card__head"><div><h2 class="card__title">현재 상태 (일시적)</h2><p class="card__desc">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>
-          <dl class="kv" data-variant="default bound"><dt>현재 위치</dt><dd data-fill="liveLoc">북쪽 정원</dd><dt>소지</dt><dd data-fill="liveItem">은색 열쇠</dd></dl><p class="muted" data-variant="unbound" hidden style="margin:0;font-size:13px">이 Persona는 이 채팅에 연결된 Live Persona가 없어 일시적 현재 상태가 없습니다.</p></div>
+          <div id="live-persona-state"><p class="muted" style="margin:0;font-size:13px">선택한 Persona의 Live 상태를 불러오는 중</p></div></div>
       </div></div>
 
       <div data-subpanel="all" data-group="ed"><div class="stack">
-        <div class="seg" id="ed-lang" role="group" aria-label="보기 언어"><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div>
+        <div class="seg" id="ed-lang" role="group" aria-label="보기 언어"><button aria-pressed="true">원문</button><button aria-pressed="false">번역</button></div><p class="hint" id="ed-lang-note" style="margin:0">보관된 원문을 편집합니다.</p>
         <p class="hint">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>
         <div class="card card--tight">
 <div class="fld"><div class="fld__head"><label for="f-name">이름</label><code class="fld__key">name</code></div><input class="input" id="f-name" data-key="name" value="세라 하운"><div class="fld__act"><label class="check"><input type="checkbox" data-lock="name" aria-label="이름 잠금"><span>잠금</span></label><button class="btn btn--sm" data-regen="name"><i data-i="refresh" data-size="sm"></i>다시 만들기</button></div></div>
@@ -263,8 +265,11 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
           <div class="ver"><span class="badge">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class="btn btn--sm" data-toast="v2와 비교합니다. (시안)">비교</button></div>
           <div class="ver"><span class="badge">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class="btn btn--sm" data-toast="v1에서 파생본을 만들었습니다. (시안)">파생본 만들기</button></div>
         </div>
-        <div class="cluster"><button class="btn" data-toast="생성 Blueprint를 열었습니다. (시안)">생성 Blueprint</button><button class="btn" data-toast="PersonaSpec JSON을 복사했습니다. (시안)">JSON 보기</button></div>
+        <div class="cluster"><button class="btn" id="btn-persona-blueprint" data-open="sheet-persona-blueprint">생성 Blueprint</button><button class="btn" id="btn-persona-json" data-open="sheet-persona-json">JSON 보기</button></div>
       </div></div>
+
+  <div class="overlay overlay--bottom" id="sheet-persona-blueprint" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="spb-title"><div class="eyebrow">World blueprint</div><h2 id="spb-title" style="margin:2px 0 8px;font:800 19px var(--font-display)">생성 Blueprint</h2><p class="muted" id="spb-target" style="margin:0 0 10px;font-size:13px"></p><div class="list" id="spb-items"></div><div class="dialog__actions"><button class="btn" data-close>닫기</button></div></div></div>
+  <div class="overlay overlay--bottom" id="sheet-persona-json" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="spj-title"><div class="eyebrow">PersonaSpec</div><h2 id="spj-title" style="margin:2px 0 8px;font:800 19px var(--font-display)">PersonaSpec JSON</h2><p class="muted" id="spj-target" style="margin:0 0 10px;font-size:13px"></p><pre id="spj-content" style="max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)"></pre><div class="dialog__actions"><button class="btn" data-close>닫기</button></div></div></div>
 
       <div data-subpanel="out" data-group="ed"><div class="stack">
         <div class="target-card"><h3>① LIA 보관함 <small>‘<span data-fill="name">세라 하운</span>’ · 자동 보관됨</small></h3><p class="muted" style="margin:0;font-size:13px">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>
@@ -317,10 +322,10 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
         <dl class="kv" style="margin-top:10px"><dt>저장 상태</dt><dd id="as-state">9개 저장됨 · Neutral Master 있음</dd><dt>대상 요약</dt><dd id="as-sum">짙은 회색 외투, 은색 열쇠를 쥔 29세 여성</dd></dl></div>
       <div class="card lock-card"><div class="card__head"><div><h2 class="card__title">Visual Generation Lock</h2><p class="card__desc">기준은 <b>프롬프트와 생성 조건(Lock)</b>입니다. 확정 뒤에는 감정별로 바뀌지 않습니다.</p></div><span class="badge badge--ok" id="as-lock">확정됨</span></div>
         <dl class="kv"><dt>생성 조건</dt><dd>seed 482913 · 832×1216 · sampler 표본</dd><dt>구도</dt><dd>표준 감정 에셋 · 상반신</dd><dt>구형 Lock</dt><dd>해당 없음 — 이전 형식의 Lock이 남아 있으면 이곳에 ‘구형’으로 표시됩니다.</dd><dt>배경 규칙</dt><dd>순백색 고정 · Positive/Negative 양쪽에서 강제 · 투명/장면 배경 사용 안 함</dd></dl>
-        <div class="field" style="margin-top:12px"><label>구도 프리셋 <span class="hint">(Neutral 기준 확정 시 Lock에 포함)</span></label>
+        <div id="asset-lock-fields"><div class="field" style="margin-top:12px"><label>구도 프리셋 <span class="hint">(Neutral 기준 확정 시 Lock에 포함)</span></label>
           <div class="choices" data-dirty><button class="choice is-on"><b>표준 감정 에셋 · 상반신</b><span>허리 위 · 중앙 · 손 최소</span></button><button class="choice"><b>얼굴 중심 에셋 · 흉상</b><span>머리와 어깨 중심</span></button><button class="choice"><b>반신 에셋 · 반신</b><span>허리~허벅지 중간까지</span></button></div></div>
         <div class="field" style="margin-top:12px"><label>추가 스타일 메모</label><textarea class="textarea" rows="2">부드러운 수채 질감</textarea><span class="hint">Neutral 생성 시 Lock 후보에 포함됩니다. 기준 확정 뒤에는 바뀌지 않습니다.</span></div>
-        <div class="cluster" style="margin-top:12px"><button class="btn" data-run-job="job-neutral" data-ctx='{"emo": "neutral (Visual Master)"}'>Neutral 다시 만들기</button><button class="btn" data-toast="Neutral 기준을 확정했습니다. (시안)">Neutral 기준 확정</button></div></div>
+        <div class="cluster" style="margin-top:12px"><button class="btn" data-run-job="job-neutral" data-ctx='{"emo": "neutral (Visual Master)"}'>Neutral 다시 만들기</button><button class="btn" id="btn-confirm-visual-lock">Neutral 기준 확정</button></div></div></div>
       <div><div class="section-title"><h2>감정 이미지 <span class="muted" style="font-weight:500" id="as-n">9 / 12</span></h2><span class="hint">눌러서 업로드·프롬프트 편집·재생성·삭제</span></div>
         <div class="emo-grid" id="emo-grid">
           <button class="emo is-done is-master" data-open="sheet-emo" data-ctx='{"emo":"neutral (Visual Master)"}'><div class="avatar">N</div>neutral<br><span class="muted">✓ Master</span></button>
@@ -438,7 +443,7 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
   <!-- 후보 선택 (랜덤·등장인물 추출) -->
   <div class="overlay overlay--bottom" id="dlg-cand" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dc-t">
     <div class="eyebrow">Candidates</div><h2 id="dc-t" style="margin:2px 0 4px;font:800 19px var(--font-display)"><span data-variant="default random">새 인물 후보를 하나 고르세요</span><span data-variant="character" hidden>Persona로 바꿀 등장인물을 고르세요</span></h2>
-    <p class="muted" style="margin:0 0 12px;font-size:13px">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p>
+    <p class="muted" style="margin:0 0 12px;font-size:13px">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class="hint" id="random-cand-context" hidden style="margin:0 0 12px"></p>
     <div class="stack stack--sm" data-detail-root data-variant="default random">
       <button class="big-choice is-on" data-select-row="c1" data-cand='{"pid":"mira","name":"미라","mode":"랜덤 신규 생성"}'><div class="avatar avatar--sm avatar--c">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class="pick">선택</span></button>
       <button class="big-choice" data-select-row="c2" data-cand='{"pid":"tobi","name":"토비","mode":"랜덤 신규 생성"}'><div class="avatar avatar--sm avatar--b">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class="pick">선택</span></button>
@@ -503,10 +508,10 @@ button.emo:hover{border-color:var(--accent-line);background:var(--surface2)}
    - BOUND          : 이 채팅에 연결된 Persona (한 채팅에 하나)
    - P[id].inVault  : 보관함에 있는지 (보관함 삭제 ≠ Persona 삭제)
    ===================================================================== */
-document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='edit'||e.detail==='assets');});
+document.addEventListener('suite:page',function(e){document.getElementById('savebar').hidden=!(e.detail==='settings'||e.detail==='make'||e.detail==='edit'||e.detail==='assets');});
 var META=[{"k": "name", "l": "이름", "v": "세라 하운"}, {"k": "gender", "l": "성별", "v": "여성"}, {"k": "age", "l": "나이", "v": "29세"}, {"k": "speciesRace", "l": "종족", "v": "인간"}, {"k": "origin", "l": "출신", "v": "북쪽 도서 도시 ‘하운’"}, {"k": "role", "l": "역할/직업", "v": "왕실 기록실 사서"}, {"k": "appearance", "l": "외모", "v": "짙은 회색 외투, 은색 열쇠"}, {"k": "personality", "l": "성격", "v": "신중하지만 약속을 가볍게 여기지 않는다"}, {"k": "visibleSide", "l": "겉으로 보이는 면", "v": "차분하고 예의 바름"}, {"k": "hiddenSide", "l": "숨은 면", "v": "기록되지 않은 일에 대한 집착"}, {"k": "internalContradiction", "l": "내적 모순", "v": "비밀을 지키려다 진실을 외면한다"}, {"k": "background", "l": "배경", "v": "기록실에서 자라 외부와 거리를 둠"}, {"k": "speech", "l": "말투", "v": "짧고 낮은 어조"}, {"k": "motivation", "l": "동기/욕망", "v": "사라진 기록의 행방을 찾는 것"}, {"k": "relationshipStyle", "l": "관계 방식", "v": "거리를 두되 한번 믿으면 끝까지"}, {"k": "relationshipToCharacter", "l": "{{char}}와의 접점", "v": "열쇠를 맡긴 첫 의뢰인"}, {"k": "preferences", "l": "선호/취향", "v": "오래된 종이 냄새, 식은 차"}, {"k": "conflictRepair", "l": "갈등/회복", "v": "말수가 줄었다가 사실부터 정리해 사과"}, {"k": "skills", "l": "기술/강점", "v": "고문서 판독, 암기"}, {"k": "limitations", "l": "한계/약점", "v": "몸싸움에 약함"}, {"k": "knowledgeBoundary", "l": "지식 경계", "v": "왕실 외부 소식은 소문 수준"}, {"k": "boundaries", "l": "RP 경계", "v": "직접 묘사하지 않을 수위 설정은 보관 결과 기준"}, {"k": "worldFitNotes", "l": "세계관 적합 메모", "v": "보름달 전 개방 금지 규칙을 인지"}];
 var COLORS=['b','c','d','n'];
-var P={},ORDER=[],BOUND=null,cur=null,SEQ=0;
+var P={},ORDER=[],BOUND=null,cur=null,SEQ=0,LIASET={maxChars:1200,richPersonaMode:true};
 function $id(i){return document.getElementById(i);}
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -514,15 +519,16 @@ function cx(o){return " data-ctx='"+JSON.stringify(o).replace(/'/g,'&#39;')+"'";
 function setCtx(el,o){if(el)el.setAttribute('data-ctx',JSON.stringify(o));}
 function ver(p){return p.vers[0];}
 function fillF(f){var o={};META.forEach(function(m){o[m.k]=(f&&f[m.k])||'';});return o;}
+function translatedSample(f){var map={name:'Sera Haun',gender:'Female',age:'29',speciesRace:'Human',origin:'Haun, a northern library city',role:'Royal archive librarian',appearance:'Dark gray coat, silver key',personality:'Careful, but never treats a promise lightly',visibleSide:'Calm and courteous',hiddenSide:'Obsessed with what was never recorded',internalContradiction:'Avoids the truth to protect a secret',background:'Raised in the archive and distant from the outside',speech:'Short, low sentences; speaks less when unsure',motivation:'Find the missing records',relationshipStyle:'Keeps distance, stays loyal once trust is earned',relationshipToCharacter:'The first client to entrust a key',preferences:'Old paper and cooled tea',conflictRepair:'Gets quiet, then apologizes after sorting the facts',skills:'Reading old documents, memorization',limitations:'Poor at physical fights',knowledgeBoundary:'News outside the palace is hearsay',boundaries:'Uses the boundaries saved with this Persona',worldFitNotes:'Knows the rule against opening before the full moon'};var out={};META.forEach(function(m){out[m.k]=map[m.k]||String((f||{})[m.k]||'');});return out;}
 function mk(id,mode,color,f,vers,adopted,adoptedVer,adoptedName){
-  var p={id:id,mode:mode,color:color,f:fillF(f),locks:{},ui:{lang:0,density:1,adLang:0,adMode:0},vers:vers,adopted:!!adopted,adoptedVer:adoptedVer||null,adoptedName:adoptedName||null,adoptedF:null,adoptedOpt:null,inVault:true,draft:null};
+  var p={id:id,mode:mode,color:color,f:fillF(f),translationF:translatedSample(fillF(f)),views:{},locks:{},ui:{lang:0,density:1,adLang:0,adMode:0},vers:vers,adopted:!!adopted,adoptedVer:adoptedVer||null,adoptedName:adoptedName||null,adoptedF:null,adoptedOpt:null,inVault:true,draft:null};
   p.vers[0].f=clone(p.f);if(p.adopted){p.adoptedF=clone(p.f);p.adoptedOpt=curOpt(p);}return p;}
 var DEN=['Full','Standard','Compact'],ALANG=['원문','번역본'],AMODE=['현재 채팅 전용','새 Persona로 저장'];
 function curOpt(p){return {density:p.ui.density,lang:p.ui.adLang,mode:p.ui.adMode};}
 function optText(o){return ALANG[o.lang]+' · '+DEN[o.density]+' · '+AMODE[o.mode];}
 /* 채택본과 지금(보관함 최신 저장본 + 채택 옵션)의 차이. 비어 있으면 다시 채택할 것이 없다 */
 function adoptDiff(p){var d={content:false,opts:[]};if(!p.adopted)return d;
-  d.content=p.inVault&&p.adoptedVer!==ver(p).n&&diffLabels(p.adoptedF||{},ver(p).f).length>0;var a=p.adoptedOpt,u=curOpt(p);
+  var selected=p.ui.adLang===1?p.translationF:ver(p).f;d.content=diffLabels(p.adoptedF||{},selected||{}).length>0;var a=p.adoptedOpt,u=curOpt(p);
   if(a.density!==u.density)d.opts.push('밀도 '+DEN[a.density]+' → '+DEN[u.density]);
   if(a.lang!==u.lang)d.opts.push('채택 내용 '+ALANG[a.lang]+' → '+ALANG[u.lang]);
   if(a.mode!==u.mode)d.opts.push('저장 방식 '+AMODE[a.mode]+' → '+AMODE[u.mode]);
@@ -593,11 +599,14 @@ function idx(el){if(!el)return 0;var bs=[].slice.call(el.children);for(var i=0;i
 function setIdx(el,i){if(!el)return;[].slice.call(el.children).forEach(function(b,k){if(el.classList.contains('seg'))b.setAttribute('aria-pressed',String(k===i));else b.classList.toggle('is-on',k===i);});}
 function populate(p){
   var root=$id('edit-root');
-  root.querySelectorAll('[data-key]').forEach(function(el){el.value=p.f[el.dataset.key]||'';});
+  var view=p.views&&p.views[p.ui.lang],fields=view||((p.ui.lang===1)?p.translationF:p.f);
+  root.querySelectorAll('[data-key]').forEach(function(el){el.value=fields[el.dataset.key]||'';});
   root.querySelectorAll('[data-lock]').forEach(function(el){el.checked=!!p.locks[el.dataset.lock];});
   setIdx($id('ed-lang'),p.ui.lang);setIdx($id('ed-density'),p.ui.density);
   setIdx($id('ad-lang'),p.ui.adLang);setIdx($id('ad-mode'),p.ui.adMode);
+  $id('ed-lang-note').textContent=p.ui.lang===1?'번역본 · 번역 값은 원문과 분리해 편집·저장합니다.':'보관된 원문을 편집합니다.';
 }
+function updateViewDirty(p){var dirty=false;[0,1].forEach(function(i){var d=p.views[i],base=i===1?p.translationF:p.f;if(d&&META.some(function(m){return String(d[m.k]||'')!==String(base[m.k]||'');}))dirty=true;});var h=$id('ed-view-dirty');if(h){h.value=dirty?'1':'0';h.dispatchEvent(new Event('input',{bubbles:true}));}}
 function readDraft(){var f={},locks={};META.forEach(function(m){var el=$id('f-'+m.k);f[m.k]=el?el.value:'';var c=document.querySelector('[data-lock="'+m.k+'"]');locks[m.k]=!!(c&&c.checked);});
   return {f:f,locks:locks};}
 function writeDraft(d){META.forEach(function(m){document.querySelectorAll('[data-key="'+m.k+'"]').forEach(function(el){el.value=d.f[m.k]||'';});var c=document.querySelector('[data-lock="'+m.k+'"]');if(c)c.checked=!!d.locks[m.k];});}
@@ -610,7 +619,7 @@ function editInfo(p){var v=ver(p),stale=p.adopted&&p.adoptedVer!==v.n;
     variant:BOUND===p.id?'bound':'unbound'};}
 function diffLabels(a,b){return META.filter(function(m){return (a[m.k]||'')!==(b[m.k]||'');}).map(function(m){return m.l;});}
 function renderEdit(){
-  var p=cur&&P[cur];if(!p)return;var info=editInfo(p);
+  var p=cur&&P[cur];if(!p)return;var info=editInfo(p);renderLiveState(p);
   window.suiteFill($id('edit-root'),info);
   var vl=$id('ver-list');vl.innerHTML='';
   p.vers.forEach(function(v,i){var d=document.createElement('div');d.className='ver';
@@ -657,16 +666,18 @@ function renderAll(){renderMine();renderShelf();renderSources();renderAssetTarge
 /* ---------- 저장 / 되돌리기 (편집 범위) ---------- */
 document.addEventListener('suite:save',function(e){
   if(e.detail.scope!=='edit')return;var p=cur&&P[cur];if(!p)return;
+  if(p.ui.lang===1){p.translationF=Object.assign({},p.translationF);META.forEach(function(m){var el=$id('f-'+m.k);if(el)p.translationF[m.k]=el.value;});p.views[1]=null;$id('ed-view-dirty').value='0';window.suiteSnapshot('edit');updateViewDirty(p);return;}
   var d=readDraft(),ch=diffLabels(p.f,d.f),lockCh=META.some(function(m){return !!p.locks[m.k]!==!!d.locks[m.k];});
   if(ch.length||lockCh){p.vers.unshift({n:ver(p).n+1,when:'방금',note:'수동 편집'+(ch.length?' · 항목 '+ch.length+'개 변경'+(ch.length<=3?' ('+ch.join(', ')+')':''):' · 잠금 변경'),f:clone(d.f)});}
-  p.f=d.f;p.locks=d.locks;p.draft=null;
+  p.f=d.f;p.locks=d.locks;p.draft=null;p.views[0]=null;$id('ed-view-dirty').value='0';
   ORDER=[p.id].concat(ORDER.filter(function(i){return i!==p.id;}));
-  renderAll();
+  renderAll();window.suiteSnapshot('edit');updateViewDirty(p);
 });
 document.addEventListener('suite:revert',function(e){if(e.detail.scope!=='edit')return;var p=cur&&P[cur];if(p)p.draft=null;renderEdit();});
 /* 입력: 같은 항목(요약·전체)은 한 값으로 */
 document.addEventListener('input',function(e){var el=e.target,k=el.dataset&&el.dataset.key;
   if(k)document.querySelectorAll('[data-key="'+k+'"]').forEach(function(o){if(o!==el)o.value=el.value;});
+  if(k&&cur&&P[cur]){var pp=P[cur],view=pp.views[pp.ui.lang]||(pp.views[pp.ui.lang]={});view[k]=el.value;}
   if(el.closest&&el.closest('#edit-root'))setTimeout(refreshActions,0);});
 document.addEventListener('click',function(e){
   if(e.target.closest('#edit-root'))setTimeout(refreshActions,0);
@@ -680,7 +691,7 @@ document.addEventListener('click',function(e){
 document.addEventListener('click',function(e){
   if(e.target.closest('#btn-adopt')){var b=$id('btn-adopt');if(b.disabled)return;var p=P[cur];
     refreshActions();var was=p.adopted,dd=adoptDiff(p);
-    p.adopted=true;p.adoptedVer=ver(p).n;p.adoptedName=p.f.name;p.adoptedF=clone(ver(p).f);p.adoptedOpt=curOpt(p);
+    p.adopted=true;p.adoptedVer=ver(p).n;p.adoptedName=p.f.name;p.adoptedF=clone(p.ui.adLang===1?p.translationF:ver(p).f);p.adoptedOpt=curOpt(p);
     b.setAttribute('data-toast','‘'+p.adoptedName+'’ '+(was?(dd.content?'채택본을 '+J('v'+p.adoptedVer,'으로/로')+' 갱신했습니다':'채택본을 바뀐 옵션으로 다시 저장했습니다'):'채택본을 RisuAI Persona로 저장했습니다')+' ('+optText(p.adoptedOpt)+'). (시안)');
     renderAll();return;}
   var b2=e.target.closest('[data-act]');if(!b2||b2.disabled)return;
@@ -778,7 +789,12 @@ function renderAssets(){var pid=asTarget(),p=P[pid],a=(pid&&ASSETS[pid])||{lock:
   $id('as-n').textContent=n+' / '+EMO.length;$id('bd-n').textContent=n;$id('as-off').hidden=!imgOff();
   $id('emo-grid').innerHTML=EMO.map(function(e,i){var d=!!a.done[e],m=e==='neutral';var ctx={emo:m?'neutral (Visual Master)':e,key:e,pid:pid||'',name:p?p.adoptedName:'',variant:m&&d?'master':d?'has':'none'};
     return '<button class="emo '+(d?'is-done':'is-todo')+(m?' is-master':'')+'" data-open="sheet-emo"'+cx(ctx)+'><div class="avatar'+(d?'':' todo')+'">'+(d?esc(e.charAt(0).toUpperCase()):'?')+'</div>'+esc(e)+'<br>'+(d?'<span class="muted">✓ '+(m?'Master':'완료')+'</span>':'— 아직')+'</button>';}).join('');
+  var locked=!!a.lock,fields=$id('asset-lock-fields');if(fields){fields.querySelectorAll('textarea, .choice').forEach(function(el){el.disabled=locked;});fields.setAttribute('aria-disabled',String(locked));}
+  var confirm=$id('btn-confirm-visual-lock');if(confirm){confirm.disabled=locked||!a.done.neutral;confirm.textContent=locked?'Neutral 기준 확정됨':'Neutral 기준 확정';}
   var je=document.getElementById('job-emo');if(je)je.dataset.jobLabels='확정된 생성 조건(Lock)을 확인하는 중|neutral 외 '+(EMO.length-1)+'개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성할 수 있습니다.';}
+function renderLiveState(p){var root=$id('live-persona-state');if(!root)return;var live=BOUND===p.id&&LIVE[p.id];if(!live){root.innerHTML='<p class="muted" style="margin:0;font-size:13px">'+(BOUND===p.id?'이 채팅 소유 Live Persona가 아직 없습니다.':'이 Persona는 현재 채팅에 연결되지 않아 Live 상태를 표시하지 않습니다.')+'</p>';return;}root.innerHTML='<dl class="kv"><dt>관리 채팅</dt><dd>현재 채팅 · 이 Persona 소유</dd><dt>현재 위치</dt><dd>'+esc(live.loc||'기록 없음')+'</dd><dt>소지</dt><dd>'+esc(live.item||'—')+'</dd></dl>';}
+function renderPersonaBlueprint(){var p=cur&&P[cur];if(!p)return;$id('spb-title').textContent='‘'+p.f.name+'’ 생성 Blueprint';$id('spb-target').textContent='대상: '+p.f.name+' · 보관함 '+ver(p).n+' · 현재 편집 중인 Persona 결과의 세계관 근거';$id('spb-items').innerHTML='<div class="row"><div><div class="row__title">보름달 전 개방 금지</div><div class="row__meta">Character Lore #3 · Blueprint 근거 표본</div></div></div><div class="row"><div><div class="row__title">왕실 기록실 출입 규칙</div><div class="row__meta">모듈 ‘왕국 연대기’ · Blueprint 근거 표본</div></div></div>';}
+function renderPersonaJson(){var p=cur&&P[cur];if(!p)return;var fields=(p.views[p.ui.lang]|| (p.ui.lang===1?p.translationF:p.f));$id('spj-title').textContent='‘'+p.f.name+'’ PersonaSpec JSON';$id('spj-target').textContent='대상: '+p.f.name+' · 보관함 '+ver(p).n+' · '+(p.ui.lang===1?'번역본 보기':'원문 보기');$id('spj-content').textContent=JSON.stringify({personaId:p.id,name:p.f.name,language:p.ui.lang===1?'translation':'original',personaSpec:fields},null,2);}
 /* ---------- 검토 탭 ---------- */
 function renderReview(){var p=cur&&P[cur],r=p&&REVIEW[p.id];
   $id('rv-chips').innerHTML=(r?r.chips:[['ok','✓ 세계관 적합'],['ok','✓ 필수 항목']]).map(function(c){return '<span class="chk-chip '+c[0]+'">'+esc(c[1])+'</span>';}).join('');
@@ -806,8 +822,13 @@ document.addEventListener('suite:page',function(e){if(e.detail==='edit'&&!cur){w
   if(e.detail==='shelf')renderShelf();if(e.detail==='update'){renderUpd();syncChg();}if(e.detail==='assets')renderAssets();});
 document.addEventListener('change',function(e){var t=e.target;if(t.id==='asset-target')renderAssets();if(t.classList&&t.classList.contains('rc'))syncRc();if(t.classList&&t.classList.contains('chg'))syncChg();
   if(t.id==='emo-list'){var l=t.value.split(/[\n,]+/).map(function(x){return x.trim();}).filter(Boolean);if(l.indexOf('neutral')<0)l.unshift('neutral');EMO=l;renderAssets();}});
-document.addEventListener('suite:save',function(e){if(e.detail.scope==='settings'){renderMine();renderAssets();}});
+document.addEventListener('suite:save',function(e){if(e.detail.scope==='make'||e.detail.scope==='settings'){var max=Number($id('lia-max-chars').value);if(max>=240&&max<=3000&&Number.isInteger(max))LIASET.maxChars=max;LIASET.richPersonaMode=!!$id('lia-rich-profile').checked;try{localStorage.setItem('liaMockSettingsV1',JSON.stringify(LIASET));}catch(_e){}renderMine();renderAssets();}});
+document.addEventListener('click',function(e){var save=e.target.closest('[data-save]');if(save&&save.closest('.savebar')&&document.querySelector('.page.is-active[data-page="make"],.page.is-active[data-page="settings"]')){var input=$id('lia-max-chars'),n=Number(input.value);if(!input.value||!Number.isInteger(n)||n<240||n>3000){e.preventDefault();e.stopImmediatePropagation();input.setCustomValidity('240~3000 사이의 정수를 입력하세요.');input.reportValidity();return;}input.setCustomValidity('');}},true);
+document.addEventListener('click',function(e){var b=e.target.closest('[data-run-job="job-gen"],[data-run-job="job-cand"]');if(!b)return;var c={};try{c=JSON.parse(b.dataset.ctx||'{}');}catch(_e){}c.maxChars=LIASET.maxChars;c.contextOptions=Object.assign({},c.contextOptions,{richPersonaMode:LIASET.richPersonaMode});if(b.id==='random-cand-go'){c.variant='random';c.mode='랜덤 신규 생성';c.randomConcept=$id('random-concept').value.trim();}b.setAttribute('data-ctx',JSON.stringify(c));},true);
+document.addEventListener('suite:ready',function(){try{var stored=JSON.parse(localStorage.getItem('liaMockSettingsV1')||'null');if(stored&&Number.isInteger(+stored.maxChars)&&+stored.maxChars>=240&&+stored.maxChars<=3000)LIASET={maxChars:+stored.maxChars,richPersonaMode:stored.richPersonaMode!==false};}catch(_e){}$id('lia-max-chars').value=LIASET.maxChars;$id('lia-rich-profile').checked=LIASET.richPersonaMode;window.suiteSnapshot('make');});
 document.addEventListener('click',function(e){var t=e.target;
+  var langButton=t.closest('#ed-lang button');if(langButton&&cur&&P[cur]){var pLang=P[cur],fromLang=pLang.ui.lang;setTimeout(function(){pLang.views[fromLang]={};META.forEach(function(m){var el=$id('f-'+m.k);if(el)pLang.views[fromLang][m.k]=el.value;});pLang.ui.lang=idx($id('ed-lang'));populate(pLang);var dirtyInput=$id('ed-view-dirty');if(dirtyInput)dirtyInput.value='0';window.suiteSnapshot('edit');updateViewDirty(pLang);renderPersonaJson();},0);return;}
+  var lockConfirm=t.closest('#btn-confirm-visual-lock');if(lockConfirm&&!lockConfirm.disabled){var lpid=asTarget();ASSETS[lpid]=ASSETS[lpid]||{lock:false,done:{}};ASSETS[lpid].lock=true;renderAssets();window.suiteToast('Neutral 기준을 확정했습니다. 이후 감정별 생성 조건은 고정됩니다. (시안)');return;}
   var px=t.closest('[data-proxy]');if(px){var tg=$id(px.dataset.proxy),pg=tg.closest('.page');if(pg)window.suiteGo(pg.dataset.page);if(tg.disabled){window.suiteToast('출발점이 될 RisuAI Persona가 없어 만들 수 없습니다. 먼저 채택하세요. (시안)');return;}tg.click();return;}
   if(t.closest('#proto-turn')){UPD.done=Math.min(UPD.done+1,5);renderUpd();window.suiteToast('완료된 대화 턴이 하나 늘었습니다: '+UPD.done+' / 5 (시안)');return;}
   if(t.closest('#rc-go')){var g=$id('rc-go');if(g.disabled)return;var on=[].slice.call(document.querySelectorAll('.rc')).filter(function(c){return c.checked&&!c.disabled;}),cf=on.some(function(c){return c.dataset.conflict;});
@@ -828,7 +849,7 @@ document.addEventListener('click',function(e){var t=e.target;
 });
 document.addEventListener('suite:jobdone',function(e){var c=e.detail.ctx||{};
   if(e.detail.id==='job-update'&&c.pid){UPD.hist.unshift({range:c.range,when:'방금',note:'다음 5턴 분석 · Live Persona 갱신 (표본)',pid:c.pid});UPD.done=0;UPD.from+=5;LIVE[c.pid]=LIVE[c.pid]||{loc:'(이 채팅에서 아직 기록 없음)',item:'—'};renderUpd();}
-  if(e.detail.id==='job-neutral'){var pid=c.pid;if(pid&&P[pid]){ASSETS[pid]=ASSETS[pid]||{lock:false,done:{}};ASSETS[pid].done[c.key||'neutral']=1;if((c.key||'neutral')==='neutral')ASSETS[pid].lock=true;renderAssets();}}
+  if(e.detail.id==='job-neutral'){var pid=c.pid;if(pid&&P[pid]){ASSETS[pid]=ASSETS[pid]||{lock:false,done:{}};ASSETS[pid].done[c.key||'neutral']=1;if((c.key||'neutral')==='neutral')ASSETS[pid].lock=false;renderAssets();}}
   if(e.detail.id==='job-emo'){var p2=c.pid;if(p2&&P[p2]){ASSETS[p2]=ASSETS[p2]||{lock:false,done:{}};EMO.forEach(function(x){ASSETS[p2].done[x]=1;});renderAssets();}}
   if(e.detail.id==='job-cand'){setTimeout(function(){var grp=[].slice.call(document.querySelectorAll('#dlg-cand [data-detail-root]')).filter(function(g){return !g.hidden;})[0];if(grp){var first=[].slice.call(grp.querySelectorAll('[data-cand]')).filter(function(b){return !b.disabled;})[0];if(first)first.click();}},0);}
 });
@@ -836,7 +857,7 @@ document.addEventListener('suite:jobdone',function(e){var c=e.detail.ctx||{};
 var MADE={};
 document.addEventListener('suite:jobdone',function(e){if(e.detail.id==='job-gen'&&e.detail.ctx&&e.detail.ctx.candName)MADE[e.detail.ctx.candName]=1;});
 document.addEventListener('click',function(e){var g=e.target.closest('#btn-cand-go');if(g&&g.dataset.cand){var c=JSON.parse(g.dataset.cand);var cc=JSON.parse(g.dataset.ctx||'{}');cc.candName=c.name;g.setAttribute('data-ctx',JSON.stringify(cc));}},false);
-document.addEventListener('suite:open',function(e){if(e.detail.id!=='dlg-cand')return;document.querySelectorAll('#dlg-cand [data-cand]').forEach(function(b){var c=JSON.parse(b.dataset.cand),made=!!MADE[c.name];b.disabled=made;var pk=b.querySelector('.pick');if(pk)pk.textContent=made?'보관함에 있음':'선택';
+document.addEventListener('suite:open',function(e){if(e.detail.id==='sheet-persona-blueprint')renderPersonaBlueprint();if(e.detail.id==='sheet-persona-json')renderPersonaJson();if(e.detail.id!=='dlg-cand')return;var cc=e.detail.ctx||{};$id('random-cand-context').hidden=cc.variant!=='random'||!cc.randomConcept;$id('random-cand-context').textContent=cc.variant==='random'&&cc.randomConcept?'이번 후보 입력 컨셉: '+cc.randomConcept:'';document.querySelectorAll('#dlg-cand [data-cand]').forEach(function(b){var c=JSON.parse(b.dataset.cand),made=!!MADE[c.name];b.disabled=made;var pk=b.querySelector('.pick');if(pk)pk.textContent=made?'보관함에 있음':'선택';
     if(made&&b.classList.contains('is-on'))b.classList.remove('is-on');});
   [].slice.call(document.querySelectorAll('#dlg-cand [data-detail-root]')).forEach(function(grp){if(!grp.querySelector('[data-cand].is-on:not([disabled])')){var f=grp.querySelector('[data-cand]:not([disabled])');if(f)f.classList.add('is-on');}});syncCand();});
 /* 이미지 제공자 '사용 안 함'(저장값)이면 이미지 진입점 숨김 */

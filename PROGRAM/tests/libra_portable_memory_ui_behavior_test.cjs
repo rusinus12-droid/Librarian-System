@@ -164,7 +164,7 @@ const first = mountRecovery();
 const firstControls = ensureUi(first.host);
 assert.ok(firstControls, 'LIBRA mounts controls in the Recovery card');
 assert.equal(firstControls.parentNode, first.host);
-assert.equal(firstControls.className, 'libra-portable-memory-controls');
+assert.equal(firstControls.className, 'stack', 'portable controls use the adopted mockup stack instead of the retired recovery-only wrapper');
 assert.equal(document.body.children.includes(firstControls), false, 'controls are never attached directly to the body');
 assert.deepEqual(firstControls.querySelectorAll('button').map(button => button.textContent), ['↓ JSON 백업 다운로드', '↑ JSON 백업에서 복원']);
 assert.ok(firstControls.querySelectorAll('button').every(button => button.disabled === false));

@@ -27,10 +27,10 @@ const version=hayaku.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1];
 assert.ok(version, 'HAYAKU semantic version');
 requireText(hayaku, `const PLUGIN_VERSION = '${version}';`, 'HAYAKU header/runtime version parity');
 requireText(hayaku, "? '채팅 범위 미확인'", 'compact unavailable-chat status text');
-requireText(hayaku, '.hv-recovery-state{display:inline-flex;align-items:center;align-self:start;justify-self:start;', 'non-stretching recovery status badge');
-requireText(hayaku, '.hv-recovery-run{width:max-content;max-width:100%;height:40px;min-height:40px;', 'recovery action fits label with consistent height');
-requireText(hayaku, 'id="runHayakuNativeRepair" type="button" disabled class="hv-btn primary hv-recovery-run"', 'manual repair normalized action class');
-requireText(hayaku, 'id="runHayakuNativeColdStart" class="hv-btn primary hv-recovery-run"', 'Cold Start normalized action class');
+requireText(hayaku, 'data-hayaku-viewer-panel="recovery"', 'canonical Recovery destination');
+requireText(hayaku, 'data-recovery-view="missing"', 'canonical missing-turn subview');
+requireText(hayaku, 'id="runHayakuNativeRepair" class="btn btn--primary"', 'manual repair action uses the canonical button component');
+requireText(hayaku, 'id="runHayakuNativeColdStart" class="btn btn--primary"', 'Cold Start action uses the canonical button component');
 requireText(retrace, releaseText('//@version {retrace}'), 'RE:TRACE version');
 requireText(retrace, releaseText("const PLUGIN_VERSION = '{retrace}';"), 'RE:TRACE runtime version');
 
@@ -78,7 +78,10 @@ forbidText(auxiliaryProbe, 'setTimeout(', 'probe must not synthesize a timeout')
 forbidText(auxiliaryProbe, 'for (', 'probe must not retry provider calls');
 requireText(hayaku, "reason: 'auxiliary_probe_in_progress'", 'probe and recovery overlap guard');
 requireText(hayaku, "outcome: 'auxiliary_probe_in_progress'", 'probe and afterRequest overlap guard');
-requireText(hayaku, 'id="testHayakuAuxiliaryModel"', 'explicit auxiliary model call test button');
+requireText(hayaku, "const HAYAKU_AUXILIARY_PROBE_SCHEMA = 'hayaku.otherax_call_probe.v1';", 'session-only auxiliary probe backend contract');
+requireText(hayaku, 'id="ax-test"', 'the canonical Settings page retains the one-call probe control');
+requireText(hayaku, "root.querySelector?.('#ax-test')?.addEventListener('click', async event =>", 'the canonical probe control remains bound to the existing backend');
+forbidText(hayaku, 'id="testHayakuAuxiliaryModel"', 'retired pre-mockup auxiliary probe button selector');
 requireText(hayaku, 'nativeOtherAxCallProbeV1: true', 'probe capability');
 
 const nativeWorker = section(hayaku, 'const executeNativeAnalysisAttempt = async (kind, chunk, context = {}) => {', 'const nativeRepairRunSnapshot = () => ({', 'native analysis worker');
@@ -102,11 +105,12 @@ requireText(hayaku, "const RECOVERY_EVIDENCE_MANIFEST_SCHEMA = 'hayaku.recovery_
 requireText(hayaku, 'const readVerifiedRecoveryEvidence = async', 'verified evidence readback');
 forbidText(hayaku, '.slice(0, RECOVERY_VAULT_MAX_TURN_CHARS)', 'Recovery Vault canonical evidence must not truncate');
 requireText(hayaku, "reason: 'evidence_over_request_budget'", 'oversized evidence routes to Failed Recovery without LLM');
-// The retired failure-repair UI must not return. Existing raw diagnostics and
-// evidence readback above remain separate from a user-operated retry panel.
-forbidText(hayaku, 'id="hayakuFailedRecoveryEvidenceStatus"', 'retired failure evidence panel');
-forbidText(hayaku, 'id="hayakuFailedRecoveryRequestStatus"', 'retired failure request panel');
-forbidText(hayaku, 'id="hayakuFailedRecoveryGroundingStatus"', 'retired failure grounding panel');
+// The approved failure-detail destination keeps source, raw response,
+// diagnostics, candidate and history as five internal panels. These read-only
+// evidence fields belong to its diagnostic panel, not a retired top-level page.
+requireText(hayaku, 'data-subpanel="dx" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryGroundingStatus"', 'failure grounding diagnostics remain in the diagnostic detail tab');
+requireText(hayaku, 'id="hayakuFailedRecoveryEvidenceStatus"', 'failure evidence completeness remains readable');
+requireText(hayaku, 'id="hayakuFailedRecoveryRequestStatus"', 'failure request budget remains readable');
 requireText(hayaku, '|chunkKeys|', 'Portable Backup recovery sidecar dependency discovery');
 requireText(hayaku, 'const recoveryCoverageProjection = ({ snapshot = {}, ledger = {}, activeRecords = [], checkedAt = now() } = {}) => {', 'owner-native recovery coverage');
 requireText(hayaku, "schema: 'hayaku.recovery_coverage.v1'", 'recovery coverage schema');

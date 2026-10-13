@@ -65,9 +65,12 @@
   var cb = q('#cold-batch'); cb.value='10'; fire(cb); await wait();
   // HY-08 unrelated save keeps per-run 10
   window.suiteGo('settings'); await wait(); q('[data-subtab=basic]').click(); await wait();
-  var dbg = qa('[data-subpanel=basic] input[type=checkbox]').slice(-1)[0]; dbg.click(); await wait();
+  // The debug field lives in Recovery/Safety; do not accidentally switch HAYAKU off.
+  q('[data-subtab=safe]').click(); await wait();
+  var dbg = qa('[data-page=settings] .setting').filter(function(row){var arg=row.querySelector('.argtag');return arg && arg.textContent==='hayaku_debug';})[0].querySelector('input[type=checkbox]'); dbg.click(); await wait();
   q('#savebar-hy [data-save]').click(); await wait(150);
-  window.suiteGo('recovery'); await wait(); out.coldKept = q('#cold-batch').value; ok.coldKept = out.coldKept==='10';
+  window.suiteGo('recovery'); await wait(); q('[data-page=recovery] [data-subtab=cold]').click(); await wait(); out.coldKept = q('#cold-batch').value; ok.coldKept = out.coldKept==='10';
+  ok.coldEligible = !q('#cold-go').disabled && !!q('#cold-go').offsetParent;
   q('#cold-go').click(); await wait(120); q('#dlg-cold [data-run-job]').click(); await wait(5800);
   out.coldRes = q('#job-cold [data-fill=saved]').textContent + '/' + q('#job-cold [data-fill=held]').textContent + ' actual=' + q('#job-cold [data-fill=actual]').textContent;
   ok.coldResult = q('#job-cold [data-fill=saved]').textContent==='144' && q('#job-cold [data-fill=actual]').textContent==='16회';

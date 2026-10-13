@@ -210,10 +210,12 @@ html[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}
       <div data-subpanel="skill" data-group="src"><div class="stack">
         <div class="card"><div class="setting"><div><div class="setting__name">Skill 자동 선택</div><div class="setting__desc">단계마다 어울리는 작법 Skill을 <b>로컬에서</b> 고릅니다. 추가 LLM 호출은 없습니다. 0개 선택도 허용됩니다.</div></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label></div>
           <div class="setting"><div><div class="setting__name">단계당 최대 Skill 수</div><div class="setting__desc">기본 2개 · 최대 3개</div></div><input class="input" type="number" min="0" max="3" value="2" style="width:90px" aria-label="단계당 최대 Skill 수"></div></div>
-        <div class="split"><div class="search" style="flex:1"><i class="ic" data-i="search"></i><input class="input" placeholder="Skill 검색" aria-label="Skill 검색"></div><button class="btn btn--primary btn--sm" data-open="dlg-skill" data-ctx='{"id": "", "variant": "new", "name": "", "prio": "45", "body": "", "kind": "새 사용자"}'><i data-i="plus" data-size="sm"></i>사용자 Skill 추가</button></div>
+        <div class="split"><div class="search" style="flex:1"><i class="ic" data-i="search"></i><input class="input" id="skill-search" placeholder="Skill 검색" aria-label="Skill 검색"></div><button class="btn btn--primary btn--sm" data-open="dlg-skill" data-ctx='{"id": "", "variant": "new", "name": "", "prio": "45", "body": "", "kind": "새 사용자"}'><i data-i="plus" data-size="sm"></i>사용자 Skill 추가</button></div>
+        <p class="hint" style="margin:0">추가·편집·사용 전환·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type="hidden" id="skill-library-state" data-dirty-key="skill-library" value="saved">
         <div class="list">
-          <div class="skill-row" data-skill-id="sk-tension"><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>긴장 쌓기 <span class="badge">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill" data-ctx='{"id": "sk-tension", "variant": "builtin", "name": "긴장 쌓기", "prio": "120", "body": "장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)", "kind": "내장"}'>원본 보기</button><button class="btn btn--sm" data-skill-restore="sk-tension">복원</button></div></div>
-          <div class="skill-row" data-skill-id="sk-garden"><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>정원 장면 묘사 <span class="badge badge--info">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill" data-ctx='{"id": "sk-garden", "variant": "custom", "name": "정원 장면 묘사", "prio": "80", "body": "정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.", "kind": "사용자"}'>편집</button><button class="btn btn--sm btn--danger" data-skill-del="sk-garden">삭제</button></div></div>
+          <div class="skill-row" data-skill-id="sk-tension"><label class="switch"><input type="checkbox" checked data-dirty-key="skill-library"><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>긴장 쌓기 <span class="badge">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill" data-ctx='{"id": "sk-tension", "variant": "builtin", "name": "긴장 쌓기", "prio": "120", "body": "장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)", "kind": "내장"}'>원본 보기</button><button class="btn btn--sm" data-skill-restore="sk-tension">복원</button></div></div>
+          <div class="skill-row" data-skill-id="sk-garden"><label class="switch"><input type="checkbox" checked data-dirty-key="skill-library"><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>정원 장면 묘사 <span class="badge badge--info">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill" data-ctx='{"id": "sk-garden", "variant": "custom", "name": "정원 장면 묘사", "prio": "80", "body": "정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.", "kind": "사용자"}'>편집</button><button class="btn btn--sm btn--danger" data-skill-del="sk-garden">삭제</button></div></div>
+          <div class="empty" id="skill-no-results" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>
         </div></div></div>
     </div>
   </section>
@@ -231,21 +233,21 @@ html[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}
 
   <!-- ===== AI 연결 ===== -->
   <section class="page" data-page="providers" data-track-group="gradia" data-track>
-    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Providers</div><h1 class="page-title">AI 연결과 모델</h1><p class="page-desc">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class="page-actions"><button class="btn" data-toast="새 연결 프리셋 입력 화면은 이 시안에서 생략했습니다. (시안)"><i data-i="plus" data-size="sm"></i>추가</button><button class="btn" data-toast="목록에서 프리셋을 고른 뒤 상세의 ‘복제’를 쓰세요. (시안)">복제</button></div></div>
+    <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Providers</div><h1 class="page-title">AI 연결과 모델</h1><p class="page-desc">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class="page-actions"><button class="btn" data-prov-add><i data-i="plus" data-size="sm"></i>추가</button><button class="btn" data-prov-clone>복제</button></div></div>
     <div class="grid g-side g-side--b" data-detail-root>
       <div class="list"><button class="row is-on" data-select-row="p1"><span class="row__icon">C</span><div><div class="row__title">claude-sonnet · 작성용</div><div class="row__meta">SHADOW · 인물</div></div><span class="badge badge--ok">완료</span></button><button class="row" data-select-row="p2"><span class="row__icon">G</span><div><div class="row__title">gpt-4.1 · 범용</div><div class="row__meta">세계관 · 플롯</div></div><span class="badge badge--ok">완료</span></button><button class="row" data-select-row="p3"><span class="row__icon">O</span><div><div class="row__title">ollama · 로컬</div><div class="row__meta">미사용</div></div><span class="badge badge--warn">키 필요</span></button></div>
       <div class="stack"><div class="card" data-detail="p1"><div class="card__head"><div><h2 class="card__title">claude-sonnet · 작성용</h2><p class="card__desc">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class="btn btn--sm" data-prov-test="p1">연결 테스트</button></div>
         <div class="grid g2"><div class="field"><label>이름</label><input class="input" value="claude-sonnet · 작성용"></div><div class="field"><label>Provider</label><select class="select"><option>Claude / Anthropic</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" value="claude-sonnet-4"><button class="btn btn--sm" data-toast="모델 목록을 불러왔습니다. (시안)">목록</button></div></div><div class="field"><label>Endpoint URL</label><input class="input" placeholder="기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장됨 (표시하지 않음)"></div></div>
         <details class="fold" style="margin-top:14px"><summary>제공자별 상세 <span class="hint">추론 · 서비스 등급 · 인증</span></summary><div class="fold__body hint">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>
-        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-toast="‘claude-sonnet · 작성용’ 프리셋을 복제했습니다. (시안)">복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p1">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "claude-sonnet · 작성용"}'>프리셋 삭제…</button></div></div>
+        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-prov-clone>복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p1">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "claude-sonnet · 작성용"}'>프리셋 삭제…</button></div></div>
       <div class="card" data-detail="p2" hidden><div class="card__head"><div><h2 class="card__title">gpt-4.1 · 범용</h2><p class="card__desc">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class="btn btn--sm" data-prov-test="p2">연결 테스트</button></div>
         <div class="grid g2"><div class="field"><label>이름</label><input class="input" value="gpt-4.1 · 범용"></div><div class="field"><label>Provider</label><select class="select"><option>OpenAI</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" value="gpt-4.1"><button class="btn btn--sm" data-toast="모델 목록을 불러왔습니다. (시안)">목록</button></div></div><div class="field"><label>Endpoint URL</label><input class="input" placeholder="기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장됨 (표시하지 않음)"></div></div>
         <details class="fold" style="margin-top:14px"><summary>제공자별 상세 <span class="hint">추론 · 서비스 등급 · 인증</span></summary><div class="fold__body hint">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>
-        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-toast="‘gpt-4.1 · 범용’ 프리셋을 복제했습니다. (시안)">복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p2">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "gpt-4.1 · 범용"}'>프리셋 삭제…</button></div></div>
+        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-prov-clone>복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p2">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "gpt-4.1 · 범용"}'>프리셋 삭제…</button></div></div>
       <div class="card" data-detail="p3" hidden><div class="card__head"><div><h2 class="card__title">ollama · 로컬</h2><p class="card__desc">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class="btn btn--sm" data-prov-test="p3">연결 테스트</button></div>
         <div class="grid g2"><div class="field"><label>이름</label><input class="input" value="ollama · 로컬"></div><div class="field"><label>Provider</label><select class="select"><option>Ollama</option></select></div><div class="field"><label>모델</label><div class="cluster" style="flex-wrap:nowrap"><input class="input" value="llama3"><button class="btn btn--sm" data-toast="모델 목록을 불러왔습니다. (시안)">목록</button></div></div><div class="field"><label>Endpoint URL</label><input class="input" placeholder="기본값"></div><div class="field"><label>API Key</label><input class="input" type="password" placeholder="저장됨 (표시하지 않음)"></div></div>
         <details class="fold" style="margin-top:14px"><summary>제공자별 상세 <span class="hint">추론 · 서비스 등급 · 인증</span></summary><div class="fold__body hint">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>
-        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-toast="‘ollama · 로컬’ 프리셋을 복제했습니다. (시안)">복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p3">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "ollama · 로컬"}'>프리셋 삭제…</button></div></div></div>
+        <div class="cluster" style="margin-top:14px"><button class="btn btn--sm" data-prov-clone>복제</button><button class="btn btn--sm btn--danger" data-prov-keydel="p3">키 삭제</button><button class="btn btn--sm btn--danger" data-open="dlg-del-prov" data-ctx='{"name": "ollama · 로컬"}'>프리셋 삭제…</button></div></div></div>
     </div>
   </section>
 
@@ -366,40 +368,53 @@ document.addEventListener('suite:ready',function(){matchQuality();matchLength();
 document.addEventListener('input',function(e){var t=e.target;if(t.dataset&&t.dataset.typed){var b=document.getElementById(t.dataset.typedTarget);if(b)b.disabled=(t.value.trim()!==t.dataset.typed);}});
 document.addEventListener('suite:ready',function(){var q=new URLSearchParams(location.search);if(q.get('mode'))setMode(q.get('mode'));skInit();});
 /* ---- Skill: 목록·편집창·삭제가 한 데이터(SK)를 씀. 내장은 이름·원문 읽기 전용 ---- */
-var SK={},SKN=0;
+var SK={},SKN=0,SK_BASE={},SK_BASE_ROWS=[];
 function $id(i){return document.getElementById(i);}
 function ctxJ(o){return JSON.stringify(o);}
 function skInit(){document.querySelectorAll('.skill-row[data-skill-id]').forEach(function(r){var c=JSON.parse(r.querySelector('[data-open="dlg-skill"]').dataset.ctx);
-  SK[r.dataset.skillId]={id:c.id,name:c.name,prio:c.prio,body:c.body,builtin:c.variant==='builtin',def:{prio:c.prio,body:c.body}};});}
+  SK[r.dataset.skillId]={id:c.id,name:c.name,prio:c.prio,body:c.body,builtin:c.variant==='builtin',def:{prio:c.prio,body:c.body}};});skCaptureSaved();skFilter();}
+function skMarkChanged(){var state={};Object.keys(SK).sort().forEach(function(id){var k=SK[id],r=skRow(id);state[id]={name:k.name,prio:k.prio,body:k.body,builtin:k.builtin,enabled:!!(r&&r.querySelector('input[type=checkbox]').checked)};});
+  var field=$id('skill-library-state');if(field)field.value=JSON.stringify(state);window.suiteMarkDirty&&window.suiteMarkDirty();}
+function skCaptureSaved(){SK_BASE=JSON.parse(JSON.stringify(SK));SK_BASE_ROWS=[];document.querySelectorAll('.skill-row[data-skill-id]').forEach(function(row){var copy=row.cloneNode(true),toggle=copy.querySelector('input[type=checkbox]');if(toggle){if(row.querySelector('input[type=checkbox]').checked)toggle.setAttribute('checked','');else toggle.removeAttribute('checked');}copy.removeAttribute('hidden');SK_BASE_ROWS.push(copy.outerHTML);});}
+function skRestoreSaved(){SK=JSON.parse(JSON.stringify(SK_BASE));var list=$id('skill-library-state').parentElement.querySelector('.list');list.querySelectorAll('.skill-row[data-skill-id]').forEach(function(row){row.remove();});var temp=document.createElement('div');SK_BASE_ROWS.forEach(function(html){temp.innerHTML=html;list.insertBefore(temp.firstElementChild,null);});skFilter();window.suiteRegister&&window.suiteRegister(list);window.suiteAutoLabel&&window.suiteAutoLabel();}
 function skRow(id){return document.querySelector('.skill-row[data-skill-id="'+id+'"]');}
 function skUpdate(id){var k=SK[id],r=skRow(id);if(!k||!r)return;
   r.querySelector('b').firstChild.nodeValue=k.name+' ';
   r.querySelector('small').textContent='우선도 '+k.prio+(k.builtin?' · SHADOW · 플롯 AIDE에 컴파일':' · reference 2개');
   var ob=r.querySelector('[data-open="dlg-skill"]');ob.setAttribute('data-ctx',ctxJ({id:id,variant:k.builtin?'builtin':'custom',name:k.name,prio:k.prio,body:k.body,kind:k.builtin?'내장':'사용자'}));
-  var db=r.querySelector('[data-skill-del]');if(db)db.setAttribute('data-ctx',ctxJ({id:id,name:k.name}));}
+  var db=r.querySelector('[data-skill-del]');if(db)db.setAttribute('data-ctx',ctxJ({id:id,name:k.name}));skFilter();}
 function skAdd(k){var id='sk-n'+(++SKN);SK[id]={id:id,name:k.name,prio:k.prio,body:k.body,builtin:false,def:{prio:k.prio,body:k.body}};
   var r=document.createElement('div');r.className='skill-row';r.setAttribute('data-skill-id',id);
-  r.innerHTML='<label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>x <span class="badge badge--info">사용자</span></b><small></small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill">편집</button><button class="btn btn--sm btn--danger" data-open="dlg-del-skill" data-skill-del="'+id+'">삭제</button></div>';
+  r.innerHTML='<label class="switch"><input type="checkbox" checked data-dirty-key="skill-library"><span class="switch__track"></span><span class="sr-only">사용</span></label><div><b>x <span class="badge badge--info">사용자</span></b><small></small></div><div class="cluster"><button class="btn btn--sm" data-open="dlg-skill">편집</button><button class="btn btn--sm btn--danger" data-open="dlg-del-skill" data-skill-del="'+id+'">삭제</button></div>';
   document.querySelector('.skill-row').parentElement.appendChild(r);skUpdate(id);window.suiteAutoLabel&&window.suiteAutoLabel();
   window.suiteRegister(r); /* 새 사용 스위치의 기준값 = 만들어진 순간의 값(켜짐). 처음 끄는 것도 미저장 변경으로 센다 */
+  skMarkChanged();
   return id;}
-function skSaveState(){var ov=$id('dlg-skill'),v=(ov._ctx||{}).variant;var ok=v==='builtin'||$id('sk-name').value.trim().length>0;
+function skFilter(){var q=($id('skill-search')&&$id('skill-search').value||'').trim().toLocaleLowerCase(),rows=document.querySelectorAll('.skill-row[data-skill-id]'),shown=0;
+  rows.forEach(function(r){var k=SK[r.dataset.skillId],hay=(k.name+' '+k.body).toLocaleLowerCase(),match=!q||hay.indexOf(q)!==-1;r.hidden=!match;if(match)shown++;});
+  var empty=$id('skill-no-results');if(empty)empty.hidden=shown!==0;}
+function skSaveState(){var ov=$id('dlg-skill'),v=(ov._ctx||{}).variant,priority=$id('sk-prio'),raw=priority.value,validPriority=raw!==''&&Number.isInteger(Number(raw))&&Number(raw)>=0&&Number(raw)<=200;
+  priority.setCustomValidity(validPriority?'':'우선도는 0~200 사이의 정수여야 합니다.');
+  var ok=v==='builtin'||$id('sk-name').value.trim().length>0;
   ['sk-save-b','sk-save-c'].forEach(function(i){$id(i).disabled=!ok;});}
 document.addEventListener('suite:open',function(e){if(e.detail.id==='dlg-skill')skSaveState();});
-document.addEventListener('input',function(e){if(e.target.id==='sk-name')skSaveState();});
+document.addEventListener('input',function(e){if(e.target.id==='sk-name'||e.target.id==='sk-prio')skSaveState();if(e.target.id==='skill-search')skFilter();});
 document.addEventListener('click',function(e){
   var rs=e.target.closest('[data-skill-restore]');
   if(rs){var k=SK[rs.dataset.skillRestore];k.prio=k.def.prio;k.body=k.def.body;skUpdate(rs.dataset.skillRestore);window.suiteToast('‘'+k.name+'’ 항목을 내장 기본값(우선도 '+k.prio+')으로 복원했습니다. (시안)');return;}
   var dl=e.target.closest('[data-skill-del]');
   if(dl&&dl.dataset.open!=='dlg-del-skill'){var k2=SK[dl.dataset.skillDel];window.suiteOpen('dlg-del-skill',{id:dl.dataset.skillDel,name:k2.name});return;}
   var a=e.target.closest('[data-act="skill-save"]');
-  if(a&&!a.disabled){var c=$id('dlg-skill')._ctx||{};var pr=Math.max(0,Math.min(200,parseInt($id('sk-prio').value,10)||0));
-    if(c.variant==='builtin'){SK[c.id].prio=String(pr);skUpdate(c.id);a.setAttribute('data-ctx',ctxJ({name:SK[c.id].name}));}
+  if(a&&!a.disabled){var c=$id('dlg-skill')._ctx||{},priority=$id('sk-prio');if(!priority.checkValidity()){priority.reportValidity();return;}var pr=String(Number(priority.value));
+    if(c.variant==='builtin'){SK[c.id].prio=pr;skUpdate(c.id);skMarkChanged();a.setAttribute('data-ctx',ctxJ({name:SK[c.id].name}));}
     else if(c.variant==='new'){var id=skAdd({name:$id('sk-name').value.trim(),prio:String(pr),body:$id('sk-body').value});a.setAttribute('data-ctx',ctxJ({name:SK[id].name}));}
-    else{var k3=SK[c.id];k3.name=$id('sk-name').value.trim();k3.prio=String(pr);k3.body=$id('sk-body').value;skUpdate(c.id);a.setAttribute('data-ctx',ctxJ({name:k3.name}));}}
+    else{var k3=SK[c.id];k3.name=$id('sk-name').value.trim();k3.prio=pr;k3.body=$id('sk-body').value;skUpdate(c.id);skMarkChanged();a.setAttribute('data-ctx',ctxJ({name:k3.name}));}}
   var d=e.target.closest('[data-act="skill-del"]');
-  if(d){var cc=$id('dlg-del-skill')._ctx||{};var r=skRow(cc.id);if(r)r.remove();delete SK[cc.id];}
+  if(d){var cc=$id('dlg-del-skill')._ctx||{};var r=skRow(cc.id);if(r)r.remove();delete SK[cc.id];skFilter();skMarkChanged();}
 });
+document.addEventListener('change',function(e){if(e.target.closest&&e.target.closest('.skill-row[data-skill-id]'))skMarkChanged();});
+document.addEventListener('suite:save',function(e){if(!e.detail||e.detail.scope==='gradia')skCaptureSaved();});
+document.addEventListener('suite:revert',function(e){if(!e.detail||e.detail.scope==='gradia')skRestoreSaved();});
 document.addEventListener('change',function(e){if(e.target.id==='ooc-stage'){var c=Object.assign({},window.suiteCtx()||{},{stage:e.target.value});window.suiteOpen('dlg-ooc',c);}});
 
 /* ---------- 5차: 화면 사이 같은 값을 한 데이터로 ---------- */
@@ -428,14 +443,35 @@ document.addEventListener('change',function(e){if(/^on-s[1-4]$/.test(e.target.id
 /* GR-04 연결 프리셋: 이름·모델·상태·사용처를 한 곳에서 계산 */
 var PV={};
 function provInit(){['p1','p2','p3'].forEach(function(id){var card=$q('[data-detail="'+id+'"]'),row=$q('[data-select-row="'+id+'"]');var ins=$a('.input',card);
-  PV[id]={id:id,card:card,row:row,nameEl:ins[0],modelEl:ins[1],keyEl:card.querySelector('input[type=password]'),status:row.querySelector('.badge').textContent==='키 필요'?'key':'ok',name:ins[0].value};});
+  PV[id]={id:id,card:card,row:row,nameEl:ins[0],providerEl:card.querySelector('select'),modelEl:ins[1],urlEl:ins[2],keyEl:card.querySelector('input[type=password]'),status:row.querySelector('.badge').textContent==='키 필요'?'key':'ok',name:ins[0].value};});
   /* 단계 select 옵션을 프리셋 id로 연결 */
   $a('[data-page=pipeline] select').forEach(function(sel){$a('option',sel).forEach(function(o){for(var id in PV)if(PV[id].name===o.textContent)o.dataset.prov=id;});});
   provRender();}
+function uniqueProvName(base){var names=Object.keys(PV).map(function(id){return PV[id].nameEl.value.trim();}),name=base,n=2;while(names.indexOf(name)!==-1)name=base+' '+n++;return name;}
+function provCreate(sourceId,kind){var source=PV[sourceId],id='p'+(Math.max.apply(null,Object.keys(PV).map(function(k){return Number(k.slice(1))||0;}))+1);
+  var card=source.card.cloneNode(true),row=source.row.cloneNode(true),name=kind==='clone'?uniqueProvName(source.nameEl.value.trim()+' 복사본'):uniqueProvName('새 프리셋');
+  card.dataset.detail=id;row.dataset.selectRow=id;row.classList.remove('is-on');row.removeAttribute('aria-current');
+  card.querySelector('[data-prov-test]').dataset.provTest=id;var keyButton=card.querySelector('[data-prov-keydel]');keyButton.dataset.provKeydel=id;
+  var ins=$a('.input',card);card.querySelector('.card__title').textContent=name;
+  var providerEl=card.querySelector('select'),modelEl=ins[1],urlEl=ins[2],keyEl=card.querySelector('input[type=password]');
+  if(kind==='add'){providerEl.value='OpenAI';modelEl.value='';urlEl.value='';keyEl.value='';keyEl.placeholder='API 키를 입력하세요';row.querySelector('.row__icon').textContent='G';row.querySelector('.badge').textContent='키 필요';}
+  else {row.querySelector('.row__icon').textContent=source.row.querySelector('.row__icon').textContent;keyEl.value='';keyEl.placeholder=source.status==='ok'?'저장됨 (표시하지 않음)':'저장된 키 없음';}
+  card.querySelector('[data-prov-keydel]').dataset.armed='';delete card.querySelector('[data-prov-keydel]').dataset.armed;
+  card.querySelector('[data-prov-keydel]').textContent='키 삭제';
+  card.querySelector('[data-open="dlg-del-prov"]').setAttribute('data-ctx',JSON.stringify({name:name,id:id}));
+  card.hidden=true;row.querySelector('.row__title').textContent=name;
+  var detailRoot=$q('[data-detail-root]'),list=detailRoot.querySelector('.list'),stack=detailRoot.querySelector('.stack');list.appendChild(row);stack.appendChild(card);
+  PV[id]={id:id,card:card,row:row,nameEl:ins[0],providerEl:providerEl,modelEl:modelEl,urlEl:urlEl,keyEl:keyEl,status:kind==='clone'?source.status:'key',name:name,isNew:true};
+  $a('[data-page=pipeline] select').forEach(function(sel){var option=document.createElement('option');option.dataset.prov=id;option.textContent=name;sel.appendChild(option);});
+  window.suiteRegister(card); /* 원본 필드 기준으로 등록한 뒤 새 이름을 넣어 추가/복제를 미저장으로 표시 */
+  ins[0].value=name;provRender();window.suiteMarkDirty();row.click();window.suiteAutoLabel&&window.suiteAutoLabel();
+  window.suiteToast(kind==='clone'?'‘'+source.name+'’ 프리셋을 복제했습니다. 키는 기존 프리셋에서 복사된 상태로 숨겨 두었습니다. (시안)':'새 프리셋을 추가했습니다. 기본 Provider는 OpenAI입니다. 저장해야 유지됩니다. (시안)');
+}
 function stageUse(){var map={},names={'shadow':'SHADOW','char':'인물','world':'세계관','plot':'플롯'};
   Object.keys(names).forEach(function(k){var d=$q('[data-detail="'+k+'"]');if(!d)return;var sel=$a('select',d).filter(function(x){return x.querySelector('option[data-prov]');})[0];if(!sel)return;var o=sel.options[sel.selectedIndex];if(o&&o.dataset.prov)(map[o.dataset.prov]=map[o.dataset.prov]||[]).push(names[k]);});return map;}
-function provRender(){var use=stageUse(),ready=0,ids=Object.keys(PV);
-  ids.forEach(function(id){var p=PV[id];p.name=p.nameEl.value||'(이름 없음)';if(p.status==='ok')ready++;
+function provRender(){var use=stageUse(),ready=0,ids=Object.keys(PV),nameCounts={};
+  ids.forEach(function(id){var name=PV[id].nameEl.value.trim();nameCounts[name]=(nameCounts[name]||0)+1;});
+  ids.forEach(function(id){var p=PV[id],typedName=p.nameEl.value.trim();p.name=typedName||'(이름 없음)';p.nameEl.setCustomValidity(!typedName?'프리셋 이름을 입력하세요.':nameCounts[typedName]>1?'이미 사용 중인 프리셋 이름입니다.':'');if(p.status==='ok')ready++;
     p.row.querySelector('.row__title').textContent=p.name;p.row.querySelector('.row__meta').textContent=(use[id]||[]).join(' · ')||'미사용';
     var b=p.row.querySelector('.badge');b.className='badge '+(p.status==='ok'?'badge--ok':'badge--warn');b.textContent=p.status==='ok'?'완료':'키 필요';
     p.card.querySelector('.card__title').textContent=p.name;var del=p.card.querySelector('[data-open="dlg-del-prov"]');if(del)del.setAttribute('data-ctx',JSON.stringify({name:p.name,id:id}));
@@ -444,12 +480,18 @@ function provRender(){var use=stageUse(),ready=0,ids=Object.keys(PV);
   var sh=$q('[data-detail="shadow"] select'),so=sh&&sh.options[sh.selectedIndex];var sm=document.getElementById('src-shadow-model');if(sm&&so&&PV[so.dataset.prov])sm.textContent=PV[so.dataset.prov].modelEl.value;}
 document.addEventListener('input',function(e){if(e.target.closest&&e.target.closest('[data-page=providers]'))provRender();});
 document.addEventListener('change',function(e){if(e.target.closest&&e.target.closest('[data-page=pipeline]')&&e.target.tagName==='SELECT')provRender();});
+document.addEventListener('click',function(e){var save=e.target.closest('#savebar [data-save]'),page=$q('.page.is-active[data-page="providers"]');if(!save||!page)return;provRender();var invalid=Object.keys(PV).map(function(id){return PV[id].nameEl;}).filter(function(el){return !el.checkValidity();})[0];if(invalid){e.preventDefault();e.stopImmediatePropagation();invalid.focus();invalid.reportValidity();}},true);
 document.addEventListener('click',function(e){
+  var add=e.target.closest('[data-prov-add]');if(add){provCreate('p2','add');return;}
+  var clone=e.target.closest('[data-prov-clone]');if(clone){var selected=clone.closest('[data-detail]'),sourceId=selected&&selected.dataset.detail;
+    if(!sourceId){var shown=$q('[data-detail-root] [data-detail]:not([hidden])');sourceId=shown&&shown.dataset.detail;}
+    if(sourceId&&PV[sourceId])provCreate(sourceId,'clone');return;}
   var t=e.target.closest('[data-prov-test]');if(t){var p=PV[t.dataset.provTest];if(p.status==='key'&&!p.keyEl.value)window.suiteToast('‘'+p.name+'’ 연결 테스트 실패: API 키가 없습니다. 키를 입력한 뒤 다시 테스트하세요. (시안)');else window.suiteToast('‘'+p.name+'’ 연결 테스트 성공 · 모델 '+p.modelEl.value+(p.keyEl.value?' (입력한 키로 시험, 저장 전)':'')+' (시안)');return;}
   var k=e.target.closest('[data-prov-keydel]');if(k){var q=PV[k.dataset.provKeydel];if(!k.dataset.armed){k.dataset.armed='1';k.textContent='한 번 더 눌러 키 삭제';setTimeout(function(){if(k.dataset.armed){delete k.dataset.armed;k.textContent='키 삭제';}},2500);return;}
     delete k.dataset.armed;k.textContent='키 삭제';q.status='key';q.keyEl.value='';q.keyEl.placeholder='저장된 키 없음';provRender();window.suiteToast('‘'+q.name+'’의 API 키만 삭제했습니다. 프리셋은 남습니다. (시안)');}
 });
-document.addEventListener('suite:save',function(){for(var id in PV){var p=PV[id];if(p.keyEl.value){p.status='ok';p.keyEl.value='';p.keyEl.placeholder='저장됨 (표시하지 않음)';}}setTimeout(function(){window.suiteSnapshot('gradia');provRender();},0);});
+document.addEventListener('suite:save',function(){for(var id in PV){var p=PV[id];if(p.keyEl.value){p.status='ok';p.keyEl.value='';p.keyEl.placeholder='저장됨 (표시하지 않음)';}p.isNew=false;}setTimeout(function(){window.suiteSnapshot('gradia');provRender();},0);});
+document.addEventListener('suite:revert',function(e){if(e.detail&&e.detail.scope!=='gradia')return;Object.keys(PV).forEach(function(id){var p=PV[id];if(!p.isNew)return;p.row.remove();p.card.remove();$a('[data-prov="'+id+'"]').forEach(function(o){o.remove();});delete PV[id];});var first=$q('[data-select-row]');if(first)first.click();provRender();});
 /* GR-06 가져오기 미리보기: '현재'는 지금 값 */
 var IMP=[{k:'파이프라인 무게',g:'q-weight',v:1,names:['경량','중량']},{k:'목표 분량',g:'q-length',v:2,names:['1,000~2,000자','3,000~5,000자','5,000~7,000자','8,000자 이상']}];
 function renderImport(){var d=document.getElementById('imp-diff');if(!d)return;var h='<span class="h">항목</span><span class="h">현재</span><span class="h">가져올 값</span>',n=0;
