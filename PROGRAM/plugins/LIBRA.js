@@ -44859,19 +44859,19 @@ function createLibraReadonlySourceContext(owner) {
     const families = Object.fromEntries(['canonical', 'micro', 'state', 'lore'].map(kind => [kind,
       { records: 0, units: 0, reasons: [], representation: kind === 'micro' ? 'producer_bounded' : kind === 'lore' ? 'rendered_passages' : 'stored_schema' }]));
     const note = (family, reason) => { if (!families[family].reasons.includes(reason)) families[family].reasons.push(reason); };
-    const check = () => { if (nodes.size >= nodeLimit) throw new Error('LIBRA_GRAPH_NODE_BUDGET'); };
+    const check = (needed = 1) => { if (nodes.size + needed > nodeLimit) throw new Error('LIBRA_GRAPH_NODE_BUDGET'); };
     const bound = (key, revision, body) => ({ ...frame, revision, locator: { recordKey: key }, body: clone(body) });
     const legacy = (key, revision, body, originScope = frame.scopeKey, recordKind = 'projection') => ({
       kind: 'revision_bound', ownerNamespace: namespace, originScope, recordKind, recordKey: key,
       revision, restoreEpoch: frame.restoreEpoch, snapshot: clone(body) });
     const keep = node => { nodes.set(node.id, node); return node; };
-    const source = (family, key, revision, body, originScope = frame.scopeKey) => {
-      check(); families[family].records++;
+    const source = (family, key, revision, body, originScope = frame.scopeKey, minChildNodes = 0) => {
+      check(1 + minChildNodes); families[family].records++;
       return { node: keep(identity.source({ identity: legacy(key, revision, body, originScope, family), binding: bound(key, revision, body) })),
         family, key, revision, body, originScope };
     };
     const meaning = (src, kind, key, body, anchor, metadata) => {
-      check(); const node = keep(identity.meaning({ source: src.node, kind,
+      check(1); const node = keep(identity.meaning({ source: src.node, kind,
         identity: legacy(key, src.revision, body, src.originScope), anchor,
         binding: bound(key, src.revision, body) }));
       units.push({ nodeId: node.id, family: src.family, ...clone(metadata) }); families[src.family].units++;
@@ -44894,10 +44894,11 @@ function createLibraReadonlySourceContext(owner) {
     if (registry.scopeKey && registry.scopeKey !== frame.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_SCOPE_INVALID');
     const counts = new Map();
     for (const row of array(registry.entities)) counts.set(row.id, (counts.get(row.id) || 0) + 1);
+    let entityBudgetReached = false;
     for (const row of array(registry.entities)) {
       if (row.validated !== true || !string(row.id) || counts.get(row.id) !== 1) continue;
       if (['inactive', 'superseded', 'deleted'].includes(row.status)) continue;
-      if (nodes.size >= nodeLimit) break;
+      if (nodes.size >= nodeLimit) { entityBudgetReached = true; break; }
       const key = string(snapshot.registry.key) + '#' + row.id, revision = registry.fingerprint || 'registry_without_revision';
       const node = keep(identity.entity({ identity: legacy(key, revision, row), binding: bound(key, revision, row) }));
       entityById.set(row.id, node);
@@ -44905,6 +44906,9 @@ function createLibraReadonlySourceContext(owner) {
         const token = normalized(name); if (!token) continue;
         if (!names.has(token)) names.set(token, new Set()); names.get(token).add(row.id);
       }
+    }
+    if (entityBudgetReached) {
+      for (const family of ['canonical', 'micro', 'state', 'lore']) note(family, 'node_work_budget');
     }
     const entity = value => entityById.get(string(value)) || null;
     const byName = value => { const found = names.get(normalized(value)); return found?.size === 1 ? entity([...found][0]) : null; };
@@ -44914,10 +44918,10 @@ function createLibraReadonlySourceContext(owner) {
       const record = row.record;
       if (!record || !row.key || record.memoryId !== row.ref?.memoryId || record.revision !== row.ref?.revision
         || record.sourceDigest !== row.ref?.sourceDigest) { note('canonical', 'record_ref_mismatch'); return; }
-      const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey);
       const artifact = object(record.canonicalArtifact);
       if (!['libra.canonical_artifact.v4', 'libra.canonical_artifact.v5'].includes(artifact.schema)) {
         const text = string(record.text);
+        const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, text ? 1 : 0);
         if (text) {
           const anchor = { coordinateSpace: 'record_text', start: 0, end: text.length };
           const node = meaning(src, 'source_excerpt', row.key + '#text', { text }, anchor,
@@ -44928,6 +44932,11 @@ function createLibraReadonlySourceContext(owner) {
       }
       const duplicate = new Map();
       for (const fact of array(artifact.facts)) duplicate.set(fact.tempFactId, (duplicate.get(fact.tempFactId) || 0) + 1);
+      const validFacts = array(artifact.facts).filter(fact => {
+        const contract = object(snapshot.claimContracts?.[fact.claimKind]);
+        return fact.tempFactId && duplicate.get(fact.tempFactId) === 1 && contract.field && contract.domain === fact.domain;
+      });
+      const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, validFacts.length ? 1 : 0);
       array(artifact.facts).forEach((fact, index) => {
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
         if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.field || contract.domain !== fact.domain) {
@@ -44983,7 +44992,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       if (record.analysisStatus === 'verified' && !claims.length) { note('micro', 'verified_claims_unavailable'); return; }
       const src = source('micro', row.recordKey, record.analysisRevisionId,
-        { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey);
+        { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey, 1);
       spans.forEach((span, index) => {
         const claim = claims[index] || null, body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId };
         const node = meaning(src, claim ? 'micro_claim' : 'source_excerpt', row.recordKey + '#units/' + index, body,
@@ -45025,18 +45034,21 @@ function createLibraReadonlySourceContext(owner) {
           const isClear = !own(values, field) && (own(clears, field) || own(clearCorrections, field));
           if (own(values, field) && (own(clears, field) || own(clearCorrections, field))) { note('state', 'field_value_clear_conflict'); continue; }
           const proof = object(isClear ? clears[field] : evidence[field]), correction = object(isClear ? clearCorrections[field] : correctionFields[field]);
-          const fieldValue = isClear ? null : values[field], items = Array.isArray(fieldValue) && fieldValue.length ? fieldValue : [fieldValue];
+          const fieldValue = isClear ? null : values[field];
+          const isCollection = Array.isArray(fieldValue) && fieldValue.length > 0;
+          const items = isCollection ? fieldValue : [fieldValue];
           for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
             const hasProvenance = Object.keys(proof).length > 0 || !!correction.correctionId;
             const body = { domain, entityId: string(row.id), field, value: items[itemIndex], availability: isClear ? 'clear' : 'value',
               fieldEvidence: proof, correction, authority, certainty: row.certainty || 'unknown',
               provenanceStatus: hasProvenance ? 'recorded' : 'unknown', domainStatus: head.domainStatus || {},
               headBasis: head.basis || null, headThroughTurn: head.throughTurn ?? null };
-            const selector = { domain, entityId: string(row.id), field, itemIndex: Array.isArray(fieldValue) ? itemIndex : null };
+            const selector = { domain, entityId: string(row.id), field, itemIndex: isCollection ? itemIndex : null };
             const key = state.key + '#fields/' + JSON.stringify(selector);
             const role = correction.correctionId ? 'user_corrected' : !hasProvenance ? 'state_unprovenanced'
               : authority.current === true && authority.pending !== true ? 'state_current' : 'state_last_known';
-            const node = meaning(src, Array.isArray(fieldValue) && fieldValue.length ? 'state_item' : 'state_field', key, body, selector,
+            if (hasProvenance && correction.correctionId && !correctionSources.has(correction.correctionId)) check(2);
+            const node = meaning(src, isCollection ? 'state_item' : 'state_field', key, body, selector,
               { semanticRole: role, ...body, text: JSON.stringify(items[itemIndex]) });
             if (!hasProvenance) { note('state', 'field_provenance_unknown'); continue; }
             if (correction.correctionId) {
@@ -45089,9 +45101,12 @@ function createLibraReadonlySourceContext(owner) {
     const lore = object(snapshot.lore), index = object(lore.index);
     for (const row of array(lore.entries)) attempt('lore', () => {
       if (!row.identity || typeof row.rendered !== 'string') { note('lore', 'entry_rendering_unavailable'); return; }
+      const validPassages = array(row.passages).filter(passage => passage.coordinateSpace === 'rendered'
+        && Number.isSafeInteger(passage.start) && Number.isSafeInteger(passage.end)
+        && passage.start >= 0 && passage.end > passage.start && passage.end <= row.rendered.length);
       const activation = object(row.activation);
       const body = { entry: row.entry, rendered: row.rendered, activation, selectionBinding: lore.selectionBinding || {} };
-      const src = source('lore', 'lore:' + row.identity, lore.revision, body);
+      const src = source('lore', 'lore:' + row.identity, lore.revision, body, frame.scopeKey, validPassages.length ? 1 : 0);
       for (const [position, passage] of array(row.passages).entries()) {
         if (passage.coordinateSpace !== 'rendered' || !Number.isSafeInteger(passage.start) || !Number.isSafeInteger(passage.end)
           || passage.start < 0 || passage.end <= passage.start || passage.end > row.rendered.length) { note('lore', 'rendered_passage_locator_invalid'); continue; }
@@ -68394,15 +68409,17 @@ ${string(queryBundle?.sceneText || '')}`;
     const memoryGraphDurableOperation = async (options, build) => {
       const sourceOptions = memoryGraphStoreOptions(options, build), epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       if (build && state.memoryGraphStore?.inspect().activeBuild) throw new Error('LIBRA_GRAPH_STORE_BUILD_BUSY');
-      let first = true, initial = null;
+      let initial = null, reuseInitial = false;
       const snapshot = async () => {
+        if (reuseInitial && initial) { reuseInitial = false; return initial; }
         let collected;
         const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: initial?.graph.scopeKey || options.expectedScopeKey || '' }, value => { collected = value; });
         const value = { graph, scope: collected.scope, sourceKeys: collected.sourceKeys };
-        if (first) { initial = value; first = false; }
+        if (!initial) initial = value;
         return value;
       };
       await snapshot();
+      reuseInitial = true;
       if (serial !== state.memoryGraphStoreSerial) throw new Error('LIBRA_GRAPH_STORE_CANCELLED');
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(initial.scope))?.mode || '');
       if (!['plugin_only','server_only'].includes(mode)) throw new Error('LIBRA_GRAPH_STORE_MODE_UNSUPPORTED');
@@ -81900,10 +81917,10 @@ advanced
     async getEvidenceLinkIndex(options = {}) { return await safeClone(await LibraMemoryCore.getEvidenceLinkIndex(options)); },
     async getLoreLinkIndex(options = {}) { return await safeClone(await LibraMemoryCore.getLoreLinkIndex(options)); },
     async getMemoryGraphProjectionPage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphProjectionPage(options)); },
-    async getMemoryGraphAccessPage(options = {}) { return await LibraMemoryCore.getMemoryGraphAccessPage(options); },
+    async getMemoryGraphAccessPage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphAccessPage(options)); },
     inspectMemoryGraphPages() { return LibraMemoryCore.inspectMemoryGraphPages(); },
-    async buildMemoryGraphGeneration(options = {}) { return await LibraMemoryCore.buildMemoryGraphGeneration(options); },
-    async getMemoryGraphDurablePage(options = {}) { return await LibraMemoryCore.getMemoryGraphDurablePage(options); },
+    async buildMemoryGraphGeneration(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphGeneration(options)); },
+    async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
