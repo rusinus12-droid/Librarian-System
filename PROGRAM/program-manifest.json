@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T15:27:48.743Z",
+  "generatedAt": "2026-10-13T15:28:40.974Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2596,8 +2596,8 @@
       "bytes": 835
     },
     "docs/LIBRA_UM0_UM1_ADAPTER_MAPPING.md": {
-      "sha256": "aa4718c2920db3c5777ce490c60f7bc806c190537a364ffcdc15ba3f7cc4beb9",
-      "bytes": 13997
+      "sha256": "953bfcf04583636cf223b43aa78b685422dd8dedf30874d4d0f01224e32a0f67",
+      "bytes": 16939
     },
     "docs/LIBRA_Unified_Architecture_v2_20260921.md": {
       "sha256": "901c8f57b3713baf3921aabcb01a9cab3acb038614cd388f0139f3030c00fa60",
