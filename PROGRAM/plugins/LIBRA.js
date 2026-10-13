@@ -33665,6 +33665,17 @@ function createLibraReadonlySourceContext(owner) {
       consumedCanonicalProofsByMemory.set(memory, proof);
       return proof;
     };
+    const inheritConsumedCanonicalProof = (source, target) => {
+      const proof = getConsumedCanonicalProof(source);
+      if (!proof || !target || string(target.memoryKey || '') !== string(proof.recordKey)) return target;
+      // Only the request-local locator may differ from the trusted loaded row.
+      // Keep the original physical digest, including for logical archive overlays;
+      // final consumption still re-reads that body from its owning store.
+      const logicalTarget = { ...target }; delete logicalTarget.memoryKey;
+      if (canonicalConsumptionDigest(logicalTarget) !== canonicalConsumptionDigest(source)) return target;
+      consumedCanonicalProofsByMemory.set(target, proof);
+      return target;
+    };
     const consumedMicroProofsByState = new WeakMap();
     const consumedDataReadSets = new Map();
     const activeMicroConsumptionProof = active => ({
@@ -57501,7 +57512,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       // the key alongside the record, because everything downstream (the observation's admitted/agreed
       // sets, the read set, the admission bookkeeping) addresses candidates by that key. Losing it here is
       // what made a reached-and-admitted candidate report as `not_admitted`.
-      const memory = { ...loaded, memoryKey: string(asObject(entry?.memory).memoryKey || '') };
+      const memory = inheritConsumedCanonicalProof(loaded, { ...loaded, memoryKey: string(asObject(entry?.memory).memoryKey || '') });
       return {
         id: `${memory.memoryId}:r${Number(memory.revision || 0)}`,
         memory,
