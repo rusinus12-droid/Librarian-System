@@ -131,6 +131,11 @@ const computePilots = Object.freeze({
 });
 
 const MANIFEST_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', 'dist']);
+// A linked worktree has `.git` as a FILE (a `gitdir:` pointer), not a directory. The tracked-file filter
+// below would normally drop it, but that filter has no opinion when Git is unavailable or when the
+// generator runs somewhere `ls-files` returns nothing — then the pointer was recorded in the manifest.
+// Exclude the name in both shapes.
+const MANIFEST_EXCLUDED_FILES = new Set(['.git']);
 // OS metadata (macOS .DS_Store, Windows Thumbs.db/desktop.ini) is written by the file manager into
 // any directory a user has browsed. It is gitignored, never tracked, and never copied into a release
 // — the artifact builder is an allowlist (shouldCopySourceProgram / shouldCopyUpdater), so it cannot
@@ -228,6 +233,7 @@ const listFiles = current => {
     if (entry.isDirectory()) {
       if (!MANIFEST_EXCLUDED_DIRECTORIES.has(entry.name)) rows.push(...listFiles(full));
     } else if (entry.isFile()
+      && !MANIFEST_EXCLUDED_FILES.has(entry.name)
       && path.resolve(full) !== path.resolve(manifestPath)
       && !isManifestEphemeralFile(entry.name)
       && !isManifestCopyOfExistingFile(full)

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T13:09:02.200Z",
+  "generatedAt": "2026-10-13T13:26:39.559Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -4307,6 +4307,10 @@
       "sha256": "a3498ea4215dd05819f20beb65a2239cc2a37a60e24ba964b9309b93adc5fbf9",
       "bytes": 5155
     },
+    "tests/checksum_generator_worktree_metadata_test.cjs": {
+      "sha256": "fc35cd0a3d120051e89f6e0fd7ae50a85d624ac5dd45f9bc563a53dea77b40e1",
+      "bytes": 5271
+    },
     "tests/code_review_findings_reachability_test.cjs": {
       "sha256": "65c8cd092647d503c0c08784b6ef005dc4f21818eb4135c7abe9e93431612afb",
       "bytes": 13451
@@ -6458,6 +6462,10 @@
     "tests/health_storage_admission_integration_test.cjs": {
       "sha256": "f84d45c406d090a4be5ef60da9af011f26e9f8ce93c98f78349687353842b409",
       "bytes": 3532
+    },
+    "tests/helpers/approved_theme_contrast.cjs": {
+      "sha256": "5335999cbaf6ee3bfe1034c09e8ad32306a82511a8d628e0d88c07ffd270e2fd",
+      "bytes": 3176
     },
     "tests/helpers/global-allchat-panel-dom.cjs": {
       "sha256": "4cac9b88219ca38971aa31479de67e8d2d8788055c99c78ccbba69f412294da2",
@@ -10176,12 +10184,12 @@
       "bytes": 8368
     },
     "tools/update_checksums.cjs": {
-      "sha256": "0a3c51e07b3290ffe213c77452a3453829a6b3c6b55f7b93665e3f75abdc1cde",
-      "bytes": 3040
+      "sha256": "deb6bc25b0820d6687fb13f8231beff2e162e823c7a74df6201cb5902d3b3897",
+      "bytes": 3434
     },
     "tools/update_manifest.cjs": {
-      "sha256": "8dc118347c470dcb343aa4684430e1588f678b69c0cd235dae558d1528610dd5",
-      "bytes": 60612
+      "sha256": "0bdfddab06decd866cfcca1d32d4daab6cf3ad882f492911ebedf3ada0b6bd50",
+      "bytes": 61061
     },
     "tools/verify_runtime_archive.cjs": {
       "sha256": "29e2de76fce6e71a1ebe211c3ca4f0685a22539ccf69bb1cd1e7ebc443a62730",
