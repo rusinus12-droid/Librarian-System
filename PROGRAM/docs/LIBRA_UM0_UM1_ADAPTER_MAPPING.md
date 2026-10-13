@@ -1,9 +1,9 @@
 # LIBRA UM0/UM1 대응표 — 현재 reader schema → 새 adapter 표
 
-- 지위: **F-1/F-2의 1차 identity 계약과 normalized 커널·합성 fixture 구현. 나머지 결정·실제 reader/검색 연결은 미완료.** [UM1 identity 계약](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md)을 따른다.
-- 기준: 설계 문서 **v1.1**(2026-10-14) §3~§9·§11~§14, `WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md`, 플러그인 코드 `9f64f43`(이후 문서 커밋에서 코드 변경 없음).
+- 지위: **F-1/F-2 identity 커널과 실제 네 자료 owner reader의 요청 내 read-only 투영 구현. 나머지 결정·통합 검색/GraphStore/dispatch는 미완료.** [identity 계약](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md)과 [reader adapter 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)을 따른다.
+- 기준: 설계 문서 **v1.3**(2026-10-14) §3~§9·§11~§14, `WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md`. §G의 최초 코드 조사 기준은 `9f64f43`; identity 구현 `654803d` 후 실제 reader 연결을 추가했다.
 - 개정: v3에서 §G의 1차 8건을 코드에서 확인했고, v4에서 남아 있던 4건(passage locator 필드, domainStatus 값 집합, 요청 경로의 saveManifest 호출, analysisStatus별 표현 제한)까지 확정했습니다. §G 표에 12행 전부 기록했습니다.
-- 후속: 설계 v1.2에서 F-1/F-2를 결정하고, [순수 identity 커널](../tools/libra_memory_graph_identity.cjs)·[14개 검증](../tests/libra_memory_graph_identity_test.cjs)·[네 자료 normalized fixture](../tests/fixtures/libra_memory_graph_identity_fixture.cjs)를 추가했다. F-9의 합성 fixture 배치도 고정했다. actual hook·physical proof 검증은 아직 실행하지 않았다.
+- 후속: 설계 v1.2의 F-1/F-2·[14개 identity 검증](../tests/libra_memory_graph_identity_test.cjs)에 v1.3의 [11개 reader schema 검증](../tests/libra_memory_graph_reader_contract_test.cjs)·[등록 owner API 검증](../tests/libra_memory_graph_reader_runtime_test.cjs)을 추가했다. plugin_only/server_only 합성 호스트에서 실제 reader/writer를 실행했다. 통합 검색의 actual host·최종 dispatch physical proof 검증은 아직 실행하지 않았다.
 - 표기: 심볼은 `plugins/LIBRA.js` 기준이며 줄 번호는 drift할 수 있어 참고용입니다(≈).
 
 ## A. 자료 adapter · 그래프 계층 대응표 (§4.5, §5, §7.7, §11)
@@ -21,6 +21,8 @@
 | `QueryEngine.retrieve/scoreCandidate` · `EvidenceCompiler.*` | 단일 frontier·평가·선택·출력 | A0의 shortlist + BM25F/dense + RRF + gate, 그리고 lore용 별도 경로(`referenceAuthorityWeight`, `libra.response_lore_rrf.v1`, `libra.memory_lore_rerank.v1`) | §6.2–§6.4 단일 frontier, 개선 시 재평가. BM25F·cosine·exact match는 계산 primitive로만 재사용 | V01–V03, V13, V14 |
 
 ## B. 노드·관계 매핑 (§4.1, §4.4)
+
+§A의 다섯 SourceAdapter 메서드는 목표 인터페이스다. 현재 구현은 `getMemoryGraphProjectionPage`와 내부 순수 투영 facade이며 coverage·node/basis·보수적 derivation을 제공한다. `describeCoverage/enumerateChanged/project/readSource/validateConsumedReadSet` 전체 API나 exhaustive delta·최종 readset 인증을 구현했다고 해석하지 않는다.
 
 | 대상 | 현재 근거 (확인) | 매핑 메모 |
 | --- | --- | --- |
@@ -70,7 +72,7 @@
 
 연결 시나리오: V01, V13, V14, V15, V17.
 
-현재 구현한 [normalized fixture](../tests/fixtures/libra_memory_graph_identity_fixture.cjs)는 13개 node·19개 edge의 투영·identity 연결만 검증한다. State correction journal은 별도 source occurrence다. 아직 단일 frontier 검색·전파·보호 경유·cache 축출·최종 dispatch proof는 실행하지 않았고, 이를 V01/V13/V15/V17 완료로 보고하지 않는다.
+최초 [normalized fixture](../tests/fixtures/libra_memory_graph_identity_fixture.cjs)는 13개 node·19개 edge의 투영·identity 연결을 검증한다. 추가 [owner reader fixture](../tests/fixtures/libra_memory_graph_reader_fixture.cjs)는 실제 writer/producer로 자료를 생성하고 shipped API로 읽는다. plugin_only/server_only 각각 48개 node·81개 edge가 연결되며 State correction journal은 별도 source occurrence다. standalone reader에 host-selected 요청 정보가 없으면 lore의 `hostSelected:null`을 보존한다. 아직 단일 frontier 검색·전파·보호 경유·cache 축출·최종 dispatch proof는 실행하지 않았고, 이를 V01/V13/V15/V17 완료로 보고하지 않는다.
 
 ## F. 구현 전에 기록해야 할 결정
 
@@ -82,7 +84,7 @@
 6. **역할 가중치·전파 감쇠·정지 tolerance** — 고정 평가 세트 ablation으로 결정. WM 수치 이식 금지.
 7. **lore 활성 조건의 소비자 정책 표현** — 현재 `alwaysActive`(force)와 `referenceAuthorityWeight`의 `lore_host_selected:1.50`(bonus)가 병존. §5.3대로 **필수 inclusion 조건**으로 옮기고 bonus 모사를 제거하는 범위(§G-3).
 8. **SpaceBinding 최소 필드 집합과 무효화 시점** — §8 튜플 중 1차 범위, restore/import 포함.
-9. **fixture 배치·명명 — 합성 fixture 배치 결정·구현 완료.** `tests/fixtures/libra_memory_graph_identity_fixture.cjs`, `tests/libra_memory_graph_identity_test.cjs`. actual registered hook·physical readset suite는 후속 단계이며 합성 검증과 구분.
+9. **fixture 배치·명명 — normalized/실제 등록 API의 합성 fixture 구현.** `tests/fixtures/libra_memory_graph_identity_fixture.cjs`, `tests/libra_memory_graph_identity_test.cjs`; 추가 `tests/fixtures/libra_memory_graph_reader_fixture.cjs`, `tests/libra_memory_graph_reader_contract_test.cjs`, `tests/libra_memory_graph_reader_runtime_test.cjs`, `tests/libra_memory_graph_assembly_test.cjs`. actual-host qualification·최종 physical readset suite는 후속 단계이며 등록 API의 합성 호스트 검증과 구분.
 10. **retire·shadow 순서** — 동일 snapshot 고정 하에 UM5/UM6에서 기존 경로 실행을 끊는 시점(§13).
 
 ## G. 코드 확인 결과 (v3에서 채운 항목)
@@ -102,4 +104,4 @@
 | 11 | 정상 요청 경로에서 실제로 실행되는 `saveManifest` | 호출 지점 **33곳**의 감싸는 선언까지 확인. 요청 경로에서 도달하는 것은 **파생 벡터 flush 1곳**: `scheduleUnifiedDerivedVectors`(≈55247) → `setTimeout(...,0)` → `void flushUnifiedDerivedVectors(context)`(await하지 않음) → 내부 `await saveManifest(live.scope, manifest)`(≈55233, 실패 시 ref 롤백, 긍정 증거 `rowStatus===ready`일 때만 반영). 소스 주석(≈65830–65835)이 callee closure의 유일한 enqueue가 setTimeout(0)+void라고 명시. `reconcileCanonicalBranchBeforeRecall*`는 branch audit·`scan`·`eligibleStarts`에서 호출되고 저장은 조건부(`if (changed || branchGuardChanged)`, ≈43516). 나머지 31곳은 canonical job stage·portable import·migration·실패 정리 경로 |
 | 12 | `analysisStatus`별 표현 제한 | `minimumSourceBoundMicro`(≈48798): `exactQuote = row.text.slice(0,500)`, `claims: []`, `authority: source_only`, `excerpt:{role, messageId, startOffset:0, endOffset:exactQuote.length, exactQuote}` → **500자 제한이 offset에 구조적으로 새겨짐**(endOffset=500). `projectMicro`(≈44306)는 `verified`/`minimum_source_bound` 외 status를 `TypeError(LIBRA_NETWORK_MICRO_ANALYSIS_STATUS)`로 거부하고, `verified`는 claims 사용과 span 정합(`exactQuote.length === endOffset - startOffset`)을 요구하며, `minimum_source_bound`는 `[record.excerpt]`만 사용해 projection `kind=source_only`·`authority=source_only`가 됨 |
 
-**§G 조사 기록 유지.** F-1/F-2의 1차 identity 계약과 F-9의 합성 fixture 배치는 구현했다. F-3–F-8/F-10 결정과 실제 owner reader·검색·물리 검증 연결은 남아 있다. 코드에 필드 이름이 존재하는 것과 원본 권위·coverage를 증명하는 것은 구분한다. 줄 번호는 개정 시 drift할 수 있으므로 심볼 이름으로 재확인하세요.
+**§G 조사 기록 유지.** F-1/F-2·F-9와 실제 owner reader의 요청 내 투영을 구현했다. F-3–F-8/F-10 결정·단일 검색·최종 physical readset/dispatch 검증은 남아 있다. 기존 legacy query의 파생 쓰기는 유지보수 이전 대상이며 새 명시적 read-only API와 구분한다. 코드에 필드 이름이 존재하는 것과 원본 권위·coverage를 증명하는 것은 구분한다. 줄 번호는 개정 시 drift할 수 있으므로 심볼 이름으로 재확인하세요.

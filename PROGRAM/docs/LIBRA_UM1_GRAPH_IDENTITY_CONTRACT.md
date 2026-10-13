@@ -1,8 +1,8 @@
 # LIBRA UM1 — 공통 NodeID·EdgeID와 근거 식별 계약
 
-- 버전: 1.0 · 2026-10-14.
-- 기준: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md) v1.2, [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) F-1/F-2, 플러그인 코드 기준 `b5cffc8`(LIBRA.js bytes는 `9f64f43`과 동일).
-- 상태: **F-1/F-2의 1차 계약과 normalized identity 커널·합성 투영 fixture 구현. 실제 owner reader·GraphStore·검색/dispatch 연결은 후속 작업.**
+- 버전: 1.1 · 2026-10-14.
+- 기준: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md) v1.3, [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) F-1/F-2. 최초 identity 구현 `654803d`; 기존 A1/A2/B1 identity·scorer는 유지.
+- 상태: **F-1/F-2의 1차 계약과 normalized identity 커널 구현. 네 자료의 실제 owner reader 연결은 별도 [reader 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)에서 구현·검증했다. GraphStore·검색/dispatch는 후속 작업.**
 - 구현: [libra_memory_graph_identity.cjs](../tools/libra_memory_graph_identity.cjs).
 - 근거: [identity 검증](../tests/libra_memory_graph_identity_test.cjs), [네 자료 fixture](../tests/fixtures/libra_memory_graph_identity_fixture.cjs).
 
@@ -47,7 +47,7 @@ fallback의 revision/epoch/snapshot은 supplied binding과 일치해야 한다. 
 
 State의 동일 qualified field는 lifetime이 증명된 경우 값을 바꿔도 같은 NodeID를 가질 수 있다. 값·certainty·clear/unknown·correction basis는 binding과 관련 엣지를 바꾼다. 자료가 없다는 것을 명시적 clear로 바꾸지 않는다.
 
-canonical/Micro의 typed meaning과 source attachment가 바뀌면 다른 의미 단위다. rendering만 바뀌고 동일 stable unit이 증명되면 NodeID는 유지하고 binding/RepresentationID를 바꾼다. **현재 raw record에서 stable unit을 자동 도출하는 adapter는 이 커밋에 없다.**
+canonical/Micro의 typed meaning과 source attachment가 바뀌면 다른 의미 단위다. rendering만 바뀌고 동일 stable unit이 증명되면 NodeID는 유지하고 binding/RepresentationID를 바꾼다. 실제 reader adapter는 현재 revision-bound unit을 발급하며 raw record에서 stable lifetime을 자동 인증하지 않는다. legacy canonical text를 위한 `source_excerpt` basis kind도 사용한다.
 
 ## 4. 커널 API와 권한 경계
 
@@ -67,7 +67,7 @@ source/entity/meaning/basis/edge를 frozen descriptive handle로 발급하고 ex
 
 이 handle은 storage read capability나 최종 model dispatch 허가가 아니다. 현재성·nonrewinding epoch·scope 전환·취소·source eligibility는 실제 owner/QueryGraphView가 별도로 검증해야 한다. `clear()`는 이 커널의 handle registry만 폐기한다. durable publication, SourceGraph restart 검증, private physical readset, QueryGraphView authority는 구현하지 않았다. serialized ID를 직접 재신뢰하는 importer도 없다.
 
-이 커널은 memory-only reference implementation이다. retained exact tuple/binding 자료를 무제한 production 캐시로 채택하지 않는다. `inspect()`는 `byteBounded:false`, `runtimeIntegrated:false`, `authority:descriptive_only`를 반환한다. F-3의 byte admission·pin·eviction 및 GraphStore에서의 exact identity 충돌 검증·reissue가 후속 gate다.
+이 커널은 memory-only reference implementation이다. retained exact tuple/binding 자료를 무제한 production 캐시로 채택하지 않는다. `inspect()`는 `byteBounded:false`, `runtimeIntegrated:false`, `authority:descriptive_only`를 반환한다. `runtimeIntegrated:false`는 이 커널 단독의 진단이며 실제 reader facade의 `owner_reader_projection_only` 연결과 구분한다. reader 호출은 반환 후 커널 handle registry를 clear한다. F-3의 byte admission·pin·eviction 및 GraphStore에서의 exact identity 충돌 검증·reissue가 후속 gate다.
 
 ## 5. 첫 fixture와 검증 범위
 
@@ -87,7 +87,7 @@ V01의 **투영·식별 전제**, V14의 **관계 identity 전제**만 검증했
 
 ## 6. 다음 구현 gate
 
-1. 실제 canonical/Micro/State/lore reader가 owner-read snapshot과 normalized unit/basis를 만들도록 연결한다. duplicate claim·동명·rendered coordinates·coverage를 보존한다.
-2. stable source/unit/occurrence의 발급 근거를 adapter별로 기록하고, 부족한 자료는 revision-bound로 유지한다. inventory label 존재를 exhaustive owner delta proof로 승격하지 않는다.
+1. 실제 canonical/Micro/State/lore reader의 owner-read snapshot·normalized unit/basis 연결은 [reader adapter 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)에서 구현했다. duplicate claim·동명·rendered coordinates·coverage와 읽기 부작용 경계를 검증했다.
+2. 현재 reader는 revision-bound로 유지한다. stable source/unit/occurrence 발급 근거와 exhaustive owner inventory/delta proof는 후속 작업이다.
 3. F-3/F-4의 byte admission·maintenance/query 경계를 확정하고 SourceGraph generation reader에 붙인다. 그 전에는 현행 production posting 키와 독립 ranker를 교체하지 않는다.
-4. 같은 fixture를 실제 registered hook·owner physical readset 검증으로 확장하고, UM3에서 단일 frontier 검색/전파를 구현한다.
+4. 실제 등록 API의 합성 호스트 검증은 실행했다. 최종 owner physical readset/dispatch와 actual-host qualification으로 확장하고, UM3에서 단일 frontier 검색/전파를 구현한다.

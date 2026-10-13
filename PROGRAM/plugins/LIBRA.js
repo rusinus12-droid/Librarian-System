@@ -44677,11 +44677,449 @@ function createLibraReadonlySourceContext(owner) {
       frontier:{postingKeys:terms.size,pageSize,policy:'access_only'}});
     return Object.freeze({reconcile,reconcilePaged,query,invalidateDependencies,scanDense,inspect});
   };
-  return Object.freeze({ project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
+  return Object.freeze({ fingerprint: sha256Hex, project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
     diagnostics: () => activeRegistry?.diagnostics() || { schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: 0,
       identityCoverage: 'partial', pathBonus: 0, costs: {} } });
 });
     // END LIBRA MEMORY NETWORK
+    // BEGIN LIBRA MEMORY GRAPH
+    const createLibraMemoryGraphIdentity = (function createMemoryGraphIdentity({ fingerprint } = {}) {
+  if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_FINGERPRINT_REQUIRED');
+  const schema = 'libra.memory_graph_identity.v1';
+  const labels = new Map(), bindings = new Map();
+  let issued = new WeakMap();
+  const fail = reason => { throw new TypeError('LIBRA_GRAPH_' + reason); };
+  const id = value => typeof value === 'string' && value.trim().length ? value : fail('IDENTIFIER_REQUIRED');
+  const copy = (value, path = new Set()) => {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || Object.is(value, -0)) fail('JSON_NUMBER_INVALID');
+      return value;
+    }
+    if (!value || typeof value !== 'object') fail('JSON_DATA_REQUIRED');
+    if (path.has(value)) fail('JSON_CYCLE');
+    const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
+    if (!array && proto !== Object.prototype && proto !== null) fail('JSON_DATA_REQUIRED');
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(value);
+    if (keys.some(key => typeof key !== 'string' || (array && key === 'length' ? false
+      : !descriptors[key].enumerable || !Object.hasOwn(descriptors[key], 'value')))) fail('JSON_DATA_REQUIRED');
+    path.add(value);
+    let result;
+    if (array) {
+      if (keys.length !== value.length + 1 || keys.some(key => key !== 'length' && !/^(0|[1-9][0-9]*)$/.test(key))) fail('JSON_ARRAY_INVALID');
+      result = Array.from({ length: value.length }, (_, index) => {
+        if (!Object.hasOwn(descriptors, String(index))) fail('JSON_ARRAY_INVALID');
+        return copy(descriptors[index].value, path);
+      });
+    } else result = Object.fromEntries(keys.sort().map(key => [key, copy(descriptors[key].value, path)]));
+    path.delete(value);
+    return result;
+  };
+  const freeze = value => {
+    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
+    return value;
+  };
+  const fields = (value, required, optional = []) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || required.some(key => !Object.hasOwn(value, key))
+      || Object.keys(value).some(key => !required.includes(key) && !optional.includes(key))) fail('FIELDS_INVALID');
+    return value;
+  };
+  const epoch = value => Number.isSafeInteger(value) && value >= 0 ? value : fail('EPOCH_INVALID');
+  const objectIdentity = input => {
+    const value = copy(input);
+    const common = ['kind', 'ownerNamespace', 'originScope'];
+    if (value?.kind === 'stable') {
+      fields(value, [...common, 'objectUUID', 'birthIncarnation']);
+      for (const key of [...common, 'objectUUID', 'birthIncarnation']) id(value[key]);
+    } else if (value?.kind === 'revision_bound') {
+      fields(value, [...common, 'recordKind', 'recordKey', 'revision', 'restoreEpoch', 'snapshot']);
+      for (const key of [...common, 'recordKind', 'recordKey']) id(value[key]);
+      if (!['string', 'number'].includes(typeof value.revision) || value.revision === '') fail('REVISION_REQUIRED');
+      epoch(value.restoreEpoch);
+    } else fail('OBJECT_IDENTITY_REQUIRED');
+    return value;
+  };
+  const binding = input => {
+    const value = copy(input);
+    fields(value, ['owner', 'scopeKey', 'worldlineId', 'restoreEpoch', 'revision', 'locator', 'body'], ['view']);
+    for (const key of ['owner', 'scopeKey', 'worldlineId']) id(value[key]);
+    epoch(value.restoreEpoch);
+    if (!['string', 'number'].includes(typeof value.revision) || value.revision === '') fail('REVISION_REQUIRED');
+    return copy({ ...value, view: value.view ?? null });
+  };
+  const frame = value => JSON.stringify([value.owner, value.scopeKey, value.worldlineId, value.restoreEpoch, value.view]);
+  const checkRevisionIdentity = (identity, bound) => {
+    if (identity.kind === 'revision_bound' && (identity.revision !== bound.revision
+      || identity.restoreEpoch !== bound.restoreEpoch || JSON.stringify(identity.snapshot) !== JSON.stringify(bound.body))) fail('REVISION_BINDING_MISMATCH');
+  };
+  const label = (prefix, exact, table) => {
+    const hash = fingerprint(exact);
+    if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) fail('FINGERPRINT_INVALID');
+    const key = prefix + hash;
+    if (table.has(key) && table.get(key) !== exact) fail('IDENTITY_LABEL_COLLISION');
+    return key;
+  };
+  const get = (handle, type) => {
+    const record = handle && issued.get(handle);
+    if (!record || type && record.type !== type) fail('HANDLE_UNAVAILABLE');
+    return record;
+  };
+  const emit = (type, tuple, value, descriptor, privateState = {}) => {
+    const exact = JSON.stringify(tuple), bindingExact = JSON.stringify(value);
+    const prefix = type === 'node' ? 'libra.node.v1:' : type === 'basis' ? 'libra.basis.v1:' : 'libra.edge.v1:';
+    const key = label(prefix, exact, labels);
+    const bindingId = label('libra.binding.v1:', JSON.stringify([key, bindingExact]), bindings);
+    // Validate both labels before retaining anything: a failed binding collision is atomic.
+    labels.set(key, exact); bindings.set(bindingId, JSON.stringify([key, bindingExact]));
+    const handle = freeze({ schema, id: key, bindingId, ...descriptor });
+    issued.set(handle, { type, exact, bindingExact, binding: freeze(value), ...privateState });
+    return handle;
+  };
+  const source = ({ identity, binding: input } = {}) => {
+    const normalized = objectIdentity(identity), bound = binding(input);
+    checkRevisionIdentity(normalized, bound);
+    return emit('node', ['source', normalized], bound, { layer: 'source', identityCoverage: normalized.kind },
+      { partition: JSON.stringify([normalized.ownerNamespace, normalized.originScope]) });
+  };
+  const entity = ({ identity, binding: input } = {}) => {
+    const normalized = objectIdentity(identity), bound = binding(input);
+    checkRevisionIdentity(normalized, bound);
+    return emit('node', ['entity', normalized], bound, { layer: 'entity', identityCoverage: normalized.kind });
+  };
+  const meaningKinds = new Set(['canonical_fact', 'micro_claim', 'source_excerpt', 'state_field', 'state_item', 'lore_passage']);
+  const meaning = ({ source: origin, kind, identity, anchor, binding: input } = {}) => {
+    const parent = get(origin, 'node');
+    if (origin.layer !== 'source') fail('SOURCE_REQUIRED');
+    if (!meaningKinds.has(kind)) fail('MEANING_KIND_INVALID');
+    const bound = binding(input), unitIdentity = objectIdentity(identity), normalized = copy(anchor);
+    checkRevisionIdentity(unitIdentity, bound);
+    if (parent.partition !== JSON.stringify([unitIdentity.ownerNamespace, unitIdentity.originScope])) fail('SOURCE_PARTITION_MISMATCH');
+    if (!normalized || typeof normalized !== 'object') fail('ANCHOR_REQUIRED');
+    if (frame(parent.binding) !== frame(bound)) fail('FRAME_MISMATCH');
+    return emit('node', ['meaning', kind, parent.exact, unitIdentity, normalized], [parent.binding, bound], {
+      layer: 'meaning', kind, sourceId: origin.id,
+      identityCoverage: origin.identityCoverage === 'stable' && unitIdentity.kind === 'stable' ? 'stable' : 'revision_bound'
+    });
+  };
+  const basisKinds = new Set(['canonical_claim', 'source_excerpt', 'micro_span', 'state_field_evidence', 'state_correction', 'lore_passage', 'entity_attachment', 'association']);
+  const basis = ({ source: origin, kind, identity, anchor, binding: input } = {}) => {
+    const parent = get(origin, 'node');
+    if (origin.layer !== 'source') fail('SOURCE_REQUIRED');
+    if (!basisKinds.has(kind)) fail('BASIS_KIND_INVALID');
+    const normalized = objectIdentity(identity), bound = binding(input), occurrence = copy(anchor);
+    checkRevisionIdentity(normalized, bound);
+    if (parent.partition !== JSON.stringify([normalized.ownerNamespace, normalized.originScope])) fail('SOURCE_PARTITION_MISMATCH');
+    if (!occurrence || typeof occurrence !== 'object') fail('ANCHOR_REQUIRED');
+    if (frame(parent.binding) !== frame(bound)) fail('FRAME_MISMATCH');
+    return emit('basis', ['basis', kind, parent.exact, normalized, occurrence], [parent.binding, bound], {
+      kind, sourceId: origin.id, identityCoverage: origin.identityCoverage === 'stable' && normalized.kind === 'stable' ? 'stable' : 'revision_bound'
+    });
+  };
+  const predicates = new Set(['mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from', 'updates', 'clears',
+    'supersedes', 'follows', 'fulfills', 'reopens', 'defines', 'applies_to', 'contradicts', 'semantic_affinity']);
+  const edge = ({ from, to, predicate, qualifier = {}, validTime = null, basis: reason, binding: input } = {}) => {
+    const left = get(from, 'node'), right = get(to, 'node'), evidence = get(reason, 'basis');
+    const bound = binding(input);
+    if (!predicates.has(predicate)) fail('PREDICATE_INVALID');
+    if (reason.kind === 'association' && predicate !== 'semantic_affinity') fail('ASSOCIATION_AUTHORITY');
+    // Meaning/basis bindings retain the source and their own current descriptive binding.
+    const own = record => Array.isArray(record.binding) ? record.binding[1] : record.binding;
+    for (const record of [left, right, evidence]) if (frame(own(record)) !== frame(bound)) fail('FRAME_MISMATCH');
+    return emit('edge', ['edge', left.exact, right.exact, id(predicate), copy(qualifier), copy(validTime), evidence.exact],
+      [left.binding, right.binding, evidence.binding, bound], {
+        from: from.id, to: to.id, predicate, basisId: reason.id,
+        identityCoverage: [from, to, reason].every(handle => handle.identityCoverage === 'stable') ? 'stable' : 'revision_bound'
+      });
+  };
+  const sameIdentity = (left, right) => get(left).type === get(right).type && get(left).exact === get(right).exact;
+  const sameBinding = (left, right) => sameIdentity(left, right) && get(left).bindingExact === get(right).bindingExact;
+  const clear = () => { issued = new WeakMap(); labels.clear(); bindings.clear(); };
+  return Object.freeze({ source, entity, meaning, basis, edge, sameIdentity, sameBinding, clear,
+    inspect: () => ({ schema, retainedIdentityKeys: labels.size, retainedBindingKeys: bindings.size,
+      authority: 'descriptive_only', byteBounded: false, runtimeIntegrated: false }) });
+});
+    const createLibraMemoryGraphReaders = (function createMemoryGraphReaders({ identity, normalizeName, digestClaim } = {}) {
+  if (!identity || typeof identity.meaning !== 'function') throw new TypeError('LIBRA_GRAPH_IDENTITY_REQUIRED');
+  const array = value => Array.isArray(value) ? value : [];
+  const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const string = value => typeof value === 'string' ? value : '';
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const normalized = normalizeName || (value => string(value).normalize('NFKC').trim().toLowerCase());
+  const own = (value, key) => Object.hasOwn(object(value), key);
+  const project = (snapshot, { nodeLimit = 2048 } = {}) => {
+    const frame = clone(snapshot.frame);
+    if (!frame.owner || !frame.scopeKey || !frame.worldlineId || !Number.isSafeInteger(frame.restoreEpoch)
+      || frame.restoreEpoch < 0 || !Number.isSafeInteger(nodeLimit) || nodeLimit < 1 || nodeLimit > 8192) throw new TypeError('LIBRA_GRAPH_READER_FRAME_INVALID');
+    const namespace = 'libra', nodes = new Map(), edges = new Map(), bases = new Map(), units = [];
+    const families = Object.fromEntries(['canonical', 'micro', 'state', 'lore'].map(kind => [kind,
+      { records: 0, units: 0, reasons: [], representation: kind === 'micro' ? 'producer_bounded' : kind === 'lore' ? 'rendered_passages' : 'stored_schema' }]));
+    const note = (family, reason) => { if (!families[family].reasons.includes(reason)) families[family].reasons.push(reason); };
+    const check = () => { if (nodes.size >= nodeLimit) throw new Error('LIBRA_GRAPH_NODE_BUDGET'); };
+    const bound = (key, revision, body) => ({ ...frame, revision, locator: { recordKey: key }, body: clone(body) });
+    const legacy = (key, revision, body, originScope = frame.scopeKey, recordKind = 'projection') => ({
+      kind: 'revision_bound', ownerNamespace: namespace, originScope, recordKind, recordKey: key,
+      revision, restoreEpoch: frame.restoreEpoch, snapshot: clone(body) });
+    const keep = node => { nodes.set(node.id, node); return node; };
+    const source = (family, key, revision, body, originScope = frame.scopeKey) => {
+      check(); families[family].records++;
+      return { node: keep(identity.source({ identity: legacy(key, revision, body, originScope, family), binding: bound(key, revision, body) })),
+        family, key, revision, body, originScope };
+    };
+    const meaning = (src, kind, key, body, anchor, metadata) => {
+      check(); const node = keep(identity.meaning({ source: src.node, kind,
+        identity: legacy(key, src.revision, body, src.originScope), anchor,
+        binding: bound(key, src.revision, body) }));
+      units.push({ nodeId: node.id, family: src.family, ...clone(metadata) }); families[src.family].units++;
+      return node;
+    };
+    const basis = (src, kind, key, body, anchor) => {
+      const value = identity.basis({ source: src.node, kind, identity: legacy(key, src.revision, body, src.originScope),
+        anchor, binding: bound(key, src.revision, body) }); bases.set(value.id, value); return value;
+    };
+    const link = (from, to, predicate, reason, qualifier = {}, validTime = null) => {
+      if (!to || !reason) return;
+      const body = { from: from.id, to: to.id, predicate, qualifier, validTime, basisId: reason.id };
+      const value = identity.edge({ from, to, predicate, qualifier, validTime, basis: reason,
+        binding: bound('edge:' + reason.id, 1, body) }); edges.set(value.id, value);
+    };
+    const attempt = (family, run) => { try { run(); } catch (error) {
+      if (error.message === 'LIBRA_GRAPH_NODE_BUDGET') note(family, 'node_work_budget'); else throw error;
+    } };
+    const registry = object(snapshot.registry?.record), entityById = new Map(), names = new Map();
+    if (registry.scopeKey && registry.scopeKey !== frame.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_SCOPE_INVALID');
+    const counts = new Map();
+    for (const row of array(registry.entities)) counts.set(row.id, (counts.get(row.id) || 0) + 1);
+    for (const row of array(registry.entities)) {
+      if (row.validated !== true || !string(row.id) || counts.get(row.id) !== 1) continue;
+      if (['inactive', 'superseded', 'deleted'].includes(row.status)) continue;
+      if (nodes.size >= nodeLimit) break;
+      const key = string(snapshot.registry.key) + '#' + row.id, revision = registry.fingerprint || 'registry_without_revision';
+      const node = keep(identity.entity({ identity: legacy(key, revision, row), binding: bound(key, revision, row) }));
+      entityById.set(row.id, node);
+      for (const name of [row.name, ...array(row.aliases)]) {
+        const token = normalized(name); if (!token) continue;
+        if (!names.has(token)) names.set(token, new Set()); names.get(token).add(row.id);
+      }
+    }
+    const entity = value => entityById.get(string(value)) || null;
+    const byName = value => { const found = names.get(normalized(value)); return found?.size === 1 ? entity([...found][0]) : null; };
+    const canonicalFacts = new Map(), microSpans = new Map();
+
+    for (const row of array(snapshot.canonical)) attempt('canonical', () => {
+      const record = row.record;
+      if (!record || !row.key || record.memoryId !== row.ref?.memoryId || record.revision !== row.ref?.revision
+        || record.sourceDigest !== row.ref?.sourceDigest) { note('canonical', 'record_ref_mismatch'); return; }
+      const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey);
+      const artifact = object(record.canonicalArtifact);
+      if (!['libra.canonical_artifact.v4', 'libra.canonical_artifact.v5'].includes(artifact.schema)) {
+        const text = string(record.text);
+        if (text) {
+          const anchor = { coordinateSpace: 'record_text', start: 0, end: text.length };
+          const node = meaning(src, 'source_excerpt', row.key + '#text', { text }, anchor,
+            { text, semanticRole: 'canonical_legacy_excerpt', authority: 'source_only' });
+          link(node, src.node, 'evidenced_by', basis(src, 'source_excerpt', row.key + '#text-basis', { text }, anchor));
+        }
+        note('canonical', 'typed_schema_unavailable'); return;
+      }
+      const duplicate = new Map();
+      for (const fact of array(artifact.facts)) duplicate.set(fact.tempFactId, (duplicate.get(fact.tempFactId) || 0) + 1);
+      array(artifact.facts).forEach((fact, index) => {
+        const contract = object(snapshot.claimContracts?.[fact.claimKind]);
+        if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.field || contract.domain !== fact.domain) {
+          note('canonical', 'claim_schema_or_identity_ambiguous'); return;
+        }
+        const subjectId = row.entityRefs?.[fact.subjectTempRef] || '', targetIds = new Set();
+        for (const ref of [fact.targetTempRef, typeof fact.values?.[contract.value] === 'string' && /Ref$/.test(contract.value) ? fact.values[contract.value] : '']) {
+          if (ref && row.entityRefs?.[ref]) targetIds.add(row.entityRefs[ref]);
+          else if (ref) note('canonical', 'target_mapping_unavailable');
+        }
+        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field };
+        const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field });
+        if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
+        const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
+        link(node, src.node, 'evidenced_by', why);
+        link(node, entity(subjectId), 'subject_of', why);
+        for (const targetId of targetIds) {
+          link(node, entity(targetId), 'target_of', why);
+          if (!entity(targetId)) note('canonical', 'target_mapping_unavailable');
+        }
+        if (!entity(subjectId) && fact.domain !== 'narrative') note('canonical', 'subject_mapping_unavailable');
+        canonicalFacts.set(JSON.stringify([record.memoryId, record.revision, fact.tempFactId]), { node, why, fact,
+          subjectId, targetIds: [...targetIds], field: contract.field, sourceDigest: record.sourceDigest });
+      });
+    });
+
+    const validSpan = (span, receipt) => span && ['user', 'assistant'].includes(span.role)
+      && string(receipt?.[span.role]?.chatId) === string(span.messageId) && span.messageId
+      && Number.isSafeInteger(span.startOffset) && Number.isSafeInteger(span.endOffset)
+      && span.startOffset >= 0 && span.endOffset > span.startOffset
+      && typeof span.exactQuote === 'string' && span.exactQuote.length === span.endOffset - span.startOffset
+      && string(receipt?.[span.role]?.text).slice(span.startOffset, span.endOffset) === span.exactQuote;
+    for (const row of array(snapshot.micro)) attempt('micro', () => {
+      const record = row.record, receipt = row.receipt, head = row.head;
+      if (row.status !== 'verified' || !record || !receipt || !head || record.schema !== 'libra.micro_memory.v1'
+        || head.schema !== 'libra.micro_memory_head.v1' || head.scopeKey !== record.scopeKey || head.worldlineId !== record.worldlineId
+        || Number(head.sessionEpoch) !== Number(record.sessionEpoch) || Number(head.turn) !== Number(record.turn)
+        || !['verified', 'minimum_source_bound'].includes(record.analysisStatus)
+        || record.sourceRevisionId !== receipt.revisionId || record.sourceDigest !== receipt.sourceDigest
+        || record.scopeKey !== receipt.scopeKey || record.worldlineId !== receipt.worldlineId
+        || Number(record.turn) !== Number(receipt.turn) || Number(record.sessionEpoch) !== Number(receipt.sessionEpoch)
+        || record.receiptKey !== row.receiptKey || head.recordKey !== row.recordKey
+        || head.sourceRevisionId !== record.sourceRevisionId || head.sourceDigest !== record.sourceDigest
+        || head.analysisRevisionId !== record.analysisRevisionId || head.analysisStatus !== record.analysisStatus) {
+        note('micro', row.reason || 'source_head_record_binding_unavailable'); return;
+      }
+      const claims = record.analysisStatus === 'verified' ? array(record.claims) : [];
+      const spans = claims.length ? claims.map(claim => claim.evidence) : [record.excerpt];
+      if (claims.length > 16 || !spans.length || spans.some(span => !validSpan(span, receipt))) { note('micro', 'exact_source_span_invalid'); return; }
+      if (record.analysisStatus === 'minimum_source_bound' && (array(record.claims).length || spans[0].exactQuote.length > 500)) {
+        note('micro', 'source_only_representation_invalid'); return;
+      }
+      if (record.analysisStatus === 'verified' && !claims.length) { note('micro', 'verified_claims_unavailable'); return; }
+      const src = source('micro', row.recordKey, record.analysisRevisionId,
+        { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey);
+      spans.forEach((span, index) => {
+        const claim = claims[index] || null, body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId };
+        const node = meaning(src, claim ? 'micro_claim' : 'source_excerpt', row.recordKey + '#units/' + index, body,
+          { index, role: span.role, messageId: span.messageId, startOffset: span.startOffset, endOffset: span.endOffset },
+          { text: claim ? string(claim.text) : span.exactQuote, semanticRole: claim ? 'micro_candidate' : 'source_only',
+            authority: claim ? 'source_verified_candidate' : 'source_only', sourceSpan: clone(span),
+            representationCoverage: claim ? 'producer_bounded_claim' : 'producer_bounded_excerpt' });
+        const why = basis(src, 'micro_span', row.recordKey + '#span/' + index, body, { span, receiptKey: record.receiptKey });
+        link(node, src.node, 'evidenced_by', why);
+        for (const [role, name] of [['subject_of', claim?.actor], ['target_of', claim?.target], ['subject_of', claim?.stateIntent?.target?.entityName]]) {
+          if (!name) continue; const target = byName(name);
+          if (target) link(node, target, role, why); else note('micro', 'entity_name_ambiguous_or_unavailable');
+        }
+        // A quote can support several different claims. State evidence names the
+        // owner's claim digest; a span alone cannot choose one claim occurrence.
+        const claimDigest = claim && typeof digestClaim === 'function' ? string(digestClaim(claim)) : '';
+        if (claimDigest) {
+          const key = JSON.stringify([record.receiptKey, record.sourceRevisionId, record.sourceDigest,
+            record.analysisRevisionId, claimDigest, span.role, span.messageId, span.startOffset, span.endOffset, span.exactQuote]);
+          microSpans.set(key, microSpans.has(key) ? null : { node, why });
+        }
+      });
+    });
+
+    const state = snapshot.state;
+    if (state?.view?.head?.scopeKey && state.view.head.scopeKey !== frame.scopeKey) throw new Error('LIBRA_GRAPH_STATE_SCOPE_INVALID');
+    if (state?.view?.head?.schema === 'libra.continuity_state.v2') attempt('state', () => {
+      const head = state.view.head, authority = object(state.view.authority);
+      const src = source('state', state.key, state.revision, { head, authority });
+      const corrections = new Map();
+      for (const row of array(state.corrections?.records)) {
+        if (row.status !== 'active' || row.scopeKey !== frame.scopeKey || row.worldlineId !== frame.worldlineId) continue;
+        if (corrections.has(row.correctionId)) corrections.set(row.correctionId, null); else corrections.set(row.correctionId, row);
+      }
+      const correctionSources = new Map();
+      const projectFields = (domain, row, values, evidence, clears = {}, correctionFields = {}, clearCorrections = {}) => {
+        const fields = [...new Set([...Object.keys(object(values)), ...Object.keys(object(clears)), ...Object.keys(object(clearCorrections))])];
+        for (const field of fields) {
+          const isClear = !own(values, field) && (own(clears, field) || own(clearCorrections, field));
+          if (own(values, field) && (own(clears, field) || own(clearCorrections, field))) { note('state', 'field_value_clear_conflict'); continue; }
+          const proof = object(isClear ? clears[field] : evidence[field]), correction = object(isClear ? clearCorrections[field] : correctionFields[field]);
+          const fieldValue = isClear ? null : values[field], items = Array.isArray(fieldValue) && fieldValue.length ? fieldValue : [fieldValue];
+          for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+            const hasProvenance = Object.keys(proof).length > 0 || !!correction.correctionId;
+            const body = { domain, entityId: string(row.id), field, value: items[itemIndex], availability: isClear ? 'clear' : 'value',
+              fieldEvidence: proof, correction, authority, certainty: row.certainty || 'unknown',
+              provenanceStatus: hasProvenance ? 'recorded' : 'unknown', domainStatus: head.domainStatus || {},
+              headBasis: head.basis || null, headThroughTurn: head.throughTurn ?? null };
+            const selector = { domain, entityId: string(row.id), field, itemIndex: Array.isArray(fieldValue) ? itemIndex : null };
+            const key = state.key + '#fields/' + JSON.stringify(selector);
+            const role = correction.correctionId ? 'user_corrected' : !hasProvenance ? 'state_unprovenanced'
+              : authority.current === true && authority.pending !== true ? 'state_current' : 'state_last_known';
+            const node = meaning(src, Array.isArray(fieldValue) && fieldValue.length ? 'state_item' : 'state_field', key, body, selector,
+              { semanticRole: role, ...body, text: JSON.stringify(items[itemIndex]) });
+            if (!hasProvenance) { note('state', 'field_provenance_unknown'); continue; }
+            if (correction.correctionId) {
+              const record = corrections.get(correction.correctionId), nativeDomain = { character: 'characters', relationship: 'relationships' }[domain] || domain;
+              const matching = record && array(record.compiledAfter?.patches).filter(patch => patch.domain === nativeDomain
+                && (patch.entityId === row.id || domain === 'narrative')
+                && (isClear ? array(patch.clear).includes(field) : own(patch.set, field) && JSON.stringify(patch.set[field]) === JSON.stringify(fieldValue)));
+              if (!matching?.length) { note('state', 'correction_field_basis_unresolved'); continue; }
+              let correctionSource = correctionSources.get(record.correctionId);
+              if (!correctionSource) { correctionSource = source('state', state.correctionKey + '#' + record.correctionId,
+                state.revision, record); correctionSources.set(record.correctionId, correctionSource); }
+              const why = basis(correctionSource, 'state_correction', key + '#correction', { record, matching, selector }, selector);
+              link(node, correctionSource.node, 'evidenced_by', why, { field, availability: body.availability });
+              link(node, entity(row.id), 'subject_of', why, { field });
+              if (/Ref$/.test(field)) link(node, entity(fieldValue), 'target_of', why, { field });
+              continue; // The overridden canonical field evidence is not the current value's derivation.
+            }
+            const why = basis(src, 'state_field_evidence', key + '#evidence', { proof, selector }, selector);
+            link(node, src.node, 'evidenced_by', why, { field, availability: body.availability });
+            link(node, entity(domain === 'relationship' ? row.subjectId : row.id), 'subject_of', why, { field });
+            if (domain === 'relationship') link(node, entity(row.targetId), 'target_of', why, { field, dimension: row.dimension });
+            if (/Ref$/.test(field)) link(node, entity(fieldValue), 'target_of', why, { field });
+            let linked = false;
+            for (const assertionId of array(proof.assertionIds)) {
+              const fact = canonicalFacts.get(JSON.stringify([proof.memoryId, proof.revision, assertionId]));
+              const sameTarget = domain === 'relationship' ? fact?.subjectId === row.subjectId
+                && fact.targetIds.includes(row.targetId) && fact.fact.dimension === row.dimension : fact?.subjectId === row.id;
+              if (!fact || fact.sourceDigest !== proof.sourceDigest || !sameTarget || fact.field !== field) continue;
+              link(node, fact.node, 'derived_from', why, { field }); linked = true;
+            }
+            if (proof.schema === 'libra.micro_state_field_evidence.v1' && proof.status === 'state_admitted') {
+              const micro = microSpans.get(JSON.stringify([proof.receiptKey, proof.sourceRevisionId, proof.sourceDigest,
+                proof.analysisRevisionId, proof.claimDigest, proof.role, proof.messageId, proof.startOffset, proof.endOffset, proof.exactQuote]));
+              if (micro) { link(node, micro.node, 'derived_from', why, { field }); linked = true; }
+            }
+            if (!linked) note('state', 'field_basis_outside_page_or_unresolved');
+          }
+        }
+      };
+      for (const [domain, collection] of [['character', 'characters'], ['relationship', 'relationships'], ['world', 'world']]) {
+        for (const row of array(head[collection])) projectFields(domain, row, row.state, object(row.fieldEvidence),
+          object(row.clearedFieldEvidence), object(row.fieldCorrectionProvenance), object(row.clearedFieldCorrectionProvenance));
+      }
+      const narrative = object(head.narrative), fields = Object.fromEntries(Object.entries(narrative)
+        .filter(([name]) => !['fieldEvidence', 'fieldCorrectionProvenance', 'clearedFieldCorrectionProvenance', 'clearedFieldEvidence'].includes(name)));
+      projectFields('narrative', { id: 'narrative_current', certainty: 'unknown' }, fields, object(narrative.fieldEvidence),
+        object(narrative.clearedFieldEvidence), object(narrative.fieldCorrectionProvenance), object(narrative.clearedFieldCorrectionProvenance));
+    }); else note('state', 'state_view_unavailable');
+
+    const lore = object(snapshot.lore), index = object(lore.index);
+    for (const row of array(lore.entries)) attempt('lore', () => {
+      if (!row.identity || typeof row.rendered !== 'string') { note('lore', 'entry_rendering_unavailable'); return; }
+      const activation = object(row.activation);
+      const body = { entry: row.entry, rendered: row.rendered, activation, selectionBinding: lore.selectionBinding || {} };
+      const src = source('lore', 'lore:' + row.identity, lore.revision, body);
+      for (const [position, passage] of array(row.passages).entries()) {
+        if (passage.coordinateSpace !== 'rendered' || !Number.isSafeInteger(passage.start) || !Number.isSafeInteger(passage.end)
+          || passage.start < 0 || passage.end <= passage.start || passage.end > row.rendered.length) { note('lore', 'rendered_passage_locator_invalid'); continue; }
+        const text = row.rendered.slice(passage.start, passage.end), selector = { coordinateSpace: 'rendered', start: passage.start, end: passage.end, position };
+        const unitBody = { passage, text, activation };
+        const node = meaning(src, 'lore_passage', 'lore:' + row.identity + '#passages/' + position, unitBody, selector,
+          { text, semanticRole: 'background_setting', locator: clone(passage), activation: clone(activation),
+            representationCoverage: { coordinateSpace: 'rendered', rawOffsetAvailable: false } });
+        const why = basis(src, 'lore_passage', 'lore:' + row.identity + '#basis/' + position, unitBody, selector);
+        link(node, src.node, 'evidenced_by', why);
+        const native = array(index.entries).find(entry => entry.identity === row.identity);
+        const nativePassage = array(native?.passages).find(p => p.start === passage.start && p.end === passage.end);
+        for (const mention of array(nativePassage?.mentions)) {
+          const approved = array(index.links).some(link => link.identity === row.identity && link.entityId === mention.entityId
+            && link.via === 'name_reference' && ['reference', 'confirmed'].includes(link.resolution));
+          if (approved) link(node, entity(mention.entityId), 'mentions', why);
+          else if (mention.ambiguous) note('lore', 'ambiguous_or_removed_reference');
+        }
+      }
+    });
+    for (const [family, reasons] of Object.entries(object(snapshot.pending))) for (const reason of array(reasons)) note(family, string(reason) || 'reader_unavailable');
+    for (const reason of array(index.status?.reasons)) if (index.status?.partial) note('lore', reason);
+    return { schema: 'libra.memory_graph_projection.v1', nodes: [...nodes.values()], edges: [...edges.values()], bases: [...bases.values()], units,
+      coverage: { scope: 'owner_reader_page', inventory: clone(snapshot.inventory || {}), identity: 'revision_bound', families,
+        projectionComplete: Object.values(families).every(family => !family.reasons.length) },
+      authority: 'descriptive_only', modelDispatchEligible: false, byteBounded: false, providerCalls: 0, documentEmbeddingCalls: 0,
+      runtimeIntegrated: 'owner_reader_projection_only' };
+  };
+  return Object.freeze({ project });
+});
+    // END LIBRA MEMORY GRAPH
 
     const tokenize = value => Array.from(new Set(tokenStream(value))).slice(0, 800);
 
@@ -67336,6 +67774,114 @@ ${string(queryBundle?.sceneText || '')}`;
       return clone({schema:CANONICAL_READER_PAGE_SCHEMA,scopeKey:string(context.scope.scopeKey),items,nextCursor:hasMore?worldManagerEncodeCursor('lcr1',nextOffset,identity):'',hasMore,total:refs.length,limit:pageLimit,
         query:compact(query||'',500),worldlineId:resolved.worldlineId,cutoffTurn:Number.isFinite(resolved.cutoffTurn)?resolved.cutoffTurn:null,requestLocalReadOnly:true});
     };
+    // Explicit owner-reader projection only. It does not run from normal recall or model dispatch.
+    const getMemoryGraphProjectionPage = async (options = {}) => {
+      for (const name of Object.keys(asObject(options))) if (!['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'].includes(name)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
+      const limit = Math.max(1, Math.min(50, Number(options.limit || 20)));
+      const nodeLimit = Math.max(1, Math.min(8192, Number(options.nodeLimit || 2048)));
+      if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(nodeLimit)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
+      const requestId = id('graph_reader');
+      let captured = null, graphIdentity = null;
+      try {
+        captured = await readonlySourceContext.capture({ requestId, durationMs: 30000 });
+        const request = { handle: captured.handle, requestId };
+        const context = await resolveContext(), scope = context.scope;
+        if (scope.scopeKey !== captured.summary.scope.scopeKey || options.expectedScopeKey && options.expectedScopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
+        const epoch = Number(state.microRestoreGeneration || 0), pairs = buildPairs(context.chat, scope.scopeKey);
+        const manifest = await loadManifest(scope, pairs.length), active = await readUnifiedWorldlineView(scope, manifest, pairs);
+        const resolved = await resolveWorldManagerHistoryWorldline(scope);
+        const refs = canonicalReaderRefs(active.manifest, resolved);
+        const frame = { owner: 'libra:' + captured.summary.route.mode, scopeKey: scope.scopeKey,
+          worldlineId: resolved.worldlineId, restoreEpoch: epoch,
+          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null } };
+        const pageIdentity = { scopeKey: scope.scopeKey, worldlineId: resolved.worldlineId, epoch,
+          publicationGeneration: captured.summary.publicationGeneration,
+          refs: refs.map(canonicalReaderRefIdentity), turns: active.pairs.map(pair => Number(pair.turn)) };
+        const canonicalOffset = worldManagerDecodeCursor('mgc1', options.canonicalCursor || '', pageIdentity, refs.length, 'LIBRA_GRAPH_CANONICAL_CURSOR_INVALID');
+        const turns = active.pairs.map(pair => Number(pair.turn));
+        const microOffset = worldManagerDecodeCursor('mgm1', options.microCursor || '', pageIdentity, turns.length, 'LIBRA_GRAPH_MICRO_CURSOR_INVALID');
+        const readbacks = [], pending = { canonical: [], micro: [], state: [], lore: [] };
+        const read = async (keyValue, load) => { const value = await load(); readbacks.push({ key: keyValue, body: stableReferenceJson(value), load }); return value; };
+        await read(key.manifest(scope), () => storage.getVerifiedJson(key.manifest(scope), scope, null));
+        const registry = await read(key.entityRegistry(scope), () => storage.getVerifiedJson(key.entityRegistry(scope), scope, null));
+        const canonical = [];
+        for (const ref of refs.slice(canonicalOffset, canonicalOffset + limit)) {
+          const memory = await read(ref.key, () => loadMemoryRef(ref));
+          if (!memory) { pending.canonical.push('canonical_readback_unavailable'); continue; }
+          if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory);
+          const entityRefs = Object.fromEntries(asArray(memory.canonicalArtifact?.entities).map(entity => [entity.tempId,
+            unifiedContinuityEntityId(memory.canonicalArtifact, entity.tempId, registry || {}, memory.unifiedRuntimeEntityOverrides) || '']));
+          canonical.push({ key: ref.key, ref: clone(ref), record: clone(memory), entityRefs,
+            originScope: string(memory.scopeKey || scope.scopeKey) });
+        }
+        const micro = [];
+        for (const turn of turns.slice(microOffset, microOffset + limit)) {
+          const value = await read('micro-turn:' + turn,
+            () => readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn));
+          if (value.status === 'verified' && microRecallMemoryFromRecord(value.record, value.receipt, value.recordKey)) {
+            micro.push({ ...clone(value), receiptKey: value.record.receiptKey });
+          } else if (value.status !== 'missing' || !refs.some(ref => Number(ref.sessionEpoch || 0) === 0 && turn >= Number(ref.turnRange?.start) && turn <= Number(ref.turnRange?.end))) {
+            pending.micro.push(value.reason || value.status || 'micro_unavailable');
+          }
+        }
+        if (asArray(active.manifest.inheritedMicroArchives).length) pending.micro.push('inherited_micro_projection_not_yet_supported');
+        await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
+        const stateView = await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
+        const stateWorldline = await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
+        const correctionStore = await read(key.stateCorrections(scope), () => storage.getVerifiedJson(key.stateCorrections(scope), scope, null));
+        const correctionJournal = await read('state-correction-journal', async () => {
+          const journal = await loadStateCorrectionJournal(scope, { strict: true });
+          // The empty legacy reader synthesizes a root updatedAt on each read.
+          // Compare exact selected records; the stored root is separately re-read.
+          return { schema: journal.schema, scopeKey: journal.scopeKey, revision: journal.revision, records: journal.records };
+        });
+        const settings = await loadSettings();
+        const loreSnapshot = await loadRisuContextSnapshot(settings, [], null);
+        const loreEntries = snapshot => loreLinkAllowedEntries(snapshot).map(entry => ({ identity: entry.identity,
+          entry: clone(entry.lore), rendered: entry.rendered,
+          activation: { alwaysActive: entry.lore.alwaysActive === true || entry.lore.always_active === true || entry.lore.constant === true,
+            hostSelected: string(entry.lore.activationRoute || '').startsWith('risu_request_selected') ? true : null,
+            hostSelectionAvailable: string(entry.lore.activationRoute || '').startsWith('risu_request_selected'),
+            activationRoute: string(entry.lore.activationRoute || ''), priority: entry.lore.priority ?? null,
+            position: entry.lore.position ?? null, mode: entry.lore.mode ?? null,
+            keys: clone(asArray(entry.lore.keys)), secondaryKeys: clone(asArray(entry.lore.secondaryKeys)),
+            additionalKeys: clone(asArray(entry.lore.additionalKeys)), excludeKeys: clone(asArray(entry.lore.excludeKeys)),
+            useRegex: entry.lore.useRegex === true, selective: entry.lore.selective === true,
+            activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
+          passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
+        const allowedLore = loreEntries(loreSnapshot);
+        await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
+        const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
+        if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
+        const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
+        graphIdentity = createLibraMemoryGraphIdentity({ fingerprint: primitive.fingerprint });
+        const readers = createLibraMemoryGraphReaders({ identity: graphIdentity, normalizeName: statePipelineIdentityKey, digestClaim: digest });
+        const inventory = { canonicalTotal: refs.length, canonicalRead: canonical.length,
+          microTurnTotal: turns.length, microRead: micro.length, inventoryComplete: false,
+          canonicalNextCursor: canonicalOffset + limit < refs.length ? worldManagerEncodeCursor('mgc1', canonicalOffset + limit, pageIdentity) : '',
+          microNextCursor: microOffset + limit < turns.length ? worldManagerEncodeCursor('mgm1', microOffset + limit, pageIdentity) : '',
+          scope: 'request_local_reader_page', exhaustiveOwnerDeltaVerified: false };
+        if (inventory.canonicalNextCursor) pending.canonical.push('canonical_pages_unread');
+        if (inventory.microNextCursor) pending.micro.push('micro_pages_unread');
+        const graph = readers.project({ frame, registry: { key: key.entityRegistry(scope), record: registry }, canonical, micro,
+          claimContracts: UNIFIED_CLAIMS,
+          state: { key: key.continuityState(scope), revision: stableReferenceJson({ stateWorldline, correctionStore, basis: stateView?.head?.basis || null }),
+            view: stateView, correctionKey: key.stateCorrections(scope), corrections: correctionJournal },
+          lore: { entries: allowedLore, index: loreIndex, revision: stableReferenceJson(loreIndex.basis),
+            selectionBinding: loreIndex.basis }, inventory, pending }, { nodeLimit });
+        for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+        const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
+        if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+        if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
+        const currentness = await readonlySourceContext.assertCurrent(request);
+        return clone({ ...graph, scopeKey: scope.scopeKey, requestLocalReadOnly: true,
+          readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
+          nativeSourceCaptureAdmission: 'unsupported', modelDispatchEligible: false });
+      } finally {
+        graphIdentity?.clear();
+        if (captured) readonlySourceContext.release({ handle: captured.handle, requestId });
+      }
+    };
     const canonicalReaderPatchFields = patchValue => {
       const patch=asObject(patchValue); const fields=new Set([...Object.keys(asObject(patch.set)),...asArray(patch.clear).map(string).filter(Boolean)]);
       if (string(patch.operation||'')==='close') fields.add('status');
@@ -69926,7 +70472,7 @@ ${string(queryBundle?.sceneText || '')}`;
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -80754,6 +81300,7 @@ advanced
     async getCanonicalMemoryDetail(options = {}) { return await LibraMemoryCore.getCanonicalMemoryDetail(options); },
     async getEvidenceLinkIndex(options = {}) { return await safeClone(await LibraMemoryCore.getEvidenceLinkIndex(options)); },
     async getLoreLinkIndex(options = {}) { return await safeClone(await LibraMemoryCore.getLoreLinkIndex(options)); },
+    async getMemoryGraphProjectionPage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphProjectionPage(options)); },
     async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
     // The read-set contract suite drives the SHIPPED builder, so its bridge handling is asserted against
     // the real function rather than a reimplementation. It is named without the `_test` surface because

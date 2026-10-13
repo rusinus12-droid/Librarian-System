@@ -122,7 +122,7 @@ module.exports = function createMemoryGraphIdentity({ fingerprint } = {}) {
       identityCoverage: origin.identityCoverage === 'stable' && unitIdentity.kind === 'stable' ? 'stable' : 'revision_bound'
     });
   };
-  const basisKinds = new Set(['canonical_claim', 'micro_span', 'state_field_evidence', 'state_correction', 'lore_passage', 'entity_attachment', 'association']);
+  const basisKinds = new Set(['canonical_claim', 'source_excerpt', 'micro_span', 'state_field_evidence', 'state_correction', 'lore_passage', 'entity_attachment', 'association']);
   const basis = ({ source: origin, kind, identity, anchor, binding: input } = {}) => {
     const parent = get(origin, 'node');
     if (origin.layer !== 'source') fail('SOURCE_REQUIRED');

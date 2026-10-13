@@ -570,7 +570,7 @@ module.exports = function createMemoryNetwork({ hash: legacyHash, tokenize, adap
       frontier:{postingKeys:terms.size,pageSize,policy:'access_only'}});
     return Object.freeze({reconcile,reconcilePaged,query,invalidateDependencies,scanDense,inspect});
   };
-  return Object.freeze({ project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
+  return Object.freeze({ fingerprint: sha256Hex, project, projectMicro, resolveEvidenceCluster, upsert, invalidate, discover, projectCanonical, createRegistry, createPagedIndex,
     diagnostics: () => activeRegistry?.diagnostics() || { schema: 'libra.canonical-network-diagnostics.v1', canonicalCandidates: 0,
       identityCoverage: 'partial', pathBonus: 0, costs: {} } });
 };

@@ -1,7 +1,7 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.2 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **설계 초안. UM1 normalized identity 커널·합성 투영 fixture는 구현했다. 실제 owner reader·단일 검색·GraphStore·캐시/Lane·dispatch 인터페이스는 후속 작업이다.**
+- 문서 버전: 1.3 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **설계 초안. UM1 identity 커널과 네 자료의 실제 owner reader → 요청 내 읽기 전용 그래프 투영을 구현했다. 단일 검색·GraphStore·캐시/Lane·최종 dispatch 연결은 후속 작업이다.**
 - 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
@@ -23,6 +23,7 @@
 | [WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md) | 새 WM의 연결·검증·검색 제어를 대조한 정적 코드 검토. LIBRA 구현 완료나 호스트 성능 증거로 사용하지 않음 |
 | [LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md) | 현재 reader schema → 새 adapter 표. F-1/F-2 identity 계약·normalized fixture 구현과 남은 결정/연결 gate |
 | [LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md](LIBRA_UM1_GRAPH_IDENTITY_CONTRACT.md) | 공통 NodeID/EdgeID·basis·binding 1차 계약, 순수 커널과 14개 검증. production 검색 완료 증거와 구분 |
+| [LIBRA_UM1_READER_ADAPTER_CONTRACT.md](LIBRA_UM1_READER_ADAPTER_CONTRACT.md) | 실제 정본·Micro·State·lore reader 연결, 공개 read-only projection page, 역할/근거/coverage 및 실제 등록 API의 합성 호스트 검증 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
 
@@ -75,6 +76,14 @@ A2의 runtime items에는 벡터가 없고, 준비한 paged index가 기존 cano
 | 조회 중 derived cold build 저장 허용 | 준비·검증·durable 게시를 유지보수 경로로 분리. 요청 내 임시 투영은 읽기 전용 | §7.7 |
 
 HME 전체 엔진을 재도입하거나 기존 `bonusCap`으로 relevance/근거 gate를 우회하지 않는다. 연결·검증 원칙과 필요한 계산 primitive를 활용하되 LIBRA 소유권·typed 의미·단일 검색 제어 계약 아래 구현한다.
+
+### 2.4 v1.3의 구현 진척
+
+`getMemoryGraphProjectionPage()`는 LIBRA의 실제 owner reader를 통해 네 자료를 읽고 공통 identity 커널로 투영한다. 정본 fact·검증된 Micro claim/source-only excerpt·State field/item/정정·허용된 lore rendered passage를 보존하고, 승인된 entity와 정확한 근거를 연결한다. 호출자는 원본 record·proof를 공급하지 않는다. 선택한 저장 본문·State 읽기 뷰·정정 record와 lore를 재확인하며 저장이나 provider/document embedding 호출을 시작하지 않는다.
+
+등록된 공개 API를 합성 호스트에서 실행한 plugin_only/server_only fixture는 각각 48-node/81-edge, 정본 13·Micro 1·State 17·lore 2 unit을 반환했다. 동일 span의 다른 Micro claim은 owner claim digest로 구별하고 유일 대응이 없으면 State derivation을 만들지 않는다. 별도 실제 writer 시나리오에서 사용자 정정·명시적 clear, 실제 producer 실패에서 source-only 500자 표현도 검증했다.
+
+이는 **owner reader 연결과 투영의 검증**이다. 실제 설치 호스트 qualification, viewer/as-of QueryGraphView, 최종 물리 dispatch proof, 단일 frontier/scorer, durable graph·공통 byte cache·Lane 전환은 완료하지 않았다. page의 `inventoryComplete:false`, `byteBounded:false`, `modelDispatchEligible:false`와 미해결 근거 사유를 유지한다. 기존 normal recall/beforeRequest는 새 API를 자동 호출하지 않는다. 세부 계약과 재현 명령은 [reader adapter 계약](LIBRA_UM1_READER_ADAPTER_CONTRACT.md)에 고정한다.
 
 ## 3. 전체 아키텍처
 
@@ -531,7 +540,7 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 ## 14. 구현 시작 전 기록할 결정
 
-현재 [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)의 F-1/F-2 identity 계약과 normalized 커널·첫 합성 투영 fixture를 구현했다. 다음 작업은 실제 owner reader에서 canonical/Micro/State/lore unit·basis를 발급하도록 연결하고, coverage·중복·source lifetime 근거를 고정하는 것이다. UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다.
+현재 [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)의 F-1/F-2 identity 계약·normalized 커널에 실제 canonical/Micro/State/lore owner reader를 연결했다. 안정 lifetime을 증명하지 못한 자료는 revision-bound로 유지하며, page 밖 근거·ambiguity·미지원 inherited Micro를 coverage로 보고한다. 다음 우선 작업은 F-3/F-4의 byte admission·maintenance/query 경계를 결정하고, 이 투영을 SourceGraph page/generation reader와 연결하는 것이다. UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다. 그 뒤 UM3에서 네 자료를 같은 frontier·평가·종료 정책으로 검색한다.
 
 WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
 
@@ -547,3 +556,4 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.1 · 2026-10-14 | WM HME 검토 반영: 역할/다중 관계, 원본/요청 뷰 분리, activation 재평가·설명 정합성, exhaustive page 접근, maintenance 게시·restart 검증·변경 가드, V13–V18 추가 |
 | 1.1 · 2026-10-14 | UM0/UM1 대응표 초안([LIBRA_UM0_UM1_ADAPTER_MAPPING.md](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)) 연결. §1 문서 목록·§14에서 참조. 설계 결정이 아니며 열린 항목을 포함 |
 | 1.2 · 2026-10-14 | 공통 NodeID·EdgeID/basis·binding 1차 계약과 normalized 커널·합성 13-node/19-edge fixture, 14개 identity 검증 구현. 실제 reader/검색/dispatch gate는 미완료 |
+| 1.3 · 2026-10-14 | 네 자료의 실제 owner reader와 공개 read-only graph projection page 구현. 등록 API의 plugin_only/server_only 합성 호스트, source-only·정정·clear·본문 경합·cursor/route 및 11개 schema 계약 검증. 검색·durable/cache/Lane·dispatch는 후속 gate |
