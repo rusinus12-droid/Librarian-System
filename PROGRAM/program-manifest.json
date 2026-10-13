@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-13T14:30:33.954Z",
+  "generatedAt": "2026-10-13T15:19:06.555Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2524,8 +2524,8 @@
       "bytes": 8022
     },
     "docs/LIBRA_MEMORY_NETWORK_CONTRACT.md": {
-      "sha256": "39061361873b30fd3a8aabc78e625f15e9daa785cef9553527083fcd83782ce0",
-      "bytes": 30889
+      "sha256": "6f54aa2b7b5e65e27790d8bbb168599e05dc845b5b9e4414aa99a989951815ae",
+      "bytes": 31428
     },
     "docs/LIBRA_MODEL_SUMMARY_2.3.53.md": {
       "sha256": "da749705ee7876252213a252cb672a33dc205ac200cd3193228a9f4e2d13fd71",
@@ -2600,8 +2600,8 @@
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "3456b06cfc129a39b65afee430abb19880ab78526df12d8a493568b3f0f432bc",
-      "bytes": 43642
+      "sha256": "de9c82c1c0acce30034c06fb93a354b31cc70fca2c08c989dc18b3a56667d1d5",
+      "bytes": 59890
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -2676,8 +2676,8 @@
       "bytes": 9844
     },
     "docs/MAIN_MEMORY_TRACEABILITY.md": {
-      "sha256": "4be1e2963353623e81c233c9a58b0e633079c6b0c3c710d3c051a945f9ac4036",
-      "bytes": 25560
+      "sha256": "5c5917549a2fe52baeaa8a7278d204187a531aa1bdf794e52a3a136b5ec6cd71",
+      "bytes": 27887
     },
     "docs/MEMORY_SCOPE_RECOVERY_0.3.55.md": {
       "sha256": "de28c8c5dc559fa9b51162707bb63fce3441f6e18402655c76f664b401c934b6",
@@ -3562,6 +3562,10 @@
     "docs/WM_ACCEPTANCE_05.md": {
       "sha256": "e3e0f95f941bbbe95e02193a7b6383759215de68cd0354be358c9f7fdfedd8a3",
       "bytes": 3373
+    },
+    "docs/WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md": {
+      "sha256": "afb03486c60abc2ce2765315451ef777e4f98c6e3cfc97960e64afc6ad615867",
+      "bytes": 11157
     },
     "docs/데이터_구조와_마이그레이션.md": {
       "sha256": "568656134c0df8da383c5ebf5febb627a6171f25f598e7a1e3edd70f941f3029",

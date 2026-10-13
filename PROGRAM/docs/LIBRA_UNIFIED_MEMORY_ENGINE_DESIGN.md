@@ -1,9 +1,10 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.0 · 작성일: 2026-10-13
+- 문서 버전: 1.1 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
 - 상태: **설계 초안. 아래 새 엔진·스키마·인터페이스는 아직 구현되지 않았다.**
 - 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
+- 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**
 
 ## 1. 문서의 역할과 기존 계약
@@ -18,6 +19,8 @@
 | [MAIN_MEMORY_CONTRACT_DECISIONS.md](MAIN_MEMORY_CONTRACT_DECISIONS.md) | typed fact, lifecycle, 사용자 정정, 현재/과거·분기, schema reader/writer 호환 계약 유지 |
 | [SOURCE_EDIT_DETECTION_RETIREMENT_20261006.md](SOURCE_EDIT_DETECTION_RETIREMENT_20261006.md) | 자동 원문 변경 탐지·역사 재분석을 복원하지 않음. 남아 있는 검증 비용과 호스트 한계 유지 |
 | [PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md) | 기존 저장 소유권·읽기 소비자 역할 유지. 검색 인덱스가 새 정본 소유자가 되지 않음 |
+| [MAIN_MEMORY_TRACEABILITY.md](MAIN_MEMORY_TRACEABILITY.md) §9 | 이전 World Maker HME의 복원 판단을 보존하고, 새 WM 첨부본의 재사용 원칙과 적용 범위를 갱신 |
+| [WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md) | 새 WM의 연결·검증·검색 제어를 대조한 정적 코드 검토. LIBRA 구현 완료나 호스트 성능 증거로 사용하지 않음 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
 
@@ -55,6 +58,22 @@ A2의 runtime items에는 벡터가 없고, 준비한 paged index가 기존 cano
 | U09 | query가 원문 재분석·State 쓰기·역사 문서 임베딩을 자동 시작하지 않음 |
 | U10 | 최종 출력이 사용한 실제 근거와 의존성을 재검증하고 coverage·비용을 관찰 가능하게 함 |
 
+### 2.3 WM HME 검토에 따른 설계 결정
+
+첨부본에는 기존 `memory/entity/lore` 그래프와 새 `TypedHmeSourceGraph`의 `memory/entity/world/narrative` 그래프가 공존한다. 새 typed 경로는 원본 그래프를 영속 유지하고 요청별 적격 부분 그래프를 만든다. 그러나 검색 제어는 휴리스틱 검색과 별도 semantic 검색 → 양쪽 시드의 그래프 확장 → 휴리스틱 점수 반영 → RRF → 다양성/MMR 선택이다. 자료 identity를 공유하는 것과 하나의 검색 정책을 실행하는 것을 구분한다.
+
+| WM에서 확인한 구현 | 차세대 LIBRA 결정 | 반영 절 |
+| --- | --- | --- |
+| 인물 허브·역할별 연결·빈도 억제 | 공통 EntityNode와 의미 단위 연결에 적용. 가중치 수치는 별도 calibration | §4.4, §6.3 |
+| 영속 원본 그래프 + 요청별 적격 그래프 | SourceGraph generation + 발급된 QueryGraphView로 분리. 전체 부분 그래프 복사 대신 적격 페이지 cursor 사용 | §4.5, §7 |
+| restart 때 현재 원본에서 노드·엣지 재계산 | 독립 검증을 통과한 derived generation만 사용. 검증 비용과 불완전 범위를 기록 | §9.3 |
+| epoch·최신 작업 token·scope별 write barrier | 원본 partition과 publication 작업의 경합 계약에 적용. 원자성은 storage owner의 별도 증명 필요 | §9.3 |
+| 시드별 최대 2홉 BFS·graph bonus·두 순위의 RRF | 공통 초기 활성화·개선 시 재평가·단일 frontier와 scoreCandidate로 교체 | §6.2–§6.4 |
+| bounded graph·scope 개수 캐시·변경 시 엣지 재컴파일 | exhaustive durable shards·공통 byte cache·페이지 스케줄러·역의존 delta 게시로 재설계 | §7, §9 |
+| 조회 중 derived cold build 저장 허용 | 준비·검증·durable 게시를 유지보수 경로로 분리. 요청 내 임시 투영은 읽기 전용 | §7.7 |
+
+HME 전체 엔진을 재도입하거나 기존 `bonusCap`으로 relevance/근거 gate를 우회하지 않는다. 연결·검증 원칙과 필요한 계산 primitive를 활용하되 LIBRA 소유권·typed 의미·단일 검색 제어 계약 아래 구현한다.
+
 ## 3. 전체 아키텍처
 
 ~~~mermaid
@@ -63,9 +82,12 @@ flowchart TD
     M[Micro·receipt 소유자] --> AD
     S[State·정정·entity registry 소유자] --> AD
     L[호스트 로어북 소유자] --> AD
-    AD --> G[공통 노드·관계 투영]
+    AD --> G[SourceGraph: 공통 노드·관계 투영]
     G --> D[버전된 durable 파생 shard·인덱스]
     D --> CP[페이지·표현·질의 cache pools]
+    D --> GV[QueryGraphView: 발급 generation·적격 cursor]
+    Q --> GV
+    GV --> QE
     Q[질의·문맥·scope·as-of] --> QE[단일 Query Engine]
     CP <--> ML[Memory Lane: 페이지 접근·탐색 스케줄러]
     ML <--> QE
@@ -135,6 +157,31 @@ MeaningNode {
 
 엣지마다 owner/scope/view binding, 생성 근거, 방향, 적용 시점, dependency와 coverage를 보존한다. similarity 모든 쌍의 O(N²) edge를 영구 생성하지 않는다. 저장된 typed adjacency와 필요할 때 계산하는 의미 접근을 함께 사용한다.
 
+EdgeID의 exact identity에는 방향 있는 endpoints, predicate, qualified field/적용 조건, 유효 시간, basis identity와 incarnation을 포함한다. revision은 별도 binding으로 검증한다. 같은 두 노드 사이의 `mentions`·`evidenced_by`·`updates` 등은 별개 엣지다. unordered endpoint pair나 이름 일치로 관계를 한 개로 합치지 않는다. 역방향 탐색은 해당 predicate의 허용 규칙을 명시하고, inverse 탐색을 실제 역방향 사건의 증거로 출력하지 않는다.
+
+대상 연결에는 소유자가 승인한 당사자·관찰자·언급·추정 역할을 보존한다. 주체/대상 attachment가 있는 canonical fact, Micro claim, State field와 lore 구간이 같은 EntityNode에 연결될 수 있다. 역할은 탐색 적합성의 feature이며 물리 proof나 사실 confidence를 대체하지 않는다. WM의 1.0/0.62/0.25/0.08 계수를 기본값으로 채택하지 않는다.
+
+단어·시간 근접·공유 주제에서 추정한 관계는 검색용 association으로 명시한다. `causal_followup`·`resolves_thread` 같은 추정 label을 승인된 인과·lifecycle 엣지로 승격하지 않는다. 불완전 sourceRefs·턴 anchor에는 partial/unknown lineage를 남긴다.
+
+### 4.5 원본 연결망과 질문별 그래프 뷰
+
+SourceGraph는 승인된 원본 snapshot·projection schema·안정/partial identity·명시적 source dependencies를 기준으로 생성한다. 같은 authorized partition 안의 질문이 바뀌었다는 이유로 원본 엣지나 durable generation을 다시 쓰지 않는다. 원본 소유권·세계선 lineage·유효 시점·visibility 근거는 원본 그래프에 보존한다.
+
+QueryGraphView는 SourceGraph generation과 QueryFrame에 결속된 private issued handle이다. scope·native branch·as-of·viewer·lore activation·semantic role에 맞는 node/edge pages를 읽는 cursor를 제공한다. 캐시 page bytes는 공유할 수 있지만 적격성 판정·lease·path state는 요청에 귀속한다. 질문별로 원본 전체를 복제·필터링하여 별도 graph Map을 만들지 않는다.
+
+보호되거나 해당 view에 부적격한 자료는 출력뿐 아니라 seed·중간 노드·edge 확장에서도 제외한다. 나중에 출력문을 redaction하는 것으로 비공개 경유를 허용하지 않는다. 적격성 metadata를 확인한 뒤 읽기 작업을 예약하며, 접근 불가 자료의 이름·관계·개수·진단으로 간접 정보를 노출하지 않는다. 필요한 적격성·근거를 증명할 수 없는 영역은 unknown/unavailable로 보고한다.
+
+| WM 자료·원칙 | LIBRA 투영 책임 | 대응 시 보존할 의미 |
+| --- | --- | --- |
+| memory와 entity 허브 | canonical/Micro의 MeaningNode + 공통 EntityNode | source/claim attachment, 인물 identity·역할·원문 근거 |
+| entity current state·relation | State field/item + 승인된 canonical relation/lifecycle | 현재값·정정·last-known과 발생 사건을 구분 |
+| world rule·state·codex | 기존 lore passage/rule + State 또는 canonical world fact | 적용 설정·상태 이력·관찰 사실을 각각 보존 |
+| narrative memoryRefs·arc/thread | 기존 승인 자료의 문맥·source/typed lifecycle 연결 | 새 narrative 정본·자동 요약 원장을 생성하지 않음 |
+| 기존 entity–lore 연결 | lore adapter의 공통 대상·정의·적용 엣지 | 활성 조건·안정 entry identity·동명 ambiguity |
+| WM typed 경로에 독립 adapter가 없는 Micro·일반 lore | LIBRA의 두 adapter를 직접 구현 | source-only·receipt·passage coverage까지 독립 발견 가능 |
+
+이 표는 개념 대응이다. WM 데이터를 자동 import하거나 서로 다른 네 자료 종류를 일대일로 치환하는 계약이 아니다. 실제 LIBRA reader schema와 source ownership은 UM1에서 별도로 고정한다.
+
 ## 5. 네 자료 adapter
 
 ### 5.1 정본과 Micro
@@ -195,6 +242,25 @@ a_q(v) = max(
 
 scoreCandidate가 direct/propagated feature와 candidate role을 함께 관리한다. 별도 graph scorer가 기존 scorer 결과에 임의 bonus를 추가하는 경로는 두지 않는다. 근거의 고정값·숫자 계수는 §12의 calibration gate에서 확정한다.
 
+WM의 시드별 FIFO BFS와 first-visit visited 규칙을 초기 전파 커널로 사용하지 않는다. 모든 직접 신호와 그래프 접근은 같은 frontier에 작업을 넣고, 이미 처리한 node라도 activation이 개선되면 같은 정책으로 다시 평가한다.
+
+~~~text
+offer(v, value, witness):
+  reject unless v and witness are eligible in the issued view
+  if value strictly improves bestActivation(v):
+    atomically update activation + winning path + dependencies + pathVersion
+    enqueue v with its current pathVersion in the common frontier
+
+pop(v, version):
+  discard stale queue items whose version no longer matches
+  read eligible outgoing edge pages through Memory Lane
+  offer each target with the attenuated value and its extended witness
+~~~
+
+위 offer/pop은 의미 설명용이다. epsilon·부동소수 비교·동점의 결정 순서는 versioned numeric policy로 정한다. 같은 activation의 설명 경로를 교체할 경우에도 점수·근거·dependency를 일관되게 유지한다. 점수는 최댓값을 보존하면서 edgeChain만 약한 최신 경로로 덮어쓰는 갱신은 허용하지 않는다.
+
+고정 최대 2홉을 전체 접근 범위로 삼지 않는다. 정당한 3홉 이상 연결도 동일 예산 안에서 탐색할 수 있다. hop/work 제한이나 tolerance로 남은 영향 평가를 생략하면 stopReason과 traversal coverage에 반영한다. 감쇠·동일값 재확장 금지와 versioned queue로 순환 증폭을 막고, bounded working set 한계에 닿으면 partial을 반환한다.
+
 ### 6.4 단일 frontier와 종료
 
 우선순위 큐에는 candidate와 아직 읽지 않은 page/region cursor가 함께 들어간다. 가장 유용한 후보·연결·페이지를 한 controller가 방문한다. hydration 후보 수와 출력 개수는 별도 예산이다.
@@ -202,6 +268,8 @@ scoreCandidate가 direct/propagated feature와 candidate role을 함께 관리�
 complete는 선언한 scope/view의 적격 접근 스트림을 소진했거나, **증명 가능한 score upper bound**로 남은 영역이 선택 결과를 바꾸지 못함을 확인했을 때만 사용한다. centroid·sketch·heuristic confidence만으로 unseen region을 완료 처리하지 않는다.
 
 deadline, request bytes, hydration/proof budget, unavailable shard, dirty index, 지원되지 않는 binding으로 멈추면 partial/degraded와 unread cursor/region·stopReason을 반환한다. page exhaustion, index coverage, representation coverage, traversal completion, final delivery completion은 각각 다른 상태다.
+
+complete 판정은 node의 최초 방문이나 그래프의 화면 표본 소진과 무관하다. 미처리 activation 개선, unread adjacency/direct-access cursor, 수치 tolerance의 남은 영향까지 포함한다. 처리 순서·cold/warm page 도착 순서가 달라도 동일 declared-complete 결과와 결정적 winning witness를 반환해야 한다.
 
 ## 7. 캐시·Memory Lane·인덱스의 공동 재설계
 
@@ -301,6 +369,16 @@ index manifest는 generation, schema/projection/tokenizer/policy binding, comple
 
 provider 인증 캐시, generation job journal, backup/restore transaction은 그래프 cache로 합치지 않는다. 다만 어떤 저장 bytes·pin·in-flight 작업을 새 engine budget이 담당하는지 inventory에 기록한다.
 
+### 7.7 HME 경험을 반영한 저장·접근 계약
+
+WM의 bucket 40, memory-pair local 선택 8, retained node/전체 edge/시드/후보 상한은 참고 구현의 비용 정책이다. local 8은 모든 노드의 최종 degree 상한도 아니다. 이 값을 차세대 원본 corpus나 durable adjacency의 표현 범위로 옮기지 않는다. 필요한 구조 엣지는 적격 자료를 완전 열거한 shard/page에 보존하고, 아직 근거를 만들 수 없는 관계는 coverage로 표시한다.
+
+대상·출처·정정 등 구조 연결에 페이지 접근 기회를 먼저 부여하고, 조밀한 연상 연결은 같은 공통 작업 예산에서 처리한다. 페이지가 넘치면 split/continuation으로 이어 읽으며, 허브·종류별 cache reservation은 resident 유지 정책으로만 사용한다. cache에서 밀린 entity/lore/오래된 기억도 durable index를 통해 발견할 수 있어야 한다. source family별 고정 top-K나 영구 제외 quota를 만들지 않는다.
+
+SourceGraph 구축·delta 적용·restart 독립 검증·durable publication은 maintenance 작업이다. query는 발급된 verified generation을 읽으며, 없는 projection을 허용된 source page에서 요청 내 임시 투영할 수 있다. query 중 캐시 miss를 핑계로 durable graph cold build/write를 실행하지 않는다. 지원 범위를 읽기 전용 fallback으로 해결할 수 없으면 partial을 반환한다. 자동 원문 재분석·State 쓰기·역사 임베딩도 시작하지 않는다.
+
+graph states뿐 아니라 전체 source map, revision 검증 자료, queue·write barrier·serialization/readback staging도 공통 inventory와 byte admission에 포함한다. 48개 scope 같은 개수 제한만으로 그래프 메모리 상한을 주장하지 않는다. high-degree adjacency는 paged access를 사용하며 작업 순서는 Memory Lane이 공통 frontier와 조정한다.
+
 ## 8. 임베딩 공간과 표현 계약
 
 SpaceBinding은 provider endpoint/adapter semantics, model/version, document/query task·instruction pair, dimensions, normalization/metric, profile/config generation, projection/chunk version, precision, viewer/privacy/reset generation을 식별한다. query와 document의 task 문자열이 무조건 같아야 하는 것이 아니라 **해당 provider가 정의한 호환 task pair**여야 한다.
@@ -333,6 +411,16 @@ plugin host·native lore에 trusted revision API가 없는 경우 exact fallback
 
 source mutation과 query 중 publication을 분리해 검증한다. 원본 내용·적격성·query space·선택 dependency가 동일함을 소유자 증명으로 확인할 수 있는 순수 derived publication은 새 요청 전체를 불필요하게 취소하지 않는 방향으로 설계한다. 증명이 없으면 기존 보수적 binding 거부를 유지한다. retry는 원래 deadline/예산 안의 bounded operation이며 새로운 모델 호출이나 무제한 재시도를 만들지 않는다.
 
+### 9.3 영속 그래프 검증·경합·최소 변경 게시
+
+WM typed 그래프의 재시작 검증처럼 저장된 checksum·source revision label만으로 현재 원본과의 일치를 인증하지 않는다. owner의 independent snapshot/change-set proof가 있는 경우 exact source inventory·coverage·projection dependencies를 검증한다. 그러한 증명이 없으면 현재 원본에서 필요한 node/edge 투영을 bounded 단계로 재도출해 검증하며, 확인하지 못한 영역은 dirty/unverified로 남긴다. 전체 재도출 비용을 cache hit나 warm-zero로 숨기지 않는다.
+
+새 build에는 owner partition, source from/to revision, projection/index policy, nonrewinding restore epoch와 publication job token을 봉인한다. partition별 게시 순서를 유지하고 작업 전후에 token과 basis를 확인한다. scope clear가 이미 발행된 host write를 취소할 수 없으면 그 작업의 순서 barrier는 settle까지 유지한다. RAM handle과 root 게시 권한은 즉시 폐기한다. 실제 durable 원자성·stale write 방지는 owner CAS/transaction 또는 검증된 ordered root publication에 달려 있으며, token만으로 완료 주장하지 않는다.
+
+node 재사용 fingerprint가 맞아도 관련 edge·전역 DF/degree·평가 hint의 영향 범위를 따로 검증한다. reverse dependency index는 body·alias·relation·State correction·lore activation 변화에서 영향을 받는 node/edge/posting/statistics를 열거한다. 국소 변경에는 해당 shards만 새로 준비하고 나머지 불변 pages는 새 manifest membership으로 재사용한다. 전역 통계나 normalization이 변하면 관련 shard/hint까지 넓혀 갱신한다. dependency 열거가 불완전하면 보수적 rebuild와 그 비용·coverage를 보고한다.
+
+WM warm path의 전체 source fingerprint 계산과 수정 시 retained edge 전체 compile은 검증 fallback의 참고 사례다. 차세대 최적화의 완료 조건은 owner가 증명한 exhaustive delta로 반복 작업을 줄이고, 실제 query/read 경로에서 증명하는 것이다.
+
 ## 10. 선택·출력·최종 근거 검증
 
 검색 결과는 top-K 텍스트 배열에 그치지 않고, 질문을 설명하는 EvidenceBundle을 반환한다. 선택된 meaning node, source span, State basis/lore role, temporal interpretation, conflict/unknown, closure dependency와 representation coverage를 포함한다.
@@ -355,7 +443,7 @@ SourceAdapter.hydrateOriginal(locators, frame, budget)
 SourceAdapter.validateConsumedReadSet(privateHandle, frame)
 
 GraphStore.prepareGeneration(basis, delta, budget)
-GraphStore.openView(frame) -> issued view
+GraphStore.openView(frame) -> issued QueryGraphView
 GraphStore.readNodePage/readEdgePage/readPostingPage/readVectorPage(view, cursor)
 CacheManager.reserve/pin/release/invalidate/inspect
 MemoryLane.nextAccess(frontier, view, query, budget)
@@ -369,6 +457,8 @@ view/continuation cursor는 발급 instance·generation·QueryFrame에 결속된
 진단에는 engine/policy/schema version, exact snapshot identity의 비밀 없는 요약, source/representation/index/traversal/delivery coverage, scanned nodes/edges/vectors/dot terms, candidate merges, page reads/hits/misses, warm validation/hash/parse, resident/request/pinned/staging accounted bytes·unmeasured overhead, cancellation/backpressure/stopReason을 포함한다.
 
 요청별 counters는 request ID/operation context에 귀속한다. 동시 요청을 lifetime-all-scopes counter 차분으로 개별 비용이라고 보고하지 않는다. lexical/semantic/graph/temporal 접근 설명은 남기되 과거 별도 ranker가 계속 실행됐다는 뜻으로 사용하지 않는다.
+
+winning activation·pathVersion·edge basis·dependency를 묶어 설명한다. 적격 corpus와 index coverage, 실제 방문 node/edge, 누락·미탐색 region, hub 경유, 화면 표본을 별도 필드로 보고한다. 표본의 node/edge 끝점을 맞추고 `sampleCoverage`를 명시한다. 표본에서 인물/로어가 안 보이는 것을 전체 연결 부재로 판정하지 않는다. 공개 진단은 viewer가 알 수 있는 자료와 허용된 집계만 포함한다.
 
 ## 12. 검증과 성능 gate
 
@@ -388,6 +478,12 @@ view/continuation cursor는 발급 instance·generation·QueryFrame에 결속된
 | V10 | 바이트 admission·pin pressure·큰 단일 page·high-degree adjacency·cursor/visited 증가·강제 종료 정리 | U06,U07,U08 |
 | V11 | 이전 catalog/block/ELI/LLI/lore ranker가 unified 정상 요청에서 이중 실행되지 않음 | U06 |
 | V12 | plugin_only/server_only 결과·proof 동등성, 지원하지 않는 host 기능은 BLOCKED 명시 | U05,U08,U10 |
+| V13 | 직접 신호·먼저 도달한 약한 경로 뒤 더 강한 경로가 발견되면 재평가; 3홉 연결·cycle·동점·페이지 순서에서도 결과/설명 일치 | U02,U03,U07,U10 |
+| V14 | 같은 endpoints의 여러 predicate·방향·시간·basis를 보존; 추정 association을 인과·정정·현재 상태로 승격하지 않음 | U03,U04,U05 |
+| V15 | 보호·타 분기·미래 자료를 seed·중간 경유·진단에서도 제외; 서로 다른 viewer/as-of 요청이 source graph를 다시 쓰지 않음 | U04,U05,U09,U10 |
+| V16 | checksum이 맞는 오래되거나 일부 누락된 저장 그래프도 source inventory/edge 검증에서 거부; restart 미검증 영역은 dirty/partial | U07,U08,U10 |
+| V17 | 인물 허브·구조 엣지·오래된 low-frequency source가 resident 축출/조밀한 연상 후에도 durable page로 발견; 실제 bytes와 unread coverage 보고 | U01,U06,U07 |
+| V18 | query cold miss의 durable graph write/publication 0; owner delta·취소/clear·late storage settle 이후 현재 generation만 게시 | U06,U08,U09,U10 |
 
 각 시나리오는 owner-adapter fixture, 실제 registered hook/consumer packet, 가능해진 시점의 실제 호스트 검증을 구분한다. mirror는 migration evidence로 유지한다. 기존 typed lifecycle/schema/State correction·source admission·final-proof 회귀도 이어 간다.
 
@@ -404,6 +500,8 @@ semantic retrieval 평가 세트에는 네 자료 연결 질문, 단일 자료 �
 | latency·품질 합격 수치 | 동일 장비·source/profile의 legacy 기준선 측정 후 versioned qualification profile에 기록 |
 | trusted owner/native/lore change-set protocol | 지원되는 API와 모든 writer·restore·외부 수정 경계의 증명 |
 | ANN·학습형 edge/scorer | 별도 후속 설계·approximation/학습 자료·설명/권한 검증 |
+
+WM의 role weight·meaning threshold·spread factor·preset은 ablation 비교 자료로 기록한다. 코드에 존재한다는 이유만으로 LIBRA 기본값이나 검색 품질 인증으로 사용하지 않는다. V13–V18에는 HME에서 확인한 first-visit·동일 pair 병합·약한 경로의 설명 덮어쓰기·조회 중 derived write·restart 일부 누락을 재현하는 차세대 fixture를 포함한다.
 
 수치가 미확정인 동안 설계 존재와 제품 성능 인증을 구분한다. 현재 A2의 actual 100k OOM/BLOCKED와 warm 전체 검증 비용을 그대로 기록한다. 큰 corpus는 small bounded diagnostic → 실제 source workload의 단계적 scale 순서로 검증하며, 기존 금지된 100k 재실행/heap 증액을 이 문서가 승인하지 않는다.
 
@@ -431,4 +529,15 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 다음 작업은 UM0/UM1에서 현재 field/claim/lore reader schema를 새 adapter 표에 대응시키고, V01의 가장 작은 네 자료 연결 fixture와 source coverage를 고정하는 것이다. UM2에서는 기존 캐시·레인·인덱스별 bytes·재구성·권한 경계를 측정하고, trusted owner protocol이 없는 부분을 분리한다.
 
+WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
+
+UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검색 경로의 경계·원본 권위·restart 검증 비용을 기록한다. UM1은 §4.5의 개념 대응을 실제 LIBRA reader/owner schema로 치환한다. UM2는 §7.7/§9.3의 byte admission·maintenance publication·exhaustive delta gate를, UM3/UM4는 V13–V18의 단일 전파·적격 경유·설명/출력 검증을 완료한다. 이전 HME의 복원 비목표를 통합 설계의 재사용 원칙까지 금지하는 것으로 확대하지 않는다.
+
 각 구현 단계는 source SHA, kernel/policy/schema version, 원본·파생 데이터의 변화, 실제 등록 훅/packet, cache/lane/index 이전 완료 표와 남은 gate를 저장소 안의 재현 가능한 증거에 기록한다. 임시 실행 환경 절대경로만을 문서의 유일한 검증 근거로 사용하지 않는다.
+
+## 15. 변경 기록
+
+| 버전·일자 | 변경 |
+| --- | --- |
+| 1.0 · 2026-10-13 | 네 자료·단일 검색·캐시·Memory Lane·공통 인덱스의 최초 통합 설계 |
+| 1.1 · 2026-10-14 | WM HME 검토 반영: 역할/다중 관계, 원본/요청 뷰 분리, activation 재평가·설명 정합성, exhaustive page 접근, maintenance 게시·restart 검증·변경 가드, V13–V18 추가 |

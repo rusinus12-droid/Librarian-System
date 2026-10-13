@@ -6,6 +6,8 @@ This document records the A1/A2/B1 implementation and its qualified boundaries. 
 
 The implementation baseline for that design is ca40d76450784f4ff6397666d47aba079415eec9. The new node/edge model, activation propagation, cache manager, lane scheduler and durable graph indexes are proposed work, not current APIs. Existing A1/A2/B1 safety and evidence claims below remain scoped to their recorded source/tests. The current scorer-preservation and pathBonus=0 rules describe the migration stages; they do not define the final propagation algorithm. The successor's UM0–UM6 stages map and qualify the later B2/C2/D1/D2 work.
 
+The 2026-10-14 successor revision incorporates the [WM HME source review](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md): role-aware entity links, separate source generations and query views, improved-path reevaluation, restart validation and publication guards. Its V13–V18 gates cover those contracts together with cache/page/Lane redesign. WM's dual-lane RRF, graph bonuses, retained-graph caps and query-time durable builds are not the target retrieval controller; no WM integration is claimed by this staged implementation contract.
+
 A1 is a canonical registry transition on the approved A0 recall baseline. It preserves the existing shortlist, associative admission, BM25F/dense scorer, ranked-list fusion, gate, excerpt, and packing behavior. C2/D1 will replace that flow with the approved single frontier/scorer; A1 does not claim that engine is active. Normal runtime parity targets are `plugin_only` and `server_only`. Mirror tests remain migration evidence.
 
 ## Pure factory and interfaces

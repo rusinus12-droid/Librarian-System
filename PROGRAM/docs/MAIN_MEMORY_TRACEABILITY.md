@@ -2,6 +2,8 @@
 
 **작성:** 2026-09-26 · **목적:** "무엇을 복원하는가"의 전수 목록. 설계·계약·계획 문서가 **선택한 것**을 다루는 반면, 이 문서는 **원본에 있는 것을 빠짐없이 대조**한다.
 
+**2026-10-14 보완:** §9에 새 WM v6.0.0 첨부본의 HME 검토와 차세대 통합 설계의 재사용 원칙을 추가했다. 아래 전수 집계와 이전 원본의 복원 판정은 당시 비교 범위로 보존한다. 새 검토의 [source fingerprint·구현 경로](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)와 [후속 통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md)를 구분해 읽는다.
+
 **대조한 원본:**
 - `LIBRA_WorldMaker_Integration_Plan_20260925` — `01` 설계서(R01–R16, §7.3 link, §17 D01–D06) · `02` 계획(T00–T11) · `03` 수용(A01–A44, §7 결과형식, §8 추적표) · `04` 인수인계 · `reference/CURRENT_LIBRA_SOURCE_MAP.md`(C01–C23) · `reference/SOURCE_EXTENSIONS.md`(C24–C31) · `reference/originals/LIBRA World Maker Full.js`(**47 섹션, 78,336줄**)
 - `Librarian-Benchmark-Validation-20260925` — 19후보 판정 · `DECISIONS.json` · G01–G18 · 부록 C.3(다음 감사 4항목) · `SOURCE_EVIDENCE.md`(L01–L23, A01–A08)
@@ -287,9 +289,9 @@
 
 ---
 
-## 9. `[HME]` LIBRA-internal Associative Graph Adapter — **조사 완료: 이미 구현됨**
+## 9. `[HME]` LIBRA-internal Associative Graph Adapter — 이전 복원 판정과 차세대 재사용
 
-`L51713`, 7,056줄. 원본에서 유일하게 이름에 `LIBRA-internal` 이 들어간 섹션.
+이전 비교 원본의 `L51713`, 7,056줄. 당시 원본에서 유일하게 이름에 `LIBRA-internal` 이 들어간 섹션이다. 이 줄 번호·대응표는 새 `LIBRA_World_Manager.js` 첨부본을 가리키지 않는다.
 
 ### 원본 HME 의 자기 규정 (L51713–51716)
 
@@ -300,7 +302,7 @@
 
 **원본 스스로 "파생 검색 인덱스일 뿐, 정본도 권위도 아니다"** 라고 선언한다.
 
-### 현행 LIBRA 대응 — 이미 있음
+### 이전 원본과 당시 LIBRA의 기능 대응
 
 | 원본 HME | 현행 LIBRA | 상태 |
 |---|---|---|
@@ -315,11 +317,20 @@ LIBRA 의 Stage 4 주석이 원본보다 엄격함을 명시한다:
 
 > "안전 gate 는 절대 완화하지 않는다" — an associative row is a normal row; it is not exempt from the gate, and `associative` is only a provenance label on it.
 
-**판정: 복원 불필요.** 원본 HME 의 `bonusCap`(점수 가산) 방식은 LIBRA 가 **명시적으로 거부**한 설계다(근거 없는 후보를 가산으로 통과시키는 것). `01` §34 "HME 전체 재도입" 비목표와 일치.
+**이전 원본의 기능 복원 판정: 일괄 복원 불필요.** 원본 HME 의 `bonusCap`(점수 가산)으로 근거 없는 후보를 gate에 통과시키는 설계는 채택하지 않는다. `01` §34 "HME 전체 재도입" 비목표와 일치한다. 이 판정은 차세대 단일 검색 정책에서 검증된 관계·적격성을 사용해 활성화를 전파하는 설계까지 금지하지 않는다.
 
-### 이 프로젝트에서 HME 에서 가져올 것
+### 2026-10-14 새 WM 첨부본 검토와 재사용 결정
 
-없음. 단 **T07 의 closure 가 기존 연상 인덱스와 충돌하지 않는지**는 확인 대상이다(§7 부록 C.3 항목 3).
+새 첨부본은 HME가 `L62998`에서 시작하고, `TypedHmeSourceGraph`와 원본 기반 재시작 검증을 포함한다. 기존 memory/entity/lore 그래프와 새 memory/entity/world/narrative 그래프를 구분해야 한다. typed 경로에도 휴리스틱·semantic 두 검색과 RRF가 남아 있으므로 통합 엔진 완료 증거로 보지 않는다. 자세한 코드 근거는 [WM HME 검토](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 고정했다.
+
+| 참고할 구현 원칙 | 차세대 LIBRA 적용 | 다시 설계할 경계 |
+|---|---|---|
+| 인물 허브·역할별 연결·빈도 억제 | 네 자료의 EntityNode·MeaningNode 연결 | stable identity·다중 predicate·방향·근거를 보존; 계수는 별도 검증 |
+| 원본 그래프와 요청별 적격 그래프 분리 | SourceGraph generation + QueryGraphView | Micro/일반 lore adapter 직접 구현, 보호된 중간 경유 제외, 페이지 읽기 |
+| restart 원본 재도출 검증·epoch/token/write barrier | 파생 generation 검증·경합 제어 | owner 원자 게시 증명·exhaustive delta·바이트 예산 필요 |
+| 경로·hub·node/edge 표본 진단 | winning path와 실제 탐색/표본 coverage | 약한 최신 경로로 설명 덮어쓰기 금지, 표본을 전체 그래프로 오인하지 않음 |
+
+차세대 결정은 [통합 설계 v1.1](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md) §2.3/§4.5/§6/§7.7/§9.3과 V13–V18에 반영한다. WM 전체 엔진 재도입, graph bonus gate 우회, 두 검색의 마지막 병합, 최대 2홉·개수 캐시를 차세대 완료 상태로 채택하지 않는다. **T07 closure와 기존 연상 인덱스의 충돌 확인**은 계속 유지한다(§7 부록 C.3 항목 3).
 
 ---
 
