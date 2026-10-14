@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T00:20:28.837Z",
+  "generatedAt": "2026-10-14T00:31:23.703Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -7459,6 +7459,10 @@
       "sha256": "6d35417b5d47113ca5e7c75b82e63bf3df56291cd8f2f3915d25f5b32bdaf5df",
       "bytes": 10732
     },
+    "tests/libra_memory_graph_query_test.cjs": {
+      "sha256": "7594a35d24f8f45d1b9cc9ebd0e2d5b33ab773dbb08a37152df7789c168836e8",
+      "bytes": 13045
+    },
     "tests/libra_memory_graph_reader_contract_test.cjs": {
       "sha256": "d77e4ba356fb7952b926e34f670781df7d4e0f44861b05f1e6b7d80dbabc0154",
       "bytes": 10882
@@ -10106,6 +10110,10 @@
     "tools/libra_memory_graph_pages.cjs": {
       "sha256": "65bc2f4a417422f86c1370a64d74dc9ca01c5c307debe3d972782256c8f4cd02",
       "bytes": 17728
+    },
+    "tools/libra_memory_graph_query.cjs": {
+      "sha256": "ff6d7148c9c7a7a09afef348bd5e7ec75a1386763c847237b1c44e963c570848",
+      "bytes": 22974
     },
     "tools/libra_memory_graph_readers.cjs": {
       "sha256": "5eb9bee43c2a25fc3b196d8bfcd0c126dde9f7a90d47ec57756d1e2b57a6f83d",
