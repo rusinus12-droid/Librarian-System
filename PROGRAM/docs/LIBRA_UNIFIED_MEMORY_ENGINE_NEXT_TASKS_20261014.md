@@ -106,6 +106,11 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **이 증분으로 N01의 관찰 가능한 기준은 채워졌다**: ① 창 밖 기억의 질의 도달(넷째 증분, 실측) ② 실제 읽은 shard/cache/Lane 경로 관찰(다섯째 증분) ③ 미독·예산 종료가 partial/coverage로 드러남(③은 두 증분의 음성 대조) ④ `byteBounded:true`를 선언하지 않음(inventory 집합이 `byteBounded:false` 고정).
 - **N01에서 남은 것**: GUI 화면에 이 trace·시점·미독 영역을 표시하는 adapter, 그리고 cold/warm/축출/재시작·수정/복원·동시/취소 축은 기존 스위트(V05·store 12종)가 덮지만 이번 증분에서 재측정하지는 않았다. 실제 설치 호스트 인증은 E4/N06이다.
 
+- **연결 (여섯째 증분) — GUI 표시**: 진단 화면에 `읽은 경로 · 시점 · 미독` 카드를 추가하고, 표시 전용 DTO `getMemoryRecallDiagnosticsView()`(`libra.recall_diagnostics_view.v1`, `authority: display_only`)를 공개 API와 GUI가 공유한다. 카드는 창(limit·정본/Micro 읽음 대비 전체·투영 미완), 읽은 경로(page 수·byte/예산·cache hit·frontier step·작업 byte·중단 사유), 역할별 분해, 채택(건수·family·억제 Micro·packet 문자/예산), **미독 구역**(owner cursor·lane cursor·next_window), 서빙 엔진을 표시한다. 상태는 `data-recall-diagnostics-state`로 `absent`/`partial`/`complete`를 드러낸다.
+- **권한 없음(음성 대조)**: DTO에 `modelDispatchEligible`·`dispatchVerification`·`authorized` 같은 필드가 없고 직렬화 결과에도 발송 허가가 나타나지 않는다. 화면은 발송 권한을 부여할 수 없다.
+- 재현: `node PROGRAM/tests/libra_recall_diagnostics_view_test.cjs` → 4 PASS.
+- **검증 공백 (닫지 못한 것)**: 이 카드의 **렌더된 DOM 검증은 하지 못했다**. 다른 GUI 스위트가 쓰는 jsdom 하네스는 이 진단 섹션에 도달하지 못하며(옆의 기존 카드 `마지막 실행 상태`도 같은 하네스에서 렌더되지 않는다), 어떤 클릭 경로로도 그 화면이 만들어지지 않았다. 따라서 현재 검증은 ① DTO 동작(absent/partial/complete·미독·채택·무권한) ② 카드가 그 DTO를 읽어 훅과 각 줄을 만든다는 소스 수준 확인까지다. 실제 렌더 증명에는 이 섹션을 여는 별도 하네스가 필요하다.
+
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
 ## 5. N02 — 자료별 semantic 표현

@@ -75319,6 +75319,61 @@ ${string(queryBundle?.sceneText || '')}`;
         lastOutputCapture: state.lastOutputCapture ? clone(state.lastOutputCapture) : null,
         lastMicroPublication: state.lastMicroPublication ? clone(state.lastMicroPublication) : null
       }),
+      // N01 GUI display adapter: a display-only DTO over the last recall. It reads values the recall
+      // already produced and never confers authority — there is no dispatch field here, and the GUI must
+      // not be able to grant one. Numbers are reported against their budgets so a partial window reads
+      // as partial instead of looking like a whole-history answer.
+      getMemoryRecallDiagnosticsView: () => {
+        const recall = state.lastRecall || null;
+        if (!recall) return clone({ schema: 'libra.recall_diagnostics_view.v1', authority: 'display_only', present: false, at: null, state: 'absent' });
+        const engine = recall.diagnostics?.memoryEngine || null;
+        const trace = recall.accessTrace || recall.diagnostics?.unifiedMemoryEngine?.accessTrace || recall.unifiedExecution?.accessTrace || null;
+        const windowRead = recall.windowRead || null;
+        const bundle = recall.bundle || recall.unifiedExecution?.bundle || null;
+        const packet = recall.packet || null;
+        const itemList = asArray(bundle?.items);
+        const roleStats = asObject(trace?.lane?.roleStats);
+        const unread = [
+          ...asArray(trace?.coverage?.unreadInventoryCursors).map(row => ({ kind: 'owner_cursor', cursorKey: String(row?.cursorKey || '') })),
+          ...asArray(trace?.lane?.unreadCursors).map(row => ({ kind: 'lane_cursor', cursorKey: String(row?.cursorKey || row?.cursor || '') })),
+          ...(recall.nextWindow ? [{ kind: 'next_window', cursorKey: String(recall.nextWindow.microCursor || recall.nextWindow.canonicalCursor || '') }] : [])
+        ].filter(row => row.cursorKey);
+        const partial = trace ? trace.coverage?.complete !== true : (windowRead?.projectionComplete !== true);
+        return clone({
+          schema: 'libra.recall_diagnostics_view.v1',
+          authority: 'display_only',
+          present: true,
+          state: partial ? 'partial' : 'complete',
+          at: Number(recall.at || 0),
+          engine: engine ? { mode: String(engine.mode || ''), source: String(engine.source || ''), defaultApplied: engine.defaultApplied === true, qualification: String(engine.qualification || '') } : null,
+          window: windowRead ? {
+            limit: Number(windowRead.limit || 0),
+            canonicalCursor: String(windowRead.canonicalCursor || ''),
+            microCursor: String(windowRead.microCursor || ''),
+            projectionComplete: windowRead.projectionComplete === true,
+            read: { canonical: Number(windowRead.inventory?.canonicalRead || 0), canonicalTotal: Number(windowRead.inventory?.canonicalTotal || 0),
+              micro: Number(windowRead.inventory?.microRead || 0), microTotal: Number(windowRead.inventory?.microTurnTotal || 0) }
+          } : null,
+          read: trace ? {
+            pages: Number(trace.lane?.pagesRead || 0), bytes: Number(trace.lane?.bytesRead || 0), budget: Number(trace.lane?.maxBytes || 0),
+            cacheHits: Number(trace.lane?.cacheHits || 0), coalesced: Number(trace.lane?.coalescedRequests || 0),
+            roles: Object.keys(roleStats).filter(role => Number(roleStats[role]?.pages || 0) > 0)
+              .map(role => ({ role, pages: Number(roleStats[role].pages || 0), bytes: Number(roleStats[role].bytes || 0) })),
+            frontierSteps: Number(trace.frontier?.steps || 0), onDemandAnchors: Number(trace.frontier?.onDemandNeighborhoodAnchors || 0),
+            workspaceBytes: Number(trace.workspace?.l0WorkspaceBytes || 0), workspaceBudget: Number(trace.workspace?.maxWorkspaceBytes || 0),
+            complete: trace.coverage?.complete === true, stopReason: String(trace.coverage?.stopReason || '')
+          } : null,
+          adoption: bundle ? {
+            admitted: itemList.length, suppressedMicro: asArray(bundle.suppressedMicroIds).length,
+            families: [...new Set(itemList.map(item => String(item?.family || '')))].filter(Boolean).sort(),
+            packetChars: Number(packet?.characterLength || 0), maxCharacters: Number(bundle.budget?.maxCharacters || 0),
+            independentSources: Number(bundle.independentSupportingSourceCount || 0)
+          } : null,
+          viewpoint: { historicalCanonicalUnavailable: trace?.coverage?.historicalCanonicalUnavailable === true,
+            sourceCoverageComplete: trace?.coverage?.sourceCoverageComplete === true },
+          unread
+        });
+      },
       getLastRecall: () => clone(state.lastRecall),
       getStoryArc: () => clone(state.snapshot?.storyArc || state.lastStoryArc || null),
       getContinuityState: () => clone(state.snapshot?.continuityState || state.lastContinuityState || null),
@@ -79134,6 +79189,21 @@ ${string(queryBundle?.sceneText || '')}`;
       guiEl('div', { class: 'card' }, summaryBlocks),
       guiEl('div', { class: 'grid g2' }, [
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 실행 상태' }), guiEl('div', { class: 'code', text: JSON.stringify({ lastBefore: Runtime.last, lastAuxiliarySkip: Runtime.lastAuxiliarySkip, lastProviderError: Runtime.lastProviderError, hookStatus: Runtime.hookStatus, hookRuntime: hookRuntimeSnapshot(), recallRuntime: LibraMemoryCore.state.lastRecallRuntime || null, storageWriteStats: LibraMemoryCore.state.storageWriteStats || {}, secretStorage: Runtime.secretStorage, migration: Runtime.migration, lastSafeStage: Runtime.lastSafeStage }, null, 2) })]),
+        (() => {
+          const view = LibraMemoryCore.getMemoryRecallDiagnosticsView();
+          const rows = [];
+          if (!view.present) rows.push(guiEl('div', { class: 'hint', text: '아직 회수 기록이 없습니다.' }));
+          else {
+            if (view.window) rows.push(guiEl('div', { class: 'hint', text: `창: limit ${view.window.limit} · 정본 ${view.window.read.canonical}/${view.window.read.canonicalTotal} · Micro ${view.window.read.micro}/${view.window.read.microTotal}${view.window.projectionComplete ? '' : ' · 투영 미완(부분)'}` }));
+            if (view.read) rows.push(guiEl('div', { class: 'hint', text: `읽은 경로: page ${view.read.pages} · ${view.read.bytes}/${view.read.budget} bytes · cache hit ${view.read.cacheHits} · frontier ${view.read.frontierSteps} · 작업 ${view.read.workspaceBytes}/${view.read.workspaceBudget}${view.read.stopReason ? ' · 중단 ' + view.read.stopReason : ''}` }));
+            if (view.read?.roles.length) rows.push(guiEl('div', { class: 'hint', text: '역할: ' + view.read.roles.map(role => `${role.role} ${role.pages}p`).join(', ') }));
+            if (view.adoption) rows.push(guiEl('div', { class: 'hint', text: `채택: ${view.adoption.admitted}건(${view.adoption.families.join('/') || '-'}) · 억제 Micro ${view.adoption.suppressedMicro} · ${view.adoption.packetChars}/${view.adoption.maxCharacters}자` }));
+            rows.push(guiEl('div', { class: 'hint', text: view.unread.length ? '미독: ' + view.unread.map(row => row.kind).join(', ') : '미독 없음' }));
+            rows.push(guiEl('div', { class: 'hint', text: view.engine ? `엔진: ${view.engine.mode}(${view.engine.source}${view.engine.defaultApplied ? ', 기본값' : ''})` : '' }));
+          }
+          return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
+            guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows]);
+        })(),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
         guiEl('div', { class: 'card' }, [
@@ -85943,6 +86013,7 @@ advanced
     inspectMemoryGraphPages() { return LibraMemoryCore.inspectMemoryGraphPages(); },
     async buildMemoryGraphGeneration(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphGeneration(options)); },
     async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
+    getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) { return await safeClone(await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options)); },
