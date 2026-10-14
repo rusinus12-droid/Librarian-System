@@ -149,10 +149,14 @@ module.exports = function createMemoryGraphRepresentation({ fingerprint } = {}) 
     }
     const boundSpace = representation.space;
     if (boundSpace.spaceId !== text(space.spaceId) || boundSpace.provider !== text(space.provider) || boundSpace.model !== text(space.model)
-      || boundSpace.dimension !== Number(space.dimension) || (text(space.metric) && boundSpace.metric !== text(space.metric))) {
+      || boundSpace.dimension !== Number(space.dimension) || (text(space.metric) && boundSpace.metric !== text(space.metric))
+      || text(boundSpace.taskPair) !== text(space.taskPair) || text(boundSpace.profileDigest) !== text(space.profileDigest)) {
       return Object.freeze({ status: 'foreign_space', reason: 'embedding_space_mismatch' });
     }
     const boundView = representation.viewpoint || {};
+    if (text(boundView.viewerId) !== text(viewpoint.viewerId)) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_other_viewer' });
+    }
     const asOfTurn = Number.isSafeInteger(viewpoint.asOfTurn) ? viewpoint.asOfTurn : null;
     if (asOfTurn !== null && !Number.isSafeInteger(boundView.asOfTurn)) {
       return Object.freeze({ status: 'out_of_view', reason: 'representation_viewpoint_unknown' });

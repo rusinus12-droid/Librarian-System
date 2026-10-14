@@ -7724,11 +7724,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(readSource==='unified_engine'&&(!unifiedReadProvider||typeof unifiedReadProvider.capture!=='function'||typeof unifiedReadProvider.current!=='function'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
     // Same envelope, same validation below: only where the answer comes from changes.
     const sourceRead=readSource==='unified_engine'?async(action,body)=>{
-      checkAbort();
+      await assertRoute();
       const answer=action==='capture'
         ? await unifiedReadProvider.capture({scope:body?.scope,maxCorpusBytes:body?.maxCorpusBytes,signal:readOptions.signal})
         : await unifiedReadProvider.current({proof:body,signal:readOptions.signal});
-      checkAbort();
+      await assertRoute();
       if(!answer||typeof answer!=='object')reject('LIB_READ_UNIFIED_UNAVAILABLE');
       return answer;
     }:read;

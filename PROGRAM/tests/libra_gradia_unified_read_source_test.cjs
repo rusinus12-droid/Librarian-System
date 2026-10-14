@@ -41,7 +41,11 @@ function sdkFixture(options = {}) {
   const instrumented = sdkSource.replace('  const bridge = Object.freeze({', `Object.assign(dataBinding,{url:__fixture.connection.url,dataInstanceId:__fixture.connection.dataInstanceId,dataIdentityContract:__fixture.connection.dataIdentityContract,certified:true,generation:1,rejected:false}); state.config.url=__fixture.connection.url;state.bootstrap={value:__fixture.connection,baseUrl:__fixture.connection.url,at:1,pending:null}; __fixture.values.set(SCOPE_ROUTING_LOCAL_KEY,JSON.stringify(__fixture.route)); __fixture.state=state;__fixture.dataBinding=dataBinding;\n  const bridge = Object.freeze({`);
   vm.runInContext(instrumented + ';globalThis.factory=createMemorySuiteStorageBridge', context);
   const bridge = context.factory({ namespace: 'libra', pluginId: 'serial_gradation_agents_for_rp', managementButton: false, startupDiagnostics: false, ...(options.unifiedReadProvider ? { unifiedReadProvider: options.unifiedReadProvider } : {}) });
-  return { bridge, counts: () => ({ calls, writes }), setCurrent: v => { current = v; } };
+  return { bridge, counts: () => ({ calls, writes }), setCurrent: v => { current = v; },
+    setMode(mode) { route.entries[scope.scopeKey].mode = mode; values.set('__memory_suite_internal_scope_routes_v1__:libra', JSON.stringify(route)); },
+    setResetReview(value) { values.set('memory_suite_reset_choice.v2.libra', JSON.stringify(value)); },
+    changeConnection() { connection.dataInstanceId = 'Z'.repeat(32); }
+  };
 }
 
 function unifiedAnswer(patch = {}) {
@@ -134,6 +138,57 @@ function unifiedProvider(options = {}) {
     } finally { await f.bridge.dispose(); }
   });
 
+  await test('N03 regression: route, reset and connection changes refuse unified currentness before calling the provider', async () => {
+    for (const [change, code] of [
+      [f => f.setMode('plugin_only'), 'LIB_READ_SERVER_MODE_REQUIRED'],
+      [f => f.setResetReview({ choice: 'unreviewed' }), 'LIB_READ_RESET_REVIEW_REQUIRED'],
+      [f => f.changeConnection(), 'LIB_READ_SERVER_CONNECTION_REQUIRED']
+    ]) {
+      const { provider, counts } = unifiedProvider();
+      const f = sdkFixture({ unifiedReadProvider: provider });
+      try {
+        const session = await f.bridge.createLibraReadOnlyClient().openReadSession(scope, { source: 'unified_engine' });
+        change(f);
+        await assert.rejects(() => session.assertCurrent(), error => error.code === code);
+        assert.equal(counts.current, 0, 'a changed boundary must be refused before provider access');
+      } finally { await f.bridge.dispose(); }
+    }
+  });
+
+  await test('N03 regression: a late unified capture cannot cross a storage-mode change', async () => {
+    let release, entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const { provider } = unifiedProvider();
+    provider.capture = async () => { entered(); return await new Promise(resolve => { release = resolve; }); };
+    const f = sdkFixture({ unifiedReadProvider: provider });
+    try {
+      const pending = f.bridge.createLibraReadOnlyClient().openReadSession(scope, { source: 'unified_engine' });
+      const rejected = assert.rejects(pending, error => error.code === 'LIB_READ_SERVER_MODE_REQUIRED');
+      await waiting; f.setMode('plugin_only'); release(unifiedAnswer());
+      await rejected;
+    } finally { await f.bridge.dispose(); }
+  });
+
+  await test('N03 regression: a late unified currentness answer cannot cross reset or connection changes', async () => {
+    for (const [change, code] of [
+      [f => f.setResetReview({ choice: 'unreviewed' }), 'LIB_READ_RESET_REVIEW_REQUIRED'],
+      [f => f.changeConnection(), 'LIB_READ_SERVER_CONNECTION_REQUIRED']
+    ]) {
+      let release, entered;
+      const waiting = new Promise(resolve => { entered = resolve; });
+      const { provider } = unifiedProvider();
+      const current = provider.current;
+      provider.current = async input => { entered(); await new Promise(resolve => { release = resolve; }); return await current(input); };
+      const f = sdkFixture({ unifiedReadProvider: provider });
+      try {
+        const session = await f.bridge.createLibraReadOnlyClient().openReadSession(scope, { source: 'unified_engine' });
+        const pending = session.assertCurrent();
+        const rejected = assert.rejects(pending, error => error.code === code);
+        await waiting; change(f); release(); await rejected;
+      } finally { await f.bridge.dispose(); }
+    }
+  });
+
   // --- GRADIA's server-read consumer ---------------------------------------------------------------
   function captureConsumer(source) {
     const ast = acorn.parse(source, { ecmaVersion: 'latest' }); let target;
@@ -152,10 +207,12 @@ function unifiedProvider(options = {}) {
     let captures = 0; const asked = [];
     const client = { schema: 'memory-suite.libra-read-client.v1', pluginId: 'serial_gradation_agents_for_rp', openReadSession: async (s, o) => {
       captures++; asked.push(o.source === undefined ? null : o.source);
-      return { snapshot: packet, source: options.answerSource, engine: options.engine, assertCurrentSync: () => true, assertCurrent: async () => true }; } };
+      if (options.onCapture) await options.onCapture(binding);
+      return { snapshot: packet, source: options.answerSource, engine: options.engine,
+        assertCurrentSync: () => { if (options.onSyncCurrent) options.onSyncCurrent(binding); return true; }, assertCurrent: async () => true }; } };
     const binding = options.unbound ? null : { client, scope, maxCorpusBytes: 4194304, ...(options.readSource === undefined ? {} : { readSource: options.readSource }) };
-    const consumer = host.createLibReadConsumer({ getBinding: () => binding, assertNativeScope: async () => true, digest: async value => crypto.createHash('sha256').update(value).digest('hex') });
-    return { consumer, counts: () => ({ captures }), asked: () => asked };
+    const consumer = host.createLibReadConsumer({ getBinding: () => binding, assertNativeScope: options.assertNativeScope || (async () => true), digest: async value => crypto.createHash('sha256').update(value).digest('hex') });
+    return { consumer, binding, counts: () => ({ captures }), asked: () => asked };
   }
 
   await test('N03: the consumer asks for the declared source and the legacy default is unchanged', async () => {
@@ -196,6 +253,50 @@ function unifiedProvider(options = {}) {
     const f = await consumerFixture({ readSource: 'moon', answerSource: 'unified_engine' });
     await assert.rejects(() => f.consumer.beginRead({ requestId: 'r5' }), error => error.code === 'LIB_READ_SOURCE_UNSUPPORTED');
     assert.equal(f.counts().captures, 0);
+  });
+
+  await test('N03 regression: changing the declared source discards the previous evidence and draft', async () => {
+    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine' });
+    const session = await f.consumer.beginRead({ requestId: 'source-change' });
+    await session.bindDraft('OLD_UNIFIED_DRAFT');
+    f.binding.readSource = 'server_logical_read';
+    assert.throws(() => session.assertLocalCurrent(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+    await assert.rejects(() => session.getEvidence(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+  });
+
+  await test('N03 regression: a source change during capture refuses the late answer', async () => {
+    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
+      onCapture: async binding => { binding.readSource = 'server_logical_read'; } });
+    await assert.rejects(() => f.consumer.beginRead({ requestId: 'late-source' }), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+    assert.equal(f.counts().captures, 1);
+  });
+
+  await test('N03 regression: the final native-scope await cannot hide a source change', async () => {
+    let armed = false, checks = 0, binding;
+    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
+      assertNativeScope: async () => { if (armed && ++checks === 2) binding.readSource = 'server_logical_read'; return true; } });
+    binding = f.binding;
+    const session = await f.consumer.beginRead({ requestId: 'final-source' });
+    await session.bindDraft('OLD_UNIFIED_DRAFT'); armed = true;
+    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+  });
+
+  await test('N03 regression: absent and explicit legacy defaults remain the same source', async () => {
+    const f = await consumerFixture({ answerSource: undefined });
+    const session = await f.consumer.beginRead({ requestId: 'legacy-default' });
+    await session.bindDraft('LEGACY_DRAFT'); f.binding.readSource = 'server_logical_read';
+    assert.equal(await session.finalizeDraft(), 'LEGACY_DRAFT');
+  });
+
+  await test('N03 regression: the synchronous final owner check cannot hide a source change', async () => {
+    let armed = false;
+    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
+      onSyncCurrent: binding => { if (armed) binding.readSource = 'server_logical_read'; } });
+    const session = await f.consumer.beginRead({ requestId: 'sync-source' });
+    await session.bindDraft('OLD_UNIFIED_DRAFT'); armed = true;
+    assert.throws(() => session.assertLocalCurrent(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
   });
 
   console.log(JSON.stringify({ suite: 'libra_gradia_unified_read_source', passed: results.length, tests: results }));

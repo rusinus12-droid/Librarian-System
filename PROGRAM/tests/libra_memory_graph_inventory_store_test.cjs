@@ -99,23 +99,24 @@ const deltaFor = (built, family) => (built.sourceInventoryDeltas || []).find(del
     await x.build();
     x.graph.units = x.graph.units.filter(unit => unit.nodeId !== 'n0');
     const built = await x.build();
-    assert.equal(built.sourceInventoryDeltaBasis, 'previous_window');
+    assert.equal(built.sourceInventoryDeltaBasis, 'same_window');
     const canonical = deltaFor(built, 'canonical');
-    assert.equal(canonical.windowChanged, true);
+    assert.equal(canonical.windowChanged, false);
     assert.deepEqual(canonical.unobservableRemoval, ['n0']);
     assert.deepEqual(canonical.removed, [], 'canonical cannot prove a deletion');
-    assert.ok(canonical.reasons.includes('window_changed'));
+    assert.ok(canonical.reasons.includes('removal_not_observable'));
     assert.equal(canonical.deltaComplete, false);
   });
 
   await test('N01 negative control: across windows nothing is reported as a deletion, even for lore', async () => {
     const x = makeFixture();
-    await x.build();
+    const first = await x.build(), read = await x.read();
     // A lore entry disappears and the window moves: lore does report tombstones inside a window, but
     // across windows an absent entry is outside the window, so it must not be called removed.
     x.graph.units = x.graph.units.filter(unit => unit.nodeId !== 'n3');
     x.graph.units.push({ nodeId: 'n9', family: 'state', text: 'y'.repeat(100) });
-    const built = await x.build();
+    const built = await x.build({ sourceOptions: { ...options, canonicalCursor: 'mgc1:20' },
+      baseRootKey: read.rootKey, baseGeneration: first.generation });
     assert.equal(built.sourceInventoryDeltaBasis, 'previous_window');
     for (const delta of built.sourceInventoryDeltas) {
       assert.deepEqual(delta.removed, [], delta.family + ' must not report a cross-window deletion');
@@ -126,6 +127,49 @@ const deltaFor = (built, family) => (built.sourceInventoryDeltas || []).find(del
     assert.deepEqual(lore.unobservableRemoval, ['n3'], 'the absent lore entry is outside the window');
     assert.deepEqual(lore.removalObservable, true, 'lore can report tombstones — inside one window');
     assert.deepEqual(deltaFor(built, 'state').added, ['n9']);
+  });
+
+  await test('N01 regression: source revision and binding changes remain within the same window', async () => {
+    const x = makeFixture();
+    x.graph.units[0].revision = 'r1';
+    const first = await x.build();
+    x.graph.units[0].revision = 'r2'; x.graph.nodes[0].bindingId = 'changed-source-binding';
+    const built = await x.build(), delta = deltaFor(built, 'canonical');
+    assert.notEqual(built.sourceStamp, first.sourceStamp, 'the source itself changed');
+    assert.equal(built.sourceInventoryDeltaBasis, 'same_window');
+    assert.equal(delta.windowChanged, false);
+    assert.deepEqual(delta.changed, [{ key: 'n0', from: 'r1', to: 'r2' }]);
+    assert.equal(delta.reasons.includes('window_changed'), false);
+  });
+
+  await test('N01 regression: same-window lore removal is observable even when the source stamp changes', async () => {
+    const x = makeFixture(); await x.build();
+    x.graph.units = x.graph.units.filter(unit => unit.nodeId !== 'n3');
+    x.graph.nodes = x.graph.nodes.filter(node => node.id !== 'n3');
+    const built = await x.build(), delta = deltaFor(built, 'lore');
+    assert.equal(built.sourceInventoryDeltaBasis, 'same_window');
+    assert.deepEqual(delta.removed, ['n3']);
+    assert.deepEqual(delta.unobservableRemoval, []);
+    assert.equal(delta.deltaComplete, false, 'a bounded window still has incomplete family coverage');
+  });
+
+  await test('N01 regression: an explicit base within the same window is not a window change', async () => {
+    const x = makeFixture(), first = await x.build(), read = await x.read();
+    const built = await x.build({ baseRootKey: read.rootKey, baseGeneration: first.generation });
+    assert.equal(built.sourceInventoryDeltaBasis, 'same_window');
+    assert.ok(built.sourceInventoryDeltas.every(delta => delta.windowChanged === false));
+  });
+
+  await test('N01 regression: changing the restore/view frame keeps cross-window removals unobservable', async () => {
+    for (const change of [graph => { graph.readerFrame.restoreEpoch++; }, graph => { graph.readerFrame.view.cutoffTurn = 5; }]) {
+      const x = makeFixture(); await x.build();
+      change(x.graph); x.graph.units = x.graph.units.filter(unit => unit.nodeId !== 'n3');
+      const built = await x.build(), delta = deltaFor(built, 'lore');
+      assert.equal(built.sourceInventoryDeltaBasis, 'previous_window');
+      assert.equal(delta.windowChanged, true);
+      assert.deepEqual(delta.removed, []);
+      assert.deepEqual(delta.unobservableRemoval, ['n3']);
+    }
   });
 
   await test('N01 negative control: without the inventory kernel nothing is claimed about coverage', async () => {

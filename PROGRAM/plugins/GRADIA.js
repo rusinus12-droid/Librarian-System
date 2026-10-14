@@ -28716,12 +28716,18 @@ function createGradiaEvidenceBudget({ digest }) {
         for (const key of ['scopeKey', 'characterId', 'chatId']) if (typeof scope?.[key] !== 'string' || !scope[key] || scope[key].length > 512) fail('LIB_READ_SCOPE_UNAVAILABLE');
         const maxCorpusBytes = binding.maxCorpusBytes === undefined ? 4194304 : binding.maxCorpusBytes;
         if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) fail('LIB_READ_BUDGET_INVALID');
-        const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation]);
-        const assertBinding = async () => {
+        const readSource = String(binding.readSource || 'server_logical_read');
+        if (!['server_logical_read','unified_engine'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
+        const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation, readSource]);
+        const assertBindingSignature = () => {
           check(record); const now = dependencies.getBinding?.();
-          if (!now || now.client !== client || JSON.stringify([now.scope, now.maxCorpusBytes === undefined ? 4194304 : now.maxCorpusBytes, now.generation]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
+          if (!now || now.client !== client || JSON.stringify([now.scope, now.maxCorpusBytes === undefined ? 4194304 : now.maxCorpusBytes, now.generation,
+            String(now.readSource || 'server_logical_read')]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
+        };
+        const assertBinding = async () => {
+          assertBindingSignature();
           if (typeof dependencies.assertNativeScope !== 'function' || await guarded(() => dependencies.assertNativeScope(scope)) !== true) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-          check(record);
+          assertBindingSignature();
         };
         await assertBinding();
         // Reuse the existing completed-turn selection exactly; never replace it
@@ -28729,8 +28735,6 @@ function createGradiaEvidenceBudget({ digest }) {
         if (typeof input.pipelineSnapshot === 'function') input.pipelineSnapshot();
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
-        const readSource = String(binding.readSource || 'server_logical_read');
-        if (!['server_logical_read','unified_engine'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
         let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource }));
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
@@ -28823,7 +28827,11 @@ function createGradiaEvidenceBudget({ digest }) {
           ...(readEngine ? { engine: readEngine } : {}),
           nativeScope: freeze(scope), selection,
           invalidate: reason => stop(record, /^LIB_READ_/.test(reason || '') ? reason : 'LIB_READ_INVALIDATED'),
-          assertLocalCurrent: () => { check(record); try { if (assertReadCurrentSync() !== true) fail('LIB_READ_STALE'); } catch (_) { stop(record, 'LIB_READ_STALE'); fail('LIB_READ_STALE'); } },
+          assertLocalCurrent: () => { check(record); try {
+            assertBindingSignature();
+            if (assertReadCurrentSync() !== true) fail('LIB_READ_STALE');
+            assertBindingSignature();
+          } catch (error) { const code = error?.code === 'LIB_READ_BOUNDARY_CHANGED' ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code); } },
           assertCurrent, getEvidence: async () => { await assertCurrent(); return record.evidence; },
           bindDraft: async draft => { await assertCurrent(); if (typeof draft !== 'string' || !draft || bytes(draft) > 320000) fail('LIB_READ_DRAFT_INVALID');
             const hash = await guarded(() => digest(draft)); await assertCurrent(); if (!/^[a-f0-9]{64}$/.test(hash)) fail('LIB_READ_HASH_UNAVAILABLE'); record.draft = draft; return Object.freeze({ evidenceRevision, draftHash: hash }); },

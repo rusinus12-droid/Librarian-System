@@ -1,7 +1,7 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.0
-- 코드·호출 경로 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
+- 작성일: 2026-10-14 · 문서 버전: 1.1
+- 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
 - 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. 전체 기록의 영속 접근, GRADIA의 새 엔진 연결, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
 
@@ -31,7 +31,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - [GRADIA 근거 연결 검사](../tests/gradia/evidence-bridge.test.cjs): 셰도우/AIDE의 근거 전달·최종 현재성 검증, 인풋 작성기의 회수 없음·이전 근거 비사용.
 - [SQLite → SDK → GRADIA 검사](../tests/gradia_readonly_cross_project_test.cjs): 기존 서버 읽기의 원본·operation 비변경과 원본 교체 후 이전 draft 거부.
 
-기준 소스 SHA-256:
+최초 퇴역/호출 검사 기준(`3e589dd`)의 소스 SHA-256:
 
 | 파일 | SHA-256 |
 | --- | --- |
@@ -48,6 +48,10 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | N01 | P1 · 부분 구현 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
 | N03 | P1 · 기존 서버 읽기만 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
+| N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
+| N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
+| N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
+| N07 | P2 · 기본값 legacy | 기본값 전환·중복 경로 종료 | M13/M15 | 지원 범위의 N00–N06 합격 |
 
 ### N03 진척 — 읽기 출처(source) 계약
 
@@ -57,7 +61,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **조용한 대체 금지**: `unified_engine`을 요청했는데 통합 엔진 읽기 공급자가 없으면 서버 읽기로 대신 답하지 않고 거부한다(`LIB_READ_UNIFIED_UNAVAILABLE`). 실측으로 이 경우 서버 호출 수가 **0**임을 확인했다.
 - 통합 엔진의 답변도 **같은 봉투**로 검증된다: scope·evidenceRevision(64자 digest)·corpusBytes·item shape 검사가 그대로 적용된다. 통합 세션에는 `source: 'unified_engine'`과 `engine`(예: 세대 `mgm1:5`)이 추가로 실리고, `assertCurrent()`도 같은 출처에 다시 묻는다(현재성 계약 유지).
 - GRADIA 소비자는 **요청한 출처를 검증**한다: 바인딩이 `readSource`를 선언하고 클라이언트에 그대로 전달하며, 돌아온 세션의 출처가 다르면 거부한다(`LIB_READ_SOURCE_MISMATCH`). 계약 문자열(`existing-server-logical-read.v1`)은 **바꾸지 않았다** — 예산·스코프 게이트가 그 계약에 걸려 있어서 계약을 바꾸면 조용히 약해진다. 출처는 `readSource`와 `selection.readSource`로 따로 보고된다.
-- 게이트는 실제 코드에 있다: `sdk/MemorySuiteStorageClient.source.js`(읽기 클라이언트) → `sync_embedded_sdk.cjs`로 6개 플러그인에 재삽입, `check_sdk_sync.cjs` OK. GRADIA 쪽 검증은 `plugins/GRADIA.js` 소비자에 있다.
+- 게이트는 `sdk/MemorySuiteStorageClient.source.js`의 읽기 클라이언트와 `plugins/GRADIA.js` 소비자에 있다. SDK 원본을 재생성하는 대상과 고정 내장 변형은 [변형 registry](../tools/lib/sdk_variants.cjs)로 구분한다. `check_sdk_sync.cjs`의 통과는 각 변형의 일치이며 모든 플러그인이 SDK 원본의 새 기능을 갖는다는 뜻이 아니다.
 
 **검증**
 
@@ -68,11 +72,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 - **통합 엔진 읽기 공급자 자체는 아직 연결하지 않았다.** 이 증분은 출처 계약·거부·검증까지다. 공급자(owner read-session, N00)가 연결되면 GRADIA 셰도우·AIDE가 통합 결과를 읽는다. 지금 `unified_engine`을 켜면 GRADIA는 **거부**한다 — 그것이 의도된 동작이다.
 - 실제 설치 RisuAI 호스트에서의 셰도우/AIDE 파이프라인 검증은 미완(E4).
-- **배포 상태 주의**: 이번 출처 계약은 SDK 원본에서 재생성되는 변형(HAYAKU·Flashback·GRADIA의 읽기 클라이언트)에 들어갔다. LIA·RETRACE는 저장소 SDK 변형이 고정 해시(`preserved-local-only`/`preserved-manager-only`)로 동결되어 있어 그 안의 읽기 클라이언트 사본은 옛 상태 그대로다(설계대로 보존). LIBRA에는 읽기 클라이언트가 없다. 따라서 GRADIA가 LIA·RETRACE의 옛 클라이언트에 묶이면 `unified_engine` 요청을 이해하지 못하고 출처 없는 세션을 돌려주며, 소비자가 이를 **거부**한다(`LIB_READ_SOURCE_MISMATCH`) — 조용히 서버 읽기로 답하지 않는다.
-| N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
-| N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
-| N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
-| N07 | P2 · 기본값 legacy | 기본값 전환·중복 경로 종료 | M13/M15 | 지원 범위의 N00–N06 합격 |
+- **배포 상태 정정**: 출처 계약은 SDK 원본과 이를 재생성하는 HAYAKU·Flashback의 읽기 클라이언트에 들어갔다. **GRADIA도 `preserved-readonly-three-owner` 고정 변형**이며 SDK 원본의 `unifiedReadProvider`/`readOptions.source` 경로가 없다. GRADIA 소비자의 source 검사는 별도로 구현돼 있다. LIA·RETRACE도 고정 변형이고 LIBRA 전용 SDK에는 이 읽기 클라이언트가 없다. 고정 변형의 구형 클라이언트에 `unified_engine`을 요청하면 출처 없는 응답을 GRADIA 소비자가 `LIB_READ_SOURCE_MISMATCH`로 거부한다. GRADIA SDK의 검토된 확장과 실제 owner 공급자 연결은 N03 후속 과제다.
 
 다음 엔진 구현은 **N01**부터 시작한다. N00의 runtime 소비자 계약 정리와 N06의 고정 평가 세트 정의는 이에 앞서 또는 함께 진행할 수 있다. 제한된 source window를 전체 기록처럼 취급하는 상태에서 소비자 수만 늘려도 corpus coverage 문제는 해결되지 않는다.
 
@@ -233,3 +233,20 @@ node --test PROGRAM/tests/gradia/evidence-bridge.test.cjs PROGRAM/tests/gradia_r
 ```
 
 후속 작업자는 과제별 실제 변경 경로·source SHA·검사·측정과 남은 gate를 현황 문서에 기록한다. 기능 이름·새 API·포맷터·자기 보고식 bool만으로 과제를 닫지 않는다.
+
+## 12. `9a61245` 리뷰 후 네 결함 패치
+
+`9a61245`까지의 N01/N02/N03 증분에서 확인한 네 결함을 수정했다. 기준 커밋에서 회귀 검사의 실패를 확인한 뒤 runtime과 내장 코드를 함께 갱신했다.
+
+| 경계 | 수정한 계약 | 회귀 검사 |
+| --- | --- | --- |
+| N03 통합 reader | provider의 capture/current 전후에 기존 route·reset·connection·취소 fence를 검사. 변경된 저장 경계의 늦은 응답을 거부 | 모드 변경 전후, provider 대기 중 reset/connection 변경 |
+| N03 GRADIA 소비자 | 정규화한 readSource를 요청 시작에 봉인하고 native scope 검증 await 전후에 재검증. 불일치는 근거/draft 폐기 | source 변경·늦은 capture·마지막 scope await, 구형 기본값 정상 전달 |
+| N02 표현 | 동일 spaceId라도 taskPair/profileDigest 불일치는 foreign_space. viewerId 변경·누락은 out_of_view이고 vector 채널 제외 | task pair/profile 변경·누락, viewer 변경·누락, 동일 binding 정상 경로 |
+| N01 inventory delta | 조회 sourceOptions·owner/view/restore frame으로 구간을 비교. sourceStamp 변화와 explicit base 지정만으로 window_changed를 만들지 않음 | 동일 구간 revision/binding 수정·lore removal, 실제 cursor/restore/view 이동 |
+
+직접 회귀는 `libra_gradia_unified_read_source_test.cjs`(18), `libra_memory_graph_representation_test.cjs`(9), `libra_memory_graph_inventory_store_test.cjs`(11)의 38개 검사다. 영향권 SDK/GRADIA pipeline·durable store·continuation·native semantic 검사와 내장 코드·패키지 정합성도 함께 확인한다.
+
+SDK 원본 수정은 HAYAKU·Flashback에 내장했고, GRADIA는 소비자의 async/sync binding 검사를 수정했다. GRADIA·LIA·RETRACE의 고정 SDK 해시는 유지한다. LIBRA에는 수정한 store/representation 커널을 동기화한다.
+
+이 패치는 N01의 전체 영속 인덱스, N02의 추가 벡터 생산자, N03의 실제 통합 reader 공급자를 연결한 것이 아니다. native GC와 설치 호스트/실제 모델 품질 gate도 계속 남는다. 구간 내 delta가 수정돼도 bounded source inventory의 `deltaComplete:false`를 전체 기록의 완료로 바꾸지 않는다.

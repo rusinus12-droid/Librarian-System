@@ -45632,7 +45632,10 @@ function createLibraReadonlySourceContext(owner) {
         // A generation published for another source window is still a base — the whole point of the
         // unread cursor is that the next window continues where the previous one stopped — but every
         // disappearance across windows is then reported as outside the window, never as a deletion.
-        const windowChanged = base.sourceStamp !== stamp || Boolean(baseManifest);
+        // Content/revision changes belong to a same-window delta. Only the requested slice and its
+        // owner/view/restore frame distinguish windows, including when an explicit base was supplied.
+        const windowChanged = base.policy !== policy || base.partition !== loc.partition
+          || !same(base.sourceOptions, sourceOptions) || !same(base.readerFrame, after.graph.readerFrame);
         const deltas = [];
         for (const page of inventorySet.pages) {
           const before = published.pages?.find(candidate => candidate.family === page.family);
@@ -49198,10 +49201,14 @@ function createLibraReadonlySourceContext(owner) {
     }
     const boundSpace = representation.space;
     if (boundSpace.spaceId !== text(space.spaceId) || boundSpace.provider !== text(space.provider) || boundSpace.model !== text(space.model)
-      || boundSpace.dimension !== Number(space.dimension) || (text(space.metric) && boundSpace.metric !== text(space.metric))) {
+      || boundSpace.dimension !== Number(space.dimension) || (text(space.metric) && boundSpace.metric !== text(space.metric))
+      || text(boundSpace.taskPair) !== text(space.taskPair) || text(boundSpace.profileDigest) !== text(space.profileDigest)) {
       return Object.freeze({ status: 'foreign_space', reason: 'embedding_space_mismatch' });
     }
     const boundView = representation.viewpoint || {};
+    if (text(boundView.viewerId) !== text(viewpoint.viewerId)) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_other_viewer' });
+    }
     const asOfTurn = Number.isSafeInteger(viewpoint.asOfTurn) ? viewpoint.asOfTurn : null;
     if (asOfTurn !== null && !Number.isSafeInteger(boundView.asOfTurn)) {
       return Object.freeze({ status: 'out_of_view', reason: 'representation_viewpoint_unknown' });

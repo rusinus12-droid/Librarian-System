@@ -104,6 +104,33 @@ test('N02: a unit without a usable vector still participates through the same ke
   assert.deepEqual([...canonicalPlan.units[1].channels], ['lexical', 'entity', 'predicate', 'graph']);
 });
 
+test('N02 regression: task pair and profile changes are isolated even under the same space ID', () => {
+  for (const changed of [{ taskPair: 'different-query/document' }, { profileDigest: 'c'.repeat(64) }, { taskPair: undefined }, { profileDigest: undefined }]) {
+    const id = bound();
+    const space = { ...SPACE, ...changed };
+    assert.equal(representation.classifyRepresentation({ representation: id, space, viewpoint: VIEW }).status, 'foreign_space');
+    const plan = representation.planRepresentationAccess({ family: 'canonical', space, viewpoint: VIEW,
+      units: [{ unitKey: 'm1', representation: id, currentBasis: 'rev-1' }] });
+    assert.equal(plan.coverage.foreignSpace, 1);
+    assert.equal(plan.vectorCoverageComplete, false);
+    assert.equal(plan.units[0].channels.includes('vector'), false);
+  }
+});
+
+test('N02 regression: viewer changes or missing viewer binding cannot receive the vector channel', () => {
+  for (const viewerId of ['another_reader', undefined, '']) {
+    const viewpoint = { ...VIEW, viewerId };
+    const verdict = representation.classifyRepresentation({ representation: bound(), space: SPACE, viewpoint });
+    assert.equal(verdict.status, 'out_of_view');
+    assert.equal(verdict.reason, 'representation_other_viewer');
+    const plan = representation.planRepresentationAccess({ family: 'canonical', space: SPACE, viewpoint,
+      units: [{ unitKey: 'm1', representation: bound() }] });
+    assert.equal(plan.units[0].channels.includes('vector'), false);
+    assert.equal(plan.vectorCoverageComplete, false);
+  }
+  assert.equal(representation.classifyRepresentation({ representation: bound(), space: SPACE, viewpoint: VIEW }).status, 'valid');
+});
+
 test('N02: coverage adds up and is never claimed complete while anything is missing', () => {
   const plan = representation.planRepresentationAccess({
     family: 'canonical', space: SPACE, viewpoint: VIEW,

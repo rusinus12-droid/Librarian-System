@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.3
+- 작성일: 2026-10-14 · 문서 버전: 1.4
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `3e589dd` native semantic bridge와 소비자 호출 경로 재검토. §12–14가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
+- 현재 기준: `9a61245`까지의 N01/N02/N03 증분과 이후 네 결함 패치. §12–15가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
 - 목표 계약: [통합 엔진 설계 v1.10](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
 - 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 임베딩 adapter·저장 정본 벡터를 단일 frontier에 연결했다. 실제 설치 호스트, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–14를 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 메모리 읽기는 아직 새 계약이 필요한 목표다.
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–15를 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 메모리 읽기는 아직 새 계약이 필요한 목표다.
 
 ## 1. 완성이 의미하는 것
 
@@ -273,3 +273,16 @@ M04의 `countedBytes`는 서로 다른 논리 계측값의 합이다. packet/bod
 실행한 검사는 [퇴역 runtime](../tests/libra_helper_retirement_runtime_test.cjs)·[Classic 권한](../tests/libra_classic_planner_authority_contract_test.cjs) 2개 파일과 [GRADIA 근거 연결](../tests/gradia/evidence-bridge.test.cjs)·[SQLite 읽기](../tests/gradia_readonly_cross_project_test.cjs) 42개 검사이며 모두 통과했다. 이 증거는 기존 경로의 퇴역/읽기 계약을 확인한다. GRADIA의 새 엔진 연결·실제 설치 호스트 인증을 완료한 것은 아니다.
 
 다음 엔진 구현은 전체 기록의 durable index·공통 cache·Memory Lane(N01)이다. 소비자 범위 정리(N00)와 평가 세트 정의(N06)를 함께 준비하고, 자료별 표현(N02), GRADIA 셰도우/AIDE(N03), 인풋 작성기(N04), 안전한 native GC(N05), 인증 이후 legacy 종료(N07)를 추적한다. 문서 수정으로 runtime 소비자 제한·reader·GC를 구현했다고 표시하지 않는다.
+
+## 15. `9a61245` 후 읽기·표현·delta 경계 패치
+
+N01의 원본 목록/continuation/접근 진단, N02의 표현/생산자 선언, N03의 읽기 출처 계약은 부분 구현이다. GRADIA의 실제 unified 공급자와 전체 corpus의 영속 index는 미연결 상태다.
+
+| 리뷰 결함 | 패치 | 검증 범위 |
+| --- | --- | --- |
+| 통합 SDK 읽기가 저장 모드 변경을 놓침 | provider capture/current 전후의 assertRoute로 기존 reset/connection/취소 검증 복원 | 변경 전 호출 거부와 provider 대기 중 변경·늦은 응답 거부 |
+| GRADIA readSource 변경 후 이전 draft 전달 | readSource를 signature에 포함하고 native scope await 뒤에도 binding을 재확인 | capture·draft 이후·최종 scope await 중 source 변경 시 근거/draft 거부, legacy default 정상 |
+| 표현 viewer/taskPair/profile 검증 누락 | query와 representation의 해당 binding을 비교하고 vector 채널에서 격리 | 변경/누락된 field 거부와 기존 정상/lexical 참여 |
+| 원본 내용 수정을 window 이동으로 오분류 | sourceOptions·policy/partition·readerFrame으로 구간 판정. sourceStamp/explicit base 자체는 이동 사유에서 제외 | 같은 구간 revision/binding 수정과 removal, 실제 cursor/restore/view 이동 보호 |
+
+직접 회귀 3개 파일의 38개 검사와 영향권 SDK·GRADIA·store/continuation·native semantic을 검증한다. 소스 커널/SDK를 재생성되는 내장 변형에 동기화하며 LIA/RETRACE의 고정 변형은 유지한다. 새 공급자·새 producer·전체 inventory/GC/호스트 인증이 완료됐다고 표시하지 않는다. 상세 연결 상태와 재현 범위는 [다음 과제 §12](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md#12-9a61245-리뷰-후-네-결함-패치)를 따른다.
