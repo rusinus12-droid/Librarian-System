@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.5 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **설계 초안. 네 자료 reader·byte page cache에 durable projection-window pages·generation manifest/root와 독립 재검증 reader를 연결했다. 전체 corpus inventory/delta·공통 posting/adjacency 접근·전체 byte inventory·Memory Lane·단일 검색·최종 dispatch는 후속 작업이다.**
-- 구현 기준: codex/libra-memory-network-20261013, ca40d76450784f4ff6397666d47aba079415eec9
+- 문서 버전: 1.6 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **UM1–UM6 커널·인덱스·Memory Lane·단일 검색·근거 묶음 컴파일러·단계적 전환(Shadow/Cutover/Legacy Retirement Fence) 구현 및 `LIBRA.js` 내장 완료. 실제 설치 호스트(RisuAI) 성능 인증과 호스트 원문 무변이 revision API는 외부 호스트 한계로 분리 유지한다.**
+- 구현 기준: codex/libra-memory-network-20261013
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**
@@ -102,6 +102,15 @@ pin backpressure·LRU 재조회·강제 digest 충돌·finally 해제·partition
 합성 native host의 실제 등록 API에서 두 저장 모드 모두 48 nodes·81 edges·27 bases·33 units를 17개 page로 게시·재읽는다. server_only는 기존 SDK의 source/root readset과 page/manifest 조건을 결속한 root CAS, plugin_only는 runtime 내 직렬 root-last/readback의 partial 보장이다. 새 VM에서는 이전 RAM verified 상태를 신뢰하지 않는다. 중간 실패·오염·취소/복원·독립 publisher 경합을 [durable 계약](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)과 재현 suite에 기록한다.
 
 `durableGenerationVerified:true`는 **현재 owner projection window의 전체 persisted pages** 검증에 한정한다. 전체 owner inventory/delta·native mutation atomicity·viewer/as-of QueryGraphView·최종 dispatch를 뜻하지 않는다. `inventoryComplete:false`, `ownerAtomicity:false`, `modelDispatchEligible:false`, 전체 `byteBounded:false`와 actual-host 미인증 한계를 유지한다. 기존 normal recall·A2 preparation/ranker 경로는 아직 이전하지 않았다.
+
+### 2.7 v1.6의 구현 진척
+
+UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `SourceNode` 생성, 빈 배열 `[]` State 필드 분류, `reuseInitial` 중복 읽기, 공개 API `safeClone` 대칭성)을 수정하고, UM2–UM6의 5개 핵심 모듈(`Index`, `Lane`, `Query`, `Compiler`, `Rollout`)을 구현해 `LIBRA.js`에 동기화·내장했다.
+
+- **UM2 공통 접근 인덱스·Memory Lane·GC (`libra_memory_graph_index.cjs`, `libra_memory_graph_lane.cjs`, `libra_memory_graph_store.cjs`)**: Node/Source directory, 방향·predicate·구조 우선순위가 보존된 typed adjacency, 엔티티/슬롯/시간 포스팅, 전역 DF 기반 lexical 포스팅, 역의존 인덱스(`reverseDependencies`, `affectedByChanges`), 5개 역할 Memory Lane 스케줄러(동일 페이지 중복 읽기 병합·예산 중단 커서 반환) 및 오래된 durable generation 정리용 `collectGarbage`를 구현했다.
+- **UM3 단일 검색·활성화 전파 커널 (`libra_memory_graph_query.cjs`)**: `sealQueryFrame`, `openView`(비적격·비공개·미래 턴 후보의 시드·중간 경유 원천 차단), `scoreCandidate`(단일 보정 점수·공간 불일치 벡터 격리), 개선 경로 재평가(`pathVersion`·결정적 `winningWitness` 동시 갱신) 기반 단일 우선순위 큐 `retrieve`를 구현했다(`V01`–`V04`, `V13`, `V15`).
+- **UM4 근거 묶음 컴파일러·최종 물리 검증 (`libra_memory_graph_compiler.cjs`)**: 정본·Micro 동일 사실 보수적 흡수(`evidenceFamilyKey`)와 충돌(`contradicts`) 양쪽 보존, 사건/현재 상태/과거 근거/배경 설정/원문 발췌 구획을 분리한 `EvidenceBundle` 조립, 발송 직전 원본 상태·리비전·restoreEpoch를 대조하는 `validateConsumedReadSet`를 구현했다(`V06`, `V07`, `V09`, `V12`).
+- **UM5–UM6 단계적 전환·Shadow 비교·레거시 이중 실행 차단 (`libra_memory_graph_rollout.cjs`)**: 요청 시작 시 엔진 모드(`legacy` | `shadow` | `unified`) 봉인, unified 부분 중단·검증 실패 시 레거시 랭커 무음 폴백 금지(`V11`), 이중 주입·추가 모델 호출 없는 Shadow 비교(`V08`), 레거시 캐시/A2/랭커 이중 실행 차단 펜스(`createLegacyExecutionFence`), cold/warm/eviction/재시작 결정성 검증(`verifyColdWarmEvictionDeterminism`, `V05`)을 완료했다.
 
 ## 3. 전체 아키텍처
 
@@ -581,3 +590,4 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.3 · 2026-10-14 | 네 자료의 실제 owner reader와 공개 read-only graph projection page 구현. 등록 API의 plugin_only/server_only 합성 호스트, source-only·정정·clear·본문 경합·cursor/route 및 11개 schema 계약 검증. 검색·durable/cache/Lane·dispatch는 후속 gate |
 | 1.4 · 2026-10-14 | 공통 accounted-byte JSON page cache·pin/LRU·partition·staging/decode admission과 실제 owner projection access API. snapshot/binding/restore cursor·예산 stop·13개 순수 검사·실제 등록 API/portable restore 검증. 전체 heap·durable SourceGraph/generation·Lane/검색은 후속 gate |
 | 1.5 · 2026-10-14 | durable owner-window pages·generation manifest/root-last/서버 CAS와 전체 window source/payload 재도출 reader. 12개 순수 계약 검사·실제 등록 API/재시작·오염·취소 barrier·portable restore·서버 publisher 경합 검증. exhaustive corpus/delta·공통 access index·Lane/검색/dispatch는 후속 gate |
+| 1.6 · 2026-10-14 | UM1 reader 경계 결함 수정 및 UM2–UM6 공통 접근 인덱스·역의존·5역할 Memory Lane·store GC·단일 검색/전파 커널(`QueryGraphView`/`scoreCandidate`/`retrieve`)·근거 묶음 컴파일러/최종 물리 검증(`validateConsumedReadSet`)·엔진 봉인/Shadow 비교/레거시 이중 실행 차단 펜스(`V05`, `V08`, `V11`) 구현 및 `LIBRA.js` 내장·전체 9개 그래프 스위트 검증 |

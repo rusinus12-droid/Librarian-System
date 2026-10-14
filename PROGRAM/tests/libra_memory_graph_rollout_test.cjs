@@ -230,6 +230,54 @@ test('UM5 & V08: shadow evaluation measures recall/precision and intentional Sta
   assert.ok(shadow.unresolvedBlocked.includes('actual_risuai_host_qualification'));
 });
 
+test('UM6 & V11: legacy retirement fence rejects duplicate legacy cache/A2/ranker execution under unified mode', () => {
+  const snap = makeSnapshot();
+  const { rollout } = buildEnv(snap);
+
+  const unifiedSeal = rollout.sealRequestMode({
+    mode: 'unified',
+    requestId: 'req-cutover-1',
+    owner: snap.frame.owner,
+    scopeKey: snap.frame.scopeKey,
+    worldlineId: snap.frame.worldlineId,
+    restoreEpoch: snap.frame.restoreEpoch
+  });
+  const fence = rollout.createLegacyExecutionFence(unifiedSeal);
+  assert.equal(fence.status().cleanCutoverVerified, true);
+
+  assert.throws(
+    () => fence.assertLegacyAllowed('recallCatalogCache'),
+    /LIBRA_GRAPH_ROLLOUT_LEGACY_DUPLICATE_EXECUTION_FORBIDDEN/
+  );
+  assert.equal(fence.status().cleanCutoverVerified, false);
+  assert.equal(fence.status().duplicateExecutionCount, 1);
+
+  const legacySeal = rollout.sealRequestMode({
+    mode: 'legacy',
+    requestId: 'req-legacy-1',
+    owner: snap.frame.owner,
+    scopeKey: snap.frame.scopeKey,
+    worldlineId: snap.frame.worldlineId,
+    restoreEpoch: snap.frame.restoreEpoch
+  });
+  const legacyFence = rollout.createLegacyExecutionFence(legacySeal);
+  assert.equal(legacyFence.assertLegacyAllowed('recallCatalogCache'), true);
+});
+
+test('UM6 & V05: cold cache, warm cache, post-LRU eviction, and restart produce identical complete results and winning witnesses', () => {
+  const snap = makeSnapshot();
+  const { graph, rollout } = buildEnv(snap);
+  const report = rollout.verifyColdWarmEvictionDeterminism({
+    graph,
+    queryInput: { queryText: 'silver ring alice' }
+  });
+  assert.equal(report.deterministic, true);
+  assert.equal(report.passes.cold.complete, true);
+  assert.equal(report.passes.cold.candidateDigest, report.passes.warm.candidateDigest);
+  assert.equal(report.passes.cold.bundleDigest, report.passes.postEviction.bundleDigest);
+  assert.equal(report.passes.cold.packetDigest, report.passes.postRestart.packetDigest);
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();
