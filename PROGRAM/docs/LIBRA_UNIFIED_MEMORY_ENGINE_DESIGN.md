@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.9 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 문서 버전: 1.10 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
 - 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. 전체 corpus durable 접근, 다른 소비자의 실제 삽입, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
-- 구현 기준: codex/libra-memory-network-20261013, `bad8cdf` 안전성 패치 이후 native semantic bridge. 현재 범위와 검증은 [현황 §12–13](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#13-native-임베딩-연결)에서 추적
+- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 현재 범위와 검증은 [현황 §12–14](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**
@@ -28,6 +28,7 @@
 | [LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md) | 유지보수 전용 불변 page/manifest·root-last/CAS 게시, 현재 원본/전체 window page 재도출 검증·재시작·취소 barrier. exhaustive corpus/delta·final delivery 완료와 구분 |
 | [LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md) | native provider/query cache·저장 정본 projection 벡터의 source access·단일 frontier·최종 vector/config 검증. 품질/전체 corpus/다른 자료 representation은 후속 |
 | [LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) | 현재 연결/검증 수준, 미완료 D01–D08/M01–M15, 완료 gate·작업 순서의 기준 |
+| [LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md) | 퇴역 기능·현재 소비자 호출 재검토와 N00–N07의 우선순위·선행 조건·완료 기준 |
 | [LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md) | `83caadd`의 호출 경로와 재현된 8개 결함, 저장소 기준의 재현 명령 |
 
 문서의 새 검색 계약은 기존 출력 캡·Memory Lane routing·독립 순위 병합을 영구 유지하라는 뜻이 아니다. 해당 검색 정책은 아래 전환 단계에서 명시적으로 교체한다. 반면 정본·State writer의 의미, 원문 채택·재분석 동의, 저장소 권한은 계속 보존한다. 실제 학습형 GNN, 자동 온라인 가중치 학습, ANN은 초기 구현의 필수 조건으로 두지 않는다.
@@ -414,7 +415,7 @@ index manifest는 generation, schema/projection/tokenizer/policy binding, comple
 | embedding queryCache/queryInFlight | query/vector pool + 기존 provider adapter | profile/auth/cancel isolation과 physical call 예산 유지 |
 | pairRevisionCaches / raw source fence | owner/currentness adapter의 bounded read cache | trusted native mutation/topology 증명 확보 전 전체 검증 제거 금지 |
 | continuity read cache / State replay cache | 요청 provenance pool / State-owner replay cache | read-only와 transaction 소유를 분리하고 correction·rollback 보존 |
-| consumer/GUI/Planner result hints | sealed dependency-aware hint/read model | cache hit마다 정책·최종 readset 재검증. GUI의 Memory Lane 진단 의미를 version으로 구분 |
+| consumer/GUI/GRADIA result hints | sealed dependency-aware hint/read model | cache hit마다 정책·최종 readset 재검증. GUI의 Memory Lane 진단 의미를 version으로 구분 |
 
 provider 인증 캐시, generation job journal, backup/restore transaction은 그래프 cache로 합치지 않는다. 다만 어떤 저장 bytes·pin·in-flight 작업을 새 engine budget이 담당하는지 inventory에 기록한다.
 
@@ -474,7 +475,9 @@ WM warm path의 전체 source fingerprint 계산과 수정 시 retained edge 전
 
 검색 결과는 top-K 텍스트 배열에 그치지 않고, 질문을 설명하는 EvidenceBundle을 반환한다. 선택된 meaning node, source span, State basis/lore role, temporal interpretation, conflict/unknown, closure dependency와 representation coverage를 포함한다.
 
-한 공통 선택기가 query coverage·관련성·문맥·중복·출력 예산을 다룬다. 소비자별 instruction/required lore/current input 계약을 존중하되 별도 검색을 다시 실행해 결과를 섞지 않는다. Classic/Planner/SGA/Input Writer/GUI/GRADIA의 렌더러와 권한 계약은 소비자 adapter에 남는다. GRADIA의 기존 owner-corpus/selection receipt 조건을 우회하지 않는다.
+한 공통 선택기가 query coverage·관련성·문맥·중복·출력 예산을 다룬다. 소비자별 instruction/required lore/current input 계약을 존중하되 별도 검색을 다시 실행해 결과를 섞지 않는다. 활성 연결 대상은 **LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기**다. LIBRA의 Planner·SGA·Input Writer 실행 기능은 퇴역했다. kernel에 남은 구형 packet 포맷은 활성 제품 소비자나 실행 권한의 증거가 아니다. GRADIA의 기존 owner-corpus/selection receipt 조건을 우회하지 않는다.
+
+GRADIA 셰도우·AIDE의 기존 서버 읽기와 새 통합 엔진 연결은 구분한다. GRADIA 인풋 작성기는 현재 기억 회수를 하지 않으므로, 미전송 제안·작성 작업별 읽기 세션·최종 편집/send 검증을 먼저 정의해야 한다. 이전 셰도우 실행의 private 근거를 작성기에 넘기지 않는다. 세부 범위와 완료 기준은 [다음 과제 N00/N03/N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)를 따른다.
 
 정본/Micro 대응이 확인돼도 실제 정본 출력이 budget에서 탈락하면 Micro를 억제하지 않는다. 억제된 claim의 source·entity·State/lore dependency도 private readset에 보존한다. 여러 자료가 같은 원문에 의존하면 독립 supporting source로 중복 계산하지 않는다.
 
@@ -599,6 +602,9 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.5 · 2026-10-14 | durable owner-window pages·generation manifest/root-last/서버 CAS와 전체 window source/payload 재도출 reader. 12개 순수 계약 검사·실제 등록 API/재시작·오염·취소 barrier·portable restore·서버 publisher 경합 검증. exhaustive corpus/delta·공통 access index·Lane/검색/dispatch는 후속 gate |
 | 1.6 · 2026-10-14 | UM1 reader 수정 및 UM2–UM6 커널 추가·LIBRA.js 내장, 9개 그래프 테스트 파일 통과. 최초 완료 표현은 v1.7에서 실제 호출·증거 범위에 맞춰 정정 |
 | 1.7 · 2026-10-14 | `83caadd`의 실제 요청 미연결·임베딩/공통 접근/소비자/legacy 미완료를 명시. 현황표 E0–E4·D01–D08·M01–M15·G1–G6와 저장소 재현 리뷰 추가. 미래 Micro/검증·폐기/GC/coverage·역의존/출력/V05 결함과 host 한계를 분리. runtime 수정은 포함하지 않음 |
+| 1.8 · 2026-10-14 | private 최종 전달·시간·구조화 대응·원자적 GC·byte admission의 강화된 실행 경계 반영 |
+| 1.9 · 2026-10-14 | 정본 global projection 벡터와 실제 provider/query cache를 단일 scorer/frontier에 연결한 native semantic 범위 반영 |
+| 1.10 · 2026-10-14 | LIBRA Planner·SGA·Input Writer 퇴역과 별도 GRADIA 소비자 경계를 정정. 기존 셰도우/AIDE 서버 읽기와 새 엔진 연결, 인풋 작성기의 새 세션 계약을 구분하고 N00–N07 작업 계획 연결. runtime 변경 없음 |
 
 
 ## 14. 리뷰 후 강화한 실행 경계 (v1.8)
@@ -619,3 +625,9 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 이 경로는 query 중 문서 벡터를 만들지 않는다. 공간/문서 벡터가 없으면 공통 lexical/graph 경로로 검색하고, representation 예산 탈락은 partial, 원본/설정 변경은 base request 보존으로 처리한다. source 전체 벡터가 과거 조회보다 미래를 포함하면 해당 semantic 접근을 제외한다. 기존 query cache·coalescing은 request scope/worldline/restore/view에 결속한다.
 
 지원은 plugin_only/server_only의 등록 fixture에서 검증했고 mirror readonly owner·실제 provider 품질/설치 호스트·전체 corpus/durable representation pages와 §13의 기본값 전환 gate는 남아 있다. 최신 증거는 [현황 §13](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#13-native-임베딩-연결)을 따른다.
+
+## 16. 현재 소비자와 다음 과제 (v1.10)
+
+`3e589dd`의 호출 경로 재검토와 기존 퇴역·Classic 2파일/GRADIA 42검사에서 LIBRA의 Planner·SGA·Input Writer 실행 제거를 확인했다. 구형 설정/백업·호환 포맷에 이름이 남는 것과 실제 helper 호출은 구분한다. [제품 역할 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)의 퇴역 결정을 유지한다.
+
+다음 엔진 구현 우선순위는 전체 기록의 durable shard/index와 공통 Cache Manager·Memory Lane 연결이다. 그 위에서 자료별 semantic 표현, 별도 GRADIA의 읽기 adapter·private 선택 영수증 검증, 인풋 작성기 세션, native GC, 품질/호스트 인증과 legacy 종료를 진행한다. 상세 산출물·선행 조건·완료 기준은 [N00–N07 계획](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에 결속한다. 이 문서 갱신은 그 과제들의 구현 완료가 아니다.

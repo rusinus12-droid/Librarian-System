@@ -1,14 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.2
+- 작성일: 2026-10-14 · 문서 버전: 1.3
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `bad8cdf`의 8건 안전성·전달 패치와 이후 native semantic bridge. §12–13이 기존 조사표와 §11의 완료 표현을 갱신한다.
-- 목표 계약: [통합 엔진 설계 v1.9](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)
+- 현재 기준: `3e589dd` native semantic bridge와 소비자 호출 경로 재검토. §12–14가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
+- 목표 계약: [통합 엔진 설계 v1.10](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
 - 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 임베딩 adapter·저장 정본 벡터를 단일 frontier에 연결했다. 실제 설치 호스트, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
+
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–14를 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 메모리 읽기는 아직 새 계약이 필요한 목표다.
 
 ## 1. 완성이 의미하는 것
 
@@ -23,7 +25,7 @@
 | E0 코드 확인 | 함수·설정·호출 지점이 존재함 | 새 factory 5개가 LIBRA.js에 내장됨 |
 | E1 커널 검사 | 직접 주입한 snapshot·owner mock으로 계약 일부 검사 | Index/Lane/Query/Compiler/Rollout의 순수 suite |
 | E2 등록 API 검사 | shipped API·실제 storage bridge를 합성 호스트에서 실행 | reader/page/store의 plugin_only·server_only 검사 |
-| E3 요청·소비자 통합 검사 | 실제 beforeRequest/각 소비자가 새 engine을 실행하고 최종 packet·owner 검증·비용을 관찰 | 새 통합 엔진에는 미실행. 이전 엔진의 parity 증거와 구분 |
+| E3 요청·소비자 통합 검사 | 실제 beforeRequest/활성 소비자가 새 engine을 실행하고 최종 packet·owner 검증·비용을 관찰 | 현재는 Classic의 등록 합성 호스트 경로 검증. 별도 GRADIA의 새 엔진 읽기와 실제 설치 인증은 미완; 구형 formatter 검사는 활성 소비자 연결의 증거가 아님 |
 | E4 설치 호스트 인증 | 실제 RisuAI 설치·지원 workload에서 품질·시간·메모리·호환성 측정 | 미실행 |
 
 표현은 `제한 범위 연결·검증`, `커널 구현`, `미연결`, `결함 확인`, `미검증`, `호스트 지원 없음`으로 구분한다. E1의 `modelDispatchEligible:true` 반환이나 자기 보고식 비용 플래그는 E3/E4 증거가 아니다.
@@ -87,10 +89,10 @@
 | M03 | **실제 durable 공통 인덱스**: `index.compile`에 `tokenizerVersion`·`projectionSchema`·`dfScope`·`tableDigests` 결속 및 `queryPage`의 공통 `pages` 캐시 연동(`cacheHit` 보고) 완료(E1/E2); 영속 인덱스 샤드 분리는 미완 | node/source·방향/predicate adjacency·entity/slot/time·lexical·semantic index를 generation/schema/tokenizer/representation과 결속해 공통 page/cache로 읽음. 전체 corpus DF·degree의 범위와 digest 검증. D06/M02 |
 | M04 | **전체 byte inventory·Cache Manager**: `query.retrieve`에 `l0WorkspaceBytes`/`maxWorkspaceBytes`(`workspace_byte_budget`) 계상 및 `queryPage`의 `pages` pin/release 연동 완료(E1/E2); source read/JSON·전역 힙 전체 계상은 미완 | source read/JSON, L0 후보·witness, index page, frontier/Lane, readset, I/O/in-flight/write barrier의 소유·예산·pin·release를 기록. 동시 요청·고차수·축출·취소에서 admission/backpressure 검증. 전체 heap bounded 주장에는 별도 측정 필요 |
 | M05 | **탐색과 통합된 Memory Lane**: 초기 전체 adjacency drain 제거, frontier pop 시 `anchorNodeId`별 `graph_neighborhood` 요청·5개 역할(`query_anchor_access`/`temporal_state_access`/`semantic_access`/`graph_neighborhood`/`context_expansion`) 예산 공유·`resumeCursors` generation/digest 검증(`LIBRA_GRAPH_LANE_CURSOR_STALE`) 완료(E1/E2) | 활성 frontier가 필요한 anchor 페이지를 요청하고 결과에 따라 다음 작업 갱신. lexical/entity/time/semantic/context가 같은 예산을 공유. 축출된 과거 자료 발견, structural 우선 기회, partial/재개 정책과 cursor generation 검증. M03/M04 |
-| M06 | **실제 임베딩 adapter·표현 접근**: `sealQueryFrame`·`retrieve`에 `semanticSpace`(`spaceId`/`provider`/`model`/`dimension`/`metric`/`profileDigest`)·`queryEmbedding`·`documentRepresentations` 코사인/내적 유사도 평가 및 불일치 공간 격리(`incompatible_isolated`, 배경 재임베딩 미실행) 구현 완료(E1/E2); 일반 회상 파이프라인 임베딩 브리지 직결은 미완 | query/document representation의 text/chunk·공간·task pair·dimension/metric·profile/auth/view/reset를 검사하고 실제 semantic feature를 공통 scorer/frontier로 공급. 누락은 lexical/entity로 남기고 불일치는 격리. query가 역사 문서 임베딩을 자동 시작하지 않음 |
+| M06 | **실제 임베딩 adapter·표현 접근**: `3e589dd`에서 실제 provider/query cache와 저장 정본 global vector를 명시적 unified/Classic의 공통 scorer/frontier에 연결(§13). section·다른 자료의 표현 생산·durable vector page와 실제 모델 품질은 미완 | query/document representation의 text/chunk·공간·task pair·dimension/metric·profile/auth/view/reset를 검사. 누락은 lexical/entity로 남기고 불일치는 격리. query가 역사 문서 임베딩을 자동 시작하지 않음. 다음 과제 N02/N06 |
 | M07 | **QueryFrame·native 적격성**: `openView`에서 활성 `EntityNode` 이름/별칭 단일 매칭(`resolvedEntityIds`, 목적어 전용 `target_of` 엔티티 포함)과 다중 엔티티 모호 별칭(`ambiguousAliases`) 분리, `executeMemoryGraphUnifiedQuery`의 `entityRegistry` 자동 주입, `allowedPredecessorWorldlines` 계보 필터 구현 완료(E1/E2) | entity ID/alias ambiguity 해석, scope/owner/native lineage/predecessor/as-of/viewer·lore activation을 owner metadata로 봉인. seed/경유/basis/출력/진단에 동일 적용. source/entity 중계 node도 보호. D01 |
 | M08 | **근거 의미·자동 대응**: 동일 턴·동일 주어/주장 어휘 및 명시적 `supersedes`/`derived_from`/`evidenced_by` 기반 정본-Micro 자동 대응(미래 턴·`contradicts`/`reopens` 흡수 금지), 파생 State의 동일 원문 `SourceNode` 중복 계산 제거(`computeIndependentPrimarySources`), `lifecycleStatus` 보존 구현 완료(E1/E2) | owner가 증명한 정본/Micro 동일 사실만 흡수. 동일 원문 파생 자료의 독립 source 중복 계산 방지. 정정·clear/unknown/last-known·충돌 양쪽·증명된 lifecycle 관계를 보존. 미지원 lineage는 coverage로 남김. D05/D07 |
-| M09 | **원문 hydration·소비자 adapter**: 소비자별(`planner`/`sga` `@T<turn>` 태그, `hydrateSourceQuotes` 원문 인용 부착, `gradia` 선택 영수증 검증) 포맷터와 `select` 예산 판정을 일원화하고 실제 채택 항목만 readset에 결속 완료(E1/E2); 호스트 `beforeRequest` 전체 소비자 배선은 미완 | Classic/Planner/SGA/Input Writer/GUI/GRADIA가 실제 packet/표시 정책과 출력 예산으로 선택·hydrate. 실제 남은 출력만 consumed readset에 결속. GRADIA owner receipt와 corpus 검증 유지. M08/D07 |
+| M09 | **원문 hydration·활성 소비자 adapter**: Classic 최종 전달은 제한 검증. LIBRA Planner·SGA·Input Writer 실행은 퇴역했고 kernel의 옛 formatter 지원과 구분한다. 별도 GRADIA 셰도우/AIDE는 기존 서버 읽기만 연결; 인풋 작성기는 회수 없음. 새 unified reader·선택 영수증 verifier·작성기 세션은 미완 | LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기가 자기 권한/예산으로 선택·hydrate하고 실제 채택만 readset에 결속. 인풋 작성기는 미전송 입력 계약을 먼저 정의. M08/D07, 다음 과제 N00/N03/N04 |
 | M10 | **최종 private owner 검증**: 물리 콜백 필수화(D02), `executeMemoryGraphUnifiedQuery`의 원본 스토리지 키 핀(`pinnedValues` + `conditionalReadSet`) 재검증 및 `validateConsumedReadSet`에서 `requiredEdgeBindings`·`requiredBasisBindings` 실시간 대조 완료(E1/E2) | native source/head/registry/correction/lore 및 witness basis/edge와 흡수된 Micro 의존성을 최종 경계에서 검증. SDK readset/lease·restore/route/삭제 fence 사용. unsupported owner 기능을 graph 플래그로 대체하지 않음. D02/D04/M01/M09 |
 | M11 | **유지보수·무효화·GC 연결**: `fencedMemoryStorageSet`(비-`memory-graph:v1:` source write)·`noteMicroRestoreBoundary`·`deleteCurrentScope`·`cancelMemoryGraphGenerationBuild`·`unload`에서 `memoryGraphCompiler.invalidateAll()` 및 `pages` 무효화 연결, 등록 API `collectMemoryGraphGarbage` 노출 완료(E1/E2) | 실제 source mutation/설정/profile/복원/삭제/unload에서 대상 generation·page/representation/query hints와 in-flight 작업을 무효화. query에서 durable build/repair를 실행하지 않음. SDK/runtime의 취소·게시·sweep 증거. D03/D06 |
 | M12 | **실제 shadow·V05 평가**: `LibraMemoryCore.recall`(`unifiedEngineMode: 'shadow'`)에서 실제 owner 투영 그래프와 legacy 선택 결과를 `runShadowComparison`으로 비교(`shadowInjectedIntoModelPrompt: false`, `doubleInjection: false`, `additionalModelCalls: 0`) 및 `verifyColdWarmEvictionDeterminism` 검증 완료(E1/E2) | 동일 snapshot과 호환 vector에서 legacy/unified 결과를 관찰·비교. packet 주입·provider/model 호출·source write를 실제 trace로 계측. 품질/의도된 차이와 불변식 회귀 구분. cold/warm/실제 LRU/새 VM restart 판정. D08/M01–M10 |
@@ -225,7 +227,7 @@ node tools/build_plugins.cjs --plugin libra --profile source --no-minify --out /
 
 1. native embedding 연결은 §13에서 1차 구현했다. 실제 provider 평가·calibration과 다른 자료의 representation 생산/접근은 남아 있다.
 2. 현재 projection window의 메모리 내 배열 compile에서 전체 corpus의 durable index/shard 탐색으로 이전한다. source reader·index build·private readset·동시 I/O를 포함한 peak 예산을 계측한다.
-3. Planner·SGA·Input Writer·GUI·GRADIA의 실제 삽입 경계를 연결한다. GRADIA는 owner selection receipt verifier 없이 dispatch를 허용하지 않는다.
+3. LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기를 활성 대상에 맞게 연결한다. LIBRA Planner·SGA·Input Writer는 퇴역했으며 복원 대상이 아니다. GRADIA의 새 reader/owner selection receipt verifier와 인풋 작성기의 미전송 입력 세션 계약은 [다음 과제 N00/N03/N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)를 따른다.
 4. storage owner에 namespace GC fence와 publisher/build/reader 보호 프로토콜을 구현한 뒤 native sweep을 활성화한다.
 5. 실제 설치 호스트·평가 세트·규모/latency/메모리 수용 기준을 검증하고 legacy 기본값 전환·중복 경로 종료를 결정한다.
 
@@ -244,3 +246,18 @@ M04의 `countedBytes`는 서로 다른 논리 계측값의 합이다. packet/bod
 - plugin_only/server_only가 지원 profile이다. mirror는 기존 readonly owner 계약에 따라 embedding 제출 전에 명시적으로 거부된다. 기본 모드는 legacy다.
 
 새 검사는 `tests/libra_memory_graph_semantic_test.cjs`, `tests/libra_memory_graph_semantic_runtime_test.cjs`다. 실제 등록 API·native writer·SDK/adapter와 controlled HTTP 응답을 사용하며 실제 외부 embedding 모델의 의미 정확도는 측정하지 않았다. 이번 벡터 재사용 범위는 **정본 global projection**이고, section/다른 자료의 새 벡터 생산·durable semantic pages·전체 corpus 인덱스·다른 소비자·GC·E4/M14는 미완료다. representationBytes는 채택한 numeric workspace의 계상 추정이며 전체 peak heap의 상한이 아니다.
+
+## 14. 소비자 호출 재검토와 다음 과제
+
+`3e589dd`의 원격 HEAD와 로컬 소스가 일치하는 상태에서 기존 실행 경로를 재검토했다. [다음 과제 문서](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에 소스 SHA·근거 파일·N00–N07의 우선순위·선행 조건·완료 기준을 기록했다.
+
+| 확인 대상 | 현재 판정 |
+| --- | --- |
+| LIBRA Planner·SGA·Input Writer | 실행 함수·공개 실행 API·관련 호스트 설정/작성기 버튼 제거. 예전 응답 설정도 Classic으로 정규화. 재시작·GUI·실제 기본 Classic에서 퇴역 helper 호출 없음 |
+| 옛 소비자 이름 | 주석/구형 저장 키/descriptor와 kernel packet formatter에 남음. 포맷 검사·이름 존재를 활성 실행 증거로 사용하지 않음 |
+| GRADIA 셰도우·AIDE | 기존 서버 read-session과 요청별 근거 전달은 연결. 새 unified kernel을 읽는 adapter와 native owner 선택 영수증 verifier는 미연결 |
+| GRADIA 인풋 작성기 | 활성 작성 기능이나 현재 기억 회수 없음·이전 실행 근거 비사용을 검사. 통합 검색 읽기는 미전송 제안의 별도 세션 계약이 필요한 후속 과제 |
+
+실행한 검사는 [퇴역 runtime](../tests/libra_helper_retirement_runtime_test.cjs)·[Classic 권한](../tests/libra_classic_planner_authority_contract_test.cjs) 2개 파일과 [GRADIA 근거 연결](../tests/gradia/evidence-bridge.test.cjs)·[SQLite 읽기](../tests/gradia_readonly_cross_project_test.cjs) 42개 검사이며 모두 통과했다. 이 증거는 기존 경로의 퇴역/읽기 계약을 확인한다. GRADIA의 새 엔진 연결·실제 설치 호스트 인증을 완료한 것은 아니다.
+
+다음 엔진 구현은 전체 기록의 durable index·공통 cache·Memory Lane(N01)이다. 소비자 범위 정리(N00)와 평가 세트 정의(N06)를 함께 준비하고, 자료별 표현(N02), GRADIA 셰도우/AIDE(N03), 인풋 작성기(N04), 안전한 native GC(N05), 인증 이후 legacy 종료(N07)를 추적한다. 문서 수정으로 runtime 소비자 제한·reader·GC를 구현했다고 표시하지 않는다.
