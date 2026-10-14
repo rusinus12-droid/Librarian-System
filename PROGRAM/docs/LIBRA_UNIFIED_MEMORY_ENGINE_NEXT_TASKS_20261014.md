@@ -131,6 +131,14 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **표시 연결**: 진단 표시 DTO와 카드가 선언 표와 **실제 상태**를 함께 보여준다. 실측(fixture·plugin_only): `status: no_compatible_representations`, `admitted 0`, `rejected ['representation_missing']`, `vectorlessFamilies ['micro','state','lore']`, `backgroundEmbeddingStarted false`. 표현 payload(벡터)는 표시 DTO에 들어가지 않는다.
 - **여기서 멈춘 것**: ① micro·state·lore의 **실제 벡터 생산자**는 아직 없다(이 계약은 생산자를 만들지 않는다 — 유지보수 정책 결정 필요) ② 계획을 **scorer/frontier의 입력으로 소비**하는 연결은 아직이다(현재 질의 커널은 벡터 없는 자료를 이미 lexical/entity 채널로 처리하지만, 이 계획을 점수 입력으로 받지는 않는다) ③ 가중치 calibration은 N06.
 
+**진척 (둘째 증분) — 표현 계약을 scorer 입력으로 소비**: 계약이 장식이 아니라 점수의 입력이 되었다.
+
+- **커널**: `sealQueryFrame`이 `representationDecisions`(nodeId → `{status, reason}`)를 받고, `resolveSemanticFeature`가 **주입된 표현(documentRepresentations)보다 먼저** 계획을 본다. `valid`가 아니면 의미 점수를 부여하지 않고 `semanticFeatureStatus: incompatible_isolated`·계약 사유·`gatedByPlan: true`로 남긴다. 진단에 `planDecisionCount`·`planGatedCount`·`planGatedReasons`가 추가된다.
+- **플러그인**: semantic bridge의 `rejected[]`와 자료 선언을 per-node 판정으로 만들어 질의에 넘긴다(`embedding_space_mismatch`→`foreign_space`, `representation_outside_temporal_view`→`out_of_view`, 선언된 생산자가 없는 자료→`no_representation_producer_declared`, 채택된 정본→`valid`). 새 어휘를 만들지 않고 계약 어휘로 옮긴다.
+- **실측**(fixture·plugin_only, 사용할 수 있는 임베딩 없음): 판정 33건 = 차단 33건(정본 13건 `representation_missing` + micro·state·lore 20건 `no_representation_producer_declared`), `compatibleCount 0`, 그럼에도 답변은 `complete`이며 read trace의 `query_anchor_access` pages > 0이다 — 벡터 없는 자료가 **같은 커널의 lexical/entity/predicate/graph**로 참여한다.
+- 재현: `node PROGRAM/tests/libra_memory_graph_scorer_representation_test.cjs` → 4 PASS(전수 차단·사유 어휘·벡터 없이 전달·계획이 주입보다 먼저라는 규칙 순서).
+- **측정하지 않은 것(명시)**: **양성 경로** — 쓸 수 있는 임베딩이 있는 호스트에서 `valid` 판정이 실제로 의미 점수를 받고 점수가 올라가는지는 이 fixture에 임베딩이 없어 확인하지 않았다. 이번 증분이 증명한 것은 "계약을 어긴 표현은 점수를 못 받는다"와 "그래도 답은 나온다"까지다.
+
 **완료 기준:** 각 family의 유효/누락/불일치·과거/미래 표현을 같은 scorer/frontier에서 처리하고 원래 근거로 연결한다. 실제 모델의 검색 정확도와 가중치 calibration은 N06에서 별도로 판정한다.
 
 ## 6. N03 — GRADIA 셰도우·AIDE 연결

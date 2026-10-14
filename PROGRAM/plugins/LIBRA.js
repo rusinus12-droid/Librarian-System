@@ -46708,6 +46708,7 @@ function createLibraReadonlySourceContext(owner) {
     semanticSpace = null,
     queryEmbedding = null,
     documentRepresentations = {},
+    representationDecisions = {},
     lambda = 0.82,
     epsilon = 1e-6,
     maxFrontierSteps = 256,
@@ -46773,7 +46774,13 @@ function createLibraReadonlySourceContext(owner) {
       entityRegistry: normalizedRegistry,
       queryVectors: Object.freeze({ ...(queryVectors || {}) }),
       queryEmbedding: normalizedEmbedding,
-      documentRepresentations: Object.freeze({ ...(documentRepresentations || {}) })
+      documentRepresentations: Object.freeze({ ...(documentRepresentations || {}) }),
+      // N02: the representation contract's verdict per node, decided before scoring. A node whose
+      // representation is missing, in a foreign space, out of the query's temporal view or built on a
+      // changed basis must not contribute a semantic score — whatever the caller injected.
+      representationDecisions: Object.freeze(Object.fromEntries(Object.entries(representationDecisions || {})
+        .filter(([, decision]) => decision && typeof decision === 'object' && String(decision.status || '').trim())
+        .map(([nodeId, decision]) => [String(nodeId), Object.freeze({ status: String(decision.status).trim(), reason: String(decision.reason || '').trim() })])))
     });
   };
 
@@ -46978,6 +46985,13 @@ function createLibraReadonlySourceContext(owner) {
 
   // M06: Evaluate semantic representation compatibility & similarity without background re-embedding
   const resolveSemanticFeature = (node, queryFrame) => {
+    // The plan is consulted BEFORE any injected representation: an injected vector cannot buy a
+    // semantic score that the family's own representation contract refused.
+    const decision = queryFrame.representationDecisions?.[node.id];
+    if (decision && decision.status !== 'valid') {
+      return { score: undefined, status: 'incompatible_isolated',
+        reason: decision.reason || ('representation_' + decision.status), gatedByPlan: true };
+    }
     const docRep = queryFrame.documentRepresentations?.[node.id];
     const space = queryFrame.semanticSpace;
     if (docRep && typeof docRep === 'object') {
@@ -47098,6 +47112,9 @@ function createLibraReadonlySourceContext(owner) {
 
     const semanticByNodeId = new Map();
     const semanticDiagnostics = {
+      planDecisionCount: Object.keys(queryFrame.representationDecisions || {}).length,
+      planGatedCount: 0,
+      planGatedReasons: {},
       spaceId: queryFrame.semanticSpace?.spaceId || null,
       compatibleCount: 0,
       incompatibleIsolatedCount: 0,
@@ -47111,6 +47128,11 @@ function createLibraReadonlySourceContext(owner) {
       if (!unit && !(node.layer === 'source' && queryFrame.documentRepresentations?.[node.id])) continue;
       const sem = resolveSemanticFeature(node, queryFrame);
       semanticByNodeId.set(node.id, sem);
+      if (sem.gatedByPlan) {
+        semanticDiagnostics.planGatedCount += 1;
+        const gatedReason = String(sem.reason || 'unknown');
+        semanticDiagnostics.planGatedReasons[gatedReason] = (semanticDiagnostics.planGatedReasons[gatedReason] || 0) + 1;
+      }
       if (sem.status === 'available' || sem.status === 'available_vector_space') {
         semanticDiagnostics.compatibleCount++;
         laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: node.id, priorityHint: Math.max(0.5, sem.score || 0.5), requesterId: `sem:${node.id}` });
@@ -72524,6 +72546,28 @@ ${string(queryBundle?.sceneText || '')}`;
         });
         nativeSemantic.diagnostics.queryBudgetMs = queryBudgetMs;
         Object.assign(queryInput, nativeSemantic.queryInput);
+        // N02: the family declaration plus the semantic bridge's own rejections become per-node verdicts
+        // the scorer must respect, so a family without a representation producer cannot be scored as if
+        // it had one, and an injected vector cannot outweigh the contract.
+        {
+          const admitted = nativeSemantic?.queryInput?.documentRepresentations || {};
+          const rejectedByKey = new Map();
+          for (const row of asArray(nativeSemantic?.diagnostics?.rejected)) rejectedByKey.set(String(row?.recordKey || ''), String(row?.reason || ''));
+          const decisions = {};
+          for (const unit of asArray(graph.units)) {
+            const nodeId = string(unit?.nodeId || '');
+            if (!nodeId) continue;
+            if (string(unit.family) !== 'canonical') { decisions[nodeId] = { status: 'missing', reason: 'no_representation_producer_declared' }; continue; }
+            if (admitted[nodeId]) { decisions[nodeId] = { status: 'valid', reason: '' }; continue; }
+            const reason = rejectedByKey.get(string(unit.recordKey || '')) || 'representation_missing';
+            decisions[nodeId] = {
+              status: reason === 'embedding_space_mismatch' ? 'foreign_space'
+                : reason === 'representation_outside_temporal_view' ? 'out_of_view' : 'missing',
+              reason
+            };
+          }
+          queryInput.representationDecisions = decisions;
+        }
       }
       for (const dependency of nativeSemantic?.dependencies || []) {
         const captured = vectorReadbacks.get(dependency.key);

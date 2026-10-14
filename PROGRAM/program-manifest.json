@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T10:14:01.041Z",
+  "generatedAt": "2026-10-14T10:19:30.013Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2628,8 +2628,8 @@
       "bytes": 79709
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "6bb66d626ede0b3594ddc66f26f2c308170c96d7010ecedb6e034e3279d72229",
-      "bytes": 31337
+      "sha256": "a6badc707220f858a47fc9e07bffef584e11de4b38e854f1a6c9bef3e072d634",
+      "bytes": 33310
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -3644,8 +3644,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "fe48520db9c4e0c0165968eb8eced75fd0c419f7f110c0310e832d3b84fabd70",
-      "bytes": 5963627
+      "sha256": "23314e9749ffd2490b814ffd6567a8da914100a484ebfd6232f7628c59c8639d",
+      "bytes": 5966655
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7535,6 +7535,10 @@
       "sha256": "f84f15cd131cea69df8c6e782decf228e465a3b65cdcdffe932bdec906e03292",
       "bytes": 17332
     },
+    "tests/libra_memory_graph_scorer_representation_test.cjs": {
+      "sha256": "17d684e4101969cfd28747573bf9c22b4ee9953e03733086a1925d5364c9cf24",
+      "bytes": 5255
+    },
     "tests/libra_memory_graph_semantic_runtime_test.cjs": {
       "sha256": "5746b91430dbcf1d9ada6c39939841cfe907c9155e3dcb58792e1acb8c8a1800",
       "bytes": 17306
@@ -10200,8 +10204,8 @@
       "bytes": 17728
     },
     "tools/libra_memory_graph_query.cjs": {
-      "sha256": "08cd0bf6ccf55fdcbc7a4a01c24a20338b0dc8bd674fab0ecae3d906e64b3887",
-      "bytes": 44492
+      "sha256": "95a9476ad7d591f578219da2c65c595d3ab7d8e2828eceab577e2dd0d3a5e047",
+      "bytes": 46080
     },
     "tools/libra_memory_graph_readers.cjs": {
       "sha256": "753e1a92b5683a6a7f3149736678b8574536d56736e4421866cdd548e3de42b6",
