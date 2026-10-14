@@ -86214,7 +86214,8 @@ advanced
   const serve = async (action, payload = {}) => {
     check(); prune();
     if (bytes(payload) > requestLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-    if (action === 'describe') return { schema, source: 'unified_engine', readOnly: true };
+    if (action === 'describe') return { schema, source: 'unified_engine', readOnly: true,
+      purposes: ['response_evidence', 'input_writer_proposal'] };
     if (action === 'release') {
       const record = receipts.get(payload.receiptId) || operations.get(payload.operationId)
         || [...receipts.values()].find(row => row.operationId === payload.operationId);
@@ -86231,6 +86232,15 @@ advanced
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
     }
     if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
+    if (payload.proposal !== undefined) {
+      const p = payload.proposal;
+      const keys = ['schema','purpose','operationId','proposalDigest','nativeContextDigest','queryTruncated','factAdopted'];
+      if (!p || Array.isArray(p) || Object.keys(p).length !== keys.length || Object.keys(p).some(key => !keys.includes(key))
+        || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+        || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+        || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+        || typeof p.queryTruncated !== 'boolean') fail('LIB_READ_PROPOSAL_INVALID');
+    }
     if (typeof payload.operationId !== 'string' || !payload.operationId || payload.operationId.length > 160
       || typeof payload.queryText !== 'string' || !payload.queryText.trim() || bytes(payload.queryText) > 16384
       || !Number.isSafeInteger(payload.maxCorpusBytes) || payload.maxCorpusBytes < 512 || payload.maxCorpusBytes > 33554432
@@ -86256,6 +86266,8 @@ advanced
       const execution = record.execution, content = execution.packet.renderedText;
       if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
       const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+        purpose: payload.proposal ? 'input_writer_proposal' : 'response_evidence',
+        ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
         queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,
         windowRead: execution.windowRead, nextWindow: execution.nextWindow,
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };

@@ -6,7 +6,7 @@ const preservedConsumerSha256='93711f7bb78faaf46d18bda64da7108710b37b0865a44a67f
 // Reviewed manager-only health delta; local-only consumers retain their pin.
 const managerOnlyConsumerSha256='8a74a8a9045f1821c238e1e14652fc44b4efb44c63ca13bfca5aa7c78b434cf4';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
-const gradiaReadOnlyConsumerSha256='a32422227a7aff8b5a536c4e59b3a8b848307bfb9713f340fcb622b3f9a78dbc';
+const gradiaReadOnlyConsumerSha256='a8f8bf6c735527c235d98d420c86b6b6ef05727fcf95a2dc9691f95c0ed22619';
 const STORAGE_VARIANTS=Object.freeze({
  'Flashback_Memory.js':Object.freeze({variant:'core3-standard-flashback',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:true}),
  'HAYAKU_Locator_Continuity.js':Object.freeze({variant:'core3-standard-hayaku',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:true}),

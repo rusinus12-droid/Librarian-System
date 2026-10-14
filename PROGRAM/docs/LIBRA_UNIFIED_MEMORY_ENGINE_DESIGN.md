@@ -1,9 +1,9 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.11 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 전체 corpus durable 접근, 인풋 작성기 읽기, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
-- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 현재 범위와 검증은 [현황 §12–16](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
-- N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 실제 설치 인증과 인풋 작성기 계약은 후속 과제다.
+- 문서 버전: 1.12 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. GRADIA 인풋 작성기도 별도 미전송 제안 계약으로 제한 연결했다. 전체 corpus durable 접근, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
+- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 현재 범위와 검증은 [현황 §12–17](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
+- N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**

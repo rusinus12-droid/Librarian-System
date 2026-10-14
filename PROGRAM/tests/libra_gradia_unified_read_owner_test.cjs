@@ -71,3 +71,12 @@ test('serialized escaping and proof count against the raw response budget',async
  await assert.rejects(()=>f.client.capture({...f.input,maxRawBytes:r.rawBytes-1}),e=>e.code==='LIB_READ_CORPUS_BUDGET_EXCEEDED');
  await assert.rejects(()=>f.client.capture({...f.input,maxRawBytes:'4096'}),e=>e.code==='LIB_READ_BUDGET_INVALID');
 });
+test('the owner seals an unsubmitted proposal as query intent and never as a fact',async t=>{
+ const f=await fixture(t),proposal={schema:'gradia.input-writer-proposal.v1',purpose:'input_writer_proposal',operationId:'writer-1',
+  proposalDigest:fingerprint('unsent proposal'),nativeContextDigest:fingerprint('native history'),queryTruncated:false,factAdopted:false};
+ const r=await f.client.capture({...f.input,proposal});assert.equal(r.engine.purpose,'input_writer_proposal');
+ assert.deepEqual(r.engine.proposal,proposal);assert.equal((await f.client.current({proof:f.proof(r)})).current,true);
+ for(const bad of [{...proposal,factAdopted:true},{...proposal,proposalDigest:'invalid'},{...proposal,currentState:'caller claim'},{}])
+  await assert.rejects(()=>f.client.capture({...f.input,proposal:bad}),e=>e.code==='LIB_READ_PROPOSAL_INVALID');
+ assert.equal(f.queries(),1);
+});

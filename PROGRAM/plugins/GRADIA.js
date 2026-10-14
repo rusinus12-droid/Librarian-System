@@ -3263,32 +3263,38 @@
     return { schema: 'gradia.native-read-set.v1', currentInputRef: nativeTurnRef(inputMessage), selections,
       currentInput: contentToText(inputMessage.content), query: baseRecent.latestUser, turns: [...selected.values()] };
   };
-  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId) => {
+  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, proposalContext = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
     const settingsSignature = requestSettingsSignature(settings);
     const runtimeSettingsSignature = requestSettingsSignature(Runtime.settings || {});
-    const controller = new AbortController();
+    const controller = proposalContext?.controller || new AbortController();
     let session;
     let certifiedSelections = [];
     try {
-      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
+      session = await (proposalContext ? LibWriterReadConsumer : LibReadConsumer).beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
+        ...(proposalContext ? { proposal: proposalContext.proposal } : {}),
         // Snapshot construction is lazy: unbound/plugin-only performs no identity,
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: () => {
+          if (proposalContext) { proposalContext.assertLocal(); return; }
           const snapshot = captureLibNativeReadSet(requestMessages, settings, baseRecent);
           certifiedSelections = snapshot.selections;
           return snapshot;
         } });
     } catch (error) {
-      if (/CANCELED|SUPERSEDED|MODE_CHANGED/.test(error?.code || '')) throw error;
+      if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED/.test(error?.code || '')) throw error;
       return { status: 'unavailable', reason: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE',
         assertCurrent: async () => true, close() {} };
     }
     if (session.status !== 'ready') return { ...session, close() {} };
     const budgetMeter = session.contract === 'existing-server-logical-read.v1' ? createGradiaEvidenceBudget({ digest: libReadSha256 }) : null;
-    const run = { status: 'ready', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), stageViews: new Map(),
-      fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) purgeLibEvidenceRuntime(); return libEvidenceError(code); },
+    if (proposalContext && (session.engine?.purpose !== 'input_writer_proposal'
+      || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
+      session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
+    }
+    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), stageViews: new Map(),
+      fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
         // Native reconstruction may add only the already-verified scope to the
@@ -3301,7 +3307,7 @@
           || JSON.stringify(libNativePromptView(recent)) !== JSON.stringify(expected.view)) throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
+      assertStageViews() { proposalContext?.assertLocal(); for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
       assertLocalCurrent() {
         if (this.failed) throw libEvidenceError(this.failed);
         this.assertStageViews();
@@ -3316,7 +3322,7 @@
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        try { await session.assertCurrent(); }
+        try { if (proposalContext) await proposalContext.assertCurrent(); await session.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
         catch (_) { throw this.fail('LIB_READ_CURRENTNESS_LOST'); }
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
@@ -3324,6 +3330,10 @@
       },
       async beforeModel(stage, phase) {
         await this.assertCurrent();
+        if (proposalContext) {
+          if (stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16) throw this.fail('LIB_READ_RETRY_DISABLED');
+          this.calls.add('input_writer:' + this.calls.size); return;
+        }
         const allowed = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
           ? ['analysis', stage === 'shadow_act' ? 'draft' : 'patch'] : [stage === 'shadow_act' ? 'draft' : 'patch'];
         const key = `${stage}:${phase}`;
@@ -3405,7 +3415,7 @@
       async finalize(draft) { await this.assertCurrent(); await session.bindDraft(draft);
         const final = await session.finalizeDraft(); await this.assertCurrent(); return final; },
       close() { this.budgetWitness = null; this.budgetEnvelope = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate('LIB_READ_CLOSED');
-        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); activeLibEvidenceRun = null; } }
+        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); activeLibEvidenceRun = null; } }
     };
     activeLibEvidenceRun = run;
     try {
@@ -3418,6 +3428,87 @@
     }
     catch (error) { run.close(); throw error; }
     return run;
+  };
+
+  let inputWriterEvidenceLease = null;
+  let inputWriterDialogCancel = null;
+  const purgeInputWriterEvidenceRuntime = () => {
+    Runtime.lastInputAssist = null; Runtime.lastInputAssistContext = null;
+    Runtime.lastInputAssistMaterialUsage = null; Runtime.lastInputAssistTranslation = null;
+    Runtime.inputAssistStaticCandidate = null; Runtime.inputAssistStaticHandoff = null;
+    Runtime.inputAssistConfirmation = null;
+    if (Runtime.inputAssistSend) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, generated: '' };
+  };
+  const closeInputWriterEvidence = (code = 'LIB_READ_CLOSED', expected = inputWriterEvidenceLease) => {
+    if (!expected) return;
+    expected.failed ||= code;
+    expected.controller.abort();
+    if (expected.run) { expected.run.fail(code); expected.run.close(); }
+    if (inputWriterEvidenceLease === expected) inputWriterEvidenceLease = null;
+  };
+  const inputWriterNativeView = snapshot => JSON.stringify({
+    identity: snapshot?.chatInfo?.identity,
+    character: Object.fromEntries(Object.entries(snapshot?.character || {}).filter(([key]) => key !== 'chats')),
+    chat: snapshot?.chatInfo?.chat,
+    db: Object.fromEntries(['personas','selectedPersona','modules','enabledModules','moduleIntergration'].map(key => [key, snapshot?.db?.[key]]))
+  }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  const prepareInputWriterEvidence = () => {
+    if (libReadBinding?.readSource !== 'unified_engine') return null;
+    if (activeLibEvidenceRun) throw libEvidenceError('LIB_READ_BUSY');
+    const lease = { operationId: globalThis.crypto?.randomUUID?.() || idForInputWriter(), failed: '', run: null, controller: new AbortController(),
+      binding: libReadBinding, parentRequestId: Runtime.inputAssistSend?.busy ? Runtime.inputAssistSend.requestId : null };
+    inputWriterEvidenceLease = lease; return lease;
+  };
+  const assertInputWriterLease = lease => {
+    if (lease.failed || lease.controller.signal.aborted || inputWriterEvidenceLease !== lease || libReadBinding !== lease.binding)
+      throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
+    if (lease.parentRequestId !== null && (Runtime.inputAssistSend?.requestId !== lease.parentRequestId
+      || Runtime.inputAssistSend?.cancelRequested)) throw libEvidenceError('LIB_READ_CANCELED');
+  };
+  const guardInputWriterRead = async (lease, operation) => {
+    assertInputWriterLease(lease); let timer, abort;
+    const canceled = new Promise((_, reject) => {
+      abort = () => reject(libEvidenceError('LIB_READ_CANCELED'));
+      lease.controller.signal.addEventListener('abort', abort, { once: true });
+      timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 30000);
+    });
+    try { const result = await Promise.race([Promise.resolve().then(operation), canceled]); assertInputWriterLease(lease); return result; }
+    finally { clearTimeout(timer); lease.controller.signal.removeEventListener('abort', abort); }
+  };
+  const openInputWriterEvidence = async (original, settings, options, staticSnapshot, terminalScene, lease) => {
+    if (!lease) return null;
+    const assertLocal = () => assertInputWriterLease(lease);
+    try {
+      const initialNative = inputWriterNativeView(staticSnapshot);
+      const proposalDigest = await libReadSha256(original), nativeContextDigest = await libReadSha256(initialNative);
+      assertLocal();
+      const rawQuery = [original, terminalScene].filter(Boolean).join('\n\n') || 'Continue the existing scene with an unsubmitted input proposal.';
+      let query = '', queryBytes = 0;
+      for (const char of rawQuery) { const size = new TextEncoder().encode(char).length; if (queryBytes + size > 12000) break; query += char; queryBytes += size; }
+      const proposal = Object.freeze({ schema: 'gradia.input-writer-proposal.v1', purpose: 'input_writer_proposal',
+        operationId: lease.operationId, proposalDigest, nativeContextDigest, queryTruncated: query.length !== rawQuery.length, factAdopted: false });
+      const context = { proposal, controller: lease.controller, assertLocal, async assertCurrent() {
+        const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true }));
+        if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+      } };
+      await context.assertCurrent();
+      lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
+      assertLocal();
+      if (lease.run.status !== 'ready') throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
+      lease.run.block = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n' + lease.run.block;
+      if (new TextEncoder().encode(lease.run.block).length > 65536) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
+      await lease.run.assertCurrent(); return lease;
+    } catch (error) { closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease); throw error; }
+  };
+  const idForInputWriter = () => 'input-writer:' + Date.now() + ':' + Math.random().toString(36).slice(2);
+  const assertInputWriterDelivery = async (lease, value, currentValue = () => value) => {
+    if (!lease) return value;
+    if (lease.failed || inputWriterEvidenceLease !== lease || !lease.run) throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
+    const exact = text(value);
+    await lease.run.finalize(exact);
+    if (text(currentValue()) !== exact || inputWriterEvidenceLease !== lease) throw lease.run.fail('LIB_READ_PROPOSAL_CHANGED');
+    lease.run.assertLocalCurrent(); return exact;
   };
 
   const log = (...args) => {
@@ -19293,6 +19384,7 @@ ${passage.text || ''}`, 420));
   };
 
   const runInputAssistForContent = async (content, settings, options = {}) => {
+    closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     Runtime.lastInputAssistMaterialUsage = null;
     // A static snapshot belongs to exactly one delivery cycle. Regeneration may
     // replace it inside the same cycle, while a newly submitted input must never
@@ -19307,7 +19399,10 @@ ${passage.text || ''}`, 420));
     const continuationCue = classifyInputAssistContinuationCue(original);
     if (requestedMode === 'off') return original;
     if (/data:image\/|<svg|base64,/i.test(original) && original.length > 2500) return original;
-    const inputAssistStaticSnapshot = await loadRisuStaticContextSnapshot(settings);
+    const preparation = prepareInputWriterEvidence();
+    const inputAssistStaticSnapshot = preparation
+      ? await guardInputWriterRead(preparation, () => loadRisuStaticContextSnapshot(settings))
+      : await loadRisuStaticContextSnapshot(settings);
     const storedMessages = Array.isArray(inputAssistStaticSnapshot?.chatInfo?.chat?.message)
       ? inputAssistStaticSnapshot.chatInfo.chat.message.map(normalizeInputAssistHistoryMessage).filter(Boolean)
       : [];
@@ -19442,6 +19537,8 @@ ${passage.text || ''}`, 420));
       INPUT_ASSIST_STAGE_ID, recent, scoped, null, null
     );
     recent.materialsUsed = Runtime.lastInputAssistMaterialUsage;
+    const writerEvidence = await openInputWriterEvidence(original, settings, options, inputAssistStaticSnapshot, terminalVisibleScene, preparation);
+    if (writerEvidence) scoped[LIB_EVIDENCE_CONTEXT] = writerEvidence.run;
     if (authorDirectedDraft) {
       const startedAt = Date.now();
       // RP author-choice generation reads the COMPLETE CURRENT continuity snapshot directly.
@@ -19493,7 +19590,8 @@ ${passage.text || ''}`, 420));
         maxTokens: 2600,
         temp: 0.65,
         forceNoThinking: true,
-        jsonMode: true
+        jsonMode: true,
+        omitNativeJsonMode: !!writerEvidence
       });
       const parsedPayload = result.ok ? relaxedJsonParse(result.content) : null;
       const schemaOk = parsedPayload?.schema === AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA;
@@ -19604,7 +19702,8 @@ ${passage.text || ''}`, 420));
         maxTokens,
         temp: 0.58,
         forceNoThinking: true,
-        jsonMode: true
+        jsonMode: true,
+        omitNativeJsonMode: !!writerEvidence
       });
       const parsedPayload = result.ok ? relaxedJsonParse(result.content) : null;
       const schemaOk = parsedPayload?.schema === NOVEL_INPUT_CHOICES_SCHEMA;
@@ -19692,6 +19791,7 @@ ${passage.text || ''}`, 420));
     const languageLabel = language === 'korean' ? 'Korean' : language === 'japanese' ? 'Japanese' : 'English';
     const localizedLabel = language === 'korean' ? '한국어' : language === 'japanese' ? '일본어' : '영어';
     const scoped = scopedSettingsForStage(settings, INPUT_ASSIST_STAGE_ID);
+    if (inputWriterEvidenceLease?.run) scoped[LIB_EVIDENCE_CONTEXT] = inputWriterEvidenceLease.run;
     const systemPrompt = [
       'You are a faithful RP input translator.',
       `Translate the supplied message into natural ${languageLabel} and return ONLY the ${languageLabel} translation.`,
@@ -19786,6 +19886,9 @@ ${passage.text || ''}`, 420));
       last.trace.parsed.deliveredInputHash = last.deliveredInputHash;
       last.trace.parsed.deliverySource = deliverySource;
       last.trace.parsed.deliveredGenerated = deliveredGenerated;
+    }
+    if (activeLibEvidenceRun?.purpose === 'input_writer') {
+      clearInputAssistStaticHandoff('input_writer_evidence_not_reusable'); last.externalEvidence = true; return deliveredInput;
     }
     const candidate = Runtime.inputAssistStaticCandidate;
     Runtime.inputAssistStaticCandidate = null;
@@ -20160,6 +20263,8 @@ ${passage.text || ''}`, 420));
       cancelled: false,
       reason: 'user_cancelled'
     };
+    closeInputWriterEvidence('LIB_READ_CANCELED');
+    if (inputWriterDialogCancel) await inputWriterDialogCancel();
     await setInputAssistContinuePanel(
       current.phase === 'generating'
         ? '전송 취소 요청을 받았습니다. 입력 생성이 끝나도 RisuAI로 보내지 않습니다…'
@@ -20449,12 +20554,13 @@ ${passage.text || ''}`, 420));
     });
   };
 
-  const showInputAssistDeliveryPicker = async (generated, { onTranslate = null } = {}) => {
+  const showInputAssistDeliveryPicker = async (generated, { onTranslate = null, onValidate = null } = {}) => {
     const body = text(generated || '').trim();
     const cancelledResult = { action: 'cancelled', content: '', edited: false, translationLanguage: '' };
     if (!body) return cancelledResult;
     const guiReady = await canUseInputAssistConfirmationGui();
     if (!guiReady) {
+      if (onValidate) await onValidate(body);
       Runtime.inputAssistConfirmation = {
         ...(Runtime.inputAssistConfirmation || {}),
         open: false,
@@ -20590,8 +20696,16 @@ ${passage.text || ''}`, 420));
         };
       };
       const finish = async result => {
-        if (settled || busy) return;
+        if (settled || busy && result?.action !== 'cancelled') return;
+        if (result?.action === 'direct' && onValidate) {
+          setBusy(true);
+          try { await onValidate(result.content, () => text(preview.value).trim()); }
+          catch (error) { copyStatus.textContent = '전달 검증 실패: ' + text(error.code || error.message); copyStatus.style.color = '#ff9aa7'; return; }
+          finally { setBusy(false); }
+        }
+        if (settled) return;
         settled = true;
+        if (inputWriterDialogCancel === cancelDialog) inputWriterDialogCancel = null;
         document.removeEventListener('keydown', keyHandler);
         const finalResult = result && typeof result === 'object' ? result : cancelledResult;
         Runtime.inputAssistConfirmation = {
@@ -20648,7 +20762,14 @@ ${passage.text || ''}`, 420));
         copyStatus.textContent = '클립보드에 복사하고 있습니다…';
         copyStatus.style.color = 'var(--sga-muted)';
 
-        // Keep the clipboard call inside the originating click's transient activation.
+        if (onValidate) {
+          setBusy(true);
+          try { await onValidate(result.content, () => text(preview.value).trim()); }
+          catch (error) { copyStatus.textContent = '복사 검증 실패: ' + text(error.code || error.message); copyStatus.style.color = '#ff9aa7'; return; }
+          finally { setBusy(false); copyButton.disabled = false; }
+        }
+        if (settled) return;
+        // Verification may consume activation; retain the existing manual-copy fallback.
         const copied = await copyInputAssistTextToClipboard(result.content);
         if (copied?.ok) {
           if (Runtime.lastInputAssist) {
@@ -20682,6 +20803,8 @@ ${passage.text || ''}`, 420));
           void finish(cancelledResult);
         }
       };
+      const cancelDialog = () => finish(cancelledResult);
+      if (onValidate) inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       const app = guiEl('div', { class: 'frame wide' });
       const card = guiEl('section', { class: 'card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } }, [
@@ -20737,6 +20860,7 @@ ${passage.text || ''}`, 420));
       continuationMode ? '직전 장면을 바탕으로 이어질 인풋을 작성하고 있습니다…' : '작성한 인풋을 바탕으로 확장안을 만들고 있습니다…',
       'working', 0, true
     );
+    let writerLease = null;
     try {
       const settings = await loadSettings();
       if (settings.inputAssistMode === 'off') throw new Error('쉬운 설정에서 인풋 관리자 모드를 먼저 선택해 주세요.');
@@ -20745,6 +20869,7 @@ ${passage.text || ''}`, 420));
         source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
         telemetryNewCycle: true
       });
+      writerLease = inputWriterEvidenceLease;
       if (inputAssistContinueCancelled(requestId)) throw inputAssistContinueCancellationError();
       let choiceEdited = false;
       let choiceSourceEdited = false;
@@ -20760,10 +20885,13 @@ ${passage.text || ''}`, 420));
         const reviewed = await showAuthorDirectedInputChoicePicker({
           original: originalInput,
           choices,
+          onValidate: writerLease ? (value, current) => assertInputWriterDelivery(writerLease, value, current) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_author_choice_regenerate' : 'explicit_input_writer_author_choice_regenerate' });
-            return Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
+            const next = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
+            if (next.length < 2) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
+            writerLease = inputWriterEvidenceLease; return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -20783,10 +20911,13 @@ ${passage.text || ''}`, 420));
         const reviewed = await showNovelInputChoicePicker({
           original: originalInput,
           choices,
+          onValidate: writerLease ? (value, current) => assertInputWriterDelivery(writerLease, value, current) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_novel_choice_regenerate' : 'explicit_input_writer_novel_choice_regenerate' });
-            return Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
+            const next = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
+            if (next.length < 3) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
+            writerLease = inputWriterEvidenceLease; return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -20800,7 +20931,9 @@ ${passage.text || ''}`, 420));
         choiceTranslationLanguage = text(reviewed.translationLanguage || '');
       }
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'reviewing', generated };
+      await assertInputWriterDelivery(writerLease, generated);
       const delivery = await showInputAssistDeliveryPicker(generated, {
+        onValidate: writerLease ? (value, current) => assertInputWriterDelivery(writerLease, value, current) : null,
         onTranslate: async (value, targetLanguage) => (
           await translateInputAssistReviewText(value, settings, targetLanguage)
         )
@@ -20837,6 +20970,7 @@ ${passage.text || ''}`, 420));
           Runtime.lastInputAssist.trace.parsed.choiceTranslationLanguage = choiceTranslationLanguage;
         }
       }
+      await assertInputWriterDelivery(writerLease, generated);
       generated = finalizeInputAssistDelivery(generated, deliverySource, settings).trim();
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'ready', generated };
       if (delivery.action === 'copy') {
@@ -20855,6 +20989,8 @@ ${passage.text || ''}`, 420));
       if (inputAssistContinueCancelled(requestId)) throw inputAssistContinueCancellationError();
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'sending', cancelRequested: false };
       await setInputAssistContinuePanel('RisuAI로 전송하고 있습니다…', 'working');
+      await assertInputWriterDelivery(writerLease, generated);
+      closeInputWriterEvidence('LIB_READ_CONSUMED', writerLease);
       const sent = await sendApi.sendChat(generated);
       if (sent === false) throw new Error('RisuAI가 GRADIA의 채팅 전송 요청을 허용하지 않았습니다.');
       Runtime.inputAssistSend = { busy: false, phase: 'sent', requestId, cancelRequested: false, cancelled: false, lastAt: Date.now(), ok: true, reason: '', generated };
@@ -20874,6 +21010,10 @@ ${passage.text || ''}`, 420));
       await notifyInputAssistContinueError(reason);
       finishCallTelemetry('explicit_input_writer_failed');
       return false;
+    } finally {
+      closeInputWriterEvidence('LIB_READ_CLOSED', writerLease);
+      if (inputWriterEvidenceLease?.parentRequestId === requestId) closeInputWriterEvidence();
+      if (writerLease && Runtime.inputAssistSend?.requestId === requestId) purgeInputWriterEvidenceRuntime();
     }
   };
 
@@ -22496,7 +22636,7 @@ ${passage.text || ''}`, 420));
   };
 
   const recordStageTrace = (entry) => {
-    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
+    if (activeLibEvidenceRun && (entry.stage !== INPUT_ASSIST_STAGE_ID || activeLibEvidenceRun.purpose === 'input_writer')) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -28737,7 +28877,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
         let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-          ...(readSource === 'unified_engine' ? { queryText: input.queryText } : {}) }));
+          ...(readSource === 'unified_engine' ? { queryText: input.queryText, ...(input.proposal ? {proposal: input.proposal} : {}) } : {}) }));
         if (typeof read?.close === 'function') record.releaseRead = read.close;
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
@@ -28862,6 +29002,7 @@ function createGradiaEvidenceBudget({ digest }) {
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
     const readSource = options.readSource === undefined ? 'server_logical_read' : String(options.readSource);
     if (!['server_logical_read','unified_engine'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
+    closeInputWriterEvidence('LIB_READ_BOUNDARY_CHANGED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
     libReadSelection = null;
@@ -28869,6 +29010,7 @@ function createGradiaEvidenceBudget({ digest }) {
     return Object.freeze({ status: 'bound', liveConnectionVerified: false, maxCorpusBytes });
   };
   const unbindLibReadOnlyClient = () => {
+    closeInputWriterEvidence('LIB_READ_CONNECTION_UNAVAILABLE');
     LibReadConsumer.invalidate('LIB_READ_CONNECTION_UNAVAILABLE');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_CONNECTION_UNAVAILABLE'); old.close(); }
     libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;
@@ -36081,7 +36223,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A new request may obtain a fresh authorization witness. Once selected,
       // a draft must fail on change rather than refresh its evidence silently.
       await authorizationCurrent(action==='capture');
-      const result=action==='capture'?await provider.capture({...body,queryText:readOptions.queryText,signal:readOptions.signal,
+      if(action==='capture'&&readOptions.proposal){
+        if(typeof provider.describe!=='function')reject('LIB_READ_UNIFIED_UNAVAILABLE');
+        const description=await provider.describe();await assertRoute();await authorizationCurrent();
+        if(description?.schema!=='libra.gradia-unified-read.v1'||description?.readOnly!==true
+          ||!Array.isArray(description.purposes)||!description.purposes.includes('input_writer_proposal'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+      }
+      const result=action==='capture'?await provider.capture({...body,queryText:readOptions.queryText,signal:readOptions.signal,...(readOptions.proposal?{proposal:readOptions.proposal}:{}),
         binding:{url:connection.url,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch}})
         :await provider.current({proof:body,signal:readOptions.signal});
       try{await assertRoute();await authorizationCurrent();return result;}
@@ -36760,6 +36908,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   })();
 
   const LibReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
+  const LibWriterReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope });
 
   const runPipeline = async (messages, type, settings) => {
     const pipelineStartedAt = Date.now();
@@ -37402,6 +37551,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const beforeRequest = async (messages, type) => {
+    if (isMainNarrativeRequest(type)) closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
@@ -39011,6 +39161,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!selected) return;
       onSelect({
         content: selected,
+        currentValue: () => text(editor.value).trim(),
         edited: sourceEdited || (translationView !== 'source' && translatedEdited[translationView]),
         sourceEdited,
         translationLanguage: translationView === 'source' ? '' : translationView
@@ -39072,11 +39223,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     choices = [],
     source = 'normal_input',
     onRegenerate = null,
-    onTranslate = null
+    onTranslate = null,
+    onValidate = null
   } = {}) => {
     const initialOriginal = text(original || '').trim();
     let currentChoices = Array.isArray(choices) ? choices.map(item => ({ ...item })).filter(item => text(item?.brief).trim()) : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
     if (typeof document === 'undefined') {
       // Never auto-select an AI proposal in headless mode. Preserve the user's own
       // authored direction when available; explicit continuation without UI cancels.
@@ -39150,8 +39302,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         } catch (_) {}
       };
       const finish = async (action, content, choice = null, review = {}) => {
-        if (settled || busy) return;
+        if (settled || busy && action !== 'cancelled') return;
+        if (action !== 'cancelled' && onValidate) {
+          setBusy(true);
+          try { await onValidate(content, review.currentValue || (() => content)); }
+          catch (error) { statusNode.textContent = '선택 검증 실패: ' + text(error.code || error.message); statusNode.classList.add('err'); return; }
+          finally { setBusy(false); }
+        }
+        if (settled) return;
         settled = true;
+        if (inputWriterDialogCancel === cancelDialog) inputWriterDialogCancel = null;
         document.removeEventListener('keydown', keyHandler);
         const selected = text(content || '').trim();
         recordAuthorDirectedChoiceDecision(action, selected, choice, review);
@@ -39244,6 +39404,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
+      const cancelDialog = () => finish('cancelled', '', null);
+      if (onValidate) inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
@@ -39301,13 +39463,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     choices = [],
     source = 'normal_input',
     onRegenerate = null,
-    onTranslate = null
+    onTranslate = null,
+    onValidate = null
   } = {}) => {
     const initialOriginal = text(original || '').trim();
     let currentChoices = Array.isArray(choices)
       ? choices.map(item => ({ ...item })).filter(item => text(item?.input).trim())
       : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
     if (typeof document === 'undefined') {
       // Never auto-select an AI candidate without an interactive picker.
       if (initialOriginal) {
@@ -39380,8 +39543,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         } catch (_) {}
       };
       const finish = async (action, content, choice = null, review = {}) => {
-        if (settled || busy) return;
+        if (settled || busy && action !== 'cancelled') return;
+        if (action !== 'cancelled' && onValidate) {
+          setBusy(true);
+          try { await onValidate(content, review.currentValue || (() => content)); }
+          catch (error) { statusNode.textContent = '선택 검증 실패: ' + text(error.code || error.message); statusNode.classList.add('err'); return; }
+          finally { setBusy(false); }
+        }
+        if (settled) return;
         settled = true;
+        if (inputWriterDialogCancel === cancelDialog) inputWriterDialogCancel = null;
         document.removeEventListener('keydown', keyHandler);
         const selected = text(content || '').trim();
         recordNovelInputChoiceDecision(action, selected, choice, review);
@@ -39478,6 +39649,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
+      const cancelDialog = () => finish('cancelled', '', null);
+      if (onValidate) inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
@@ -42496,7 +42669,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const serve = async (action, payload = {}) => {
     check(); prune();
     if (bytes(payload) > requestLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-    if (action === 'describe') return { schema, source: 'unified_engine', readOnly: true };
+    if (action === 'describe') return { schema, source: 'unified_engine', readOnly: true,
+      purposes: ['response_evidence', 'input_writer_proposal'] };
     if (action === 'release') {
       const record = receipts.get(payload.receiptId) || operations.get(payload.operationId)
         || [...receipts.values()].find(row => row.operationId === payload.operationId);
@@ -42513,6 +42687,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
     }
     if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
+    if (payload.proposal !== undefined) {
+      const p = payload.proposal;
+      const keys = ['schema','purpose','operationId','proposalDigest','nativeContextDigest','queryTruncated','factAdopted'];
+      if (!p || Array.isArray(p) || Object.keys(p).length !== keys.length || Object.keys(p).some(key => !keys.includes(key))
+        || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+        || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+        || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+        || typeof p.queryTruncated !== 'boolean') fail('LIB_READ_PROPOSAL_INVALID');
+    }
     if (typeof payload.operationId !== 'string' || !payload.operationId || payload.operationId.length > 160
       || typeof payload.queryText !== 'string' || !payload.queryText.trim() || bytes(payload.queryText) > 16384
       || !Number.isSafeInteger(payload.maxCorpusBytes) || payload.maxCorpusBytes < 512 || payload.maxCorpusBytes > 33554432
@@ -42538,6 +42721,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const execution = record.execution, content = execution.packet.renderedText;
       if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
       const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+        purpose: payload.proposal ? 'input_writer_proposal' : 'response_evidence',
+        ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
         queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,
         windowRead: execution.windowRead, nextWindow: execution.nextWindow,
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
@@ -42829,9 +43014,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       )));
     },
     getInputAssistSendStatus() {
+      if (activeLibEvidenceRun?.purpose === 'input_writer') return { ...Runtime.inputAssistSend, generated: '', externalEvidence: true };
       return JSON.parse(JSON.stringify(Runtime.inputAssistSend || null));
     },
     getInputAssistConfirmationStatus() {
+      if (activeLibEvidenceRun?.purpose === 'input_writer') return { open: Runtime.inputAssistConfirmation?.open === true, externalEvidence: true };
       return JSON.parse(JSON.stringify(Runtime.inputAssistConfirmation || null));
     },
     getLastInputAssistTranslation() {
@@ -42986,6 +43173,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }, event);
     },
     async rewriteInput(content) {
+      if (libReadBinding?.readSource === 'unified_engine' && Runtime.inputAssistSend?.busy) throw libEvidenceError('LIB_READ_BUSY');
       const settings = await loadSettings();
       try {
         return await runInputAssistForContent(content, settings, {
@@ -42993,6 +43181,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           telemetryNewCycle: true
         });
       } finally {
+        closeInputWriterEvidence('LIB_READ_CLOSED');
         clearInputAssistStaticHandoff('public_rewrite_not_delivered');
         finishCallTelemetry('public_rewrite');
       }

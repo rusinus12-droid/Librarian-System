@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.2
+- 작성일: 2026-10-14 · 문서 버전: 1.3
 - 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
-- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 전체 기록의 영속 접근, 인풋 작성기 읽기, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
+- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 기록의 영속 접근, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
 
 이 문서는 소비자 호출 경로 재검토를 반영한 현재 작업 계획이다. 이전 설계·현황 문서에서 LIBRA의 Planner·SGA·Input Writer를 활성 연결 대상으로 적은 부분을 정정한다. 과제 정의는 구현 완료나 배포 자격을 부여하지 않는다.
 
@@ -16,7 +16,7 @@
 | LIBRA Planner·SGA | 실행 함수와 공개 실행 API 제거. 예전 응답 설정도 Classic으로 정규화 | 실행 경로를 복원하는 과제로 잡지 않음 |
 | LIBRA Input Writer | 실행 함수·공개 API·작성기 버튼 등록 제거 | 인풋 작성 기능의 소유자는 별도 GRADIA |
 | GRADIA 셰도우·AIDE | 기존 서버 읽기 전용 연결과 요청별 근거 전달 경로가 있음 | server_only·호스트 채널을 통한 통합 읽기 연결. 실제 설치 인증과 전체 corpus 접근은 남음 |
-| GRADIA 인풋 작성기 | 작성 기능은 활성. 현재 기억 회수를 하지 않으며 이전 실행의 근거도 받지 않도록 검사 | 미전송 입력에 맞는 별도 질의·읽기 세션 계약부터 정의 |
+| GRADIA 인풋 작성기 | 명시적 작성 버튼에서 별도 미전송 제안 세션으로 통합 읽기 연결. 셰도우 근거·전달 권한 비재사용 | 실제 설치 인증·대규모 성능 측정은 남음 |
 
 LIBRA의 주석·구형 저장 키·descriptor에 남은 이름은 실행 기능의 증거가 아니다. 단, [현재 compiler](../tools/libra_memory_graph_compiler.cjs)는 `planner/sga/input_writer` packet 형식도 실제 지원한다. 이 커널 포맷 지원과 제품의 활성 실행 경로를 구분해야 한다. native owner verifier에는 이번 N03에서 private GRADIA 선택 영수증 검증을 연결했다. 공개 query API가 임의로 영수증 권한을 발급하지는 않는다.
 
@@ -48,7 +48,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | N01 | P1 · 부분 구현 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
 | N03 | P1 · 제한 범위 통합 읽기 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
-| N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
+| N04 | P1 · 미전송 제안 읽기 제한 연결 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
 | N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
 | N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
 | N07 | P2 · 기본값 legacy | 기본값 전환·중복 경로 종료 | M13/M15 | 지원 범위의 N00–N06 합격 |
@@ -172,17 +172,17 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 **완료 기준:** native 통합 엔진 → 정식 reader → 실제 셰도우/AIDE prompt → 최종 handoff 경로를 검사한다. 원본 교체·영수증 위조·scope 변경·취소/늦은 응답은 영향을 받은 draft를 거부한다. 정상 경로의 추가 검색·모델 호출과 실제 채택 근거를 측정한다.
 
-## 7. N04 — GRADIA 인풋 작성기의 새 읽기 계약
+## 7. N04 — GRADIA 인풋 작성기의 별도 통합 읽기
 
-현재 [회귀 검사](../tests/gradia/evidence-bridge.test.cjs)는 인풋 작성기가 기억 회수를 하지 않고 이전 셰도우 실행의 근거를 받지 않음을 보장한다. 읽기 기능 추가는 이 계약을 명시적으로 바꾸는 작업이다. 검사만 지우거나 셰도우 settings의 private 근거를 전달해서 구현하지 않는다.
+**제한 범위 연결·검증:** 기존 자료 화면에서 통합 읽기에 연결한 후 명시적 인풋 작성 버튼을 사용한다. `server_only`, 동일 native scope, readonly principal과 기존 G2 예산 profile을 유지한다. 자동 input handler와 beforeRequest 입력 가로채기를 등록하지 않는다.
 
-- 질의 권한을 `미전송 제안`과 `호스트가 채택한 현재 입력`으로 구분한다. 작성 중인 입력을 이미 일어난 사건·정본·현재 상태로 승격하지 않는다.
-- 작성 작업별 operation ID, 제안 텍스트 hash, 기준 대화·scope/세계선/view, 설정·출력 예산, 원본 영수증을 갖는 새 읽기 세션을 정의한다.
-- 제안 변경·재생성·scope 전환·취소는 이전 읽기 결과와 draft를 무효화한다. query가 기억·State·역사 임베딩을 쓰지 않도록 한다.
-- preview/copy와 실제 send 경계를 구분한다. 사용자 편집 뒤 전달할 정확한 내용과 현재 근거를 재검증하고 이전 draft의 권한을 재사용하지 않는다.
-- 인풋 작성기와 이후 셰도우는 각각의 실행 소유권을 갖는다. 공유 캐시 페이지의 재사용과 이전 실행의 private 전달 권한 재사용을 구분한다.
+- 별도 `LibWriterReadConsumer`와 작업별 operation ID를 사용한다. 원래 제안의 SHA-256·기준 native context digest·scope/세계선이 owner 영수증과 결속된다. `input_writer_proposal`, `factAdopted:false`를 owner가 검증하고, 제안·선택·복사만으로 기억/State를 쓰지 않는다.
+- 실제 RP/Novel 작성기 prompt에 owner 근거가 들어간다. 최초 생성/번역은 같은 세션을 사용하고 재생성은 이전 영수증을 해제한 새 작업이다. 셰도우의 private 세션을 가져오지 않는다.
+- 선택과 최종 편집본의 복사/전송 직전에 원본·native 대화/설정·연결/권한과 정확한 출력 내용을 다시 검증한다. sendChat 권한 확인을 기다린 뒤에도 검사한다. 취소·원본 교체·연결/입력 변경·늦은 응답은 이전 근거와 초안 전달을 차단한다.
+- 근거·선택지·파생 입력은 generic runtime/provider 진단·저장·체크포인트·다음 실행의 static handoff에 보관하지 않는다. 선택지/편집 UI만 작업 중 private 결과를 사용한다. 복사한 텍스트를 나중에 직접 보내는 일은 새 host 입력이며 과거 읽기 권한을 전달하지 않는다.
+- 공급자의 `input_writer_proposal` 지원을 확인한다. 연결 없는 기존 작성기는 기억 조회를 시작하지 않으며, 기존 [회귀 검사](../tests/gradia/evidence-bridge.test.cjs)는 **셰도우 근거 비사용**을 계속 검사한다.
 
-**완료 기준:** 별도 세션의 통합 검색 근거가 실제 작성기 prompt에 들어간다. 제안 변경/재생성·취소·원본 교체·최종 편집/send를 검사하며 이전 실행 근거 비사용과 원본 비변경은 계속 보장한다. 기존 회수 없음 검사는 새 계약의 읽기 가능/불가 조건을 검증하도록 함께 갱신한다.
+[작성기 통합 읽기 계약·검증](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)에 실제 UI와 LIBRA/SQLite 통합 경로, 지원 model/payload 한계, 재현 명령을 기록한다. E4 설치 인증과 전체 corpus 접근(N01)은 이 연결 완료에 포함하지 않는다.
 
 ## 8. N05 — GC와 수명주기
 

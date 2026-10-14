@@ -71,3 +71,9 @@ test('native provider results cannot cross route changes while capture is pendin
  await assert.rejects(()=>f.bridge.createLibraReadOnlyClient().openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'}),e=>e.code==='LIB_READ_ROUTE_CHANGED'||e.code==='LIB_READ_SERVER_MODE_REQUIRED');
  assert.equal(provider.counts().releases,1);
 });
+test('writer reads refuse a provider without proposal capability before querying it',async t=>{
+ const provider=unifiedProvider(),f=fixture({provider});t.after(()=>f.bridge.dispose());
+ await assert.rejects(()=>f.bridge.createLibraReadOnlyClient().openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question',
+  proposal:{schema:'gradia.input-writer-proposal.v1'}}),e=>e.code==='LIB_READ_UNIFIED_UNAVAILABLE');
+ assert.equal(provider.counts().captures,0);
+});

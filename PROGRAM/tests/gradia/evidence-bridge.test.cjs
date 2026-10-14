@@ -129,7 +129,7 @@ test('literal evidence-shaped native input is preserved or denied, never silentl
  const first=await f.run();first.closeEvidence();const user=f.prompts[0].messages.find(m=>m.role==='user').content,block=user.slice(user.indexOf('GRADIA EXTERNAL EVIDENCE: UNTRUSTED QUOTED DATA'));
  const input=messages();input.at(-1).content='Please explain this literal text:\n'+block;f.certifyInput(input);const raw=JSON.stringify(input);const r=await f.run(input);assert.equal(r.externalEvidence,false);assert.equal(JSON.stringify(input),raw);assert.ok(f.prompts.at(-1).messages.some(m=>m.content.includes(block)));r.closeEvidence();
 });
-test('Input Writer proposals receive no run evidence and never trigger recall',async()=>{
+test('unbound Input Writer never borrows the active SHADOW evidence session',async()=>{
  const f=await fixture();await configureBeforeRequest(f);const result=await f.run();await f.host.plugin.saveRuntimeSettings({default_preset:'offline',input_assist_mode:'npc_focus',writing_mode:'novel',input_assist_target_chars:500});
  const before=f.prompts.length;await f.host.plugin.rewriteInput('Write an unsubmitted proposal for the archivist.');assert.equal(f.recalls,1);assert.ok(f.prompts.length>before);for(const p of f.prompts.slice(before))assert.ok(!JSON.stringify(p).includes('EVIDENCE_SENTINEL'));result.closeEvidence();
 });

@@ -9,7 +9,7 @@ LIBRA와 GRADIA를 함께 로드하고 기존 LIB 서버 읽기 전용 연결 �
 
 현재 지원 조건은 **server_only**, 수락된 data identity/reset, 등록된 동일 character/chat scope, GRADIA의 실제 readonly 서버 권한, 인증된 plugin channel이다. 기존 G2 모델·문맥·payload 예산 제한을 유지하므로 연결 성공만으로 모든 생성 모델이 지원되는 것은 아니다. 현재 고정 profile은 `gpt-4o-mini-2024-07-18`의 허용된 요청 형식이다. plugin_only/mirror 또는 호스트 채널이 없는 환경을 같은 지원 범위로 주장하지 않는다.
 
-연결/점검은 서버 권한과 통합 공급자 가용성을 검사한다. 실제 검색은 새 응답 실행에서 제출된 최신 사용자 입력을 질의로 실행한다. 채널의 질의 한도는 UTF-8 16 KiB, 직렬화된 요청 한도는 64 KiB이며 초과 요청을 거부한다. 점검 화면의 서버 원문 개수를 통합 검색 결과로 표시하지 않는다. GRADIA 인풋 작성기의 미전송 입력은 이 경로를 호출하지 않는다(N04 별도 계약).
+연결/점검은 서버 권한과 통합 공급자 가용성을 검사한다. 실제 검색은 새 응답 실행에서 제출된 최신 사용자 입력을 질의로 실행한다. 채널의 질의 한도는 UTF-8 16 KiB, 직렬화된 요청 한도는 64 KiB이며 초과 요청을 거부한다. 점검 화면의 서버 원문 개수를 통합 검색 결과로 표시하지 않는다. GRADIA 인풋 작성기는 [N04 별도 세션 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 같은 공급자를 읽는다. 셰도우 세션을 재사용하지 않는다.
 
 ## 실제 실행과 권한
 
@@ -47,6 +47,6 @@ item의 `libra.unified.bundle:<receipt>` key는 이 실행에서 발급한 bundl
 - `libra_gradia_unified_pipeline_runtime_test.cjs`: 실제 LIBRA native producer/kernel·SQLite·GRADIA 공개 연결 API와 beforeRequest를 결합한다. 한 검색이 SHADOW/AIDE 네 요청과 최종 전달로 이어지고, 원본 메모리 쓰기·추가 분석 모델 호출·근거 영속화가 없는지 확인한다. 후속 실행 중 원문을 수정하면 다음 단계와 최종 초안을 차단한다.
 - 기존 source 계약, readonly 연결, 서버 adapter, 세 owner pipeline, 원본 교체, Classic·퇴역 회귀 검사를 유지한다.
 
-이 변경에서 위 세 신규/확장 suite의 23개 검사와 기존 영향권 검사 묶음의 99개가 통과했다. source 계약 파일 내부의 18개 판정과 native semantic 회귀의 8개 시나리오도 모두 통과했다. 두 플러그인의 source 빌드·구문 검사와 SDK/graph/channel 내장 동기화 검사를 수행했다. 빌드의 기존 크기 기준 초과 경고는 성능 인증으로 해석하지 않는다.
+N03 최초 연결(`e4ef853`)에서 위 세 신규/확장 suite의 23개 검사와 기존 영향권 검사 묶음의 99개가 통과했다. source 계약 파일 내부의 18개 판정과 native semantic 회귀의 8개 시나리오도 모두 통과했다. 두 플러그인의 source 빌드·구문 검사와 SDK/graph/channel 내장 동기화 검사를 수행했다. 빌드의 기존 크기 기준 초과 경고는 성능 인증으로 해석하지 않는다. 후속 작성기 검증은 N04 계약에서 추적한다.
 
-호스트 채널과 모델 응답은 제어된 fixture다. 실제 설치 RisuAI의 채널 호환·성능, 외부 모델 답변의 의미 품질, 대규모 workload는 미인증이다. 검색은 현재 native projection window의 범위로 제한된다. 전체 corpus의 durable 인덱스·공통 캐시/Memory Lane(N01), 자료별 나머지 representation(N02), 인풋 작성기(N04), 안전한 native GC(N05), 품질/설치 인증(N06), 기본값 전환(N07)은 별도 과제다.
+호스트 채널과 모델 응답은 제어된 fixture다. 실제 설치 RisuAI의 채널 호환·성능, 외부 모델 답변의 의미 품질, 대규모 workload는 미인증이다. 검색은 현재 native projection window의 범위로 제한된다. 전체 corpus의 durable 인덱스·공통 캐시/Memory Lane(N01), 자료별 나머지 representation(N02), 안전한 native GC(N05), 품질/설치 인증(N06), 기본값 전환(N07)은 별도 과제다.
