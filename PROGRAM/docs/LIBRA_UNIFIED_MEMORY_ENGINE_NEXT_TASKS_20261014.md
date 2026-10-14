@@ -76,6 +76,13 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - source read/JSON·index build·frontier/witness·private readset·동시 I/O·반환 데이터의 계측과 admission/backpressure를 연결한다. 누적 전송량, resident bytes, peak heap, 문자 예산을 구분한다.
 - Classic의 최종 전달과 GUI의 열람/진단 adapter를 같은 query 결과에 연결한다. GUI는 근거·시점·미독 영역·실제 채택을 표시하며, 화면용 public DTO에 모델 발송 권한을 부여하지 않는다. source window 밖의 조회와 partial을 GUI에서도 확인할 수 있어야 한다.
 
+**진척 (첫 증분):** 4개 자료의 inventory·미독 cursor·delta/tombstone 계약을 `tools/libra_memory_graph_inventory.cjs`(순수 커널)와 `tests/libra_memory_graph_inventory_test.cjs`(8 PASS, 음성 대조 포함)로 고정했다.
+
+- 지원 등급은 `FAMILY_SUPPORT_PROFILES`가 자료별로 선언하고, 각 선언의 **근거 심볼**을 명시해 스위트가 실제 플러그인에서 그 심볼을 확인한다(사라지면 실패). lore만 tombstone(`removals`·`confirmations`)을 보고할 수 있고, canonical·micro·state에서 사라진 항목은 `unobservableRemoval`로 남는다 — owner가 지원하지 않는 변경 기록을 만들어내지 않는다.
+- cursor는 **열거 digest에 결속**된다. 집합이 바뀐 뒤 이전 cursor로 이어받으면 `cursor_stale`로 거부한다(조용한 누락 방지).
+- 잘린 page는 전체 family와 diff할 수 없다(`delta_requires_whole_family`). 페이지 밖 항목이 허위 삭제로 보고되는 경로를 막는다. 전체 열거라도 완료 선언이 없으면 `deltaComplete:false`(`coverage_not_declared`)이다.
+- **하지 않은 것**: 이 증분은 계약·검증까지다. 이 inventory/delta를 store generation manifest에 싣고, 미독 cursor를 실제 유지보수 열거에 사용하는 연결은 다음 증분이다. 연결되지 않은 factory를 플러그인에 늘리지 않기 위해 아직 내장하지 않았다.
+
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
 ## 5. N02 — 자료별 semantic 표현
