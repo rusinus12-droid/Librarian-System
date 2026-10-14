@@ -99,6 +99,13 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **함께 고친 결함**: 질의 경로에 창 크기 검증이 없어 `limit: 51` 같은 요청이 조용히 통과했다(저장소 경로는 1–50으로 검증한다). 이제 `limit` 1–50·`nodeLimit` 1–8192·커서 문자열 길이를 검증하고 위반은 `LIBRA_GRAPH_QUERY_LIMIT_INVALID`/`NODELIMIT_INVALID`로 거부한다.
 - 재현: `node PROGRAM/tests/libra_memory_graph_query_window_runtime_test.cjs` → 4 PASS(창 보고, 창 밖 기억의 질의 도달, 남은 커서 반환, 위조·범위 밖 커서 거부).
 
+- **연결 (다섯째 증분) — 읽은 경로 관찰**: 질의 결과에 `accessTrace`(`libra.graph_access_trace.v1`)를 노출했다. 이 호출이 **이미 계산한 값만** 묶은 서술이며 새 계측은 없다: Lane이 읽은 page/byte 수와 **역할별 분해**(`query_anchor_access`·`graph_neighborhood`·`temporal_state_access`·`semantic_access`·`context_expansion`), cache hit·coalesced 요청·미독 cursor, frontier step·재평가·요청된 인접 anchor, L0 workspace byte(예산 대비 초과 여부), 그리고 coverage/중단 사유. recall 진단에도 같은 trace를 싣는다.
+- **실측 예 (fixture·plugin_only)**: 기본 질의 = lane 46 pages·99,083 bytes / 262,144, `graph_neighborhood` 37 pages·89,123 bytes, `query_anchor_access` 9 pages·9,960 bytes, frontier 40 step·인접 anchor 37, workspace 46,496 / 262,144 초과 없음, `frontier_exhausted`. 소예산(`maxPages:1, maxBytes:512, pageBytes:256`) 질의 = **delivery `partial`·`stopReason lane_page_count_budget`·lane.complete false·1 page·196 bytes** — 예산 중단이 trace에 그대로 드러난다.
+- **권한 없음**: trace는 `authority: descriptive_only`이고 `modelDispatchEligible` 필드를 갖지 않는다. 발송 가능 여부는 별도 dispatch 검증에서만 나온다.
+- 재현: `node PROGRAM/tests/libra_memory_graph_access_trace_runtime_test.cjs` → 4 PASS(경로 보고, 커널 진단과의 일치, 예산 중단 가시성, 권한 없음).
+- **이 증분으로 N01의 관찰 가능한 기준은 채워졌다**: ① 창 밖 기억의 질의 도달(넷째 증분, 실측) ② 실제 읽은 shard/cache/Lane 경로 관찰(다섯째 증분) ③ 미독·예산 종료가 partial/coverage로 드러남(③은 두 증분의 음성 대조) ④ `byteBounded:true`를 선언하지 않음(inventory 집합이 `byteBounded:false` 고정).
+- **N01에서 남은 것**: GUI 화면에 이 trace·시점·미독 영역을 표시하는 adapter, 그리고 cold/warm/축출/재시작·수정/복원·동시/취소 축은 기존 스위트(V05·store 12종)가 덮지만 이번 증분에서 재측정하지는 않았다. 실제 설치 호스트 인증은 E4/N06이다.
+
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
 ## 5. N02 — 자료별 semantic 표현

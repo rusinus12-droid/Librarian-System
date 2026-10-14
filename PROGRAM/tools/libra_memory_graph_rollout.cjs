@@ -180,6 +180,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       semanticCoverageComplete: semanticAccessComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
+      accessTrace: queryResult.accessTrace || null,
       diagnostics: queryResult.diagnostics,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,

@@ -47572,6 +47572,37 @@ function createLibraReadonlySourceContext(owner) {
         unreadInventoryCursors,
         historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
       },
+      // N01 completion: what this query actually read, assembled only from values this call already
+      // produced (no new measurement). It describes the read path and grants nothing: authority stays
+      // descriptive and modelDispatchEligible stays false.
+      accessTrace: Object.freeze({
+        schema: 'libra.graph_access_trace.v1',
+        authority: 'descriptive_only',
+        generation: compiledIndex.generation,
+        indexDigest: compiledIndex.indexDigest,
+        lane: Object.freeze({
+          pagesRead: laneReport.pagesRead,
+          bytesRead: laneReport.bytesRead,
+          maxBytes,
+          cacheHits: laneReport.cacheHits || 0,
+          coalescedRequests: laneReport.coalescedRequests,
+          complete: laneReport.complete,
+          stopReason: laneReport.stopReason || '',
+          roleStats: laneReport.roleStats || null,
+          unreadCursors: laneReport.unreadCursors || []
+        }),
+        frontier: Object.freeze({
+          steps: poppedSteps,
+          reevaluations,
+          onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size
+        }),
+        workspace: Object.freeze({ l0WorkspaceBytes, maxWorkspaceBytes, exceeded: workspaceBudgetExceeded }),
+        coverage: Object.freeze({
+          complete, sourceCoverageComplete, traversalComplete, stopReason,
+          familyNotes, unreadInventoryCursors,
+          historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
+        })
+      }),
       authority: 'descriptive_only',
       modelDispatchEligible: false
     });
@@ -48579,6 +48610,7 @@ function createLibraReadonlySourceContext(owner) {
       semanticCoverageComplete: semanticAccessComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
+      accessTrace: queryResult.accessTrace || null,
       diagnostics: queryResult.diagnostics,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
@@ -65378,7 +65410,8 @@ ${string(queryBundle?.sceneText || '')}`;
               modelDispatchEligible: unifiedExec.modelDispatchEligible,
               legacyRankerExecuted: false,
               legacyCachesRebuilt: false,
-              cleanCutoverVerified: fence.status().cleanCutoverVerified
+              cleanCutoverVerified: fence.status().cleanCutoverVerified,
+              accessTrace: unifiedExec.accessTrace || null
             },
             recallRuntime: recallGuardSnapshot(guard)
           },
