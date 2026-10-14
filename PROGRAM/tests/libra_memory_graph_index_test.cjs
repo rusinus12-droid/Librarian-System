@@ -260,7 +260,7 @@ test('Priority 2 & D06 (UM2 Common Access Index & Transitive Reverse Dependencie
 
   const compiled = index.compile(graph, { partition, generation });
   assert.equal(compiled.schema, 'libra.memory_graph_index.v1');
-  assert.equal(compiled.tokenizerVersion, 'libra.tokenizer.nfkc_v1');
+  assert.equal(compiled.tokenizerVersion, 'libra.tokenizer.nfkc_ko_particle_v2');
   assert.equal(compiled.dfScope, 'window_exact');
   assert.equal(typeof compiled.tableDigests?.directoryDigest, 'string');
   assert.equal(typeof compiled.tableDigests?.adjacencyDigest, 'string');

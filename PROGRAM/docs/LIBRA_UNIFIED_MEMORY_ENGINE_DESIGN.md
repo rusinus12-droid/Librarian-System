@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.13 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. GRADIA 인풋 작성기도 별도 미전송 제안 계약으로 제한 연결했다. 전체 corpus durable 접근, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
-- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 현재 범위와 검증은 [현황 §12–17](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
+- 문서 버전: 1.14 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 선택적 영속 접근·증분 원본 검증·전체 자원 계상과 실제 설치/품질·규모 인증은 미완성이다.**
+- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 최신 전환 계약은 [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md). 이전 범위와 검증은 [현황 §12–19](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
@@ -123,7 +123,11 @@ UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `So
 
 `buildMemoryGraphCorpus()`가 정본/Micro owner cursor를 순회하고 State·로어북·대상·관계를 하나의 그래프로 통합해 공통 index 표를 불변 page로 게시한다. unified query는 현재 frame의 게시 인덱스를 복원해 기존 단일 scorer/frontier/Lane/Compiler에서 사용한다. Classic과 별도 GRADIA SHADOW/AIDE·인풋 작성기가 같은 경로를 사용하며, 임베딩은 기존 정본 source-access 표현을 유지한다. GUI의 명시적 구축/취소와 `corpusRead` 진단을 연결했다.
 
-이는 N01의 실제 전체 구간 검색·저장 표 재사용 증분이다. 모든 원본 구간의 native 재투영과 표 전체 hydration, 대규모 선택적 shard 접근·증분 원본 검증·전체 자원 계상은 남아 있다. 여러 SDK readset과 root CAS는 전체 owner 원자성이 아니다. 기본값 `legacy`와 실제 설치/품질 gate를 유지한다. 최신 제한·상한·수용 근거는 [전체 구간 공통 인덱스 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)과 [현황 §18](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#18-전체-구간-공통-인덱스의-구축과-검색-연결)을 따른다. 앞의 v1.3–v1.7 설명은 당시 구현 기록이다.
+이는 N01의 실제 전체 구간 검색·저장 표 재사용 증분이다. 모든 원본 구간의 native 재투영과 표 전체 hydration, 대규모 선택적 shard 접근·증분 원본 검증·전체 자원 계상은 남아 있다. 여러 SDK readset과 root CAS는 전체 owner 원자성이 아니다. 당시 기본값은 `legacy`였으며, v1.14에서 유일한 `unified`로 전환했다. 실제 설치/품질 gate는 계속 미인증이다. 최신 제한·상한·수용 근거는 [전체 구간 공통 인덱스 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)과 [현황 §18](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#18-전체-구간-공통-인덱스의-구축과-검색-연결)을 따른다. 앞의 v1.3–v1.7 설명은 당시 구현 기록이다.
+
+### 2.9 v1.14 — 기본·유일한 통합 검색
+
+정상 회상·Classic 최종 주입·GUI 검색·GRADIA LIBRA 읽기는 통합 엔진만 실행한다. 저장 인덱스가 없거나 내용/표현 버전이 낡으면 현재 원본의 모든 owner cursor 구간을 읽어 같은 공통 index와 frontier로 검색한다. 저장 인덱스 repair·문서 벡터 생산·legacy 검색을 시작하지 않는다. 손상·권한/route/reset 변경·취소·예산 실패는 명시적 실패 또는 base request로 처리한다. [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)과 [현황 §19](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#19-레거시-검색의-완전-대체)를 현재 기준으로 적용한다. 이전 절의 모드 선택·준비 작업 설명은 당시 기록이다.
 
 ## 3. 전체 아키텍처
 
@@ -573,14 +577,14 @@ WM의 role weight·meaning threshold·spread factor·preset은 ablation 비교 �
 | UM2 저장·메모리 기반 | durable shards·공통 indexes·cache manager·새 Memory Lane·space binding | 실제 read/query 사용, bytes·coverage·atomic generation·source protocol gate | A2 재설계 + B2 |
 | UM3 단일 검색 커널 | feature calibration·전파·공통 frontier·scoreCandidate/retrieve | V01–V04·V10, 기존 scorer에 graph bonus를 더하는 경로 없음 | C2/D1의 구체화 |
 | UM4 소비자·검증 통합 | EvidenceBundle·모든 consumer adapter·physical readset | V06–V09·V12 및 현재성/State/GRADIA 회귀 | D1 후속 전달 경계 |
-| UM5 비교·전환 | shadow/offline 평가·실제 workload qualification·명시적 engine selection | 합격 수치·지원 profile·unresolved BLOCKED 공개 | C2/D2 검증 |
+| UM5 품질 인증 | 고정 snapshot/offline 평가·실제 workload qualification | 합격 수치·지원 profile·unresolved BLOCKED 공개 | C2/D2 검증 |
 | UM6 기존 경로 종료 | 중복 cache/index/Memory Lane/ranker 제거·호환 importer/진단 문서 | V05,V11; 실제 unified 요청의 이중계산 0 | 전환 완료 조건 |
 
 새 설계의 acceptance를 기존 source-identical packet parity로만 정의하지 않는다. State/lore를 직접 검색하고 정당한 연결을 추가하므로 일부 결과는 의도적으로 달라진다. 보존해야 할 불변식과 개선해야 할 평가 결과를 각각 판정한다.
 
 전환 초기의 비교 경로는 source snapshot을 고정해 사용한다. main의 알려진 연상 proof 결함을 정상 기대값으로 채택하지 않는다. shadow는 결과를 실제로 두 번 주입하지 않으며 같은 호환 query vector·source view를 공유할 수 있을 때만 공유한다. 검증을 위해 추가 모델 호출·공간 변경이 필요하면 별도 명시적 작업으로 기록한다.
 
-unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 중간 실패가 기존 독립 ranker를 몰래 실행하고 complete를 붙이는 fallback을 만들지 않는다. 동일 unified 엔진의 bounded source-page fallback 또는 명시적 partial/기존 base request를 사용한다.
+실제 요청은 unified 경로만 봉인한다. `legacy`·`shadow`는 호환 입력으로 unified로 이관하며, 실행 선택지로 제공하지 않는다. unified 중간 실패가 기존 독립 ranker를 몰래 실행하고 complete를 붙이는 fallback을 만들지 않는다. 동일 unified 엔진의 bounded source-page fallback 또는 명시적 partial/기존 base request를 사용한다.
 
 **완료 판정:** 네 자료가 실제 공통 탐색에 참여하고, 캐시·Memory Lane·인덱스가 같은 generation/byte/coverage 계약으로 동작하며, unified 정상 요청에서 기존 독립 후보/순위/캐시 재구성이 종료돼야 한다. 레지스트리·API 이름 추가, 인덱스 준비 또는 검색 결과의 마지막 병합만으로 완료 처리하지 않는다.
 
@@ -588,7 +592,7 @@ unified 또는 legacy 경로는 요청 시작 시 선택·봉인한다. unified 
 
 ## 14. 구현 시작 전 기록할 결정
 
-현재 실제 네 자료 reader·공통 page/cache에 [durable window/generation 게시·독립 reader](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)를 연결했고, 별도로 Index/Lane/Query/Compiler/Rollout 커널을 내장했다. 다음 우선 작업은 [현황 D01–D08](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 시간·물리 검증·폐기·GC·coverage·역의존·출력·V05 결함 수리다. 이어 M02–M05/M11에서 exhaustive inventory와 durable 공통 index/cache/Lane·byte/delta 접근을 연결하고, M01/M06–M10에서 실제 embedding·QueryFrame·소비자·private owner dispatch를 연결한다. 실제 shadow/qualification 이후 legacy 경로를 종료한다. 안정 lifetime·미지원 inherited Micro·page 밖 근거·host protocol 한계는 별도 coverage/partial로 유지한다.
+현재 실제 네 자료 reader·공통 page/cache에 [durable window/generation 게시·독립 reader](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md)를 연결했고, 별도로 Index/Lane/Query/Compiler/Rollout 커널을 내장했다. 다음 우선 작업은 [현황 D01–D08](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 시간·물리 검증·폐기·GC·coverage·역의존·출력·V05 결함 수리다. 이어 M02–M05/M11에서 exhaustive inventory와 durable 공통 index/cache/Lane·byte/delta 접근을 연결하고, M01/M06–M10에서 실제 embedding·QueryFrame·소비자·private owner dispatch를 연결한다. 사용자의 완전 대체 지시에 따라 v1.14에서 기존 serving ranker·준비 작업·최종 renderer를 제거했다. qualification은 레거시 복귀 gate가 아닌 새 엔진의 독립 인증 과제로 남는다. 안정 lifetime·미지원 inherited Micro·page 밖 근거·host protocol 한계는 별도 coverage/partial로 유지한다.
 
 WM 검토를 반영한 첫 fixture는 정본의 물건 수령 사건, Micro의 양도 원문/claim, State의 현재 소유자와 correction basis, lore의 사용 규칙을 공통 인물·물건·출처에 연결한다. 같은 pair의 서로 다른 관계, 뒤늦은 강한 경로, 보호된 중간 노드, resident에서 축출된 과거 자료를 함께 둔다. 이 자료로 adapter coverage와 graph/kernel 계약을 먼저 검증한 뒤 cache/Lane/index 구현으로 확장한다.
 
@@ -612,7 +616,7 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.8 · 2026-10-14 | private 최종 전달·시간·구조화 대응·원자적 GC·byte admission의 강화된 실행 경계 반영 |
 | 1.9 · 2026-10-14 | 정본 global projection 벡터와 실제 provider/query cache를 단일 scorer/frontier에 연결한 native semantic 범위 반영 |
 | 1.10 · 2026-10-14 | LIBRA Planner·SGA·Input Writer 퇴역과 별도 GRADIA 소비자 경계를 정정. 기존 셰도우/AIDE 서버 읽기와 새 엔진 연결, 인풋 작성기의 새 세션 계약을 구분하고 N00–N07 작업 계획 연결. runtime 변경 없음 |
-
+| 1.14 · 2026-10-14 | 사용자 완전 대체 지시에 따라 unified를 기본·유일 검색기로 전환. cold/stale 전체 구간 검색, Classic/GUI/GRADIA 기본 연결, 기존 serving ranker·준비·renderer·UI 제어 종료. 실제 설치/규모 인증은 별도 미완 |
 
 ## 14. 리뷰 후 강화한 실행 경계 (v1.8)
 

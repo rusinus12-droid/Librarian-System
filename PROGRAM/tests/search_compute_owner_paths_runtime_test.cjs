@@ -53,17 +53,9 @@ const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_s
      afterCompute=()=>{h.setMessages([{role:'user',data:'changed while searching',chatId:'changed'}]);afterCompute=null;};
      await assert.rejects(()=>t.searchIndexCompositeRecall(store,'Alice',s,owner),/HAYAKU_SEARCH_BINDING_STALE/);passed++;
    }finally{await h.dispose();}
-   const chat={id:'search-chat',message:[]},character={id:'search-character',chatPage:0,chats:[chat]};
-   const l=await createLibraVmHarness(args,{nativeFetch,getCharacter:async()=>character,getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getChatFromIndex:async()=>chat},{transformSource:source=>policySource(source).replace('    const reciprocalRankFusion = (arms, settings, guard = null) => {',
-     `    globalThis.__testDenseRows = async (rows, vectors, bundle, settings) => { const context=await resolveContext(); const pairs=buildPairs(context.chat,context.scope.scopeKey); const manifest=await loadManifest(context.scope,pairs.length); return await computeLibraDenseRows(rows,vectors,bundle,settings,{context,manifest,pairs}); };\n    const reciprocalRankFusion = (arms, settings, guard = null) => {`)});
-   try{
-     const rows=[{id:'a',memory:{text:'a'},vectorRecord:{profileId:'test',entries:{global:{vector:[1,0]},summary:{vector:[.2,.8]}}}},{id:'b',memory:{text:'b'},vectorRecord:{profileId:'test',entries:{global:{vector:[0,1]}}}}];
-     const vectors={current:[1,0],scene:[0,1],profileId:'test'},bundle={currentWeight:.8,sceneWeight:.2,queryType:'fact'};
-     const before=JSON.stringify(rows),local=await l.context.__testDenseRows(plain(rows),vectors,bundle,{});
-     l.context.__searchTestMode='prefer_server';const remote=await l.context.__testDenseRows(plain(rows),vectors,bundle,{});
-     assert.deepEqual(plain(remote),plain(local));assert.equal(JSON.stringify(rows),before);
-     assert(calls.some(c=>c.operation==='libra.memory-search.v1'));passed++;
-   }finally{await l.cleanup();}
+   // LIBRA no longer offers the old array-scoring compute bridge; the
+   // native common-engine/provider path is covered by its replacement suite.
+   const l=await createLibraVmHarness();try{assert.equal(l.api.debugRecallBm25fScoresLocal,undefined);assert.equal(l.api.debugRecallBm25fScoresWithCurrentOwner,undefined);assert.equal(l.api.getMemorySuiteComputeStatus().status,'retired');passed++;}finally{await l.cleanup();}
    console.log(JSON.stringify({test:'search_compute_owner_paths',passed,actualHttpOperations:calls.map(c=>c.operation),controlledBoundary:'storage policy only; production search functions and compute transport',externalModelCalls:0}));
  }finally{await app.close();fs.rmSync(dir,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

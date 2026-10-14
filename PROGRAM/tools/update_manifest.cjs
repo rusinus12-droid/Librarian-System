@@ -355,9 +355,11 @@ manifest.dataContract.computePlane = {
     version: pluginVersions.libra,
     operation: computePilots.libra.operation,
     algorithmFingerprint: computePilots.libra.fingerprint,
-    execution: 'bounded_interactive_execute_with_local_fallback',
+    retired: true,
+    replacement: 'libra.memory_graph_query.v1',
+    execution: 'retired_unified_engine_replacement',
     localDefaultZeroNetwork: true,
-    preferServerDelegatesCurrentRequest: true,
+    preferServerDelegatesCurrentRequest: false,
     deadlineMs: 1500,
     localReserveMs: 400,
     ownerBindingReadback: ['scopeKey', 'characterId', 'chatId', 'branchDigest', 'manifestSignature', 'queryDigest', 'candidateDigest']

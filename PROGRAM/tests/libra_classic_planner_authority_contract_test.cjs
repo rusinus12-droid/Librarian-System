@@ -20,14 +20,13 @@ assert.match(source, /last_known_non_authoritative/);
 // Planner provider authority ordering was retired with embedded response drafting.
 // Classic retains current canonical validation and refuses direct derived-state prose.
 const beforeRequest = sliceBetween('const beforeRequest = async', 'const afterRequest = async');
-assert.match(beforeRequest, /buildClassicCanonicalProvenanceRescue/);
+assert.match(beforeRequest, /authority\.compiler\.validatePacket/);
+assert.doesNotMatch(beforeRequest, /buildClassicCanonicalProvenanceRescue/);
 assert.doesNotMatch(beforeRequest, /narrativeForRoute\s*=\s*await __libraCompletionGetNarrative/);
 assert.doesNotMatch(beforeRequest, /runTurnPlanner\(|callSgaProvider\(/);
 
-const classic = sliceBetween('const renderClassicBlock =', 'const libraSafeClassicSourceLabel =');
-assert.doesNotMatch(classic, /continuity_state_prompt|CURRENT STATE HEAD|continuityStatePromptBlock/, 'Classic final injection must not directly inject derived State prose');
-assert.match(source, /buildClassicCanonicalProvenanceRescue[\s\S]{0,1600}requireCurrent: true/);
-assert.match(source, /embeddingSettingsSource = embeddingConfig \? 'bounded_settings_load' : 'unavailable_sparse_fallback'/);
+assert.match(source, /const UNIFIED_CLASSIC_HEADER/);
+assert.doesNotMatch(source, /const renderClassicBlock\s*=/);
 
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
@@ -42,7 +41,7 @@ const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs
   const calls=f.control.calls.length;
   const packet=await actualClassicPacket(f,'민아 지호 신뢰 은빛 열쇠',f.getManifest().scopeKey);
   assert.ok(packet.actualClassic.deliveredRows.some(row=>row.memoryId===ref.memoryId&&row.revision===ref.revision));
-  assert.doesNotMatch(packet.actualClassic.block,/CURRENT STATE HEAD|continuity_state_prompt|cs_rel_|ce_/);
+  assert.doesNotMatch(packet.actualClassic.block,/CURRENT STATE HEAD|continuity_state_prompt/);
   assert.equal(f.control.calls.length,calls,'Classic request performs no extra response provider dispatch');
   assert.equal(f.r.values.get(ref.key),canonicalBefore,'Classic must not mutate Canonical Memory');
   assert.equal(f.r.values.get(headRecord.key),headBefore,'Classic must not mutate State Head');

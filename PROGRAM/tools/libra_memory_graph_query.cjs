@@ -18,7 +18,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     .toLowerCase()
     .split(/[^a-z0-9\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff_]+/)
     .filter(token => token.length >= 2);
-  const tokenizer = typeof tokenize === 'function' ? tokenize : defaultTokenize;
+  const tokenizer = typeof tokenize === 'function' ? tokenize : typeof index.tokenize === 'function' ? index.tokenize : defaultTokenize;
   const fail = reason => { const err = new Error('LIBRA_GRAPH_QUERY_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
   const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));

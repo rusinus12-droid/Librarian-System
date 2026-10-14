@@ -92,15 +92,16 @@ function provider() {
       assert.ok(result.bundle.items.some(item => item.family === 'canonical')); assert.equal(result.modelDispatchEligible, true);
     } finally { await host.cleanup(); }
   });
-  await test('mirror preserves the existing readonly owner rejection without submitting an embedding', async () => {
+  await test('native mirror owner uses the same engine with physical server verification', async () => {
     const p = provider(), host = await fixture({ mode: 'mirror', embeddingConfig: config, embeddingFetch: p.fetch });
     try {
       const before = p.requests.length;
-      await assert.rejects(() => host.f.r.api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: query } }), /READ_ROUTE_MODE_UNAVAILABLE/);
-      assert.equal(p.requests.length, before);
+      const result=await host.f.r.api.executeMemoryGraphUnifiedQuery({queryInput:{queryText:query}});
+      assert.equal(result.diagnostics.nativeSemantic.status,'available');assert.equal(result.modelDispatchEligible,true);
+      assert.equal(p.requests.length,before+1);
     } finally { await host.cleanup(); }
   });
-  await test('cold shadow avoids a query call, explicit query failure/timeout preserves the same lexical graph', async () => {
+  await test('retired shadow input uses the unified query, provider failure/timeout preserves its lexical graph', async () => {
     const p = provider(), host = await fixture({ includeMicro: false, embeddingConfig: config, embeddingFetch: p.fetch });
     let release;
     try {
@@ -110,10 +111,10 @@ function provider() {
       await host.f.control.hooks.beforeRequest([{ role: 'user', content: 'Initialize owner boundary.' }], 'model');
       const before = p.requests.length;
       const cold = await api.executeMemoryGraphUnifiedQuery({ mode: 'shadow', queryInput: { queryText: QUOTE } });
-      assert.equal(cold.additionalEmbeddingCalls, 0); assert.equal(p.requests.length, before);
-      assert.equal(cold.diagnostics.nativeSemantic.status, 'query_embedding_unavailable');
+      assert.equal(cold.mode, 'unified');assert.equal(cold.additionalEmbeddingCalls,1);assert.equal(p.requests.length,before+1);
+      assert.equal(cold.diagnostics.nativeSemantic.status,'available');
       p.setQuery(async () => { throw Error('controlled_provider_failure'); });
-      const failed = await api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: QUOTE } });
+      const failed = await api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: QUOTE + ' failure' } });
       assert.equal(failed.diagnostics.nativeSemantic.status, 'query_embedding_unavailable');
       assert.ok(failed.bundle.items.some(item => item.family === 'canonical'));
       assert.equal(failed.modelDispatchEligible, true); assert.equal(failed.legacyRankerExecuted, false);

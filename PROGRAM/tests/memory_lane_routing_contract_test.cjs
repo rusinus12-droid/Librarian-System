@@ -11,20 +11,9 @@ const flashbackSource = read('Flashback_Memory.js');
 const hayakuSource = read('HAYAKU_Locator_Continuity.js');
 const ariadneSource = read('LIBRA.js');
 
-// Ariadne reuses the persistent Recall Catalog and creates only an in-memory,
-// rebuildable catalog-block accelerator for sufficiently large catalogs.
-assert.match(ariadneSource, /RECALL_CATALOG_BLOCK_SCHEMA = 'libra\.recall_catalog_block_index\.v1'/);
-assert.match(ariadneSource, /RECALL_CATALOG_BLOCK_BUILD_VERSION = 'memory_lane_cjk_v3'/);
-assert.match(ariadneSource, /RECALL_CATALOG_BLOCK_MIN_ENTRIES = 96/);
-assert.match(ariadneSource, /const buildRecallCatalogBlockIndex =/);
-assert.match(ariadneSource, /const routeRecallCatalogBlocks =/);
-assert.match(ariadneSource, /reason: 'low_confidence_global_fallback'/);
-assert.match(ariadneSource, /reason: 'ambiguous_nondiscriminative_global_fallback'/);
-assert.match(ariadneSource, /debugRouteMemoryLaneCatalog/);
-assert.match(ariadneSource, /exactOverrideEntries/);
-assert.match(ariadneSource, /rareMatchedAnchors/);
-assert.match(ariadneSource, /semantic \* 0\.96 \+ recency \* 0\.04/);
-assert.doesNotMatch(ariadneSource, /key\.(?:memoryLane|recallLaneIndex)\s*=/, 'Ariadne must not create a second durable memory store');
+// LIBRA uses the common graph Lane; the catalog router has been retired.
+assert.doesNotMatch(ariadneSource,/const (?:buildRecallCatalogBlockIndex|routeRecallCatalogBlocks)\s*=/);
+assert.match(ariadneSource,/createLibraMemoryGraphLane/);
 
 // HAYAKU upgrades the existing router/index rather than adding a packet store.
 assert.match(hayakuSource, /GLOBAL_PACKET_ROUTING_VERSION = 'hayaku_global_packet_routing_catalog_v2'/);
@@ -222,50 +211,9 @@ const createHarness = source => {
   const ariadneHarness = createHarness(ariadneSource);
   try {
     const api = await waitFor(() => ariadneHarness.context.__LIBRA__, 'Ariadne API', 30000);
-    const entries = Array.from({ length: 120 }, (_, index) => {
-      const target = index >= 48 && index < 72;
-      return {
-        memoryKey: `memory-${index}`,
-        refFingerprint: `fp-${index}`,
-        searchText: target
-          ? `세연 지하 연구소 은색 열쇠 비밀 사건 ${index}`
-          : `세연 평범한 일상 대화 장면 ${index}`,
-        summary: target ? '은색 열쇠 사건' : '일상 장면',
-        anchorTokens: target ? ['세연', '은색 열쇠', '지하 연구소'] : ['세연'],
-        strongAnchorTokens: target ? ['세연', '은색 열쇠', '지하 연구소'] : ['세연'],
-        vectorSketch: [],
-        turnRange: { start: index + 1, end: index + 1 }
-      };
-    });
-    const catalog = { signature: 'ariadne-memory-lane-contract', entries };
-    const sourceBefore = JSON.stringify(entries);
-    const index = api.debugBuildMemoryLaneCatalogIndex(catalog, entries);
-    assert.equal(index.active, true, 'large Ariadne catalogs activate the block accelerator');
-    assert.equal(index.blockCount, 5, '120 entries form five 24-entry catalog blocks');
-    const specific = api.debugRouteMemoryLaneCatalog(catalog, entries, {
-      currentText: '세연이 지하 연구소의 은색 열쇠를 다시 꺼낸다.',
-      sparseText: '세연 지하 연구소 은색 열쇠',
-      currentAnchors: { strong: ['세연', '은색 열쇠', '지하 연구소'], quotes: ['은색 열쇠'], numbers: [] },
-      sceneAnchors: { strong: [], quotes: [], numbers: [] },
-      pairs: Array.from({ length: 120 }, () => ({})),
-      currentWeight: 1,
-      sceneWeight: 0,
-      queryType: 'event'
-    }, { current: [], scene: [] }, { forceCurrentScene: false });
-    assert.equal(specific.active, true, 'specific rare phrase query uses bounded Ariadne block routing');
-    assert.ok(specific.entries.length < entries.length, 'Ariadne block routing reduces the catalog candidate set');
-    assert.ok(specific.entries.some(entry => Number(String(entry.memoryKey).split('-')[1]) >= 48 && Number(String(entry.memoryKey).split('-')[1]) < 72), 'the rare-event block survives Ariadne coarse routing');
-    assert.ok(specific.selectedBlocks.some(row => row.rareMatchedAnchors.includes('은색 열쇠')), 'Ariadne diagnostics preserve the rare exact anchor reason');
-    const ambiguous = api.debugRouteMemoryLaneCatalog(catalog, entries, {
-      currentText: '세연', sparseText: '세연',
-      currentAnchors: { strong: ['세연'], quotes: [], numbers: [] },
-      sceneAnchors: { strong: [], quotes: [], numbers: [] },
-      pairs: Array.from({ length: 120 }, () => ({})), currentWeight: 1, sceneWeight: 0, queryType: 'fact'
-    }, { current: [], scene: [] }, { forceCurrentScene: false });
-    assert.equal(ambiguous.active, false, 'ubiquitous-name-only query does not hard-cut the Ariadne catalog');
-    assert.equal(ambiguous.reason, 'ambiguous_nondiscriminative_global_fallback');
-    assert.equal(ambiguous.entries.length, entries.length, 'Ariadne ambiguous fallback preserves the full candidate space');
-    assert.equal(JSON.stringify(entries), sourceBefore, 'Ariadne block indexing does not mutate source catalog entries');
+    assert.equal(api.debugRouteMemoryLaneCatalog,undefined);
+    assert.equal(api.debugBuildMemoryLaneCatalogIndex,undefined);
+    assert.equal(typeof api.executeMemoryGraphUnifiedQuery,'function');
   } finally {
     await ariadneHarness.cleanup();
   }

@@ -108,6 +108,20 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
     else if (before !== raw) fail('immutable_collision');
     if (await owner.read(key) !== raw) fail('write_readback'); owner.check();
   };
+  // A cold or superseded derived index never selects another search engine.
+  // Read the current owner corpus and compile it once in the same query path.
+  const prepare = async ({ snapshot, owner, options = {}, reason = 'no_published_corpus' } = {}) => {
+    const native = await enumerate(snapshot, options, owner.check), generation = stamp(native.graph);
+    return { ...native, compiledIndex: null,
+      currentGraph: async () => {
+        const live = await enumerate(snapshot, native.config, owner.check);
+        if (!same(live.windows,native.windows) || stamp(live.graph) !== generation) fail('source_changed');
+        return live.graph;
+      },
+      access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
+        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
+    };
+  };
   const build = async ({ snapshot, owner, options = {} } = {}) => {
     if (active) fail('build_busy'); active = true;
     try {
@@ -190,5 +204,5 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total,
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
   };
-  return Object.freeze({ build, read, enumerate, location, inspect: () => ({ activeBuild: active }) });
+  return Object.freeze({ build, read, prepare, enumerate, location, inspect: () => ({ activeBuild: active }) });
 };

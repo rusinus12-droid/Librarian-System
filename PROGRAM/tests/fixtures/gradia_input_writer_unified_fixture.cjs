@@ -52,7 +52,7 @@ async function fixture(t,{native=false,writingMode='novel',unified=true}={}){
   showContainer:async()=>{},hideContainer:async()=>{},sendChat:async value=>{sent.push(value);return true;},
   onUnload:async fn=>{unloads.push(fn);return true;}},testGlobals:{crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),navigator:{clipboard:{writeText:async v=>{copied.push(v);}},userActivation:{isActive:true}}}});
  t.after(async()=>{await host.plugin.closeSettingsGui();for(const fn of unloads.reverse())await fn();dom.window.close();await owner?.dispose();await nativeHost?.cleanup();});
- if(unified){const status=await host.plugin.connectUnifiedLibReadOnly(url);assert.equal(status.state,'connected',JSON.stringify(status));}
+ if(unified){const status=await host.plugin.connectLibReadOnly(url);assert.equal(status.state,'connected',JSON.stringify(status));}
  await host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:5000,stream:false});
  await host.plugin.saveRuntimeSettings({mode:'off',default_preset:'writer',input_assist_mode:'user_focus',writing_mode:writingMode,input_assist_target_chars:500,lore_activation_mode:'off',input_assist_lore_activation_mode:'off'});
  const document=dom.window.document;

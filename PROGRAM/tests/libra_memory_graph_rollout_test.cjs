@@ -379,15 +379,11 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     assert.ok(unifiedRecall.memories.length >= 1);
     assert.ok(unifiedRecall.packet.renderedText.includes('consumer=planner'));
 
-    // M12: previewUnifiedMemoryRecall in 'shadow' mode runs shadow comparison alongside legacy recall with zero double injection
-    const shadowRecall = await host.f.r.api.previewUnifiedMemoryRecall({
-      queryText: QUOTE,
-      unifiedEngineMode: 'shadow'
-    });
-    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.mode, 'shadow');
-    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.shadowInjectedIntoModelPrompt, false);
-    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.doubleInjection, false);
-    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.additionalModelCalls, 0);
+    // Former serving modes are input compatibility, not a second search path.
+    const migrated = await host.f.r.api.previewUnifiedMemoryRecall({queryText:QUOTE,unifiedEngineMode:'shadow'});
+    assert.equal(migrated.diagnostics.memoryEngine.mode,'unified');
+    assert.equal(migrated.diagnostics.memoryEngine.retiredSelection,'shadow');
+    assert.equal(migrated.diagnostics.unifiedShadowEvaluation,undefined);
   } finally {
     await host.cleanup();
   }

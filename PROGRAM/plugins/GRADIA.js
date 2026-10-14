@@ -28857,13 +28857,13 @@ function createGradiaEvidenceBudget({ digest }) {
         for (const key of ['scopeKey', 'characterId', 'chatId']) if (typeof scope?.[key] !== 'string' || !scope[key] || scope[key].length > 512) fail('LIB_READ_SCOPE_UNAVAILABLE');
         const maxCorpusBytes = binding.maxCorpusBytes === undefined ? 4194304 : binding.maxCorpusBytes;
         if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) fail('LIB_READ_BUDGET_INVALID');
-        const readSource = String(binding.readSource || 'server_logical_read');
-        if (!['server_logical_read','unified_engine'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
+        const readSource = String(binding.readSource || 'unified_engine');
+        if (readSource !== 'unified_engine') fail('LIB_READ_SOURCE_UNSUPPORTED');
         const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation, readSource]);
         const assertBindingSignature = () => {
           check(record); const now = dependencies.getBinding?.();
           if (!now || now.client !== client || JSON.stringify([now.scope, now.maxCorpusBytes === undefined ? 4194304 : now.maxCorpusBytes, now.generation,
-            String(now.readSource || 'server_logical_read')]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
+            String(now.readSource || 'unified_engine')]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
         };
         const assertBinding = async () => {
           assertBindingSignature();
@@ -29000,7 +29000,8 @@ function createGradiaEvidenceBudget({ digest }) {
     }
     const maxCorpusBytes = options.maxCorpusBytes === undefined ? 4194304 : options.maxCorpusBytes;
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
-    const readSource = options.readSource === undefined ? 'server_logical_read' : String(options.readSource);
+    const requestedSource = options.readSource === undefined ? 'unified_engine' : String(options.readSource);
+    const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
     if (!['server_logical_read','unified_engine'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
     closeInputWriterEvidence('LIB_READ_BOUNDARY_CHANGED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
@@ -36763,7 +36764,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const LibReadConnection = (() => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
-    let readOwners = ['libra'], unavailable = {}, readSource = 'server_logical_read';
+    let readOwners = ['libra'], unavailable = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
@@ -36834,9 +36835,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         catch (_) { if (epoch === generation) invalidate('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       }, 500);
     };
-    const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'server_logical_read') => {
+    const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'unified_engine') => {
       if (disposed) return status();
-      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource); unavailable = {}; state = 'connecting'; refresh();
+      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource) === 'server_logical_read' ? 'unified_engine' : String(requestedSource); unavailable = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
@@ -36898,11 +36899,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const savedOwners = saved.schema === 'gradia.lib-read-connection.v1' ? ['libra'] : saved.readOwners;
         if (!Array.isArray(savedOwners) || !savedOwners.length || savedOwners.length > 3
           || new Set(savedOwners).size !== savedOwners.length || savedOwners.some(owner=>!LIB_READ_OWNERS.includes(owner))) return;
-        consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)),saved.readSource||'server_logical_read');
+        consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)),saved.readSource||'unified_engine');
       } catch (_) { /* First install or unreadable preferences remain disconnected. */ }
       finally { consentReadPending = false; }
     };
-    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'server_logical_read'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,
+    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'unified_engine'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,
       disconnect:()=>forget(),imported:()=>forget('LIB_READ_SETTINGS_IMPORTED'),
       dispose:async()=>{disposed=true;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
@@ -42278,7 +42279,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const field=mockupNode('label','field'),label=mockupNode('span','label','LIBRA 검색');
       const select=document.createElement('select');select.id='lib-read-source';select.className='input';
       select.setAttribute('aria-label','LIBRA 검색 방식');
-      for(const [value,title] of [['server_logical_read','기존 기억 읽기'],['unified_engine','통합 메모리 검색']]){
+      for(const [value,title] of [['unified_engine','통합 메모리 검색']]){
         const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
       }
       select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
@@ -42820,6 +42821,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   /* LIBRA GRADIA UNIFIED READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
+    async connectLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect();},
     async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
     getLibReadOnlyStatus: () => Object.freeze({ connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {

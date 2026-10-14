@@ -133,6 +133,12 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
       stopReason: 'semantic_representation_byte_budget',
       coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
+    const guiSearch = consumerPolicy.consumer === 'gui' ? (() => {
+      const units = new Map(graph.units.map(unit => [unit.nodeId,unit]));
+      return { sourceKeys: [...new Set(queryResult.candidates.filter(row => row.family === 'canonical')
+        .map(row => units.get(row.nodeId)?.recordKey).filter(Boolean))],
+        complete: queryResult.complete, stopReason: queryResult.stopReason };
+    })() : null;
     const selected = compiler.select(queryResult, graph, consumerPolicy);
     const packet = compiler.render(selected, {
       l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
@@ -166,6 +172,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
 
     return Object.freeze({
       schema: 'libra.unified_execution_result.v1',
+      ...(guiSearch ? { guiSearch } : {}),
       mode: sealed.mode,
       requestId: sealed.requestId,
       generation,

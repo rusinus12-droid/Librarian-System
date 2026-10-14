@@ -26,7 +26,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
    getChat:async()=>chat,getCurrentChat:async()=>chat,getChatFromIndex:async()=>chat,
    getDatabase:async()=>({characters:[character],personas:[],selectedPersona:'',modules:[]}),
    nativeFetch:sdkFetch,onUnload:async fn=>{unload.push(fn);return true;}}});
- const status=await g.plugin.connectUnifiedLibReadOnly(x.server.url);
+ const status=await g.plugin.connectLibReadOnly(x.server.url);
  assert.equal(status.state,'connected',JSON.stringify(status));assert.equal(status.readSource,'unified_engine');
  await g.plugin.saveProviderPreset('offline',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:2048,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:5000,stream:false});
  await g.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',

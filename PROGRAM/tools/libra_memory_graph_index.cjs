@@ -8,7 +8,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     throw new TypeError('LIBRA_GRAPH_INDEX_ADAPTER_REQUIRED');
   }
   const schema = 'libra.memory_graph_index.v1';
-  const tokenizerVersion = 'libra.tokenizer.nfkc_v1';
+  const tokenizerVersion = 'libra.tokenizer.nfkc_ko_particle_v2';
   const issued = new WeakSet();
   const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
@@ -26,7 +26,13 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     .normalize('NFKC')
     .toLowerCase()
     .split(/[^a-z0-9\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff_]+/)
-    .filter(token => token.length >= 2);
+    .filter(token => token.length >= 2)
+    .flatMap(token => {
+      // Keep the exact word and add one conservative Korean particle variant.
+      // This is a common lexical access channel, never a separate ranker.
+      const match = /^([가-힣]{2,}?)(?:에게서|으로부터|에서는|에서|에게|으로|까지|부터|처럼|보다|은|는|이|가|을|를|의|에|로|도|과|와|만)$/.exec(token);
+      return match && match[1] !== token ? [token,match[1]] : [token];
+    });
   const tokenizer = typeof tokenize === 'function' ? tokenize : defaultTokenize;
   const fail = reason => { const err = new Error('LIBRA_GRAPH_INDEX_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
@@ -483,5 +489,5 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;
-  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage });
+  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage, tokenize: tokenizer });
 };

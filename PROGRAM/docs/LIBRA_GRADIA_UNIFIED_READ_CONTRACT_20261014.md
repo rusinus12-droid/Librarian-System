@@ -1,11 +1,11 @@
 # GRADIA의 LIBRA 통합 메모리 읽기 계약
 
-- 작성일: 2026-10-14 · 버전: 1.0
+- 작성일: 2026-10-14 · 버전: 1.1
 - 범위: [다음 과제 N03](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)의 실제 공급자 연결. 통합 엔진 전체 완성이나 설치 호스트 인증은 아니다.
 
 ## 사용 방법과 지원 범위
 
-LIBRA와 GRADIA를 함께 로드하고 기존 LIB 서버 읽기 전용 연결 조건을 갖춘다. GRADIA 자료 화면에서 **LIBRA 검색 → 통합 메모리 검색**을 선택한 뒤 **연결**을 누른다. 선택은 연결할 때 적용한다. 공개 `connectUnifiedLibReadOnly(url)`도 같은 경로를 실행한다. 연결 성공 후 상태의 `readSource`는 `unified_engine`이다. URL별로 저장한 연결 동의에 출처도 보존한다. 이전 설정의 출처 기본값은 `server_logical_read`다.
+LIBRA와 GRADIA를 함께 로드하고 기존 LIB 서버 읽기 전용 연결 조건을 갖춘다. GRADIA 자료 화면에서 **연결**을 누르면 LIBRA는 통합 엔진을 사용한다. 공개 `connectLibReadOnly(url)`와 호환 별칭 `connectUnifiedLibReadOnly(url)`도 같은 경로를 실행한다. 연결 성공 후 상태의 `readSource`는 `unified_engine`이다. URL별로 저장한 연결 동의에 출처도 보존한다. 출처 누락 및 이전 `server_logical_read` 저장 동의도 `unified_engine`으로 이관한다. 새 동의 없이 자동 연결 범위를 넓히지는 않는다.
 
 현재 지원 조건은 **server_only**, 수락된 data identity/reset, 등록된 동일 character/chat scope, GRADIA의 실제 readonly 서버 권한, 인증된 plugin channel이다. 기존 G2 모델·문맥·payload 예산 제한을 유지하므로 연결 성공만으로 모든 생성 모델이 지원되는 것은 아니다. 현재 고정 profile은 `gpt-4o-mini-2024-07-18`의 허용된 요청 형식이다. plugin_only/mirror 또는 호스트 채널이 없는 환경을 같은 지원 범위로 주장하지 않는다.
 
@@ -49,4 +49,4 @@ item의 `libra.unified.bundle:<receipt>` key는 이 실행에서 발급한 bundl
 
 N03 최초 연결(`e4ef853`)에서 위 세 신규/확장 suite의 23개 검사와 기존 영향권 검사 묶음의 99개가 통과했다. source 계약 파일 내부의 18개 판정과 native semantic 회귀의 8개 시나리오도 모두 통과했다. 두 플러그인의 source 빌드·구문 검사와 SDK/graph/channel 내장 동기화 검사를 수행했다. 빌드의 기존 크기 기준 초과 경고는 성능 인증으로 해석하지 않는다. 후속 작성기 검증은 N04 계약에서 추적한다.
 
-호스트 채널과 모델 응답은 제어된 fixture다. 실제 설치 RisuAI의 채널 호환·성능, 외부 모델 답변의 의미 품질, 대규모 workload는 미인증이다. 검색은 현재 native projection window의 범위로 제한된다. 전체 corpus의 durable 인덱스·공통 캐시/Memory Lane(N01), 자료별 나머지 representation(N02), 안전한 native GC(N05), 품질/설치 인증(N06), 기본값 전환(N07)은 별도 과제다.
+호스트 채널과 모델 응답은 제어된 fixture다. 실제 설치 RisuAI의 채널 호환·성능, 외부 모델 답변의 의미 품질, 대규모 workload는 미인증이다. 검색은 게시된 전체 corpus index 또는 같은 엔진의 request-local 전체 owner 구간을 사용하며, owner coverage와 자원 상한은 보존한다. 전체 corpus의 durable 인덱스·공통 캐시/Memory Lane(N01), 자료별 나머지 representation(N02), 안전한 native GC(N05), 품질/설치 인증(N06), 기본·유일한 serving 전환(N07)은 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)에 따라 수행했다.

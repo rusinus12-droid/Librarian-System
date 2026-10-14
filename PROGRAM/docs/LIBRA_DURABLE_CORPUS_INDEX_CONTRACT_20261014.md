@@ -1,6 +1,6 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 버전: 1.0
+- 작성일: 2026-10-14 · 버전: 1.1
 - 조사 기준: `89fb341` 이후의 이 증분
 - 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 대규모 corpus의 선택적 페이지 접근과 원본 증분 검증은 아직 미완성이다.**
 
@@ -16,12 +16,13 @@ GUI 진단 카드의 **전체 이력 인덱스 구축** 버튼과 등록 API가 
 
 | 입력 | 동작 |
 | --- | --- |
-| 기본 `corpusMode:'auto'` | 현재 frame의 게시 인덱스가 있으면 사용. 없으면 기존 owner window로 읽고 `corpusRead.reason:'no_published_corpus'` 표시 |
+| 기본 `corpusMode:'auto'` | 호환되는 현재 게시 인덱스를 복원. 없으면 모든 owner cursor 구간을 열거한 같은 엔진의 `request_local_corpus`로 검색 |
 | `corpusMode:'required'` | 게시 인덱스가 없으면 실패. 저장된 전체 구간 검색의 확인용 API |
 | `corpusMode:'window'` 또는 명시적 limit/nodeLimit/cursor | 호출자가 지정한 원본 구간 검색. `required`와 구간 옵션을 함께 주면 거부 |
-| 인덱스가 낡거나 손상됨 | 실패. query가 인덱스를 재구축하거나 첫 구간/legacy 검색으로 전환하지 않음 |
+| 내용·tokenizer 버전이 낡음 | auto는 현재 전 구간 원본에서 같은 엔진으로 검색. required는 실패 |
+| 인덱스 손상·route/reset 변경 | 실패. query가 저장 인덱스를 repair하거나 legacy 검색으로 전환하지 않음 |
 
-명시적 unified 모드의 Classic recall/beforeRequest, GRADIA SHADOW/AIDE, GRADIA 인풋 작성기가 이 동일한 경로를 사용한다. GRADIA에는 `engine.corpusRead`를 설명용 metadata로 전달하며 기존 owner 선택 영수증·읽기 출처·제안 봉인·현재성 검사를 유지한다. 전체 이력 인덱스 구축 자체가 기본 검색 모드를 바꾸지는 않는다. 기본값은 여전히 `legacy`다.
+기본·유일한 unified의 Classic recall/beforeRequest·GUI 검색, GRADIA SHADOW/AIDE, GRADIA 인풋 작성기가 이 동일한 경로를 사용한다. GRADIA에는 `engine.corpusRead`를 설명용 metadata로 전달하며 기존 owner 선택 영수증·읽기 출처·제안 봉인·현재성 검사를 유지한다. 별도 인덱스 구축이나 opt-in은 기본 검색의 선행 조건이 아니다. 현재 기본·유일한 검색기와 실패 계약은 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)을 따른다.
 
 ## 2. 현재성·무결성·발송 권한
 
@@ -33,7 +34,7 @@ owner cursor의 서명에는 runtime publication binding도 들어간다. 저장
 
 server_only의 개별 source readset은 기존 SDK 한도인 64키를 유지한다. 전체 자료가 이를 넘으면 여러 readset으로 나누고 모두 최종 검증한다. 이를 전체 자료의 단일 원자적 snapshot으로 부르지 않는다. root 게시의 CAS는 root와 manifest에 한정한다. plugin_only의 root-last 게시도 cross-runtime 원자성을 주장하지 않는다. 게시 전후 전체 구간을 대조하며 뒤늦은 수정은 이후 읽기에서 거부된다. `ownerAtomicity:false`를 유지한다.
 
-새 원본 구간·revision·삭제·복원·세계선 변경 후에는 기존 인덱스가 그대로 현재 자료를 대표한다고 간주하지 않는다. native cursor/frame/stamp 또는 최종 원본 검증이 이를 거부한다. 동일 frame의 낡은 인덱스는 명시적 재구축으로 교체한다. 다른 frame에서 인덱스가 없으면 `auto`는 구간 검색임을 표시하고 `required`는 거부한다.
+새 원본 구간·revision·삭제·복원·세계선 변경 후에는 기존 인덱스가 그대로 현재 자료를 대표한다고 간주하지 않는다. native cursor/frame/stamp 또는 최종 원본 검증이 이를 거부한다. 동일 frame의 낡은 저장 인덱스는 명시적 재구축으로 교체할 수 있다. query의 auto는 새 원본의 request-local corpus를 검색하고 저장하지 않는다. required는 누락/불일치를 거부한다.
 
 ## 3. 자원과 부분 결과
 
@@ -75,4 +76,4 @@ node PROGRAM/tools/check_sdk_sync.cjs
 
 **N01은 닫히지 않았다.** 원본 전체 재투영과 공통 index 표 전체 hydration이 아직 필요하다. Lane은 복원한 공통 표의 query page를 읽으며 저장 shard를 직접 비동기 탐색하는 구조까지 이행하지 않았다. 다음 구현은 owner의 증분/근거 계약에 맞춘 원본 검증, 선택적 durable index·벡터 page 접근, build 재개·증분 교체와 전체 workspace/I/O admission이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·warm I/O 절감·대규모 성능 합격으로 사용하지 않는다.
 
-N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 기본값 전환도 각각의 gate를 유지한다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.
+N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 serving 전환은 수행했으며 실제 인증 gate를 대신하지 않는다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.

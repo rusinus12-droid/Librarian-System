@@ -64,7 +64,8 @@ assert.match(adoption, /state\s*:\s*'adopting'/);
 assert.match(adoption, /validateCanonicalManualAuthority/);
 assert.match(adoption, /validateCanonicalAdoptionBinding/);
 assert.match(adoption, /commitCanonicalAdoptionTransaction/);
-assert.match(adoption, /loadOrRefreshRecallCatalog\(context, manifest, null\)/);
+assert.doesNotMatch(adoption, /loadOrRefreshRecallCatalog/);
+assert.match(adoption, /memoryGraphCompiler\?\.invalidateAll/);
 assert.doesNotMatch(adoption, /상태 전용 재분석에 실패했습니다\. 활성 정본은 변경되지 않았습니다/,
   'derived-state failure must not block a verified canonical adoption');
 assert.match(adoption, /warnings\.push\(\{ stage: 'state_pipeline_v3'/,

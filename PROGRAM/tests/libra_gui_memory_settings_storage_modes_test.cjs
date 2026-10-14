@@ -22,15 +22,15 @@ async function save(s){s.doc.querySelector('[data-settings-room-save]').click();
   try{
    s=await open(mode,handler);
    const observedMode=(await s.api.getUnifiedStorageStatus()).mode;assert.equal(observedMode,mode,'fixture enters intended chat storage mode');
-   const input=field(s,'최대 리콜 메모리 수');assert.equal(input.value,'12');input.value='17';input.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
-   assert.equal((await s.api.getLibraMemorySettings()).recallMaxMemories,12);
+   const input=field(s,'통합 검색 최대 근거 수');assert.equal(input.value,'24');input.value='17';input.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
+   assert.equal((await s.api.getLibraMemorySettings()).unifiedMaxUnits,24);
    await save(s);assert.equal(s.api.debugGuiSettingsState().dirty,false,s.doc.querySelector('[data-settings-room-save-status]').textContent);
    const localPresent=s.values.has(key);
    const stored=handler.app.repositories.libra.database.prepare('SELECT key,value_json FROM kv WHERE deleted=0 AND key=?').get(key);
    assert.equal(localPresent,true,mode+': global memory settings retain the established plugin-local owner');
    assert.equal(!!stored,false,mode+': global memory settings are not scoped chat data');
    restart=await open(mode,handler,[...s.values]);
-   assert.equal(field(restart,'최대 리콜 메모리 수').value,'17',mode+': durable recall setting survives restart');
+   assert.equal(field(restart,'통합 검색 최대 근거 수').value,'17',mode+': durable recall setting survives restart');
    assert.equal(s.wire.length+restart.wire.length,0);assert.deepEqual([...s.errors,...restart.errors],[]);
    rows.push({mode,observedMode,status:'PASS',localPresent,serverPresent:!!stored,internalHandlerRequests:handler.trace.length,realNetworkOrModelCalls:0});
    console.log(JSON.stringify(rows.at(-1)));

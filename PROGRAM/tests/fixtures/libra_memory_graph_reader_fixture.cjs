@@ -5,7 +5,7 @@ const { waitFor } = require('./libra_vm_harness.cjs');
 const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 
-async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true } = {}) {
+async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6 } = {}) {
   let listener;
   const host = { ...hostOverrides, addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
   const serverOptions = { mode, host, transformSource, args };
@@ -30,8 +30,11 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
     }));
     let active = null;
     if (includeMicro) {
-      f.chat.message.push({ role: 'user', chatId: 't6-u', data: '열쇠는 누가 보관하지?' },
-        { role: 'assistant', chatId: 't6-a', data: minimum ? QUOTE.repeat(30) : QUOTE });
+      for (let turn = 6; turn < microTurn; turn++) f.chat.message.push(
+        { role: 'user', chatId: 'gap-u'+turn, data: '추가 질문 '+turn },
+        { role: 'assistant', chatId: 'gap-a'+turn, data: '추가 원문 '+turn });
+      f.chat.message.push({ role: 'user', chatId: 't'+microTurn+'-u', data: '열쇠는 누가 보관하지?' },
+        { role: 'assistant', chatId: 't'+microTurn+'-a', data: minimum ? QUOTE.repeat(30) : QUOTE });
       f.chat.messages = f.chat.message;
       f.control.onCall = async args => {
         if (minimum) return { type: 'error', result: 'fixture_micro_provider_unavailable' };
@@ -42,10 +45,10 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
               certainty: 'confirmed', epistemicStatus: 'observed', stateChangeType: 'none', evidence: {
                 role: 'assistant', messageId: input.assistant.messageId, startOffset: 0, endOffset: QUOTE.length, exactQuote: QUOTE } }] } }) };
       };
-      listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 11 });
-      await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 6, 15000);
+      listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+      await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === microTurn, 15000);
       await new Promise(resolve => setTimeout(resolve, 5));
-      active = await f.r.api.debugReadActiveMicroMemory(6);
+      active = await f.r.api.debugReadActiveMicroMemory(microTurn);
       if (active.status !== 'verified') throw new Error('graph fixture failed to publish a real Micro');
     }
     f.control.onCall = async () => { throw new Error('graph projection must not invoke a provider'); };

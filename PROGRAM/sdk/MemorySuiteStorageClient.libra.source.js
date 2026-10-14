@@ -7464,7 +7464,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let value;try{value=JSON.parse(raw);}catch(_){readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');}
     if(!value||typeof value!=='object'||Array.isArray(value))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');return value;
   };
-  const readReadonlyRoute=async identity=>{
+  const readReadonlyRoute=async (identity, ownerRead=false)=>{
     const fence=readonlyRouteFence(),plugin=rawPluginStorage(),device=await rawDeviceStorage({strict:true});
     if(typeof plugin?.getItem!=='function')readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
     const rawScope=await plugin.getItem('libra:v1:scope-registry:v1'),registry=readonlyRouteObject(rawScope);
@@ -7489,13 +7489,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const pick=id=>{let out=null;for(const candidate of candidates){const value=candidate[id];if(!value)continue;if(out&&value.updatedAt===out.updatedAt&&JSON.stringify(value)!==JSON.stringify(out))readonlyRouteFail('READ_ROUTE_AMBIGUOUS');if(!out||value.updatedAt>out.updatedAt)out=value;}return out;};
     const stored=pick(scope.scopeKey),global=pick(GLOBAL_SCOPE_ID);
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
-    const explicit=stored&&!['inherited','migrated'].includes(stored.origin),selected=explicit?stored:global&&!global.removed?global:stored;
-    if(!selected||selected.removed||selected.mode===MODE_MIRROR||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
+    const explicit=stored&&!['inherited','migrated'].includes(stored.origin);
+    let selected=explicit?stored:global&&!global.removed?global:stored,ownerLocalWitness=null;
+    if(!selected&&ownerRead){
+      // Only the native owner's engine may observe the established fresh-local
+      // default. Reuse the strict argument/transition/reset witness; never import
+      // a mode, create routing rows or weaken the external readonly contract.
+      const local=await inspectLocalHealthSnapshot({...scope,scopeId:scope.scopeKey},'libra:v1:scope:'+scope.scopeKey+':manifest',{strictPhysical:true});
+      if(local.mode!==MODE_PLUGIN_ONLY)readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
+      selected={mode:MODE_PLUGIN_ONLY,origin:'owner_observed_local_default'};ownerLocalWitness=local.binding;
+    }
+    if(!selected||selected.removed||selected.mode===MODE_MIRROR&&!ownerRead||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
     const reset=await plugin.getItem(resetChoiceKey);if(reset!=null&&reset!=='')readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
     const currentDevice=await rawDeviceStorage({strict:true});
     if(readonlyRouteFence()!==fence||rawPluginStorage()!==plugin||currentDevice!==device)readonlyRouteFail('READ_ROUTE_CHANGED');
     // Includes only relevant routing rows; unrelated registry entries are harmless.
-    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device};
+    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness};
   };
   const readonlyRouteState=input=>{
     readonlyRouteExact(input,['handle','requestId']);const s=readonlyRouteHandles.get(input.handle);
@@ -7504,22 +7513,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(performance.now()>=s.deadline){s.active=false;readonlyRouteActive.delete(s);readonlyRouteFail('READ_ROUTE_EXPIRED');}
     return s;
   };
-  const observeReadonlyRoute=async input=>{
+  const observeReadRoute=async (input,ownerRead)=>{
     readonlyRouteExact(input,['requestId','characterId','chatId','durationMs']);readonlyRouteId(input.requestId);readonlyRouteId(input.characterId);readonlyRouteId(input.chatId);
     if(!Number.isSafeInteger(input.durationMs)||input.durationMs<1||input.durationMs>120000)readonlyRouteFail('READ_ROUTE_REQUEST_INVALID');
     for(const s of readonlyRouteActive)if(performance.now()>=s.deadline&&!s.pending){s.active=false;readonlyRouteActive.delete(s);}
     if(readonlyRouteActive.size>=4)readonlyRouteFail('READ_ROUTE_LIMIT');
-    const s={requestId:input.requestId,identity:{characterId:input.characterId,chatId:input.chatId},deadline:performance.now()+input.durationMs,pending:true,active:true};readonlyRouteActive.add(s);
+    const s={requestId:input.requestId,identity:{characterId:input.characterId,chatId:input.chatId},deadline:performance.now()+input.durationMs,pending:true,active:true,ownerRead};readonlyRouteActive.add(s);
     try{
-      s.value=await readReadonlyRoute(s.identity);if(performance.now()>=s.deadline)readonlyRouteFail('READ_ROUTE_EXPIRED');
+      s.value=await readReadonlyRoute(s.identity,ownerRead);if(performance.now()>=s.deadline)readonlyRouteFail('READ_ROUTE_EXPIRED');
       const handle=Object.freeze({});readonlyRouteHandles.set(handle,s);
       const summary=Object.freeze({schema:'memory-suite.readonly-route-observation.v1',scope:Object.freeze({...s.value.scope}),mode:s.value.mode,routeEpoch:Object.freeze({kind:'sdk-instance-configuration-generation',generation:wholeDataInventoryEpoch}),semanticModeEpoch:null,modePublication:s.value.modePublication,usage:'request-local-route-observation',authorityQualified:false});
       return Object.freeze({handle,summary});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
   };
+  const observeReadonlyRoute=input=>observeReadRoute(input,false);
+  const observeOwnerReadonlyRoute=input=>observeReadRoute(input,true);
   const assertReadonlyRouteCurrent=async input=>{
     const s=readonlyRouteState(input);if(s.pending)readonlyRouteFail('READ_ROUTE_BUSY');s.pending=true;
-    try{const current=await readReadonlyRoute(s.identity);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence]);
+    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness]);
       if(current.plugin!==s.value.plugin||current.device!==s.value.device||binding(current)!==binding(s.value))readonlyRouteFail('READ_ROUTE_CHANGED');
       return Object.freeze({status:'request-local-current',semanticModeEpoch:null});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
@@ -7641,7 +7652,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const bridge = Object.freeze({
     namespace,
     pluginId,
-    observeReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
+    observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,

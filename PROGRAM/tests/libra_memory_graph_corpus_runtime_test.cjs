@@ -27,7 +27,8 @@ for (const mode of ['plugin_only','server_only']) test(`${mode}: shipped API sea
   // the published generation rather than silently searching the first window.
   x.f.chat.message.find(row=>row.chatId==='t6-a').data+=' 원문이 바뀌었다.';
   await assert.rejects(()=>api.executeMemoryGraphUnifiedQuery(options),/CORPUS_|READER_|READ_/);
-  await assert.rejects(()=>api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'}),/CORPUS_|READER_|READ_/);
+  const current=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'});
+  assert.equal(current.corpusRead.mode,'request_local_corpus');assert.equal(current.corpusRead.reason,'superseded_derived_index');
 });
 
 test('stored canonical vectors seed the same durable-index frontier without lexical overlap or document embedding during retrieval',async t=>{

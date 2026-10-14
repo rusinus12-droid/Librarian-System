@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.7
+- 작성일: 2026-10-14 · 문서 버전: 1.8
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `89fb341`의 GRADIA 인풋 작성기 연결과 이후 전체 구간 공통 인덱스 증분. §12–18이 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
-- 목표 계약: [통합 엔진 설계 v1.13](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 현재 기준: `89fb341`의 GRADIA 인풋 작성기 연결과 이후 전체 구간 공통 인덱스 증분. §12–19가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다. 최신 기본값·실행 경로는 §19를 우선한다.
+- 목표 계약: [통합 엔진 설계 v1.14](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
-- 판정: **통합 엔진 미완성. 명시적 unified의 Classic·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 원본 전체 재투영·표 전체 hydration을 줄이는 선택적 접근/증분 검증, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본값은 legacy다.**
+- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 원본 전체 재투영·표 전체 hydration을 줄이는 선택적 접근/증분 검증, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–18을 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §19를 우선하며 §12–18의 이전 기본값·구간 제한 설명을 갱신한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
 
 ## 1. 완성이 의미하는 것
 
@@ -314,3 +314,15 @@ N01의 두 실제 공백을 연결했다. 첫째, 정본·Micro의 모든 owner 
 커널 suite는 53구간을 사용해 첫 구간 밖 자료, cold/warm/축출/독립 runtime 복원, 수정·오염·중간 실패·예산·취소·외부 namespace 거부를 확인한다. 등록 API와 실제 storage bridge의 두 모드, GRADIA SHADOW/AIDE·인풋 작성기의 합성 native 호스트도 검증한다. 상세 재현·기본 상한·구현과 검증의 경계는 [전체 구간 공통 인덱스 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)을 따른다.
 
 **완성 판정은 여전히 미완성이다.** native 전체 구간을 현재 자료에서 재투영하고 공통 index 표 전체를 hydrate한다. 저장 shard를 Lane이 직접 선택해서 읽는 비동기 접근, 원본 증분 검증, 전체 workspace/I/O admission, build 재개·증분 교체는 남는다. 여러 64키 readset과 root CAS는 전체 원본의 원자성을 뜻하지 않는다. 따라서 `inventoryComplete:false`, `ownerAtomicity:false`, `byteBounded:false`를 유지한다. N02의 다른 자료 representation, N05 native GC, N06 실제 설치/품질·규모, N07 기본 전환도 닫지 않는다.
+
+## 19. 레거시 검색의 완전 대체
+
+사용자의 “레거시 검색을 새로운 엔진이 완전히 대체” 지시를 적용했다. 기본값만 변경한 것이 아니라 정상 recall·Classic 최종 주입과 GUI 질의를 단일 엔진으로 전환하고, 실행 가능한 기존 dense/sparse/RRF/MMR·catalog shortlist·블록 router·Micro head corpus·A2 cache 준비·옛 Classic renderer를 제거했다. 자동 정본 채택 후 catalog/evidence-link 보조 준비도 종료했다. 원본 쓰기/백업/가져오기와 명시적 근거 inspector는 유지하며 검색기로 재사용하지 않는다.
+
+`legacy`·`shadow` 설정/요청은 출처 기록과 함께 `unified`로 정규화한다. 새·기존 GRADIA 연결과 인풋 작성기의 LIBRA source도 `unified_engine`으로 통일한다. HAYAKU·Flashback의 별도 읽기와 고정 readonly SDK 권한 witness는 LIBRA의 옛 검색 fallback이 아니다.
+
+저장 공통 index가 없는 첫 요청, 원본 변경, tokenizer 버전 변경도 같은 엔진에서 전 구간 원본을 열거해 request-local 공통 index를 사용한다. 유효한 게시 index는 기존처럼 복원한다. 저장 손상이나 route/reset/연결 변경은 덮어 쓰지 않고 거부한다. 최대 구간/byte 상한 초과 역시 레거시나 첫 구간의 complete 검색으로 위장하지 않는다. Classic은 base request, GRADIA는 해당 근거/초안 차단으로 처리한다.
+
+새 local 설치의 미등록 기본 route는 native owner 전용 관찰로 읽으며 route를 생성하지 않는다. native mirror도 물리 서버 검증을 유지한다. 외부 readonly source 계약의 엄격한 route 요구는 그대로 유지한다. GUI의 한글 조사 검색도 공통 lexical tokenizer를 사용한다.
+
+N07의 기본·유일 엔진 전환과 중복 serving 경로 종료는 이 증분에서 수행했다. N01의 선택적 저장 page 접근·증분 원본 검증·전체 workspace/I/O 계상, N02 추가 representation, N05 native 삭제, N06 실제 호스트/품질·규모 인증은 남는다. 전체 엔진을 완성/인증했다고 판정하지 않는다. 검증 명령과 지원 경계는 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)을 따른다.

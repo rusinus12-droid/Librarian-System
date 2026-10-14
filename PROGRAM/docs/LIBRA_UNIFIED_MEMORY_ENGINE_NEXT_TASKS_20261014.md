@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.4
+- 작성일: 2026-10-14 · 문서 버전: 1.5
 - 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
-- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 구간 공통 index의 저장·검색 재사용까지 연결했다. 선택적 영속 접근·증분 검증, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
+- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 구간 공통 index의 저장·검색 재사용까지 연결했다. 기본·유일한 unified 검색으로의 전환과 기존 serving 경로 제거를 수행했다. 선택적 영속 접근·증분 검증과 실제 품질·성능 인증은 미완료다.**
 
 이 문서는 소비자 호출 경로 재검토를 반영한 현재 작업 계획이다. 이전 설계·현황 문서에서 LIBRA의 Planner·SGA·Input Writer를 활성 연결 대상으로 적은 부분을 정정한다. 과제 정의는 구현 완료나 배포 자격을 부여하지 않는다.
 
@@ -51,7 +51,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | N04 | P1 · 미전송 제안 읽기 제한 연결 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
 | N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
 | N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
-| N07 | P2 · 기본값 legacy | 기본값 전환·중복 경로 종료 | M13/M15 | 지원 범위의 N00–N06 합격 |
+| N07 | serving 전환·기존 실행 제거 완료 | 기본·유일한 unified, 이전 설정 이관·실패 계약 | M13/M15 | 사용자 완전 대체 지시; N06 인증은 별도 미완 |
 
 ### N03 진척 — 실제 owner 공급자·GRADIA 연결
 
@@ -59,7 +59,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - GRADIA의 고정 SDK를 검토된 최소 범위로 확장했다. 기존 서버의 readonly principal·route·reset·data identity 검사는 유지한다. 서버 원문은 권한 확인 witness에만 쓰고 통합 검색의 결과로 대신 전달하지 않는다. HAYAKU·Flashback은 기존 읽기를 유지하며 `engine.sourceByOwner`로 구분한다.
 - GUI 자료 화면에서 **LIBRA 검색 → 통합 메모리 검색 → 연결**로 선택한다. 공개 `connectUnifiedLibReadOnly(url)`도 같은 실제 연결 경로다. 새 질문을 질의로 전달하고 한 번 발급한 근거를 SHADOW·AIDE 네 단계가 공유한다. 소스 변경·권한 철회·취소·연결 변경 시 진행 중인 근거와 초안을 폐기한다.
 - `source: unified_engine`, generation, owner corpus digest, 선택 영수증, `queryComplete`, `deliveryOutcome`, `windowRead`, `nextWindow`를 보존한다. 캡처한 bundle의 `complete:true`를 전체 corpus 검색 완료로 해석하지 않는다.
-- 통합 공급자가 없거나 읽기 권한이 없으면 거부한다. 기존 기본 연결의 source는 `server_logical_read`로 유지한다. 기존 고정 SDK를 공통 writer SDK로 교체하지 않았으며 LIA·RETRACE pin도 유지한다.
+- 통합 공급자가 없거나 읽기 권한이 없으면 거부한다. 현재 기본 연결과 이전 저장 source도 `unified_engine`으로 이관했다(§10). 기존 고정 SDK를 공통 writer SDK로 교체하지 않았으며 LIA·RETRACE pin도 유지한다.
 - 검증과 상세 계약: [GRADIA 통합 읽기 계약](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). 등록 호스트의 실제 LIBRA·SQLite·GRADIA beforeRequest를 사용한다. 실제 설치 RisuAI 인증(E4), 전체 corpus의 영속 접근(N01), 미전송 인풋 작성기(N04), 기본값 전환(N07)은 닫지 않는다.
 
 다음 엔진 구현은 **N01**부터 시작한다. N00의 runtime 소비자 계약 정리와 N06의 고정 평가 세트 정의는 이에 앞서 또는 함께 진행할 수 있다. 제한된 source window를 전체 기록처럼 취급하는 상태에서 소비자 수만 늘려도 corpus coverage 문제는 해결되지 않는다.
@@ -207,9 +207,9 @@ native GC는 inventory 조회와 dry-run이 있어도 실제 삭제가 차단된
 
 ## 10. N07 — 기본값 전환과 중복 경로 종료
 
-현재 기본값은 legacy다. 지원 범위의 앞선 과제가 합격한 뒤에 전환한다.
+사용자의 완전 대체 지시에 따라 기본·유일한 serving 엔진을 unified로 전환했다. 이전 절의 명시적 선택·기본값 legacy 설명은 당시 기록이며, 최신 실행 경로는 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)과 현황 §19를 우선한다.
 
-**작업:** request 시작의 mode/owner/generation 봉인을 유지하고 기존 shortlist/RRF·중복 cache/index/Lane·별도 family ranker 실행을 종료한다. 필요한 importer와 구형 저장 호환은 보존하고 전환·복구·GUI 진단 정책을 기록한다.
+**수행:** request 시작의 mode/owner/generation 봉인을 유지하고 기존 shortlist/RRF/MMR·catalog/블록/Micro head 준비·별도 family ranker·이전 최종 renderer 실행을 제거했다. 필요한 importer와 구형 저장 호환은 보존하고 전환·복구·GUI 진단 정책을 기록한다.
 
 **완료 기준:** 실제 unified 요청에서 중복 ranker·준비 작업·검색 호출·prompt 주입이 없는 것을 trace로 확인한다. 지원 소비자의 품질·예산·최종 현재성 기준을 통과하고, 설정/백업/재시작이 퇴역 helper나 이전 중복 경로를 재활성화하지 않는다.
 
