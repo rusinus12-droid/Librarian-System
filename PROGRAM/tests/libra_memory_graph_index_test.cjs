@@ -260,13 +260,22 @@ test('Priority 2 & D06 (UM2 Common Access Index & Transitive Reverse Dependencie
 
   const compiled = index.compile(graph, { partition, generation });
   assert.equal(compiled.schema, 'libra.memory_graph_index.v1');
+  assert.equal(compiled.tokenizerVersion, 'libra.tokenizer.nfkc_v1');
+  assert.equal(compiled.dfScope, 'window_exact');
+  assert.equal(typeof compiled.tableDigests?.directoryDigest, 'string');
+  assert.equal(typeof compiled.tableDigests?.adjacencyDigest, 'string');
+  assert.equal(typeof compiled.tableDigests?.postingsDigest, 'string');
+  assert.equal(typeof compiled.tableDigests?.reverseDependenciesDigest, 'string');
   assert.equal(compiled.stats.directoryCount, graph.nodes.length);
   assert.equal(compiled.stats.adjacencyCount, graph.edges.length * 2);
   assert.ok(compiled.stats.postingCount > 0);
   assert.ok(compiled.stats.reverseDependencyCount > 0);
   assert.ok(compiled.stats.maxOutDegree >= 1);
 
+  const outSubjectPageCold = index.queryPage(compiled, { table: 'adjacency', direction: 'out', predicate: 'subject_of', pageBytes: 4096 });
+  assert.equal(outSubjectPageCold.cacheHit, false);
   const outSubjectPage = index.queryPage(compiled, { table: 'adjacency', direction: 'out', predicate: 'subject_of', pageBytes: 4096 });
+  assert.equal(outSubjectPage.cacheHit, true);
   assert.ok(outSubjectPage.items.length >= 2);
   assert.ok(outSubjectPage.items.every(row => row.direction === 'out' && row.predicate === 'subject_of' && row.structural === true));
 
@@ -397,6 +406,8 @@ test('Priority 2 & D03 (UM2 Store Maintenance GC): retains active root manifest/
 
   const verified = await store.read({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pool: 'units' });
   assert.equal(verified.status, 'verified');
+  assert.equal(typeof verified.unreadRegions.hasUnreadSourceWindows, 'boolean');
+  assert.equal(verified.unreadRegions.exhaustiveDeltaSupported, false);
 
   // D03: Concurrent publisher updating rootKey during mark phase must NOT have its active manifest deleted
   const rootKey = [...values.keys()].find(k => k.includes(':root:'));

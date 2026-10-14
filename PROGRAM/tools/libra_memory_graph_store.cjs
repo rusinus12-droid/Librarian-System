@@ -28,6 +28,15 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
     const part = partition(graph);
     return pages.generation(graph, { partition: part, restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
   };
+  const computeUnreadRegions = coverage => ({
+    canonicalNextCursor: coverage?.inventory?.canonicalNextCursor || '',
+    microNextCursor: coverage?.inventory?.microNextCursor || '',
+    hasUnreadSourceWindows: Boolean(
+      coverage?.inventory?.canonicalNextCursor
+      || coverage?.inventory?.microNextCursor
+    ),
+    exhaustiveDeltaSupported: false
+  });
   const visit = async (graph, opts, callback) => {
     const stamp = graphStamp(graph), loc = location(graph, opts.sourceOptions), refs = [];
     for (const pool of pools) {
@@ -101,9 +110,10 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
         if (!same(stored.value, record)) fail('projection_mismatch'); counters.validations++;
       });
       if (!same(directory.refs, rederived.refs)) fail('source_changed');
+      const unreadRegions = computeUnreadRegions(after.graph.coverage);
       const manifest = { schema: 'libra.graph_generation.v1', policy, sourceOptions, pageBytes,
         sourceStamp: stamp, readerFrame: after.graph.readerFrame, coverage: after.graph.coverage,
-        partition: loc.partition, pages: directory.refs, totals: directory.totals,
+        unreadRegions, partition: loc.partition, pages: directory.refs, totals: directory.totals,
         jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false };
       let manifestRaw, generation, manifestKey;
       await json(manifest, loc.partition, stamp, async raw => {
@@ -123,7 +133,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       counters.publications++;
       return { schema: 'libra.graph_generation_build.v1', status: 'published', generation,
         pageCount: directory.refs.length, totals: directory.totals, coverage: manifest.coverage,
-        publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
+        unreadRegions, publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
         providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null };
     } catch (error) { counters.rejected++; throw error; }
     finally { active = false; }
@@ -136,7 +146,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
     const root = await load(owner, loc.rootKey, 32768, loc.partition, stamp, ticket);
     const missing = reason => ({ schema: 'libra.graph_durable_read.v1', status: reason, items: [],
       scopeKey: graph.scopeKey, readerFrame: graph.readerFrame, readerValidation: graph.readerValidation || null,
-      coverage: graph.coverage, requestLocalReadOnly: true, modelDispatchEligible: false, durableGenerationVerified: false });
+      coverage: graph.coverage, unreadRegions: computeUnreadRegions(graph.coverage),
+      requestLocalReadOnly: true, modelDispatchEligible: false, durableGenerationVerified: false });
     if (!root.value) return missing('missing_generation');
     if (root.value.schema !== 'libra.graph_root.v1' || root.value.policy !== policy
       || !/^[a-f0-9]{64}$/.test(root.value.generation) || root.value.manifestKey !== loc.prefix + 'generation:' + root.value.generation) fail('root_invalid');
@@ -172,7 +183,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
     if (graphStamp(final.graph) !== stamp) return missing('stale_generation');
     return { schema: 'libra.graph_durable_read.v1', status: 'verified', generation: root.value.generation,
       pool, pageIndex, nextPageIndex: pageIndex + 1 < selected.length ? pageIndex + 1 : null, items,
-      coverage: manifest.coverage, sourceStamp: stamp, publication: root.value.publication,
+      coverage: manifest.coverage, unreadRegions: manifest.unreadRegions || computeUnreadRegions(manifest.coverage),
+      sourceStamp: stamp, publication: root.value.publication,
       scopeKey: graph.scopeKey, readerFrame: final.graph.readerFrame, readerValidation: final.graph.readerValidation || null,
       nativeSourceCaptureAdmission: 'unsupported',
       durableGenerationVerified: true, verificationScope: 'current_owner_projection_window_all_persisted_pages',
@@ -248,7 +260,6 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
         };
       }
 
-      // Only sweep keys that were already present before the mark phase and remain unreferenced after root verification
       const initialKeySet = new Set(allKeys);
       const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
@@ -287,6 +298,6 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
   };
   return Object.freeze({ build, read, collectGarbage, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
     invalidationEpoch: epoch, counters: { ...counters }, durableStoreImplemented: true,
-    exhaustiveOwnerInventory: false, rootGCImplemented: false, ownerTransportBounded: false }),
+    exhaustiveOwnerInventory: false, rootGCImplemented: true, ownerTransportBounded: false }),
     invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
 };

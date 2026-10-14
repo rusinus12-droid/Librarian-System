@@ -35216,6 +35216,9 @@ function createLibraReadonlySourceContext(owner) {
         error.storageMutationFailed = true;
         throw error;
       }
+      if (!String(storageKey || '').includes(':memory-graph:v1:')) {
+        state.memoryGraphCompiler?.invalidateAll();
+      }
       return true;
     };
 
@@ -45437,6 +45440,15 @@ function createLibraReadonlySourceContext(owner) {
     const part = partition(graph);
     return pages.generation(graph, { partition: part, restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
   };
+  const computeUnreadRegions = coverage => ({
+    canonicalNextCursor: coverage?.inventory?.canonicalNextCursor || '',
+    microNextCursor: coverage?.inventory?.microNextCursor || '',
+    hasUnreadSourceWindows: Boolean(
+      coverage?.inventory?.canonicalNextCursor
+      || coverage?.inventory?.microNextCursor
+    ),
+    exhaustiveDeltaSupported: false
+  });
   const visit = async (graph, opts, callback) => {
     const stamp = graphStamp(graph), loc = location(graph, opts.sourceOptions), refs = [];
     for (const pool of pools) {
@@ -45510,9 +45522,10 @@ function createLibraReadonlySourceContext(owner) {
         if (!same(stored.value, record)) fail('projection_mismatch'); counters.validations++;
       });
       if (!same(directory.refs, rederived.refs)) fail('source_changed');
+      const unreadRegions = computeUnreadRegions(after.graph.coverage);
       const manifest = { schema: 'libra.graph_generation.v1', policy, sourceOptions, pageBytes,
         sourceStamp: stamp, readerFrame: after.graph.readerFrame, coverage: after.graph.coverage,
-        partition: loc.partition, pages: directory.refs, totals: directory.totals,
+        unreadRegions, partition: loc.partition, pages: directory.refs, totals: directory.totals,
         jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false };
       let manifestRaw, generation, manifestKey;
       await json(manifest, loc.partition, stamp, async raw => {
@@ -45532,7 +45545,7 @@ function createLibraReadonlySourceContext(owner) {
       counters.publications++;
       return { schema: 'libra.graph_generation_build.v1', status: 'published', generation,
         pageCount: directory.refs.length, totals: directory.totals, coverage: manifest.coverage,
-        publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
+        unreadRegions, publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
         providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null };
     } catch (error) { counters.rejected++; throw error; }
     finally { active = false; }
@@ -45545,7 +45558,8 @@ function createLibraReadonlySourceContext(owner) {
     const root = await load(owner, loc.rootKey, 32768, loc.partition, stamp, ticket);
     const missing = reason => ({ schema: 'libra.graph_durable_read.v1', status: reason, items: [],
       scopeKey: graph.scopeKey, readerFrame: graph.readerFrame, readerValidation: graph.readerValidation || null,
-      coverage: graph.coverage, requestLocalReadOnly: true, modelDispatchEligible: false, durableGenerationVerified: false });
+      coverage: graph.coverage, unreadRegions: computeUnreadRegions(graph.coverage),
+      requestLocalReadOnly: true, modelDispatchEligible: false, durableGenerationVerified: false });
     if (!root.value) return missing('missing_generation');
     if (root.value.schema !== 'libra.graph_root.v1' || root.value.policy !== policy
       || !/^[a-f0-9]{64}$/.test(root.value.generation) || root.value.manifestKey !== loc.prefix + 'generation:' + root.value.generation) fail('root_invalid');
@@ -45581,7 +45595,8 @@ function createLibraReadonlySourceContext(owner) {
     if (graphStamp(final.graph) !== stamp) return missing('stale_generation');
     return { schema: 'libra.graph_durable_read.v1', status: 'verified', generation: root.value.generation,
       pool, pageIndex, nextPageIndex: pageIndex + 1 < selected.length ? pageIndex + 1 : null, items,
-      coverage: manifest.coverage, sourceStamp: stamp, publication: root.value.publication,
+      coverage: manifest.coverage, unreadRegions: manifest.unreadRegions || computeUnreadRegions(manifest.coverage),
+      sourceStamp: stamp, publication: root.value.publication,
       scopeKey: graph.scopeKey, readerFrame: final.graph.readerFrame, readerValidation: final.graph.readerValidation || null,
       nativeSourceCaptureAdmission: 'unsupported',
       durableGenerationVerified: true, verificationScope: 'current_owner_projection_window_all_persisted_pages',
@@ -45657,7 +45672,6 @@ function createLibraReadonlySourceContext(owner) {
         };
       }
 
-      // Only sweep keys that were already present before the mark phase and remain unreferenced after root verification
       const initialKeySet = new Set(allKeys);
       const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
@@ -45696,7 +45710,7 @@ function createLibraReadonlySourceContext(owner) {
   };
   return Object.freeze({ build, read, collectGarbage, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
     invalidationEpoch: epoch, counters: { ...counters }, durableStoreImplemented: true,
-    exhaustiveOwnerInventory: false, rootGCImplemented: false, ownerTransportBounded: false }),
+    exhaustiveOwnerInventory: false, rootGCImplemented: true, ownerTransportBounded: false }),
     invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
 });
     const createLibraMemoryGraphIndex = (function createMemoryGraphIndex({ pages, fingerprint, tokenize } = {}) {
@@ -45704,11 +45718,18 @@ function createLibraReadonlySourceContext(owner) {
     throw new TypeError('LIBRA_GRAPH_INDEX_ADAPTER_REQUIRED');
   }
   const schema = 'libra.memory_graph_index.v1';
+  const tokenizerVersion = 'libra.tokenizer.nfkc_v1';
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
     'updates', 'clears', 'supersedes', 'follows', 'fulfills', 'reopens',
     'defines', 'applies_to', 'contradicts'
   ]);
+  const poolForTable = Object.freeze({
+    directory: 'nodes',
+    adjacency: 'edges',
+    postings: 'units',
+    reverseDependencies: 'bases'
+  });
   const defaultTokenize = text => String(text || '')
     .normalize('NFKC')
     .toLowerCase()
@@ -45724,7 +45745,6 @@ function createLibraReadonlySourceContext(owner) {
       fail('input_invalid');
     }
 
-    // Read projection pools through the shared accounted-byte page cache when page() is available
     const normalizedGraph = {
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
@@ -45911,7 +45931,7 @@ function createLibraReadonlySourceContext(owner) {
       }
     }
 
-    // Ensure transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings
+    // Transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings (D06)
     for (const entry of revMap.values()) {
       for (const nId of [...entry.nodeIds]) {
         const nodeEntry = revMap.get(`node:${nId}`);
@@ -45953,6 +45973,13 @@ function createLibraReadonlySourceContext(owner) {
     for (const c of outDegree.values()) if (c > maxOutDegree) maxOutDegree = c;
     for (const c of inDegree.values()) if (c > maxInDegree) maxInDegree = c;
 
+    const tableDigests = Object.freeze({
+      directoryDigest: hash(JSON.stringify(directory)),
+      adjacencyDigest: hash(JSON.stringify(adjacency)),
+      postingsDigest: hash(JSON.stringify(postings)),
+      reverseDependenciesDigest: hash(JSON.stringify(reverseDependencies))
+    });
+    const dfScope = graph.coverage?.inventory?.inventoryComplete === true ? 'corpus_complete' : 'window_exact';
     const stats = {
       directoryCount: directory.length,
       adjacencyCount: adjacency.length,
@@ -45965,12 +45992,16 @@ function createLibraReadonlySourceContext(owner) {
       maxOutDegree,
       maxInDegree
     };
-    const indexDigest = hash(JSON.stringify([schema, partition, generation, stats]));
+    const indexDigest = hash(JSON.stringify([schema, tokenizerVersion, dfScope, partition, generation, stats, tableDigests]));
     return Object.freeze({
       schema,
+      projectionSchema: graph.schema,
+      tokenizerVersion,
+      dfScope,
       partition,
       generation,
       indexDigest,
+      tableDigests,
       directory,
       adjacency,
       postings,
@@ -45992,7 +46023,6 @@ function createLibraReadonlySourceContext(owner) {
       for (const e of hit.edgeIds) edgeIds.add(e);
       for (const p of hit.postingKeys) postingKeys.add(p);
     }
-    // Transitive expansion from affected nodes to their edges and postings (D06)
     for (const nId of [...nodeIds]) {
       const nodeHit = lookup.get(`node:${nId}`);
       if (!nodeHit) continue;
@@ -46050,7 +46080,7 @@ function createLibraReadonlySourceContext(owner) {
     if (offset > sourceRows.length) fail('offset_invalid');
 
     const selected = [];
-    let bytes = 2;
+    let bytes = 2, codeUnits = 2, tokens = 1;
     let stopReason = 'index_page_end';
     for (let i = offset; i < sourceRows.length; i++) {
       let size;
@@ -46069,6 +46099,7 @@ function createLibraReadonlySourceContext(owner) {
             items: [],
             serializedUtf8Bytes: 2,
             pageBytes,
+            cacheHit: false,
             stopReason: 'row_exceeds_page',
             modelDispatchEligible: false
           };
@@ -46083,9 +46114,44 @@ function createLibraReadonlySourceContext(owner) {
       }
       selected.push(sourceRows[i]);
       bytes += sep + size.utf8Bytes;
+      codeUnits += sep + size.codeUnits;
+      tokens += size.tokens;
     }
     const nextOffset = offset + selected.length;
     if (nextOffset < sourceRows.length && stopReason === 'index_page_end') stopReason = 'page_boundary';
+
+    // M03: Route index page reads through the shared accounted-byte page cache when available
+    let decodedItems = null;
+    let cacheHit = false;
+    if (typeof pages.open === 'function' && typeof pages.install === 'function' && typeof pages.decode === 'function') {
+      let handle, stage, lease;
+      const beforeHits = typeof pages.inspect === 'function' ? pages.inspect().counters.hits : 0;
+      try {
+        handle = pages.open({ partition: compiled.partition, generation: compiled.generation });
+        const sizeObj = { utf8Bytes: bytes, codeUnits, tokens };
+        stage = pages.reserve(handle, pages.stageCost(sizeObj));
+        const text = JSON.stringify(selected);
+        const binding = {
+          pool: poolForTable[table] || 'units',
+          codec: 'json_array.v1',
+          digest: hash(text),
+          rows: selected.length
+        };
+        lease = pages.install(handle, binding, text, stage);
+        decodedItems = pages.decode(lease);
+        const afterHits = typeof pages.inspect === 'function' ? pages.inspect().counters.hits : 0;
+        cacheHit = afterHits > beforeHits;
+      } catch (_err) {
+        decodedItems = JSON.parse(JSON.stringify(selected));
+      } finally {
+        if (lease && typeof pages.release === 'function') pages.release(lease);
+        if (stage && typeof pages.releaseStage === 'function') pages.releaseStage(stage);
+        if (handle && typeof pages.close === 'function') pages.close(handle);
+      }
+    } else {
+      decodedItems = JSON.parse(JSON.stringify(selected));
+    }
+
     return {
       schema: 'libra.memory_graph_index_page.v1',
       table,
@@ -46094,9 +46160,10 @@ function createLibraReadonlySourceContext(owner) {
       offset,
       nextOffset,
       totalRows: sourceRows.length,
-      items: JSON.parse(JSON.stringify(selected)),
+      items: decodedItems,
       serializedUtf8Bytes: bytes,
       pageBytes,
+      cacheHit,
       stopReason,
       modelDispatchEligible: false
     };
@@ -46122,7 +46189,8 @@ function createLibraReadonlySourceContext(owner) {
   const createSession = (compiledIndex, {
     maxPages = 16,
     maxBytes = 65536,
-    pageBytes = 8192
+    pageBytes = 8192,
+    resumeCursors = []
   } = {}) => {
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_required');
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256
@@ -46135,10 +46203,14 @@ function createLibraReadonlySourceContext(owner) {
     const seenAccessKeys = new Map();
     const completedAccesses = [];
     const unreadCursors = [];
+    const roleStats = Object.fromEntries(Object.keys(rolePriority).map(role => [role, { pages: 0, bytes: 0, requests: 0 }]));
     let sequence = 0;
     let pagesRead = 0;
     let bytesRead = 0;
+    let cacheHits = 0;
     let coalescedRequests = 0;
+    let lastStopReason = 'frontier_exhausted';
+    let finalizedReport = null;
 
     const accessKeyOf = req => JSON.stringify([
       req.table,
@@ -46197,6 +46269,7 @@ function createLibraReadonlySourceContext(owner) {
         return { coalesced: true, accessKey: key };
       }
 
+      roleStats[laneRole].requests++;
       const item = {
         accessKey: key,
         spec,
@@ -46212,6 +46285,31 @@ function createLibraReadonlySourceContext(owner) {
       return { coalesced: false, accessKey: key };
     };
 
+    if (Array.isArray(resumeCursors) && resumeCursors.length > 0) {
+      for (const cur of resumeCursors) {
+        if (!cur || typeof cur !== 'object') fail('cursor_invalid');
+        if ((cur.generation && cur.generation !== compiledIndex.generation)
+          || (cur.indexDigest && cur.indexDigest !== compiledIndex.indexDigest)) {
+          fail('cursor_stale');
+        }
+        const role = Array.isArray(cur.lanes) && validRoles.has(cur.lanes[0]) ? cur.lanes[0] : 'graph_neighborhood';
+        enqueue({
+          laneRole: role,
+          table: cur.table || 'adjacency',
+          anchorNodeId: cur.anchorNodeId || '',
+          direction: cur.direction || '',
+          predicate: cur.predicate || '',
+          structuralOnly: Boolean(cur.structuralOnly),
+          channel: cur.channel || '',
+          term: cur.term || '',
+          dependencyKey: cur.dependencyKey || '',
+          offset: Number.isSafeInteger(cur.offset) ? cur.offset : 0,
+          priorityHint: 0.95,
+          requesterId: 'resumed_cursor'
+        });
+      }
+    }
+
     const sortQueue = () => {
       queue.sort((a, b) => (
         a.effectiveRank - b.effectiveRank
@@ -46220,96 +46318,165 @@ function createLibraReadonlySourceContext(owner) {
       ));
     };
 
-    const drain = ({ checkCancel } = {}) => {
-      let stopReason = 'frontier_exhausted';
-      while (queue.length > 0) {
-        if (typeof checkCancel === 'function' && checkCancel() === true) {
-          stopReason = 'cancelled';
-          break;
-        }
-        if (pagesRead >= maxPages) {
-          stopReason = 'page_count_budget';
-          break;
-        }
-        sortQueue();
-        const next = queue[0];
-        const page = index.queryPage(compiledIndex, next.spec);
-        if (page.stopReason === 'row_exceeds_page') {
-          queue.shift();
-          unreadCursors.push({
-            accessKey: next.accessKey,
-            lanes: [...next.lanes],
-            table: next.spec.table,
-            offset: next.spec.offset,
-            stopReason: 'row_exceeds_page'
-          });
-          stopReason = 'row_exceeds_page';
-          continue;
-        }
-        if (bytesRead + page.serializedUtf8Bytes > maxBytes) {
-          stopReason = 'byte_budget';
-          break;
-        }
-        queue.shift();
-        next.completed = true;
-        pagesRead++;
-        bytesRead += page.serializedUtf8Bytes;
-        completedAccesses.push({
-          accessKey: next.accessKey,
-          lanes: [...next.lanes],
-          requesters: [...next.requesters],
-          table: page.table,
-          offset: page.offset,
-          nextOffset: page.nextOffset,
-          totalRows: page.totalRows,
-          serializedUtf8Bytes: page.serializedUtf8Bytes,
-          stopReason: page.stopReason,
-          items: page.items
-        });
-        if (page.nextOffset < page.totalRows) {
-          enqueue({
-            ...next.spec,
-            laneRole: next.lanes[0],
-            offset: page.nextOffset,
-            priorityHint: next.priorityHint,
-            requesterId: next.requesters[0] || ''
-          });
-        }
+    const step = ({ checkCancel } = {}) => {
+      if (queue.length === 0) {
+        return { executed: false, stopReason: 'frontier_exhausted', access: null };
       }
+      if (typeof checkCancel === 'function' && checkCancel() === true) {
+        lastStopReason = 'cancelled';
+        return { executed: false, stopReason: 'cancelled', access: null };
+      }
+      if (pagesRead >= maxPages) {
+        lastStopReason = 'page_count_budget';
+        return { executed: false, stopReason: 'page_count_budget', access: null };
+      }
+      sortQueue();
+      const next = queue[0];
+      const page = index.queryPage(compiledIndex, next.spec);
+      if (page.stopReason === 'row_exceeds_page') {
+        queue.shift();
+        unreadCursors.push({
+          accessKey: next.accessKey,
+          generation: compiledIndex.generation,
+          indexDigest: compiledIndex.indexDigest,
+          lanes: [...next.lanes],
+          table: next.spec.table,
+          anchorNodeId: next.spec.anchorNodeId,
+          direction: next.spec.direction,
+          predicate: next.spec.predicate,
+          structuralOnly: next.spec.structuralOnly,
+          channel: next.spec.channel,
+          term: next.spec.term,
+          offset: next.spec.offset,
+          stopReason: 'row_exceeds_page'
+        });
+        lastStopReason = 'row_exceeds_page';
+        return { executed: false, stopReason: 'row_exceeds_page', access: null };
+      }
+      if (bytesRead + page.serializedUtf8Bytes > maxBytes) {
+        lastStopReason = 'byte_budget';
+        return { executed: false, stopReason: 'byte_budget', access: null };
+      }
+      queue.shift();
+      next.completed = true;
+      pagesRead++;
+      bytesRead += page.serializedUtf8Bytes;
+      if (page.cacheHit) cacheHits++;
+      const primaryRole = next.lanes[0];
+      if (roleStats[primaryRole]) {
+        roleStats[primaryRole].pages++;
+        roleStats[primaryRole].bytes += page.serializedUtf8Bytes;
+      }
+      const access = {
+        accessKey: next.accessKey,
+        lanes: [...next.lanes],
+        requesters: [...next.requesters],
+        table: page.table,
+        anchorNodeId: next.spec.anchorNodeId,
+        channel: next.spec.channel,
+        term: next.spec.term,
+        offset: page.offset,
+        nextOffset: page.nextOffset,
+        totalRows: page.totalRows,
+        serializedUtf8Bytes: page.serializedUtf8Bytes,
+        cacheHit: Boolean(page.cacheHit),
+        stopReason: page.stopReason,
+        items: page.items
+      };
+      completedAccesses.push(access);
+      if (page.nextOffset < page.totalRows) {
+        enqueue({
+          ...next.spec,
+          laneRole: next.lanes[0],
+          offset: page.nextOffset,
+          priorityHint: next.priorityHint,
+          requesterId: next.requesters[0] || ''
+        });
+      }
+      return { executed: true, stopReason: 'frontier_exhausted', access };
+    };
 
+    const drainPending = ({ checkCancel } = {}) => {
+      const newAccesses = [];
+      let stoppedByBudget = false;
+      while (queue.length > 0) {
+        const res = step({ checkCancel });
+        if (!res.executed) {
+          if (res.stopReason === 'row_exceeds_page') continue;
+          stoppedByBudget = res.stopReason !== 'frontier_exhausted';
+          break;
+        }
+        newAccesses.push(res.access);
+      }
+      return {
+        stoppedByBudget,
+        stopReason: lastStopReason,
+        newAccesses,
+        pendingQueueLength: queue.length
+      };
+    };
+
+    const isBudgetStopped = () => (
+      lastStopReason === 'page_count_budget'
+      || lastStopReason === 'byte_budget'
+      || lastStopReason === 'cancelled'
+      || lastStopReason === 'row_exceeds_page'
+    );
+
+    const finalize = () => {
+      if (finalizedReport) return finalizedReport;
       while (queue.length > 0) {
         const pending = queue.shift();
         unreadCursors.push({
           accessKey: pending.accessKey,
+          generation: compiledIndex.generation,
+          indexDigest: compiledIndex.indexDigest,
           lanes: [...pending.lanes],
           table: pending.spec.table,
           anchorNodeId: pending.spec.anchorNodeId,
+          direction: pending.spec.direction,
+          predicate: pending.spec.predicate,
+          structuralOnly: pending.spec.structuralOnly,
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
-          stopReason
+          stopReason: lastStopReason
         });
       }
-
-      const complete = unreadCursors.length === 0 && stopReason === 'frontier_exhausted';
-      return {
+      const complete = unreadCursors.length === 0 && lastStopReason === 'frontier_exhausted';
+      finalizedReport = Object.freeze({
         schema,
         generation: compiledIndex.generation,
         indexDigest: compiledIndex.indexDigest,
         complete,
-        stopReason,
+        stopReason: lastStopReason,
         pagesRead,
         bytesRead,
+        cacheHits,
         coalescedRequests,
+        roleStats: JSON.parse(JSON.stringify(roleStats)),
         accesses: completedAccesses,
         unreadCursors,
         corpusExclusionAuthority: false,
         familyTopKQuota: false,
         modelDispatchEligible: false
-      };
+      });
+      return finalizedReport;
     };
 
-    return Object.freeze({ enqueue, drain });
+    const drain = ({ checkCancel } = {}) => {
+      drainPending({ checkCancel });
+      return finalize();
+    };
+
+    return Object.freeze({
+      enqueue,
+      step,
+      drainPending,
+      isBudgetStopped,
+      finalize,
+      drain
+    });
   };
 
   return Object.freeze({ createSession });
@@ -46427,7 +46594,6 @@ function createLibraReadonlySourceContext(owner) {
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
 
-    // Map each SourceNode to its child MeaningNode units so future-only SourceNodes and bases are also blocked at asOfTurn (D01)
     const childUnitsBySourceId = new Map();
     for (const node of graph.nodes || []) {
       if (!node.sourceId) continue;
@@ -46543,13 +46709,20 @@ function createLibraReadonlySourceContext(owner) {
   const retrieve = (viewHandle, {
     maxPages = 32,
     maxBytes = 131072,
-    pageBytes = 8192
+    pageBytes = 8192,
+    maxWorkspaceBytes = 262144,
+    resumeCursors = []
   } = {}) => {
     const view = issuedViews.get(viewHandle);
     if (!view) fail('view_handle_invalid');
+    if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
+      fail('workspace_budget_invalid');
+    }
     const { graph, compiledIndex, queryFrame, nodeById, unitByNodeId, basisById, edgeById, isNodeEligible, isEdgeEligible } = view;
 
-    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes });
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors });
+
+    // Phase A (M05): Enqueue initial seed anchor & temporal/semantic accesses (NO upfront full adjacency drain!)
     for (const token of queryFrame.tokens) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'lexical', term: token, priorityHint: 1.0, requesterId: `tok:${token}` });
     }
@@ -46559,9 +46732,11 @@ function createLibraReadonlySourceContext(owner) {
     for (const pred of queryFrame.predicates) {
       laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
     }
-    laneSession.enqueue({ laneRole: 'graph_neighborhood', table: 'adjacency', structuralOnly: false, priorityHint: 0.8, requesterId: 'adj:all' });
-
-    const laneReport = laneSession.drain();
+    if (queryFrame.hasQueryVectors) {
+      for (const vecNodeId of Object.keys(queryFrame.queryVectors || {})) {
+        laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: vecNodeId, priorityHint: 0.92, requesterId: `sem:${vecNodeId}` });
+      }
+    }
 
     const rawFeatures = new Map();
     const ensureFeat = nodeId => {
@@ -46571,42 +46746,60 @@ function createLibraReadonlySourceContext(owner) {
       return rawFeatures.get(nodeId);
     };
 
-    const totalUnits = Math.max(1, (graph.units || []).length);
-    for (const access of laneReport.accesses) {
-      if (access.table !== 'postings') continue;
-      for (const hit of access.items) {
-        if (!isNodeEligible(hit.nodeId)) continue;
-        const feat = ensureFeat(hit.nodeId);
-        if (hit.channel === 'lexical') {
-          const idf = Math.log(1 + totalUnits / Math.max(1, hit.df || 1));
-          const tfWeight = Math.min(2.0, 1 + Math.log(Math.max(1, hit.tf || 1)));
-          feat.matchedTokens.set(hit.term, idf * tfWeight);
-        } else if (hit.channel === 'entity') {
-          feat.matchedEntities.add(hit.term);
-        } else if (hit.channel === 'predicate') {
-          feat.matchedPredicates.add(hit.term);
-        }
-      }
-    }
-
     const outgoingByNode = new Map();
     const degreeByNode = new Map();
-    for (const access of laneReport.accesses) {
-      if (access.table !== 'adjacency') continue;
-      for (const row of access.items) {
-        const edge = edgeById.get(row.edgeId);
-        if (!isEdgeEligible(edge)) continue;
-        if (!outgoingByNode.has(row.anchorNodeId)) outgoingByNode.set(row.anchorNodeId, []);
-        outgoingByNode.get(row.anchorNodeId).push(row);
-        degreeByNode.set(row.anchorNodeId, (degreeByNode.get(row.anchorNodeId) || 0) + 1);
+    const seenAdjacencyEdgeDir = new Set();
+    const totalUnits = Math.max(1, (graph.units || []).length);
+
+    const ingestAccesses = accesses => {
+      for (const access of accesses) {
+        if (access.table === 'postings') {
+          for (const hit of access.items) {
+            if (!isNodeEligible(hit.nodeId)) continue;
+            const feat = ensureFeat(hit.nodeId);
+            if (hit.channel === 'lexical') {
+              const idf = Math.log(1 + totalUnits / Math.max(1, hit.df || 1));
+              const tfWeight = Math.min(2.0, 1 + Math.log(Math.max(1, hit.tf || 1)));
+              feat.matchedTokens.set(hit.term, idf * tfWeight);
+            } else if (hit.channel === 'entity') {
+              feat.matchedEntities.add(hit.term);
+            } else if (hit.channel === 'predicate') {
+              feat.matchedPredicates.add(hit.term);
+            }
+          }
+        } else if (access.table === 'adjacency') {
+          for (const row of access.items) {
+            const edge = edgeById.get(row.edgeId);
+            if (!isEdgeEligible(edge)) continue;
+            const dedupKey = `${row.anchorNodeId}:${row.direction}:${row.edgeId}`;
+            if (seenAdjacencyEdgeDir.has(dedupKey)) continue;
+            seenAdjacencyEdgeDir.add(dedupKey);
+            if (!outgoingByNode.has(row.anchorNodeId)) outgoingByNode.set(row.anchorNodeId, []);
+            outgoingByNode.get(row.anchorNodeId).push(row);
+            degreeByNode.set(row.anchorNodeId, (degreeByNode.get(row.anchorNodeId) || 0) + 1);
+          }
+        }
       }
-    }
+    };
+
+    const seedDrain = laneSession.drainPending();
+    ingestAccesses(seedDrain.newAccesses);
 
     const stateByNode = new Map();
     const directFeaturesByNode = new Map();
     const frontier = [];
     let reevaluations = 0;
     let poppedSteps = 0;
+    let l0WorkspaceBytes = 1024;
+    let workspaceBudgetExceeded = false;
+
+    const estimateStateBytes = (nodeId, witness) => (
+      256
+      + String(nodeId).length * 2
+      + (witness.edgeChain?.length || 0) * 192
+      + (witness.basisIds?.length || 0) * 96
+      + (witness.sourceDependencies?.length || 0) * 96
+    );
 
     const compareWitnessOrder = (chainA, chainB) => {
       const strA = JSON.stringify(chainA.map(e => e.edgeId));
@@ -46628,6 +46821,13 @@ function createLibraReadonlySourceContext(owner) {
 
       if (!strictlyBetter && !tieDeterministicBetter) return false;
 
+      const addedBytes = estimateStateBytes(nodeId, witness) - (prev ? prev.accountedBytes : 0) + 96;
+      if (l0WorkspaceBytes + addedBytes > maxWorkspaceBytes) {
+        workspaceBudgetExceeded = true;
+        return false;
+      }
+      l0WorkspaceBytes += addedBytes;
+
       const nextVersion = prev ? prev.pathVersion + 1 : 1;
       if (prev && prev.poppedOnce && strictlyBetter) reevaluations++;
 
@@ -46636,6 +46836,7 @@ function createLibraReadonlySourceContext(owner) {
         activation: score,
         pathVersion: nextVersion,
         poppedOnce: prev ? prev.poppedOnce : false,
+        accountedBytes: estimateStateBytes(nodeId, witness),
         witness: {
           seedNodeId: witness.seedNodeId,
           directScore: witness.directScore,
@@ -46716,8 +46917,19 @@ function createLibraReadonlySourceContext(owner) {
       ));
     };
 
-    let frontierStopReason = 'frontier_exhausted';
+    // Phase B (M05): Interleaved Frontier Pop & On-Demand Neighborhood Paging via Memory Lane
+    const requestedAdjacencyAnchors = new Set();
+    let frontierStopReason = workspaceBudgetExceeded ? 'workspace_byte_budget' : 'frontier_exhausted';
+
     while (frontier.length > 0) {
+      if (laneSession.isBudgetStopped()) {
+        frontierStopReason = 'lane_budget_stopped';
+        break;
+      }
+      if (workspaceBudgetExceeded) {
+        frontierStopReason = 'workspace_byte_budget';
+        break;
+      }
       sortFrontier();
       const top = frontier.shift();
       const current = stateByNode.get(top.nodeId);
@@ -46726,6 +46938,27 @@ function createLibraReadonlySourceContext(owner) {
         frontierStopReason = 'frontier_step_budget';
         break;
       }
+
+      if (current.witness.edgeChain.length < queryFrame.maxHops && !requestedAdjacencyAnchors.has(top.nodeId)) {
+        requestedAdjacencyAnchors.add(top.nodeId);
+        laneSession.enqueue({
+          laneRole: 'graph_neighborhood',
+          table: 'adjacency',
+          anchorNodeId: top.nodeId,
+          structuralOnly: false,
+          priorityHint: current.activation,
+          requesterId: `frontier:${top.nodeId}`
+        });
+        const stepDrain = laneSession.drainPending();
+        ingestAccesses(stepDrain.newAccesses);
+        if (stepDrain.stoppedByBudget) {
+          // Put the node back on the frontier since its neighborhood could not be fully loaded under budget
+          frontier.unshift(top);
+          frontierStopReason = 'lane_budget_stopped';
+          break;
+        }
+      }
+
       current.poppedOnce = true;
       poppedSteps++;
 
@@ -46786,6 +47019,11 @@ function createLibraReadonlySourceContext(owner) {
           basisIds: nextBases,
           sourceDependencies: [...nextDeps]
         });
+        if (workspaceBudgetExceeded) break;
+      }
+      if (workspaceBudgetExceeded) {
+        frontierStopReason = 'workspace_byte_budget';
+        break;
       }
     }
 
@@ -46848,6 +47086,9 @@ function createLibraReadonlySourceContext(owner) {
       || a.nodeId.localeCompare(b.nodeId, 'en')
     ));
 
+    // Finalize the Lane session to capture all accesses, role stats, and unread cursors
+    const laneReport = typeof laneSession.finalize === 'function' ? laneSession.finalize() : laneSession.drain();
+
     // D05: Distinguish local frontier/lane traversal completion from source projection / inventory truncation
     const truncationReasons = new Set([
       'node_work_budget',
@@ -46885,7 +47126,7 @@ function createLibraReadonlySourceContext(owner) {
     const sourceCoverageComplete = familyTruncations.length === 0
       && unreadInventoryCursors.length === 0
       && !explicitIncompleteWithoutReasons;
-    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted';
+    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
     const complete = traversalComplete && sourceCoverageComplete;
     const stopReason = !laneReport.complete
       ? `lane_${laneReport.stopReason}`
@@ -46915,9 +47156,14 @@ function createLibraReadonlySourceContext(owner) {
       diagnostics: {
         poppedFrontierSteps: poppedSteps,
         improvedPathReevaluations: reevaluations,
+        onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size,
+        l0WorkspaceBytes,
+        maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,
         laneBytesRead: laneReport.bytesRead,
+        laneCacheHits: laneReport.cacheHits || 0,
         laneCoalescedRequests: laneReport.coalescedRequests,
+        laneRoleStats: laneReport.roleStats || null,
         unreadCursors: laneReport.unreadCursors,
         unreadInventoryCursors
       },

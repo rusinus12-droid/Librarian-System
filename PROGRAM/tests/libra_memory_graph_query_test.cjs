@@ -345,6 +345,50 @@ test('V15 & D05: protected intermediate hub is blocked without mutating SourceGr
   assert.equal(truncRes.stopReason, 'projection_coverage_incomplete');
 });
 
+test('M04 & M05: frontier-integrated Lane requests per-anchor neighborhood pages on demand, enforces L0 workspace byte budget, and validates resumeCursors generation', () => {
+  const { query, graph, compiled } = buildStack(makeFourFamilySnapshot());
+  const qf = query.sealQueryFrame({
+    queryText: 'silver ring alice',
+    owner: baseFrame.owner,
+    scopeKey: baseFrame.scopeKey,
+    worldlineId: baseFrame.worldlineId
+  });
+  const view = query.openView(graph, compiled, qf);
+
+  // 1. Partial Lane page budget stops with unreadCursors that can be resumed in a subsequent retrieve()
+  const partialRes = query.retrieve(view, {
+    maxPages: 2,
+    maxBytes: 32768,
+    pageBytes: 1024
+  });
+  assert.equal(partialRes.complete, false);
+  assert.equal(partialRes.stopReason, 'lane_page_count_budget');
+  assert.ok(partialRes.diagnostics.unreadCursors.length > 0, 'Partial budget stop must emit unreadCursors');
+  assert.ok(partialRes.diagnostics.l0WorkspaceBytes > 1024, 'L0 workspace byte accounting must be tracked');
+
+  const resumedRes = query.retrieve(view, {
+    maxPages: 32,
+    maxBytes: 65536,
+    pageBytes: 1024,
+    resumeCursors: partialRes.diagnostics.unreadCursors
+  });
+  assert.equal(resumedRes.complete, true);
+  assert.ok(resumedRes.diagnostics.onDemandNeighborhoodAnchors >= 1, 'Frontier must issue per-anchor graph_neighborhood requests');
+  assert.ok(resumedRes.diagnostics.laneRoleStats.graph_neighborhood.requests >= 1);
+
+  // 2. Stale resumeCursor with mismatched generation must throw LIBRA_GRAPH_LANE_CURSOR_STALE
+  const staleCursor = { ...partialRes.diagnostics.unreadCursors[0], generation: 'stale-gen-id' };
+  assert.throws(
+    () => query.retrieve(view, { resumeCursors: [staleCursor] }),
+    /LIBRA_GRAPH_LANE_CURSOR_STALE/
+  );
+
+  // 3. Tight maxWorkspaceBytes stops traversal with workspace_byte_budget
+  const wsStopped = query.retrieve(view, { maxWorkspaceBytes: 2048 });
+  assert.equal(wsStopped.complete, false);
+  assert.equal(wsStopped.stopReason, 'workspace_byte_budget');
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();

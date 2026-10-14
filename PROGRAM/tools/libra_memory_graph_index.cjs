@@ -1,17 +1,25 @@
 'use strict';
-// UM2 Common Access Index: Node/Source directory, Paged Typed Adjacency (by direction/predicate),
-// 4-Channel Postings (lexical/entity/predicate/time), and Reverse Dependency mapping over a verified Memory Graph projection.
-// Pure and byte-measured via the shared createMemoryGraphPages adapter; issues no physical proof.
+// UM2 Common Access Index (M03, D06):
+// Node/Source directory, Paged Typed Adjacency (by direction/predicate with structural priority),
+// 4-Channel Postings (lexical/entity/predicate/time), and Transitive Reverse Dependency mapping.
+// Bound to generation/schema/tokenizer/DF scope, with table digests and shared accounted-byte page cache integration.
 module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize } = {}) {
   if (!pages || typeof pages.measure !== 'function' || typeof fingerprint !== 'function') {
     throw new TypeError('LIBRA_GRAPH_INDEX_ADAPTER_REQUIRED');
   }
   const schema = 'libra.memory_graph_index.v1';
+  const tokenizerVersion = 'libra.tokenizer.nfkc_v1';
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
     'updates', 'clears', 'supersedes', 'follows', 'fulfills', 'reopens',
     'defines', 'applies_to', 'contradicts'
   ]);
+  const poolForTable = Object.freeze({
+    directory: 'nodes',
+    adjacency: 'edges',
+    postings: 'units',
+    reverseDependencies: 'bases'
+  });
   const defaultTokenize = text => String(text || '')
     .normalize('NFKC')
     .toLowerCase()
@@ -27,7 +35,6 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       fail('input_invalid');
     }
 
-    // Read projection pools through the shared accounted-byte page cache when page() is available
     const normalizedGraph = {
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
@@ -214,7 +221,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       }
     }
 
-    // Ensure transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings
+    // Transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings (D06)
     for (const entry of revMap.values()) {
       for (const nId of [...entry.nodeIds]) {
         const nodeEntry = revMap.get(`node:${nId}`);
@@ -256,6 +263,13 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     for (const c of outDegree.values()) if (c > maxOutDegree) maxOutDegree = c;
     for (const c of inDegree.values()) if (c > maxInDegree) maxInDegree = c;
 
+    const tableDigests = Object.freeze({
+      directoryDigest: hash(JSON.stringify(directory)),
+      adjacencyDigest: hash(JSON.stringify(adjacency)),
+      postingsDigest: hash(JSON.stringify(postings)),
+      reverseDependenciesDigest: hash(JSON.stringify(reverseDependencies))
+    });
+    const dfScope = graph.coverage?.inventory?.inventoryComplete === true ? 'corpus_complete' : 'window_exact';
     const stats = {
       directoryCount: directory.length,
       adjacencyCount: adjacency.length,
@@ -268,12 +282,16 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       maxOutDegree,
       maxInDegree
     };
-    const indexDigest = hash(JSON.stringify([schema, partition, generation, stats]));
+    const indexDigest = hash(JSON.stringify([schema, tokenizerVersion, dfScope, partition, generation, stats, tableDigests]));
     return Object.freeze({
       schema,
+      projectionSchema: graph.schema,
+      tokenizerVersion,
+      dfScope,
       partition,
       generation,
       indexDigest,
+      tableDigests,
       directory,
       adjacency,
       postings,
@@ -295,7 +313,6 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       for (const e of hit.edgeIds) edgeIds.add(e);
       for (const p of hit.postingKeys) postingKeys.add(p);
     }
-    // Transitive expansion from affected nodes to their edges and postings (D06)
     for (const nId of [...nodeIds]) {
       const nodeHit = lookup.get(`node:${nId}`);
       if (!nodeHit) continue;
@@ -353,7 +370,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     if (offset > sourceRows.length) fail('offset_invalid');
 
     const selected = [];
-    let bytes = 2;
+    let bytes = 2, codeUnits = 2, tokens = 1;
     let stopReason = 'index_page_end';
     for (let i = offset; i < sourceRows.length; i++) {
       let size;
@@ -372,6 +389,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
             items: [],
             serializedUtf8Bytes: 2,
             pageBytes,
+            cacheHit: false,
             stopReason: 'row_exceeds_page',
             modelDispatchEligible: false
           };
@@ -386,9 +404,44 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       }
       selected.push(sourceRows[i]);
       bytes += sep + size.utf8Bytes;
+      codeUnits += sep + size.codeUnits;
+      tokens += size.tokens;
     }
     const nextOffset = offset + selected.length;
     if (nextOffset < sourceRows.length && stopReason === 'index_page_end') stopReason = 'page_boundary';
+
+    // M03: Route index page reads through the shared accounted-byte page cache when available
+    let decodedItems = null;
+    let cacheHit = false;
+    if (typeof pages.open === 'function' && typeof pages.install === 'function' && typeof pages.decode === 'function') {
+      let handle, stage, lease;
+      const beforeHits = typeof pages.inspect === 'function' ? pages.inspect().counters.hits : 0;
+      try {
+        handle = pages.open({ partition: compiled.partition, generation: compiled.generation });
+        const sizeObj = { utf8Bytes: bytes, codeUnits, tokens };
+        stage = pages.reserve(handle, pages.stageCost(sizeObj));
+        const text = JSON.stringify(selected);
+        const binding = {
+          pool: poolForTable[table] || 'units',
+          codec: 'json_array.v1',
+          digest: hash(text),
+          rows: selected.length
+        };
+        lease = pages.install(handle, binding, text, stage);
+        decodedItems = pages.decode(lease);
+        const afterHits = typeof pages.inspect === 'function' ? pages.inspect().counters.hits : 0;
+        cacheHit = afterHits > beforeHits;
+      } catch (_err) {
+        decodedItems = JSON.parse(JSON.stringify(selected));
+      } finally {
+        if (lease && typeof pages.release === 'function') pages.release(lease);
+        if (stage && typeof pages.releaseStage === 'function') pages.releaseStage(stage);
+        if (handle && typeof pages.close === 'function') pages.close(handle);
+      }
+    } else {
+      decodedItems = JSON.parse(JSON.stringify(selected));
+    }
+
     return {
       schema: 'libra.memory_graph_index_page.v1',
       table,
@@ -397,9 +450,10 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       offset,
       nextOffset,
       totalRows: sourceRows.length,
-      items: JSON.parse(JSON.stringify(selected)),
+      items: decodedItems,
       serializedUtf8Bytes: bytes,
       pageBytes,
+      cacheHit,
       stopReason,
       modelDispatchEligible: false
     };

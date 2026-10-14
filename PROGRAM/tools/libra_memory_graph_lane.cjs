@@ -1,7 +1,9 @@
 'use strict';
-// UM2 Next-Gen Memory Lane Scheduler: coordinates page access order across the 5 unified Lane roles
+// UM2 Next-Gen Memory Lane Scheduler (M04, M05):
+// Coordinates incremental/on-demand page access across the 5 unified Lane roles
 // (query_anchor_access, semantic_access, graph_neighborhood, temporal_state_access, context_expansion)
-// under a shared request byte/page budget without per-family top-K quotas or silent corpus exclusion.
+// under a shared request byte/page budget, supporting active frontier step/drainPending,
+// request coalescing, structural priority, and generation-verified cursor resumption.
 module.exports = function createMemoryGraphLane({ index, pages } = {}) {
   if (!index || typeof index.queryPage !== 'function' || !pages || typeof pages.measure !== 'function') {
     throw new TypeError('LIBRA_GRAPH_LANE_ADAPTER_REQUIRED');
@@ -20,7 +22,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
   const createSession = (compiledIndex, {
     maxPages = 16,
     maxBytes = 65536,
-    pageBytes = 8192
+    pageBytes = 8192,
+    resumeCursors = []
   } = {}) => {
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_required');
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256
@@ -33,10 +36,14 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
     const seenAccessKeys = new Map();
     const completedAccesses = [];
     const unreadCursors = [];
+    const roleStats = Object.fromEntries(Object.keys(rolePriority).map(role => [role, { pages: 0, bytes: 0, requests: 0 }]));
     let sequence = 0;
     let pagesRead = 0;
     let bytesRead = 0;
+    let cacheHits = 0;
     let coalescedRequests = 0;
+    let lastStopReason = 'frontier_exhausted';
+    let finalizedReport = null;
 
     const accessKeyOf = req => JSON.stringify([
       req.table,
@@ -95,6 +102,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
         return { coalesced: true, accessKey: key };
       }
 
+      roleStats[laneRole].requests++;
       const item = {
         accessKey: key,
         spec,
@@ -110,6 +118,31 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       return { coalesced: false, accessKey: key };
     };
 
+    if (Array.isArray(resumeCursors) && resumeCursors.length > 0) {
+      for (const cur of resumeCursors) {
+        if (!cur || typeof cur !== 'object') fail('cursor_invalid');
+        if ((cur.generation && cur.generation !== compiledIndex.generation)
+          || (cur.indexDigest && cur.indexDigest !== compiledIndex.indexDigest)) {
+          fail('cursor_stale');
+        }
+        const role = Array.isArray(cur.lanes) && validRoles.has(cur.lanes[0]) ? cur.lanes[0] : 'graph_neighborhood';
+        enqueue({
+          laneRole: role,
+          table: cur.table || 'adjacency',
+          anchorNodeId: cur.anchorNodeId || '',
+          direction: cur.direction || '',
+          predicate: cur.predicate || '',
+          structuralOnly: Boolean(cur.structuralOnly),
+          channel: cur.channel || '',
+          term: cur.term || '',
+          dependencyKey: cur.dependencyKey || '',
+          offset: Number.isSafeInteger(cur.offset) ? cur.offset : 0,
+          priorityHint: 0.95,
+          requesterId: 'resumed_cursor'
+        });
+      }
+    }
+
     const sortQueue = () => {
       queue.sort((a, b) => (
         a.effectiveRank - b.effectiveRank
@@ -118,96 +151,165 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       ));
     };
 
-    const drain = ({ checkCancel } = {}) => {
-      let stopReason = 'frontier_exhausted';
-      while (queue.length > 0) {
-        if (typeof checkCancel === 'function' && checkCancel() === true) {
-          stopReason = 'cancelled';
-          break;
-        }
-        if (pagesRead >= maxPages) {
-          stopReason = 'page_count_budget';
-          break;
-        }
-        sortQueue();
-        const next = queue[0];
-        const page = index.queryPage(compiledIndex, next.spec);
-        if (page.stopReason === 'row_exceeds_page') {
-          queue.shift();
-          unreadCursors.push({
-            accessKey: next.accessKey,
-            lanes: [...next.lanes],
-            table: next.spec.table,
-            offset: next.spec.offset,
-            stopReason: 'row_exceeds_page'
-          });
-          stopReason = 'row_exceeds_page';
-          continue;
-        }
-        if (bytesRead + page.serializedUtf8Bytes > maxBytes) {
-          stopReason = 'byte_budget';
-          break;
-        }
-        queue.shift();
-        next.completed = true;
-        pagesRead++;
-        bytesRead += page.serializedUtf8Bytes;
-        completedAccesses.push({
-          accessKey: next.accessKey,
-          lanes: [...next.lanes],
-          requesters: [...next.requesters],
-          table: page.table,
-          offset: page.offset,
-          nextOffset: page.nextOffset,
-          totalRows: page.totalRows,
-          serializedUtf8Bytes: page.serializedUtf8Bytes,
-          stopReason: page.stopReason,
-          items: page.items
-        });
-        if (page.nextOffset < page.totalRows) {
-          enqueue({
-            ...next.spec,
-            laneRole: next.lanes[0],
-            offset: page.nextOffset,
-            priorityHint: next.priorityHint,
-            requesterId: next.requesters[0] || ''
-          });
-        }
+    const step = ({ checkCancel } = {}) => {
+      if (queue.length === 0) {
+        return { executed: false, stopReason: 'frontier_exhausted', access: null };
       }
+      if (typeof checkCancel === 'function' && checkCancel() === true) {
+        lastStopReason = 'cancelled';
+        return { executed: false, stopReason: 'cancelled', access: null };
+      }
+      if (pagesRead >= maxPages) {
+        lastStopReason = 'page_count_budget';
+        return { executed: false, stopReason: 'page_count_budget', access: null };
+      }
+      sortQueue();
+      const next = queue[0];
+      const page = index.queryPage(compiledIndex, next.spec);
+      if (page.stopReason === 'row_exceeds_page') {
+        queue.shift();
+        unreadCursors.push({
+          accessKey: next.accessKey,
+          generation: compiledIndex.generation,
+          indexDigest: compiledIndex.indexDigest,
+          lanes: [...next.lanes],
+          table: next.spec.table,
+          anchorNodeId: next.spec.anchorNodeId,
+          direction: next.spec.direction,
+          predicate: next.spec.predicate,
+          structuralOnly: next.spec.structuralOnly,
+          channel: next.spec.channel,
+          term: next.spec.term,
+          offset: next.spec.offset,
+          stopReason: 'row_exceeds_page'
+        });
+        lastStopReason = 'row_exceeds_page';
+        return { executed: false, stopReason: 'row_exceeds_page', access: null };
+      }
+      if (bytesRead + page.serializedUtf8Bytes > maxBytes) {
+        lastStopReason = 'byte_budget';
+        return { executed: false, stopReason: 'byte_budget', access: null };
+      }
+      queue.shift();
+      next.completed = true;
+      pagesRead++;
+      bytesRead += page.serializedUtf8Bytes;
+      if (page.cacheHit) cacheHits++;
+      const primaryRole = next.lanes[0];
+      if (roleStats[primaryRole]) {
+        roleStats[primaryRole].pages++;
+        roleStats[primaryRole].bytes += page.serializedUtf8Bytes;
+      }
+      const access = {
+        accessKey: next.accessKey,
+        lanes: [...next.lanes],
+        requesters: [...next.requesters],
+        table: page.table,
+        anchorNodeId: next.spec.anchorNodeId,
+        channel: next.spec.channel,
+        term: next.spec.term,
+        offset: page.offset,
+        nextOffset: page.nextOffset,
+        totalRows: page.totalRows,
+        serializedUtf8Bytes: page.serializedUtf8Bytes,
+        cacheHit: Boolean(page.cacheHit),
+        stopReason: page.stopReason,
+        items: page.items
+      };
+      completedAccesses.push(access);
+      if (page.nextOffset < page.totalRows) {
+        enqueue({
+          ...next.spec,
+          laneRole: next.lanes[0],
+          offset: page.nextOffset,
+          priorityHint: next.priorityHint,
+          requesterId: next.requesters[0] || ''
+        });
+      }
+      return { executed: true, stopReason: 'frontier_exhausted', access };
+    };
 
+    const drainPending = ({ checkCancel } = {}) => {
+      const newAccesses = [];
+      let stoppedByBudget = false;
+      while (queue.length > 0) {
+        const res = step({ checkCancel });
+        if (!res.executed) {
+          if (res.stopReason === 'row_exceeds_page') continue;
+          stoppedByBudget = res.stopReason !== 'frontier_exhausted';
+          break;
+        }
+        newAccesses.push(res.access);
+      }
+      return {
+        stoppedByBudget,
+        stopReason: lastStopReason,
+        newAccesses,
+        pendingQueueLength: queue.length
+      };
+    };
+
+    const isBudgetStopped = () => (
+      lastStopReason === 'page_count_budget'
+      || lastStopReason === 'byte_budget'
+      || lastStopReason === 'cancelled'
+      || lastStopReason === 'row_exceeds_page'
+    );
+
+    const finalize = () => {
+      if (finalizedReport) return finalizedReport;
       while (queue.length > 0) {
         const pending = queue.shift();
         unreadCursors.push({
           accessKey: pending.accessKey,
+          generation: compiledIndex.generation,
+          indexDigest: compiledIndex.indexDigest,
           lanes: [...pending.lanes],
           table: pending.spec.table,
           anchorNodeId: pending.spec.anchorNodeId,
+          direction: pending.spec.direction,
+          predicate: pending.spec.predicate,
+          structuralOnly: pending.spec.structuralOnly,
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
-          stopReason
+          stopReason: lastStopReason
         });
       }
-
-      const complete = unreadCursors.length === 0 && stopReason === 'frontier_exhausted';
-      return {
+      const complete = unreadCursors.length === 0 && lastStopReason === 'frontier_exhausted';
+      finalizedReport = Object.freeze({
         schema,
         generation: compiledIndex.generation,
         indexDigest: compiledIndex.indexDigest,
         complete,
-        stopReason,
+        stopReason: lastStopReason,
         pagesRead,
         bytesRead,
+        cacheHits,
         coalescedRequests,
+        roleStats: JSON.parse(JSON.stringify(roleStats)),
         accesses: completedAccesses,
         unreadCursors,
         corpusExclusionAuthority: false,
         familyTopKQuota: false,
         modelDispatchEligible: false
-      };
+      });
+      return finalizedReport;
     };
 
-    return Object.freeze({ enqueue, drain });
+    const drain = ({ checkCancel } = {}) => {
+      drainPending({ checkCancel });
+      return finalize();
+    };
+
+    return Object.freeze({
+      enqueue,
+      step,
+      drainPending,
+      isBudgetStopped,
+      finalize,
+      drain
+    });
   };
 
   return Object.freeze({ createSession });
