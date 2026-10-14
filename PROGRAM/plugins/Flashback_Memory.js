@@ -4338,6 +4338,13 @@ const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
   const localOnlyOwner = options.storagePolicy === 'local_only';
+  // The unified engine's read source (the LIBRA owner read-session) is supplied by the host that embeds
+  // this client. Without it a unified read is refused rather than quietly served from the server's read.
+  const unifiedReadProviderOption = options.unifiedReadProvider;
+  // A provider object (or a getter returning one) is accepted; anything else cannot serve a unified read.
+  const resolveUnifiedReadProvider = () => (typeof unifiedReadProviderOption === 'function'
+    ? unifiedReadProviderOption()
+    : (unifiedReadProviderOption && typeof unifiedReadProviderOption === 'object' ? unifiedReadProviderOption : null));
   const managerOnly = options.storagePolicy === 'manager_only';
   const managerOnlyError = () => Object.assign(new Error('MEMORY_SUITE_MANAGER_ONLY_POLICY'), {code:'MEMORY_SUITE_MANAGER_ONLY_POLICY'});
   const localOnlyError = () => Object.assign(new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'), {code:'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'});
@@ -11952,6 +11959,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!Number.isSafeInteger(maxCorpusBytes)||maxCorpusBytes<1||maxCorpusBytes>33554432)reject('LIB_READ_BUDGET_INVALID');
     const checkAbort=()=>{if(readOptions.signal?.aborted)reject('LIB_READ_CANCELED');};
     checkAbort();
+    const readSource=readOptions.source === undefined ? 'server_logical_read' : String(readOptions.source);
+    if(!['server_logical_read','unified_engine'].includes(readSource))reject('LIB_READ_SOURCE_UNSUPPORTED');
     if (namespace !== 'libra' || pluginId !== 'serial_gradation_agents_for_rp') reject('LIB_READ_PRINCIPAL_REQUIRED');
     const sourceScope={};
     for(const key of ['scopeKey','characterId','chatId']){const value=scopeInput?.[key];if(typeof value!=='string'||!value.trim()||value.length>512||/[\r\n\0]/.test(value))reject('LIB_READ_SCOPE_INVALID');sourceScope[key]=value;}
@@ -12044,7 +12053,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
       return payload.result;
     };
-    const result=await read('capture',{scope:sourceScope,maxCorpusBytes});
+    const unifiedReadProvider=readSource==='unified_engine'?resolveUnifiedReadProvider():null;
+    if(readSource==='unified_engine'&&(!unifiedReadProvider||typeof unifiedReadProvider.capture!=='function'||typeof unifiedReadProvider.current!=='function'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+    // Same envelope, same validation below: only where the answer comes from changes.
+    const sourceRead=readSource==='unified_engine'?async(action,body)=>{
+      checkAbort();
+      const answer=action==='capture'
+        ? await unifiedReadProvider.capture({scope:body?.scope,maxCorpusBytes:body?.maxCorpusBytes,signal:readOptions.signal})
+        : await unifiedReadProvider.current({proof:body,signal:readOptions.signal});
+      checkAbort();
+      if(!answer||typeof answer!=='object')reject('LIB_READ_UNIFIED_UNAVAILABLE');
+      return answer;
+    }:read;
+    const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes});
     if(result?.schema!=='memory-suite.libra-read-session.v1'||result.readOnly!==true||result.complete!==true
       ||result.dataInstanceId!==connection.dataInstanceId||result.resetEpoch!==epoch
       ||JSON.stringify(result.scope)!==JSON.stringify(sourceScope)||!/^[a-f0-9]{64}$/.test(result.evidenceRevision||'')
@@ -12062,8 +12083,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       evidenceRevision:result.evidenceRevision,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch});
     localCurrent();
     return Object.freeze({snapshot,
+      source:readSource,
+      ...(readSource==='unified_engine'&&result&&typeof result==='object'&&result.engine?{engine:result.engine}:{}),
       assertCurrentSync:()=>{localCurrent();assertConnectionState(connection.url);return true;},
-      assertCurrent:async()=>{const now=await read('current',proof);
+      assertCurrent:async()=>{const now=await sourceRead('current',proof);
         if(now?.schema!=='memory-suite.libra-read-session-current.v1'||now.current!==true||JSON.stringify(now.scope)!==JSON.stringify(sourceScope)||now.evidenceRevision!==proof.evidenceRevision
           ||now.dataInstanceId!==connection.dataInstanceId||now.resetEpoch!==epoch)reject('LIB_READ_STALE');localCurrent();return true;}
     });

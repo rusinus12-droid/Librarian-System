@@ -48,6 +48,26 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | N01 | P1 · 부분 구현 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
 | N03 | P1 · 기존 서버 읽기만 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
+
+### N03 진척 — 읽기 출처(source) 계약
+
+**한 것**
+
+- 읽기 세션에 **출처**를 도입했다. `openReadSession(scope, {source})` — `server_logical_read`(기본, 기존 경로 그대로) 또는 `unified_engine`. 모르는 출처는 이름으로 거부한다(`LIB_READ_SOURCE_UNSUPPORTED`).
+- **조용한 대체 금지**: `unified_engine`을 요청했는데 통합 엔진 읽기 공급자가 없으면 서버 읽기로 대신 답하지 않고 거부한다(`LIB_READ_UNIFIED_UNAVAILABLE`). 실측으로 이 경우 서버 호출 수가 **0**임을 확인했다.
+- 통합 엔진의 답변도 **같은 봉투**로 검증된다: scope·evidenceRevision(64자 digest)·corpusBytes·item shape 검사가 그대로 적용된다. 통합 세션에는 `source: 'unified_engine'`과 `engine`(예: 세대 `mgm1:5`)이 추가로 실리고, `assertCurrent()`도 같은 출처에 다시 묻는다(현재성 계약 유지).
+- GRADIA 소비자는 **요청한 출처를 검증**한다: 바인딩이 `readSource`를 선언하고 클라이언트에 그대로 전달하며, 돌아온 세션의 출처가 다르면 거부한다(`LIB_READ_SOURCE_MISMATCH`). 계약 문자열(`existing-server-logical-read.v1`)은 **바꾸지 않았다** — 예산·스코프 게이트가 그 계약에 걸려 있어서 계약을 바꾸면 조용히 약해진다. 출처는 `readSource`와 `selection.readSource`로 따로 보고된다.
+- 게이트는 실제 코드에 있다: `sdk/MemorySuiteStorageClient.source.js`(읽기 클라이언트) → `sync_embedded_sdk.cjs`로 6개 플러그인에 재삽입, `check_sdk_sync.cjs` OK. GRADIA 쪽 검증은 `plugins/GRADIA.js` 소비자에 있다.
+
+**검증**
+
+- 신규 `tests/libra_gradia_unified_read_source_test.cjs` → **10 PASS**: 기본 출처 불변 / 공급자 없는 통합 요청 거부(서버 호출 0) / 미지 출처 거부 / 통합 세션 서빙(서버 호출 0, `engine` 전달) / 봉투 위반 3종(scope·예산·revision) 거부 / 현재성 실패(`LIB_READ_STALE`) / 소비자의 기본 경로 불변 / 서버 읽기의 통합 위장 거부 / 통합 세션 수용(예산 게이트 유지) / 캡처 전 미지 출처 거부.
+- 영향권 기존 스위트 9종 PASS: `gradia_readonly_sdk`, `gradia_readonly_cross_project`, `gradia_three_owner_sdk`, `gradia_three_owner_consumer`, `gradia/lib-read-consumer`, `gradia/server-read-adapter`, `gradia/evidence-bridge`, `composed_reanalysis_gradia_runtime`, `review_readonly_worst_escape`.
+
+**남은 것 (명시)**
+
+- **통합 엔진 읽기 공급자 자체는 아직 연결하지 않았다.** 이 증분은 출처 계약·거부·검증까지다. 공급자(owner read-session, N00)가 연결되면 GRADIA 셰도우·AIDE가 통합 결과를 읽는다. 지금 `unified_engine`을 켜면 GRADIA는 **거부**한다 — 그것이 의도된 동작이다.
+- 실제 설치 RisuAI 호스트에서의 셰도우/AIDE 파이프라인 검증은 미완(E4).
 | N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
 | N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
 | N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |

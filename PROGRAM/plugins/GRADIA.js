@@ -28729,8 +28729,16 @@ function createGradiaEvidenceBudget({ digest }) {
         if (typeof input.pipelineSnapshot === 'function') input.pipelineSnapshot();
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
-        let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal }));
+        const readSource = String(binding.readSource || 'server_logical_read');
+        if (!['server_logical_read','unified_engine'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
+        let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource }));
         await assertBinding();
+        // The declared source must be the one that answered. A silent fall back to the server read would
+        // present unqualified evidence as the unified engine's answer.
+        if (String(read?.source || 'server_logical_read') !== readSource) fail('LIB_READ_SOURCE_MISMATCH');
+        // Captured now: the consumer nulls its references before returning, so the engine identity has to
+        // be read while the client session is still in hand.
+        const readEngine = read?.engine && typeof read.engine === 'object' ? freeze(copyMeta(read.engine)) : null;
         let raw = read?.snapshot;
         const multipleOwners = client.schema === 'memory-suite.memory-read-client.v1';
         const allowedOwners = ['libra','hayaku','flashback'];
@@ -28800,7 +28808,7 @@ function createGradiaEvidenceBudget({ digest }) {
         record.evidence = freeze({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected });
         const selection = Object.freeze({ corpusBytes, corpusItems: corpus.length, selectedItems: selected.length,
           omittedItems: candidates.length - selected.length, ...(multipleOwners ? {deduplicatedItems,owners:allowedOwners.filter(owner=>corpus.some(item=>item.owner===owner))} : {}),
-          truncated: false, promptByteLimit: 65536,
+          truncated: false, promptByteLimit: 65536, readSource,
           reason: selected.length === candidates.length ? 'all_complete_items' : 'complete_items_prompt_budget' });
         const assertCurrent = async () => {
           try { await assertBinding(); if (await guarded(() => assertReadCurrent()) !== true) fail('LIB_READ_STALE'); await assertBinding(); check(record); return true; }
@@ -28808,7 +28816,12 @@ function createGradiaEvidenceBudget({ digest }) {
         };
         await assertCurrent();
         dependencies.onSelection?.(selection);
-        return Object.freeze({ status: 'ready', contract: 'existing-server-logical-read.v1', nativeScope: freeze(scope), selection,
+        // The contract stays the same because it describes the envelope the budget and scope gates are
+        // built on; which engine answered is reported separately so a unified read cannot pass as a
+        // server read, or the reverse.
+        return Object.freeze({ status: 'ready', contract: 'existing-server-logical-read.v1', readSource,
+          ...(readEngine ? { engine: readEngine } : {}),
+          nativeScope: freeze(scope), selection,
           invalidate: reason => stop(record, /^LIB_READ_/.test(reason || '') ? reason : 'LIB_READ_INVALIDATED'),
           assertLocalCurrent: () => { check(record); try { if (assertReadCurrentSync() !== true) fail('LIB_READ_STALE'); } catch (_) { stop(record, 'LIB_READ_STALE'); fail('LIB_READ_STALE'); } },
           assertCurrent, getEvidence: async () => { await assertCurrent(); return record.evidence; },
