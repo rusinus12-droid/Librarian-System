@@ -65314,6 +65314,13 @@ ${string(queryBundle?.sceneText || '')}`;
             ...(activeView.cutoffTurn != null ? { asOfTurn: Number(activeView.cutoffTurn) } : {}),
             ...(suppliedBundle?.unifiedQueryInput && typeof suppliedBundle.unifiedQueryInput === 'object' ? suppliedBundle.unifiedQueryInput : {})
           },
+          // A caller may ask for a specific slice of the source window (the owner's own cursor from a
+          // published generation). Without it the query reads the default window, exactly as before.
+          ...(suppliedBundle?.unifiedWindow && typeof suppliedBundle.unifiedWindow === 'object' && !Array.isArray(suppliedBundle.unifiedWindow) ? {
+            limit: suppliedBundle.unifiedWindow.limit ?? undefined,
+            canonicalCursor: suppliedBundle.unifiedWindow.canonicalCursor ?? undefined,
+            microCursor: suppliedBundle.unifiedWindow.microCursor ?? undefined
+          } : {}),
           consumerPolicy: suppliedBundle?.consumerPolicy && typeof suppliedBundle.consumerPolicy === 'object'
             ? suppliedBundle.consumerPolicy
             : {
@@ -65356,6 +65363,8 @@ ${string(queryBundle?.sceneText || '')}`;
           packet: unifiedExec.packet,
           bundle: unifiedExec.bundle,
           unifiedExecution: unifiedExec,
+          windowRead: unifiedExec.windowRead || null,
+          nextWindow: unifiedExec.nextWindow || null,
           diagnostics: {
             candidates: asArray(unifiedExec.bundle?.items).length,
             unifiedMemoryEngine: {
@@ -72205,6 +72214,13 @@ ${string(queryBundle?.sceneText || '')}`;
         limit: options.limit ?? 20,
         nodeLimit: options.nodeLimit ?? 2048
       };
+      // The window request is an input like any other: the store path already bounds limit/nodeLimit, and
+      // a query that silently accepted an out-of-range window would report a slice nobody asked for.
+      for (const name of ['canonicalCursor','microCursor']) {
+        if (typeof sourceOptions[name] !== 'string' || sourceOptions[name].length > 2048) throw new Error('LIBRA_GRAPH_QUERY_OPTIONS_INVALID');
+      }
+      if (!Number.isSafeInteger(sourceOptions.limit) || sourceOptions.limit < 1 || sourceOptions.limit > 50) throw new Error('LIBRA_GRAPH_QUERY_LIMIT_INVALID');
+      if (!Number.isSafeInteger(sourceOptions.nodeLimit) || sourceOptions.nodeLimit < 1 || sourceOptions.nodeLimit > 8192) throw new Error('LIBRA_GRAPH_QUERY_NODELIMIT_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       const suite = ensureMemoryGraphUnifiedSuite();
       let initialCollected = null;
@@ -72360,7 +72376,26 @@ ${string(queryBundle?.sceneText || '')}`;
         ownerVerifier,
         semanticAccessComplete: !semanticBudgetStopped
       });
+      // N01: a query reads a slice of the source window, so it has to say which slice it read and where
+      // the owner says the next one starts — otherwise a window-bounded answer looks like a whole-history
+      // answer. The inventory is the owner's own coverage record, carried through unchanged.
+      const windowInventory = clone(graph.coverage?.inventory || null);
+      const windowNext = { canonicalCursor: string(windowInventory?.canonicalNextCursor || ''), microCursor: string(windowInventory?.microNextCursor || '') };
       const result = Object.freeze({ ...execution,
+        windowRead: Object.freeze({
+          schema: 'libra.graph_query_window.v1',
+          limit: sourceOptions.limit,
+          canonicalCursor: sourceOptions.canonicalCursor,
+          microCursor: sourceOptions.microCursor,
+          projectionComplete: graph.coverage?.projectionComplete !== false,
+          inventory: windowInventory
+        }),
+        nextWindow: windowNext.canonicalCursor || windowNext.microCursor
+          ? Object.freeze({
+              schema: 'libra.graph_next_window.v1', ...windowNext, reason: 'owner_reported_unread',
+              families: Object.freeze(['canonical', 'micro'].filter(family => windowNext[family + 'Cursor']))
+            })
+          : null,
         diagnostics: { ...execution.diagnostics,
         nativeSemantic: nativeSemantic?.diagnostics || { status: 'caller_supplied', authority: 'unverified_relevance_signals' } },
         additionalEmbeddingCalls: nativeSemantic?.diagnostics.queryRequestCount || 0 });

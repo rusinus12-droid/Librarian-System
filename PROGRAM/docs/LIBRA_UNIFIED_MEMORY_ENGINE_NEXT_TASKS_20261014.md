@@ -94,6 +94,11 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **여기서 멈춘 것**: 이어받은 창이 실제 **질의 결과**로 이어지는지, 그리고 실제 읽힌 shard/cache/Lane 경로 관찰은 아직이다. 이번 증분은 열거·게시·검증까지다.
 - **검증하지 않은 표현 정정**: 앞선 커밋 메시지와 이 문서 초판은 이어받은 구간을 "더 오래된 구간"이라고 적었다. 실제로 확인한 것은 "창이 덮지 않은 나머지 구간"까지이며, 그 구간이 시간상 어느 방향인지는(자료별 정렬 순서에 따른다) 측정하지 않았다. `mgm1`/`mgc1` 커서는 owner가 준 다음 위치를 그대로 이어받을 뿐이고, 방향은 이 계층이 정하지 않는다.
 
+- **연결 (넷째 증분) — 질의 도달**: 질의도 자기 창을 말하고, 주인이 준 커서로 창 밖 구간을 읽을 수 있다. recall의 통합 분기와 통합 질의가 `unifiedWindow`(`limit`/`canonicalCursor`/`microCursor`)를 받아 owner 커서를 그대로 전달하고, 결과의 `windowRead`(`libra.graph_query_window.v1` — limit·커서·owner inventory·`projectionComplete`)와 `nextWindow`가 어느 창을 읽었고 어디가 남았는지 밝힌다.
+- **측정한 방향 (이번에 실제로 확인)**: fixture·plugin_only 합성 호스트에서 기본 창(`limit 1`)은 turn 0–5를 읽고 turn 6의 Micro 기억이 **없으며** `deliveryOutcome: partial`·`microRead 0`·다음 커서 `mgm1:1`을 낸다. 주인 커서 `mgm1:5`로 이어받으면 turn 0–**6**을 읽어 그 Micro 기억이 **나오고** `deliveryOutcome: complete`·`microRead 1`·다음 커서 없음이 된다. 즉 커서는 자료의 자체 순서를 **앞쪽(턴 번호가 커지는 방향)** 으로 진행한다 — 이번에 측정한 사실이며, 일반화는 하지 않는다.
+- **함께 고친 결함**: 질의 경로에 창 크기 검증이 없어 `limit: 51` 같은 요청이 조용히 통과했다(저장소 경로는 1–50으로 검증한다). 이제 `limit` 1–50·`nodeLimit` 1–8192·커서 문자열 길이를 검증하고 위반은 `LIBRA_GRAPH_QUERY_LIMIT_INVALID`/`NODELIMIT_INVALID`로 거부한다.
+- 재현: `node PROGRAM/tests/libra_memory_graph_query_window_runtime_test.cjs` → 4 PASS(창 보고, 창 밖 기억의 질의 도달, 남은 커서 반환, 위조·범위 밖 커서 거부).
+
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
 ## 5. N02 — 자료별 semantic 표현
