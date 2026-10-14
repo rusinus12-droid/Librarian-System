@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T00:46:26.766Z",
+  "generatedAt": "2026-10-14T01:33:05.232Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2524,8 +2524,8 @@
       "bytes": 8022
     },
     "docs/LIBRA_MEMORY_NETWORK_CONTRACT.md": {
-      "sha256": "6084cb60a00021c13c542e3fdca68292260851d3145a7fce8cfbf907fd9611b2",
-      "bytes": 35824
+      "sha256": "463c6dc67adcb762d0e56acc4d5917a0da82eb1565413710e01fa5adba3b2705",
+      "bytes": 36367
     },
     "docs/LIBRA_MODEL_SUMMARY_2.3.53.md": {
       "sha256": "da749705ee7876252213a252cb672a33dc205ac200cd3193228a9f4e2d13fd71",
@@ -2620,8 +2620,16 @@
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "5e897e87ee507a83999f3560d15f52ddbb732da2804e66284d76cb91e5faf05f",
-      "bytes": 71777
+      "sha256": "eda45e68a955b01959c3e93e2007a4f4e478758a53758c7115e6fb5e31c6261d",
+      "bytes": 73278
+    },
+    "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
+      "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
+      "bytes": 21942
+    },
+    "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
+      "sha256": "0f1b8a4cf19a9b40fd79d614f52e9eccbacb5acc8fc37b7a76be103d6d32c571",
+      "bytes": 20588
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
