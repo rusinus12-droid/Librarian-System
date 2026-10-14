@@ -88,10 +88,11 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **여전히 하지 않은 것**: 미독 cursor를 실제 유지보수 열거에 사용해 **최근 창 밖의 오래된 기억을 질의로 발견**하는 것(N01 완료 기준) — 셋째 증분에서 열거·게시까지 연결했고 질의 도달은 남았다, 그리고 실제 읽힌 shard/cache/Lane 경로 관찰이다. 지금 연결은 게시·기록·검증까지다.
 - **하지 않은 것**: 이 증분은 계약·검증까지다. 이 inventory/delta를 store generation manifest에 싣고, 미독 cursor를 실제 유지보수 열거에 사용하는 연결은 다음 증분이다. 연결되지 않은 factory를 플러그인에 늘리지 않기 위해 아직 내장하지 않았다.
 
-- **연결 (셋째 증분)**: 게시된 미독 지점이 이제 **실행 가능한 핸들**이다. 세대 기록·빌드 결과·검증된 read가 `nextWindow`(`libra.graph_next_window.v1` — `canonicalCursor`/`microCursor`/`families`/`reason`)를 돌려주고, `buildMemoryGraphGeneration({continueFromPublished:true})`가 그 지점에서 열거를 이어받아 **창 밖(더 오래된) 구간**을 새 세대로 게시한다. 결과에 `continuedFrom`(기준 세대·커서)이 남고 delta basis는 `previous_window`가 된다.
+- **연결 (셋째 증분)**: 게시된 미독 지점이 이제 **실행 가능한 핸들**이다. 세대 기록·빌드 결과·검증된 read가 `nextWindow`(`libra.graph_next_window.v1` — `canonicalCursor`/`microCursor`/`families`/`reason`)를 돌려주고, `buildMemoryGraphGeneration({continueFromPublished:true})`가 그 지점에서 열거를 이어받아 **창이 덮지 않은 나머지 구간**을 새 세대로 게시한다. 결과에 `continuedFrom`(기준 세대·커서)이 남고 delta basis는 `previous_window`가 된다.
 - 창 요청은 세대 신원의 일부이므로 이어받으면 **다른 슬롯**에 게시된다. 그래서 이어받는 빌드는 기준 세대를 명시하고, 저장소가 그 기준을 직접 로드·검증한다(`base_generation_mismatch`로 거부). 호출자가 준 데이터를 신뢰하지 않는다.
 - 재현: `node PROGRAM/tests/libra_memory_graph_continuation_runtime_test.cjs` → 3 PASS(게시된 핸들 회수, 이어받아 게시, 미게시 상태에서 이어받기 거부 + 옵션 검증), `node PROGRAM/tests/libra_memory_graph_inventory_store_test.cjs` → 7 PASS(기준 세대 검증 포함).
-- **여기서 멈춘 것**: 이어받은 창이 실제 **질의 결과**로 오래된 기억에 도달하는지와, 실제 읽힌 shard/cache/Lane 경로 관찰은 아직이다. 이번 증분은 열거·게시·검증까지다.
+- **여기서 멈춘 것**: 이어받은 창이 실제 **질의 결과**로 이어지는지, 그리고 실제 읽힌 shard/cache/Lane 경로 관찰은 아직이다. 이번 증분은 열거·게시·검증까지다.
+- **검증하지 않은 표현 정정**: 앞선 커밋 메시지와 이 문서 초판은 이어받은 구간을 "더 오래된 구간"이라고 적었다. 실제로 확인한 것은 "창이 덮지 않은 나머지 구간"까지이며, 그 구간이 시간상 어느 방향인지는(자료별 정렬 순서에 따른다) 측정하지 않았다. `mgm1`/`mgc1` 커서는 owner가 준 다음 위치를 그대로 이어받을 뿐이고, 방향은 이 계층이 정하지 않는다.
 
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
