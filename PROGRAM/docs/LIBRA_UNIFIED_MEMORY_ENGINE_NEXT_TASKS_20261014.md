@@ -81,6 +81,11 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - 지원 등급은 `FAMILY_SUPPORT_PROFILES`가 자료별로 선언하고, 각 선언의 **근거 심볼**을 명시해 스위트가 실제 플러그인에서 그 심볼을 확인한다(사라지면 실패). lore만 tombstone(`removals`·`confirmations`)을 보고할 수 있고, canonical·micro·state에서 사라진 항목은 `unobservableRemoval`로 남는다 — owner가 지원하지 않는 변경 기록을 만들어내지 않는다.
 - cursor는 **열거 digest에 결속**된다. 집합이 바뀐 뒤 이전 cursor로 이어받으면 `cursor_stale`로 거부한다(조용한 누락 방지).
 - 잘린 page는 전체 family와 diff할 수 없다(`delta_requires_whole_family`). 페이지 밖 항목이 허위 삭제로 보고되는 경로를 막는다. 전체 열거라도 완료 선언이 없으면 `deltaComplete:false`(`coverage_not_declared`)이다.
+- **연결 (둘째 증분)**: 생성 게시물이 이제 자기 세대가 **각 자료의 어느 부분을 덮는지** 기록한다. `createMemoryGraphStore`가 inventory 커널을 주입받아 `sourceInventory`(자료별 page + 병합 집합)·`sourceInventoryDeltas`·`sourceInventoryDeltaBasis`를 세대 manifest에 싣고, build 결과·검증된 read가 같은 값을 돌려준다. owner가 보고한 미독 cursor(`coverage.inventory.*NextCursor`)는 `unread`/`ownerCursors`로 그대로 드러난다.
+- **창이 바뀐 비교의 안전 규칙**: 미독 cursor의 목적 자체가 "다음 창은 이전 창이 멈춘 곳에서 이어진다"이므로 창이 달라도 delta를 계산한다. 다만 그때 사라진 항목은 tombstone 지원 여부와 무관하게 `unobservableRemoval`(사유 `window_changed`)로만 남기고 `removed`로 부르지 않는다. delta가 없는 경우도 `basis`(`inventory_disabled`·`no_previous_generation`·`previous_generation_without_inventory`·`same_window`·`previous_window`)로 이유를 밝힌다.
+- 한 page가 family 전체보다 크면(창이 한 page보다 큼) delta는 `delta_requires_whole_family`로 건너뛰고 `skipped`에 남는다 — 페이지 밖 항목을 삭제로 오인하지 않기 위해서다.
+- 재현: `node PROGRAM/tests/libra_memory_graph_inventory_store_test.cjs` → 6 PASS(창 기록·delta·미독 cursor·커널 미주입 시 무주장·알 수 없는 family 무시), `node PROGRAM/tests/libra_memory_graph_inventory_test.cjs` → 10 PASS.
+- **여전히 하지 않은 것**: 미독 cursor를 실제 유지보수 열거에 사용해 **최근 창 밖의 오래된 기억을 질의로 발견**하는 것(N01 완료 기준), 그리고 실제 읽힌 shard/cache/Lane 경로 관찰이다. 지금 연결은 게시·기록·검증까지다.
 - **하지 않은 것**: 이 증분은 계약·검증까지다. 이 inventory/delta를 store generation manifest에 싣고, 미독 cursor를 실제 유지보수 열거에 사용하는 연결은 다음 증분이다. 연결되지 않은 factory를 플러그인에 늘리지 않기 위해 아직 내장하지 않았다.
 
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.

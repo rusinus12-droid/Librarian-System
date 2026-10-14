@@ -75,7 +75,7 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
 
   const enumerationDigest = entries => hash(entries.map(entry => [entry.key, entry.revision]));
 
-  const buildSourceInventory = ({ family, entries = [], cursor = null, pageSize = 128, complete = false } = {}) => {
+  const buildSourceInventory = ({ family, entries = [], cursor = null, pageSize = 128, complete = false, ownerUnread = [] } = {}) => {
     const profile = profileFor(family);
     if (!profile) fail('family_unsupported');
     const all = normalizeEntries(entries);
@@ -88,6 +88,13 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
       if (text(cursor.digest) !== digest) fail('cursor_stale');
       if (!Number.isSafeInteger(cursor.offset) || cursor.offset < 0 || cursor.offset > all.length) fail('cursor_invalid');
       offset = cursor.offset;
+    }
+    if (!Array.isArray(ownerUnread)) fail('owner_unread_invalid');
+    const reportedUnread = [];
+    for (const region of ownerUnread) {
+      if (text(region?.family) !== profile.family) fail('owner_unread_family_mismatch');
+      if (!text(region.cursor)) fail('owner_unread_cursor_required');
+      reportedUnread.push(Object.freeze({ family: profile.family, cursor: text(region.cursor), reason: text(region.reason) || 'owner_cursor' }));
     }
     const page = all.slice(offset, offset + size);
     const nextOffset = offset + page.length;
@@ -104,14 +111,17 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
       enumerated: Object.freeze({ from: offset, to: nextOffset, total: all.length }),
       coverage: pageCoverage,
       // A page boundary is an unread region, not a hidden one: callers must be able to report it.
-      unread: Object.freeze(truncated ? [{ family: profile.family, from: nextOffset, reason: 'page_boundary' }] : []),
+      unread: Object.freeze([
+        ...(truncated ? [{ family: profile.family, from: nextOffset, reason: 'page_boundary' }] : []),
+        ...reportedUnread
+      ]),
       nextCursor: Object.freeze(truncated ? { schema: 'libra.source_inventory_cursor.v1', family: profile.family, offset: nextOffset, digest } : null),
       removalObservable: profile.removalObservable === true,
       support: profile
     });
   };
 
-  const diffInventories = (previous, next) => {
+  const diffInventories = (previous, next, options = {}) => {
     if (!previous || !next || previous.schema !== 'libra.source_inventory.v1' || next.schema !== 'libra.source_inventory.v1') fail('delta_requires_inventories');
     if (previous.family !== next.family) fail('delta_family_mismatch');
     const profile = profileFor(previous.family);
@@ -121,6 +131,10 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
     // only downgrades deltaComplete.
     const wholeFamily = value => value.nextCursor === null && value.enumerated.from === 0;
     if (!wholeFamily(previous) || !wholeFamily(next)) fail('delta_requires_whole_family');
+    // Two generations can cover different source windows. Then an entry that is absent from the new
+    // window is outside it — not deleted — whatever the owner's tombstone support is, and the delta
+    // says so instead of reporting a removal it cannot observe.
+    const windowChanged = options.windowChanged === true;
     const before = new Map(previous.entries.map(entry => [entry.key, entry]));
     const after = new Map(next.entries.map(entry => [entry.key, entry]));
     const added = [];
@@ -137,11 +151,12 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
     for (const key of before.keys()) {
       if (after.has(key)) continue;
       // An entry that disappeared is only a deletion where the owner reports tombstones.
-      if (profile.removalObservable === true) removed.push(key); else unobservableRemoval.push(key);
+      if (!windowChanged && profile.removalObservable === true) removed.push(key); else unobservableRemoval.push(key);
     }
     for (const [key, entry] of after) if (entry.revision === null) unverified.push(key);
     for (const inventory of [previous, next]) if (inventory.coverage !== 'complete') reasons.push('coverage_not_declared');
-    if (unobservableRemoval.length && profile.removalObservable !== true) reasons.push('removal_not_observable');
+    if (windowChanged) reasons.push('window_changed');
+    else if (unobservableRemoval.length && profile.removalObservable !== true) reasons.push('removal_not_observable');
     if (unverified.length) reasons.push('revision_unverifiable');
     return Object.freeze({
       schema: 'libra.source_inventory_delta.v1',
@@ -153,6 +168,7 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
       unverified: Object.freeze(unverified.sort((a, b) => a.localeCompare(b, 'en'))),
       unread: Object.freeze([...previous.unread, ...next.unread]),
       removalObservable: profile.removalObservable === true,
+      windowChanged,
       deltaComplete: reasons.length === 0,
       reasons: Object.freeze(reasons)
     });
@@ -164,6 +180,7 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
     const unreadRegions = [];
     const unverified = [];
     const removalsNotObservable = [];
+    const ownerCursors = [];
     let complete = inventories.length > 0;
     for (const inventory of inventories) {
       if (!inventory || inventory.schema !== 'libra.source_inventory.v1') fail('inventory_invalid');
@@ -172,6 +189,7 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
       if (inventory.coverage !== 'complete') complete = false;
       unreadRegions.push(...inventory.unread);
       if (inventory.removalObservable !== true) removalsNotObservable.push(inventory.family);
+      for (const region of inventory.unread) if (region.cursor) ownerCursors.push({ family: inventory.family, cursor: region.cursor, reason: region.reason });
       for (const entry of inventory.entries) if (entry.revision === null) unverified.push({ family: inventory.family, key: entry.key });
     }
     return Object.freeze({
@@ -180,6 +198,7 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
       missingFamilies: Object.freeze(SOURCE_FAMILIES.filter(family => !seen.has(family))),
       coverage: complete && seen.size === SOURCE_FAMILIES.length ? 'complete' : 'partial',
       unreadRegions: Object.freeze(unreadRegions),
+      ownerCursors: Object.freeze(ownerCursors),
       unverified: Object.freeze(unverified),
       removalsNotObservable: Object.freeze(removalsNotObservable),
       byteBounded: false

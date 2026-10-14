@@ -45461,8 +45461,12 @@ function createLibraReadonlySourceContext(owner) {
   return Object.freeze({ open, reserve, releaseStage, close, acquire, install, decode, release, measure, stageCost,
     generation, page, inspect, invalidate, dispose() { invalidate(); disposed = true; } });
 });
-    const createLibraMemoryGraphStore = (function createMemoryGraphStore({ pages, fingerprint } = {}) {
+    const createLibraMemoryGraphStore = (function createMemoryGraphStore({ pages, fingerprint, inventory = null } = {}) {
   if (!pages || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_STORE_ADAPTER_REQUIRED');
+  if (inventory !== null && (typeof inventory.buildSourceInventory !== 'function' || typeof inventory.diffInventories !== 'function'
+    || typeof inventory.mergeFamilyInventories !== 'function' || !Array.isArray(inventory.SOURCE_FAMILIES))) {
+    throw new TypeError('LIBRA_GRAPH_STORE_INVENTORY_ADAPTER_REQUIRED');
+  }
   const pools = ['nodes','edges','bases','units'];
   const policy = 'owner_projection_directory.v1', pageSchema = 'libra.graph_durable_page.v1';
   let active = false, epoch = 0, disposed = false;
@@ -45570,11 +45574,53 @@ function createLibraReadonlySourceContext(owner) {
         if (!same(stored.value, record)) fail('projection_mismatch'); counters.validations++;
       });
       if (!same(directory.refs, rederived.refs)) fail('source_changed');
+      // N01: publish what this generation's source window covers, per family, without claiming a whole
+      // family. The owner reports its own unread cursors; a window larger than one page is a page, and
+      // a page must never be diffed against a whole family.
+      const inventorySet = !inventory ? null : (() => {
+        const unitFamilies = new Map(inventory.SOURCE_FAMILIES.map(family => [family, []]));
+        for (const unit of Array.isArray(after.graph.units) ? after.graph.units : []) {
+          const bucket = unitFamilies.get(unit?.family);
+          if (!bucket) continue;
+          bucket.push({ key: String(unit.nodeId || unit.id || ''), revision: unit.revision || unit.sourceRevision || null, turn: Number.isSafeInteger(unit.turn) ? unit.turn : null });
+        }
+        const coverageInventory = after.graph.coverage?.inventory || {};
+        const pages = inventory.SOURCE_FAMILIES.map(family => inventory.buildSourceInventory({
+          family,
+          entries: unitFamilies.get(family),
+          pageSize: Math.max(256, unitFamilies.get(family).length + 1),
+          complete: false,
+          ownerUnread: [{ family, cursor: String(coverageInventory[family + 'NextCursor'] || ''), reason: 'owner_cursor' }].filter(region => region.cursor)
+        }));
+        const merged = inventory.mergeFamilyInventories(pages);
+        return { schema: 'libra.graph_generation_inventory.v1', pages, merged };
+      })();
+      // The absence of a delta is itself a fact, so it is reported with a basis instead of silently.
+      const inventoryDelta = !inventory || !inventorySet ? { deltas: [], basis: 'inventory_disabled' } : await (async () => {
+        if (!previous?.value?.manifestKey) return { deltas: [], basis: 'no_previous_generation' };
+        const stored = await load(owner, previous.value.manifestKey, 131072, loc.partition, stamp, ticket);
+        const published = stored?.value?.sourceInventory;
+        if (!published) return { deltas: [], basis: 'previous_generation_without_inventory' };
+        // A generation published for another source window is still a base — the whole point of the
+        // unread cursor is that the next window continues where the previous one stopped — but every
+        // disappearance across windows is then reported as outside the window, never as a deletion.
+        const windowChanged = stored.value.sourceStamp !== stamp;
+        const deltas = [];
+        for (const page of inventorySet.pages) {
+          const before = published.pages?.find(candidate => candidate.family === page.family);
+          if (!before) { deltas.push({ family: page.family, skipped: 'no_previous_family' }); continue; }
+          try { deltas.push(inventory.diffInventories(before, page, { windowChanged })); }
+          catch (error) { deltas.push({ family: page.family, skipped: String(error?.reason || 'delta_unavailable') }); }
+        }
+        return { deltas, basis: windowChanged ? 'previous_window' : 'same_window' };
+      })();
+      const inventoryDeltas = inventoryDelta.deltas;
       const unreadRegions = computeUnreadRegions(after.graph.coverage);
       const manifest = { schema: 'libra.graph_generation.v1', policy, sourceOptions, pageBytes,
         sourceStamp: stamp, readerFrame: after.graph.readerFrame, coverage: after.graph.coverage,
         unreadRegions, partition: loc.partition, pages: directory.refs, totals: directory.totals,
-        jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false };
+        jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false,
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
       let manifestRaw, generation, manifestKey;
       await json(manifest, loc.partition, stamp, async raw => {
         manifestRaw = raw; generation = hash(raw); manifestKey = loc.prefix + 'generation:' + generation;
@@ -45594,7 +45640,8 @@ function createLibraReadonlySourceContext(owner) {
       return { schema: 'libra.graph_generation_build.v1', status: 'published', generation,
         pageCount: directory.refs.length, totals: directory.totals, coverage: manifest.coverage,
         unreadRegions, publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
-        providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null };
+        providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null,
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
     } catch (error) { counters.rejected++; throw error; }
     finally { active = false; }
   };
@@ -45644,6 +45691,8 @@ function createLibraReadonlySourceContext(owner) {
     return { schema: 'libra.graph_durable_read.v1', status: 'verified', generation: root.value.generation,
       pool, pageIndex, nextPageIndex: pageIndex + 1 < selected.length ? pageIndex + 1 : null, items,
       coverage: manifest.coverage, unreadRegions: manifest.unreadRegions || computeUnreadRegions(manifest.coverage),
+      sourceInventory: manifest.sourceInventory || null, sourceInventoryDeltas: manifest.sourceInventoryDeltas || [],
+      sourceInventoryDeltaBasis: manifest.sourceInventoryDeltaBasis || '',
       sourceStamp: stamp, publication: root.value.publication,
       scopeKey: graph.scopeKey, readerFrame: final.graph.readerFrame, readerValidation: final.graph.readerValidation || null,
       nativeSourceCaptureAdmission: 'unsupported',
@@ -48725,6 +48774,206 @@ function createLibraReadonlySourceContext(owner) {
     executeUnifiedRequest,
     verifyColdWarmEvictionDeterminism,
     runShadowComparison
+  });
+});
+    const createLibraMemoryGraphInventory = (function createMemoryGraphInventory({ fingerprint } = {}) {
+  if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_INVENTORY_FINGERPRINT_REQUIRED');
+  const fail = reason => { const error = new Error('LIBRA_GRAPH_INVENTORY_' + reason.toUpperCase()); error.reason = reason; throw error; };
+  const text = value => String(value == null ? '' : value).trim();
+  const hash = value => {
+    const digestValue = fingerprint(typeof value === 'string' ? value : JSON.stringify(value));
+    if (!/^[a-f0-9]{64}$/.test(String(digestValue))) fail('fingerprint_invalid');
+    return String(digestValue);
+  };
+
+  const SOURCE_FAMILIES = Object.freeze(['canonical', 'micro', 'state', 'lore']);
+
+  // Only what the owner can actually report. `basis` names the shipped symbols behind each claim;
+  // the suite fails if a basis symbol disappears from plugins/LIBRA.js.
+  const FAMILY_SUPPORT_PROFILES = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical', revision: true, correction: true, removalObservable: false, restoreEpoch: true,
+      cursorBasis: 'turn_range', basis: Object.freeze(['libra.canonical_memory.v1', 'sourceDigest', 'microRestoreGeneration'])
+    }),
+    micro: Object.freeze({
+      family: 'micro', revision: true, correction: false, removalObservable: false, restoreEpoch: true,
+      cursorBasis: 'receipt_revision', basis: Object.freeze(['libra.micro_memory.v1', 'receiptRevisionId', 'analysisRevisionId', 'analysisStatus'])
+    }),
+    state: Object.freeze({
+      family: 'state', revision: true, correction: true, removalObservable: false, restoreEpoch: true,
+      cursorBasis: 'state_observation', basis: Object.freeze(['libra.continuity_state.v2', 'fieldEvidence', 'manual_state_disposition', 'state_observation.v2'])
+    }),
+    lore: Object.freeze({
+      family: 'lore', revision: true, correction: false, removalObservable: true, restoreEpoch: true,
+      cursorBasis: 'lore_digest', basis: Object.freeze(['libra.lore_link_index.v1', 'loreSelectionDigest', 'removals', 'confirmations'])
+    })
+  });
+
+  const profileFor = family => FAMILY_SUPPORT_PROFILES[text(family)] || null;
+  const supportBasisSymbols = family => {
+    const profile = profileFor(family);
+    if (!profile) fail('family_unsupported');
+    return profile.basis;
+  };
+
+  const normalizeEntries = entries => {
+    if (!Array.isArray(entries)) fail('entries_invalid');
+    const seen = new Set();
+    const normalized = [];
+    for (const entry of entries) {
+      const key = text(entry?.key);
+      if (!key) fail('entry_key_required');
+      if (seen.has(key)) fail('entry_key_duplicate');
+      seen.add(key);
+      normalized.push(Object.freeze({
+        key,
+        revision: text(entry.revision) || null,
+        turn: Number.isSafeInteger(entry.turn) ? entry.turn : null,
+        digest: text(entry.digest) || null
+      }));
+    }
+    return normalized.sort((left, right) => left.key.localeCompare(right.key, 'en'));
+  };
+
+  const enumerationDigest = entries => hash(entries.map(entry => [entry.key, entry.revision]));
+
+  const buildSourceInventory = ({ family, entries = [], cursor = null, pageSize = 128, complete = false, ownerUnread = [] } = {}) => {
+    const profile = profileFor(family);
+    if (!profile) fail('family_unsupported');
+    const all = normalizeEntries(entries);
+    const size = Number.isSafeInteger(pageSize) && pageSize > 0 ? pageSize : 128;
+    const digest = enumerationDigest(all);
+    let offset = 0;
+    if (cursor != null) {
+      if (cursor.schema !== 'libra.source_inventory_cursor.v1') fail('cursor_invalid');
+      if (text(cursor.family) !== profile.family) fail('cursor_family_mismatch');
+      if (text(cursor.digest) !== digest) fail('cursor_stale');
+      if (!Number.isSafeInteger(cursor.offset) || cursor.offset < 0 || cursor.offset > all.length) fail('cursor_invalid');
+      offset = cursor.offset;
+    }
+    if (!Array.isArray(ownerUnread)) fail('owner_unread_invalid');
+    const reportedUnread = [];
+    for (const region of ownerUnread) {
+      if (text(region?.family) !== profile.family) fail('owner_unread_family_mismatch');
+      if (!text(region.cursor)) fail('owner_unread_cursor_required');
+      reportedUnread.push(Object.freeze({ family: profile.family, cursor: text(region.cursor), reason: text(region.reason) || 'owner_cursor' }));
+    }
+    const page = all.slice(offset, offset + size);
+    const nextOffset = offset + page.length;
+    const truncated = nextOffset < all.length;
+    const pageCoverage = truncated ? 'partial' : (complete === true ? 'complete' : 'partial');
+    return Object.freeze({
+      schema: 'libra.source_inventory.v1',
+      family: profile.family,
+      cursorBasis: profile.cursorBasis,
+      digest,
+      pageSize: size,
+      entries: Object.freeze(page),
+      entryCount: all.length,
+      enumerated: Object.freeze({ from: offset, to: nextOffset, total: all.length }),
+      coverage: pageCoverage,
+      // A page boundary is an unread region, not a hidden one: callers must be able to report it.
+      unread: Object.freeze([
+        ...(truncated ? [{ family: profile.family, from: nextOffset, reason: 'page_boundary' }] : []),
+        ...reportedUnread
+      ]),
+      nextCursor: Object.freeze(truncated ? { schema: 'libra.source_inventory_cursor.v1', family: profile.family, offset: nextOffset, digest } : null),
+      removalObservable: profile.removalObservable === true,
+      support: profile
+    });
+  };
+
+  const diffInventories = (previous, next, options = {}) => {
+    if (!previous || !next || previous.schema !== 'libra.source_inventory.v1' || next.schema !== 'libra.source_inventory.v1') fail('delta_requires_inventories');
+    if (previous.family !== next.family) fail('delta_family_mismatch');
+    const profile = profileFor(previous.family);
+    // A page is not a family: comparing a bounded page against a whole enumeration would report
+    // every out-of-page entry as a removal (a fabricated deletion). Both sides must cover the whole
+    // enumeration extent; a full extent that the caller never declared complete is a softer case and
+    // only downgrades deltaComplete.
+    const wholeFamily = value => value.nextCursor === null && value.enumerated.from === 0;
+    if (!wholeFamily(previous) || !wholeFamily(next)) fail('delta_requires_whole_family');
+    // Two generations can cover different source windows. Then an entry that is absent from the new
+    // window is outside it — not deleted — whatever the owner's tombstone support is, and the delta
+    // says so instead of reporting a removal it cannot observe.
+    const windowChanged = options.windowChanged === true;
+    const before = new Map(previous.entries.map(entry => [entry.key, entry]));
+    const after = new Map(next.entries.map(entry => [entry.key, entry]));
+    const added = [];
+    const changed = [];
+    const removed = [];
+    const unobservableRemoval = [];
+    const unverified = [];
+    const reasons = [];
+    for (const [key, entry] of after) {
+      if (!before.has(key)) { added.push(key); continue; }
+      const prior = before.get(key);
+      if (prior.revision !== entry.revision) changed.push({ key, from: prior.revision, to: entry.revision });
+    }
+    for (const key of before.keys()) {
+      if (after.has(key)) continue;
+      // An entry that disappeared is only a deletion where the owner reports tombstones.
+      if (!windowChanged && profile.removalObservable === true) removed.push(key); else unobservableRemoval.push(key);
+    }
+    for (const [key, entry] of after) if (entry.revision === null) unverified.push(key);
+    for (const inventory of [previous, next]) if (inventory.coverage !== 'complete') reasons.push('coverage_not_declared');
+    if (windowChanged) reasons.push('window_changed');
+    else if (unobservableRemoval.length && profile.removalObservable !== true) reasons.push('removal_not_observable');
+    if (unverified.length) reasons.push('revision_unverifiable');
+    return Object.freeze({
+      schema: 'libra.source_inventory_delta.v1',
+      family: profile.family,
+      added: Object.freeze(added.sort((a, b) => a.localeCompare(b, 'en'))),
+      changed: Object.freeze(changed.sort((a, b) => a.key.localeCompare(b.key, 'en'))),
+      removed: Object.freeze(removed.sort((a, b) => a.localeCompare(b, 'en'))),
+      unobservableRemoval: Object.freeze(unobservableRemoval.sort((a, b) => a.localeCompare(b, 'en'))),
+      unverified: Object.freeze(unverified.sort((a, b) => a.localeCompare(b, 'en'))),
+      unread: Object.freeze([...previous.unread, ...next.unread]),
+      removalObservable: profile.removalObservable === true,
+      windowChanged,
+      deltaComplete: reasons.length === 0,
+      reasons: Object.freeze(reasons)
+    });
+  };
+
+  const mergeFamilyInventories = (inventories = []) => {
+    if (!Array.isArray(inventories)) fail('inventories_invalid');
+    const seen = new Set();
+    const unreadRegions = [];
+    const unverified = [];
+    const removalsNotObservable = [];
+    const ownerCursors = [];
+    let complete = inventories.length > 0;
+    for (const inventory of inventories) {
+      if (!inventory || inventory.schema !== 'libra.source_inventory.v1') fail('inventory_invalid');
+      if (seen.has(inventory.family)) fail('inventory_family_duplicate');
+      seen.add(inventory.family);
+      if (inventory.coverage !== 'complete') complete = false;
+      unreadRegions.push(...inventory.unread);
+      if (inventory.removalObservable !== true) removalsNotObservable.push(inventory.family);
+      for (const region of inventory.unread) if (region.cursor) ownerCursors.push({ family: inventory.family, cursor: region.cursor, reason: region.reason });
+      for (const entry of inventory.entries) if (entry.revision === null) unverified.push({ family: inventory.family, key: entry.key });
+    }
+    return Object.freeze({
+      schema: 'libra.source_inventory_set.v1',
+      families: Object.freeze([...seen].sort((a, b) => a.localeCompare(b, 'en'))),
+      missingFamilies: Object.freeze(SOURCE_FAMILIES.filter(family => !seen.has(family))),
+      coverage: complete && seen.size === SOURCE_FAMILIES.length ? 'complete' : 'partial',
+      unreadRegions: Object.freeze(unreadRegions),
+      ownerCursors: Object.freeze(ownerCursors),
+      unverified: Object.freeze(unverified),
+      removalsNotObservable: Object.freeze(removalsNotObservable),
+      byteBounded: false
+    });
+  };
+
+  return Object.freeze({
+    SOURCE_FAMILIES,
+    FAMILY_SUPPORT_PROFILES,
+    supportBasisSymbols,
+    buildSourceInventory,
+    diffInventories,
+    mergeFamilyInventories
   });
 });
     // END LIBRA MEMORY GRAPH
@@ -71794,7 +72043,8 @@ ${string(queryBundle?.sceneText || '')}`;
       }
       if (!state.memoryGraphStore) {
         const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
-        state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+        state.memoryGraphInventory = createLibraMemoryGraphInventory({ fingerprint: primitive.fingerprint });
+        state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       }
       const check = () => { if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
         || state.deletingScopes.has(initial.graph.scopeKey)) throw new Error('LIBRA_GRAPH_STORE_OWNER_CHANGED'); };
@@ -71866,7 +72116,8 @@ ${string(queryBundle?.sceneText || '')}`;
     const ensureMemoryGraphUnifiedSuite = () => {
       const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
       if (!state.memoryGraphPages) state.memoryGraphPages = createLibraMemoryGraphPages({ fingerprint: primitive.fingerprint });
-      if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphInventory) state.memoryGraphInventory = createLibraMemoryGraphInventory({ fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       if (!state.memoryGraphIndex) state.memoryGraphIndex = createLibraMemoryGraphIndex({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
       if (!state.memoryGraphLane) state.memoryGraphLane = createLibraMemoryGraphLane({ index: state.memoryGraphIndex, pages: state.memoryGraphPages });
       if (!state.memoryGraphQuery) state.memoryGraphQuery = createLibraMemoryGraphQuery({ index: state.memoryGraphIndex, lane: state.memoryGraphLane, pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });

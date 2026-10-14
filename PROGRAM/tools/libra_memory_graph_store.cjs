@@ -1,8 +1,12 @@
 'use strict';
 // Durable derived pages only. All storage/current-owner authority is injected;
 // serialized generations never grant final model delivery permission.
-module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
+module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory = null } = {}) {
   if (!pages || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_STORE_ADAPTER_REQUIRED');
+  if (inventory !== null && (typeof inventory.buildSourceInventory !== 'function' || typeof inventory.diffInventories !== 'function'
+    || typeof inventory.mergeFamilyInventories !== 'function' || !Array.isArray(inventory.SOURCE_FAMILIES))) {
+    throw new TypeError('LIBRA_GRAPH_STORE_INVENTORY_ADAPTER_REQUIRED');
+  }
   const pools = ['nodes','edges','bases','units'];
   const policy = 'owner_projection_directory.v1', pageSchema = 'libra.graph_durable_page.v1';
   let active = false, epoch = 0, disposed = false;
@@ -110,11 +114,53 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
         if (!same(stored.value, record)) fail('projection_mismatch'); counters.validations++;
       });
       if (!same(directory.refs, rederived.refs)) fail('source_changed');
+      // N01: publish what this generation's source window covers, per family, without claiming a whole
+      // family. The owner reports its own unread cursors; a window larger than one page is a page, and
+      // a page must never be diffed against a whole family.
+      const inventorySet = !inventory ? null : (() => {
+        const unitFamilies = new Map(inventory.SOURCE_FAMILIES.map(family => [family, []]));
+        for (const unit of Array.isArray(after.graph.units) ? after.graph.units : []) {
+          const bucket = unitFamilies.get(unit?.family);
+          if (!bucket) continue;
+          bucket.push({ key: String(unit.nodeId || unit.id || ''), revision: unit.revision || unit.sourceRevision || null, turn: Number.isSafeInteger(unit.turn) ? unit.turn : null });
+        }
+        const coverageInventory = after.graph.coverage?.inventory || {};
+        const pages = inventory.SOURCE_FAMILIES.map(family => inventory.buildSourceInventory({
+          family,
+          entries: unitFamilies.get(family),
+          pageSize: Math.max(256, unitFamilies.get(family).length + 1),
+          complete: false,
+          ownerUnread: [{ family, cursor: String(coverageInventory[family + 'NextCursor'] || ''), reason: 'owner_cursor' }].filter(region => region.cursor)
+        }));
+        const merged = inventory.mergeFamilyInventories(pages);
+        return { schema: 'libra.graph_generation_inventory.v1', pages, merged };
+      })();
+      // The absence of a delta is itself a fact, so it is reported with a basis instead of silently.
+      const inventoryDelta = !inventory || !inventorySet ? { deltas: [], basis: 'inventory_disabled' } : await (async () => {
+        if (!previous?.value?.manifestKey) return { deltas: [], basis: 'no_previous_generation' };
+        const stored = await load(owner, previous.value.manifestKey, 131072, loc.partition, stamp, ticket);
+        const published = stored?.value?.sourceInventory;
+        if (!published) return { deltas: [], basis: 'previous_generation_without_inventory' };
+        // A generation published for another source window is still a base — the whole point of the
+        // unread cursor is that the next window continues where the previous one stopped — but every
+        // disappearance across windows is then reported as outside the window, never as a deletion.
+        const windowChanged = stored.value.sourceStamp !== stamp;
+        const deltas = [];
+        for (const page of inventorySet.pages) {
+          const before = published.pages?.find(candidate => candidate.family === page.family);
+          if (!before) { deltas.push({ family: page.family, skipped: 'no_previous_family' }); continue; }
+          try { deltas.push(inventory.diffInventories(before, page, { windowChanged })); }
+          catch (error) { deltas.push({ family: page.family, skipped: String(error?.reason || 'delta_unavailable') }); }
+        }
+        return { deltas, basis: windowChanged ? 'previous_window' : 'same_window' };
+      })();
+      const inventoryDeltas = inventoryDelta.deltas;
       const unreadRegions = computeUnreadRegions(after.graph.coverage);
       const manifest = { schema: 'libra.graph_generation.v1', policy, sourceOptions, pageBytes,
         sourceStamp: stamp, readerFrame: after.graph.readerFrame, coverage: after.graph.coverage,
         unreadRegions, partition: loc.partition, pages: directory.refs, totals: directory.totals,
-        jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false };
+        jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false,
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
       let manifestRaw, generation, manifestKey;
       await json(manifest, loc.partition, stamp, async raw => {
         manifestRaw = raw; generation = hash(raw); manifestKey = loc.prefix + 'generation:' + generation;
@@ -134,7 +180,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       return { schema: 'libra.graph_generation_build.v1', status: 'published', generation,
         pageCount: directory.refs.length, totals: directory.totals, coverage: manifest.coverage,
         unreadRegions, publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
-        providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null };
+        providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null,
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
     } catch (error) { counters.rejected++; throw error; }
     finally { active = false; }
   };
@@ -184,6 +231,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
     return { schema: 'libra.graph_durable_read.v1', status: 'verified', generation: root.value.generation,
       pool, pageIndex, nextPageIndex: pageIndex + 1 < selected.length ? pageIndex + 1 : null, items,
       coverage: manifest.coverage, unreadRegions: manifest.unreadRegions || computeUnreadRegions(manifest.coverage),
+      sourceInventory: manifest.sourceInventory || null, sourceInventoryDeltas: manifest.sourceInventoryDeltas || [],
+      sourceInventoryDeltaBasis: manifest.sourceInventoryDeltaBasis || '',
       sourceStamp: stamp, publication: root.value.publication,
       scopeKey: graph.scopeKey, readerFrame: final.graph.readerFrame, readerValidation: final.graph.readerValidation || null,
       nativeSourceCaptureAdmission: 'unsupported',

@@ -82,6 +82,31 @@ test('N01 negative control: a stale, foreign or malformed cursor is refused inst
     error => error.reason === 'cursor_invalid', 'an unversioned cursor is not accepted');
 });
 
+test('N01: the owner reports its own unread regions, and they are carried, not hidden', () => {
+  const page = inventory.buildSourceInventory({
+    family: 'canonical', entries: entries(2), pageSize: 2, ownerUnread: [{ family: 'canonical', cursor: 'mgc1:20', reason: 'owner_cursor' }]
+  });
+  assert.deepEqual(page.unread, [{ family: 'canonical', cursor: 'mgc1:20', reason: 'owner_cursor' }]);
+  const merged = inventory.mergeFamilyInventories([page]);
+  assert.deepEqual(merged.ownerCursors, [{ family: 'canonical', cursor: 'mgc1:20', reason: 'owner_cursor' }]);
+  assert.throws(() => inventory.buildSourceInventory({ family: 'micro', entries: [], ownerUnread: [{ family: 'canonical', cursor: 'x' }] }),
+    error => error.reason === 'owner_unread_family_mismatch');
+  assert.throws(() => inventory.buildSourceInventory({ family: 'micro', entries: [], ownerUnread: [{ family: 'micro' }] }),
+    error => error.reason === 'owner_unread_cursor_required');
+});
+
+test('N01 negative control: across windows a disappearance is never a removal', () => {
+  const before = inventory.buildSourceInventory({ family: 'lore', entries: [{ key: 'l1', revision: 'r1' }], pageSize: 1, complete: true });
+  const after = inventory.buildSourceInventory({ family: 'lore', entries: [], pageSize: 1, complete: true });
+  const sameWindow = inventory.diffInventories(before, after);
+  assert.deepEqual(sameWindow.removed, ['l1'], 'inside one window lore does report a removal');
+  const acrossWindows = inventory.diffInventories(before, after, { windowChanged: true });
+  assert.deepEqual(acrossWindows.removed, []);
+  assert.deepEqual(acrossWindows.unobservableRemoval, ['l1']);
+  assert.equal(acrossWindows.windowChanged, true);
+  assert.ok(acrossWindows.reasons.includes('window_changed'));
+});
+
 test('N01: the enumeration digest is order independent and revision sensitive', () => {
   const all = entries(4);
   const forward = inventory.buildSourceInventory({ family: 'state', entries: all, pageSize: 4 }).digest;
