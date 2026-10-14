@@ -3,8 +3,13 @@ const fs = require('node:fs'), path = require('node:path'), crypto = require('no
 const identity = require('./libra_memory_graph_identity.cjs'), readers = require('./libra_memory_graph_readers.cjs');
 const pages = require('./libra_memory_graph_pages.cjs');
 const store = require('./libra_memory_graph_store.cjs');
+const index = require('./libra_memory_graph_index.cjs');
+const lane = require('./libra_memory_graph_lane.cjs');
+const query = require('./libra_memory_graph_query.cjs');
+const compiler = require('./libra_memory_graph_compiler.cjs');
+const rollout = require('./libra_memory_graph_rollout.cjs');
 const begin = '// BEGIN LIBRA MEMORY GRAPH', end = '// END LIBRA MEMORY GRAPH';
-const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    ${end}`;
+const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    ${end}`;
 function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = false } = {}) {
   const before = fs.readFileSync(target, 'utf8');
   const starts = [...before.matchAll(/^[ \t]*\/\/ BEGIN LIBRA MEMORY GRAPH[ \t]*$/gm)];
@@ -29,7 +34,12 @@ function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = fa
     identitySHA256: crypto.createHash('sha256').update(identity.toString()).digest('hex'),
     readersSHA256: crypto.createHash('sha256').update(readers.toString()).digest('hex'),
     pagesSHA256: crypto.createHash('sha256').update(pages.toString()).digest('hex'),
-    storeSHA256: crypto.createHash('sha256').update(store.toString()).digest('hex') };
+    storeSHA256: crypto.createHash('sha256').update(store.toString()).digest('hex'),
+    indexSHA256: crypto.createHash('sha256').update(index.toString()).digest('hex'),
+    laneSHA256: crypto.createHash('sha256').update(lane.toString()).digest('hex'),
+    querySHA256: crypto.createHash('sha256').update(query.toString()).digest('hex'),
+    compilerSHA256: crypto.createHash('sha256').update(compiler.toString()).digest('hex'),
+    rolloutSHA256: crypto.createHash('sha256').update(rollout.toString()).digest('hex') };
 }
 module.exports = { sync, block };
 if (require.main === module) try { console.log(JSON.stringify(sync({ check: process.argv.includes('--check') }))); }
