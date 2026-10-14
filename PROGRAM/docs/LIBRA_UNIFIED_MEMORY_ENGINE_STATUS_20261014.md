@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.8
+- 작성일: 2026-10-14 · 문서 버전: 1.9
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `89fb341`의 GRADIA 인풋 작성기 연결과 이후 전체 구간 공통 인덱스 증분. §12–19가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다. 최신 기본값·실행 경로는 §19를 우선한다.
-- 목표 계약: [통합 엔진 설계 v1.14](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 현재 기준: `89fb341`의 GRADIA 인풋 작성기 연결과 이후 전체 구간 공통 인덱스 증분. §12–20이 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다. 최신 기본값·실행 경로와 선택적 읽기는 §19–20을 우선한다.
+- 목표 계약: [통합 엔진 설계 v1.15](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
-- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 원본 전체 재투영·표 전체 hydration을 줄이는 선택적 접근/증분 검증, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
+- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 전체 재투영을 줄이는 증분 검증, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §19를 우선하며 §12–18의 이전 기본값·구간 제한 설명을 갱신한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §19–20을 우선하며 §12–18의 이전 기본값·구간 제한 설명을 갱신한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
 
 ## 1. 완성이 의미하는 것
 
@@ -326,3 +326,11 @@ N01의 두 실제 공백을 연결했다. 첫째, 정본·Micro의 모든 owner 
 새 local 설치의 미등록 기본 route는 native owner 전용 관찰로 읽으며 route를 생성하지 않는다. native mirror도 물리 서버 검증을 유지한다. 외부 readonly source 계약의 엄격한 route 요구는 그대로 유지한다. GUI의 한글 조사 검색도 공통 lexical tokenizer를 사용한다.
 
 N07의 기본·유일 엔진 전환과 중복 serving 경로 종료는 이 증분에서 수행했다. N01의 선택적 저장 page 접근·증분 원본 검증·전체 workspace/I/O 계상, N02 추가 representation, N05 native 삭제, N06 실제 호스트/품질·규모 인증은 남는다. 전체 엔진을 완성/인증했다고 판정하지 않는다. 검증 명령과 지원 경계는 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)을 따른다.
+
+## 20. 선택적 저장 인덱스 읽기
+
+N01의 표 전체 hydration을 신규 게시 인덱스에서 종료했다. corpus root/metadata/directory만 연 뒤 같은 Memory Lane과 frontier가 필요한 posting·adjacency·semantic directory 페이지를 비동기로 요청한다. 공통 Cache Manager에서 reserve/pin/decode/release하며 별도 decoded table cache를 두지 않는다. request의 첫 사용은 저장값을 물리 검증하고, 같은 요청의 재사용은 공통 cache로 처리한다. 물리 page/payload byte admission·trace와 pending I/O 취소·root 교체 검증을 연결했다.
+
+고정 160-unit 커널 fixture에서 23페이지·332,423 B가 3페이지·48,952 B로 줄었고 eager와 점수·근거 경로·bundle/packet digest가 일치했다. 실제 등록 LIBRA와 plugin_only/server_only corpus, GRADIA 소비자 경로도 검증한다. 이는 전체 요청 성능이나 실제 설치 인증은 아니다. 읽지 않은 저장 페이지의 손상까지 query가 검사하지 않으므로 등록 API/진단의 전체 인덱스 검증은 별도의 read-only maintenance 작업으로 제공한다.
+
+원본 전체 구간과 최종 native graph는 계속 재투영한다. owner revision/delta의 완전한 증명 없는 생략은 하지 않는다. 원본 증분 검증·build 재개/증분·큰 단일 행 분할·semantic representation 접근·전체 workspace/I/O 계상은 남아 있으며 N01을 닫지 않는다. 이전 manifest의 전체 표 복원 호환과 기본·유일한 unified 엔진은 유지한다. 상세 예산·수용 근거는 [선택적 읽기 계약](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)을 따른다.

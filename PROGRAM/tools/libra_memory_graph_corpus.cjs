@@ -122,6 +122,30 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
+  const routingVersion = 'libra.index_page_routing.v1';
+  const routingKinds = { directory: ['node','source'], adjacency: ['anchor'],
+    postings: ['lexical','entity','predicate','time'], reverseDependencies: ['dependency'] };
+  const range = values => {
+    const sorted = [...new Set(values.filter(value => typeof value === 'string' && value))].sort((a,b) => a.localeCompare(b,'en'));
+    return sorted.length ? { min: sorted[0], max: sorted.at(-1) } : null;
+  };
+  const routingFor = (table, rows) => routingKinds[table].flatMap(kind => {
+    const values = rows.filter(row => table !== 'postings' || row.channel === kind).map(row =>
+      table === 'postings' ? row.term : kind === 'node' ? row.nodeId : kind === 'source' ? row.sourceId
+        : kind === 'anchor' ? row.anchorNodeId : row.dependencyKey);
+    const value = range(values); return value ? [{ kind, ...value }] : [];
+  });
+  const validRouting = ref => Array.isArray(ref.routing) && ref.routing.length <= routingKinds[ref.table].length
+    && new Set(ref.routing.map(row => row?.kind)).size === ref.routing.length
+    && (ref.rows === 0 ? ref.routing.length === 0 : ref.routing.length > 0)
+    && ref.routing.every(row => row && Object.keys(row).sort().join(',') === 'kind,max,min'
+      && routingKinds[ref.table].includes(row.kind) && typeof row.min === 'string' && row.min.length > 0 && row.min.length <= 8192
+      && typeof row.max === 'string' && row.max.length > 0 && row.max.length <= 8192 && row.min.localeCompare(row.max,'en') <= 0);
+  const mightContain = (ref, spec) => {
+    const term = spec.table === 'postings' ? spec.term : spec.table === 'reverseDependencies' ? spec.dependencyKey : spec.anchorNodeId;
+    return ref.routing.some(row => (!spec.channel || spec.table !== 'postings' || row.kind === spec.channel)
+      && (!term || row.min.localeCompare(term,'en') <= 0 && row.max.localeCompare(term,'en') >= 0));
+  };
   const build = async ({ snapshot, owner, options = {} } = {}) => {
     if (active) fail('build_busy'); active = true;
     try {
@@ -138,12 +162,12 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
           total += page.serializedUtf8Bytes;
           if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
           await immutable(owner,key,text);
-          refs.push({ key, table, digest, rows: page.items.length, bytes: page.serializedUtf8Bytes, offset });
+          refs.push({ key, table, digest, rows: page.items.length, bytes: page.serializedUtf8Bytes, offset, routing: routingFor(table,page.items) });
           offset = page.nextOffset;
         } while (offset < compiled[table].length);
       }
       const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
-      const manifest = { schema, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
+      const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
         serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
@@ -161,7 +185,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
     } finally { active = false; }
   };
-  const read = async ({ initialGraph, snapshot, owner } = {}) => {
+  const read = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
     const loc = location(initialGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
     if (rootRaw === null) return null;
     const root = parse(rootRaw,2048);
@@ -170,38 +194,92 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
     if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,initialGraph.readerFrame)
       || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
+    if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
     const native = await enumerate(snapshot, manifest.config, owner.check);
     if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
-    const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
-    let total = 0;
+    const lazy = !eager && manifest.routingVersion === routingVersion;
+    const counts = Object.fromEntries(tables.map(table => [table,0])); let total = 0;
     for (const ref of manifest.refs) {
-      if (!tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
+      if (!ref || !tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
         || ref.key !== loc.prefix + 'page:' + ref.table + ':' + ref.digest
         || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > native.config.pageBytes
-        || ref.offset !== restored[ref.table].length) fail('directory_invalid');
+        || !Number.isSafeInteger(ref.rows) || ref.rows < 0 || ref.offset !== counts[ref.table]
+        || manifest.routingVersion && !validRouting(ref)) fail('directory_invalid');
+      counts[ref.table] += ref.rows;
       total += ref.bytes; if (total > native.config.maxSerializedBytes) fail('index_budget');
-      const text = await owner.read(ref.key); owner.check();
-      const rows = parse(text,native.config.pageBytes);
-      if (hash(text) !== ref.digest || !Array.isArray(rows) || rows.length !== ref.rows
-        || pages.measure(rows,native.config.pageBytes).utf8Bytes !== ref.bytes) fail('page_corrupt');
-      const handle = pages.open({ partition: loc.partition, generation: manifest.generation }); let stage, lease;
-      try {
-        stage = pages.reserve(handle,pages.stageCost(pages.measure(rows,native.config.pageBytes)));
-        lease = pages.install(handle,{ pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows },text,stage);
-        restored[ref.table].push(...pages.decode(lease));
-      } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); pages.close(handle); }
     }
-    const compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
-    if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
+      if (!manifest.refs.some(ref => ref.table === table) || counts[table] !== manifest.metadata?.stats?.[stat]) fail('directory_invalid');
+    }
+    const metrics = { storageAccess: lazy ? 'selective_durable_pages' : 'materialized_tables',
+      publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0 };
+    // No raw/decoded table cache: re-acquire validated content through the shared
+    // Cache Manager. Every new request physically verifies its first page use.
+    const validated = new Set();
+    const assertIndexCurrent = async () => {
+      owner.check(); if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    };
+    const readPage = async (ref, consume, budget) => {
+      owner.check(); let handle,stage,lease;
+      try {
+        handle = pages.open({ partition: loc.partition, generation: manifest.generation });
+        const binding = { pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows };
+        if (validated.has(ref.key)) lease = pages.acquire(handle,binding);
+        if (lease) metrics.cacheHits++;
+        else {
+          if (budget && budget.pagesRead >= budget.maxPages) return 'storage_page_count_budget';
+          if (budget && budget.bytesRead + ref.bytes > budget.maxBytes) return 'storage_byte_budget';
+          // Reserve expected raw/decode workspace before initiating physical I/O.
+          stage = pages.reserve(handle,pages.stageCost({ utf8Bytes: ref.bytes, codeUnits: ref.bytes, tokens: 0 }));
+          if (budget) { budget.pagesRead++; budget.bytesRead += ref.bytes; }
+          metrics.pagesRead++; metrics.bytesRead += ref.bytes;
+          const text = await owner.read(ref.key); owner.check();
+          if (typeof text !== 'string' || text.length > native.config.pageBytes || hash(text) !== ref.digest) fail('page_corrupt');
+          const size = pages.encodedSize(text);
+          if (size.utf8Bytes !== ref.bytes) fail('page_corrupt');
+          pages.releaseStage(stage); stage = null;
+          stage = pages.reserve(handle,pages.stageCost(size));
+          lease = pages.install(handle,binding,text,stage);
+          validated.add(ref.key); metrics.uniquePagesRead = validated.size;
+        }
+        const rows = pages.decode(lease);
+        if (!Array.isArray(rows) || rows.length !== ref.rows || pages.measure(rows,native.config.pageBytes).utf8Bytes !== ref.bytes
+          || manifest.routingVersion && !same(routingFor(ref.table,rows),ref.routing)) fail('page_corrupt');
+        consume(rows); owner.check(); return null;
+      } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
+    };
+    const readRows = async (spec,budget) => {
+      owner.check(); await owner.assertRoute?.(); owner.check();
+      const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
+      if (!Number.isSafeInteger(credit.maxPages) || credit.maxPages < 1 || credit.maxPages > 512
+        || !Number.isSafeInteger(credit.maxBytes) || credit.maxBytes < 512 || credit.maxBytes > 8388608
+        || !Number.isSafeInteger(credit.pagesRead) || credit.pagesRead < 0 || credit.pagesRead > credit.maxPages
+        || !Number.isSafeInteger(credit.bytesRead) || credit.bytesRead < 0 || credit.bytesRead > credit.maxBytes) fail('storage_budget_invalid');
+      const rows = [];
+      for (const ref of manifest.refs) if (ref.table === spec.table && mightContain(ref,spec)) {
+        const stopped = await readPage(ref, page => rows.push(...page), credit);
+        if (stopped) return { storageStopped: true, stopReason: stopped };
+      }
+      await assertIndexCurrent(); return { rows };
+    };
+    let compiledIndex;
+    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: stamp(native.graph), readRows });
+    else {
+      const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
+      for (const ref of manifest.refs) await readPage(ref, rows => restored[ref.table].push(...rows));
+      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
+    }
+    await assertIndexCurrent();
     const currentGraph = async () => {
+      await assertIndexCurrent();
       const live = await enumerate(snapshot, native.config, owner.check);
       if (!same(live.windows,manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
-      return live.graph;
+      await assertIndexCurrent(); return live.graph;
     };
-    return { ...native, compiledIndex, currentGraph,
+    return { ...native, compiledIndex, currentGraph, assertIndexCurrent,
       access: { schema, mode: 'durable_common_index', generation: manifest.generation, indexDigest: compiledIndex.indexDigest,
         windowCount: native.windows.length, pageCount: manifest.refs.length,
-        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total,
+        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total, storage: metrics,
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
   };
   return Object.freeze({ build, read, prepare, enumerate, location, inspect: () => ({ activeBuild: active }) });

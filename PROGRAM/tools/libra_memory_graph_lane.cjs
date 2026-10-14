@@ -23,7 +23,9 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
     maxPages = 16,
     maxBytes = 65536,
     pageBytes = 8192,
-    resumeCursors = []
+    resumeCursors = [],
+    maxStoragePages = maxPages,
+    maxStorageBytes = maxBytes
   } = {}) => {
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_required');
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256
@@ -32,6 +34,10 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       fail('budget_options_invalid');
     }
 
+    if (!Number.isSafeInteger(maxStoragePages) || maxStoragePages < 1 || maxStoragePages > 512
+      || !Number.isSafeInteger(maxStorageBytes) || maxStorageBytes < 512 || maxStorageBytes > 8388608) fail('storage_budget_invalid');
+    const storageBudget = { maxPages: maxStoragePages, maxBytes: maxStorageBytes, pagesRead: 0, bytesRead: 0 };
+    let busy = false;
     const queue = [];
     const seenAccessKeys = new Map();
     const completedAccesses = [];
@@ -151,7 +157,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       ));
     };
 
-    const step = ({ checkCancel } = {}) => {
+    const stepSteps = function* ({ checkCancel } = {}) {
       if (queue.length === 0) {
         return { executed: false, stopReason: 'frontier_exhausted', access: null };
       }
@@ -165,7 +171,13 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       }
       sortQueue();
       const next = queue[0];
-      const page = index.queryPage(compiledIndex, next.spec);
+      const page = yield next.spec;
+      if (typeof checkCancel === 'function' && checkCancel() === true) {
+        lastStopReason = 'cancelled'; return { executed: false, stopReason: 'cancelled', access: null };
+      }
+      if (page.storageStopped) {
+        lastStopReason = page.stopReason; return { executed: false, stopReason: lastStopReason, access: null };
+      }
       if (page.stopReason === 'row_exceeds_page') {
         queue.shift();
         unreadCursors.push({
@@ -229,11 +241,11 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       return { executed: true, stopReason: 'frontier_exhausted', access };
     };
 
-    const drainPending = ({ checkCancel } = {}) => {
+    const drainSteps = function* ({ checkCancel } = {}) {
       const newAccesses = [];
       let stoppedByBudget = false;
       while (queue.length > 0) {
-        const res = step({ checkCancel });
+        const res = yield* stepSteps({ checkCancel });
         if (!res.executed) {
           if (res.stopReason === 'row_exceeds_page') continue;
           stoppedByBudget = res.stopReason !== 'frontier_exhausted';
@@ -249,14 +261,36 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       };
     };
 
+    // Both drivers execute the same scheduler. Only physical page access awaits.
+    const run = generator => {
+      if (busy) fail('session_busy');
+      let next = generator.next();
+      while (!next.done) next = generator.next(index.queryPage(compiledIndex, next.value));
+      return next.value;
+    };
+    const runAsync = async generator => {
+      if (busy) fail('session_busy'); busy = true;
+      try {
+        let next = generator.next();
+        while (!next.done) next = generator.next(await index.queryPageAsync(compiledIndex, next.value, storageBudget));
+        return next.value;
+      } finally { busy = false; }
+    };
+    const step = options => run(stepSteps(options));
+    const stepAsync = options => runAsync(stepSteps(options));
+    const drainPending = options => run(drainSteps(options));
+    const drainPendingAsync = options => runAsync(drainSteps(options));
+
     const isBudgetStopped = () => (
       lastStopReason === 'page_count_budget'
       || lastStopReason === 'byte_budget'
       || lastStopReason === 'cancelled'
+      || lastStopReason.startsWith('storage_')
       || lastStopReason === 'row_exceeds_page'
     );
 
     const finalize = () => {
+      if (busy) fail('session_busy');
       if (finalizedReport) return finalizedReport;
       while (queue.length > 0) {
         const pending = queue.shift();
@@ -285,6 +319,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
         stopReason: lastStopReason,
         pagesRead,
         bytesRead,
+        storage: Object.freeze({ ...storageBudget }),
         cacheHits,
         coalescedRequests,
         roleStats: JSON.parse(JSON.stringify(roleStats)),
@@ -306,6 +341,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       enqueue,
       step,
       drainPending,
+      stepAsync,
+      drainPendingAsync,
       isBudgetStopped,
       finalize,
       drain

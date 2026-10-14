@@ -129,7 +129,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       worldlineId: sealed.worldlineId
     });
     const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-    const retrieved = query.retrieve(viewHandle, laneBudget);
+    const retrieved = await query.retrieveAsync(viewHandle, laneBudget);
     const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
       stopReason: 'semantic_representation_byte_budget',
       coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
@@ -191,7 +191,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       accessTrace: queryResult.accessTrace || null,
-      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations } },
+      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations, storageAccess: compiledIndex.storageAccess || 'materialized_tables' } },
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,

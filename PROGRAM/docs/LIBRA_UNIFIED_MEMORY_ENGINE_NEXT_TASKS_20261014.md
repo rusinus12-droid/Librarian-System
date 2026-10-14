@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.5
+- 작성일: 2026-10-14 · 문서 버전: 1.6
 - 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
-- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 구간 공통 index의 저장·검색 재사용까지 연결했다. 기본·유일한 unified 검색으로의 전환과 기존 serving 경로 제거를 수행했다. 선택적 영속 접근·증분 검증과 실제 품질·성능 인증은 미완료다.**
+- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 구간 공통 index의 저장·검색 재사용까지 연결했다. 기본·유일한 unified 검색으로의 전환과 기존 serving 경로 제거를 수행했다. 신규 게시 인덱스의 선택적 영속 접근도 연결했다. 증분 원본 검증과 실제 품질·성능 인증은 미완료다.**
 
 이 문서는 소비자 호출 경로 재검토를 반영한 현재 작업 계획이다. 이전 설계·현황 문서에서 LIBRA의 Planner·SGA·Input Writer를 활성 연결 대상으로 적은 부분을 정정한다. 과제 정의는 구현 완료나 배포 자격을 부여하지 않는다.
 
@@ -45,7 +45,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | ID | 우선순위·현재 상태 | 과제 | 기존 현황 항목 | 선행 조건 |
 | --- | --- | --- | --- | --- |
 | N00 | P0 · 문서 정정 완료, runtime 계약 정리 남음 | 활성 소비자와 호환 포맷 분리 | M09/M15 | 현재 퇴역 계약 확인 |
-| N01 | P1 · 전체 구간 영속 index 연결, 선택적 접근 미완 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
+| N01 | P1 · 선택적 index 접근 연결, 원본 증분 검증 미완 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
 | N03 | P1 · 제한 범위 통합 읽기 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
 | N04 | P1 · 미전송 제안 읽기 제한 연결 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
@@ -77,7 +77,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 ## 4. N01 — 전체 기록의 공통 영속 접근
 
-현재 owner projection window와 메모리 배열 compile을 전체 기록의 인덱스로 바꾼다. 노드·관계·키워드·시간·벡터를 동일 generation에 결속한 영속 shard/page로 저장하고, 하나의 탐색 큐가 필요한 페이지를 요청한다.
+전체 owner 구간의 저장 공통 index와 신규 manifest의 선택적 페이지 접근을 연결했다. 최신 실행과 검증은 [선택적 읽기 계약](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)과 현황 §20을 우선한다. 다음 우선 작업은 원본의 revision/delta 증명에 결속한 증분 현재성 검증이다. 아래 증분 기록은 당시의 구현 범위를 보존한다. 노드·관계·키워드·시간·벡터를 동일 generation에 결속한 영속 shard/page로 저장하고, 하나의 탐색 큐가 필요한 페이지를 요청한다.
 
 - 정본·Micro·State·lore의 inventory, 미독 cursor, delta/tombstone·수정·복원 의존성을 먼저 고정한다. owner가 지원하지 않는 변경 기록을 만들어내지 않는다.
 - directory·typed adjacency·lexical/entity/time·semantic access의 shard schema와 tokenizer/DF/degree 범위를 version으로 봉인한다.

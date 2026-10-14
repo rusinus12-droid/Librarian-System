@@ -45269,11 +45269,8 @@ function createLibraReadonlySourceContext(owner) {
       const token = pin(value, entry); counters.hits++; return token;
     } finally { releaseStage(stage); }
   };
-  const install = (handle, binding, text, stage) => {
-    const value = request(handle), reservation = stages.get(stage);
-    if (!reservation || reservation.request !== value || typeof text !== 'string') fail('staging_required');
-    // Bounded producers pass size from pre-encoding measurement; verify the
-    // actual JSON only after its decode/hash workspace has been reserved.
+  const encodedSize = text => {
+    if (typeof text !== 'string') fail('json_invalid');
     let encodedBytes = 0, tokenBound = 1, inString = false, escaped = false;
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);
@@ -45283,6 +45280,14 @@ function createLibraReadonlySourceContext(owner) {
       else if (code === 34) inString = true;
       else if ([91,123,44,58].includes(code)) tokenBound++;
     }
+    return { utf8Bytes: encodedBytes, codeUnits: text.length, tokens: tokenBound };
+  };
+  const install = (handle, binding, text, stage) => {
+    const value = request(handle), reservation = stages.get(stage);
+    if (!reservation || reservation.request !== value || typeof text !== 'string') fail('staging_required');
+    // Bounded producers pass size from pre-encoding measurement; verify the
+    // actual JSON only after its decode/hash workspace has been reserved.
+    const encoded = encodedSize(text), encodedBytes = encoded.utf8Bytes, tokenBound = encoded.tokens;
     if (encodedBytes > config.pageBytes) fail('row_exceeds_page');
     const required = 65536 + encodedBytes * 12 + text.length * 4 + tokenBound * 64;
     if (required > reservation.bytes) fail('staging_budget', { stage: 'encoded_preflight', required, reserved: reservation.bytes });
@@ -45390,7 +45395,7 @@ function createLibraReadonlySourceContext(owner) {
     } finally { if (token) release(token); if (stage) releaseStage(stage); if (handle) close(handle); }
     result.cache = inspect(); return result;
   };
-  return Object.freeze({ open, reserve, releaseStage, close, acquire, install, decode, release, measure, stageCost,
+  return Object.freeze({ open, reserve, releaseStage, close, acquire, install, decode, release, measure, stageCost, encodedSize,
     generation, page, inspect, invalidate, dispose() { invalidate(); disposed = true; } });
 });
     const createLibraMemoryGraphStore = (function createMemoryGraphStore({ pages, fingerprint, inventory = null } = {}) {
@@ -45800,6 +45805,7 @@ function createLibraReadonlySourceContext(owner) {
   const schema = 'libra.memory_graph_index.v1';
   const tokenizerVersion = 'libra.tokenizer.nfkc_ko_particle_v2';
   const issued = new WeakSet();
+  const lazyReaders = new WeakMap();
   const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
@@ -46105,6 +46111,7 @@ function createLibraReadonlySourceContext(owner) {
 
   const affectedByChanges = (compiled, changedDependencyKeys = []) => {
     if (!compiled || compiled.schema !== schema || !Array.isArray(changedDependencyKeys)) fail('input_invalid');
+    if (lazyReaders.has(compiled)) fail('materialized_index_required');
     const lookup = new Map(compiled.reverseDependencies.map(row => [row.dependencyKey, row]));
     const nodeIds = new Set(), edgeIds = new Set(), postingKeys = new Set(), unmatchedKeys = [];
     for (const key of changedDependencyKeys) {
@@ -46150,6 +46157,7 @@ function createLibraReadonlySourceContext(owner) {
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) {
       fail('options_invalid');
     }
+    if (lazyReaders.has(compiled)) fail('async_page_required');
     let sourceRows = compiled[table];
     if (table === 'adjacency') {
       sourceRows = sourceRows.filter(row => (
@@ -46277,9 +46285,32 @@ function createLibraReadonlySourceContext(owner) {
     }
     return issue({ ...record, authority: 'descriptive_only', modelDispatchEligible: false });
   };
+  const restoreLazy = (metadata, { partition, generation, readRows } = {}) => {
+    if (typeof readRows !== 'function') fail('lazy_reader_required');
+    if (!metadata || metadata.schema !== schema || metadata.partition !== partition || metadata.generation !== generation
+      || metadata.projectionSchema !== 'libra.memory_graph_projection.v1' || metadata.tokenizerVersion !== tokenizerVersion
+      || !['window_exact','corpus_complete'].includes(metadata.dfScope)) fail('restore_binding_invalid');
+    for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
+      if (Object.hasOwn(metadata,table) || !Number.isSafeInteger(metadata.stats?.[stat]) || metadata.stats[stat] < 0
+        || !/^[a-f0-9]{64}$/.test(metadata.tableDigests?.[table+'Digest'])) fail('restore_stats_invalid');
+    }
+    if (hash(JSON.stringify([schema,tokenizerVersion,metadata.dfScope,partition,generation,metadata.stats,metadata.tableDigests])) !== metadata.indexDigest) fail('restore_digest_invalid');
+    const compiled = issue({ ...metadata, storageAccess: 'selective_durable_pages', authority: 'descriptive_only', modelDispatchEligible: false });
+    lazyReaders.set(compiled,readRows); return compiled;
+  };
+  const queryPageAsync = async (compiled, options = {}, storageBudget) => {
+    const reader = lazyReaders.get(compiled);
+    if (!reader) return queryPage(compiled,options);
+    const table = options.table || 'adjacency', offset = options.offset ?? 0, pageBytes = options.pageBytes ?? 16384;
+    if (!Object.hasOwn(poolForTable,table) || !Number.isSafeInteger(offset) || offset < 0
+      || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) fail('options_invalid');
+    const result = await reader({ ...options, table, offset, pageBytes },storageBudget);
+    if (result.storageStopped) return result;
+    return queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
+  };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;
-  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage, tokenize: tokenizer });
+  return Object.freeze({ compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
 });
     const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
@@ -46402,6 +46433,30 @@ function createLibraReadonlySourceContext(owner) {
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
+  const routingVersion = 'libra.index_page_routing.v1';
+  const routingKinds = { directory: ['node','source'], adjacency: ['anchor'],
+    postings: ['lexical','entity','predicate','time'], reverseDependencies: ['dependency'] };
+  const range = values => {
+    const sorted = [...new Set(values.filter(value => typeof value === 'string' && value))].sort((a,b) => a.localeCompare(b,'en'));
+    return sorted.length ? { min: sorted[0], max: sorted.at(-1) } : null;
+  };
+  const routingFor = (table, rows) => routingKinds[table].flatMap(kind => {
+    const values = rows.filter(row => table !== 'postings' || row.channel === kind).map(row =>
+      table === 'postings' ? row.term : kind === 'node' ? row.nodeId : kind === 'source' ? row.sourceId
+        : kind === 'anchor' ? row.anchorNodeId : row.dependencyKey);
+    const value = range(values); return value ? [{ kind, ...value }] : [];
+  });
+  const validRouting = ref => Array.isArray(ref.routing) && ref.routing.length <= routingKinds[ref.table].length
+    && new Set(ref.routing.map(row => row?.kind)).size === ref.routing.length
+    && (ref.rows === 0 ? ref.routing.length === 0 : ref.routing.length > 0)
+    && ref.routing.every(row => row && Object.keys(row).sort().join(',') === 'kind,max,min'
+      && routingKinds[ref.table].includes(row.kind) && typeof row.min === 'string' && row.min.length > 0 && row.min.length <= 8192
+      && typeof row.max === 'string' && row.max.length > 0 && row.max.length <= 8192 && row.min.localeCompare(row.max,'en') <= 0);
+  const mightContain = (ref, spec) => {
+    const term = spec.table === 'postings' ? spec.term : spec.table === 'reverseDependencies' ? spec.dependencyKey : spec.anchorNodeId;
+    return ref.routing.some(row => (!spec.channel || spec.table !== 'postings' || row.kind === spec.channel)
+      && (!term || row.min.localeCompare(term,'en') <= 0 && row.max.localeCompare(term,'en') >= 0));
+  };
   const build = async ({ snapshot, owner, options = {} } = {}) => {
     if (active) fail('build_busy'); active = true;
     try {
@@ -46418,12 +46473,12 @@ function createLibraReadonlySourceContext(owner) {
           total += page.serializedUtf8Bytes;
           if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
           await immutable(owner,key,text);
-          refs.push({ key, table, digest, rows: page.items.length, bytes: page.serializedUtf8Bytes, offset });
+          refs.push({ key, table, digest, rows: page.items.length, bytes: page.serializedUtf8Bytes, offset, routing: routingFor(table,page.items) });
           offset = page.nextOffset;
         } while (offset < compiled[table].length);
       }
       const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
-      const manifest = { schema, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
+      const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
         serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
@@ -46441,7 +46496,7 @@ function createLibraReadonlySourceContext(owner) {
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
     } finally { active = false; }
   };
-  const read = async ({ initialGraph, snapshot, owner } = {}) => {
+  const read = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
     const loc = location(initialGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
     if (rootRaw === null) return null;
     const root = parse(rootRaw,2048);
@@ -46450,38 +46505,92 @@ function createLibraReadonlySourceContext(owner) {
     if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,initialGraph.readerFrame)
       || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
+    if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
     const native = await enumerate(snapshot, manifest.config, owner.check);
     if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
-    const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
-    let total = 0;
+    const lazy = !eager && manifest.routingVersion === routingVersion;
+    const counts = Object.fromEntries(tables.map(table => [table,0])); let total = 0;
     for (const ref of manifest.refs) {
-      if (!tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
+      if (!ref || !tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
         || ref.key !== loc.prefix + 'page:' + ref.table + ':' + ref.digest
         || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > native.config.pageBytes
-        || ref.offset !== restored[ref.table].length) fail('directory_invalid');
+        || !Number.isSafeInteger(ref.rows) || ref.rows < 0 || ref.offset !== counts[ref.table]
+        || manifest.routingVersion && !validRouting(ref)) fail('directory_invalid');
+      counts[ref.table] += ref.rows;
       total += ref.bytes; if (total > native.config.maxSerializedBytes) fail('index_budget');
-      const text = await owner.read(ref.key); owner.check();
-      const rows = parse(text,native.config.pageBytes);
-      if (hash(text) !== ref.digest || !Array.isArray(rows) || rows.length !== ref.rows
-        || pages.measure(rows,native.config.pageBytes).utf8Bytes !== ref.bytes) fail('page_corrupt');
-      const handle = pages.open({ partition: loc.partition, generation: manifest.generation }); let stage, lease;
-      try {
-        stage = pages.reserve(handle,pages.stageCost(pages.measure(rows,native.config.pageBytes)));
-        lease = pages.install(handle,{ pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows },text,stage);
-        restored[ref.table].push(...pages.decode(lease));
-      } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); pages.close(handle); }
     }
-    const compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
-    if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
+      if (!manifest.refs.some(ref => ref.table === table) || counts[table] !== manifest.metadata?.stats?.[stat]) fail('directory_invalid');
+    }
+    const metrics = { storageAccess: lazy ? 'selective_durable_pages' : 'materialized_tables',
+      publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0 };
+    // No raw/decoded table cache: re-acquire validated content through the shared
+    // Cache Manager. Every new request physically verifies its first page use.
+    const validated = new Set();
+    const assertIndexCurrent = async () => {
+      owner.check(); if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    };
+    const readPage = async (ref, consume, budget) => {
+      owner.check(); let handle,stage,lease;
+      try {
+        handle = pages.open({ partition: loc.partition, generation: manifest.generation });
+        const binding = { pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows };
+        if (validated.has(ref.key)) lease = pages.acquire(handle,binding);
+        if (lease) metrics.cacheHits++;
+        else {
+          if (budget && budget.pagesRead >= budget.maxPages) return 'storage_page_count_budget';
+          if (budget && budget.bytesRead + ref.bytes > budget.maxBytes) return 'storage_byte_budget';
+          // Reserve expected raw/decode workspace before initiating physical I/O.
+          stage = pages.reserve(handle,pages.stageCost({ utf8Bytes: ref.bytes, codeUnits: ref.bytes, tokens: 0 }));
+          if (budget) { budget.pagesRead++; budget.bytesRead += ref.bytes; }
+          metrics.pagesRead++; metrics.bytesRead += ref.bytes;
+          const text = await owner.read(ref.key); owner.check();
+          if (typeof text !== 'string' || text.length > native.config.pageBytes || hash(text) !== ref.digest) fail('page_corrupt');
+          const size = pages.encodedSize(text);
+          if (size.utf8Bytes !== ref.bytes) fail('page_corrupt');
+          pages.releaseStage(stage); stage = null;
+          stage = pages.reserve(handle,pages.stageCost(size));
+          lease = pages.install(handle,binding,text,stage);
+          validated.add(ref.key); metrics.uniquePagesRead = validated.size;
+        }
+        const rows = pages.decode(lease);
+        if (!Array.isArray(rows) || rows.length !== ref.rows || pages.measure(rows,native.config.pageBytes).utf8Bytes !== ref.bytes
+          || manifest.routingVersion && !same(routingFor(ref.table,rows),ref.routing)) fail('page_corrupt');
+        consume(rows); owner.check(); return null;
+      } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
+    };
+    const readRows = async (spec,budget) => {
+      owner.check(); await owner.assertRoute?.(); owner.check();
+      const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
+      if (!Number.isSafeInteger(credit.maxPages) || credit.maxPages < 1 || credit.maxPages > 512
+        || !Number.isSafeInteger(credit.maxBytes) || credit.maxBytes < 512 || credit.maxBytes > 8388608
+        || !Number.isSafeInteger(credit.pagesRead) || credit.pagesRead < 0 || credit.pagesRead > credit.maxPages
+        || !Number.isSafeInteger(credit.bytesRead) || credit.bytesRead < 0 || credit.bytesRead > credit.maxBytes) fail('storage_budget_invalid');
+      const rows = [];
+      for (const ref of manifest.refs) if (ref.table === spec.table && mightContain(ref,spec)) {
+        const stopped = await readPage(ref, page => rows.push(...page), credit);
+        if (stopped) return { storageStopped: true, stopReason: stopped };
+      }
+      await assertIndexCurrent(); return { rows };
+    };
+    let compiledIndex;
+    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: stamp(native.graph), readRows });
+    else {
+      const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
+      for (const ref of manifest.refs) await readPage(ref, rows => restored[ref.table].push(...rows));
+      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
+    }
+    await assertIndexCurrent();
     const currentGraph = async () => {
+      await assertIndexCurrent();
       const live = await enumerate(snapshot, native.config, owner.check);
       if (!same(live.windows,manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
-      return live.graph;
+      await assertIndexCurrent(); return live.graph;
     };
-    return { ...native, compiledIndex, currentGraph,
+    return { ...native, compiledIndex, currentGraph, assertIndexCurrent,
       access: { schema, mode: 'durable_common_index', generation: manifest.generation, indexDigest: compiledIndex.indexDigest,
         windowCount: native.windows.length, pageCount: manifest.refs.length,
-        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total,
+        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total, storage: metrics,
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
   };
   return Object.freeze({ build, read, prepare, enumerate, location, inspect: () => ({ activeBuild: active }) });
@@ -46505,7 +46614,9 @@ function createLibraReadonlySourceContext(owner) {
     maxPages = 16,
     maxBytes = 65536,
     pageBytes = 8192,
-    resumeCursors = []
+    resumeCursors = [],
+    maxStoragePages = maxPages,
+    maxStorageBytes = maxBytes
   } = {}) => {
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_required');
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256
@@ -46514,6 +46625,10 @@ function createLibraReadonlySourceContext(owner) {
       fail('budget_options_invalid');
     }
 
+    if (!Number.isSafeInteger(maxStoragePages) || maxStoragePages < 1 || maxStoragePages > 512
+      || !Number.isSafeInteger(maxStorageBytes) || maxStorageBytes < 512 || maxStorageBytes > 8388608) fail('storage_budget_invalid');
+    const storageBudget = { maxPages: maxStoragePages, maxBytes: maxStorageBytes, pagesRead: 0, bytesRead: 0 };
+    let busy = false;
     const queue = [];
     const seenAccessKeys = new Map();
     const completedAccesses = [];
@@ -46633,7 +46748,7 @@ function createLibraReadonlySourceContext(owner) {
       ));
     };
 
-    const step = ({ checkCancel } = {}) => {
+    const stepSteps = function* ({ checkCancel } = {}) {
       if (queue.length === 0) {
         return { executed: false, stopReason: 'frontier_exhausted', access: null };
       }
@@ -46647,7 +46762,13 @@ function createLibraReadonlySourceContext(owner) {
       }
       sortQueue();
       const next = queue[0];
-      const page = index.queryPage(compiledIndex, next.spec);
+      const page = yield next.spec;
+      if (typeof checkCancel === 'function' && checkCancel() === true) {
+        lastStopReason = 'cancelled'; return { executed: false, stopReason: 'cancelled', access: null };
+      }
+      if (page.storageStopped) {
+        lastStopReason = page.stopReason; return { executed: false, stopReason: lastStopReason, access: null };
+      }
       if (page.stopReason === 'row_exceeds_page') {
         queue.shift();
         unreadCursors.push({
@@ -46711,11 +46832,11 @@ function createLibraReadonlySourceContext(owner) {
       return { executed: true, stopReason: 'frontier_exhausted', access };
     };
 
-    const drainPending = ({ checkCancel } = {}) => {
+    const drainSteps = function* ({ checkCancel } = {}) {
       const newAccesses = [];
       let stoppedByBudget = false;
       while (queue.length > 0) {
-        const res = step({ checkCancel });
+        const res = yield* stepSteps({ checkCancel });
         if (!res.executed) {
           if (res.stopReason === 'row_exceeds_page') continue;
           stoppedByBudget = res.stopReason !== 'frontier_exhausted';
@@ -46731,14 +46852,36 @@ function createLibraReadonlySourceContext(owner) {
       };
     };
 
+    // Both drivers execute the same scheduler. Only physical page access awaits.
+    const run = generator => {
+      if (busy) fail('session_busy');
+      let next = generator.next();
+      while (!next.done) next = generator.next(index.queryPage(compiledIndex, next.value));
+      return next.value;
+    };
+    const runAsync = async generator => {
+      if (busy) fail('session_busy'); busy = true;
+      try {
+        let next = generator.next();
+        while (!next.done) next = generator.next(await index.queryPageAsync(compiledIndex, next.value, storageBudget));
+        return next.value;
+      } finally { busy = false; }
+    };
+    const step = options => run(stepSteps(options));
+    const stepAsync = options => runAsync(stepSteps(options));
+    const drainPending = options => run(drainSteps(options));
+    const drainPendingAsync = options => runAsync(drainSteps(options));
+
     const isBudgetStopped = () => (
       lastStopReason === 'page_count_budget'
       || lastStopReason === 'byte_budget'
       || lastStopReason === 'cancelled'
+      || lastStopReason.startsWith('storage_')
       || lastStopReason === 'row_exceeds_page'
     );
 
     const finalize = () => {
+      if (busy) fail('session_busy');
       if (finalizedReport) return finalizedReport;
       while (queue.length > 0) {
         const pending = queue.shift();
@@ -46767,6 +46910,7 @@ function createLibraReadonlySourceContext(owner) {
         stopReason: lastStopReason,
         pagesRead,
         bytesRead,
+        storage: Object.freeze({ ...storageBudget }),
         cacheHits,
         coalescedRequests,
         roleStats: JSON.parse(JSON.stringify(roleStats)),
@@ -46788,6 +46932,8 @@ function createLibraReadonlySourceContext(owner) {
       enqueue,
       step,
       drainPending,
+      stepAsync,
+      drainPendingAsync,
       isBudgetStopped,
       finalize,
       drain
@@ -47240,13 +47386,15 @@ function createLibraReadonlySourceContext(owner) {
     };
   };
 
-  const retrieve = (viewHandle, {
+  const retrieveSteps = function* (viewHandle, {
     maxPages = 64,
     maxBytes = 262144,
     pageBytes = 8192,
     maxWorkspaceBytes = 262144,
-    resumeCursors = []
-  } = {}) => {
+    resumeCursors = [],
+    maxStoragePages = maxPages,
+    maxStorageBytes = maxBytes
+  } = {}) {
     const view = issuedViews.get(viewHandle);
     if (!view) fail('view_handle_invalid');
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
@@ -47266,7 +47414,7 @@ function createLibraReadonlySourceContext(owner) {
       isEdgeEligible
     } = view;
 
-    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors });
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes });
 
     // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
@@ -47356,7 +47504,7 @@ function createLibraReadonlySourceContext(owner) {
       }
     };
 
-    const seedDrain = laneSession.drainPending();
+    const seedDrain = yield laneSession;
     ingestAccesses(seedDrain.newAccesses);
 
     const stateByNode = new Map();
@@ -47539,7 +47687,7 @@ function createLibraReadonlySourceContext(owner) {
           priorityHint: current.activation,
           requesterId: `frontier:${top.nodeId}`
         });
-        const stepDrain = laneSession.drainPending();
+        const stepDrain = yield laneSession;
         ingestAccesses(stepDrain.newAccesses);
         if (stepDrain.stoppedByBudget) {
           frontier.unshift(top);
@@ -47759,6 +47907,7 @@ function createLibraReadonlySourceContext(owner) {
         l0WorkspaceBytes,
         maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,
+        storage: laneReport.storage || null,
         laneBytesRead: laneReport.bytesRead,
         laneMaxBytes: maxBytes,
         laneCacheHits: laneReport.cacheHits || 0,
@@ -47778,6 +47927,7 @@ function createLibraReadonlySourceContext(owner) {
         indexDigest: compiledIndex.indexDigest,
         lane: Object.freeze({
           pagesRead: laneReport.pagesRead,
+          storage: laneReport.storage || null,
           bytesRead: laneReport.bytesRead,
           maxBytes,
           cacheHits: laneReport.cacheHits || 0,
@@ -47805,7 +47955,18 @@ function createLibraReadonlySourceContext(owner) {
     });
   };
 
-  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve });
+  // One frontier/scorer algorithm, with synchronous and awaited page drivers.
+  const retrieve = (...args) => {
+    const work = retrieveSteps(...args); let next = work.next();
+    while (!next.done) next = work.next(next.value.drainPending());
+    return next.value;
+  };
+  const retrieveAsync = async (...args) => {
+    const work = retrieveSteps(...args); let next = work.next();
+    while (!next.done) next = work.next(await next.value.drainPendingAsync());
+    return next.value;
+  };
+  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve, retrieveAsync });
 });
     const createLibraMemoryGraphSemantic = (function createMemoryGraphSemantic({ digest, profileFor, projectionFor } = {}) {
   if (![digest, profileFor, projectionFor].every(fn => typeof fn === 'function')) throw new TypeError('LIBRA_GRAPH_SEMANTIC_ADAPTER_REQUIRED');
@@ -48756,7 +48917,7 @@ function createLibraReadonlySourceContext(owner) {
       worldlineId: sealed.worldlineId
     });
     const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-    const retrieved = query.retrieve(viewHandle, laneBudget);
+    const retrieved = await query.retrieveAsync(viewHandle, laneBudget);
     const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
       stopReason: 'semantic_representation_byte_budget',
       coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
@@ -48818,7 +48979,7 @@ function createLibraReadonlySourceContext(owner) {
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       accessTrace: queryResult.accessTrace || null,
-      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations } },
+      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations, storageAccess: compiledIndex.storageAccess || 'materialized_tables' } },
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
@@ -68604,6 +68765,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
       return await state.memoryGraphCorpus.build({ ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'expectedScopeKey')) });
     };
+    const verifyMemoryGraphCorpus = async (options = {}) => {
+      if (!options || typeof options !== 'object' || Array.isArray(options)
+        || Object.keys(options).some(key => key !== 'expectedScopeKey')) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      ensureMemoryGraphUnifiedSuite(); let collected;
+      const graph = await readMemoryGraphProjection({ expectedScopeKey: options.expectedScopeKey || '' }, value => { collected = value; });
+      const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
+      const corpus = await state.memoryGraphCorpus.read({ initialGraph: graph, ...context, eager: true });
+      if (!corpus) throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
+      await corpus.currentGraph(); await context.owner.assertRoute();
+      return { schema: 'libra.graph_corpus_audit.v1', status: 'verified', generation: corpus.access.generation,
+        indexDigest: corpus.access.indexDigest, storage: clone(corpus.access.storage),
+        coverage: clone(corpus.graph.coverage), requestLocalReadOnly: true, modelDispatchEligible: false };
+    };
     const executeMemoryGraphUnifiedQuery = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
       const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget','semanticPolicy','corpusMode'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
@@ -68803,6 +68978,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               }
             }
             await corpusContext.owner.assertRoute();
+            await corpus?.assertIndexCurrent?.();
             return true;
           } catch (_err) {
             return false;
@@ -71560,7 +71736,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -75712,6 +75888,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
                 const result = await LibraMemoryCore.buildMemoryGraphCorpus();
                 guiSetStatus(`전체 이력 인덱스 게시: ${result.windowCount}구간 · ${result.pageCount}페이지`);
               } catch (error) { guiSetStatus(error?.message || String(error),true,true); }
+            } }),
+            guiEl('button', { class: 'btn', text: '전체 인덱스 검증', onClick: async () => {
+              try { guiSetStatus('전체 이력 인덱스를 검증하고 있습니다.');
+                const result = await LibraMemoryCore.verifyMemoryGraphCorpus();
+                guiSetStatus(`전체 인덱스 ${Number(result.storage.pagesRead)}개 페이지를 검증했습니다.`);
+              } catch (error) { guiSetStatus(`인덱스 검증 실패: ${String(error?.message || error)}`,true); }
             } }),
             guiEl('button', { class: 'btn', text: '인덱스 구축 취소', onClick: () => { LibraMemoryCore.cancelMemoryGraphGenerationBuild(); guiSetStatus('인덱스 구축 취소를 요청했습니다.'); } })]);
         })(),
@@ -82700,6 +82882,7 @@ advanced
     inspectMemoryGraphPages() { return LibraMemoryCore.inspectMemoryGraphPages(); },
     async buildMemoryGraphGeneration(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphGeneration(options)); },
     async buildMemoryGraphCorpus(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphCorpus(options)); },
+    async verifyMemoryGraphCorpus(options = {}) { return await safeClone(await LibraMemoryCore.verifyMemoryGraphCorpus(options)); },
     async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
     getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },

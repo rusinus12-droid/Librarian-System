@@ -35,7 +35,7 @@ function fixture({count=53,canonicalCount=2}={}) {
   };
   const initial=async()=> (await snapshot({limit:1,canonicalCursor:'',microCursor:''})).graph;
   const build=options=>corpus.build({owner,snapshot,options:{limit:1,...options}});
-  const read=async()=>corpus.read({owner,snapshot,initialGraph:await initial()});
+  const read=async()=>corpus.read({owner,snapshot,initialGraph:await initial(),eager:true});
   const idle=()=>{const s=pages.inspect();assert.equal(s.pins,0);assert.equal(s.activeRequests,0);assert.equal(s.bytes.request,0);assert.equal(s.bytes.staging,0);assert.equal(corpus.inspect().activeBuild,false);};
   return {values,writes,reads,visits,pages,index,corpus,owner,snapshot,initial,build,read,idle,
     change(){revision++;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},get compiles(){return compileCount;}};
@@ -56,7 +56,7 @@ test('cold, warm, evicted and fresh-runtime reads reuse the published index with
   x.pages.invalidate();assert.deepEqual((await x.read()).compiledIndex,first.compiledIndex);
   const pages=createPages({fingerprint:hash}),index=createIndex({pages,fingerprint:hash});
   const corpus=createCorpus({pages,index:{...index,compile(){throw Error('query_must_not_compile');}},fingerprint:hash});
-  const fresh=await corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:await x.initial()});
+  const fresh=await corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:await x.initial(),eager:true});
   assert.deepEqual(fresh.compiledIndex,first.compiledIndex);assert.equal(x.compiles,1);x.idle();
 });
 test('an edit outside the first source window refuses both a fresh read and an already selected generation',async()=>{

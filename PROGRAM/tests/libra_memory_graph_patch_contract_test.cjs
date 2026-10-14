@@ -73,7 +73,7 @@ const idle = pages => { const s = pages.inspect(); assert.equal(s.activeRequests
       complete: true, candidates: [{ nodeId: 'n', family: 'canonical', semanticRole: 'canonical_assertion', text: 'test words', score: 1 }] };
     const rollout = createRollout({ fingerprint,
       pages: { generation: () => 'a'.repeat(64) }, index: { compile: () => ({ indexDigest: 'b'.repeat(64) }) }, lane: {},
-      query: { sealQueryFrame: () => ({ frameId: 'c'.repeat(64) }), openView: () => ({}), retrieve: () => queryResult },
+      query: { sealQueryFrame: () => ({ frameId: 'c'.repeat(64) }), openView: () => ({}), retrieveAsync: async () => queryResult },
       compiler: { ...compiler, render: selected => ({ ...compiler.render(selected), consumerVerification: { ok: false } }) }
     });
     const sealToken = rollout.sealRequestMode({ mode: 'unified', requestId: 'bad-packet', owner: graph.readerFrame.owner,

@@ -10,6 +10,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   const schema = 'libra.memory_graph_index.v1';
   const tokenizerVersion = 'libra.tokenizer.nfkc_ko_particle_v2';
   const issued = new WeakSet();
+  const lazyReaders = new WeakMap();
   const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
@@ -315,6 +316,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
 
   const affectedByChanges = (compiled, changedDependencyKeys = []) => {
     if (!compiled || compiled.schema !== schema || !Array.isArray(changedDependencyKeys)) fail('input_invalid');
+    if (lazyReaders.has(compiled)) fail('materialized_index_required');
     const lookup = new Map(compiled.reverseDependencies.map(row => [row.dependencyKey, row]));
     const nodeIds = new Set(), edgeIds = new Set(), postingKeys = new Set(), unmatchedKeys = [];
     for (const key of changedDependencyKeys) {
@@ -360,6 +362,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) {
       fail('options_invalid');
     }
+    if (lazyReaders.has(compiled)) fail('async_page_required');
     let sourceRows = compiled[table];
     if (table === 'adjacency') {
       sourceRows = sourceRows.filter(row => (
@@ -487,7 +490,30 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     }
     return issue({ ...record, authority: 'descriptive_only', modelDispatchEligible: false });
   };
+  const restoreLazy = (metadata, { partition, generation, readRows } = {}) => {
+    if (typeof readRows !== 'function') fail('lazy_reader_required');
+    if (!metadata || metadata.schema !== schema || metadata.partition !== partition || metadata.generation !== generation
+      || metadata.projectionSchema !== 'libra.memory_graph_projection.v1' || metadata.tokenizerVersion !== tokenizerVersion
+      || !['window_exact','corpus_complete'].includes(metadata.dfScope)) fail('restore_binding_invalid');
+    for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
+      if (Object.hasOwn(metadata,table) || !Number.isSafeInteger(metadata.stats?.[stat]) || metadata.stats[stat] < 0
+        || !/^[a-f0-9]{64}$/.test(metadata.tableDigests?.[table+'Digest'])) fail('restore_stats_invalid');
+    }
+    if (hash(JSON.stringify([schema,tokenizerVersion,metadata.dfScope,partition,generation,metadata.stats,metadata.tableDigests])) !== metadata.indexDigest) fail('restore_digest_invalid');
+    const compiled = issue({ ...metadata, storageAccess: 'selective_durable_pages', authority: 'descriptive_only', modelDispatchEligible: false });
+    lazyReaders.set(compiled,readRows); return compiled;
+  };
+  const queryPageAsync = async (compiled, options = {}, storageBudget) => {
+    const reader = lazyReaders.get(compiled);
+    if (!reader) return queryPage(compiled,options);
+    const table = options.table || 'adjacency', offset = options.offset ?? 0, pageBytes = options.pageBytes ?? 16384;
+    if (!Object.hasOwn(poolForTable,table) || !Number.isSafeInteger(offset) || offset < 0
+      || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) fail('options_invalid');
+    const result = await reader({ ...options, table, offset, pageBytes },storageBudget);
+    if (result.storageStopped) return result;
+    return queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
+  };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;
-  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage, tokenize: tokenizer });
+  return Object.freeze({ compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
 };

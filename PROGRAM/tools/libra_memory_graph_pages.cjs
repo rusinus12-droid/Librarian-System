@@ -142,11 +142,8 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
       const token = pin(value, entry); counters.hits++; return token;
     } finally { releaseStage(stage); }
   };
-  const install = (handle, binding, text, stage) => {
-    const value = request(handle), reservation = stages.get(stage);
-    if (!reservation || reservation.request !== value || typeof text !== 'string') fail('staging_required');
-    // Bounded producers pass size from pre-encoding measurement; verify the
-    // actual JSON only after its decode/hash workspace has been reserved.
+  const encodedSize = text => {
+    if (typeof text !== 'string') fail('json_invalid');
     let encodedBytes = 0, tokenBound = 1, inString = false, escaped = false;
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);
@@ -156,6 +153,14 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
       else if (code === 34) inString = true;
       else if ([91,123,44,58].includes(code)) tokenBound++;
     }
+    return { utf8Bytes: encodedBytes, codeUnits: text.length, tokens: tokenBound };
+  };
+  const install = (handle, binding, text, stage) => {
+    const value = request(handle), reservation = stages.get(stage);
+    if (!reservation || reservation.request !== value || typeof text !== 'string') fail('staging_required');
+    // Bounded producers pass size from pre-encoding measurement; verify the
+    // actual JSON only after its decode/hash workspace has been reserved.
+    const encoded = encodedSize(text), encodedBytes = encoded.utf8Bytes, tokenBound = encoded.tokens;
     if (encodedBytes > config.pageBytes) fail('row_exceeds_page');
     const required = 65536 + encodedBytes * 12 + text.length * 4 + tokenBound * 64;
     if (required > reservation.bytes) fail('staging_budget', { stage: 'encoded_preflight', required, reserved: reservation.bytes });
@@ -263,6 +268,6 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
     } finally { if (token) release(token); if (stage) releaseStage(stage); if (handle) close(handle); }
     result.cache = inspect(); return result;
   };
-  return Object.freeze({ open, reserve, releaseStage, close, acquire, install, decode, release, measure, stageCost,
+  return Object.freeze({ open, reserve, releaseStage, close, acquire, install, decode, release, measure, stageCost, encodedSize,
     generation, page, inspect, invalidate, dispose() { invalidate(); disposed = true; } });
 };

@@ -40,6 +40,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(bus.messages.filter(row=>row.body.action==='capture').length,1);
  assert.equal(bus.messages.find(row=>row.body.result?.engine?.corpusRead)?.body.result.engine.corpusRead.mode,'durable_common_index');
+ assert.equal(bus.messages.find(row=>row.body.result?.engine?.corpusRead)?.body.result.engine.corpusRead.storage.storageAccess,'selective_durable_pages');
  assert.ok(bus.messages.some(row=>row.body.action==='current'));
  assert.equal(f.control.calls.length,calls);assert.deepEqual(x.server.storedRows(),before,'reading must not write owner memory');
  assert.ok(!JSON.stringify([...g.store]).includes('owner_issued_evidence_bundle'));

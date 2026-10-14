@@ -1,7 +1,7 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.14 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 선택적 영속 접근·증분 원본 검증·전체 자원 계상과 실제 설치/품질·규모 인증은 미완성이다.**
+- 문서 버전: 1.15 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·전체 자원 계상과 실제 설치/품질·규모 인증은 미완성이다.**
 - 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 최신 전환 계약은 [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md). 이전 범위와 검증은 [현황 §12–19](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
@@ -128,6 +128,10 @@ UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `So
 ### 2.9 v1.14 — 기본·유일한 통합 검색
 
 정상 회상·Classic 최종 주입·GUI 검색·GRADIA LIBRA 읽기는 통합 엔진만 실행한다. 저장 인덱스가 없거나 내용/표현 버전이 낡으면 현재 원본의 모든 owner cursor 구간을 읽어 같은 공통 index와 frontier로 검색한다. 저장 인덱스 repair·문서 벡터 생산·legacy 검색을 시작하지 않는다. 손상·권한/route/reset 변경·취소·예산 실패는 명시적 실패 또는 base request로 처리한다. [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)과 [현황 §19](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#19-레거시-검색의-완전-대체)를 현재 기준으로 적용한다. 이전 절의 모드 선택·준비 작업 설명은 당시 기록이다.
+
+### 2.10 v1.15 — 선택적 저장 인덱스 읽기
+
+Memory Lane의 seed/frontier가 필요한 저장 index page를 비동기로 요청한다. Query/Lane은 하나의 generator 알고리즘을 동기/비동기 driver로 실행하며 별도 ranker를 추가하지 않는다. 신규 manifest의 키 범위와 실제 페이지를 대조하고 공통 Cache Manager·물리 payload 예산으로 읽는다. 원본 전체 재투영/최종 native 검증은 유지한다. [선택적 읽기 계약](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)과 [현황 §20](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#20-선택적-저장-인덱스-읽기)을 최신 기준으로 적용한다.
 
 ## 3. 전체 아키텍처
 
@@ -617,6 +621,7 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.9 · 2026-10-14 | 정본 global projection 벡터와 실제 provider/query cache를 단일 scorer/frontier에 연결한 native semantic 범위 반영 |
 | 1.10 · 2026-10-14 | LIBRA Planner·SGA·Input Writer 퇴역과 별도 GRADIA 소비자 경계를 정정. 기존 셰도우/AIDE 서버 읽기와 새 엔진 연결, 인풋 작성기의 새 세션 계약을 구분하고 N00–N07 작업 계획 연결. runtime 변경 없음 |
 | 1.14 · 2026-10-14 | 사용자 완전 대체 지시에 따라 unified를 기본·유일 검색기로 전환. cold/stale 전체 구간 검색, Classic/GUI/GRADIA 기본 연결, 기존 serving ranker·준비·renderer·UI 제어 종료. 실제 설치/규모 인증은 별도 미완 |
+| 1.15 · 2026-10-14 | 신규 게시 공통 index의 선택적 비동기 저장 page 접근·Cache Manager·물리 payload admission/trace와 전체 read-only audit 연결. 단일 Query/Lane 알고리즘·native 원본 재검증 유지 |
 
 ## 14. 리뷰 후 강화한 실행 경계 (v1.8)
 

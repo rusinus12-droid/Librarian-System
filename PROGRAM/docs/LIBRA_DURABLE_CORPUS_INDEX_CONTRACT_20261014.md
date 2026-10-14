@@ -1,8 +1,8 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 버전: 1.1
+- 작성일: 2026-10-14 · 버전: 1.2
 - 조사 기준: `89fb341` 이후의 이 증분
-- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 대규모 corpus의 선택적 페이지 접근과 원본 증분 검증은 아직 미완성이다.**
+- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근을 연결했다. 원본 증분 검증과 대규모 성능 인증은 아직 미완성이다.**
 
 ## 1. 실제 사용 경로
 
@@ -26,7 +26,7 @@ GUI 진단 카드의 **전체 이력 인덱스 구축** 버튼과 등록 API가 
 
 ## 2. 현재성·무결성·발송 권한
 
-읽을 때 모든 저장 표의 namespace/key·크기·digest·행수·offset과 index metadata를 검사한다. 공통 Index의 `restore()`는 현재 native generation/partition과 결속하고 모듈이 실제로 발급한 객체만 rollout에 전달한다. cold/warm/축출/새 VM 모두 같은 검사를 한다. cache hit가 디스크의 오염을 숨기지 않는다.
+manifest의 namespace/key·크기·행수·offset·routing과 index metadata를 검증하고, 필요한 저장 page만 읽어 내용 digest·행수·routing을 대조한다. 이전 manifest와 명시적 전체 검증은 모든 표를 복원한다. 최신 계약은 [선택적 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)를 따른다. 공통 Index의 `restore()`는 현재 native generation/partition과 결속하고 모듈이 실제로 발급한 객체만 rollout에 전달한다. cold/warm/축출/새 VM 모두 실제 사용하는 페이지를 검증한다. 요청의 첫 사용에서 cache hit가 디스크의 오염을 숨기지 않으며, 안 읽은 페이지의 손상은 전체 검증에서 검사한다.
 
 owner cursor의 서명에는 runtime publication binding도 들어간다. 저장된 서명을 재시작 후의 내용 식별자로 쓰지 않는다. 매번 새 owner cursor로 순회하고 구간 순서·실제 native 행/frame binding·미독 구간의 유무를 비교한다. 이 수정은 양쪽 저장 모드의 실제 VM 재시작과 커널의 커서 변경·실제 내용 변경 대조 검사로 확인한다.
 
@@ -74,6 +74,6 @@ node PROGRAM/tools/sync_libra_gradia_unified_read.cjs --check
 node PROGRAM/tools/check_sdk_sync.cjs
 ```
 
-**N01은 닫히지 않았다.** 원본 전체 재투영과 공통 index 표 전체 hydration이 아직 필요하다. Lane은 복원한 공통 표의 query page를 읽으며 저장 shard를 직접 비동기 탐색하는 구조까지 이행하지 않았다. 다음 구현은 owner의 증분/근거 계약에 맞춘 원본 검증, 선택적 durable index·벡터 page 접근, build 재개·증분 교체와 전체 workspace/I/O admission이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·warm I/O 절감·대규모 성능 합격으로 사용하지 않는다.
+**N01은 닫히지 않았다.** 원본 전체 재투영은 아직 필요하다. 신규 게시 index는 Lane이 필요한 저장 page를 직접 비동기로 읽으며, routing이 없는 이전 manifest는 전체 표 복원을 유지한다. 다음 구현은 owner의 증분/근거 계약에 맞춘 원본 검증, 선택적 durable index·벡터 page 접근, build 재개·증분 교체와 전체 workspace/I/O admission이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·warm I/O 절감·대규모 성능 합격으로 사용하지 않는다.
 
 N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 serving 전환은 수행했으며 실제 인증 gate를 대신하지 않는다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.

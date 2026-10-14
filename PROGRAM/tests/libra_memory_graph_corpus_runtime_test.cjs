@@ -12,6 +12,8 @@ for (const mode of ['plugin_only','server_only']) test(`${mode}: shipped API sea
   const records=()=>mode==='server_only'?x.server.storedRows():[...x.f.r.values].filter(([key])=>key.includes(':memory-graph:v1:'));
   const before=records(),calls=x.f.control.calls.length;
   const cold=await api.executeMemoryGraphUnifiedQuery(options),warm=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'});
+  assert.equal(cold.corpusRead.storage.storageAccess,'selective_durable_pages');
+  assert.ok(cold.corpusRead.storage.pagesRead>0&&cold.corpusRead.storage.pagesRead<cold.corpusRead.pageCount);
   assert.equal(cold.corpusRead.mode,'durable_common_index');assert.equal(cold.corpusRead.indexBuildsDuringQuery,0);
   assert.equal(cold.windowRead.scope,'enumerated_owner_windows');assert.equal(cold.windowRead.limit,1);
   assert.ok(cold.bundle.items.some(i=>i.family==='micro'&&i.text===QUOTE));assert.equal(cold.modelDispatchEligible,true);

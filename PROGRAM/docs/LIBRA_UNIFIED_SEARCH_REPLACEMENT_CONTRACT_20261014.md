@@ -1,6 +1,6 @@
 # LIBRA 레거시 검색 종료 계약
 
-- 작성일: 2026-10-14 · 버전: 1.0
+- 작성일: 2026-10-14 · 버전: 1.1
 - 기준: `75d9805` 이후, 사용자의 “레거시 검색을 새로운 엔진이 완전히 대체” 지시.
 - 판정: **통합 엔진을 기본·유일한 검색기로 전환하고 기존 serving 경로를 제거했다. 실제 설치/품질·대규모 성능 인증 완료를 뜻하지 않는다.**
 
@@ -50,4 +50,4 @@ node PROGRAM/tools/sync_libra_gradia_unified_read.cjs --check
 node PROGRAM/tools/check_sdk_sync.cjs
 ```
 
-현재 검증은 제어된 등록 합성 호스트·실제 SQLite/HTTP storage·shipped plugin의 호출 경로다. N01 선택적 저장 shard 접근·증분 원본 검증·전체 workspace/I/O 계상, N02 추가 representation 생산, N05 native 실제 삭제, N06 설치/품질·규모 인증은 남는다. 이 미완료가 옛 엔진을 선택하거나 중복 실행시키지는 않는다.
+현재 검증은 제어된 등록 합성 호스트·실제 SQLite/HTTP storage·shipped plugin의 호출 경로다. N01의 신규 저장 index 선택적 접근은 [후속 계약](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)에서 연결했다. 원본 증분 검증·전체 workspace/I/O 계상, N02 추가 representation 생산, N05 native 실제 삭제, N06 설치/품질·규모 인증은 남는다. 이 미완료가 옛 엔진을 선택하거나 중복 실행시키지는 않는다.

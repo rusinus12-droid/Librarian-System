@@ -21,8 +21,10 @@ test('normal Classic request uses the new engine without opt-in, a stored index,
 });
 test('corrupt stored index refuses the request and never invokes a retired search or mutates the source',async t=>{
  const f=await writer();t.after(()=>f.r.cleanup());await f.run();const api=f.r.api;await api.buildMemoryGraphCorpus();poisonLegacy(f);
- const page=[...f.r.values.keys()].find(key=>key.includes(':memory-graph:v1:corpus:page:'));
- assert.ok(page);f.r.values.set(page,'CORRUPTED_INDEX');const before=[...f.r.values],calls=f.control.calls.length;
+ const read=f.r.values.get.bind(f.r.values),touched=[];
+ f.r.values.get=key=>{if(key.includes(':memory-graph:v1:corpus:page:'))touched.push(key);return read(key);};
+ await api.previewUnifiedMemoryRecall({queryText:'은빛 열쇠'});
+ const page=touched[0]; assert.ok(page);f.r.values.set(page,'CORRUPTED_INDEX');const before=[...f.r.values],calls=f.control.calls.length;
  const messages=[{role:'user',content:'은빛 열쇠'}],output=await f.control.hooks.beforeRequest(messages,'model');
  assert.deepEqual(output,messages);assert.equal(api.getLastMemoryRecallViewer().failOpen,true);
  assert.equal(api.getRuntime().lastMemoryInjectionMeta.injected,false);assert.deepEqual([...f.r.values],before);assert.equal(f.control.calls.length,calls);

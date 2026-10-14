@@ -450,13 +450,15 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     };
   };
 
-  const retrieve = (viewHandle, {
+  const retrieveSteps = function* (viewHandle, {
     maxPages = 64,
     maxBytes = 262144,
     pageBytes = 8192,
     maxWorkspaceBytes = 262144,
-    resumeCursors = []
-  } = {}) => {
+    resumeCursors = [],
+    maxStoragePages = maxPages,
+    maxStorageBytes = maxBytes
+  } = {}) {
     const view = issuedViews.get(viewHandle);
     if (!view) fail('view_handle_invalid');
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
@@ -476,7 +478,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       isEdgeEligible
     } = view;
 
-    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors });
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes });
 
     // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
@@ -566,7 +568,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       }
     };
 
-    const seedDrain = laneSession.drainPending();
+    const seedDrain = yield laneSession;
     ingestAccesses(seedDrain.newAccesses);
 
     const stateByNode = new Map();
@@ -749,7 +751,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
           priorityHint: current.activation,
           requesterId: `frontier:${top.nodeId}`
         });
-        const stepDrain = laneSession.drainPending();
+        const stepDrain = yield laneSession;
         ingestAccesses(stepDrain.newAccesses);
         if (stepDrain.stoppedByBudget) {
           frontier.unshift(top);
@@ -969,6 +971,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         l0WorkspaceBytes,
         maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,
+        storage: laneReport.storage || null,
         laneBytesRead: laneReport.bytesRead,
         laneMaxBytes: maxBytes,
         laneCacheHits: laneReport.cacheHits || 0,
@@ -988,6 +991,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         indexDigest: compiledIndex.indexDigest,
         lane: Object.freeze({
           pagesRead: laneReport.pagesRead,
+          storage: laneReport.storage || null,
           bytesRead: laneReport.bytesRead,
           maxBytes,
           cacheHits: laneReport.cacheHits || 0,
@@ -1015,5 +1019,16 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     });
   };
 
-  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve });
+  // One frontier/scorer algorithm, with synchronous and awaited page drivers.
+  const retrieve = (...args) => {
+    const work = retrieveSteps(...args); let next = work.next();
+    while (!next.done) next = work.next(next.value.drainPending());
+    return next.value;
+  };
+  const retrieveAsync = async (...args) => {
+    const work = retrieveSteps(...args); let next = work.next();
+    while (!next.done) next = work.next(await next.value.drainPendingAsync());
+    return next.value;
+  };
+  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve, retrieveAsync });
 };

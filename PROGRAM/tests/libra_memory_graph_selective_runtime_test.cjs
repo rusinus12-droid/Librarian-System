@@ -1,0 +1,20 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
+test('shipped native query performs selective physical reads and full audit finds unread corruption without model calls or writes',async t=>{
+ const f=await fixture();t.after(()=>f.r.cleanup());await f.run();const api=f.r.api;
+ await assert.rejects(()=>api.verifyMemoryGraphCorpus(),/CORPUS_MISSING_GENERATION/);
+ await api.buildMemoryGraphCorpus();const before=[...f.r.values],calls=f.control.calls.length,read=f.r.values.get.bind(f.r.values),touched=[];
+ f.r.values.get=key=>{if(key.includes(':memory-graph:v1:corpus:page:'))touched.push(key);return read(key);};
+ const result=await api.executeMemoryGraphUnifiedQuery({corpusMode:'required',queryInput:{queryText:'은빛 열쇠'},semanticPolicy:{mode:'disabled'}});
+ assert.equal(result.modelDispatchEligible,true);assert.equal(result.corpusRead.storage.storageAccess,'selective_durable_pages');
+ assert.equal(result.corpusRead.storage.pagesRead,touched.length);assert.ok(touched.length>0&&touched.length<result.corpusRead.pageCount);
+ assert.ok(!touched.some(key=>key.includes(':reverseDependencies:')));
+ const unused=before.find(([key])=>key.includes(':corpus:page:reverseDependencies:'));assert.ok(unused);f.r.values.set(unused[0],'BAD_UNUSED_PAGE');
+ const still=await api.executeMemoryGraphUnifiedQuery({corpusMode:'required',queryInput:{queryText:'은빛 열쇠'},semanticPolicy:{mode:'disabled'}});
+ assert.equal(still.packet.packetDigest,result.packet.packetDigest);await assert.rejects(()=>api.verifyMemoryGraphCorpus(),/PAGE_CORRUPT/);
+ f.r.values.set(...unused);const audit=await api.verifyMemoryGraphCorpus();assert.equal(audit.status,'verified');assert.equal(audit.requestLocalReadOnly,true);assert.equal(audit.modelDispatchEligible,false);
+ assert.equal(audit.storage.pagesRead,result.corpusRead.pageCount);assert.equal(audit.storage.bytesRead,result.corpusRead.serializedIndexBytes);
+ assert.deepEqual([...f.r.values],before);assert.equal(f.control.calls.length,calls);const cache=api.inspectMemoryGraphPages();assert.equal(cache.pins,0);assert.equal(cache.activeRequests,0);
+ console.log(JSON.stringify({nativeSelective:result.corpusRead.storage,nativeAudit:audit.storage}));
+});
