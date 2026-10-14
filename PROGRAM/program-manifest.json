@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T00:10:04.787Z",
+  "generatedAt": "2026-10-14T00:20:28.837Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -10098,6 +10098,10 @@
     "tools/libra_memory_graph_index.cjs": {
       "sha256": "c3bb0e148298dd4ef89c5953d8f82812c40fb38c4f53fa71795de98989eb850c",
       "bytes": 14739
+    },
+    "tools/libra_memory_graph_lane.cjs": {
+      "sha256": "17ccaa7168ce913030cac4a5041d14e2e104122e8ac0a5611dc17d895a36b7cd",
+      "bytes": 7216
     },
     "tools/libra_memory_graph_pages.cjs": {
       "sha256": "65bc2f4a417422f86c1370a64d74dc9ca01c5c307debe3d972782256c8f4cd02",
