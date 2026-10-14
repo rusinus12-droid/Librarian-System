@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.8 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 provider, 전체 corpus durable 접근, 다른 소비자의 실제 삽입, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
-- 구현 기준: codex/libra-memory-network-20261013, `8d0b64087c00155ff9f410bcf0c31d4a074eea9d` 이후 8건 패치. 현재 범위와 검증은 [현황 §12](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#12-8d0b640-리뷰의-8건-패치와-현재-제한)에서 추적
+- 문서 버전: 1.9 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. 전체 corpus durable 접근, 다른 소비자의 실제 삽입, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
+- 구현 기준: codex/libra-memory-network-20261013, `bad8cdf` 안전성 패치 이후 native semantic bridge. 현재 범위와 검증은 [현황 §12–13](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#13-native-임베딩-연결)에서 추적
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**
@@ -26,6 +26,7 @@
 | [LIBRA_UM1_READER_ADAPTER_CONTRACT.md](LIBRA_UM1_READER_ADAPTER_CONTRACT.md) | 실제 정본·Micro·State·lore reader 연결, 공개 read-only projection page, 역할/근거/coverage 및 실제 등록 API의 합성 호스트 검증 |
 | [LIBRA_UM2_PAGE_CACHE_CONTRACT.md](LIBRA_UM2_PAGE_CACHE_CONTRACT.md) | F-3/F-4의 첫 경계: 공통 payload byte admission·pin/LRU·partition·staging/decode와 실제 owner projection page 접근. 전체 heap·durable generation·Lane 완료와 구분 |
 | [LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md](LIBRA_UM2_DURABLE_GRAPH_CONTRACT.md) | 유지보수 전용 불변 page/manifest·root-last/CAS 게시, 현재 원본/전체 window page 재도출 검증·재시작·취소 barrier. exhaustive corpus/delta·final delivery 완료와 구분 |
+| [LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md) | native provider/query cache·저장 정본 projection 벡터의 source access·단일 frontier·최종 vector/config 검증. 품질/전체 corpus/다른 자료 representation은 후속 |
 | [LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) | 현재 연결/검증 수준, 미완료 D01–D08/M01–M15, 완료 gate·작업 순서의 기준 |
 | [LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md) | `83caadd`의 호출 경로와 재현된 8개 결함, 저장소 기준의 재현 명령 |
 
@@ -114,7 +115,7 @@ UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `So
 - **UM4 근거 컴파일러 커널**: 후보 선택, caller correspondenceMap 기반 Micro 흡수, 역할 라벨·private readset 및 graph binding 대조를 구현했다. 실제 대응·독립 근거·충돌 보존·소비자 adapter/hydration은 별도 gate다. 물리 검증 선택 사항, await 중 readset 폐기, 최종 출력 예산 초과 결함을 확인했다. `validateConsumedReadSet`의 존재만으로 최종 owner/dispatch 연결이 완료되지 않는다.
 - **UM5–UM6 전환 커널**: mode seal·shadow 비교·base-request 결과·legacy fence helper와 V05 helper를 추가했다. 실제 beforeRequest/recall의 모드 선택과 legacy 실행 지점에는 연결되지 않았다. V05는 존재하지 않는 점수/digest 필드를 비교하고 실제 cache hit/LRU·독립 restart를 실행하지 않아 완료 증거로 사용할 수 없다.
 
-**현재 판정:** `D01`–`D08`의 커널·경계 결함 8건은 수리되어 순수/합성 호스트 회귀 스위트(E1/E2)와 등록 공개 API(`executeMemoryGraphUnifiedQuery`)에서 검증됐다. 다만 일반 회상(`beforeRequest`/`LibraMemoryCore.recall`)과 전체 소비자 어댑터·실제 임베딩/durable shard 전환(`M01`–`M15`)은 아직 기존 검색기를 사용한다. [현황·미완료 작업](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 E0–E4, D01–D08(해결), M01–M15, G1–G6를 현재 상태로 사용하고 [코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)의 재현 근거를 따른다. 엔진 자체의 미완료와 실제 설치 호스트/원본 revision API 한계를 분리한다.
+**기존 조사 기록(§14–15 이전):** `D01`–`D08`의 커널·경계 결함 8건은 수리되어 순수/합성 호스트 회귀 스위트(E1/E2)와 등록 공개 API(`executeMemoryGraphUnifiedQuery`)에서 검증됐다. 다만 일반 회상(`beforeRequest`/`LibraMemoryCore.recall`)과 전체 소비자 어댑터·실제 임베딩/durable shard 전환(`M01`–`M15`)은 아직 기존 검색기를 사용한다. [현황·미완료 작업](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 E0–E4, D01–D08(해결), M01–M15, G1–G6를 현재 상태로 사용하고 [코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)의 재현 근거를 따른다. 엔진 자체의 미완료와 실제 설치 호스트/원본 revision API 한계를 분리한다.
 
 ## 3. 전체 아키텍처
 
@@ -609,3 +610,12 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 - **캐시/예산**: admission 실패 후 원래 배열이나 무계상 JSON clone으로 우회하지 않는다. 지원하는 page ceiling 안에서 admission을 재시도하거나 오류/partial을 공개한다. UTF-8 payload bytes·accounted workspace estimate·누적 전송량·문자 예산을 구분하고 미측정값을 0으로 채우지 않는다.
 
 이 강화는 §13의 전체 완료 gate를 대체하지 않는다. 기본 모드와 실제 호스트 qualification은 [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)에 따른다.
+
+
+## 15. Native semantic 접근 구현 (v1.9)
+
+[UM3 native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md)에 따라 현재 정본 global projection의 저장 벡터와 기존 제공자 질의 벡터를 실제 unified/Classic 경로에 연결했다. global vector의 의미 범위는 정본 SourceNode에 유지하고, 동일 scorer/frontier에서 원래 관계를 확장한다. 개별 claim/다른 자료에 벡터를 복사하지 않는다. 실제 저장 projection·task pair/차원·설정/권한 epoch와 물리적 vector readset을 보존한다.
+
+이 경로는 query 중 문서 벡터를 만들지 않는다. 공간/문서 벡터가 없으면 공통 lexical/graph 경로로 검색하고, representation 예산 탈락은 partial, 원본/설정 변경은 base request 보존으로 처리한다. source 전체 벡터가 과거 조회보다 미래를 포함하면 해당 semantic 접근을 제외한다. 기존 query cache·coalescing은 request scope/worldline/restore/view에 결속한다.
+
+지원은 plugin_only/server_only의 등록 fixture에서 검증했고 mirror readonly owner·실제 provider 품질/설치 호스트·전체 corpus/durable representation pages와 §13의 기본값 전환 gate는 남아 있다. 최신 증거는 [현황 §13](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#13-native-임베딩-연결)을 따른다.

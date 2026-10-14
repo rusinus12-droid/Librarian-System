@@ -360,6 +360,10 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const docRep = queryFrame.documentRepresentations?.[node.id];
     const space = queryFrame.semanticSpace;
     if (docRep && typeof docRep === 'object') {
+      if (node.layer === 'source' && queryFrame.asOfTurn !== null
+        && (!Number.isSafeInteger(docRep.temporalEndTurn) || docRep.temporalEndTurn > queryFrame.asOfTurn)) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'representation_outside_temporal_view' };
+      }
       if (!space || !Array.isArray(queryFrame.queryEmbedding)) {
         return { score: undefined, status: 'incompatible_isolated', reason: 'missing_query_space_or_embedding' };
       }
@@ -483,7 +487,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     for (const node of graph.nodes || []) {
       if (!isNodeEligible(node.id)) continue;
       const unit = unitByNodeId.get(node.id);
-      if (!unit) continue;
+      if (!unit && !(node.layer === 'source' && queryFrame.documentRepresentations?.[node.id])) continue;
       const sem = resolveSemanticFeature(node, queryFrame);
       semanticByNodeId.set(node.id, sem);
       if (sem.status === 'available' || sem.status === 'available_vector_space') {
@@ -638,7 +642,17 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         }
         continue;
       }
-      if (!unit) continue;
+      if (!unit) {
+        const sem = semanticByNodeId.get(node.id);
+        if (node.layer === 'source' && sem?.status === 'available_vector_space' && sem.score > 0) {
+          const evaluated = scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
+            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame);
+          directFeaturesByNode.set(node.id, evaluated);
+          offer(node.id, evaluated.directScore, { seedNodeId: node.id, directScore: evaluated.directScore,
+            edgeChain: [], visitedNodes: [node.id], basisIds: [], sourceDependencies: [node.id] });
+        }
+        continue;
+      }
 
       let lexSum = 0;
       if (feat) for (const w of feat.matchedTokens.values()) lexSum += w;

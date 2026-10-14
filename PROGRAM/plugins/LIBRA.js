@@ -44960,7 +44960,7 @@ function createLibraReadonlySourceContext(owner) {
         if (text) {
           const anchor = { coordinateSpace: 'record_text', start: 0, end: text.length };
           const node = meaning(src, 'source_excerpt', row.key + '#text', { text }, anchor,
-            { text, semanticRole: 'canonical_legacy_excerpt', authority: 'source_only' });
+            { text, semanticRole: 'canonical_legacy_excerpt', authority: 'source_only', recordKey: row.key });
           link(node, src.node, 'evidenced_by', basis(src, 'source_excerpt', row.key + '#text-basis', { text }, anchor));
         }
         note('canonical', 'typed_schema_unavailable'); return;
@@ -44996,7 +44996,7 @@ function createLibraReadonlySourceContext(owner) {
           ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
         const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field, turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof, recordKey: row.key });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
         bases.set(why.id, { ...why, turn, temporalKnown });
@@ -46898,6 +46898,10 @@ function createLibraReadonlySourceContext(owner) {
     const docRep = queryFrame.documentRepresentations?.[node.id];
     const space = queryFrame.semanticSpace;
     if (docRep && typeof docRep === 'object') {
+      if (node.layer === 'source' && queryFrame.asOfTurn !== null
+        && (!Number.isSafeInteger(docRep.temporalEndTurn) || docRep.temporalEndTurn > queryFrame.asOfTurn)) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'representation_outside_temporal_view' };
+      }
       if (!space || !Array.isArray(queryFrame.queryEmbedding)) {
         return { score: undefined, status: 'incompatible_isolated', reason: 'missing_query_space_or_embedding' };
       }
@@ -47021,7 +47025,7 @@ function createLibraReadonlySourceContext(owner) {
     for (const node of graph.nodes || []) {
       if (!isNodeEligible(node.id)) continue;
       const unit = unitByNodeId.get(node.id);
-      if (!unit) continue;
+      if (!unit && !(node.layer === 'source' && queryFrame.documentRepresentations?.[node.id])) continue;
       const sem = resolveSemanticFeature(node, queryFrame);
       semanticByNodeId.set(node.id, sem);
       if (sem.status === 'available' || sem.status === 'available_vector_space') {
@@ -47176,7 +47180,17 @@ function createLibraReadonlySourceContext(owner) {
         }
         continue;
       }
-      if (!unit) continue;
+      if (!unit) {
+        const sem = semanticByNodeId.get(node.id);
+        if (node.layer === 'source' && sem?.status === 'available_vector_space' && sem.score > 0) {
+          const evaluated = scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
+            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame);
+          directFeaturesByNode.set(node.id, evaluated);
+          offer(node.id, evaluated.directScore, { seedNodeId: node.id, directScore: evaluated.directScore,
+            edgeChain: [], visitedNodes: [node.id], basisIds: [], sourceDependencies: [node.id] });
+        }
+        continue;
+      }
 
       let lexSum = 0;
       if (feat) for (const w of feat.matchedTokens.values()) lexSum += w;
@@ -47481,6 +47495,99 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve });
+});
+    const createLibraMemoryGraphSemantic = (function createMemoryGraphSemantic({ digest, profileFor, projectionFor } = {}) {
+  if (![digest, profileFor, projectionFor].every(fn => typeof fn === 'function')) throw new TypeError('LIBRA_GRAPH_SEMANTIC_ADAPTER_REQUIRED');
+  const vectorValid = (vector, dimension) => {
+    if (!Array.isArray(vector) || vector.length !== dimension || !vector.every(value => typeof value === 'number' && Number.isFinite(value))) return false;
+    const squaredNorm = vector.reduce((sum, value) => sum + value * value, 0);
+    return Number.isFinite(squaredNorm) && squaredNorm > 0;
+  };
+  const prepare = async ({ graph, canonicalRows = [], config, queryText = '', asOfTurn = null,
+    readVector, embedQuery, check = () => {}, maxBytes = 262144 } = {}) => {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 4096 || maxBytes > 16777216) throw new TypeError('LIBRA_GRAPH_SEMANTIC_BUDGET_INVALID');
+    const diagnostics = { schema: 'libra.native_graph_semantic.v1', status: 'unavailable', representationScope: 'canonical_global_projection_source_access',
+      queryRequestCount: 0, queryCacheHits: 0, coalesced: false, documentEmbeddingCalls: 0, backgroundEmbeddingStarted: false,
+      admittedRepresentations: 0, representationBytes: 0, maxRepresentationBytes: maxBytes, rejected: [],
+      vectorlessFamilies: ['micro','state','lore'], byteBounded: false };
+    const empty = () => ({ queryInput: { semanticSpace: null, queryEmbedding: null, documentRepresentations: {}, queryVectors: {} }, dependencies: [], diagnostics });
+    if (!config) { diagnostics.status = 'configuration_unavailable'; return empty(); }
+    if (!config.enabled) { diagnostics.status = 'disabled'; return empty(); }
+    if (!String(queryText).trim()) { diagnostics.status = 'empty_query'; return empty(); }
+    const nodes = new Map((graph.nodes || []).map(node => [node.id, node]));
+    const sourcesByKey = new Map();
+    for (const unit of graph.units || []) {
+      if (unit.family !== 'canonical' || !unit.recordKey) continue;
+      const node = nodes.get(unit.nodeId), source = nodes.get(node?.sourceId);
+      if (!source || source.layer !== 'source') continue;
+      if (!sourcesByKey.has(unit.recordKey)) sourcesByKey.set(unit.recordKey, new Set());
+      sourcesByKey.get(unit.recordKey).add(source.id);
+    }
+    const documents = [], dependencies = [];
+    let bytes = 2048, dimension = null, expectedProfile = null;
+    const reject = (key, reason) => diagnostics.rejected.push({ recordKey: key, reason });
+    for (const row of canonicalRows) {
+      check();
+      const memory = row.record, sourceIds = sourcesByKey.get(row.key), embedding = memory?.embedding;
+      if (!sourceIds || sourceIds.size !== 1 || embedding?.status !== 'ready' || !embedding.vectorKey) { reject(row.key, 'representation_missing'); continue; }
+      // The global projection can contain future facts, even if the source has
+      // other eligible child facts. Never use it as a past-view semantic proxy.
+      if (asOfTurn !== null && (!Number.isSafeInteger(memory.turnRange?.end) || memory.turnRange.end > asOfTurn)) {
+        reject(row.key, 'representation_outside_temporal_view'); continue;
+      }
+      let vectorRecord;
+      try { vectorRecord = await readVector(embedding.vectorKey); } catch (_) { check(); reject(row.key, 'vector_read_unavailable'); continue; }
+      check();
+      if (!vectorRecord || vectorRecord.schema !== 'libra.embedding_projection.v2' || vectorRecord.scopeKey !== memory.scopeKey
+        || vectorRecord.memoryId !== memory.memoryId || vectorRecord.revision !== memory.revision) { reject(row.key, 'vector_owner_binding_mismatch'); continue; }
+      const d = vectorRecord.dimensions;
+      if (!Number.isSafeInteger(d) || d < 1 || d > 65536 || !vectorValid(vectorRecord.entries?.global?.vector || vectorRecord.vector, d)) {
+        reject(row.key, 'invalid_vector'); continue;
+      }
+      let profile, projection;
+      try { profile = profileFor({ ...config, dimensions: d }); projection = projectionFor(memory); }
+      catch (_) { reject(row.key, 'projection_or_profile_unavailable'); continue; }
+      if (vectorRecord.provider !== profile.provider || vectorRecord.model !== profile.model
+        || vectorRecord.profileId !== profile.profileId || embedding.profileId !== vectorRecord.profileId
+        || digest(vectorRecord.embeddingDescriptor) !== digest(profile.descriptor)
+        || dimension !== null && dimension !== d) { reject(row.key, 'embedding_space_mismatch'); continue; }
+      const hash = projection.textHashes.global, entry = vectorRecord.entries?.global;
+      if (vectorRecord.projectionVersion !== projection.version || vectorRecord.textHash !== hash
+        || embedding.textHash !== hash || !embedding.vectorHash || vectorRecord.vectorHash !== embedding.vectorHash
+        || entry && entry.textHash !== hash) { reject(row.key, 'projection_text_mismatch'); continue; }
+      const additional = 1024 + d * 8 + (dimension === null ? d * 16 : 0);
+      if (bytes + additional > maxBytes) { reject(row.key, 'representation_byte_budget'); continue; }
+      const node = nodes.get([...sourceIds][0]);
+      documents.push({ nodeId: node.id, bindingId: node.bindingId, vector: (entry?.vector || vectorRecord.vector).slice(),
+        representationId: digest([embedding.vectorKey, vectorRecord.profileId, hash, vectorRecord.vectorHash]),
+        projectionVersion: projection.version, textHash: hash, temporalEndTurn: memory.turnRange?.end ?? null });
+      dependencies.push({ key: embedding.vectorKey, digest: digest(vectorRecord) });
+      dimension = d; expectedProfile = profile; bytes += additional;
+    }
+    if (!documents.length) { diagnostics.status = 'no_compatible_representations'; return empty(); }
+    let query;
+    try { query = await embedQuery(String(queryText), config); }
+    catch (error) { check(); diagnostics.status = 'query_embedding_unavailable'; diagnostics.reason = error.code || 'query_embedding_failed';
+      diagnostics.queryRequestCount = Number(error.graphEmbeddingOperation?.embeddingRequests || 0); return empty(); }
+    check();
+    diagnostics.queryRequestCount = Number(query?.graphEmbeddingOperation?.embeddingRequests ?? query?.metadata?.requestCount ?? 0);
+    diagnostics.queryCacheHits = Number(query?.metadata?.cacheHits || 0);
+    diagnostics.coalesced = Boolean(query?.graphEmbeddingCoalesced);
+    if (!query || query.provider !== expectedProfile.provider || query.model !== expectedProfile.model
+      || query.dimensions !== dimension || query.metadata?.profileId !== expectedProfile.profileId
+      || !vectorValid(query.vectors?.[0], dimension)) { diagnostics.status = 'query_space_mismatch'; return empty(); }
+    const semanticSpace = { spaceId: expectedProfile.descriptor.spaceId, provider: expectedProfile.provider,
+      model: expectedProfile.model, dimension, metric: 'cosine',
+      taskPair: expectedProfile.queryTask + '/' + expectedProfile.documentTask, profileDigest: digest(expectedProfile.descriptor) };
+    const documentRepresentations = Object.fromEntries(documents.map(document => [document.nodeId, {
+      ...document, spaceId: semanticSpace.spaceId, provider: semanticSpace.provider, model: semanticSpace.model,
+      dimension, metric: semanticSpace.metric, profileDigest: semanticSpace.profileDigest } ]));
+    diagnostics.status = 'available'; diagnostics.admittedRepresentations = documents.length;
+    diagnostics.representationBytes = bytes; diagnostics.spaceId = semanticSpace.spaceId;
+    diagnostics.dimension = dimension; diagnostics.queryTask = expectedProfile.queryTask; diagnostics.documentTask = expectedProfile.documentTask;
+    return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
+  };
+  return Object.freeze({ prepare });
 });
     const createLibraMemoryGraphCompiler = (function createMemoryGraphCompiler({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
@@ -48304,6 +48411,7 @@ function createLibraReadonlySourceContext(owner) {
     queryInput = {},
     consumerPolicy = {},
     laneBudget = {},
+    semanticAccessComplete = true,
     ownerVerifier = null
   } = {}) => {
     const sealed = sealToken && sealedRequests.get(sealToken);
@@ -48334,7 +48442,10 @@ function createLibraReadonlySourceContext(owner) {
       worldlineId: sealed.worldlineId
     });
     const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-    const queryResult = query.retrieve(viewHandle, laneBudget);
+    const retrieved = query.retrieve(viewHandle, laneBudget);
+    const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
+      stopReason: 'semantic_representation_byte_budget',
+      coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
     const selected = compiler.select(queryResult, graph, consumerPolicy);
     const packet = compiler.render(selected, {
       l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
@@ -48382,6 +48493,7 @@ function createLibraReadonlySourceContext(owner) {
       queryComplete: queryResult.complete,
       traversalComplete: queryResult.traversalComplete,
       sourceCoverageComplete: queryResult.sourceCoverageComplete,
+      semanticCoverageComplete: semanticAccessComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       diagnostics: queryResult.diagnostics,
@@ -64928,7 +65040,7 @@ ${string(queryBundle?.sceneText || '')}`;
                     - Number(suppliedBundle?.unifiedEnvelopeReserve || 0))
               },
           laneBudget: suppliedBundle?.laneBudget && typeof suppliedBundle.laneBudget === 'object' ? suppliedBundle.laneBudget : {}
-        }), RECALL_REQUEST_BUDGET_MS);
+        }, guard), RECALL_REQUEST_BUDGET_MS);
         const modeSeal = suite.rollout.sealRequestMode({
           mode: 'unified',
           requestId: unifiedExec.requestId || id('unified_recall'),
@@ -71609,7 +71721,8 @@ ${string(queryBundle?.sceneText || '')}`;
         if (collect) collect({
           scope,
           sourceKeys: [...sourceKeys].sort(),
-          entityRegistry: Array.isArray(registry?.entities) ? clone(registry.entities) : []
+          entityRegistry: Array.isArray(registry?.entities) ? clone(registry.entities) : [],
+          canonicalRows: canonical.map(({ key, record }) => ({ key, record }))
         });
         return clone({ ...graph, scopeKey: scope.scopeKey, readerFrame: frame, requestLocalReadOnly: true,
           readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
@@ -71776,8 +71889,8 @@ ${string(queryBundle?.sceneText || '')}`;
         rollout: state.memoryGraphRollout
       };
     };
-    const executeMemoryGraphUnifiedQuery = async (options = {}) => {
-      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget'];
+    const executeMemoryGraphUnifiedQuery = async (options = {}, recallGuard = null) => {
+      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget','semanticPolicy'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
         throw new Error('LIBRA_GRAPH_QUERY_OPTIONS_INVALID');
       }
@@ -71803,6 +71916,7 @@ ${string(queryBundle?.sceneText || '')}`;
           ? (raw?.exists === true && raw?.tombstone !== true ? raw.value : null)
           : (raw ?? null);
       };
+
       const pinKeys = [...new Set(initialCollected.sourceKeys || [])];
       if (storageMode === 'server_only' && pinKeys.length > 64) throw new Error('LIBRA_GRAPH_QUERY_SOURCE_PIN_LIMIT');
       const conditionalReadSet = (storageMode === 'server_only' && pinKeys.length > 0)
@@ -71829,6 +71943,82 @@ ${string(queryBundle?.sceneText || '')}`;
           ? rawQueryInput.entityRegistry
           : (Array.isArray(initialCollected.entityRegistry) ? initialCollected.entityRegistry : [])
       };
+      const semanticGuard = recallGuard || createRecallGuard(RECALL_REQUEST_BUDGET_MS);
+      const checkSemanticOwner = () => {
+        ensureRecallGuard(semanticGuard, 'native_graph_semantic');
+        if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
+          || state.deletingScopes.has(graph.scopeKey)) throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
+      };
+      const semanticPolicy = options.semanticPolicy || {};
+      if (!semanticPolicy || typeof semanticPolicy !== 'object' || Array.isArray(semanticPolicy)
+        || Object.keys(semanticPolicy).some(key => !['mode','maxRepresentationBytes','queryBudgetMs'].includes(key))
+        || !['native','disabled'].includes(semanticPolicy.mode || 'native')) throw new Error('LIBRA_GRAPH_SEMANTIC_POLICY_INVALID');
+      const queryBudgetMs = semanticPolicy.queryBudgetMs ?? RECALL_EMBEDDING_BUDGET_MS;
+      if (!Number.isSafeInteger(queryBudgetMs) || queryBudgetMs < 250 || queryBudgetMs > RECALL_EMBEDDING_BUDGET_MS) throw new Error('LIBRA_GRAPH_SEMANTIC_QUERY_BUDGET_INVALID');
+      const injected = ['semanticSpace','queryEmbedding','documentRepresentations','queryVectors'].some(key => Object.hasOwn(rawQueryInput, key));
+      let nativeSemantic = null, semanticSettingsBinding = null;
+      const readSemanticConfig = async () => normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
+      const settingsBinding = config => stableReferenceJson({ request: embeddingRequestDescriptor(config), authority: [config.key, config.customHeaders] });
+      const vectorReadbacks = new Map(), vectorPins = [];
+      if (!injected) {
+        const config = semanticPolicy.mode === 'disabled' ? { enabled: false }
+          : await runRecallStep(semanticGuard, 'native_semantic_settings', readSemanticConfig, RECALL_STEP_BUDGET_MS,
+            { soft: true, fallback: null, abortOnTimeout: false });
+        if (config?.enabled) semanticSettingsBinding = settingsBinding(config);
+        const bridge = createLibraMemoryGraphSemantic({ digest, profileFor: config => EmbeddingProviderRegistry.profileFor(config), projectionFor: buildMemoryRetrievalProjection });
+        nativeSemantic = await bridge.prepare({ graph, canonicalRows: initialCollected.canonicalRows || [], config,
+          queryText: rawQueryInput.queryText || '', asOfTurn: rawQueryInput.asOfTurn ?? null,
+          maxBytes: semanticPolicy.maxRepresentationBytes ?? 262144, check: checkSemanticOwner,
+          readVector: async storageKey => {
+            if (!embeddingVectorStorageKey(storageKey)) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_KEY_UNOWNED');
+            const pin = storageMode === 'server_only' ? await MemorySuiteStorageBridge.captureConditionalReadSet([storageKey]) : null;
+            const record = await storage.getVerifiedJson(storageKey, initialCollected.scope, null);
+            if (pin) { await MemorySuiteStorageBridge.assertConditionalReadSet(pin); vectorPins.push(pin); }
+            // Decode the captured portable payload directly; a stale device-local
+            // cache must never substitute different bytes for the pinned record.
+            let hydrated = record;
+            if (record?.portableVectorPayload?.schema === LOCAL_VECTOR_PAYLOAD_SCHEMA) {
+              const decoded = decodeLocalProjectionPayload(record.portableVectorPayload, record.localVectorRef || record.portableVectorPayload);
+              hydrated = { ...record, entries: Object.fromEntries(Object.entries(record.entries || {}).map(([key, entry]) => [key, { ...entry, vector: decoded.vectors[key] || [] }])),
+                vector: decoded.vectors.global || [] };
+            }
+            vectorReadbacks.set(storageKey, { record, rawBody: stableReferenceJson(record), hydratedDigest: digest(hydrated) });
+            return hydrated;
+          },
+          embedQuery: async (text, config) => {
+            const current = await readSemanticConfig(); checkSemanticOwner();
+            if (settingsBinding(current) !== semanticSettingsBinding) throw new Error('LIBRA_GRAPH_SEMANTIC_SETTINGS_CHANGED');
+            const scopeIdentity = stableReferenceJson([graph.readerFrame.owner, graph.scopeKey, graph.readerFrame.worldlineId, epoch, graph.readerFrame.view]);
+            if (mode === 'shadow') {
+              const warm = EmbeddingProviderRegistry.peekWarmQuery(config, [text], { scopeKey: scopeIdentity });
+              if (warm.status !== 'available') throw new Error('LIBRA_GRAPH_SEMANTIC_SHADOW_CACHE_MISS');
+              return warm;
+            }
+            const child = new AbortController(), parent = semanticGuard.controller?.signal;
+            const deadlineAt = Math.min(Date.now() + queryBudgetMs - 120, semanticGuard.deadlineAt - 120);
+            const abort = () => child.abort(parent?.reason || recallDeadlineError('native_query_embedding'));
+            if (parent?.aborted) abort(); else parent?.addEventListener?.('abort', abort, { once: true });
+            const timer = setTimeout(() => child.abort(recallStepTimeoutError('native_query_embedding', queryBudgetMs)), Math.max(1, deadlineAt - Date.now()));
+            const ledger = MemorySuiteExecutionContract.createLedger({ maxRequests: 16, signal: child.signal, deadlineAt });
+            try {
+              const result = await runRecallStep(semanticGuard, 'native_query_embedding',
+                () => EmbeddingProviderRegistry.embedTexts(config, [text], { purpose: 'query', scopeKey: scopeIdentity,
+                  signal: child.signal, deadlineAt, operationLedger: ledger }), queryBudgetMs,
+                { abortOnTimeout: false });
+              return { ...result, graphEmbeddingOperation: ledger.snapshot(),
+                graphEmbeddingCoalesced: ledger.snapshot().requestCount === 0 && !result.metadata?.cacheHits };
+            } catch (error) { error.graphEmbeddingOperation = ledger.snapshot(); throw error; }
+            finally { clearTimeout(timer); child.abort(); parent?.removeEventListener?.('abort', abort); }
+          }
+        });
+        nativeSemantic.diagnostics.queryBudgetMs = queryBudgetMs;
+        Object.assign(queryInput, nativeSemantic.queryInput);
+      }
+      for (const dependency of nativeSemantic?.dependencies || []) {
+        const captured = vectorReadbacks.get(dependency.key);
+        const current = await storage.getVerifiedJson(dependency.key, initialCollected.scope, null);
+        if (!captured || stableReferenceJson(current) !== captured.rawBody || dependency.digest !== captured.hydratedDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
+      }
       const ownerVerifier = {
         currentGraph: async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
         assertPhysicalCurrentness: async () => {
@@ -71837,7 +72027,13 @@ ${string(queryBundle?.sceneText || '')}`;
             return false;
           }
           try {
+            if (semanticSettingsBinding && settingsBinding(await readSemanticConfig()) !== semanticSettingsBinding) return false;
             if (conditionalReadSet) await MemorySuiteStorageBridge.assertConditionalReadSet(conditionalReadSet);
+            for (const pin of vectorPins) await MemorySuiteStorageBridge.assertConditionalReadSet(pin);
+            for (const dependency of nativeSemantic?.dependencies || []) {
+              const current = await storage.getVerifiedJson(dependency.key, initialCollected.scope, null);
+              if (stableReferenceJson(current) !== vectorReadbacks.get(dependency.key)?.rawBody) return false;
+            }
             for (const saved of pinnedValues) {
               if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
                 return false;
@@ -71849,16 +72045,22 @@ ${string(queryBundle?.sceneText || '')}`;
           }
         }
       };
+      const semanticBudgetStopped = (nativeSemantic?.diagnostics.rejected || []).some(row => row.reason === 'representation_byte_budget');
       const execution = await suite.rollout.executeUnifiedRequest({
         sealToken,
         graph,
         queryInput,
         consumerPolicy: options.consumerPolicy || {},
         laneBudget: options.laneBudget || {},
-        ownerVerifier
+        ownerVerifier,
+        semanticAccessComplete: !semanticBudgetStopped
       });
-      unifiedGraphDeliveryAuthority.set(execution, { compiler: suite.compiler, ownerVerifier });
-      return execution;
+      const result = Object.freeze({ ...execution,
+        diagnostics: { ...execution.diagnostics,
+        nativeSemantic: nativeSemantic?.diagnostics || { status: 'caller_supplied', authority: 'unverified_relevance_signals' } },
+        additionalEmbeddingCalls: nativeSemantic?.diagnostics.queryRequestCount || 0 });
+      unifiedGraphDeliveryAuthority.set(result, { compiler: suite.compiler, ownerVerifier });
+      return result;
     };
     const collectMemoryGraphGarbage = async (options = {}) => {
       const allowed = ['expectedScopeKey','dryRun','throwOnConflict','candidateKeys'];

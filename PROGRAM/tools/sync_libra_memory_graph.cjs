@@ -6,10 +6,11 @@ const store = require('./libra_memory_graph_store.cjs');
 const index = require('./libra_memory_graph_index.cjs');
 const lane = require('./libra_memory_graph_lane.cjs');
 const query = require('./libra_memory_graph_query.cjs');
+const semantic = require('./libra_memory_graph_semantic.cjs');
 const compiler = require('./libra_memory_graph_compiler.cjs');
 const rollout = require('./libra_memory_graph_rollout.cjs');
 const begin = '// BEGIN LIBRA MEMORY GRAPH', end = '// END LIBRA MEMORY GRAPH';
-const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    ${end}`;
+const block = () => `    ${begin}\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphSemantic = (${semantic.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    ${end}`;
 function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = false } = {}) {
   const before = fs.readFileSync(target, 'utf8');
   const starts = [...before.matchAll(/^[ \t]*\/\/ BEGIN LIBRA MEMORY GRAPH[ \t]*$/gm)];
@@ -37,6 +38,7 @@ function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = fa
     storeSHA256: crypto.createHash('sha256').update(store.toString()).digest('hex'),
     indexSHA256: crypto.createHash('sha256').update(index.toString()).digest('hex'),
     laneSHA256: crypto.createHash('sha256').update(lane.toString()).digest('hex'),
+    semanticSHA256: crypto.createHash('sha256').update(semantic.toString()).digest('hex'),
     querySHA256: crypto.createHash('sha256').update(query.toString()).digest('hex'),
     compilerSHA256: crypto.createHash('sha256').update(compiler.toString()).digest('hex'),
     rolloutSHA256: crypto.createHash('sha256').update(rollout.toString()).digest('hex') };

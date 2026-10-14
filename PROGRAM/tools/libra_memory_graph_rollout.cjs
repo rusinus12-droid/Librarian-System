@@ -95,6 +95,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     queryInput = {},
     consumerPolicy = {},
     laneBudget = {},
+    semanticAccessComplete = true,
     ownerVerifier = null
   } = {}) => {
     const sealed = sealToken && sealedRequests.get(sealToken);
@@ -125,7 +126,10 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       worldlineId: sealed.worldlineId
     });
     const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-    const queryResult = query.retrieve(viewHandle, laneBudget);
+    const retrieved = query.retrieve(viewHandle, laneBudget);
+    const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
+      stopReason: 'semantic_representation_byte_budget',
+      coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
     const selected = compiler.select(queryResult, graph, consumerPolicy);
     const packet = compiler.render(selected, {
       l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
@@ -173,6 +177,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       queryComplete: queryResult.complete,
       traversalComplete: queryResult.traversalComplete,
       sourceCoverageComplete: queryResult.sourceCoverageComplete,
+      semanticCoverageComplete: semanticAccessComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       diagnostics: queryResult.diagnostics,

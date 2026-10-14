@@ -100,7 +100,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
         if (text) {
           const anchor = { coordinateSpace: 'record_text', start: 0, end: text.length };
           const node = meaning(src, 'source_excerpt', row.key + '#text', { text }, anchor,
-            { text, semanticRole: 'canonical_legacy_excerpt', authority: 'source_only' });
+            { text, semanticRole: 'canonical_legacy_excerpt', authority: 'source_only', recordKey: row.key });
           link(node, src.node, 'evidenced_by', basis(src, 'source_excerpt', row.key + '#text-basis', { text }, anchor));
         }
         note('canonical', 'typed_schema_unavailable'); return;
@@ -136,7 +136,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
           ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
         const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field, turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof, recordKey: row.key });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
         bases.set(why.id, { ...why, turn, temporalKnown });

@@ -1,12 +1,12 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.1
+- 작성일: 2026-10-14 · 문서 버전: 1.2
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `8d0b64087c00155ff9f410bcf0c31d4a074eea9d` 이후의 8건 안전성·전달 패치. §12가 기존 조사표와 §11의 완료 표현을 갱신한다.
-- 목표 계약: [통합 엔진 설계 v1.8](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)
+- 현재 기준: `bad8cdf`의 8건 안전성·전달 패치와 이후 native semantic bridge. §12–13이 기존 조사표와 §11의 완료 표현을 갱신한다.
+- 목표 계약: [통합 엔진 설계 v1.9](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
-- 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 설치 호스트, provider 임베딩 연결, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
+- 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 임베딩 adapter·저장 정본 벡터를 단일 frontier에 연결했다. 실제 설치 호스트, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
@@ -223,10 +223,24 @@ node tools/build_plugins.cjs --plugin libra --profile source --no-minify --out /
 
 ### 12.3 남은 우선 작업
 
-1. native embedding provider와 동일 semantic space의 저장 representation을 실제 unified query에 연결하고 품질을 평가한다.
+1. native embedding 연결은 §13에서 1차 구현했다. 실제 provider 평가·calibration과 다른 자료의 representation 생산/접근은 남아 있다.
 2. 현재 projection window의 메모리 내 배열 compile에서 전체 corpus의 durable index/shard 탐색으로 이전한다. source reader·index build·private readset·동시 I/O를 포함한 peak 예산을 계측한다.
 3. Planner·SGA·Input Writer·GUI·GRADIA의 실제 삽입 경계를 연결한다. GRADIA는 owner selection receipt verifier 없이 dispatch를 허용하지 않는다.
 4. storage owner에 namespace GC fence와 publisher/build/reader 보호 프로토콜을 구현한 뒤 native sweep을 활성화한다.
 5. 실제 설치 호스트·평가 세트·규모/latency/메모리 수용 기준을 검증하고 legacy 기본값 전환·중복 경로 종료를 결정한다.
 
 M04의 `countedBytes`는 서로 다른 논리 계측값의 합이다. packet/body는 중첩하고 Lane은 누적 전송량이므로 peak heap이나 전체 유계 증거로 읽지 않는다. `byteBounded:false`, 미계상 8범주, unmeasured calibration, default legacy는 유지한다.
+
+
+## 13. Native 임베딩 연결
+
+`bad8cdf` 이후 [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md)을 구현했다. 현재 상태는 §12.3의 “실제 제공자 연결 미완료”를 갱신한다. 외부 모델 품질·실제 설치 호스트·전체 corpus 전환의 완료는 아니다.
+
+- 기존 제공자 설정/adapter/query cache와 request ledger를 사용해 질의 벡터를 생성한다. native projection source의 저장 global 벡터와 실제 task pair·해석된 차원·profile/descriptor·projection text/payload·record scope/revision을 대조한다.
+- source representation을 공통 scoreCandidate·하나의 frontier에 넣고 원래 evidence/entity/derivation 연결로 확장한다. 정본 global vector를 개별 fact vector로 복사하지 않는다. Micro·State·lore는 공통 typed/lexical/graph 접근으로 참여한다. query 중 document embedding/reanalysis/State writes는 0이다.
+- 질의 캐시의 scope/worldline/restore/view·auth/config epoch를 보존한다. warm/restart/coalescing·OpenAI·Cohere의 search_query/search_document와 auto dimensions를 등록 fixture에서 확인한다.
+- source와 server vector readset은 provider 대기 이전에 캡처한다. 사용한 실제 vector body와 설정 binding도 최종 private dispatch에 검증한다. provider 실패/timeout은 동일 kernel의 lexical/graph 조회로 처리하되 원본이 바뀌면 augmentation을 거부한다.
+- representation budget 탈락을 result와 bundle의 partial/queryComplete에 함께 반영한다. standalone shadow는 warm cache만 읽고 새 embedding을 제출하지 않는다.
+- plugin_only/server_only가 지원 profile이다. mirror는 기존 readonly owner 계약에 따라 embedding 제출 전에 명시적으로 거부된다. 기본 모드는 legacy다.
+
+새 검사는 `tests/libra_memory_graph_semantic_test.cjs`, `tests/libra_memory_graph_semantic_runtime_test.cjs`다. 실제 등록 API·native writer·SDK/adapter와 controlled HTTP 응답을 사용하며 실제 외부 embedding 모델의 의미 정확도는 측정하지 않았다. 이번 벡터 재사용 범위는 **정본 global projection**이고, section/다른 자료의 새 벡터 생산·durable semantic pages·전체 corpus 인덱스·다른 소비자·GC·E4/M14는 미완료다. representationBytes는 채택한 numeric workspace의 계상 추정이며 전체 peak heap의 상한이 아니다.
