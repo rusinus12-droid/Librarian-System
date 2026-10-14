@@ -45635,6 +45635,1674 @@ function createLibraReadonlySourceContext(owner) {
     exhaustiveOwnerInventory: false, rootGCImplemented: false, ownerTransportBounded: false }),
     invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
 });
+    const createLibraMemoryGraphIndex = (function createMemoryGraphIndex({ pages, fingerprint, tokenize } = {}) {
+  if (!pages || typeof pages.measure !== 'function' || typeof fingerprint !== 'function') {
+    throw new TypeError('LIBRA_GRAPH_INDEX_ADAPTER_REQUIRED');
+  }
+  const schema = 'libra.memory_graph_index.v1';
+  const structuralPredicates = new Set([
+    'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
+    'updates', 'clears', 'supersedes', 'follows', 'fulfills', 'reopens',
+    'defines', 'applies_to', 'contradicts'
+  ]);
+  const defaultTokenize = text => String(text || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .split(/[^a-z0-9\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff_]+/)
+    .filter(token => token.length >= 2);
+  const tokenizer = typeof tokenize === 'function' ? tokenize : defaultTokenize;
+  const fail = reason => { const err = new Error('LIBRA_GRAPH_INDEX_' + reason.toUpperCase()); err.reason = reason; throw err; };
+  const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
+
+  const compile = (graph, { partition, generation } = {}) => {
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1' || typeof partition !== 'string' || !partition
+      || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) {
+      fail('input_invalid');
+    }
+    const unitByNodeId = new Map();
+    for (const unit of graph.units || []) unitByNodeId.set(unit.nodeId, unit);
+
+    // 1. Node/Source Directory
+    const directory = (graph.nodes || []).map(node => {
+      const unit = unitByNodeId.get(node.id) || null;
+      return {
+        nodeId: node.id,
+        layer: node.layer,
+        kind: node.kind || node.layer,
+        sourceId: node.sourceId || (node.layer === 'source' ? node.id : null),
+        bindingId: node.bindingId,
+        identityCoverage: node.identityCoverage,
+        family: unit?.family || null,
+        semanticRole: unit?.semanticRole || null
+      };
+    }).sort((a, b) => a.nodeId.localeCompare(b.nodeId, 'en'));
+
+    // 2. Typed Adjacency with structural priority and degree tracking
+    const adjacency = [];
+    const outDegree = new Map(), inDegree = new Map();
+    for (const edge of graph.edges || []) {
+      const structural = structuralPredicates.has(edge.predicate);
+      outDegree.set(edge.from, (outDegree.get(edge.from) || 0) + 1);
+      inDegree.set(edge.to, (inDegree.get(edge.to) || 0) + 1);
+      adjacency.push({
+        anchorNodeId: edge.from,
+        direction: 'out',
+        predicate: edge.predicate,
+        structural,
+        neighborNodeId: edge.to,
+        edgeId: edge.id,
+        basisId: edge.basisId,
+        bindingId: edge.bindingId,
+        identityCoverage: edge.identityCoverage
+      });
+      adjacency.push({
+        anchorNodeId: edge.to,
+        direction: 'in',
+        predicate: edge.predicate,
+        structural,
+        neighborNodeId: edge.from,
+        edgeId: edge.id,
+        basisId: edge.basisId,
+        bindingId: edge.bindingId,
+        identityCoverage: edge.identityCoverage
+      });
+    }
+    adjacency.sort((a, b) => (
+      a.anchorNodeId.localeCompare(b.anchorNodeId, 'en')
+      || a.direction.localeCompare(b.direction, 'en')
+      || (a.structural === b.structural ? 0 : a.structural ? -1 : 1)
+      || a.predicate.localeCompare(b.predicate, 'en')
+      || a.neighborNodeId.localeCompare(b.neighborNodeId, 'en')
+      || a.edgeId.localeCompare(b.edgeId, 'en')
+    ));
+
+    // 3. Lexical / Entity / Predicate / Time Postings
+    const lexicalMap = new Map();
+    const entityPostings = new Map();
+    const predicatePostings = new Map();
+    const timePostings = new Map();
+
+    // 4. Reverse Dependency Table: dependencyKey -> { nodeIds: Set, edgeIds: Set, postingKeys: Set }
+    const revMap = new Map();
+    const recordDep = (depKey, { nodeId, edgeId, postingKey } = {}) => {
+      if (!depKey) return;
+      if (!revMap.has(depKey)) {
+        revMap.set(depKey, { nodeIds: new Set(), edgeIds: new Set(), postingKeys: new Set() });
+      }
+      const entry = revMap.get(depKey);
+      if (nodeId) entry.nodeIds.add(nodeId);
+      if (edgeId) entry.edgeIds.add(edgeId);
+      if (postingKey) entry.postingKeys.add(postingKey);
+    };
+
+    const addPosting = (table, channel, key, nodeId, meta = {}) => {
+      if (!key) return;
+      if (!table.has(key)) table.set(key, new Map());
+      const bucket = table.get(key);
+      const prev = bucket.get(nodeId);
+      if (prev) prev.tf += 1;
+      else bucket.set(nodeId, { nodeId, tf: 1, ...meta });
+      recordDep(`node:${nodeId}`, { nodeId, postingKey: `${channel}:${key}` });
+    };
+
+    for (const node of graph.nodes || []) {
+      recordDep(`node:${node.id}`, { nodeId: node.id });
+      if (node.sourceId) recordDep(`source:${node.sourceId}`, { nodeId: node.id });
+      if (node.layer === 'source') recordDep(`source:${node.id}`, { nodeId: node.id });
+      if (node.layer === 'entity') recordDep(`entity:${node.id}`, { nodeId: node.id });
+    }
+
+    for (const unit of graph.units || []) {
+      recordDep(`family:${unit.family}`, { nodeId: unit.nodeId });
+      const tokens = tokenizer(unit.text || '');
+      for (const token of tokens) {
+        addPosting(lexicalMap, 'lexical', token, unit.nodeId, { family: unit.family, semanticRole: unit.semanticRole || null });
+      }
+      if (unit.subjectId) {
+        addPosting(entityPostings, 'entity', unit.subjectId, unit.nodeId, { role: 'subject', family: unit.family });
+        recordDep(`entity_ref:${unit.subjectId}`, { nodeId: unit.nodeId, postingKey: `entity:${unit.subjectId}` });
+      }
+      for (const targetId of unit.targetIds || []) {
+        addPosting(entityPostings, 'entity', targetId, unit.nodeId, { role: 'target', family: unit.family });
+        recordDep(`entity_ref:${targetId}`, { nodeId: unit.nodeId, postingKey: `entity:${targetId}` });
+      }
+      if (unit.entityId) {
+        addPosting(entityPostings, 'entity', unit.entityId, unit.nodeId, { role: 'state_entity', family: unit.family });
+        recordDep(`entity_ref:${unit.entityId}`, { nodeId: unit.nodeId, postingKey: `entity:${unit.entityId}` });
+      }
+      if (unit.field) {
+        addPosting(predicatePostings, 'predicate', unit.field, unit.nodeId, { family: unit.family });
+        recordDep(`field:${unit.domain || unit.family}:${unit.field}`, { nodeId: unit.nodeId, postingKey: `predicate:${unit.field}` });
+      }
+      if (unit.fact?.claimKind) {
+        addPosting(predicatePostings, 'predicate', unit.fact.claimKind, unit.nodeId, { family: unit.family });
+      }
+      const timeKey = unit.fact?.time?.label || unit.fact?.values?.time || (Number.isSafeInteger(unit.headThroughTurn) ? `turn:${unit.headThroughTurn}` : '');
+      if (timeKey) addPosting(timePostings, 'time', String(timeKey), unit.nodeId, { family: unit.family });
+    }
+
+    const basisById = new Map();
+    for (const b of graph.bases || []) basisById.set(b.id, b);
+
+    for (const edge of graph.edges || []) {
+      addPosting(predicatePostings, 'predicate', edge.predicate, edge.from, { via: 'edge_out', edgeId: edge.id });
+      if (['mentions', 'subject_of', 'target_of'].includes(edge.predicate)) {
+        addPosting(entityPostings, 'entity', edge.to, edge.from, { role: edge.predicate, edgeId: edge.id });
+        recordDep(`entity:${edge.to}`, { nodeId: edge.from, edgeId: edge.id, postingKey: `entity:${edge.to}` });
+      }
+      recordDep(`node:${edge.from}`, { nodeId: edge.from, edgeId: edge.id });
+      recordDep(`node:${edge.to}`, { nodeId: edge.to, edgeId: edge.id });
+      recordDep(`basis:${edge.basisId}`, { nodeId: edge.from, edgeId: edge.id });
+      const basis = basisById.get(edge.basisId);
+      if (basis?.sourceId) {
+        recordDep(`source:${basis.sourceId}`, { nodeId: edge.from, edgeId: edge.id });
+      }
+    }
+
+    const flattenPostings = (table, channel) => {
+      const rows = [];
+      for (const [term, bucket] of [...table.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))) {
+        const hits = [...bucket.values()].sort((a, b) => a.nodeId.localeCompare(b.nodeId, 'en'));
+        const df = hits.length;
+        for (const hit of hits) {
+          rows.push({ channel, term, df, ...hit });
+        }
+      }
+      return rows;
+    };
+
+    const postings = [
+      ...flattenPostings(lexicalMap, 'lexical'),
+      ...flattenPostings(entityPostings, 'entity'),
+      ...flattenPostings(predicatePostings, 'predicate'),
+      ...flattenPostings(timePostings, 'time')
+    ];
+
+    const reverseDependencies = [...revMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'en'))
+      .map(([dependencyKey, sets]) => ({
+        dependencyKey,
+        nodeIds: [...sets.nodeIds].sort((a, b) => a.localeCompare(b, 'en')),
+        edgeIds: [...sets.edgeIds].sort((a, b) => a.localeCompare(b, 'en')),
+        postingKeys: [...sets.postingKeys].sort((a, b) => a.localeCompare(b, 'en'))
+      }));
+
+    let maxOutDegree = 0, maxInDegree = 0;
+    for (const c of outDegree.values()) if (c > maxOutDegree) maxOutDegree = c;
+    for (const c of inDegree.values()) if (c > maxInDegree) maxInDegree = c;
+
+    const stats = {
+      directoryCount: directory.length,
+      adjacencyCount: adjacency.length,
+      postingCount: postings.length,
+      reverseDependencyCount: reverseDependencies.length,
+      lexicalTermCount: lexicalMap.size,
+      entityKeyCount: entityPostings.size,
+      predicateKeyCount: predicatePostings.size,
+      timeKeyCount: timePostings.size,
+      maxOutDegree,
+      maxInDegree
+    };
+    const indexDigest = hash(JSON.stringify([schema, partition, generation, stats]));
+    return Object.freeze({
+      schema,
+      partition,
+      generation,
+      indexDigest,
+      directory,
+      adjacency,
+      postings,
+      reverseDependencies,
+      stats,
+      authority: 'descriptive_only',
+      modelDispatchEligible: false
+    });
+  };
+
+  const affectedByChanges = (compiled, changedDependencyKeys = []) => {
+    if (!compiled || compiled.schema !== schema || !Array.isArray(changedDependencyKeys)) fail('input_invalid');
+    const lookup = new Map(compiled.reverseDependencies.map(row => [row.dependencyKey, row]));
+    const nodeIds = new Set(), edgeIds = new Set(), postingKeys = new Set(), unmatchedKeys = [];
+    for (const key of changedDependencyKeys) {
+      const hit = lookup.get(String(key));
+      if (!hit) { unmatchedKeys.push(String(key)); continue; }
+      for (const n of hit.nodeIds) nodeIds.add(n);
+      for (const e of hit.edgeIds) edgeIds.add(e);
+      for (const p of hit.postingKeys) postingKeys.add(p);
+    }
+    return {
+      schema: 'libra.memory_graph_delta_impact.v1',
+      generation: compiled.generation,
+      indexDigest: compiled.indexDigest,
+      affectedNodeIds: [...nodeIds].sort((a, b) => a.localeCompare(b, 'en')),
+      affectedEdgeIds: [...edgeIds].sort((a, b) => a.localeCompare(b, 'en')),
+      affectedPostingKeys: [...postingKeys].sort((a, b) => a.localeCompare(b, 'en')),
+      unmatchedKeys,
+      requiresGlobalDfRefresh: [...postingKeys].some(k => k.startsWith('lexical:')),
+      requiresDegreeRefresh: edgeIds.size > 0
+    };
+  };
+
+  const queryPage = (compiled, {
+    table = 'adjacency',
+    anchorNodeId = '',
+    direction = '',
+    predicate = '',
+    structuralOnly = false,
+    channel = '',
+    term = '',
+    dependencyKey = '',
+    offset = 0,
+    pageBytes = 16384
+  } = {}) => {
+    if (!compiled || compiled.schema !== schema) fail('compiled_index_required');
+    if (!['directory', 'adjacency', 'postings', 'reverseDependencies'].includes(table)) fail('table_invalid');
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) {
+      fail('options_invalid');
+    }
+    let sourceRows = compiled[table];
+    if (table === 'adjacency') {
+      sourceRows = sourceRows.filter(row => (
+        (!anchorNodeId || row.anchorNodeId === anchorNodeId)
+        && (!direction || row.direction === direction)
+        && (!predicate || row.predicate === predicate)
+        && (!structuralOnly || row.structural === true)
+      ));
+    } else if (table === 'postings') {
+      sourceRows = sourceRows.filter(row => (
+        (!channel || row.channel === channel)
+        && (!term || row.term === term)
+      ));
+    } else if (table === 'directory' && anchorNodeId) {
+      sourceRows = sourceRows.filter(row => row.nodeId === anchorNodeId || row.sourceId === anchorNodeId);
+    } else if (table === 'reverseDependencies' && dependencyKey) {
+      sourceRows = sourceRows.filter(row => row.dependencyKey === dependencyKey);
+    }
+    if (offset > sourceRows.length) fail('offset_invalid');
+
+    const selected = [];
+    let bytes = 2;
+    let stopReason = 'index_page_end';
+    for (let i = offset; i < sourceRows.length; i++) {
+      let size;
+      try {
+        size = pages.measure(sourceRows[i], pageBytes - 2);
+      } catch (err) {
+        if (err.reason === 'row_exceeds_page' && !selected.length) {
+          return {
+            schema: 'libra.memory_graph_index_page.v1',
+            table,
+            generation: compiled.generation,
+            indexDigest: compiled.indexDigest,
+            offset,
+            nextOffset: offset,
+            totalRows: sourceRows.length,
+            items: [],
+            serializedUtf8Bytes: 2,
+            pageBytes,
+            stopReason: 'row_exceeds_page',
+            modelDispatchEligible: false
+          };
+        }
+        stopReason = 'page_boundary';
+        break;
+      }
+      const sep = selected.length ? 1 : 0;
+      if (bytes + sep + size.utf8Bytes > pageBytes) {
+        stopReason = 'page_boundary';
+        break;
+      }
+      selected.push(sourceRows[i]);
+      bytes += sep + size.utf8Bytes;
+    }
+    const nextOffset = offset + selected.length;
+    if (nextOffset < sourceRows.length && stopReason === 'index_page_end') stopReason = 'page_boundary';
+    return {
+      schema: 'libra.memory_graph_index_page.v1',
+      table,
+      generation: compiled.generation,
+      indexDigest: compiled.indexDigest,
+      offset,
+      nextOffset,
+      totalRows: sourceRows.length,
+      items: JSON.parse(JSON.stringify(selected)),
+      serializedUtf8Bytes: bytes,
+      pageBytes,
+      stopReason,
+      modelDispatchEligible: false
+    };
+  };
+
+  return Object.freeze({ compile, affectedByChanges, queryPage });
+});
+    const createLibraMemoryGraphLane = (function createMemoryGraphLane({ index, pages } = {}) {
+  if (!index || typeof index.queryPage !== 'function' || !pages || typeof pages.measure !== 'function') {
+    throw new TypeError('LIBRA_GRAPH_LANE_ADAPTER_REQUIRED');
+  }
+  const schema = 'libra.memory_graph_lane.v1';
+  const rolePriority = {
+    query_anchor_access: 1,
+    temporal_state_access: 2,
+    graph_neighborhood: 3,
+    semantic_access: 4,
+    context_expansion: 5
+  };
+  const validRoles = new Set(Object.keys(rolePriority));
+  const fail = reason => { const err = new Error('LIBRA_GRAPH_LANE_' + reason.toUpperCase()); err.reason = reason; throw err; };
+
+  const createSession = (compiledIndex, {
+    maxPages = 16,
+    maxBytes = 65536,
+    pageBytes = 8192
+  } = {}) => {
+    if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_required');
+    if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 256
+      || !Number.isSafeInteger(maxBytes) || maxBytes < 512 || maxBytes > 1048576
+      || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) {
+      fail('budget_options_invalid');
+    }
+
+    const queue = [];
+    const seenAccessKeys = new Map();
+    const completedAccesses = [];
+    const unreadCursors = [];
+    let sequence = 0;
+    let pagesRead = 0;
+    let bytesRead = 0;
+    let coalescedRequests = 0;
+
+    const accessKeyOf = req => JSON.stringify([
+      req.table,
+      req.anchorNodeId || '',
+      req.direction || '',
+      req.predicate || '',
+      Boolean(req.structuralOnly),
+      req.channel || '',
+      req.term || '',
+      req.dependencyKey || '',
+      req.offset || 0,
+      req.pageBytes || pageBytes
+    ]);
+
+    const enqueue = ({
+      laneRole,
+      table = 'postings',
+      anchorNodeId = '',
+      direction = '',
+      predicate = '',
+      structuralOnly = false,
+      channel = '',
+      term = '',
+      dependencyKey = '',
+      offset = 0,
+      priorityHint = 0,
+      requesterId = ''
+    } = {}) => {
+      if (!validRoles.has(laneRole)) fail('lane_role_invalid');
+      if (!['directory', 'adjacency', 'postings', 'reverseDependencies'].includes(table)) fail('table_invalid');
+      if (!Number.isSafeInteger(offset) || offset < 0) fail('offset_invalid');
+      if (typeof priorityHint !== 'number' || !Number.isFinite(priorityHint)) fail('priority_invalid');
+
+      const spec = {
+        laneRole,
+        table,
+        anchorNodeId: String(anchorNodeId || ''),
+        direction: String(direction || ''),
+        predicate: String(predicate || ''),
+        structuralOnly: Boolean(structuralOnly),
+        channel: String(channel || ''),
+        term: String(term || ''),
+        dependencyKey: String(dependencyKey || ''),
+        offset,
+        pageBytes
+      };
+      const key = accessKeyOf(spec);
+      if (seenAccessKeys.has(key)) {
+        const existing = seenAccessKeys.get(key);
+        if (requesterId && !existing.requesters.includes(requesterId)) existing.requesters.push(requesterId);
+        if (!existing.lanes.includes(laneRole)) existing.lanes.push(laneRole);
+        const rank = rolePriority[laneRole] - (structuralOnly ? 0.5 : 0);
+        if (rank < existing.effectiveRank) existing.effectiveRank = rank;
+        if (priorityHint > existing.priorityHint) existing.priorityHint = priorityHint;
+        coalescedRequests++;
+        return { coalesced: true, accessKey: key };
+      }
+
+      const item = {
+        accessKey: key,
+        spec,
+        lanes: [laneRole],
+        requesters: requesterId ? [requesterId] : [],
+        effectiveRank: rolePriority[laneRole] - (structuralOnly ? 0.5 : 0),
+        priorityHint,
+        seq: sequence++,
+        completed: false
+      };
+      seenAccessKeys.set(key, item);
+      queue.push(item);
+      return { coalesced: false, accessKey: key };
+    };
+
+    const sortQueue = () => {
+      queue.sort((a, b) => (
+        a.effectiveRank - b.effectiveRank
+        || b.priorityHint - a.priorityHint
+        || a.seq - b.seq
+      ));
+    };
+
+    const drain = ({ checkCancel } = {}) => {
+      let stopReason = 'frontier_exhausted';
+      while (queue.length > 0) {
+        if (typeof checkCancel === 'function' && checkCancel() === true) {
+          stopReason = 'cancelled';
+          break;
+        }
+        if (pagesRead >= maxPages) {
+          stopReason = 'page_count_budget';
+          break;
+        }
+        sortQueue();
+        const next = queue[0];
+        const page = index.queryPage(compiledIndex, next.spec);
+        if (page.stopReason === 'row_exceeds_page') {
+          queue.shift();
+          unreadCursors.push({
+            accessKey: next.accessKey,
+            lanes: [...next.lanes],
+            table: next.spec.table,
+            offset: next.spec.offset,
+            stopReason: 'row_exceeds_page'
+          });
+          stopReason = 'row_exceeds_page';
+          continue;
+        }
+        if (bytesRead + page.serializedUtf8Bytes > maxBytes) {
+          stopReason = 'byte_budget';
+          break;
+        }
+        queue.shift();
+        next.completed = true;
+        pagesRead++;
+        bytesRead += page.serializedUtf8Bytes;
+        completedAccesses.push({
+          accessKey: next.accessKey,
+          lanes: [...next.lanes],
+          requesters: [...next.requesters],
+          table: page.table,
+          offset: page.offset,
+          nextOffset: page.nextOffset,
+          totalRows: page.totalRows,
+          serializedUtf8Bytes: page.serializedUtf8Bytes,
+          stopReason: page.stopReason,
+          items: page.items
+        });
+        if (page.nextOffset < page.totalRows) {
+          enqueue({
+            ...next.spec,
+            laneRole: next.lanes[0],
+            offset: page.nextOffset,
+            priorityHint: next.priorityHint,
+            requesterId: next.requesters[0] || ''
+          });
+        }
+      }
+
+      while (queue.length > 0) {
+        const pending = queue.shift();
+        unreadCursors.push({
+          accessKey: pending.accessKey,
+          lanes: [...pending.lanes],
+          table: pending.spec.table,
+          anchorNodeId: pending.spec.anchorNodeId,
+          channel: pending.spec.channel,
+          term: pending.spec.term,
+          offset: pending.spec.offset,
+          stopReason
+        });
+      }
+
+      const complete = unreadCursors.length === 0 && stopReason === 'frontier_exhausted';
+      return {
+        schema,
+        generation: compiledIndex.generation,
+        indexDigest: compiledIndex.indexDigest,
+        complete,
+        stopReason,
+        pagesRead,
+        bytesRead,
+        coalescedRequests,
+        accesses: completedAccesses,
+        unreadCursors,
+        corpusExclusionAuthority: false,
+        familyTopKQuota: false,
+        modelDispatchEligible: false
+      };
+    };
+
+    return Object.freeze({ enqueue, drain });
+  };
+
+  return Object.freeze({ createSession });
+});
+    const createLibraMemoryGraphQuery = (function createMemoryGraphQuery({ index, lane, pages, fingerprint, tokenize } = {}) {
+  if (!index || typeof index.queryPage !== 'function' || !lane || typeof lane.createSession !== 'function'
+    || !pages || typeof pages.measure !== 'function' || typeof fingerprint !== 'function') {
+    throw new TypeError('LIBRA_GRAPH_QUERY_ADAPTER_REQUIRED');
+  }
+  const schema = 'libra.memory_graph_query.v1';
+  const policyVersion = 'libra.unified_query_policy.v1';
+  const defaultTokenize = text => String(text || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .split(/[^a-z0-9\uac00-\ud7a3\u3040-\u30ff\u4e00-\u9fff_]+/)
+    .filter(token => token.length >= 2);
+  const tokenizer = typeof tokenize === 'function' ? tokenize : defaultTokenize;
+  const fail = reason => { const err = new Error('LIBRA_GRAPH_QUERY_' + reason.toUpperCase()); err.reason = reason; throw err; };
+  const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
+  const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+
+  const predicateWeights = Object.freeze({
+    subject_of: 0.92,
+    target_of: 0.90,
+    derived_from: 0.94,
+    evidenced_by: 0.88,
+    updates: 0.86,
+    clears: 0.84,
+    supersedes: 0.85,
+    defines: 0.88,
+    applies_to: 0.88,
+    mentions: 0.72,
+    follows: 0.80,
+    fulfills: 0.82,
+    reopens: 0.78,
+    contradicts: 0.75,
+    semantic_affinity: 0.55
+  });
+
+  const issuedViews = new WeakMap();
+
+  const sealQueryFrame = ({
+    queryText = '',
+    entityIds = [],
+    predicates = [],
+    owner = '',
+    scopeKey = '',
+    worldlineId = 'main',
+    viewerId = 'owner_reader',
+    asOfTurn = null,
+    excludedNodeIds = [],
+    queryVectors = {},
+    lambda = 0.82,
+    epsilon = 1e-6,
+    maxFrontierSteps = 256,
+    maxHops = 4
+  } = {}) => {
+    if (typeof owner !== 'string' || !owner.trim() || typeof scopeKey !== 'string' || !scopeKey.trim()
+      || typeof worldlineId !== 'string' || !worldlineId.trim() || typeof viewerId !== 'string' || !viewerId.trim()) {
+      fail('frame_scope_invalid');
+    }
+    if (asOfTurn !== null && (!Number.isSafeInteger(asOfTurn) || asOfTurn < 0)) fail('as_of_turn_invalid');
+    if (typeof lambda !== 'number' || !(lambda > 0 && lambda < 1)) fail('lambda_invalid');
+    if (typeof epsilon !== 'number' || !(epsilon > 0 && epsilon < 0.1)) fail('epsilon_invalid');
+    if (!Number.isSafeInteger(maxFrontierSteps) || maxFrontierSteps < 1 || maxFrontierSteps > 4096) fail('frontier_budget_invalid');
+    if (!Number.isSafeInteger(maxHops) || maxHops < 1 || maxHops > 8) fail('hop_budget_invalid');
+
+    const tokens = [...new Set(tokenizer(queryText))].sort((a, b) => a.localeCompare(b, 'en'));
+    const entities = [...new Set((Array.isArray(entityIds) ? entityIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const preds = [...new Set((Array.isArray(predicates) ? predicates : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const excluded = [...new Set((Array.isArray(excludedNodeIds) ? excludedNodeIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+
+    const frame = {
+      schema: 'libra.query_frame.v1',
+      policyVersion,
+      queryText: String(queryText || ''),
+      tokens,
+      entityIds: entities,
+      predicates: preds,
+      owner: owner.trim(),
+      scopeKey: scopeKey.trim(),
+      worldlineId: worldlineId.trim(),
+      viewerId: viewerId.trim(),
+      asOfTurn,
+      excludedNodeIds: excluded,
+      hasQueryVectors: Object.keys(queryVectors || {}).length > 0,
+      lambda,
+      epsilon,
+      maxFrontierSteps,
+      maxHops
+    };
+    const frameId = hash(JSON.stringify(frame));
+    return Object.freeze({ ...frame, frameId, queryVectors: Object.freeze({ ...(queryVectors || {}) }) });
+  };
+
+  const openView = (graph, compiledIndex, queryFrame) => {
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
+    if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_invalid');
+    if (!queryFrame || queryFrame.schema !== 'libra.query_frame.v1') fail('query_frame_invalid');
+    if (graph.scopeKey && graph.scopeKey !== queryFrame.scopeKey) fail('scope_mismatch');
+    if (graph.readerFrame?.worldlineId && graph.readerFrame.worldlineId !== queryFrame.worldlineId) fail('worldline_mismatch');
+
+    const nodeById = new Map((graph.nodes || []).map(n => [n.id, n]));
+    const unitByNodeId = new Map((graph.units || []).map(u => [u.nodeId, u]));
+    const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
+    const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
+    const excludedSet = new Set(queryFrame.excludedNodeIds || []);
+
+    let historicalStateUnavailable = false;
+    const isNodeEligible = nodeId => {
+      if (!nodeId || excludedSet.has(nodeId)) return false;
+      const node = nodeById.get(nodeId);
+      if (!node) return false;
+      const unit = unitByNodeId.get(nodeId);
+      if (!unit) return true;
+
+      if (unit.viewerId && unit.viewerId !== queryFrame.viewerId) return false;
+      if (unit.visibility === 'private' && queryFrame.viewerId !== 'owner_reader') return false;
+
+      if (queryFrame.asOfTurn !== null) {
+        if (unit.family === 'state') {
+          if (Number.isSafeInteger(unit.headThroughTurn) && unit.headThroughTurn > queryFrame.asOfTurn) {
+            historicalStateUnavailable = true;
+            return false;
+          }
+        }
+        const unitTurn = unit.sourceSpan?.turn
+          ?? unit.fact?.evidenceSpans?.[0]?.turn
+          ?? (typeof unit.fact?.values?.turn === 'number' ? unit.fact.values.turn : null);
+        if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const isEdgeEligible = edge => {
+      if (!edge) return false;
+      if (!isNodeEligible(edge.from) || !isNodeEligible(edge.to)) return false;
+      const basis = basisById.get(edge.basisId);
+      if (basis?.sourceId && !isNodeEligible(basis.sourceId)) return false;
+      return true;
+    };
+
+    const handle = Object.freeze({
+      schema: 'libra.query_graph_view.v1',
+      generation: compiledIndex.generation,
+      indexDigest: compiledIndex.indexDigest,
+      frameId: queryFrame.frameId,
+      scopeKey: queryFrame.scopeKey,
+      worldlineId: queryFrame.worldlineId,
+      viewerId: queryFrame.viewerId,
+      asOfTurn: queryFrame.asOfTurn
+    });
+
+    issuedViews.set(handle, {
+      graph,
+      compiledIndex,
+      queryFrame,
+      nodeById,
+      unitByNodeId,
+      basisById,
+      edgeById,
+      isNodeEligible,
+      isEdgeEligible,
+      getHistoricalStateUnavailable: () => historicalStateUnavailable
+    });
+    return handle;
+  };
+
+  const scoreCandidate = (unit, features = {}, queryFrame) => {
+    const lexicalScore = clamp01(features.lexicalScore || 0);
+    const hasSemantic = typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
+    const semanticScore = hasSemantic ? clamp01(features.semanticScore) : 0;
+    const entitySlotScore = clamp01(features.entitySlotScore || 0);
+    const predicateScore = clamp01(features.predicateScore || 0);
+
+    let roleWeight = 0.85;
+    if (unit?.semanticRole === 'user_corrected') roleWeight = 1.0;
+    else if (unit?.semanticRole === 'state_current' || unit?.semanticRole === 'canonical_assertion') roleWeight = 0.95;
+    else if (unit?.semanticRole === 'micro_candidate' || unit?.semanticRole === 'background_setting') roleWeight = 0.90;
+    else if (unit?.semanticRole === 'state_last_known' || unit?.semanticRole === 'source_only' || unit?.semanticRole === 'canonical_legacy_excerpt') roleWeight = 0.82;
+    else if (unit?.semanticRole === 'state_unprovenanced') roleWeight = 0.45;
+
+    const combinedSignal = hasSemantic
+      ? (0.38 * lexicalScore + 0.32 * semanticScore + 0.20 * entitySlotScore + 0.10 * predicateScore)
+      : (0.52 * lexicalScore + 0.33 * entitySlotScore + 0.15 * predicateScore);
+
+    const directScore = clamp01(combinedSignal * roleWeight);
+    return {
+      directScore,
+      lexicalScore,
+      semanticScore: hasSemantic ? semanticScore : null,
+      semanticFeatureStatus: hasSemantic ? 'available' : 'unavailable',
+      entitySlotScore,
+      predicateScore,
+      roleWeight,
+      mandatoryInclusion: Boolean(unit?.activation?.alwaysActive === true || unit?.activation?.hostSelected === true)
+    };
+  };
+
+  const retrieve = (viewHandle, {
+    maxPages = 32,
+    maxBytes = 131072,
+    pageBytes = 8192
+  } = {}) => {
+    const view = issuedViews.get(viewHandle);
+    if (!view) fail('view_handle_invalid');
+    const { graph, compiledIndex, queryFrame, nodeById, unitByNodeId, basisById, edgeById, isNodeEligible, isEdgeEligible } = view;
+
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes });
+    for (const token of queryFrame.tokens) {
+      laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'lexical', term: token, priorityHint: 1.0, requesterId: `tok:${token}` });
+    }
+    for (const entId of queryFrame.entityIds) {
+      laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'entity', term: entId, priorityHint: 1.0, requesterId: `ent:${entId}` });
+    }
+    for (const pred of queryFrame.predicates) {
+      laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
+    }
+    laneSession.enqueue({ laneRole: 'graph_neighborhood', table: 'adjacency', structuralOnly: false, priorityHint: 0.8, requesterId: 'adj:all' });
+
+    const laneReport = laneSession.drain();
+
+    const rawFeatures = new Map();
+    const ensureFeat = nodeId => {
+      if (!rawFeatures.has(nodeId)) {
+        rawFeatures.set(nodeId, { matchedTokens: new Map(), matchedEntities: new Set(), matchedPredicates: new Set() });
+      }
+      return rawFeatures.get(nodeId);
+    };
+
+    const totalUnits = Math.max(1, (graph.units || []).length);
+    for (const access of laneReport.accesses) {
+      if (access.table !== 'postings') continue;
+      for (const hit of access.items) {
+        if (!isNodeEligible(hit.nodeId)) continue;
+        const feat = ensureFeat(hit.nodeId);
+        if (hit.channel === 'lexical') {
+          const idf = Math.log(1 + totalUnits / Math.max(1, hit.df || 1));
+          const tfWeight = Math.min(2.0, 1 + Math.log(Math.max(1, hit.tf || 1)));
+          feat.matchedTokens.set(hit.term, idf * tfWeight);
+        } else if (hit.channel === 'entity') {
+          feat.matchedEntities.add(hit.term);
+        } else if (hit.channel === 'predicate') {
+          feat.matchedPredicates.add(hit.term);
+        }
+      }
+    }
+
+    const outgoingByNode = new Map();
+    const degreeByNode = new Map();
+    for (const access of laneReport.accesses) {
+      if (access.table !== 'adjacency') continue;
+      for (const row of access.items) {
+        const edge = edgeById.get(row.edgeId);
+        if (!isEdgeEligible(edge)) continue;
+        if (!outgoingByNode.has(row.anchorNodeId)) outgoingByNode.set(row.anchorNodeId, []);
+        outgoingByNode.get(row.anchorNodeId).push(row);
+        degreeByNode.set(row.anchorNodeId, (degreeByNode.get(row.anchorNodeId) || 0) + 1);
+      }
+    }
+
+    const stateByNode = new Map();
+    const directFeaturesByNode = new Map();
+    const frontier = [];
+    let reevaluations = 0;
+    let poppedSteps = 0;
+
+    const compareWitnessOrder = (chainA, chainB) => {
+      const strA = JSON.stringify(chainA.map(e => e.edgeId));
+      const strB = JSON.stringify(chainB.map(e => e.edgeId));
+      return strA.localeCompare(strB, 'en');
+    };
+
+    const offer = (nodeId, value, witness) => {
+      if (!isNodeEligible(nodeId)) return false;
+      const score = clamp01(value);
+      if (score <= 0) return false;
+      const prev = stateByNode.get(nodeId);
+      const strictlyBetter = !prev || score > prev.activation + queryFrame.epsilon;
+      const tieDeterministicBetter = prev
+        && Math.abs(score - prev.activation) <= queryFrame.epsilon
+        && (witness.edgeChain.length < prev.witness.edgeChain.length
+          || (witness.edgeChain.length === prev.witness.edgeChain.length
+            && compareWitnessOrder(witness.edgeChain, prev.witness.edgeChain) < 0));
+
+      if (!strictlyBetter && !tieDeterministicBetter) return false;
+
+      const nextVersion = prev ? prev.pathVersion + 1 : 1;
+      if (prev && prev.poppedOnce && strictlyBetter) reevaluations++;
+
+      stateByNode.set(nodeId, {
+        nodeId,
+        activation: score,
+        pathVersion: nextVersion,
+        poppedOnce: prev ? prev.poppedOnce : false,
+        witness: {
+          seedNodeId: witness.seedNodeId,
+          directScore: witness.directScore,
+          edgeChain: [...witness.edgeChain],
+          visitedNodes: new Set(witness.visitedNodes),
+          basisIds: [...witness.basisIds],
+          sourceDependencies: [...witness.sourceDependencies]
+        }
+      });
+      frontier.push({ nodeId, version: nextVersion, activation: score });
+      return true;
+    };
+
+    const maxPossibleIdf = Math.max(1, queryFrame.tokens.length * Math.log(1 + totalUnits));
+    for (const node of graph.nodes || []) {
+      if (!isNodeEligible(node.id)) continue;
+      const unit = unitByNodeId.get(node.id);
+      const feat = rawFeatures.get(node.id);
+      if (node.layer === 'entity') {
+        const matched = queryFrame.entityIds.includes(node.id)
+          || (feat && feat.matchedEntities.size > 0);
+        if (matched) {
+          directFeaturesByNode.set(node.id, {
+            directScore: 0.90,
+            lexicalScore: 0,
+            semanticScore: null,
+            semanticFeatureStatus: 'unavailable',
+            entitySlotScore: 1,
+            predicateScore: 0,
+            roleWeight: 0.90,
+            mandatoryInclusion: false
+          });
+          offer(node.id, 0.90, {
+            seedNodeId: node.id,
+            directScore: 0.90,
+            edgeChain: [],
+            visitedNodes: [node.id],
+            basisIds: [],
+            sourceDependencies: []
+          });
+        }
+        continue;
+      }
+      if (!unit) continue;
+
+      let lexSum = 0;
+      if (feat) for (const w of feat.matchedTokens.values()) lexSum += w;
+      const lexicalScore = queryFrame.tokens.length ? clamp01(lexSum / maxPossibleIdf) : 0;
+      const entityMatches = (feat ? feat.matchedEntities.size : 0)
+        + (unit.subjectId && queryFrame.entityIds.includes(unit.subjectId) ? 1 : 0)
+        + (unit.entityId && queryFrame.entityIds.includes(unit.entityId) ? 1 : 0)
+        + (unit.targetIds || []).filter(t => queryFrame.entityIds.includes(t)).length;
+      const entitySlotScore = queryFrame.entityIds.length ? clamp01(entityMatches / queryFrame.entityIds.length) : (entityMatches > 0 ? 0.7 : 0);
+      const predMatches = (feat ? feat.matchedPredicates.size : 0)
+        + (unit.field && queryFrame.predicates.includes(unit.field) ? 1 : 0);
+      const predicateScore = queryFrame.predicates.length ? clamp01(predMatches / queryFrame.predicates.length) : 0;
+      const semanticScore = typeof queryFrame.queryVectors?.[node.id] === 'number' ? queryFrame.queryVectors[node.id] : undefined;
+
+      const evaluated = scoreCandidate(unit, { lexicalScore, semanticScore, entitySlotScore, predicateScore }, queryFrame);
+      directFeaturesByNode.set(node.id, evaluated);
+      if (evaluated.directScore > 0) {
+        offer(node.id, evaluated.directScore, {
+          seedNodeId: node.id,
+          directScore: evaluated.directScore,
+          edgeChain: [],
+          visitedNodes: [node.id],
+          basisIds: [],
+          sourceDependencies: node.sourceId ? [node.sourceId] : []
+        });
+      }
+    }
+
+    const sortFrontier = () => {
+      frontier.sort((a, b) => (
+        b.activation - a.activation
+        || a.nodeId.localeCompare(b.nodeId, 'en')
+        || a.version - b.version
+      ));
+    };
+
+    let frontierStopReason = 'frontier_exhausted';
+    while (frontier.length > 0) {
+      sortFrontier();
+      const top = frontier.shift();
+      const current = stateByNode.get(top.nodeId);
+      if (!current || current.pathVersion !== top.version) continue;
+      if (poppedSteps >= queryFrame.maxFrontierSteps) {
+        frontierStopReason = 'frontier_step_budget';
+        break;
+      }
+      current.poppedOnce = true;
+      poppedSteps++;
+
+      if (current.witness.edgeChain.length >= queryFrame.maxHops) continue;
+
+      const adjRows = outgoingByNode.get(top.nodeId) || [];
+      const deg = degreeByNode.get(top.nodeId) || 1;
+      const currentNode = nodeById.get(top.nodeId);
+      const hubDamping = currentNode?.layer === 'entity' && deg > 2
+        ? 1 / (1 + 0.12 * Math.log2(deg))
+        : 1.0;
+
+      for (const row of adjRows) {
+        const targetId = row.neighborNodeId;
+        if (!isNodeEligible(targetId)) continue;
+        if (current.witness.visitedNodes.has(targetId)) continue;
+
+        const edge = edgeById.get(row.edgeId);
+        if (!isEdgeEligible(edge)) continue;
+        const basis = basisById.get(row.basisId);
+        const baseWeight = predicateWeights[row.predicate] ?? 0.65;
+        const dirFactor = row.direction === 'out' ? 1.0 : 0.92;
+        const edgeWeight = clamp01(baseWeight * dirFactor * hubDamping);
+
+        const targetNode = nodeById.get(targetId);
+        const targetUnit = unitByNodeId.get(targetId);
+        let targetFit = 0.90;
+        if (targetNode?.layer === 'entity') targetFit = 0.95;
+        else if (targetNode?.layer === 'source') targetFit = 0.78;
+        else if (targetUnit?.semanticRole === 'state_unprovenanced') targetFit = 0.55;
+        else if (targetUnit) targetFit = 0.95;
+
+        const propagated = current.activation * queryFrame.lambda * edgeWeight * targetFit;
+        const nextChain = [
+          ...current.witness.edgeChain,
+          {
+            edgeId: row.edgeId,
+            from: top.nodeId,
+            to: targetId,
+            direction: row.direction,
+            predicate: row.predicate,
+            basisId: row.basisId,
+            basisKind: basis?.kind || 'unknown'
+          }
+        ];
+        const nextBases = current.witness.basisIds.includes(row.basisId)
+          ? current.witness.basisIds
+          : [...current.witness.basisIds, row.basisId];
+        const nextDeps = new Set(current.witness.sourceDependencies);
+        if (targetNode?.sourceId) nextDeps.add(targetNode.sourceId);
+        if (basis?.sourceId) nextDeps.add(basis.sourceId);
+
+        offer(targetId, propagated, {
+          seedNodeId: current.witness.seedNodeId,
+          directScore: current.witness.directScore,
+          edgeChain: nextChain,
+          visitedNodes: [...current.witness.visitedNodes, targetId],
+          basisIds: nextBases,
+          sourceDependencies: [...nextDeps]
+        });
+      }
+    }
+
+    const familySeen = new Map();
+    const candidates = [];
+    for (const unit of graph.units || []) {
+      if (!isNodeEligible(unit.nodeId)) continue;
+      const node = nodeById.get(unit.nodeId);
+      const actState = stateByNode.get(unit.nodeId);
+      const directFeat = directFeaturesByNode.get(unit.nodeId) || scoreCandidate(unit, {}, queryFrame);
+      if (!actState && !directFeat.mandatoryInclusion) continue;
+
+      const finalScore = actState ? actState.activation : 0;
+      const derivedEdges = (graph.edges || []).filter(e => e.from === unit.nodeId && e.predicate === 'derived_from' && isEdgeEligible(e));
+      const familyAnchor = derivedEdges.length === 1
+        ? `family:derived:${derivedEdges[0].to}`
+        : `family:unit:${unit.nodeId}`;
+
+      const existingFamily = familySeen.get(familyAnchor);
+      const corroboratingCount = existingFamily ? existingFamily.count + 1 : 1;
+      familySeen.set(familyAnchor, { count: corroboratingCount });
+
+      candidates.push({
+        nodeId: unit.nodeId,
+        sourceId: node?.sourceId || null,
+        family: unit.family,
+        kind: node?.kind || null,
+        semanticRole: unit.semanticRole || null,
+        availability: unit.availability || null,
+        provenanceStatus: unit.provenanceStatus || null,
+        text: unit.text || '',
+        score: Number(finalScore.toFixed(6)),
+        directScore: Number(directFeat.directScore.toFixed(6)),
+        propagatedScore: Number((actState && actState.witness.edgeChain.length > 0 ? actState.activation : 0).toFixed(6)),
+        mandatoryInclusion: directFeat.mandatoryInclusion,
+        semanticFeatureStatus: directFeat.semanticFeatureStatus,
+        evidenceFamilyId: familyAnchor,
+        independentEvidenceCount: 1,
+        pathVersion: actState ? actState.pathVersion : 0,
+        winningWitness: actState ? {
+          seedNodeId: actState.witness.seedNodeId,
+          hopCount: actState.witness.edgeChain.length,
+          edgeChain: actState.witness.edgeChain,
+          basisIds: actState.witness.basisIds,
+          sourceDependencies: actState.witness.sourceDependencies
+        } : {
+          seedNodeId: unit.nodeId,
+          hopCount: 0,
+          edgeChain: [],
+          basisIds: [],
+          sourceDependencies: node?.sourceId ? [node.sourceId] : []
+        }
+      });
+    }
+
+    candidates.sort((a, b) => (
+      b.score - a.score
+      || (a.mandatoryInclusion === b.mandatoryInclusion ? 0 : a.mandatoryInclusion ? -1 : 1)
+      || a.nodeId.localeCompare(b.nodeId, 'en')
+    ));
+
+    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted';
+    return Object.freeze({
+      schema,
+      policyVersion,
+      generation: compiledIndex.generation,
+      indexDigest: compiledIndex.indexDigest,
+      frameId: queryFrame.frameId,
+      complete: traversalComplete,
+      stopReason: !laneReport.complete ? `lane_${laneReport.stopReason}` : frontierStopReason,
+      historicalStateUnavailable: view.getHistoricalStateUnavailable(),
+      candidates,
+      diagnostics: {
+        poppedFrontierSteps: poppedSteps,
+        improvedPathReevaluations: reevaluations,
+        lanePagesRead: laneReport.pagesRead,
+        laneBytesRead: laneReport.bytesRead,
+        laneCoalescedRequests: laneReport.coalescedRequests,
+        unreadCursors: laneReport.unreadCursors
+      },
+      authority: 'descriptive_only',
+      modelDispatchEligible: false
+    });
+  };
+
+  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve });
+});
+    const createLibraMemoryGraphCompiler = (function createMemoryGraphCompiler({ fingerprint } = {}) {
+  if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
+  const schema = 'libra.memory_graph_compiler.v1';
+  const validConsumers = new Set(['classic', 'planner', 'sga', 'input_writer', 'gui', 'gradia']);
+  const fail = reason => { const err = new Error('LIBRA_GRAPH_COMPILER_' + reason.toUpperCase()); err.reason = reason; throw err; };
+  const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
+
+  let issuedReadSets = new WeakMap();
+  let compilerEpoch = 0;
+
+  const normalizePolicy = (policy = {}) => {
+    const consumer = String(policy.consumer || 'classic');
+    if (!validConsumers.has(consumer)) fail('consumer_invalid');
+    const maxCharacters = policy.maxCharacters ?? 4096;
+    const maxUnits = policy.maxUnits ?? 24;
+    if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 32 || maxCharacters > 262144) fail('max_characters_invalid');
+    if (!Number.isSafeInteger(maxUnits) || maxUnits < 1 || maxUnits > 256) fail('max_units_invalid');
+    if (consumer === 'gradia') {
+      const receipt = policy.gradiaSelectionReceipt;
+      if (!receipt || typeof receipt !== 'object'
+        || typeof receipt.ownerCorpusDigest !== 'string' || !receipt.ownerCorpusDigest.trim()
+        || typeof receipt.selectionReceiptId !== 'string' || !receipt.selectionReceiptId.trim()) {
+        fail('gradia_receipt_required');
+      }
+    }
+    return {
+      consumer,
+      maxCharacters,
+      maxUnits,
+      includeMandatoryLore: policy.includeMandatoryLore !== false,
+      correspondenceMap: policy.correspondenceMap && typeof policy.correspondenceMap === 'object' ? policy.correspondenceMap : {},
+      gradiaSelectionReceipt: consumer === 'gradia' ? { ...policy.gradiaSelectionReceipt } : null
+    };
+  };
+
+  const collectCandidateDependencies = (cand, nodeById, basisById, edgeById) => {
+    const nodeIds = new Set([cand.nodeId]);
+    const sourceIds = new Set();
+    const entityIds = new Set();
+    const basisIds = new Set(cand.winningWitness?.basisIds || []);
+    const bindingByNodeId = new Map();
+
+    const addNode = id => {
+      if (!id) return;
+      const n = nodeById.get(id);
+      if (!n) return;
+      nodeIds.add(id);
+      bindingByNodeId.set(id, n.bindingId);
+      if (n.layer === 'source') sourceIds.add(id);
+      else if (n.layer === 'entity') entityIds.add(id);
+      if (n.sourceId) {
+        sourceIds.add(n.sourceId);
+        const sNode = nodeById.get(n.sourceId);
+        if (sNode) bindingByNodeId.set(n.sourceId, sNode.bindingId);
+      }
+    };
+
+    addNode(cand.nodeId);
+    for (const sId of cand.winningWitness?.sourceDependencies || []) addNode(sId);
+    for (const step of cand.winningWitness?.edgeChain || []) {
+      addNode(step.from);
+      addNode(step.to);
+      if (step.basisId) basisIds.add(step.basisId);
+      const edge = edgeById.get(step.edgeId);
+      if (edge) {
+        addNode(edge.from);
+        addNode(edge.to);
+      }
+    }
+    for (const bId of basisIds) {
+      const b = basisById.get(bId);
+      if (b?.sourceId) addNode(b.sourceId);
+    }
+
+    return { nodeIds, sourceIds, entityIds, basisIds, bindingByNodeId };
+  };
+
+  // Select an EvidenceBundle under character & unit budgets with conservative Micro absorption (§10, V09)
+  const select = (queryResult, graph, rawPolicy = {}) => {
+    if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
+    const policy = normalizePolicy(rawPolicy);
+
+    const nodeById = new Map((graph.nodes || []).map(n => [n.id, n]));
+    const unitByNodeId = new Map((graph.units || []).map(u => [u.nodeId, u]));
+    const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
+    const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
+
+    // Order candidates: mandatory lore first (when enabled by consumer policy), then by query score
+    const ordered = [...(queryResult.candidates || [])].sort((a, b) => {
+      if (policy.includeMandatoryLore && a.mandatoryInclusion !== b.mandatoryInclusion) {
+        return a.mandatoryInclusion ? -1 : 1;
+      }
+      return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
+    });
+
+    // Separate non-Micro and Micro so we know which Canonical counterparts actually pass budget admission first!
+    // If a Canonical candidate drops under budget, its corresponding Micro candidate MUST NOT be suppressed (§10, V09).
+    const admitted = [];
+    const admittedNodeIds = new Set();
+    const droppedForBudget = [];
+    const suppressedMicro = [];
+    let usedCharacters = 0;
+
+    // Pass 1: admit non-Micro candidates (or all candidates in order, deferring Micro absorption check until after Canonical admission is known)
+    // To preserve score ranking while guaranteeing Micro is only absorbed if its Canonical counterpart actually fits the budget,
+    // we first simulate admission in rank order, and if a Canonical counterpart is later dropped for budget, any Micro that was
+    // provisionally held for absorption is restored!
+    const provisionalHeldMicro = [];
+
+    for (const cand of ordered) {
+      const textLen = String(cand.text || '').length;
+      const counterpartCanonicalId = cand.family === 'micro'
+        ? (policy.correspondenceMap[cand.nodeId] || null)
+        : null;
+
+      // If this Micro unit has a designated Canonical counterpart that is already admitted, absorb/suppress it now
+      if (counterpartCanonicalId && admittedNodeIds.has(counterpartCanonicalId)) {
+        suppressedMicro.push({
+          microNodeId: cand.nodeId,
+          absorbedByCanonicalNodeId: counterpartCanonicalId,
+          candidate: cand
+        });
+        continue;
+      }
+      // If the Canonical counterpart appears later in the candidate list, hold this Micro provisionally
+      if (counterpartCanonicalId && ordered.some(other => other.nodeId === counterpartCanonicalId)) {
+        provisionalHeldMicro.push({ cand, counterpartCanonicalId });
+        continue;
+      }
+
+      if (admitted.length >= policy.maxUnits || usedCharacters + textLen > policy.maxCharacters) {
+        droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        continue;
+      }
+      admitted.push(cand);
+      admittedNodeIds.add(cand.nodeId);
+      usedCharacters += textLen;
+    }
+
+    // Resolve provisionally held Micro candidates: if their Canonical counterpart was admitted, absorb them;
+    // if the Canonical counterpart was dropped for budget, admit the Micro candidate if budget permits!
+    for (const { cand, counterpartCanonicalId } of provisionalHeldMicro) {
+      if (admittedNodeIds.has(counterpartCanonicalId)) {
+        suppressedMicro.push({
+          microNodeId: cand.nodeId,
+          absorbedByCanonicalNodeId: counterpartCanonicalId,
+          candidate: cand
+        });
+      } else {
+        const textLen = String(cand.text || '').length;
+        if (admitted.length < policy.maxUnits && usedCharacters + textLen <= policy.maxCharacters) {
+          admitted.push(cand);
+          admittedNodeIds.add(cand.nodeId);
+          usedCharacters += textLen;
+        } else {
+          droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        }
+      }
+    }
+
+    // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09)
+    const allNodeIds = new Set();
+    const allSourceIds = new Set();
+    const allEntityIds = new Set();
+    const allBasisIds = new Set();
+    const requiredBindings = new Map();
+    const independentSupportingSources = new Set();
+
+    for (const cand of admitted) {
+      const deps = collectCandidateDependencies(cand, nodeById, basisById, edgeById);
+      for (const id of deps.nodeIds) allNodeIds.add(id);
+      for (const id of deps.sourceIds) {
+        allSourceIds.add(id);
+        independentSupportingSources.add(id);
+      }
+      for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.basisIds) allBasisIds.add(id);
+      for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+    }
+
+    for (const item of suppressedMicro) {
+      const deps = collectCandidateDependencies(item.candidate, nodeById, basisById, edgeById);
+      for (const id of deps.nodeIds) allNodeIds.add(id);
+      for (const id of deps.sourceIds) allSourceIds.add(id);
+      for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.basisIds) allBasisIds.add(id);
+      for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+      const canonicalNode = nodeById.get(item.absorbedByCanonicalNodeId);
+      if (canonicalNode) {
+        allNodeIds.add(canonicalNode.id);
+        requiredBindings.set(canonicalNode.id, canonicalNode.bindingId);
+        if (canonicalNode.sourceId) allSourceIds.add(canonicalNode.sourceId);
+      }
+    }
+
+    const items = admitted.map(cand => {
+      const unit = unitByNodeId.get(cand.nodeId) || {};
+      return {
+        nodeId: cand.nodeId,
+        sourceId: cand.sourceId,
+        family: cand.family,
+        kind: cand.kind,
+        semanticRole: cand.semanticRole,
+        availability: cand.availability ?? null,
+        provenanceStatus: cand.provenanceStatus ?? null,
+        text: cand.text,
+        score: cand.score,
+        mandatoryInclusion: cand.mandatoryInclusion,
+        evidenceFamilyId: cand.evidenceFamilyId,
+        sourceSpan: unit.sourceSpan || null,
+        locator: unit.locator || null,
+        winningWitness: cand.winningWitness
+      };
+    });
+
+    const bundle = {
+      schema: 'libra.evidence_bundle.v1',
+      consumer: policy.consumer,
+      generation: queryResult.generation,
+      indexDigest: queryResult.indexDigest,
+      frameId: queryResult.frameId,
+      scopeKey: graph.scopeKey || graph.readerFrame?.scopeKey || '',
+      worldlineId: graph.readerFrame?.worldlineId || 'main',
+      restoreEpoch: graph.readerFrame?.restoreEpoch ?? 0,
+      owner: graph.readerFrame?.owner || '',
+      historicalStateUnavailable: Boolean(queryResult.historicalStateUnavailable),
+      queryComplete: Boolean(queryResult.complete),
+      budget: {
+        maxCharacters: policy.maxCharacters,
+        usedCharacters,
+        maxUnits: policy.maxUnits,
+        admittedUnits: items.length,
+        droppedUnits: droppedForBudget.length,
+        suppressedMicroCount: suppressedMicro.length
+      },
+      independentSupportingSourceCount: independentSupportingSources.size,
+      items,
+      suppressedMicroIds: suppressedMicro.map(s => s.microNodeId),
+      droppedForBudget,
+      gradiaSelectionReceipt: policy.gradiaSelectionReceipt,
+      authority: 'unverified_bundle',
+      modelDispatchEligible: false
+    };
+
+    const readSetToken = Object.freeze({
+      schema: 'libra.consumed_readset_handle.v1',
+      bundleDigest: hash(JSON.stringify(bundle)),
+      consumer: policy.consumer,
+      scopeKey: bundle.scopeKey
+    });
+
+    issuedReadSets.set(readSetToken, {
+      compilerEpoch,
+      revoked: false,
+      bundle,
+      policy,
+      frame: {
+        owner: bundle.owner,
+        scopeKey: bundle.scopeKey,
+        worldlineId: bundle.worldlineId,
+        restoreEpoch: bundle.restoreEpoch
+      },
+      dependencies: {
+        nodeIds: [...allNodeIds].sort((a, b) => a.localeCompare(b, 'en')),
+        sourceIds: [...allSourceIds].sort((a, b) => a.localeCompare(b, 'en')),
+        entityIds: [...allEntityIds].sort((a, b) => a.localeCompare(b, 'en')),
+        basisIds: [...allBasisIds].sort((a, b) => a.localeCompare(b, 'en')),
+        requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
+      }
+    });
+
+    return Object.freeze({ bundle: Object.freeze(bundle), readSetHandle: readSetToken });
+  };
+
+  // Render consumer packet envelope from selected EvidenceBundle (§10)
+  const render = ({ bundle, readSetHandle } = {}) => {
+    const record = readSetHandle && issuedReadSets.get(readSetHandle);
+    if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
+    if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || hash(JSON.stringify(bundle)) !== readSetHandle.bundleDigest) {
+      fail('bundle_mismatch');
+    }
+    const header = `[LIBRA_EVIDENCE consumer=${bundle.consumer} scope=${bundle.scopeKey} units=${bundle.items.length} sources=${bundle.independentSupportingSourceCount}]`;
+    const lines = bundle.items.map((item, idx) => (
+      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
+    ));
+    const renderedText = [header, ...lines].join('\n');
+    return Object.freeze({
+      schema: 'libra.rendered_consumer_packet.v1',
+      consumer: bundle.consumer,
+      scopeKey: bundle.scopeKey,
+      worldlineId: bundle.worldlineId,
+      renderedText,
+      characterLength: renderedText.length,
+      admittedNodeIds: bundle.items.map(i => i.nodeId),
+      suppressedMicroIds: bundle.suppressedMicroIds,
+      gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
+      readSetHandle,
+      modelDispatchEligible: false
+    });
+  };
+
+  // Final physical readset verification at model dispatch boundary (§10, §11, V06, V07, V09, V12)
+  const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
+    const record = readSetHandle && issuedReadSets.get(readSetHandle);
+    if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
+    if (!ownerVerifier || typeof ownerVerifier.currentGraph !== 'function') fail('owner_verifier_required');
+
+    const live = await ownerVerifier.currentGraph();
+    if (!live || live.schema !== 'libra.memory_graph_projection.v1') fail('live_graph_unavailable');
+
+    const liveFrame = live.readerFrame || {};
+    if (liveFrame.owner !== record.frame.owner
+      || (live.scopeKey || liveFrame.scopeKey) !== record.frame.scopeKey
+      || liveFrame.worldlineId !== record.frame.worldlineId) {
+      fail('scope_or_owner_changed');
+    }
+    if (liveFrame.restoreEpoch !== record.frame.restoreEpoch) {
+      fail('restore_epoch_changed');
+    }
+
+    const liveNodeBindings = new Map((live.nodes || []).map(n => [n.id, n.bindingId]));
+    for (const [nodeId, expectedBindingId] of Object.entries(record.dependencies.requiredBindings)) {
+      const actualBindingId = liveNodeBindings.get(nodeId);
+      if (!actualBindingId || actualBindingId !== expectedBindingId) {
+        fail('dependency_binding_stale');
+      }
+    }
+
+    if (record.policy.consumer === 'gradia') {
+      if (typeof ownerVerifier.verifyGradiaReceipt !== 'function') fail('gradia_verifier_required');
+      const ok = await ownerVerifier.verifyGradiaReceipt(record.policy.gradiaSelectionReceipt);
+      if (ok !== true) fail('gradia_receipt_invalid');
+    }
+
+    if (typeof ownerVerifier.assertPhysicalCurrentness === 'function') {
+      const ok = await ownerVerifier.assertPhysicalCurrentness(record.dependencies);
+      if (ok !== true) fail('physical_readset_stale');
+    }
+
+    return Object.freeze({
+      schema: 'libra.consumed_readset_verification.v1',
+      status: 'verified',
+      consumer: record.policy.consumer,
+      scopeKey: record.frame.scopeKey,
+      worldlineId: record.frame.worldlineId,
+      restoreEpoch: record.frame.restoreEpoch,
+      verifiedNodeCount: Object.keys(record.dependencies.requiredBindings).length,
+      verifiedSourceCount: record.dependencies.sourceIds.length,
+      verifiedSuppressedMicroCount: record.bundle.suppressedMicroIds.length,
+      modelDispatchEligible: true
+    });
+  };
+
+  const revoke = readSetHandle => {
+    const record = readSetHandle && issuedReadSets.get(readSetHandle);
+    if (record) record.revoked = true;
+  };
+
+  const invalidateAll = () => {
+    compilerEpoch++;
+    issuedReadSets = new WeakMap();
+  };
+
+  return Object.freeze({ select, render, validateConsumedReadSet, revoke, invalidateAll });
+});
+    const createLibraMemoryGraphRollout = (function createMemoryGraphRollout({ index, lane, query, compiler, pages, fingerprint } = {}) {
+  if (!index || !lane || !query || !compiler || !pages || typeof fingerprint !== 'function') {
+    throw new TypeError('LIBRA_GRAPH_ROLLOUT_ADAPTER_REQUIRED');
+  }
+  const schema = 'libra.memory_graph_rollout.v1';
+  const validModes = new Set(['legacy', 'shadow', 'unified']);
+  const fail = reason => { const err = new Error('LIBRA_GRAPH_ROLLOUT_' + reason.toUpperCase()); err.reason = reason; throw err; };
+  const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
+
+  const sealedRequests = new WeakMap();
+
+  const sealRequestMode = ({
+    mode = 'legacy',
+    requestId = '',
+    owner = '',
+    scopeKey = '',
+    worldlineId = 'main',
+    restoreEpoch = 0
+  } = {}) => {
+    if (!validModes.has(mode)) fail('mode_invalid');
+    if (typeof requestId !== 'string' || !requestId.trim()
+      || typeof owner !== 'string' || !owner.trim()
+      || typeof scopeKey !== 'string' || !scopeKey.trim()
+      || typeof worldlineId !== 'string' || !worldlineId.trim()
+      || !Number.isSafeInteger(restoreEpoch) || restoreEpoch < 0) {
+      fail('request_context_invalid');
+    }
+    const payload = {
+      schema: 'libra.engine_selection_seal.v1',
+      mode,
+      requestId: requestId.trim(),
+      owner: owner.trim(),
+      scopeKey: scopeKey.trim(),
+      worldlineId: worldlineId.trim(),
+      restoreEpoch
+    };
+    const token = Object.freeze({ ...payload, sealDigest: hash(JSON.stringify(payload)) });
+    sealedRequests.set(token, { ...payload });
+    return token;
+  };
+
+  // Execute unified retrieval + compilation under a sealed request token.
+  // Never invokes legacy rankers on unified partial/failure (§13, V11).
+  const executeUnifiedRequest = async ({
+    sealToken,
+    graph,
+    queryInput = {},
+    consumerPolicy = {},
+    laneBudget = {},
+    ownerVerifier = null
+  } = {}) => {
+    const sealed = sealToken && sealedRequests.get(sealToken);
+    if (!sealed) fail('request_seal_invalid');
+    if (sealed.mode === 'legacy') fail('unified_execution_forbidden_in_legacy_mode');
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
+    if ((graph.scopeKey || graph.readerFrame?.scopeKey) !== sealed.scopeKey
+      || graph.readerFrame?.worldlineId !== sealed.worldlineId
+      || graph.readerFrame?.restoreEpoch !== sealed.restoreEpoch) {
+      fail('snapshot_seal_mismatch');
+    }
+
+    const partition = JSON.stringify({
+      owner: sealed.owner,
+      scopeKey: sealed.scopeKey,
+      viewer: graph.readerFrame?.view?.viewerId || 'owner_reader'
+    });
+    const generation = pages.generation(graph, {
+      partition,
+      restoreEpoch: sealed.restoreEpoch,
+      view: graph.readerFrame
+    });
+    const compiledIndex = index.compile(graph, { partition, generation });
+    const queryFrame = query.sealQueryFrame({
+      ...queryInput,
+      owner: sealed.owner,
+      scopeKey: sealed.scopeKey,
+      worldlineId: sealed.worldlineId
+    });
+    const viewHandle = query.openView(graph, compiledIndex, queryFrame);
+    const queryResult = query.retrieve(viewHandle, laneBudget);
+    const selected = compiler.select(queryResult, graph, consumerPolicy);
+    const packet = compiler.render(selected);
+
+    let dispatchVerification = null;
+    let deliveryOutcome = queryResult.complete ? 'complete' : 'partial';
+    let fallbackAction = 'none';
+
+    if (ownerVerifier) {
+      try {
+        dispatchVerification = await compiler.validateConsumedReadSet(selected.readSetHandle, ownerVerifier);
+      } catch (err) {
+        // Unified verification failure NEVER runs legacy ranker; falls back to base model request only (§10, §13)
+        deliveryOutcome = 'base_request_only';
+        fallbackAction = 'preserve_base_model_request';
+        dispatchVerification = {
+          schema: 'libra.consumed_readset_verification.v1',
+          status: 'rejected',
+          reason: err.message,
+          modelDispatchEligible: false
+        };
+      }
+    }
+
+    return Object.freeze({
+      schema: 'libra.unified_execution_result.v1',
+      mode: sealed.mode,
+      requestId: sealed.requestId,
+      generation,
+      indexDigest: compiledIndex.indexDigest,
+      frameId: queryFrame.frameId,
+      deliveryOutcome,
+      fallbackAction,
+      legacyRankerExecuted: false,
+      legacyCachesRebuilt: false,
+      doubleInjection: false,
+      additionalModelCalls: 0,
+      queryComplete: queryResult.complete,
+      stopReason: queryResult.stopReason,
+      bundle: selected.bundle,
+      packet: deliveryOutcome === 'base_request_only' ? null : packet,
+      dispatchVerification,
+      modelDispatchEligible: Boolean(dispatchVerification?.modelDispatchEligible === true && sealed.mode === 'unified')
+    });
+  };
+
+  // Offline / Shadow comparison against a fixed snapshot and legacy baseline or gold expectations (§12.2, §13).
+  const runShadowComparison = async ({
+    requestId = 'shadow-eval',
+    graph,
+    queryInput = {},
+    consumerPolicy = {},
+    legacyBaseline = {},
+    goldExpectation = {},
+    ownerVerifier = null
+  } = {}) => {
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
+    const frame = graph.readerFrame || {};
+    const sealToken = sealRequestMode({
+      mode: 'shadow',
+      requestId,
+      owner: frame.owner || 'libra:plugin_only',
+      scopeKey: graph.scopeKey || frame.scopeKey || 'default',
+      worldlineId: frame.worldlineId || 'main',
+      restoreEpoch: frame.restoreEpoch ?? 0
+    });
+
+    const unified = await executeUnifiedRequest({
+      sealToken,
+      graph,
+      queryInput,
+      consumerPolicy,
+      ownerVerifier
+    });
+
+    const unifiedIds = new Set(unified.bundle.items.map(i => i.nodeId));
+    const unifiedFamilies = new Set(unified.bundle.items.map(i => i.family));
+    const legacyIds = new Set(Array.isArray(legacyBaseline.admittedNodeIds) ? legacyBaseline.admittedNodeIds : []);
+    const expectedIds = Array.isArray(goldExpectation.expectedNodeIds) ? goldExpectation.expectedNodeIds : [];
+    const forbiddenIds = Array.isArray(goldExpectation.forbiddenNodeIds) ? goldExpectation.forbiddenNodeIds : [];
+
+    const matchedGold = expectedIds.filter(id => unifiedIds.has(id));
+    const evidenceRecall = expectedIds.length ? Number((matchedGold.length / expectedIds.length).toFixed(4)) : 1;
+    const evidencePrecision = unifiedIds.size && expectedIds.length
+      ? Number((matchedGold.length / unifiedIds.size).toFixed(4))
+      : 1;
+
+    // Identify intentional divergence where Unified discovers State/lore or multi-hop evidence beyond legacy canonical shortlist (§13)
+    const addedByUnified = unified.bundle.items
+      .filter(i => !legacyIds.has(i.nodeId))
+      .map(i => ({
+        nodeId: i.nodeId,
+        family: i.family,
+        semanticRole: i.semanticRole,
+        hopCount: i.winningWitness?.hopCount || 0,
+        intentionalReason: ['state', 'lore'].includes(i.family)
+          ? 'direct_state_or_lore_graph_participation'
+          : (i.winningWitness?.hopCount || 0) > 0
+            ? 'multi_hop_graph_propagation'
+            : 'unified_calibrated_rank'
+      }));
+
+    const forbiddenLeaks = forbiddenIds.filter(id => unifiedIds.has(id));
+    const wrongAuthorityPromotion = unified.bundle.items.some(
+      i => (i.semanticRole === 'state_unprovenanced' && i.provenanceStatus === 'recorded')
+        || (i.family === 'lore' && i.semanticRole === 'canonical_assertion')
+    );
+
+    const invariantViolations = [];
+    if (forbiddenLeaks.length) invariantViolations.push('ineligible_or_forbidden_node_leaked');
+    if (wrongAuthorityPromotion) invariantViolations.push('wrong_authority_promotion');
+    if (unified.doubleInjection) invariantViolations.push('shadow_double_injection');
+    if (unified.additionalModelCalls > 0) invariantViolations.push('unexpected_model_call_in_shadow');
+
+    return Object.freeze({
+      schema,
+      mode: 'shadow',
+      requestId,
+      generation: unified.generation,
+      indexDigest: unified.indexDigest,
+      shadowInjectedIntoModelPrompt: false,
+      doubleInjection: false,
+      additionalModelCalls: 0,
+      metrics: {
+        evidenceRecall,
+        evidencePrecision,
+        admittedUnitCount: unified.bundle.items.length,
+        participatingFamilies: [...unifiedFamilies].sort((a, b) => a.localeCompare(b, 'en')),
+        intentionalDivergenceCount: addedByUnified.length
+      },
+      intentionalDivergence: addedByUnified,
+      invariantViolations,
+      invariantsPassed: invariantViolations.length === 0,
+      unresolvedBlocked: [
+        'actual_risuai_host_qualification',
+        'warm_raw_history_zero_host_mutation_api'
+      ],
+      unifiedResult: unified
+    });
+  };
+
+  return Object.freeze({ sealRequestMode, executeUnifiedRequest, runShadowComparison });
+});
     // END LIBRA MEMORY GRAPH
 
     const tokenize = value => Array.from(new Set(tokenStream(value))).slice(0, 800);

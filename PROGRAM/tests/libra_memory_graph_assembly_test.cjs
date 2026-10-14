@@ -12,6 +12,11 @@ const { buildPlugins } = require('../tools/build_plugins.cjs');
       block().replace('createLibraMemoryGraphIdentity', 'staleIdentity'), `${block()}\n${block()}`,
       block().replace('createLibraMemoryGraphPages', 'stalePages'),
       block().replace('createLibraMemoryGraphStore', 'staleStore'),
+      block().replace('createLibraMemoryGraphIndex', 'staleIndex'),
+      block().replace('createLibraMemoryGraphLane', 'staleLane'),
+      block().replace('createLibraMemoryGraphQuery', 'staleQuery'),
+      block().replace('createLibraMemoryGraphCompiler', 'staleCompiler'),
+      block().replace('createLibraMemoryGraphRollout', 'staleRollout'),
       '// END LIBRA MEMORY GRAPH\n// BEGIN LIBRA MEMORY GRAPH']) {
       fs.writeFileSync(target, source);
       assert.throws(() => sync({ target, check: true }), /marker|synchronization/i);
