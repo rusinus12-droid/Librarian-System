@@ -44,14 +44,17 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     };
     const readPool = pool => {
       const total = normalizedGraph[pool].length;
-      if (typeof pages.page !== 'function' || total === 0) return normalizedGraph[pool];
+      if (typeof pages.page !== 'function') fail('page_cache_required');
+      if (total === 0) return [];
       const out = [];
       let offset = 0;
       while (offset < total) {
-        const pg = pages.page(normalizedGraph, { partition, generation, pool, offset, pageBytes });
-        if (!Array.isArray(pg.items) || pg.nextOffset <= offset) {
-          return normalizedGraph[pool];
+        let pg = pages.page(normalizedGraph, { partition, generation, pool, offset, pageBytes });
+        const ceiling = Math.min(65536, typeof pages.inspect === 'function' ? pages.inspect().limits.pageBytes : pageBytes);
+        if (pg.nextOffset <= offset && pg.stopReason === 'row_exceeds_page' && pageBytes < ceiling) {
+          pg = pages.page(normalizedGraph, { partition, generation, pool, offset, pageBytes: ceiling });
         }
+        if (!Array.isArray(pg.items) || pg.nextOffset <= offset) fail('page_budget_' + pg.stopReason);
         out.push(...pg.items);
         offset = pg.nextOffset;
       }
@@ -431,15 +434,13 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
         decodedItems = pages.decode(lease);
         const afterHits = typeof pages.inspect === 'function' ? pages.inspect().counters.hits : 0;
         cacheHit = afterHits > beforeHits;
-      } catch (_err) {
-        decodedItems = JSON.parse(JSON.stringify(selected));
       } finally {
         if (lease && typeof pages.release === 'function') pages.release(lease);
         if (stage && typeof pages.releaseStage === 'function') pages.releaseStage(stage);
         if (handle && typeof pages.close === 'function') pages.close(handle);
       }
     } else {
-      decodedItems = JSON.parse(JSON.stringify(selected));
+      fail('page_cache_required');
     }
 
     return {

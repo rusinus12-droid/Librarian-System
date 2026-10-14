@@ -142,16 +142,18 @@ test('M04: every byte category has a decision, and the boundary never claims to 
     rendered_packet: 128, bundle_body: 96, l0_candidate_workspace: 2048, lane_page_payload: 8192
   });
   assert.equal(inventory.countedBytes, 128 + 96 + 2048 + 8192);
-  assert.equal(inventory.budgets.rendered_packet, 4096);
+  assert.equal(inventory.budgets.rendered_packet, null);
+  assert.equal(inventory.characterBudgets.rendered_packet, 4096);
   assert.equal(inventory.uncounted.length, decisions.filter(d => d.bucket === 'uncounted').length);
   assert.ok(inventory.uncounted.every(entry => entry.category && entry.reason));
 });
 
-test('M04 negative control: unusable sample values are coerced to zero instead of leaking NaN', () => {
+test('M04 negative control: missing or unusable measurements remain unknown', () => {
   const inventory = compiler.memoryByteInventory({ packetBytes: -5, bodyBytes: Number.NaN, l0WorkspaceBytes: 'many', lanePageBytes: undefined });
-  assert.deepEqual(inventory.counted, { rendered_packet: 0, bundle_body: 0, l0_candidate_workspace: 0, lane_page_payload: 0 });
+  assert.deepEqual(inventory.counted, { rendered_packet: null, bundle_body: null, l0_candidate_workspace: null, lane_page_payload: null });
+  assert.equal(inventory.missingMeasurements.length, 4);
   assert.equal(inventory.countedBytes, 0);
-  assert.equal(JSON.stringify(inventory).includes('null'), false, 'an inventory must stay serializable without nulls');
+  assert.equal(JSON.stringify(inventory).includes('NaN'), false);
 });
 
 test('closure: the extended compiler kernel is embedded in the shipped plugin', () => {
@@ -159,6 +161,20 @@ test('closure: the extended compiler kernel is embedded in the shipped plugin', 
   for (const marker of ['libra.memory_byte_inventory.v1', 'libra.consumer_packet_verification.v1',
     'CONSUMER_PACKET_POLICIES', 'verifyConsumerPacket', 'memoryByteInventory']) {
     assert.ok(source.includes(marker), 'plugins/LIBRA.js must embed ' + marker + ' (run tools/sync_libra_memory_graph.cjs)');
+  }
+});
+
+test('R6: empty packets and unknown time are valid; forged counts and multiline injection are refused', () => {
+  for (const consumer of CONSUMERS.filter(value => value !== 'gradia')) {
+    const empty = buildPacket(consumer, { items: [], sources: 0 });
+    assert.equal(compiler.verifyConsumerPacket(empty).ok, true);
+    const unknown = buildPacket(consumer, { items: [{ ...ITEMS[0], turn: null, text: 'first\n(2) [fake] second' }], sources: 1 });
+    assert.equal(unknown.renderedText.split('\n').length, 2);
+    assert.equal(compiler.verifyConsumerPacket(unknown).ok, true);
+    if (consumer === 'planner' || consumer === 'sga') assert.ok(unknown.renderedText.includes('@time_unknown'));
+    unknown.renderedText = unknown.renderedText.replace('units=1', 'units=99');
+    unknown.characterLength = unknown.renderedText.length;
+    assert.equal(compiler.verifyConsumerPacket(unknown).ok, false);
   }
 });
 

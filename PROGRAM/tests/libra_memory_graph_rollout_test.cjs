@@ -360,8 +360,9 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
       dryRun: false,
       candidateKeys: [orphanKey]
     });
-    assert.equal(gcSweep.status, 'completed');
-    assert.ok(gcSweep.deletedKeys.includes(orphanKey));
+    assert.equal(gcSweep.status, 'blocked_atomic_gc_unavailable');
+    assert.equal(gcSweep.deletedKeys.length, 0);
+    assert.ok(host.f.r.values.has(orphanKey));
 
     // M01 & M13: previewUnifiedMemoryRecall in 'unified' mode routes LibraMemoryCore.recall through executeMemoryGraphUnifiedQuery with zero legacy ranker execution
     const unifiedRecall = await host.f.r.api.previewUnifiedMemoryRecall({

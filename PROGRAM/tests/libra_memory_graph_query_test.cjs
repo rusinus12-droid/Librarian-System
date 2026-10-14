@@ -470,6 +470,27 @@ test('M06 & M07: validates semantic representation space compatibility, isolates
   assert.equal(loreCand.semanticFeatureStatus, 'incompatible_isolated');
 });
 
+test('R2: mixed native evidence refs use the latest support turn and unknown time remains explicit partial coverage', () => {
+  for (const [spans, known] of [
+    [[{ ref: 't1-a', quote: 'early' }, { ref: 't5-a', quote: 'late' }], true],
+    [[{ ref: 'unknown', quote: 'unplaced' }], false]
+  ]) {
+    const snapshot = makeFourFamilySnapshot();
+    snapshot.canonical[0].record.canonicalArtifact.facts[0].evidenceSpans = spans;
+    const { query, graph, compiled } = buildStack(snapshot);
+    const frame = query.sealQueryFrame({ queryText: 'silver ring alice', owner: baseFrame.owner,
+      scopeKey: baseFrame.scopeKey, worldlineId: baseFrame.worldlineId, asOfTurn: 3 });
+    const result = query.retrieve(query.openView(graph, compiled, frame));
+    assert.equal(result.candidates.some(item => item.family === 'canonical'), false);
+    const canonIds = new Set(graph.units.filter(unit => unit.family === 'canonical').map(unit => unit.nodeId));
+    for (const candidate of result.candidates) {
+      assert.ok((candidate.winningWitness?.edgeChain || []).every(edge => !canonIds.has(edge.from) && !canonIds.has(edge.to)));
+    }
+    assert.equal(result.historicalCanonicalUnavailable, !known);
+    if (!known) { assert.equal(result.complete, false); assert.equal(result.coverage.historicalCanonicalUnavailable, true); }
+  }
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();

@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.7 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진 미완성. 네 자료 reader·공통 payload cache·durable projection-window API는 제한 범위에서 연결·검증했다. Index/Lane/Query/Compiler/Rollout은 커널 구현·내장 단계이며 실제 검색 요청·임베딩·공통 접근·소비자 dispatch·legacy 종료는 미연결이다. 재현된 결함과 검증 gate는 별도 현황표로 추적한다.**
-- 구현 기준: codex/libra-memory-network-20261013, `83caadd3940e121e4d6198bb3619845b59146e91`
+- 문서 버전: 1.8 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 provider, 전체 corpus durable 접근, 다른 소비자의 실제 삽입, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
+- 구현 기준: codex/libra-memory-network-20261013, `8d0b64087c00155ff9f410bcf0c31d4a074eea9d` 이후 8건 패치. 현재 범위와 검증은 [현황 §12](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#12-8d0b640-리뷰의-8건-패치와-현재-제한)에서 추적
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정
 - 목표: **정본·Micro·상태 추적·로어북을 하나의 연결망과 탐색·평가 과정으로 통합하고, 기존 캐시·Memory Lane·인덱스를 그 구조에 맞게 재설계한다.**
@@ -598,3 +598,14 @@ UM0 inventory에는 참고 WM source fingerprint·두 그래프 경로·두 검�
 | 1.5 · 2026-10-14 | durable owner-window pages·generation manifest/root-last/서버 CAS와 전체 window source/payload 재도출 reader. 12개 순수 계약 검사·실제 등록 API/재시작·오염·취소 barrier·portable restore·서버 publisher 경합 검증. exhaustive corpus/delta·공통 access index·Lane/검색/dispatch는 후속 gate |
 | 1.6 · 2026-10-14 | UM1 reader 수정 및 UM2–UM6 커널 추가·LIBRA.js 내장, 9개 그래프 테스트 파일 통과. 최초 완료 표현은 v1.7에서 실제 호출·증거 범위에 맞춰 정정 |
 | 1.7 · 2026-10-14 | `83caadd`의 실제 요청 미연결·임베딩/공통 접근/소비자/legacy 미완료를 명시. 현황표 E0–E4·D01–D08·M01–M15·G1–G6와 저장소 재현 리뷰 추가. 미래 Micro/검증·폐기/GC/coverage·역의존/출력/V05 결함과 host 한계를 분리. runtime 수정은 포함하지 않음 |
+
+
+## 14. 리뷰 후 강화한 실행 경계 (v1.8)
+
+- **최종 소비자**: 통합 packet의 public DTO는 전달 권한이 아니다. 발급한 packet과 readset의 private identity를 실제 주입 직전에 검사하고 물리적 원본·restore/scope/owner·최신 요청 소유권을 확인한다. 소비자 포맷 검증 실패는 dispatch를 차단한다. Classic wrapper와 명시적 최근 대화까지 전체 출력 예산 안에 있어야 한다.
+- **과거 적격성**: canonical native evidence 참조에서 주장별 시간을 보존한다. 복수 근거의 가장 늦은 턴, unknown 시간, basis·중간 연결까지 적격성에 반영한다. 불명 근거를 과거 사실로 보내면서 complete를 주장하지 않는다.
+- **중복 통합**: lexical 유사성은 검색 신호다. Micro 제거 권한은 동일하고 유일한 구조화 의미·원문 occurrence에 결속된 owner correspondence에서만 나온다. 초기 자동 흡수는 확인된 character/world scalar set/clear 범위이고, reference·collection·profile·모호한 claim은 독립 근거로 남긴다.
+- **GC**: full durable inventory와 원자적 namespace fence는 별개 조건이다. 삭제는 진행 중 build/publisher·reader pin·루트와 candidate 값을 같은 원자적 경계에서 보호해야 한다. native bridge가 지원하지 않으면 dry-run만 가능하고 sweep은 명시적으로 blocked다.
+- **캐시/예산**: admission 실패 후 원래 배열이나 무계상 JSON clone으로 우회하지 않는다. 지원하는 page ceiling 안에서 admission을 재시도하거나 오류/partial을 공개한다. UTF-8 payload bytes·accounted workspace estimate·누적 전송량·문자 예산을 구분하고 미측정값을 0으로 채우지 않는다.
+
+이 강화는 §13의 전체 완료 gate를 대체하지 않는다. 기본 모드와 실제 호스트 qualification은 [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)에 따른다.

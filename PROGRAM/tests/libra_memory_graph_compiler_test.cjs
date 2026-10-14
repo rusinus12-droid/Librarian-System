@@ -223,8 +223,25 @@ const runPipeline = snapshot => {
   return { graph, compiled, queryResult, compiler };
 };
 
+// Native-shaped source reference and receipt, with one uniquely bound scalar claim.
+const correspondenceSnapshot = () => {
+  const snap = makeSnapshot('plugin_only'), row = snap.canonical[0], micro = snap.micro[0];
+  const quote = micro.receipt.assistant.text;
+  snap.claimContracts.possession = { domain: 'character', field: 'location', value: 'location' };
+  Object.assign(row.record, { scopeKey: snap.frame.scopeKey, worldlineId: 'main', sessionEpoch: 0 });
+  Object.assign(row.record.canonicalArtifact.facts[0], { targetTempRef: '', values: { location: 'royal archive' },
+    temporalRole: 'current_sequence', certainty: 'confirmed', evidenceSpans: [{ ref: 't2-a', quote }] });
+  row.evidenceBatch = [{ turn: 2, assistant: { chatId: 'msg-6', text: quote } }];
+  micro.record.turn = micro.head.turn = micro.receipt.turn = 2;
+  Object.assign(micro.record.claims[0], { temporalRole: 'current', certainty: 'confirmed', epistemicStatus: 'observed',
+    stateIntent: { domain: 'character', target: { entityName: 'Alice' }, field: 'location', operation: 'set', value: 'royal archive' } });
+  const state = snap.state.view.head.characters[0];
+  state.state = { location: 'royal archive' }; state.fieldEvidence = { location: state.fieldEvidence.heldItemRef };
+  return snap;
+};
+
 test('V09 & D07: envelope-aware character budget enforces maxCharacters on rendered packet and preserves Micro when Canonical drops for budget', async () => {
-  const snap = makeSnapshot('plugin_only');
+  const snap = correspondenceSnapshot();
   const { graph, queryResult, compiler } = runPipeline(snap);
 
   const canonicalCand = queryResult.candidates.find(c => c.family === 'canonical');
@@ -268,7 +285,7 @@ test('V09 & D07: envelope-aware character budget enforces maxCharacters on rende
 });
 
 test('V06, V07, V09, D02 & D04: final dispatch requires physical verifier, re-checks handle/revocation across awaits, and rejects stale dependencies', async () => {
-  const snap = makeSnapshot('plugin_only');
+  const snap = correspondenceSnapshot();
   const { graph, queryResult, compiler } = runPipeline(snap);
   const canonicalCand = queryResult.candidates.find(c => c.family === 'canonical');
   const microCand = queryResult.candidates.find(c => c.family === 'micro');
@@ -308,7 +325,7 @@ test('V06, V07, V09, D02 & D04: final dispatch requires physical verifier, re-ch
   );
 
   // 3. V09: Mutating the suppressed Micro record before dispatch rejects delivery
-  const mutatedMicroSnap = makeSnapshot('plugin_only');
+  const mutatedMicroSnap = correspondenceSnapshot();
   mutatedMicroSnap.micro[0].record.analysisRevisionId = 'ana-rev-6-mutated';
   mutatedMicroSnap.micro[0].head.analysisRevisionId = 'ana-rev-6-mutated';
   const mutatedMicroGraph = runPipeline(mutatedMicroSnap).graph;
@@ -321,7 +338,7 @@ test('V06, V07, V09, D02 & D04: final dispatch requires physical verifier, re-ch
   );
 
   // 4. V06: Mutating lore rendered text rejects delivery
-  const mutatedLoreSnap = makeSnapshot('plugin_only');
+  const mutatedLoreSnap = correspondenceSnapshot();
   mutatedLoreSnap.lore.entries[0].rendered = 'The Silver Ring is now sealed forever and cannot open anything.';
   const mutatedLoreGraph = runPipeline(mutatedLoreSnap).graph;
   await assert.rejects(
@@ -333,7 +350,7 @@ test('V06, V07, V09, D02 & D04: final dispatch requires physical verifier, re-ch
   );
 
   // 5. V07: ABA restore epoch advance rejects identical content
-  const abaSnap = makeSnapshot('plugin_only');
+  const abaSnap = correspondenceSnapshot();
   abaSnap.frame.restoreEpoch = 4;
   const abaGraph = runPipeline(abaSnap).graph;
   await assert.rejects(
@@ -397,11 +414,7 @@ test('V12: plugin_only and server_only produce equivalent bundles/proofs, and GR
 });
 
 test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primary source deduplication, quote hydration, and witness edge/basis binding verification', async () => {
-  const snap = makeSnapshot('plugin_only');
-  // Set Micro turn to 2 (same turn as Canonical fact f1) so automatic correspondence absorbs Micro without caller correspondenceMap
-  snap.micro[0].record.turn = 2;
-  snap.micro[0].head.turn = 2;
-  snap.micro[0].receipt.turn = 2;
+  const snap = correspondenceSnapshot();
   const { graph, queryResult, compiler } = runPipeline(snap);
 
   const selected = compiler.select(queryResult, graph, {
@@ -409,7 +422,7 @@ test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primar
     maxCharacters: 4096,
     hydrateSourceQuotes: true
   });
-  // M08: Micro at same turn (turn 2) with matching subject/claim words is automatically absorbed by Canonical
+  // Only the owner-derived scalar meaning and exact source occurrence permit absorption.
   assert.equal(selected.bundle.suppressedMicroIds.length, 1);
   // M08: State unit derived_from Canonical shares the same primary root source, so independentSupportingSourceCount === 2 (Canonical + Lore)
   assert.equal(selected.bundle.independentSupportingSourceCount, 2);
@@ -436,6 +449,34 @@ test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primar
     }),
     /DEPENDENCY_BINDING_STALE/
   );
+});
+
+test('R5: negation, changed value, target and source occurrence cannot be hidden by caller hints', () => {
+  for (const mutate of [
+    snap => { snap.micro[0].record.claims[0].text = 'Alice never received the Silver Ring.'; delete snap.micro[0].record.claims[0].stateIntent; },
+    snap => { snap.micro[0].record.claims[0].stateIntent.value = 'another archive'; },
+    snap => { snap.micro[0].record.claims[0].stateIntent.target.entityName = 'Bob'; },
+    snap => { snap.micro[0].receipt.assistant.chatId = snap.micro[0].record.claims[0].evidence.messageId = 'another-source'; },
+    snap => { snap.canonical[0].record.canonicalArtifact.facts.push({ ...clone(snap.canonical[0].record.canonicalArtifact.facts[0]), tempFactId: 'f2' }); }
+  ]) {
+    const snap = correspondenceSnapshot(); mutate(snap);
+    const { graph, queryResult, compiler } = runPipeline(snap);
+    const micro = queryResult.candidates.find(c => c.family === 'micro'), canonical = queryResult.candidates.find(c => c.family === 'canonical');
+    assert.ok(micro && canonical);
+    const selected = compiler.select(queryResult, graph, { maxCharacters: 4096, correspondenceMap: { [micro.nodeId]: canonical.nodeId } });
+    assert.equal(selected.bundle.suppressedMicroIds.length, 0);
+    assert.ok(selected.bundle.items.some(item => item.nodeId === micro.nodeId));
+  }
+});
+
+test('R6: final packet validation rejects clones and invalidated private handles', async () => {
+  const { graph, queryResult, compiler } = runPipeline(makeSnapshot());
+  const packet = compiler.render(compiler.select(queryResult, graph));
+  const verifier = { currentGraph: async () => graph, assertPhysicalCurrentness: async () => true };
+  assert.equal((await compiler.validatePacket(packet, verifier)).modelDispatchEligible, true);
+  await assert.rejects(() => compiler.validatePacket(clone(packet), verifier), /PACKET_NOT_ISSUED/);
+  compiler.invalidateAll();
+  await assert.rejects(() => compiler.validatePacket(packet, verifier), /PACKET_NOT_ISSUED/);
 });
 
 (async () => {

@@ -381,7 +381,16 @@ test('Priority 2 & D03 (UM2 Store Maintenance GC): retains active root manifest/
     async assertCaptured(pin) { for (const item of pin) if ((values.get(item.key) ?? null) !== item.raw) throw new Error('source_pin_changed'); },
     async commitRoot({ key, raw }) { values.set(key, raw); },
     async listKeys(prefix) { return [...values.keys()].filter(k => k.startsWith(prefix)); },
-    async deleteStale(key) { values.delete(key); }
+    async captureGCInventory(prefix) {
+      return { keys: await this.listKeys(prefix), complete: true, fence: 'mock-atomic-namespace' };
+    },
+    async deleteConditional({ key, expectedRaw, inventory, roots, prefix }) {
+      const keys = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
+      const expectedKeys = inventory.keys.filter(k => values.has(k)).sort();
+      if (JSON.stringify(keys) !== JSON.stringify(expectedKeys) || values.get(key) !== expectedRaw
+        || roots.some(root => values.get(root.key) !== root.raw)) return false;
+      values.delete(key); return true;
+    }
   };
   const sourceOptions = { canonicalCursor: '', microCursor: '', limit: 20, nodeLimit: 2048 };
   await store.build({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pageBytes: 1024, jobToken: 'job-1' });

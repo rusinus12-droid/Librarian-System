@@ -127,15 +127,23 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     const viewHandle = query.openView(graph, compiledIndex, queryFrame);
     const queryResult = query.retrieve(viewHandle, laneBudget);
     const selected = compiler.select(queryResult, graph, consumerPolicy);
-    const packet = compiler.render(selected);
+    const packet = compiler.render(selected, {
+      l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
+      l0WorkspaceBudget: queryResult.diagnostics?.maxWorkspaceBytes,
+      lanePageBytes: queryResult.diagnostics?.laneBytesRead,
+      lanePageBudget: queryResult.diagnostics?.laneMaxBytes
+    });
 
     let dispatchVerification = null;
     let deliveryOutcome = queryResult.complete ? 'complete' : 'partial';
     let fallbackAction = 'none';
 
-    if (ownerVerifier) {
+    if (!packet.consumerVerification.ok) {
+      deliveryOutcome = 'base_request_only'; fallbackAction = 'preserve_base_model_request';
+      dispatchVerification = { status: 'rejected', reason: 'consumer_packet_invalid', modelDispatchEligible: false };
+    } else if (ownerVerifier) {
       try {
-        dispatchVerification = await compiler.validateConsumedReadSet(selected.readSetHandle, ownerVerifier);
+        dispatchVerification = await compiler.validatePacket(packet, ownerVerifier);
       } catch (err) {
         // Unified verification failure NEVER runs legacy ranker; falls back to base model request only (§10, §13)
         deliveryOutcome = 'base_request_only';

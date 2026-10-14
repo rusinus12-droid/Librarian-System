@@ -3,8 +3,8 @@
 // 1. Selects an EvidenceBundle from UM3 retrieval candidates under consumer character/unit budgets,
 //    measuring the full rendered envelope (header + consumer-specific role/hydration formatting + newlines)
 //    so the final rendered packet never exceeds maxCharacters (D07, M09).
-// 2. Enforces conservative Canonical/Micro absorption (both caller correspondenceMap and automatic
-//    owner-verified turn/entity/quote correspondence without absorbing newer-turn or contradicting Micro units),
+// 2. Enforces conservative Canonical/Micro absorption from unique owner-normalized scalar
+//    claims and exact source occurrences; caller hints and lexical overlap cannot grant absorption,
 //    deduplicates derived State/Canonical primary root source counting, and preserves lifecycle/conflict annotations (M08).
 // 3. Issues private WeakMap-backed consumed readset handles binding admitted nodes, witness edges/bases,
 //    and absorbed Micro dependencies, and requires mandatory physical owner currentness verification
@@ -43,7 +43,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   ]);
 
   const memoryByteInventory = (sample = {}) => {
-    const number = (name) => { const value = Number(sample[name]); return Number.isFinite(value) && value >= 0 ? value : 0; };
+    const number = name => typeof sample[name] === 'number' && Number.isFinite(sample[name]) && sample[name] >= 0 ? sample[name] : null;
     const counted = Object.freeze({
       rendered_packet: number('packetBytes'),
       bundle_body: number('bodyBytes'),
@@ -51,17 +51,22 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       lane_page_payload: number('lanePageBytes')
     });
     const budgets = Object.freeze({
-      rendered_packet: number('maxCharacters'),
+      rendered_packet: number('packetByteBudget'),
       l0_candidate_workspace: number('l0WorkspaceBudget'),
       lane_page_payload: number('lanePageBudget'),
-      bundle_body: 0
+      bundle_body: null
     });
     return Object.freeze({
       schema: 'libra.memory_byte_inventory.v1',
       byteBounded: false,
       counted,
       budgets,
-      countedBytes: Object.values(counted).reduce((total, value) => total + value, 0),
+      countedBytes: Object.values(counted).reduce((total, value) => total + (value ?? 0), 0),
+      measurementUnits: Object.freeze({ rendered_packet: 'utf8_encoded_bytes', bundle_body: 'utf8_encoded_bytes',
+        l0_candidate_workspace: 'estimated_accounted_bytes', lane_page_payload: 'cumulative_utf8_transfer_bytes' }),
+      aggregateMeaning: 'sum_of_available_logical_measurements_not_peak_heap',
+      characterBudgets: Object.freeze({ rendered_packet: number('maxCharacters') }),
+      missingMeasurements: Object.freeze(Object.keys(counted).filter(key => counted[key] === null)),
       uncounted: Object.freeze(MEMORY_BYTE_CATEGORY_DECISIONS
         .filter(decision => decision.bucket === 'uncounted')
         .map(decision => Object.freeze({ category: decision.category, reason: decision.reason }))),
@@ -81,9 +86,16 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     };
     const text = String(packet?.renderedText || '');
     const lines = text.split('\n');
+    check('rendered_text_type', typeof packet?.renderedText === 'string', typeof packet?.renderedText);
     check('schema', packet?.schema === 'libra.rendered_consumer_packet.v1', packet?.schema);
-    check('header_consumer_label', lines[0] === '[LIBRA_EVIDENCE consumer=' + consumer + ' scope=' + String(packet?.scopeKey || '') + ' units=' + lines.slice(1).length + ' sources=' + Number(packet?.independentSourceCount || packet?.sources || lines.slice(1).length) + ']'
-      || lines[0].startsWith('[LIBRA_EVIDENCE consumer=' + consumer + ' scope='), lines[0]);
+    const count = Array.isArray(packet?.admittedNodeIds) ? packet.admittedNodeIds.length : -1;
+    const sources = packet?.independentSourceCount;
+    const empty = text === '' && count === 0 && sources === 0;
+    check('header_consumer_label', empty || count >= 0 && Number.isSafeInteger(sources) && sources >= 0
+      && lines[0] === '[LIBRA_EVIDENCE consumer=' + consumer + ' scope=' + String(packet?.scopeKey || '')
+        + ' units=' + count + ' sources=' + sources + ']', lines[0]);
+    check('rendered_item_lines', empty || lines.length === count + 1
+      && lines.slice(1).every((line, index) => line.startsWith('(' + (index + 1) + ') [')), lines.length);
     check('character_length_matches_text', Number(packet?.characterLength || 0) === text.length, Number(packet?.characterLength || 0) + ' vs ' + text.length);
     if (options.maxCharacters != null) {
       check('character_budget', text.length <= Number(options.maxCharacters), text.length + ' > ' + options.maxCharacters);
@@ -92,7 +104,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       check('item_count', Array.isArray(packet?.admittedNodeIds) && packet.admittedNodeIds.length === Number(options.itemCount), packet?.admittedNodeIds?.length);
     }
     if (policy.lineTag) {
-      check('format_family_plan_lines', lines.slice(1).every(line => /@T\d+/.test(line)), policy.formatFamily);
+      check('format_family_plan_lines', empty || lines.slice(1).every(line => /^\(\d+\) \[.*@(?:T\d+|time_unknown)\]/.test(line)), policy.formatFamily);
     }
     if (policy.requiresSelectionReceipt) {
       const receipt = packet?.gradiaSelectionReceipt;
@@ -115,6 +127,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
   let issuedReadSets = new WeakMap();
+  let issuedPackets = new WeakMap();
   let compilerEpoch = 0;
 
   const normalizePolicy = (policy = {}) => {
@@ -210,64 +223,33 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       }
     }
 
-    const explicitSupersedeMap = new Map();
-    for (const edge of graph.edges || []) {
-      if (edge.predicate === 'supersedes' || edge.predicate === 'derived_from' || edge.predicate === 'evidenced_by') {
-        explicitSupersedeMap.set(`${edge.from}->${edge.to}`, true);
-      }
-    }
-
-    const normWords = text => new Set(
-      String(text || '')
-        .normalize('NFKC')
-        .toLowerCase()
-        .split(/[^a-z0-9\uac00-\ud7a3]+/)
-        .filter(w => w.length >= 3)
-    );
-
-    const subjectEntityNodesByUnit = new Map();
-    for (const edge of graph.edges || []) {
-      if (edge.predicate === 'subject_of') {
-        if (!subjectEntityNodesByUnit.has(edge.from)) subjectEntityNodesByUnit.set(edge.from, new Set());
-        subjectEntityNodesByUnit.get(edge.from).add(edge.to);
-      }
-    }
-
-    const sharesSubject = (nodeIdA, unitA, nodeIdB, unitB) => {
-      if (unitA.subjectId && unitB.subjectId && unitA.subjectId === unitB.subjectId) return true;
-      const setA = subjectEntityNodesByUnit.get(nodeIdA);
-      const setB = subjectEntityNodesByUnit.get(nodeIdB);
-      if (setA && setB) {
-        for (const entNodeId of setA) if (setB.has(entNodeId)) return true;
-      }
-      return false;
+    const proofKey = unit => {
+      const p = unit?.correspondenceProof, a = p?.sourceOccurrence;
+      if (!p || !a || !['character','world'].includes(p.domain) || !p.subjectId || !p.field || /Ref$/.test(p.field)
+        || !['set','clear'].includes(p.operation) || !(p.value === null || ['string','boolean'].includes(typeof p.value) || typeof p.value === 'number' && Number.isFinite(p.value))
+        || p.temporalRole !== 'current_sequence' || p.certainty !== 'confirmed' || p.epistemicStatus !== 'observed'
+        || !a.scopeKey || !a.worldlineId || !a.messageId || !a.sourceTextDigest || !a.exactQuote
+        || !Number.isSafeInteger(a.turn) || !Number.isSafeInteger(a.sessionEpoch)
+        || !['user','assistant'].includes(a.role) || !Number.isSafeInteger(a.startOffset)
+        || a.endOffset - a.startOffset !== a.exactQuote.length) return '';
+      return JSON.stringify([p.domain,p.subjectId,p.field,p.operation,p.value,p.temporalRole,p.certainty,p.epistemicStatus,
+        a.scopeKey,a.worldlineId,a.sessionEpoch,a.turn,a.role,a.messageId,a.startOffset,a.endOffset,a.exactQuote,a.sourceTextDigest]);
     };
-
+    // Ambiguous claim occurrences stay independent, even when only one duplicate
+    // reached the ranked candidate window.
+    const counts = new Map();
+    for (const unit of unitByNodeId.values()) {
+      const key = proofKey(unit);
+      if (key) counts.set(unit.family + ':' + key, (counts.get(unit.family + ':' + key) || 0) + 1);
+    }
     for (const mCand of microCands) {
-      const mUnit = unitByNodeId.get(mCand.nodeId) || {};
-      const mTurn = mCand.turn ?? mUnit.turn ?? null;
-      const mWords = normWords(mCand.text);
+      const key = proofKey(unitByNodeId.get(mCand.nodeId));
+      if (!key || counts.get('micro:' + key) !== 1 || counts.get('canonical:' + key) !== 1) continue;
       for (const cCand of canonicalCands) {
         if (contradictionOrReopenPairs.has(`${mCand.nodeId}->${cCand.nodeId}`)) continue;
-        const cUnit = unitByNodeId.get(cCand.nodeId) || {};
-        const cTurn = cCand.turn ?? cUnit.turn ?? null;
-        // Never absorb a newer-turn Micro observation into an older Canonical fact
-        if (Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn > cTurn) continue;
-
-        if (explicitSupersedeMap.has(`${cCand.nodeId}->${mCand.nodeId}`)) {
+        if (key === proofKey(unitByNodeId.get(cCand.nodeId))) {
           autoMap[mCand.nodeId] = cCand.nodeId;
           break;
-        }
-        const sameTurn = Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn === cTurn;
-        const sameSubject = sharesSubject(mCand.nodeId, mUnit, cCand.nodeId, cUnit);
-        if (sameTurn && sameSubject && mWords.size > 0) {
-          const cWords = normWords(cCand.text);
-          let shared = 0;
-          for (const w of mWords) if (cWords.has(w)) shared++;
-          if (shared / Math.max(1, Math.min(mWords.size, cWords.size)) >= 0.6) {
-            autoMap[mCand.nodeId] = cCand.nodeId;
-            break;
-          }
         }
       }
     }
@@ -275,6 +257,12 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   };
 
   // M09: Hydrate item text with verified source span quote when requested by policy
+  const singleLine = value => String(value || '').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+  const utf8Bytes = value => {
+    let bytes = 0;
+    for (const char of String(value || '')) { const cp = char.codePointAt(0); bytes += cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4; }
+    return bytes;
+  };
   const formatHydratedItemLine = (item, idx, consumer, hydrateSourceQuotes) => {
     const quoteSuffix = hydrateSourceQuotes && item.sourceSpan?.exactQuote && !String(item.text || '').includes(item.sourceSpan.exactQuote)
       ? ` (quote: "${item.sourceSpan.exactQuote}")`
@@ -283,10 +271,10 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       ? `/${item.lifecycleStatus}`
       : '';
     if (consumer === 'planner' || consumer === 'sga') {
-      const turnTag = Number.isSafeInteger(item.turn) ? `@T${item.turn}` : '';
-      return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${turnTag}] ${item.text}${quoteSuffix}`;
+      const turnTag = Number.isSafeInteger(item.turn) ? `@T${item.turn}` : '@time_unknown';
+      return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${turnTag}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
     }
-    return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}] ${item.text}${quoteSuffix}`;
+    return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
   };
 
   // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07, M09)
@@ -335,7 +323,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     });
 
     const autoMap = buildAutoCorrespondenceMap(ordered, graph, unitByNodeId);
-    const combinedCorrespondence = { ...autoMap, ...policy.correspondenceMap };
+    const combinedCorrespondence = autoMap; // Caller hints cannot manufacture owner correspondence.
 
     const contradictionNodes = new Set();
     for (const edge of graph.edges || []) {
@@ -583,7 +571,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   };
 
   // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08, M09)
-  const render = ({ bundle, readSetHandle } = {}) => {
+  const render = ({ bundle, readSetHandle } = {}, metrics = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
     if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || bundle.bundleDigest !== readSetHandle.bundleDigest) {
@@ -608,7 +596,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       bundle.bundleDigest,
       renderedText
     ]));
-    return Object.freeze({
+    const packet = Object.freeze({
       schema: 'libra.rendered_consumer_packet.v1',
       consumer: bundle.consumer,
       scopeKey: bundle.scopeKey,
@@ -616,14 +604,16 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       renderedText,
       characterLength: renderedText.length,
       packetDigest,
-      admittedNodeIds: bundle.items.map(i => i.nodeId),
+      independentSourceCount: bundle.independentSupportingSourceCount,
+      admittedNodeIds: Object.freeze(bundle.items.map(i => i.nodeId)),
       suppressedMicroIds: bundle.suppressedMicroIds,
       gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
       readSetHandle,
       modelDispatchEligible: false,
       byteInventory: memoryByteInventory({
-        packetBytes: renderedText.length,
-        bodyBytes: Number(bundle.budget?.bodyCharacters || 0),
+        ...metrics,
+        packetBytes: utf8Bytes(renderedText),
+        bodyBytes: bundle.items.reduce((total, item) => total + utf8Bytes(item.text), 0),
         maxCharacters: Number(bundle.budget?.maxCharacters || 0)
       }),
       consumerVerification: verifyConsumerPacket({
@@ -632,11 +622,27 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         scopeKey: bundle.scopeKey,
         renderedText,
         characterLength: renderedText.length,
+        independentSourceCount: bundle.independentSupportingSourceCount,
         admittedNodeIds: bundle.items.map(i => i.nodeId),
         gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
         modelDispatchEligible: false
       }, { maxCharacters: Number(bundle.budget?.maxCharacters || 0), itemCount: bundle.items.length })
     });
+    issuedPackets.set(packet, { bundle, readSetHandle });
+    return packet;
+  };
+
+  // A public DTO/clone never carries issuance authority. Verify the exact issued
+  // envelope and actual admitted items again at the consumer's final boundary.
+  const validatePacket = async (packet, ownerVerifier) => {
+    const issued = packet && issuedPackets.get(packet);
+    if (!issued) fail('packet_not_issued');
+    const { bundle, readSetHandle } = issued;
+    if (packet.renderedText !== formatPacketText(bundle.consumer, bundle.scopeKey, bundle.items,
+      bundle.independentSupportingSourceCount, Boolean(bundle.hydrateSourceQuotes))) fail('packet_content_changed');
+    const check = verifyConsumerPacket(packet, { maxCharacters: bundle.budget.maxCharacters, itemCount: bundle.items.length });
+    if (!check.ok) fail('consumer_packet_invalid');
+    return await validateConsumedReadSet(readSetHandle, ownerVerifier);
   };
 
   // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, M10, V06, V07, V09, V12)
@@ -731,9 +737,10 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   const invalidateAll = () => {
     compilerEpoch++;
     issuedReadSets = new WeakMap();
+    issuedPackets = new WeakMap();
   };
 
-  return Object.freeze({ select, render, validateConsumedReadSet, revoke, invalidateAll,
+  return Object.freeze({ select, render, validatePacket, validateConsumedReadSet, revoke, invalidateAll,
     renderPacketText: formatPacketText, verifyConsumerPacket, memoryByteInventory,
     CONSUMER_PACKET_POLICIES, MEMORY_BYTE_CATEGORY_DECISIONS });
 };

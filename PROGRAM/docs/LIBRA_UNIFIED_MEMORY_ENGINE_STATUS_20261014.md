@@ -1,11 +1,12 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.0
-- 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
+- 작성일: 2026-10-14 · 문서 버전: 1.1
+- 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 목표 계약: [통합 엔진 설계 v1.7](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)
+- 현재 기준: `8d0b64087c00155ff9f410bcf0c31d4a074eea9d` 이후의 8건 안전성·전달 패치. §12가 기존 조사표와 §11의 완료 표현을 갱신한다.
+- 목표 계약: [통합 엔진 설계 v1.8](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
-- 판정: **통합 엔진 미완성. 원본 reader·page/cache·durable window API는 제한된 범위에서 연결·검증됐고, 새 Index/Lane/Query/Compiler/Rollout은 커널 구현·내장 단계다. 정상 요청의 검색·임베딩·저장 접근·소비자 전달·기존 경로 종료는 남아 있다.**
+- 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 설치 호스트, provider 임베딩 연결, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
@@ -183,3 +184,49 @@
 ### 11.7 변경 파일 (E3·M04)
 
 `PROGRAM/tools/libra_memory_graph_compiler.cjs`(정책표·검증기·인벤토리, 도구가 원본), `PROGRAM/tests/libra_memory_graph_consumers_test.cjs`(신규), `PROGRAM/plugins/LIBRA.js`(동기화 재생성), `PROGRAM/docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md`.
+
+
+## 12. `8d0b640` 리뷰의 8건 패치와 현재 제한
+
+§11의 “E3 경계 닫힘”, “4개 바이트 범주 계상”은 당시 구현자의 마감 기록이다. 실제 `beforeRequest`는 private 정본 proof가 없는 새 객체를 이전 packet builder에 전달해 실패했고, planner 검증 실패가 dispatch를 차단하지 않았다. 바이트 표에는 문자 수와 누락된 L0/Lane의 0이 들어갔다. 아래는 그 재현을 수정한 현재 계약이며 전체 엔진 완료 판정은 아니다.
+
+| 리뷰 ID | 수정한 동작 | 회귀 증거 |
+| --- | --- | --- |
+| R1 | unified 결과를 기존 정본 DTO로 재해석하지 않고 실제 Classic 요청에 역할을 보존한 packet으로 전달. 내부 WeakMap에 보관한 issuance/owner verifier로 **주입 직전** packet·원본 의존성을 검증. 원래 요청 deadline, 최신 요청 소유권, 응답 경계, 주입 위치·전체 문자 예산과 명시적 Live Tail/receipt 검증 유지 | 등록 `beforeRequest`에서 두 저장 모드의 실제 주입; legacy 양성 대조; recall 후 Micro 변경 시 원래 요청 보존; 이전 요청이 새 요청 진단을 덮어쓰지 않는 경합; 명시적 최근 대화 주입 |
+| R2 | 정본의 실제 `evidenceSpans.ref` (`t5-a`, `t2-u`)에서 주장별 시간 도출. 여러 근거는 가장 늦은 턴까지 필요. 미래 노드·연결·basis를 제외하고 시점 불명 정본은 과거 질의에서 제외하며 `historicalCanonicalUnavailable` 및 partial coverage 공개 | 두 저장 모드에서 같은 T1–5 batch의 T5 사실 제외·T3 사실 유지; 복수 참조·불명 참조·witness 경로 검사 |
+| R3 | GC가 SDK의 전체 durable key 목록으로 루트를 찾음. RAM knownKeys나 caller candidateKeys만으로 mark를 완료하지 않음. 완전한 owner inventory가 없으면 `blocked_incomplete_inventory` | 재시작 후 실제 루트 재발견, caller가 활성 page만 넘겨도 삭제 없음·durable read verified |
+| R4 | sweep에 owner의 원자적 namespace fence와 conditional delete를 요구. 루트뿐 아니라 새 publisher·진행 중 build·reader pin의 보호가 삭제와 같은 연산에 속해야 함. 현재 native bridge는 해당 기능이 없어 `blocked_atomic_gc_unavailable`, `deletedKeys:[]` 반환 | store의 마지막 확인 후 publisher가 새 루트를 게시하는 경합에서 조건부 삭제 거부; 새 manifest/read 보존; fence 없는 owner 삭제 금지 |
+| R5 | 단어 overlap·같은 턴·같은 인물·단순 derived_from/증거 edge·caller correspondenceMap으로 Micro를 흡수하지 않음. adapter가 발급한 유일한 scalar claim의 주체·domain·field·set/clear·값·시제·확실성·정확한 원문 위치/내용 digest가 같고 정본이 실제 채택될 때만 흡수 | 동일 native-shaped scalar 원문/값의 양성 대조; 부정문·다른 값/대상/원문·중복 claim 보존; 정본이 예산 때문에 탈락하면 Micro 유지; 흡수한 Micro 의존성도 최종 검증 |
+| R6 | planner/sga의 모르는 시점은 `@time_unknown`으로 표시. 줄바꿈을 escaped text로 렌더하고 헤더 항목/출처 수를 정확히 확인. 빈 packet은 정상 빈 결과. verification 실패는 base_request_only로 전환하고 dispatch 차단. public JSON clone에 private 권한 없음 | native 정본·State·lore가 포함된 5 소비자 packet 검증; malformed header·format·receipt·clone·invalidate 음성 대조; rollout에서 실제 verification 실패 강제 후 packet/dispatch 거부 |
+| R7 | index compile/query가 staging·request·resident·integrity·disposed 실패를 원래 배열/JSON 복사로 우회하지 않음. 큰 행 재시도도 설정된 page ceiling과 기존 admission 안에서만 실행 | 256-byte staging 실패, decode 무결성 실패, dispose 후 query 모두 결과를 내지 않고 명시적 거부; lease/pin/staging 누수 없음; 큰 행의 정상 accounted decode |
+| R8 | packet/body는 UTF-8 encoded byte 수. L0는 query의 accounted estimate, Lane은 누적 payload 전송량과 실제 예산을 연결. 문자 예산은 `characterBudgets`로 분리하고 미측정값은 null·missingMeasurements로 표시 | 한글 native packet의 Buffer.byteLength와 일치; L0/Lane 실제 diagnostics·예산 일치; 누락 계측을 0으로 주장하지 않는 음성 대조 |
+
+### 12.1 GC adapter 계약과 안전한 제한
+
+store의 `captureGCInventory(prefix)`는 owner가 완전한 key 목록과 namespace fence를 제공하는 경계다. `deleteConditional({key, expectedRaw, prefix, inventory, roots})`는 그 fence, candidate 값, 루트의 동일성을 원자적으로 확인하고 삭제해야 한다. 이름만 같은 함수나 루트별 reread로 원자성을 주장할 수 없다. 진행 중 publisher/build와 reader가 보호되지 않는 adapter는 fence를 제공하면 안 된다.
+
+등록 native API는 full SDK inventory로 **dry-run mark와 후보 조회**를 지원한다. plugin_only·server_only 모두 현재 원자적 namespace GC 프로토콜이 없으므로 실제 sweep을 보류한다. 이는 기존의 위험한 삭제를 막은 패치이며 **native GC 기능 완료가 아니다**. 원본·소스·State에는 쓰지 않는다. 이 계약을 추가할 다음 작업에는 restart·새 루트 생성·build/read pin·ABA·삭제 직전 경합 검사가 필요하다.
+
+### 12.2 검증 명령과 수준
+
+PROGRAM 디렉터리에서 Node 24로 실행한다.
+
+```bash
+node --test tests/libra_memory_graph_*test.cjs tests/libra_memory_engine_mode_test.cjs
+node --check plugins/LIBRA.js
+node tools/sync_libra_memory_graph.cjs --check
+node tests/program_data_layout_test.cjs
+node tools/build_plugins.cjs --plugin libra --profile source --no-minify --out /tmp/libra-memory-patch-build
+```
+
+새 직접 재현은 `tests/libra_memory_graph_patch_contract_test.cjs`, `tests/libra_memory_graph_patch_runtime_test.cjs`에 있다. runtime suite는 실제 등록 API·SDK bridge·source writer·beforeRequest를 사용하며 provider와 설치 호스트는 fixture다. 두 저장 모드의 등록 경로 증거는 E2/E3 일부이며 실제 RisuAI E4와 구분한다. manifest/checksum·내장 동기화도 갱신한다.
+
+### 12.3 남은 우선 작업
+
+1. native embedding provider와 동일 semantic space의 저장 representation을 실제 unified query에 연결하고 품질을 평가한다.
+2. 현재 projection window의 메모리 내 배열 compile에서 전체 corpus의 durable index/shard 탐색으로 이전한다. source reader·index build·private readset·동시 I/O를 포함한 peak 예산을 계측한다.
+3. Planner·SGA·Input Writer·GUI·GRADIA의 실제 삽입 경계를 연결한다. GRADIA는 owner selection receipt verifier 없이 dispatch를 허용하지 않는다.
+4. storage owner에 namespace GC fence와 publisher/build/reader 보호 프로토콜을 구현한 뒤 native sweep을 활성화한다.
+5. 실제 설치 호스트·평가 세트·규모/latency/메모리 수용 기준을 검증하고 legacy 기본값 전환·중복 경로 종료를 결정한다.
+
+M04의 `countedBytes`는 서로 다른 논리 계측값의 합이다. packet/body는 중첩하고 Lane은 누적 전송량이므로 peak heap이나 전체 유계 증거로 읽지 않는다. `byteBounded:false`, 미계상 8범주, unmeasured calibration, default legacy는 유지한다.

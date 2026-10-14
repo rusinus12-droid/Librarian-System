@@ -201,7 +201,12 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       const part = JSON.stringify({ owner: 'gc', scopeKey, viewer: 'maintenance_gc' });
       const stamp = hash(prefix + ':' + ticket);
       check(ticket, owner);
-      const allKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
+      const inventory = typeof owner.captureGCInventory === 'function' ? await owner.captureGCInventory(prefix) : null;
+      if (!inventory || inventory.complete !== true || !Array.isArray(inventory.keys)) {
+        return { schema: 'libra.graph_store_gc.v1', status: 'blocked_incomplete_inventory', scopeKey,
+          dryRun: Boolean(dryRun), activeRoots: null, candidateKeys: [], deletedKeys: [] };
+      }
+      const allKeys = inventory.keys.filter(k => typeof k === 'string' && k.startsWith(prefix));
       const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
       const rootPin = typeof owner.capture === 'function' ? await owner.capture(rootKeys) : null;
       const rootRawByKey = new Map();
@@ -268,7 +273,12 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
 
       const deleted = [];
       let status = 'completed';
-      if (!dryRun && typeof owner.deleteStale === 'function') {
+      // The owner must atomically fence the entire namespace (new roots, pending
+      // publishers and pinned readers) together with this candidate's deletion.
+      // A last-second read or per-root CAS alone cannot provide that guarantee.
+      if (!dryRun && (typeof owner.deleteConditional !== 'function' || !inventory.fence)) {
+        status = 'blocked_atomic_gc_unavailable';
+      } else if (!dryRun) {
         for (const candidateKey of candidates) {
           try {
             await verifyRootsUnchanged();
@@ -277,8 +287,11 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
             status = 'aborted_concurrent_mutation';
             break;
           }
-          await owner.deleteStale(candidateKey);
+          const expectedRaw = await owner.read(candidateKey);
+          const removed = await owner.deleteConditional({ key: candidateKey, expectedRaw, prefix,
+            inventory, roots: [...rootRawByKey].map(([key, raw]) => ({ key, raw })) });
           check(ticket, owner);
+          if (removed !== true) { status = 'aborted_concurrent_mutation'; break; }
           deleted.push(candidateKey);
           counters.gcDeleted++;
         }
@@ -298,6 +311,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
   };
   return Object.freeze({ build, read, collectGarbage, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
     invalidationEpoch: epoch, counters: { ...counters }, durableStoreImplemented: true,
-    exhaustiveOwnerInventory: false, rootGCImplemented: true, ownerTransportBounded: false }),
+    exhaustiveOwnerInventory: false, rootGCImplemented: true,
+    gcDeletionRequirement: 'complete_durable_inventory_and_atomic_namespace_fence_for_publishers_and_readers', ownerTransportBounded: false }),
     invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
 };

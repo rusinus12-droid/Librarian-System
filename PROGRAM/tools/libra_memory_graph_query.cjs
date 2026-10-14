@@ -160,7 +160,15 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     if (!unit) return null;
     if (Number.isSafeInteger(unit.turn)) return unit.turn;
     if (Number.isSafeInteger(unit.sourceSpan?.turn)) return unit.sourceSpan.turn;
-    if (Number.isSafeInteger(unit.fact?.evidenceSpans?.[0]?.turn)) return unit.fact.evidenceSpans[0].turn;
+    const spans = unit.fact?.evidenceSpans;
+    if (Array.isArray(spans) && spans.length) {
+      const turns = spans.map(span => {
+        const match = /^t([1-9]\d*)-[ua]$/.exec(String(span.ref || ''));
+        return match ? Number(match[1]) : span.turn;
+      });
+      if (turns.every(Number.isSafeInteger)) return Math.max(...turns);
+      return null;
+    }
     if (Number.isSafeInteger(unit.fact?.values?.turn)) return unit.fact.values.turn;
     return null;
   };
@@ -262,6 +270,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     }
 
     let historicalStateUnavailable = false;
+    const historicalCanonicalUnavailable = queryFrame.asOfTurn !== null
+      && (graph.units || []).some(unit => unit.family === 'canonical' && resolveUnitTurn(unit) === null);
     const isUnitTemporallyEligible = unit => {
       if (!unit || queryFrame.asOfTurn === null) return true;
       if (unit.family === 'state') {
@@ -271,6 +281,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         }
       }
       const unitTurn = resolveUnitTurn(unit);
+      if (unit.family === 'canonical' && unitTurn === null) return false;
       if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
         return false;
       }
@@ -309,6 +320,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       }
       const basis = basisById.get(edge.basisId);
       if (basis?.sourceId && !isNodeEligible(basis.sourceId)) return false;
+      if (queryFrame.asOfTurn !== null && (basis?.temporalKnown === false || Number.isSafeInteger(basis?.turn) && basis.turn > queryFrame.asOfTurn)) return false;
       return true;
     };
 
@@ -337,7 +349,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       ambiguousAliases,
       isNodeEligible,
       isEdgeEligible,
-      getHistoricalStateUnavailable: () => historicalStateUnavailable
+      getHistoricalStateUnavailable: () => historicalStateUnavailable,
+      historicalCanonicalUnavailable
     });
     return handle;
   };
@@ -875,7 +888,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const explicitIncompleteWithoutReasons = graph.coverage?.projectionComplete === false && familyNotes.length === 0;
     const sourceCoverageComplete = familyTruncations.length === 0
       && unreadInventoryCursors.length === 0
-      && !explicitIncompleteWithoutReasons;
+      && !explicitIncompleteWithoutReasons && !view.historicalCanonicalUnavailable;
     const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
     const complete = traversalComplete && sourceCoverageComplete;
     const stopReason = !laneReport.complete
@@ -895,12 +908,14 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       sourceCoverageComplete,
       stopReason,
       historicalStateUnavailable: view.getHistoricalStateUnavailable(),
+      historicalCanonicalUnavailable: view.historicalCanonicalUnavailable,
       coverage: {
         projectionComplete: Boolean(graph.coverage?.projectionComplete !== false && sourceCoverageComplete),
         inventoryComplete: Boolean(graph.coverage?.inventory?.inventoryComplete),
         familyIncompleteReasons: familyTruncations,
         familyNotes,
-        unreadInventoryCursors
+        unreadInventoryCursors,
+        historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
       },
       candidates,
       diagnostics: {
@@ -914,11 +929,13 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,
         laneBytesRead: laneReport.bytesRead,
+        laneMaxBytes: maxBytes,
         laneCacheHits: laneReport.cacheHits || 0,
         laneCoalescedRequests: laneReport.coalescedRequests,
         laneRoleStats: laneReport.roleStats || null,
         unreadCursors: laneReport.unreadCursors,
-        unreadInventoryCursors
+        unreadInventoryCursors,
+        historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
       },
       authority: 'descriptive_only',
       modelDispatchEligible: false

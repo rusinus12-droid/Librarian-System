@@ -71,6 +71,23 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
     const entity = value => entityById.get(string(value)) || null;
     const byName = value => { const found = names.get(normalized(value)); return found?.size === 1 ? entity([...found][0]) : null; };
     const canonicalFacts = new Map(), microSpans = new Map();
+    const evidenceTurn = span => {
+      const match = /^t([1-9]\d*)-[ua]$/.exec(string(span?.ref));
+      const value = match ? Number(match[1]) : span?.turn;
+      return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    };
+    const occurrence = (sourceRow, role, quote, scopeKey, worldlineId, sessionEpoch) => {
+      const sourceText = string(sourceRow?.[role]?.text), start = sourceText.indexOf(quote);
+      if (!quote || start < 0 || sourceText.indexOf(quote, start + 1) !== -1 || typeof digestClaim !== 'function') return null;
+      return { scopeKey, worldlineId, sessionEpoch, turn: sourceRow.turn, role,
+        messageId: string(sourceRow[role]?.chatId), startOffset: start, endOffset: start + quote.length,
+        exactQuote: quote, sourceTextDigest: digestClaim({ text: sourceText }) };
+    };
+    const scalar = value => value === null || ['string','boolean'].includes(typeof value) || typeof value === 'number' && Number.isFinite(value);
+    const claimProof = (domain, subjectId, field, operation, value, anchor) => anchor && anchor.messageId && subjectId && field
+      && ['character','world'].includes(domain) && !/Ref$/.test(field) && ['set','clear'].includes(operation) && (operation === 'clear' || scalar(value))
+      ? { domain, subjectId, field, operation, value: operation === 'clear' ? null : value,
+          temporalRole: 'current_sequence', certainty: 'confirmed', epistemicStatus: 'observed', sourceOccurrence: anchor } : null;
 
     for (const row of array(snapshot.canonical)) attempt('canonical', () => {
       const record = row.record;
@@ -105,15 +122,28 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
           if (ref && row.entityRefs?.[ref]) targetIds.add(row.entityRefs[ref]);
           else if (ref) note('canonical', 'target_mapping_unavailable');
         }
-        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field };
+        const spans = array(fact.evidenceSpans), turns = spans.map(evidenceTurn);
+        const temporalKnown = turns.length > 0 && turns.every(Number.isSafeInteger);
+        const turn = temporalKnown ? Math.max(...turns) : null;
+        // Each claim uses its own evidence time, never the batch's ending turn.
+        const span = spans.length === 1 ? spans[0] : null;
+        const role = span?.ref?.endsWith('-u') ? 'user' : 'assistant';
+        const sourceRows = array(row.evidenceBatch).filter(value => value.turn === turn);
+        const anchor = span && sourceRows.length === 1 ? occurrence(sourceRows[0], role, string(span.quote),
+          record.scopeKey || frame.scopeKey, record.worldlineId || frame.worldlineId, Number(record.sessionEpoch || 0)) : null;
+        const correspondenceProof = fact.temporalRole === 'current_sequence' && fact.certainty === 'confirmed'
+          && !contract.refType && !contract.collection && !contract.profile && !/Ref$/.test(contract.value || '') && !targetIds.size
+          ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
+        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field, turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
-        link(node, src.node, 'evidenced_by', why);
-        link(node, entity(subjectId), 'subject_of', why);
+        bases.set(why.id, { ...why, turn, temporalKnown });
+        link(node, src.node, 'evidenced_by', why, {}, { turn });
+        link(node, entity(subjectId), 'subject_of', why, {}, { turn });
         for (const targetId of targetIds) {
-          link(node, entity(targetId), 'target_of', why);
+          link(node, entity(targetId), 'target_of', why, {}, { turn });
           if (!entity(targetId)) note('canonical', 'target_mapping_unavailable');
         }
         if (!entity(subjectId) && fact.domain !== 'narrative') note('canonical', 'subject_mapping_unavailable');
@@ -154,12 +184,20 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
       const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
       const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
       spans.forEach((span, index) => {
-        const claim = claims[index] || null, body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId };
+        const claim = claims[index] || null, intent = claim?.stateIntent;
+        const actor = intent ? byName(intent.target?.entityName) : null;
+        const logicalActor = actor && [...entityById].find(([, node]) => node.id === actor.id)?.[0];
+        const anchor = occurrence({ turn: recordTurn, [span.role]: receipt[span.role] }, span.role, span.exactQuote,
+          record.scopeKey, record.worldlineId, recordSessionEpoch);
+        const correspondenceProof = claim?.temporalRole === 'current' && claim.certainty === 'confirmed' && claim.epistemicStatus === 'observed'
+          && anchor?.startOffset === span.startOffset && anchor?.endOffset === span.endOffset
+          ? claimProof(intent?.domain, logicalActor, intent?.field, intent?.operation, intent?.value, anchor) : null;
+        const body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId, correspondenceProof };
         const node = meaning(src, claim ? 'micro_claim' : 'source_excerpt', row.recordKey + '#units/' + index, body,
           { index, role: span.role, messageId: span.messageId, startOffset: span.startOffset, endOffset: span.endOffset },
           { text: claim ? string(claim.text) : span.exactQuote, semanticRole: claim ? 'micro_candidate' : 'source_only',
             authority: claim ? 'source_verified_candidate' : 'source_only', sourceSpan: clone(span),
-            turn: recordTurn, sessionEpoch: recordSessionEpoch,
+            turn: recordTurn, sessionEpoch: recordSessionEpoch, correspondenceProof,
             representationCoverage: claim ? 'producer_bounded_claim' : 'producer_bounded_excerpt' });
         const why = basis(src, 'micro_span', row.recordKey + '#span/' + index, body, { span, receiptKey: record.receiptKey });
         link(node, src.node, 'evidenced_by', why);
