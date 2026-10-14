@@ -84,7 +84,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **연결 (둘째 증분)**: 생성 게시물이 이제 자기 세대가 **각 자료의 어느 부분을 덮는지** 기록한다. `createMemoryGraphStore`가 inventory 커널을 주입받아 `sourceInventory`(자료별 page + 병합 집합)·`sourceInventoryDeltas`·`sourceInventoryDeltaBasis`를 세대 manifest에 싣고, build 결과·검증된 read가 같은 값을 돌려준다. owner가 보고한 미독 cursor(`coverage.inventory.*NextCursor`)는 `unread`/`ownerCursors`로 그대로 드러난다.
 - **창이 바뀐 비교의 안전 규칙**: 미독 cursor의 목적 자체가 "다음 창은 이전 창이 멈춘 곳에서 이어진다"이므로 창이 달라도 delta를 계산한다. 다만 그때 사라진 항목은 tombstone 지원 여부와 무관하게 `unobservableRemoval`(사유 `window_changed`)로만 남기고 `removed`로 부르지 않는다. delta가 없는 경우도 `basis`(`inventory_disabled`·`no_previous_generation`·`previous_generation_without_inventory`·`same_window`·`previous_window`)로 이유를 밝힌다.
 - 한 page가 family 전체보다 크면(창이 한 page보다 큼) delta는 `delta_requires_whole_family`로 건너뛰고 `skipped`에 남는다 — 페이지 밖 항목을 삭제로 오인하지 않기 위해서다.
-- 재현: `node PROGRAM/tests/libra_memory_graph_inventory_store_test.cjs` → 6 PASS(창 기록·delta·미독 cursor·커널 미주입 시 무주장·알 수 없는 family 무시), `node PROGRAM/tests/libra_memory_graph_inventory_test.cjs` → 10 PASS.
+- 재현: `node PROGRAM/tests/libra_memory_graph_inventory_store_test.cjs` → 당시 6 PASS(창 기록·delta·미독 cursor·커널 미주입 시 무주장·알 수 없는 family 무시). 셋째 증분에서 기준 세대 검증 1건이 추가되어 현재 **7 PASS**, `node PROGRAM/tests/libra_memory_graph_inventory_test.cjs` → 10 PASS.
 - **여전히 하지 않은 것**: 미독 cursor를 실제 유지보수 열거에 사용해 **최근 창 밖의 오래된 기억을 질의로 발견**하는 것(N01 완료 기준) — 셋째 증분에서 열거·게시까지 연결했고 질의 도달은 남았다, 그리고 실제 읽힌 shard/cache/Lane 경로 관찰이다. 지금 연결은 게시·기록·검증까지다.
 - **하지 않은 것**: 이 증분은 계약·검증까지다. 이 inventory/delta를 store generation manifest에 싣고, 미독 cursor를 실제 유지보수 열거에 사용하는 연결은 다음 증분이다. 연결되지 않은 factory를 플러그인에 늘리지 않기 위해 아직 내장하지 않았다.
 

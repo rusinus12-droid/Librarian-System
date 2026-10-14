@@ -155,10 +155,12 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         const canonicalCursor = cursors.find(region => region.family === 'canonical')?.cursor || '';
         const microCursor = cursors.find(region => region.family === 'micro')?.cursor || '';
         if (!canonicalCursor && !microCursor) return null;
+        // The generation hash does not exist until the manifest is serialized, so the stored handle
+        // carries no generation at all; the reader and the build result add the published one.
         return Object.freeze({
           schema: 'libra.graph_next_window.v1', canonicalCursor, microCursor,
           families: Object.freeze(cursors.map(region => region.family)),
-          reason: 'owner_reported_unread', generation: ''
+          reason: 'owner_reported_unread'
         });
       })();
       const inventoryDelta = !inventory || !inventorySet ? { deltas: [], basis: 'inventory_disabled' } : await (async () => {

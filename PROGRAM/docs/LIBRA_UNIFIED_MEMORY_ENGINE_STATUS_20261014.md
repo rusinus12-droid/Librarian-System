@@ -181,7 +181,7 @@
 
 - **E3 (경계)**: `tools/libra_memory_graph_compiler.cjs`에 `CONSUMER_PACKET_POLICIES`(6 소비자)와 `verifyConsumerPacket()`을 추가하고, `render()`가 `consumerVerification`과 `byteInventory`를 반환하게 했다. 검증 항목은 이 경계가 실제로 확인할 수 있는 것만이다: envelope 스키마, 헤더 `consumer=<id>` 라벨, `characterLength` 정합, 소비자 문자 예산, 항목 수, planner·sga의 `@T` 라인 패밀리, gradia의 `gradiaSelectionReceipt`(그 외 소비자의 불필요한 receipt 금지), 그리고 packet이 스스로 `modelDispatchEligible:true`를 주장하지 않을 것.
 - **M04**: `MEMORY_BYTE_CATEGORY_DECISIONS`(12범주)와 `memoryByteInventory()`가 계상값·예산·미계상 사유를 한 구조로 반환한다. `byteBounded`는 **false**로 고정되어 있다 — 전체 API가 유계라고 주장하지 않는다.
-- 재현: `node PROGRAM/tests/libra_memory_graph_consumers_test.cjs` → 9 PASS. 구성: 6 소비자 전수 검증 + **음성 대조 6종**(라벨 오타·예산 초과·gradia receipt 누락·비해당 소비자의 receipt·plan_lines를 default로 렌더·dispatch 자기주장·미선언 소비자 거부) + 범주 누락/중복 검사 + NaN 누출 금지 + 플러그인 내장 확인.
+- 재현: `node PROGRAM/tests/libra_memory_graph_consumers_test.cjs` → 당시 9 PASS. (이후 §12의 R6 패치가 위조 카운트·개행 주입 검사를 추가해 현재는 **10 PASS**이며, 위 문장의 검사 목록은 그 이전 내용이다.) 구성: 6 소비자 전수 검증 + **음성 대조 6종**(라벨 오타·예산 초과·gradia receipt 누락·비해당 소비자의 receipt·plan_lines를 default로 렌더·dispatch 자기주장·미선언 소비자 거부) + 범주 누락/중복 검사 + NaN 누출 금지 + 플러그인 내장 확인.
 - 한계: 이 마감은 **compiler 경계**의 검증이다. 소비자 호스트가 실제로 이 packet을 삽입·hydration하는지는 E3의 남은 절반이며, 실제 GRADIA/Classic/Planner 호스트가 필요하다.
 
 ### 11.6.1 정정 — `bad8cdf`가 반박한 부분
