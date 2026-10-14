@@ -136,3 +136,39 @@
 초기 지원 profile에서 G1–G6가 증거로 충족되고, 정상 요청이 **네 자료 → 공통 index/cache/Lane → 한 frontier/scorer → 실제 출력 → private owner 검증**을 거쳐 전달하며 legacy 이중 실행이 0일 때 통합 엔진 완료로 판정한다. 지원하지 않는 owner/view/규모는 공개된 partial/blocked 범위로 관리하고 지원 profile의 완료와 섞지 않는다.
 
 각 D/M 항목을 닫을 때 `수정 커밋`, `API/호출 경로`, `회귀 검사·검증 수준`, `원본/파생 데이터 변경`, `지원 profile/남은 한계`를 기록한다. v1.6의 함수 존재/PASS 표기는 최초 커널 구현 이력으로 보존하고, 현재 완료 상태는 이 현황표와 위 gate로 갱신한다.
+
+## 11. 마감 기록 (2026-10-14)
+
+이 절은 M01 관련 3건을 마감하면서 **닫은 것**과 **닫지 못한 것**을 구분해 기록한다. 닫힌 항목에는 재현 명령이 있고, 닫히지 않은 항목에는 선행 조건을 적는다. 닫지 못한 것을 PASS로 적지 않는다.
+
+### 11.1 닫힘 — 라우팅 모드의 단일 출처·검증·기록 (M01 1차)
+
+- `PROGRAM/tools/libra_memory_engine_mode.cjs` 신규. `legacy|shadow|unified`만 허용하고, **미지정이면 기본 `legacy`**(사유를 `DEFAULT_MODE_OPEN_GATES = [E3, E4]`로 명시), 값이 있는데 목록에 없으면 `LIBRA_MEMORY_ENGINE_MODE_INVALID`로 **거부**한다(legacy로 조용히 강등하지 않음). 해석 결과는 `{mode, source, declared, defaultApplied, qualification}`을 갖는 `libra.memory_engine_decision.v1`이다.
+- 라벨이 아니라 기록: recall의 세 경로(legacy·shadow·unified) 결과 모두 `diagnostics.memoryEngine`을 갖는다. legacy·shadow는 legacy-base 결과에, unified는 통합 결과에 스탬프된다.
+- 정책 블록은 `PROGRAM/plugins/LIBRA.js`에 내장되며, `tests/libra_memory_engine_mode_test.cjs`가 마커 블록을 정규화 비교해 드리프트를 막는다(음성 대조: 한 글자 바꾼 사본은 불일치로 판정).
+- 재현: `node PROGRAM/tests/libra_memory_engine_mode_test.cjs` → 10 PASS.
+
+### 11.2 닫힘 — 하드코딩 라벨 제거
+
+- `const engineMode='librarian',unified=true;`를 삭제했다. 캐노니컬 파이프라인의 `unified`는 이제 `isReadableUnifiedEngineVersion(UNIFIED_ENGINE_VERSION)`에서 **파생**한다. 이 경로는 `LEGACY_JOB_REVIEW_REQUIRED` 가드 뒤에 있어 항상 참이지만, 엔진 식별자에서 유도되므로 엔진 버전이 바뀔 때 `unified ? … : 'legacy'` 분기가 죽은 코드로 남아 거짓 라벨을 쓸 수 있었던 경로가 사라진다.
+- 검사: 같은 스위트가 리터럴 재도입을 부재 단언으로 금지한다.
+
+### 11.3 닫힘 — 랭킹 계수의 출처 표기
+
+- 가중치를 `tools/libra_memory_graph_query.cjs`의 `MEMORY_ENGINE_SCORE_WEIGHTS`(frozen)로 명명하고 `calibration: 'unmeasured'`를 스스로 선언하게 했다. 값과 연산 순서는 이전과 동일하다(동작 불변).
+- 이 영역의 원본은 도구 소스다: 내장 영역(44700–48399)은 `tools/sync_libra_memory_graph.cjs`가 재생성하며, 직접 플러그인만 고치면 다음 동기화에서 되돌려진다. 편집 후 `--check`가 `changed:false`인지 확인해야 한다.
+- 남은 것: 실제 calibration·ablation은 **M14**이며 이 절로 닫히지 않는다.
+
+### 11.4 닫지 못한 것 (선행 조건 명시)
+
+| 항목 | 상태 | 선행 조건 |
+| --- | --- | --- |
+| E3 요청·소비자 통합 | **부분**. recall 진입점은 통합/shadow 라우팅을 실행하고 등록 API 스위트가 그 경로를 구동한다. 소비자별(Classic·Planner·SGA·Input Writer·GUI·GRADIA) 실제 adapter·hydration·최종 packet 검증은 미실행 | 각 소비자의 실제 packet 정책 fixture |
+| E4 설치 호스트 인증 | **미실행 — 외부 차단** | 실제 RisuAI 설치 호스트 |
+| M04 전체 byte inventory | **미실행**. payload·exact binding·lease·staging만 계상되며 source read/JSON·L0 후보/witness·index page·frontier/Lane·readset·I/O·write barrier는 미계상 | 잔여 범주 counter 구현 후 계상치 기록 |
+| M14 품질·latency·메모리 수용 수치 | **미실행**. 계수는 코드에서 `calibration:'unmeasured'`로 표기됨 | 고정 평가 세트 + 대표 workload |
+| 기본값을 unified로 전환 | **금지(의도적)**. 기본은 `legacy`이고 결과에 `qualification: 'unqualified_until_E3_E4'`가 남는다 | E3·E4·M14 종료 |
+
+### 11.5 변경 파일
+
+`PROGRAM/tools/libra_memory_engine_mode.cjs`(신규), `PROGRAM/tests/libra_memory_engine_mode_test.cjs`(신규), `PROGRAM/tools/libra_memory_graph_query.cjs`, `PROGRAM/plugins/LIBRA.js`(동기화 재생성 포함).

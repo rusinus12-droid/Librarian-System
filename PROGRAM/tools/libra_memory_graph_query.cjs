@@ -373,6 +373,23 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     return { score: undefined, status: 'unavailable', reason: null };
   };
 
+  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: no ablation or
+  // acceptance set exists yet, so these numbers are not quality evidence (M14 / D2 gate). The
+  // provenance marker is asserted by tests/libra_memory_engine_mode_test.cjs.
+  const MEMORY_ENGINE_SCORE_WEIGHTS = Object.freeze({
+    calibration: 'unmeasured',
+    semantic: Object.freeze({ lexical: 0.38, semantic: 0.32, entitySlot: 0.20, predicate: 0.10 }),
+    lexicalOnly: Object.freeze({ lexical: 0.52, entitySlot: 0.33, predicate: 0.15 }),
+    role: Object.freeze({
+      user_corrected: 1.0,
+      state_current: 0.95, canonical_assertion: 0.95,
+      micro_candidate: 0.90, background_setting: 0.90,
+      state_last_known: 0.82, source_only: 0.82, canonical_legacy_excerpt: 0.82,
+      state_unprovenanced: 0.45
+    }),
+    roleDefault: 0.85
+  });
+
   const scoreCandidate = (unit, features = {}, queryFrame) => {
     const lexicalScore = clamp01(features.lexicalScore || 0);
     const hasSemantic = typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
@@ -380,16 +397,12 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const entitySlotScore = clamp01(features.entitySlotScore || 0);
     const predicateScore = clamp01(features.predicateScore || 0);
 
-    let roleWeight = 0.85;
-    if (unit?.semanticRole === 'user_corrected') roleWeight = 1.0;
-    else if (unit?.semanticRole === 'state_current' || unit?.semanticRole === 'canonical_assertion') roleWeight = 0.95;
-    else if (unit?.semanticRole === 'micro_candidate' || unit?.semanticRole === 'background_setting') roleWeight = 0.90;
-    else if (unit?.semanticRole === 'state_last_known' || unit?.semanticRole === 'source_only' || unit?.semanticRole === 'canonical_legacy_excerpt') roleWeight = 0.82;
-    else if (unit?.semanticRole === 'state_unprovenanced') roleWeight = 0.45;
+    const roleWeight = MEMORY_ENGINE_SCORE_WEIGHTS.role[unit?.semanticRole] ?? MEMORY_ENGINE_SCORE_WEIGHTS.roleDefault;
 
+    const signalWeights = hasSemantic ? MEMORY_ENGINE_SCORE_WEIGHTS.semantic : MEMORY_ENGINE_SCORE_WEIGHTS.lexicalOnly;
     const combinedSignal = hasSemantic
-      ? (0.38 * lexicalScore + 0.32 * semanticScore + 0.20 * entitySlotScore + 0.10 * predicateScore)
-      : (0.52 * lexicalScore + 0.33 * entitySlotScore + 0.15 * predicateScore);
+      ? (signalWeights.lexical * lexicalScore + signalWeights.semantic * semanticScore + signalWeights.entitySlot * entitySlotScore + signalWeights.predicate * predicateScore)
+      : (signalWeights.lexical * lexicalScore + signalWeights.entitySlot * entitySlotScore + signalWeights.predicate * predicateScore);
 
     const directScore = clamp01(combinedSignal * roleWeight);
     const semanticFeatureStatus = features.semanticFeatureStatus

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T03:58:04.037Z",
+  "generatedAt": "2026-10-14T04:24:36.871Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2628,8 +2628,8 @@
       "bytes": 21942
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
-      "sha256": "8eb41ee2fe2392f6b2c6c2e2d5526b75a62f439d6b56c1ab080d3fc642fc7046",
-      "bytes": 25135
+      "sha256": "a0cca3b20db3db1ae21be6ba6885519942abb976145402ecf4daa540ca82d2ff",
+      "bytes": 29132
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -3636,8 +3636,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "5f5dce089e23db9b3c3cf55210a430764af640b8edb06712da818f90dccfc093",
-      "bytes": 5880613
+      "sha256": "11e7f5e55a579fa46231b69c4774b3432729165e827f678c9ce0952684a62fb4",
+      "bytes": 5884448
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7439,6 +7439,10 @@
       "sha256": "312c844749cc6c6cf7116557bc30806dca23bb12d636bd3094a13ae50f984e42",
       "bytes": 7125
     },
+    "tests/libra_memory_engine_mode_test.cjs": {
+      "sha256": "b1cc66ac33133fb5184bb7fe9edbf3a4a8fc775b9092ccc95808ef4300af8010",
+      "bytes": 7740
+    },
     "tests/libra_memory_first_runtime_test.cjs": {
       "sha256": "177e7613fb9d35babc5cc50a31fd7d60779fbdd6783061de58a9270d9fb11105",
       "bytes": 5831
@@ -10111,6 +10115,10 @@
       "sha256": "48ddf1d7ace7a58e3e39eba72008bfdaeceb16ae480936596781b65b384adcf0",
       "bytes": 29067
     },
+    "tools/libra_memory_engine_mode.cjs": {
+      "sha256": "8fce8cf6452f77873a4cf876b1d79af48d8f8139f02cab80b25d67309b7f1849",
+      "bytes": 3125
+    },
     "tools/libra_memory_graph_compiler.cjs": {
       "sha256": "a24da1921669f06395d6ca972660b8c14b907fcc10a38a5a47c4d32e72435b31",
       "bytes": 27790
@@ -10132,8 +10140,8 @@
       "bytes": 17728
     },
     "tools/libra_memory_graph_query.cjs": {
-      "sha256": "f09f4dc03c0efd20440eee2e9bd82afadc089f8491c4a6d0f525564ec2e89382",
-      "bytes": 40362
+      "sha256": "b2dca27a01aec36a683418d247c530f3b101f76e6663d9ed8cb507dc815c0354",
+      "bytes": 40999
     },
     "tools/libra_memory_graph_readers.cjs": {
       "sha256": "e7491370bf7279ee599fafc946fe981156f4ea06e5d162fbae5f0243d9303005",

@@ -46852,6 +46852,23 @@ function createLibraReadonlySourceContext(owner) {
     return { score: undefined, status: 'unavailable', reason: null };
   };
 
+  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: no ablation or
+  // acceptance set exists yet, so these numbers are not quality evidence (M14 / D2 gate). The
+  // provenance marker is asserted by tests/libra_memory_engine_mode_test.cjs.
+  const MEMORY_ENGINE_SCORE_WEIGHTS = Object.freeze({
+    calibration: 'unmeasured',
+    semantic: Object.freeze({ lexical: 0.38, semantic: 0.32, entitySlot: 0.20, predicate: 0.10 }),
+    lexicalOnly: Object.freeze({ lexical: 0.52, entitySlot: 0.33, predicate: 0.15 }),
+    role: Object.freeze({
+      user_corrected: 1.0,
+      state_current: 0.95, canonical_assertion: 0.95,
+      micro_candidate: 0.90, background_setting: 0.90,
+      state_last_known: 0.82, source_only: 0.82, canonical_legacy_excerpt: 0.82,
+      state_unprovenanced: 0.45
+    }),
+    roleDefault: 0.85
+  });
+
   const scoreCandidate = (unit, features = {}, queryFrame) => {
     const lexicalScore = clamp01(features.lexicalScore || 0);
     const hasSemantic = typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
@@ -46859,16 +46876,12 @@ function createLibraReadonlySourceContext(owner) {
     const entitySlotScore = clamp01(features.entitySlotScore || 0);
     const predicateScore = clamp01(features.predicateScore || 0);
 
-    let roleWeight = 0.85;
-    if (unit?.semanticRole === 'user_corrected') roleWeight = 1.0;
-    else if (unit?.semanticRole === 'state_current' || unit?.semanticRole === 'canonical_assertion') roleWeight = 0.95;
-    else if (unit?.semanticRole === 'micro_candidate' || unit?.semanticRole === 'background_setting') roleWeight = 0.90;
-    else if (unit?.semanticRole === 'state_last_known' || unit?.semanticRole === 'source_only' || unit?.semanticRole === 'canonical_legacy_excerpt') roleWeight = 0.82;
-    else if (unit?.semanticRole === 'state_unprovenanced') roleWeight = 0.45;
+    const roleWeight = MEMORY_ENGINE_SCORE_WEIGHTS.role[unit?.semanticRole] ?? MEMORY_ENGINE_SCORE_WEIGHTS.roleDefault;
 
+    const signalWeights = hasSemantic ? MEMORY_ENGINE_SCORE_WEIGHTS.semantic : MEMORY_ENGINE_SCORE_WEIGHTS.lexicalOnly;
     const combinedSignal = hasSemantic
-      ? (0.38 * lexicalScore + 0.32 * semanticScore + 0.20 * entitySlotScore + 0.10 * predicateScore)
-      : (0.52 * lexicalScore + 0.33 * entitySlotScore + 0.15 * predicateScore);
+      ? (signalWeights.lexical * lexicalScore + signalWeights.semantic * semanticScore + signalWeights.entitySlot * entitySlotScore + signalWeights.predicate * predicateScore)
+      : (signalWeights.lexical * lexicalScore + signalWeights.entitySlot * entitySlotScore + signalWeights.predicate * predicateScore);
 
     const directScore = clamp01(combinedSignal * roleWeight);
     const semanticFeatureStatus = features.semanticFeatureStatus
@@ -57967,7 +57980,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         && (activeRef.sourceDigest === sourceHash||await libraCanonicalSlotPreservationKind(context,activeRef,batch))) return await loadMemoryRef(activeRef);
 
       if(memorySettings.configurationStatus!=='ready')throw new Error('LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED');
-      const engineMode='librarian',unified=true;
+      // The canonical pipeline IS the unified engine version: every work record that reaches
+      // this point is stamped UNIFIED_ENGINE_VERSION (any other engineVersion is rejected with
+      // LEGACY_JOB_REVIEW_REQUIRED below). Derive the flag from that engine identity instead of
+      // asserting a literal, so the legacy branches below stay live if the engine version changes.
+      const engineMode='librarian';
+      const unified=isReadableUnifiedEngineVersion(UNIFIED_ENGINE_VERSION);
       const policySnapshot=clone(await loadSettings());
       if(policySnapshot.librarianPolicy?.reviewRequired)throw new Error('LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED');
       const revision = Math.max(1, Number(options.revision || 0) || Number(activeRef?.revision || 0) + 1);
@@ -64612,6 +64630,47 @@ ${string(queryBundle?.sceneText || '')}`;
       return {diagnostics};
     };
 
+    /* LIBRA_MEMORY_ENGINE_MODE_POLICY:START */
+    const MEMORY_ENGINE_MODES = Object.freeze(['legacy', 'shadow', 'unified']);
+    const DEFAULT_MEMORY_ENGINE_MODE = 'legacy';
+    const DEFAULT_MODE_OPEN_GATES = Object.freeze(['E3', 'E4']);
+    const memoryEngineModeText = value => String(value == null ? '' : value).trim();
+    const isKnownMemoryEngineMode = value => MEMORY_ENGINE_MODES.includes(memoryEngineModeText(value));
+    const normalizeMemoryEngineMode = (value, options = {}) => {
+      const raw = memoryEngineModeText(value);
+      if (!raw) return options.fallback || DEFAULT_MEMORY_ENGINE_MODE;
+      if (!isKnownMemoryEngineMode(raw)) {
+        const error = new TypeError('LIBRA_MEMORY_ENGINE_MODE_INVALID:' + raw);
+        error.code = 'LIBRA_MEMORY_ENGINE_MODE_INVALID';
+        error.value = raw;
+        error.allowed = MEMORY_ENGINE_MODES.slice();
+        throw error;
+      }
+      return raw;
+    };
+    const resolveMemoryEngineMode = (options = {}) => {
+      const requestRaw = memoryEngineModeText(options.requestValue);
+      const settingRaw = memoryEngineModeText(options.settingValue);
+      const declared = requestRaw || settingRaw;
+      const mode = normalizeMemoryEngineMode(declared);
+      const source = requestRaw ? 'request' : (settingRaw ? 'setting' : 'default');
+      return {
+        schema: 'libra.memory_engine_decision.v1',
+        mode,
+        source,
+        declared: declared || null,
+        defaultApplied: source === 'default',
+        qualification: mode === 'legacy' ? 'qualified_baseline' : 'unqualified_until_E3_E4'
+      };
+    };
+    const stampMemoryEngineDecision = (result, decision, extra = {}) => {
+      if (!result || typeof result !== 'object') return result;
+      if (!result.diagnostics || typeof result.diagnostics !== 'object') result.diagnostics = {};
+      result.diagnostics.memoryEngine = Object.assign({}, decision, extra);
+      return result;
+    };
+    /* LIBRA_MEMORY_ENGINE_MODE_POLICY:END */
+
     const recall = async (context, queryInput, guard = null) => {
       ensureRecallGuard(guard, 'recall_start');
       const capturedNetworkEpoch = Number(state.microRestoreGeneration || 0);
@@ -64638,7 +64697,11 @@ ${string(queryBundle?.sceneText || '')}`;
         persistRecallCatalog=false;
         queryBundle={...queryBundle,...scoped,manifest,pairs,requestLocalReadOnly,persistRecallCatalog:false};
       }
-      const unifiedEngineMode = string(suppliedBundle?.unifiedEngineMode || settings?.unifiedMemoryEngineMode || 'legacy');
+      const memoryEngineDecision = resolveMemoryEngineMode({
+        requestValue: suppliedBundle?.unifiedEngineMode === undefined ? null : suppliedBundle.unifiedEngineMode,
+        settingValue: settings?.unifiedMemoryEngineMode === undefined ? null : settings.unifiedMemoryEngineMode
+      });
+      const unifiedEngineMode = memoryEngineDecision.mode; // LIBRA_MEMORY_ENGINE_MODE_POLICY: single source of truth
       if (unifiedEngineMode === 'unified') {
         const suite = ensureMemoryGraphUnifiedSuite();
         const scopeKeyStr = string(context?.scope?.scopeKey || '');
@@ -64714,6 +64777,7 @@ ${string(queryBundle?.sceneText || '')}`;
           configuredRecallMaxChars: Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS),
           at: Date.now()
         };
+        stampMemoryEngineDecision(unifiedResult, memoryEngineDecision, { servedBy: 'memory_graph_unified_query' });
         state.lastRecall = unifiedResult;
         state.lastRecallRuntime = recallGuardSnapshot(guard);
         Runtime.lastMemoryRecall = clone(unifiedResult);
@@ -65505,6 +65569,10 @@ ${string(queryBundle?.sceneText || '')}`;
       };
       consumedClosureProofsByResult.set(result, mergeConsumedProofs(recallClosureProofs));
       if (networkFrame) consumedNetworkFramesByResult.set(result, unifiedDeepFreeze(clone(networkFrame)));
+      // Record which engine actually served this recall. The legacy and shadow paths both
+      // return this legacy-base result, so the decision is stamped here where `result` exists
+      // (stamping earlier would read `result` before its declaration).
+      if (unifiedEngineMode !== 'unified') stampMemoryEngineDecision(result, memoryEngineDecision);
       if (unifiedEngineMode === 'shadow') {
         try {
           const suite = ensureMemoryGraphUnifiedSuite();
