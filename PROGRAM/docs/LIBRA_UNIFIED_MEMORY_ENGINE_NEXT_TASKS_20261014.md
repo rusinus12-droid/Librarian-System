@@ -68,6 +68,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 - **통합 엔진 읽기 공급자 자체는 아직 연결하지 않았다.** 이 증분은 출처 계약·거부·검증까지다. 공급자(owner read-session, N00)가 연결되면 GRADIA 셰도우·AIDE가 통합 결과를 읽는다. 지금 `unified_engine`을 켜면 GRADIA는 **거부**한다 — 그것이 의도된 동작이다.
 - 실제 설치 RisuAI 호스트에서의 셰도우/AIDE 파이프라인 검증은 미완(E4).
+- **배포 상태 주의**: 이번 출처 계약은 SDK 원본에서 재생성되는 변형(HAYAKU·Flashback·GRADIA의 읽기 클라이언트)에 들어갔다. LIA·RETRACE는 저장소 SDK 변형이 고정 해시(`preserved-local-only`/`preserved-manager-only`)로 동결되어 있어 그 안의 읽기 클라이언트 사본은 옛 상태 그대로다(설계대로 보존). LIBRA에는 읽기 클라이언트가 없다. 따라서 GRADIA가 LIA·RETRACE의 옛 클라이언트에 묶이면 `unified_engine` 요청을 이해하지 못하고 출처 없는 세션을 돌려주며, 소비자가 이를 **거부**한다(`LIB_READ_SOURCE_MISMATCH`) — 조용히 서버 읽기로 답하지 않는다.
 | N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
 | N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
 | N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
