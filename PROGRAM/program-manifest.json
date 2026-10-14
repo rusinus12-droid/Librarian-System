@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T04:24:36.871Z",
+  "generatedAt": "2026-10-14T04:31:07.269Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2628,8 +2628,8 @@
       "bytes": 21942
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
-      "sha256": "a0cca3b20db3db1ae21be6ba6885519942abb976145402ecf4daa540ca82d2ff",
-      "bytes": 29132
+      "sha256": "2feb06efd7f9ab4807af332433c065247e837006ef58900326afe61b66abc42b",
+      "bytes": 31217
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -3636,8 +3636,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "11e7f5e55a579fa46231b69c4774b3432729165e827f678c9ce0952684a62fb4",
-      "bytes": 5884448
+      "sha256": "2a7e07a58d13bafdb0c29fc53b9fc45d4a824dac52788ec9ec0c85d1c0be63bf",
+      "bytes": 5891927
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7459,6 +7459,10 @@
       "sha256": "b18b77621445ee5f8eb9bbc9595c28ee89eaabbde53023a414ed288cca0d56cc",
       "bytes": 18350
     },
+    "tests/libra_memory_graph_consumers_test.cjs": {
+      "sha256": "b9cafc996c5753daf38f634e6627f70ed770b536b537f00b20ff08fa7f2069c5",
+      "bytes": 9763
+    },
     "tests/libra_memory_graph_identity_test.cjs": {
       "sha256": "f3b6af1881fcd4828657155a2fbec14462603c4e88f8a355045a39786ced0925",
       "bytes": 11961
@@ -10120,8 +10124,8 @@
       "bytes": 3125
     },
     "tools/libra_memory_graph_compiler.cjs": {
-      "sha256": "a24da1921669f06395d6ca972660b8c14b907fcc10a38a5a47c4d32e72435b31",
-      "bytes": 27790
+      "sha256": "fcd3796a0bc23ad1e4097b5c159c190fec998c18b015ba2be2097fc5ca13c90f",
+      "bytes": 35269
     },
     "tools/libra_memory_graph_identity.cjs": {
       "sha256": "2e30acf13362eee0a223b54a7d3a7c045b0bec5371d65a3363166c76496f8b30",

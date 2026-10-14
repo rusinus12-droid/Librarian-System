@@ -163,12 +163,23 @@
 
 | 항목 | 상태 | 선행 조건 |
 | --- | --- | --- |
-| E3 요청·소비자 통합 | **부분**. recall 진입점은 통합/shadow 라우팅을 실행하고 등록 API 스위트가 그 경로를 구동한다. 소비자별(Classic·Planner·SGA·Input Writer·GUI·GRADIA) 실제 adapter·hydration·최종 packet 검증은 미실행 | 각 소비자의 실제 packet 정책 fixture |
+| E3 요청·소비자 통합 | **경계까지 닫힘**. recall 진입점이 라우팅을 실행하고, compiler 경계가 6개 소비자 각각의 packet 정책을 검증한다(헤더 라벨·문자 예산·plan_lines 포맷·gradia receipt·dispatch 자기주장 금지). 남은 것: 소비자 **호스트측** hydration(Classic·Planner·SGA·Input Writer·GUI·GRADIA 실제 삽입) | 각 소비자 호스트의 실제 packet 삽입부 |
 | E4 설치 호스트 인증 | **미실행 — 외부 차단** | 실제 RisuAI 설치 호스트 |
-| M04 전체 byte inventory | **미실행**. payload·exact binding·lease·staging만 계상되며 source read/JSON·L0 후보/witness·index page·frontier/Lane·readset·I/O·write barrier는 미계상 | 잔여 범주 counter 구현 후 계상치 기록 |
+| M04 전체 byte inventory | **선언까지 닫힘**. 12개 범주 전부에 결정이 있다: 4개는 계상(rendered_packet·bundle_body·l0_candidate_workspace·lane_page_payload), 8개는 사유와 함께 미계상. `byteBounded:false` 유지. 남은 것: 미계상 범주의 실제 counter 구현과 유계 주장 | 미계상 8범주 counter + 유계 판정 fixture |
 | M14 품질·latency·메모리 수용 수치 | **미실행**. 계수는 코드에서 `calibration:'unmeasured'`로 표기됨 | 고정 평가 세트 + 대표 workload |
 | 기본값을 unified로 전환 | **금지(의도적)**. 기본은 `legacy`이고 결과에 `qualification: 'unqualified_until_E3_E4'`가 남는다 | E3·E4·M14 종료 |
 
 ### 11.5 변경 파일
 
 `PROGRAM/tools/libra_memory_engine_mode.cjs`(신규), `PROGRAM/tests/libra_memory_engine_mode_test.cjs`(신규), `PROGRAM/tools/libra_memory_graph_query.cjs`, `PROGRAM/plugins/LIBRA.js`(동기화 재생성 포함).
+
+### 11.6 소비자·바이트 마감 (E3·M04)
+
+- **E3 (경계)**: `tools/libra_memory_graph_compiler.cjs`에 `CONSUMER_PACKET_POLICIES`(6 소비자)와 `verifyConsumerPacket()`을 추가하고, `render()`가 `consumerVerification`과 `byteInventory`를 반환하게 했다. 검증 항목은 이 경계가 실제로 확인할 수 있는 것만이다: envelope 스키마, 헤더 `consumer=<id>` 라벨, `characterLength` 정합, 소비자 문자 예산, 항목 수, planner·sga의 `@T` 라인 패밀리, gradia의 `gradiaSelectionReceipt`(그 외 소비자의 불필요한 receipt 금지), 그리고 packet이 스스로 `modelDispatchEligible:true`를 주장하지 않을 것.
+- **M04**: `MEMORY_BYTE_CATEGORY_DECISIONS`(12범주)와 `memoryByteInventory()`가 계상값·예산·미계상 사유를 한 구조로 반환한다. `byteBounded`는 **false**로 고정되어 있다 — 전체 API가 유계라고 주장하지 않는다.
+- 재현: `node PROGRAM/tests/libra_memory_graph_consumers_test.cjs` → 9 PASS. 구성: 6 소비자 전수 검증 + **음성 대조 6종**(라벨 오타·예산 초과·gradia receipt 누락·비해당 소비자의 receipt·plan_lines를 default로 렌더·dispatch 자기주장·미선언 소비자 거부) + 범주 누락/중복 검사 + NaN 누출 금지 + 플러그인 내장 확인.
+- 한계: 이 마감은 **compiler 경계**의 검증이다. 소비자 호스트가 실제로 이 packet을 삽입·hydration하는지는 E3의 남은 절반이며, 실제 GRADIA/Classic/Planner 호스트가 필요하다.
+
+### 11.7 변경 파일 (E3·M04)
+
+`PROGRAM/tools/libra_memory_graph_compiler.cjs`(정책표·검증기·인벤토리, 도구가 원본), `PROGRAM/tests/libra_memory_graph_consumers_test.cjs`(신규), `PROGRAM/plugins/LIBRA.js`(동기화 재생성), `PROGRAM/docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md`.

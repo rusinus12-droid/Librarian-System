@@ -47410,6 +47410,104 @@ function createLibraReadonlySourceContext(owner) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
   const schema = 'libra.memory_graph_compiler.v1';
   const validConsumers = new Set(['classic', 'planner', 'sga', 'input_writer', 'gui', 'gradia']);
+
+  // M09/E3: what each consumer's rendered packet must satisfy before this layer hands it over. Only
+  // facts this layer can check on the envelope are declared here; no host-side behaviour is claimed.
+  const CONSUMER_PACKET_POLICIES = Object.freeze({
+    classic: Object.freeze({ consumer: 'classic', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
+    planner: Object.freeze({ consumer: 'planner', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false }),
+    sga: Object.freeze({ consumer: 'sga', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false }),
+    input_writer: Object.freeze({ consumer: 'input_writer', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
+    gui: Object.freeze({ consumer: 'gui', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
+    gradia: Object.freeze({ consumer: 'gradia', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: true })
+  });
+
+  // M04: every byte category this boundary can see gets a decision — counted at this layer, or
+  // explicitly uncounted with the reason. byteBounded stays false: the whole API is NOT bounded.
+  const MEMORY_BYTE_CATEGORY_DECISIONS = Object.freeze([
+    Object.freeze({ category: 'rendered_packet', bucket: 'counted', note: 'final envelope handed to the consumer' }),
+    Object.freeze({ category: 'bundle_body', bucket: 'counted', note: 'admitted item text inside the envelope' }),
+    Object.freeze({ category: 'l0_candidate_workspace', bucket: 'counted', note: 'query.retrieve l0WorkspaceBytes' }),
+    Object.freeze({ category: 'lane_page_payload', bucket: 'counted', note: 'drained lane page payload bytes' }),
+    Object.freeze({ category: 'source_read_json', bucket: 'uncounted', reason: 'the owner reader performs the read; no counter is wired at this layer' }),
+    Object.freeze({ category: 'l0_witness_bytes', bucket: 'uncounted', reason: 'witness payload is referenced by id and digest, not retained as bytes here' }),
+    Object.freeze({ category: 'index_page_build', bucket: 'uncounted', reason: 'compiled index arrays are built per generation; peak build bytes are not sampled' }),
+    Object.freeze({ category: 'frontier_expansion', bucket: 'uncounted', reason: 'the traversal frontier is bounded by pages, not by a byte counter' }),
+    Object.freeze({ category: 'readset_handle_state', bucket: 'uncounted', reason: 'private readset handles retain ids and digests only' }),
+    Object.freeze({ category: 'owner_io_in_flight', bucket: 'uncounted', reason: 'the storage bridge owns in-flight buffers' }),
+    Object.freeze({ category: 'write_barrier', bucket: 'uncounted', reason: 'publication barriers live in the durable store' }),
+    Object.freeze({ category: 'vm_overhead', bucket: 'uncounted', reason: 'runtime heap outside the accounted structures' })
+  ]);
+
+  const memoryByteInventory = (sample = {}) => {
+    const number = (name) => { const value = Number(sample[name]); return Number.isFinite(value) && value >= 0 ? value : 0; };
+    const counted = Object.freeze({
+      rendered_packet: number('packetBytes'),
+      bundle_body: number('bodyBytes'),
+      l0_candidate_workspace: number('l0WorkspaceBytes'),
+      lane_page_payload: number('lanePageBytes')
+    });
+    const budgets = Object.freeze({
+      rendered_packet: number('maxCharacters'),
+      l0_candidate_workspace: number('l0WorkspaceBudget'),
+      lane_page_payload: number('lanePageBudget'),
+      bundle_body: 0
+    });
+    return Object.freeze({
+      schema: 'libra.memory_byte_inventory.v1',
+      byteBounded: false,
+      counted,
+      budgets,
+      countedBytes: Object.values(counted).reduce((total, value) => total + value, 0),
+      uncounted: Object.freeze(MEMORY_BYTE_CATEGORY_DECISIONS
+        .filter(decision => decision.bucket === 'uncounted')
+        .map(decision => Object.freeze({ category: decision.category, reason: decision.reason }))),
+      categories: Object.freeze(MEMORY_BYTE_CATEGORY_DECISIONS.map(decision => decision.category))
+    });
+  };
+
+  const verifyConsumerPacket = (packet, options = {}) => {
+    const consumer = String(packet?.consumer || options.consumer || '');
+    const policy = CONSUMER_PACKET_POLICIES[consumer];
+    if (!policy) fail('consumer_invalid');
+    const checked = [];
+    const findings = [];
+    const check = (name, ok, detail) => {
+      checked.push(name);
+      if (!ok) findings.push({ check: name, detail: String(detail == null ? '' : detail).slice(0, 120) });
+    };
+    const text = String(packet?.renderedText || '');
+    const lines = text.split('\n');
+    check('schema', packet?.schema === 'libra.rendered_consumer_packet.v1', packet?.schema);
+    check('header_consumer_label', lines[0] === '[LIBRA_EVIDENCE consumer=' + consumer + ' scope=' + String(packet?.scopeKey || '') + ' units=' + lines.slice(1).length + ' sources=' + Number(packet?.independentSourceCount || packet?.sources || lines.slice(1).length) + ']'
+      || lines[0].startsWith('[LIBRA_EVIDENCE consumer=' + consumer + ' scope='), lines[0]);
+    check('character_length_matches_text', Number(packet?.characterLength || 0) === text.length, Number(packet?.characterLength || 0) + ' vs ' + text.length);
+    if (options.maxCharacters != null) {
+      check('character_budget', text.length <= Number(options.maxCharacters), text.length + ' > ' + options.maxCharacters);
+    }
+    if (options.itemCount != null) {
+      check('item_count', Array.isArray(packet?.admittedNodeIds) && packet.admittedNodeIds.length === Number(options.itemCount), packet?.admittedNodeIds?.length);
+    }
+    if (policy.lineTag) {
+      check('format_family_plan_lines', lines.slice(1).every(line => /@T\d+/.test(line)), policy.formatFamily);
+    }
+    if (policy.requiresSelectionReceipt) {
+      const receipt = packet?.gradiaSelectionReceipt;
+      check('selection_receipt_present', Boolean(receipt && typeof receipt === 'object'
+        && String(receipt.ownerCorpusDigest || '').trim() && String(receipt.selectionReceiptId || '').trim()), receipt);
+    } else {
+      check('no_unrequested_receipt', packet?.gradiaSelectionReceipt == null, 'receipt present for a non-receipt consumer');
+    }
+    check('dispatch_not_self_asserted', packet?.modelDispatchEligible !== true, packet?.modelDispatchEligible);
+    return Object.freeze({
+      schema: 'libra.consumer_packet_verification.v1',
+      consumer,
+      formatFamily: policy.formatFamily,
+      ok: findings.length === 0,
+      checked: Object.freeze(checked),
+      findings: Object.freeze(findings)
+    });
+  };
   const fail = reason => { const err = new Error('LIBRA_GRAPH_COMPILER_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
@@ -47919,7 +48017,22 @@ function createLibraReadonlySourceContext(owner) {
       suppressedMicroIds: bundle.suppressedMicroIds,
       gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
       readSetHandle,
-      modelDispatchEligible: false
+      modelDispatchEligible: false,
+      byteInventory: memoryByteInventory({
+        packetBytes: renderedText.length,
+        bodyBytes: Number(bundle.budget?.bodyCharacters || 0),
+        maxCharacters: Number(bundle.budget?.maxCharacters || 0)
+      }),
+      consumerVerification: verifyConsumerPacket({
+        schema: 'libra.rendered_consumer_packet.v1',
+        consumer: bundle.consumer,
+        scopeKey: bundle.scopeKey,
+        renderedText,
+        characterLength: renderedText.length,
+        admittedNodeIds: bundle.items.map(i => i.nodeId),
+        gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
+        modelDispatchEligible: false
+      }, { maxCharacters: Number(bundle.budget?.maxCharacters || 0), itemCount: bundle.items.length })
     });
   };
 
@@ -48017,7 +48130,9 @@ function createLibraReadonlySourceContext(owner) {
     issuedReadSets = new WeakMap();
   };
 
-  return Object.freeze({ select, render, validateConsumedReadSet, revoke, invalidateAll });
+  return Object.freeze({ select, render, validateConsumedReadSet, revoke, invalidateAll,
+    renderPacketText: formatPacketText, verifyConsumerPacket, memoryByteInventory,
+    CONSUMER_PACKET_POLICIES, MEMORY_BYTE_CATEGORY_DECISIONS });
 });
     const createLibraMemoryGraphRollout = (function createMemoryGraphRollout({ index, lane, query, compiler, pages, fingerprint } = {}) {
   if (!index || !lane || !query || !compiler || !pages || typeof fingerprint !== 'function') {
