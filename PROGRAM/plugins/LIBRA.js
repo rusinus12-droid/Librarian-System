@@ -45407,7 +45407,7 @@ function createLibraReadonlySourceContext(owner) {
   const pools = ['nodes','edges','bases','units'];
   const policy = 'owner_projection_directory.v1', pageSchema = 'libra.graph_durable_page.v1';
   let active = false, epoch = 0, disposed = false;
-  const counters = { builds: 0, publications: 0, reads: 0, pageReads: 0, pageWrites: 0, pageReuses: 0, validations: 0, rejected: 0 };
+  const counters = { builds: 0, publications: 0, reads: 0, pageReads: 0, pageWrites: 0, pageReuses: 0, validations: 0, rejected: 0, gcRuns: 0, gcDeleted: 0 };
   const fail = reason => { const error = new Error('LIBRA_GRAPH_STORE_' + reason.toUpperCase()); error.reason = reason; throw error; };
   const hash = text => { const value = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(value)) fail('fingerprint_invalid'); return value; };
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -45458,8 +45458,6 @@ function createLibraReadonlySourceContext(owner) {
   };
   const parse = async (raw, maxChars, part, generation) => {
     if (typeof raw !== 'string' || raw.length > maxChars) fail('record_size_invalid');
-    // This reserves decode/validation staging, but the SDK's already-returned
-    // raw string is an unbounded owner transport allocation, reported separately.
     const handle = pages.open({ partition: part, generation }); let stage;
     try {
       const bytes = 65536 + raw.length * 24;
@@ -45497,7 +45495,6 @@ function createLibraReadonlySourceContext(owner) {
       });
       const after = await snapshot(); check(ticket, owner);
       if (graphStamp(after.graph) !== stamp || !same(after.sourceKeys, initial.sourceKeys)) fail('source_changed');
-      // Re-derive exact headers and payloads, not just stored checksum labels.
       const rederived = await visit(after.graph, { sourceOptions, pageBytes }, async (ref, record) => {
         check(ticket, owner);
         const stored = await load(owner, ref.key, ref.codeUnits * 2 + 8192, loc.partition, stamp, ticket);
@@ -45584,7 +45581,56 @@ function createLibraReadonlySourceContext(owner) {
       requestLocalReadOnly: true, byteBounded: false, ownerTransportBounded: false,
       cache: pages.inspect() };
   };
-  return Object.freeze({ build, read, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
+  const collectGarbage = async ({ owner, scopeKey, dryRun = false } = {}) => {
+    if (active) fail('build_busy'); if (disposed) fail('disposed');
+    if (!owner || typeof owner.listKeys !== 'function' || typeof scopeKey !== 'string' || !scopeKey) fail('options_invalid');
+    active = true; const ticket = epoch; counters.gcRuns++;
+    try {
+      const prefix = 'libra:v1:scope:' + scopeKey + ':memory-graph:v1:';
+      const part = JSON.stringify({ owner: 'gc', scopeKey, viewer: 'maintenance_gc' });
+      const stamp = hash(prefix + ':' + ticket);
+      check(ticket, owner);
+      const allKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
+      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:'));
+      const retainedManifests = new Set();
+      const retainedPages = new Set();
+      for (const rootKey of rootKeys) {
+        const root = await load(owner, rootKey, 32768, part, stamp, ticket);
+        if (root.value?.manifestKey) {
+          retainedManifests.add(root.value.manifestKey);
+          const manifest = await load(owner, root.value.manifestKey, 131072, part, stamp, ticket);
+          for (const pageRef of manifest.value?.pages || []) {
+            if (pageRef?.key) retainedPages.add(pageRef.key);
+          }
+        }
+      }
+      const candidates = allKeys.filter(k => (
+        (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
+        || (k.startsWith(prefix + 'page:') && !retainedPages.has(k))
+      )).sort((a, b) => a.localeCompare(b, 'en'));
+      const deleted = [];
+      if (!dryRun && typeof owner.deleteStale === 'function') {
+        for (const candidateKey of candidates) {
+          check(ticket, owner);
+          await owner.deleteStale(candidateKey);
+          check(ticket, owner);
+          deleted.push(candidateKey);
+          counters.gcDeleted++;
+        }
+      }
+      return {
+        schema: 'libra.graph_store_gc.v1',
+        scopeKey,
+        dryRun: Boolean(dryRun),
+        activeRoots: rootKeys.length,
+        retainedManifestCount: retainedManifests.size,
+        retainedPageCount: retainedPages.size,
+        candidateKeys: candidates,
+        deletedKeys: deleted
+      };
+    } finally { active = false; }
+  };
+  return Object.freeze({ build, read, collectGarbage, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
     invalidationEpoch: epoch, counters: { ...counters }, durableStoreImplemented: true,
     exhaustiveOwnerInventory: false, rootGCImplemented: false, ownerTransportBounded: false }),
     invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
