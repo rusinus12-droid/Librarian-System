@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T00:36:26.078Z",
+  "generatedAt": "2026-10-14T00:46:26.766Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2620,8 +2620,8 @@
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "ad839ff232c4c2b74d7592cc51ea3ebdde02e8621f7103351b481eab2ac39924",
-      "bytes": 69008
+      "sha256": "5e897e87ee507a83999f3560d15f52ddbb732da2804e66284d76cb91e5faf05f",
+      "bytes": 71777
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -3628,8 +3628,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "544ab6744e65d608f1e45af3859dae0b97d933d82c182378842a1f457afa316b",
-      "bytes": 5816559
+      "sha256": "a79fa8f20a2f0b8b36844689f327c144bd0b737a20c71ff9b6c23910b00d62ba",
+      "bytes": 5821143
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7475,6 +7475,10 @@
       "sha256": "8f2877b9d6e4be2fc9d3039911ddba02bcd09a5a255bb82d356adb74e26e487c",
       "bytes": 8181
     },
+    "tests/libra_memory_graph_rollout_test.cjs": {
+      "sha256": "91a06ac5dcb436bdbb0ded929f09933eac1ae02581a47731827ea7204cb79b1c",
+      "bytes": 11021
+    },
     "tests/libra_memory_graph_store_runtime_test.cjs": {
       "sha256": "067b2111b83cb60aa6a221087bfc8df62ab4c0f15aefff932270d15b40639e21",
       "bytes": 9019
@@ -10126,6 +10130,10 @@
     "tools/libra_memory_graph_readers.cjs": {
       "sha256": "5eb9bee43c2a25fc3b196d8bfcd0c126dde9f7a90d47ec57756d1e2b57a6f83d",
       "bytes": 24921
+    },
+    "tools/libra_memory_graph_rollout.cjs": {
+      "sha256": "09f835f4ba3a4d7889864a7c69de71adc7ab5472001ee9667f804a7d64050abc",
+      "bytes": 14393
     },
     "tools/libra_memory_graph_store.cjs": {
       "sha256": "9ad46b5c996766db2e4de1673fd3c3cd3d4f307b5c84a81a45fac8c2c6c4b8c7",

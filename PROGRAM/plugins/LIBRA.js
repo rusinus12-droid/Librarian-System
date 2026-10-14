@@ -47087,6 +47087,15 @@ function createLibraReadonlySourceContext(owner) {
   }
   const schema = 'libra.memory_graph_rollout.v1';
   const validModes = new Set(['legacy', 'shadow', 'unified']);
+  const retiredLegacyStructures = Object.freeze([
+    'recallCatalogCache',
+    'recallCatalogBlockCache',
+    'evidenceLinkIndexCache',
+    'loreLinkIndexCache',
+    'ResponseLoreIndexCache',
+    'a2MetadataPreparationLoop',
+    'legacyDualRrfRanker'
+  ]);
   const fail = reason => { const err = new Error('LIBRA_GRAPH_ROLLOUT_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
@@ -47120,6 +47129,35 @@ function createLibraReadonlySourceContext(owner) {
     const token = Object.freeze({ ...payload, sealDigest: hash(JSON.stringify(payload)) });
     sealedRequests.set(token, { ...payload });
     return token;
+  };
+
+  // UM6 & V11: Guard that prevents retired legacy caches, A2 preparation loops, or independent rankers
+  // from running alongside a sealed unified request (§7.6, §11, §14 V11).
+  const createLegacyExecutionFence = sealToken => {
+    const sealed = sealToken && sealedRequests.get(sealToken);
+    if (!sealed) fail('request_seal_invalid');
+    const attemptedLegacyOps = [];
+    return Object.freeze({
+      schema: 'libra.legacy_retirement_fence.v1',
+      mode: sealed.mode,
+      requestId: sealed.requestId,
+      retiredLegacyStructures,
+      assertLegacyAllowed: operationName => {
+        const op = String(operationName || 'unknown_legacy_op');
+        if (sealed.mode === 'unified') {
+          attemptedLegacyOps.push(op);
+          fail('legacy_duplicate_execution_forbidden');
+        }
+        return true;
+      },
+      status: () => Object.freeze({
+        mode: sealed.mode,
+        retiredLegacyStructures,
+        attemptedLegacyOps: [...attemptedLegacyOps],
+        duplicateExecutionCount: attemptedLegacyOps.length,
+        cleanCutoverVerified: sealed.mode === 'unified' && attemptedLegacyOps.length === 0
+      })
+    });
   };
 
   // Execute unified retrieval + compilation under a sealed request token.
@@ -47203,6 +47241,86 @@ function createLibraReadonlySourceContext(owner) {
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
       modelDispatchEligible: Boolean(dispatchVerification?.modelDispatchEligible === true && sealed.mode === 'unified')
+    });
+  };
+
+  // UM6 & V05: Verify that cold cache, warm cache, post-LRU eviction, and fresh restart produce
+  // identical logical complete results and winning witnesses for the same snapshot and query (§7.2, §12.1, V05).
+  const verifyColdWarmEvictionDeterminism = ({
+    graph,
+    queryInput = {},
+    consumerPolicy = {}
+  } = {}) => {
+    if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
+    const frame = graph.readerFrame || {};
+    const owner = frame.owner || 'libra:plugin_only';
+    const scopeKey = graph.scopeKey || frame.scopeKey || 'default';
+    const worldlineId = frame.worldlineId || 'main';
+    const restoreEpoch = frame.restoreEpoch ?? 0;
+    const partition = JSON.stringify({
+      owner,
+      scopeKey,
+      viewer: frame.view?.viewerId || 'owner_reader'
+    });
+    const generation = pages.generation(graph, { partition, restoreEpoch, view: frame });
+
+    const runPass = () => {
+      const compiledIndex = index.compile(graph, { partition, generation });
+      const queryFrame = query.sealQueryFrame({
+        ...queryInput,
+        owner,
+        scopeKey,
+        worldlineId
+      });
+      const viewHandle = query.openView(graph, compiledIndex, queryFrame);
+      const queryResult = query.retrieve(viewHandle, { maxPages: 64, maxBytes: 262144, pageBytes: 4096 });
+      const selected = compiler.select(queryResult, graph, consumerPolicy);
+      const packet = compiler.render(selected);
+      return {
+        complete: queryResult.complete,
+        candidateDigest: hash(JSON.stringify(queryResult.candidates.map(c => ({
+          nodeId: c.nodeId,
+          bestActivation: c.bestActivation,
+          winningWitness: c.winningWitness
+        })))),
+        bundleDigest: selected.bundle.bundleDigest,
+        packetDigest: packet.packetDigest
+      };
+    };
+
+    // Pass 1: Cold cache
+    pages.invalidate({ reason: 'v05_cold_start' });
+    const cold = runPass();
+
+    // Pass 2: Warm cache
+    const warm = runPass();
+
+    // Pass 3: Post-eviction / partition invalidation
+    pages.invalidate({ partition, reason: 'v05_eviction' });
+    const postEviction = runPass();
+
+    // Pass 4: Simulated restart (full cache clear)
+    pages.invalidate({ reason: 'v05_restart' });
+    const postRestart = runPass();
+
+    const deterministic = cold.complete
+      && warm.complete
+      && postEviction.complete
+      && postRestart.complete
+      && cold.candidateDigest === warm.candidateDigest
+      && cold.candidateDigest === postEviction.candidateDigest
+      && cold.candidateDigest === postRestart.candidateDigest
+      && cold.bundleDigest === warm.bundleDigest
+      && cold.bundleDigest === postEviction.bundleDigest
+      && cold.bundleDigest === postRestart.bundleDigest
+      && cold.packetDigest === warm.packetDigest
+      && cold.packetDigest === postEviction.packetDigest
+      && cold.packetDigest === postRestart.packetDigest;
+
+    return Object.freeze({
+      schema: 'libra.determinism_verification.v1',
+      deterministic,
+      passes: { cold, warm, postEviction, postRestart }
     });
   };
 
@@ -47301,7 +47419,13 @@ function createLibraReadonlySourceContext(owner) {
     });
   };
 
-  return Object.freeze({ sealRequestMode, executeUnifiedRequest, runShadowComparison });
+  return Object.freeze({
+    sealRequestMode,
+    createLegacyExecutionFence,
+    executeUnifiedRequest,
+    verifyColdWarmEvictionDeterminism,
+    runShadowComparison
+  });
 });
     // END LIBRA MEMORY GRAPH
 
