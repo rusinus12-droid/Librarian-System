@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.4
+- 작성일: 2026-10-14 · 문서 버전: 1.5
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `9a61245`까지의 N01/N02/N03 증분과 이후 네 결함 패치. §12–15가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
-- 목표 계약: [통합 엔진 설계 v1.10](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 현재 기준: `9a61245`까지의 N01/N02/N03 증분과 이후 네 결함 패치. §12–16가 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다.
+- 목표 계약: [통합 엔진 설계 v1.11](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
 - 판정: **통합 엔진 미완성. 명시적 unified 설정의 실제 Classic beforeRequest 전달과 최종 private 검증은 등록 API 합성 호스트에서 연결·검증했다. 기본값은 legacy다. 실제 임베딩 adapter·저장 정본 벡터를 단일 frontier에 연결했다. 실제 설치 호스트, 전체 corpus의 durable index 접근, 나머지 소비자 삽입, 품질·규모 검증과 안전한 native GC 삭제는 남아 있다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–15를 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 메모리 읽기는 아직 새 계약이 필요한 목표다.
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §12–16를 우선한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 메모리 읽기는 아직 새 계약이 필요한 목표다.
 
 ## 1. 완성이 의미하는 것
 
@@ -25,7 +25,7 @@
 | E0 코드 확인 | 함수·설정·호출 지점이 존재함 | 새 factory 5개가 LIBRA.js에 내장됨 |
 | E1 커널 검사 | 직접 주입한 snapshot·owner mock으로 계약 일부 검사 | Index/Lane/Query/Compiler/Rollout의 순수 suite |
 | E2 등록 API 검사 | shipped API·실제 storage bridge를 합성 호스트에서 실행 | reader/page/store의 plugin_only·server_only 검사 |
-| E3 요청·소비자 통합 검사 | 실제 beforeRequest/활성 소비자가 새 engine을 실행하고 최종 packet·owner 검증·비용을 관찰 | 현재는 Classic의 등록 합성 호스트 경로 검증. 별도 GRADIA의 새 엔진 읽기와 실제 설치 인증은 미완; 구형 formatter 검사는 활성 소비자 연결의 증거가 아님 |
+| E3 요청·소비자 통합 검사 | 실제 beforeRequest/활성 소비자가 새 engine을 실행하고 최종 packet·owner 검증·비용을 관찰 | Classic과 GRADIA 셰도우·AIDE의 등록 합성 호스트 경로 검증(§16). 실제 설치 인증은 미완; 구형 formatter 검사는 활성 소비자 연결의 증거가 아님 |
 | E4 설치 호스트 인증 | 실제 RisuAI 설치·지원 workload에서 품질·시간·메모리·호환성 측정 | 미실행 |
 
 표현은 `제한 범위 연결·검증`, `커널 구현`, `미연결`, `결함 확인`, `미검증`, `호스트 지원 없음`으로 구분한다. E1의 `modelDispatchEligible:true` 반환이나 자기 보고식 비용 플래그는 E3/E4 증거가 아니다.
@@ -286,3 +286,12 @@ N01의 원본 목록/continuation/접근 진단, N02의 표현/생산자 선언,
 | 원본 내용 수정을 window 이동으로 오분류 | sourceOptions·policy/partition·readerFrame으로 구간 판정. sourceStamp/explicit base 자체는 이동 사유에서 제외 | 같은 구간 revision/binding 수정과 removal, 실제 cursor/restore/view 이동 보호 |
 
 직접 회귀 3개 파일의 38개 검사와 영향권 SDK·GRADIA·store/continuation·native semantic을 검증한다. 소스 커널/SDK를 재생성되는 내장 변형에 동기화하며 LIA/RETRACE의 고정 변형은 유지한다. 새 공급자·새 producer·전체 inventory/GC/호스트 인증이 완료됐다고 표시하지 않는다. 상세 연결 상태와 재현 범위는 [다음 과제 §12](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md#12-9a61245-리뷰-후-네-결함-패치)를 따른다.
+
+
+## 16. GRADIA 셰도우·AIDE의 실제 통합 읽기 연결
+
+N03의 공급자 공백을 server_only의 제한 범위에서 연결했다. LIBRA private owner → 실제 unified query/compiler → 인증된 plugin channel → GRADIA 고정 readonly SDK → `openLibEvidenceRun` → SHADOW·AIDE → 최종 beforeRequest 전달 경로다. 구형 Planner·SGA를 복원하지 않으며 GRADIA 인풋 작성기는 여전히 기억 회수를 하지 않는다.
+
+기존 서버 readonly principal의 capture/current는 권한 확인 witness로만 사용한다. 통합 결과는 owner가 발급한 단일 bundle이며 현재성 확인은 서버 권한과 private compiler 원본 검증을 모두 거친다. 다른 owner의 읽기 방식은 `engine.sourceByOwner`에 남긴다. 연결 URL·scope·route·data/reset·원본·소비자 source 변경과 취소는 진행 중인 근거/초안을 무효화한다. 통합 공급자 부재 시 기존 검색으로 대체하지 않는다.
+
+[구체적인 계약·사용 방법·검증](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md)에 한계와 검사 경로를 기록한다. 이 절은 §6 M09와 §14의 **GRADIA unified 공급자·선택 영수증 미연결** 설명을 갱신한다. Classic/GRADIA의 E3 연결은 전체 기록을 읽는 durable index(N01), 다른 자료의 벡터 생산(N02), 인풋 작성기(N04), 설치 인증/품질/규모(N06), 기본값 전환(N07)의 완료를 뜻하지 않는다.

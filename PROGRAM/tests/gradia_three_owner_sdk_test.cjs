@@ -8,10 +8,10 @@ function fixture(options={}){
  const values=new Map(),requests=[],changed=new Set();let writes=0;const store={getItem:async k=>values.get(k)??null,setItem:async()=>{writes++;throw Error('FORBIDDEN')},removeItem:async()=>{writes++;throw Error('FORBIDDEN')}};
  for(const owner of owners)values.set('__memory_suite_internal_scope_routes_v1__:'+owner,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:owner,version:1,legacyGlobalModeImported:true,entries:{[scopes[owner].scopeKey]:{scopeId:scopes[owner].scopeKey,scopeKey:scopes[owner].scopeKey,mode:'server_only',origin:'user_explicit',updatedAt:1}}}));
  const connection={url,requestedUrl:url,token:'synthetic-only',dataInstanceId:id,dataIdentityContract:'memory-suite.physical-data-identity.v1',dataIdentityCertified:true,resetEpochCertified:true,resetEpochs:{},authorization:{schema:'memory-suite.bootstrap-authorization.v1',pluginId:'serial_gradation_agents_for_rp',namespace:'libra',roles:['readonly'],readNamespaces:options.allowed||owners,writeNamespaces:[]},capabilities:{'libra-read-session.v1':true,'gradia-memory-read-session.v1':true}};
- const host={pluginStorage:store,getLocalPluginStorage:async()=>store,getArgument:async name=>name.includes('url')?url:undefined,nativeFetch:async(u,init)=>{const m=/\/v1\/(libra|hayaku|flashback)\/read-session\/(capture|current)$/.exec(u);assert(m,u);const [_,owner,action]=m,body=JSON.parse(init.body),scope=scopes[owner],content=options.content||owner+' full memory';requests.push({owner,action,body});const evidenceRevision=crypto.createHash('sha256').update(owner).digest('hex'),result=action==='capture'?{schema:`memory-suite.${owner}-read-session.v1`,scope,readOnly:true,complete:true,items:[{id:'same',key:'same',content,source:{namespace:owner,scopeKey:scope.scopeKey,revision:1}}],dependencies:[{namespace:owner,space:'plugin',key:'root',exists:true,tombstone:false,revision:1,digest:'a'.repeat(64),updatedAt:1,valueBytes:10}],evidenceRevision,corpusBytes:Buffer.byteLength(content),maxCorpusBytes:body.maxCorpusBytes,maxRawBytes:body.maxRawBytes,metadataBytes:10,rawBytes:options.rawBytes?.[owner]??10,dataInstanceId:id,resetEpoch:0,readIdentity:{scope,dataInstanceId:id,resetEpoch:0}}:{schema:`memory-suite.${owner}-read-session-current.v1`,current:!changed.has(owner),scope,evidenceRevision,dataInstanceId:id,resetEpoch:0};if(options.sameShard && action==='capture' && owner!=='libra'){result.items.push({...result.items[0],id:'second',content:'second'});result.corpusBytes+=6;}return new Response(JSON.stringify({ok:true,dataInstanceId:id,result}));}};
+ const host={pluginStorage:store,getLocalPluginStorage:async()=>store,getArgument:async name=>name.includes('url')?url:undefined,nativeFetch:async(u,init)=>{const m=/\/v1\/(libra|hayaku|flashback)\/read-session\/(capture|current)$/.exec(u);assert(m,u);const [_,owner,action]=m,body=JSON.parse(init.body),scope=scopes[owner],content=options.content||owner+' full memory';requests.push({owner,action,body});if(options.deny?.())return new Response(JSON.stringify({error:'forbidden'}),{status:403});if(action==='capture')options.onCapture?.(owner,changed);const evidenceRevision=crypto.createHash('sha256').update(owner).digest('hex'),result=action==='capture'?{schema:`memory-suite.${owner}-read-session.v1`,scope,readOnly:true,complete:true,items:[{id:'same',key:'same',content,source:{namespace:owner,scopeKey:scope.scopeKey,revision:1}}],dependencies:[{namespace:owner,space:'plugin',key:'root',exists:true,tombstone:false,revision:1,digest:'a'.repeat(64),updatedAt:1,valueBytes:10}],evidenceRevision,corpusBytes:Buffer.byteLength(content),maxCorpusBytes:body.maxCorpusBytes,maxRawBytes:body.maxRawBytes,metadataBytes:10,rawBytes:options.rawBytes?.[owner]??10,dataInstanceId:id,resetEpoch:0,readIdentity:{scope,dataInstanceId:id,resetEpoch:0}}:{schema:`memory-suite.${owner}-read-session-current.v1`,current:!changed.has(owner),scope,evidenceRevision,dataInstanceId:id,resetEpoch:0};if(options.sameShard && action==='capture' && owner!=='libra'){result.items.push({...result.items[0],id:'second',content:'second'});result.corpusBytes+=6;}return new Response(JSON.stringify({ok:true,dataInstanceId:id,result}));}};
  const box={connection};const context=vm.createContext({console,URL,Response,AbortController,TextEncoder,TextDecoder,crypto:crypto.webcrypto,setTimeout,clearTimeout,RisuAI:host,__fixture:box});
  const injected=source.replace('  const bridge = Object.freeze({',`Object.assign(dataBinding,{url:__fixture.connection.url,dataInstanceId:__fixture.connection.dataInstanceId,dataIdentityContract:__fixture.connection.dataIdentityContract,certified:true,generation:1,rejected:false});state.config.url=__fixture.connection.url;state.bootstrap={value:__fixture.connection,baseUrl:__fixture.connection.url,at:1,pending:null};__fixture.state=state;__fixture.dataBinding=dataBinding;\n  const bridge = Object.freeze({`);
- vm.runInContext(injected+';globalThis.factory=createMemorySuiteStorageBridge',context);const bridge=context.factory({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',managementButton:false,startupDiagnostics:false});return{bridge,values,requests,changed,box,connection,counts:()=>({writes})};
+ vm.runInContext(injected+';globalThis.factory=createMemorySuiteStorageBridge',context);const bridge=context.factory({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',managementButton:false,startupDiagnostics:false,unifiedReadProvider:options.provider});return{bridge,values,requests,changed,box,connection,counts:()=>({writes})};
 }
 test('private three-owner SDK facade captures bounded owner packets with provenance and checks every owner',async t=>{const f=fixture();t.after(()=>f.bridge.dispose());assert.equal(typeof f.bridge.createMemoryReadOnlyClient,'function');const client=f.bridge.createMemoryReadOnlyClient(scopes),s=await client.openReadSession(scopes.libra);assert.equal(client.schema,'memory-suite.memory-read-client.v1');assert.equal(s.snapshot.schema,'memory-suite.memory-read-session.v1');assert.deepEqual(Array.from(s.snapshot.items,i=>i.owner),owners);assert.equal(s.snapshot.corpusBytes,owners.reduce((n,o)=>n+Buffer.byteLength(o+' full memory'),0));assert(Object.isFrozen(s.snapshot));assert.equal(await s.assertCurrent(),true);assert.deepEqual([...new Set(f.requests.filter(r=>r.action==='current').map(r=>r.owner))],owners);assert.equal(f.counts().writes,0);});
 test('each owner mutation, route change, and unaccepted reset stops the combined session',async t=>{for(const owner of owners){const f=fixture();t.after(()=>f.bridge.dispose());const s=await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra);f.changed.add(owner);await assert.rejects(()=>s.assertCurrent(),e=>e.code==='LIB_READ_STALE');const g=fixture();t.after(()=>g.bridge.dispose());const read=await g.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra);const key='__memory_suite_internal_scope_routes_v1__:'+owner,route=JSON.parse(g.values.get(key));route.entries[scopes[owner].scopeKey].mode='plugin_only';g.values.set(key,JSON.stringify(route));await assert.rejects(()=>read.assertCurrent(),e=>/^LIB_READ_/.test(e.code));}});
@@ -24,3 +24,50 @@ test('composed reader passes remaining raw allocation budget before each owner c
 test('unaccepted reset epoch for any selected owner blocks its capture',async t=>{for(const owner of owners){const f=fixture();t.after(()=>f.bridge.dispose());f.connection.resetEpochs[owner]=1;await assert.rejects(()=>f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra),e=>e.code==='LIB_READ_RESET_REVIEW_REQUIRED');assert(!f.requests.some(r=>r.owner===owner&&r.action==='capture'));assert.equal(f.counts().writes,0);}});
 
 test('raw-heavy excluded owner data makes the global remainder govern the next owner',async t=>{const raw=26*1024*1024,f=fixture({content:'ab',rawBytes:{hayaku:raw}});t.after(()=>f.bridge.dispose());await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra);const last=f.requests.find(r=>r.owner==='flashback'&&r.action==='capture');assert.equal(last.body.maxRawBytes,7*4194304+2097152-raw-10);assert(last.body.maxRawBytes<7*last.body.maxCorpusBytes+2097152);});
+
+function unifiedProvider(){
+ let captures=0,checks=0,releases=0;
+ return {counts:()=>({captures,checks,releases}),
+  capture:async input=>{captures++;assert.equal(input.queryText,'current question');
+   assert.equal(input.binding.dataInstanceId,id);assert.equal(input.binding.resetEpoch,0);
+   return {schema:'memory-suite.libra-read-session.v1',scope:input.scope,readOnly:true,complete:true,
+    items:[{id:'bundle',key:'owner-receipt',content:'UNIFIED_ONLY',source:{namespace:'libra',kind:'owner_issued_evidence_bundle'}}],
+    readIdentity:{scope:input.scope,dataInstanceId:id,resetEpoch:0,ownerReceiptId:'r1'},dependencies:[],evidenceRevision:'e'.repeat(64),
+    corpusBytes:12,metadataBytes:64,rawBytes:76,maxCorpusBytes:input.maxCorpusBytes,maxRawBytes:input.maxRawBytes,
+    dataInstanceId:id,resetEpoch:0,engine:{source:'unified_engine',queryComplete:false}};},
+  current:async({proof})=>{checks++;return {schema:'memory-suite.libra-read-session-current.v1',current:true,...proof};},
+  release:async()=>{releases++;}};
+}
+test('GRADIA pinned SDK selects native LIBRA evidence and retains explicit sources for other owners',async t=>{
+ const provider=unifiedProvider(),f=fixture({provider});t.after(()=>f.bridge.dispose());
+ const read=await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'});
+ assert.equal(read.source,'unified_engine');assert.equal(read.snapshot.items[0].content,'UNIFIED_ONLY');
+ assert.deepEqual(JSON.parse(JSON.stringify(read.engine.sourceByOwner)),{libra:'unified_engine',hayaku:'server_logical_read',flashback:'server_logical_read'});
+ assert.equal(read.engine.queryComplete,false);assert.equal(provider.counts().captures,1);
+ assert.equal(f.requests.filter(r=>r.owner==='libra'&&r.action==='capture').length,1,'server capture obtains only an authorization witness');
+ await read.assertCurrent();read.close();await Promise.resolve();assert.equal(provider.counts().releases,1);assert.equal(f.counts().writes,0);
+});
+test('revoking the server read principal blocks the native provider before capture and currentness',async t=>{
+ let denied=false;const provider=unifiedProvider(),f=fixture({provider,deny:()=>denied});t.after(()=>f.bridge.dispose());
+ const client=f.bridge.createLibraReadOnlyClient(),read=await client.openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'});
+ const checks=provider.counts().checks;denied=true;
+ await assert.rejects(()=>read.assertCurrent(),e=>/^LIB_READ_/.test(e.code));assert.equal(provider.counts().checks,checks);
+ await assert.rejects(()=>client.openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'}),e=>/^LIB_READ_/.test(e.code));
+ assert.equal(provider.counts().captures,1);read.close();
+});
+test('only a new native query refreshes an obsolete authorization witness; an existing draft stays stale',async t=>{
+ const provider=unifiedProvider(),f=fixture({provider,onCapture:(owner,changed)=>changed.delete(owner)});t.after(()=>f.bridge.dispose());
+ const client=f.bridge.createLibraReadOnlyClient(),options={source:'unified_engine',queryText:'current question'};
+ const old=await client.openReadSession(scopes.libra,options);f.changed.add('libra');
+ await assert.rejects(()=>old.assertCurrent(),e=>e.code==='LIB_READ_STALE');
+ const fresh=await client.openReadSession(scopes.libra,options);assert.equal(provider.counts().captures,2);
+ assert.equal(f.requests.filter(r=>r.action==='capture').length,2);old.close();fresh.close();
+});
+test('native provider results cannot cross route changes while capture is pending',async t=>{
+ const provider=unifiedProvider(),capture=provider.capture;let f;
+ provider.capture=async input=>{const result=await capture(input),key='__memory_suite_internal_scope_routes_v1__:libra';
+  const route=JSON.parse(f.values.get(key));route.entries[scopes.libra.scopeKey].mode='plugin_only';f.values.set(key,JSON.stringify(route));return result;};
+ f=fixture({provider});t.after(()=>f.bridge.dispose());
+ await assert.rejects(()=>f.bridge.createLibraReadOnlyClient().openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'}),e=>e.code==='LIB_READ_ROUTE_CHANGED'||e.code==='LIB_READ_SERVER_MODE_REQUIRED');
+ assert.equal(provider.counts().releases,1);
+});

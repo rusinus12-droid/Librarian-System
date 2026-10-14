@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.1
+- 작성일: 2026-10-14 · 문서 버전: 1.2
 - 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
-- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. 전체 기록의 영속 접근, GRADIA의 새 엔진 연결, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
+- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 전체 기록의 영속 접근, 인풋 작성기 읽기, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
 
 이 문서는 소비자 호출 경로 재검토를 반영한 현재 작업 계획이다. 이전 설계·현황 문서에서 LIBRA의 Planner·SGA·Input Writer를 활성 연결 대상으로 적은 부분을 정정한다. 과제 정의는 구현 완료나 배포 자격을 부여하지 않는다.
 
@@ -15,10 +15,10 @@
 | LIBRA GUI | 현재 기억 열람·진단 화면은 활성 상태 | 통합 결과·출처·시간·coverage·실제 채택 정보를 읽는 표시 adapter 연결 |
 | LIBRA Planner·SGA | 실행 함수와 공개 실행 API 제거. 예전 응답 설정도 Classic으로 정규화 | 실행 경로를 복원하는 과제로 잡지 않음 |
 | LIBRA Input Writer | 실행 함수·공개 API·작성기 버튼 등록 제거 | 인풋 작성 기능의 소유자는 별도 GRADIA |
-| GRADIA 셰도우·AIDE | 기존 서버 읽기 전용 연결과 요청별 근거 전달 경로가 있음 | 기존 읽기 권한·현재성 계약을 유지하며 새 통합 엔진의 결과를 읽도록 연결 |
+| GRADIA 셰도우·AIDE | 기존 서버 읽기 전용 연결과 요청별 근거 전달 경로가 있음 | server_only·호스트 채널을 통한 통합 읽기 연결. 실제 설치 인증과 전체 corpus 접근은 남음 |
 | GRADIA 인풋 작성기 | 작성 기능은 활성. 현재 기억 회수를 하지 않으며 이전 실행의 근거도 받지 않도록 검사 | 미전송 입력에 맞는 별도 질의·읽기 세션 계약부터 정의 |
 
-LIBRA의 주석·구형 저장 키·descriptor에 남은 이름은 실행 기능의 증거가 아니다. 단, [현재 compiler](../tools/libra_memory_graph_compiler.cjs)는 `planner/sga/input_writer` packet 형식도 실제 지원한다. 이 커널 포맷 지원과 제품의 활성 실행 경로를 구분해야 한다. 현재 native owner verifier에는 GRADIA 선택 영수증 검증 연결도 없다.
+LIBRA의 주석·구형 저장 키·descriptor에 남은 이름은 실행 기능의 증거가 아니다. 단, [현재 compiler](../tools/libra_memory_graph_compiler.cjs)는 `planner/sga/input_writer` packet 형식도 실제 지원한다. 이 커널 포맷 지원과 제품의 활성 실행 경로를 구분해야 한다. native owner verifier에는 이번 N03에서 private GRADIA 선택 영수증 검증을 연결했다. 공개 query API가 임의로 영수증 권한을 발급하지는 않는다.
 
 GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`를 사용한다. 셰도우·AIDE의 기존 연결과 새 unified kernel 연결은 별개다. LIBRA의 `shadow` 엔진 비교 모드와 GRADIA의 셰도우 창작 단계도 서로 다른 기능이다. LIBRA query의 plugin_only/server_only 지원을 GRADIA reader의 같은 지원으로 확대 해석하지 않는다.
 
@@ -47,32 +47,20 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | N00 | P0 · 문서 정정 완료, runtime 계약 정리 남음 | 활성 소비자와 호환 포맷 분리 | M09/M15 | 현재 퇴역 계약 확인 |
 | N01 | P1 · 부분 구현 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
-| N03 | P1 · 기존 서버 읽기만 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
+| N03 | P1 · 제한 범위 통합 읽기 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
 | N04 | P1 · 새 읽기 계약 미정의 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
 | N05 | P1 · native 실제 삭제 차단 | 안전한 GC·게시·읽기 보호 | M11 | exhaustive inventory, storage owner의 원자적 보호 |
 | N06 | P1 · 실제 품질/규모 미측정 | 평가·예산·실제 호스트 인증 | M12/M14 | 평가 세트는 먼저 작성; 인증에는 해당 구현 필요 |
 | N07 | P2 · 기본값 legacy | 기본값 전환·중복 경로 종료 | M13/M15 | 지원 범위의 N00–N06 합격 |
 
-### N03 진척 — 읽기 출처(source) 계약
+### N03 진척 — 실제 owner 공급자·GRADIA 연결
 
-**한 것**
-
-- 읽기 세션에 **출처**를 도입했다. `openReadSession(scope, {source})` — `server_logical_read`(기본, 기존 경로 그대로) 또는 `unified_engine`. 모르는 출처는 이름으로 거부한다(`LIB_READ_SOURCE_UNSUPPORTED`).
-- **조용한 대체 금지**: `unified_engine`을 요청했는데 통합 엔진 읽기 공급자가 없으면 서버 읽기로 대신 답하지 않고 거부한다(`LIB_READ_UNIFIED_UNAVAILABLE`). 실측으로 이 경우 서버 호출 수가 **0**임을 확인했다.
-- 통합 엔진의 답변도 **같은 봉투**로 검증된다: scope·evidenceRevision(64자 digest)·corpusBytes·item shape 검사가 그대로 적용된다. 통합 세션에는 `source: 'unified_engine'`과 `engine`(예: 세대 `mgm1:5`)이 추가로 실리고, `assertCurrent()`도 같은 출처에 다시 묻는다(현재성 계약 유지).
-- GRADIA 소비자는 **요청한 출처를 검증**한다: 바인딩이 `readSource`를 선언하고 클라이언트에 그대로 전달하며, 돌아온 세션의 출처가 다르면 거부한다(`LIB_READ_SOURCE_MISMATCH`). 계약 문자열(`existing-server-logical-read.v1`)은 **바꾸지 않았다** — 예산·스코프 게이트가 그 계약에 걸려 있어서 계약을 바꾸면 조용히 약해진다. 출처는 `readSource`와 `selection.readSource`로 따로 보고된다.
-- 게이트는 `sdk/MemorySuiteStorageClient.source.js`의 읽기 클라이언트와 `plugins/GRADIA.js` 소비자에 있다. SDK 원본을 재생성하는 대상과 고정 내장 변형은 [변형 registry](../tools/lib/sdk_variants.cjs)로 구분한다. `check_sdk_sync.cjs`의 통과는 각 변형의 일치이며 모든 플러그인이 SDK 원본의 새 기능을 갖는다는 뜻이 아니다.
-
-**검증**
-
-- 신규 `tests/libra_gradia_unified_read_source_test.cjs` → **10 PASS**: 기본 출처 불변 / 공급자 없는 통합 요청 거부(서버 호출 0) / 미지 출처 거부 / 통합 세션 서빙(서버 호출 0, `engine` 전달) / 봉투 위반 3종(scope·예산·revision) 거부 / 현재성 실패(`LIB_READ_STALE`) / 소비자의 기본 경로 불변 / 서버 읽기의 통합 위장 거부 / 통합 세션 수용(예산 게이트 유지) / 캡처 전 미지 출처 거부.
-- 영향권 기존 스위트 9종 PASS: `gradia_readonly_sdk`, `gradia_readonly_cross_project`, `gradia_three_owner_sdk`, `gradia_three_owner_consumer`, `gradia/lib-read-consumer`, `gradia/server-read-adapter`, `gradia/evidence-bridge`, `composed_reanalysis_gradia_runtime`, `review_readonly_worst_escape`.
-
-**남은 것 (명시)**
-
-- **통합 엔진 읽기 공급자 자체는 아직 연결하지 않았다.** 이 증분은 출처 계약·거부·검증까지다. 공급자(owner read-session, N00)가 연결되면 GRADIA 셰도우·AIDE가 통합 결과를 읽는다. 지금 `unified_engine`을 켜면 GRADIA는 **거부**한다 — 그것이 의도된 동작이다.
-- 실제 설치 RisuAI 호스트에서의 셰도우/AIDE 파이프라인 검증은 미완(E4).
-- **배포 상태 정정**: 출처 계약은 SDK 원본과 이를 재생성하는 HAYAKU·Flashback의 읽기 클라이언트에 들어갔다. **GRADIA도 `preserved-readonly-three-owner` 고정 변형**이며 SDK 원본의 `unifiedReadProvider`/`readOptions.source` 경로가 없다. GRADIA 소비자의 source 검사는 별도로 구현돼 있다. LIA·RETRACE도 고정 변형이고 LIBRA 전용 SDK에는 이 읽기 클라이언트가 없다. 고정 변형의 구형 클라이언트에 `unified_engine`을 요청하면 출처 없는 응답을 GRADIA 소비자가 `LIB_READ_SOURCE_MISMATCH`로 거부한다. GRADIA SDK의 검토된 확장과 실제 owner 공급자 연결은 N03 후속 과제다.
+- LIBRA private owner가 `executeMemoryGraphUnifiedQuery`를 실행하고, 선택 영수증·compiler 원본 검증을 거친 근거 묶음을 발급한다. 인증된 RisuAI plugin channel에서 요청자의 plugin ID를 확인한다. 공개 전역 객체를 읽기 권한으로 쓰지 않는다.
+- GRADIA의 고정 SDK를 검토된 최소 범위로 확장했다. 기존 서버의 readonly principal·route·reset·data identity 검사는 유지한다. 서버 원문은 권한 확인 witness에만 쓰고 통합 검색의 결과로 대신 전달하지 않는다. HAYAKU·Flashback은 기존 읽기를 유지하며 `engine.sourceByOwner`로 구분한다.
+- GUI 자료 화면에서 **LIBRA 검색 → 통합 메모리 검색 → 연결**로 선택한다. 공개 `connectUnifiedLibReadOnly(url)`도 같은 실제 연결 경로다. 새 질문을 질의로 전달하고 한 번 발급한 근거를 SHADOW·AIDE 네 단계가 공유한다. 소스 변경·권한 철회·취소·연결 변경 시 진행 중인 근거와 초안을 폐기한다.
+- `source: unified_engine`, generation, owner corpus digest, 선택 영수증, `queryComplete`, `deliveryOutcome`, `windowRead`, `nextWindow`를 보존한다. 캡처한 bundle의 `complete:true`를 전체 corpus 검색 완료로 해석하지 않는다.
+- 통합 공급자가 없거나 읽기 권한이 없으면 거부한다. 기존 기본 연결의 source는 `server_logical_read`로 유지한다. 기존 고정 SDK를 공통 writer SDK로 교체하지 않았으며 LIA·RETRACE pin도 유지한다.
+- 검증과 상세 계약: [GRADIA 통합 읽기 계약](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). 등록 호스트의 실제 LIBRA·SQLite·GRADIA beforeRequest를 사용한다. 실제 설치 RisuAI 인증(E4), 전체 corpus의 영속 접근(N01), 미전송 인풋 작성기(N04), 기본값 전환(N07)은 닫지 않는다.
 
 다음 엔진 구현은 **N01**부터 시작한다. N00의 runtime 소비자 계약 정리와 N06의 고정 평가 세트 정의는 이에 앞서 또는 함께 진행할 수 있다. 제한된 source window를 전체 기록처럼 취급하는 상태에서 소비자 수만 늘려도 corpus coverage 문제는 해결되지 않는다.
 

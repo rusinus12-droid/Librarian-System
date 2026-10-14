@@ -770,6 +770,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dataIdentityContract:connection.dataIdentityContract, certified:connection.dataIdentityCertified, rejected:false});
   };
   const serverBinding = () => Object.freeze({schema:'memory-suite.client-data-binding.v1', ...dataBinding,
+    resetEpoch: state.bootstrap.value?.resetEpochs?.[namespace] ?? 0,
+    resetEpochCertified: state.bootstrap.value?.resetEpochCertified === true,
     current:!lifecycle.disposed && !dataBinding.rejected && !!dataBinding.url && state.config.url === dataBinding.url});
   const configuredServerUrlNow = async () => normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
   const captureBootstrapIntent = config => ({

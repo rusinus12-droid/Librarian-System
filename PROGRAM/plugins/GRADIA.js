@@ -3272,7 +3272,7 @@
     let session;
     let certifiedSelections = [];
     try {
-      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal,
+      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
         // Snapshot construction is lazy: unbound/plugin-only performs no identity,
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: () => {
@@ -28681,6 +28681,7 @@ function createGradiaEvidenceBudget({ digest }) {
     const stop = (record, reason) => {
       if (!record || record.reason) return;
       record.reason = reason; record.corpus = null; record.evidence = null; record.draft = '';
+      if (record.releaseRead) { const release = record.releaseRead; record.releaseRead = null; void Promise.resolve().then(release).catch(() => {}); }
       record.controller.abort(); record.removeAbort?.();
     };
     const check = record => {
@@ -28735,7 +28736,9 @@ function createGradiaEvidenceBudget({ digest }) {
         if (typeof input.pipelineSnapshot === 'function') input.pipelineSnapshot();
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
-        let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource }));
+        let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
+          ...(readSource === 'unified_engine' ? { queryText: input.queryText } : {}) }));
+        if (typeof read?.close === 'function') record.releaseRead = read.close;
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
         // present unqualified evidence as the unified engine's answer.
@@ -28857,10 +28860,12 @@ function createGradiaEvidenceBudget({ digest }) {
     }
     const maxCorpusBytes = options.maxCorpusBytes === undefined ? 4194304 : options.maxCorpusBytes;
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
+    const readSource = options.readSource === undefined ? 'server_logical_read' : String(options.readSource);
+    if (!['server_logical_read','unified_engine'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
     libReadSelection = null;
-    libReadBinding = Object.freeze({ client, scope: Object.freeze(scope), maxCorpusBytes, generation: ++libReadBindingGeneration });
+    libReadBinding = Object.freeze({ client, scope: Object.freeze(scope), maxCorpusBytes, readSource, generation: ++libReadBindingGeneration });
     return Object.freeze({ status: 'bound', liveConnectionVerified: false, maxCorpusBytes });
   };
   const unbindLibReadOnlyClient = () => {
@@ -28974,6 +28979,9 @@ function createGradiaEvidenceBudget({ digest }) {
     return Object.freeze({scope,scopes:Object.freeze(scopes),unavailable:Object.freeze(unavailable)});
   };
   const createPrivateLibReadBridge = (url, assertLive, readOwners = ['libra']) => {
+    const unifiedProvider = createLibraGradiaUnifiedRead({ role: 'client', check: assertLive,
+      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
+      randomId: () => globalThis.crypto?.randomUUID?.() || Date.now() + ':' + Math.random().toString(36).slice(2) });
     const deny = () => { throw libEvidenceError('LIB_READ_WRITE_FORBIDDEN'); };
     const readonlyStore = store => store?.getItem ? Object.freeze({getItem: key => store.getItem(key), setItem: deny, removeItem: deny}) : null;
     const risuai = Object.freeze({
@@ -29175,6 +29183,7 @@ function createMemorySuiteHostLineage() {
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
   const localOnlyOwner = options.storagePolicy === 'local_only';
+  const unifiedReadAuthorizations = new Map();
   const managerOnly = options.storagePolicy === 'manager_only';
   const managerOnlyError = () => Object.assign(new Error('MEMORY_SUITE_MANAGER_ONLY_POLICY'), {code:'MEMORY_SUITE_MANAGER_ONLY_POLICY'});
   const localOnlyError = () => Object.assign(new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'), {code:'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'});
@@ -35945,6 +35954,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(maxRawBytes!==undefined&&(!Number.isSafeInteger(maxRawBytes)||maxRawBytes<0||maxRawBytes>7*maxCorpusBytes+2097152))reject('LIB_READ_BUDGET_INVALID');
     const checkAbort=()=>{if(readOptions.signal?.aborted)reject('LIB_READ_CANCELED');};
     checkAbort();
+    const source=readOptions.source === undefined ? 'server_logical_read' : String(readOptions.source);
+    if(!['server_logical_read','unified_engine'].includes(source)||source==='unified_engine'&&owner!=='libra')reject('LIB_READ_SOURCE_UNSUPPORTED');
     if (namespace !== 'libra' || pluginId !== 'serial_gradation_agents_for_rp') reject('LIB_READ_PRINCIPAL_REQUIRED');
     const sourceScope={};
     for(const key of ['scopeKey','characterId','chatId']){const value=scopeInput?.[key];if(typeof value!=='string'||!value.trim()||value.length>512||/[\r\n\0]/.test(value))reject('LIB_READ_SCOPE_INVALID');sourceScope[key]=value;}
@@ -36043,7 +36054,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
       return payload.result;
     };
-    const result=await read('capture',{scope:sourceScope,maxCorpusBytes,...(maxRawBytes===undefined?{}:{maxRawBytes})});
+    const provider=options.unifiedReadProvider;
+    if(source==='unified_engine'&&(!provider||typeof provider.capture!=='function'||typeof provider.current!=='function'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+    const authorizationKey=JSON.stringify([sourceScope,connectionWitness,initialRoute,maxCorpusBytes]);
+    let authorizationProof=null;
+    const authorizationCurrent=async(allowRefresh=false)=>{
+      const current=await read('current',authorizationProof);
+      if(current?.current!==true||current.evidenceRevision!==authorizationProof.evidenceRevision
+        ||current.dataInstanceId!==connection.dataInstanceId||current.resetEpoch!==epoch
+        ||JSON.stringify(current.scope)!==JSON.stringify(sourceScope)){
+        if(!allowRefresh)reject('LIB_READ_STALE');
+        unifiedReadAuthorizations.delete(authorizationKey);
+        await openLibraReadSession(sourceScope,{...readOptions,source:'server_logical_read'});
+        authorizationProof=unifiedReadAuthorizations.get(authorizationKey);
+        if(!authorizationProof)reject('LIB_READ_PRINCIPAL_REQUIRED');
+        await authorizationCurrent();
+      }
+    };
+    const sourceRead=source==='unified_engine'?async(action,body)=>{
+      await assertRoute();
+      if(action==='capture'){
+        authorizationProof=unifiedReadAuthorizations.get(authorizationKey)||null;
+        if(!authorizationProof){await openLibraReadSession(sourceScope,{...readOptions,source:'server_logical_read'});authorizationProof=unifiedReadAuthorizations.get(authorizationKey)||null;}
+        if(!authorizationProof)reject('LIB_READ_PRINCIPAL_REQUIRED');
+      }
+      // A new request may obtain a fresh authorization witness. Once selected,
+      // a draft must fail on change rather than refresh its evidence silently.
+      await authorizationCurrent(action==='capture');
+      const result=action==='capture'?await provider.capture({...body,queryText:readOptions.queryText,signal:readOptions.signal,
+        binding:{url:connection.url,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch}})
+        :await provider.current({proof:body,signal:readOptions.signal});
+      try{await assertRoute();await authorizationCurrent();return result;}
+      catch(error){if(action==='capture')await Promise.resolve(provider.release?.(result?.readIdentity?.ownerReceiptId)).catch(()=>{});throw error;}
+    }:read;
+    const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes,...(maxRawBytes===undefined?{}:{maxRawBytes})});
     if(result?.schema!==`memory-suite.${owner}-read-session.v1`||result.readOnly!==true||result.complete!==true
       ||result.dataInstanceId!==connection.dataInstanceId||result.resetEpoch!==epoch
       ||JSON.stringify(result.scope)!==JSON.stringify(sourceScope)||!/^[a-f0-9]{64}$/.test(result.evidenceRevision||'')
@@ -36060,9 +36104,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const proof=freeze({scope:sourceScope,readIdentity:result.readIdentity,dependencies:result.dependencies,
       evidenceRevision:result.evidenceRevision,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch});
     localCurrent();
-    return Object.freeze({snapshot,
+    if(source==='server_logical_read'&&owner==='libra'){
+      if(unifiedReadAuthorizations.size>=8)unifiedReadAuthorizations.delete(unifiedReadAuthorizations.keys().next().value);
+      unifiedReadAuthorizations.set(authorizationKey,freeze(JSON.parse(JSON.stringify(proof))));
+    }
+    return Object.freeze({snapshot,source,
+      ...(source==='unified_engine'?{engine:result.engine,close:()=>Promise.resolve(provider.release?.(result.readIdentity.ownerReceiptId)).catch(()=>{})}:{}),
       assertCurrentSync:()=>{localCurrent();assertConnectionState(connection.url);return true;},
-      assertCurrent:async()=>{const now=await read('current',proof);
+      assertCurrent:async()=>{const now=await sourceRead('current',proof);
         if(now?.schema!==`memory-suite.${owner}-read-session-current.v1`||now.current!==true||JSON.stringify(now.scope)!==JSON.stringify(sourceScope)||now.evidenceRevision!==proof.evidenceRevision
           ||now.dataInstanceId!==connection.dataInstanceId||now.resetEpoch!==epoch)reject('LIB_READ_STALE');localCurrent();return true;}
     });
@@ -36093,6 +36142,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return Object.freeze({schema:'memory-suite.memory-read-client.v1',pluginId,
       openReadSession:async(scopeInput,readOptions={})=>{
         if(JSON.stringify(scopeInput)!==JSON.stringify(anchor))reject('LIB_READ_SCOPE_INVALID');
+        if(!['server_logical_read','unified_engine'].includes(readOptions.source||'server_logical_read'))reject('LIB_READ_SOURCE_UNSUPPORTED');
+        if(readOptions.source==='unified_engine'&&!owners.includes('libra'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
         const maxCorpusBytes=readOptions.maxCorpusBytes===undefined?4194304:readOptions.maxCorpusBytes;
         if(!Number.isSafeInteger(maxCorpusBytes)||maxCorpusBytes<1||maxCorpusBytes>33554432)reject('LIB_READ_BUDGET_INVALID');
         const connection=state.bootstrap.value,auth=connection?.authorization;
@@ -36102,10 +36153,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ||auth.readNamespaces.some(owner=>!allowed.includes(owner))||owners.some(owner=>!auth.readNamespaces.includes(owner))
           ||!Array.isArray(auth.writeNamespaces)||auth.writeNamespaces.length)reject('LIB_READ_PRINCIPAL_REQUIRED');
         const reads=[],items=[],revisions=[];let corpusBytes=0,metadataBytes=0,rawBytes=0,dependencyCount=0;
-        for(const owner of owners){
+        try{for(const owner of owners){
           const remainingCorpus=Math.max(1,maxCorpusBytes-corpusBytes);
           const remainingRaw=Math.min(7*remainingCorpus+2097152,7*maxCorpusBytes+2097152-rawBytes);
-          const read=await openLibraReadSession(scopes[owner],{...readOptions,owner,maxCorpusBytes:remainingCorpus,maxRawBytes:remainingRaw});
+          const read=await openLibraReadSession(scopes[owner],{...readOptions,owner,
+            source:owner==='libra'?readOptions.source:'server_logical_read',maxCorpusBytes:remainingCorpus,maxRawBytes:remainingRaw});
           reads.push(read);const packet=read.snapshot;
           corpusBytes+=packet.corpusBytes;
           if(corpusBytes>maxCorpusBytes)reject('LIB_READ_CORPUS_BUDGET_EXCEEDED');
@@ -36126,7 +36178,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         assertCurrentSync();
         const snapshot=Object.freeze({schema:'memory-suite.memory-read-session.v1',readOnly:true,complete:true,
           scope:anchor,scopes,owners,items:Object.freeze(items),evidenceRevision,corpusBytes,maxCorpusBytes,metadataBytes,rawBytes,dataInstanceId:connection.dataInstanceId});
-        return Object.freeze({snapshot,assertCurrentSync,assertCurrent});
+        return Object.freeze({snapshot,source:readOptions.source||'server_logical_read',
+          ...(readOptions.source==='unified_engine'?{engine:Object.freeze({...reads.find(read=>read.source==='unified_engine')?.engine,
+            sourceByOwner:Object.freeze(Object.fromEntries(owners.map((owner,index)=>[owner,reads[index].source])))})}:{}),
+          close:()=>{for(const read of reads)read.close?.();},assertCurrentSync,assertCurrent});
+        }catch(error){for(const read of reads)read.close?.();throw error;}
       }
     });
   };
@@ -36552,15 +36608,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 };
 /* GRADIA PRIVATE CANONICAL SDK END */
-    return createMemorySuiteStorageBridge({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',pluginVersion:PLUGIN_VERSION,
-      defaultUrl:url,managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false});
+    const bridge = createMemorySuiteStorageBridge({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',pluginVersion:PLUGIN_VERSION,
+      defaultUrl:url,managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,unifiedReadProvider:unifiedProvider});
+    return Object.freeze({...bridge,describeUnifiedRead:()=>unifiedProvider.describe(),dispose:async()=>{await unifiedProvider.dispose();await bridge.dispose();}});
   };
   const LibReadConnection = (() => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
-    let readOwners = ['libra'], unavailable = {};
+    let readOwners = ['libra'], unavailable = {}, readSource = 'server_logical_read';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
-    const status = () => Object.freeze({state,reason,url,explicit,readOwners:Object.freeze([...readOwners]),
+    const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'restricted_g2_profile',model:'gpt-4o-mini-2024-07-18'});
     const refresh = () => {
@@ -36587,7 +36644,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (pendingConsent) {
         const stale = pendingConsent; pendingConsent = null; explicit = false;
         const revokedAt = generation;
-        void persistPreference({schema:'gradia.lib-read-connection.v2',url:stale.url,explicit:false,readOwners:[...readOwners]}).catch(() => {
+        void persistPreference({schema:'gradia.lib-read-connection.v2',url:stale.url,explicit:false,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}).catch(() => {
           if (generation === revokedAt) { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); }
         });
       }
@@ -36602,7 +36659,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // A canceled startup read may never reveal saved consent. Retain that
         // uncertainty until a verified false write, so a failed revoke can retry.
         consentMayBeStored = true;
-        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners]}); }
+        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}); }
         catch (error) { state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); throw error; }
       }
     };
@@ -36629,16 +36686,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         catch (_) { if (epoch === generation) invalidate('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       }, 500);
     };
-    const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS) => {
+    const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'server_logical_read') => {
       if (disposed) return status();
-      invalidate(''); readOwners = [...requestedOwners]; unavailable = {}; state = 'connecting'; refresh();
+      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource); unavailable = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
+        if(!['server_logical_read','unified_engine'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
         const normalized = normalizeLibReadUrl(target);
         // Input is normalized before the operation; an imported setting is never consent.
         if (normalized !== target) throw libEvidenceError('LIB_READ_SERVER_URL_INVALID');
         const resolvedBundle = await resolveLibRegisteredScopes(readOwners), resolved = resolvedBundle.scope; check();
+        if(readSource==='unified_engine'&&!resolvedBundle.scopes.libra)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
         scopeBundle = resolvedBundle; unavailable = {...resolvedBundle.unavailable};
         const next = createPrivateLibReadBridge(target,check,readOwners); bridge = next; scope = resolved;
         watch(epoch);
@@ -36646,13 +36705,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const client = readOwners.length === 1 && readOwners[0] === 'libra' ? next.createLibraReadOnlyClient() : next.createMemoryReadOnlyClient(resolvedBundle.scopes);
         let read = await client.openReadSession(resolved,{maxCorpusBytes:4194304}); check();
         await read.assertCurrent(); read = null; await assertScope(resolved); check();
+        if(readSource==='unified_engine'){const capability=await next.describeUnifiedRead();check();if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');}
         if (!startup) {
           pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners]}); check();
+          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}); check();
           await assertScope(resolved); check();
           pendingConsent = null; explicit = true;
         }
-        bindLibReadOnlyClient(client,{scope:resolved}); state = 'connected'; reason = '';
+        bindLibReadOnlyClient(client,{scope:resolved,readSource}); state = 'connected'; reason = '';
       } catch (error) {
         if (epoch === generation) { invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error'; }
       }
@@ -36666,7 +36726,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         let read = await binding.client.openReadSession(binding.scope,{maxCorpusBytes:binding.maxCorpusBytes});
         await read.assertCurrent(); await assertScope(binding.scope);
         if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
-        corpus = {items:read.snapshot.items.length,bytes:read.snapshot.corpusBytes}; read = null;
+        if(binding.readSource==='unified_engine'){
+          const capability=await bridge.describeUnifiedRead();
+          if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
+          if(disposed||epoch!==generation||binding!==libReadBinding)throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
+          corpus={source:'unified_engine',queried:false};
+        }else corpus = {items:read.snapshot.items.length,bytes:read.snapshot.corpusBytes}; read = null;
       } catch (error) {
         if (epoch === generation) { invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error'; }
       }
@@ -36685,11 +36750,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const savedOwners = saved.schema === 'gradia.lib-read-connection.v1' ? ['libra'] : saved.readOwners;
         if (!Array.isArray(savedOwners) || !savedOwners.length || savedOwners.length > 3
           || new Set(savedOwners).size !== savedOwners.length || savedOwners.some(owner=>!LIB_READ_OWNERS.includes(owner))) return;
-        consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)));
+        consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)),saved.readSource||'server_logical_read');
       } catch (_) { /* First install or unreadable preferences remain disconnected. */ }
       finally { consentReadPending = false; }
     };
-    return Object.freeze({status,setUrl,connect:()=>connect(false),inspect,start,assertScope,
+    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'server_logical_read'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,
       disconnect:()=>forget(),imported:()=>forget('LIB_READ_SETTINGS_IMPORTED'),
       dispose:async()=>{disposed=true;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
@@ -41654,7 +41719,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const name=target.closest('[data-provider-delete]').dataset.providerDelete;
         openGuiDialog({title:`${name} 프리셋 삭제`,description:'연결 중인 단계는 기본 연결로 되돌립니다. 저장 전 변경으로 표시됩니다.',actions:[guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),guiEl('button',{class:'btn btn--danger',text:'삭제',onClick:async()=>{delete Gui.state.providers[name];for(const slot of Object.values(Gui.state.agents||{}))if(slot.presetName===name)slot.presetName='';if(Gui.state.runtime.defaultPresetName===name)Gui.state.runtime.defaultPresetName='';if(Gui.state.runtime.userIntentOocPreset===name)Gui.state.runtime.userIntentOocPreset='';Gui.selectedPreset=Object.keys(Gui.state.providers||{})[0]||'';markGuiDirty();closeGuiDialog();await renderSettingsGui();}})]});return;
       }
-      if (target.closest('#lib-connect')) { LibReadConnection.setUrl(app.querySelector('#lib-url')?.value||''); void LibReadConnection.connect(false,LIB_READ_OWNERS).then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결 상태를 갱신했습니다.');}); return; }
+      if (target.closest('#lib-connect')) { LibReadConnection.setUrl(app.querySelector('#lib-url')?.value||''); void LibReadConnection.connect(app.querySelector('#lib-read-source')?.value||'unified_engine').then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결 상태를 갱신했습니다.');}); return; }
       if (target.closest('#lib-disconnect')) { void LibReadConnection.disconnect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결을 해제했습니다.');}).catch(()=>{mockupRenderSources();guiSetStatus('LIB_READ_PREFERENCE_UNAVAILABLE: 자동 연결 해제를 저장하지 못했습니다. 연결 해제를 다시 눌러 주세요.',true,true);}); return; }
       if (target.closest('#lib-check')) { void LibReadConnection.inspect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 상태를 다시 확인했습니다.');}); return; }
     });
@@ -42035,12 +42100,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mockupRenderSources = (options = {}) => {
     const page=Gui.app?.querySelector('[data-page="sources"]');if(!page||!Gui.state)return;
     const status=LibReadConnection.status();
+    const connectButton=page.querySelector('#lib-connect');
+    if(connectButton&&!page.querySelector('#lib-read-source')){
+      const field=mockupNode('label','field'),label=mockupNode('span','label','LIBRA 검색');
+      const select=document.createElement('select');select.id='lib-read-source';select.className='input';
+      select.setAttribute('aria-label','LIBRA 검색 방식');
+      for(const [value,title] of [['server_logical_read','기존 기억 읽기'],['unified_engine','통합 메모리 검색']]){
+        const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
+      }
+      select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
+    }
+    const readSourceControl=page.querySelector('#lib-read-source');
+    if(readSourceControl&&readSourceControl.dataset.boundSource!==status.readSource){
+      readSourceControl.value=status.readSource;readSourceControl.dataset.boundSource=status.readSource;
+    }
     const url=page.querySelector('#lib-url');if(url){if(!options.preserveUrlDraft)url.value=status.url;url.dataset.savedUrl=status.url;}
     const chip=page.querySelector('#lib-chip');if(chip){chip.className='health '+(status.state==='connected'?'health--ok':'health--warn');const textNode=chip.querySelector('span');if(textNode)textNode.textContent=status.state==='connected'?'읽기 전용 연결됨':'읽기 연결 '+status.state;}
     const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason:'');
     const inspect=page.querySelector('#lib-check');if(inspect)inspect.disabled=status.state!=='connected';
     const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
-    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
+    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
     const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.join(' · ')||'없음';
     const names=page.querySelectorAll('.state-grid > div');
     if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.join(' · ')||'없음')+' · 쓰기 권한 없음'));
@@ -42384,8 +42463,178 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   
 
+  /* LIBRA GRADIA UNIFIED READ START */
+  const createLibraGradiaUnifiedRead = (function createLibraGradiaUnifiedRead(options = {}) {
+  const schema = 'libra.gradia-unified-read.v1';
+  const requestChannel = 'libra_gradia_unified_read_request_v1';
+  const responseChannel = 'libra_gradia_unified_read_response_v1';
+  const ownerId = 'libra', readerId = 'serial_gradation_agents_for_rp';
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const bytes = value => new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value)).length;
+  const api = () => typeof options.api === 'function' ? options.api() : options.api;
+  const now = options.now || Date.now;
+  let disposed = false, started = false, serial = 0;
+  const pending = new Map(), receipts = new Map(), operations = new Map(), issued = new Set();
+  const requestLimit = 65536, ttl = 600000;
+  const check = signal => { if (disposed || signal?.aborted) fail('LIB_READ_CANCELED'); options.check?.(); };
+  const prune = () => {
+    for (const [id, record] of receipts) if (!record.active || record.expires <= now()) { record.active = false; receipts.delete(id); }
+    for (const [id, record] of operations) if (!record.active || record.expires <= now()) operations.delete(id);
+  };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const assertRecord = record => { check(); if (!record?.active || record.expires <= now()) fail('LIB_READ_STALE'); };
+  const validate = async record => {
+    assertRecord(record);
+    if (!same(await options.boundary(record.request), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    assertRecord(record);
+    if (record.execution && await options.verify(record.execution) !== true) fail('LIB_READ_STALE');
+    assertRecord(record);
+    if (!same(await options.boundary(record.request), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    assertRecord(record);
+  };
+  const serve = async (action, payload = {}) => {
+    check(); prune();
+    if (bytes(payload) > requestLimit) fail('LIB_READ_BUDGET_EXCEEDED');
+    if (action === 'describe') return { schema, source: 'unified_engine', readOnly: true };
+    if (action === 'release') {
+      const record = receipts.get(payload.receiptId) || operations.get(payload.operationId)
+        || [...receipts.values()].find(row => row.operationId === payload.operationId);
+      if (record) { record.active = false; receipts.delete(record.id); operations.delete(record.operationId); }
+      return { released: true };
+    }
+    if (action === 'current') {
+      const proof = payload.proof;
+      const record = receipts.get(proof?.readIdentity?.ownerReceiptId);
+      if (!record || !same(proof, record.proof)) fail('LIB_READ_STALE');
+      await validate(record);
+      return { schema: 'memory-suite.libra-read-session-current.v1', current: true,
+        scope: record.request.scope, evidenceRevision: record.proof.evidenceRevision,
+        dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
+    }
+    if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
+    if (typeof payload.operationId !== 'string' || !payload.operationId || payload.operationId.length > 160
+      || typeof payload.queryText !== 'string' || !payload.queryText.trim() || bytes(payload.queryText) > 16384
+      || !Number.isSafeInteger(payload.maxCorpusBytes) || payload.maxCorpusBytes < 512 || payload.maxCorpusBytes > 33554432
+      || payload.maxRawBytes !== undefined && (!Number.isSafeInteger(payload.maxRawBytes) || payload.maxRawBytes < 0
+        || payload.maxRawBytes > 7 * payload.maxCorpusBytes + 2097152)) fail('LIB_READ_BUDGET_INVALID');
+    if (operations.has(payload.operationId) || receipts.size + operations.size >= 32) fail('LIB_READ_SESSION_LIMIT');
+    const record = { id: options.randomId(), operationId: payload.operationId, request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
+    operations.set(record.operationId, record);
+    try {
+      record.boundary = await options.boundary(record.request); assertRecord(record);
+      const authority = {
+        bindGraph(graph) {
+          assertRecord(record);
+          const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
+            nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
+            bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+          record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
+          return record.receipt;
+        },
+        verifyReceipt(receipt) { assertRecord(record); return !!record.receipt && same(record.receipt, receipt); }
+      };
+      record.execution = await options.query(record.request, authority); await validate(record);
+      const execution = record.execution, content = execution.packet.renderedText;
+      if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
+      const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+        queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,
+        windowRead: execution.windowRead, nextWindow: execution.nextWindow,
+        ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
+      const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
+      const corpusBytes = bytes(content);
+      const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
+      const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
+        resetEpoch: record.boundary.resetEpoch, ownerReceiptId: record.id };
+      const evidenceRevision = options.fingerprint(JSON.stringify([record.id, record.receipt, execution.packet.packetDigest, readIdentity]));
+      record.proof = { scope: record.request.scope, readIdentity, dependencies: [], evidenceRevision,
+        dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
+      // Account for JSON escaping, duplicated engine metadata and proof bytes.
+      // The fixed allowance covers the remaining response envelope, not host heap.
+      const rawBytes = bytes({ items, engine, ...record.proof }) + 1024;
+      if (corpusBytes > payload.maxCorpusBytes || metadataBytes > 65536 || payload.maxRawBytes !== undefined && rawBytes > payload.maxRawBytes) fail('LIB_READ_CORPUS_BUDGET_EXCEEDED');
+      receipts.set(record.id, record); operations.delete(record.operationId);
+      return { schema: 'memory-suite.libra-read-session.v1', readOnly: true, complete: true,
+        ...record.proof, items, engine, corpusBytes, metadataBytes, rawBytes, maxCorpusBytes: payload.maxCorpusBytes,
+        ...(payload.maxRawBytes === undefined ? {} : { maxRawBytes: payload.maxRawBytes }) };
+    } catch (error) { record.active = false; operations.delete(record.operationId); receipts.delete(record.id); throw error; }
+  };
+  const listener = async (message, metadata = {}) => {
+    if (disposed || message?.schema !== schema || typeof message.requestId !== 'string') return;
+    if (options.role === 'owner') {
+      if (metadata.sender !== readerId || message.kind !== 'request') return;
+      let reply;
+      try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
+      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE' }; }
+      if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
+    } else {
+      if (metadata.sender !== ownerId || message.kind !== 'response') return;
+      const record = pending.get(message.requestId); if (!record) return;
+      pending.delete(message.requestId); record.finish();
+      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE' }));
+    }
+  };
+  let starting = null;
+  const start = async () => {
+    check(); if (started) return true;
+    if (!starting) starting = (async () => {
+      const host = api();
+      if (typeof host?.addPluginChannelListener !== 'function' || typeof host?.postPluginChannelMessage !== 'function') fail('LIB_READ_UNIFIED_UNAVAILABLE');
+      const result = await host.addPluginChannelListener(options.role === 'owner' ? requestChannel : responseChannel, listener);
+      check(); if (result === false) fail('LIB_READ_UNIFIED_UNAVAILABLE'); started = true; return true;
+    })().finally(() => { starting = null; });
+    return await starting;
+  };
+  const request = async (action, payload, signal) => {
+    check(signal); await start(); check(signal);
+    if (bytes(payload) > requestLimit) fail('LIB_READ_BUDGET_EXCEEDED');
+    const requestId = (options.randomId ? options.randomId() : String(now()) + ':' + (++serial)) + ':' + (++serial);
+    return await new Promise((resolve, reject) => {
+      const finish = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); };
+      const abort = () => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); };
+      const timer = setTimeout(() => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' }));
+        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); }, options.timeoutMs || 10000);
+      pending.set(requestId, { resolve, reject, finish }); signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) { abort(); return; }
+      Promise.resolve(api().postPluginChannelMessage(ownerId, requestChannel, { schema, kind: 'request', requestId, action, payload }))
+        .catch(() => { if (pending.delete(requestId)) { finish(); reject(Object.assign(new Error('LIB_READ_UNIFIED_UNAVAILABLE'), { code: 'LIB_READ_UNIFIED_UNAVAILABLE' })); } });
+    });
+  };
+  return Object.freeze({ start,
+    describe: () => request('describe', {}),
+    capture: async input => {
+      const result = await request('capture', { ...input, signal: undefined,
+        operationId: input.operationId || String(now()) + ':' + (++serial) }, input.signal);
+      if (result?.readIdentity?.ownerReceiptId) issued.add(result.readIdentity.ownerReceiptId);
+      return result;
+    },
+    current: input => request('current', { proof: input.proof }, input.signal),
+    release: async receiptId => { issued.delete(receiptId); return await request('release', { receiptId }); },
+    async dispose() {
+      // Revoke issued owner selections before removing the response listener.
+      // Dispatch is best effort: disconnection must not wait for a peer timeout.
+      if (options.role !== 'owner' && started) for (const receiptId of issued) {
+        try { Promise.resolve(api().postPluginChannelMessage(ownerId, requestChannel, { schema, kind: 'request',
+          requestId: 'dispose:' + (++serial), action: 'release', payload: { receiptId } })).catch(() => {}); } catch (_) {}
+      }
+      issued.clear();
+      disposed = true;
+      for (const record of receipts.values()) record.active = false;
+      for (const record of operations.values()) record.active = false;
+      receipts.clear(); operations.clear();
+      for (const record of pending.values()) { record.finish(); record.reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' })); }
+      pending.clear();
+      if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener);
+      started = false;
+    }
+  });
+});
+  /* LIBRA GRADIA UNIFIED READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
+    async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
     getLibReadOnlyStatus: () => Object.freeze({ connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {
       const context = await resolveCurrentNativeContext();
