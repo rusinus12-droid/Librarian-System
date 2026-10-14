@@ -19,6 +19,8 @@ const createMemoryGraphIdentity = resolveTool('libra_memory_graph_identity.cjs')
 const createMemoryGraphPages = resolveTool('libra_memory_graph_pages.cjs');
 const createMemoryGraphReaders = resolveTool('libra_memory_graph_readers.cjs');
 const createMemoryGraphIndex = resolveTool('libra_memory_graph_index.cjs');
+const createMemoryGraphLane = resolveTool('libra_memory_graph_lane.cjs');
+const createMemoryGraphStore = resolveTool('libra_memory_graph_store.cjs');
 
 const sha256 = text => crypto.createHash('sha256').update(String(text)).digest('hex');
 
@@ -246,7 +248,7 @@ test('Defect 3 fix: empty array [] in State field uses state_field kind with ite
   assert.deepEqual(emptyTagUnit.value, []);
 });
 
-test('Priority 2 (UM2 Common Access Index): compiles Node/Source directory, directional Typed Adjacency, and 4-channel Postings with byte-bounded paging', () => {
+test('Priority 2 (UM2 Common Access Index & Reverse Dependencies): compiles directory, directional Typed Adjacency, 4-channel Postings, and delta impact', () => {
   const identity = createMemoryGraphIdentity({ fingerprint: sha256 });
   const pages = createMemoryGraphPages({ fingerprint: sha256 });
   const readers = createMemoryGraphReaders({ identity, digestClaim: c => sha256(JSON.stringify(c)) });
@@ -261,17 +263,25 @@ test('Priority 2 (UM2 Common Access Index): compiles Node/Source directory, dire
   assert.equal(compiled.stats.directoryCount, graph.nodes.length);
   assert.equal(compiled.stats.adjacencyCount, graph.edges.length * 2);
   assert.ok(compiled.stats.postingCount > 0);
-  assert.ok(compiled.stats.lexicalTermCount > 0);
-  assert.ok(compiled.stats.entityKeyCount > 0);
-  assert.ok(compiled.stats.predicateKeyCount > 0);
+  assert.ok(compiled.stats.reverseDependencyCount > 0);
+  assert.ok(compiled.stats.maxOutDegree >= 1);
 
   const outSubjectPage = index.queryPage(compiled, { table: 'adjacency', direction: 'out', predicate: 'subject_of', pageBytes: 4096 });
   assert.ok(outSubjectPage.items.length >= 2);
-  assert.ok(outSubjectPage.items.every(row => row.direction === 'out' && row.predicate === 'subject_of'));
+  assert.ok(outSubjectPage.items.every(row => row.direction === 'out' && row.predicate === 'subject_of' && row.structural === true));
 
   const lexicalPage = index.queryPage(compiled, { table: 'postings', channel: 'lexical', term: 'silver', pageBytes: 4096 });
   assert.equal(lexicalPage.items.length, 3);
   assert.ok(lexicalPage.items.every(row => row.df === 3 && row.tf >= 1));
+
+  const canonicalSource = graph.nodes.find(n => n.layer === 'source');
+  const impact = index.affectedByChanges(compiled, [`source:${canonicalSource.id}`, 'field:character:heldItemRef', 'unknown:key']);
+  assert.equal(impact.schema, 'libra.memory_graph_delta_impact.v1');
+  assert.ok(impact.affectedNodeIds.length >= 2);
+  assert.ok(impact.affectedEdgeIds.length >= 1);
+  assert.ok(impact.affectedPostingKeys.includes('predicate:heldItemRef'));
+  assert.deepEqual(impact.unmatchedKeys, ['unknown:key']);
+  assert.equal(impact.requiresDegreeRefresh, true);
 
   const tooSmallPage = index.queryPage(compiled, { table: 'adjacency', offset: 0, pageBytes: 512 });
   assert.equal(tooSmallPage.stopReason, 'row_exceeds_page');
@@ -287,6 +297,91 @@ test('Priority 2 (UM2 Common Access Index): compiles Node/Source directory, dire
     offset = page.nextOffset;
   }
   assert.equal(walked.length, compiled.adjacency.length);
+});
+
+test('Priority 2 (UM2 Memory Lane Scheduler): coalesces duplicate requests, prioritizes roles/structural edges, and reports unread cursors on budget stop', () => {
+  const identity = createMemoryGraphIdentity({ fingerprint: sha256 });
+  const pages = createMemoryGraphPages({ fingerprint: sha256 });
+  const readers = createMemoryGraphReaders({ identity, digestClaim: c => sha256(JSON.stringify(c)) });
+  const index = createMemoryGraphIndex({ pages, fingerprint: sha256 });
+  const lane = createMemoryGraphLane({ index, pages });
+
+  const graph = readers.project(makeSampleSnapshot(), { nodeLimit: 2048 });
+  const partition = JSON.stringify({ owner: baseFrame.owner, scopeKey: baseFrame.scopeKey, viewer: baseFrame.view.viewerId });
+  const generation = pages.generation(graph, { partition, restoreEpoch: 0, view: baseFrame });
+  const compiled = index.compile(graph, { partition, generation });
+
+  const session = lane.createSession(compiled, { maxPages: 10, maxBytes: 32768, pageBytes: 1024 });
+  session.enqueue({ laneRole: 'context_expansion', table: 'directory', requesterId: 'req-ctx' });
+  const firstAnchor = session.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'lexical', term: 'silver', requesterId: 'req-1' });
+  const duplicateAnchor = session.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'lexical', term: 'silver', requesterId: 'req-2' });
+  assert.equal(firstAnchor.coalesced, false);
+  assert.equal(duplicateAnchor.coalesced, true);
+
+  const result = session.drain();
+  assert.equal(result.complete, true);
+  assert.equal(result.coalescedRequests, 1);
+  assert.equal(result.corpusExclusionAuthority, false);
+  assert.equal(result.familyTopKQuota, false);
+  assert.equal(result.accesses[0].table, 'postings');
+  assert.deepEqual(result.accesses[0].requesters, ['req-1', 'req-2']);
+
+  const tightSession = lane.createSession(compiled, { maxPages: 1, maxBytes: 32768, pageBytes: 1024 });
+  tightSession.enqueue({ laneRole: 'graph_neighborhood', table: 'adjacency', structuralOnly: true });
+  const partialResult = tightSession.drain();
+  assert.equal(partialResult.complete, false);
+  assert.equal(partialResult.stopReason, 'page_count_budget');
+  assert.equal(partialResult.pagesRead, 1);
+  assert.ok(partialResult.unreadCursors.length >= 1);
+});
+
+test('Priority 2 (UM2 Store Maintenance GC): retains active root manifest and pages while deleting only orphaned/superseded keys', async () => {
+  const pages = createMemoryGraphPages({ fingerprint: sha256 });
+  const store = createMemoryGraphStore({ pages, fingerprint: sha256 });
+  const values = new Map([['source-1', 'v1']]);
+  const graph = {
+    schema: 'libra.memory_graph_projection.v1',
+    scopeKey: 'scope-alpha',
+    readerFrame: baseFrame,
+    coverage: { inventory: { inventoryComplete: false } },
+    nodes: [{ id: 'n1', bindingId: 'b1' }],
+    edges: [{ id: 'e1', bindingId: 'be1' }],
+    bases: [{ id: 'ba1', bindingId: 'bba1' }],
+    units: [{ nodeId: 'n1', family: 'canonical', text: 'active unit' }]
+  };
+  const owner = {
+    publication: 'test_runtime_ordered_partial',
+    check() {},
+    async read(key) { return values.get(key) ?? null; },
+    async putImmutable(key, raw) { values.set(key, raw); },
+    async capture(keys) { return keys.map(key => ({ key, raw: values.get(key) ?? null })); },
+    async assertCaptured(pin) { for (const item of pin) if ((values.get(item.key) ?? null) !== item.raw) throw new Error('source_pin_changed'); },
+    async commitRoot({ key, raw }) { values.set(key, raw); },
+    async listKeys(prefix) { return [...values.keys()].filter(k => k.startsWith(prefix)); },
+    async deleteStale(key) { values.delete(key); }
+  };
+  const sourceOptions = { canonicalCursor: '', microCursor: '', limit: 20, nodeLimit: 2048 };
+  await store.build({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pageBytes: 1024, jobToken: 'job-1' });
+
+  const prefix = 'libra:v1:scope:scope-alpha:memory-graph:v1:';
+  const orphanPageKey = prefix + 'page:units:' + '0'.repeat(64);
+  const orphanGenKey = prefix + 'generation:' + 'f'.repeat(64);
+  values.set(orphanPageKey, JSON.stringify({ orphan: true }));
+  values.set(orphanGenKey, JSON.stringify({ orphan: true }));
+
+  const dry = await store.collectGarbage({ owner, scopeKey: 'scope-alpha', dryRun: true });
+  assert.equal(dry.dryRun, true);
+  assert.deepEqual(dry.candidateKeys, [orphanGenKey, orphanPageKey]);
+  assert.equal(dry.deletedKeys.length, 0);
+  assert.equal(values.has(orphanPageKey), true);
+
+  const swept = await store.collectGarbage({ owner, scopeKey: 'scope-alpha', dryRun: false });
+  assert.deepEqual(swept.deletedKeys, [orphanGenKey, orphanPageKey]);
+  assert.equal(values.has(orphanPageKey), false);
+  assert.equal(values.has(orphanGenKey), false);
+
+  const verified = await store.read({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pool: 'units' });
+  assert.equal(verified.status, 'verified');
 });
 
 (async () => {
