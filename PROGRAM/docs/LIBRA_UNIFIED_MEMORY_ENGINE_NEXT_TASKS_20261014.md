@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 문서 버전: 1.3
+- 작성일: 2026-10-14 · 문서 버전: 1.4
 - 최초 코드·호출 경로 확인 기준: `codex/libra-memory-network-20261013`, [`3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db`](https://github.com/rusinus12-droid/Librarian-System/commit/3e589ddcdb9fa10e7d22f1f38e8d61cd4025f4db)
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [native semantic 계약](LIBRA_UM3_NATIVE_SEMANTIC_CONTRACT.md), [제품 역할·퇴역 계약](PLUGIN-ROLE-AND-STORAGE-DESIGN-20261007.md)
-- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 기록의 영속 접근, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
+- 판정: **정본 저장 벡터와 질의 임베딩은 하나의 scorer/frontier에 연결됐다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. 인풋 작성기의 별도 미전송 제안 세션도 제한 범위에서 연결했다. 전체 구간 공통 index의 저장·검색 재사용까지 연결했다. 선택적 영속 접근·증분 검증, 실제 품질·성능 인증과 기본값 전환은 미완료다.**
 
 이 문서는 소비자 호출 경로 재검토를 반영한 현재 작업 계획이다. 이전 설계·현황 문서에서 LIBRA의 Planner·SGA·Input Writer를 활성 연결 대상으로 적은 부분을 정정한다. 과제 정의는 구현 완료나 배포 자격을 부여하지 않는다.
 
@@ -45,7 +45,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 | ID | 우선순위·현재 상태 | 과제 | 기존 현황 항목 | 선행 조건 |
 | --- | --- | --- | --- | --- |
 | N00 | P0 · 문서 정정 완료, runtime 계약 정리 남음 | 활성 소비자와 호환 포맷 분리 | M09/M15 | 현재 퇴역 계약 확인 |
-| N01 | P1 · 부분 구현 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
+| N01 | P1 · 전체 구간 영속 index 연결, 선택적 접근 미완 | 전체 기록의 영속 인덱스·캐시·Memory Lane | M02–M05 | 원본별 inventory/coverage 계약 |
 | N02 | P1 · 정본 global 접근만 연결 | 자료별 representation 생산·접근 | M06–M08 | 표현 계약, 전체 접근 완료에는 N01 |
 | N03 | P1 · 제한 범위 통합 읽기 연결 | GRADIA 셰도우·AIDE의 통합 엔진 읽기 | M09/M10 | N00, owner read-session 계약; 전체 접근에는 N01 |
 | N04 | P1 · 미전송 제안 읽기 제한 연결 | GRADIA 인풋 작성기의 통합 엔진 읽기 | M09/M10/M15 | 미전송 입력 계약, N03의 공통 reader |
@@ -66,7 +66,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 ## 3. N00 — 활성 소비자와 호환 포맷
 
-현재 활성 소비자 구조는 **LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기**다. 인풋 작성기의 메모리 읽기는 목표이며 아직 현재 기능이 아니다.
+현재 활성 소비자 구조는 **LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기**다. 인풋 작성기의 메모리 읽기도 별도 미전송 제안 계약으로 제한 연결했다. LIBRA의 퇴역 기능을 다시 연결 대상으로 분류하지 않는다.
 
 - 제품 발송용 consumer policy와 순수 커널의 구형 packet formatter를 구분한다. 구형 이름이 들어간 formatter 검사 통과를 실제 소비자 연결 완료로 보고하지 않는다.
 - native facade·public API·설정·GUI·백업 가져오기에서 퇴역 기능을 다시 실행시키는 통로가 없는지 확인한다. 호환 포맷을 보존할 경우 용도·범위와 발송 권한을 명시한다.
@@ -121,6 +121,8 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - **검증 공백 (닫지 못한 것)**: 이 카드의 **렌더된 DOM 검증은 하지 못했다**. 다른 GUI 스위트가 쓰는 jsdom 하네스는 이 진단 섹션에 도달하지 못하며(옆의 기존 카드 `마지막 실행 상태`도 같은 하네스에서 렌더되지 않는다), 어떤 클릭 경로로도 그 화면이 만들어지지 않았다. 따라서 현재 검증은 ① DTO 동작(absent/partial/complete·미독·채택·무권한) ② 카드가 그 DTO를 읽어 훅과 각 줄을 만든다는 소스 수준 확인까지다. 실제 렌더 증명에는 이 섹션을 여는 별도 하네스가 필요하다.
 
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
+
+**N01 최신 증분:** `buildMemoryGraphCorpus()`가 전체 owner 구간을 열거해 하나의 index를 게시하고, Classic/GRADIA의 unified query가 저장 표를 재사용한다. 검색 중 index.compile은 실행하지 않으며, 원본 변경·오염·예산 중단에 대한 검증을 추가했다. 기존 수동 nextWindow 조회와 구분한다. **N01 전체 완료는 아니다:** native 전체 재투영, index 표 전체 hydration, 증분 검증·선택적 durable page 접근·총 메모리/I/O admission은 남는다. 상세 범위·기본 상한·재현은 [전체 구간 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)을 따른다. 위의 이전 증분 기록을 이 종료 조건이 닫혔다는 뜻으로 읽지 않는다.
 
 ## 5. N02 — 자료별 semantic 표현
 

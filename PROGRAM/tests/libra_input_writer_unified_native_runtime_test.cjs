@@ -2,11 +2,15 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/gradia_input_writer_unified_fixture.cjs');
 test('actual LIBRA kernel and SQLite feed the explicit writer; canonical replacement forbids its next handoff',async t=>{
- const f=await fixture(t,{native:true}),owner=f.nativeHost,rows=owner.server.storedRows(),calls=owner.f.control.calls.length;
+ const f=await fixture(t,{native:true}),owner=f.nativeHost;
+ await owner.f.r.api.buildMemoryGraphCorpus({limit:2});
+ const rows=owner.server.storedRows(),calls=owner.f.control.calls.length;
  let {pending}=await f.start('민아와 준호, 은빛 열쇠의 현재 보관 상황을 참고해 다음 입력을 제안해 줘.');
  await f.select();assert.equal(await f.done(pending,'복사 후 직접 전송'),true);
  assert.equal(f.copied.length,1);assert.ok(JSON.stringify(f.prompts[0]).includes('owner_issued_evidence_bundle'));
  const capture=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
+ const result=f.bus.messages.find(m=>m.body.result?.engine?.corpusRead)?.body.result;
+ assert.equal(result.engine.corpusRead.mode,'durable_common_index');assert.equal(result.engine.corpusRead.indexBuildsDuringQuery,0);
  assert.equal(capture.proposal.purpose,'input_writer_proposal');assert.equal(capture.proposal.factAdopted,false);
  assert.equal(owner.f.control.calls.length,calls);assert.deepEqual(owner.server.storedRows(),rows,'writer reading must not mutate memory');
  ({pending}=await f.start('은빛 열쇠를 다시 찾는 미전송 입력을 제안해 줘.'));await f.select();

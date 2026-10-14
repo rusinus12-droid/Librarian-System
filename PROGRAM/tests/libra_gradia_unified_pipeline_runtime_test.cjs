@@ -9,6 +9,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  t.after(async()=>{for(const fn of unload.reverse())await fn();await x.cleanup();});
  const f=x.f,chat=f.chat,character=f.character;
  chat.message.push({role:'user',chatId:'t7-u',data:'민아 은빛 열쇠의 현재 보관자는?'});chat.messages=chat.message;
+ await f.r.api.buildMemoryGraphCorpus({limit:2});
  const sdkFetch=async(url,init)=>{
    if(url.startsWith(x.server.url+'/'))return await fetch(url,init);
    const body=JSON.parse(init.body);prompts.push(body);await onModel?.(prompts.length);
@@ -38,6 +39,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  assert.ok(prompts.every(body=>JSON.stringify(body).includes(QUOTE)), 'real owner Micro evidence must reach each stage');
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(bus.messages.filter(row=>row.body.action==='capture').length,1);
+ assert.equal(bus.messages.find(row=>row.body.result?.engine?.corpusRead)?.body.result.engine.corpusRead.mode,'durable_common_index');
  assert.ok(bus.messages.some(row=>row.body.action==='current'));
  assert.equal(f.control.calls.length,calls);assert.deepEqual(x.server.storedRows(),before,'reading must not write owner memory');
  assert.ok(!JSON.stringify([...g.store]).includes('owner_issued_evidence_bundle'));

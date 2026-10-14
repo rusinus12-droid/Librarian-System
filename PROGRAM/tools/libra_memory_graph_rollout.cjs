@@ -96,6 +96,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     consumerPolicy = {},
     laneBudget = {},
     semanticAccessComplete = true,
+    preparedIndex = null,
     ownerVerifier = null
   } = {}) => {
     const sealed = sealToken && sealedRequests.get(sealToken);
@@ -118,7 +119,9 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       restoreEpoch: sealed.restoreEpoch,
       view: graph.readerFrame
     });
-    const compiledIndex = index.compile(graph, { partition, generation });
+    if (preparedIndex && !index.isCompatible(preparedIndex, { partition, generation })) fail('prepared_index_invalid');
+    let indexCompilations = 0;
+    const compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation }); })();
     const queryFrame = query.sealQueryFrame({
       ...queryInput,
       owner: sealed.owner,
@@ -181,7 +184,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       accessTrace: queryResult.accessTrace || null,
-      diagnostics: queryResult.diagnostics,
+      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations } },
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,

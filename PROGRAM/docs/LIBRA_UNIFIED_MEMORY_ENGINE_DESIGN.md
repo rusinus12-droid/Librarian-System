@@ -1,6 +1,6 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.12 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
+- 문서 버전: 1.13 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
 - 상태: **통합 엔진 미완성. 명시적 unified의 실제 Classic beforeRequest 전달·주입 직전 private 원본 검증을 등록 API 합성 호스트에서 연결했다. 실제 임베딩 adapter·저장 정본 벡터·질의 캐시를 단일 frontier에 연결했다. GRADIA 셰도우·AIDE의 명시적 통합 읽기도 제한 범위에서 연결했다. GRADIA 인풋 작성기도 별도 미전송 제안 계약으로 제한 연결했다. 전체 corpus durable 접근, 설치 호스트·품질/규모 검증과 legacy 전환은 남아 있다.**
 - 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 현재 범위와 검증은 [현황 §12–17](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
@@ -118,6 +118,12 @@ UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `So
 - **UM5–UM6 전환 커널**: mode seal·shadow 비교·base-request 결과·legacy fence helper와 V05 helper를 추가했다. 실제 beforeRequest/recall의 모드 선택과 legacy 실행 지점에는 연결되지 않았다. V05는 존재하지 않는 점수/digest 필드를 비교하고 실제 cache hit/LRU·독립 restart를 실행하지 않아 완료 증거로 사용할 수 없다.
 
 **기존 조사 기록(§14–15 이전):** `D01`–`D08`의 커널·경계 결함 8건은 수리되어 순수/합성 호스트 회귀 스위트(E1/E2)와 등록 공개 API(`executeMemoryGraphUnifiedQuery`)에서 검증됐다. 다만 일반 회상(`beforeRequest`/`LibraMemoryCore.recall`)과 전체 소비자 어댑터·실제 임베딩/durable shard 전환(`M01`–`M15`)은 아직 기존 검색기를 사용한다. [현황·미완료 작업](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 E0–E4, D01–D08(해결), M01–M15, G1–G6를 현재 상태로 사용하고 [코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)의 재현 근거를 따른다. 엔진 자체의 미완료와 실제 설치 호스트/원본 revision API 한계를 분리한다.
+
+### 2.8 v1.13 — 전체 구간 인덱스의 실제 검색 연결
+
+`buildMemoryGraphCorpus()`가 정본/Micro owner cursor를 순회하고 State·로어북·대상·관계를 하나의 그래프로 통합해 공통 index 표를 불변 page로 게시한다. unified query는 현재 frame의 게시 인덱스를 복원해 기존 단일 scorer/frontier/Lane/Compiler에서 사용한다. Classic과 별도 GRADIA SHADOW/AIDE·인풋 작성기가 같은 경로를 사용하며, 임베딩은 기존 정본 source-access 표현을 유지한다. GUI의 명시적 구축/취소와 `corpusRead` 진단을 연결했다.
+
+이는 N01의 실제 전체 구간 검색·저장 표 재사용 증분이다. 모든 원본 구간의 native 재투영과 표 전체 hydration, 대규모 선택적 shard 접근·증분 원본 검증·전체 자원 계상은 남아 있다. 여러 SDK readset과 root CAS는 전체 owner 원자성이 아니다. 기본값 `legacy`와 실제 설치/품질 gate를 유지한다. 최신 제한·상한·수용 근거는 [전체 구간 공통 인덱스 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)과 [현황 §18](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md#18-전체-구간-공통-인덱스의-구축과-검색-연결)을 따른다. 앞의 v1.3–v1.7 설명은 당시 구현 기록이다.
 
 ## 3. 전체 아키텍처
 

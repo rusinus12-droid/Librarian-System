@@ -893,6 +893,9 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       'node_work_budget',
       'micro_pages_unread',
       'canonical_pages_unread',
+      'canonical_readback_unavailable',
+      'typed_schema_unavailable',
+      'inherited_micro_projection_not_yet_supported',
       'lore_pages_unread',
       'reader_unavailable',
       'state_view_unavailable',
@@ -923,6 +926,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       .map(([cursorKey, cursor]) => ({ cursorKey, cursor }));
     const explicitIncompleteWithoutReasons = graph.coverage?.projectionComplete === false && familyNotes.length === 0;
     const sourceCoverageComplete = familyTruncations.length === 0
+      && !(graph.coverage?.sourceReadFailures?.length > 0)
       && unreadInventoryCursors.length === 0
       && !explicitIncompleteWithoutReasons && !view.historicalCanonicalUnavailable;
     const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
@@ -950,6 +954,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         inventoryComplete: Boolean(graph.coverage?.inventory?.inventoryComplete),
         familyIncompleteReasons: familyTruncations,
         familyNotes,
+        sourceReadFailures: graph.coverage?.sourceReadFailures || [],
         unreadInventoryCursors,
         historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
       },
@@ -1001,6 +1006,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         coverage: Object.freeze({
           complete, sourceCoverageComplete, traversalComplete, stopReason,
           familyNotes, unreadInventoryCursors,
+          sourceReadFailures: graph.coverage?.sourceReadFailures || [],
           historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
         })
       }),

@@ -330,6 +330,9 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
     for (const reason of array(index.status?.reasons)) if (index.status?.partial) note('lore', reason);
     return { schema: 'libra.memory_graph_projection.v1', nodes: [...nodes.values()], edges: [...edges.values()], bases: [...bases.values()], units,
       coverage: { scope: 'owner_reader_page', inventory: clone(snapshot.inventory || {}), identity: 'revision_bound', families,
+        sourceReadFailures: Object.entries(object(snapshot.pending)).flatMap(([family, reasons]) => [...new Set(array(reasons))]
+          .filter(reason => !['canonical_pages_unread','micro_pages_unread'].includes(reason))
+          .map(reason => ({ family, reason: string(reason) || 'reader_unavailable' }))),
         projectionComplete: Object.values(families).every(family => !family.reasons.length) },
       authority: 'descriptive_only', modelDispatchEligible: false, byteBounded: false, providerCalls: 0, documentEmbeddingCalls: 0,
       runtimeIntegrated: 'owner_reader_projection_only' };

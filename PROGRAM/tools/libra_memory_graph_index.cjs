@@ -9,6 +9,8 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   }
   const schema = 'libra.memory_graph_index.v1';
   const tokenizerVersion = 'libra.tokenizer.nfkc_v1';
+  const issued = new WeakSet();
+  const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
     'updates', 'clears', 'supersedes', 'follows', 'fulfills', 'reopens',
@@ -286,7 +288,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       maxInDegree
     };
     const indexDigest = hash(JSON.stringify([schema, tokenizerVersion, dfScope, partition, generation, stats, tableDigests]));
-    return Object.freeze({
+    return issue({
       schema,
       projectionSchema: graph.schema,
       tokenizerVersion,
@@ -460,5 +462,26 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     };
   };
 
-  return Object.freeze({ compile, affectedByChanges, queryPage });
+  // Durable tables remain relevance data. The owner must independently read the
+  // native graph and establish its generation before restoring these tables.
+  const restore = (record, { partition, generation } = {}) => {
+    if (!record || record.schema !== schema || record.partition !== partition || record.generation !== generation
+      || record.projectionSchema !== 'libra.memory_graph_projection.v1' || record.tokenizerVersion !== tokenizerVersion
+      || !['window_exact', 'corpus_complete'].includes(record.dfScope)) fail('restore_binding_invalid');
+    const tableDigests = {};
+    for (const table of ['directory', 'adjacency', 'postings', 'reverseDependencies']) {
+      if (!Array.isArray(record[table])) fail('restore_table_invalid');
+      tableDigests[table + 'Digest'] = hash(JSON.stringify(record[table]));
+      if (tableDigests[table + 'Digest'] !== record.tableDigests?.[table + 'Digest']) fail('restore_digest_invalid');
+    }
+    const expected = hash(JSON.stringify([schema, tokenizerVersion, record.dfScope, partition, generation, record.stats, tableDigests]));
+    if (expected !== record.indexDigest) fail('restore_digest_invalid');
+    for (const [table, stat] of [['directory','directoryCount'], ['adjacency','adjacencyCount'], ['postings','postingCount'], ['reverseDependencies','reverseDependencyCount']]) {
+      if (record.stats?.[stat] !== record[table].length) fail('restore_stats_invalid');
+    }
+    return issue({ ...record, authority: 'descriptive_only', modelDispatchEligible: false });
+  };
+  const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
+    && compiled.partition === partition && compiled.generation === generation;
+  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage });
 };

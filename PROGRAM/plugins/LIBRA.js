@@ -33531,6 +33531,7 @@ function createLibraReadonlySourceContext(owner) {
       memoryGraphStore: null,
       memoryGraphStoreSerial: 0,
       memoryGraphIndex: null,
+      memoryGraphCorpus: null,
       memoryGraphLane: null,
       memoryGraphQuery: null,
       memoryGraphCompiler: null,
@@ -45192,6 +45193,9 @@ function createLibraReadonlySourceContext(owner) {
     for (const reason of array(index.status?.reasons)) if (index.status?.partial) note('lore', reason);
     return { schema: 'libra.memory_graph_projection.v1', nodes: [...nodes.values()], edges: [...edges.values()], bases: [...bases.values()], units,
       coverage: { scope: 'owner_reader_page', inventory: clone(snapshot.inventory || {}), identity: 'revision_bound', families,
+        sourceReadFailures: Object.entries(object(snapshot.pending)).flatMap(([family, reasons]) => [...new Set(array(reasons))]
+          .filter(reason => !['canonical_pages_unread','micro_pages_unread'].includes(reason))
+          .map(reason => ({ family, reason: string(reason) || 'reader_unavailable' }))),
         projectionComplete: Object.values(families).every(family => !family.reasons.length) },
       authority: 'descriptive_only', modelDispatchEligible: false, byteBounded: false, providerCalls: 0, documentEmbeddingCalls: 0,
       runtimeIntegrated: 'owner_reader_projection_only' };
@@ -45869,6 +45873,8 @@ function createLibraReadonlySourceContext(owner) {
   }
   const schema = 'libra.memory_graph_index.v1';
   const tokenizerVersion = 'libra.tokenizer.nfkc_v1';
+  const issued = new WeakSet();
+  const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
     'updates', 'clears', 'supersedes', 'follows', 'fulfills', 'reopens',
@@ -46146,7 +46152,7 @@ function createLibraReadonlySourceContext(owner) {
       maxInDegree
     };
     const indexDigest = hash(JSON.stringify([schema, tokenizerVersion, dfScope, partition, generation, stats, tableDigests]));
-    return Object.freeze({
+    return issue({
       schema,
       projectionSchema: graph.schema,
       tokenizerVersion,
@@ -46320,7 +46326,219 @@ function createLibraReadonlySourceContext(owner) {
     };
   };
 
-  return Object.freeze({ compile, affectedByChanges, queryPage });
+  // Durable tables remain relevance data. The owner must independently read the
+  // native graph and establish its generation before restoring these tables.
+  const restore = (record, { partition, generation } = {}) => {
+    if (!record || record.schema !== schema || record.partition !== partition || record.generation !== generation
+      || record.projectionSchema !== 'libra.memory_graph_projection.v1' || record.tokenizerVersion !== tokenizerVersion
+      || !['window_exact', 'corpus_complete'].includes(record.dfScope)) fail('restore_binding_invalid');
+    const tableDigests = {};
+    for (const table of ['directory', 'adjacency', 'postings', 'reverseDependencies']) {
+      if (!Array.isArray(record[table])) fail('restore_table_invalid');
+      tableDigests[table + 'Digest'] = hash(JSON.stringify(record[table]));
+      if (tableDigests[table + 'Digest'] !== record.tableDigests?.[table + 'Digest']) fail('restore_digest_invalid');
+    }
+    const expected = hash(JSON.stringify([schema, tokenizerVersion, record.dfScope, partition, generation, record.stats, tableDigests]));
+    if (expected !== record.indexDigest) fail('restore_digest_invalid');
+    for (const [table, stat] of [['directory','directoryCount'], ['adjacency','adjacencyCount'], ['postings','postingCount'], ['reverseDependencies','reverseDependencyCount']]) {
+      if (record.stats?.[stat] !== record[table].length) fail('restore_stats_invalid');
+    }
+    return issue({ ...record, authority: 'descriptive_only', modelDispatchEligible: false });
+  };
+  const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
+    && compiled.partition === partition && compiled.generation === generation;
+  return Object.freeze({ compile, restore, isCompatible, affectedByChanges, queryPage });
+});
+    const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint } = {}) {
+  if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
+  const pools = ['nodes','edges','bases','units'];
+  const tables = ['directory','adjacency','postings','reverseDependencies'];
+  const schema = 'libra.graph_corpus.v1';
+  let active = false;
+  const fail = reason => { const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase()); e.reason = reason; throw e; };
+  const hash = value => { const h = fingerprint(value); if (!/^[a-f0-9]{64}$/.test(h)) fail('digest_invalid'); return h; };
+  const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  const partition = graph => JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: graph.readerFrame.view.viewerId });
+  const stamp = graph => pages.generation(graph, { partition: partition(graph), restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
+  // Owner cursor signatures contain request/runtime publication bindings. They
+  // are fresh traversal handles, not durable content identities across restart.
+  // Preserve whether another slice exists; native row/frame bindings identify
+  // this slice and are independently re-derived on every read.
+  const windowStamp = graph => stamp({ ...graph, coverage: { ...graph.coverage, inventory: { ...graph.coverage.inventory,
+    canonicalNextCursor: graph.coverage.inventory.canonicalNextCursor ? 'unread' : '',
+    microNextCursor: graph.coverage.inventory.microNextCursor ? 'unread' : '' } } });
+  const location = graph => {
+    const prefix = 'libra:v1:scope:' + graph.scopeKey + ':memory-graph:v1:corpus:';
+    return { prefix, rootKey: prefix + 'root:' + hash(JSON.stringify(graph.readerFrame)), partition: partition(graph) };
+  };
+  const policy = input => {
+    const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, pageBytes: 8192, ...input };
+    for (const [key,min,max] of [['limit',1,50],['nodeLimit',1,8192],['maxWindows',1,128],['maxSerializedBytes',65536,8388608],['pageBytes',512,16384]]) {
+      if (!Number.isSafeInteger(value[key]) || value[key] < min || value[key] > max) fail('policy_invalid');
+    }
+    if (Object.keys(value).some(key => !['limit','nodeLimit','maxWindows','maxSerializedBytes','pageBytes'].includes(key))) fail('policy_invalid');
+    return value;
+  };
+  const enumerate = async (snapshot, input, check = () => {}) => {
+    const config = policy(input), maps = Object.fromEntries(pools.map(pool => [pool,new Map()]));
+    const sourceKeys = new Set(), canonicalRows = new Map(), windows = [], reasons = {}, families = {}, sourceReadFailures = new Map();
+    let first = null, collected = null, options = { limit: config.limit, nodeLimit: config.nodeLimit, canonicalCursor: '', microCursor: '' };
+    let bytes = 0;
+    for (;;) {
+      check();
+      if (windows.length >= config.maxWindows) fail('window_budget');
+      const value = await snapshot(options); check();
+      const graph = value.graph;
+      if (!first) { first = graph; collected = value.collected; }
+      if (!same(first.readerFrame, graph.readerFrame) || graph.scopeKey !== first.scopeKey) fail('frame_changed');
+      const inventory = graph.coverage?.inventory;
+      if (!inventory || inventory.canonicalTotal !== first.coverage.inventory.canonicalTotal
+        || inventory.microTurnTotal !== first.coverage.inventory.microTurnTotal) fail('inventory_changed');
+      windows.push({ ordinal: windows.length, stamp: windowStamp(graph) });
+      for (const pool of pools) for (const row of graph[pool]) {
+        const id = row.id || row.nodeId, before = maps[pool].get(id);
+        if (before) { if (!same(before,row)) fail('overlap_changed'); continue; }
+        bytes += pages.measure(row, config.maxSerializedBytes).utf8Bytes;
+        if (bytes > config.maxSerializedBytes) fail('workspace_budget');
+        maps[pool].set(id,row);
+      }
+      for (const key of value.collected?.sourceKeys || []) sourceKeys.add(key);
+      for (const row of value.collected?.canonicalRows || []) {
+        const before = canonicalRows.get(row.key);
+        if (before && !same(before,row)) fail('source_changed');
+        canonicalRows.set(row.key,row);
+      }
+      for (const failure of graph.coverage?.sourceReadFailures || []) sourceReadFailures.set(JSON.stringify(failure),failure);
+      for (const [family, entry] of Object.entries(graph.coverage.families || {})) {
+        families[family] = { ...entry }; reasons[family] ||= new Set();
+        for (const reason of entry.reasons || []) if (!['canonical_pages_unread','micro_pages_unread'].includes(reason)) reasons[family].add(reason);
+      }
+      const nextCanonical = inventory.canonicalNextCursor || '', nextMicro = inventory.microNextCursor || '';
+      if (!nextCanonical && !nextMicro) break;
+      // Retain the last cursor of a completed family; empty would restart it.
+      const next = { ...options, canonicalCursor: nextCanonical || options.canonicalCursor, microCursor: nextMicro || options.microCursor };
+      if (same(next,options)) fail('cursor_stalled');
+      options = next;
+    }
+    const arrays = Object.fromEntries(pools.map(pool => [pool,[...maps[pool].values()]]));
+    // A State derivation may be outside one slice and present in a later one.
+    // Clear that slice-local note only after checking every recorded field in
+    // the merged graph; unrelated uncertainty/ambiguity notes remain intact.
+    const derived = new Set(arrays.edges.filter(edge => edge.predicate === 'derived_from').map(edge => edge.from));
+    if (reasons.state?.has('field_basis_outside_page_or_unresolved')
+      && arrays.units.filter(unit => unit.family === 'state' && unit.provenanceStatus === 'recorded'
+        && unit.semanticRole !== 'user_corrected').every(unit => derived.has(unit.nodeId))) {
+      reasons.state.delete('field_basis_outside_page_or_unresolved');
+    }
+    for (const [family, entry] of Object.entries(families)) {
+      entry.reasons = [...reasons[family]];
+      const units = arrays.units.filter(unit => unit.family === family);
+      entry.units = units.length;
+      entry.records = new Set(units.map(unit => maps.nodes.get(unit.nodeId)?.sourceId || unit.recordKey || unit.nodeId)).size;
+    }
+    const graph = { ...first, ...arrays, coverage: { ...first.coverage, scope: 'enumerated_owner_windows', families,
+      sourceReadFailures: [...sourceReadFailures.values()],
+      inventory: { ...first.coverage.inventory, canonicalRead: canonicalRows.size,
+        microRead: new Set(arrays.units.filter(unit => unit.family === 'micro').map(unit => unit.recordKey || unit.nodeId)).size,
+        canonicalNextCursor: '', microNextCursor: '', inventoryComplete: false,
+        scope: 'enumerated_owner_windows', enumeratedWindows: windows.length, exhaustiveOwnerDeltaVerified: false },
+      projectionComplete: sourceReadFailures.size === 0 && Object.values(families).every(entry => !entry.reasons.length) } };
+    return { graph, windows, collected: { ...collected, sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()] },
+      serializedGraphBytes: bytes, config };
+  };
+  const parse = (raw, maximum) => {
+    if (typeof raw !== 'string' || raw.length > maximum || new TextEncoder().encode(raw).length > maximum) fail('record_size');
+    try { return JSON.parse(raw); } catch (_) { fail('record_invalid'); }
+  };
+  const immutable = async (owner, key, raw) => {
+    owner.check(); const before = await owner.read(key); owner.check();
+    if (before === null) await owner.putImmutable(key, raw);
+    else if (before !== raw) fail('immutable_collision');
+    if (await owner.read(key) !== raw) fail('write_readback'); owner.check();
+  };
+  const build = async ({ snapshot, owner, options = {} } = {}) => {
+    if (active) fail('build_busy'); active = true;
+    try {
+      const value = await enumerate(snapshot, options, owner.check), { graph, config } = value;
+      const loc = location(graph), generation = stamp(graph), previous = await owner.read(loc.rootKey);
+      const compiled = index.compile(graph, { partition: loc.partition, generation, pageBytes: config.pageBytes });
+      const refs = []; let total = 0;
+      for (const table of tables) {
+        let offset = 0;
+        do {
+          const page = pages.page({ units: compiled[table] }, { partition: loc.partition, generation, pool: 'units', offset, pageBytes: config.pageBytes });
+          if (page.nextOffset === offset && compiled[table].length) fail('page_' + page.stopReason);
+          const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
+          total += page.serializedUtf8Bytes;
+          if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+          await immutable(owner,key,text);
+          refs.push({ key, table, digest, rows: page.items.length, bytes: page.serializedUtf8Bytes, offset });
+          offset = page.nextOffset;
+        } while (offset < compiled[table].length);
+      }
+      const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
+      const manifest = { schema, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
+        serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
+      pages.measure(manifest, 131072);
+      const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
+      await immutable(owner,key,raw);
+      const final = await enumerate(snapshot, config, owner.check);
+      if (!same(value.windows,final.windows) || stamp(final.graph) !== generation) fail('source_changed');
+      await owner.publish({ key: loc.rootKey, previous, raw: JSON.stringify({ schema, manifestKey: key, digest }), manifestKey: key, manifestRaw: raw });
+      // Root publication is ordered/CAS, not a cross-corpus transaction. A late
+      // edit leaves an unusable old generation, never an authoritative new fact.
+      const after = await enumerate(snapshot, config, owner.check);
+      if (!same(value.windows,after.windows)) fail('source_changed_after_publication');
+      return { schema, status: 'published', generation, indexDigest: compiled.indexDigest, windowCount: value.windows.length,
+        pageCount: refs.length, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
+    } finally { active = false; }
+  };
+  const read = async ({ initialGraph, snapshot, owner } = {}) => {
+    const loc = location(initialGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
+    if (rootRaw === null) return null;
+    const root = parse(rootRaw,2048);
+    if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
+    const raw = await owner.read(root.manifestKey), manifest = parse(raw,131072);
+    if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,initialGraph.readerFrame)
+      || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
+      || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
+    const native = await enumerate(snapshot, manifest.config, owner.check);
+    if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
+    const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
+    let total = 0;
+    for (const ref of manifest.refs) {
+      if (!tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
+        || ref.key !== loc.prefix + 'page:' + ref.table + ':' + ref.digest
+        || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > native.config.pageBytes
+        || ref.offset !== restored[ref.table].length) fail('directory_invalid');
+      total += ref.bytes; if (total > native.config.maxSerializedBytes) fail('index_budget');
+      const text = await owner.read(ref.key); owner.check();
+      const rows = parse(text,native.config.pageBytes);
+      if (hash(text) !== ref.digest || !Array.isArray(rows) || rows.length !== ref.rows
+        || pages.measure(rows,native.config.pageBytes).utf8Bytes !== ref.bytes) fail('page_corrupt');
+      const handle = pages.open({ partition: loc.partition, generation: manifest.generation }); let stage, lease;
+      try {
+        stage = pages.reserve(handle,pages.stageCost(pages.measure(rows,native.config.pageBytes)));
+        lease = pages.install(handle,{ pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows },text,stage);
+        restored[ref.table].push(...pages.decode(lease));
+      } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); pages.close(handle); }
+    }
+    const compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
+    if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    const currentGraph = async () => {
+      const live = await enumerate(snapshot, native.config, owner.check);
+      if (!same(live.windows,manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
+      return live.graph;
+    };
+    return { ...native, compiledIndex, currentGraph,
+      access: { schema, mode: 'durable_common_index', generation: manifest.generation, indexDigest: compiledIndex.indexDigest,
+        windowCount: native.windows.length, pageCount: manifest.refs.length,
+        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total,
+        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
+  };
+  return Object.freeze({ build, read, enumerate, location, inspect: () => ({ activeBuild: active }) });
 });
     const createLibraMemoryGraphLane = (function createMemoryGraphLane({ index, pages } = {}) {
   if (!index || typeof index.queryPage !== 'function' || !pages || typeof pages.measure !== 'function') {
@@ -47519,6 +47737,9 @@ function createLibraReadonlySourceContext(owner) {
       'node_work_budget',
       'micro_pages_unread',
       'canonical_pages_unread',
+      'canonical_readback_unavailable',
+      'typed_schema_unavailable',
+      'inherited_micro_projection_not_yet_supported',
       'lore_pages_unread',
       'reader_unavailable',
       'state_view_unavailable',
@@ -47549,6 +47770,7 @@ function createLibraReadonlySourceContext(owner) {
       .map(([cursorKey, cursor]) => ({ cursorKey, cursor }));
     const explicitIncompleteWithoutReasons = graph.coverage?.projectionComplete === false && familyNotes.length === 0;
     const sourceCoverageComplete = familyTruncations.length === 0
+      && !(graph.coverage?.sourceReadFailures?.length > 0)
       && unreadInventoryCursors.length === 0
       && !explicitIncompleteWithoutReasons && !view.historicalCanonicalUnavailable;
     const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
@@ -47576,6 +47798,7 @@ function createLibraReadonlySourceContext(owner) {
         inventoryComplete: Boolean(graph.coverage?.inventory?.inventoryComplete),
         familyIncompleteReasons: familyTruncations,
         familyNotes,
+        sourceReadFailures: graph.coverage?.sourceReadFailures || [],
         unreadInventoryCursors,
         historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
       },
@@ -47627,6 +47850,7 @@ function createLibraReadonlySourceContext(owner) {
         coverage: Object.freeze({
           complete, sourceCoverageComplete, traversalComplete, stopReason,
           familyNotes, unreadInventoryCursors,
+          sourceReadFailures: graph.coverage?.sourceReadFailures || [],
           historicalCanonicalUnavailable: view.historicalCanonicalUnavailable
         })
       }),
@@ -48553,6 +48777,7 @@ function createLibraReadonlySourceContext(owner) {
     consumerPolicy = {},
     laneBudget = {},
     semanticAccessComplete = true,
+    preparedIndex = null,
     ownerVerifier = null
   } = {}) => {
     const sealed = sealToken && sealedRequests.get(sealToken);
@@ -48575,7 +48800,9 @@ function createLibraReadonlySourceContext(owner) {
       restoreEpoch: sealed.restoreEpoch,
       view: graph.readerFrame
     });
-    const compiledIndex = index.compile(graph, { partition, generation });
+    if (preparedIndex && !index.isCompatible(preparedIndex, { partition, generation })) fail('prepared_index_invalid');
+    let indexCompilations = 0;
+    const compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation }); })();
     const queryFrame = query.sealQueryFrame({
       ...queryInput,
       owner: sealed.owner,
@@ -48638,7 +48865,7 @@ function createLibraReadonlySourceContext(owner) {
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
       accessTrace: queryResult.accessTrace || null,
-      diagnostics: queryResult.diagnostics,
+      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations } },
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
@@ -65657,6 +65884,7 @@ ${string(queryBundle?.sceneText || '')}`;
           bundle: unifiedExec.bundle,
           unifiedExecution: unifiedExec,
           windowRead: unifiedExec.windowRead || null,
+          corpusRead: unifiedExec.corpusRead || null,
           nextWindow: unifiedExec.nextWindow || null,
           diagnostics: {
             candidates: asArray(unifiedExec.bundle?.items).length,
@@ -72476,6 +72704,7 @@ ${string(queryBundle?.sceneText || '')}`;
       if (!state.memoryGraphInventory) state.memoryGraphInventory = createLibraMemoryGraphInventory({ fingerprint: primitive.fingerprint });
       if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       if (!state.memoryGraphIndex) state.memoryGraphIndex = createLibraMemoryGraphIndex({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphCorpus) state.memoryGraphCorpus = createLibraMemoryGraphCorpus({ pages: state.memoryGraphPages, index: state.memoryGraphIndex, fingerprint: primitive.fingerprint });
       if (!state.memoryGraphLane) state.memoryGraphLane = createLibraMemoryGraphLane({ index: state.memoryGraphIndex, pages: state.memoryGraphPages });
       if (!state.memoryGraphQuery) state.memoryGraphQuery = createLibraMemoryGraphQuery({ index: state.memoryGraphIndex, lane: state.memoryGraphLane, pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
       if (!state.memoryGraphCompiler) state.memoryGraphCompiler = createLibraMemoryGraphCompiler({ fingerprint: primitive.fingerprint });
@@ -72497,8 +72726,73 @@ ${string(queryBundle?.sceneText || '')}`;
         rollout: state.memoryGraphRollout
       };
     };
+    const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null) => {
+      const mode = string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '');
+      if (!['plugin_only','server_only'].includes(mode)) throw new Error('LIBRA_GRAPH_CORPUS_MODE_UNSUPPORTED');
+      const binding = mode === 'server_only' ? stableReferenceJson(MemorySuiteStorageBridge.serverBinding()) : '';
+      const check = () => {
+        if (guard) ensureRecallGuard(guard, 'graph_corpus');
+        if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
+          || state.deletingScopes.has(initialGraph.scopeKey)) throw new Error('LIBRA_GRAPH_CORPUS_OWNER_CHANGED');
+      };
+      const assertRoute = async () => {
+        check();
+        if (mode !== string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '')
+          || mode === 'server_only' && binding !== stableReferenceJson(MemorySuiteStorageBridge.serverBinding())) throw new Error('LIBRA_GRAPH_CORPUS_ROUTE_CHANGED');
+        check();
+      };
+      const prefix = `${PREFIX}:scope:${initialGraph.scopeKey}:memory-graph:v1:corpus:`;
+      const read = async storageKey => {
+        if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
+        await assertRoute();
+        const raw = mode === 'server_only' ? await MemorySuiteStorageBridge.serverGet('plugin',storageKey)
+          : await MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey);
+        await assertRoute();
+        return mode === 'server_only' ? raw?.exists === true && raw?.tombstone !== true ? raw.value : null : raw ?? null;
+      };
+      const commit = async (mutations,conditions = []) => {
+        await assertRoute();
+        const batch = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
+        await assertRoute();
+        const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(batch);
+        await assertRoute();
+        if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_CORPUS_COMMIT_UNVERIFIED');
+      };
+      return { owner: { check, read, assertRoute,
+        async putImmutable(storageKey,raw) {
+          if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
+          if (mode === 'server_only') await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]);
+          else { await assertRoute(); await fencedMemoryStorageSet(storageKey,raw); await assertRoute(); }
+        },
+        async publish({ key: rootKey, raw, previous, manifestKey, manifestRaw }) {
+          if (!rootKey.startsWith(prefix) || !manifestKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
+          if (mode === 'server_only') await commit([{ key: rootKey, kind: 'set', value: raw,
+            expected: previous === null ? { exists: false } : { exists: true, value: previous } }],
+            [{ key: manifestKey, expected: { exists: true, value: manifestRaw } }]);
+          else {
+            if (await read(rootKey) !== previous || await read(manifestKey) !== manifestRaw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_CONFLICT');
+            await fencedMemoryStorageSet(rootKey,raw); await assertRoute();
+          }
+          if (await read(rootKey) !== raw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_READBACK');
+        }
+      }, snapshot: async sourceOptions => {
+        await assertRoute(); let next;
+        const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: initialGraph.scopeKey }, value => { next = value; });
+        await assertRoute(); return { graph, collected: next };
+      } };
+    };
+    const buildMemoryGraphCorpus = async (options = {}) => {
+      const allowed = ['expectedScopeKey','limit','nodeLimit','maxWindows','maxSerializedBytes','pageBytes'];
+      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !allowed.includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      const suite = ensureMemoryGraphUnifiedSuite(); let collected;
+      if (state.memoryGraphCorpus.inspect().activeBuild) throw new Error('LIBRA_GRAPH_CORPUS_BUILD_BUSY');
+      const graph = await readMemoryGraphProjection({ expectedScopeKey: options.expectedScopeKey || '' }, value => { collected = value; });
+      const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
+      return await state.memoryGraphCorpus.build({ ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'expectedScopeKey')) });
+    };
     const executeMemoryGraphUnifiedQuery = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
-      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget','semanticPolicy'];
+      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget','semanticPolicy','corpusMode'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
         throw new Error('LIBRA_GRAPH_QUERY_OPTIONS_INVALID');
       }
@@ -72518,7 +72812,16 @@ ${string(queryBundle?.sceneText || '')}`;
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       const suite = ensureMemoryGraphUnifiedSuite();
       let initialCollected = null;
-      const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
+      let graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
+      const corpusMode = options.corpusMode || 'auto';
+      if (!['auto','required','window'].includes(corpusMode)) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
+      const explicitWindow = ['limit','nodeLimit','canonicalCursor','microCursor'].some(key => options[key] !== undefined);
+      if (explicitWindow && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_WINDOW_CONFLICT');
+      const corpusContext = await memoryGraphCorpusContext(graph,initialCollected,epoch,serial,recallGuard);
+      const corpus = corpusMode === 'window' || explicitWindow ? null
+        : await state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext });
+      if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
+      if (corpus) { graph = corpus.graph; initialCollected = corpus.collected; }
       if (gradiaAuthority) options = { ...options, consumerPolicy: { ...options.consumerPolicy,
         consumer: 'gradia', gradiaSelectionReceipt: gradiaAuthority.bindGraph(graph) } };
       if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0) || !initialCollected?.scope) {
@@ -72535,10 +72838,13 @@ ${string(queryBundle?.sceneText || '')}`;
       };
 
       const pinKeys = [...new Set(initialCollected.sourceKeys || [])];
-      if (storageMode === 'server_only' && pinKeys.length > 64) throw new Error('LIBRA_GRAPH_QUERY_SOURCE_PIN_LIMIT');
-      const conditionalReadSet = (storageMode === 'server_only' && pinKeys.length > 0)
-        ? await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys)
-        : null;
+      if (!corpus && storageMode === 'server_only' && pinKeys.length > 64) throw new Error('LIBRA_GRAPH_QUERY_SOURCE_PIN_LIMIT');
+      // Each SDK readset retains its own 64-key limit. Multiple readsets do not
+      // establish a cross-corpus atomic snapshot; all are checked at delivery.
+      const conditionalReadSets = [];
+      if (storageMode === 'server_only') for (let offset = 0; offset < pinKeys.length; offset += 64) {
+        conditionalReadSets.push(await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys.slice(offset,offset + 64)));
+      }
       const pinnedValues = [];
       for (const storageKey of pinKeys) {
         pinnedValues.push({ key: storageKey, raw: await readRawSource(storageKey) });
@@ -72659,7 +72965,7 @@ ${string(queryBundle?.sceneText || '')}`;
         if (!captured || stableReferenceJson(current) !== captured.rawBody || dependency.digest !== captured.hydratedDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
       }
       const ownerVerifier = {
-        currentGraph: async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
+        currentGraph: corpus ? corpus.currentGraph : async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
         assertPhysicalCurrentness: async () => {
           if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
             || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
@@ -72667,7 +72973,8 @@ ${string(queryBundle?.sceneText || '')}`;
           }
           try {
             if (semanticSettingsBinding && settingsBinding(await readSemanticConfig()) !== semanticSettingsBinding) return false;
-            if (conditionalReadSet) await MemorySuiteStorageBridge.assertConditionalReadSet(conditionalReadSet);
+            await corpusContext.owner.assertRoute();
+            for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet);
             for (const pin of vectorPins) await MemorySuiteStorageBridge.assertConditionalReadSet(pin);
             for (const dependency of nativeSemantic?.dependencies || []) {
               const current = await storage.getVerifiedJson(dependency.key, initialCollected.scope, null);
@@ -72678,6 +72985,7 @@ ${string(queryBundle?.sceneText || '')}`;
                 return false;
               }
             }
+            await corpusContext.owner.assertRoute();
             return true;
           } catch (_err) {
             return false;
@@ -72693,7 +73001,8 @@ ${string(queryBundle?.sceneText || '')}`;
         consumerPolicy: options.consumerPolicy || {},
         laneBudget: options.laneBudget || {},
         ownerVerifier,
-        semanticAccessComplete: !semanticBudgetStopped
+        semanticAccessComplete: !semanticBudgetStopped,
+        preparedIndex: corpus?.compiledIndex || null
       });
       // N01: a query reads a slice of the source window, so it has to say which slice it read and where
       // the owner says the next one starts — otherwise a window-bounded answer looks like a whole-history
@@ -72701,9 +73010,12 @@ ${string(queryBundle?.sceneText || '')}`;
       const windowInventory = clone(graph.coverage?.inventory || null);
       const windowNext = { canonicalCursor: string(windowInventory?.canonicalNextCursor || ''), microCursor: string(windowInventory?.microNextCursor || '') };
       const result = Object.freeze({ ...execution,
+        corpusRead: corpus ? { ...corpus.access, indexBuildsDuringQuery: execution.diagnostics.indexAccess.compilations }
+          : { mode: 'owner_window', reason: explicitWindow || corpusMode === 'window' ? 'explicit_window' : 'no_published_corpus' },
         windowRead: Object.freeze({
           schema: 'libra.graph_query_window.v1',
-          limit: sourceOptions.limit,
+          scope: corpus ? 'enumerated_owner_windows' : 'owner_window',
+          limit: corpus?.config.limit || sourceOptions.limit,
           canonicalCursor: sourceOptions.canonicalCursor,
           microCursor: sourceOptions.microCursor,
           projectionComplete: graph.coverage?.projectionComplete !== false,
@@ -75420,7 +75732,7 @@ ${string(queryBundle?.sceneText || '')}`;
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -75680,10 +75992,11 @@ ${string(queryBundle?.sceneText || '')}`;
           }
         };
         const unread = [
+          ...asArray(trace?.coverage?.sourceReadFailures).map(row => ({ kind: 'source_read_failure', family: String(row?.family || ''), reason: String(row?.reason || '') })),
           ...asArray(trace?.coverage?.unreadInventoryCursors).map(row => ({ kind: 'owner_cursor', cursorKey: String(row?.cursorKey || '') })),
           ...asArray(trace?.lane?.unreadCursors).map(row => ({ kind: 'lane_cursor', cursorKey: String(row?.cursorKey || row?.cursor || '') })),
           ...(recall.nextWindow ? [{ kind: 'next_window', cursorKey: String(recall.nextWindow.microCursor || recall.nextWindow.canonicalCursor || '') }] : [])
-        ].filter(row => row.cursorKey);
+        ].filter(row => row.cursorKey || row.reason);
         const partial = trace ? trace.coverage?.complete !== true : (windowRead?.projectionComplete !== true);
         return clone({
           schema: 'libra.recall_diagnostics_view.v1',
@@ -75692,6 +76005,9 @@ ${string(queryBundle?.sceneText || '')}`;
           state: partial ? 'partial' : 'complete',
           at: Number(recall.at || 0),
           engine: engine ? { mode: String(engine.mode || ''), source: String(engine.source || ''), defaultApplied: engine.defaultApplied === true, qualification: String(engine.qualification || '') } : null,
+          corpus: recall.corpusRead ? { mode: String(recall.corpusRead.mode), windowCount: Number(recall.corpusRead.windowCount || 0),
+            indexBuildsDuringQuery: Number(recall.corpusRead.indexBuildsDuringQuery || 0),
+            nativeReprojectionRequired: recall.corpusRead.nativeReprojectionRequired === true, byteBounded: false } : null,
           window: windowRead ? {
             limit: Number(windowRead.limit || 0),
             canonicalCursor: String(windowRead.canonicalCursor || ''),
@@ -79542,10 +79858,14 @@ ${string(queryBundle?.sceneText || '')}`;
           if (!view.present) rows.push(guiEl('div', { class: 'hint', text: '아직 회수 기록이 없습니다.' }));
           else {
             if (view.window) rows.push(guiEl('div', { class: 'hint', text: `창: limit ${view.window.limit} · 정본 ${view.window.read.canonical}/${view.window.read.canonicalTotal} · Micro ${view.window.read.micro}/${view.window.read.microTotal}${view.window.projectionComplete ? '' : ' · 투영 미완(부분)'}` }));
+            if (view.corpus) rows.push(guiEl('div', { class: 'hint', text: view.corpus.mode === 'durable_common_index'
+              ? `전체 구간 인덱스: ${view.corpus.windowCount}구간 · 검색 중 인덱스 재생성 ${view.corpus.indexBuildsDuringQuery}회 · 원본 재검증 사용`
+              : '원본 구간 검색: 게시된 전체 구간 인덱스를 사용하지 않았습니다.' }));
             if (view.read) rows.push(guiEl('div', { class: 'hint', text: `읽은 경로: page ${view.read.pages} · ${view.read.bytes}/${view.read.budget} bytes · cache hit ${view.read.cacheHits} · frontier ${view.read.frontierSteps} · 작업 ${view.read.workspaceBytes}/${view.read.workspaceBudget}${view.read.stopReason ? ' · 중단 ' + view.read.stopReason : ''}` }));
             if (view.read?.roles.length) rows.push(guiEl('div', { class: 'hint', text: '역할: ' + view.read.roles.map(role => `${role.role} ${role.pages}p`).join(', ') }));
             if (view.adoption) rows.push(guiEl('div', { class: 'hint', text: `채택: ${view.adoption.admitted}건(${view.adoption.families.join('/') || '-'}) · 억제 Micro ${view.adoption.suppressedMicro} · ${view.adoption.packetChars}/${view.adoption.maxCharacters}자` }));
-            rows.push(guiEl('div', { class: 'hint', text: view.unread.length ? '미독: ' + view.unread.map(row => row.kind).join(', ') : '미독 없음' }));
+            rows.push(guiEl('div', { class: 'hint', text: view.unread.length ? '미독: ' + view.unread.map(row => row.kind === 'source_read_failure'
+              ? `원본 읽기 실패(${row.family}: ${row.reason})` : row.kind).join(', ') : '미독 없음' }));
             rows.push(guiEl('div', { class: 'hint', text: view.engine ? `엔진: ${view.engine.mode}(${view.engine.source}${view.engine.defaultApplied ? ', 기본값' : ''})` : '' }));
             if (view.representation?.declared) {
               const withVector = view.representation.declared.filter(unit => unit.vectorToday).map(unit => unit.family);
@@ -79555,7 +79875,16 @@ ${string(queryBundle?.sceneText || '')}`;
             }
           }
           return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
-            guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows]);
+            guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows,
+            guiEl('div', { class: 'hint', text: '전체 이력 인덱스를 구축하면 통합 검색이 이를 사용합니다. 원본 변경 뒤에는 다시 구축해야 합니다. 기본 검색 모드 설정은 별도로 적용됩니다.' }),
+            guiEl('button', { class: 'btn', text: '전체 이력 인덱스 구축', onClick: async () => {
+              try {
+                guiSetStatus('전체 이력 인덱스를 구축하는 중입니다.');
+                const result = await LibraMemoryCore.buildMemoryGraphCorpus();
+                guiSetStatus(`전체 이력 인덱스 게시: ${result.windowCount}구간 · ${result.pageCount}페이지`);
+              } catch (error) { guiSetStatus(error?.message || String(error),true,true); }
+            } }),
+            guiEl('button', { class: 'btn', text: '인덱스 구축 취소', onClick: () => { LibraMemoryCore.cancelMemoryGraphGenerationBuild(); guiSetStatus('인덱스 구축 취소를 요청했습니다.'); } })]);
         })(),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
@@ -86270,6 +86599,7 @@ advanced
         ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
         queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,
         windowRead: execution.windowRead, nextWindow: execution.nextWindow,
+        ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
         source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
@@ -86546,6 +86876,7 @@ advanced
     async getMemoryGraphAccessPage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphAccessPage(options)); },
     inspectMemoryGraphPages() { return LibraMemoryCore.inspectMemoryGraphPages(); },
     async buildMemoryGraphGeneration(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphGeneration(options)); },
+    async buildMemoryGraphCorpus(options = {}) { return await safeClone(await LibraMemoryCore.buildMemoryGraphCorpus(options)); },
     async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
     getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },

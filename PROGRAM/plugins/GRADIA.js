@@ -42725,6 +42725,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
         queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,
         windowRead: execution.windowRead, nextWindow: execution.nextWindow,
+        ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
         source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];

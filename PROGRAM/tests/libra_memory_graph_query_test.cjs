@@ -345,6 +345,17 @@ test('V15 & D05: protected intermediate hub is blocked without mutating SourceGr
   assert.equal(truncRes.stopReason, 'projection_coverage_incomplete');
 });
 
+test('whole-window enumeration does not hide unsupported inherited Micro or failed canonical reads', () => {
+  for (const [family,reason] of [['micro','inherited_micro_projection_not_yet_supported'],['micro','owner_specific_new_read_failure'],['canonical','canonical_readback_unavailable'],['canonical','typed_schema_unavailable']]) {
+    const snapshot=makeFourFamilySnapshot();snapshot.pending={ [family]: [reason] };
+    const {query,graph,compiled}=buildStack(snapshot);
+    const frame=query.sealQueryFrame({queryText:'silver ring',owner:baseFrame.owner,scopeKey:baseFrame.scopeKey});
+    const result=query.retrieve(query.openView(graph,compiled,frame),{maxPages:64,maxBytes:262144});
+    assert.equal(result.traversalComplete,true);assert.equal(result.sourceCoverageComplete,false);assert.equal(result.complete,false);
+    assert.equal(result.stopReason,'projection_coverage_incomplete');
+  }
+});
+
 test('M04 & M05: frontier-integrated Lane requests per-anchor neighborhood pages on demand, enforces L0 workspace byte budget, and validates resumeCursors generation', () => {
   const { query, graph, compiled } = buildStack(makeFourFamilySnapshot());
   const qf = query.sealQueryFrame({
