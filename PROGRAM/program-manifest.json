@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T10:19:30.013Z",
+  "generatedAt": "2026-10-14T10:42:02.829Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2628,8 +2628,8 @@
       "bytes": 79709
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "a6badc707220f858a47fc9e07bffef584e11de4b38e854f1a6c9bef3e072d634",
-      "bytes": 33310
+      "sha256": "caa1c3867ba41ab06397f7c9645a0cd80c6d4779d94bc4e8c829f14c99beddae",
+      "bytes": 36112
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -3644,8 +3644,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "23314e9749ffd2490b814ffd6567a8da914100a484ebfd6232f7628c59c8639d",
-      "bytes": 5966655
+      "sha256": "d688aae63fc264eee91c15b6278495284fb8930a125f0a1f33783a37cd6e17ff",
+      "bytes": 5971641
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7511,6 +7511,10 @@
       "sha256": "5e62721183920fa25e1cbb247a4b2c7f415094c9d7e23508e7d09fd3df887e8c",
       "bytes": 8861
     },
+    "tests/libra_memory_graph_producer_policy_test.cjs": {
+      "sha256": "e1106e5a87bf026d5644bb42378c3203b442d6bbeef18ad55ddaeb77ed2cef3e",
+      "bytes": 5742
+    },
     "tests/libra_memory_graph_query_test.cjs": {
       "sha256": "dd58ae48ddee7028f395957b3c1219a0dd693fc5c80dfc8035f5fddcb76765a1",
       "bytes": 21223
@@ -10212,8 +10216,8 @@
       "bytes": 28835
     },
     "tools/libra_memory_graph_representation.cjs": {
-      "sha256": "181ced04f13f8b82439866142065dbd8c995e21874f1f6ccc4423a1e0c806e21",
-      "bytes": 10176
+      "sha256": "805fe174c6c86475e0b8bc6d1c7e75624d3c26dc9afcd76e7c24de90a6da6322",
+      "bytes": 13601
     },
     "tools/libra_memory_graph_rollout.cjs": {
       "sha256": "18e59970e2585b75b0dd386ecd945f582591b88fc2c1c8b98ef085946977566f",

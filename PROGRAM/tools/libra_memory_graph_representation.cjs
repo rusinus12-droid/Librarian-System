@@ -52,6 +52,61 @@ module.exports = function createMemoryGraphRepresentation({ fingerprint } = {}) 
 
   const CHANNELS = Object.freeze(['vector', 'lexical', 'entity', 'predicate', 'graph']);
 
+  // What each family would embed, who would embed it, and what may never trigger embedding. Declaring a
+  // family without a producer is a decision, not an omission: the document embedding path consults this
+  // gate, so a later change cannot start embedding a family silently.
+  const PRODUCER_POLICIES = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical', authorized: true, activation: 'explicit_maintenance_only',
+      textUnit: 'owner source projection', textBasis: 'canonical commit envelope (turn range + source digest)',
+      requiresOwnerBasis: true, precondition: Object.freeze([])
+    }),
+    micro: Object.freeze({
+      family: 'micro', authorized: false, activation: 'none',
+      textUnit: 'analysis receipt text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a maintenance API that re-embeds a receipt only when its revision is still current',
+        'an explicit budget for that maintenance, visible to the owner',
+        'a receipt text basis that cannot be assembled from uncommitted analysis'
+      ])
+    }),
+    state: Object.freeze({
+      family: 'state', authorized: false, activation: 'none',
+      textUnit: 'field evidence text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a text basis that keeps certainty and disposition visible, so a vector cannot read as settled fact',
+        'an explicit maintenance API and budget, as for micro',
+        'a rule for fields whose evidence is withdrawn'
+      ])
+    }),
+    lore: Object.freeze({
+      family: 'lore', authorized: false, activation: 'none',
+      textUnit: 'link passage text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a tombstone-aware maintenance path, since lore is the family whose removals are observable',
+        'an explicit maintenance API and budget, as for micro',
+        'a passage locator that survives revision'
+      ])
+    })
+  });
+  const FORBIDDEN_TRIGGERS = Object.freeze(['query', 'write', 'load', 'session_start', 'boot', 'prefetch']);
+  const producerPolicies = () => Object.freeze(SOURCE_FAMILIES.map(family => PRODUCER_POLICIES[family]));
+  // Embedding is allowed only for a declared producer, only under explicit maintenance, and only with a
+  // real owner basis. Everything else is refused by name rather than skipped quietly.
+  const mayEmbed = ({ family, trigger, hasOwnerBasis } = {}) => {
+    const wanted = text(family);
+    const policy = PRODUCER_POLICIES[wanted];
+    const asked = text(trigger);
+    if (!policy) fail('family_unsupported', { family: wanted });
+    if (!asked) fail('trigger_required', { family: wanted });
+    const verdict = { family: wanted, trigger: asked, allowed: false, reason: '' };
+    if (FORBIDDEN_TRIGGERS.includes(asked)) return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
+    if (asked !== 'explicit_maintenance') return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
+    if (policy.authorized !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
+    if (policy.requiresOwnerBasis === true && hasOwnerBasis !== true) return Object.freeze({ ...verdict, reason: 'owner_basis_required' });
+    return Object.freeze({ ...verdict, allowed: true });
+  };
+
   const declaredUnits = () => Object.freeze(SOURCE_FAMILIES.map(family => REPRESENTATION_UNITS[family]));
 
   const representationId = ({ family, unitKey, sourceBasis, textHash, viewpoint = {}, space = {} } = {}) => {
@@ -168,7 +223,7 @@ module.exports = function createMemoryGraphRepresentation({ fingerprint } = {}) 
   };
 
   return Object.freeze({
-    SOURCE_FAMILIES, REPRESENTATION_UNITS, CHANNELS,
-    declaredUnits, representationId, classifyRepresentation, classifyAgainstBasis, planRepresentationAccess
+    SOURCE_FAMILIES, REPRESENTATION_UNITS, CHANNELS, FORBIDDEN_TRIGGERS, PRODUCER_POLICIES,
+    declaredUnits, producerPolicies, mayEmbed, representationId, classifyRepresentation, classifyAgainstBasis, planRepresentationAccess
   });
 };

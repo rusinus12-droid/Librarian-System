@@ -49101,6 +49101,61 @@ function createLibraReadonlySourceContext(owner) {
 
   const CHANNELS = Object.freeze(['vector', 'lexical', 'entity', 'predicate', 'graph']);
 
+  // What each family would embed, who would embed it, and what may never trigger embedding. Declaring a
+  // family without a producer is a decision, not an omission: the document embedding path consults this
+  // gate, so a later change cannot start embedding a family silently.
+  const PRODUCER_POLICIES = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical', authorized: true, activation: 'explicit_maintenance_only',
+      textUnit: 'owner source projection', textBasis: 'canonical commit envelope (turn range + source digest)',
+      requiresOwnerBasis: true, precondition: Object.freeze([])
+    }),
+    micro: Object.freeze({
+      family: 'micro', authorized: false, activation: 'none',
+      textUnit: 'analysis receipt text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a maintenance API that re-embeds a receipt only when its revision is still current',
+        'an explicit budget for that maintenance, visible to the owner',
+        'a receipt text basis that cannot be assembled from uncommitted analysis'
+      ])
+    }),
+    state: Object.freeze({
+      family: 'state', authorized: false, activation: 'none',
+      textUnit: 'field evidence text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a text basis that keeps certainty and disposition visible, so a vector cannot read as settled fact',
+        'an explicit maintenance API and budget, as for micro',
+        'a rule for fields whose evidence is withdrawn'
+      ])
+    }),
+    lore: Object.freeze({
+      family: 'lore', authorized: false, activation: 'none',
+      textUnit: 'link passage text', textBasis: 'not built', requiresOwnerBasis: true,
+      precondition: Object.freeze([
+        'a tombstone-aware maintenance path, since lore is the family whose removals are observable',
+        'an explicit maintenance API and budget, as for micro',
+        'a passage locator that survives revision'
+      ])
+    })
+  });
+  const FORBIDDEN_TRIGGERS = Object.freeze(['query', 'write', 'load', 'session_start', 'boot', 'prefetch']);
+  const producerPolicies = () => Object.freeze(SOURCE_FAMILIES.map(family => PRODUCER_POLICIES[family]));
+  // Embedding is allowed only for a declared producer, only under explicit maintenance, and only with a
+  // real owner basis. Everything else is refused by name rather than skipped quietly.
+  const mayEmbed = ({ family, trigger, hasOwnerBasis } = {}) => {
+    const wanted = text(family);
+    const policy = PRODUCER_POLICIES[wanted];
+    const asked = text(trigger);
+    if (!policy) fail('family_unsupported', { family: wanted });
+    if (!asked) fail('trigger_required', { family: wanted });
+    const verdict = { family: wanted, trigger: asked, allowed: false, reason: '' };
+    if (FORBIDDEN_TRIGGERS.includes(asked)) return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
+    if (asked !== 'explicit_maintenance') return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
+    if (policy.authorized !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
+    if (policy.requiresOwnerBasis === true && hasOwnerBasis !== true) return Object.freeze({ ...verdict, reason: 'owner_basis_required' });
+    return Object.freeze({ ...verdict, allowed: true });
+  };
+
   const declaredUnits = () => Object.freeze(SOURCE_FAMILIES.map(family => REPRESENTATION_UNITS[family]));
 
   const representationId = ({ family, unitKey, sourceBasis, textHash, viewpoint = {}, space = {} } = {}) => {
@@ -49217,8 +49272,8 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   return Object.freeze({
-    SOURCE_FAMILIES, REPRESENTATION_UNITS, CHANNELS,
-    declaredUnits, representationId, classifyRepresentation, classifyAgainstBasis, planRepresentationAccess
+    SOURCE_FAMILIES, REPRESENTATION_UNITS, CHANNELS, FORBIDDEN_TRIGGERS, PRODUCER_POLICIES,
+    declaredUnits, producerPolicies, mayEmbed, representationId, classifyRepresentation, classifyAgainstBasis, planRepresentationAccess
   });
 });
     // END LIBRA MEMORY GRAPH
@@ -51718,6 +51773,14 @@ function createLibraReadonlySourceContext(owner) {
       return {};
     };
 
+    // N02 producer policy: one place decides whether a document may be embedded at all.
+    const memoryGraphRepresentationKernel = () => {
+      if (!state.memoryGraphRepresentation) {
+        const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
+        state.memoryGraphRepresentation = createLibraMemoryGraphRepresentation({ fingerprint: primitive.fingerprint });
+      }
+      return state.memoryGraphRepresentation;
+    };
     const embedMemory = async (scope, memory, previousMemory = null, options = {}) => {
       const projection = buildMemoryRetrievalProjection(memory);
       memory.sections = clone(projection.sections);
@@ -51728,6 +51791,16 @@ function createLibraReadonlySourceContext(owner) {
         textHashes: clone(projection.textHashes)
       };
 
+      // Declared producers only, explicit maintenance only, real owner basis required. A family without a
+      // producer is refused here by name instead of being embedded because a caller asked.
+      const producerVerdict = memoryGraphRepresentationKernel().mayEmbed({
+        family: 'canonical', trigger: 'explicit_maintenance',
+        hasOwnerBasis: Boolean(memory && memory.turnRange && memory.sourceDigest)
+      });
+      if (!producerVerdict.allowed) {
+        state.lastVectorProducerRefusal = { reason: producerVerdict.reason, family: producerVerdict.family, at: nowIso() };
+        return { status: 'skipped', reason: 'producer_policy:' + producerVerdict.reason, projectionVersion: RETRIEVAL_PROJECTION_VERSION, vectorCount: 0 };
+      }
       const config = await loadEmbeddingSettings();
       const validation = await LibraProviderBridge.validateEmbedding(config);
       if (!config.enabled || !validation.ok) {
@@ -75536,13 +75609,10 @@ ${string(queryBundle?.sceneText || '')}`;
         const roleStats = asObject(trace?.lane?.roleStats);
         // N02: the representation contract is read here, so the screen states which families have a
         // vector producer and which do not, joined with what the semantic bridge actually admitted.
-        if (!state.memoryGraphRepresentation) {
-          const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
-          state.memoryGraphRepresentation = createLibraMemoryGraphRepresentation({ fingerprint: primitive.fingerprint });
-        }
+        const representationKernel = memoryGraphRepresentationKernel();
         const semantic = recall.unifiedExecution?.diagnostics?.nativeSemantic || recall.diagnostics?.nativeSemantic || null;
         const representationView = {
-          declared: state.memoryGraphRepresentation.declaredUnits().map(unit => ({
+          declared: representationKernel.declaredUnits().map(unit => ({
             family: unit.family, unit: unit.unit, producer: unit.producer, vectorToday: unit.vectorToday === true, note: unit.note
           })),
           actual: semantic ? {
@@ -75552,7 +75622,14 @@ ${string(queryBundle?.sceneText || '')}`;
             vectorlessFamilies: asArray(semantic.vectorlessFamilies).map(String),
             rejected: asArray(semantic.rejected).slice(0, 8).map(row => String(row?.reason || '')),
             backgroundEmbeddingStarted: semantic.backgroundEmbeddingStarted === true
-          } : null
+          } : null,
+          // What may be embedded at all is a decision, so it is stated beside the declaration rather than
+          // read off whatever happened during this one recall.
+          policy: {
+            authorized: representationKernel.producerPolicies().filter(policy => policy.authorized === true).map(policy => policy.family),
+            unauthorized: representationKernel.producerPolicies().filter(policy => policy.authorized !== true).map(policy => policy.family),
+            forbiddenTriggers: [...representationKernel.FORBIDDEN_TRIGGERS]
+          }
         };
         const unread = [
           ...asArray(trace?.coverage?.unreadInventoryCursors).map(row => ({ kind: 'owner_cursor', cursorKey: String(row?.cursorKey || '') })),

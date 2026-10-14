@@ -139,6 +139,16 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - 재현: `node PROGRAM/tests/libra_memory_graph_scorer_representation_test.cjs` → 4 PASS(전수 차단·사유 어휘·벡터 없이 전달·계획이 주입보다 먼저라는 규칙 순서).
 - **측정하지 않은 것(명시)**: **양성 경로** — 쓸 수 있는 임베딩이 있는 호스트에서 `valid` 판정이 실제로 의미 점수를 받고 점수가 올라가는지는 이 fixture에 임베딩이 없어 확인하지 않았다. 이번 증분이 증명한 것은 "계약을 어긴 표현은 점수를 못 받는다"와 "그래도 답은 나온다"까지다.
 
+**진척 (셋째 증분) — 벡터 생산자 정책**: "어떤 자료가 벡터를 갖나"를 결정으로 기록하고 게이트로 강제했다.
+
+- **먼저 실제 코드를 확인했다**: 살아 있는 임베딩 경로에 도달하는 것은 **정본 owner source projection 하나뿐**(`buildCanonicalCommitEnvelope` + `buildMemoryRetrievalProjection` → `embedMemory`)이며 micro·state·lore는 도달하지 않는다. 그래서 선언(`vectorToday: false`)은 실제 코드와 일치한다.
+- `PRODUCER_POLICIES`: canonical은 `authorized: true`·`activation: explicit_maintenance_only`. micro·state·lore는 `authorized: false`이며 **무엇을 임베딩할지(textUnit)** 와 **무엇이 갖춰져야 하는지(precondition 3항목)** 를 명시한다 — micro: 현재 revision이 유지될 때만 재임베딩하는 유지보수 API·예산·미커밋 분석에서 조립할 수 없는 영수증 텍스트 / state: certainty·disposition이 드러나는 텍스트와 철회 필드 규칙 / lore: tombstone을 아는 유지보수 경로와 revision을 견디는 passage locator.
+- `mayEmbed({family, trigger, hasOwnerBasis})`: 선언된 생산자 + `explicit_maintenance` + 실제 owner basis일 때만 허용. `query`·`write`·`load`·`session_start`·`boot`·`prefetch`는 **모든 자료에서** 거부(`trigger_not_maintenance`), 생산자가 없는 자료는 유지보수 트리거라도 거부(`producer_not_authorized`), basis 없는 정본은 `owner_basis_required`, 모르는 자료는 이름으로 실패.
+- **게이트가 실제 임베딩 경로에 있다**: `embedMemory`가 provider 호출 **직전에** 정책을 보고, 거부되면 `status: 'skipped'`로 남기고 기록(`state.lastVectorProducerRefusal`)한 뒤 임베딩하지 않는다. 선언 표와 정책이 어긋나지 않도록 `vectorToday`와 `authorized`가 같은지 스위트가 검사한다.
+- 실측: canonical+maintenance+owner basis만 `allowed: true`, 나머지 7개 조합은 전부 거부(사유 포함). 화면에는 정책이 선언 옆에 표시된다(authorized `['canonical']`, unauthorized `['micro','state','lore']`, 금지 트리거 6종).
+- 재현: `node PROGRAM/tests/libra_memory_graph_producer_policy_test.cjs` → 5 PASS. **임베딩 경로 회귀 4종 PASS**(`libra_explicit_embedding_lifecycle` 4, `libra_unified_recall_vector_v1` 7, `libra_embedding_vector_3mode_parity`, `libra_memory_graph_semantic_runtime` 8) — 게이트가 정상 정본 임베딩을 막지 않는다는 증거.
+- **측정하지 않은 것(명시)**: 플러그인 쪽 **거부 분기는 런타임으로 실행되지 않았다.** 공개 API로 비정본 문서 임베딩을 요청할 수 없기 때문이며, 그것이 바로 지키려는 성질이다. 거부는 커널 수준에서만 실행·검증했다.
+
 **완료 기준:** 각 family의 유효/누락/불일치·과거/미래 표현을 같은 scorer/frontier에서 처리하고 원래 근거로 연결한다. 실제 모델의 검색 정확도와 가중치 calibration은 N06에서 별도로 판정한다.
 
 ## 6. N03 — GRADIA 셰도우·AIDE 연결
