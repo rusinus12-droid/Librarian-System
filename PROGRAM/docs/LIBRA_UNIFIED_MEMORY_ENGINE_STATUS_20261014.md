@@ -142,7 +142,7 @@
 
 ## 11. 마감 기록 (2026-10-14)
 
-이 절은 M01 관련 3건을 마감하면서 **닫은 것**과 **닫지 못한 것**을 구분해 기록한다. 닫힌 항목에는 재현 명령이 있고, 닫히지 않은 항목에는 선행 조건을 적는다. 닫지 못한 것을 PASS로 적지 않는다.
+이 절은 M01 관련 3건을 마감할 당시의 **구현자 기록**이다. 이후 `bad8cdf`의 리뷰(§12)가 이 절의 E3·M04 마감 표현 일부를 반박했으므로 **최신 판정은 §12–14를 우선한다.** 여기서 유지되는 항목과 정정된 항목을 구분해 표시하며, 정정된 항목을 완료로 읽지 않는다.
 
 ### 11.1 닫힘 — 라우팅 모드의 단일 출처·검증·기록 (M01 1차)
 
@@ -161,14 +161,15 @@
 - 가중치를 `tools/libra_memory_graph_query.cjs`의 `MEMORY_ENGINE_SCORE_WEIGHTS`(frozen)로 명명하고 `calibration: 'unmeasured'`를 스스로 선언하게 했다. 값과 연산 순서는 이전과 동일하다(동작 불변).
 - 이 영역의 원본은 도구 소스다: 내장 영역(44700–48399)은 `tools/sync_libra_memory_graph.cjs`가 재생성하며, 직접 플러그인만 고치면 다음 동기화에서 되돌려진다. 편집 후 `--check`가 `changed:false`인지 확인해야 한다.
 - 남은 것: 실제 calibration·ablation은 **M14**이며 이 절로 닫히지 않는다.
+- §12 리뷰의 R1–R8은 위 11.1–11.3(모드 정책·라벨·가중치 표기)을 다루지 않는다(코드·문서 대조). 이 세 항목은 유지된다.
 
 ### 11.4 닫지 못한 것 (선행 조건 명시)
 
 | 항목 | 상태 | 선행 조건 |
 | --- | --- | --- |
-| E3 요청·소비자 통합 | **경계까지 닫힘**. recall 진입점이 라우팅을 실행하고, compiler 경계가 6개 소비자 각각의 packet 정책을 검증한다(헤더 라벨·문자 예산·plan_lines 포맷·gradia receipt·dispatch 자기주장 금지). 남은 것: 소비자 **호스트측** hydration(Classic·Planner·SGA·Input Writer·GUI·GRADIA 실제 삽입) | 각 소비자 호스트의 실제 packet 삽입부 |
+| E3 요청·소비자 통합 | **정정 — 커널 경계 한정이며 미완**. compiler 경계에 검증기는 있었으나 R6에서 **검증 실패가 dispatch를 차단하지 않았고 위조 카운트·개행 주입을 통과**시켰다(현재는 실패 시 `base_request_only` 전환 + `packet: null`). 또 활성 소비자는 **LIBRA Classic·GUI와 별도 GRADIA**이며 `planner`·`sga`·`input_writer`는 퇴역했다 — 커널의 옛 packet 형식 지원은 활성 기능이 아니다. 남은 것: Classic 최종 전달의 실제 호스트 검증과 GRADIA 새 엔진 읽기(N03) | 활성 소비자 각각의 실제 주입·검증, GRADIA 읽기 adapter |
 | E4 설치 호스트 인증 | **미실행 — 외부 차단** | 실제 RisuAI 설치 호스트 |
-| M04 전체 byte inventory | **선언까지 닫힘**. 12개 범주 전부에 결정이 있다: 4개는 계상(rendered_packet·bundle_body·l0_candidate_workspace·lane_page_payload), 8개는 사유와 함께 미계상. `byteBounded:false` 유지. 남은 것: 미계상 범주의 실제 counter 구현과 유계 주장 | 미계상 8범주 counter + 유계 판정 fixture |
+| M04 전체 byte inventory | **정정 — 커널 경계 한정**. R8이 당시 계상의 결함을 지적했다: packet/body를 **문자 수로 계상**했고 미측정값을 **0으로 강제**해 "비용 0"을 주장했다. 현재는 UTF-8 바이트 계상, `characterBudgets` 분리, 미측정은 `null` + `missingMeasurements`이며 `byteBounded:false`가 유지된다. 남은 것: 미계상 범주의 실제 counter·누적 전송량·resident·peak heap 계측 연결(N01) | 미계상 범주 counter + 유계 판정 fixture |
 | M14 품질·latency·메모리 수용 수치 | **미실행**. 계수는 코드에서 `calibration:'unmeasured'`로 표기됨 | 고정 평가 세트 + 대표 workload |
 | 기본값을 unified로 전환 | **금지(의도적)**. 기본은 `legacy`이고 결과에 `qualification: 'unqualified_until_E3_E4'`가 남는다 | E3·E4·M14 종료 |
 
@@ -182,6 +183,17 @@
 - **M04**: `MEMORY_BYTE_CATEGORY_DECISIONS`(12범주)와 `memoryByteInventory()`가 계상값·예산·미계상 사유를 한 구조로 반환한다. `byteBounded`는 **false**로 고정되어 있다 — 전체 API가 유계라고 주장하지 않는다.
 - 재현: `node PROGRAM/tests/libra_memory_graph_consumers_test.cjs` → 9 PASS. 구성: 6 소비자 전수 검증 + **음성 대조 6종**(라벨 오타·예산 초과·gradia receipt 누락·비해당 소비자의 receipt·plan_lines를 default로 렌더·dispatch 자기주장·미선언 소비자 거부) + 범주 누락/중복 검사 + NaN 누출 금지 + 플러그인 내장 확인.
 - 한계: 이 마감은 **compiler 경계**의 검증이다. 소비자 호스트가 실제로 이 packet을 삽입·hydration하는지는 E3의 남은 절반이며, 실제 GRADIA/Classic/Planner 호스트가 필요하다.
+
+### 11.6.1 정정 — `bad8cdf`가 반박한 부분
+
+| 당시 기록 (§11.6) | 실제 | 현재 |
+| --- | --- | --- |
+| "6 소비자 전수 검증" | `planner`·`sga`·`input_writer`는 **퇴역**. 커널이 옛 형식을 지원하는 것과 활성 소비자인 것은 다르다 | 활성: Classic·GUI·별도 GRADIA (v1.10 §16) |
+| "검증 항목에 dispatch 자기주장 금지 포함" | 검증 실패가 **dispatch를 막지 않았다**. 위조 `units=99`, 개행 주입이 통과 | R6: 실패 시 `base_request_only` 전환 + `packet: null` |
+| "12범주에 결정, 4개 계상" | 계상이 **문자 수**였고 미측정을 **0**으로 강제 | R8: UTF-8 바이트, `characterBudgets` 분리, `null` + `missingMeasurements` |
+| "경계까지 닫힘" | 그 시점 실제 `beforeRequest` 전달은 private 정본 proof 부재로 실패 | R1·R2가 수정. §12.3이 남은 우선 작업 |
+
+교훈: 이 경계의 검증은 커널이 자기 포맷터로 만든 packet을 자기 검증기로 확인하는 구조라 **자기참조**였고, 실패 경로가 산출물을 실제로 보류하는지는 별도로 확인해야 했다.
 
 ### 11.7 변경 파일 (E3·M04)
 
