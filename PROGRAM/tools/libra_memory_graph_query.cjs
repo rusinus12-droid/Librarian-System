@@ -179,13 +179,39 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
     const allowedWorldlines = new Set([queryFrame.worldlineId, ...(queryFrame.allowedPredecessorWorldlines || [])]);
 
-    // Map logical entityId (e.g. 'ent-alice') to projected EntityNode.id via unit subjectId/entityId -> subject_of edge
+    // Map logical entityId (e.g. 'ent-alice', 'ent-ring') to projected EntityNode.id:
+    // 1) Positional 1-to-1 correspondence with active validated registry entities projected by readers.project()
+    // 2) Fallback edge scan across subject_of and target_of edges
     const entityNodeIdByLogicalId = new Map();
+    const entityNodes = (graph.nodes || []).filter(n => n.layer === 'entity');
+    if (Array.isArray(queryFrame.entityRegistry) && queryFrame.entityRegistry.length > 0 && entityNodes.length > 0) {
+      const regCounts = new Map();
+      for (const row of queryFrame.entityRegistry) {
+        if (row?.id) regCounts.set(row.id, (regCounts.get(row.id) || 0) + 1);
+      }
+      const validRows = queryFrame.entityRegistry.filter(row => (
+        row?.validated === true
+        && typeof row.id === 'string' && row.id.length > 0
+        && regCounts.get(row.id) === 1
+        && !['inactive', 'superseded', 'deleted'].includes(row.status)
+      ));
+      for (let i = 0; i < Math.min(validRows.length, entityNodes.length); i++) {
+        entityNodeIdByLogicalId.set(validRows[i].id, entityNodes[i].id);
+      }
+    }
     for (const unit of graph.units || []) {
       const logicalId = unit.subjectId || unit.entityId;
-      if (!logicalId || entityNodeIdByLogicalId.has(logicalId)) continue;
-      const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
-      if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+      if (logicalId && !entityNodeIdByLogicalId.has(logicalId)) {
+        const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
+        if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+      }
+      if (Array.isArray(unit.targetIds) && unit.targetIds.length === 1) {
+        const tId = unit.targetIds[0];
+        if (tId && !entityNodeIdByLogicalId.has(tId)) {
+          const targEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'target_of');
+          if (targEdge?.to) entityNodeIdByLogicalId.set(tId, targEdge.to);
+        }
+      }
     }
 
     // M07: Entity & Alias ambiguity resolution against active EntityNodes in the scope
@@ -210,7 +236,9 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       }
     }
 
-    const resolvedEntityIds = new Set(queryFrame.entityIds || []);
+    const resolvedEntityIds = new Set(
+      (queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
+    );
     const ambiguousAliases = [];
     const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
     for (const [alias, entNodeIds] of aliasToEntities.entries()) {
@@ -379,8 +407,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
   };
 
   const retrieve = (viewHandle, {
-    maxPages = 32,
-    maxBytes = 131072,
+    maxPages = 64,
+    maxBytes = 262144,
     pageBytes = 8192,
     maxWorkspaceBytes = 262144,
     resumeCursors = []

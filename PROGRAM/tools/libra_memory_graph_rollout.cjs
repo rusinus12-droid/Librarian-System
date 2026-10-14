@@ -167,6 +167,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       sourceCoverageComplete: queryResult.sourceCoverageComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
+      diagnostics: queryResult.diagnostics,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,

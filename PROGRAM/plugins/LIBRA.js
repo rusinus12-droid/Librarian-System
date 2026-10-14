@@ -35216,7 +35216,11 @@ function createLibraReadonlySourceContext(owner) {
         error.storageMutationFailed = true;
         throw error;
       }
-      if (!String(storageKey || '').includes(':memory-graph:v1:')) {
+      if (String(storageKey || '').includes(':memory-graph:v1:')) {
+        if (!state.memoryGraphKnownKeys) state.memoryGraphKnownKeys = new Set();
+        if (serialized === null || serialized === undefined) state.memoryGraphKnownKeys.delete(storageKey);
+        else state.memoryGraphKnownKeys.add(storageKey);
+      } else {
         state.memoryGraphCompiler?.invalidateAll();
       }
       return true;
@@ -46654,13 +46658,39 @@ function createLibraReadonlySourceContext(owner) {
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
     const allowedWorldlines = new Set([queryFrame.worldlineId, ...(queryFrame.allowedPredecessorWorldlines || [])]);
 
-    // Map logical entityId (e.g. 'ent-alice') to projected EntityNode.id via unit subjectId/entityId -> subject_of edge
+    // Map logical entityId (e.g. 'ent-alice', 'ent-ring') to projected EntityNode.id:
+    // 1) Positional 1-to-1 correspondence with active validated registry entities projected by readers.project()
+    // 2) Fallback edge scan across subject_of and target_of edges
     const entityNodeIdByLogicalId = new Map();
+    const entityNodes = (graph.nodes || []).filter(n => n.layer === 'entity');
+    if (Array.isArray(queryFrame.entityRegistry) && queryFrame.entityRegistry.length > 0 && entityNodes.length > 0) {
+      const regCounts = new Map();
+      for (const row of queryFrame.entityRegistry) {
+        if (row?.id) regCounts.set(row.id, (regCounts.get(row.id) || 0) + 1);
+      }
+      const validRows = queryFrame.entityRegistry.filter(row => (
+        row?.validated === true
+        && typeof row.id === 'string' && row.id.length > 0
+        && regCounts.get(row.id) === 1
+        && !['inactive', 'superseded', 'deleted'].includes(row.status)
+      ));
+      for (let i = 0; i < Math.min(validRows.length, entityNodes.length); i++) {
+        entityNodeIdByLogicalId.set(validRows[i].id, entityNodes[i].id);
+      }
+    }
     for (const unit of graph.units || []) {
       const logicalId = unit.subjectId || unit.entityId;
-      if (!logicalId || entityNodeIdByLogicalId.has(logicalId)) continue;
-      const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
-      if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+      if (logicalId && !entityNodeIdByLogicalId.has(logicalId)) {
+        const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
+        if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+      }
+      if (Array.isArray(unit.targetIds) && unit.targetIds.length === 1) {
+        const tId = unit.targetIds[0];
+        if (tId && !entityNodeIdByLogicalId.has(tId)) {
+          const targEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'target_of');
+          if (targEdge?.to) entityNodeIdByLogicalId.set(tId, targEdge.to);
+        }
+      }
     }
 
     // M07: Entity & Alias ambiguity resolution against active EntityNodes in the scope
@@ -46685,7 +46715,9 @@ function createLibraReadonlySourceContext(owner) {
       }
     }
 
-    const resolvedEntityIds = new Set(queryFrame.entityIds || []);
+    const resolvedEntityIds = new Set(
+      (queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
+    );
     const ambiguousAliases = [];
     const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
     for (const [alias, entNodeIds] of aliasToEntities.entries()) {
@@ -46854,8 +46886,8 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   const retrieve = (viewHandle, {
-    maxPages = 32,
-    maxBytes = 131072,
+    maxPages = 64,
+    maxBytes = 262144,
     pageBytes = 8192,
     maxWorkspaceBytes = 262144,
     resumeCursors = []
@@ -48133,6 +48165,7 @@ function createLibraReadonlySourceContext(owner) {
       sourceCoverageComplete: queryResult.sourceCoverageComplete,
       stopReason: queryResult.stopReason,
       coverage: queryResult.coverage,
+      diagnostics: queryResult.diagnostics,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
@@ -71134,7 +71167,11 @@ ${string(queryBundle?.sceneText || '')}`;
         if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
         if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
         const currentness = await readonlySourceContext.assertCurrent(request);
-        if (collect) collect({ scope, sourceKeys: [...sourceKeys].sort() });
+        if (collect) collect({
+          scope,
+          sourceKeys: [...sourceKeys].sort(),
+          entityRegistry: Array.isArray(registry?.entities) ? clone(registry.entities) : []
+        });
         return clone({ ...graph, scopeKey: scope.scopeKey, readerFrame: frame, requestLocalReadOnly: true,
           readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
           nativeSourceCaptureAdmission: 'unsupported', modelDispatchEligible: false });
@@ -71315,9 +71352,27 @@ ${string(queryBundle?.sceneText || '')}`;
       const suite = ensureMemoryGraphUnifiedSuite();
       let initialCollected = null;
       const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
-      if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) {
+      if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0) || !initialCollected?.scope) {
         throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
       }
+      const storageMode = string((await MemorySuiteStorageBridge.getScopeMode(initialCollected.scope))?.mode || 'plugin_only');
+      const readRawSource = async storageKey => {
+        const raw = storageMode === 'server_only'
+          ? await MemorySuiteStorageBridge.serverGet('plugin', storageKey)
+          : await MemorySuiteStorageBridge.ownerLegacyRead('plugin', storageKey);
+        return storageMode === 'server_only'
+          ? (raw?.exists === true && raw?.tombstone !== true ? raw.value : null)
+          : (raw ?? null);
+      };
+      const pinKeys = (initialCollected.sourceKeys || []).slice(0, 64);
+      const conditionalReadSet = (storageMode === 'server_only' && pinKeys.length > 0)
+        ? await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys)
+        : null;
+      const pinnedValues = [];
+      for (const storageKey of pinKeys) {
+        pinnedValues.push({ key: storageKey, raw: await readRawSource(storageKey) });
+      }
+
       const mode = options.mode || 'unified';
       const sealToken = suite.rollout.sealRequestMode({
         mode,
@@ -71327,6 +71382,13 @@ ${string(queryBundle?.sceneText || '')}`;
         worldlineId: graph.readerFrame.worldlineId,
         restoreEpoch: epoch
       });
+      const rawQueryInput = options.queryInput && typeof options.queryInput === 'object' ? options.queryInput : {};
+      const queryInput = {
+        ...rawQueryInput,
+        entityRegistry: Array.isArray(rawQueryInput.entityRegistry)
+          ? rawQueryInput.entityRegistry
+          : (Array.isArray(initialCollected.entityRegistry) ? initialCollected.entityRegistry : [])
+      };
       const ownerVerifier = {
         currentGraph: async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
         assertPhysicalCurrentness: async () => {
@@ -71334,16 +71396,109 @@ ${string(queryBundle?.sceneText || '')}`;
             || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
             return false;
           }
-          return true;
+          try {
+            if (conditionalReadSet) await MemorySuiteStorageBridge.assertConditionalReadSet(conditionalReadSet);
+            for (const saved of pinnedValues) {
+              if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
+                return false;
+              }
+            }
+            return true;
+          } catch (_err) {
+            return false;
+          }
         }
       };
       return await suite.rollout.executeUnifiedRequest({
         sealToken,
         graph,
-        queryInput: options.queryInput || {},
+        queryInput,
         consumerPolicy: options.consumerPolicy || {},
         laneBudget: options.laneBudget || {},
         ownerVerifier
+      });
+    };
+    const collectMemoryGraphGarbage = async (options = {}) => {
+      const allowed = ['expectedScopeKey','dryRun','throwOnConflict','candidateKeys'];
+      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
+        throw new Error('LIBRA_GRAPH_STORE_OPTIONS_INVALID');
+      }
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      const suite = ensureMemoryGraphUnifiedSuite();
+      let initialCollected = null;
+      const graph = await readMemoryGraphProjection({ expectedScopeKey: options.expectedScopeKey || '', limit: 1, nodeLimit: 64 }, value => { initialCollected = value; });
+      if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0) || !initialCollected?.scope) {
+        throw new Error('LIBRA_GRAPH_STORE_CANCELLED');
+      }
+      const storageMode = string((await MemorySuiteStorageBridge.getScopeMode(initialCollected.scope))?.mode || 'plugin_only');
+      const check = () => {
+        if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
+          || state.deletingScopes.has(graph.scopeKey)) {
+          throw new Error('LIBRA_GRAPH_STORE_OWNER_CHANGED');
+        }
+      };
+      const readRaw = async storageKey => {
+        check();
+        const raw = storageMode === 'server_only'
+          ? await MemorySuiteStorageBridge.serverGet('plugin', storageKey)
+          : await MemorySuiteStorageBridge.ownerLegacyRead('plugin', storageKey);
+        check();
+        return storageMode === 'server_only'
+          ? (raw?.exists === true && raw?.tombstone !== true ? raw.value : null)
+          : (raw ?? null);
+      };
+      const owner = {
+        check,
+        read: readRaw,
+        publication: storageMode === 'server_only' ? 'conditional_root_cas' : 'runtime_ordered_root_last_readback_partial',
+        async capture(keys) {
+          if (!keys.length) return { readSet: null, values: [] };
+          if (keys.length > 64) throw new Error('LIBRA_GRAPH_STORE_SOURCE_PIN_LIMIT');
+          const readSet = storageMode === 'server_only' ? await MemorySuiteStorageBridge.captureConditionalReadSet(keys) : null;
+          const values = [];
+          for (const k of keys) values.push({ key: k, raw: await readRaw(k) });
+          return { readSet, values };
+        },
+        async assertCaptured(pin) {
+          if (!pin) return;
+          if (pin.readSet) await MemorySuiteStorageBridge.assertConditionalReadSet(pin.readSet);
+          for (const saved of pin.values || []) {
+            if (stableReferenceJson(await readRaw(saved.key)) !== stableReferenceJson(saved.raw)) {
+              throw new Error('LIBRA_GRAPH_STORE_SOURCE_PIN_CHANGED');
+            }
+          }
+          check();
+        },
+        async listKeys(prefix) {
+          check();
+          const known = new Set([
+            ...(state.memoryGraphKnownKeys ? [...state.memoryGraphKnownKeys] : []),
+            ...(Array.isArray(options.candidateKeys) ? options.candidateKeys.map(String) : [])
+          ]);
+          const active = [];
+          for (const k of known) {
+            if (typeof k === 'string' && k.startsWith(prefix)) {
+              const raw = await readRaw(k);
+              if (raw !== null) active.push(k);
+            }
+          }
+          return active.sort((a, b) => a.localeCompare(b, 'en'));
+        },
+        async deleteStale(storageKey) {
+          check();
+          if (!String(storageKey || '').startsWith(`${PREFIX}:scope:${graph.scopeKey}:memory-graph:v1:`)) {
+            throw new Error('LIBRA_GRAPH_STORE_KEY_UNOWNED');
+          }
+          await fencedMemoryStorageSet(storageKey, null);
+          state.memoryGraphKnownKeys?.delete(storageKey);
+          check();
+        }
+      };
+      return await suite.store.collectGarbage({
+        owner,
+        scopeKey: graph.scopeKey,
+        dryRun: Boolean(options.dryRun),
+        throwOnConflict: Boolean(options.throwOnConflict)
       });
     };
     const canonicalReaderPatchFields = patchValue => {
@@ -73936,7 +74091,7 @@ ${string(queryBundle?.sceneText || '')}`;
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -84772,6 +84927,7 @@ advanced
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) { return await safeClone(await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options)); },
+    async collectMemoryGraphGarbage(options = {}) { return await safeClone(await LibraMemoryCore.collectMemoryGraphGarbage(options)); },
     async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
     // The read-set contract suite drives the SHIPPED builder, so its bridge handling is asserted against
     // the real function rather than a reimplementation. It is named without the `_test` surface because

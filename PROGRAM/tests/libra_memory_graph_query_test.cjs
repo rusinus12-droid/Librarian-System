@@ -445,6 +445,20 @@ test('M06 & M07: validates semantic representation space compatibility, isolates
   assert.equal(view.resolvedEntityIds.length, 1);
   assert.ok(view.ambiguousAliases.some(a => a.alias === '실버' && a.candidateEntityIds.length === 2));
 
+  // F2: Target-only entity ('ent-ring' via alias '은반지') resolves to its projected EntityNode.id (libra.node.v1:...)
+  const targetOnlyQf = query.sealQueryFrame({
+    queryText: '은반지',
+    owner: baseFrame.owner,
+    scopeKey: baseFrame.scopeKey,
+    worldlineId: baseFrame.worldlineId,
+    entityRegistry: snap.registry.record.entities
+  });
+  const targetOnlyView = query.openView(graph, compiled, targetOnlyQf);
+  assert.equal(targetOnlyView.resolvedEntityIds.length, 1);
+  assert.match(targetOnlyView.resolvedEntityIds[0], /^libra\.node\.v1:[a-f0-9]{64}$/);
+  const targetOnlyRes = query.retrieve(targetOnlyView);
+  assert.ok(targetOnlyRes.candidates.some(c => c.family === 'canonical'), 'Target-only entity alias must seed canonical retrieval via entity postings');
+
   const res = query.retrieve(view);
   assert.equal(res.diagnostics.semanticDiagnostics.compatibleCount, 1);
   assert.equal(res.diagnostics.semanticDiagnostics.incompatibleIsolatedCount, 1);

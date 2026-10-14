@@ -339,6 +339,29 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     assert.equal(truncatedExec.deliveryOutcome, 'partial');
     assert.equal(truncatedExec.queryComplete, false);
     assert.equal(truncatedExec.stopReason, 'projection_coverage_incomplete');
+
+    // F1: Registered executeMemoryGraphUnifiedQuery auto-forwards owner entityRegistry for alias resolution
+    assert.ok(Array.isArray(currentExec.diagnostics?.resolvedEntityIds));
+    assert.ok(currentExec.diagnostics.resolvedEntityIds.length >= 1);
+
+    // F4: Registered collectMemoryGraphGarbage runs store GC over active generation roots
+    await host.f.r.api.buildMemoryGraphGeneration({ expectedScopeKey: host.scopeKey, pageBytes: 16384 });
+    const orphanKey = `libra:v1:scope:${host.scopeKey}:memory-graph:v1:page:units:${'a'.repeat(64)}`;
+    host.f.r.values.set(orphanKey, JSON.stringify({ orphan: true }));
+    const gcDry = await host.f.r.api.collectMemoryGraphGarbage({
+      expectedScopeKey: host.scopeKey,
+      dryRun: true,
+      candidateKeys: [orphanKey]
+    });
+    assert.equal(gcDry.status, 'completed');
+    assert.ok(gcDry.candidateKeys.includes(orphanKey));
+    const gcSweep = await host.f.r.api.collectMemoryGraphGarbage({
+      expectedScopeKey: host.scopeKey,
+      dryRun: false,
+      candidateKeys: [orphanKey]
+    });
+    assert.equal(gcSweep.status, 'completed');
+    assert.ok(gcSweep.deletedKeys.includes(orphanKey));
   } finally {
     await host.cleanup();
   }
