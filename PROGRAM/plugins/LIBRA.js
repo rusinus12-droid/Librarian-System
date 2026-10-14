@@ -49042,6 +49042,163 @@ function createLibraReadonlySourceContext(owner) {
     mergeFamilyInventories
   });
 });
+    const createLibraMemoryGraphRepresentation = (function createMemoryGraphRepresentation({ fingerprint } = {}) {
+  if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_REPRESENTATION_FINGERPRINT_REQUIRED');
+  const fail = reason => { const error = new Error('LIBRA_GRAPH_REPRESENTATION_' + reason.toUpperCase()); error.reason = reason; throw error; };
+  const text = value => String(value == null ? '' : value).trim();
+  const digest = value => {
+    const hashed = fingerprint(typeof value === 'string' ? value : JSON.stringify(value));
+    if (!/^[a-f0-9]{64}$/.test(String(hashed))) fail('fingerprint_invalid');
+    return String(hashed);
+  };
+
+  const SOURCE_FAMILIES = Object.freeze(['canonical', 'micro', 'state', 'lore']);
+
+  // What each family would embed, who would produce it, and whether that producer exists today.
+  const REPRESENTATION_UNITS = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical', unit: 'source_global_projection', producer: 'owner_projection', maintenance: 'explicit_maintenance_only',
+      textBasis: 'owner source record global projection', vectorToday: true, note: 'bound to the source node, never copied onto individual facts'
+    }),
+    micro: Object.freeze({
+      family: 'micro', unit: 'none_declared', producer: 'none_declared', maintenance: 'none',
+      textBasis: 'verified Micro claim span (candidate unit once a producer exists)', vectorToday: false,
+      note: 'no vector producer today; participates lexically and by entity/predicate'
+    }),
+    state: Object.freeze({
+      family: 'state', unit: 'none_declared', producer: 'none_declared', maintenance: 'none',
+      textBasis: 'continuity field value plus evidence (candidate unit once a producer exists)', vectorToday: false,
+      note: 'no vector producer today; participates lexically and by entity/predicate'
+    }),
+    lore: Object.freeze({
+      family: 'lore', unit: 'none_declared', producer: 'none_declared', maintenance: 'none',
+      textBasis: 'lore entry passage (candidate unit once a producer exists)', vectorToday: false,
+      note: 'no vector producer today; participates lexically and by entity/predicate'
+    })
+  });
+
+  const CHANNELS = Object.freeze(['vector', 'lexical', 'entity', 'predicate', 'graph']);
+
+  const declaredUnits = () => Object.freeze(SOURCE_FAMILIES.map(family => REPRESENTATION_UNITS[family]));
+
+  const representationId = ({ family, unitKey, sourceBasis, textHash, viewpoint = {}, space = {} } = {}) => {
+    const unit = REPRESENTATION_UNITS[text(family)];
+    if (!unit) fail('family_unsupported');
+    if (!text(unitKey)) fail('unit_key_required');
+    if (!text(textHash)) fail('text_hash_required');
+    if (!text(sourceBasis)) fail('source_basis_required');
+    if (!text(space.spaceId) || !text(space.provider) || !text(space.model) || !Number.isSafeInteger(space.dimension) || space.dimension < 1) {
+      fail('space_binding_incomplete');
+    }
+    const bound = {
+      family: unit.family,
+      unitKey: text(unitKey),
+      sourceBasis: text(sourceBasis),
+      textHash: text(textHash),
+      viewpoint: Object.freeze({
+        worldlineId: text(viewpoint.worldlineId) || 'main',
+        restoreEpoch: Number.isSafeInteger(viewpoint.restoreEpoch) ? viewpoint.restoreEpoch : 0,
+        asOfTurn: Number.isSafeInteger(viewpoint.asOfTurn) ? viewpoint.asOfTurn : null,
+        viewerId: text(viewpoint.viewerId)
+      }),
+      space: Object.freeze({
+        spaceId: text(space.spaceId), provider: text(space.provider), model: text(space.model),
+        dimension: Number(space.dimension), metric: text(space.metric) || 'cosine',
+        taskPair: text(space.taskPair), profileDigest: text(space.profileDigest)
+      })
+    };
+    return Object.freeze({
+      schema: 'libra.representation_id.v1',
+      representationId: digest(['libra.representation_id.v1', bound.family, bound.unitKey, bound.sourceBasis, bound.textHash, bound.viewpoint, bound.space]),
+      ...bound
+    });
+  };
+
+  const classifyRepresentation = ({ representation, space, viewpoint = {} } = {}) => {
+    if (!representation || representation.schema !== 'libra.representation_id.v1') return Object.freeze({ status: 'missing', reason: 'representation_missing' });
+    if (!space || !text(space.spaceId) || !text(space.provider) || !text(space.model) || !Number.isSafeInteger(space.dimension)) {
+      fail('query_space_binding_incomplete');
+    }
+    const boundSpace = representation.space;
+    if (boundSpace.spaceId !== text(space.spaceId) || boundSpace.provider !== text(space.provider) || boundSpace.model !== text(space.model)
+      || boundSpace.dimension !== Number(space.dimension) || (text(space.metric) && boundSpace.metric !== text(space.metric))) {
+      return Object.freeze({ status: 'foreign_space', reason: 'embedding_space_mismatch' });
+    }
+    const boundView = representation.viewpoint || {};
+    const asOfTurn = Number.isSafeInteger(viewpoint.asOfTurn) ? viewpoint.asOfTurn : null;
+    if (asOfTurn !== null && !Number.isSafeInteger(boundView.asOfTurn)) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_viewpoint_unknown' });
+    }
+    if (asOfTurn !== null && boundView.asOfTurn > asOfTurn) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_outside_temporal_view' });
+    }
+    if (text(viewpoint.worldlineId) && boundView.worldlineId !== text(viewpoint.worldlineId)) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_other_worldline' });
+    }
+    if (Number.isSafeInteger(viewpoint.restoreEpoch) && boundView.restoreEpoch !== Number(viewpoint.restoreEpoch)) {
+      return Object.freeze({ status: 'out_of_view', reason: 'representation_other_restore_epoch' });
+    }
+    return Object.freeze({ status: 'valid', reason: '' });
+  };
+
+  const classifyAgainstBasis = (representation, currentBasis) => {
+    if (!representation || representation.schema !== 'libra.representation_id.v1') return Object.freeze({ status: 'missing', reason: 'representation_missing' });
+    if (text(currentBasis) && representation.sourceBasis !== text(currentBasis)) {
+      return Object.freeze({ status: 'stale_basis', reason: 'representation_basis_changed' });
+    }
+    return Object.freeze({ status: 'valid', reason: '' });
+  };
+
+  const planRepresentationAccess = ({ family, units = [], space, viewpoint = {} } = {}) => {
+    const declaration = REPRESENTATION_UNITS[text(family)];
+    if (!declaration) fail('family_unsupported');
+    if (!Array.isArray(units)) fail('units_invalid');
+    const coverage = { valid: 0, missing: 0, foreignSpace: 0, outOfView: 0, staleBasis: 0 };
+    const planned = [];
+    for (const unit of units) {
+      const verdict = unit?.representation ? classifyRepresentation({ representation: unit.representation, space, viewpoint }) : { status: 'missing', reason: 'representation_missing' };
+      const basisVerdict = verdict.status === 'valid' && unit.currentBasis !== undefined
+        ? classifyAgainstBasis(unit.representation, unit.currentBasis) : verdict;
+      const finalVerdict = verdict.status === 'valid' ? basisVerdict : verdict;
+      if (finalVerdict.status === 'valid') coverage.valid += 1;
+      else if (finalVerdict.status === 'foreign_space') coverage.foreignSpace += 1;
+      else if (finalVerdict.status === 'out_of_view') coverage.outOfView += 1;
+      else if (finalVerdict.status === 'stale_basis') coverage.staleBasis += 1;
+      else coverage.missing += 1;
+      const useVector = finalVerdict.status === 'valid' && declaration.vectorToday === true;
+      planned.push(Object.freeze({
+        unitKey: text(unit.unitKey),
+        representationId: finalVerdict.status === 'valid' ? unit.representation.representationId : null,
+        status: finalVerdict.status,
+        reason: finalVerdict.reason,
+        channels: Object.freeze(useVector ? ['vector', 'lexical', 'entity', 'predicate', 'graph'] : ['lexical', 'entity', 'predicate', 'graph'])
+      }));
+    }
+    const total = planned.length;
+    const counted = coverage.valid + coverage.missing + coverage.foreignSpace + coverage.outOfView + coverage.staleBasis;
+    if (counted !== total) fail('coverage_miscount');
+    return Object.freeze({
+      schema: 'libra.representation_access_plan.v1',
+      family: declaration.family,
+      declaration,
+      units: Object.freeze(planned),
+      unitCount: total,
+      coverage: Object.freeze(coverage),
+      vectorCoverageComplete: total > 0 && coverage.valid === total,
+      channels: CHANNELS,
+      separateDenseRanker: false,
+      heuristicMergeLayer: false,
+      jobsStarted: 0,
+      writes: 0,
+      byteBounded: false
+    });
+  };
+
+  return Object.freeze({
+    SOURCE_FAMILIES, REPRESENTATION_UNITS, CHANNELS,
+    declaredUnits, representationId, classifyRepresentation, classifyAgainstBasis, planRepresentationAccess
+  });
+});
     // END LIBRA MEMORY GRAPH
 
     const tokenize = value => Array.from(new Set(tokenStream(value))).slice(0, 800);
@@ -75333,6 +75490,26 @@ ${string(queryBundle?.sceneText || '')}`;
         const packet = recall.packet || null;
         const itemList = asArray(bundle?.items);
         const roleStats = asObject(trace?.lane?.roleStats);
+        // N02: the representation contract is read here, so the screen states which families have a
+        // vector producer and which do not, joined with what the semantic bridge actually admitted.
+        if (!state.memoryGraphRepresentation) {
+          const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
+          state.memoryGraphRepresentation = createLibraMemoryGraphRepresentation({ fingerprint: primitive.fingerprint });
+        }
+        const semantic = recall.unifiedExecution?.diagnostics?.nativeSemantic || recall.diagnostics?.nativeSemantic || null;
+        const representationView = {
+          declared: state.memoryGraphRepresentation.declaredUnits().map(unit => ({
+            family: unit.family, unit: unit.unit, producer: unit.producer, vectorToday: unit.vectorToday === true, note: unit.note
+          })),
+          actual: semantic ? {
+            status: String(semantic.status || ''),
+            spaceId: String(semantic.spaceId || ''), dimension: Number(semantic.dimension || 0),
+            admitted: Number(semantic.admittedRepresentations || 0),
+            vectorlessFamilies: asArray(semantic.vectorlessFamilies).map(String),
+            rejected: asArray(semantic.rejected).slice(0, 8).map(row => String(row?.reason || '')),
+            backgroundEmbeddingStarted: semantic.backgroundEmbeddingStarted === true
+          } : null
+        };
         const unread = [
           ...asArray(trace?.coverage?.unreadInventoryCursors).map(row => ({ kind: 'owner_cursor', cursorKey: String(row?.cursorKey || '') })),
           ...asArray(trace?.lane?.unreadCursors).map(row => ({ kind: 'lane_cursor', cursorKey: String(row?.cursorKey || row?.cursor || '') })),
@@ -75369,6 +75546,7 @@ ${string(queryBundle?.sceneText || '')}`;
             packetChars: Number(packet?.characterLength || 0), maxCharacters: Number(bundle.budget?.maxCharacters || 0),
             independentSources: Number(bundle.independentSupportingSourceCount || 0)
           } : null,
+          representation: representationView,
           viewpoint: { historicalCanonicalUnavailable: trace?.coverage?.historicalCanonicalUnavailable === true,
             sourceCoverageComplete: trace?.coverage?.sourceCoverageComplete === true },
           unread
@@ -79200,6 +79378,12 @@ ${string(queryBundle?.sceneText || '')}`;
             if (view.adoption) rows.push(guiEl('div', { class: 'hint', text: `채택: ${view.adoption.admitted}건(${view.adoption.families.join('/') || '-'}) · 억제 Micro ${view.adoption.suppressedMicro} · ${view.adoption.packetChars}/${view.adoption.maxCharacters}자` }));
             rows.push(guiEl('div', { class: 'hint', text: view.unread.length ? '미독: ' + view.unread.map(row => row.kind).join(', ') : '미독 없음' }));
             rows.push(guiEl('div', { class: 'hint', text: view.engine ? `엔진: ${view.engine.mode}(${view.engine.source}${view.engine.defaultApplied ? ', 기본값' : ''})` : '' }));
+            if (view.representation?.declared) {
+              const withVector = view.representation.declared.filter(unit => unit.vectorToday).map(unit => unit.family);
+              const without = view.representation.declared.filter(unit => !unit.vectorToday).map(unit => unit.family);
+              rows.push(guiEl('div', { class: 'hint', dataset: { recallRepresentation: 'true' },
+                text: `표현: 벡터 있음 ${withVector.join('/') || '-'} · 생산자 없음 ${without.join('/') || '-'}${view.representation.actual ? ` · 실제 ${view.representation.actual.status || 'n/a'}(채택 ${view.representation.actual.admitted}, 거부 ${view.representation.actual.rejected.length})` : ''}` }));
+            }
           }
           return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
             guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows]);

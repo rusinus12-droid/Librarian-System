@@ -64,6 +64,24 @@ const test = async (name, run) => { await run(); results.push(name); };
       assert.equal(/dispatchEligible"\s*:\s*true/.test(serialized), false, 'no serialized dispatch grant may appear');
     });
 
+    await test('N02: the display view states which families have a vector producer and what was admitted', () => {
+      const view = api.getMemoryRecallDiagnosticsView();
+      const declared = view.representation.declared;
+      assert.deepEqual([...declared.map(unit => unit.family)], ['canonical', 'micro', 'state', 'lore']);
+      assert.equal(declared.find(unit => unit.family === 'canonical').vectorToday, true);
+      assert.equal(declared.find(unit => unit.family === 'canonical').producer, 'owner_projection');
+      for (const family of ['micro', 'state', 'lore']) {
+        assert.equal(declared.find(unit => unit.family === family).vectorToday, false, family + ' must be declared vectorless');
+      }
+      assert.ok(view.representation.actual, 'the actual semantic state must be reported, not implied');
+      assert.ok(String(view.representation.actual.status).length > 0);
+      assert.equal(view.representation.actual.backgroundEmbeddingStarted, false, 'no background embedding may be started');
+      assert.deepEqual([...view.representation.actual.vectorlessFamilies].sort(), ['lore', 'micro', 'state']);
+      assert.ok(Array.isArray(view.representation.actual.rejected));
+      const serialized = JSON.stringify(view.representation);
+      assert.equal(/"(vector|entries|embedding)"\s*:/.test(serialized), false, 'the display view must not carry vector payloads');
+    });
+
     await test('N01: the GUI card is built from that view and exposes stable hooks', () => {
       const source = fs.readFileSync(pluginPath, 'utf8');
       assert.ok(source.includes("dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) }"),
@@ -74,6 +92,7 @@ const test = async (name, run) => { await run(); results.push(name); };
         assert.ok(source.includes(line), 'the card must show: ' + line);
       }
       assert.ok(source.includes("guiEl('h3', { text: '읽은 경로 · 시점 · 미독' })"), 'the card must be titled');
+      assert.ok(source.includes("recallRepresentation: 'true'"), 'the card must expose the representation line (N02)');
       // The card reads budgets alongside the numbers, so a partial window cannot look complete.
       assert.ok(source.includes('${view.read.bytes}/${view.read.budget} bytes'), 'the read line must show bytes against the budget');
     });

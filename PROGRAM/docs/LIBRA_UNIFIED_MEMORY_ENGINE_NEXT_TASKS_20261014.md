@@ -122,6 +122,15 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 - query는 기존 질의 벡터를 사용하고 representation을 읽는다. 역사 재분석·State 쓰기·문서 자동 재임베딩을 시작하지 않는다.
 - 벡터가 없거나 공간이 맞지 않는 자료도 같은 kernel의 lexical/entity/graph 접근으로 참여한다. 별도 dense 순위와 휴리스틱 순위를 병합하는 구조를 다시 만들지 않는다.
 
+**진척 (첫 증분):** 자료별 표현 계약을 `tools/libra_memory_graph_representation.cjs`(순수 커널)와 `tests/libra_memory_graph_representation_test.cjs`(7 PASS)로 고정했다.
+
+- **선언**: `REPRESENTATION_UNITS`가 자료별 표현 단위·생산 주체·유지보수 경로·임베딩할 텍스트를 선언한다. canonical = `source_global_projection`(owner projection, vectorToday true), micro·state·lore = **`none_declared`(vectorToday false)** — 없는 coverage를 침묵으로 두지 않는다. 이 선언은 shipped semantic bridge의 `vectorlessFamilies: ['micro','state','lore']`와 일치한다(스위트가 실제 소스에서 확인).
+- **식별**: `representationId()`가 (family, unit key, source basis, text hash, viewpoint{worldline·restoreEpoch·asOfTurn·viewer}, space{spaceId·provider·model·dimension·metric·taskPair·profileDigest}) 튜플을 digest로 묶는다. **벡터 바이트를 담지 않는다** — 정본 global vector는 원본 source 노드에 결속된 채로 둔다. 불완전한 binding은 `unit_key_required`·`text_hash_required`·`space_binding_incomplete`로 거부한다.
+- **분류**: `valid`·`missing`·`foreign_space`(provider/model/dimension/metric 불일치)·`out_of_view`(과거·미래 시점, 다른 세계선, 다른 restore epoch)·`stale_basis`(원본 basis 변경)로 나누고 사유를 남긴다.
+- **참여**: `planRepresentationAccess()`는 벡터가 없거나 공간이 다르거나 stale한 단위도 **같은 커널의 lexical/entity/predicate/graph 채널**로 참여시킨다(`separateDenseRanker:false`, `heuristicMergeLayer:false`). 벡터 채널은 선언된 생산자가 있는 자료의 유효 단위에만 열린다. coverage 5종이 unit 수와 합이 맞고, 하나라도 유효하지 않으면 `vectorCoverageComplete:false`, `byteBounded:false`다. 계획은 **아무것도 생산하지 않는다**(`jobsStarted:0`·`writes:0`, 임베딩 호출 금지 검사 포함).
+- **표시 연결**: 진단 표시 DTO와 카드가 선언 표와 **실제 상태**를 함께 보여준다. 실측(fixture·plugin_only): `status: no_compatible_representations`, `admitted 0`, `rejected ['representation_missing']`, `vectorlessFamilies ['micro','state','lore']`, `backgroundEmbeddingStarted false`. 표현 payload(벡터)는 표시 DTO에 들어가지 않는다.
+- **여기서 멈춘 것**: ① micro·state·lore의 **실제 벡터 생산자**는 아직 없다(이 계약은 생산자를 만들지 않는다 — 유지보수 정책 결정 필요) ② 계획을 **scorer/frontier의 입력으로 소비**하는 연결은 아직이다(현재 질의 커널은 벡터 없는 자료를 이미 lexical/entity 채널로 처리하지만, 이 계획을 점수 입력으로 받지는 않는다) ③ 가중치 calibration은 N06.
+
 **완료 기준:** 각 family의 유효/누락/불일치·과거/미래 표현을 같은 scorer/frontier에서 처리하고 원래 근거로 연결한다. 실제 모델의 검색 정확도와 가중치 calibration은 N06에서 별도로 판정한다.
 
 ## 6. N03 — GRADIA 셰도우·AIDE 연결
