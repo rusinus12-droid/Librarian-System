@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T03:52:54.431Z",
+  "generatedAt": "2026-10-14T03:58:04.037Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2628,8 +2628,8 @@
       "bytes": 21942
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
-      "sha256": "2105e55f2fdb53c30b8999e623c5d988336126241bca86733dd33d3ab173c1bf",
-      "bytes": 24462
+      "sha256": "8eb41ee2fe2392f6b2c6c2e2d5526b75a62f439d6b56c1ab080d3fc642fc7046",
+      "bytes": 25135
     },
     "docs/LIBRA_WORKBENCH_CONSOLIDATION_2.3.67.md": {
       "sha256": "49daa2571bf96c2b89ca2ede306da6870e489a2321962a135d923e5992007156",
@@ -3636,8 +3636,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "0352a0b15a3d27fc109b31add664cf18fd05eb492f6d776f99ef80351ff68714",
-      "bytes": 5874306
+      "sha256": "5f5dce089e23db9b3c3cf55210a430764af640b8edb06712da818f90dccfc093",
+      "bytes": 5880613
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7484,8 +7484,8 @@
       "bytes": 8181
     },
     "tests/libra_memory_graph_rollout_test.cjs": {
-      "sha256": "b61bf5f114548ef731beb6cf405b558f7c3f32e045aede57e8d1f6c949e1cb5d",
-      "bytes": 15622
+      "sha256": "c4e0d3787f61dd0013d78122e21059c67c36e903508987c2c65f4448c0244029",
+      "bytes": 17272
     },
     "tests/libra_memory_graph_store_runtime_test.cjs": {
       "sha256": "067b2111b83cb60aa6a221087bfc8df62ab4c0f15aefff932270d15b40639e21",

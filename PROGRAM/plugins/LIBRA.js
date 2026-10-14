@@ -64638,6 +64638,87 @@ ${string(queryBundle?.sceneText || '')}`;
         persistRecallCatalog=false;
         queryBundle={...queryBundle,...scoped,manifest,pairs,requestLocalReadOnly,persistRecallCatalog:false};
       }
+      const unifiedEngineMode = string(suppliedBundle?.unifiedEngineMode || settings?.unifiedMemoryEngineMode || 'legacy');
+      if (unifiedEngineMode === 'unified') {
+        const suite = ensureMemoryGraphUnifiedSuite();
+        const scopeKeyStr = string(context?.scope?.scopeKey || '');
+        const unifiedExec = await executeMemoryGraphUnifiedQuery({
+          expectedScopeKey: scopeKeyStr,
+          mode: 'unified',
+          queryInput: {
+            queryText: string(queryBundle.currentText || ''),
+            ...(activeView.cutoffTurn != null ? { asOfTurn: Number(activeView.cutoffTurn) } : {}),
+            ...(suppliedBundle?.unifiedQueryInput && typeof suppliedBundle.unifiedQueryInput === 'object' ? suppliedBundle.unifiedQueryInput : {})
+          },
+          consumerPolicy: suppliedBundle?.consumerPolicy && typeof suppliedBundle.consumerPolicy === 'object'
+            ? suppliedBundle.consumerPolicy
+            : {
+                consumer: string(suppliedBundle?.consumer || 'classic'),
+                maxCharacters: Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS)
+              },
+          laneBudget: suppliedBundle?.laneBudget && typeof suppliedBundle.laneBudget === 'object' ? suppliedBundle.laneBudget : {}
+        });
+        const modeSeal = suite.rollout.sealRequestMode({
+          mode: 'unified',
+          requestId: unifiedExec.requestId || id('unified_recall'),
+          owner: unifiedExec.bundle?.owner || 'libra:plugin_only',
+          scopeKey: scopeKeyStr,
+          worldlineId: unifiedExec.bundle?.worldlineId || 'main',
+          restoreEpoch: capturedNetworkEpoch
+        });
+        const fence = suite.rollout.createLegacyExecutionFence(modeSeal);
+        const unifiedMemories = asArray(unifiedExec.bundle?.items).map(item => ({
+          id: item.nodeId,
+          nodeId: item.nodeId,
+          family: item.family,
+          semanticRole: item.semanticRole,
+          score: item.score,
+          excerpt: item.text,
+          memory: {
+            memoryId: item.nodeId,
+            kind: item.family,
+            summary: item.text,
+            sessionEpoch: 0,
+            turnRange: { start: Number(item.turn || 0), end: Number(item.turn || 0) }
+          }
+        }));
+        const unifiedResult = {
+          memories: unifiedMemories,
+          scope: clone(context.scope),
+          scopeKey: scopeKeyStr,
+          queryText: queryBundle.currentText,
+          packet: unifiedExec.packet,
+          bundle: unifiedExec.bundle,
+          unifiedExecution: unifiedExec,
+          diagnostics: {
+            candidates: asArray(unifiedExec.bundle?.items).length,
+            unifiedMemoryEngine: {
+              mode: 'unified',
+              generation: unifiedExec.generation,
+              indexDigest: unifiedExec.indexDigest,
+              deliveryOutcome: unifiedExec.deliveryOutcome,
+              queryComplete: unifiedExec.queryComplete,
+              sourceCoverageComplete: unifiedExec.sourceCoverageComplete,
+              stopReason: unifiedExec.stopReason,
+              modelDispatchEligible: unifiedExec.modelDispatchEligible,
+              legacyRankerExecuted: false,
+              legacyCachesRebuilt: false,
+              cleanCutoverVerified: fence.status().cleanCutoverVerified
+            },
+            recallRuntime: recallGuardSnapshot(guard)
+          },
+          tokens: Math.ceil(Number(unifiedExec.packet?.characterLength || 0) / 3),
+          excerptChars: Number(unifiedExec.packet?.characterLength || 0),
+          recallMaxChars: Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS),
+          effectiveRecallMaxChars: Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS),
+          configuredRecallMaxChars: Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS),
+          at: Date.now()
+        };
+        state.lastRecall = unifiedResult;
+        state.lastRecallRuntime = recallGuardSnapshot(guard);
+        Runtime.lastMemoryRecall = clone(unifiedResult);
+        return unifiedResult;
+      }
       const microCorpus = await runRecallStep(guard, 'recall_micro_corpus',
         () => activeMicroRecallCorpus(context, pairs, manifest, currentTurn), RECALL_STEP_BUDGET_MS,
         { soft: true, fallback: { refs: [], entries: [], signature: '', pending: [{ reason: 'micro_recall_index_unavailable' }] },
@@ -65424,6 +65505,42 @@ ${string(queryBundle?.sceneText || '')}`;
       };
       consumedClosureProofsByResult.set(result, mergeConsumedProofs(recallClosureProofs));
       if (networkFrame) consumedNetworkFramesByResult.set(result, unifiedDeepFreeze(clone(networkFrame)));
+      if (unifiedEngineMode === 'shadow') {
+        try {
+          const suite = ensureMemoryGraphUnifiedSuite();
+          let shadowCollected = null;
+          const shadowGraph = await readMemoryGraphProjection({
+            expectedScopeKey: string(context?.scope?.scopeKey || ''),
+            limit: 20,
+            nodeLimit: 2048
+          }, value => { shadowCollected = value; });
+          const shadowReport = await suite.rollout.runShadowComparison({
+            requestId: id('shadow_recall'),
+            graph: shadowGraph,
+            queryInput: {
+              queryText: string(queryBundle.currentText || ''),
+              entityRegistry: Array.isArray(shadowCollected?.entityRegistry) ? shadowCollected.entityRegistry : [],
+              ...(activeView.cutoffTurn != null ? { asOfTurn: Number(activeView.cutoffTurn) } : {})
+            },
+            legacyBaseline: {
+              admittedNodeIds: selected.map(row => string(row.id || row.memory?.memoryId || '')).filter(Boolean)
+            },
+            ownerVerifier: {
+              currentGraph: async () => await readMemoryGraphProjection({ expectedScopeKey: shadowGraph.scopeKey }),
+              assertPhysicalCurrentness: async () => !state.disposed && capturedNetworkEpoch === Number(state.microRestoreGeneration || 0)
+            }
+          });
+          result.diagnostics.unifiedShadowEvaluation = clone(shadowReport);
+          Runtime.lastUnifiedShadowEvaluation = clone(shadowReport);
+        } catch (shadowError) {
+          result.diagnostics.unifiedShadowEvaluation = {
+            schema: 'libra.memory_graph_rollout.v1',
+            mode: 'shadow',
+            status: 'failed_open',
+            error: string(shadowError?.message || shadowError || '').slice(0, 200)
+          };
+        }
+      }
       if (guard?.publicationCurrent && !guard.publicationCurrent()) return result;
       state.lastRecall = result;
       state.lastRecallRuntime = recallGuardSnapshot(guard);
@@ -84897,8 +85014,20 @@ advanced
     async retryPendingUnifiedVectors() {
       return safeClone(await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true}));
     },
-    async previewUnifiedMemoryRecall(queryText='') {
-      return safeClone(await LibraMemoryCore.recall(await LibraMemoryCore.resolveContext(),String(queryText)));
+    async previewUnifiedMemoryRecall(queryOrOptions='') {
+      const ctx = await LibraMemoryCore.resolveContext();
+      if (queryOrOptions && typeof queryOrOptions === 'object' && !Array.isArray(queryOrOptions)) {
+        const qText = String(queryOrOptions.queryText ?? queryOrOptions.currentText ?? '');
+        return safeClone(await LibraMemoryCore.recall(ctx, {
+          currentText: qText,
+          sceneText: '',
+          sparseText: qText,
+          currentWeight: 1,
+          sceneWeight: 0,
+          ...queryOrOptions
+        }));
+      }
+      return safeClone(await LibraMemoryCore.recall(ctx, String(queryOrOptions)));
     },
     async scanMemoryNow(options = {}) {
       return await LibraMemoryCore.startManualCanonicalScan(options);

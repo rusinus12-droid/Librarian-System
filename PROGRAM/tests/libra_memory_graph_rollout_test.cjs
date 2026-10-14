@@ -362,6 +362,31 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     });
     assert.equal(gcSweep.status, 'completed');
     assert.ok(gcSweep.deletedKeys.includes(orphanKey));
+
+    // M01 & M13: previewUnifiedMemoryRecall in 'unified' mode routes LibraMemoryCore.recall through executeMemoryGraphUnifiedQuery with zero legacy ranker execution
+    const unifiedRecall = await host.f.r.api.previewUnifiedMemoryRecall({
+      queryText: QUOTE,
+      unifiedEngineMode: 'unified',
+      consumer: 'planner'
+    });
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.mode, 'unified');
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.deliveryOutcome, 'complete');
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.legacyRankerExecuted, false);
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.legacyCachesRebuilt, false);
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.cleanCutoverVerified, true);
+    assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.modelDispatchEligible, true);
+    assert.ok(unifiedRecall.memories.length >= 1);
+    assert.ok(unifiedRecall.packet.renderedText.includes('consumer=planner'));
+
+    // M12: previewUnifiedMemoryRecall in 'shadow' mode runs shadow comparison alongside legacy recall with zero double injection
+    const shadowRecall = await host.f.r.api.previewUnifiedMemoryRecall({
+      queryText: QUOTE,
+      unifiedEngineMode: 'shadow'
+    });
+    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.mode, 'shadow');
+    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.shadowInjectedIntoModelPrompt, false);
+    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.doubleInjection, false);
+    assert.equal(shadowRecall.diagnostics.unifiedShadowEvaluation.additionalModelCalls, 0);
   } finally {
     await host.cleanup();
   }
