@@ -60,20 +60,20 @@
 
 ## 5. 먼저 해결할 결함 — D01–D08
 
-이 표의 8건은 조사 HEAD에서 재현됐다. 실제 ordinary recall은 새 커널을 사용하지 않으므로 이 표를 기존 엔진 전체의 동일 결함 목록으로 확대하지 않는다. 새 경로의 dispatch 또는 자동 GC를 연결하기 전에 아래 경계를 닫아야 한다.
+이 표의 8건은 조사 HEAD(`83caadd`)에서 재현됐으며, 후속 수리 커밋에서 커널·런타임 경계를 수정하고 E1/E2 회귀 테스트로 검증했다. 실제 ordinary recall(`beforeRequest`) 전환과 자동 GC 연결은 M01–M15 gate에 속한다.
 
-| ID·우선순위 | 재현한 동작 | 수정 완료 조건 |
+| ID·우선순위 | 재현한 동작 | 수리 내용 및 검증 증거 (상태: 해결) |
 | --- | --- | --- |
-| D01 · P1 · 시간 | native Micro의 turn은 record/head/receipt에 있고 span에는 없음. plugin_only/server_only에서 turn 6이 asOfTurn 3에 반환 | owner 검증된 source turn을 unit/basis에 보존. native producer 형식으로 미래 seed·중간 경유·출력을 차단 |
-| D02 · P1 · 물리 검증 | `assertPhysicalCurrentness` 없이 이전 graph만 반환해도 발송 가능 true | trusted private owner 검증을 필수로 요구. cached/공개 DTO만으로 발송 승인 불가. 미지원은 거부/명시적 partial |
-| D03 · P1 · GC | mark 뒤 다른 publisher가 root B를 게시하면 B의 manifest 삭제 | owner 수준 게시/GC fencing·조건부 sweep, 진행 중 build와 사용 중 generation 보호, 오염/불완전 mark에서 삭제 중단 |
-| D04 · P1 · 폐기 | `currentGraph()` 대기 중 `invalidateAll()`을 실행해도 기존 readset이 verified | 각 await 뒤·승인 직전 issued handle/revoked/epoch 재확인. restore·scope·취소·unload 경계에 연결 |
-| D05 · P2 · coverage | `nodeLimit:5`로 세 family가 `node_work_budget`에 걸려도 query complete | 원본 coverage·미독 source cursor·index coverage를 끝까지 전달. traversal 종료와 지원 corpus 완료를 구분 |
-| D06 · P2 · 역의존성 | source 변경의 affectedPostingKeys가 비고 DF refresh false | source→unit→각 posting의 전이 의존성 갱신. 수정·삭제·정정·registry/lore 변화의 stale posting 제거 |
-| D07 · P2 · 출력 예산 | maxCharacters 32, body 31인데 packet 129자 | envelope·라벨·번호·구분자까지 최종 출력 예산에 포함. 실제 채택된 정본을 기준으로 Micro 흡수/readset 확정 |
-| D08 · P2 · V05 | 존재하지 않는 bestActivation/bundleDigest/packetDigest 비교로 통과 | 실제 score+witness·bundle·rendered packet digest 비교. 실제 cache hit/LRU와 독립 실행기 재시작을 검사 |
+| D01 · P1 · 시간 | native Micro의 turn은 record/head/receipt에 있고 span에는 없음. plugin_only/server_only에서 turn 6이 asOfTurn 3에 반환 | **해결 (E1/E2)**: `libra_memory_graph_readers.cjs`에서 owner 검증된 `record.turn`/`sessionEpoch`를 Micro unit에 보존하고, `libra_memory_graph_query.cjs`의 `openView`에서 미래 unit·자식 전체가 미래인 `SourceNode`·미래 basis 엣지를 차단. `libra_memory_graph_query_test.cjs` 및 등록 API(`executeMemoryGraphUnifiedQuery`) E2 테스트로 검증 |
+| D02 · P1 · 물리 검증 | `assertPhysicalCurrentness` 없이 이전 graph만 반환해도 발송 가능 true | **해결 (E1/E2)**: `libra_memory_graph_compiler.cjs`의 `validateConsumedReadSet`에서 `assertPhysicalCurrentness` 콜백을 필수로 강제(누락 시 `LIBRA_GRAPH_COMPILER_PHYSICAL_VERIFIER_REQUIRED` 거부). `libra_memory_graph_compiler_test.cjs`에서 검증 |
+| D03 · P1 · GC | mark 뒤 다른 publisher가 root B를 게시하면 B의 manifest 삭제 | **해결 (E1)**: `libra_memory_graph_store.cjs`의 `collectGarbage`에서 `owner.capture` 핀·manifest/root 무결성 확인 및 각 삭제 직전 `verifyRootsUnchanged()`로 동시 게시 감지 시 즉시 중단(`status: 'aborted_concurrent_mutation'`, 활성 manifest 보존). `libra_memory_graph_index_test.cjs`에서 검증 |
+| D04 · P1 · 폐기 | `currentGraph()` 대기 중 `invalidateAll()`을 실행해도 기존 readset이 verified | **해결 (E1/E2)**: `validateConsumedReadSet`의 모든 `await` 직후 및 최종 반환 직전 `assertHandleActive()`(핸들·`revoked`·`compilerEpoch`) 재확인. `LIBRA.js`의 `noteMicroRestoreBoundary`·`deleteCurrentScope`·`cancelMemoryGraphGenerationBuild`·`unload`에 `memoryGraphCompiler.invalidateAll()` 연결 |
+| D05 · P2 · coverage | `nodeLimit:5`로 세 family가 `node_work_budget`에 걸려도 query complete | **해결 (E1/E2)**: `libra_memory_graph_query.cjs`에서 `traversalComplete`와 `sourceCoverageComplete`(`node_work_budget`, `*_pages_unread`, 미독 커서 등)를 분리해 원본 투영 절단 시 `complete: false`, `stopReason: 'projection_coverage_incomplete'`, Rollout `deliveryOutcome: 'partial'` 반환 |
+| D06 · P2 · 역의존성 | source 변경의 affectedPostingKeys가 비고 DF refresh false | **해결 (E1)**: `libra_memory_graph_index.cjs`의 `compile` 및 `affectedByChanges`에서 `source:` / `node:` → `postingKeys`·`edgeIds` 전이 확장을 수행하고 `lexical:` 포함 시 `requiresGlobalDfRefresh: true` 반환 |
+| D07 · P2 · 출력 예산 | maxCharacters 32, body 31인데 packet 129자 | **해결 (E1/E2)**: `libra_memory_graph_compiler.cjs`에서 `formatPacketText`(헤더·역할 라벨·번호·줄바꿈 포함) 기준으로 `select` 예산을 판정하여 `usedCharacters === packet.characterLength <= maxCharacters` 보장 및 실제 채택된 정본 기준으로만 Micro 흡수 |
+| D08 · P2 · V05 | 존재하지 않는 bestActivation/bundleDigest/packetDigest 비교로 통과 | **해결 (E1)**: `bundle.bundleDigest`·`packet.packetDigest` 생성 및 `c.score`·`winningWitness` 비교로 수정하고, `index.compile`을 `pages.page()` 캐시 경로에 연결해 실제 cold miss / warm hit / partition eviction / 독립 팩토리 재시작을 `verifyColdWarmEvictionDeterminism`에서 검증 |
 
-모든 결함은 수정 커밋·회귀 검사·증거 수준을 함께 기록한 뒤 닫는다. 현재 테스트가 PASS인 상태는 위 완료 조건을 대신하지 않는다.
+모든 결함은 수정 커밋·회귀 검사·증거 수준을 함께 기록한 뒤 닫는다. 현재 테스트가 PASS인 상태는 M01–M15의 전체 통합 완료 조건을 대신하지 않는다.
 
 ## 6. 구현·연결 미완료 작업 — M01–M15
 

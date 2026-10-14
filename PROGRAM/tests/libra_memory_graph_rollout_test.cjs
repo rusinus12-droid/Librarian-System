@@ -137,7 +137,7 @@ const makeSnapshot = () => ({
   }
 });
 
-const buildEnv = snapshot => {
+const buildEnv = (snapshot, { nodeLimit = 2048 } = {}) => {
   const identity = createMemoryGraphIdentity({ fingerprint: sha256 });
   const pages = createMemoryGraphPages({ fingerprint: sha256 });
   const readers = createMemoryGraphReaders({ identity, digestClaim: c => sha256(JSON.stringify(c)) });
@@ -147,16 +147,16 @@ const buildEnv = snapshot => {
   const compiler = createMemoryGraphCompiler({ fingerprint: sha256 });
   const rollout = createMemoryGraphRollout({ index, lane, query, compiler, pages, fingerprint: sha256 });
 
-  const rawGraph = readers.project(snapshot, { nodeLimit: 2048 });
+  const rawGraph = readers.project(snapshot, { nodeLimit });
   const graph = {
     ...rawGraph,
     scopeKey: snapshot.frame.scopeKey,
     readerFrame: clone(snapshot.frame)
   };
-  return { graph, rollout };
+  return { graph, rollout, pages, index, lane, query, compiler };
 };
 
-test('UM5 & V11: sealed engine mode prevents silent fallback to legacy ranker on partial budget stop or stale final readset', async () => {
+test('UM5, V11 & D05: sealed engine mode prevents silent fallback to legacy ranker on partial budget stop, truncated projection, or stale final readset', async () => {
   const snap = makeSnapshot();
   const { graph, rollout } = buildEnv(snap);
 
@@ -181,7 +181,19 @@ test('UM5 & V11: sealed engine mode prevents silent fallback to legacy ranker on
   assert.equal(partialExec.legacyCachesRebuilt, false);
   assert.equal(partialExec.queryComplete, false);
 
-  // 2. Final physical readset failure falls back to base_request_only without running legacy ranker
+  // 2. D05: Truncated source projection (nodeLimit = 5) reports deliveryOutcome: 'partial' and stopReason: 'projection_coverage_incomplete'
+  const truncatedGraph = buildEnv(snap, { nodeLimit: 5 }).graph;
+  const truncatedExec = await rollout.executeUnifiedRequest({
+    sealToken: seal,
+    graph: truncatedGraph,
+    queryInput: { queryText: 'silver ring alice' }
+  });
+  assert.equal(truncatedExec.deliveryOutcome, 'partial');
+  assert.equal(truncatedExec.queryComplete, false);
+  assert.equal(truncatedExec.sourceCoverageComplete, false);
+  assert.equal(truncatedExec.stopReason, 'projection_coverage_incomplete');
+
+  // 3. Final physical readset failure falls back to base_request_only without running legacy ranker
   const staleSnap = makeSnapshot();
   staleSnap.frame.restoreEpoch = 9;
   const staleGraph = buildEnv(staleSnap).graph;
@@ -189,7 +201,10 @@ test('UM5 & V11: sealed engine mode prevents silent fallback to legacy ranker on
     sealToken: seal,
     graph,
     queryInput: { queryText: 'silver ring alice' },
-    ownerVerifier: { currentGraph: async () => staleGraph }
+    ownerVerifier: {
+      currentGraph: async () => staleGraph,
+      assertPhysicalCurrentness: async () => true
+    }
   });
   assert.equal(rejectedExec.deliveryOutcome, 'base_request_only');
   assert.equal(rejectedExec.fallbackAction, 'preserve_base_model_request');
@@ -215,7 +230,10 @@ test('UM5 & V08: shadow evaluation measures recall/precision and intentional Sta
       expectedNodeIds: [canonicalUnit.nodeId, stateUnit.nodeId, loreUnit.nodeId],
       forbiddenNodeIds: ['forged-ineligible-node']
     },
-    ownerVerifier: { currentGraph: async () => graph }
+    ownerVerifier: {
+      currentGraph: async () => graph,
+      assertPhysicalCurrentness: async () => true
+    }
   });
 
   assert.equal(shadow.mode, 'shadow');
@@ -264,18 +282,66 @@ test('UM6 & V11: legacy retirement fence rejects duplicate legacy cache/A2/ranke
   assert.equal(legacyFence.assertLegacyAllowed('recallCatalogCache'), true);
 });
 
-test('UM6 & V05: cold cache, warm cache, post-LRU eviction, and restart produce identical complete results and winning witnesses', () => {
+test('UM6, V05 & D08: cold cache, warm cache, post-LRU eviction, and fresh factory restart produce identical concrete digests', () => {
   const snap = makeSnapshot();
   const { graph, rollout } = buildEnv(snap);
   const report = rollout.verifyColdWarmEvictionDeterminism({
     graph,
-    queryInput: { queryText: 'silver ring alice' }
+    queryInput: { queryText: 'silver ring alice' },
+    createFreshRuntime: () => {
+      const freshPages = createMemoryGraphPages({ fingerprint: sha256 });
+      const freshIndex = createMemoryGraphIndex({ pages: freshPages, fingerprint: sha256 });
+      const freshLane = createMemoryGraphLane({ index: freshIndex, pages: freshPages });
+      const freshQuery = createMemoryGraphQuery({ index: freshIndex, lane: freshLane, pages: freshPages, fingerprint: sha256 });
+      const freshCompiler = createMemoryGraphCompiler({ fingerprint: sha256 });
+      return { pages: freshPages, index: freshIndex, lane: freshLane, query: freshQuery, compiler: freshCompiler };
+    }
   });
   assert.equal(report.deterministic, true);
+  assert.equal(report.bundleAndPacketDigestFieldsPresent, true);
   assert.equal(report.passes.cold.complete, true);
+  assert.ok(report.passes.cold.cacheMisses > 0);
+  assert.ok(report.passes.warm.cacheHits > 0);
+  assert.ok(report.passes.postEviction.evictionsTriggered > 0);
+  assert.match(report.passes.cold.candidateDigest, /^[a-f0-9]{64}$/);
+  assert.match(report.passes.cold.bundleDigest, /^[a-f0-9]{64}$/);
+  assert.match(report.passes.cold.packetDigest, /^[a-f0-9]{64}$/);
   assert.equal(report.passes.cold.candidateDigest, report.passes.warm.candidateDigest);
   assert.equal(report.passes.cold.bundleDigest, report.passes.postEviction.bundleDigest);
   assert.equal(report.passes.cold.packetDigest, report.passes.postRestart.packetDigest);
+});
+
+test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery runs all 5 embedded factories on synthetic plugin_only host and enforces asOfTurn and truncation boundaries', async () => {
+  const { fixture, QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+  const host = await fixture({ mode: 'plugin_only' });
+  try {
+    const currentExec = await host.f.r.api.executeMemoryGraphUnifiedQuery({
+      expectedScopeKey: host.scopeKey,
+      queryInput: { queryText: QUOTE }
+    });
+    assert.equal(currentExec.deliveryOutcome, 'complete');
+    assert.equal(currentExec.modelDispatchEligible, true);
+    assert.ok(currentExec.bundle.items.some(i => i.family === 'micro'));
+    assert.ok(currentExec.packet.characterLength <= 4096);
+
+    const pastExec = await host.f.r.api.executeMemoryGraphUnifiedQuery({
+      expectedScopeKey: host.scopeKey,
+      queryInput: { queryText: QUOTE, asOfTurn: 3 }
+    });
+    assert.equal(pastExec.deliveryOutcome, 'complete');
+    assert.equal(pastExec.bundle.items.some(i => i.family === 'micro'), false, 'Native future Micro turn 6 must be excluded at asOfTurn 3');
+
+    const truncatedExec = await host.f.r.api.executeMemoryGraphUnifiedQuery({
+      expectedScopeKey: host.scopeKey,
+      nodeLimit: 12,
+      queryInput: { queryText: QUOTE }
+    });
+    assert.equal(truncatedExec.deliveryOutcome, 'partial');
+    assert.equal(truncatedExec.queryComplete, false);
+    assert.equal(truncatedExec.stopReason, 'projection_coverage_incomplete');
+  } finally {
+    await host.cleanup();
+  }
 });
 
 (async () => {

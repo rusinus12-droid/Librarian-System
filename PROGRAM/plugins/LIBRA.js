@@ -33522,6 +33522,11 @@ function createLibraReadonlySourceContext(owner) {
       memoryGraphPages: null,
       memoryGraphStore: null,
       memoryGraphStoreSerial: 0,
+      memoryGraphIndex: null,
+      memoryGraphLane: null,
+      memoryGraphQuery: null,
+      memoryGraphCompiler: null,
+      memoryGraphRollout: null,
       memoryNetworkIO: { signatureCalls: 0, signatureRefs: 0, refFingerprints: 0,
         catalogMetadataReconstructions: 0, memoryLoads: 0, vectorLoads: 0,
         rawHistoryRowsValidated: 0, sourceDigestPairs: 0, ownerReads: 0,
@@ -44993,12 +44998,15 @@ function createLibraReadonlySourceContext(owner) {
       if (record.analysisStatus === 'verified' && !claims.length) { note('micro', 'verified_claims_unavailable'); return; }
       const src = source('micro', row.recordKey, record.analysisRevisionId,
         { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey, 1);
+      const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
+      const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
       spans.forEach((span, index) => {
         const claim = claims[index] || null, body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId };
         const node = meaning(src, claim ? 'micro_claim' : 'source_excerpt', row.recordKey + '#units/' + index, body,
           { index, role: span.role, messageId: span.messageId, startOffset: span.startOffset, endOffset: span.endOffset },
           { text: claim ? string(claim.text) : span.exactQuote, semanticRole: claim ? 'micro_candidate' : 'source_only',
             authority: claim ? 'source_verified_candidate' : 'source_only', sourceSpan: clone(span),
+            turn: recordTurn, sessionEpoch: recordSessionEpoch,
             representationCoverage: claim ? 'producer_bounded_claim' : 'producer_bounded_excerpt' });
         const why = basis(src, 'micro_span', row.recordKey + '#span/' + index, body, { span, receiptKey: record.receiptKey });
         link(node, src.node, 'evidenced_by', why);
@@ -45581,7 +45589,7 @@ function createLibraReadonlySourceContext(owner) {
       requestLocalReadOnly: true, byteBounded: false, ownerTransportBounded: false,
       cache: pages.inspect() };
   };
-  const collectGarbage = async ({ owner, scopeKey, dryRun = false } = {}) => {
+  const collectGarbage = async ({ owner, scopeKey, dryRun = false, throwOnConflict = false } = {}) => {
     if (active) fail('build_busy'); if (disposed) fail('disposed');
     if (!owner || typeof owner.listKeys !== 'function' || typeof scopeKey !== 'string' || !scopeKey) fail('options_invalid');
     active = true; const ticket = epoch; counters.gcRuns++;
@@ -45591,27 +45599,82 @@ function createLibraReadonlySourceContext(owner) {
       const stamp = hash(prefix + ':' + ticket);
       check(ticket, owner);
       const allKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
-      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:'));
+      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+      const rootPin = typeof owner.capture === 'function' ? await owner.capture(rootKeys) : null;
+      const rootRawByKey = new Map();
       const retainedManifests = new Set();
       const retainedPages = new Set();
+
       for (const rootKey of rootKeys) {
         const root = await load(owner, rootKey, 32768, part, stamp, ticket);
-        if (root.value?.manifestKey) {
-          retainedManifests.add(root.value.manifestKey);
-          const manifest = await load(owner, root.value.manifestKey, 131072, part, stamp, ticket);
-          for (const pageRef of manifest.value?.pages || []) {
-            if (pageRef?.key) retainedPages.add(pageRef.key);
-          }
+        rootRawByKey.set(rootKey, root.raw);
+        if (root.raw === null) continue;
+        if (!root.value || root.value.schema !== 'libra.graph_root.v1' || typeof root.value.manifestKey !== 'string'
+          || !root.value.manifestKey.startsWith(prefix + 'generation:')) {
+          fail('gc_root_corrupt');
+        }
+        retainedManifests.add(root.value.manifestKey);
+        const manifest = await load(owner, root.value.manifestKey, 131072, part, stamp, ticket);
+        if (!manifest.value || manifest.value.schema !== 'libra.graph_generation.v1' || !Array.isArray(manifest.value.pages)) {
+          fail('gc_manifest_corrupt');
+        }
+        for (const pageRef of manifest.value.pages) {
+          if (!pageRef?.key || typeof pageRef.key !== 'string') fail('gc_manifest_corrupt');
+          retainedPages.add(pageRef.key);
         }
       }
-      const candidates = allKeys.filter(k => (
+
+      const verifyRootsUnchanged = async () => {
+        check(ticket, owner);
+        if (rootPin && typeof owner.assertCaptured === 'function') {
+          await owner.assertCaptured(rootPin);
+        }
+        const currentKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
+        const currentRootKeys = currentKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+        if (!same(currentRootKeys, rootKeys)) fail('gc_concurrent_root_change');
+        for (const rootKey of rootKeys) {
+          const latest = await load(owner, rootKey, 32768, part, stamp, ticket);
+          if (latest.raw !== rootRawByKey.get(rootKey)) fail('gc_concurrent_root_change');
+        }
+        return currentKeys;
+      };
+
+      let postMarkKeys;
+      try {
+        postMarkKeys = await verifyRootsUnchanged();
+      } catch (err) {
+        if (throwOnConflict) throw err;
+        return {
+          schema: 'libra.graph_store_gc.v1',
+          status: 'aborted_concurrent_mutation',
+          scopeKey,
+          dryRun: Boolean(dryRun),
+          activeRoots: rootKeys.length,
+          retainedManifestCount: retainedManifests.size,
+          retainedPageCount: retainedPages.size,
+          candidateKeys: [],
+          deletedKeys: []
+        };
+      }
+
+      // Only sweep keys that were already present before the mark phase and remain unreferenced after root verification
+      const initialKeySet = new Set(allKeys);
+      const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
         || (k.startsWith(prefix + 'page:') && !retainedPages.has(k))
       )).sort((a, b) => a.localeCompare(b, 'en'));
+
       const deleted = [];
+      let status = 'completed';
       if (!dryRun && typeof owner.deleteStale === 'function') {
         for (const candidateKey of candidates) {
-          check(ticket, owner);
+          try {
+            await verifyRootsUnchanged();
+          } catch (err) {
+            if (throwOnConflict) throw err;
+            status = 'aborted_concurrent_mutation';
+            break;
+          }
           await owner.deleteStale(candidateKey);
           check(ticket, owner);
           deleted.push(candidateKey);
@@ -45620,6 +45683,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       return {
         schema: 'libra.graph_store_gc.v1',
+        status,
         scopeKey,
         dryRun: Boolean(dryRun),
         activeRoots: rootKeys.length,
@@ -45654,16 +45718,48 @@ function createLibraReadonlySourceContext(owner) {
   const fail = reason => { const err = new Error('LIBRA_GRAPH_INDEX_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
-  const compile = (graph, { partition, generation } = {}) => {
+  const compile = (graph, { partition, generation, pageBytes = 16384 } = {}) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1' || typeof partition !== 'string' || !partition
       || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) {
       fail('input_invalid');
     }
+
+    // Read projection pools through the shared accounted-byte page cache when page() is available
+    const normalizedGraph = {
+      ...graph,
+      nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+      edges: Array.isArray(graph.edges) ? graph.edges : [],
+      bases: Array.isArray(graph.bases) ? graph.bases : [],
+      units: Array.isArray(graph.units) ? graph.units : []
+    };
+    const readPool = pool => {
+      const total = normalizedGraph[pool].length;
+      if (typeof pages.page !== 'function' || total === 0) return normalizedGraph[pool];
+      const out = [];
+      let offset = 0;
+      while (offset < total) {
+        const pg = pages.page(normalizedGraph, { partition, generation, pool, offset, pageBytes });
+        if (!Array.isArray(pg.items) || pg.nextOffset <= offset) {
+          return normalizedGraph[pool];
+        }
+        out.push(...pg.items);
+        offset = pg.nextOffset;
+      }
+      return out;
+    };
+
+    const nodes = readPool('nodes');
+    const edges = readPool('edges');
+    const bases = readPool('bases');
+    const units = readPool('units');
+
+    const nodeById = new Map();
+    for (const node of nodes) nodeById.set(node.id, node);
     const unitByNodeId = new Map();
-    for (const unit of graph.units || []) unitByNodeId.set(unit.nodeId, unit);
+    for (const unit of units) unitByNodeId.set(unit.nodeId, unit);
 
     // 1. Node/Source Directory
-    const directory = (graph.nodes || []).map(node => {
+    const directory = nodes.map(node => {
       const unit = unitByNodeId.get(node.id) || null;
       return {
         nodeId: node.id,
@@ -45680,7 +45776,7 @@ function createLibraReadonlySourceContext(owner) {
     // 2. Typed Adjacency with structural priority and degree tracking
     const adjacency = [];
     const outDegree = new Map(), inDegree = new Map();
-    for (const edge of graph.edges || []) {
+    for (const edge of edges) {
       const structural = structuralPredicates.has(edge.predicate);
       outDegree.set(edge.from, (outDegree.get(edge.from) || 0) + 1);
       inDegree.set(edge.to, (inDegree.get(edge.to) || 0) + 1);
@@ -45742,17 +45838,26 @@ function createLibraReadonlySourceContext(owner) {
       const prev = bucket.get(nodeId);
       if (prev) prev.tf += 1;
       else bucket.set(nodeId, { nodeId, tf: 1, ...meta });
-      recordDep(`node:${nodeId}`, { nodeId, postingKey: `${channel}:${key}` });
+      const postingKey = `${channel}:${key}`;
+      recordDep(`node:${nodeId}`, { nodeId, postingKey });
+      const node = nodeById.get(nodeId);
+      if (node?.sourceId) {
+        recordDep(`source:${node.sourceId}`, { nodeId, postingKey });
+      }
+      const unit = unitByNodeId.get(nodeId);
+      if (unit?.family) {
+        recordDep(`family:${unit.family}`, { nodeId, postingKey });
+      }
     };
 
-    for (const node of graph.nodes || []) {
+    for (const node of nodes) {
       recordDep(`node:${node.id}`, { nodeId: node.id });
       if (node.sourceId) recordDep(`source:${node.sourceId}`, { nodeId: node.id });
       if (node.layer === 'source') recordDep(`source:${node.id}`, { nodeId: node.id });
       if (node.layer === 'entity') recordDep(`entity:${node.id}`, { nodeId: node.id });
     }
 
-    for (const unit of graph.units || []) {
+    for (const unit of units) {
       recordDep(`family:${unit.family}`, { nodeId: unit.nodeId });
       const tokens = tokenizer(unit.text || '');
       for (const token of tokens) {
@@ -45777,14 +45882,17 @@ function createLibraReadonlySourceContext(owner) {
       if (unit.fact?.claimKind) {
         addPosting(predicatePostings, 'predicate', unit.fact.claimKind, unit.nodeId, { family: unit.family });
       }
-      const timeKey = unit.fact?.time?.label || unit.fact?.values?.time || (Number.isSafeInteger(unit.headThroughTurn) ? `turn:${unit.headThroughTurn}` : '');
+      const timeKey = unit.fact?.time?.label
+        || unit.fact?.values?.time
+        || (Number.isSafeInteger(unit.turn) ? `turn:${unit.turn}` : '')
+        || (Number.isSafeInteger(unit.headThroughTurn) ? `turn:${unit.headThroughTurn}` : '');
       if (timeKey) addPosting(timePostings, 'time', String(timeKey), unit.nodeId, { family: unit.family });
     }
 
     const basisById = new Map();
-    for (const b of graph.bases || []) basisById.set(b.id, b);
+    for (const b of bases) basisById.set(b.id, b);
 
-    for (const edge of graph.edges || []) {
+    for (const edge of edges) {
       addPosting(predicatePostings, 'predicate', edge.predicate, edge.from, { via: 'edge_out', edgeId: edge.id });
       if (['mentions', 'subject_of', 'target_of'].includes(edge.predicate)) {
         addPosting(entityPostings, 'entity', edge.to, edge.from, { role: edge.predicate, edgeId: edge.id });
@@ -45792,10 +45900,24 @@ function createLibraReadonlySourceContext(owner) {
       }
       recordDep(`node:${edge.from}`, { nodeId: edge.from, edgeId: edge.id });
       recordDep(`node:${edge.to}`, { nodeId: edge.to, edgeId: edge.id });
+      const fromNode = nodeById.get(edge.from);
+      if (fromNode?.sourceId) recordDep(`source:${fromNode.sourceId}`, { nodeId: edge.from, edgeId: edge.id });
+      const toNode = nodeById.get(edge.to);
+      if (toNode?.sourceId) recordDep(`source:${toNode.sourceId}`, { nodeId: edge.to, edgeId: edge.id });
       recordDep(`basis:${edge.basisId}`, { nodeId: edge.from, edgeId: edge.id });
       const basis = basisById.get(edge.basisId);
       if (basis?.sourceId) {
         recordDep(`source:${basis.sourceId}`, { nodeId: edge.from, edgeId: edge.id });
+      }
+    }
+
+    // Ensure transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings
+    for (const entry of revMap.values()) {
+      for (const nId of [...entry.nodeIds]) {
+        const nodeEntry = revMap.get(`node:${nId}`);
+        if (!nodeEntry) continue;
+        for (const eId of nodeEntry.edgeIds) entry.edgeIds.add(eId);
+        for (const pKey of nodeEntry.postingKeys) entry.postingKeys.add(pKey);
       }
     }
 
@@ -45869,6 +45991,13 @@ function createLibraReadonlySourceContext(owner) {
       for (const n of hit.nodeIds) nodeIds.add(n);
       for (const e of hit.edgeIds) edgeIds.add(e);
       for (const p of hit.postingKeys) postingKeys.add(p);
+    }
+    // Transitive expansion from affected nodes to their edges and postings (D06)
+    for (const nId of [...nodeIds]) {
+      const nodeHit = lookup.get(`node:${nId}`);
+      if (!nodeHit) continue;
+      for (const e of nodeHit.edgeIds) edgeIds.add(e);
+      for (const p of nodeHit.postingKeys) postingKeys.add(p);
     }
     return {
       schema: 'libra.memory_graph_delta_impact.v1',
@@ -46276,6 +46405,15 @@ function createLibraReadonlySourceContext(owner) {
     return Object.freeze({ ...frame, frameId, queryVectors: Object.freeze({ ...(queryVectors || {}) }) });
   };
 
+  const resolveUnitTurn = unit => {
+    if (!unit) return null;
+    if (Number.isSafeInteger(unit.turn)) return unit.turn;
+    if (Number.isSafeInteger(unit.sourceSpan?.turn)) return unit.sourceSpan.turn;
+    if (Number.isSafeInteger(unit.fact?.evidenceSpans?.[0]?.turn)) return unit.fact.evidenceSpans[0].turn;
+    if (Number.isSafeInteger(unit.fact?.values?.turn)) return unit.fact.values.turn;
+    return null;
+  };
+
   const openView = (graph, compiledIndex, queryFrame) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_invalid');
@@ -46289,37 +46427,57 @@ function createLibraReadonlySourceContext(owner) {
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
 
+    // Map each SourceNode to its child MeaningNode units so future-only SourceNodes and bases are also blocked at asOfTurn (D01)
+    const childUnitsBySourceId = new Map();
+    for (const node of graph.nodes || []) {
+      if (!node.sourceId) continue;
+      const u = unitByNodeId.get(node.id);
+      if (!u) continue;
+      if (!childUnitsBySourceId.has(node.sourceId)) childUnitsBySourceId.set(node.sourceId, []);
+      childUnitsBySourceId.get(node.sourceId).push(u);
+    }
+
     let historicalStateUnavailable = false;
+    const isUnitTemporallyEligible = unit => {
+      if (!unit || queryFrame.asOfTurn === null) return true;
+      if (unit.family === 'state') {
+        if (Number.isSafeInteger(unit.headThroughTurn) && unit.headThroughTurn > queryFrame.asOfTurn) {
+          historicalStateUnavailable = true;
+          return false;
+        }
+      }
+      const unitTurn = resolveUnitTurn(unit);
+      if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
+        return false;
+      }
+      return true;
+    };
+
     const isNodeEligible = nodeId => {
       if (!nodeId || excludedSet.has(nodeId)) return false;
       const node = nodeById.get(nodeId);
       if (!node) return false;
+      if (node.layer === 'source' && queryFrame.asOfTurn !== null) {
+        const childUnits = childUnitsBySourceId.get(node.id) || [];
+        if (childUnits.length > 0 && !childUnits.some(u => isUnitTemporallyEligible(u))) {
+          return false;
+        }
+      }
       const unit = unitByNodeId.get(nodeId);
       if (!unit) return true;
 
       if (unit.viewerId && unit.viewerId !== queryFrame.viewerId) return false;
       if (unit.visibility === 'private' && queryFrame.viewerId !== 'owner_reader') return false;
-
-      if (queryFrame.asOfTurn !== null) {
-        if (unit.family === 'state') {
-          if (Number.isSafeInteger(unit.headThroughTurn) && unit.headThroughTurn > queryFrame.asOfTurn) {
-            historicalStateUnavailable = true;
-            return false;
-          }
-        }
-        const unitTurn = unit.sourceSpan?.turn
-          ?? unit.fact?.evidenceSpans?.[0]?.turn
-          ?? (typeof unit.fact?.values?.turn === 'number' ? unit.fact.values.turn : null);
-        if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
-          return false;
-        }
-      }
+      if (!isUnitTemporallyEligible(unit)) return false;
       return true;
     };
 
     const isEdgeEligible = edge => {
       if (!edge) return false;
       if (!isNodeEligible(edge.from) || !isNodeEligible(edge.to)) return false;
+      if (queryFrame.asOfTurn !== null && Number.isSafeInteger(edge.validTime?.turn) && edge.validTime.turn > queryFrame.asOfTurn) {
+        return false;
+      }
       const basis = basisById.get(edge.basisId);
       if (basis?.sourceId && !isNodeEligible(basis.sourceId)) return false;
       return true;
@@ -46658,6 +46816,7 @@ function createLibraReadonlySourceContext(owner) {
         semanticRole: unit.semanticRole || null,
         availability: unit.availability || null,
         provenanceStatus: unit.provenanceStatus || null,
+        turn: resolveUnitTurn(unit),
         text: unit.text || '',
         score: Number(finalScore.toFixed(6)),
         directScore: Number(directFeat.directScore.toFixed(6)),
@@ -46689,16 +46848,69 @@ function createLibraReadonlySourceContext(owner) {
       || a.nodeId.localeCompare(b.nodeId, 'en')
     ));
 
+    // D05: Distinguish local frontier/lane traversal completion from source projection / inventory truncation
+    const truncationReasons = new Set([
+      'node_work_budget',
+      'micro_pages_unread',
+      'canonical_pages_unread',
+      'lore_pages_unread',
+      'reader_unavailable',
+      'state_view_unavailable',
+      'source_head_record_binding_unavailable',
+      'record_ref_mismatch',
+      'exact_source_span_invalid',
+      'source_only_representation_invalid',
+      'verified_claims_unavailable',
+      'entry_rendering_unavailable',
+      'rendered_passage_locator_invalid',
+      'claim_schema_or_identity_ambiguous',
+      'claim_evidence_unavailable',
+      'field_value_clear_conflict',
+      'correction_field_basis_unresolved'
+    ]);
+    const familyEntries = Object.entries(graph.coverage?.families || {});
+    const familyTruncations = familyEntries
+      .map(([family, f]) => ({
+        family,
+        reasons: (Array.isArray(f?.reasons) ? f.reasons : []).filter(r => truncationReasons.has(r) || /budget|unread/i.test(String(r)))
+      }))
+      .filter(f => f.reasons.length > 0);
+    const familyNotes = familyEntries
+      .filter(([, f]) => Array.isArray(f?.reasons) && f.reasons.length > 0)
+      .map(([family, f]) => ({ family, reasons: [...f.reasons] }));
+    const unreadInventoryCursors = Object.entries(graph.coverage?.inventory || {})
+      .filter(([k, v]) => k.endsWith('NextCursor') && Boolean(v))
+      .map(([cursorKey, cursor]) => ({ cursorKey, cursor }));
+    const explicitIncompleteWithoutReasons = graph.coverage?.projectionComplete === false && familyNotes.length === 0;
+    const sourceCoverageComplete = familyTruncations.length === 0
+      && unreadInventoryCursors.length === 0
+      && !explicitIncompleteWithoutReasons;
     const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted';
+    const complete = traversalComplete && sourceCoverageComplete;
+    const stopReason = !laneReport.complete
+      ? `lane_${laneReport.stopReason}`
+      : (frontierStopReason !== 'frontier_exhausted'
+        ? frontierStopReason
+        : (!sourceCoverageComplete ? 'projection_coverage_incomplete' : 'frontier_exhausted'));
+
     return Object.freeze({
       schema,
       policyVersion,
       generation: compiledIndex.generation,
       indexDigest: compiledIndex.indexDigest,
       frameId: queryFrame.frameId,
-      complete: traversalComplete,
-      stopReason: !laneReport.complete ? `lane_${laneReport.stopReason}` : frontierStopReason,
+      complete,
+      traversalComplete,
+      sourceCoverageComplete,
+      stopReason,
       historicalStateUnavailable: view.getHistoricalStateUnavailable(),
+      coverage: {
+        projectionComplete: Boolean(graph.coverage?.projectionComplete !== false && sourceCoverageComplete),
+        inventoryComplete: Boolean(graph.coverage?.inventory?.inventoryComplete),
+        familyIncompleteReasons: familyTruncations,
+        familyNotes,
+        unreadInventoryCursors
+      },
       candidates,
       diagnostics: {
         poppedFrontierSteps: poppedSteps,
@@ -46706,7 +46918,8 @@ function createLibraReadonlySourceContext(owner) {
         lanePagesRead: laneReport.pagesRead,
         laneBytesRead: laneReport.bytesRead,
         laneCoalescedRequests: laneReport.coalescedRequests,
-        unreadCursors: laneReport.unreadCursors
+        unreadCursors: laneReport.unreadCursors,
+        unreadInventoryCursors
       },
       authority: 'descriptive_only',
       modelDispatchEligible: false
@@ -46792,18 +47005,28 @@ function createLibraReadonlySourceContext(owner) {
     return { nodeIds, sourceIds, entityIds, basisIds, bindingByNodeId };
   };
 
-  // Select an EvidenceBundle under character & unit budgets with conservative Micro absorption (§10, V09)
+  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07)
+  const formatPacketText = (consumer, scopeKey, items, independentSourceCount) => {
+    if (!Array.isArray(items) || items.length === 0) return '';
+    const header = `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
+    const lines = items.map((item, idx) => (
+      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
+    ));
+    return [header, ...lines].join('\n');
+  };
+
+  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07)
   const select = (queryResult, graph, rawPolicy = {}) => {
     if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     const policy = normalizePolicy(rawPolicy);
+    const scopeKey = graph.scopeKey || graph.readerFrame?.scopeKey || '';
 
     const nodeById = new Map((graph.nodes || []).map(n => [n.id, n]));
     const unitByNodeId = new Map((graph.units || []).map(u => [u.nodeId, u]));
     const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
 
-    // Order candidates: mandatory lore first (when enabled by consumer policy), then by query score
     const ordered = [...(queryResult.candidates || [])].sort((a, b) => {
       if (policy.includeMandatoryLore && a.mandatoryInclusion !== b.mandatoryInclusion) {
         return a.mandatoryInclusion ? -1 : 1;
@@ -46811,27 +47034,53 @@ function createLibraReadonlySourceContext(owner) {
       return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
     });
 
-    // Separate non-Micro and Micro so we know which Canonical counterparts actually pass budget admission first!
-    // If a Canonical candidate drops under budget, its corresponding Micro candidate MUST NOT be suppressed (§10, V09).
     const admitted = [];
     const admittedNodeIds = new Set();
     const droppedForBudget = [];
     const suppressedMicro = [];
-    let usedCharacters = 0;
-
-    // Pass 1: admit non-Micro candidates (or all candidates in order, deferring Micro absorption check until after Canonical admission is known)
-    // To preserve score ranking while guaranteeing Micro is only absorbed if its Canonical counterpart actually fits the budget,
-    // we first simulate admission in rank order, and if a Canonical counterpart is later dropped for budget, any Micro that was
-    // provisionally held for absorption is restored!
     const provisionalHeldMicro = [];
 
+    const countIndependentSources = list => {
+      const sources = new Set();
+      for (const c of list) {
+        const deps = collectCandidateDependencies(c, nodeById, basisById, edgeById);
+        for (const sId of deps.sourceIds) sources.add(sId);
+      }
+      return sources.size;
+    };
+
+    const fitsRenderedBudget = candidateToAdd => {
+      if (admitted.length >= policy.maxUnits) return false;
+      const trialList = [...admitted, candidateToAdd];
+      const trialSources = countIndependentSources(trialList);
+      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources);
+      return trialRendered.length <= policy.maxCharacters;
+    };
+
+    const resolveHeldForCanonical = canonicalNodeId => {
+      for (let i = provisionalHeldMicro.length - 1; i >= 0; i--) {
+        if (provisionalHeldMicro[i].counterpartCanonicalId !== canonicalNodeId) continue;
+        const [{ cand }] = provisionalHeldMicro.splice(i, 1);
+        if (admittedNodeIds.has(canonicalNodeId)) {
+          suppressedMicro.push({
+            microNodeId: cand.nodeId,
+            absorbedByCanonicalNodeId: canonicalNodeId,
+            candidate: cand
+          });
+        } else if (fitsRenderedBudget(cand)) {
+          admitted.push(cand);
+          admittedNodeIds.add(cand.nodeId);
+        } else {
+          droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        }
+      }
+    };
+
     for (const cand of ordered) {
-      const textLen = String(cand.text || '').length;
       const counterpartCanonicalId = cand.family === 'micro'
         ? (policy.correspondenceMap[cand.nodeId] || null)
         : null;
 
-      // If this Micro unit has a designated Canonical counterpart that is already admitted, absorb/suppress it now
       if (counterpartCanonicalId && admittedNodeIds.has(counterpartCanonicalId)) {
         suppressedMicro.push({
           microNodeId: cand.nodeId,
@@ -46840,23 +47089,21 @@ function createLibraReadonlySourceContext(owner) {
         });
         continue;
       }
-      // If the Canonical counterpart appears later in the candidate list, hold this Micro provisionally
       if (counterpartCanonicalId && ordered.some(other => other.nodeId === counterpartCanonicalId)) {
         provisionalHeldMicro.push({ cand, counterpartCanonicalId });
         continue;
       }
 
-      if (admitted.length >= policy.maxUnits || usedCharacters + textLen > policy.maxCharacters) {
+      if (!fitsRenderedBudget(cand)) {
         droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        resolveHeldForCanonical(cand.nodeId);
         continue;
       }
       admitted.push(cand);
       admittedNodeIds.add(cand.nodeId);
-      usedCharacters += textLen;
+      resolveHeldForCanonical(cand.nodeId);
     }
 
-    // Resolve provisionally held Micro candidates: if their Canonical counterpart was admitted, absorb them;
-    // if the Canonical counterpart was dropped for budget, admit the Micro candidate if budget permits!
     for (const { cand, counterpartCanonicalId } of provisionalHeldMicro) {
       if (admittedNodeIds.has(counterpartCanonicalId)) {
         suppressedMicro.push({
@@ -46864,15 +47111,11 @@ function createLibraReadonlySourceContext(owner) {
           absorbedByCanonicalNodeId: counterpartCanonicalId,
           candidate: cand
         });
+      } else if (fitsRenderedBudget(cand)) {
+        admitted.push(cand);
+        admittedNodeIds.add(cand.nodeId);
       } else {
-        const textLen = String(cand.text || '').length;
-        if (admitted.length < policy.maxUnits && usedCharacters + textLen <= policy.maxCharacters) {
-          admitted.push(cand);
-          admittedNodeIds.add(cand.nodeId);
-          usedCharacters += textLen;
-        } else {
-          droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
-        }
+        droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
       }
     }
 
@@ -46921,6 +47164,7 @@ function createLibraReadonlySourceContext(owner) {
         semanticRole: cand.semanticRole,
         availability: cand.availability ?? null,
         provenanceStatus: cand.provenanceStatus ?? null,
+        turn: cand.turn ?? unit.turn ?? null,
         text: cand.text,
         score: cand.score,
         mandatoryInclusion: cand.mandatoryInclusion,
@@ -46931,13 +47175,22 @@ function createLibraReadonlySourceContext(owner) {
       };
     });
 
-    const bundle = {
+    const renderedPreview = formatPacketText(
+      policy.consumer,
+      scopeKey,
+      items,
+      independentSupportingSources.size
+    );
+    const usedCharacters = renderedPreview.length;
+    const bodyCharacters = items.reduce((acc, i) => acc + String(i.text || '').length, 0);
+
+    const bundleCore = {
       schema: 'libra.evidence_bundle.v1',
       consumer: policy.consumer,
       generation: queryResult.generation,
       indexDigest: queryResult.indexDigest,
       frameId: queryResult.frameId,
-      scopeKey: graph.scopeKey || graph.readerFrame?.scopeKey || '',
+      scopeKey,
       worldlineId: graph.readerFrame?.worldlineId || 'main',
       restoreEpoch: graph.readerFrame?.restoreEpoch ?? 0,
       owner: graph.readerFrame?.owner || '',
@@ -46946,6 +47199,8 @@ function createLibraReadonlySourceContext(owner) {
       budget: {
         maxCharacters: policy.maxCharacters,
         usedCharacters,
+        bodyCharacters,
+        envelopeCharacters: usedCharacters - bodyCharacters,
         maxUnits: policy.maxUnits,
         admittedUnits: items.length,
         droppedUnits: droppedForBudget.length,
@@ -46959,10 +47214,12 @@ function createLibraReadonlySourceContext(owner) {
       authority: 'unverified_bundle',
       modelDispatchEligible: false
     };
+    const bundleDigest = hash(JSON.stringify(bundleCore));
+    const bundle = Object.freeze({ ...bundleCore, bundleDigest });
 
     const readSetToken = Object.freeze({
       schema: 'libra.consumed_readset_handle.v1',
-      bundleDigest: hash(JSON.stringify(bundle)),
+      bundleDigest,
       consumer: policy.consumer,
       scopeKey: bundle.scopeKey
     });
@@ -46987,21 +47244,34 @@ function createLibraReadonlySourceContext(owner) {
       }
     });
 
-    return Object.freeze({ bundle: Object.freeze(bundle), readSetHandle: readSetToken });
+    return Object.freeze({ bundle, readSetHandle: readSetToken });
   };
 
-  // Render consumer packet envelope from selected EvidenceBundle (§10)
+  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08)
   const render = ({ bundle, readSetHandle } = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
-    if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || hash(JSON.stringify(bundle)) !== readSetHandle.bundleDigest) {
+    if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || bundle.bundleDigest !== readSetHandle.bundleDigest) {
       fail('bundle_mismatch');
     }
-    const header = `[LIBRA_EVIDENCE consumer=${bundle.consumer} scope=${bundle.scopeKey} units=${bundle.items.length} sources=${bundle.independentSupportingSourceCount}]`;
-    const lines = bundle.items.map((item, idx) => (
-      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
-    ));
-    const renderedText = [header, ...lines].join('\n');
+    const { bundleDigest: _omittedDigest, ...bundleCore } = bundle;
+    if (hash(JSON.stringify(bundleCore)) !== readSetHandle.bundleDigest) {
+      fail('bundle_mismatch');
+    }
+    const renderedText = formatPacketText(
+      bundle.consumer,
+      bundle.scopeKey,
+      bundle.items,
+      bundle.independentSupportingSourceCount
+    );
+    const packetDigest = hash(JSON.stringify([
+      'libra.rendered_consumer_packet.v1',
+      bundle.consumer,
+      bundle.scopeKey,
+      bundle.worldlineId,
+      bundle.bundleDigest,
+      renderedText
+    ]));
     return Object.freeze({
       schema: 'libra.rendered_consumer_packet.v1',
       consumer: bundle.consumer,
@@ -47009,6 +47279,7 @@ function createLibraReadonlySourceContext(owner) {
       worldlineId: bundle.worldlineId,
       renderedText,
       characterLength: renderedText.length,
+      packetDigest,
       admittedNodeIds: bundle.items.map(i => i.nodeId),
       suppressedMicroIds: bundle.suppressedMicroIds,
       gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
@@ -47017,13 +47288,22 @@ function createLibraReadonlySourceContext(owner) {
     });
   };
 
-  // Final physical readset verification at model dispatch boundary (§10, §11, V06, V07, V09, V12)
+  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, V06, V07, V09, V12)
   const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
-    if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
+    const assertHandleActive = () => {
+      const current = readSetHandle && issuedReadSets.get(readSetHandle);
+      if (!current || current !== record || current.revoked || current.compilerEpoch !== compilerEpoch) {
+        fail('readset_handle_invalid');
+      }
+    };
+    assertHandleActive();
     if (!ownerVerifier || typeof ownerVerifier.currentGraph !== 'function') fail('owner_verifier_required');
+    // D02: Physical owner currentness verification is mandatory before granting modelDispatchEligible: true
+    if (typeof ownerVerifier.assertPhysicalCurrentness !== 'function') fail('physical_verifier_required');
 
     const live = await ownerVerifier.currentGraph();
+    assertHandleActive();
     if (!live || live.schema !== 'libra.memory_graph_projection.v1') fail('live_graph_unavailable');
 
     const liveFrame = live.readerFrame || {};
@@ -47047,13 +47327,17 @@ function createLibraReadonlySourceContext(owner) {
     if (record.policy.consumer === 'gradia') {
       if (typeof ownerVerifier.verifyGradiaReceipt !== 'function') fail('gradia_verifier_required');
       const ok = await ownerVerifier.verifyGradiaReceipt(record.policy.gradiaSelectionReceipt);
+      assertHandleActive();
       if (ok !== true) fail('gradia_receipt_invalid');
     }
 
-    if (typeof ownerVerifier.assertPhysicalCurrentness === 'function') {
-      const ok = await ownerVerifier.assertPhysicalCurrentness(record.dependencies);
-      if (ok !== true) fail('physical_readset_stale');
-    }
+    const physicalOk = await ownerVerifier.assertPhysicalCurrentness(record.dependencies, {
+      bundle: record.bundle,
+      frame: record.frame,
+      liveGraph: live
+    });
+    assertHandleActive();
+    if (physicalOk !== true && physicalOk?.verified !== true) fail('physical_readset_stale');
 
     return Object.freeze({
       schema: 'libra.consumed_readset_verification.v1',
@@ -47161,7 +47445,7 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   // Execute unified retrieval + compilation under a sealed request token.
-  // Never invokes legacy rankers on unified partial/failure (§13, V11).
+  // Never invokes legacy rankers on unified partial/failure (§13, V11, D05).
   const executeUnifiedRequest = async ({
     sealToken,
     graph,
@@ -47236,7 +47520,10 @@ function createLibraReadonlySourceContext(owner) {
       doubleInjection: false,
       additionalModelCalls: 0,
       queryComplete: queryResult.complete,
+      traversalComplete: queryResult.traversalComplete,
+      sourceCoverageComplete: queryResult.sourceCoverageComplete,
       stopReason: queryResult.stopReason,
+      coverage: queryResult.coverage,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
@@ -47244,12 +47531,13 @@ function createLibraReadonlySourceContext(owner) {
     });
   };
 
-  // UM6 & V05: Verify that cold cache, warm cache, post-LRU eviction, and fresh restart produce
-  // identical logical complete results and winning witnesses for the same snapshot and query (§7.2, §12.1, V05).
+  // UM6 & V05 (D08): Verify that cold cache, warm cache, post-LRU/partition eviction, and fresh restart produce
+  // identical logical complete results, concrete candidate scores, winning witnesses, bundle digests, and rendered packet digests.
   const verifyColdWarmEvictionDeterminism = ({
     graph,
     queryInput = {},
-    consumerPolicy = {}
+    consumerPolicy = {},
+    createFreshRuntime = null
   } = {}) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     const frame = graph.readerFrame || {};
@@ -47264,49 +47552,88 @@ function createLibraReadonlySourceContext(owner) {
     });
     const generation = pages.generation(graph, { partition, restoreEpoch, view: frame });
 
-    const runPass = () => {
-      const compiledIndex = index.compile(graph, { partition, generation });
-      const queryFrame = query.sealQueryFrame({
+    const runPass = (env = { index, lane, query, compiler, pages }) => {
+      const beforeCache = typeof env.pages.inspect === 'function' ? env.pages.inspect().counters : { hits: 0, misses: 0, evictions: 0 };
+      const compiledIndex = env.index.compile(graph, { partition, generation });
+      const queryFrame = env.query.sealQueryFrame({
         ...queryInput,
         owner,
         scopeKey,
         worldlineId
       });
-      const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-      const queryResult = query.retrieve(viewHandle, { maxPages: 64, maxBytes: 262144, pageBytes: 4096 });
-      const selected = compiler.select(queryResult, graph, consumerPolicy);
-      const packet = compiler.render(selected);
+      const viewHandle = env.query.openView(graph, compiledIndex, queryFrame);
+      const queryResult = env.query.retrieve(viewHandle, { maxPages: 64, maxBytes: 262144, pageBytes: 4096 });
+      const selected = env.compiler.select(queryResult, graph, consumerPolicy);
+      const packet = env.compiler.render(selected);
+      const afterCache = typeof env.pages.inspect === 'function' ? env.pages.inspect().counters : { hits: 0, misses: 0, evictions: 0 };
+
+      for (const c of queryResult.candidates) {
+        if (typeof c.score !== 'number' || !Number.isFinite(c.score) || !c.winningWitness || !Array.isArray(c.winningWitness.edgeChain)) {
+          fail('candidate_score_or_witness_missing');
+        }
+      }
+      if (typeof selected.bundle.bundleDigest !== 'string' || !/^[a-f0-9]{64}$/.test(selected.bundle.bundleDigest)) {
+        fail('bundle_digest_missing');
+      }
+      if (typeof packet.packetDigest !== 'string' || !/^[a-f0-9]{64}$/.test(packet.packetDigest)) {
+        fail('packet_digest_missing');
+      }
+
+      const candidateDigest = hash(JSON.stringify(queryResult.candidates.map(c => ({
+        nodeId: c.nodeId,
+        score: c.score,
+        directScore: c.directScore,
+        propagatedScore: c.propagatedScore,
+        pathVersion: c.pathVersion,
+        winningWitness: c.winningWitness
+      }))));
+
       return {
         complete: queryResult.complete,
-        candidateDigest: hash(JSON.stringify(queryResult.candidates.map(c => ({
-          nodeId: c.nodeId,
-          bestActivation: c.bestActivation,
-          winningWitness: c.winningWitness
-        })))),
+        candidateCount: queryResult.candidates.length,
+        candidateDigest,
         bundleDigest: selected.bundle.bundleDigest,
-        packetDigest: packet.packetDigest
+        packetDigest: packet.packetDigest,
+        cacheHits: afterCache.hits - beforeCache.hits,
+        cacheMisses: afterCache.misses - beforeCache.misses,
+        evictions: afterCache.evictions - beforeCache.evictions
       };
     };
 
-    // Pass 1: Cold cache
-    pages.invalidate({ reason: 'v05_cold_start' });
+    // Pass 1: Cold cache (invalidate all resident pages first)
+    pages.invalidate();
     const cold = runPass();
 
-    // Pass 2: Warm cache
+    // Pass 2: Warm cache (re-reads populated resident pages from Pass 1)
     const warm = runPass();
 
-    // Pass 3: Post-eviction / partition invalidation
-    pages.invalidate({ partition, reason: 'v05_eviction' });
-    const postEviction = runPass();
+    // Pass 3: Post-eviction (evict the partition's resident pages and reload)
+    const evictionsBefore = typeof pages.inspect === 'function' ? pages.inspect().counters.evictions : 0;
+    pages.invalidate(partition);
+    const evictionsTriggered = (typeof pages.inspect === 'function' ? pages.inspect().counters.evictions : 0) - evictionsBefore;
+    const postEviction = {
+      ...runPass(),
+      evictionsTriggered
+    };
 
-    // Pass 4: Simulated restart (full cache clear)
-    pages.invalidate({ reason: 'v05_restart' });
-    const postRestart = runPass();
+    // Pass 4: Simulated restart (fresh cache state or caller-supplied fresh runtime factories)
+    pages.invalidate();
+    const freshEnv = typeof createFreshRuntime === 'function'
+      ? createFreshRuntime()
+      : { index, lane, query, compiler, pages };
+    const postRestart = runPass(freshEnv);
 
-    const deterministic = cold.complete
+    const digestsPresent = /^[a-f0-9]{64}$/.test(cold.candidateDigest)
+      && /^[a-f0-9]{64}$/.test(cold.bundleDigest)
+      && /^[a-f0-9]{64}$/.test(cold.packetDigest);
+
+    const deterministic = digestsPresent
+      && cold.complete
       && warm.complete
       && postEviction.complete
       && postRestart.complete
+      && warm.cacheHits > 0
+      && postEviction.evictionsTriggered > 0
       && cold.candidateDigest === warm.candidateDigest
       && cold.candidateDigest === postEviction.candidateDigest
       && cold.candidateDigest === postRestart.candidateDigest
@@ -47320,6 +47647,7 @@ function createLibraReadonlySourceContext(owner) {
     return Object.freeze({
       schema: 'libra.determinism_verification.v1',
       deterministic,
+      bundleAndPacketDigestFieldsPresent: digestsPresent,
       passes: { cold, warm, postEviction, postRestart }
     });
   };
@@ -47365,7 +47693,6 @@ function createLibraReadonlySourceContext(owner) {
       ? Number((matchedGold.length / unifiedIds.size).toFixed(4))
       : 1;
 
-    // Identify intentional divergence where Unified discovers State/lore or multi-hop evidence beyond legacy canonical shortlist (§13)
     const addedByUnified = unified.bundle.items
       .filter(i => !legacyIds.has(i.nodeId))
       .map(i => ({
@@ -51790,6 +52117,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const noteMicroRestoreBoundary = () => {
       state.memoryGraphPages?.invalidate();
       state.memoryGraphStore?.invalidate();
+      state.memoryGraphCompiler?.invalidateAll();
       state.worldManagerRuntimeMetaGeneration = Math.max(0,
         Number(state.worldManagerRuntimeMetaGeneration || 0)) + 1;
       state.microRestoreGeneration = Math.max(0,
@@ -68163,6 +68491,7 @@ ${string(queryBundle?.sceneText || '')}`;
       if(options.expectedScopeKey&&string(context.scope.scopeKey)!==string(options.expectedScopeKey))throw new Error('scope_delete_scope_changed');
       state.memoryGraphPages?.invalidate();
       state.memoryGraphStore?.invalidate();
+      state.memoryGraphCompiler?.invalidateAll();
       if((await MemorySuiteStorageBridge.getMode())!=='plugin_only'){
         const saved=await storage.getJson(key.manifest(context.scope),null);
         if((await loadMemorySettings()).memoryEngine!=='legacy'||fullContinuityRefs(saved||{}).some(unifiedRefIsReadableUnified)) {
@@ -70334,8 +70663,80 @@ ${string(queryBundle?.sceneText || '')}`;
     };
     const buildMemoryGraphGeneration = async (options = {}) => await memoryGraphDurableOperation(options, true);
     const getMemoryGraphDurablePage = async (options = {}) => await memoryGraphDurableOperation(options, false);
-    const cancelMemoryGraphGenerationBuild = () => { state.memoryGraphStoreSerial++; state.memoryGraphStore?.invalidate(); return { cancelled: true, activeBuild: state.memoryGraphStore?.inspect().activeBuild === true }; };
+    const cancelMemoryGraphGenerationBuild = () => { state.memoryGraphStoreSerial++; state.memoryGraphStore?.invalidate(); state.memoryGraphCompiler?.invalidateAll(); return { cancelled: true, activeBuild: state.memoryGraphStore?.inspect().activeBuild === true }; };
     const inspectMemoryGraphStore = () => state.memoryGraphStore?.inspect() || { schema: 'libra.graph_store.v1', initialized: false, activeBuild: false };
+    const ensureMemoryGraphUnifiedSuite = () => {
+      const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
+      if (!state.memoryGraphPages) state.memoryGraphPages = createLibraMemoryGraphPages({ fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphIndex) state.memoryGraphIndex = createLibraMemoryGraphIndex({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphLane) state.memoryGraphLane = createLibraMemoryGraphLane({ index: state.memoryGraphIndex, pages: state.memoryGraphPages });
+      if (!state.memoryGraphQuery) state.memoryGraphQuery = createLibraMemoryGraphQuery({ index: state.memoryGraphIndex, lane: state.memoryGraphLane, pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphCompiler) state.memoryGraphCompiler = createLibraMemoryGraphCompiler({ fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphRollout) state.memoryGraphRollout = createLibraMemoryGraphRollout({
+        index: state.memoryGraphIndex,
+        lane: state.memoryGraphLane,
+        query: state.memoryGraphQuery,
+        compiler: state.memoryGraphCompiler,
+        pages: state.memoryGraphPages,
+        fingerprint: primitive.fingerprint
+      });
+      return {
+        pages: state.memoryGraphPages,
+        store: state.memoryGraphStore,
+        index: state.memoryGraphIndex,
+        lane: state.memoryGraphLane,
+        query: state.memoryGraphQuery,
+        compiler: state.memoryGraphCompiler,
+        rollout: state.memoryGraphRollout
+      };
+    };
+    const executeMemoryGraphUnifiedQuery = async (options = {}) => {
+      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget'];
+      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
+        throw new Error('LIBRA_GRAPH_QUERY_OPTIONS_INVALID');
+      }
+      const sourceOptions = {
+        canonicalCursor: options.canonicalCursor || '',
+        microCursor: options.microCursor || '',
+        limit: options.limit ?? 20,
+        nodeLimit: options.nodeLimit ?? 2048
+      };
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      const suite = ensureMemoryGraphUnifiedSuite();
+      let initialCollected = null;
+      const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
+      if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) {
+        throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
+      }
+      const mode = options.mode || 'unified';
+      const sealToken = suite.rollout.sealRequestMode({
+        mode,
+        requestId: typeof options.requestId === 'string' && options.requestId.trim() ? options.requestId.trim() : id('graph_query'),
+        owner: graph.readerFrame.owner,
+        scopeKey: graph.scopeKey,
+        worldlineId: graph.readerFrame.worldlineId,
+        restoreEpoch: epoch
+      });
+      const ownerVerifier = {
+        currentGraph: async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
+        assertPhysicalCurrentness: async () => {
+          if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
+            || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
+            return false;
+          }
+          return true;
+        }
+      };
+      return await suite.rollout.executeUnifiedRequest({
+        sealToken,
+        graph,
+        queryInput: options.queryInput || {},
+        consumerPolicy: options.consumerPolicy || {},
+        laneBudget: options.laneBudget || {},
+        ownerVerifier
+      });
+    };
     const canonicalReaderPatchFields = patchValue => {
       const patch=asObject(patchValue); const fields=new Set([...Object.keys(asObject(patch.set)),...asArray(patch.clear).map(string).filter(Boolean)]);
       if (string(patch.operation||'')==='close') fields.add('status');
@@ -72926,7 +73327,7 @@ ${string(queryBundle?.sceneText || '')}`;
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -83761,6 +84162,7 @@ advanced
     async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
+    async executeMemoryGraphUnifiedQuery(options = {}) { return await safeClone(await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options)); },
     async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
     // The read-set contract suite drives the SHIPPED builder, so its bridge handling is asserted against
     // the real function rather than a reimplementation. It is named without the `_test` surface because
@@ -84680,6 +85082,7 @@ advanced
       LibraMemoryCore.readonlySourceContext.dispose();
       LibraMemoryCore.state.memoryGraphPages?.dispose();
       LibraMemoryCore.state.memoryGraphStore?.dispose();
+      LibraMemoryCore.state.memoryGraphCompiler?.invalidateAll();
       for(const group of ConsumerActiveOperations.keys())cancelConsumerOperation(group);
       LibraMemoryCore.disposeSourceRules();
       LibraMemoryCore.state.scheduledScanSerial += 1;

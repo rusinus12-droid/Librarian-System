@@ -151,12 +151,15 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
       if (record.analysisStatus === 'verified' && !claims.length) { note('micro', 'verified_claims_unavailable'); return; }
       const src = source('micro', row.recordKey, record.analysisRevisionId,
         { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey, 1);
+      const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
+      const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
       spans.forEach((span, index) => {
         const claim = claims[index] || null, body = { claim, span, sourceRevisionId: record.sourceRevisionId, analysisRevisionId: record.analysisRevisionId };
         const node = meaning(src, claim ? 'micro_claim' : 'source_excerpt', row.recordKey + '#units/' + index, body,
           { index, role: span.role, messageId: span.messageId, startOffset: span.startOffset, endOffset: span.endOffset },
           { text: claim ? string(claim.text) : span.exactQuote, semanticRole: claim ? 'micro_candidate' : 'source_only',
             authority: claim ? 'source_verified_candidate' : 'source_only', sourceSpan: clone(span),
+            turn: recordTurn, sessionEpoch: recordSessionEpoch,
             representationCoverage: claim ? 'producer_bounded_claim' : 'producer_bounded_excerpt' });
         const why = basis(src, 'micro_span', row.recordKey + '#span/' + index, body, { span, receiptKey: record.receiptKey });
         link(node, src.node, 'evidenced_by', why);

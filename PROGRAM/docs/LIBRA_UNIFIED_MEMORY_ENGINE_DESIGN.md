@@ -114,7 +114,7 @@ UM1 reader·durable store의 경계 결함(`node_work_budget` 누락, 고아 `So
 - **UM4 근거 컴파일러 커널**: 후보 선택, caller correspondenceMap 기반 Micro 흡수, 역할 라벨·private readset 및 graph binding 대조를 구현했다. 실제 대응·독립 근거·충돌 보존·소비자 adapter/hydration은 별도 gate다. 물리 검증 선택 사항, await 중 readset 폐기, 최종 출력 예산 초과 결함을 확인했다. `validateConsumedReadSet`의 존재만으로 최종 owner/dispatch 연결이 완료되지 않는다.
 - **UM5–UM6 전환 커널**: mode seal·shadow 비교·base-request 결과·legacy fence helper와 V05 helper를 추가했다. 실제 beforeRequest/recall의 모드 선택과 legacy 실행 지점에는 연결되지 않았다. V05는 존재하지 않는 점수/digest 필드를 비교하고 실제 cache hit/LRU·독립 restart를 실행하지 않아 완료 증거로 사용할 수 없다.
 
-**현재 판정:** 새 factory 다섯 개는 LIBRA.js에 선언만 있고 runtime 생성 호출이 없다. 일반 회상은 기존 검색기를 사용한다. [현황·미완료 작업](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 E0–E4, D01–D08, M01–M15, G1–G6를 현재 상태로 사용하고 [코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)의 재현 근거를 따른다. 엔진 자체의 미완료와 실제 설치 호스트/원본 revision API 한계를 분리한다.
+**현재 판정:** `D01`–`D08`의 커널·경계 결함 8건은 수리되어 순수/합성 호스트 회귀 스위트(E1/E2)와 등록 공개 API(`executeMemoryGraphUnifiedQuery`)에서 검증됐다. 다만 일반 회상(`beforeRequest`/`LibraMemoryCore.recall`)과 전체 소비자 어댑터·실제 임베딩/durable shard 전환(`M01`–`M15`)은 아직 기존 검색기를 사용한다. [현황·미완료 작업](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)의 E0–E4, D01–D08(해결), M01–M15, G1–G6를 현재 상태로 사용하고 [코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)의 재현 근거를 따른다. 엔진 자체의 미완료와 실제 설치 호스트/원본 revision API 한계를 분리한다.
 
 ## 3. 전체 아키텍처
 

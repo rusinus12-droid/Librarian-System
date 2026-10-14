@@ -248,7 +248,7 @@ test('Defect 3 fix: empty array [] in State field uses state_field kind with ite
   assert.deepEqual(emptyTagUnit.value, []);
 });
 
-test('Priority 2 (UM2 Common Access Index & Reverse Dependencies): compiles directory, directional Typed Adjacency, 4-channel Postings, and delta impact', () => {
+test('Priority 2 & D06 (UM2 Common Access Index & Transitive Reverse Dependencies): compiles directory, directional Typed Adjacency, 4-channel Postings, and transitive source delta impact', () => {
   const identity = createMemoryGraphIdentity({ fingerprint: sha256 });
   const pages = createMemoryGraphPages({ fingerprint: sha256 });
   const readers = createMemoryGraphReaders({ identity, digestClaim: c => sha256(JSON.stringify(c)) });
@@ -274,7 +274,13 @@ test('Priority 2 (UM2 Common Access Index & Reverse Dependencies): compiles dire
   assert.equal(lexicalPage.items.length, 3);
   assert.ok(lexicalPage.items.every(row => row.df === 3 && row.tf >= 1));
 
-  const canonicalSource = graph.nodes.find(n => n.layer === 'source');
+  // D06: source:<id> change transitively includes its MeaningNode postings (lexical/entity/predicate/time) and requests DF refresh
+  const canonicalSource = graph.nodes.find(n => n.layer === 'source'
+    && graph.units.some(u => u.family === 'canonical' && graph.nodes.some(m => m.id === u.nodeId && m.sourceId === n.id)));
+  const sourceOnlyImpact = index.affectedByChanges(compiled, [`source:${canonicalSource.id}`]);
+  assert.ok(sourceOnlyImpact.affectedPostingKeys.some(k => k.startsWith('lexical:')), 'source change must include lexical postings');
+  assert.equal(sourceOnlyImpact.requiresGlobalDfRefresh, true, 'source change affecting lexical postings must request global DF refresh');
+
   const impact = index.affectedByChanges(compiled, [`source:${canonicalSource.id}`, 'field:character:heldItemRef', 'unknown:key']);
   assert.equal(impact.schema, 'libra.memory_graph_delta_impact.v1');
   assert.ok(impact.affectedNodeIds.length >= 2);
@@ -335,7 +341,7 @@ test('Priority 2 (UM2 Memory Lane Scheduler): coalesces duplicate requests, prio
   assert.ok(partialResult.unreadCursors.length >= 1);
 });
 
-test('Priority 2 (UM2 Store Maintenance GC): retains active root manifest and pages while deleting only orphaned/superseded keys', async () => {
+test('Priority 2 & D03 (UM2 Store Maintenance GC): retains active root manifest/pages and aborts sweep if a concurrent publisher updates root during mark', async () => {
   const pages = createMemoryGraphPages({ fingerprint: sha256 });
   const store = createMemoryGraphStore({ pages, fingerprint: sha256 });
   const values = new Map([['source-1', 'v1']]);
@@ -349,10 +355,18 @@ test('Priority 2 (UM2 Store Maintenance GC): retains active root manifest and pa
     bases: [{ id: 'ba1', bindingId: 'bba1' }],
     units: [{ nodeId: 'n1', family: 'canonical', text: 'active unit' }]
   };
+  let flipOnRead = null;
   const owner = {
     publication: 'test_runtime_ordered_partial',
     check() {},
-    async read(key) { return values.get(key) ?? null; },
+    async read(key) {
+      const raw = values.get(key) ?? null;
+      if (flipOnRead && key === flipOnRead.manifestKey) {
+        values.set(flipOnRead.rootKey, flipOnRead.rootRaw);
+        flipOnRead = null;
+      }
+      return raw;
+    },
     async putImmutable(key, raw) { values.set(key, raw); },
     async capture(keys) { return keys.map(key => ({ key, raw: values.get(key) ?? null })); },
     async assertCaptured(pin) { for (const item of pin) if ((values.get(item.key) ?? null) !== item.raw) throw new Error('source_pin_changed'); },
@@ -376,12 +390,25 @@ test('Priority 2 (UM2 Store Maintenance GC): retains active root manifest and pa
   assert.equal(values.has(orphanPageKey), true);
 
   const swept = await store.collectGarbage({ owner, scopeKey: 'scope-alpha', dryRun: false });
+  assert.equal(swept.status, 'completed');
   assert.deepEqual(swept.deletedKeys, [orphanGenKey, orphanPageKey]);
   assert.equal(values.has(orphanPageKey), false);
   assert.equal(values.has(orphanGenKey), false);
 
   const verified = await store.read({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pool: 'units' });
   assert.equal(verified.status, 'verified');
+
+  // D03: Concurrent publisher updating rootKey during mark phase must NOT have its active manifest deleted
+  const rootKey = [...values.keys()].find(k => k.includes(':root:'));
+  const aRaw = values.get(rootKey), aRoot = JSON.parse(aRaw);
+  await store.build({ snapshot: async () => ({ graph, sourceKeys: ['source-1'] }), owner, sourceOptions, pageBytes: 1024, jobToken: 'job-2' });
+  const bRaw = values.get(rootKey), bRoot = JSON.parse(bRaw);
+  values.set(rootKey, aRaw);
+  flipOnRead = { rootKey, manifestKey: aRoot.manifestKey, rootRaw: bRaw };
+  const raceSweep = await store.collectGarbage({ owner, scopeKey: 'scope-alpha' });
+  assert.equal(raceSweep.status, 'aborted_concurrent_mutation');
+  assert.equal(values.has(bRoot.manifestKey), true, 'Active manifest B must remain intact after concurrent root update');
+  assert.equal(raceSweep.deletedKeys.includes(bRoot.manifestKey), false);
 });
 
 (async () => {

@@ -95,6 +95,15 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     return Object.freeze({ ...frame, frameId, queryVectors: Object.freeze({ ...(queryVectors || {}) }) });
   };
 
+  const resolveUnitTurn = unit => {
+    if (!unit) return null;
+    if (Number.isSafeInteger(unit.turn)) return unit.turn;
+    if (Number.isSafeInteger(unit.sourceSpan?.turn)) return unit.sourceSpan.turn;
+    if (Number.isSafeInteger(unit.fact?.evidenceSpans?.[0]?.turn)) return unit.fact.evidenceSpans[0].turn;
+    if (Number.isSafeInteger(unit.fact?.values?.turn)) return unit.fact.values.turn;
+    return null;
+  };
+
   const openView = (graph, compiledIndex, queryFrame) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     if (!compiledIndex || compiledIndex.schema !== 'libra.memory_graph_index.v1') fail('index_invalid');
@@ -108,37 +117,57 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
 
+    // Map each SourceNode to its child MeaningNode units so future-only SourceNodes and bases are also blocked at asOfTurn (D01)
+    const childUnitsBySourceId = new Map();
+    for (const node of graph.nodes || []) {
+      if (!node.sourceId) continue;
+      const u = unitByNodeId.get(node.id);
+      if (!u) continue;
+      if (!childUnitsBySourceId.has(node.sourceId)) childUnitsBySourceId.set(node.sourceId, []);
+      childUnitsBySourceId.get(node.sourceId).push(u);
+    }
+
     let historicalStateUnavailable = false;
+    const isUnitTemporallyEligible = unit => {
+      if (!unit || queryFrame.asOfTurn === null) return true;
+      if (unit.family === 'state') {
+        if (Number.isSafeInteger(unit.headThroughTurn) && unit.headThroughTurn > queryFrame.asOfTurn) {
+          historicalStateUnavailable = true;
+          return false;
+        }
+      }
+      const unitTurn = resolveUnitTurn(unit);
+      if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
+        return false;
+      }
+      return true;
+    };
+
     const isNodeEligible = nodeId => {
       if (!nodeId || excludedSet.has(nodeId)) return false;
       const node = nodeById.get(nodeId);
       if (!node) return false;
+      if (node.layer === 'source' && queryFrame.asOfTurn !== null) {
+        const childUnits = childUnitsBySourceId.get(node.id) || [];
+        if (childUnits.length > 0 && !childUnits.some(u => isUnitTemporallyEligible(u))) {
+          return false;
+        }
+      }
       const unit = unitByNodeId.get(nodeId);
       if (!unit) return true;
 
       if (unit.viewerId && unit.viewerId !== queryFrame.viewerId) return false;
       if (unit.visibility === 'private' && queryFrame.viewerId !== 'owner_reader') return false;
-
-      if (queryFrame.asOfTurn !== null) {
-        if (unit.family === 'state') {
-          if (Number.isSafeInteger(unit.headThroughTurn) && unit.headThroughTurn > queryFrame.asOfTurn) {
-            historicalStateUnavailable = true;
-            return false;
-          }
-        }
-        const unitTurn = unit.sourceSpan?.turn
-          ?? unit.fact?.evidenceSpans?.[0]?.turn
-          ?? (typeof unit.fact?.values?.turn === 'number' ? unit.fact.values.turn : null);
-        if (Number.isSafeInteger(unitTurn) && unitTurn > queryFrame.asOfTurn) {
-          return false;
-        }
-      }
+      if (!isUnitTemporallyEligible(unit)) return false;
       return true;
     };
 
     const isEdgeEligible = edge => {
       if (!edge) return false;
       if (!isNodeEligible(edge.from) || !isNodeEligible(edge.to)) return false;
+      if (queryFrame.asOfTurn !== null && Number.isSafeInteger(edge.validTime?.turn) && edge.validTime.turn > queryFrame.asOfTurn) {
+        return false;
+      }
       const basis = basisById.get(edge.basisId);
       if (basis?.sourceId && !isNodeEligible(basis.sourceId)) return false;
       return true;
@@ -477,6 +506,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         semanticRole: unit.semanticRole || null,
         availability: unit.availability || null,
         provenanceStatus: unit.provenanceStatus || null,
+        turn: resolveUnitTurn(unit),
         text: unit.text || '',
         score: Number(finalScore.toFixed(6)),
         directScore: Number(directFeat.directScore.toFixed(6)),
@@ -508,16 +538,69 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       || a.nodeId.localeCompare(b.nodeId, 'en')
     ));
 
+    // D05: Distinguish local frontier/lane traversal completion from source projection / inventory truncation
+    const truncationReasons = new Set([
+      'node_work_budget',
+      'micro_pages_unread',
+      'canonical_pages_unread',
+      'lore_pages_unread',
+      'reader_unavailable',
+      'state_view_unavailable',
+      'source_head_record_binding_unavailable',
+      'record_ref_mismatch',
+      'exact_source_span_invalid',
+      'source_only_representation_invalid',
+      'verified_claims_unavailable',
+      'entry_rendering_unavailable',
+      'rendered_passage_locator_invalid',
+      'claim_schema_or_identity_ambiguous',
+      'claim_evidence_unavailable',
+      'field_value_clear_conflict',
+      'correction_field_basis_unresolved'
+    ]);
+    const familyEntries = Object.entries(graph.coverage?.families || {});
+    const familyTruncations = familyEntries
+      .map(([family, f]) => ({
+        family,
+        reasons: (Array.isArray(f?.reasons) ? f.reasons : []).filter(r => truncationReasons.has(r) || /budget|unread/i.test(String(r)))
+      }))
+      .filter(f => f.reasons.length > 0);
+    const familyNotes = familyEntries
+      .filter(([, f]) => Array.isArray(f?.reasons) && f.reasons.length > 0)
+      .map(([family, f]) => ({ family, reasons: [...f.reasons] }));
+    const unreadInventoryCursors = Object.entries(graph.coverage?.inventory || {})
+      .filter(([k, v]) => k.endsWith('NextCursor') && Boolean(v))
+      .map(([cursorKey, cursor]) => ({ cursorKey, cursor }));
+    const explicitIncompleteWithoutReasons = graph.coverage?.projectionComplete === false && familyNotes.length === 0;
+    const sourceCoverageComplete = familyTruncations.length === 0
+      && unreadInventoryCursors.length === 0
+      && !explicitIncompleteWithoutReasons;
     const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted';
+    const complete = traversalComplete && sourceCoverageComplete;
+    const stopReason = !laneReport.complete
+      ? `lane_${laneReport.stopReason}`
+      : (frontierStopReason !== 'frontier_exhausted'
+        ? frontierStopReason
+        : (!sourceCoverageComplete ? 'projection_coverage_incomplete' : 'frontier_exhausted'));
+
     return Object.freeze({
       schema,
       policyVersion,
       generation: compiledIndex.generation,
       indexDigest: compiledIndex.indexDigest,
       frameId: queryFrame.frameId,
-      complete: traversalComplete,
-      stopReason: !laneReport.complete ? `lane_${laneReport.stopReason}` : frontierStopReason,
+      complete,
+      traversalComplete,
+      sourceCoverageComplete,
+      stopReason,
       historicalStateUnavailable: view.getHistoricalStateUnavailable(),
+      coverage: {
+        projectionComplete: Boolean(graph.coverage?.projectionComplete !== false && sourceCoverageComplete),
+        inventoryComplete: Boolean(graph.coverage?.inventory?.inventoryComplete),
+        familyIncompleteReasons: familyTruncations,
+        familyNotes,
+        unreadInventoryCursors
+      },
       candidates,
       diagnostics: {
         poppedFrontierSteps: poppedSteps,
@@ -525,7 +608,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         lanePagesRead: laneReport.pagesRead,
         laneBytesRead: laneReport.bytesRead,
         laneCoalescedRequests: laneReport.coalescedRequests,
-        unreadCursors: laneReport.unreadCursors
+        unreadCursors: laneReport.unreadCursors,
+        unreadInventoryCursors
       },
       authority: 'descriptive_only',
       modelDispatchEligible: false

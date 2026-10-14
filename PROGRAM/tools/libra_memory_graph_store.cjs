@@ -180,7 +180,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       requestLocalReadOnly: true, byteBounded: false, ownerTransportBounded: false,
       cache: pages.inspect() };
   };
-  const collectGarbage = async ({ owner, scopeKey, dryRun = false } = {}) => {
+  const collectGarbage = async ({ owner, scopeKey, dryRun = false, throwOnConflict = false } = {}) => {
     if (active) fail('build_busy'); if (disposed) fail('disposed');
     if (!owner || typeof owner.listKeys !== 'function' || typeof scopeKey !== 'string' || !scopeKey) fail('options_invalid');
     active = true; const ticket = epoch; counters.gcRuns++;
@@ -190,27 +190,82 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       const stamp = hash(prefix + ':' + ticket);
       check(ticket, owner);
       const allKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
-      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:'));
+      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+      const rootPin = typeof owner.capture === 'function' ? await owner.capture(rootKeys) : null;
+      const rootRawByKey = new Map();
       const retainedManifests = new Set();
       const retainedPages = new Set();
+
       for (const rootKey of rootKeys) {
         const root = await load(owner, rootKey, 32768, part, stamp, ticket);
-        if (root.value?.manifestKey) {
-          retainedManifests.add(root.value.manifestKey);
-          const manifest = await load(owner, root.value.manifestKey, 131072, part, stamp, ticket);
-          for (const pageRef of manifest.value?.pages || []) {
-            if (pageRef?.key) retainedPages.add(pageRef.key);
-          }
+        rootRawByKey.set(rootKey, root.raw);
+        if (root.raw === null) continue;
+        if (!root.value || root.value.schema !== 'libra.graph_root.v1' || typeof root.value.manifestKey !== 'string'
+          || !root.value.manifestKey.startsWith(prefix + 'generation:')) {
+          fail('gc_root_corrupt');
+        }
+        retainedManifests.add(root.value.manifestKey);
+        const manifest = await load(owner, root.value.manifestKey, 131072, part, stamp, ticket);
+        if (!manifest.value || manifest.value.schema !== 'libra.graph_generation.v1' || !Array.isArray(manifest.value.pages)) {
+          fail('gc_manifest_corrupt');
+        }
+        for (const pageRef of manifest.value.pages) {
+          if (!pageRef?.key || typeof pageRef.key !== 'string') fail('gc_manifest_corrupt');
+          retainedPages.add(pageRef.key);
         }
       }
-      const candidates = allKeys.filter(k => (
+
+      const verifyRootsUnchanged = async () => {
+        check(ticket, owner);
+        if (rootPin && typeof owner.assertCaptured === 'function') {
+          await owner.assertCaptured(rootPin);
+        }
+        const currentKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
+        const currentRootKeys = currentKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+        if (!same(currentRootKeys, rootKeys)) fail('gc_concurrent_root_change');
+        for (const rootKey of rootKeys) {
+          const latest = await load(owner, rootKey, 32768, part, stamp, ticket);
+          if (latest.raw !== rootRawByKey.get(rootKey)) fail('gc_concurrent_root_change');
+        }
+        return currentKeys;
+      };
+
+      let postMarkKeys;
+      try {
+        postMarkKeys = await verifyRootsUnchanged();
+      } catch (err) {
+        if (throwOnConflict) throw err;
+        return {
+          schema: 'libra.graph_store_gc.v1',
+          status: 'aborted_concurrent_mutation',
+          scopeKey,
+          dryRun: Boolean(dryRun),
+          activeRoots: rootKeys.length,
+          retainedManifestCount: retainedManifests.size,
+          retainedPageCount: retainedPages.size,
+          candidateKeys: [],
+          deletedKeys: []
+        };
+      }
+
+      // Only sweep keys that were already present before the mark phase and remain unreferenced after root verification
+      const initialKeySet = new Set(allKeys);
+      const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
         || (k.startsWith(prefix + 'page:') && !retainedPages.has(k))
       )).sort((a, b) => a.localeCompare(b, 'en'));
+
       const deleted = [];
+      let status = 'completed';
       if (!dryRun && typeof owner.deleteStale === 'function') {
         for (const candidateKey of candidates) {
-          check(ticket, owner);
+          try {
+            await verifyRootsUnchanged();
+          } catch (err) {
+            if (throwOnConflict) throw err;
+            status = 'aborted_concurrent_mutation';
+            break;
+          }
           await owner.deleteStale(candidateKey);
           check(ticket, owner);
           deleted.push(candidateKey);
@@ -219,6 +274,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint } = {}) {
       }
       return {
         schema: 'libra.graph_store_gc.v1',
+        status,
         scopeKey,
         dryRun: Boolean(dryRun),
         activeRoots: rootKeys.length,

@@ -70,7 +70,7 @@ const makeSnapshot = (mode = 'plugin_only') => ({
               domain: 'character',
               subjectTempRef: 'e1',
               targetTempRef: 'e2',
-              text: 'Alice received the Silver Ring in the grand archive.',
+              text: 'Alice received the Silver Ring in the grand royal archive sanctuary.',
               values: { itemRef: 'e2', time: 'day-1', turn: 2 },
               evidenceSpans: [{ turn: 2, quote: 'Alice received the Silver Ring' }]
             }
@@ -104,7 +104,6 @@ const makeSnapshot = (mode = 'plugin_only') => ({
             evidence: {
               role: 'assistant',
               messageId: 'msg-6',
-              turn: 6,
               startOffset: 0,
               endOffset: 31,
               exactQuote: 'Alice received the Silver Ring.'
@@ -224,7 +223,7 @@ const runPipeline = snapshot => {
   return { graph, compiled, queryResult, compiler };
 };
 
-test('V09: conservative Micro absorption suppresses Micro when Canonical counterpart fits budget, but retains Micro if Canonical drops for budget', async () => {
+test('V09 & D07: envelope-aware character budget enforces maxCharacters on rendered packet and preserves Micro when Canonical drops for budget', async () => {
   const snap = makeSnapshot('plugin_only');
   const { graph, queryResult, compiler } = runPipeline(snap);
 
@@ -239,24 +238,36 @@ test('V09: conservative Micro absorption suppresses Micro when Canonical counter
     maxUnits: 10,
     correspondenceMap: { [microCand.nodeId]: canonicalCand.nodeId }
   });
+  const generousPacket = compiler.render(generous);
+  assert.equal(generous.bundle.budget.usedCharacters, generousPacket.characterLength);
+  assert.ok(generousPacket.characterLength <= 4096);
   assert.ok(generous.bundle.items.some(i => i.nodeId === canonicalCand.nodeId));
   assert.equal(generous.bundle.items.some(i => i.nodeId === microCand.nodeId), false);
   assert.deepEqual(generous.bundle.suppressedMicroIds, [microCand.nodeId]);
 
-  // Case B: Tight character budget where mandatory lore (57 chars) + Micro (31 chars) fit,
-  // but Canonical (52 chars) after lore+state exceeds maxCharacters -> Canonical drops, so Micro MUST NOT be suppressed!
+  // Case B (V09 + D07): Tight envelope-aware budget (260 chars) where Lore + Canonical (262 rendered chars) overflows,
+  // while Lore + State + Micro (254 rendered chars) fits -> Canonical drops, so Micro MUST NOT be suppressed!
   const tight = compiler.select(queryResult, graph, {
     consumer: 'classic',
-    maxCharacters: 105, // Lore (57) + State ("\"ent-ring\"" = 10) = 67 chars; Canonical (52 chars) overflows 105, whereas Micro (31 chars) fits (67 + 31 = 98 <= 105)!
+    maxCharacters: 260,
     maxUnits: 10,
     correspondenceMap: { [microCand.nodeId]: canonicalCand.nodeId }
   });
-  assert.equal(tight.bundle.items.some(i => i.nodeId === canonicalCand.nodeId), false, 'Canonical dropped due to character budget');
+  const tightPacket = compiler.render(tight);
+  assert.equal(tight.bundle.budget.usedCharacters, tightPacket.characterLength);
+  assert.ok(tightPacket.characterLength <= 260, `Rendered packet (${tightPacket.characterLength}) must not exceed maxCharacters (260)`);
+  assert.equal(tight.bundle.items.some(i => i.nodeId === canonicalCand.nodeId), false, 'Canonical dropped due to rendered character budget');
   assert.equal(tight.bundle.items.some(i => i.nodeId === microCand.nodeId), true, 'Micro must survive when Canonical counterpart drops for budget');
   assert.equal(tight.bundle.suppressedMicroIds.length, 0);
+
+  // Case C (D07): Ultra-tight budget (maxCharacters: 32) never emits a 129-char packet
+  const ultraShort = compiler.select(queryResult, graph, { maxCharacters: 32, maxUnits: 10 });
+  const ultraShortPacket = compiler.render(ultraShort);
+  assert.equal(ultraShort.bundle.budget.usedCharacters, ultraShortPacket.characterLength);
+  assert.ok(ultraShortPacket.characterLength <= 32, 'Rendered packet must never exceed maxCharacters: 32');
 });
 
-test('V06, V07 & V09: final dispatch verification rejects mutated suppressed-Micro source, entity registry change, lore edit, ABA restore epoch, or cloned handle', async () => {
+test('V06, V07, V09, D02 & D04: final dispatch requires physical verifier, re-checks handle/revocation across awaits, and rejects stale dependencies', async () => {
   const snap = makeSnapshot('plugin_only');
   const { graph, queryResult, compiler } = runPipeline(snap);
   const canonicalCand = queryResult.candidates.find(c => c.family === 'canonical');
@@ -271,7 +282,13 @@ test('V06, V07 & V09: final dispatch verification rejects mutated suppressed-Mic
   const packet = compiler.render(selected);
   assert.equal(packet.modelDispatchEligible, false);
 
-  // 1. Unchanged live graph passes physical dispatch verification
+  // D02: Calling validateConsumedReadSet without assertPhysicalCurrentness MUST reject (never grant modelDispatchEligible: true)
+  await assert.rejects(
+    () => compiler.validateConsumedReadSet(selected.readSetHandle, { currentGraph: async () => graph }),
+    /PHYSICAL_VERIFIER_REQUIRED/
+  );
+
+  // 1. Unchanged live graph + physical verifier passes physical dispatch verification
   const verified = await compiler.validateConsumedReadSet(selected.readSetHandle, {
     currentGraph: async () => graph,
     assertPhysicalCurrentness: async deps => deps.sourceIds.length >= 3
@@ -283,26 +300,35 @@ test('V06, V07 & V09: final dispatch verification rejects mutated suppressed-Mic
   // 2. JSON clone of readSetHandle is rejected (WeakMap capability protection)
   const forgedHandle = JSON.parse(JSON.stringify(selected.readSetHandle));
   await assert.rejects(
-    () => compiler.validateConsumedReadSet(forgedHandle, { currentGraph: async () => graph }),
+    () => compiler.validateConsumedReadSet(forgedHandle, {
+      currentGraph: async () => graph,
+      assertPhysicalCurrentness: async () => true
+    }),
     /READSET_HANDLE_INVALID/
   );
 
-  // 3. V09: Even though Micro was suppressed/absorbed in the rendered text, mutating the Micro record before dispatch MUST reject delivery!
+  // 3. V09: Mutating the suppressed Micro record before dispatch rejects delivery
   const mutatedMicroSnap = makeSnapshot('plugin_only');
   mutatedMicroSnap.micro[0].record.analysisRevisionId = 'ana-rev-6-mutated';
   mutatedMicroSnap.micro[0].head.analysisRevisionId = 'ana-rev-6-mutated';
   const mutatedMicroGraph = runPipeline(mutatedMicroSnap).graph;
   await assert.rejects(
-    () => compiler.validateConsumedReadSet(selected.readSetHandle, { currentGraph: async () => mutatedMicroGraph }),
+    () => compiler.validateConsumedReadSet(selected.readSetHandle, {
+      currentGraph: async () => mutatedMicroGraph,
+      assertPhysicalCurrentness: async () => true
+    }),
     /DEPENDENCY_BINDING_STALE/
   );
 
-  // 4. V06: Mutating lore rendered text or entity registry fingerprint rejects delivery
+  // 4. V06: Mutating lore rendered text rejects delivery
   const mutatedLoreSnap = makeSnapshot('plugin_only');
   mutatedLoreSnap.lore.entries[0].rendered = 'The Silver Ring is now sealed forever and cannot open anything.';
   const mutatedLoreGraph = runPipeline(mutatedLoreSnap).graph;
   await assert.rejects(
-    () => compiler.validateConsumedReadSet(selected.readSetHandle, { currentGraph: async () => mutatedLoreGraph }),
+    () => compiler.validateConsumedReadSet(selected.readSetHandle, {
+      currentGraph: async () => mutatedLoreGraph,
+      assertPhysicalCurrentness: async () => true
+    }),
     /DEPENDENCY_BINDING_STALE/
   );
 
@@ -311,8 +337,24 @@ test('V06, V07 & V09: final dispatch verification rejects mutated suppressed-Mic
   abaSnap.frame.restoreEpoch = 4;
   const abaGraph = runPipeline(abaSnap).graph;
   await assert.rejects(
-    () => compiler.validateConsumedReadSet(selected.readSetHandle, { currentGraph: async () => abaGraph }),
+    () => compiler.validateConsumedReadSet(selected.readSetHandle, {
+      currentGraph: async () => abaGraph,
+      assertPhysicalCurrentness: async () => true
+    }),
     /RESTORE_EPOCH_CHANGED|DEPENDENCY_BINDING_STALE/
+  );
+
+  // 6. D04: invalidateAll() or revoke() while currentGraph() is awaiting MUST reject!
+  let releaseGraph;
+  const pendingInvalidation = compiler.validateConsumedReadSet(selected.readSetHandle, {
+    currentGraph: () => new Promise(resolve => { releaseGraph = resolve; }),
+    assertPhysicalCurrentness: async () => true
+  });
+  compiler.invalidateAll();
+  releaseGraph(graph);
+  await assert.rejects(
+    () => pendingInvalidation,
+    /READSET_HANDLE_INVALID/
   );
 });
 
@@ -341,13 +383,15 @@ test('V12: plugin_only and server_only produce equivalent bundles/proofs, and GR
   await assert.rejects(
     () => pluginRun.compiler.validateConsumedReadSet(gradiaSel.readSetHandle, {
       currentGraph: async () => pluginRun.graph,
-      verifyGradiaReceipt: async () => false
+      verifyGradiaReceipt: async () => false,
+      assertPhysicalCurrentness: async () => true
     }),
     /GRADIA_RECEIPT_INVALID/
   );
   const gradiaVerified = await pluginRun.compiler.validateConsumedReadSet(gradiaSel.readSetHandle, {
     currentGraph: async () => pluginRun.graph,
-    verifyGradiaReceipt: async r => r.selectionReceiptId === 'rcpt-101'
+    verifyGradiaReceipt: async r => r.selectionReceiptId === 'rcpt-101',
+    assertPhysicalCurrentness: async () => true
   });
   assert.equal(gradiaVerified.modelDispatchEligible, true);
 });

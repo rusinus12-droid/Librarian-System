@@ -101,10 +101,10 @@ const makeFourFamilySnapshot = () => ({
             text: 'Alice lent the Silver Ring to Bob for safekeeping.',
             actor: 'Alice',
             target: 'Bob',
+            // D01: Native Micro evidence does NOT contain `turn`; turn lives on record/head/receipt
             evidence: {
               role: 'assistant',
               messageId: 'msg-6',
-              turn: 6,
               startOffset: 0,
               endOffset: 50,
               exactQuote: 'Alice lent the Silver Ring to Bob for safekeeping.'
@@ -216,7 +216,7 @@ const makeFourFamilySnapshot = () => ({
   }
 });
 
-const buildStack = snapshot => {
+const buildStack = (snapshot, { nodeLimit = 2048 } = {}) => {
   const identity = createMemoryGraphIdentity({ fingerprint: sha256 });
   const pages = createMemoryGraphPages({ fingerprint: sha256 });
   const readers = createMemoryGraphReaders({ identity, digestClaim: c => sha256(JSON.stringify(c)) });
@@ -224,7 +224,7 @@ const buildStack = snapshot => {
   const lane = createMemoryGraphLane({ index, pages });
   const query = createMemoryGraphQuery({ index, lane, pages, fingerprint: sha256 });
 
-  const graph = readers.project(snapshot, { nodeLimit: 2048 });
+  const graph = readers.project(snapshot, { nodeLimit });
   const partition = JSON.stringify({ owner: baseFrame.owner, scopeKey: baseFrame.scopeKey, viewer: baseFrame.view.viewerId });
   const generation = pages.generation(graph, { partition, restoreEpoch: 0, view: baseFrame });
   const compiled = index.compile(graph, { partition, generation });
@@ -258,8 +258,11 @@ test('V01 & V03: retrieves all 4 families (canonical, micro, state, lore) in one
   assert.equal(stateHeld.independentEvidenceCount, 1);
 });
 
-test('V02 & V04: missing embeddings do not drop candidates, and past asOfTurn excludes future turns/State head while preserving clear vs unknown', () => {
+test('V02, V04 & D01: missing embeddings do not drop candidates, and past asOfTurn excludes native Micro future turns and State head while preserving clear vs unknown', () => {
   const { query, graph, compiled } = buildStack(makeFourFamilySnapshot());
+  const microUnit = graph.units.find(u => u.family === 'micro');
+  assert.equal(microUnit.sourceSpan.turn, undefined, 'Native Micro evidence must not carry a synthetic turn field');
+  assert.equal(microUnit.turn, 6, 'Projected Micro unit must preserve owner-verified record/receipt turn');
 
   const currentFrame = query.sealQueryFrame({
     queryText: 'alice observation',
@@ -275,7 +278,7 @@ test('V02 & V04: missing embeddings do not drop candidates, and past asOfTurn ex
   assert.equal(clearedField.semanticFeatureStatus, 'unavailable');
 
   const pastFrame = query.sealQueryFrame({
-    queryText: 'silver ring alice',
+    queryText: 'silver ring alice safekeeping',
     owner: baseFrame.owner,
     scopeKey: baseFrame.scopeKey,
     asOfTurn: 3
@@ -283,7 +286,7 @@ test('V02 & V04: missing embeddings do not drop candidates, and past asOfTurn ex
   const pastRes = query.retrieve(query.openView(graph, compiled, pastFrame));
   assert.equal(pastRes.historicalStateUnavailable, true, 'Future State head (turn 6) must not be used for asOfTurn 3');
   assert.equal(pastRes.candidates.some(c => c.family === 'state'), false);
-  assert.equal(pastRes.candidates.some(c => c.family === 'micro'), false, 'Future Micro turn 6 must be excluded at asOfTurn 3');
+  assert.equal(pastRes.candidates.some(c => c.family === 'micro'), false, 'Future native Micro turn 6 must be excluded at asOfTurn 3');
   assert.equal(pastRes.candidates.some(c => c.family === 'canonical'), true, 'Historical Canonical turn 2 remains eligible at asOfTurn 3');
 });
 
@@ -310,7 +313,7 @@ test('V13: improved-path reevaluation updates both score and winningWitness.edge
   assert.ok(loreResult.pathVersion >= 2, 'pathVersion must increment on improved-path reevaluation');
 });
 
-test('V15: protected/excluded intermediate hub node is blocked from bridging propagation without mutating SourceGraph', () => {
+test('V15 & D05: protected intermediate hub is blocked without mutating SourceGraph, and truncated projection coverage never reports complete: true', () => {
   const { query, graph, compiled } = buildStack(makeFourFamilySnapshot());
   const aliceNode = graph.nodes.find(n => n.layer === 'entity'
     && graph.edges.some(e => e.to === n.id && e.predicate === 'mentions'));
@@ -326,6 +329,20 @@ test('V15: protected/excluded intermediate hub node is blocked from bridging pro
   const blockedRes = query.retrieve(query.openView(graph, compiled, blockedFrame));
   assert.equal(blockedRes.candidates.some(c => c.family === 'lore'), false, 'Ineligible intermediate hub must not bridge propagation');
   assert.equal(graph.edges.length, edgesBefore, 'SourceGraph must not be mutated by QueryGraphView filtering');
+
+  // D05: nodeLimit truncation sets projectionComplete: false, which must propagate to queryResult.complete: false
+  const truncated = buildStack(makeFourFamilySnapshot(), { nodeLimit: 5 });
+  assert.equal(truncated.graph.coverage.projectionComplete, false);
+  const truncFrame = truncated.query.sealQueryFrame({
+    queryText: 'silver ring',
+    owner: baseFrame.owner,
+    scopeKey: baseFrame.scopeKey
+  });
+  const truncRes = truncated.query.retrieve(truncated.query.openView(truncated.graph, truncated.compiled, truncFrame));
+  assert.equal(truncRes.traversalComplete, true);
+  assert.equal(truncRes.sourceCoverageComplete, false);
+  assert.equal(truncRes.complete, false, 'Truncated source projection must never report queryResult.complete: true');
+  assert.equal(truncRes.stopReason, 'projection_coverage_incomplete');
 });
 
 (async () => {

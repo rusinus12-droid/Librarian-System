@@ -7,7 +7,7 @@
 //    or extra model/embedding calls, distinguishing preserved invariants from intentional State/lore
 //    expansion and disclosing unresolved host blockers (§12.2, §13).
 // 4. Enforces UM6 retirement fence for legacy duplicate cache/index/Memory Lane/ranker paths (V11)
-//    and verifies cold/warm/eviction/restart determinism across identical inputs (V05).
+//    and verifies cold/warm/eviction/restart determinism across identical inputs (V05, D08).
 module.exports = function createMemoryGraphRollout({ index, lane, query, compiler, pages, fingerprint } = {}) {
   if (!index || !lane || !query || !compiler || !pages || typeof fingerprint !== 'function') {
     throw new TypeError('LIBRA_GRAPH_ROLLOUT_ADAPTER_REQUIRED');
@@ -88,7 +88,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
   };
 
   // Execute unified retrieval + compilation under a sealed request token.
-  // Never invokes legacy rankers on unified partial/failure (§13, V11).
+  // Never invokes legacy rankers on unified partial/failure (§13, V11, D05).
   const executeUnifiedRequest = async ({
     sealToken,
     graph,
@@ -163,7 +163,10 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       doubleInjection: false,
       additionalModelCalls: 0,
       queryComplete: queryResult.complete,
+      traversalComplete: queryResult.traversalComplete,
+      sourceCoverageComplete: queryResult.sourceCoverageComplete,
       stopReason: queryResult.stopReason,
+      coverage: queryResult.coverage,
       bundle: selected.bundle,
       packet: deliveryOutcome === 'base_request_only' ? null : packet,
       dispatchVerification,
@@ -171,12 +174,13 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     });
   };
 
-  // UM6 & V05: Verify that cold cache, warm cache, post-LRU eviction, and fresh restart produce
-  // identical logical complete results and winning witnesses for the same snapshot and query (§7.2, §12.1, V05).
+  // UM6 & V05 (D08): Verify that cold cache, warm cache, post-LRU/partition eviction, and fresh restart produce
+  // identical logical complete results, concrete candidate scores, winning witnesses, bundle digests, and rendered packet digests.
   const verifyColdWarmEvictionDeterminism = ({
     graph,
     queryInput = {},
-    consumerPolicy = {}
+    consumerPolicy = {},
+    createFreshRuntime = null
   } = {}) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     const frame = graph.readerFrame || {};
@@ -191,49 +195,88 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     });
     const generation = pages.generation(graph, { partition, restoreEpoch, view: frame });
 
-    const runPass = () => {
-      const compiledIndex = index.compile(graph, { partition, generation });
-      const queryFrame = query.sealQueryFrame({
+    const runPass = (env = { index, lane, query, compiler, pages }) => {
+      const beforeCache = typeof env.pages.inspect === 'function' ? env.pages.inspect().counters : { hits: 0, misses: 0, evictions: 0 };
+      const compiledIndex = env.index.compile(graph, { partition, generation });
+      const queryFrame = env.query.sealQueryFrame({
         ...queryInput,
         owner,
         scopeKey,
         worldlineId
       });
-      const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-      const queryResult = query.retrieve(viewHandle, { maxPages: 64, maxBytes: 262144, pageBytes: 4096 });
-      const selected = compiler.select(queryResult, graph, consumerPolicy);
-      const packet = compiler.render(selected);
+      const viewHandle = env.query.openView(graph, compiledIndex, queryFrame);
+      const queryResult = env.query.retrieve(viewHandle, { maxPages: 64, maxBytes: 262144, pageBytes: 4096 });
+      const selected = env.compiler.select(queryResult, graph, consumerPolicy);
+      const packet = env.compiler.render(selected);
+      const afterCache = typeof env.pages.inspect === 'function' ? env.pages.inspect().counters : { hits: 0, misses: 0, evictions: 0 };
+
+      for (const c of queryResult.candidates) {
+        if (typeof c.score !== 'number' || !Number.isFinite(c.score) || !c.winningWitness || !Array.isArray(c.winningWitness.edgeChain)) {
+          fail('candidate_score_or_witness_missing');
+        }
+      }
+      if (typeof selected.bundle.bundleDigest !== 'string' || !/^[a-f0-9]{64}$/.test(selected.bundle.bundleDigest)) {
+        fail('bundle_digest_missing');
+      }
+      if (typeof packet.packetDigest !== 'string' || !/^[a-f0-9]{64}$/.test(packet.packetDigest)) {
+        fail('packet_digest_missing');
+      }
+
+      const candidateDigest = hash(JSON.stringify(queryResult.candidates.map(c => ({
+        nodeId: c.nodeId,
+        score: c.score,
+        directScore: c.directScore,
+        propagatedScore: c.propagatedScore,
+        pathVersion: c.pathVersion,
+        winningWitness: c.winningWitness
+      }))));
+
       return {
         complete: queryResult.complete,
-        candidateDigest: hash(JSON.stringify(queryResult.candidates.map(c => ({
-          nodeId: c.nodeId,
-          bestActivation: c.bestActivation,
-          winningWitness: c.winningWitness
-        })))),
+        candidateCount: queryResult.candidates.length,
+        candidateDigest,
         bundleDigest: selected.bundle.bundleDigest,
-        packetDigest: packet.packetDigest
+        packetDigest: packet.packetDigest,
+        cacheHits: afterCache.hits - beforeCache.hits,
+        cacheMisses: afterCache.misses - beforeCache.misses,
+        evictions: afterCache.evictions - beforeCache.evictions
       };
     };
 
-    // Pass 1: Cold cache
-    pages.invalidate({ reason: 'v05_cold_start' });
+    // Pass 1: Cold cache (invalidate all resident pages first)
+    pages.invalidate();
     const cold = runPass();
 
-    // Pass 2: Warm cache
+    // Pass 2: Warm cache (re-reads populated resident pages from Pass 1)
     const warm = runPass();
 
-    // Pass 3: Post-eviction / partition invalidation
-    pages.invalidate({ partition, reason: 'v05_eviction' });
-    const postEviction = runPass();
+    // Pass 3: Post-eviction (evict the partition's resident pages and reload)
+    const evictionsBefore = typeof pages.inspect === 'function' ? pages.inspect().counters.evictions : 0;
+    pages.invalidate(partition);
+    const evictionsTriggered = (typeof pages.inspect === 'function' ? pages.inspect().counters.evictions : 0) - evictionsBefore;
+    const postEviction = {
+      ...runPass(),
+      evictionsTriggered
+    };
 
-    // Pass 4: Simulated restart (full cache clear)
-    pages.invalidate({ reason: 'v05_restart' });
-    const postRestart = runPass();
+    // Pass 4: Simulated restart (fresh cache state or caller-supplied fresh runtime factories)
+    pages.invalidate();
+    const freshEnv = typeof createFreshRuntime === 'function'
+      ? createFreshRuntime()
+      : { index, lane, query, compiler, pages };
+    const postRestart = runPass(freshEnv);
 
-    const deterministic = cold.complete
+    const digestsPresent = /^[a-f0-9]{64}$/.test(cold.candidateDigest)
+      && /^[a-f0-9]{64}$/.test(cold.bundleDigest)
+      && /^[a-f0-9]{64}$/.test(cold.packetDigest);
+
+    const deterministic = digestsPresent
+      && cold.complete
       && warm.complete
       && postEviction.complete
       && postRestart.complete
+      && warm.cacheHits > 0
+      && postEviction.evictionsTriggered > 0
       && cold.candidateDigest === warm.candidateDigest
       && cold.candidateDigest === postEviction.candidateDigest
       && cold.candidateDigest === postRestart.candidateDigest
@@ -247,6 +290,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     return Object.freeze({
       schema: 'libra.determinism_verification.v1',
       deterministic,
+      bundleAndPacketDigestFieldsPresent: digestsPresent,
       passes: { cold, warm, postEviction, postRestart }
     });
   };
@@ -292,7 +336,6 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       ? Number((matchedGold.length / unifiedIds.size).toFixed(4))
       : 1;
 
-    // Identify intentional divergence where Unified discovers State/lore or multi-hop evidence beyond legacy canonical shortlist (§13)
     const addedByUnified = unified.bundle.items
       .filter(i => !legacyIds.has(i.nodeId))
       .map(i => ({

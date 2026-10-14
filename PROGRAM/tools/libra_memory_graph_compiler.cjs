@@ -1,13 +1,15 @@
 'use strict';
 // UM4 Consumer & Final Readset Verification Compiler (EvidenceCompiler):
-// 1. Selects an EvidenceBundle from UM3 retrieval candidates under consumer character/unit budgets.
+// 1. Selects an EvidenceBundle from UM3 retrieval candidates under consumer character/unit budgets,
+//    measuring the full rendered envelope (header + role labels + numbering + newlines) so the final
+//    rendered packet never exceeds maxCharacters (D07).
 // 2. Enforces conservative Canonical/Micro absorption: a Micro unit is suppressed ONLY when its
-//    admitted Canonical counterpart actually survives the character budget; if Canonical drops,
+//    admitted Canonical counterpart actually survives the rendered character budget; if Canonical drops,
 //    Micro remains eligible. When Micro IS absorbed, its source/entity/basis dependencies are
 //    retained in the private consumed readset (§10, V09).
 // 3. Issues private WeakMap-backed consumed readset handles (never forgeable via JSON clone)
-//    and validates physical owner currentness, exact bindings, and nonrewinding restoreEpoch
-//    at the final model dispatch boundary (V06, V07, V09, V12).
+//    and requires mandatory physical owner currentness verification (`assertPhysicalCurrentness`),
+//    re-checking handle validity, revocation, and compilerEpoch across every async boundary (D02, D04, V06, V07, V09, V12).
 module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
   const schema = 'libra.memory_graph_compiler.v1';
@@ -85,18 +87,28 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     return { nodeIds, sourceIds, entityIds, basisIds, bindingByNodeId };
   };
 
-  // Select an EvidenceBundle under character & unit budgets with conservative Micro absorption (§10, V09)
+  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07)
+  const formatPacketText = (consumer, scopeKey, items, independentSourceCount) => {
+    if (!Array.isArray(items) || items.length === 0) return '';
+    const header = `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
+    const lines = items.map((item, idx) => (
+      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
+    ));
+    return [header, ...lines].join('\n');
+  };
+
+  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07)
   const select = (queryResult, graph, rawPolicy = {}) => {
     if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     const policy = normalizePolicy(rawPolicy);
+    const scopeKey = graph.scopeKey || graph.readerFrame?.scopeKey || '';
 
     const nodeById = new Map((graph.nodes || []).map(n => [n.id, n]));
     const unitByNodeId = new Map((graph.units || []).map(u => [u.nodeId, u]));
     const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
 
-    // Order candidates: mandatory lore first (when enabled by consumer policy), then by query score
     const ordered = [...(queryResult.candidates || [])].sort((a, b) => {
       if (policy.includeMandatoryLore && a.mandatoryInclusion !== b.mandatoryInclusion) {
         return a.mandatoryInclusion ? -1 : 1;
@@ -104,27 +116,53 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
     });
 
-    // Separate non-Micro and Micro so we know which Canonical counterparts actually pass budget admission first!
-    // If a Canonical candidate drops under budget, its corresponding Micro candidate MUST NOT be suppressed (§10, V09).
     const admitted = [];
     const admittedNodeIds = new Set();
     const droppedForBudget = [];
     const suppressedMicro = [];
-    let usedCharacters = 0;
-
-    // Pass 1: admit non-Micro candidates (or all candidates in order, deferring Micro absorption check until after Canonical admission is known)
-    // To preserve score ranking while guaranteeing Micro is only absorbed if its Canonical counterpart actually fits the budget,
-    // we first simulate admission in rank order, and if a Canonical counterpart is later dropped for budget, any Micro that was
-    // provisionally held for absorption is restored!
     const provisionalHeldMicro = [];
 
+    const countIndependentSources = list => {
+      const sources = new Set();
+      for (const c of list) {
+        const deps = collectCandidateDependencies(c, nodeById, basisById, edgeById);
+        for (const sId of deps.sourceIds) sources.add(sId);
+      }
+      return sources.size;
+    };
+
+    const fitsRenderedBudget = candidateToAdd => {
+      if (admitted.length >= policy.maxUnits) return false;
+      const trialList = [...admitted, candidateToAdd];
+      const trialSources = countIndependentSources(trialList);
+      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources);
+      return trialRendered.length <= policy.maxCharacters;
+    };
+
+    const resolveHeldForCanonical = canonicalNodeId => {
+      for (let i = provisionalHeldMicro.length - 1; i >= 0; i--) {
+        if (provisionalHeldMicro[i].counterpartCanonicalId !== canonicalNodeId) continue;
+        const [{ cand }] = provisionalHeldMicro.splice(i, 1);
+        if (admittedNodeIds.has(canonicalNodeId)) {
+          suppressedMicro.push({
+            microNodeId: cand.nodeId,
+            absorbedByCanonicalNodeId: canonicalNodeId,
+            candidate: cand
+          });
+        } else if (fitsRenderedBudget(cand)) {
+          admitted.push(cand);
+          admittedNodeIds.add(cand.nodeId);
+        } else {
+          droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        }
+      }
+    };
+
     for (const cand of ordered) {
-      const textLen = String(cand.text || '').length;
       const counterpartCanonicalId = cand.family === 'micro'
         ? (policy.correspondenceMap[cand.nodeId] || null)
         : null;
 
-      // If this Micro unit has a designated Canonical counterpart that is already admitted, absorb/suppress it now
       if (counterpartCanonicalId && admittedNodeIds.has(counterpartCanonicalId)) {
         suppressedMicro.push({
           microNodeId: cand.nodeId,
@@ -133,23 +171,21 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         });
         continue;
       }
-      // If the Canonical counterpart appears later in the candidate list, hold this Micro provisionally
       if (counterpartCanonicalId && ordered.some(other => other.nodeId === counterpartCanonicalId)) {
         provisionalHeldMicro.push({ cand, counterpartCanonicalId });
         continue;
       }
 
-      if (admitted.length >= policy.maxUnits || usedCharacters + textLen > policy.maxCharacters) {
+      if (!fitsRenderedBudget(cand)) {
         droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
+        resolveHeldForCanonical(cand.nodeId);
         continue;
       }
       admitted.push(cand);
       admittedNodeIds.add(cand.nodeId);
-      usedCharacters += textLen;
+      resolveHeldForCanonical(cand.nodeId);
     }
 
-    // Resolve provisionally held Micro candidates: if their Canonical counterpart was admitted, absorb them;
-    // if the Canonical counterpart was dropped for budget, admit the Micro candidate if budget permits!
     for (const { cand, counterpartCanonicalId } of provisionalHeldMicro) {
       if (admittedNodeIds.has(counterpartCanonicalId)) {
         suppressedMicro.push({
@@ -157,15 +193,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
           absorbedByCanonicalNodeId: counterpartCanonicalId,
           candidate: cand
         });
+      } else if (fitsRenderedBudget(cand)) {
+        admitted.push(cand);
+        admittedNodeIds.add(cand.nodeId);
       } else {
-        const textLen = String(cand.text || '').length;
-        if (admitted.length < policy.maxUnits && usedCharacters + textLen <= policy.maxCharacters) {
-          admitted.push(cand);
-          admittedNodeIds.add(cand.nodeId);
-          usedCharacters += textLen;
-        } else {
-          droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
-        }
+        droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
       }
     }
 
@@ -214,6 +246,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         semanticRole: cand.semanticRole,
         availability: cand.availability ?? null,
         provenanceStatus: cand.provenanceStatus ?? null,
+        turn: cand.turn ?? unit.turn ?? null,
         text: cand.text,
         score: cand.score,
         mandatoryInclusion: cand.mandatoryInclusion,
@@ -224,13 +257,22 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       };
     });
 
-    const bundle = {
+    const renderedPreview = formatPacketText(
+      policy.consumer,
+      scopeKey,
+      items,
+      independentSupportingSources.size
+    );
+    const usedCharacters = renderedPreview.length;
+    const bodyCharacters = items.reduce((acc, i) => acc + String(i.text || '').length, 0);
+
+    const bundleCore = {
       schema: 'libra.evidence_bundle.v1',
       consumer: policy.consumer,
       generation: queryResult.generation,
       indexDigest: queryResult.indexDigest,
       frameId: queryResult.frameId,
-      scopeKey: graph.scopeKey || graph.readerFrame?.scopeKey || '',
+      scopeKey,
       worldlineId: graph.readerFrame?.worldlineId || 'main',
       restoreEpoch: graph.readerFrame?.restoreEpoch ?? 0,
       owner: graph.readerFrame?.owner || '',
@@ -239,6 +281,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       budget: {
         maxCharacters: policy.maxCharacters,
         usedCharacters,
+        bodyCharacters,
+        envelopeCharacters: usedCharacters - bodyCharacters,
         maxUnits: policy.maxUnits,
         admittedUnits: items.length,
         droppedUnits: droppedForBudget.length,
@@ -252,10 +296,12 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       authority: 'unverified_bundle',
       modelDispatchEligible: false
     };
+    const bundleDigest = hash(JSON.stringify(bundleCore));
+    const bundle = Object.freeze({ ...bundleCore, bundleDigest });
 
     const readSetToken = Object.freeze({
       schema: 'libra.consumed_readset_handle.v1',
-      bundleDigest: hash(JSON.stringify(bundle)),
+      bundleDigest,
       consumer: policy.consumer,
       scopeKey: bundle.scopeKey
     });
@@ -280,21 +326,34 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       }
     });
 
-    return Object.freeze({ bundle: Object.freeze(bundle), readSetHandle: readSetToken });
+    return Object.freeze({ bundle, readSetHandle: readSetToken });
   };
 
-  // Render consumer packet envelope from selected EvidenceBundle (§10)
+  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08)
   const render = ({ bundle, readSetHandle } = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
-    if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || hash(JSON.stringify(bundle)) !== readSetHandle.bundleDigest) {
+    if (!bundle || bundle.schema !== 'libra.evidence_bundle.v1' || bundle.bundleDigest !== readSetHandle.bundleDigest) {
       fail('bundle_mismatch');
     }
-    const header = `[LIBRA_EVIDENCE consumer=${bundle.consumer} scope=${bundle.scopeKey} units=${bundle.items.length} sources=${bundle.independentSupportingSourceCount}]`;
-    const lines = bundle.items.map((item, idx) => (
-      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
-    ));
-    const renderedText = [header, ...lines].join('\n');
+    const { bundleDigest: _omittedDigest, ...bundleCore } = bundle;
+    if (hash(JSON.stringify(bundleCore)) !== readSetHandle.bundleDigest) {
+      fail('bundle_mismatch');
+    }
+    const renderedText = formatPacketText(
+      bundle.consumer,
+      bundle.scopeKey,
+      bundle.items,
+      bundle.independentSupportingSourceCount
+    );
+    const packetDigest = hash(JSON.stringify([
+      'libra.rendered_consumer_packet.v1',
+      bundle.consumer,
+      bundle.scopeKey,
+      bundle.worldlineId,
+      bundle.bundleDigest,
+      renderedText
+    ]));
     return Object.freeze({
       schema: 'libra.rendered_consumer_packet.v1',
       consumer: bundle.consumer,
@@ -302,6 +361,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       worldlineId: bundle.worldlineId,
       renderedText,
       characterLength: renderedText.length,
+      packetDigest,
       admittedNodeIds: bundle.items.map(i => i.nodeId),
       suppressedMicroIds: bundle.suppressedMicroIds,
       gradiaSelectionReceipt: bundle.gradiaSelectionReceipt,
@@ -310,13 +370,22 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     });
   };
 
-  // Final physical readset verification at model dispatch boundary (§10, §11, V06, V07, V09, V12)
+  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, V06, V07, V09, V12)
   const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
-    if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
+    const assertHandleActive = () => {
+      const current = readSetHandle && issuedReadSets.get(readSetHandle);
+      if (!current || current !== record || current.revoked || current.compilerEpoch !== compilerEpoch) {
+        fail('readset_handle_invalid');
+      }
+    };
+    assertHandleActive();
     if (!ownerVerifier || typeof ownerVerifier.currentGraph !== 'function') fail('owner_verifier_required');
+    // D02: Physical owner currentness verification is mandatory before granting modelDispatchEligible: true
+    if (typeof ownerVerifier.assertPhysicalCurrentness !== 'function') fail('physical_verifier_required');
 
     const live = await ownerVerifier.currentGraph();
+    assertHandleActive();
     if (!live || live.schema !== 'libra.memory_graph_projection.v1') fail('live_graph_unavailable');
 
     const liveFrame = live.readerFrame || {};
@@ -340,13 +409,17 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     if (record.policy.consumer === 'gradia') {
       if (typeof ownerVerifier.verifyGradiaReceipt !== 'function') fail('gradia_verifier_required');
       const ok = await ownerVerifier.verifyGradiaReceipt(record.policy.gradiaSelectionReceipt);
+      assertHandleActive();
       if (ok !== true) fail('gradia_receipt_invalid');
     }
 
-    if (typeof ownerVerifier.assertPhysicalCurrentness === 'function') {
-      const ok = await ownerVerifier.assertPhysicalCurrentness(record.dependencies);
-      if (ok !== true) fail('physical_readset_stale');
-    }
+    const physicalOk = await ownerVerifier.assertPhysicalCurrentness(record.dependencies, {
+      bundle: record.bundle,
+      frame: record.frame,
+      liveGraph: live
+    });
+    assertHandleActive();
+    if (physicalOk !== true && physicalOk?.verified !== true) fail('physical_readset_stale');
 
     return Object.freeze({
       schema: 'libra.consumed_readset_verification.v1',

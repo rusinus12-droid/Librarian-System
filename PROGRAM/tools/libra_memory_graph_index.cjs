@@ -21,16 +21,48 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   const fail = reason => { const err = new Error('LIBRA_GRAPH_INDEX_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
-  const compile = (graph, { partition, generation } = {}) => {
+  const compile = (graph, { partition, generation, pageBytes = 16384 } = {}) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1' || typeof partition !== 'string' || !partition
       || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) {
       fail('input_invalid');
     }
+
+    // Read projection pools through the shared accounted-byte page cache when page() is available
+    const normalizedGraph = {
+      ...graph,
+      nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+      edges: Array.isArray(graph.edges) ? graph.edges : [],
+      bases: Array.isArray(graph.bases) ? graph.bases : [],
+      units: Array.isArray(graph.units) ? graph.units : []
+    };
+    const readPool = pool => {
+      const total = normalizedGraph[pool].length;
+      if (typeof pages.page !== 'function' || total === 0) return normalizedGraph[pool];
+      const out = [];
+      let offset = 0;
+      while (offset < total) {
+        const pg = pages.page(normalizedGraph, { partition, generation, pool, offset, pageBytes });
+        if (!Array.isArray(pg.items) || pg.nextOffset <= offset) {
+          return normalizedGraph[pool];
+        }
+        out.push(...pg.items);
+        offset = pg.nextOffset;
+      }
+      return out;
+    };
+
+    const nodes = readPool('nodes');
+    const edges = readPool('edges');
+    const bases = readPool('bases');
+    const units = readPool('units');
+
+    const nodeById = new Map();
+    for (const node of nodes) nodeById.set(node.id, node);
     const unitByNodeId = new Map();
-    for (const unit of graph.units || []) unitByNodeId.set(unit.nodeId, unit);
+    for (const unit of units) unitByNodeId.set(unit.nodeId, unit);
 
     // 1. Node/Source Directory
-    const directory = (graph.nodes || []).map(node => {
+    const directory = nodes.map(node => {
       const unit = unitByNodeId.get(node.id) || null;
       return {
         nodeId: node.id,
@@ -47,7 +79,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     // 2. Typed Adjacency with structural priority and degree tracking
     const adjacency = [];
     const outDegree = new Map(), inDegree = new Map();
-    for (const edge of graph.edges || []) {
+    for (const edge of edges) {
       const structural = structuralPredicates.has(edge.predicate);
       outDegree.set(edge.from, (outDegree.get(edge.from) || 0) + 1);
       inDegree.set(edge.to, (inDegree.get(edge.to) || 0) + 1);
@@ -109,17 +141,26 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       const prev = bucket.get(nodeId);
       if (prev) prev.tf += 1;
       else bucket.set(nodeId, { nodeId, tf: 1, ...meta });
-      recordDep(`node:${nodeId}`, { nodeId, postingKey: `${channel}:${key}` });
+      const postingKey = `${channel}:${key}`;
+      recordDep(`node:${nodeId}`, { nodeId, postingKey });
+      const node = nodeById.get(nodeId);
+      if (node?.sourceId) {
+        recordDep(`source:${node.sourceId}`, { nodeId, postingKey });
+      }
+      const unit = unitByNodeId.get(nodeId);
+      if (unit?.family) {
+        recordDep(`family:${unit.family}`, { nodeId, postingKey });
+      }
     };
 
-    for (const node of graph.nodes || []) {
+    for (const node of nodes) {
       recordDep(`node:${node.id}`, { nodeId: node.id });
       if (node.sourceId) recordDep(`source:${node.sourceId}`, { nodeId: node.id });
       if (node.layer === 'source') recordDep(`source:${node.id}`, { nodeId: node.id });
       if (node.layer === 'entity') recordDep(`entity:${node.id}`, { nodeId: node.id });
     }
 
-    for (const unit of graph.units || []) {
+    for (const unit of units) {
       recordDep(`family:${unit.family}`, { nodeId: unit.nodeId });
       const tokens = tokenizer(unit.text || '');
       for (const token of tokens) {
@@ -144,14 +185,17 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       if (unit.fact?.claimKind) {
         addPosting(predicatePostings, 'predicate', unit.fact.claimKind, unit.nodeId, { family: unit.family });
       }
-      const timeKey = unit.fact?.time?.label || unit.fact?.values?.time || (Number.isSafeInteger(unit.headThroughTurn) ? `turn:${unit.headThroughTurn}` : '');
+      const timeKey = unit.fact?.time?.label
+        || unit.fact?.values?.time
+        || (Number.isSafeInteger(unit.turn) ? `turn:${unit.turn}` : '')
+        || (Number.isSafeInteger(unit.headThroughTurn) ? `turn:${unit.headThroughTurn}` : '');
       if (timeKey) addPosting(timePostings, 'time', String(timeKey), unit.nodeId, { family: unit.family });
     }
 
     const basisById = new Map();
-    for (const b of graph.bases || []) basisById.set(b.id, b);
+    for (const b of bases) basisById.set(b.id, b);
 
-    for (const edge of graph.edges || []) {
+    for (const edge of edges) {
       addPosting(predicatePostings, 'predicate', edge.predicate, edge.from, { via: 'edge_out', edgeId: edge.id });
       if (['mentions', 'subject_of', 'target_of'].includes(edge.predicate)) {
         addPosting(entityPostings, 'entity', edge.to, edge.from, { role: edge.predicate, edgeId: edge.id });
@@ -159,10 +203,24 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       }
       recordDep(`node:${edge.from}`, { nodeId: edge.from, edgeId: edge.id });
       recordDep(`node:${edge.to}`, { nodeId: edge.to, edgeId: edge.id });
+      const fromNode = nodeById.get(edge.from);
+      if (fromNode?.sourceId) recordDep(`source:${fromNode.sourceId}`, { nodeId: edge.from, edgeId: edge.id });
+      const toNode = nodeById.get(edge.to);
+      if (toNode?.sourceId) recordDep(`source:${toNode.sourceId}`, { nodeId: edge.to, edgeId: edge.id });
       recordDep(`basis:${edge.basisId}`, { nodeId: edge.from, edgeId: edge.id });
       const basis = basisById.get(edge.basisId);
       if (basis?.sourceId) {
         recordDep(`source:${basis.sourceId}`, { nodeId: edge.from, edgeId: edge.id });
+      }
+    }
+
+    // Ensure transitive closure on revMap so any dependencyKey referencing a nodeId also carries that nodeId's edges & postings
+    for (const entry of revMap.values()) {
+      for (const nId of [...entry.nodeIds]) {
+        const nodeEntry = revMap.get(`node:${nId}`);
+        if (!nodeEntry) continue;
+        for (const eId of nodeEntry.edgeIds) entry.edgeIds.add(eId);
+        for (const pKey of nodeEntry.postingKeys) entry.postingKeys.add(pKey);
       }
     }
 
@@ -236,6 +294,13 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       for (const n of hit.nodeIds) nodeIds.add(n);
       for (const e of hit.edgeIds) edgeIds.add(e);
       for (const p of hit.postingKeys) postingKeys.add(p);
+    }
+    // Transitive expansion from affected nodes to their edges and postings (D06)
+    for (const nId of [...nodeIds]) {
+      const nodeHit = lookup.get(`node:${nId}`);
+      if (!nodeHit) continue;
+      for (const e of nodeHit.edgeIds) edgeIds.add(e);
+      for (const p of nodeHit.postingKeys) postingKeys.add(p);
     }
     return {
       schema: 'libra.memory_graph_delta_impact.v1',
