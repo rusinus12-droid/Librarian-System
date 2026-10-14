@@ -389,6 +389,73 @@ test('M04 & M05: frontier-integrated Lane requests per-anchor neighborhood pages
   assert.equal(wsStopped.stopReason, 'workspace_byte_budget');
 });
 
+test('M06 & M07: validates semantic representation space compatibility, isolates mismatched vectors without background re-embedding, and separates unambiguous vs ambiguous entity aliases', () => {
+  const snap = makeFourFamilySnapshot();
+  // Add a second active entity sharing the alias "실버" to test alias ambiguity detection
+  snap.registry.record.entities.push(
+    { id: 'ent-alice-clone', name: 'Silver Knight', aliases: ['은기사', '실버'], validated: true, status: 'active' }
+  );
+  snap.registry.record.entities[1].aliases.push('실버');
+  const { query, graph, compiled } = buildStack(snap);
+
+  const canonicalUnit = graph.units.find(u => u.family === 'canonical');
+  const loreUnit = graph.units.find(u => u.family === 'lore');
+  const canonicalNode = graph.nodes.find(n => n.id === canonicalUnit.nodeId);
+
+  const qf = query.sealQueryFrame({
+    queryText: '앨리스 실버',
+    owner: baseFrame.owner,
+    scopeKey: baseFrame.scopeKey,
+    worldlineId: baseFrame.worldlineId,
+    entityRegistry: snap.registry.record.entities,
+    semanticSpace: {
+      spaceId: 'emb-space-v1',
+      provider: 'local',
+      model: 'bge-m3',
+      dimension: 3,
+      metric: 'cosine',
+      profileDigest: 'prof-1'
+    },
+    queryEmbedding: [1, 0, 0],
+    documentRepresentations: {
+      [canonicalUnit.nodeId]: {
+        spaceId: 'emb-space-v1',
+        provider: 'local',
+        model: 'bge-m3',
+        dimension: 3,
+        metric: 'cosine',
+        profileDigest: 'prof-1',
+        bindingId: canonicalNode.bindingId,
+        vector: [0.8, 0.6, 0]
+      },
+      [loreUnit.nodeId]: {
+        spaceId: 'emb-space-WRONG',
+        provider: 'other',
+        model: 'other-model',
+        dimension: 3,
+        metric: 'cosine',
+        profileDigest: 'prof-2',
+        vector: [1, 0, 0]
+      }
+    }
+  });
+
+  const view = query.openView(graph, compiled, qf);
+  // M07: Unambiguous alias '앨리스' resolves to ent-alice, while ambiguous alias '실버' is isolated in ambiguousAliases
+  assert.equal(view.resolvedEntityIds.length, 1);
+  assert.ok(view.ambiguousAliases.some(a => a.alias === '실버' && a.candidateEntityIds.length === 2));
+
+  const res = query.retrieve(view);
+  assert.equal(res.diagnostics.semanticDiagnostics.compatibleCount, 1);
+  assert.equal(res.diagnostics.semanticDiagnostics.incompatibleIsolatedCount, 1);
+  assert.equal(res.diagnostics.semanticDiagnostics.backgroundEmbeddingStarted, false);
+
+  const canonicalCand = res.candidates.find(c => c.nodeId === canonicalUnit.nodeId);
+  const loreCand = res.candidates.find(c => c.nodeId === loreUnit.nodeId);
+  assert.equal(canonicalCand.semanticFeatureStatus, 'available_vector_space');
+  assert.equal(loreCand.semanticFeatureStatus, 'incompatible_isolated');
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();

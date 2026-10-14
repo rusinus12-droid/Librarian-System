@@ -1,9 +1,11 @@
 'use strict';
-// UM3 Single Retrieval & Activation Kernel (D01, D05, M04, M05):
-// Seals QueryFrame, issues private eligibility-filtered QueryGraphView handles,
-// evaluates candidates with a single calibrated scoreCandidate, and runs strongest-path
-// activation propagation with improved-path reevaluation (pathVersion) over a single priority frontier
-// interleaved with on-demand Memory Lane neighborhood paging and L0 workspace byte accounting.
+// UM3 Single Retrieval & Activation Kernel (D01, D05, M04, M05, M06, M07):
+// Seals QueryFrame with semantic representation space binding & native lineage rules,
+// issues private eligibility-filtered QueryGraphView handles with alias ambiguity detection,
+// evaluates candidates with a single calibrated scoreCandidate (supporting real vector cosine/dot
+// similarity and isolating incompatible representation spaces without background re-embedding),
+// and runs strongest-path activation propagation with improved-path reevaluation (pathVersion)
+// over a single priority frontier interleaved with on-demand Memory Lane neighborhood paging.
 module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerprint, tokenize } = {}) {
   if (!index || typeof index.queryPage !== 'function' || !lane || typeof lane.createSession !== 'function'
     || !pages || typeof pages.measure !== 'function' || typeof fingerprint !== 'function') {
@@ -41,17 +43,50 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
   const issuedViews = new WeakMap();
 
+  const normalizeSemanticSpace = space => {
+    if (!space || typeof space !== 'object') return null;
+    const spaceId = String(space.spaceId || '').trim();
+    const provider = String(space.provider || 'local').trim();
+    const model = String(space.model || '').trim();
+    const dimension = Number.isSafeInteger(space.dimension) && space.dimension > 0 ? space.dimension : 0;
+    const metric = space.metric === 'dot' ? 'dot' : 'cosine';
+    const taskPair = String(space.taskPair || 'query_document').trim();
+    const profileDigest = String(space.profileDigest || '').trim();
+    if (!spaceId || !dimension) fail('semantic_space_invalid');
+    return Object.freeze({ spaceId, provider, model, dimension, metric, taskPair, profileDigest });
+  };
+
+  const computeVectorSimilarity = (vecA, vecB, metric = 'cosine') => {
+    if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length === 0 || vecA.length !== vecB.length) return null;
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+      const a = Number(vecA[i]), b = Number(vecB[i]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      dot += a * b;
+      normA += a * a;
+      normB += b * b;
+    }
+    if (metric === 'dot') return clamp01(dot);
+    if (normA <= 0 || normB <= 0) return 0;
+    return clamp01(dot / (Math.sqrt(normA) * Math.sqrt(normB)));
+  };
+
   const sealQueryFrame = ({
     queryText = '',
     entityIds = [],
+    entityRegistry = [],
     predicates = [],
     owner = '',
     scopeKey = '',
     worldlineId = 'main',
+    allowedPredecessorWorldlines = [],
     viewerId = 'owner_reader',
     asOfTurn = null,
     excludedNodeIds = [],
     queryVectors = {},
+    semanticSpace = null,
+    queryEmbedding = null,
+    documentRepresentations = {},
     lambda = 0.82,
     epsilon = 1e-6,
     maxFrontierSteps = 256,
@@ -67,10 +102,27 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     if (!Number.isSafeInteger(maxFrontierSteps) || maxFrontierSteps < 1 || maxFrontierSteps > 4096) fail('frontier_budget_invalid');
     if (!Number.isSafeInteger(maxHops) || maxHops < 1 || maxHops > 8) fail('hop_budget_invalid');
 
+    const normalizedSpace = normalizeSemanticSpace(semanticSpace);
+    const normalizedEmbedding = Array.isArray(queryEmbedding) ? Object.freeze(queryEmbedding.map(Number)) : null;
+    if (normalizedEmbedding && normalizedSpace && normalizedEmbedding.length !== normalizedSpace.dimension) {
+      fail('query_embedding_dimension_mismatch');
+    }
+
     const tokens = [...new Set(tokenizer(queryText))].sort((a, b) => a.localeCompare(b, 'en'));
     const entities = [...new Set((Array.isArray(entityIds) ? entityIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
     const preds = [...new Set((Array.isArray(predicates) ? predicates : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
     const excluded = [...new Set((Array.isArray(excludedNodeIds) ? excludedNodeIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const predecessors = [...new Set((Array.isArray(allowedPredecessorWorldlines) ? allowedPredecessorWorldlines : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const normalizedRegistry = Array.isArray(entityRegistry)
+      ? Object.freeze(entityRegistry.map(r => Object.freeze({
+        id: String(r?.id || ''),
+        nodeId: String(r?.nodeId || ''),
+        name: String(r?.name || ''),
+        aliases: Object.freeze(Array.isArray(r?.aliases) ? r.aliases.map(String) : []),
+        status: String(r?.status || 'active'),
+        validated: r?.validated !== false
+      })))
+      : Object.freeze([]);
 
     const frame = {
       schema: 'libra.query_frame.v1',
@@ -82,17 +134,26 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       owner: owner.trim(),
       scopeKey: scopeKey.trim(),
       worldlineId: worldlineId.trim(),
+      allowedPredecessorWorldlines: predecessors,
       viewerId: viewerId.trim(),
       asOfTurn,
       excludedNodeIds: excluded,
-      hasQueryVectors: Object.keys(queryVectors || {}).length > 0,
+      semanticSpace: normalizedSpace,
+      hasQueryVectors: Object.keys(queryVectors || {}).length > 0 || Boolean(normalizedEmbedding),
       lambda,
       epsilon,
       maxFrontierSteps,
       maxHops
     };
     const frameId = hash(JSON.stringify(frame));
-    return Object.freeze({ ...frame, frameId, queryVectors: Object.freeze({ ...(queryVectors || {}) }) });
+    return Object.freeze({
+      ...frame,
+      frameId,
+      entityRegistry: normalizedRegistry,
+      queryVectors: Object.freeze({ ...(queryVectors || {}) }),
+      queryEmbedding: normalizedEmbedding,
+      documentRepresentations: Object.freeze({ ...(documentRepresentations || {}) })
+    });
   };
 
   const resolveUnitTurn = unit => {
@@ -116,6 +177,52 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
+    const allowedWorldlines = new Set([queryFrame.worldlineId, ...(queryFrame.allowedPredecessorWorldlines || [])]);
+
+    // Map logical entityId (e.g. 'ent-alice') to projected EntityNode.id via unit subjectId/entityId -> subject_of edge
+    const entityNodeIdByLogicalId = new Map();
+    for (const unit of graph.units || []) {
+      const logicalId = unit.subjectId || unit.entityId;
+      if (!logicalId || entityNodeIdByLogicalId.has(logicalId)) continue;
+      const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
+      if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+    }
+
+    // M07: Entity & Alias ambiguity resolution against active EntityNodes in the scope
+    const aliasToEntities = new Map();
+    const entityMetaSources = [
+      ...(Array.isArray(queryFrame.entityRegistry) ? queryFrame.entityRegistry : []),
+      ...(Array.isArray(graph.coverage?.entityDirectory) ? graph.coverage.entityDirectory : []),
+      ...(graph.nodes || []).filter(n => n.layer === 'entity' && (n.name || n.label || Array.isArray(n.aliases)))
+    ];
+    for (const entry of entityMetaSources) {
+      const entIdentifier = entry.nodeId || entityNodeIdByLogicalId.get(entry.id) || entry.id;
+      if (!entIdentifier || excludedSet.has(entIdentifier)) continue;
+      if (entry.status && entry.status !== 'active') continue;
+      if (entry.validated === false) continue;
+      const surfaceTerms = [entry.label, entry.name, ...(Array.isArray(entry.aliases) ? entry.aliases : [])]
+        .filter(Boolean)
+        .map(s => String(s).normalize('NFKC').toLowerCase().trim())
+        .filter(Boolean);
+      for (const term of new Set(surfaceTerms)) {
+        if (!aliasToEntities.has(term)) aliasToEntities.set(term, []);
+        aliasToEntities.get(term).push(entIdentifier);
+      }
+    }
+
+    const resolvedEntityIds = new Set(queryFrame.entityIds || []);
+    const ambiguousAliases = [];
+    const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
+    for (const [alias, entNodeIds] of aliasToEntities.entries()) {
+      const matchedInQuery = queryFrame.tokens.includes(alias) || (alias.length >= 2 && queryLower.includes(alias));
+      if (!matchedInQuery) continue;
+      const uniqueIds = [...new Set(entNodeIds)].sort((a, b) => a.localeCompare(b, 'en'));
+      if (uniqueIds.length === 1) {
+        resolvedEntityIds.add(uniqueIds[0]);
+      } else if (uniqueIds.length > 1) {
+        ambiguousAliases.push({ alias, candidateEntityIds: uniqueIds });
+      }
+    }
 
     const childUnitsBySourceId = new Map();
     for (const node of graph.nodes || []) {
@@ -146,6 +253,10 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       if (!nodeId || excludedSet.has(nodeId)) return false;
       const node = nodeById.get(nodeId);
       if (!node) return false;
+      if (node.layer === 'entity') {
+        if (node.status && node.status !== 'active') return false;
+        if (node.validated === false) return false;
+      }
       if (node.layer === 'source' && queryFrame.asOfTurn !== null) {
         const childUnits = childUnitsBySourceId.get(node.id) || [];
         if (childUnits.length > 0 && !childUnits.some(u => isUnitTemporallyEligible(u))) {
@@ -155,6 +266,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       const unit = unitByNodeId.get(nodeId);
       if (!unit) return true;
 
+      if (unit.worldlineId && !allowedWorldlines.has(unit.worldlineId)) return false;
       if (unit.viewerId && unit.viewerId !== queryFrame.viewerId) return false;
       if (unit.visibility === 'private' && queryFrame.viewerId !== 'owner_reader') return false;
       if (!isUnitTemporallyEligible(unit)) return false;
@@ -180,7 +292,9 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       scopeKey: queryFrame.scopeKey,
       worldlineId: queryFrame.worldlineId,
       viewerId: queryFrame.viewerId,
-      asOfTurn: queryFrame.asOfTurn
+      asOfTurn: queryFrame.asOfTurn,
+      resolvedEntityIds: Object.freeze([...resolvedEntityIds].sort((a, b) => a.localeCompare(b, 'en'))),
+      ambiguousAliases: Object.freeze(ambiguousAliases)
     });
 
     issuedViews.set(handle, {
@@ -191,11 +305,44 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       unitByNodeId,
       basisById,
       edgeById,
+      resolvedEntityIds: [...resolvedEntityIds].sort((a, b) => a.localeCompare(b, 'en')),
+      ambiguousAliases,
       isNodeEligible,
       isEdgeEligible,
       getHistoricalStateUnavailable: () => historicalStateUnavailable
     });
     return handle;
+  };
+
+  // M06: Evaluate semantic representation compatibility & similarity without background re-embedding
+  const resolveSemanticFeature = (node, queryFrame) => {
+    const docRep = queryFrame.documentRepresentations?.[node.id];
+    const space = queryFrame.semanticSpace;
+    if (docRep && typeof docRep === 'object') {
+      if (!space || !Array.isArray(queryFrame.queryEmbedding)) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'missing_query_space_or_embedding' };
+      }
+      if (docRep.spaceId !== space.spaceId
+        || (docRep.provider && docRep.provider !== space.provider)
+        || (docRep.model && docRep.model !== space.model)
+        || (docRep.dimension && docRep.dimension !== space.dimension)
+        || (docRep.metric && docRep.metric !== space.metric)
+        || (space.profileDigest && docRep.profileDigest && docRep.profileDigest !== space.profileDigest)
+        || (docRep.bindingId && docRep.bindingId !== node.bindingId)
+        || !Array.isArray(docRep.vector)
+        || docRep.vector.length !== space.dimension) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'space_or_binding_mismatch' };
+      }
+      const sim = computeVectorSimilarity(queryFrame.queryEmbedding, docRep.vector, space.metric);
+      if (sim === null) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'invalid_vector_values' };
+      }
+      return { score: sim, status: 'available_vector_space', reason: null };
+    }
+    if (typeof queryFrame.queryVectors?.[node.id] === 'number' && Number.isFinite(queryFrame.queryVectors[node.id])) {
+      return { score: clamp01(queryFrame.queryVectors[node.id]), status: 'available', reason: null };
+    }
+    return { score: undefined, status: 'unavailable', reason: null };
   };
 
   const scoreCandidate = (unit, features = {}, queryFrame) => {
@@ -217,11 +364,13 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       : (0.52 * lexicalScore + 0.33 * entitySlotScore + 0.15 * predicateScore);
 
     const directScore = clamp01(combinedSignal * roleWeight);
+    const semanticFeatureStatus = features.semanticFeatureStatus
+      || (hasSemantic ? 'available' : 'unavailable');
     return {
       directScore,
       lexicalScore,
       semanticScore: hasSemantic ? semanticScore : null,
-      semanticFeatureStatus: hasSemantic ? 'available' : 'unavailable',
+      semanticFeatureStatus,
       entitySlotScore,
       predicateScore,
       roleWeight,
@@ -241,23 +390,55 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
       fail('workspace_budget_invalid');
     }
-    const { graph, compiledIndex, queryFrame, nodeById, unitByNodeId, basisById, edgeById, isNodeEligible, isEdgeEligible } = view;
+    const {
+      graph,
+      compiledIndex,
+      queryFrame,
+      nodeById,
+      unitByNodeId,
+      basisById,
+      edgeById,
+      resolvedEntityIds,
+      ambiguousAliases,
+      isNodeEligible,
+      isEdgeEligible
+    } = view;
 
     const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors });
 
-    // Phase A (M05): Enqueue initial seed anchor & temporal/semantic accesses (NO upfront full adjacency drain!)
+    // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'lexical', term: token, priorityHint: 1.0, requesterId: `tok:${token}` });
     }
-    for (const entId of queryFrame.entityIds) {
+    for (const entId of resolvedEntityIds) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'entity', term: entId, priorityHint: 1.0, requesterId: `ent:${entId}` });
     }
     for (const pred of queryFrame.predicates) {
       laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
     }
-    if (queryFrame.hasQueryVectors) {
-      for (const vecNodeId of Object.keys(queryFrame.queryVectors || {})) {
-        laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: vecNodeId, priorityHint: 0.92, requesterId: `sem:${vecNodeId}` });
+
+    const semanticByNodeId = new Map();
+    const semanticDiagnostics = {
+      spaceId: queryFrame.semanticSpace?.spaceId || null,
+      compatibleCount: 0,
+      incompatibleIsolatedCount: 0,
+      missingCount: 0,
+      backgroundEmbeddingStarted: false
+    };
+
+    for (const node of graph.nodes || []) {
+      if (!isNodeEligible(node.id)) continue;
+      const unit = unitByNodeId.get(node.id);
+      if (!unit) continue;
+      const sem = resolveSemanticFeature(node, queryFrame);
+      semanticByNodeId.set(node.id, sem);
+      if (sem.status === 'available' || sem.status === 'available_vector_space') {
+        semanticDiagnostics.compatibleCount++;
+        laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: node.id, priorityHint: Math.max(0.5, sem.score || 0.5), requesterId: `sem:${node.id}` });
+      } else if (sem.status === 'incompatible_isolated') {
+        semanticDiagnostics.incompatibleIsolatedCount++;
+      } else {
+        semanticDiagnostics.missingCount++;
       }
     }
 
@@ -379,7 +560,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       const unit = unitByNodeId.get(node.id);
       const feat = rawFeatures.get(node.id);
       if (node.layer === 'entity') {
-        const matched = queryFrame.entityIds.includes(node.id)
+        const matched = resolvedEntityIds.includes(node.id)
           || (feat && feat.matchedEntities.size > 0);
         if (matched) {
           directFeaturesByNode.set(node.id, {
@@ -409,16 +590,22 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       if (feat) for (const w of feat.matchedTokens.values()) lexSum += w;
       const lexicalScore = queryFrame.tokens.length ? clamp01(lexSum / maxPossibleIdf) : 0;
       const entityMatches = (feat ? feat.matchedEntities.size : 0)
-        + (unit.subjectId && queryFrame.entityIds.includes(unit.subjectId) ? 1 : 0)
-        + (unit.entityId && queryFrame.entityIds.includes(unit.entityId) ? 1 : 0)
-        + (unit.targetIds || []).filter(t => queryFrame.entityIds.includes(t)).length;
-      const entitySlotScore = queryFrame.entityIds.length ? clamp01(entityMatches / queryFrame.entityIds.length) : (entityMatches > 0 ? 0.7 : 0);
+        + (unit.subjectId && resolvedEntityIds.includes(unit.subjectId) ? 1 : 0)
+        + (unit.entityId && resolvedEntityIds.includes(unit.entityId) ? 1 : 0)
+        + (unit.targetIds || []).filter(t => resolvedEntityIds.includes(t)).length;
+      const entitySlotScore = resolvedEntityIds.length ? clamp01(entityMatches / resolvedEntityIds.length) : (entityMatches > 0 ? 0.7 : 0);
       const predMatches = (feat ? feat.matchedPredicates.size : 0)
         + (unit.field && queryFrame.predicates.includes(unit.field) ? 1 : 0);
       const predicateScore = queryFrame.predicates.length ? clamp01(predMatches / queryFrame.predicates.length) : 0;
-      const semanticScore = typeof queryFrame.queryVectors?.[node.id] === 'number' ? queryFrame.queryVectors[node.id] : undefined;
+      const semInfo = semanticByNodeId.get(node.id) || { score: undefined, status: 'unavailable' };
 
-      const evaluated = scoreCandidate(unit, { lexicalScore, semanticScore, entitySlotScore, predicateScore }, queryFrame);
+      const evaluated = scoreCandidate(unit, {
+        lexicalScore,
+        semanticScore: semInfo.score,
+        semanticFeatureStatus: semInfo.status,
+        entitySlotScore,
+        predicateScore
+      }, queryFrame);
       directFeaturesByNode.set(node.id, evaluated);
       if (evaluated.directScore > 0) {
         offer(node.id, evaluated.directScore, {
@@ -475,7 +662,6 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         const stepDrain = laneSession.drainPending();
         ingestAccesses(stepDrain.newAccesses);
         if (stepDrain.stoppedByBudget) {
-          // Put the node back on the frontier since its neighborhood could not be fully loaded under budget
           frontier.unshift(top);
           frontierStopReason = 'lane_budget_stopped';
           break;
@@ -556,7 +742,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       if (!isNodeEligible(unit.nodeId)) continue;
       const node = nodeById.get(unit.nodeId);
       const actState = stateByNode.get(unit.nodeId);
-      const directFeat = directFeaturesByNode.get(unit.nodeId) || scoreCandidate(unit, {}, queryFrame);
+      const semInfo = semanticByNodeId.get(unit.nodeId) || { score: undefined, status: 'unavailable' };
+      const directFeat = directFeaturesByNode.get(unit.nodeId) || scoreCandidate(unit, { semanticFeatureStatus: semInfo.status }, queryFrame);
       if (!actState && !directFeat.mandatoryInclusion) continue;
 
       const finalScore = actState ? actState.activation : 0;
@@ -609,7 +796,6 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       || a.nodeId.localeCompare(b.nodeId, 'en')
     ));
 
-    // Finalize the Lane session to capture all accesses, role stats, and unread cursors
     const laneReport = typeof laneSession.finalize === 'function' ? laneSession.finalize() : laneSession.drain();
 
     // D05: Distinguish local frontier/lane traversal completion from source projection / inventory truncation
@@ -680,6 +866,9 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         poppedFrontierSteps: poppedSteps,
         improvedPathReevaluations: reevaluations,
         onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size,
+        resolvedEntityIds,
+        ambiguousAliases,
+        semanticDiagnostics,
         l0WorkspaceBytes,
         maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,

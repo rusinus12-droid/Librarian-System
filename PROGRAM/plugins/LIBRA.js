@@ -46518,17 +46518,50 @@ function createLibraReadonlySourceContext(owner) {
 
   const issuedViews = new WeakMap();
 
+  const normalizeSemanticSpace = space => {
+    if (!space || typeof space !== 'object') return null;
+    const spaceId = String(space.spaceId || '').trim();
+    const provider = String(space.provider || 'local').trim();
+    const model = String(space.model || '').trim();
+    const dimension = Number.isSafeInteger(space.dimension) && space.dimension > 0 ? space.dimension : 0;
+    const metric = space.metric === 'dot' ? 'dot' : 'cosine';
+    const taskPair = String(space.taskPair || 'query_document').trim();
+    const profileDigest = String(space.profileDigest || '').trim();
+    if (!spaceId || !dimension) fail('semantic_space_invalid');
+    return Object.freeze({ spaceId, provider, model, dimension, metric, taskPair, profileDigest });
+  };
+
+  const computeVectorSimilarity = (vecA, vecB, metric = 'cosine') => {
+    if (!Array.isArray(vecA) || !Array.isArray(vecB) || vecA.length === 0 || vecA.length !== vecB.length) return null;
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+      const a = Number(vecA[i]), b = Number(vecB[i]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      dot += a * b;
+      normA += a * a;
+      normB += b * b;
+    }
+    if (metric === 'dot') return clamp01(dot);
+    if (normA <= 0 || normB <= 0) return 0;
+    return clamp01(dot / (Math.sqrt(normA) * Math.sqrt(normB)));
+  };
+
   const sealQueryFrame = ({
     queryText = '',
     entityIds = [],
+    entityRegistry = [],
     predicates = [],
     owner = '',
     scopeKey = '',
     worldlineId = 'main',
+    allowedPredecessorWorldlines = [],
     viewerId = 'owner_reader',
     asOfTurn = null,
     excludedNodeIds = [],
     queryVectors = {},
+    semanticSpace = null,
+    queryEmbedding = null,
+    documentRepresentations = {},
     lambda = 0.82,
     epsilon = 1e-6,
     maxFrontierSteps = 256,
@@ -46544,10 +46577,27 @@ function createLibraReadonlySourceContext(owner) {
     if (!Number.isSafeInteger(maxFrontierSteps) || maxFrontierSteps < 1 || maxFrontierSteps > 4096) fail('frontier_budget_invalid');
     if (!Number.isSafeInteger(maxHops) || maxHops < 1 || maxHops > 8) fail('hop_budget_invalid');
 
+    const normalizedSpace = normalizeSemanticSpace(semanticSpace);
+    const normalizedEmbedding = Array.isArray(queryEmbedding) ? Object.freeze(queryEmbedding.map(Number)) : null;
+    if (normalizedEmbedding && normalizedSpace && normalizedEmbedding.length !== normalizedSpace.dimension) {
+      fail('query_embedding_dimension_mismatch');
+    }
+
     const tokens = [...new Set(tokenizer(queryText))].sort((a, b) => a.localeCompare(b, 'en'));
     const entities = [...new Set((Array.isArray(entityIds) ? entityIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
     const preds = [...new Set((Array.isArray(predicates) ? predicates : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
     const excluded = [...new Set((Array.isArray(excludedNodeIds) ? excludedNodeIds : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const predecessors = [...new Set((Array.isArray(allowedPredecessorWorldlines) ? allowedPredecessorWorldlines : []).map(String).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'en'));
+    const normalizedRegistry = Array.isArray(entityRegistry)
+      ? Object.freeze(entityRegistry.map(r => Object.freeze({
+        id: String(r?.id || ''),
+        nodeId: String(r?.nodeId || ''),
+        name: String(r?.name || ''),
+        aliases: Object.freeze(Array.isArray(r?.aliases) ? r.aliases.map(String) : []),
+        status: String(r?.status || 'active'),
+        validated: r?.validated !== false
+      })))
+      : Object.freeze([]);
 
     const frame = {
       schema: 'libra.query_frame.v1',
@@ -46559,17 +46609,26 @@ function createLibraReadonlySourceContext(owner) {
       owner: owner.trim(),
       scopeKey: scopeKey.trim(),
       worldlineId: worldlineId.trim(),
+      allowedPredecessorWorldlines: predecessors,
       viewerId: viewerId.trim(),
       asOfTurn,
       excludedNodeIds: excluded,
-      hasQueryVectors: Object.keys(queryVectors || {}).length > 0,
+      semanticSpace: normalizedSpace,
+      hasQueryVectors: Object.keys(queryVectors || {}).length > 0 || Boolean(normalizedEmbedding),
       lambda,
       epsilon,
       maxFrontierSteps,
       maxHops
     };
     const frameId = hash(JSON.stringify(frame));
-    return Object.freeze({ ...frame, frameId, queryVectors: Object.freeze({ ...(queryVectors || {}) }) });
+    return Object.freeze({
+      ...frame,
+      frameId,
+      entityRegistry: normalizedRegistry,
+      queryVectors: Object.freeze({ ...(queryVectors || {}) }),
+      queryEmbedding: normalizedEmbedding,
+      documentRepresentations: Object.freeze({ ...(documentRepresentations || {}) })
+    });
   };
 
   const resolveUnitTurn = unit => {
@@ -46593,6 +46652,52 @@ function createLibraReadonlySourceContext(owner) {
     const basisById = new Map((graph.bases || []).map(b => [b.id, b]));
     const edgeById = new Map((graph.edges || []).map(e => [e.id, e]));
     const excludedSet = new Set(queryFrame.excludedNodeIds || []);
+    const allowedWorldlines = new Set([queryFrame.worldlineId, ...(queryFrame.allowedPredecessorWorldlines || [])]);
+
+    // Map logical entityId (e.g. 'ent-alice') to projected EntityNode.id via unit subjectId/entityId -> subject_of edge
+    const entityNodeIdByLogicalId = new Map();
+    for (const unit of graph.units || []) {
+      const logicalId = unit.subjectId || unit.entityId;
+      if (!logicalId || entityNodeIdByLogicalId.has(logicalId)) continue;
+      const subjEdge = (graph.edges || []).find(e => e.from === unit.nodeId && e.predicate === 'subject_of');
+      if (subjEdge?.to) entityNodeIdByLogicalId.set(logicalId, subjEdge.to);
+    }
+
+    // M07: Entity & Alias ambiguity resolution against active EntityNodes in the scope
+    const aliasToEntities = new Map();
+    const entityMetaSources = [
+      ...(Array.isArray(queryFrame.entityRegistry) ? queryFrame.entityRegistry : []),
+      ...(Array.isArray(graph.coverage?.entityDirectory) ? graph.coverage.entityDirectory : []),
+      ...(graph.nodes || []).filter(n => n.layer === 'entity' && (n.name || n.label || Array.isArray(n.aliases)))
+    ];
+    for (const entry of entityMetaSources) {
+      const entIdentifier = entry.nodeId || entityNodeIdByLogicalId.get(entry.id) || entry.id;
+      if (!entIdentifier || excludedSet.has(entIdentifier)) continue;
+      if (entry.status && entry.status !== 'active') continue;
+      if (entry.validated === false) continue;
+      const surfaceTerms = [entry.label, entry.name, ...(Array.isArray(entry.aliases) ? entry.aliases : [])]
+        .filter(Boolean)
+        .map(s => String(s).normalize('NFKC').toLowerCase().trim())
+        .filter(Boolean);
+      for (const term of new Set(surfaceTerms)) {
+        if (!aliasToEntities.has(term)) aliasToEntities.set(term, []);
+        aliasToEntities.get(term).push(entIdentifier);
+      }
+    }
+
+    const resolvedEntityIds = new Set(queryFrame.entityIds || []);
+    const ambiguousAliases = [];
+    const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
+    for (const [alias, entNodeIds] of aliasToEntities.entries()) {
+      const matchedInQuery = queryFrame.tokens.includes(alias) || (alias.length >= 2 && queryLower.includes(alias));
+      if (!matchedInQuery) continue;
+      const uniqueIds = [...new Set(entNodeIds)].sort((a, b) => a.localeCompare(b, 'en'));
+      if (uniqueIds.length === 1) {
+        resolvedEntityIds.add(uniqueIds[0]);
+      } else if (uniqueIds.length > 1) {
+        ambiguousAliases.push({ alias, candidateEntityIds: uniqueIds });
+      }
+    }
 
     const childUnitsBySourceId = new Map();
     for (const node of graph.nodes || []) {
@@ -46623,6 +46728,10 @@ function createLibraReadonlySourceContext(owner) {
       if (!nodeId || excludedSet.has(nodeId)) return false;
       const node = nodeById.get(nodeId);
       if (!node) return false;
+      if (node.layer === 'entity') {
+        if (node.status && node.status !== 'active') return false;
+        if (node.validated === false) return false;
+      }
       if (node.layer === 'source' && queryFrame.asOfTurn !== null) {
         const childUnits = childUnitsBySourceId.get(node.id) || [];
         if (childUnits.length > 0 && !childUnits.some(u => isUnitTemporallyEligible(u))) {
@@ -46632,6 +46741,7 @@ function createLibraReadonlySourceContext(owner) {
       const unit = unitByNodeId.get(nodeId);
       if (!unit) return true;
 
+      if (unit.worldlineId && !allowedWorldlines.has(unit.worldlineId)) return false;
       if (unit.viewerId && unit.viewerId !== queryFrame.viewerId) return false;
       if (unit.visibility === 'private' && queryFrame.viewerId !== 'owner_reader') return false;
       if (!isUnitTemporallyEligible(unit)) return false;
@@ -46657,7 +46767,9 @@ function createLibraReadonlySourceContext(owner) {
       scopeKey: queryFrame.scopeKey,
       worldlineId: queryFrame.worldlineId,
       viewerId: queryFrame.viewerId,
-      asOfTurn: queryFrame.asOfTurn
+      asOfTurn: queryFrame.asOfTurn,
+      resolvedEntityIds: Object.freeze([...resolvedEntityIds].sort((a, b) => a.localeCompare(b, 'en'))),
+      ambiguousAliases: Object.freeze(ambiguousAliases)
     });
 
     issuedViews.set(handle, {
@@ -46668,11 +46780,44 @@ function createLibraReadonlySourceContext(owner) {
       unitByNodeId,
       basisById,
       edgeById,
+      resolvedEntityIds: [...resolvedEntityIds].sort((a, b) => a.localeCompare(b, 'en')),
+      ambiguousAliases,
       isNodeEligible,
       isEdgeEligible,
       getHistoricalStateUnavailable: () => historicalStateUnavailable
     });
     return handle;
+  };
+
+  // M06: Evaluate semantic representation compatibility & similarity without background re-embedding
+  const resolveSemanticFeature = (node, queryFrame) => {
+    const docRep = queryFrame.documentRepresentations?.[node.id];
+    const space = queryFrame.semanticSpace;
+    if (docRep && typeof docRep === 'object') {
+      if (!space || !Array.isArray(queryFrame.queryEmbedding)) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'missing_query_space_or_embedding' };
+      }
+      if (docRep.spaceId !== space.spaceId
+        || (docRep.provider && docRep.provider !== space.provider)
+        || (docRep.model && docRep.model !== space.model)
+        || (docRep.dimension && docRep.dimension !== space.dimension)
+        || (docRep.metric && docRep.metric !== space.metric)
+        || (space.profileDigest && docRep.profileDigest && docRep.profileDigest !== space.profileDigest)
+        || (docRep.bindingId && docRep.bindingId !== node.bindingId)
+        || !Array.isArray(docRep.vector)
+        || docRep.vector.length !== space.dimension) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'space_or_binding_mismatch' };
+      }
+      const sim = computeVectorSimilarity(queryFrame.queryEmbedding, docRep.vector, space.metric);
+      if (sim === null) {
+        return { score: undefined, status: 'incompatible_isolated', reason: 'invalid_vector_values' };
+      }
+      return { score: sim, status: 'available_vector_space', reason: null };
+    }
+    if (typeof queryFrame.queryVectors?.[node.id] === 'number' && Number.isFinite(queryFrame.queryVectors[node.id])) {
+      return { score: clamp01(queryFrame.queryVectors[node.id]), status: 'available', reason: null };
+    }
+    return { score: undefined, status: 'unavailable', reason: null };
   };
 
   const scoreCandidate = (unit, features = {}, queryFrame) => {
@@ -46694,11 +46839,13 @@ function createLibraReadonlySourceContext(owner) {
       : (0.52 * lexicalScore + 0.33 * entitySlotScore + 0.15 * predicateScore);
 
     const directScore = clamp01(combinedSignal * roleWeight);
+    const semanticFeatureStatus = features.semanticFeatureStatus
+      || (hasSemantic ? 'available' : 'unavailable');
     return {
       directScore,
       lexicalScore,
       semanticScore: hasSemantic ? semanticScore : null,
-      semanticFeatureStatus: hasSemantic ? 'available' : 'unavailable',
+      semanticFeatureStatus,
       entitySlotScore,
       predicateScore,
       roleWeight,
@@ -46718,23 +46865,55 @@ function createLibraReadonlySourceContext(owner) {
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
       fail('workspace_budget_invalid');
     }
-    const { graph, compiledIndex, queryFrame, nodeById, unitByNodeId, basisById, edgeById, isNodeEligible, isEdgeEligible } = view;
+    const {
+      graph,
+      compiledIndex,
+      queryFrame,
+      nodeById,
+      unitByNodeId,
+      basisById,
+      edgeById,
+      resolvedEntityIds,
+      ambiguousAliases,
+      isNodeEligible,
+      isEdgeEligible
+    } = view;
 
     const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors });
 
-    // Phase A (M05): Enqueue initial seed anchor & temporal/semantic accesses (NO upfront full adjacency drain!)
+    // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'lexical', term: token, priorityHint: 1.0, requesterId: `tok:${token}` });
     }
-    for (const entId of queryFrame.entityIds) {
+    for (const entId of resolvedEntityIds) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'entity', term: entId, priorityHint: 1.0, requesterId: `ent:${entId}` });
     }
     for (const pred of queryFrame.predicates) {
       laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
     }
-    if (queryFrame.hasQueryVectors) {
-      for (const vecNodeId of Object.keys(queryFrame.queryVectors || {})) {
-        laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: vecNodeId, priorityHint: 0.92, requesterId: `sem:${vecNodeId}` });
+
+    const semanticByNodeId = new Map();
+    const semanticDiagnostics = {
+      spaceId: queryFrame.semanticSpace?.spaceId || null,
+      compatibleCount: 0,
+      incompatibleIsolatedCount: 0,
+      missingCount: 0,
+      backgroundEmbeddingStarted: false
+    };
+
+    for (const node of graph.nodes || []) {
+      if (!isNodeEligible(node.id)) continue;
+      const unit = unitByNodeId.get(node.id);
+      if (!unit) continue;
+      const sem = resolveSemanticFeature(node, queryFrame);
+      semanticByNodeId.set(node.id, sem);
+      if (sem.status === 'available' || sem.status === 'available_vector_space') {
+        semanticDiagnostics.compatibleCount++;
+        laneSession.enqueue({ laneRole: 'semantic_access', table: 'directory', anchorNodeId: node.id, priorityHint: Math.max(0.5, sem.score || 0.5), requesterId: `sem:${node.id}` });
+      } else if (sem.status === 'incompatible_isolated') {
+        semanticDiagnostics.incompatibleIsolatedCount++;
+      } else {
+        semanticDiagnostics.missingCount++;
       }
     }
 
@@ -46856,7 +47035,7 @@ function createLibraReadonlySourceContext(owner) {
       const unit = unitByNodeId.get(node.id);
       const feat = rawFeatures.get(node.id);
       if (node.layer === 'entity') {
-        const matched = queryFrame.entityIds.includes(node.id)
+        const matched = resolvedEntityIds.includes(node.id)
           || (feat && feat.matchedEntities.size > 0);
         if (matched) {
           directFeaturesByNode.set(node.id, {
@@ -46886,16 +47065,22 @@ function createLibraReadonlySourceContext(owner) {
       if (feat) for (const w of feat.matchedTokens.values()) lexSum += w;
       const lexicalScore = queryFrame.tokens.length ? clamp01(lexSum / maxPossibleIdf) : 0;
       const entityMatches = (feat ? feat.matchedEntities.size : 0)
-        + (unit.subjectId && queryFrame.entityIds.includes(unit.subjectId) ? 1 : 0)
-        + (unit.entityId && queryFrame.entityIds.includes(unit.entityId) ? 1 : 0)
-        + (unit.targetIds || []).filter(t => queryFrame.entityIds.includes(t)).length;
-      const entitySlotScore = queryFrame.entityIds.length ? clamp01(entityMatches / queryFrame.entityIds.length) : (entityMatches > 0 ? 0.7 : 0);
+        + (unit.subjectId && resolvedEntityIds.includes(unit.subjectId) ? 1 : 0)
+        + (unit.entityId && resolvedEntityIds.includes(unit.entityId) ? 1 : 0)
+        + (unit.targetIds || []).filter(t => resolvedEntityIds.includes(t)).length;
+      const entitySlotScore = resolvedEntityIds.length ? clamp01(entityMatches / resolvedEntityIds.length) : (entityMatches > 0 ? 0.7 : 0);
       const predMatches = (feat ? feat.matchedPredicates.size : 0)
         + (unit.field && queryFrame.predicates.includes(unit.field) ? 1 : 0);
       const predicateScore = queryFrame.predicates.length ? clamp01(predMatches / queryFrame.predicates.length) : 0;
-      const semanticScore = typeof queryFrame.queryVectors?.[node.id] === 'number' ? queryFrame.queryVectors[node.id] : undefined;
+      const semInfo = semanticByNodeId.get(node.id) || { score: undefined, status: 'unavailable' };
 
-      const evaluated = scoreCandidate(unit, { lexicalScore, semanticScore, entitySlotScore, predicateScore }, queryFrame);
+      const evaluated = scoreCandidate(unit, {
+        lexicalScore,
+        semanticScore: semInfo.score,
+        semanticFeatureStatus: semInfo.status,
+        entitySlotScore,
+        predicateScore
+      }, queryFrame);
       directFeaturesByNode.set(node.id, evaluated);
       if (evaluated.directScore > 0) {
         offer(node.id, evaluated.directScore, {
@@ -46952,7 +47137,6 @@ function createLibraReadonlySourceContext(owner) {
         const stepDrain = laneSession.drainPending();
         ingestAccesses(stepDrain.newAccesses);
         if (stepDrain.stoppedByBudget) {
-          // Put the node back on the frontier since its neighborhood could not be fully loaded under budget
           frontier.unshift(top);
           frontierStopReason = 'lane_budget_stopped';
           break;
@@ -47033,7 +47217,8 @@ function createLibraReadonlySourceContext(owner) {
       if (!isNodeEligible(unit.nodeId)) continue;
       const node = nodeById.get(unit.nodeId);
       const actState = stateByNode.get(unit.nodeId);
-      const directFeat = directFeaturesByNode.get(unit.nodeId) || scoreCandidate(unit, {}, queryFrame);
+      const semInfo = semanticByNodeId.get(unit.nodeId) || { score: undefined, status: 'unavailable' };
+      const directFeat = directFeaturesByNode.get(unit.nodeId) || scoreCandidate(unit, { semanticFeatureStatus: semInfo.status }, queryFrame);
       if (!actState && !directFeat.mandatoryInclusion) continue;
 
       const finalScore = actState ? actState.activation : 0;
@@ -47086,7 +47271,6 @@ function createLibraReadonlySourceContext(owner) {
       || a.nodeId.localeCompare(b.nodeId, 'en')
     ));
 
-    // Finalize the Lane session to capture all accesses, role stats, and unread cursors
     const laneReport = typeof laneSession.finalize === 'function' ? laneSession.finalize() : laneSession.drain();
 
     // D05: Distinguish local frontier/lane traversal completion from source projection / inventory truncation
@@ -47157,6 +47341,9 @@ function createLibraReadonlySourceContext(owner) {
         poppedFrontierSteps: poppedSteps,
         improvedPathReevaluations: reevaluations,
         onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size,
+        resolvedEntityIds,
+        ambiguousAliases,
+        semanticDiagnostics,
         l0WorkspaceBytes,
         maxWorkspaceBytes,
         lanePagesRead: laneReport.pagesRead,
@@ -47204,6 +47391,7 @@ function createLibraReadonlySourceContext(owner) {
       maxCharacters,
       maxUnits,
       includeMandatoryLore: policy.includeMandatoryLore !== false,
+      hydrateSourceQuotes: Boolean(policy.hydrateSourceQuotes),
       correspondenceMap: policy.correspondenceMap && typeof policy.correspondenceMap === 'object' ? policy.correspondenceMap : {},
       gradiaSelectionReceipt: consumer === 'gradia' ? { ...policy.gradiaSelectionReceipt } : null
     };
@@ -47213,8 +47401,11 @@ function createLibraReadonlySourceContext(owner) {
     const nodeIds = new Set([cand.nodeId]);
     const sourceIds = new Set();
     const entityIds = new Set();
+    const edgeIds = new Set();
     const basisIds = new Set(cand.winningWitness?.basisIds || []);
     const bindingByNodeId = new Map();
+    const bindingByEdgeId = new Map();
+    const bindingByBasisId = new Map();
 
     const addNode = id => {
       if (!id) return;
@@ -47237,31 +47428,148 @@ function createLibraReadonlySourceContext(owner) {
       addNode(step.from);
       addNode(step.to);
       if (step.basisId) basisIds.add(step.basisId);
-      const edge = edgeById.get(step.edgeId);
-      if (edge) {
-        addNode(edge.from);
-        addNode(edge.to);
+      if (step.edgeId) {
+        edgeIds.add(step.edgeId);
+        const edge = edgeById.get(step.edgeId);
+        if (edge) {
+          addNode(edge.from);
+          addNode(edge.to);
+          if (edge.bindingId) bindingByEdgeId.set(edge.id, edge.bindingId);
+        }
       }
     }
     for (const bId of basisIds) {
       const b = basisById.get(bId);
-      if (b?.sourceId) addNode(b.sourceId);
+      if (b) {
+        if (b.bindingId) bindingByBasisId.set(b.id, b.bindingId);
+        if (b.sourceId) addNode(b.sourceId);
+      }
     }
 
-    return { nodeIds, sourceIds, entityIds, basisIds, bindingByNodeId };
+    return { nodeIds, sourceIds, entityIds, edgeIds, basisIds, bindingByNodeId, bindingByEdgeId, bindingByBasisId };
   };
 
-  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07)
-  const formatPacketText = (consumer, scopeKey, items, independentSourceCount) => {
+  // M08: Detect owner-verified automatic correspondence between a Micro unit and a Canonical unit
+  const buildAutoCorrespondenceMap = (candidates, graph, unitByNodeId) => {
+    const autoMap = {};
+    const canonicalCands = candidates.filter(c => c.family === 'canonical');
+    const microCands = candidates.filter(c => c.family === 'micro');
+    if (!canonicalCands.length || !microCands.length) return autoMap;
+
+    const contradictionOrReopenPairs = new Set();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'contradicts' || edge.predicate === 'reopens') {
+        contradictionOrReopenPairs.add(`${edge.from}->${edge.to}`);
+        contradictionOrReopenPairs.add(`${edge.to}->${edge.from}`);
+      }
+    }
+
+    const explicitSupersedeMap = new Map();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'supersedes' || edge.predicate === 'derived_from' || edge.predicate === 'evidenced_by') {
+        explicitSupersedeMap.set(`${edge.from}->${edge.to}`, true);
+      }
+    }
+
+    const normWords = text => new Set(
+      String(text || '')
+        .normalize('NFKC')
+        .toLowerCase()
+        .split(/[^a-z0-9\uac00-\ud7a3]+/)
+        .filter(w => w.length >= 3)
+    );
+
+    const subjectEntityNodesByUnit = new Map();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'subject_of') {
+        if (!subjectEntityNodesByUnit.has(edge.from)) subjectEntityNodesByUnit.set(edge.from, new Set());
+        subjectEntityNodesByUnit.get(edge.from).add(edge.to);
+      }
+    }
+
+    const sharesSubject = (nodeIdA, unitA, nodeIdB, unitB) => {
+      if (unitA.subjectId && unitB.subjectId && unitA.subjectId === unitB.subjectId) return true;
+      const setA = subjectEntityNodesByUnit.get(nodeIdA);
+      const setB = subjectEntityNodesByUnit.get(nodeIdB);
+      if (setA && setB) {
+        for (const entNodeId of setA) if (setB.has(entNodeId)) return true;
+      }
+      return false;
+    };
+
+    for (const mCand of microCands) {
+      const mUnit = unitByNodeId.get(mCand.nodeId) || {};
+      const mTurn = mCand.turn ?? mUnit.turn ?? null;
+      const mWords = normWords(mCand.text);
+      for (const cCand of canonicalCands) {
+        if (contradictionOrReopenPairs.has(`${mCand.nodeId}->${cCand.nodeId}`)) continue;
+        const cUnit = unitByNodeId.get(cCand.nodeId) || {};
+        const cTurn = cCand.turn ?? cUnit.turn ?? null;
+        // Never absorb a newer-turn Micro observation into an older Canonical fact
+        if (Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn > cTurn) continue;
+
+        if (explicitSupersedeMap.has(`${cCand.nodeId}->${mCand.nodeId}`)) {
+          autoMap[mCand.nodeId] = cCand.nodeId;
+          break;
+        }
+        const sameTurn = Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn === cTurn;
+        const sameSubject = sharesSubject(mCand.nodeId, mUnit, cCand.nodeId, cUnit);
+        if (sameTurn && sameSubject && mWords.size > 0) {
+          const cWords = normWords(cCand.text);
+          let shared = 0;
+          for (const w of mWords) if (cWords.has(w)) shared++;
+          if (shared / Math.max(1, Math.min(mWords.size, cWords.size)) >= 0.6) {
+            autoMap[mCand.nodeId] = cCand.nodeId;
+            break;
+          }
+        }
+      }
+    }
+    return autoMap;
+  };
+
+  // M09: Hydrate item text with verified source span quote when requested by policy
+  const formatHydratedItemLine = (item, idx, consumer, hydrateSourceQuotes) => {
+    const quoteSuffix = hydrateSourceQuotes && item.sourceSpan?.exactQuote && !String(item.text || '').includes(item.sourceSpan.exactQuote)
+      ? ` (quote: "${item.sourceSpan.exactQuote}")`
+      : '';
+    const lifecycleTag = item.lifecycleStatus && item.lifecycleStatus !== 'active'
+      ? `/${item.lifecycleStatus}`
+      : '';
+    if (consumer === 'planner' || consumer === 'sga') {
+      const turnTag = Number.isSafeInteger(item.turn) ? `@T${item.turn}` : '';
+      return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${turnTag}] ${item.text}${quoteSuffix}`;
+    }
+    return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}] ${item.text}${quoteSuffix}`;
+  };
+
+  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07, M09)
+  const formatPacketText = (consumer, scopeKey, items, independentSourceCount, hydrateSourceQuotes = false) => {
     if (!Array.isArray(items) || items.length === 0) return '';
     const header = `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
-    const lines = items.map((item, idx) => (
-      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
-    ));
+    const lines = items.map((item, idx) => formatHydratedItemLine(item, idx, consumer, hydrateSourceQuotes));
     return [header, ...lines].join('\n');
   };
 
-  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07)
+  // M08: Compute independent primary supporting sources (deduplicating State units derived_from a Canonical unit)
+  const computeIndependentPrimarySources = (list, nodeById, graphEdges) => {
+    const derivedSourceMap = new Map();
+    for (const edge of graphEdges || []) {
+      if (edge.predicate === 'derived_from') {
+        const targetNode = nodeById.get(edge.to);
+        if (targetNode?.sourceId) derivedSourceMap.set(edge.from, targetNode.sourceId);
+      }
+    }
+    const primarySources = new Set();
+    for (const c of list) {
+      const n = nodeById.get(c.nodeId);
+      const rootSource = derivedSourceMap.get(c.nodeId) || n?.sourceId || c.sourceId;
+      if (rootSource) primarySources.add(rootSource);
+    }
+    return primarySources;
+  };
+
+  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07, M08, M09)
   const select = (queryResult, graph, rawPolicy = {}) => {
     if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
@@ -47280,26 +47588,49 @@ function createLibraReadonlySourceContext(owner) {
       return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
     });
 
+    const autoMap = buildAutoCorrespondenceMap(ordered, graph, unitByNodeId);
+    const combinedCorrespondence = { ...autoMap, ...policy.correspondenceMap };
+
+    const contradictionNodes = new Set();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'contradicts') {
+        contradictionNodes.add(edge.from);
+        contradictionNodes.add(edge.to);
+      }
+    }
+
+    const resolveLifecycleStatus = cand => {
+      const unit = unitByNodeId.get(cand.nodeId) || {};
+      if (cand.semanticRole === 'user_corrected') return 'user_corrected';
+      if (cand.availability === 'clear' || unit.availability === 'clear') return 'state_cleared';
+      if (contradictionNodes.has(cand.nodeId)) return 'contradiction_paired';
+      return 'active';
+    };
+
+    const decorateCandidateForFormat = cand => {
+      const unit = unitByNodeId.get(cand.nodeId) || {};
+      return {
+        ...cand,
+        turn: cand.turn ?? unit.turn ?? null,
+        sourceSpan: unit.sourceSpan || null,
+        lifecycleStatus: resolveLifecycleStatus(cand)
+      };
+    };
+
     const admitted = [];
     const admittedNodeIds = new Set();
     const droppedForBudget = [];
     const suppressedMicro = [];
     const provisionalHeldMicro = [];
 
-    const countIndependentSources = list => {
-      const sources = new Set();
-      for (const c of list) {
-        const deps = collectCandidateDependencies(c, nodeById, basisById, edgeById);
-        for (const sId of deps.sourceIds) sources.add(sId);
-      }
-      return sources.size;
-    };
+    const countIndependentSources = list => computeIndependentPrimarySources(list, nodeById, graph.edges).size;
 
     const fitsRenderedBudget = candidateToAdd => {
       if (admitted.length >= policy.maxUnits) return false;
-      const trialList = [...admitted, candidateToAdd];
+      const decorated = decorateCandidateForFormat(candidateToAdd);
+      const trialList = [...admitted.map(decorateCandidateForFormat), decorated];
       const trialSources = countIndependentSources(trialList);
-      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources);
+      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources, policy.hydrateSourceQuotes);
       return trialRendered.length <= policy.maxCharacters;
     };
 
@@ -47324,7 +47655,7 @@ function createLibraReadonlySourceContext(owner) {
 
     for (const cand of ordered) {
       const counterpartCanonicalId = cand.family === 'micro'
-        ? (policy.correspondenceMap[cand.nodeId] || null)
+        ? (combinedCorrespondence[cand.nodeId] || null)
         : null;
 
       if (counterpartCanonicalId && admittedNodeIds.has(counterpartCanonicalId)) {
@@ -47365,24 +47696,27 @@ function createLibraReadonlySourceContext(owner) {
       }
     }
 
-    // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09)
+    // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09, M10)
     const allNodeIds = new Set();
     const allSourceIds = new Set();
     const allEntityIds = new Set();
+    const allEdgeIds = new Set();
     const allBasisIds = new Set();
     const requiredBindings = new Map();
-    const independentSupportingSources = new Set();
+    const requiredEdgeBindings = new Map();
+    const requiredBasisBindings = new Map();
+    const independentSupportingSources = computeIndependentPrimarySources(admitted, nodeById, graph.edges);
 
     for (const cand of admitted) {
       const deps = collectCandidateDependencies(cand, nodeById, basisById, edgeById);
       for (const id of deps.nodeIds) allNodeIds.add(id);
-      for (const id of deps.sourceIds) {
-        allSourceIds.add(id);
-        independentSupportingSources.add(id);
-      }
+      for (const id of deps.sourceIds) allSourceIds.add(id);
       for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.edgeIds) allEdgeIds.add(id);
       for (const id of deps.basisIds) allBasisIds.add(id);
       for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+      for (const [k, v] of deps.bindingByEdgeId.entries()) requiredEdgeBindings.set(k, v);
+      for (const [k, v] of deps.bindingByBasisId.entries()) requiredBasisBindings.set(k, v);
     }
 
     for (const item of suppressedMicro) {
@@ -47390,8 +47724,11 @@ function createLibraReadonlySourceContext(owner) {
       for (const id of deps.nodeIds) allNodeIds.add(id);
       for (const id of deps.sourceIds) allSourceIds.add(id);
       for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.edgeIds) allEdgeIds.add(id);
       for (const id of deps.basisIds) allBasisIds.add(id);
       for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+      for (const [k, v] of deps.bindingByEdgeId.entries()) requiredEdgeBindings.set(k, v);
+      for (const [k, v] of deps.bindingByBasisId.entries()) requiredBasisBindings.set(k, v);
       const canonicalNode = nodeById.get(item.absorbedByCanonicalNodeId);
       if (canonicalNode) {
         allNodeIds.add(canonicalNode.id);
@@ -47410,6 +47747,7 @@ function createLibraReadonlySourceContext(owner) {
         semanticRole: cand.semanticRole,
         availability: cand.availability ?? null,
         provenanceStatus: cand.provenanceStatus ?? null,
+        lifecycleStatus: resolveLifecycleStatus(cand),
         turn: cand.turn ?? unit.turn ?? null,
         text: cand.text,
         score: cand.score,
@@ -47425,7 +47763,8 @@ function createLibraReadonlySourceContext(owner) {
       policy.consumer,
       scopeKey,
       items,
-      independentSupportingSources.size
+      independentSupportingSources.size,
+      policy.hydrateSourceQuotes
     );
     const usedCharacters = renderedPreview.length;
     const bodyCharacters = items.reduce((acc, i) => acc + String(i.text || '').length, 0);
@@ -47433,6 +47772,7 @@ function createLibraReadonlySourceContext(owner) {
     const bundleCore = {
       schema: 'libra.evidence_bundle.v1',
       consumer: policy.consumer,
+      hydrateSourceQuotes: policy.hydrateSourceQuotes,
       generation: queryResult.generation,
       indexDigest: queryResult.indexDigest,
       frameId: queryResult.frameId,
@@ -47485,15 +47825,18 @@ function createLibraReadonlySourceContext(owner) {
         nodeIds: [...allNodeIds].sort((a, b) => a.localeCompare(b, 'en')),
         sourceIds: [...allSourceIds].sort((a, b) => a.localeCompare(b, 'en')),
         entityIds: [...allEntityIds].sort((a, b) => a.localeCompare(b, 'en')),
+        edgeIds: [...allEdgeIds].sort((a, b) => a.localeCompare(b, 'en')),
         basisIds: [...allBasisIds].sort((a, b) => a.localeCompare(b, 'en')),
-        requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
+        requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
+        requiredEdgeBindings: Object.fromEntries([...requiredEdgeBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
+        requiredBasisBindings: Object.fromEntries([...requiredBasisBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
       }
     });
 
     return Object.freeze({ bundle, readSetHandle: readSetToken });
   };
 
-  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08)
+  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08, M09)
   const render = ({ bundle, readSetHandle } = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
@@ -47508,7 +47851,8 @@ function createLibraReadonlySourceContext(owner) {
       bundle.consumer,
       bundle.scopeKey,
       bundle.items,
-      bundle.independentSupportingSourceCount
+      bundle.independentSupportingSourceCount,
+      Boolean(bundle.hydrateSourceQuotes)
     );
     const packetDigest = hash(JSON.stringify([
       'libra.rendered_consumer_packet.v1',
@@ -47534,7 +47878,7 @@ function createLibraReadonlySourceContext(owner) {
     });
   };
 
-  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, V06, V07, V09, V12)
+  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, M10, V06, V07, V09, V12)
   const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     const assertHandleActive = () => {
@@ -47570,6 +47914,23 @@ function createLibraReadonlySourceContext(owner) {
       }
     }
 
+    // M10: Verify witness edge and basis bindings in addition to node/source bindings
+    const liveEdgeBindings = new Map((live.edges || []).map(e => [e.id, e.bindingId]));
+    for (const [edgeId, expectedBindingId] of Object.entries(record.dependencies.requiredEdgeBindings || {})) {
+      const actualBindingId = liveEdgeBindings.get(edgeId);
+      if (!actualBindingId || actualBindingId !== expectedBindingId) {
+        fail('dependency_binding_stale');
+      }
+    }
+
+    const liveBasisBindings = new Map((live.bases || []).map(b => [b.id, b.bindingId]));
+    for (const [basisId, expectedBindingId] of Object.entries(record.dependencies.requiredBasisBindings || {})) {
+      const actualBindingId = liveBasisBindings.get(basisId);
+      if (!actualBindingId || actualBindingId !== expectedBindingId) {
+        fail('dependency_binding_stale');
+      }
+    }
+
     if (record.policy.consumer === 'gradia') {
       if (typeof ownerVerifier.verifyGradiaReceipt !== 'function') fail('gradia_verifier_required');
       const ok = await ownerVerifier.verifyGradiaReceipt(record.policy.gradiaSelectionReceipt);
@@ -47593,6 +47954,8 @@ function createLibraReadonlySourceContext(owner) {
       worldlineId: record.frame.worldlineId,
       restoreEpoch: record.frame.restoreEpoch,
       verifiedNodeCount: Object.keys(record.dependencies.requiredBindings).length,
+      verifiedEdgeCount: Object.keys(record.dependencies.requiredEdgeBindings || {}).length,
+      verifiedBasisCount: Object.keys(record.dependencies.requiredBasisBindings || {}).length,
       verifiedSourceCount: record.dependencies.sourceIds.length,
       verifiedSuppressedMicroCount: record.bundle.suppressedMicroIds.length,
       modelDispatchEligible: true

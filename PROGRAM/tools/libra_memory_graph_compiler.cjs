@@ -1,15 +1,14 @@
 'use strict';
-// UM4 Consumer & Final Readset Verification Compiler (EvidenceCompiler):
+// UM4 Consumer & Final Readset Verification Compiler (EvidenceCompiler — D02, D04, D07, M08, M09, M10):
 // 1. Selects an EvidenceBundle from UM3 retrieval candidates under consumer character/unit budgets,
-//    measuring the full rendered envelope (header + role labels + numbering + newlines) so the final
-//    rendered packet never exceeds maxCharacters (D07).
-// 2. Enforces conservative Canonical/Micro absorption: a Micro unit is suppressed ONLY when its
-//    admitted Canonical counterpart actually survives the rendered character budget; if Canonical drops,
-//    Micro remains eligible. When Micro IS absorbed, its source/entity/basis dependencies are
-//    retained in the private consumed readset (§10, V09).
-// 3. Issues private WeakMap-backed consumed readset handles (never forgeable via JSON clone)
-//    and requires mandatory physical owner currentness verification (`assertPhysicalCurrentness`),
-//    re-checking handle validity, revocation, and compilerEpoch across every async boundary (D02, D04, V06, V07, V09, V12).
+//    measuring the full rendered envelope (header + consumer-specific role/hydration formatting + newlines)
+//    so the final rendered packet never exceeds maxCharacters (D07, M09).
+// 2. Enforces conservative Canonical/Micro absorption (both caller correspondenceMap and automatic
+//    owner-verified turn/entity/quote correspondence without absorbing newer-turn or contradicting Micro units),
+//    deduplicates derived State/Canonical primary root source counting, and preserves lifecycle/conflict annotations (M08).
+// 3. Issues private WeakMap-backed consumed readset handles binding admitted nodes, witness edges/bases,
+//    and absorbed Micro dependencies, and requires mandatory physical owner currentness verification
+//    re-checking handle validity, revocation, and compilerEpoch across every async boundary (D02, D04, M10).
 module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
   const schema = 'libra.memory_graph_compiler.v1';
@@ -40,6 +39,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       maxCharacters,
       maxUnits,
       includeMandatoryLore: policy.includeMandatoryLore !== false,
+      hydrateSourceQuotes: Boolean(policy.hydrateSourceQuotes),
       correspondenceMap: policy.correspondenceMap && typeof policy.correspondenceMap === 'object' ? policy.correspondenceMap : {},
       gradiaSelectionReceipt: consumer === 'gradia' ? { ...policy.gradiaSelectionReceipt } : null
     };
@@ -49,8 +49,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     const nodeIds = new Set([cand.nodeId]);
     const sourceIds = new Set();
     const entityIds = new Set();
+    const edgeIds = new Set();
     const basisIds = new Set(cand.winningWitness?.basisIds || []);
     const bindingByNodeId = new Map();
+    const bindingByEdgeId = new Map();
+    const bindingByBasisId = new Map();
 
     const addNode = id => {
       if (!id) return;
@@ -73,31 +76,148 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       addNode(step.from);
       addNode(step.to);
       if (step.basisId) basisIds.add(step.basisId);
-      const edge = edgeById.get(step.edgeId);
-      if (edge) {
-        addNode(edge.from);
-        addNode(edge.to);
+      if (step.edgeId) {
+        edgeIds.add(step.edgeId);
+        const edge = edgeById.get(step.edgeId);
+        if (edge) {
+          addNode(edge.from);
+          addNode(edge.to);
+          if (edge.bindingId) bindingByEdgeId.set(edge.id, edge.bindingId);
+        }
       }
     }
     for (const bId of basisIds) {
       const b = basisById.get(bId);
-      if (b?.sourceId) addNode(b.sourceId);
+      if (b) {
+        if (b.bindingId) bindingByBasisId.set(b.id, b.bindingId);
+        if (b.sourceId) addNode(b.sourceId);
+      }
     }
 
-    return { nodeIds, sourceIds, entityIds, basisIds, bindingByNodeId };
+    return { nodeIds, sourceIds, entityIds, edgeIds, basisIds, bindingByNodeId, bindingByEdgeId, bindingByBasisId };
   };
 
-  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07)
-  const formatPacketText = (consumer, scopeKey, items, independentSourceCount) => {
+  // M08: Detect owner-verified automatic correspondence between a Micro unit and a Canonical unit
+  const buildAutoCorrespondenceMap = (candidates, graph, unitByNodeId) => {
+    const autoMap = {};
+    const canonicalCands = candidates.filter(c => c.family === 'canonical');
+    const microCands = candidates.filter(c => c.family === 'micro');
+    if (!canonicalCands.length || !microCands.length) return autoMap;
+
+    const contradictionOrReopenPairs = new Set();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'contradicts' || edge.predicate === 'reopens') {
+        contradictionOrReopenPairs.add(`${edge.from}->${edge.to}`);
+        contradictionOrReopenPairs.add(`${edge.to}->${edge.from}`);
+      }
+    }
+
+    const explicitSupersedeMap = new Map();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'supersedes' || edge.predicate === 'derived_from' || edge.predicate === 'evidenced_by') {
+        explicitSupersedeMap.set(`${edge.from}->${edge.to}`, true);
+      }
+    }
+
+    const normWords = text => new Set(
+      String(text || '')
+        .normalize('NFKC')
+        .toLowerCase()
+        .split(/[^a-z0-9\uac00-\ud7a3]+/)
+        .filter(w => w.length >= 3)
+    );
+
+    const subjectEntityNodesByUnit = new Map();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'subject_of') {
+        if (!subjectEntityNodesByUnit.has(edge.from)) subjectEntityNodesByUnit.set(edge.from, new Set());
+        subjectEntityNodesByUnit.get(edge.from).add(edge.to);
+      }
+    }
+
+    const sharesSubject = (nodeIdA, unitA, nodeIdB, unitB) => {
+      if (unitA.subjectId && unitB.subjectId && unitA.subjectId === unitB.subjectId) return true;
+      const setA = subjectEntityNodesByUnit.get(nodeIdA);
+      const setB = subjectEntityNodesByUnit.get(nodeIdB);
+      if (setA && setB) {
+        for (const entNodeId of setA) if (setB.has(entNodeId)) return true;
+      }
+      return false;
+    };
+
+    for (const mCand of microCands) {
+      const mUnit = unitByNodeId.get(mCand.nodeId) || {};
+      const mTurn = mCand.turn ?? mUnit.turn ?? null;
+      const mWords = normWords(mCand.text);
+      for (const cCand of canonicalCands) {
+        if (contradictionOrReopenPairs.has(`${mCand.nodeId}->${cCand.nodeId}`)) continue;
+        const cUnit = unitByNodeId.get(cCand.nodeId) || {};
+        const cTurn = cCand.turn ?? cUnit.turn ?? null;
+        // Never absorb a newer-turn Micro observation into an older Canonical fact
+        if (Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn > cTurn) continue;
+
+        if (explicitSupersedeMap.has(`${cCand.nodeId}->${mCand.nodeId}`)) {
+          autoMap[mCand.nodeId] = cCand.nodeId;
+          break;
+        }
+        const sameTurn = Number.isSafeInteger(mTurn) && Number.isSafeInteger(cTurn) && mTurn === cTurn;
+        const sameSubject = sharesSubject(mCand.nodeId, mUnit, cCand.nodeId, cUnit);
+        if (sameTurn && sameSubject && mWords.size > 0) {
+          const cWords = normWords(cCand.text);
+          let shared = 0;
+          for (const w of mWords) if (cWords.has(w)) shared++;
+          if (shared / Math.max(1, Math.min(mWords.size, cWords.size)) >= 0.6) {
+            autoMap[mCand.nodeId] = cCand.nodeId;
+            break;
+          }
+        }
+      }
+    }
+    return autoMap;
+  };
+
+  // M09: Hydrate item text with verified source span quote when requested by policy
+  const formatHydratedItemLine = (item, idx, consumer, hydrateSourceQuotes) => {
+    const quoteSuffix = hydrateSourceQuotes && item.sourceSpan?.exactQuote && !String(item.text || '').includes(item.sourceSpan.exactQuote)
+      ? ` (quote: "${item.sourceSpan.exactQuote}")`
+      : '';
+    const lifecycleTag = item.lifecycleStatus && item.lifecycleStatus !== 'active'
+      ? `/${item.lifecycleStatus}`
+      : '';
+    if (consumer === 'planner' || consumer === 'sga') {
+      const turnTag = Number.isSafeInteger(item.turn) ? `@T${item.turn}` : '';
+      return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${turnTag}] ${item.text}${quoteSuffix}`;
+    }
+    return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}] ${item.text}${quoteSuffix}`;
+  };
+
+  // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07, M09)
+  const formatPacketText = (consumer, scopeKey, items, independentSourceCount, hydrateSourceQuotes = false) => {
     if (!Array.isArray(items) || items.length === 0) return '';
     const header = `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
-    const lines = items.map((item, idx) => (
-      `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}] ${item.text}`
-    ));
+    const lines = items.map((item, idx) => formatHydratedItemLine(item, idx, consumer, hydrateSourceQuotes));
     return [header, ...lines].join('\n');
   };
 
-  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07)
+  // M08: Compute independent primary supporting sources (deduplicating State units derived_from a Canonical unit)
+  const computeIndependentPrimarySources = (list, nodeById, graphEdges) => {
+    const derivedSourceMap = new Map();
+    for (const edge of graphEdges || []) {
+      if (edge.predicate === 'derived_from') {
+        const targetNode = nodeById.get(edge.to);
+        if (targetNode?.sourceId) derivedSourceMap.set(edge.from, targetNode.sourceId);
+      }
+    }
+    const primarySources = new Set();
+    for (const c of list) {
+      const n = nodeById.get(c.nodeId);
+      const rootSource = derivedSourceMap.get(c.nodeId) || n?.sourceId || c.sourceId;
+      if (rootSource) primarySources.add(rootSource);
+    }
+    return primarySources;
+  };
+
+  // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07, M08, M09)
   const select = (queryResult, graph, rawPolicy = {}) => {
     if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
@@ -116,26 +236,49 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
     });
 
+    const autoMap = buildAutoCorrespondenceMap(ordered, graph, unitByNodeId);
+    const combinedCorrespondence = { ...autoMap, ...policy.correspondenceMap };
+
+    const contradictionNodes = new Set();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate === 'contradicts') {
+        contradictionNodes.add(edge.from);
+        contradictionNodes.add(edge.to);
+      }
+    }
+
+    const resolveLifecycleStatus = cand => {
+      const unit = unitByNodeId.get(cand.nodeId) || {};
+      if (cand.semanticRole === 'user_corrected') return 'user_corrected';
+      if (cand.availability === 'clear' || unit.availability === 'clear') return 'state_cleared';
+      if (contradictionNodes.has(cand.nodeId)) return 'contradiction_paired';
+      return 'active';
+    };
+
+    const decorateCandidateForFormat = cand => {
+      const unit = unitByNodeId.get(cand.nodeId) || {};
+      return {
+        ...cand,
+        turn: cand.turn ?? unit.turn ?? null,
+        sourceSpan: unit.sourceSpan || null,
+        lifecycleStatus: resolveLifecycleStatus(cand)
+      };
+    };
+
     const admitted = [];
     const admittedNodeIds = new Set();
     const droppedForBudget = [];
     const suppressedMicro = [];
     const provisionalHeldMicro = [];
 
-    const countIndependentSources = list => {
-      const sources = new Set();
-      for (const c of list) {
-        const deps = collectCandidateDependencies(c, nodeById, basisById, edgeById);
-        for (const sId of deps.sourceIds) sources.add(sId);
-      }
-      return sources.size;
-    };
+    const countIndependentSources = list => computeIndependentPrimarySources(list, nodeById, graph.edges).size;
 
     const fitsRenderedBudget = candidateToAdd => {
       if (admitted.length >= policy.maxUnits) return false;
-      const trialList = [...admitted, candidateToAdd];
+      const decorated = decorateCandidateForFormat(candidateToAdd);
+      const trialList = [...admitted.map(decorateCandidateForFormat), decorated];
       const trialSources = countIndependentSources(trialList);
-      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources);
+      const trialRendered = formatPacketText(policy.consumer, scopeKey, trialList, trialSources, policy.hydrateSourceQuotes);
       return trialRendered.length <= policy.maxCharacters;
     };
 
@@ -160,7 +303,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
 
     for (const cand of ordered) {
       const counterpartCanonicalId = cand.family === 'micro'
-        ? (policy.correspondenceMap[cand.nodeId] || null)
+        ? (combinedCorrespondence[cand.nodeId] || null)
         : null;
 
       if (counterpartCanonicalId && admittedNodeIds.has(counterpartCanonicalId)) {
@@ -201,24 +344,27 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       }
     }
 
-    // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09)
+    // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09, M10)
     const allNodeIds = new Set();
     const allSourceIds = new Set();
     const allEntityIds = new Set();
+    const allEdgeIds = new Set();
     const allBasisIds = new Set();
     const requiredBindings = new Map();
-    const independentSupportingSources = new Set();
+    const requiredEdgeBindings = new Map();
+    const requiredBasisBindings = new Map();
+    const independentSupportingSources = computeIndependentPrimarySources(admitted, nodeById, graph.edges);
 
     for (const cand of admitted) {
       const deps = collectCandidateDependencies(cand, nodeById, basisById, edgeById);
       for (const id of deps.nodeIds) allNodeIds.add(id);
-      for (const id of deps.sourceIds) {
-        allSourceIds.add(id);
-        independentSupportingSources.add(id);
-      }
+      for (const id of deps.sourceIds) allSourceIds.add(id);
       for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.edgeIds) allEdgeIds.add(id);
       for (const id of deps.basisIds) allBasisIds.add(id);
       for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+      for (const [k, v] of deps.bindingByEdgeId.entries()) requiredEdgeBindings.set(k, v);
+      for (const [k, v] of deps.bindingByBasisId.entries()) requiredBasisBindings.set(k, v);
     }
 
     for (const item of suppressedMicro) {
@@ -226,8 +372,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       for (const id of deps.nodeIds) allNodeIds.add(id);
       for (const id of deps.sourceIds) allSourceIds.add(id);
       for (const id of deps.entityIds) allEntityIds.add(id);
+      for (const id of deps.edgeIds) allEdgeIds.add(id);
       for (const id of deps.basisIds) allBasisIds.add(id);
       for (const [k, v] of deps.bindingByNodeId.entries()) requiredBindings.set(k, v);
+      for (const [k, v] of deps.bindingByEdgeId.entries()) requiredEdgeBindings.set(k, v);
+      for (const [k, v] of deps.bindingByBasisId.entries()) requiredBasisBindings.set(k, v);
       const canonicalNode = nodeById.get(item.absorbedByCanonicalNodeId);
       if (canonicalNode) {
         allNodeIds.add(canonicalNode.id);
@@ -246,6 +395,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         semanticRole: cand.semanticRole,
         availability: cand.availability ?? null,
         provenanceStatus: cand.provenanceStatus ?? null,
+        lifecycleStatus: resolveLifecycleStatus(cand),
         turn: cand.turn ?? unit.turn ?? null,
         text: cand.text,
         score: cand.score,
@@ -261,7 +411,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       policy.consumer,
       scopeKey,
       items,
-      independentSupportingSources.size
+      independentSupportingSources.size,
+      policy.hydrateSourceQuotes
     );
     const usedCharacters = renderedPreview.length;
     const bodyCharacters = items.reduce((acc, i) => acc + String(i.text || '').length, 0);
@@ -269,6 +420,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     const bundleCore = {
       schema: 'libra.evidence_bundle.v1',
       consumer: policy.consumer,
+      hydrateSourceQuotes: policy.hydrateSourceQuotes,
       generation: queryResult.generation,
       indexDigest: queryResult.indexDigest,
       frameId: queryResult.frameId,
@@ -321,15 +473,18 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         nodeIds: [...allNodeIds].sort((a, b) => a.localeCompare(b, 'en')),
         sourceIds: [...allSourceIds].sort((a, b) => a.localeCompare(b, 'en')),
         entityIds: [...allEntityIds].sort((a, b) => a.localeCompare(b, 'en')),
+        edgeIds: [...allEdgeIds].sort((a, b) => a.localeCompare(b, 'en')),
         basisIds: [...allBasisIds].sort((a, b) => a.localeCompare(b, 'en')),
-        requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
+        requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
+        requiredEdgeBindings: Object.fromEntries([...requiredEdgeBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
+        requiredBasisBindings: Object.fromEntries([...requiredBasisBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
       }
     });
 
     return Object.freeze({ bundle, readSetHandle: readSetToken });
   };
 
-  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08)
+  // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08, M09)
   const render = ({ bundle, readSetHandle } = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     if (!record || record.revoked || record.compilerEpoch !== compilerEpoch) fail('readset_handle_invalid');
@@ -344,7 +499,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       bundle.consumer,
       bundle.scopeKey,
       bundle.items,
-      bundle.independentSupportingSourceCount
+      bundle.independentSupportingSourceCount,
+      Boolean(bundle.hydrateSourceQuotes)
     );
     const packetDigest = hash(JSON.stringify([
       'libra.rendered_consumer_packet.v1',
@@ -370,7 +526,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     });
   };
 
-  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, V06, V07, V09, V12)
+  // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, M10, V06, V07, V09, V12)
   const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     const assertHandleActive = () => {
@@ -406,6 +562,23 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       }
     }
 
+    // M10: Verify witness edge and basis bindings in addition to node/source bindings
+    const liveEdgeBindings = new Map((live.edges || []).map(e => [e.id, e.bindingId]));
+    for (const [edgeId, expectedBindingId] of Object.entries(record.dependencies.requiredEdgeBindings || {})) {
+      const actualBindingId = liveEdgeBindings.get(edgeId);
+      if (!actualBindingId || actualBindingId !== expectedBindingId) {
+        fail('dependency_binding_stale');
+      }
+    }
+
+    const liveBasisBindings = new Map((live.bases || []).map(b => [b.id, b.bindingId]));
+    for (const [basisId, expectedBindingId] of Object.entries(record.dependencies.requiredBasisBindings || {})) {
+      const actualBindingId = liveBasisBindings.get(basisId);
+      if (!actualBindingId || actualBindingId !== expectedBindingId) {
+        fail('dependency_binding_stale');
+      }
+    }
+
     if (record.policy.consumer === 'gradia') {
       if (typeof ownerVerifier.verifyGradiaReceipt !== 'function') fail('gradia_verifier_required');
       const ok = await ownerVerifier.verifyGradiaReceipt(record.policy.gradiaSelectionReceipt);
@@ -429,6 +602,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       worldlineId: record.frame.worldlineId,
       restoreEpoch: record.frame.restoreEpoch,
       verifiedNodeCount: Object.keys(record.dependencies.requiredBindings).length,
+      verifiedEdgeCount: Object.keys(record.dependencies.requiredEdgeBindings || {}).length,
+      verifiedBasisCount: Object.keys(record.dependencies.requiredBasisBindings || {}).length,
       verifiedSourceCount: record.dependencies.sourceIds.length,
       verifiedSuppressedMicroCount: record.bundle.suppressedMicroIds.length,
       modelDispatchEligible: true

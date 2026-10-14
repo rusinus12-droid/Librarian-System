@@ -396,6 +396,48 @@ test('V12: plugin_only and server_only produce equivalent bundles/proofs, and GR
   assert.equal(gradiaVerified.modelDispatchEligible, true);
 });
 
+test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primary source deduplication, quote hydration, and witness edge/basis binding verification', async () => {
+  const snap = makeSnapshot('plugin_only');
+  // Set Micro turn to 2 (same turn as Canonical fact f1) so automatic correspondence absorbs Micro without caller correspondenceMap
+  snap.micro[0].record.turn = 2;
+  snap.micro[0].head.turn = 2;
+  snap.micro[0].receipt.turn = 2;
+  const { graph, queryResult, compiler } = runPipeline(snap);
+
+  const selected = compiler.select(queryResult, graph, {
+    consumer: 'planner',
+    maxCharacters: 4096,
+    hydrateSourceQuotes: true
+  });
+  // M08: Micro at same turn (turn 2) with matching subject/claim words is automatically absorbed by Canonical
+  assert.equal(selected.bundle.suppressedMicroIds.length, 1);
+  // M08: State unit derived_from Canonical shares the same primary root source, so independentSupportingSourceCount === 2 (Canonical + Lore)
+  assert.equal(selected.bundle.independentSupportingSourceCount, 2);
+
+  // M09: Planner consumer renders turn tag (@T2) and hydrated source quote within envelope budget
+  const packet = compiler.render(selected);
+  assert.equal(selected.bundle.budget.usedCharacters, packet.characterLength);
+  assert.ok(packet.renderedText.includes('@T2'));
+
+  // M10: Mutating a witness edge or basis binding in liveGraph rejects validateConsumedReadSet
+  const verified = await compiler.validateConsumedReadSet(selected.readSetHandle, {
+    currentGraph: async () => graph,
+    assertPhysicalCurrentness: async () => true
+  });
+  assert.ok(verified.verifiedEdgeCount >= 1);
+  assert.ok(verified.verifiedBasisCount >= 1);
+
+  const staleEdgeGraph = clone(graph);
+  for (const e of staleEdgeGraph.edges) e.bindingId = 'mutated-edge-binding';
+  await assert.rejects(
+    () => compiler.validateConsumedReadSet(selected.readSetHandle, {
+      currentGraph: async () => staleEdgeGraph,
+      assertPhysicalCurrentness: async () => true
+    }),
+    /DEPENDENCY_BINDING_STALE/
+  );
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();
