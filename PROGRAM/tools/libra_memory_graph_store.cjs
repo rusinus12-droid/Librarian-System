@@ -91,7 +91,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       return raw;
     });
   };
-  const build = async ({ snapshot, owner, sourceOptions, pageBytes = 16384, jobToken } = {}) => {
+  const build = async ({ snapshot, owner, sourceOptions, pageBytes = 16384, jobToken, baseRootKey = '', baseGeneration = '' } = {}) => {
     if (active) fail('build_busy'); if (disposed) fail('disposed');
     if (!Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536 || typeof jobToken !== 'string' || !jobToken || jobToken.length > 240) fail('options_invalid');
     active = true; const ticket = epoch; counters.builds++;
@@ -100,6 +100,17 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       const loc = location(initial.graph, sourceOptions), stamp = graphStamp(initial.graph);
       const sourcePin = await owner.capture([...initial.sourceKeys, loc.rootKey]); check(ticket, owner);
       const previous = await load(owner, loc.rootKey, 32768, loc.partition, stamp, ticket);
+      // A window request is part of the generation identity, so continuing the enumeration lands in a
+      // different slot and cannot see the generation it continues from. The caller may name that base;
+      // the store still loads and checks it, and refuses a base that is not what it claims to be.
+      let baseManifest = null;
+      if (typeof baseRootKey === 'string' && baseRootKey) {
+        if (typeof baseGeneration !== 'string' || !/^[a-f0-9]{64}$/.test(baseGeneration)) fail('base_generation_invalid');
+        const baseRoot = await load(owner, baseRootKey, 32768, loc.partition, stamp, ticket);
+        if (!baseRoot.value || baseRoot.value.schema !== 'libra.graph_root.v1' || baseRoot.value.generation !== baseGeneration
+          || baseRoot.value.manifestKey !== loc.prefix + 'generation:' + baseGeneration) fail('base_generation_mismatch');
+        baseManifest = (await load(owner, baseRoot.value.manifestKey, 131072, loc.partition, stamp, ticket)).value;
+      }
       const expected = [];
       const directory = await visit(initial.graph, { sourceOptions, pageBytes }, async (ref, record) => {
         const raw = await immutable(owner, ref.key, record, loc.partition, stamp, ticket);
@@ -136,15 +147,30 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         return { schema: 'libra.graph_generation_inventory.v1', pages, merged };
       })();
       // The absence of a delta is itself a fact, so it is reported with a basis instead of silently.
+      // The unread cursors are the owner's own handles for the slices it has not been asked for yet.
+      // Publishing them as an actionable next-window request is what lets a later maintenance build
+      // enumerate beyond this window instead of stopping at it.
+      const nextWindow = !inventorySet ? null : (() => {
+        const cursors = inventorySet.merged.ownerCursors || [];
+        const canonicalCursor = cursors.find(region => region.family === 'canonical')?.cursor || '';
+        const microCursor = cursors.find(region => region.family === 'micro')?.cursor || '';
+        if (!canonicalCursor && !microCursor) return null;
+        return Object.freeze({
+          schema: 'libra.graph_next_window.v1', canonicalCursor, microCursor,
+          families: Object.freeze(cursors.map(region => region.family)),
+          reason: 'owner_reported_unread', generation: ''
+        });
+      })();
       const inventoryDelta = !inventory || !inventorySet ? { deltas: [], basis: 'inventory_disabled' } : await (async () => {
-        if (!previous?.value?.manifestKey) return { deltas: [], basis: 'no_previous_generation' };
-        const stored = await load(owner, previous.value.manifestKey, 131072, loc.partition, stamp, ticket);
-        const published = stored?.value?.sourceInventory;
+        const base = baseManifest || (!previous?.value?.manifestKey ? null
+          : (await load(owner, previous.value.manifestKey, 131072, loc.partition, stamp, ticket)).value);
+        if (!base) return { deltas: [], basis: 'no_previous_generation' };
+        const published = base.sourceInventory;
         if (!published) return { deltas: [], basis: 'previous_generation_without_inventory' };
         // A generation published for another source window is still a base — the whole point of the
         // unread cursor is that the next window continues where the previous one stopped — but every
         // disappearance across windows is then reported as outside the window, never as a deletion.
-        const windowChanged = stored.value.sourceStamp !== stamp;
+        const windowChanged = base.sourceStamp !== stamp || Boolean(baseManifest);
         const deltas = [];
         for (const page of inventorySet.pages) {
           const before = published.pages?.find(candidate => candidate.family === page.family);
@@ -160,7 +186,10 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         sourceStamp: stamp, readerFrame: after.graph.readerFrame, coverage: after.graph.coverage,
         unreadRegions, partition: loc.partition, pages: directory.refs, totals: directory.totals,
         jobToken, inventoryComplete: false, ownerAtomicity: false, modelDispatchEligible: false,
-        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis,
+        // The generation hash is not known until the manifest itself is serialized; the reader fills
+        // it from the published root, so the stored record must not carry a half-built handle.
+        nextWindow };
       let manifestRaw, generation, manifestKey;
       await json(manifest, loc.partition, stamp, async raw => {
         manifestRaw = raw; generation = hash(raw); manifestKey = loc.prefix + 'generation:' + generation;
@@ -181,7 +210,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         pageCount: directory.refs.length, totals: directory.totals, coverage: manifest.coverage,
         unreadRegions, publication: owner.publication, ownerAtomicity: false, inventoryComplete: false, modelDispatchEligible: false,
         providerCalls: 0, sourceStamp: stamp, readerValidation: final.graph.readerValidation || null,
-        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis };
+        sourceInventory: inventorySet, sourceInventoryDeltas: inventoryDeltas, sourceInventoryDeltaBasis: inventoryDelta.basis,
+        nextWindow: nextWindow ? { ...nextWindow, generation } : null };
     } catch (error) { counters.rejected++; throw error; }
     finally { active = false; }
   };
@@ -233,6 +263,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       coverage: manifest.coverage, unreadRegions: manifest.unreadRegions || computeUnreadRegions(manifest.coverage),
       sourceInventory: manifest.sourceInventory || null, sourceInventoryDeltas: manifest.sourceInventoryDeltas || [],
       sourceInventoryDeltaBasis: manifest.sourceInventoryDeltaBasis || '',
+      nextWindow: manifest.nextWindow ? { ...manifest.nextWindow, generation: root.value.generation } : null,
+      rootKey: loc.rootKey,
       sourceStamp: stamp, publication: root.value.publication,
       scopeKey: graph.scopeKey, readerFrame: final.graph.readerFrame, readerValidation: final.graph.readerValidation || null,
       nativeSourceCaptureAdmission: 'unsupported',

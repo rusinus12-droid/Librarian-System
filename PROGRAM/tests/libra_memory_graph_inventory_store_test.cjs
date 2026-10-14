@@ -147,5 +147,25 @@ const deltaFor = (built, family) => (built.sourceInventoryDeltas || []).find(del
     assert.equal(total, 8, 'only the four known families are enumerated');
   });
 
+  await test('N01: an explicit base generation is loaded and checked, not trusted', async () => {
+    const x = makeFixture();
+    const first = await x.build();
+    const read = await x.read();
+    assert.ok(read.rootKey && read.nextWindow, 'a published generation exposes its root and its unread handle');
+    // Continuing lands in another slot, so the base is named explicitly — and it must really be the
+    // generation it claims to be.
+    await assert.rejects(() => x.build({ baseRootKey: read.rootKey, baseGeneration: 'f'.repeat(64) }),
+      error => String(error.message).includes('BASE_GENERATION_MISMATCH'), 'a foreign base is refused');
+    const continued = await x.build({ baseRootKey: read.rootKey, baseGeneration: first.generation,
+      sourceOptions: { ...options, canonicalCursor: 'mgc1:20' } });
+    assert.equal(continued.status, 'published');
+    assert.equal(continued.sourceInventoryDeltaBasis, 'previous_window');
+    for (const delta of continued.sourceInventoryDeltas) {
+      if (delta.skipped) continue;
+      assert.equal(delta.removed.length, 0, 'a continued window never reports a cross-window deletion');
+      assert.equal(delta.windowChanged, true);
+    }
+  });
+
   console.log(JSON.stringify({ suite: 'libra_memory_graph_inventory_store', passed: tests.length, tests }));
 })();
