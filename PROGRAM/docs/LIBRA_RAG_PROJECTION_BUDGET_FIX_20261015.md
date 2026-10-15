@@ -1,6 +1,6 @@
 # LIBRA RAG의 projection 예산 결함 수정과 권장값
 
-- 작성일: 2026-10-15 · 버전: 1.0
+- 작성일: 2026-10-15 · 버전: 1.1
 - 기준: `31b0a42` 이후 projection v2·v1 호환 읽기 수정
 - 관련: [자원 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md), [코퍼스 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md), [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 
@@ -8,7 +8,7 @@
 
 정본 2개(본문 각각 약 32KB)를 `buildMemoryGraphCorpus({limit:1})`로 구축하면 조회가 전체 projection과 `windowSlices`를 한꺼번에 디코딩했다. JSON 작업 공간 예약이 82,279,432B로 기본 64MiB를 넘었고, Classic은 `injected:false`로 근거 없이 진행했다.
 
-요청별·공유 예산의 기본값은 올리지 않았다. 새 게시물은 `libra.graph_corpus_projection.v2`를 사용한다.
+projection 결함 수정에서는 일반 query·공유 pool의 기본값을 올리지 않았다. 이후 §6에서 유지보수 기본 프로필을 적용했다. 새 게시물은 `libra.graph_corpus_projection.v2`를 사용한다.
 
 - 조회용 graph의 nodes·edges·bases·units와 canonicalRows를 `pageBytes` 이하 JSON 배열 페이지로 나눈다. 대형 단일 행은 기존 chunk 계약으로 분할·검증·재조립한다.
 - 구축용 `windowSlices`는 별도 build/window 디렉터리로 분리한다. 일반 질의는 이 이력을 읽지 않는다. 같은 내용의 페이지는 SHA-256 키로 중복 저장하지 않는다.
@@ -61,7 +61,7 @@ query projection의 P1을 수정했어도 모든 구축·감사의 자료 크기
 | --- | ---: | ---: | --- |
 | 일반 RAG·Classic·GRADIA | **64MiB** | **64MiB** | 현재 기본값 유지. 재현 결함 때문에 상향할 필요 없음 |
 | 메모리 여유가 적은 직접 query API | 16MiB | 32MiB | 측정한 작은 fixture에서 통과한 선택값. 실제 자료가 커지면 명시적 거부 가능 |
-| 세밀한 구간 구축·전체 감사 | 64MiB부터 | **128MiB** | 구축의 보유 비용을 별도로 측정. 질의의 기본값을 같이 올리지 않음 |
+| 코퍼스 구축·전체 감사 | **64MiB** | **128MiB** | 실제 기본 유지보수 프로필로 적용. 질의의 기본값과 분리 |
 
 일반 구축은 `limit:20`, `pageBytes:8192`를 권한다. `limit`는 owner 열거의 구간 크기이며 전체 이력을 최근 20턴으로 제한하는 검색 옵션이 아니다. `limit:1`은 세밀한 재개/회귀가 필요한 경우 사용하며 구간 수 증가에 따른 구축 비용을 확인한다. checkpoint의 전체 이력 표현·미등록 할당·전체 자원 상한은 N01-b에 남는다.
 
@@ -83,3 +83,14 @@ node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs PROGRAM/tests/libra
 node --test PROGRAM/tests/libra_memory_graph_vector_lane_runtime_test.cjs PROGRAM/tests/libra_memory_graph_native_gc_runtime_test.cjs PROGRAM/tests/libra_memory_graph_incremental_currentness_runtime_test.cjs PROGRAM/tests/libra_memory_graph_resources_runtime_test.cjs
 node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs PROGRAM/tests/libra_memory_graph_semantic_runtime_test.cjs
 ```
+
+
+## 6. 권장값의 기본 적용
+
+`c8b58c5` 후속에서 공통 resource kernel의 `openMaintenance()`를 추가하고 native `buildMemoryGraphCorpus()`와 `verifyMemoryGraphCorpus()`에 연결했다. 옵션 없는 호출과 GUI의 기존 구축/감사 버튼 모두 decode 64MiB·retained 128MiB를 사용한다. query·Classic·GRADIA는 `open()`의 64/64MiB를 사용한다. 두 프로필은 같은 retained 256MiB·decode 128MiB·I/O 32MiB 공유 pool을 사용하므로 경합 시 backpressure가 적용된다.
+
+호출자가 `resourceBudget`을 지정하면 각 항목이 기본 프로필보다 우선한다. 잘못된 타입·범위와 명시적으로 낮춘 예산의 거부는 공통 검증을 거친다. 표의 다른 기본값은 이미 일치했으며 native 회귀에서 구축 구간 20·페이지 8192B와 Classic의 `unifiedMaxUnits:24`·`recallMaxChars:5000`을 확인했다. GRADIA의 별도 readonly byte grant/근거 정책은 각 소비자 계약을 따른다.
+
+이는 저장소 코드의 기본 설정이며 이미 배포된 호스트에는 갱신한 LIBRA를 설치해야 적용된다. 이전 §3의 측정 파일은 당시 명시한 프로필/기본값을 가진 역사적 결과로 보존한다.
+
+이번 기본 적용의 resource kernel·native 자원·의미 검색/Classic 영향권 23항목이 통과했다. SDK/내장 커널 동기화와 source plugin 구문 빌드도 확인했다.

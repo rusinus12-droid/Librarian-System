@@ -6,6 +6,22 @@ const make=limits=>factory({measure:pages.measure,encodedSize:pages.encodedSize,
 const idle=pool=>{const s=pool.inspect();assert.equal(s.ioBytes,0);assert.equal(s.decodeBytes,0);assert.equal(s.reads,0);};
 const gate=()=>{let release;const promise=new Promise(r=>release=r);return{promise,release};};
 
+test('query and maintenance profiles enforce their own limits in the same unchanged pool',()=>{
+ const pool=make(),MiB=1024*1024,query=pool.open(),maintenance=pool.openMaintenance();
+ assert.equal(query.inspect().limits.maxRetainedBytes,64*MiB);
+ assert.equal(maintenance.inspect().limits.maxRetainedBytes,128*MiB);
+ assert.equal(maintenance.inspect().limits.maxDecodeBytes,64*MiB);
+ maintenance.reserveRetained(100*MiB,'build');
+ assert.throws(()=>query.reserveRetained(65*MiB,'query'),/RETAINED_BYTE_BUDGET/);
+ const second=pool.openMaintenance();second.reserveRetained(100*MiB,'audit');
+ const third=pool.openMaintenance();assert.throws(()=>third.reserveRetained(57*MiB),/RETAINED_BACKPRESSURE/);
+ assert.equal(pool.inspect().limits.retainedBytes,256*MiB);
+ pool.closeAll();assert.equal(pool.inspect().retainedBytes,0);assert.equal(pool.inspect().sessions,0);
+ const constrained=pool.openMaintenance({maxRetainedBytes:32});
+ assert.throws(()=>constrained.reserveRetained(33),/RETAINED_BYTE_BUDGET/);constrained.close();
+ for(const bad of [[],false,'invalid'])assert.throws(()=>pool.openMaintenance(bad),/OPTIONS_INVALID/);
+});
+
 test('raw UTF-8 payload, repeated reads and durable access have separate cumulative counters',async()=>{
  const pool=make(),q=pool.open();const text='가🙂';
  await q.read(async()=>text);await q.read(async()=>text);await q.read(async()=>({value:text}),{kind:'durable',select:r=>r.value});

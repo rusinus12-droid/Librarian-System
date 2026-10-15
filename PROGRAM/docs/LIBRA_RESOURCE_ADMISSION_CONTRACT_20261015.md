@@ -1,6 +1,6 @@
 # LIBRA 원본·JSON·보유 데이터의 자원 예산 — N01-C1/C2
 
-- 작성일: 2026-10-15 · 버전: 1.4
+- 작성일: 2026-10-15 · 버전: 1.5
 - 기준: `e542ce8` 이후 N01-C2 보유 예약·권한 수명·코퍼스 유지보수 증분
 - 판정: **owner 본문 I/O·JSON 처리와 명시적으로 계상한 graph/index/표현/private 근거의 보유 예약·해제를 연결했다. 코퍼스 build/publication·eager audit도 같은 pool을 사용한다. 전체 원본/HTTP/VM 상한은 미완료다. `byteBounded:false`를 유지한다.**
 - 관련: [전체 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [남은 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
@@ -138,3 +138,10 @@ server_only의 private query·Classic context·GRADIA receipt와 build 수명은
 ## 9. projection v2·기존 v1의 기본 RAG 예산 수정
 
 `31b0a42` 이후 조회용 graph/canonicalRows를 공통 캐시의 행 페이지로 분할하고 구축 이력을 별도 디렉터리에 보관한다. query는 windowSlices를 열지 않으며 기존 v1도 미사용 이력을 디코딩하지 않는다. 기본 source/durable/decode/retained quota는 유지한다. [projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)의 구현·측정·지원 한계와 일반 query 64/64MiB·구축 구간 20 권장을 따른다. projection bootstrap은 Lane의 index/vector page budget과 다른 단계이며 같은 resource ledger에 계상한다.
+
+
+## 10. 기본 query·유지보수 프로필
+
+`open()`은 decode 64MiB·retained 64MiB, `openMaintenance()`는 decode 64MiB·retained 128MiB를 적용한다. native corpus 구축과 전체 감사가 유지보수 프로필을 사용하며 명시적 `resourceBudget`은 항목별로 우선한다. source/durable/value/read quota와 공유 pool의 한도는 같은 검증을 사용한다. 서로 다른 프로필도 공유 pool의 retained 256MiB·decode 128MiB·I/O 32MiB를 함께 소비한다. 기본값은 요청별 보수적 예약 예산이며 실제 VM heap 상한이 아니다.
+
+`libra_memory_graph_resources_test.cjs`는 100MiB 유지보수 예약·query 64MiB 상한·공유 pool 경합·명시적 override·잘못된 입력 거부를 검사한다. native 자원 회귀는 옵션 없는 build/audit와 query의 실제 limits, 기본 구축/Classic 설정, 낮춘 예산의 거부와 세션 해제를 확인한다.

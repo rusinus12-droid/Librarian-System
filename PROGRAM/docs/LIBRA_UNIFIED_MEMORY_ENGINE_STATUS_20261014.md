@@ -1,9 +1,9 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.17
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.18
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `31b0a42` 이후 projection 기본 RAG 예산 수정. 현재 증분은 §34와 [수정·권장 예산](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)을 우선하며, 벡터·native GC 지원은 §33의 범위를 유지한다.
+- 현재 코드 확인 기준: `c8b58c5` 이후 권장 예산의 기본 적용. 현재 증분은 §35와 [적용된 예산](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)을 우선하며, projection·벡터·native GC 지원은 §33–34의 범위를 유지한다.
 - 목표 계약: [통합 엔진 설계 v1.22](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 전체 잔여 작업: **N01-a/b 원본 증명·전체 자원 상한, N05 local/mirror transactional backend, N06 실제 품질·규모·설치 인증**. 정본 global의 N01-e와 server_only native GC는 이번 증분에서 연결했다.
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
@@ -449,3 +449,8 @@ server_only는 실제 전용 SDK·HTTP·SQLite writer transaction에 영속 buil
 ## 34. RAG projection 기본 예산 결함 수정
 
 `31b0a42`에서 limit:1·정본 2개 구축본이 전체 projection decode를 거쳐 Classic 주입을 중단한 문제를 수정했다. projection v2는 조회 행 페이지와 별도 구축 이력을 사용하며 같은 페이지를 내용 digest로 중복 저장하지 않는다. v1 호환 읽기, 증분 구축/전체 감사, native GC의 전이 참조, 구형 서버의 신규 게시 차단을 연결했다. 기본 quota는 올리지 않는다. 상세 측정·권장은 [projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)를 따른다. N01-b 전체 상한과 실제 모델/호스트 품질·규모 인증은 여전히 미완료다.
+
+
+## 35. 권장 예산의 기본 적용
+
+native 코퍼스 구축·전체 감사의 기본 resource profile을 decode 64MiB·retained 128MiB로 적용했다. 일반 query·Classic·GRADIA는 64/64MiB를 사용한다. 공통 resource kernel의 `openMaintenance()`와 `open()`은 같은 공유 pool에서 admission·해제·경합을 처리하며 호출별 override를 검증한다. 구축 구간 20·페이지 8192B, Classic 근거 24개·5000자는 기존 기본값과 일치한다. [적용·검증 범위](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md) §6을 따른다. 전체 규모·실제 heap·설치/품질 인증은 별도다.

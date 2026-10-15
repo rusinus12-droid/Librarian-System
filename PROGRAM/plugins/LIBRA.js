@@ -44749,10 +44749,11 @@ function createLibraReadonlySourceContext(owner) {
   const pool = { retainedBytes: 0, peakRetainedBytes: 0, sessions: 0, peakSessions: 0, ioBytes: 0, decodeBytes: 0, reads: 0, peakIoBytes: 0, peakDecodeBytes: 0, peakReads: 0 };
   const defaults = Object.freeze({ maxSourceBytes: 64 * 1024 * 1024, maxDurableBytes: 32 * 1024 * 1024,
     maxRetainedBytes: 64 * 1024 * 1024, maxValueBytes: 8 * 1024 * 1024, maxDecodeBytes: 64 * 1024 * 1024, maxReads: 8192 });
+  const maintenanceDefaults = Object.freeze({ ...defaults, maxRetainedBytes: 128 * 1024 * 1024 });
   const inspect = () => ({ ...pool, limits: { ...poolLimits } });
-  const open = (input = {}, check = () => {}) => {
+  const openWithDefaults = (input = {}, check = () => {}, profile = defaults) => {
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof check !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
-    const config = { ...defaults, ...input };
+    const config = { ...profile, ...input };
     for (const [key,value] of Object.entries(config)) if (!Object.hasOwn(defaults,key) || !Number.isSafeInteger(value)
       || value < 1 || value > (key === 'maxReads' ? 65536 : 256 * 1024 * 1024)) throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
     if (config.maxValueBytes > poolLimits.ioBytes) throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
@@ -44907,7 +44908,10 @@ function createLibraReadonlySourceContext(owner) {
     timer = schedule(() => close('expired'),lifetimeMs); timer?.unref?.();
     return Object.freeze({ read, reserveRead, withValue, retain, reserveRetained, scope, begin, close, onClose, check: assertCurrent, inspect: snapshot });
   };
-  return Object.freeze({ open, inspect, defaults, closeAll(reason = 'invalidated') { for (const close of [...sessions]) close(reason); } });
+  const open = (input, check) => openWithDefaults(input, check, defaults);
+  const openMaintenance = (input, check) => openWithDefaults(input, check, maintenanceDefaults);
+  return Object.freeze({ open, openMaintenance, inspect, defaults, maintenanceDefaults,
+    closeAll(reason = 'invalidated') { for (const close of [...sessions]) close(reason); } });
 });
     const createLibraMemoryGraphIdentity = (function createMemoryGraphIdentity({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_FINGERPRINT_REQUIRED');
@@ -71753,7 +71757,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       ensureMemoryGraphUnifiedSuite();
       if (state.memoryGraphCorpus.inspect().activeBuild) throw new Error('LIBRA_GRAPH_CORPUS_BUILD_BUSY');
-      const resources = state.memoryGraphResources.open(options.resourceBudget || {},() => {
+      const resources = state.memoryGraphResources.openMaintenance(options.resourceBudget || {},() => {
         if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
       });
       const activity = resources.begin();
@@ -71776,7 +71780,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         || Object.keys(options).some(key => !['expectedScopeKey','resourceBudget'].includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       ensureMemoryGraphUnifiedSuite();
-      const resources = state.memoryGraphResources.open(options.resourceBudget || {},() => {
+      const resources = state.memoryGraphResources.openMaintenance(options.resourceBudget || {},() => {
         if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
       });
       const activity = resources.begin();
