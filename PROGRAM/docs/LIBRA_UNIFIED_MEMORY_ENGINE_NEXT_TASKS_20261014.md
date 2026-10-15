@@ -1,7 +1,7 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.13
-- 현재 코드 확인 기준: `0e3c39d` 이후 선택적 벡터 페이지와 native server GC 증분. [실제 구현·지원 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다.
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.14
+- 현재 코드 확인 기준: `31b0a42` 이후 projection 기본 RAG 예산 수정. [수정·권장 예산](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)과 [실제 구현·지원 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다.
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §32](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [평가 계약](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
 - 판정: **정본 global의 영속 vector page·의미 참조 인덱스·공통 Cache/Lane 읽기와 server_only native GC를 연결했다. plugin_only/mirror의 실제 GC는 원자적 호스트 기능 부재로 차단한다. N01-a/b의 원본 증명·전체 자원 상한과 N06의 실제 품질·규모·설치 인증은 남는다.**
 
@@ -92,6 +92,8 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 **완료 기준:** full-reread 대조와 동일 근거/현재성, 저장 모드별 실제 source I/O 감소, 변경·삭제/재생성·ABA·복원·viewer/시간·profile/route/data/reset·await 중 변경/취소/늦은 응답 검증을 갖춘다. 지원하지 않는 owner 범위는 재읽기 또는 명시적 partial/reject로 남긴다. manifest/cache hit·public DTO digest만으로 발송 권한을 만들지 않는다.
 
 ### N01-b · P1 · 원본부터 출력까지 자원 계상·admission — N01-C1/C2 부분 연결
+
+**projection 후속:** [projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)는 작은 구간의 구축 이력이 query decode 예산을 넘는 P1을 수정한다. 일반 조회의 64/64MiB 기본값을 유지하며 구축·감사 비용을 별도로 측정한다. 이 수정을 전체 규모/heap 보장으로 확대하지 않는다.
 
 현재 `maxStoragePages/maxStorageBytes`는 **인덱스 JSON payload** 접근 예산이다. N01-C1에서는 실제 scoped source reader와 LIBRA SDK readset, corpus root/proof/projection/page 접근에 요청별 byte/read quota와 공유 I/O 예약을 연결했다. JSON 처리/분할 재조립은 공통 page 계층의 workspace 산식으로 미리 예약한다. 실패 latch·취소/late 응답 해제와 `resourceAccess` trace를 추가했다. [계약·실제 검증](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
 

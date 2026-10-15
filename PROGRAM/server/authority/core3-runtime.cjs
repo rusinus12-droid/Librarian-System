@@ -5,7 +5,8 @@ const path=require('node:path');
 const {randomBytes,createHash}=require('node:crypto');
 const Routes=require('./route-lifecycle.cjs'),J=require('./observation-json.cjs');
 const C=require('./contracts.cjs'),Core=require('./control-store.cjs'),Owner=require('./owner-store.cjs');
-const CAPABILITIES=Object.freeze(['kv.v1','keys.v1','revision.v1','digest.v1','idempotency.v1','tombstone.v1','readback.v1','namespace-integrity.v1','integrity.v1','server-namespace-read.v1','server-batch-read.v1','keys-pagination.v1','server-batch-read-budget.v1','interactive-storage-soft-cap.v1','conditional-batch.v1','libra-graph-lifecycle.v1','flashback-writer-fence.v1','data-instance-binding.v1','core3-semantic-route.v1','libra-routed-backend-observation.v1']);
+const CAPABILITIES=Object.freeze(['kv.v1','keys.v1','revision.v1','digest.v1','idempotency.v1','tombstone.v1','readback.v1','namespace-integrity.v1','integrity.v1','server-namespace-read.v1','server-batch-read.v1','keys-pagination.v1','server-batch-read-budget.v1','interactive-storage-soft-cap.v1','conditional-batch.v1','libra-graph-lifecycle.v1',
+  'libra-graph-projection-pages.v1','flashback-writer-fence.v1','data-instance-binding.v1','core3-semantic-route.v1','libra-routed-backend-observation.v1']);
 const AUTHORITY_ROUTES=new Set(['route/read','route/status','route/transition','libra/observe','libra/observe-closure','libra/read','libra/current','libra/usage','libra/release'].map(x=>'/v1/authority/'+x));
 const ROUTES=new Set(['GET /health','GET /bootstrap','GET /v1/kv/get','GET /v1/kv/keys','GET /v1/integrity','POST /v1/kv/get-many','POST /v1/kv/set','POST /v1/kv/remove','POST /v1/kv/batch','POST /v1/flashback/writer','POST /v1/libra/graph-lifecycle','POST /v1/admin/integrity','POST /v1/shutdown']);
 function unavailable(code='AUTHORITY_LIFECYCLE_UNAVAILABLE'){throw Object.assign(new Error(code),{code,statusCode:503});}

@@ -15,7 +15,14 @@ test('two independent SQLite owners fence publication, live readers, expired tok
  assert.throws(()=>cmd(y,'acquire',{kind:'gc'}),/NAMESPACE_BUSY/);
  const put=(repo,key,value,graphLease=null)=>repo.mutate({kind:'set',space:'plugin',key,value,operationId:'fixture-'+crypto.randomUUID(),graphLease});
  const page=prefix+'corpus:page:directory:'+hash('page');put(one,page,'[]');
- const manifestRaw=JSON.stringify({schema:'libra.graph_corpus.v1',refs:[{key:page}],sourceProofs:{}}),manifest=prefix+'corpus:manifest:'+hash(manifestRaw);put(one,manifest,manifestRaw);
+ const saveProjection=value=>{const raw=JSON.stringify(value),digest=hash(raw),key=prefix+'corpus:projection:'+digest;put(one,key,raw);return {key,digest,bytes:Buffer.byteLength(raw)};};
+ const leaf=saveProjection([{nodeId:'history-only'}]);
+ const parts=()=>Object.fromEntries(['nodes','edges','bases','units','canonicalRows'].map(p=>[p,{count:0,refs:[]}]));
+ const windowParts=parts();windowParts.units={count:1,refs:[{...leaf,rows:1}]};
+ const history=saveProjection({schema:'libra.graph_corpus_projection_window.v1',parts:windowParts});
+ const buildRef=saveProjection({schema:'libra.graph_corpus_projection_build.v1',windows:[history]});
+ const projection=saveProjection({schema:'libra.graph_corpus_projection.v2',parts:parts(),build:buildRef});
+ const manifestRaw=JSON.stringify({schema:'libra.graph_corpus.v1',refs:[{key:page}],sourceProofs:{projectionKey:projection.key,projectionDigest:projection.digest}}),manifest=prefix+'corpus:manifest:'+hash(manifestRaw);put(one,manifest,manifestRaw);
  const root=prefix+'corpus:root:'+hash('root'),rootRaw=JSON.stringify({schema:'libra.graph_corpus.v1',manifestKey:manifest,digest:hash(manifestRaw)});
  assert.throws(()=>put(two,root,rootRaw),/LEASE_EXPIRED/);
  put(one,root,rootRaw,{scopeKey,token:build.token});cmd(x,'release',{token:build.token});
@@ -26,8 +33,10 @@ test('two independent SQLite owners fence publication, live readers, expired tok
  assert.throws(()=>put(two,prefix+'page:units:'+hash('late'),'[]'),/NAMESPACE_BUSY/);
  assert.throws(()=>cmd(y,'acquire',{kind:'read'}),/NAMESPACE_BUSY/);
  const inventory=cmd(x,'inventory',{token:gc.token});assert.ok(inventory.retainedKeys.includes(page));
+ assert.ok(inventory.retainedKeys.includes(leaf.key),'build-only window rows are transitively reachable');
  const candidate=key=>inventory.records.find(row=>row.key===key);
  assert.throws(()=>cmd(x,'delete',{token:gc.token,candidate:candidate(page)}),/KEY_REACHABLE/);
+ assert.throws(()=>cmd(x,'delete',{token:gc.token,candidate:candidate(leaf.key)}),/KEY_REACHABLE/);
  assert.equal(one.get('plugin',page).exists,true);
  assert.equal(cmd(x,'delete',{token:gc.token,candidate:candidate(orphan)}).deleted,true);
  assert.equal(two.get('plugin',orphan).tombstone,true);

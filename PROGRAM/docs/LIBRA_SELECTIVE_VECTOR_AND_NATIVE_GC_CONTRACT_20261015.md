@@ -1,6 +1,6 @@
 # LIBRA 선택적 벡터 페이지와 실제 서버 GC
 
-- 작성일: 2026-10-15 · 버전: 1.0
+- 작성일: 2026-10-15 · 버전: 1.1
 - 기준: `0e3c39d` 이후 선택적 벡터 저장 접근과 native server GC 구현
 - 관련: [설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §33](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md), [자원 예산](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)
 
@@ -67,7 +67,7 @@ plugin_only/mirror는 `blocked_atomic_gc_unavailable`, `deletedKeys:[]`를 유�
 - `libra_memory_graph_native_gc_runtime_test.cjs`: 실제 등록 API→SDK→HTTP→SQLite에서 orphan 회수, live root/proof/최근 대형 checkpoint 보존, plugin_only/mirror 차단.
 - 기존 native semantic·corpus·자원·Classic·GRADIA 셰도우/AIDE·인풋 작성기·SDK conditional-batch 회귀를 함께 실행한다.
 
-두 정본의 상세 합성 graph는 기본 JSON/retained 한도를 넘을 수 있어 해당 native vector 시험은 `maxDecodeBytes:128MiB`, `maxRetainedBytes:128MiB`를 명시한다. 전체 감사 대조는 retained 200MiB를 사용한다. 이를 전체 VM·실제 corpus 지원 규모 인증으로 확대하지 않는다. 보유 산식/전체 원본 증명·host/provider·설치·성능 인증은 N01-a/b·N06에 남는다.
+최초 증분에서는 두 정본의 상세 합성 graph가 전체 projection decode 한도를 넘어 native vector query에 decode/retained 128MiB를 명시했다. 후속 [projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)는 이력을 분리하고 행 페이지를 읽어 동일 회귀의 기본 query·Classic 전달을 통과시킨다. 기존 v1도 재구축 없이 읽는다. 유지보수·전체 감사의 예산 및 지원 규모는 별도이며 전체 VM 인증으로 확대하지 않는다. 보유 산식/전체 원본 증명·host/provider·설치·성능 인증은 N01-a/b·N06에 남는다.
 
 ## 7. 실행 기록
 

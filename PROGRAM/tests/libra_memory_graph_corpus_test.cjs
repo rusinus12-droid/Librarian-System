@@ -104,6 +104,43 @@ test('cold, warm, evicted and fresh-runtime reads reuse the published index with
   const fresh=await corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:await x.initial(),eager:true});
   assert.deepEqual(fresh.compiledIndex,first.compiledIndex);assert.equal(x.compiles,1);x.idle();
 });
+test('paged query projection skips build history; warm pages and eager history are physically checked',async()=>{
+  const x=fixture({count:10,incrementalProof:true}),built=await x.build();
+  const projection=JSON.parse(x.values.get(built.sourceProofs.projectionKey));
+  assert.equal(projection.schema,'libra.graph_corpus_projection.v2');assert.equal(projection.windowSlices,undefined);
+  const history=JSON.parse(x.values.get(projection.build.key));
+  assert.equal(history.windows.length,10);
+  x.reads.length=0;
+  const result=await x.read({eager:false});assert.equal(result.access.storage.projection.windowRecordsRead,0);
+  assert.ok(!x.reads.includes(projection.build.key));
+  const saved=x.values.get(history.windows[0].key);x.values.set(history.windows[0].key,'{}');
+  assert.equal((await x.read({eager:false})).graph.units.length,result.graph.units.length);
+  await assert.rejects(x.read,/PAGE_CORRUPT/);x.values.set(history.windows[0].key,saved);
+  const page=projection.parts.units.refs[0].key;x.values.set(page,'[]');
+  await assert.rejects(()=>x.read({eager:false}),/PAGE_CORRUPT/);x.idle();
+});
+test('legacy projection skips unused windows within the query decode budget and validates skipped JSON',async()=>{
+  const createResources=require('../tools/libra_memory_graph_resources.cjs');
+  const x=fixture({count:4,incrementalProof:true}),built=await x.build(),graph=await x.initial(),loc=x.corpus.location(graph);
+  const native=await x.corpus.enumerate(x.snapshot,{limit:1},x.owner.check);
+  const legacy={schema:'libra.graph_corpus_projection.v1',generation:built.generation,scopeKey:'test',frame:graph.readerFrame,
+    graph:native.graph,windowSlices:native.windowSlices,collected:native.collected};
+  legacy.windowSlices[0].unusedMetadata=Array.from({length:12000},()=>({quoted:'"escaped brace } [',value:1}));
+  const root=JSON.parse(x.values.get(loc.rootKey)),manifest=JSON.parse(x.values.get(root.manifestKey));
+  const publish=raw=>{
+    const projectionDigest=hash(raw),projectionKey=loc.prefix+'projection:'+projectionDigest;x.values.set(projectionKey,raw);
+    manifest.sourceProofs={...manifest.sourceProofs,projectionKey,projectionDigest};
+    const manifestRaw=JSON.stringify(manifest),digest=hash(manifestRaw),manifestKey=loc.prefix+'manifest:'+digest;
+    x.values.set(manifestKey,manifestRaw);x.values.set(loc.rootKey,JSON.stringify({...root,digest,manifestKey}));
+  };
+  publish(JSON.stringify(legacy));
+  const pool=createResources({measure:x.pages.measure,encodedSize:x.pages.encodedSize,stageCost:x.pages.stageCost});
+  const ledger=pool.open({maxDecodeBytes:4194304});x.owner.resources=ledger;
+  const result=await x.read({eager:false});assert.equal(result.graph.units.length,native.graph.units.length);
+  assert.ok(ledger.inspect().peakDecodeBytes<4194304);ledger.close();delete x.owner.resources;
+  publish(JSON.stringify(legacy).replace('"windowSlices":[','"windowSlices":[invalid,'));
+  await assert.rejects(()=>x.read({eager:false}),/RECORD_INVALID/);x.idle();
+});
 test('an edit outside the first source window refuses both a fresh read and an already selected generation',async()=>{
   const x=fixture({count:7});await x.build();const issued=await x.read();x.change();
   await assert.rejects(x.read,/STALE_GENERATION/);await assert.rejects(issued.currentGraph,/STALE_GENERATION/);x.idle();

@@ -1,8 +1,9 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.21 · 작성일: 2026-10-13 · 갱신일: 2026-10-15
+- 문서 버전: 1.22 · 작성일: 2026-10-13 · 갱신일: 2026-10-15
 - 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·구축 재개를 연결했으며, 증명 보장 확대·전체 자원 계상·server_only native GC까지 연결했으며, local/mirror 원자적 회수·전체 자원/원본 보장·실제 설치/품질·규모 인증은 미완성이다.**
 - 현재 코드 확인 기준: `0e3c39d` 이후 정본 global vector page·의미 참조 인덱스·공통 Cache/Lane 읽기와 server_only native GC 증분. [실제 구현·지원 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)과 [현황 §33](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)을 우선한다. plugin_only/mirror 실제 GC에는 원자적 host API 또는 transactional 파생 저장소가 필요하다. N01-a/b·실제 설치/품질·규모 인증은 남으며 전체 보장 플래그는 유지한다.
+- projection 후속: [projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)는 조회용 행 페이지와 별도 build 이력, 기존 v1 호환 읽기·GC 전이 참조를 연결한다. 기본 RAG 예산의 P1을 수정하며 전체 규모 인증과는 구분한다.
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정

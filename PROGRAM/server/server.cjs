@@ -96,6 +96,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'interactive-storage-soft-cap.v1',
   'conditional-batch.v1',
   'libra-graph-lifecycle.v1',
+  'libra-graph-projection-pages.v1',
   'flashback-writer-fence.v1',
   'scope-index.v1',
   'scope-catalog.v1',

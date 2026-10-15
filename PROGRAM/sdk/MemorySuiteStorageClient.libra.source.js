@@ -7361,6 +7361,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const before=await conditionalBatchBoundary();
     const boot=await bootstrap(false,true);
     if(boot?.capabilities?.['libra-graph-lifecycle.v1']!==true)throw new Error('LIBRA_GRAPH_LEASE_UPGRADE_REQUIRED');
+    // A v2 projection must only be published by a GC-aware storage owner.
+    if(body.action==='acquire'&&body.kind==='build'&&boot?.capabilities?.['libra-graph-projection-pages.v1']!==true)throw new Error('LIBRA_GRAPH_PROJECTION_UPGRADE_REQUIRED');
     const payload=await request('POST','/v1/libra/graph-lifecycle',{scopeKey,...body},{allowPluginOnly:true,scopeId:scopeKey,storageMode:mode});
     if(jsonComparable(before)!==jsonComparable(await conditionalBatchBoundary()))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
     if(payload?.ok!==true||!payload.result)throw new Error('LIBRA_GRAPH_LEASE_RESPONSE_INVALID');

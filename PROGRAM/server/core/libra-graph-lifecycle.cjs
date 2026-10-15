@@ -18,6 +18,35 @@ module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,app
   if(!current)fail('LIBRA_GRAPH_LEASE_EXPIRED');return current;
  };
  const expected=row=>({expectedRevision:row.revision,expectedDigest:row.digest,expectedExists:row.exists,expectedTombstone:row.tombstone});
+ // Projection v2 separates query rows from build-only windows. Trace both so
+ // reclamation and root publication use the same transitive closure.
+ const projectionReferences=(prefix,key,digest,onKey,missing='LIBRA_GRAPH_GC_REFERENCE_MISSING')=>{
+  const seen=new Set(),namespace=prefix+'corpus:projection:';
+  const keep=ref=>{
+   if(!ref||!/^[a-f0-9]{64}$/.test(String(ref.digest||''))||ref.key!==namespace+ref.digest)fail('LIBRA_GRAPH_GC_REFERENCE_UNOWNED');
+   if(!(getMetadata?getMetadata('plugin',ref.key):get('plugin',ref.key)).exists)fail(missing);
+   onKey(ref.key);
+  };
+  const visit=(ref,schema)=>{
+   keep(ref);if(seen.has(ref.key))return;seen.add(ref.key);if(seen.size>4096)fail('LIBRA_GRAPH_GC_REFERENCE_LIMIT');
+   const row=get('plugin',ref.key,{maxValueBytes:8*1024*1024}),raw=typeof row.value==='string'?row.value:JSON.stringify(row.value);
+   if(crypto.createHash('sha256').update(raw).digest('hex')!==ref.digest)fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
+   let value;try{value=JSON.parse(raw);}catch(_){fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');}
+   if(value?.schema==='libra.graph_corpus_projection.v1'&&schema==='libra.graph_corpus_projection.v2')return;
+   if(value?.schema!==schema)fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
+   if(schema==='libra.graph_corpus_projection_build.v1'){
+    if(!Array.isArray(value.windows)||value.windows.length>128)fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
+    for(const ref of value.windows)visit(ref,'libra.graph_corpus_projection_window.v1');return;
+   }
+   if(!value.parts||Object.keys(value.parts).sort().join(',')!=='bases,canonicalRows,edges,nodes,units')fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
+   for(const part of Object.values(value.parts)){
+    if(!Array.isArray(part.refs)||part.refs.length>4096)fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
+    for(const ref of part.refs)keep(ref);
+   }
+   if(schema==='libra.graph_corpus_projection.v2')visit(value.build,'libra.graph_corpus_projection_build.v1');
+  };
+  visit({key,digest},'libra.graph_corpus_projection.v2');
+ };
  const reachable=(scope,listing)=>{
   const prefix='libra:v1:scope:'+scope+':memory-graph:v1:',retained=new Set();
   const record=key=>{
@@ -35,6 +64,7 @@ module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,app
    if(!Array.isArray(m.pages)&&!Array.isArray(m.refs))fail('LIBRA_GRAPH_GC_MANIFEST_UNSUPPORTED');
    for(const page of m.refs||m.pages){if(!page?.key?.startsWith(prefix))fail('LIBRA_GRAPH_GC_REFERENCE_UNOWNED');retained.add(page.key);}
    for(const key of [m.sourceProofs?.proofKey,m.sourceProofs?.projectionKey,m.semanticDirectory?.key])if(key){if(!key.startsWith(prefix))fail('LIBRA_GRAPH_GC_REFERENCE_UNOWNED');retained.add(key);}
+   if(m.sourceProofs?.projectionKey)projectionReferences(prefix,m.sourceProofs.projectionKey,m.sourceProofs.projectionDigest,key=>retained.add(key));
     if(m.semanticDirectory?.key){const saved=record(m.semanticDirectory.key),directory=saved.value;
       if(crypto.createHash('sha256').update(typeof saved.raw==='string'?saved.raw:JSON.stringify(saved.raw)).digest('hex')!==m.semanticDirectory.digest||directory?.schema!=='libra.graph_semantic_directory.v1'||!Array.isArray(directory.entries))fail('LIBRA_GRAPH_GC_REFERENCE_CORRUPT');
       for(const entry of directory.entries)for(const page of entry.vectorPages||[]){if(!page.key?.startsWith(prefix+'corpus:vector:'))fail('LIBRA_GRAPH_GC_REFERENCE_UNOWNED');retained.add(page.key);}}
@@ -118,6 +148,7 @@ module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,app
    if(!Array.isArray(manifest.refs||manifest.pages))fail('LIBRA_GRAPH_ROOT_INVALID');
    for(const ref of manifest.refs||manifest.pages)exists(ref.key);
    for(const key of [manifest.sourceProofs?.proofKey,manifest.sourceProofs?.projectionKey,manifest.semanticDirectory?.key])if(key)exists(key);
+   if(manifest.sourceProofs?.projectionKey)projectionReferences(prefix,manifest.sourceProofs.projectionKey,manifest.sourceProofs.projectionDigest,exists,'LIBRA_GRAPH_ROOT_REFERENCE_MISSING');
    if(manifest.semanticDirectory?.key){const stored=get('plugin',manifest.semanticDirectory.key).value,raw=typeof stored==='string'?stored:JSON.stringify(stored),dir=JSON.parse(raw);
      if(crypto.createHash('sha256').update(raw).digest('hex')!==manifest.semanticDirectory.digest)fail('LIBRA_GRAPH_ROOT_INVALID');
      for(const entry of dir.entries||[])for(const page of entry.vectorPages||[])exists(page.key);}

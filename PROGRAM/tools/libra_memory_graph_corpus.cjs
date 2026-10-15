@@ -16,6 +16,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const proofSchema = 'libra.graph_corpus_source_proofs.v1';
   const proofSummarySchema = 'libra.graph_corpus_source_proof_summary.v1';
   const projectionSchema = 'libra.graph_corpus_projection.v1';
+  const pagedProjectionSchema = 'libra.graph_corpus_projection.v2';
+  const projectionWindowSchema = 'libra.graph_corpus_projection_window.v1';
+  const projectionBuildSchema = 'libra.graph_corpus_projection_build.v1';
+  const projectionTables = [...pools, 'canonicalRows'];
   const checkpointSchema = 'libra.graph_corpus_build_checkpoint.v1';
   const maxCheckpointAttempts = 128;
   const rowChunkSchema = 'libra.graph_corpus_row_chunk.v1';
@@ -649,7 +653,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const splitOversizedRow = (table, row, rowIndex, maxPageBytes) => {
     const rawJson = JSON.stringify(row);
     const rowDigest = hash(rawJson);
-    const rowRouting = routingFor(table, [row]);
+    const rowRouting = routingKinds[table] ? routingFor(table, [row]) : [];
     const maxItemBytes = maxPageBytes - 2;
     const probeChunk = (slice, chunkIndex = 9999, chunkCount = 9999) => ({
       __chunkSchema: rowChunkSchema,
@@ -777,6 +781,209 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     return resources ? await resources.withValue(rawItems, run) : await run();
   };
 
+  // Read v1 fields without allocating its unused window history. The scanner
+  // validates JSON grammar, including skipped values; it never parses them.
+  const jsonRanges = (raw, array = false) => {
+    let at = 0;
+    const ws = () => { while (at < raw.length && /[\x20\t\r\n]/.test(raw[at])) at++; };
+    const string = () => {
+      if (raw[at++] !== '"') fail('record_invalid');
+      while (at < raw.length) {
+        const code = raw.charCodeAt(at++);
+        if (code === 34) return;
+        if (code < 32) fail('record_invalid');
+        if (code === 92) {
+          const escape = raw[at++];
+          if (escape === 'u') { if (!/^[0-9a-fA-F]{4}$/.test(raw.slice(at, at + 4))) fail('record_invalid'); at += 4; }
+          else if (!escape || !'"\\/bfnrt'.includes(escape)) fail('record_invalid');
+        }
+      }
+      fail('record_invalid');
+    };
+    const value = depth => {
+      if (depth > 256) fail('record_invalid');
+      ws(); const ch = raw[at];
+      if (ch === '"') return string();
+      if (ch === '{' || ch === '[') return container(ch === '[', depth + 1);
+      const token = /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(raw.slice(at, at + 1024));
+      if (!token) fail('record_invalid'); at += token[0].length;
+    };
+    const container = (isArray, depth, ranges = null) => {
+      if (raw[at++] !== (isArray ? '[' : '{')) fail('record_invalid');
+      ws(); const end = isArray ? ']' : '}';
+      if (raw[at] === end) { at++; return; }
+      for (;;) {
+        ws(); let key;
+        if (!isArray) {
+          const keyStart = at; string();
+          if (ranges) { if (at - keyStart > 1024) fail('record_invalid'); key = JSON.parse(raw.slice(keyStart, at)); }
+          ws(); if (raw[at++] !== ':') fail('record_invalid'); ws();
+        }
+        const start = at; value(depth);
+        if (ranges) {
+          if (isArray) { if (ranges.length >= 128) fail('record_invalid'); ranges.push([start, at]); }
+          else { if (Object.hasOwn(ranges, key) || Object.keys(ranges).length >= 64) fail('record_invalid'); ranges[key] = [start, at]; }
+        }
+        ws(); if (raw[at] === end) { at++; return; }
+        if (raw[at++] !== ',') fail('record_invalid');
+      }
+    };
+    ws(); const result = array ? [] : Object.create(null);
+    container(array, 1, result); ws(); if (at !== raw.length) fail('record_invalid');
+    return result;
+  };
+  const legacyProjection = async (raw, maximum, ledger, history, fields = jsonRanges(raw)) => {
+    if (raw.length > maximum || pages.encodedSize(raw).utf8Bytes > maximum) fail('record_size');
+    ledger?.reserveRetained(4096 + raw.length * 2, 'legacy_projection_raw');
+    const result = Object.create(null);
+    for (const [key, [from, to]] of Object.entries(fields)) {
+      if (key === 'windowSlices') {
+        if (history) {
+          result.windowSlices = [];
+          for (const [start, end] of jsonRanges(raw.slice(from, to), true)) {
+            result.windowSlices.push(await parse(raw.slice(from + start, from + end), maximum, ledger));
+          }
+        }
+      } else result[key] = await parse(raw.slice(from, to), maximum, ledger);
+    }
+    return result;
+  };
+  const projectionRefValid = (ref, loc, maximum) => ref && /^[a-f0-9]{64}$/.test(String(ref.digest || ''))
+    && ref.key === loc.prefix + 'projection:' + ref.digest && Number.isSafeInteger(ref.bytes) && ref.bytes >= 2 && ref.bytes <= maximum;
+  const projectionMetrics = () => ({ schema: pagedProjectionSchema, pagesRead: 0, bytesRead: 0, cacheHits: 0, windowRecordsRead: 0 });
+  const writeProjection = async (owner, loc, graph, collected, windows, serializedGraphBytes, config) => {
+    const generation = stamp(graph), written = new Set(); let totalBytes = 0;
+    const save = async value => {
+      const raw = JSON.stringify(value), bytes = pages.encodedSize(raw).utf8Bytes, digest = hash(raw), key = loc.prefix + 'projection:' + digest;
+      if (!written.has(key)) {
+        totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget');
+        const held = owner.resources?.retain(value, 'publication_projection_page');
+        try { await immutable(owner, key, raw); written.add(key); } finally { held?.release(); }
+      }
+      owner.check(); return { key, digest, bytes };
+    };
+    const table = async (label, rows) => {
+      const refs = []; let offset = 0;
+      while (offset < rows.length) {
+        if (!rowFitsPage(rows[offset], config.pageBytes)) {
+          const chunks = splitOversizedRow('projection:' + label, rows[offset], offset, config.pageBytes);
+          let chunk = 0;
+          while (chunk < chunks.length) {
+            const page = pages.page({ units: chunks }, { partition: loc.partition, generation, pool: 'units', offset: chunk, pageBytes: config.pageBytes });
+            if (page.nextOffset === chunk) fail('projection_page_invalid');
+            refs.push({ ...await save(page.items), rows: page.items.length }); chunk = page.nextOffset;
+          }
+          offset++;
+        } else {
+          // Stop before the next oversized row so normal rows remain ordinary JSON pages.
+          let end = offset + 1;
+          while (end < rows.length && rowFitsPage(rows[end], config.pageBytes)) end++;
+          const normal = rows.slice(offset, end);
+          let sub = 0;
+          while (sub < normal.length) {
+            const page = pages.page({ units: normal }, { partition: loc.partition, generation, pool: 'units', offset: sub, pageBytes: config.pageBytes });
+            if (page.nextOffset === sub) fail('projection_page_invalid');
+            refs.push({ ...await save(page.items), rows: page.items.length }); sub = page.nextOffset;
+          }
+          offset = end;
+        }
+      }
+      return { count: rows.length, refs };
+    };
+    const snapshot = async (g, rows) => {
+      const header = { ...g }; for (const pool of pools) delete header[pool];
+      const parts = {};
+      for (const label of projectionTables) parts[label] = await table(label, label === 'canonicalRows' ? rows || [] : g[label]);
+      return { graph: header, parts };
+    };
+    const query = await snapshot(graph, collected.canonicalRows);
+    const windowRefs = [];
+    for (const window of windows) {
+      const { graph: g, canonicalRows, ...meta } = window;
+      windowRefs.push(await save({ schema: projectionWindowSchema, ...meta, ...await snapshot(g, canonicalRows) }));
+    }
+    const build = await save({ schema: projectionBuildSchema, generation, windows: windowRefs });
+    const record = { schema: pagedProjectionSchema, generation, scopeKey: graph.scopeKey, frame: graph.readerFrame,
+      serializedGraphBytes, ...query, build,
+      collected: { sourceKeys: collected.sourceKeys || [], entityRegistry: collected.entityRegistry || [] } };
+    pages.measure(record, 131072);
+    owner.resources?.retain(record, 'publication_projection', 2);
+    const ref = await save(record);
+    return { ...ref, pageCount: written.size, serializedBytes: totalBytes };
+  };
+  const loadProjection = async (owner, loc, summary, config, history = false, metrics = projectionMetrics()) => {
+    const raw = await owner.read(summary.projectionKey); owner.check();
+    if (typeof raw !== 'string' || hash(raw) !== summary.projectionDigest) fail('page_corrupt');
+    if (raw.length > config.maxSerializedBytes || pages.encodedSize(raw).utf8Bytes > config.maxSerializedBytes) fail('record_size');
+    const fields = jsonRanges(raw), schemaRange = fields.schema;
+    if (!schemaRange || schemaRange[1] - schemaRange[0] > 128) fail('record_invalid');
+    if (JSON.parse(raw.slice(...schemaRange)) === projectionSchema) {
+      metrics.schema = projectionSchema; metrics.legacyValueBytes = pages.encodedSize(raw).utf8Bytes;
+      const result = await legacyProjection(raw, config.maxSerializedBytes, owner.resources, history, fields);
+      metrics.windowRecordsRead = result.windowSlices?.length || 0; return result;
+    }
+    const directory = await parse(raw, 131072, owner.resources);
+    if (directory?.schema !== pagedProjectionSchema) fail('page_corrupt');
+    const readRecord = async (ref, schema) => {
+      if (!projectionRefValid(ref, loc, 131072)) fail('projection_directory_invalid');
+      const raw = await owner.read(ref.key); owner.check();
+      if (typeof raw !== 'string' || hash(raw) !== ref.digest || pages.encodedSize(raw).utf8Bytes !== ref.bytes) fail('page_corrupt');
+      const result = await parse(raw, 131072, owner.resources);
+      if (result?.schema !== schema) fail('projection_directory_invalid'); return result;
+    };
+    const readSnapshot = async record => {
+      if (!record.graph || pools.some(p => Object.hasOwn(record.graph, p)) || !record.parts
+        || Object.keys(record.parts).sort().join(',') !== [...projectionTables].sort().join(',')) fail('projection_directory_invalid');
+      const result = { ...record.graph };
+      for (const label of projectionTables) {
+        const part = record.parts[label];
+        if (!Number.isSafeInteger(part?.count) || part.count < 0 || !Array.isArray(part.refs) || part.refs.length > 4096) fail('projection_directory_invalid');
+        const scope = owner.resources?.scope();
+        try {
+        const assembler = createTableReassembler('projection:' + label, scope);
+        for (const ref of part.refs) {
+          if (!projectionRefValid(ref, loc, config.pageBytes) || !Number.isSafeInteger(ref.rows) || ref.rows < 1) fail('projection_directory_invalid');
+          let handle, stage, lease;
+          try {
+            handle = pages.open({ partition: loc.partition, generation: directory.generation });
+            const raw = await owner.read(ref.key); owner.check();
+            if (typeof raw !== 'string' || hash(raw) !== ref.digest || pages.encodedSize(raw).utf8Bytes !== ref.bytes) fail('page_corrupt');
+            metrics.pagesRead++; metrics.bytesRead += ref.bytes;
+            const binding = { pool: 'units', codec: 'json_array.v1', digest: ref.digest, rows: ref.rows };
+            lease = pages.acquire(handle, binding);
+            if (lease) metrics.cacheHits++;
+            else { stage = pages.reserve(handle, pages.stageCost(pages.encodedSize(raw))); lease = pages.install(handle, binding, raw, stage); }
+            const rows = owner.resources ? await owner.resources.withValue(raw, () => pages.decode(lease)) : pages.decode(lease);
+            if (!Array.isArray(rows) || rows.length !== ref.rows) fail('page_corrupt');
+            scope?.retain(rows, 'projection_page_decode');
+            await assembler.pushPage(rows);
+          } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
+        }
+        const rows = assembler.finish().rows;
+        if (rows.length !== part.count) fail('projection_directory_invalid'); result[label] = rows;
+        owner.resources?.retain(rows, 'durable_decoded_record');
+        } finally { scope?.close(); }
+      }
+      const { canonicalRows, ...graph } = result;
+      return { graph, canonicalRows };
+    };
+    const decoded = await readSnapshot(directory);
+    const result = { ...directory, graph: decoded.graph, collected: { ...directory.collected, canonicalRows: decoded.canonicalRows } };
+    if (history) {
+      const build = await readRecord(directory.build, projectionBuildSchema);
+      if (build.generation !== directory.generation || !Array.isArray(build.windows) || build.windows.length > 128) fail('projection_directory_invalid');
+      result.windowSlices = [];
+      for (const ref of build.windows) {
+        const record = await readRecord(ref, projectionWindowSchema); metrics.windowRecordsRead++;
+        const { schema, parts, graph: header, ...meta } = record;
+        const decoded = await readSnapshot(record);
+        if (windowStamp(decoded.graph) !== record.stamp) fail('page_corrupt');
+        result.windowSlices.push({ ...meta, ...decoded });
+      }
+    }
+    return result;
+  };
+
   const checkpointAttemptKey = (loc, frame, previousRootRaw, attempt) =>
     loc.prefix + 'checkpoint:' + hash(JSON.stringify([frame, previousRootRaw || 'initial', attempt]));
 
@@ -844,9 +1051,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) return null;
       const proofRecord = await parse(proofRaw, config.maxSerializedBytes, owner.resources);
-      const projRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
-      if (typeof projRaw !== 'string' || hash(projRaw) !== manifest.sourceProofs.projectionDigest) return null;
-      const projRecord = await parse(projRaw, config.maxSerializedBytes, owner.resources);
+      const projRecord = await loadProjection(owner, loc, manifest.sourceProofs, config, true);
       if (!proofRecord?.ownerProof || !Array.isArray(projRecord?.windowSlices) || !projRecord.windowSlices.length) return null;
       const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'build' });
       owner.check();
@@ -1076,24 +1281,8 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
       await immutable(owner, proofKey, proofRaw);
 
-      const projectionRecord = {
-        schema: projectionSchema,
-        generation,
-        scopeKey: graph.scopeKey,
-        frame: graph.readerFrame,
-        serializedGraphBytes: value.serializedGraphBytes,
-        graph,
-        windowSlices: value.windowSlices,
-        collected: {
-          sourceKeys: Array.isArray(value.collected?.sourceKeys) ? value.collected.sourceKeys : [],
-          entityRegistry: Array.isArray(value.collected?.entityRegistry) ? value.collected.entityRegistry : [],
-          canonicalRows: Array.isArray(value.collected?.canonicalRows) ? value.collected.canonicalRows : []
-        }
-      };
-      owner.resources?.retain(projectionRecord,'publication_projection',2);
-      const projectionRaw = JSON.stringify(projectionRecord), projectionDigest = hash(projectionRaw), projectionKey = loc.prefix + 'projection:' + projectionDigest;
-      if (new TextEncoder().encode(projectionRaw).length > config.maxSerializedBytes) fail('index_budget');
-      await immutable(owner, projectionKey, projectionRaw);
+      const projection = await writeProjection(owner, loc, graph, value.collected, value.windowSlices, value.serializedGraphBytes, config);
+      const projectionKey = projection.key, projectionDigest = projection.digest;
 
       const sourceProofs = {
         schema: proofSummarySchema,
@@ -1224,6 +1413,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       if (!manifest.refs.some(ref => ref.table === table) || counts[table] !== manifest.metadata?.stats?.[stat]) fail('directory_invalid');
     }
 
+    const projectionAccess = projectionMetrics();
     let proofRecord = null, projectionRecord = null;
     if (manifest.sourceProofs) {
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
@@ -1232,10 +1422,8 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== manifest.sourceProofs.proofVersion
         || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
 
-      const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
-      if (typeof projectionRaw !== 'string' || hash(projectionRaw) !== manifest.sourceProofs.projectionDigest) fail('page_corrupt');
-      projectionRecord = await parse(projectionRaw, config.maxSerializedBytes, owner.resources);
-      if (projectionRecord?.schema !== projectionSchema || projectionRecord.generation !== manifest.generation
+      projectionRecord = await loadProjection(owner, loc, manifest.sourceProofs, config, eager, projectionAccess);
+      if (![projectionSchema, pagedProjectionSchema].includes(projectionRecord?.schema) || projectionRecord.generation !== manifest.generation
         || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
     }
 
@@ -1292,7 +1480,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
 
     const lazy = !eager && manifest.routingVersion === routingVersion;
     const metrics = { storageAccess: lazy ? 'selective_durable_pages' : 'materialized_tables',
-      publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0 };
+      publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0, projection: projectionAccess };
     // No raw/decoded table cache: re-acquire validated content through the shared
     // Cache Manager. Every new request physically verifies its first page use.
     const validated = new Set();

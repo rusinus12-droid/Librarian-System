@@ -1,6 +1,6 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.8
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.9
 - 조사 기준: `89fb341` 이후의 이 증분, N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할
 - 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근, owner 증분 증명(`N01-A`), 증분 구축·체크포인트 재개 및 대형 단일 행 분할(`N01-B`)을 연결했다. 전체 바이트 예산(`N01-C`) 및 대규모 성능 인증은 아직 미완성이다.**
 
@@ -102,3 +102,8 @@ GC는 corpus namespace 전체를 보존한다. 실제 checkpoint는 `windowSlice
 ## 선택적 벡터 페이지와 native server GC 후속 연결
 
 `0e3c39d` 후속 구현은 정본 global vector의 불변 페이지·의미 참조 인덱스·공통 Cache/Index/Lane 접근과 server_only의 실제 lease/fence·도달성 GC를 연결한다. 현재 지원 범위·실제 검증·이전 manifest/cold 호환·원본 불변/owner bookkeeping 구분은 [후속 구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다. 전체 자원/원본 보장·실제 설치/품질·규모 인증 및 local/mirror transactional backend는 후속 과제다.
+
+
+## projection v2 후속
+
+[projection 예산 수정·권장값](LIBRA_RAG_PROJECTION_BUDGET_FIX_20261015.md)에서 조회 행 페이지와 build/window 이력을 분리한다. v1 호환 읽기·증분 재사용·전체 감사·native GC 전이 참조 검증을 유지한다. 새 서버 capability와 LIBRA를 함께 갱신하며 기본 예산 상향 없이 limit:1 재현 사례의 Classic 전달을 검증한다.

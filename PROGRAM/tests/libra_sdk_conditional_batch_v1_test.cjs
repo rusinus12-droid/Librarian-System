@@ -8,7 +8,7 @@ const results=[];async function test(name,fn){await fn();results.push(name);cons
 (async()=>{let app,bridge,prior=globalThis.risuai;let mode='server_only',scope={scopeId:'sdk-batch-scope',scopeKey:'sdk-batch-scope',available:true},fault='',calls=[],holdBootstrap=null;
 try{
  app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:root,autoBackup:false});const addr=await app.listen(),url=`http://127.0.0.1:${addr.port}`;
- globalThis.risuai={getArgument:async n=>n==='memory_suite_server_url'?url:n==='memory_suite_server_mode'?mode:'',nativeFetch:async(u,i)=>{calls.push([u,i]);if(u.endsWith('/bootstrap')&&holdBootstrap){holdBootstrap.enter();await holdBootstrap.wait;}const out=await fetch(u,i);if(fault==='lost'&&u.endsWith('/v1/kv/batch')){fault='';throw Error('network_response_lost_after_server_commit');}if(fault==='bad-cap'&&u.endsWith('/bootstrap')){const j=await out.json();delete j.capabilities['conditional-batch.v1'];return new Response(JSON.stringify(j),{status:200});}return out;}};
+ globalThis.risuai={getArgument:async n=>n==='memory_suite_server_url'?url:n==='memory_suite_server_mode'?mode:'',nativeFetch:async(u,i)=>{calls.push([u,i]);if(u.endsWith('/bootstrap')&&holdBootstrap){holdBootstrap.enter();await holdBootstrap.wait;}const out=await fetch(u,i);if(fault==='lost'&&u.endsWith('/v1/kv/batch')){fault='';throw Error('network_response_lost_after_server_commit');}if(fault==='old-projection'&&u.endsWith('/bootstrap')){const j=await out.json();delete j.capabilities['libra-graph-projection-pages.v1'];return new Response(JSON.stringify(j),{status:200});}if(fault==='bad-cap'&&u.endsWith('/bootstrap')){const j=await out.json();delete j.capabilities['conditional-batch.v1'];return new Response(JSON.stringify(j),{status:200});}return out;}};
  bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,currentScopeProvider:async()=>scope,
   resolveKeyScope:({key,currentScope})=>key.startsWith('libra:foreign:')?{kind:'scope',scopeId:'other-scope'}:{kind:'scope',...currentScope}});
  const mem={map:new Map(),async getItem(k){return this.map.get(k)??null;},async setItem(k,v){this.map.set(k,v);return true;},async removeItem(k){return this.map.delete(k);},async keys(){return [...this.map.keys()];}};
@@ -77,6 +77,13 @@ try{
   await proxy.setItem('libra:head',{t:9});
   await assert.rejects(()=>bridge.assertConditionalReadSet(pin,{readObserver}),/READ_SET_CHANGED/);assert.equal(active,0);assert.equal(stages,0);
   await assert.rejects(()=>bridge.captureConditionalReadSet(['libra:head'],{readObserver:'invalid'}),/READ_OBSERVER_INVALID/);
+ });
+ await test('build refuses an older GC owner that cannot retain paged projections, while old reads remain available',async()=>{
+  fault='old-projection';await bridge.bootstrap(true);
+  await assert.rejects(()=>bridge.acquireGraphStorageLease(scope.scopeKey,'build'),/PROJECTION_UPGRADE_REQUIRED/);
+  const read=await bridge.acquireGraphStorageLease(scope.scopeKey,'read');assert.ok(read);await read.release();
+  fault='';await bridge.bootstrap(true);
+  const build=await bridge.acquireGraphStorageLease(scope.scopeKey,'build');assert.ok(build);await build.release();
  });
  await test('unsupported capability and plugin-only mode do not silently downgrade to sequential writes',async()=>{
   await bridge.dispose();fault='bad-cap';bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,currentScopeProvider:async()=>scope});bridge.createPluginStorageProxy(mem);await assert.rejects(()=>bridge.prepareConditionalBatch({mutations:[set('libra:unsupported',1)]}),/CAPABILITY_MISSING/);fault='';await bridge.dispose();mode='plugin_only';bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,currentScopeProvider:async()=>scope});bridge.createPluginStorageProxy({...mem,map:new Map()});const n=calls.length;await assert.rejects(()=>bridge.prepareConditionalBatch({mutations:[set('libra:offline',1)]}),/REQUIRES_SERVER_ONLY/);assert.equal(calls.length,n);
