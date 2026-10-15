@@ -1,10 +1,11 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.12
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.13
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `e542ce8` 이후 N01-C2 명시적 보유 예약·수명과 코퍼스 유지보수 admission. 최신 실행·증분 구현은 §19–22, 리뷰·패치는 §23, 원본/저장 읽기·JSON admission과 잔여 작업은 §24–25 및 다음 과제 v1.9을 우선한다.
-- 목표 계약: [통합 엔진 설계 v1.18](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 현재 코드 확인 기준: `1e331fc`의 N01-C2 명시적 보유 예약·수명과 코퍼스 유지보수 admission까지. 최신 실행·증분 구현은 §19–22, 리뷰·패치는 §23, 자원 admission은 §24–25, 전체 잔여 작업량·실행 순서는 다음 과제 v1.10을 우선한다. 이번 갱신은 문서 정리이며 신규 구현/설치 인증을 추가하지 않는다.
+- 목표 계약: [통합 엔진 설계 v1.19](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 전체 잔여 작업: **큰 구현 4묶음 + 실사용 검증 1묶음**, 별도의 소규모 N00 마감 점검. 완료된 소비자 연결·레거시 전환을 다시 미구현으로 세지 않는다. 상대 작업량·의존성·완료 판정은 [다음 과제 §0](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md#0-전체-작업량과-완성까지의-거리)에 정리했다.
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
 - 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 증분 검증·구축 재개·대형 행 분할도 연결했다. 증명 보장 확대, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
 

@@ -1,18 +1,66 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.9
-- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, [`e542ce8`](https://github.com/rusinus12-droid/Librarian-System/commit/e542ce8) 이후 N01-C2 보유 예약·수명·코퍼스 유지보수 admission
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.10
+- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, [`1e331fc`](https://github.com/rusinus12-droid/Librarian-System/commit/1e331fc4154ce6856efcc0321dd660248765f7f6)의 N01-C2까지. 이번 갱신은 전체 잔여 작업량과 완료 판정의 문서화이며 신규 엔진 구현이 아니다.
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 인덱스 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)
 - 판정: **기본·유일한 통합 검색기와 활성 소비자 연결은 구현됐다. 원본 증분 검증·구축 재개·대형 행 분할도 연결됐다. 원본 증명의 보장 확대, 전체 자원 계상·admission, 추가 semantic 표현, 안전한 native GC, 실제 설치·품질·규모 검증은 남아 있다.**
 
-이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–23](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. N01-C1/C2의 현재 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 이전 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
+이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. N01-C1/C2의 현재 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 이전 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
+
+## 0. 전체 작업량과 완성까지의 거리
+
+### 0.1 현재 위치
+
+**핵심 통합 기능의 연결은 대부분 구현됐고, 전체 완성까지는 큰 구현 과제 4묶음과 실사용 검증 1묶음이 남아 있다.** 활성 소비자의 통합 연결과 레거시 serving 대체는 완료된 범위로 유지한다. 지금의 판정은 통합 검색기가 동작하는 단계이며, 지원 규모와 실제 설치 환경에서 안정성·품질까지 입증한 완성판 판정은 아직 남아 있다.
+
+이미 구현한 범위는 다음과 같다.
+
+- 정본·Micro·State·로어가 하나의 graph/index·scorer/frontier·Memory Lane·Compiler를 사용하는 검색 경로.
+- 정본 global 저장 벡터와 실제 질의 임베딩의 동일 검색 경로 참여. Micro·State·로어는 현재 다른 검색 신호로 참여한다.
+- 공통 Cache Manager·영속 인덱스의 선택적 page 읽기, 원본 구간 재사용·구축 체크포인트·대형 행 분할.
+- LIBRA Classic·GUI 및 GRADIA 셰도우/AIDE·인풋 작성기의 통합 읽기와 최종 private 검증.
+- 레거시 serving 제거와 설정 이관, N01-C1/C2의 원본 I/O·JSON·명시적 보유 예약 및 소비자별 해제.
+
+이 목록의 구현·등록 호스트 검증과 실제 RisuAI 설치 인증은 구분한다. 현재 native 실제 GC 삭제는 차단되어 있다.
+
+### 0.2 남은 다섯 묶음
+
+| 묶음 | 관련 ID | 남은 결과물 | 상대 작업량 | 완료를 판단할 근거 |
+| --- | --- | --- | --- | --- |
+| 1. 저장 읽기 재개 | N01-c | 작은 예산으로 중단한 저장 page 탐색·대형 행 재조립을 동일 generation에서 이어가는 cursor와 상태 | 중간 | 중단·재개 결과가 한 번에 읽은 점수·witness·근거와 같고, 누락/중복/오염·root 교체를 감지 |
+| 2. 대규모 운용 보강 | N01-a/b/d | 원본 변경 증명 확대, 전체 자원 비용과 지원 한도 검증, 실측에 따른 선택적 재컴파일 확장 판단·구현 | 큼 | 저장 모드별 실제 I/O와 보유/peak 비용, 변경·삭제·ABA·복원·동시 게시/취소 대조, full rebuild와의 일치 |
+| 3. 의미 검색과 표현 접근 확장 | N01-e·N02 | 자료별 임베딩 지원/의도적 vectorless 정책, 필요한 producer·저장·갱신과 표현 page의 선택적 읽기, 소비자 coverage 표시 | 중간~큼 | 지원한 표현이 유지보수→저장→재시작→검색→최종 검증을 통과하고, 불필요한 전체 표현 hydration 없이 같은 scorer를 사용 |
+| 4. 안전한 GC | N05 | 저장 owner의 완전한 inventory·원자적 fence·조건부 삭제와 build/publisher/reader 보호. 서버·SDK 보강 포함 | 큼 | mark 이후 새 게시/reader·미게시 build·candidate 교체·재시작 경합에서 필요한 데이터를 보존. 증명 부재 시 삭제 차단 |
+| 5. 품질·실사용 검증 | N06-a/b/c, N03/N04의 잔여 검증 | 고정 평가 세트·합격 수치, 실제 임베딩 모델과 RisuAI 설치의 검색 품질·속도·메모리·최종 전달 측정 | 큼 | 고정 구현 SHA·설정·workload와 raw 측정으로 지원 profile별 합격/미지원 범위를 재현 |
+
+N00의 호환 포맷·권한·문서 마감 점검은 별도의 작은 묶음이다. N07은 전환을 유지하는 회귀 검사로 관리한다. N03/N04의 남은 설치 검증은 묶음 5에 포함하므로 미구현 소비자 연결로 중복 계상하지 않는다.
+
+상대 작업량은 현재 구조와 의존성에 따른 정성적 판단이다. `중간`은 기존 경로의 확장과 경계 검증, `큼`은 여러 모듈·저장 owner 프로토콜 또는 실제 환경의 증거 확보가 필요한 범위를 뜻한다. 묶음 2·3은 작업이 겹칠 수 있으며, 선택적 재컴파일의 추가 범위와 자료별 producer 수는 지원 profile·측정 결과로 결정한다. 모든 자료의 벡터 생산을 완료 조건으로 강제하지 않는다.
+
+완료율 백분율·남은 커밋 수·달력 일수는 현재 증거로 산정하지 않는다. 서버/호스트가 제공해야 할 기능, 실제 장비·모델·규모의 합격 기준과 측정 결과에 따라 달라진다. 이 다섯 묶음을 동일 크기의 일정 단위로 계산하지 않는다.
+
+### 0.3 권장 순서와 선행 조건
+
+1. **바로 다음 구현: N01-c.** 저장 access cursor와 재조립 재개를 index·Cache Manager·Memory Lane·audit에 연결한다.
+2. **다음 기능 확장: N01-e와 N02.** 표현의 선택적 접근과 자료별 생산/갱신 정책을 함께 정하고 지원한 경로를 연결한다.
+3. **각 구현 단계에서 N01-a/b/d를 보강한다.** 원본 증명과 전체 비용을 측정하고, 필요한 owner/SDK 기능과 재컴파일 범위를 확정한다. N01-C2의 회계 추정을 실제 전체 heap 상한으로 승격하지 않는다.
+4. **N05는 저장 owner 기능부터 구현·검증한다.** 필요한 fence와 reader/build 보호가 확보된 뒤 native 삭제를 연결한다.
+5. **N06-b/c의 최종 합격은 해당 구현이 고정된 SHA에서 판정한다.** Classic·GUI·GRADIA 셰도우/AIDE·작성기의 실제 전달과 실패/취소 경계를 포함한다.
+
+N06-a의 평가 세트·합격 기준 정의와 N00 점검은 첫 단계부터 준비할 수 있다. 실제 host/provider 접근과 장비·corpus·동시성 profile도 먼저 확보한다. GC의 owner 기능 부재와 실제 설치 인증의 환경 부재는 해당 항목의 미완료/blocked 사유로 기록한다.
+
+### 0.4 전체 완료 판정
+
+각 묶음은 아래 세부 절의 완료 기준과 구현 커밋·실제 경로·검증/측정 근거를 함께 남긴 뒤 닫는다. 제한된 지원 profile의 합격과 미지원 범위를 공개하고, 알려진 미완료를 숨긴 채 전체 완료로 표기하지 않는다.
+
+현재 `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`는 유지한다. 각 보장은 해당 지원 범위의 증거를 확보한 경우에만 개별 변경한다. fixture 통과, query 성공 또는 특정 예산 하나의 구현만으로 전체 규모·품질·설치 인증을 대신하지 않는다. 실제 구현·검증 이력은 [현황 §24–25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), 세부 종료 기록 방식은 이 문서 §11을 따른다.
 
 ## 1. 확인한 실행 범위
 
 | 대상 | 현재 구현·검증 범위 | 남은 범위 |
 | --- | --- | --- |
 | 단일 검색 | 네 자료가 한 graph/index·scorer/frontier·Memory Lane·Compiler를 사용. 정본 저장 벡터와 질의 임베딩도 같은 평가에 참여 | N01의 접근 비용, N02의 표현 확장, N06의 품질·규모 검증 |
-| 영속 인덱스 | 전체 owner cursor 구간 구축·저장·재시작 후 재사용. 신규 manifest는 필요한 저장 페이지만 읽음 | 원본 증명 범위 확대, 저장 access 진행 cursor·분할 재조립 자원 예산 |
+| 영속 인덱스 | 전체 owner cursor 구간 구축·저장·재시작 후 재사용. 신규 manifest는 필요한 저장 페이지만 읽음 | 원본 증명 범위 확대, 저장 access cursor·재조립 재개·전체 자원 상한 검증 |
 | LIBRA Classic·GUI | 기본 통합 검색과 Classic 최종 전달 연결. GUI 열람 질의는 provider 호출 없이 같은 lexical/graph 경로 사용 | 실제 설치 검증, coverage·실제 채택·비용 표시 점검 |
 | GRADIA 셰도우·AIDE | 기본 LIBRA source는 unified_engine. private owner 영수증과 readonly 권한을 거쳐 실제 단계·최종 전달 연결 | 지원 profile에서 실제 설치·성능 인증 |
 | GRADIA 인풋 작성기 | 별도 미전송 제안 세션·작성 버튼·생성/번역·선택/편집·복사/전송 검증 연결 | 지원 profile에서 실제 설치·성능 인증 |
@@ -76,7 +124,7 @@ N01-b의 원본/저장 읽기·JSON admission(N01-C1)에 이어 명시적 graph/
 
 N01-B는 큰 단일 행을 청크로 저장하고 digest·연속성을 확인해 재조립한다. 다만 읽기에서는 해당 그룹을 모아 큰 행으로 재조립하며, physical budget 중단은 같은 access를 재시도한다. 별도의 저장 페이지 진행 cursor는 없다. 청크 metadata 자체가 page에 들어가지 않는 경우는 계속 거부한다.
 
-**작업:** 기존 분할 schema·digest·연속성 검증을 유지하면서 generation에 결속한 저장 진행 cursor와 재조립 staging admission을 index·Cache Manager·Lane·audit에 연결한다. 필요하면 별도 작업으로 나누되 상한을 제거하는 방식으로 해결하지 않는다.
+**작업:** 기존 분할 schema·digest·연속성 검증과 N01-C1/C2의 JSON/보유 admission을 유지하면서, generation에 결속한 저장 진행 cursor·재조립 중간 상태와 재개 시 admission을 index·Cache Manager·Lane·audit에 연결한다. 필요하면 별도 작업으로 나누되 상한을 제거하는 방식으로 해결하지 않는다.
 
 **완료 기준:** page보다 큰 행과 access를 작은 예산으로 나누어 읽고 이어갈 수 있다. fragment 누락/중복/오염·root 교체·재시작은 감지하며 eager 대조의 점수·witness·근거가 같다. 도중 결과를 access 완료나 전체 coverage로 표시하지 않는다.
 
@@ -159,7 +207,7 @@ Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기의 실제 발송/복사/�
 
 권장 구현 순서는 **N01-c → N01-e**다. N01-b의 전체 상한 증명, N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a와 N00 점검은 그 전에 시작할 수 있고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
 
-기존 회귀 검사의 시작점은 다음과 같다. 아래 명령의 존재는 미래 증분의 완료 증거가 아니며, 이번 후속 패치의 실제 실행 결과와 재현 범위는 현황 §23 및 리뷰 문서에 기록한다.
+기존 회귀 검사의 시작점은 다음과 같다. 아래 명령의 존재는 미래 증분의 완료 증거가 아니며, 실제 실행 결과와 재현 범위는 현황 §23–25 및 리뷰 문서에 기록한다. 후속 구현도 같은 방식으로 근거를 추가한다.
 
 | 변경 경계 | 기존 검사·기록 |
 | --- | --- |
