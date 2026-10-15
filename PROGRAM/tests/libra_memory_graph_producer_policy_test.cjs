@@ -86,5 +86,21 @@ const test = async (name, run) => { await run(); results.push(name); };
     } finally { await x.cleanup(); }
   });
 
+  await test('N02: producer policy gate supports authorized precondition fulfillment under explicit maintenance', () => {
+    for (const family of ['micro', 'state', 'lore']) {
+      const allowed = kernel.mayEmbed({ family, trigger: 'explicit_maintenance', hasOwnerBasis: true, satisfiesPreconditions: true });
+      assert.equal(allowed.allowed, true, family + ' with satisfied preconditions under explicit maintenance must be allowed');
+      const noBasis = kernel.mayEmbed({ family, trigger: 'explicit_maintenance', hasOwnerBasis: false, satisfiesPreconditions: true });
+      assert.equal(noBasis.allowed, false);
+      assert.equal(noBasis.reason, 'owner_basis_required');
+      const badTrigger = kernel.mayEmbed({ family, trigger: 'query', hasOwnerBasis: true, satisfiesPreconditions: true });
+      assert.equal(badTrigger.allowed, false);
+      assert.equal(badTrigger.reason, 'trigger_not_maintenance');
+      const notSatisfied = kernel.mayEmbed({ family, trigger: 'explicit_maintenance', hasOwnerBasis: true, satisfiesPreconditions: false });
+      assert.equal(notSatisfied.allowed, false);
+      assert.equal(notSatisfied.reason, 'producer_not_authorized');
+    }
+  });
+
   console.log(JSON.stringify({ suite: 'libra_memory_graph_producer_policy', passed: results.length, tests: results }));
 })().catch(error => { console.error('PRODUCER POLICY FAILED', error.code || '', error.reason || '', error.message); process.exit(1); });

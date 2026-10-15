@@ -90,5 +90,41 @@ async function test(name, fn) { await fn(); tests.push(name); }
     await assert.rejects(() => f.semantic.prepare({ ...f.options, check() { if (!active) throw Error('owner_changed'); },
       embedQuery: async () => { active = false; throw Error('provider_failure'); } }), /owner_changed/);
   });
+  await test('N02: additional representation admits valid multi-family vector and removes it from vectorlessFamilies', async () => {
+    const f = fixture();
+    const microNodeId = 'micro-fact-one';
+    f.graph.nodes.push({ id: microNodeId, bindingId: 'micro-binding-1', layer: 'meaning', sourceId: null });
+    f.graph.units.push({ nodeId: microNodeId, recordKey: 'micro-rec-1', family: 'micro', semanticRole: 'micro_candidate', turn: 2, text: 'silver key handed over' });
+    const additionalRepresentations = [{
+      family: 'micro',
+      nodeId: microNodeId,
+      recordKey: 'micro-rec-1',
+      vectorKey: 'micro-vector-1',
+      vectorRecord: { schema: 'libra.embedding_projection.v2', scopeKey: 'scope', dimensions: 2, vector: [1, 0], profileId: 'profile', vectorHash: digest([1, 0]) },
+      textHash: digest('silver key handed over'),
+      temporalEndTurn: 2
+    }];
+    const prepared = await f.semantic.prepare({ ...f.options, additionalRepresentations });
+    assert.equal(prepared.diagnostics.status, 'available');
+    assert.ok(prepared.diagnostics.admittedFamilies.includes('micro'), 'admittedFamilies must include micro');
+    assert.ok(!prepared.diagnostics.vectorlessFamilies.includes('micro'), 'vectorlessFamilies must exclude micro');
+    assert.ok(prepared.queryInput.documentRepresentations[microNodeId], 'microNodeId must be in documentRepresentations');
+
+    const pages = createPages({ fingerprint: digest }), index = createIndex({ pages, fingerprint: digest });
+    const lane = createLane({ pages, index }), query = createQuery({ pages, index, lane, fingerprint: digest });
+    const compiled = index.compile(f.graph, { partition: 'p', generation: 'b'.repeat(64) });
+    const frame = query.sealQueryFrame({
+      ...prepared.queryInput,
+      queryText: f.options.queryText,
+      owner: f.graph.readerFrame.owner,
+      scopeKey: 'scope',
+      worldlineId: 'main'
+    });
+    const result = query.retrieve(query.openView(f.graph, compiled, frame));
+    assert.equal(result.complete, true);
+    const microCandidate = result.candidates.find(c => c.nodeId === microNodeId);
+    assert.ok(microCandidate, 'microCandidate must be found in retrieval');
+    assert.ok(microCandidate.score > 0, 'microCandidate must receive positive score from vector');
+  });
   console.log(JSON.stringify({ suite: 'libra_memory_graph_semantic', passed: tests.length, tests }));
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

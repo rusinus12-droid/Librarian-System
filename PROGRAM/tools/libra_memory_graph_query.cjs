@@ -457,12 +457,23 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     maxWorkspaceBytes = 262144,
     resumeCursors = [],
     maxStoragePages = maxPages,
-    maxStorageBytes = maxBytes
+    maxStorageBytes = maxBytes,
+    maxWitnessBytes = 131072,
+    maxFrontierBytes = 131072,
+    sourceReadJsonBudget = null,
+    ownerIoInFlightBudget = null,
+    writeBarrierBudget = null
   } = {}) {
     const view = issuedViews.get(viewHandle);
     if (!view) fail('view_handle_invalid');
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
       fail('workspace_budget_invalid');
+    }
+    if (maxWitnessBytes != null && (!Number.isSafeInteger(maxWitnessBytes) || maxWitnessBytes < 1024 || maxWitnessBytes > 16777216)) {
+      fail('witness_budget_invalid');
+    }
+    if (maxFrontierBytes != null && (!Number.isSafeInteger(maxFrontierBytes) || maxFrontierBytes < 1024 || maxFrontierBytes > 16777216)) {
+      fail('frontier_budget_invalid');
     }
     const {
       graph,
@@ -578,13 +589,24 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     let poppedSteps = 0;
     let l0WorkspaceBytes = 1024;
     let workspaceBudgetExceeded = false;
+    let l0WitnessBytes = 0;
+    let witnessBudgetExceeded = false;
+    let frontierExpansionBytes = 0;
+    let maxFrontierObservedBytes = 0;
+    let frontierBudgetExceeded = false;
+
+    const estimateWitnessBytes = witness => (
+      (witness?.edgeChain?.length || 0) * 192
+      + (witness?.basisIds?.length || 0) * 96
+      + (witness?.sourceDependencies?.length || 0) * 96
+    );
+
+    const estimateFrontierItemBytes = nodeId => 64 + String(nodeId).length * 2;
 
     const estimateStateBytes = (nodeId, witness) => (
       256
       + String(nodeId).length * 2
-      + (witness.edgeChain?.length || 0) * 192
-      + (witness.basisIds?.length || 0) * 96
-      + (witness.sourceDependencies?.length || 0) * 96
+      + estimateWitnessBytes(witness)
     );
 
     const compareWitnessOrder = (chainA, chainB) => {
@@ -607,12 +629,31 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
       if (!strictlyBetter && !tieDeterministicBetter) return false;
 
+      const witnessBytes = estimateWitnessBytes(witness);
+      const prevWitnessBytes = prev ? estimateWitnessBytes(prev.witness) : 0;
+      const addedWitnessBytes = witnessBytes - prevWitnessBytes;
+      if (maxWitnessBytes != null && l0WitnessBytes + addedWitnessBytes > maxWitnessBytes) {
+        witnessBudgetExceeded = true;
+        return false;
+      }
+
+      const frontierItemBytes = estimateFrontierItemBytes(nodeId);
+      if (maxFrontierBytes != null && frontierExpansionBytes + frontierItemBytes > maxFrontierBytes) {
+        frontierBudgetExceeded = true;
+        return false;
+      }
+
       const addedBytes = estimateStateBytes(nodeId, witness) - (prev ? prev.accountedBytes : 0) + 96;
       if (l0WorkspaceBytes + addedBytes > maxWorkspaceBytes) {
         workspaceBudgetExceeded = true;
         return false;
       }
       l0WorkspaceBytes += addedBytes;
+      l0WitnessBytes += addedWitnessBytes;
+      frontierExpansionBytes += frontierItemBytes;
+      if (frontierExpansionBytes > maxFrontierObservedBytes) {
+        maxFrontierObservedBytes = frontierExpansionBytes;
+      }
 
       const nextVersion = prev ? prev.pathVersion + 1 : 1;
       if (prev && prev.poppedOnce && strictlyBetter) reevaluations++;
@@ -721,7 +762,10 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
     // Phase B (M05): Interleaved Frontier Pop & On-Demand Neighborhood Paging via Memory Lane
     const requestedAdjacencyAnchors = new Set();
-    let frontierStopReason = workspaceBudgetExceeded ? 'workspace_byte_budget' : 'frontier_exhausted';
+    let frontierStopReason = workspaceBudgetExceeded ? 'workspace_byte_budget'
+      : witnessBudgetExceeded ? 'witness_byte_budget'
+      : frontierBudgetExceeded ? 'frontier_byte_budget'
+      : 'frontier_exhausted';
 
     while (frontier.length > 0) {
       if (laneSession.isBudgetStopped()) {
@@ -732,8 +776,17 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         frontierStopReason = 'workspace_byte_budget';
         break;
       }
+      if (witnessBudgetExceeded) {
+        frontierStopReason = 'witness_byte_budget';
+        break;
+      }
+      if (frontierBudgetExceeded) {
+        frontierStopReason = 'frontier_byte_budget';
+        break;
+      }
       sortFrontier();
       const top = frontier.shift();
+      frontierExpansionBytes = Math.max(0, frontierExpansionBytes - estimateFrontierItemBytes(top.nodeId));
       const current = stateByNode.get(top.nodeId);
       if (!current || current.pathVersion !== top.version) continue;
       if (poppedSteps >= queryFrame.maxFrontierSteps) {
@@ -820,10 +873,18 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
           basisIds: nextBases,
           sourceDependencies: [...nextDeps]
         });
-        if (workspaceBudgetExceeded) break;
+        if (workspaceBudgetExceeded || witnessBudgetExceeded || frontierBudgetExceeded) break;
       }
       if (workspaceBudgetExceeded) {
         frontierStopReason = 'workspace_byte_budget';
+        break;
+      }
+      if (witnessBudgetExceeded) {
+        frontierStopReason = 'witness_byte_budget';
+        break;
+      }
+      if (frontierBudgetExceeded) {
+        frontierStopReason = 'frontier_byte_budget';
         break;
       }
     }
@@ -931,7 +992,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       && !(graph.coverage?.sourceReadFailures?.length > 0)
       && unreadInventoryCursors.length === 0
       && !explicitIncompleteWithoutReasons && !view.historicalCanonicalUnavailable;
-    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
+    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted'
+      && !workspaceBudgetExceeded && !witnessBudgetExceeded && !frontierBudgetExceeded;
     const complete = traversalComplete && sourceCoverageComplete;
     const stopReason = !laneReport.complete
       ? `lane_${laneReport.stopReason}`
@@ -970,6 +1032,16 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         semanticDiagnostics,
         l0WorkspaceBytes,
         maxWorkspaceBytes,
+        l0WitnessBytes,
+        maxWitnessBytes,
+        frontierExpansionBytes: maxFrontierObservedBytes,
+        maxFrontierBytes,
+        sourceReadJsonBytes: graph.coverage?.sourceReadJsonBytes ?? null,
+        sourceReadJsonBudget,
+        ownerIoInFlightBytes: laneReport.bytesRead,
+        ownerIoInFlightBudget: ownerIoInFlightBudget ?? maxBytes,
+        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? 0,
+        writeBarrierBudget,
         lanePagesRead: laneReport.pagesRead,
         storage: laneReport.storage || null,
         laneBytesRead: laneReport.bytesRead,
@@ -1006,7 +1078,17 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
           reevaluations,
           onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size
         }),
-        workspace: Object.freeze({ l0WorkspaceBytes, maxWorkspaceBytes, exceeded: workspaceBudgetExceeded }),
+        workspace: Object.freeze({
+          l0WorkspaceBytes,
+          maxWorkspaceBytes,
+          exceeded: workspaceBudgetExceeded,
+          l0WitnessBytes,
+          maxWitnessBytes,
+          witnessExceeded: witnessBudgetExceeded,
+          frontierExpansionBytes: maxFrontierObservedBytes,
+          maxFrontierBytes,
+          frontierExceeded: frontierBudgetExceeded
+        }),
         coverage: Object.freeze({
           complete, sourceCoverageComplete, traversalComplete, stopReason,
           familyNotes, unreadInventoryCursors,

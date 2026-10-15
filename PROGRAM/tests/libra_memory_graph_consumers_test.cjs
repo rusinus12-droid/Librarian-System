@@ -134,26 +134,73 @@ test('M04: every byte category has a decision, and the boundary never claims to 
   }
   const inventory = compiler.memoryByteInventory({
     packetBytes: 128, bodyBytes: 96, l0WorkspaceBytes: 2048, lanePageBytes: 8192,
-    maxCharacters: 4096, l0WorkspaceBudget: 262144, lanePageBudget: 131072
+    sourceReadJsonBytes: 4096, l0WitnessBytes: 1024, indexPageBuildBytes: 16384,
+    frontierExpansionBytes: 512, readsetHandleStateBytes: 384, ownerIoInFlightBytes: 2048, writeBarrierBytes: 1024,
+    maxCharacters: 4096, l0WorkspaceBudget: 262144, lanePageBudget: 131072,
+    sourceReadJsonBudget: 65536, l0WitnessBudget: 131072, indexPageBuildBudget: 65536,
+    frontierExpansionBudget: 65536, readsetHandleStateBudget: 16384, ownerIoInFlightBudget: 32768, writeBarrierBudget: 32768
   });
   assert.equal(inventory.schema, 'libra.memory_byte_inventory.v1');
   assert.equal(inventory.byteBounded, false, 'the whole API is not byte-bounded and must not claim to be');
   assert.deepEqual(inventory.counted, {
-    rendered_packet: 128, bundle_body: 96, l0_candidate_workspace: 2048, lane_page_payload: 8192
+    rendered_packet: 128, bundle_body: 96, l0_candidate_workspace: 2048, lane_page_payload: 8192,
+    source_read_json: 4096, l0_witness_bytes: 1024, index_page_build: 16384,
+    frontier_expansion: 512, readset_handle_state: 384, owner_io_in_flight: 2048, write_barrier: 1024
   });
-  assert.equal(inventory.countedBytes, 128 + 96 + 2048 + 8192);
+  assert.equal(inventory.countedBytes, 128 + 96 + 2048 + 8192 + 4096 + 1024 + 16384 + 512 + 384 + 2048 + 1024);
   assert.equal(inventory.budgets.rendered_packet, null);
+  assert.equal(inventory.budgets.source_read_json, 65536);
+  assert.equal(inventory.budgets.l0_witness_bytes, 131072);
+  assert.equal(inventory.budgets.index_page_build, 65536);
+  assert.equal(inventory.budgets.frontier_expansion, 65536);
+  assert.equal(inventory.budgets.readset_handle_state, 16384);
+  assert.equal(inventory.budgets.owner_io_in_flight, 32768);
+  assert.equal(inventory.budgets.write_barrier, 32768);
   assert.equal(inventory.characterBudgets.rendered_packet, 4096);
   assert.equal(inventory.uncounted.length, decisions.filter(d => d.bucket === 'uncounted').length);
   assert.ok(inventory.uncounted.every(entry => entry.category && entry.reason));
 });
 
 test('M04 negative control: missing or unusable measurements remain unknown', () => {
-  const inventory = compiler.memoryByteInventory({ packetBytes: -5, bodyBytes: Number.NaN, l0WorkspaceBytes: 'many', lanePageBytes: undefined });
-  assert.deepEqual(inventory.counted, { rendered_packet: null, bundle_body: null, l0_candidate_workspace: null, lane_page_payload: null });
-  assert.equal(inventory.missingMeasurements.length, 4);
+  const inventory = compiler.memoryByteInventory({
+    packetBytes: -5, bodyBytes: Number.NaN, l0WorkspaceBytes: 'many', lanePageBytes: undefined,
+    sourceReadJsonBytes: -1, l0WitnessBytes: null, indexPageBuildBytes: 'huge',
+    frontierExpansionBytes: undefined, readsetHandleStateBytes: -10, ownerIoInFlightBytes: 'none', writeBarrierBytes: undefined
+  });
+  assert.deepEqual(inventory.counted, {
+    rendered_packet: null, bundle_body: null, l0_candidate_workspace: null, lane_page_payload: null,
+    source_read_json: null, l0_witness_bytes: null, index_page_build: null,
+    frontier_expansion: null, readset_handle_state: null, owner_io_in_flight: null, write_barrier: null
+  });
+  assert.equal(inventory.missingMeasurements.length, 11);
   assert.equal(inventory.countedBytes, 0);
   assert.equal(JSON.stringify(inventory).includes('NaN'), false);
+});
+
+test('M04 admission: readset handle budget violation triggers refusal', () => {
+  const queryResult = {
+    schema: 'libra.memory_graph_query.v1',
+    generation: 'a'.repeat(64),
+    indexDigest: 'b'.repeat(64),
+    frameId: 'c'.repeat(64),
+    complete: true,
+    candidates: [{ nodeId: 'node-0', family: 'canonical', semanticRole: 'canonical_assertion', text: 'evidence', score: 1 }]
+  };
+  const mockGraph = {
+    schema: 'libra.memory_graph_projection.v1',
+    scopeKey: 'scope-alpha',
+    units: [{ nodeId: 'node-0', family: 'canonical', text: 'evidence', recordKey: 'rec-0' }],
+    nodes: [{ id: 'node-0', sourceId: 'src-0', layer: 'source' }],
+    edges: [],
+    bases: []
+  };
+  const selected = compiler.select(queryResult, mockGraph, { consumer: 'classic', maxCharacters: 4096, maxUnits: 10 });
+  assert.ok(selected.readSetBytes > 0, 'selected must report readSetBytes');
+  assert.throws(
+    () => compiler.render(selected, { readsetHandleStateBudget: 10 }),
+    error => error.reason === 'readset_handle_budget_exceeded' && /READSET_HANDLE_BUDGET_EXCEEDED/.test(error.message),
+    'exceeding readsetHandleStateBudget must be refused'
+  );
 });
 
 test('closure: the extended compiler kernel is embedded in the shipped plugin', () => {

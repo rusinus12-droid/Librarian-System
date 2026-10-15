@@ -144,7 +144,21 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
       l0WorkspaceBudget: queryResult.diagnostics?.maxWorkspaceBytes,
       lanePageBytes: queryResult.diagnostics?.laneBytesRead,
-      lanePageBudget: queryResult.diagnostics?.laneMaxBytes
+      lanePageBudget: queryResult.diagnostics?.laneMaxBytes,
+      sourceReadJsonBytes: queryResult.diagnostics?.sourceReadJsonBytes ?? graph?.coverage?.sourceReadJsonBytes ?? null,
+      sourceReadJsonBudget: queryResult.diagnostics?.sourceReadJsonBudget ?? graph?.coverage?.sourceReadJsonBudget ?? null,
+      l0WitnessBytes: queryResult.diagnostics?.l0WitnessBytes ?? null,
+      l0WitnessBudget: queryResult.diagnostics?.maxWitnessBytes ?? null,
+      indexPageBuildBytes: compiledIndex?.indexPageBuildBytes ?? graph?.indexPageBuildBytes ?? null,
+      indexPageBuildBudget: compiledIndex?.indexPageBuildBudget ?? null,
+      frontierExpansionBytes: queryResult.diagnostics?.frontierExpansionBytes ?? null,
+      frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
+      readsetHandleStateBytes: selected.readSetBytes ?? null,
+      readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
+      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? queryResult.diagnostics?.laneBytesRead ?? null,
+      ownerIoInFlightBudget: laneBudget?.ownerIoInFlightBudget ?? queryResult.diagnostics?.laneMaxBytes ?? null,
+      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? 0,
+      writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
     });
 
     let dispatchVerification = null;

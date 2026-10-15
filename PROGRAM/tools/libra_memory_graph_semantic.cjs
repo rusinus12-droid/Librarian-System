@@ -9,8 +9,9 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     return Number.isFinite(squaredNorm) && squaredNorm > 0;
   };
   const prepare = async ({ graph, canonicalRows = [], config, queryText = '', asOfTurn = null,
-    readVector, embedQuery, check = () => {}, maxBytes = 262144 } = {}) => {
+    readVector, embedQuery, check = () => {}, maxBytes = 262144, additionalRepresentations = [] } = {}) => {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 4096 || maxBytes > 16777216) throw new TypeError('LIBRA_GRAPH_SEMANTIC_BUDGET_INVALID');
+    const admittedFamilies = new Set();
     const diagnostics = { schema: 'libra.native_graph_semantic.v1', status: 'unavailable', representationScope: 'canonical_global_projection_source_access',
       queryRequestCount: 0, queryCacheHits: 0, coalesced: false, documentEmbeddingCalls: 0, backgroundEmbeddingStarted: false,
       admittedRepresentations: 0, representationBytes: 0, maxRepresentationBytes: maxBytes, rejected: [],
@@ -68,6 +69,35 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         projectionVersion: projection.version, textHash: hash, temporalEndTurn: memory.turnRange?.end ?? null });
       dependencies.push({ key: embedding.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
+      admittedFamilies.add('canonical');
+    }
+    for (const extra of additionalRepresentations) {
+      check();
+      const fam = extra?.family || 'unknown';
+      if (!extra?.nodeId || !extra?.recordKey || !extra?.vectorKey) { reject(extra?.recordKey || 'extra', 'representation_missing'); continue; }
+      if (asOfTurn !== null && Number.isSafeInteger(extra.temporalEndTurn) && extra.temporalEndTurn > asOfTurn) {
+        reject(extra.recordKey, 'representation_outside_temporal_view'); continue;
+      }
+      let vectorRecord = extra.vectorRecord;
+      if (!vectorRecord && typeof readVector === 'function') {
+        try { vectorRecord = await readVector(extra.vectorKey); } catch (_) { check(); reject(extra.recordKey, 'vector_read_unavailable'); continue; }
+      }
+      check();
+      if (!vectorRecord || !vectorValid(vectorRecord.vector, vectorRecord.dimensions)) { reject(extra.recordKey, 'invalid_vector'); continue; }
+      const d = vectorRecord.dimensions;
+      let profile;
+      try { profile = profileFor({ ...config, dimensions: d }); }
+      catch (_) { reject(extra.recordKey, 'projection_or_profile_unavailable'); continue; }
+      if (dimension !== null && dimension !== d) { reject(extra.recordKey, 'embedding_space_mismatch'); continue; }
+      const additional = 1024 + d * 8 + (dimension === null ? d * 16 : 0);
+      if (bytes + additional > maxBytes) { reject(extra.recordKey, 'representation_byte_budget'); continue; }
+      const node = nodes.get(extra.nodeId);
+      documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
+        representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
+        projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
+      if (extra.vectorKey) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
+      dimension = d; expectedProfile = profile; bytes += additional;
+      admittedFamilies.add(fam);
     }
     if (!documents.length) { diagnostics.status = 'no_compatible_representations'; return empty(); }
     let query;
@@ -90,6 +120,8 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     diagnostics.status = 'available'; diagnostics.admittedRepresentations = documents.length;
     diagnostics.representationBytes = bytes; diagnostics.spaceId = semanticSpace.spaceId;
     diagnostics.dimension = dimension; diagnostics.queryTask = expectedProfile.queryTask; diagnostics.documentTask = expectedProfile.documentTask;
+    diagnostics.vectorlessFamilies = ['micro','state','lore'].filter(family => !admittedFamilies.has(family));
+    diagnostics.admittedFamilies = [...admittedFamilies].sort();
     return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
   };
   return Object.freeze({ prepare });

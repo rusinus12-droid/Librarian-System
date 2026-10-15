@@ -93,7 +93,7 @@ module.exports = function createMemoryGraphRepresentation({ fingerprint } = {}) 
   const producerPolicies = () => Object.freeze(SOURCE_FAMILIES.map(family => PRODUCER_POLICIES[family]));
   // Embedding is allowed only for a declared producer, only under explicit maintenance, and only with a
   // real owner basis. Everything else is refused by name rather than skipped quietly.
-  const mayEmbed = ({ family, trigger, hasOwnerBasis } = {}) => {
+  const mayEmbed = ({ family, trigger, hasOwnerBasis, satisfiesPreconditions = false } = {}) => {
     const wanted = text(family);
     const policy = PRODUCER_POLICIES[wanted];
     const asked = text(trigger);
@@ -102,7 +102,7 @@ module.exports = function createMemoryGraphRepresentation({ fingerprint } = {}) 
     const verdict = { family: wanted, trigger: asked, allowed: false, reason: '' };
     if (FORBIDDEN_TRIGGERS.includes(asked)) return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
     if (asked !== 'explicit_maintenance') return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
-    if (policy.authorized !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
+    if (policy.authorized !== true && satisfiesPreconditions !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
     if (policy.requiresOwnerBasis === true && hasOwnerBasis !== true) return Object.freeze({ ...verdict, reason: 'owner_basis_required' });
     return Object.freeze({ ...verdict, allowed: true });
   };

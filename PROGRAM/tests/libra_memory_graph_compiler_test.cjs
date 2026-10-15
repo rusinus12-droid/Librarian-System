@@ -242,6 +242,7 @@ const correspondenceSnapshot = () => {
 
 test('V09 & D07: envelope-aware character budget enforces maxCharacters on rendered packet and preserves Micro when Canonical drops for budget', async () => {
   const snap = correspondenceSnapshot();
+  snap.canonical[0].record.canonicalArtifact.facts[0].text = 'Alice received the Silver Ring in the grand royal archive sanctuary of the ancient kingdom.';
   const { graph, queryResult, compiler } = runPipeline(snap);
 
   const canonicalCand = queryResult.candidates.find(c => c.family === 'canonical');
@@ -262,17 +263,17 @@ test('V09 & D07: envelope-aware character budget enforces maxCharacters on rende
   assert.equal(generous.bundle.items.some(i => i.nodeId === microCand.nodeId), false);
   assert.deepEqual(generous.bundle.suppressedMicroIds, [microCand.nodeId]);
 
-  // Case B (V09 + D07): Tight envelope-aware budget (260 chars) where Lore + Canonical (262 rendered chars) overflows,
-  // while Lore + State + Micro (254 rendered chars) fits -> Canonical drops, so Micro MUST NOT be suppressed!
+  // Case B (V09 + D07): Tight envelope-aware budget (280 chars) where Lore + Canonical (285 rendered chars) overflows,
+  // while Lore + State + Micro (278 rendered chars) fits -> Canonical drops, so Micro MUST NOT be suppressed!
   const tight = compiler.select(queryResult, graph, {
     consumer: 'classic',
-    maxCharacters: 260,
+    maxCharacters: 280,
     maxUnits: 10,
     correspondenceMap: { [microCand.nodeId]: canonicalCand.nodeId }
   });
   const tightPacket = compiler.render(tight);
   assert.equal(tight.bundle.budget.usedCharacters, tightPacket.characterLength);
-  assert.ok(tightPacket.characterLength <= 260, `Rendered packet (${tightPacket.characterLength}) must not exceed maxCharacters (260)`);
+  assert.ok(tightPacket.characterLength <= 280, `Rendered packet (${tightPacket.characterLength}) must not exceed maxCharacters (280)`);
   assert.equal(tight.bundle.items.some(i => i.nodeId === canonicalCand.nodeId), false, 'Canonical dropped due to rendered character budget');
   assert.equal(tight.bundle.items.some(i => i.nodeId === microCand.nodeId), true, 'Micro must survive when Canonical counterpart drops for budget');
   assert.equal(tight.bundle.suppressedMicroIds.length, 0);

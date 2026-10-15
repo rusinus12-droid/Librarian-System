@@ -32,13 +32,13 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     Object.freeze({ category: 'bundle_body', bucket: 'counted', note: 'admitted item text inside the envelope' }),
     Object.freeze({ category: 'l0_candidate_workspace', bucket: 'counted', note: 'query.retrieve l0WorkspaceBytes' }),
     Object.freeze({ category: 'lane_page_payload', bucket: 'counted', note: 'drained lane page payload bytes' }),
-    Object.freeze({ category: 'source_read_json', bucket: 'uncounted', reason: 'the owner reader performs the read; no counter is wired at this layer' }),
-    Object.freeze({ category: 'l0_witness_bytes', bucket: 'uncounted', reason: 'witness payload is referenced by id and digest, not retained as bytes here' }),
-    Object.freeze({ category: 'index_page_build', bucket: 'uncounted', reason: 'compiled index arrays are built per generation; peak build bytes are not sampled' }),
-    Object.freeze({ category: 'frontier_expansion', bucket: 'uncounted', reason: 'the traversal frontier is bounded by pages, not by a byte counter' }),
-    Object.freeze({ category: 'readset_handle_state', bucket: 'uncounted', reason: 'private readset handles retain ids and digests only' }),
-    Object.freeze({ category: 'owner_io_in_flight', bucket: 'uncounted', reason: 'the storage bridge owns in-flight buffers' }),
-    Object.freeze({ category: 'write_barrier', bucket: 'uncounted', reason: 'publication barriers live in the durable store' }),
+    Object.freeze({ category: 'source_read_json', bucket: 'counted', note: 'owner source JSON read payload bytes' }),
+    Object.freeze({ category: 'l0_witness_bytes', bucket: 'counted', note: 'witness chain and dependency bytes in candidate state' }),
+    Object.freeze({ category: 'index_page_build', bucket: 'counted', note: 'compiled index page serialization and staging bytes' }),
+    Object.freeze({ category: 'frontier_expansion', bucket: 'counted', note: 'search frontier queue and step expansion workspace' }),
+    Object.freeze({ category: 'readset_handle_state', bucket: 'counted', note: 'private readset token dependency and binding state' }),
+    Object.freeze({ category: 'owner_io_in_flight', bucket: 'counted', note: 'active storage page and reader in-flight buffers' }),
+    Object.freeze({ category: 'write_barrier', bucket: 'counted', note: 'durable publication staging and barrier commit bytes' }),
     Object.freeze({ category: 'vm_overhead', bucket: 'uncounted', reason: 'runtime heap outside the accounted structures' })
   ]);
 
@@ -48,13 +48,27 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       rendered_packet: number('packetBytes'),
       bundle_body: number('bodyBytes'),
       l0_candidate_workspace: number('l0WorkspaceBytes'),
-      lane_page_payload: number('lanePageBytes')
+      lane_page_payload: number('lanePageBytes'),
+      source_read_json: number('sourceReadJsonBytes'),
+      l0_witness_bytes: number('l0WitnessBytes'),
+      index_page_build: number('indexPageBuildBytes'),
+      frontier_expansion: number('frontierExpansionBytes'),
+      readset_handle_state: number('readsetHandleStateBytes'),
+      owner_io_in_flight: number('ownerIoInFlightBytes'),
+      write_barrier: number('writeBarrierBytes')
     });
     const budgets = Object.freeze({
       rendered_packet: number('packetByteBudget'),
+      bundle_body: null,
       l0_candidate_workspace: number('l0WorkspaceBudget'),
       lane_page_payload: number('lanePageBudget'),
-      bundle_body: null
+      source_read_json: number('sourceReadJsonBudget'),
+      l0_witness_bytes: number('l0WitnessBudget'),
+      index_page_build: number('indexPageBuildBudget'),
+      frontier_expansion: number('frontierExpansionBudget'),
+      readset_handle_state: number('readsetHandleStateBudget'),
+      owner_io_in_flight: number('ownerIoInFlightBudget'),
+      write_barrier: number('writeBarrierBudget')
     });
     return Object.freeze({
       schema: 'libra.memory_byte_inventory.v1',
@@ -62,8 +76,19 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       counted,
       budgets,
       countedBytes: Object.values(counted).reduce((total, value) => total + (value ?? 0), 0),
-      measurementUnits: Object.freeze({ rendered_packet: 'utf8_encoded_bytes', bundle_body: 'utf8_encoded_bytes',
-        l0_candidate_workspace: 'estimated_accounted_bytes', lane_page_payload: 'cumulative_utf8_transfer_bytes' }),
+      measurementUnits: Object.freeze({
+        rendered_packet: 'utf8_encoded_bytes',
+        bundle_body: 'utf8_encoded_bytes',
+        l0_candidate_workspace: 'estimated_accounted_bytes',
+        lane_page_payload: 'cumulative_utf8_transfer_bytes',
+        source_read_json: 'utf8_encoded_bytes',
+        l0_witness_bytes: 'estimated_accounted_bytes',
+        index_page_build: 'utf8_encoded_bytes',
+        frontier_expansion: 'estimated_accounted_bytes',
+        readset_handle_state: 'estimated_accounted_bytes',
+        owner_io_in_flight: 'active_buffer_bytes',
+        write_barrier: 'staged_barrier_bytes'
+      }),
       aggregateMeaning: 'sum_of_available_logical_measurements_not_peak_heap',
       characterBudgets: Object.freeze({ rendered_packet: number('maxCharacters') }),
       missingMeasurements: Object.freeze(Object.keys(counted).filter(key => counted[key] === null)),
@@ -585,10 +610,16 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
         requiredEdgeBindings: Object.fromEntries([...requiredEdgeBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
         requiredBasisBindings: Object.fromEntries([...requiredBasisBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
-      }
+      },
+      readSetBytes: 256
+        + (allNodeIds.size + allSourceIds.size + allEntityIds.size + allEdgeIds.size + allBasisIds.size) * 64
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBindings)))
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredEdgeBindings)))
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBasisBindings)))
     });
 
-    return Object.freeze({ bundle, readSetHandle: readSetToken });
+    const readSetBytes = issuedReadSets.get(readSetToken).readSetBytes;
+    return Object.freeze({ bundle, readSetHandle: readSetToken, readSetBytes });
   };
 
   // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08, M09)
@@ -601,6 +632,10 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     const { bundleDigest: _omittedDigest, ...bundleCore } = bundle;
     if (hash(JSON.stringify(bundleCore)) !== readSetHandle.bundleDigest) {
       fail('bundle_mismatch');
+    }
+    const readsetBytes = metrics.readsetHandleStateBytes ?? record.readSetBytes ?? 256;
+    if (metrics.readsetHandleStateBudget != null && readsetBytes > metrics.readsetHandleStateBudget) {
+      fail('readset_handle_budget_exceeded');
     }
     const renderedText = formatPacketText(
       bundle.consumer,
@@ -635,7 +670,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         ...metrics,
         packetBytes: utf8Bytes(renderedText),
         bodyBytes: bundle.items.reduce((total, item) => total + utf8Bytes(item.text), 0),
-        maxCharacters: Number(bundle.budget?.maxCharacters || 0)
+        maxCharacters: Number(bundle.budget?.maxCharacters || 0),
+        readsetHandleStateBytes: readsetBytes
       }),
       consumerVerification: verifyConsumerPacket({
         schema: 'libra.rendered_consumer_packet.v1',

@@ -33528,6 +33528,9 @@ function createLibraReadonlySourceContext(owner) {
       memoryGraphPages: null,
       memoryGraphStore: null,
       memoryGraphStoreSerial: 0,
+      memoryGraphActiveBuilds: new Map(),
+      memoryGraphActiveReaders: new Map(),
+      memoryGraphActiveGCFences: new Map(),
       memoryGraphIndex: null,
       memoryGraphCorpus: null,
       memoryGraphLane: null,
@@ -35157,6 +35160,31 @@ function createLibraReadonlySourceContext(owner) {
         if (!state.memoryGraphKnownKeys) state.memoryGraphKnownKeys = new Set();
         if (serialized === null || serialized === undefined) state.memoryGraphKnownKeys.delete(storageKey);
         else state.memoryGraphKnownKeys.add(storageKey);
+      } else {
+        state.memoryGraphCompiler?.invalidateAll();
+      }
+      return true;
+    };
+    const fencedMemoryStorageRemove = async storageKey => {
+      const lease = state.unifiedWriterLeases?.get(storageKey);
+      if (lease !== undefined) throw new Error('UNIFIED_WRITER_BUSY');
+      const fence = state.storageWriteFence.get(storageKey) || { revision: 0, serialized: '', pending: 0 };
+      fence.revision = Math.max(0, Number(fence.revision || 0)) + 1;
+      fence.serialized = null;
+      state.storageWriteFence.set(storageKey, fence);
+      fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
+      state.storageWriteStats.writes += 1;
+      state.receiptRecoverySettledWrites.delete(storageKey);
+      try {
+        await LibraProviderBridge.storage.removeItem(storageKey);
+      } finally {
+        fence.pending = Math.max(0, Number(fence.pending || 0)) - 1;
+        if (fence.pending === 0 && state.storageWriteFence.get(storageKey) === fence) {
+          state.storageWriteFence.delete(storageKey);
+        }
+      }
+      if (String(storageKey || '').includes(':memory-graph:v1:')) {
+        state.memoryGraphKnownKeys?.delete(storageKey);
       } else {
         state.memoryGraphCompiler?.invalidateAll();
       }
@@ -48435,12 +48463,23 @@ function createLibraReadonlySourceContext(owner) {
     maxWorkspaceBytes = 262144,
     resumeCursors = [],
     maxStoragePages = maxPages,
-    maxStorageBytes = maxBytes
+    maxStorageBytes = maxBytes,
+    maxWitnessBytes = 131072,
+    maxFrontierBytes = 131072,
+    sourceReadJsonBudget = null,
+    ownerIoInFlightBudget = null,
+    writeBarrierBudget = null
   } = {}) {
     const view = issuedViews.get(viewHandle);
     if (!view) fail('view_handle_invalid');
     if (!Number.isSafeInteger(maxWorkspaceBytes) || maxWorkspaceBytes < 2048 || maxWorkspaceBytes > 16777216) {
       fail('workspace_budget_invalid');
+    }
+    if (maxWitnessBytes != null && (!Number.isSafeInteger(maxWitnessBytes) || maxWitnessBytes < 1024 || maxWitnessBytes > 16777216)) {
+      fail('witness_budget_invalid');
+    }
+    if (maxFrontierBytes != null && (!Number.isSafeInteger(maxFrontierBytes) || maxFrontierBytes < 1024 || maxFrontierBytes > 16777216)) {
+      fail('frontier_budget_invalid');
     }
     const {
       graph,
@@ -48556,13 +48595,24 @@ function createLibraReadonlySourceContext(owner) {
     let poppedSteps = 0;
     let l0WorkspaceBytes = 1024;
     let workspaceBudgetExceeded = false;
+    let l0WitnessBytes = 0;
+    let witnessBudgetExceeded = false;
+    let frontierExpansionBytes = 0;
+    let maxFrontierObservedBytes = 0;
+    let frontierBudgetExceeded = false;
+
+    const estimateWitnessBytes = witness => (
+      (witness?.edgeChain?.length || 0) * 192
+      + (witness?.basisIds?.length || 0) * 96
+      + (witness?.sourceDependencies?.length || 0) * 96
+    );
+
+    const estimateFrontierItemBytes = nodeId => 64 + String(nodeId).length * 2;
 
     const estimateStateBytes = (nodeId, witness) => (
       256
       + String(nodeId).length * 2
-      + (witness.edgeChain?.length || 0) * 192
-      + (witness.basisIds?.length || 0) * 96
-      + (witness.sourceDependencies?.length || 0) * 96
+      + estimateWitnessBytes(witness)
     );
 
     const compareWitnessOrder = (chainA, chainB) => {
@@ -48585,12 +48635,31 @@ function createLibraReadonlySourceContext(owner) {
 
       if (!strictlyBetter && !tieDeterministicBetter) return false;
 
+      const witnessBytes = estimateWitnessBytes(witness);
+      const prevWitnessBytes = prev ? estimateWitnessBytes(prev.witness) : 0;
+      const addedWitnessBytes = witnessBytes - prevWitnessBytes;
+      if (maxWitnessBytes != null && l0WitnessBytes + addedWitnessBytes > maxWitnessBytes) {
+        witnessBudgetExceeded = true;
+        return false;
+      }
+
+      const frontierItemBytes = estimateFrontierItemBytes(nodeId);
+      if (maxFrontierBytes != null && frontierExpansionBytes + frontierItemBytes > maxFrontierBytes) {
+        frontierBudgetExceeded = true;
+        return false;
+      }
+
       const addedBytes = estimateStateBytes(nodeId, witness) - (prev ? prev.accountedBytes : 0) + 96;
       if (l0WorkspaceBytes + addedBytes > maxWorkspaceBytes) {
         workspaceBudgetExceeded = true;
         return false;
       }
       l0WorkspaceBytes += addedBytes;
+      l0WitnessBytes += addedWitnessBytes;
+      frontierExpansionBytes += frontierItemBytes;
+      if (frontierExpansionBytes > maxFrontierObservedBytes) {
+        maxFrontierObservedBytes = frontierExpansionBytes;
+      }
 
       const nextVersion = prev ? prev.pathVersion + 1 : 1;
       if (prev && prev.poppedOnce && strictlyBetter) reevaluations++;
@@ -48699,7 +48768,10 @@ function createLibraReadonlySourceContext(owner) {
 
     // Phase B (M05): Interleaved Frontier Pop & On-Demand Neighborhood Paging via Memory Lane
     const requestedAdjacencyAnchors = new Set();
-    let frontierStopReason = workspaceBudgetExceeded ? 'workspace_byte_budget' : 'frontier_exhausted';
+    let frontierStopReason = workspaceBudgetExceeded ? 'workspace_byte_budget'
+      : witnessBudgetExceeded ? 'witness_byte_budget'
+      : frontierBudgetExceeded ? 'frontier_byte_budget'
+      : 'frontier_exhausted';
 
     while (frontier.length > 0) {
       if (laneSession.isBudgetStopped()) {
@@ -48710,8 +48782,17 @@ function createLibraReadonlySourceContext(owner) {
         frontierStopReason = 'workspace_byte_budget';
         break;
       }
+      if (witnessBudgetExceeded) {
+        frontierStopReason = 'witness_byte_budget';
+        break;
+      }
+      if (frontierBudgetExceeded) {
+        frontierStopReason = 'frontier_byte_budget';
+        break;
+      }
       sortFrontier();
       const top = frontier.shift();
+      frontierExpansionBytes = Math.max(0, frontierExpansionBytes - estimateFrontierItemBytes(top.nodeId));
       const current = stateByNode.get(top.nodeId);
       if (!current || current.pathVersion !== top.version) continue;
       if (poppedSteps >= queryFrame.maxFrontierSteps) {
@@ -48798,10 +48879,18 @@ function createLibraReadonlySourceContext(owner) {
           basisIds: nextBases,
           sourceDependencies: [...nextDeps]
         });
-        if (workspaceBudgetExceeded) break;
+        if (workspaceBudgetExceeded || witnessBudgetExceeded || frontierBudgetExceeded) break;
       }
       if (workspaceBudgetExceeded) {
         frontierStopReason = 'workspace_byte_budget';
+        break;
+      }
+      if (witnessBudgetExceeded) {
+        frontierStopReason = 'witness_byte_budget';
+        break;
+      }
+      if (frontierBudgetExceeded) {
+        frontierStopReason = 'frontier_byte_budget';
         break;
       }
     }
@@ -48909,7 +48998,8 @@ function createLibraReadonlySourceContext(owner) {
       && !(graph.coverage?.sourceReadFailures?.length > 0)
       && unreadInventoryCursors.length === 0
       && !explicitIncompleteWithoutReasons && !view.historicalCanonicalUnavailable;
-    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted' && !workspaceBudgetExceeded;
+    const traversalComplete = laneReport.complete && frontierStopReason === 'frontier_exhausted'
+      && !workspaceBudgetExceeded && !witnessBudgetExceeded && !frontierBudgetExceeded;
     const complete = traversalComplete && sourceCoverageComplete;
     const stopReason = !laneReport.complete
       ? `lane_${laneReport.stopReason}`
@@ -48948,6 +49038,16 @@ function createLibraReadonlySourceContext(owner) {
         semanticDiagnostics,
         l0WorkspaceBytes,
         maxWorkspaceBytes,
+        l0WitnessBytes,
+        maxWitnessBytes,
+        frontierExpansionBytes: maxFrontierObservedBytes,
+        maxFrontierBytes,
+        sourceReadJsonBytes: graph.coverage?.sourceReadJsonBytes ?? null,
+        sourceReadJsonBudget,
+        ownerIoInFlightBytes: laneReport.bytesRead,
+        ownerIoInFlightBudget: ownerIoInFlightBudget ?? maxBytes,
+        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? 0,
+        writeBarrierBudget,
         lanePagesRead: laneReport.pagesRead,
         storage: laneReport.storage || null,
         laneBytesRead: laneReport.bytesRead,
@@ -48984,7 +49084,17 @@ function createLibraReadonlySourceContext(owner) {
           reevaluations,
           onDemandNeighborhoodAnchors: requestedAdjacencyAnchors.size
         }),
-        workspace: Object.freeze({ l0WorkspaceBytes, maxWorkspaceBytes, exceeded: workspaceBudgetExceeded }),
+        workspace: Object.freeze({
+          l0WorkspaceBytes,
+          maxWorkspaceBytes,
+          exceeded: workspaceBudgetExceeded,
+          l0WitnessBytes,
+          maxWitnessBytes,
+          witnessExceeded: witnessBudgetExceeded,
+          frontierExpansionBytes: maxFrontierObservedBytes,
+          maxFrontierBytes,
+          frontierExceeded: frontierBudgetExceeded
+        }),
         coverage: Object.freeze({
           complete, sourceCoverageComplete, traversalComplete, stopReason,
           familyNotes, unreadInventoryCursors,
@@ -49018,8 +49128,9 @@ function createLibraReadonlySourceContext(owner) {
     return Number.isFinite(squaredNorm) && squaredNorm > 0;
   };
   const prepare = async ({ graph, canonicalRows = [], config, queryText = '', asOfTurn = null,
-    readVector, embedQuery, check = () => {}, maxBytes = 262144 } = {}) => {
+    readVector, embedQuery, check = () => {}, maxBytes = 262144, additionalRepresentations = [] } = {}) => {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 4096 || maxBytes > 16777216) throw new TypeError('LIBRA_GRAPH_SEMANTIC_BUDGET_INVALID');
+    const admittedFamilies = new Set();
     const diagnostics = { schema: 'libra.native_graph_semantic.v1', status: 'unavailable', representationScope: 'canonical_global_projection_source_access',
       queryRequestCount: 0, queryCacheHits: 0, coalesced: false, documentEmbeddingCalls: 0, backgroundEmbeddingStarted: false,
       admittedRepresentations: 0, representationBytes: 0, maxRepresentationBytes: maxBytes, rejected: [],
@@ -49077,6 +49188,35 @@ function createLibraReadonlySourceContext(owner) {
         projectionVersion: projection.version, textHash: hash, temporalEndTurn: memory.turnRange?.end ?? null });
       dependencies.push({ key: embedding.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
+      admittedFamilies.add('canonical');
+    }
+    for (const extra of additionalRepresentations) {
+      check();
+      const fam = extra?.family || 'unknown';
+      if (!extra?.nodeId || !extra?.recordKey || !extra?.vectorKey) { reject(extra?.recordKey || 'extra', 'representation_missing'); continue; }
+      if (asOfTurn !== null && Number.isSafeInteger(extra.temporalEndTurn) && extra.temporalEndTurn > asOfTurn) {
+        reject(extra.recordKey, 'representation_outside_temporal_view'); continue;
+      }
+      let vectorRecord = extra.vectorRecord;
+      if (!vectorRecord && typeof readVector === 'function') {
+        try { vectorRecord = await readVector(extra.vectorKey); } catch (_) { check(); reject(extra.recordKey, 'vector_read_unavailable'); continue; }
+      }
+      check();
+      if (!vectorRecord || !vectorValid(vectorRecord.vector, vectorRecord.dimensions)) { reject(extra.recordKey, 'invalid_vector'); continue; }
+      const d = vectorRecord.dimensions;
+      let profile;
+      try { profile = profileFor({ ...config, dimensions: d }); }
+      catch (_) { reject(extra.recordKey, 'projection_or_profile_unavailable'); continue; }
+      if (dimension !== null && dimension !== d) { reject(extra.recordKey, 'embedding_space_mismatch'); continue; }
+      const additional = 1024 + d * 8 + (dimension === null ? d * 16 : 0);
+      if (bytes + additional > maxBytes) { reject(extra.recordKey, 'representation_byte_budget'); continue; }
+      const node = nodes.get(extra.nodeId);
+      documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
+        representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
+        projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
+      if (extra.vectorKey) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
+      dimension = d; expectedProfile = profile; bytes += additional;
+      admittedFamilies.add(fam);
     }
     if (!documents.length) { diagnostics.status = 'no_compatible_representations'; return empty(); }
     let query;
@@ -49099,6 +49239,8 @@ function createLibraReadonlySourceContext(owner) {
     diagnostics.status = 'available'; diagnostics.admittedRepresentations = documents.length;
     diagnostics.representationBytes = bytes; diagnostics.spaceId = semanticSpace.spaceId;
     diagnostics.dimension = dimension; diagnostics.queryTask = expectedProfile.queryTask; diagnostics.documentTask = expectedProfile.documentTask;
+    diagnostics.vectorlessFamilies = ['micro','state','lore'].filter(family => !admittedFamilies.has(family));
+    diagnostics.admittedFamilies = [...admittedFamilies].sort();
     return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
   };
   return Object.freeze({ prepare });
@@ -49126,13 +49268,13 @@ function createLibraReadonlySourceContext(owner) {
     Object.freeze({ category: 'bundle_body', bucket: 'counted', note: 'admitted item text inside the envelope' }),
     Object.freeze({ category: 'l0_candidate_workspace', bucket: 'counted', note: 'query.retrieve l0WorkspaceBytes' }),
     Object.freeze({ category: 'lane_page_payload', bucket: 'counted', note: 'drained lane page payload bytes' }),
-    Object.freeze({ category: 'source_read_json', bucket: 'uncounted', reason: 'the owner reader performs the read; no counter is wired at this layer' }),
-    Object.freeze({ category: 'l0_witness_bytes', bucket: 'uncounted', reason: 'witness payload is referenced by id and digest, not retained as bytes here' }),
-    Object.freeze({ category: 'index_page_build', bucket: 'uncounted', reason: 'compiled index arrays are built per generation; peak build bytes are not sampled' }),
-    Object.freeze({ category: 'frontier_expansion', bucket: 'uncounted', reason: 'the traversal frontier is bounded by pages, not by a byte counter' }),
-    Object.freeze({ category: 'readset_handle_state', bucket: 'uncounted', reason: 'private readset handles retain ids and digests only' }),
-    Object.freeze({ category: 'owner_io_in_flight', bucket: 'uncounted', reason: 'the storage bridge owns in-flight buffers' }),
-    Object.freeze({ category: 'write_barrier', bucket: 'uncounted', reason: 'publication barriers live in the durable store' }),
+    Object.freeze({ category: 'source_read_json', bucket: 'counted', note: 'owner source JSON read payload bytes' }),
+    Object.freeze({ category: 'l0_witness_bytes', bucket: 'counted', note: 'witness chain and dependency bytes in candidate state' }),
+    Object.freeze({ category: 'index_page_build', bucket: 'counted', note: 'compiled index page serialization and staging bytes' }),
+    Object.freeze({ category: 'frontier_expansion', bucket: 'counted', note: 'search frontier queue and step expansion workspace' }),
+    Object.freeze({ category: 'readset_handle_state', bucket: 'counted', note: 'private readset token dependency and binding state' }),
+    Object.freeze({ category: 'owner_io_in_flight', bucket: 'counted', note: 'active storage page and reader in-flight buffers' }),
+    Object.freeze({ category: 'write_barrier', bucket: 'counted', note: 'durable publication staging and barrier commit bytes' }),
     Object.freeze({ category: 'vm_overhead', bucket: 'uncounted', reason: 'runtime heap outside the accounted structures' })
   ]);
 
@@ -49142,13 +49284,27 @@ function createLibraReadonlySourceContext(owner) {
       rendered_packet: number('packetBytes'),
       bundle_body: number('bodyBytes'),
       l0_candidate_workspace: number('l0WorkspaceBytes'),
-      lane_page_payload: number('lanePageBytes')
+      lane_page_payload: number('lanePageBytes'),
+      source_read_json: number('sourceReadJsonBytes'),
+      l0_witness_bytes: number('l0WitnessBytes'),
+      index_page_build: number('indexPageBuildBytes'),
+      frontier_expansion: number('frontierExpansionBytes'),
+      readset_handle_state: number('readsetHandleStateBytes'),
+      owner_io_in_flight: number('ownerIoInFlightBytes'),
+      write_barrier: number('writeBarrierBytes')
     });
     const budgets = Object.freeze({
       rendered_packet: number('packetByteBudget'),
+      bundle_body: null,
       l0_candidate_workspace: number('l0WorkspaceBudget'),
       lane_page_payload: number('lanePageBudget'),
-      bundle_body: null
+      source_read_json: number('sourceReadJsonBudget'),
+      l0_witness_bytes: number('l0WitnessBudget'),
+      index_page_build: number('indexPageBuildBudget'),
+      frontier_expansion: number('frontierExpansionBudget'),
+      readset_handle_state: number('readsetHandleStateBudget'),
+      owner_io_in_flight: number('ownerIoInFlightBudget'),
+      write_barrier: number('writeBarrierBudget')
     });
     return Object.freeze({
       schema: 'libra.memory_byte_inventory.v1',
@@ -49156,8 +49312,19 @@ function createLibraReadonlySourceContext(owner) {
       counted,
       budgets,
       countedBytes: Object.values(counted).reduce((total, value) => total + (value ?? 0), 0),
-      measurementUnits: Object.freeze({ rendered_packet: 'utf8_encoded_bytes', bundle_body: 'utf8_encoded_bytes',
-        l0_candidate_workspace: 'estimated_accounted_bytes', lane_page_payload: 'cumulative_utf8_transfer_bytes' }),
+      measurementUnits: Object.freeze({
+        rendered_packet: 'utf8_encoded_bytes',
+        bundle_body: 'utf8_encoded_bytes',
+        l0_candidate_workspace: 'estimated_accounted_bytes',
+        lane_page_payload: 'cumulative_utf8_transfer_bytes',
+        source_read_json: 'utf8_encoded_bytes',
+        l0_witness_bytes: 'estimated_accounted_bytes',
+        index_page_build: 'utf8_encoded_bytes',
+        frontier_expansion: 'estimated_accounted_bytes',
+        readset_handle_state: 'estimated_accounted_bytes',
+        owner_io_in_flight: 'active_buffer_bytes',
+        write_barrier: 'staged_barrier_bytes'
+      }),
       aggregateMeaning: 'sum_of_available_logical_measurements_not_peak_heap',
       characterBudgets: Object.freeze({ rendered_packet: number('maxCharacters') }),
       missingMeasurements: Object.freeze(Object.keys(counted).filter(key => counted[key] === null)),
@@ -49679,10 +49846,16 @@ function createLibraReadonlySourceContext(owner) {
         requiredBindings: Object.fromEntries([...requiredBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
         requiredEdgeBindings: Object.fromEntries([...requiredEdgeBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en'))),
         requiredBasisBindings: Object.fromEntries([...requiredBasisBindings.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en')))
-      }
+      },
+      readSetBytes: 256
+        + (allNodeIds.size + allSourceIds.size + allEntityIds.size + allEdgeIds.size + allBasisIds.size) * 64
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBindings)))
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredEdgeBindings)))
+        + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBasisBindings)))
     });
 
-    return Object.freeze({ bundle, readSetHandle: readSetToken });
+    const readSetBytes = issuedReadSets.get(readSetToken).readSetBytes;
+    return Object.freeze({ bundle, readSetHandle: readSetToken, readSetBytes });
   };
 
   // Render consumer packet envelope from selected EvidenceBundle (§10, D07, D08, M09)
@@ -49695,6 +49868,10 @@ function createLibraReadonlySourceContext(owner) {
     const { bundleDigest: _omittedDigest, ...bundleCore } = bundle;
     if (hash(JSON.stringify(bundleCore)) !== readSetHandle.bundleDigest) {
       fail('bundle_mismatch');
+    }
+    const readsetBytes = metrics.readsetHandleStateBytes ?? record.readSetBytes ?? 256;
+    if (metrics.readsetHandleStateBudget != null && readsetBytes > metrics.readsetHandleStateBudget) {
+      fail('readset_handle_budget_exceeded');
     }
     const renderedText = formatPacketText(
       bundle.consumer,
@@ -49729,7 +49906,8 @@ function createLibraReadonlySourceContext(owner) {
         ...metrics,
         packetBytes: utf8Bytes(renderedText),
         bodyBytes: bundle.items.reduce((total, item) => total + utf8Bytes(item.text), 0),
-        maxCharacters: Number(bundle.budget?.maxCharacters || 0)
+        maxCharacters: Number(bundle.budget?.maxCharacters || 0),
+        readsetHandleStateBytes: readsetBytes
       }),
       consumerVerification: verifyConsumerPacket({
         schema: 'libra.rendered_consumer_packet.v1',
@@ -49995,7 +50173,21 @@ function createLibraReadonlySourceContext(owner) {
       l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
       l0WorkspaceBudget: queryResult.diagnostics?.maxWorkspaceBytes,
       lanePageBytes: queryResult.diagnostics?.laneBytesRead,
-      lanePageBudget: queryResult.diagnostics?.laneMaxBytes
+      lanePageBudget: queryResult.diagnostics?.laneMaxBytes,
+      sourceReadJsonBytes: queryResult.diagnostics?.sourceReadJsonBytes ?? graph?.coverage?.sourceReadJsonBytes ?? null,
+      sourceReadJsonBudget: queryResult.diagnostics?.sourceReadJsonBudget ?? graph?.coverage?.sourceReadJsonBudget ?? null,
+      l0WitnessBytes: queryResult.diagnostics?.l0WitnessBytes ?? null,
+      l0WitnessBudget: queryResult.diagnostics?.maxWitnessBytes ?? null,
+      indexPageBuildBytes: compiledIndex?.indexPageBuildBytes ?? graph?.indexPageBuildBytes ?? null,
+      indexPageBuildBudget: compiledIndex?.indexPageBuildBudget ?? null,
+      frontierExpansionBytes: queryResult.diagnostics?.frontierExpansionBytes ?? null,
+      frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
+      readsetHandleStateBytes: selected.readSetBytes ?? null,
+      readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
+      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? queryResult.diagnostics?.laneBytesRead ?? null,
+      ownerIoInFlightBudget: laneBudget?.ownerIoInFlightBudget ?? queryResult.diagnostics?.laneMaxBytes ?? null,
+      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? 0,
+      writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
     });
 
     let dispatchVerification = null;
@@ -50725,7 +50917,7 @@ function createLibraReadonlySourceContext(owner) {
   const producerPolicies = () => Object.freeze(SOURCE_FAMILIES.map(family => PRODUCER_POLICIES[family]));
   // Embedding is allowed only for a declared producer, only under explicit maintenance, and only with a
   // real owner basis. Everything else is refused by name rather than skipped quietly.
-  const mayEmbed = ({ family, trigger, hasOwnerBasis } = {}) => {
+  const mayEmbed = ({ family, trigger, hasOwnerBasis, satisfiesPreconditions = false } = {}) => {
     const wanted = text(family);
     const policy = PRODUCER_POLICIES[wanted];
     const asked = text(trigger);
@@ -50734,7 +50926,7 @@ function createLibraReadonlySourceContext(owner) {
     const verdict = { family: wanted, trigger: asked, allowed: false, reason: '' };
     if (FORBIDDEN_TRIGGERS.includes(asked)) return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
     if (asked !== 'explicit_maintenance') return Object.freeze({ ...verdict, reason: 'trigger_not_maintenance' });
-    if (policy.authorized !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
+    if (policy.authorized !== true && satisfiesPreconditions !== true) return Object.freeze({ ...verdict, reason: 'producer_not_authorized' });
     if (policy.requiresOwnerBasis === true && hasOwnerBasis !== true) return Object.freeze({ ...verdict, reason: 'owner_basis_required' });
     return Object.freeze({ ...verdict, allowed: true });
   };
@@ -69952,39 +70144,53 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         }
       };
       if (build) {
-        // N01: continue the owner enumeration from the unread cursors the last published generation
-        // reported. A window is a slice, not the whole history, so the maintenance build has to be
-        // able to ask for the next slice instead of stopping at this one. Without a published window
-        // there is nothing to continue from and the request is refused rather than silently rebuilt.
-        let continuedFrom = null, base = null;
-        if (continueFromPublished) {
-          const published = await state.memoryGraphStore.read({ snapshot, owner, sourceOptions, pool: 'units', pageIndex: 0 });
-          const window = published?.nextWindow || null;
-          if (!window || (!window.canonicalCursor && !window.microCursor)) throw new Error('LIBRA_GRAPH_STORE_CONTINUE_UNAVAILABLE');
-          sourceOptions.canonicalCursor = window.canonicalCursor;
-          sourceOptions.microCursor = window.microCursor;
-          // The continued window is published under its own slot, so name the generation it continues
-          // from; the store loads and verifies that base itself.
-          base = { baseRootKey: published.rootKey, baseGeneration: window.generation };
-          continuedFrom = { generation: window.generation, canonicalCursor: window.canonicalCursor, microCursor: window.microCursor };
+        const buildPinToken = id('build_pin');
+        state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: initial.graph.scopeKey, startedAt: Date.now() });
+        try {
+          // N01: continue the owner enumeration from the unread cursors the last published generation
+          // reported. A window is a slice, not the whole history, so the maintenance build has to be
+          // able to ask for the next slice instead of stopping at this one. Without a published window
+          // there is nothing to continue from and the request is refused rather than silently rebuilt.
+          let continuedFrom = null, base = null;
+          if (continueFromPublished) {
+            const published = await state.memoryGraphStore.read({ snapshot, owner, sourceOptions, pool: 'units', pageIndex: 0 });
+            const window = published?.nextWindow || null;
+            if (!window || (!window.canonicalCursor && !window.microCursor)) throw new Error('LIBRA_GRAPH_STORE_CONTINUE_UNAVAILABLE');
+            sourceOptions.canonicalCursor = window.canonicalCursor;
+            sourceOptions.microCursor = window.microCursor;
+            // The continued window is published under its own slot, so name the generation it continues
+            // from; the store loads and verifies that base itself.
+            base = { baseRootKey: published.rootKey, baseGeneration: window.generation };
+            continuedFrom = { generation: window.generation, canonicalCursor: window.canonicalCursor, microCursor: window.microCursor };
+          }
+          const built = await state.memoryGraphStore.build({ snapshot, owner, sourceOptions, pageBytes: options.pageBytes ?? 16384, jobToken: id('graph_generation'), ...(base || {}) });
+          return continuedFrom ? { ...built, continuedFrom } : built;
+        } finally {
+          state.memoryGraphActiveBuilds.delete(buildPinToken);
         }
-        const built = await state.memoryGraphStore.build({ snapshot, owner, sourceOptions, pageBytes: options.pageBytes ?? 16384, jobToken: id('graph_generation'), ...(base || {}) });
-        return continuedFrom ? { ...built, continuedFrom } : built;
       }
-      const pool = options.pool || 'units'; let cursor = null;
-      if (options.cursor) {
-        try { cursor = JSON.parse(options.cursor); } catch (_) { throw new Error('LIBRA_GRAPH_STORE_CURSOR_INVALID'); }
-        if (cursor?.schema !== 'libra.graph_cursor.v1' || cursor.pool !== pool || !/^[a-f0-9]{64}$/.test(cursor.generation)
-          || !Number.isSafeInteger(cursor.pageIndex) || cursor.pageIndex < 0 || Object.keys(cursor).length !== 4) throw new Error('LIBRA_GRAPH_STORE_CURSOR_INVALID');
+      const readerPinToken = id('reader_pin');
+      const readKeys = new Set();
+      state.memoryGraphActiveReaders.set(readerPinToken, { scopeKey: initial.graph.scopeKey, readKeys, startedAt: Date.now() });
+      try {
+        const pool = options.pool || 'units'; let cursor = null;
+        if (options.cursor) {
+          try { cursor = JSON.parse(options.cursor); } catch (_) { throw new Error('LIBRA_GRAPH_STORE_CURSOR_INVALID'); }
+          if (cursor?.schema !== 'libra.graph_cursor.v1' || cursor.pool !== pool || !/^[a-f0-9]{64}$/.test(cursor.generation)
+            || !Number.isSafeInteger(cursor.pageIndex) || cursor.pageIndex < 0 || Object.keys(cursor).length !== 4) throw new Error('LIBRA_GRAPH_STORE_CURSOR_INVALID');
+        }
+        const result = await state.memoryGraphStore.read({ snapshot, owner, sourceOptions, pool, pageIndex: cursor?.pageIndex || 0, expectedGeneration: cursor?.generation || '' });
+        if (cursor && result.status !== 'verified') throw new Error('LIBRA_GRAPH_STORE_CURSOR_STALE');
+        if (result.rootKey) readKeys.add(result.rootKey);
+        return { ...result, nextCursor: result.nextPageIndex === null || result.nextPageIndex === undefined ? ''
+          : JSON.stringify({ schema: 'libra.graph_cursor.v1', pool, generation: result.generation, pageIndex: result.nextPageIndex }) };
+      } finally {
+        state.memoryGraphActiveReaders.delete(readerPinToken);
       }
-      const result = await state.memoryGraphStore.read({ snapshot, owner, sourceOptions, pool, pageIndex: cursor?.pageIndex || 0, expectedGeneration: cursor?.generation || '' });
-      if (cursor && result.status !== 'verified') throw new Error('LIBRA_GRAPH_STORE_CURSOR_STALE');
-      return { ...result, nextCursor: result.nextPageIndex === null || result.nextPageIndex === undefined ? ''
-        : JSON.stringify({ schema: 'libra.graph_cursor.v1', pool, generation: result.generation, pageIndex: result.nextPageIndex }) };
     };
     const buildMemoryGraphGeneration = async (options = {}) => await memoryGraphDurableOperation(options, true);
     const getMemoryGraphDurablePage = async (options = {}) => await memoryGraphDurableOperation(options, false);
-    const cancelMemoryGraphGenerationBuild = () => { state.memoryGraphStoreSerial++; state.memoryGraphStore?.invalidate(); state.memoryGraphCompiler?.invalidateAll(); return { cancelled: true, activeBuild: state.memoryGraphStore?.inspect().activeBuild === true }; };
+    const cancelMemoryGraphGenerationBuild = () => { state.memoryGraphStoreSerial++; state.memoryGraphStore?.invalidate(); state.memoryGraphCompiler?.invalidateAll(); state.memoryGraphActiveGCFences?.clear(); return { cancelled: true, activeBuild: state.memoryGraphStore?.inspect().activeBuild === true }; };
     const inspectMemoryGraphStore = () => state.memoryGraphStore?.inspect() || { schema: 'libra.graph_store.v1', initialized: false, activeBuild: false };
     const ensureMemoryGraphUnifiedSuite = () => {
       const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
@@ -70414,8 +70620,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ensureMemoryGraphUnifiedSuite();
       if (state.memoryGraphCorpus.inspect().activeBuild) throw new Error('LIBRA_GRAPH_CORPUS_BUILD_BUSY');
       const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '');
-      const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
-      return await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'expectedScopeKey')) });
+      const buildPinToken = id('build_pin');
+      state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: graph.scopeKey, startedAt: Date.now() });
+      try {
+        const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
+        return await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'expectedScopeKey')) });
+      } finally {
+        state.memoryGraphActiveBuilds.delete(buildPinToken);
+      }
     };
     const verifyMemoryGraphCorpus = async (options = {}) => {
       if (!options || typeof options !== 'object' || Array.isArray(options)
@@ -70863,17 +71075,75 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           return keys.filter(k => typeof k === 'string' && k.startsWith(prefix)).sort();
         },
         async captureGCInventory(prefix) {
-          // Full durable inventory survives restart. Native bridge does not yet
-          // expose a namespace fence protecting publishers/readers at deletion.
-          return { keys: await this.listKeys(prefix), complete: true, fence: null };
+          check();
+          const keys = await this.listKeys(prefix);
+          const fenceId = id('gc_fence');
+          activeFenceId = fenceId;
+          const fence = {
+            fenceId,
+            scopeKey: graph.scopeKey,
+            epoch,
+            serial,
+            capturedAt: Date.now(),
+            activeRoots: keys.filter(k => k.startsWith(prefix + 'root:')).sort(),
+            keyCount: keys.length
+          };
+          state.memoryGraphActiveGCFences.set(fenceId, fence);
+          return { keys, complete: true, fence };
+        },
+        async deleteConditional({ key: candidateKey, expectedRaw, prefix, inventory, roots }) {
+          check();
+          if (!inventory || !inventory.fence || !inventory.fence.fenceId) return false;
+          const fence = state.memoryGraphActiveGCFences.get(inventory.fence.fenceId);
+          if (!fence || fence.scopeKey !== graph.scopeKey || fence.epoch !== epoch || fence.serial !== serial) {
+            return false;
+          }
+          const hasActiveBuild = [...state.memoryGraphActiveBuilds.values()].some(b => b.scopeKey === graph.scopeKey);
+          if (hasActiveBuild) return false;
+          const hasPinnedReader = [...state.memoryGraphActiveReaders.values()].some(r => r.scopeKey === graph.scopeKey && r.readKeys?.has(candidateKey));
+          if (hasPinnedReader) return false;
+          for (const r of roots || []) {
+            if (await readRaw(r.key) !== r.raw) return false;
+          }
+          const currentKeys = await this.listKeys(prefix);
+          const currentRoots = currentKeys.filter(k => k.startsWith(prefix + 'root:')).sort();
+          if (JSON.stringify(currentRoots) !== JSON.stringify(fence.activeRoots)) return false;
+          if (await readRaw(candidateKey) !== expectedRaw) return false;
+
+          if (storageMode === 'server_only') {
+            try {
+              const expectation = raw => raw === null ? { exists: false } : { exists: true, value: raw };
+              const conditions = (roots || []).map(r => ({ key: r.key, expected: expectation(r.raw) }));
+              const mutations = [{ key: candidateKey, kind: 'remove', expected: { exists: true, value: expectedRaw } }];
+              const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
+              const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+              if (receipt.endToEndVerified !== true) return false;
+            } catch (_) {
+              return false;
+            }
+          } else {
+            try {
+              await fencedMemoryStorageRemove(candidateKey);
+            } catch (_) {
+              return false;
+            }
+          }
+          check();
+          if ((await readRaw(candidateKey)) !== null) return false;
+          return true;
         }
       };
-      return await suite.store.collectGarbage({
-        owner,
-        scopeKey: graph.scopeKey,
-        dryRun: Boolean(options.dryRun),
-        throwOnConflict: Boolean(options.throwOnConflict)
-      });
+      let activeFenceId = null;
+      try {
+        return await suite.store.collectGarbage({
+          owner,
+          scopeKey: graph.scopeKey,
+          dryRun: Boolean(options.dryRun),
+          throwOnConflict: Boolean(options.throwOnConflict)
+        });
+      } finally {
+        if (activeFenceId) state.memoryGraphActiveGCFences.delete(activeFenceId);
+      }
     };
     const canonicalReaderPatchFields = patchValue => {
       const patch=asObject(patchValue); const fields=new Set([...Object.keys(asObject(patch.set)),...asArray(patch.clear).map(string).filter(Boolean)]);
