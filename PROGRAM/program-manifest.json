@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T00:38:58.062Z",
+  "generatedAt": "2026-10-15T01:21:53.584Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2646,8 +2646,8 @@
       "bytes": 83738
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "ac706aa164811ba45c9b265659a410ef83a842567f30f05a57466170934c0000",
-      "bytes": 45065
+      "sha256": "803e4cae4245f1a91c192cb20495ad5037f53f94932705dc3025c9ae020e1fa0",
+      "bytes": 49212
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -7238,8 +7238,8 @@
       "bytes": 4271
     },
     "tests/libra_input_writer_phase06_authority_runtime_test.cjs": {
-      "sha256": "17e48ee5927819c4064400729cfd8a0fd9474f478089929bb5fa772fdc20ace3",
-      "bytes": 2760
+      "sha256": "fc5b2d31a99100c71e06855b65cc004dbf20007f2415fbe164ed1dfae897767e",
+      "bytes": 3070
     },
     "tests/libra_input_writer_phase06_no_mutation_runtime_test.cjs": {
       "sha256": "dc1786e1eb9e2a86241814d5806b048faa8ddeee669a90ef049bd7c714d34f3c",

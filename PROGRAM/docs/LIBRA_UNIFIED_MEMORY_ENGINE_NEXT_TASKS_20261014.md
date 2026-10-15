@@ -256,3 +256,34 @@ SDK 원본 수정은 HAYAKU·Flashback에 내장했고, GRADIA는 소비자의 a
 
 실측: 6개 통과(`three_owner_consumer` 6, `server-read-adapter` 50, `patch_runtime` 3, `cross_project` 1, `worst_escape` 1, `composed` 1). GRADIA·SDK 계열 9/9, 그래프·정책·표시·N03 계열 32/32, 게이트·체크섬 통과.
 
+## 14. 전수 스윕과 귀속 (전체 회귀는 아직 이르다)
+
+`tests/*.cjs` 전수(1,230개; 레포 배치 대상은 `*_test.cjs`/`*.test.cjs` 1,189개)를 스위트당 150초 제한으로 돌려 **646개까지 확인**한 뒤 중단했다. 기능 작업이 진행 중인 시점의 전체 회귀는 릴리스 관문이고, 지금 필요한 정보는 **귀속**이었기 때문이다.
+
+**귀속 (레포 자체 배치로 검증)**: 실패군을 `main`(`a9549e05`, 브랜치 이전)과 현재 트리에서 **`run_regression_batch.py`로 각각 실행**해 비교했다. 원시 `node` 실행이 아니라 배치의 cwd·환경·타임아웃을 그대로 쓴 비교이며, 표본에서 원시 실행과 같은 결과가 나왔다(방법 차이 때문에 생긴 빨강이 아님).
+
+| 스위트 | main | 현재 | 원인 |
+| --- | --- | --- | --- |
+| `compute_gui_and_libra_open_latency_contract_test` | PASS | **FAIL** | `MemorySuiteLibraComputeBridge`가 트리에서 사라짐(`9c03c35`). GUI 연결 패널은 여전히 `computeBridge`를 소비 |
+| `compute_sdk_version_independence_test` | PASS | **FAIL** | 삭제된 `libra_recall_bm25f_compute_pilot_test.cjs` 참조 |
+| `engine_consistency_v2_runtime_test` | PASS | **FAIL** | `debugBuildRecallBm25fInput` 제거(`9c03c35`) |
+| `health_shared_owner_adapter_compatibility_test` | PASS | **FAIL** | LIBRA 캐시 repair가 현재 scope 캐시를 삭제하지 않음(다른 owner는 통과) |
+| `gradia_three_owner_connection_test` | PASS | **FAIL** | connect·동의 계약 변경 |
+| `gradia_three_owner_pipeline_test` | PASS | **FAIL** | owner·payload 계약 변경 |
+
+**환경 클래스(main에서도 실패)**: `build_plugins_refusal_exit_test`는 macOS `/private/var` vs `/var` 경로 문자열 차이, `build_plugins_artifact_libra_readiness_test`는 빌드 산출물 디렉터리 전제조건 부재다. `authority_core3_runtime`·`authority_initial_qualification`·`authority_libra_source_closure`(`.test`)는 main에서도 실제 테스트가 실패한다(`AUTHORITY_QUARANTINED` 등). 즉 **이 머신에서는 main도 초록이 아니다** — 이 머신에 이전 배치 로그(`FULL_TEST_EXECUTION_LOG_*.txt`)가 없어 "main 전체 초록" 주장 자체를 로컬에서 확인할 수는 없었다.
+
+| 뒤집힌 스위트 | 실패 형태 | 유형 |
+| --- | --- | --- |
+| `engine_consistency_v2_runtime_test` | `debugBuildRecallBm25fInput is not a function` | 퇴역 API 참조 (정책 stale) |
+| `compute_sdk_version_independence_test` | 삭제된 `libra_recall_bm25f_compute_pilot_test.cjs`를 실행 | 퇴역 스위트 참조 |
+| `compute_gui_and_libra_open_latency_contract_test` | `LibraMemoryCore must explicitly export its closure-owned Compute bridge` | export 계약 변경 — 확인 필요 |
+| `gradia_three_owner_connection_test` | UI Connect·동의 v2 단언 실패 | 연결 흐름 변경 — 재지정 필요 |
+| `gradia_three_owner_pipeline_test` | payload·owner 변경 단언 실패 | 읽기 경로 변경 — 재지정 필요 |
+| `health_shared_owner_adapter_compatibility_test` | 34개 중 1개 (cache repair 범위) | 확인 필요 (실제 결함 가능) |
+
+**추가 결함 (실측·귀속 확인)**: 모델 근거 블록에 내부 식별자·원시 JSON 누출.
+`9a61245`에서 항목 0개·누출 0종 → 현재 24항목·7종 id 누출(`ce_person_02c035f3`, `ce_world_*`), 2개 항목은 내부 JSON 통째. 위치는 생성 `tools/libra_memory_graph_readers.cjs:251` (`text: JSON.stringify(items[itemIndex])`)와 전달 `tools/libra_memory_graph_compiler.cjs:266-278`. `libra_input_writer_phase06_authority_runtime_test`의 `doesNotMatch /ce_/` 검사가 이 결함을 잡으므로 **그 스위트는 의도적으로 빨강**이다(옛 문구 단언만 새 문장으로 갱신했고 누출 검사는 약화하지 않았다).
+
+**메모**: `tests/*.cjs` 전체 스윕은 배치 대상이 아닌 도구·수동 하네스까지 실행한다(`apply_libra_phase06_from_baseline.cjs` code=2, `docs/gui-redesign/verification/...` 산출물 생성). 전체 회귀는 레포 자체 도구(`run_regression_batch.py`)로 릴리스 시점에 돌리는 것이 맞다.
+
