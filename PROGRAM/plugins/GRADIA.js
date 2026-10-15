@@ -42423,6 +42423,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const names = presetNamesFromState();
     list.replaceChildren();
     const cards = [...root.querySelectorAll('[data-detail]')];
+    // Detail cards belong in the right-hand column next to the list, as in the approved layout.
+    const detailColumn = [...root.children].find(node => node.classList?.contains('stack')) || root;
     cards.forEach(card => card.remove());
     names.forEach((name, index) => {
       const preset = sanitizePreset(Gui.state.providers?.[name] || {});
@@ -42477,7 +42479,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const clone=mockupNode('button','btn btn--sm','복제');clone.type='button';clone.dataset.providerClone=name;
       const keydel=mockupNode('button','btn btn--sm btn--danger','키 삭제');keydel.type='button';keydel.dataset.providerKeyDelete=name;
       const del=mockupNode('button','btn btn--sm btn--danger','프리셋 삭제');del.type='button';del.dataset.providerDelete=name;
-      actions.append(makeDefault,clone,keydel,del);card.append(actions);root.append(card);
+      actions.append(makeDefault,clone,keydel,del);card.append(actions);detailColumn.append(card);
     });
     mockupSyncProviderOptions();
   };
