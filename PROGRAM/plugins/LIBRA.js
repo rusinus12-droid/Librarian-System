@@ -61401,8 +61401,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           raw, manifestRevisionOf(storageKey), chat.message || chat.messages || []]) };
     };
     const libraDerivedCacheRecovery = MemorySuiteHealthRecovery.ownerAdapter({ owner: 'LIBRA', snapshot: libraHealthSnapshot,
-      clear: () => { state.memoryGraphPages?.invalidate(); state.memoryGraphCompiler?.invalidateAll(); },
-      empty: () => !state.memoryGraphPages || state.memoryGraphPages.inspect().pages === 0 });
+      clear: scopeKey => {
+        state.recallCatalogCache?.delete(scopeKey);
+        state.evidenceLinkIndexCache?.delete(scopeKey);
+        state.loreLinkIndexCache?.delete(scopeKey);
+        state.memoryGraphPages?.invalidate();
+        state.memoryGraphCompiler?.invalidateAll();
+      },
+      empty: scopeKey => {
+        if (state.recallCatalogCache?.has(scopeKey)) return false;
+        return !state.memoryGraphPages || state.memoryGraphPages.inspect().pages === 0;
+      }
+    });
     let libraRecoveryActions = null;
     const getLibraRecoveryActions = () => libraRecoveryActions || (libraRecoveryActions = MemorySuiteHealthRecovery.createOrchestrator({
       inspect: () => libraDerivedCacheRecovery.inspect(),

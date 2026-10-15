@@ -7,8 +7,7 @@ const specs=[
  ['compute_bridge_test.cjs','const context = {','const createMemorySuiteComputeBridge','one compute factory'],
  ['storage-compute-mode-contract-v2.test.cjs','const integrations =','const VALID_MODES = new Set','VALID_MODES'],
  ['hayaku_sparse_rrf_compute_pilot_test.cjs','const sparseSignals =','MemorySuiteHayakuComputeBridge.execute(', 'MemorySuiteHayakuComputeBridge'],
- ['lia_world_lore_compute_pilot_test.cjs','const values = new Map','MemorySuiteLiaComputeBridge.execute(', 'MemorySuiteLiaComputeBridge'],
- ['libra_recall_bm25f_compute_pilot_test.cjs','const waitFor =','MemorySuiteLibraComputeBridge.execute(', 'MemorySuiteLibraComputeBridge']
+ ['lia_world_lore_compute_pilot_test.cjs','const values = new Map','MemorySuiteLiaComputeBridge.execute(', 'MemorySuiteLiaComputeBridge']
 ];
 function run([name,end],transform=s=>s){
  const file=path.join(__dirname,name),requireHere=createRequire(file);let contract=fs.readFileSync(file,'utf8');

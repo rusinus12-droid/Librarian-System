@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T06:39:19.573Z",
+  "generatedAt": "2026-10-15T06:52:58.411Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -3666,8 +3666,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "2b1e5b8d038eec23c1d547e8fdafdb81ed01af6f538d150e970df58f06ee3bce",
-      "bytes": 5858887
+      "sha256": "2e3e9e9432e748cf5af977f3a80b54fa30ec0d7a9311dcd6b82008fd9b6aea7a",
+      "bytes": 5859178
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -4414,8 +4414,8 @@
       "bytes": 4487
     },
     "tests/compute_gui_and_libra_open_latency_contract_test.cjs": {
-      "sha256": "25b1fe972cb045cc17a7ba0a2e2052e1b4b0180fb6cec2672b4135936c1f1b1d",
-      "bytes": 5391
+      "sha256": "88479c231decde4565876c2f47438786b39ed38da620690cc411aebb46997f07",
+      "bytes": 5400
     },
     "tests/compute_hash_embedding_parity_test.cjs": {
       "sha256": "1493b532e9c14e5be45fac15e287da6ba12e5ae631de7f19b4b3650aa9f750c5",
@@ -4442,8 +4442,8 @@
       "bytes": 1740
     },
     "tests/compute_sdk_version_independence_test.cjs": {
-      "sha256": "5ef3f39dc193460c79b2c91a2eb22aa73e1943aad4b19296e9f204fcc0533ab2",
-      "bytes": 2055
+      "sha256": "956edd633771a87d939d42c9b49ac991f9d1fded39fe75c0a54974e4be588724",
+      "bytes": 1915
     },
     "tests/compute_server_integration_test.cjs": {
       "sha256": "5f030522f53a962a63514e974c930d40ae8b2685c7c21d5ac639b4e01c2e9b2b",
@@ -4546,8 +4546,8 @@
       "bytes": 6927
     },
     "tests/engine_consistency_v2_runtime_test.cjs": {
-      "sha256": "0c3646ab2c733465449d1afd8a22d34e5931a55ec06ea32a1cd86497c6d11f1d",
-      "bytes": 5676
+      "sha256": "d430849c3f2bb5c88fe59fecbfd3c2abf33215c8ab1145cd5cf5d527e186d934",
+      "bytes": 5740
     },
     "tests/execution_embedding_contract_v1_test.cjs": {
       "sha256": "634f52f901f4bac2c0fe1564a7e128ee6f87cc8ea8c9573e1ecad09b58053be1",
