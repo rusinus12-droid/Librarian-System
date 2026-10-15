@@ -180,11 +180,15 @@ N01-B는 owner 증명으로 변경 없는 구간 projection을 재사용하고 `
 
 ## 9. N06 — 품질·비용·실제 호스트
 
-### N06-a · P1 · 평가 세트와 합격 기준 — 지금 정의 가능
+### N06-a · P1 · 평가 세트와 합격 기준 — 완료 (2026-10-15)
 
-네 자료 연결 질문, 첫 window 밖 기억, 고유명사/동의어/다국어, 정정·충돌·unknown, 현재/과거·세계선·viewer, mandatory lore, vectorless·provider 실패를 포함한다. gold evidence·허용/금지 근거·기대 partial/coverage·실제 채택을 고정한다. corpus 크기·질의 분포·동시성·장비/provider별 합격 수치를 측정 전에 정한다.
+네 자료 연결 질문, 첫 window 밖 기억, 고유명사/동의어/다국어, 정정·충돌·unknown, 현재/과거·세계선·viewer, mandatory lore, vectorless·provider 실패를 포함하는 8대 표준 평가 벤치마크 셋을 정의하고 사전 합격 기준을 고정했다.
+- **표준 픽스처:** [`PROGRAM/tests/fixtures/libra_unified_memory_eval_cases_v1.json`](../tests/fixtures/libra_unified_memory_eval_cases_v1.json) (`libra.unified_memory_eval_cases.v1`, `UME-01` ~ `UME-08`)
+- **평가 러너 도구:** [`PROGRAM/tools/evaluate_libra_unified_memory.cjs`](../tools/evaluate_libra_unified_memory.cjs) (통합 요청 종단 실행, 8/8 통과, 어휘-전체 신호 ablation 중복비율 산출)
+- **합격 검증 테스트:** [`PROGRAM/tests/libra_unified_memory_evaluation_test.cjs`](../tests/libra_unified_memory_evaluation_test.cjs) (5/5 PASS: 8대 벤치마크 100% Gold Recall, 0 Forbidden Leak, 음성 대조 유출·누락 감지)
+- **명세 및 계약:** [`PROGRAM/docs/LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md`](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md)
 
-과거 엔진 비교는 보존된 동일 snapshot/baseline artifact 또는 격리된 역사 checkout으로 수행한다. 평가를 위해 현재 제품의 레거시 serving을 되살리지 않는다. 같은 자료·질의로 semantic/lexical/관계 신호 ablation과 계수 calibration을 수행한다. 현재 `calibration:unmeasured`는 평가 전 유지한다.
+과거 엔진 비교는 보존된 동일 snapshot/baseline artifact 또는 격리된 역사 checkout으로 수행하며, 평가를 위해 현재 제품의 레거시 serving을 되살리지 않는다. 같은 자료·질의로 semantic/lexical/관계 신호 ablation을 측정하되, N06-b 대규모 모델 보정 전까지 `calibration:unmeasured`는 규범대로 유지한다.
 
 ### N06-b · P1 · 실제 embedding provider와 규모 측정
 

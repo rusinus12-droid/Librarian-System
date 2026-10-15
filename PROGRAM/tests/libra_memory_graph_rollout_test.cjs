@@ -368,7 +368,7 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     const unifiedRecall = await host.f.r.api.previewUnifiedMemoryRecall({
       queryText: QUOTE,
       unifiedEngineMode: 'unified',
-      consumer: 'planner'
+      consumer: 'classic'
     });
     assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.mode, 'unified');
     assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.deliveryOutcome, 'complete');
@@ -377,7 +377,15 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.cleanCutoverVerified, true);
     assert.equal(unifiedRecall.diagnostics.unifiedMemoryEngine.modelDispatchEligible, true);
     assert.ok(unifiedRecall.memories.length >= 1);
-    assert.ok(unifiedRecall.packet.renderedText.includes('consumer=planner'));
+    assert.ok(unifiedRecall.packet.renderedText.includes('consumer=classic'));
+
+    // N00: historical format-only consumers (e.g. planner) render without model dispatch authority
+    const plannerRecall = await host.f.r.api.previewUnifiedMemoryRecall({
+      queryText: QUOTE,
+      unifiedEngineMode: 'unified',
+      consumer: 'planner'
+    });
+    assert.equal(plannerRecall.diagnostics.unifiedMemoryEngine.modelDispatchEligible, false);
 
     // Former serving modes are input compatibility, not a second search path.
     const migrated = await host.f.r.api.previewUnifiedMemoryRecall({queryText:QUOTE,unifiedEngineMode:'shadow'});
