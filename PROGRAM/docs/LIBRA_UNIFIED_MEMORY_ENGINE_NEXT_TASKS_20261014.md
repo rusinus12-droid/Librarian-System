@@ -122,7 +122,7 @@ GRADIA의 기존 서버 읽기는 `/v1/<owner>/read-session/capture`·`current`�
 
 **완료 기준:** 최근 window 밖의 오래된 기억을 질의로 발견하고, 실제 읽은 shard/cache/Lane 경로를 관찰할 수 있다. cold/warm/축출/재시작·수정/복원·동시 요청/취소에서 generation과 원본 의존성이 맞는다. 미독 영역·예산 종료는 partial/coverage로 드러나며 전체 상한을 증명하지 못한 측정값으로 `byteBounded:true`를 선언하지 않는다.
 
-**N01 최신 증분:** `buildMemoryGraphCorpus()`가 전체 owner 구간을 열거해 하나의 index를 게시하고, Classic/GRADIA의 unified query가 저장 표를 재사용한다. 검색 중 index.compile은 실행하지 않으며, 원본 변경·오염·예산 중단에 대한 검증을 추가했다. 기존 수동 nextWindow 조회와 구분한다. **N01 전체 완료는 아니다:** native 전체 재투영, index 표 전체 hydration, 증분 검증·선택적 durable page 접근·총 메모리/I/O admission은 남는다. 상세 범위·기본 상한·재현은 [전체 구간 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)을 따른다. 위의 이전 증분 기록을 이 종료 조건이 닫혔다는 뜻으로 읽지 않는다.
+**N01 최신 증분:** `buildMemoryGraphCorpus()`가 전체 owner 구간을 열거해 하나의 index를 게시하고, Classic/GRADIA의 unified query가 저장 표를 재사용한다. 검색 중 index.compile은 실행하지 않으며, 원본 변경·오염·예산 중단에 대한 검증을 추가했다. 이어 **N01-A(`48d2eab`)** 에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`(`proof:`·`projection:` 불변 레코드)를 연결해 변경되지 않은 과거 구간의 정본·Micro 본문 재읽기를 생략(`nativeReprojectionRequired:false`)하고, 소비된 readset의 물리 레코드만 발송 직전에 재확인하도록 구현했다(`libra_memory_graph_inventory_test.cjs` 12 PASS, `libra_memory_graph_corpus_test.cjs` 12 PASS, `libra_memory_graph_incremental_currentness_runtime_test.cjs` 1 PASS). **N01에서 남은 것:** 증분 코퍼스 구축·재개 및 큰 단일 레코드 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. 상세 범위·기본 상한·재현은 [전체 구간 계약](LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md)을 따른다.
 
 ## 5. N02 — 자료별 semantic 표현
 

@@ -1,17 +1,77 @@
 'use strict';
-// Full owner-window enumeration + durable common index. Native readers still
-// supply every fact and final delivery proof; persisted tables grant no authority.
-module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } = {}) {
+// Full owner-window enumeration + durable common index + N01-A incremental source currentness verification.
+// Native readers still supply every fact and final delivery proof; persisted tables grant no authority.
+module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
   const pools = ['nodes','edges','bases','units'];
   const tables = ['directory','adjacency','postings','reverseDependencies'];
   const schema = 'libra.graph_corpus.v1';
+  const routingVersion = 'libra.index_page_routing.v1';
+  const proofVersion = 'libra.source_proof_contract.v1';
+  const proofSchema = 'libra.graph_corpus_source_proofs.v1';
+  const proofSummarySchema = 'libra.graph_corpus_source_proof_summary.v1';
+  const projectionSchema = 'libra.graph_corpus_projection.v1';
   let active = false;
-  const fail = reason => { const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase()); e.reason = reason; throw e; };
+  const fail = (reason, extra = null) => {
+    const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase());
+    e.reason = reason;
+    if (extra && typeof extra === 'object') Object.assign(e, extra);
+    throw e;
+  };
   const hash = value => { const h = fingerprint(value); if (!/^[a-f0-9]{64}$/.test(h)) fail('digest_invalid'); return h; };
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
   const partition = graph => JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: graph.readerFrame.view.viewerId });
   const stamp = graph => pages.generation(graph, { partition: partition(graph), restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
+
+  // N01-A: Explicit per-family currentness guarantee & conservative reread scope contracts.
+  const DEFAULT_FAMILY_CURRENTNESS_CONTRACTS = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical',
+      proofMode: 'owner_manifest_ref_table_and_registry',
+      proofBasis: Object.freeze(['owner_manifest_ref_table', 'entity_registry', 'restore_epoch', 'approved_evidence_binding']),
+      guaranteedScope: Object.freeze(['unchanged_window_canonical_record_bodies', 'unchanged_window_canonical_assertions_and_edges']),
+      reReadRequiredScope: Object.freeze(['owner_manifest_head', 'entity_registry_head', 'changed_canonical_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_storage_tampering_without_manifest_revision_change']),
+      evidenceSymbols: Object.freeze(['canonicalReaderRefIdentity', 'loadManifest', 'ENTITY_REGISTRY_SCHEMA', 'microRestoreGeneration'])
+    }),
+    micro: Object.freeze({
+      family: 'micro',
+      proofMode: 'host_turn_pair_and_micro_head_revision',
+      proofBasis: Object.freeze(['host_completed_turn_pair_digest', 'completed_turn_head_revision', 'micro_memory_head_revision', 'micro_work_attempt_digest', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['unchanged_window_micro_turn_record_bodies', 'unchanged_window_completed_turn_receipt_bodies', 'unchanged_window_micro_candidate_units']),
+      reReadRequiredScope: Object.freeze(['host_chat_turn_pairs', 'per_turn_completed_and_micro_heads', 'changed_micro_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_micro_record_tampering_without_head_or_pair_change']),
+      evidenceSymbols: Object.freeze(['completedTurnRevisionId', 'readActiveCompletedTurnReceipt', 'libra.micro_memory_head.v1', 'microRestoreGeneration'])
+    }),
+    state: Object.freeze({
+      family: 'state',
+      proofMode: 'scope_singleton_state_head_and_correction_journal',
+      proofBasis: Object.freeze(['continuity_state_head', 'state_worldline_meta', 'state_correction_journal_revision', 'entity_registry', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['scope_singleton_state_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['scope_state_head_every_request', 'state_correction_journal_head_every_request', 'consumed_state_decision_keys']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadContinuityStateForResponse', 'loadStateCorrectionJournal', 'stateWorldlineMeta'])
+    }),
+    lore: Object.freeze({
+      family: 'lore',
+      proofMode: 'host_lore_snapshot_and_link_index_reread',
+      proofBasis: Object.freeze(['host_risu_lore_snapshot_digest', 'lore_link_mapping_head', 'lore_link_index_basis_digest']),
+      guaranteedScope: Object.freeze(['scope_singleton_lore_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['host_risu_lore_snapshot_every_request', 'lore_link_mapping_every_request', 'lore_link_index_basis_every_request']),
+      skipUnchangedWindowBodyRead: false,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadRisuContextSnapshot', 'loreLinkAllowedEntries', 'buildLoreLinkIndex'])
+    })
+  });
+  const FAMILY_CURRENTNESS_CONTRACTS = inventory?.FAMILY_CURRENTNESS_CONTRACTS || DEFAULT_FAMILY_CURRENTNESS_CONTRACTS;
+
   // Owner cursor signatures contain request/runtime publication bindings. They
   // are fresh traversal handles, not durable content identities across restart.
   // Preserve whether another slice exists; native row/frame bindings identify
@@ -33,7 +93,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
   };
   const enumerate = async (snapshot, input, check = () => {}) => {
     const config = policy(input), maps = Object.fromEntries(pools.map(pool => [pool,new Map()]));
-    const sourceKeys = new Set(), canonicalRows = new Map(), windows = [], reasons = {}, families = {}, sourceReadFailures = new Map();
+    const sourceKeys = new Set(), canonicalRows = new Map(), windows = [], windowProofs = [], reasons = {}, families = {}, sourceReadFailures = new Map();
     let first = null, collected = null, options = { limit: config.limit, nodeLimit: config.nodeLimit, canonicalCursor: '', microCursor: '' };
     let bytes = 0;
     for (;;) {
@@ -43,10 +103,18 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
       const graph = value.graph;
       if (!first) { first = graph; collected = value.collected; }
       if (!same(first.readerFrame, graph.readerFrame) || graph.scopeKey !== first.scopeKey) fail('frame_changed');
-      const inventory = graph.coverage?.inventory;
-      if (!inventory || inventory.canonicalTotal !== first.coverage.inventory.canonicalTotal
-        || inventory.microTurnTotal !== first.coverage.inventory.microTurnTotal) fail('inventory_changed');
-      windows.push({ ordinal: windows.length, stamp: windowStamp(graph) });
+      const inv = graph.coverage?.inventory;
+      if (!inv || inv.canonicalTotal !== first.coverage.inventory.canonicalTotal
+        || inv.microTurnTotal !== first.coverage.inventory.microTurnTotal) fail('inventory_changed');
+      const ordinal = windows.length, currentWindowStamp = windowStamp(graph);
+      windows.push({ ordinal, stamp: currentWindowStamp });
+      windowProofs.push({
+        ordinal,
+        stamp: currentWindowStamp,
+        canonicalNext: inv.canonicalNextCursor ? 'unread' : '',
+        microNext: inv.microNextCursor ? 'unread' : '',
+        ownerProof: value.windowProof || value.collected?.windowProof || null
+      });
       for (const pool of pools) for (const row of graph[pool]) {
         const id = row.id || row.nodeId, before = maps[pool].get(id);
         if (before) { if (!same(before,row)) fail('overlap_changed'); continue; }
@@ -65,7 +133,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         families[family] = { ...entry }; reasons[family] ||= new Set();
         for (const reason of entry.reasons || []) if (!['canonical_pages_unread','micro_pages_unread'].includes(reason)) reasons[family].add(reason);
       }
-      const nextCanonical = inventory.canonicalNextCursor || '', nextMicro = inventory.microNextCursor || '';
+      const nextCanonical = inv.canonicalNextCursor || '', nextMicro = inv.microNextCursor || '';
       if (!nextCanonical && !nextMicro) break;
       // Retain the last cursor of a completed family; empty would restart it.
       const next = { ...options, canonicalCursor: nextCanonical || options.canonicalCursor, microCursor: nextMicro || options.microCursor };
@@ -95,8 +163,14 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         canonicalNextCursor: '', microNextCursor: '', inventoryComplete: false,
         scope: 'enumerated_owner_windows', enumeratedWindows: windows.length, exhaustiveOwnerDeltaVerified: false },
       projectionComplete: sourceReadFailures.size === 0 && Object.values(families).every(entry => !entry.reasons.length) } };
-    return { graph, windows, collected: { ...collected, sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()] },
-      serializedGraphBytes: bytes, config };
+    return {
+      graph,
+      windows,
+      windowProofs,
+      collected: { ...collected, sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs },
+      serializedGraphBytes: bytes,
+      config
+    };
   };
   const parse = (raw, maximum) => {
     if (typeof raw !== 'string' || raw.length > maximum || new TextEncoder().encode(raw).length > maximum) fail('record_size');
@@ -119,10 +193,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
         return live.graph;
       },
       access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
-  const routingVersion = 'libra.index_page_routing.v1';
   const routingKinds = { directory: ['node','source'], adjacency: ['anchor'],
     postings: ['lexical','entity','predicate','time'], reverseDependencies: ['dependency'] };
   const range = values => {
@@ -166,9 +240,65 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
           offset = page.nextOffset;
         } while (offset < compiled[table].length);
       }
+      const ownerProof = typeof owner.captureSourceProof === 'function'
+        ? await owner.captureSourceProof({ graph, collected: value.collected, windows: value.windows, windowProofs: value.windowProofs, config })
+        : null;
+      owner.check();
+      const proofRecord = {
+        schema: proofSchema,
+        proofVersion,
+        scopeKey: graph.scopeKey,
+        frame: graph.readerFrame,
+        generation,
+        windowCount: value.windows.length,
+        windows: value.windows,
+        windowProofs: value.windowProofs.map(wp => ({
+          ordinal: wp.ordinal,
+          stamp: wp.stamp,
+          canonicalNext: wp.canonicalNext,
+          microNext: wp.microNext
+        })),
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+        ownerProof: ownerProof || null
+      };
+      const proofRaw = JSON.stringify(proofRecord), proofDigest = hash(proofRaw), proofKey = loc.prefix + 'proof:' + proofDigest;
+      if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
+      await immutable(owner, proofKey, proofRaw);
+
+      const projectionRecord = {
+        schema: projectionSchema,
+        generation,
+        scopeKey: graph.scopeKey,
+        frame: graph.readerFrame,
+        serializedGraphBytes: value.serializedGraphBytes,
+        graph,
+        collected: {
+          sourceKeys: Array.isArray(value.collected?.sourceKeys) ? value.collected.sourceKeys : [],
+          entityRegistry: Array.isArray(value.collected?.entityRegistry) ? value.collected.entityRegistry : [],
+          canonicalRows: Array.isArray(value.collected?.canonicalRows) ? value.collected.canonicalRows : []
+        }
+      };
+      const projectionRaw = JSON.stringify(projectionRecord), projectionDigest = hash(projectionRaw), projectionKey = loc.prefix + 'projection:' + projectionDigest;
+      if (new TextEncoder().encode(projectionRaw).length > config.maxSerializedBytes) fail('index_budget');
+      await immutable(owner, projectionKey, projectionRaw);
+
+      const sourceProofs = {
+        schema: proofSummarySchema,
+        proofVersion,
+        proofKey,
+        proofDigest,
+        projectionKey,
+        projectionDigest,
+        windowCount: value.windows.length,
+        ownerProofAvailable: Boolean(ownerProof),
+        guaranteedFamiliesWithoutBodyReRead: ['canonical', 'micro', 'state'],
+        reReadRequiredEveryRequestFamilies: ['state', 'lore'],
+        bodyReReadRequiredFamilies: ['lore']
+      };
+
       const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
-        serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        sourceProofs, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
       const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
@@ -182,35 +312,114 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
       if (!same(value.windows,after.windows)) fail('source_changed_after_publication');
       return { schema, status: 'published', generation, indexDigest: compiled.indexDigest, windowCount: value.windows.length,
         pageCount: refs.length, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        sourceProofs, familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
     } finally { active = false; }
   };
+  const validSourceProofSummary = (summary, loc, windowCount) => {
+    if (summary === undefined) return true;
+    if (!summary || typeof summary !== 'object' || summary.schema !== proofSummarySchema
+      || summary.proofVersion !== proofVersion || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
+      || !/^[a-f0-9]{64}$/.test(String(summary.projectionDigest || ''))
+      || summary.proofKey !== loc.prefix + 'proof:' + summary.proofDigest
+      || summary.projectionKey !== loc.prefix + 'projection:' + summary.projectionDigest
+      || summary.windowCount !== windowCount) return false;
+    return true;
+  };
   const read = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
-    const loc = location(initialGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
+    const startGraph = initialGraph || (await snapshot({ limit: 1, nodeLimit: 64, canonicalCursor: '', microCursor: '' })).graph;
+    const loc = location(startGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
     if (rootRaw === null) return null;
     const root = parse(rootRaw,2048);
     if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
     const raw = await owner.read(root.manifestKey), manifest = parse(raw,131072);
-    if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,initialGraph.readerFrame)
+    if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,startGraph.readerFrame)
       || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
     if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
-    const native = await enumerate(snapshot, manifest.config, owner.check);
-    if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
-    const lazy = !eager && manifest.routingVersion === routingVersion;
+    if (!validSourceProofSummary(manifest.sourceProofs, loc, manifest.windows.length)) fail('manifest_invalid');
+    const config = policy(manifest.config);
     const counts = Object.fromEntries(tables.map(table => [table,0])); let total = 0;
     for (const ref of manifest.refs) {
       if (!ref || !tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
         || ref.key !== loc.prefix + 'page:' + ref.table + ':' + ref.digest
-        || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > native.config.pageBytes
+        || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > config.pageBytes
         || !Number.isSafeInteger(ref.rows) || ref.rows < 0 || ref.offset !== counts[ref.table]
         || manifest.routingVersion && !validRouting(ref)) fail('directory_invalid');
       counts[ref.table] += ref.rows;
-      total += ref.bytes; if (total > native.config.maxSerializedBytes) fail('index_budget');
+      total += ref.bytes; if (total > config.maxSerializedBytes) fail('index_budget');
     }
     for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
       if (!manifest.refs.some(ref => ref.table === table) || counts[table] !== manifest.metadata?.stats?.[stat]) fail('directory_invalid');
     }
+
+    let proofRecord = null, projectionRecord = null;
+    if (manifest.sourceProofs) {
+      const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
+      if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) fail('page_corrupt');
+      proofRecord = parse(proofRaw, config.maxSerializedBytes);
+      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== proofVersion
+        || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
+
+      const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
+      if (typeof projectionRaw !== 'string' || hash(projectionRaw) !== manifest.sourceProofs.projectionDigest) fail('page_corrupt');
+      projectionRecord = parse(projectionRaw, config.maxSerializedBytes);
+      if (projectionRecord?.schema !== projectionSchema || projectionRecord.generation !== manifest.generation
+        || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
+    }
+
+    const canVerifyIncrementally = !eager
+      && Boolean(proofRecord?.ownerProof)
+      && Boolean(projectionRecord?.graph)
+      && typeof owner.verifySourceProofs === 'function';
+
+    let native = null, currentnessVerification = null;
+    if (canVerifyIncrementally) {
+      const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'open' });
+      owner.check();
+      if (!verdict || verdict.status !== 'verified') {
+        fail('stale_generation', { currentnessVerification: verdict || null });
+      }
+      currentnessVerification = verdict;
+      native = {
+        graph: projectionRecord.graph,
+        windows: manifest.windows,
+        collected: {
+          ...projectionRecord.collected,
+          ...(verdict.collectedPatch || {})
+        },
+        serializedGraphBytes: manifest.serializedGraphBytes,
+        config
+      };
+    } else {
+      if (proofRecord?.ownerProof && typeof owner.verifySourceProofs === 'function') {
+        const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'audit' });
+        owner.check();
+        if (!verdict || verdict.status !== 'verified') {
+          fail('stale_generation', { currentnessVerification: verdict || null });
+        }
+        currentnessVerification = { ...verdict, mode: 'eager_full_reprojection_audit', nativeReprojectionPerformed: true };
+      } else {
+        currentnessVerification = Object.freeze({
+          schema: 'libra.graph_corpus_currentness.v1',
+          status: 'verified',
+          mode: eager ? 'eager_full_reprojection_audit' : 'full_window_enumeration_fallback',
+          nativeReprojectionPerformed: true,
+          familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+          guaranteedFamiliesWithoutBodyReRead: Object.freeze(['canonical', 'micro', 'state']),
+          reReadRequiredEveryRequestFamilies: Object.freeze(['state', 'lore']),
+          bodyReReadRequiredFamilies: Object.freeze(['lore']),
+          consumedReadSetPhysicalRecheckRequired: true,
+          ownerAtomicity: false,
+          byteBounded: false
+        });
+      }
+      native = await enumerate(snapshot, config, owner.check);
+      if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
+      if (projectionRecord && stamp(projectionRecord.graph) !== stamp(native.graph)) fail('page_corrupt');
+    }
+
+    const lazy = !eager && manifest.routingVersion === routingVersion;
     const metrics = { storageAccess: lazy ? 'selective_durable_pages' : 'materialized_tables',
       publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0 };
     // No raw/decoded table cache: re-acquire validated content through the shared
@@ -263,24 +472,61 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint } 
       await assertIndexCurrent(); return { rows };
     };
     let compiledIndex;
-    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: stamp(native.graph), readRows });
+    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: manifest.generation, readRows });
     else {
       const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
       for (const ref of manifest.refs) await readPage(ref, rows => restored[ref.table].push(...rows));
-      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
+      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: manifest.generation });
     }
     await assertIndexCurrent();
     const currentGraph = async () => {
       await assertIndexCurrent();
+      if (canVerifyIncrementally) {
+        const latestVerdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config: native.config, phase: 'commit' });
+        owner.check();
+        if (!latestVerdict || latestVerdict.status !== 'verified') {
+          fail('stale_generation', { currentnessVerification: latestVerdict || null });
+        }
+        await assertIndexCurrent();
+        return native.graph;
+      }
       const live = await enumerate(snapshot, native.config, owner.check);
       if (!same(live.windows,manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
       await assertIndexCurrent(); return live.graph;
     };
-    return { ...native, compiledIndex, currentGraph, assertIndexCurrent,
-      access: { schema, mode: 'durable_common_index', generation: manifest.generation, indexDigest: compiledIndex.indexDigest,
-        windowCount: native.windows.length, pageCount: manifest.refs.length,
-        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total, storage: metrics,
-        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
+    return {
+      ...native,
+      sourceProofs: proofRecord,
+      currentnessVerification,
+      compiledIndex,
+      currentGraph,
+      assertIndexCurrent,
+      access: {
+        schema,
+        mode: 'durable_common_index',
+        generation: manifest.generation,
+        indexDigest: compiledIndex.indexDigest,
+        windowCount: native.windows.length,
+        pageCount: manifest.refs.length,
+        serializedGraphBytes: native.serializedGraphBytes,
+        serializedIndexBytes: total,
+        storage: metrics,
+        currentnessVerification,
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+        nativeReprojectionRequired: !canVerifyIncrementally,
+        ownerAtomicity: false,
+        inventoryComplete: false,
+        byteBounded: false
+      }
+    };
   };
-  return Object.freeze({ build, read, prepare, enumerate, location, inspect: () => ({ activeBuild: active }) });
+  return Object.freeze({
+    FAMILY_CURRENTNESS_CONTRACTS,
+    build,
+    read,
+    prepare,
+    enumerate,
+    location,
+    inspect: () => ({ activeBuild: active })
+  });
 };

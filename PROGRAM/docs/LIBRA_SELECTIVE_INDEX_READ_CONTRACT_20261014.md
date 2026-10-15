@@ -1,8 +1,8 @@
 # LIBRA 공통 인덱스의 선택적 저장 페이지 읽기
 
-- 작성일: 2026-10-14 · 버전: 1.0
-- 기준: `9c03c35` 이후의 N01 증분. 기본·유일한 통합 검색 계약은 유지한다.
-- 판정: **신규 게시 인덱스는 검색에 필요한 저장 페이지만 읽는다. 원본 전체 재투영·최종 원본 검증, 전체 VM 자원 계상과 실제 설치/규모 인증은 여전히 남아 있다.**
+- 작성일: 2026-10-14 · 버전: 1.1
+- 기준: `9c03c35` 이후의 N01 증분 및 `48d2eab` N01-A 증분 원본 현재성 검증. 기본·유일한 통합 검색 계약은 유지한다.
+- 판정: **신규 게시 인덱스는 검색에 필요한 저장 페이지만 읽고, N01-A owner 증분 증명으로 변경되지 않은 과거 구간 본문 재읽기를 생략한다. 증분 구축·재개, 큰 단일 행 분할(N01-B), 전체 VM 자원 계상(N01-C)과 실제 설치/규모 인증은 여전히 남아 있다.**
 
 ## 1. 실제 경로와 단일 탐색
 
@@ -40,18 +40,18 @@ I/O 전에 예상 raw/hash workspace를 예약하고, 받은 문자열의 크기
 - 순수 selective suite: 열기 시 table I/O 0, 필요한 posting/frontier만 읽기, eager와 점수·witness·bundle/packet digest 일치, cold/warm/축출/독립 runtime, 요청한/미요청 손상과 audit, 물리 byte/page admission·partial, pending I/O 취소·root 교체·동시 실행 거부·미독 cursor·자원 해제, 잘못된 directory/routing/namespace·과거 manifest 호환.
 - 고정 160-unit fixture: 전체 복원은 23페이지·332,423 B, 선택적 query는 3페이지·48,952 B. source/host/provider가 제어된 커널 fixture의 index payload 측정이며 전체 요청 latency/heap/네트워크 성능 인증으로 사용하지 않는다.
 - 등록 native suite: 실제 LIBRA writer·storage bridge의 기본 query 물리 key 읽기와 보고값 대조(46페이지·341,409 B 중 15페이지·113,532 B), 안 읽은 reverse table의 손상을 full audit에서 발견, model/provider 호출 및 원본 쓰기 증가 없음.
-- 기존 corpus runtime: plugin_only/server_only, 첫 구간 밖 Micro, 재시작·원본 교체 거부, native semantic/Classic의 동일 frontier, 64키 이하 다중 readset과 partial coverage.
+- 기존 corpus runtime 및 N01-A 증분 현재성 suite: plugin_only/server_only, 첫 구간 밖 Micro, 미소비 정본 본문 미읽기 및 소비 레코드 물리 변조 거부, 재시작·원본 교체 거부, native semantic/Classic의 동일 frontier, 64키 이하 다중 readset과 partial coverage.
 - GRADIA native suite: 게시 index를 통한 기본 셰도우/AIDE·인풋 작성기와 최종 수정 차단. owner source/readonly SDK/영수증 계약을 바꾸지 않는다.
 
 ```bash
 node --test PROGRAM/tests/libra_memory_graph_selective_index_test.cjs PROGRAM/tests/libra_memory_graph_selective_runtime_test.cjs
-node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs PROGRAM/tests/libra_memory_graph_corpus_runtime_test.cjs PROGRAM/tests/libra_unified_search_replacement_runtime_test.cjs
+node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs PROGRAM/tests/libra_memory_graph_incremental_currentness_runtime_test.cjs PROGRAM/tests/libra_memory_graph_corpus_runtime_test.cjs PROGRAM/tests/libra_unified_search_replacement_runtime_test.cjs
 node --test PROGRAM/tests/libra_memory_graph_pages_test.cjs PROGRAM/tests/libra_memory_graph_index_test.cjs PROGRAM/tests/libra_memory_graph_query_test.cjs PROGRAM/tests/libra_memory_graph_rollout_test.cjs
 node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs
 ```
 
 ## 5. 남은 N01
 
-원본의 모든 owner 구간을 여전히 새로 읽어 graph를 구성하고 generation을 확인한다. 최종 검증도 native graph를 재투영하며 QueryFrame eligibility/semantic/Compiler의 원본 Map과 배열은 유지한다. owner의 완전한 revision/delta 증명 없이 manifest revision/cache hit만으로 이를 생략하지 않는다.
+N01-A에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`를 도입해 변경되지 않은 과거 구간의 정본·Micro 본문 재읽기를 생략(`nativeReprojectionRequired:false`)하고, 소비된 readset의 물리 레코드만 발송 직전에 재확인하도록 연결했다.
 
-다음 작업은 원본의 현재성/변경 범위를 증명하는 계약과 선택적 native 재검증, 증분 build·재개, semantic representation의 선택적 접근, 큰 reverse-dependency/단일 행의 분할 및 전체 workspace/I/O admission이다. 일부 큰 행은 기존 page 한도를 넘으면 명시적으로 거부된다. `nativeReprojectionRequired:true`, `ownerAtomicity:false`, `inventoryComplete:false`, 전체 API `byteBounded:false`는 그대로다. N02/N05/N06의 추가 representation·native GC·실제 설치/품질·규모 인증도 계속 열린 과제다.
+다음 작업은 증분 build·재개와 큰 reverse-dependency/단일 행의 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. `ownerAtomicity:false`, `inventoryComplete:false`, 전체 API `byteBounded:false`는 유지한다. N02/N05/N06의 추가 representation·native GC·실제 설치/품질·규모 인증도 이어서 진행한다.

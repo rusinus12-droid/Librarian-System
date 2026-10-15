@@ -1,9 +1,11 @@
 'use strict';
-// N01 first increment contract: the four sources' inventory, unread cursor and delta/tombstone rules.
+// N01 first increment contract: the four sources' inventory, unread cursor and delta/tombstone rules,
+// plus N01-A per-family incremental source currentness & conservative reread contracts.
 //
 // Every test below must be able to fail. The negative controls deliberately break one rule each —
 // a stale cursor, a deletion reported without a tombstone, a page treated as the whole family, a
-// revision that cannot be verified — so a contract that always returns "complete" cannot pass.
+// revision that cannot be verified, or a per-family owner proof mutation — so a contract that always
+// returns "complete" or "verified" cannot pass.
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -46,6 +48,121 @@ test('N01: each family declares only what its owner can report, and the basis sy
     }
   }
   assert.equal(source.includes('libra_inventory_claimed_without_basis'), false, 'negative control: a fabricated basis symbol is not in the plugin');
+});
+
+test('N01-A: each family explicitly declares what owner proof guarantees vs what retains rereading, backed by plugin symbols', () => {
+  const contracts = inventory.FAMILY_CURRENTNESS_CONTRACTS;
+  assert.ok(Object.isFrozen(contracts));
+  assert.deepEqual(Object.keys(contracts).sort(), [...inventory.SOURCE_FAMILIES].sort());
+  assert.equal(contracts.canonical.skipUnchangedWindowBodyRead, true);
+  assert.equal(contracts.micro.skipUnchangedWindowBodyRead, true);
+  assert.equal(contracts.state.skipUnchangedWindowBodyRead, true);
+  assert.equal(contracts.lore.skipUnchangedWindowBodyRead, false, 'lore lacks an independent revision header outside host lore snapshot');
+  assert.equal(contracts.canonical.reReadRequiredEveryRequest, false);
+  assert.equal(contracts.micro.reReadRequiredEveryRequest, false);
+  assert.equal(contracts.state.reReadRequiredEveryRequest, true, 'scope singleton state head is checked once per request');
+  assert.equal(contracts.lore.reReadRequiredEveryRequest, true, 'host lore snapshot and link basis are re-read once per request');
+  const source = fs.readFileSync(pluginPath, 'utf8');
+  for (const family of inventory.SOURCE_FAMILIES) {
+    const contract = inventory.currentnessContractFor(family);
+    assert.ok(contract.guaranteedScope.length >= 1);
+    assert.ok(contract.reReadRequiredScope.length >= 2);
+    assert.ok(contract.evidenceSymbols.length >= 3);
+    for (const symbol of contract.evidenceSymbols) {
+      assert.ok(source.includes(symbol), 'currentness evidence symbol ' + symbol + ' must exist in plugins/LIBRA.js');
+    }
+  }
+  assert.throws(() => inventory.currentnessContractFor('unknown_family'), error => error.reason === 'family_unsupported');
+});
+
+test('N01-A: incremental source proof verification isolates per-family and per-window changes with negative controls', () => {
+  const baseProof = () => ({
+    schema: 'libra.graph_corpus_owner_proof.v1',
+    scopeKey: 'scope-main',
+    worldlineId: 'main',
+    restoreEpoch: 0,
+    cutoffTurn: null,
+    limit: 1,
+    manifestDigest: sha256('manifest-v1'),
+    registryDigest: sha256('registry-v1'),
+    turnPairsDigest: sha256('pairs-v1'),
+    stateProof: { continuityStateDigest: sha256('state-v1'), correctionJournalDigest: sha256('journal-v1'), stateRevision: 's-rev-1' },
+    loreProof: { allowedLoreDigest: sha256('lore-v1'), loreMappingDigest: sha256('map-v1'), loreBasisDigest: sha256('basis-v1') },
+    windows: [
+      {
+        ordinal: 0,
+        canonicalOffset: 0,
+        microOffset: 0,
+        limit: 1,
+        canonicalSlice: [{ refIdentity: { key: 'c0', revision: 1, sourceDigest: 'd0' }, available: true, evidenceKey: 'ev0' }],
+        microSlice: [{ turn: 1, pairRevisionId: 'r1', pairSourceDigest: 'p1', completedHeadDigest: 'ch1', microHeadDigest: 'mh1', status: 'verified' }]
+      },
+      {
+        ordinal: 1,
+        canonicalOffset: 1,
+        microOffset: 1,
+        limit: 1,
+        canonicalSlice: [{ refIdentity: { key: 'c1', revision: 1, sourceDigest: 'd1' }, available: true, evidenceKey: 'ev1' }],
+        microSlice: [{ turn: 2, pairRevisionId: 'r2', pairSourceDigest: 'p2', completedHeadDigest: 'ch2', microHeadDigest: 'mh2', status: 'verified' }]
+      }
+    ]
+  });
+  const ok = inventory.verifyIncrementalSourceProofs(baseProof(), baseProof());
+  assert.equal(ok.status, 'verified');
+  assert.equal(ok.mode, 'incremental_owner_proof');
+  assert.deepEqual(ok.changedFamilies, []);
+  assert.deepEqual(ok.changedWindows, []);
+  assert.deepEqual(ok.unchangedWindows, [0, 1]);
+  assert.deepEqual(ok.guaranteedFamiliesWithoutBodyReRead, ['canonical', 'micro', 'state']);
+  assert.deepEqual(ok.reReadRequiredEveryRequestFamilies, ['state', 'lore']);
+  assert.deepEqual(ok.bodyReReadRequiredFamilies, ['lore']);
+  assert.equal(ok.consumedReadSetPhysicalRecheckRequired, true);
+  assert.equal(ok.ownerAtomicity, false);
+  assert.equal(ok.byteBounded, false);
+
+  // Negative control 1: canonical slice changed in window 1
+  const canonicalMutated = baseProof();
+  canonicalMutated.manifestDigest = sha256('manifest-v2');
+  canonicalMutated.windows[1].canonicalSlice[0].refIdentity.revision = 2;
+  const canonicalVerdict = inventory.verifyIncrementalSourceProofs(baseProof(), canonicalMutated);
+  assert.equal(canonicalVerdict.status, 'stale_source');
+  assert.deepEqual(canonicalVerdict.changedFamilies, ['canonical']);
+  assert.deepEqual(canonicalVerdict.changedWindows, [1]);
+  assert.deepEqual(canonicalVerdict.unchangedWindows, [0]);
+  assert.equal(canonicalVerdict.familyVerdicts.canonical.status, 'changed');
+  assert.equal(canonicalVerdict.familyVerdicts.micro.status, 'verified');
+
+  // Negative control 2: micro head or turn pair changed in window 1
+  const microMutated = baseProof();
+  microMutated.turnPairsDigest = sha256('pairs-v2');
+  microMutated.windows[1].microSlice[0].microHeadDigest = 'mh2-mutated';
+  const microVerdict = inventory.verifyIncrementalSourceProofs(baseProof(), microMutated);
+  assert.equal(microVerdict.status, 'stale_source');
+  assert.deepEqual(microVerdict.changedFamilies, ['micro']);
+  assert.deepEqual(microVerdict.changedWindows, [1]);
+  assert.deepEqual(microVerdict.unchangedWindows, [0]);
+
+  // Negative control 3: state head changed
+  const stateMutated = baseProof();
+  stateMutated.stateProof.continuityStateDigest = sha256('state-v2');
+  const stateVerdict = inventory.verifyIncrementalSourceProofs(baseProof(), stateMutated);
+  assert.equal(stateVerdict.status, 'stale_source');
+  assert.deepEqual(stateVerdict.changedFamilies, ['state']);
+
+  // Negative control 4: lore snapshot changed
+  const loreMutated = baseProof();
+  loreMutated.loreProof.allowedLoreDigest = sha256('lore-v2');
+  const loreVerdict = inventory.verifyIncrementalSourceProofs(baseProof(), loreMutated);
+  assert.equal(loreVerdict.status, 'stale_source');
+  assert.deepEqual(loreVerdict.changedFamilies, ['lore']);
+
+  // Negative control 5: restoreEpoch changed
+  const epochMutated = baseProof();
+  epochMutated.restoreEpoch = 1;
+  const epochVerdict = inventory.verifyIncrementalSourceProofs(baseProof(), epochMutated);
+  assert.equal(epochVerdict.status, 'stale_source');
+  assert.equal(epochVerdict.frameChanged, true);
+  assert.deepEqual(epochVerdict.changedFamilies, ['canonical', 'micro', 'state', 'lore']);
 });
 
 test('N01: an inventory is a bounded page whose cursor resumes exactly the remainder', () => {

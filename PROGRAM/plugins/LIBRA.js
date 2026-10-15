@@ -46333,17 +46333,77 @@ function createLibraReadonlySourceContext(owner) {
     && compiled.partition === partition && compiled.generation === generation;
   return Object.freeze({ compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
 });
-    const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint } = {}) {
+    const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
   const pools = ['nodes','edges','bases','units'];
   const tables = ['directory','adjacency','postings','reverseDependencies'];
   const schema = 'libra.graph_corpus.v1';
+  const routingVersion = 'libra.index_page_routing.v1';
+  const proofVersion = 'libra.source_proof_contract.v1';
+  const proofSchema = 'libra.graph_corpus_source_proofs.v1';
+  const proofSummarySchema = 'libra.graph_corpus_source_proof_summary.v1';
+  const projectionSchema = 'libra.graph_corpus_projection.v1';
   let active = false;
-  const fail = reason => { const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase()); e.reason = reason; throw e; };
+  const fail = (reason, extra = null) => {
+    const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase());
+    e.reason = reason;
+    if (extra && typeof extra === 'object') Object.assign(e, extra);
+    throw e;
+  };
   const hash = value => { const h = fingerprint(value); if (!/^[a-f0-9]{64}$/.test(h)) fail('digest_invalid'); return h; };
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
   const partition = graph => JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: graph.readerFrame.view.viewerId });
   const stamp = graph => pages.generation(graph, { partition: partition(graph), restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
+
+  // N01-A: Explicit per-family currentness guarantee & conservative reread scope contracts.
+  const DEFAULT_FAMILY_CURRENTNESS_CONTRACTS = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical',
+      proofMode: 'owner_manifest_ref_table_and_registry',
+      proofBasis: Object.freeze(['owner_manifest_ref_table', 'entity_registry', 'restore_epoch', 'approved_evidence_binding']),
+      guaranteedScope: Object.freeze(['unchanged_window_canonical_record_bodies', 'unchanged_window_canonical_assertions_and_edges']),
+      reReadRequiredScope: Object.freeze(['owner_manifest_head', 'entity_registry_head', 'changed_canonical_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_storage_tampering_without_manifest_revision_change']),
+      evidenceSymbols: Object.freeze(['canonicalReaderRefIdentity', 'loadManifest', 'ENTITY_REGISTRY_SCHEMA', 'microRestoreGeneration'])
+    }),
+    micro: Object.freeze({
+      family: 'micro',
+      proofMode: 'host_turn_pair_and_micro_head_revision',
+      proofBasis: Object.freeze(['host_completed_turn_pair_digest', 'completed_turn_head_revision', 'micro_memory_head_revision', 'micro_work_attempt_digest', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['unchanged_window_micro_turn_record_bodies', 'unchanged_window_completed_turn_receipt_bodies', 'unchanged_window_micro_candidate_units']),
+      reReadRequiredScope: Object.freeze(['host_chat_turn_pairs', 'per_turn_completed_and_micro_heads', 'changed_micro_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_micro_record_tampering_without_head_or_pair_change']),
+      evidenceSymbols: Object.freeze(['completedTurnRevisionId', 'readActiveCompletedTurnReceipt', 'libra.micro_memory_head.v1', 'microRestoreGeneration'])
+    }),
+    state: Object.freeze({
+      family: 'state',
+      proofMode: 'scope_singleton_state_head_and_correction_journal',
+      proofBasis: Object.freeze(['continuity_state_head', 'state_worldline_meta', 'state_correction_journal_revision', 'entity_registry', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['scope_singleton_state_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['scope_state_head_every_request', 'state_correction_journal_head_every_request', 'consumed_state_decision_keys']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadContinuityStateForResponse', 'loadStateCorrectionJournal', 'stateWorldlineMeta'])
+    }),
+    lore: Object.freeze({
+      family: 'lore',
+      proofMode: 'host_lore_snapshot_and_link_index_reread',
+      proofBasis: Object.freeze(['host_risu_lore_snapshot_digest', 'lore_link_mapping_head', 'lore_link_index_basis_digest']),
+      guaranteedScope: Object.freeze(['scope_singleton_lore_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['host_risu_lore_snapshot_every_request', 'lore_link_mapping_every_request', 'lore_link_index_basis_every_request']),
+      skipUnchangedWindowBodyRead: false,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadRisuContextSnapshot', 'loreLinkAllowedEntries', 'buildLoreLinkIndex'])
+    })
+  });
+  const FAMILY_CURRENTNESS_CONTRACTS = inventory?.FAMILY_CURRENTNESS_CONTRACTS || DEFAULT_FAMILY_CURRENTNESS_CONTRACTS;
+
   // Owner cursor signatures contain request/runtime publication bindings. They
   // are fresh traversal handles, not durable content identities across restart.
   // Preserve whether another slice exists; native row/frame bindings identify
@@ -46365,7 +46425,7 @@ function createLibraReadonlySourceContext(owner) {
   };
   const enumerate = async (snapshot, input, check = () => {}) => {
     const config = policy(input), maps = Object.fromEntries(pools.map(pool => [pool,new Map()]));
-    const sourceKeys = new Set(), canonicalRows = new Map(), windows = [], reasons = {}, families = {}, sourceReadFailures = new Map();
+    const sourceKeys = new Set(), canonicalRows = new Map(), windows = [], windowProofs = [], reasons = {}, families = {}, sourceReadFailures = new Map();
     let first = null, collected = null, options = { limit: config.limit, nodeLimit: config.nodeLimit, canonicalCursor: '', microCursor: '' };
     let bytes = 0;
     for (;;) {
@@ -46375,10 +46435,18 @@ function createLibraReadonlySourceContext(owner) {
       const graph = value.graph;
       if (!first) { first = graph; collected = value.collected; }
       if (!same(first.readerFrame, graph.readerFrame) || graph.scopeKey !== first.scopeKey) fail('frame_changed');
-      const inventory = graph.coverage?.inventory;
-      if (!inventory || inventory.canonicalTotal !== first.coverage.inventory.canonicalTotal
-        || inventory.microTurnTotal !== first.coverage.inventory.microTurnTotal) fail('inventory_changed');
-      windows.push({ ordinal: windows.length, stamp: windowStamp(graph) });
+      const inv = graph.coverage?.inventory;
+      if (!inv || inv.canonicalTotal !== first.coverage.inventory.canonicalTotal
+        || inv.microTurnTotal !== first.coverage.inventory.microTurnTotal) fail('inventory_changed');
+      const ordinal = windows.length, currentWindowStamp = windowStamp(graph);
+      windows.push({ ordinal, stamp: currentWindowStamp });
+      windowProofs.push({
+        ordinal,
+        stamp: currentWindowStamp,
+        canonicalNext: inv.canonicalNextCursor ? 'unread' : '',
+        microNext: inv.microNextCursor ? 'unread' : '',
+        ownerProof: value.windowProof || value.collected?.windowProof || null
+      });
       for (const pool of pools) for (const row of graph[pool]) {
         const id = row.id || row.nodeId, before = maps[pool].get(id);
         if (before) { if (!same(before,row)) fail('overlap_changed'); continue; }
@@ -46397,7 +46465,7 @@ function createLibraReadonlySourceContext(owner) {
         families[family] = { ...entry }; reasons[family] ||= new Set();
         for (const reason of entry.reasons || []) if (!['canonical_pages_unread','micro_pages_unread'].includes(reason)) reasons[family].add(reason);
       }
-      const nextCanonical = inventory.canonicalNextCursor || '', nextMicro = inventory.microNextCursor || '';
+      const nextCanonical = inv.canonicalNextCursor || '', nextMicro = inv.microNextCursor || '';
       if (!nextCanonical && !nextMicro) break;
       // Retain the last cursor of a completed family; empty would restart it.
       const next = { ...options, canonicalCursor: nextCanonical || options.canonicalCursor, microCursor: nextMicro || options.microCursor };
@@ -46427,8 +46495,14 @@ function createLibraReadonlySourceContext(owner) {
         canonicalNextCursor: '', microNextCursor: '', inventoryComplete: false,
         scope: 'enumerated_owner_windows', enumeratedWindows: windows.length, exhaustiveOwnerDeltaVerified: false },
       projectionComplete: sourceReadFailures.size === 0 && Object.values(families).every(entry => !entry.reasons.length) } };
-    return { graph, windows, collected: { ...collected, sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()] },
-      serializedGraphBytes: bytes, config };
+    return {
+      graph,
+      windows,
+      windowProofs,
+      collected: { ...collected, sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs },
+      serializedGraphBytes: bytes,
+      config
+    };
   };
   const parse = (raw, maximum) => {
     if (typeof raw !== 'string' || raw.length > maximum || new TextEncoder().encode(raw).length > maximum) fail('record_size');
@@ -46451,10 +46525,10 @@ function createLibraReadonlySourceContext(owner) {
         return live.graph;
       },
       access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
-  const routingVersion = 'libra.index_page_routing.v1';
   const routingKinds = { directory: ['node','source'], adjacency: ['anchor'],
     postings: ['lexical','entity','predicate','time'], reverseDependencies: ['dependency'] };
   const range = values => {
@@ -46498,9 +46572,65 @@ function createLibraReadonlySourceContext(owner) {
           offset = page.nextOffset;
         } while (offset < compiled[table].length);
       }
+      const ownerProof = typeof owner.captureSourceProof === 'function'
+        ? await owner.captureSourceProof({ graph, collected: value.collected, windows: value.windows, windowProofs: value.windowProofs, config })
+        : null;
+      owner.check();
+      const proofRecord = {
+        schema: proofSchema,
+        proofVersion,
+        scopeKey: graph.scopeKey,
+        frame: graph.readerFrame,
+        generation,
+        windowCount: value.windows.length,
+        windows: value.windows,
+        windowProofs: value.windowProofs.map(wp => ({
+          ordinal: wp.ordinal,
+          stamp: wp.stamp,
+          canonicalNext: wp.canonicalNext,
+          microNext: wp.microNext
+        })),
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+        ownerProof: ownerProof || null
+      };
+      const proofRaw = JSON.stringify(proofRecord), proofDigest = hash(proofRaw), proofKey = loc.prefix + 'proof:' + proofDigest;
+      if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
+      await immutable(owner, proofKey, proofRaw);
+
+      const projectionRecord = {
+        schema: projectionSchema,
+        generation,
+        scopeKey: graph.scopeKey,
+        frame: graph.readerFrame,
+        serializedGraphBytes: value.serializedGraphBytes,
+        graph,
+        collected: {
+          sourceKeys: Array.isArray(value.collected?.sourceKeys) ? value.collected.sourceKeys : [],
+          entityRegistry: Array.isArray(value.collected?.entityRegistry) ? value.collected.entityRegistry : [],
+          canonicalRows: Array.isArray(value.collected?.canonicalRows) ? value.collected.canonicalRows : []
+        }
+      };
+      const projectionRaw = JSON.stringify(projectionRecord), projectionDigest = hash(projectionRaw), projectionKey = loc.prefix + 'projection:' + projectionDigest;
+      if (new TextEncoder().encode(projectionRaw).length > config.maxSerializedBytes) fail('index_budget');
+      await immutable(owner, projectionKey, projectionRaw);
+
+      const sourceProofs = {
+        schema: proofSummarySchema,
+        proofVersion,
+        proofKey,
+        proofDigest,
+        projectionKey,
+        projectionDigest,
+        windowCount: value.windows.length,
+        ownerProofAvailable: Boolean(ownerProof),
+        guaranteedFamiliesWithoutBodyReRead: ['canonical', 'micro', 'state'],
+        reReadRequiredEveryRequestFamilies: ['state', 'lore'],
+        bodyReReadRequiredFamilies: ['lore']
+      };
+
       const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
-        serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        sourceProofs, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
       const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
@@ -46514,35 +46644,114 @@ function createLibraReadonlySourceContext(owner) {
       if (!same(value.windows,after.windows)) fail('source_changed_after_publication');
       return { schema, status: 'published', generation, indexDigest: compiled.indexDigest, windowCount: value.windows.length,
         pageCount: refs.length, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        sourceProofs, familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
     } finally { active = false; }
   };
+  const validSourceProofSummary = (summary, loc, windowCount) => {
+    if (summary === undefined) return true;
+    if (!summary || typeof summary !== 'object' || summary.schema !== proofSummarySchema
+      || summary.proofVersion !== proofVersion || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
+      || !/^[a-f0-9]{64}$/.test(String(summary.projectionDigest || ''))
+      || summary.proofKey !== loc.prefix + 'proof:' + summary.proofDigest
+      || summary.projectionKey !== loc.prefix + 'projection:' + summary.projectionDigest
+      || summary.windowCount !== windowCount) return false;
+    return true;
+  };
   const read = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
-    const loc = location(initialGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
+    const startGraph = initialGraph || (await snapshot({ limit: 1, nodeLimit: 64, canonicalCursor: '', microCursor: '' })).graph;
+    const loc = location(startGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
     if (rootRaw === null) return null;
     const root = parse(rootRaw,2048);
     if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
     const raw = await owner.read(root.manifestKey), manifest = parse(raw,131072);
-    if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,initialGraph.readerFrame)
+    if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame,startGraph.readerFrame)
       || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
     if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
-    const native = await enumerate(snapshot, manifest.config, owner.check);
-    if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
-    const lazy = !eager && manifest.routingVersion === routingVersion;
+    if (!validSourceProofSummary(manifest.sourceProofs, loc, manifest.windows.length)) fail('manifest_invalid');
+    const config = policy(manifest.config);
     const counts = Object.fromEntries(tables.map(table => [table,0])); let total = 0;
     for (const ref of manifest.refs) {
       if (!ref || !tables.includes(ref.table) || !/^[a-f0-9]{64}$/.test(ref.digest)
         || ref.key !== loc.prefix + 'page:' + ref.table + ':' + ref.digest
-        || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > native.config.pageBytes
+        || !Number.isSafeInteger(ref.bytes) || ref.bytes < 2 || ref.bytes > config.pageBytes
         || !Number.isSafeInteger(ref.rows) || ref.rows < 0 || ref.offset !== counts[ref.table]
         || manifest.routingVersion && !validRouting(ref)) fail('directory_invalid');
       counts[ref.table] += ref.rows;
-      total += ref.bytes; if (total > native.config.maxSerializedBytes) fail('index_budget');
+      total += ref.bytes; if (total > config.maxSerializedBytes) fail('index_budget');
     }
     for (const [table,stat] of [['directory','directoryCount'],['adjacency','adjacencyCount'],['postings','postingCount'],['reverseDependencies','reverseDependencyCount']]) {
       if (!manifest.refs.some(ref => ref.table === table) || counts[table] !== manifest.metadata?.stats?.[stat]) fail('directory_invalid');
     }
+
+    let proofRecord = null, projectionRecord = null;
+    if (manifest.sourceProofs) {
+      const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
+      if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) fail('page_corrupt');
+      proofRecord = parse(proofRaw, config.maxSerializedBytes);
+      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== proofVersion
+        || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
+
+      const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
+      if (typeof projectionRaw !== 'string' || hash(projectionRaw) !== manifest.sourceProofs.projectionDigest) fail('page_corrupt');
+      projectionRecord = parse(projectionRaw, config.maxSerializedBytes);
+      if (projectionRecord?.schema !== projectionSchema || projectionRecord.generation !== manifest.generation
+        || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
+    }
+
+    const canVerifyIncrementally = !eager
+      && Boolean(proofRecord?.ownerProof)
+      && Boolean(projectionRecord?.graph)
+      && typeof owner.verifySourceProofs === 'function';
+
+    let native = null, currentnessVerification = null;
+    if (canVerifyIncrementally) {
+      const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'open' });
+      owner.check();
+      if (!verdict || verdict.status !== 'verified') {
+        fail('stale_generation', { currentnessVerification: verdict || null });
+      }
+      currentnessVerification = verdict;
+      native = {
+        graph: projectionRecord.graph,
+        windows: manifest.windows,
+        collected: {
+          ...projectionRecord.collected,
+          ...(verdict.collectedPatch || {})
+        },
+        serializedGraphBytes: manifest.serializedGraphBytes,
+        config
+      };
+    } else {
+      if (proofRecord?.ownerProof && typeof owner.verifySourceProofs === 'function') {
+        const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'audit' });
+        owner.check();
+        if (!verdict || verdict.status !== 'verified') {
+          fail('stale_generation', { currentnessVerification: verdict || null });
+        }
+        currentnessVerification = { ...verdict, mode: 'eager_full_reprojection_audit', nativeReprojectionPerformed: true };
+      } else {
+        currentnessVerification = Object.freeze({
+          schema: 'libra.graph_corpus_currentness.v1',
+          status: 'verified',
+          mode: eager ? 'eager_full_reprojection_audit' : 'full_window_enumeration_fallback',
+          nativeReprojectionPerformed: true,
+          familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+          guaranteedFamiliesWithoutBodyReRead: Object.freeze(['canonical', 'micro', 'state']),
+          reReadRequiredEveryRequestFamilies: Object.freeze(['state', 'lore']),
+          bodyReReadRequiredFamilies: Object.freeze(['lore']),
+          consumedReadSetPhysicalRecheckRequired: true,
+          ownerAtomicity: false,
+          byteBounded: false
+        });
+      }
+      native = await enumerate(snapshot, config, owner.check);
+      if (!same(native.windows,manifest.windows) || stamp(native.graph) !== manifest.generation) fail('stale_generation');
+      if (projectionRecord && stamp(projectionRecord.graph) !== stamp(native.graph)) fail('page_corrupt');
+    }
+
+    const lazy = !eager && manifest.routingVersion === routingVersion;
     const metrics = { storageAccess: lazy ? 'selective_durable_pages' : 'materialized_tables',
       publishedPages: manifest.refs.length, publishedBytes: total, pagesRead: 0, bytesRead: 0, cacheHits: 0, uniquePagesRead: 0 };
     // No raw/decoded table cache: re-acquire validated content through the shared
@@ -46595,26 +46804,63 @@ function createLibraReadonlySourceContext(owner) {
       await assertIndexCurrent(); return { rows };
     };
     let compiledIndex;
-    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: stamp(native.graph), readRows });
+    if (lazy) compiledIndex = index.restoreLazy(manifest.metadata,{ partition: loc.partition, generation: manifest.generation, readRows });
     else {
       const restored = { ...manifest.metadata, ...Object.fromEntries(tables.map(table => [table,[]])) };
       for (const ref of manifest.refs) await readPage(ref, rows => restored[ref.table].push(...rows));
-      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: stamp(native.graph) });
+      compiledIndex = index.restore(restored,{ partition: loc.partition, generation: manifest.generation });
     }
     await assertIndexCurrent();
     const currentGraph = async () => {
       await assertIndexCurrent();
+      if (canVerifyIncrementally) {
+        const latestVerdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config: native.config, phase: 'commit' });
+        owner.check();
+        if (!latestVerdict || latestVerdict.status !== 'verified') {
+          fail('stale_generation', { currentnessVerification: latestVerdict || null });
+        }
+        await assertIndexCurrent();
+        return native.graph;
+      }
       const live = await enumerate(snapshot, native.config, owner.check);
       if (!same(live.windows,manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
       await assertIndexCurrent(); return live.graph;
     };
-    return { ...native, compiledIndex, currentGraph, assertIndexCurrent,
-      access: { schema, mode: 'durable_common_index', generation: manifest.generation, indexDigest: compiledIndex.indexDigest,
-        windowCount: native.windows.length, pageCount: manifest.refs.length,
-        serializedGraphBytes: native.serializedGraphBytes, serializedIndexBytes: total, storage: metrics,
-        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false } };
+    return {
+      ...native,
+      sourceProofs: proofRecord,
+      currentnessVerification,
+      compiledIndex,
+      currentGraph,
+      assertIndexCurrent,
+      access: {
+        schema,
+        mode: 'durable_common_index',
+        generation: manifest.generation,
+        indexDigest: compiledIndex.indexDigest,
+        windowCount: native.windows.length,
+        pageCount: manifest.refs.length,
+        serializedGraphBytes: native.serializedGraphBytes,
+        serializedIndexBytes: total,
+        storage: metrics,
+        currentnessVerification,
+        familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
+        nativeReprojectionRequired: !canVerifyIncrementally,
+        ownerAtomicity: false,
+        inventoryComplete: false,
+        byteBounded: false
+      }
+    };
   };
-  return Object.freeze({ build, read, prepare, enumerate, location, inspect: () => ({ activeBuild: active }) });
+  return Object.freeze({
+    FAMILY_CURRENTNESS_CONTRACTS,
+    build,
+    read,
+    prepare,
+    enumerate,
+    location,
+    inspect: () => ({ activeBuild: active })
+  });
 });
     const createLibraMemoryGraphLane = (function createMemoryGraphLane({ index, pages } = {}) {
   if (!index || typeof index.queryPage !== 'function' || !pages || typeof pages.measure !== 'function') {
@@ -49285,11 +49531,153 @@ function createLibraReadonlySourceContext(owner) {
     })
   });
 
+  // N01-A: Explicit per-family incremental source currentness & conservative reread contracts.
+  // Declares what owner change proofs guarantee without re-reading historical window record bodies
+  // versus what must retain request-level rereading or consumed-readset physical verification.
+  const FAMILY_CURRENTNESS_CONTRACTS = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical',
+      proofMode: 'owner_manifest_ref_table_and_registry',
+      proofBasis: Object.freeze(['owner_manifest_ref_table', 'entity_registry', 'restore_epoch', 'approved_evidence_binding']),
+      guaranteedScope: Object.freeze(['unchanged_window_canonical_record_bodies', 'unchanged_window_canonical_assertions_and_edges']),
+      reReadRequiredScope: Object.freeze(['owner_manifest_head', 'entity_registry_head', 'changed_canonical_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_storage_tampering_without_manifest_revision_change']),
+      evidenceSymbols: Object.freeze(['canonicalReaderRefIdentity', 'loadManifest', 'ENTITY_REGISTRY_SCHEMA', 'microRestoreGeneration'])
+    }),
+    micro: Object.freeze({
+      family: 'micro',
+      proofMode: 'host_turn_pair_and_micro_head_revision',
+      proofBasis: Object.freeze(['host_completed_turn_pair_digest', 'completed_turn_head_revision', 'micro_memory_head_revision', 'micro_work_attempt_digest', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['unchanged_window_micro_turn_record_bodies', 'unchanged_window_completed_turn_receipt_bodies', 'unchanged_window_micro_candidate_units']),
+      reReadRequiredScope: Object.freeze(['host_chat_turn_pairs', 'per_turn_completed_and_micro_heads', 'changed_micro_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_micro_record_tampering_without_head_or_pair_change']),
+      evidenceSymbols: Object.freeze(['completedTurnRevisionId', 'readActiveCompletedTurnReceipt', 'libra.micro_memory_head.v1', 'microRestoreGeneration'])
+    }),
+    state: Object.freeze({
+      family: 'state',
+      proofMode: 'scope_singleton_state_head_and_correction_journal',
+      proofBasis: Object.freeze(['continuity_state_head', 'state_worldline_meta', 'state_correction_journal_revision', 'entity_registry', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['scope_singleton_state_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['scope_state_head_every_request', 'state_correction_journal_head_every_request', 'consumed_state_decision_keys']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadContinuityStateForResponse', 'loadStateCorrectionJournal', 'stateWorldlineMeta'])
+    }),
+    lore: Object.freeze({
+      family: 'lore',
+      proofMode: 'host_lore_snapshot_and_link_index_reread',
+      proofBasis: Object.freeze(['host_risu_lore_snapshot_digest', 'lore_link_mapping_head', 'lore_link_index_basis_digest']),
+      guaranteedScope: Object.freeze(['scope_singleton_lore_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['host_risu_lore_snapshot_every_request', 'lore_link_mapping_every_request', 'lore_link_index_basis_every_request']),
+      skipUnchangedWindowBodyRead: false,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadRisuContextSnapshot', 'loreLinkAllowedEntries', 'buildLoreLinkIndex'])
+    })
+  });
+
   const profileFor = family => FAMILY_SUPPORT_PROFILES[text(family)] || null;
+  const currentnessContractFor = family => {
+    const contract = FAMILY_CURRENTNESS_CONTRACTS[text(family)];
+    if (!contract) fail('family_unsupported');
+    return contract;
+  };
   const supportBasisSymbols = family => {
     const profile = profileFor(family);
     if (!profile) fail('family_unsupported');
     return profile.basis;
+  };
+
+  const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+  const verifyIncrementalSourceProofs = (published, live) => {
+    if (!published || !live || published.schema !== 'libra.graph_corpus_owner_proof.v1'
+      || live.schema !== 'libra.graph_corpus_owner_proof.v1') fail('owner_proof_invalid');
+    if (!Array.isArray(published.windows) || !Array.isArray(live.windows) || !published.windows.length) fail('owner_proof_windows_invalid');
+    const frameChanged = published.scopeKey !== live.scopeKey
+      || published.worldlineId !== live.worldlineId
+      || Number(published.restoreEpoch) !== Number(live.restoreEpoch)
+      || (published.cutoffTurn ?? null) !== (live.cutoffTurn ?? null);
+    const windowCountChanged = published.windows.length !== live.windows.length;
+    const canonicalWindows = new Set(), microWindows = new Set(), stateReasons = [], loreReasons = [];
+    const canonicalReasons = [], microReasons = [];
+    if (published.manifestDigest !== live.manifestDigest) canonicalReasons.push('manifest_ref_table_changed');
+    if (published.registryDigest !== live.registryDigest) {
+      canonicalReasons.push('entity_registry_changed');
+      stateReasons.push('entity_registry_changed');
+    }
+    if (published.turnPairsDigest !== live.turnPairsDigest) microReasons.push('host_turn_pairs_changed');
+    const maxWindows = Math.max(published.windows.length, live.windows.length);
+    for (let index = 0; index < maxWindows; index++) {
+      const before = published.windows[index], after = live.windows[index];
+      if (!before || !after) {
+        canonicalWindows.add(index);
+        microWindows.add(index);
+        continue;
+      }
+      if (!sameJson(before.canonicalSlice, after.canonicalSlice)) canonicalWindows.add(index);
+      if (!sameJson(before.microSlice, after.microSlice)) microWindows.add(index);
+    }
+    if (canonicalWindows.size && !canonicalReasons.length) canonicalReasons.push('canonical_window_slice_changed');
+    if (microWindows.size && !microReasons.length) microReasons.push('micro_window_head_or_pair_changed');
+    if (!sameJson(published.stateProof, live.stateProof)) stateReasons.push('state_head_or_correction_changed');
+    if (!sameJson(published.loreProof, live.loreProof)) loreReasons.push('host_lore_or_link_basis_changed');
+    if (frameChanged) {
+      for (const list of [canonicalReasons, microReasons, stateReasons, loreReasons]) list.push('frame_or_restore_epoch_changed');
+    }
+    if (windowCountChanged) {
+      canonicalReasons.push('window_count_changed');
+      microReasons.push('window_count_changed');
+    }
+    const buildVerdict = (family, reasons, windowsChanged = []) => {
+      const contract = FAMILY_CURRENTNESS_CONTRACTS[family];
+      const uniqueReasons = [...new Set(reasons)];
+      return Object.freeze({
+        family,
+        status: uniqueReasons.length === 0 && windowsChanged.length === 0 ? 'verified' : 'changed',
+        proofMode: contract.proofMode,
+        skipUnchangedWindowBodyRead: contract.skipUnchangedWindowBodyRead,
+        reReadRequiredEveryRequest: contract.reReadRequiredEveryRequest,
+        guaranteedScope: contract.guaranteedScope,
+        reReadRequiredScope: contract.reReadRequiredScope,
+        changedWindows: Object.freeze([...windowsChanged].sort((a, b) => a - b)),
+        reasons: Object.freeze(uniqueReasons)
+      });
+    };
+    const allWindowIndices = Array.from({ length: maxWindows }, (_, index) => index);
+    const familyVerdicts = Object.freeze({
+      canonical: buildVerdict('canonical', canonicalReasons, [...canonicalWindows]),
+      micro: buildVerdict('micro', microReasons, [...microWindows]),
+      state: buildVerdict('state', stateReasons, stateReasons.length ? [0] : []),
+      lore: buildVerdict('lore', loreReasons, loreReasons.length ? [0] : [])
+    });
+    const changedFamilies = SOURCE_FAMILIES.filter(family => familyVerdicts[family].status !== 'verified');
+    const changedWindowSet = new Set([...canonicalWindows, ...microWindows]);
+    if (stateReasons.length || loreReasons.length || frameChanged) changedWindowSet.add(0);
+    const changedWindows = [...changedWindowSet].sort((a, b) => a - b);
+    const unchangedWindows = allWindowIndices.filter(index => !changedWindowSet.has(index));
+    return Object.freeze({
+      schema: 'libra.graph_corpus_currentness.v1',
+      status: !frameChanged && !windowCountChanged && changedFamilies.length === 0 && changedWindows.length === 0 ? 'verified' : 'stale_source',
+      mode: 'incremental_owner_proof',
+      frameChanged,
+      windowCountChanged,
+      changedFamilies: Object.freeze(changedFamilies),
+      changedWindows: Object.freeze(changedWindows),
+      unchangedWindows: Object.freeze(unchangedWindows),
+      familyVerdicts,
+      guaranteedFamiliesWithoutBodyReRead: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].skipUnchangedWindowBodyRead)),
+      reReadRequiredEveryRequestFamilies: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].reReadRequiredEveryRequest)),
+      bodyReReadRequiredFamilies: Object.freeze(SOURCE_FAMILIES.filter(f => !FAMILY_CURRENTNESS_CONTRACTS[f].skipUnchangedWindowBodyRead)),
+      consumedReadSetPhysicalRecheckRequired: true,
+      ownerAtomicity: false,
+      byteBounded: false
+    });
   };
 
   const normalizeEntries = entries => {
@@ -49446,7 +49834,10 @@ function createLibraReadonlySourceContext(owner) {
   return Object.freeze({
     SOURCE_FAMILIES,
     FAMILY_SUPPORT_PROFILES,
+    FAMILY_CURRENTNESS_CONTRACTS,
+    currentnessContractFor,
     supportBasisSymbols,
+    verifyIncrementalSourceProofs,
     buildSourceInventory,
     diffInventories,
     mergeFamilyInventories
@@ -68469,24 +68860,53 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         await read(key.manifest(scope), () => storage.getVerifiedJson(key.manifest(scope), scope, null));
         const storedRegistry = await read(key.entityRegistry(scope), () => storage.getVerifiedJson(key.entityRegistry(scope), scope, null));
         const registry = storedRegistry || { schema: ENTITY_REGISTRY_SCHEMA, scopeKey: scope.scopeKey, entities: [] };
-        const canonical = [];
+        const canonical = [], canonicalSliceProof = [];
         for (const ref of refs.slice(canonicalOffset, canonicalOffset + limit)) {
           const memory = await read(ref.key, () => loadMemoryRef(ref));
-          if (!memory) { pending.canonical.push('canonical_readback_unavailable'); continue; }
+          if (!memory) {
+            pending.canonical.push('canonical_readback_unavailable');
+            canonicalSliceProof.push({ refIdentity: canonicalReaderRefIdentity(ref), available: false, evidenceKey: '' });
+            continue;
+          }
           const approvedEvidence = unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema) ? await unifiedEvidenceRead(memory) : null;
           if (approvedEvidence) addSourceKey(approvedEvidence.ref?.key);
+          canonicalSliceProof.push({ refIdentity: canonicalReaderRefIdentity(ref), available: true, evidenceKey: string(approvedEvidence?.ref?.key || '') });
           const entityRefs = Object.fromEntries(asArray(memory.canonicalArtifact?.entities).map(entity => [entity.tempId,
             unifiedContinuityEntityId(memory.canonicalArtifact, entity.tempId, registry || {}, memory.unifiedRuntimeEntityOverrides) || '']));
           canonical.push({ key: ref.key, ref: clone(ref), record: clone(memory), entityRefs,
             originScope: string(memory.scopeKey || scope.scopeKey), evidenceBatch: approvedEvidence ? clone(approvedEvidence.batch) : [] });
         }
-        const micro = [];
+        const micro = [], microSliceProof = [];
         for (const turn of turns.slice(microOffset, microOffset + limit)) {
+          const worldlineId = hostWorldlineIdForScope(scope);
+          const completedHeadKey = key.completedTurnHead(scope, worldlineId, 0, turn);
+          const microHeadKey = key.microMemoryHead(scope, worldlineId, 0, turn);
           const value = await read('micro-turn:' + turn,
-            () => readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn));
-          addSourceKey(key.completedTurnHead(scope, hostWorldlineIdForScope(scope), 0, turn));
-          addSourceKey(key.microMemoryHead(scope, hostWorldlineIdForScope(scope), 0, turn));
+            () => readActiveMicroMemory(scope, worldlineId, 0, turn));
+          addSourceKey(completedHeadKey);
+          addSourceKey(microHeadKey);
           for (const storageKey of [value.recordKey, value.headKey, value.record?.receiptKey, value.record?.workKey]) addSourceKey(storageKey);
+          if (collect) {
+            const pair = active.pairs[turn - 1];
+            let completedHead = null, microHead = value.head || null;
+            try { completedHead = await storage.getVerifiedJson(completedHeadKey, scope, null); } catch (_) { completedHead = 'corrupt_completed_head'; }
+            if (!microHead) try { microHead = await storage.getVerifiedJson(microHeadKey, scope, null); } catch (_) { microHead = 'corrupt_micro_head'; }
+            microSliceProof.push({
+              turn: Number(turn),
+              pairRevisionId: pair ? completedTurnRevisionId(pair) : '',
+              pairSourceDigest: pair ? sourceDigest([pair]) : '',
+              completedHeadKey,
+              completedHeadDigest: digest(completedHead),
+              microHeadKey,
+              microHeadDigest: digest(microHead),
+              workKey: string(microHead?.workKey || ''),
+              workDigest: string(microHead?.workDigest || ''),
+              attemptId: string(microHead?.attemptId || ''),
+              status: value.status === 'verified' ? 'verified' : string(value.status || 'missing'),
+              recordKey: value.status === 'verified' ? string(value.recordKey || '') : '',
+              receiptKey: value.status === 'verified' ? string(value.record?.receiptKey || '') : ''
+            });
+          }
           if (value.status === 'verified' && microRecallMemoryFromRecord(value.record, value.receipt, value.recordKey)) {
             micro.push({ ...clone(value), receiptKey: value.record.receiptKey });
           } else if (value.status !== 'missing' || !refs.some(ref => Number(ref.sessionEpoch || 0) === 0 && turn >= Number(ref.turnRange?.start) && turn <= Number(ref.turnRange?.end))) {
@@ -68494,11 +68914,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           }
         }
         if (asArray(active.manifest.inheritedMicroArchives).length) pending.micro.push('inherited_micro_projection_not_yet_supported');
-        await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
+        const storedState = await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
         const stateView = await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
-        if (sourceKeys) {
-          for (const rows of [stateView?.head?.characters, stateView?.head?.relationships, stateView?.head?.world, [stateView?.head?.narrative]]) {
-            for (const row of asArray(rows)) for (const evidence of Object.values(asObject(row?.fieldEvidence))) addSourceKey(evidence?.decisionKey);
+        const stateDecisionKeys = new Set();
+        for (const rows of [stateView?.head?.characters, stateView?.head?.relationships, stateView?.head?.world, [stateView?.head?.narrative]]) {
+          for (const row of asArray(rows)) for (const evidence of Object.values(asObject(row?.fieldEvidence))) {
+            if (evidence?.decisionKey) {
+              addSourceKey(evidence.decisionKey);
+              stateDecisionKeys.add(string(evidence.decisionKey));
+            }
           }
         }
         const stateWorldline = await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
@@ -68524,7 +68948,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
           passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
         const allowedLore = loreEntries(loreSnapshot);
-        await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
+        const storedLoreMapping = await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
         const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
         if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
         const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
@@ -68552,7 +68976,44 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           scope,
           sourceKeys: [...sourceKeys].sort(),
           entityRegistry: Array.isArray(registry?.entities) ? clone(registry.entities) : [],
-          canonicalRows: canonical.map(({ key, record }) => ({ key, record }))
+          canonicalRows: canonical.map(({ key, record }) => ({ key, record })),
+          windowProof: {
+            scopeKey: scope.scopeKey,
+            worldlineId: resolved.worldlineId,
+            restoreEpoch: epoch,
+            cutoffTurn: active.cutoffTurn ?? null,
+            canonicalOffset,
+            microOffset,
+            limit,
+            manifestDigest: digest(refs.map(canonicalReaderRefIdentity)),
+            registryDigest: digest(registry),
+            turnPairsDigest: digest(active.pairs.map(pair => ({
+              turn: Number(pair.turn),
+              revisionId: completedTurnRevisionId(pair),
+              sourceDigest: sourceDigest([pair])
+            }))),
+            canonicalSlice: canonicalSliceProof,
+            microSlice: microSliceProof,
+            stateProof: {
+              continuityStateKey: key.continuityState(scope),
+              continuityStateDigest: digest(storedState),
+              stateWorldlineKey: key.stateWorldlineMeta(scope),
+              stateWorldlineDigest: digest(stateWorldline),
+              correctionStoreKey: key.stateCorrections(scope),
+              correctionStoreDigest: digest(correctionStore),
+              correctionJournalDigest: digest(correctionJournal),
+              stateViewBasisDigest: digest(stateView?.head?.basis || null),
+              stateRevision: stableReferenceJson({ stateWorldline, correctionStore, basis: stateView?.head?.basis || null }),
+              decisionKeys: [...stateDecisionKeys].sort()
+            },
+            loreProof: {
+              loreMappingKey: key.loreLinkMapping(scope),
+              loreMappingDigest: digest(storedLoreMapping),
+              allowedLoreDigest: digest(allowedLore),
+              loreBasisDigest: digest(loreIndex.basis),
+              loreRevision: stableReferenceJson(loreIndex.basis)
+            }
+          }
         });
         return clone({ ...graph, scopeKey: scope.scopeKey, readerFrame: frame, requestLocalReadOnly: true,
           readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
@@ -68720,7 +69181,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!state.memoryGraphInventory) state.memoryGraphInventory = createLibraMemoryGraphInventory({ fingerprint: primitive.fingerprint });
       if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       if (!state.memoryGraphIndex) state.memoryGraphIndex = createLibraMemoryGraphIndex({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
-      if (!state.memoryGraphCorpus) state.memoryGraphCorpus = createLibraMemoryGraphCorpus({ pages: state.memoryGraphPages, index: state.memoryGraphIndex, fingerprint: primitive.fingerprint });
+      if (!state.memoryGraphCorpus) state.memoryGraphCorpus = createLibraMemoryGraphCorpus({ pages: state.memoryGraphPages, index: state.memoryGraphIndex, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       if (!state.memoryGraphLane) state.memoryGraphLane = createLibraMemoryGraphLane({ index: state.memoryGraphIndex, pages: state.memoryGraphPages });
       if (!state.memoryGraphQuery) state.memoryGraphQuery = createLibraMemoryGraphQuery({ index: state.memoryGraphIndex, lane: state.memoryGraphLane, pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
       if (!state.memoryGraphCompiler) state.memoryGraphCompiler = createLibraMemoryGraphCompiler({ fingerprint: primitive.fingerprint });
@@ -68741,6 +69202,36 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         compiler: state.memoryGraphCompiler,
         rollout: state.memoryGraphRollout
       };
+    };
+    const resolveMemoryGraphCorpusFrame = async (expectedScopeKey = '') => {
+      const requestId = id('graph_corpus_frame');
+      let captured = null;
+      try {
+        captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: 30000 });
+        const request = { handle: captured.handle, requestId };
+        const context = await resolveContext(), scope = context.scope;
+        if (scope.scopeKey !== captured.summary.scope.scopeKey || expectedScopeKey && expectedScopeKey !== scope.scopeKey) {
+          throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
+        }
+        const epoch = Number(state.microRestoreGeneration || 0), pairs = buildPairs(context.chat, scope.scopeKey);
+        const manifest = await loadManifest(scope, pairs.length), active = await readUnifiedWorldlineView(scope, manifest, pairs);
+        const resolved = await resolveWorldManagerHistoryWorldline(scope);
+        const frame = {
+          owner: 'libra:' + captured.summary.route.mode,
+          scopeKey: scope.scopeKey,
+          worldlineId: resolved.worldlineId,
+          restoreEpoch: epoch,
+          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null }
+        };
+        if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
+        await ownerReadonlySourceContext.assertCurrent(request);
+        return {
+          graph: { scopeKey: scope.scopeKey, readerFrame: frame },
+          collected: { scope, sourceKeys: [], entityRegistry: [], canonicalRows: [] }
+        };
+      } finally {
+        if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
+      }
     };
     const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null) => {
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '');
@@ -68766,6 +69257,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         await assertRoute();
         return mode !== 'plugin_only' ? raw?.exists === true && raw?.tombstone !== true ? raw.value : null : raw ?? null;
       };
+      const readRawOwnerSource = async storageKey => {
+        await assertRoute();
+        const raw = mode !== 'plugin_only' ? await MemorySuiteStorageBridge.serverGet('plugin', storageKey)
+          : await MemorySuiteStorageBridge.ownerLegacyRead('plugin', storageKey);
+        await assertRoute();
+        return mode !== 'plugin_only' ? (raw?.exists === true && raw?.tombstone !== true ? raw.value : null) : (raw ?? null);
+      };
       const commit = async (mutations,conditions = []) => {
         await assertRoute();
         const batch = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
@@ -68790,20 +69288,314 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             await fencedMemoryStorageSet(rootKey,raw); await assertRoute();
           }
           if (await read(rootKey) !== raw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_READBACK');
+        },
+        async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {} }) {
+          await assertRoute();
+          const firstProof = windowProofs[0]?.ownerProof || corpusCollected?.windowProof || null;
+          if (!firstProof) return null;
+          const sourceBodyDigests = {};
+          for (const storageKey of asArray(corpusCollected?.sourceKeys)) {
+            if (typeof storageKey !== 'string' || !storageKey.startsWith(PREFIX + ':scope:')) continue;
+            sourceBodyDigests[storageKey] = digest(stableReferenceJson(await readRawOwnerSource(storageKey)));
+          }
+          const recordDependencyKeys = {};
+          for (const wp of asArray(windowProofs)) {
+            const ownerWp = wp?.ownerProof;
+            if (!ownerWp) continue;
+            for (const item of asArray(ownerWp.canonicalSlice)) {
+              const refKey = string(item?.refIdentity?.key || '');
+              if (!refKey) continue;
+              recordDependencyKeys[refKey] = [...new Set([refKey, string(item.evidenceKey || '')].filter(Boolean))];
+            }
+            for (const item of asArray(ownerWp.microSlice)) {
+              const recordKey = string(item?.recordKey || '');
+              if (!recordKey) continue;
+              recordDependencyKeys[recordKey] = [...new Set([
+                recordKey,
+                string(item.receiptKey || ''),
+                string(item.completedHeadKey || ''),
+                string(item.microHeadKey || ''),
+                string(item.workKey || '')
+              ].filter(Boolean))];
+            }
+          }
+          await assertRoute();
+          return {
+            schema: 'libra.graph_corpus_owner_proof.v1',
+            scopeKey: firstProof.scopeKey,
+            worldlineId: firstProof.worldlineId,
+            restoreEpoch: firstProof.restoreEpoch,
+            cutoffTurn: firstProof.cutoffTurn,
+            limit: Number(config.limit || firstProof.limit || 20),
+            manifestDigest: firstProof.manifestDigest,
+            registryDigest: firstProof.registryDigest,
+            turnPairsDigest: firstProof.turnPairsDigest,
+            stateProof: firstProof.stateProof,
+            loreProof: firstProof.loreProof,
+            windows: asArray(windowProofs).map((wp, index) => ({
+              ordinal: index,
+              canonicalOffset: wp.ownerProof.canonicalOffset,
+              microOffset: wp.ownerProof.microOffset,
+              limit: wp.ownerProof.limit,
+              canonicalSlice: wp.ownerProof.canonicalSlice,
+              microSlice: wp.ownerProof.microSlice
+            })),
+            sourceBodyDigests,
+            recordDependencyKeys
+          };
+        },
+        async verifySourceProofs(proofRecord, { initialGraph: targetGraph, config = {}, phase = 'open' } = {}) {
+          await assertRoute();
+          const published = proofRecord?.ownerProof;
+          if (!published || published.schema !== 'libra.graph_corpus_owner_proof.v1') return null;
+          const requestId = id('graph_corpus_verify');
+          let captured = null;
+          try {
+            captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: 30000 });
+            const request = { handle: captured.handle, requestId };
+            const context = await resolveContext(), scope = context.scope;
+            if (scope.scopeKey !== captured.summary.scope.scopeKey || scope.scopeKey !== (targetGraph?.scopeKey || initialGraph.scopeKey)) {
+              throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
+            }
+            const liveEpoch = Number(state.microRestoreGeneration || 0);
+            const pairs = buildPairs(context.chat, scope.scopeKey);
+            const manifest = await loadManifest(scope, pairs.length);
+            const active = await readUnifiedWorldlineView(scope, manifest, pairs);
+            const resolved = await resolveWorldManagerHistoryWorldline(scope);
+            const refs = canonicalReaderRefs(active.manifest, resolved);
+            const turns = active.pairs.map(pair => Number(pair.turn));
+
+            await storage.getVerifiedJson(key.manifest(scope), scope, null);
+            const storedRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
+            const registry = storedRegistry || { schema: ENTITY_REGISTRY_SCHEMA, scopeKey: scope.scopeKey, entities: [] };
+            if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) {
+              throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
+            }
+            const liveManifestDigest = digest(refs.map(canonicalReaderRefIdentity));
+            const liveRegistryDigest = digest(registry);
+            const liveTurnPairsDigest = digest(active.pairs.map(pair => ({
+              turn: Number(pair.turn),
+              revisionId: completedTurnRevisionId(pair),
+              sourceDigest: sourceDigest([pair])
+            })));
+
+            const limit = Number(config.limit || published.limit || 20);
+            const publishedByRefKey = new Map();
+            for (const win of asArray(published.windows)) {
+              for (const item of asArray(win?.canonicalSlice)) {
+                const refKey = string(item?.refIdentity?.key || '');
+                if (refKey) publishedByRefKey.set(refKey, item);
+              }
+            }
+            const liveWindows = [];
+            let canonicalOffset = 0, microOffset = 0;
+            for (;;) {
+              if (liveWindows.length >= Number(config.maxWindows || 64)) break;
+              const canonicalSlice = [];
+              for (const ref of refs.slice(canonicalOffset, canonicalOffset + limit)) {
+                const refIdentity = canonicalReaderRefIdentity(ref);
+                const prior = publishedByRefKey.get(refIdentity.key);
+                const sameIdentity = Boolean(prior && stableReferenceJson(prior.refIdentity) === stableReferenceJson(refIdentity));
+                canonicalSlice.push({
+                  refIdentity,
+                  available: sameIdentity ? Boolean(prior.available) : true,
+                  evidenceKey: sameIdentity ? string(prior.evidenceKey || '') : ''
+                });
+              }
+              const microSlice = [];
+              for (const turn of turns.slice(microOffset, microOffset + limit)) {
+                const pair = active.pairs[turn - 1];
+                const worldlineId = hostWorldlineIdForScope(scope);
+                const completedHeadKey = key.completedTurnHead(scope, worldlineId, 0, turn);
+                const microHeadKey = key.microMemoryHead(scope, worldlineId, 0, turn);
+                let completedHead = null, microHead = null;
+                try { completedHead = await storage.getVerifiedJson(completedHeadKey, scope, null); } catch (_) { completedHead = 'corrupt_completed_head'; }
+                try { microHead = await storage.getVerifiedJson(microHeadKey, scope, null); } catch (_) { microHead = 'corrupt_micro_head'; }
+                const pairRevisionId = pair ? completedTurnRevisionId(pair) : '';
+                const pairSourceDigest = pair ? sourceDigest([pair]) : '';
+                const workDigest = string(microHead?.workDigest || '');
+                let status = 'missing';
+                if (completedHead && typeof completedHead === 'object' && microHead && typeof microHead === 'object') {
+                  const expectedRecordKey = key.microMemory(scope, worldlineId, 0, turn, completedHead.revisionId, microHead.analysisRevisionId);
+                  const validHead = completedHead.schema === 'libra.completed_turn_head.v1'
+                    && completedHead.tombstone !== true && completedHead.deleted !== true && completedHead.status !== 'tombstoned'
+                    && completedHead.scopeKey === scope.scopeKey && completedHead.worldlineId === worldlineId
+                    && Number(completedHead.turn) === Number(turn) && completedHead.revisionId === pairRevisionId
+                    && completedHead.sourceDigest === pairSourceDigest
+                    && microHead.schema === 'libra.micro_memory_head.v1' && microHead.scopeKey === scope.scopeKey
+                    && microHead.worldlineId === worldlineId && Number(microHead.turn) === Number(turn)
+                    && microHead.sourceRevisionId === completedHead.revisionId && microHead.sourceDigest === completedHead.sourceDigest
+                    && microHead.recordKey === expectedRecordKey;
+                  if (validHead && workDigest) {
+                    if (typeof microHead.attemptId !== 'string' || typeof microHead.publishRuntimeToken !== 'string'
+                      || (microHead.publishRuntimeToken === state.microRuntimeToken && Number(microHead.restoreGeneration) !== liveEpoch)) {
+                      status = 'stale_source';
+                    } else {
+                      let work = null;
+                      try { work = await storage.getVerifiedJson(microHead.workKey, scope, null); } catch (_) { work = null; }
+                      status = work && work.status === 'result_ready' && string(work.attemptId || '') === string(microHead.attemptId || '')
+                        && digest(work) === workDigest ? 'verified' : 'stale_source';
+                    }
+                  } else {
+                    status = validHead ? 'verified' : 'stale_source';
+                  }
+                }
+                microSlice.push({
+                  turn: Number(turn),
+                  pairRevisionId,
+                  pairSourceDigest,
+                  completedHeadKey,
+                  completedHeadDigest: digest(completedHead),
+                  microHeadKey,
+                  microHeadDigest: digest(microHead),
+                  workKey: string(microHead?.workKey || ''),
+                  workDigest,
+                  attemptId: string(microHead?.attemptId || ''),
+                  status,
+                  recordKey: status === 'verified' ? string(microHead?.recordKey || '') : '',
+                  receiptKey: status === 'verified' ? string(completedHead?.receiptKey || '') : ''
+                });
+              }
+              liveWindows.push({
+                ordinal: liveWindows.length,
+                canonicalOffset,
+                microOffset,
+                limit,
+                canonicalSlice,
+                microSlice
+              });
+              const hasNextCanonical = canonicalOffset + limit < refs.length;
+              const hasNextMicro = microOffset + limit < turns.length;
+              if (!hasNextCanonical && !hasNextMicro) break;
+              if (hasNextCanonical) canonicalOffset += limit;
+              if (hasNextMicro) microOffset += limit;
+            }
+
+            const storedState = await storage.getVerifiedJson(key.continuityState(scope), scope, null);
+            const stateWorldline = await storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null);
+            const correctionStore = await storage.getVerifiedJson(key.stateCorrections(scope), scope, null);
+            const journal = await loadStateCorrectionJournal(scope, { strict: true });
+            const correctionJournal = { schema: journal.schema, scopeKey: journal.scopeKey, revision: journal.revision, records: journal.records };
+            const continuityStateDigest = digest(storedState);
+            const stateWorldlineDigest = digest(stateWorldline);
+            const correctionStoreDigest = digest(correctionStore);
+            const correctionJournalDigest = digest(correctionJournal);
+            const microSlicesUnchanged = Array.isArray(published.windows)
+              && published.windows.length === liveWindows.length
+              && liveWindows.every((win, idx) => stableReferenceJson(win.microSlice) === stableReferenceJson(published.windows[idx]?.microSlice));
+            const stateHeadUnchanged = Boolean(published.stateProof
+              && continuityStateDigest === published.stateProof.continuityStateDigest
+              && stateWorldlineDigest === published.stateProof.stateWorldlineDigest
+              && correctionStoreDigest === published.stateProof.correctionStoreDigest
+              && correctionJournalDigest === published.stateProof.correctionJournalDigest
+              && liveManifestDigest === published.manifestDigest
+              && liveRegistryDigest === published.registryDigest
+              && liveTurnPairsDigest === published.turnPairsDigest
+              && microSlicesUnchanged);
+            let stateViewBasisDigest = string(published.stateProof?.stateViewBasisDigest || '');
+            let stateRevision = string(published.stateProof?.stateRevision || '');
+            let stateDecisionKeyList = [...asArray(published.stateProof?.decisionKeys)].sort();
+            if (!stateHeadUnchanged) {
+              const stateView = await loadContinuityStateForResponse(scope, active.manifest);
+              const stateDecisionKeys = new Set();
+              for (const rows of [stateView?.head?.characters, stateView?.head?.relationships, stateView?.head?.world, [stateView?.head?.narrative]]) {
+                for (const row of asArray(rows)) for (const evidence of Object.values(asObject(row?.fieldEvidence))) {
+                  if (evidence?.decisionKey) stateDecisionKeys.add(string(evidence.decisionKey));
+                }
+              }
+              stateViewBasisDigest = digest(stateView?.head?.basis || null);
+              stateRevision = stableReferenceJson({ stateWorldline, correctionStore, basis: stateView?.head?.basis || null });
+              stateDecisionKeyList = [...stateDecisionKeys].sort();
+            }
+
+            const settings = await loadSettings();
+            const loreSnapshot = await loadRisuContextSnapshot(settings, [], null);
+            const buildAllowedLore = snap => loreLinkAllowedEntries(snap).map(entry => ({
+              identity: entry.identity,
+              entry: clone(entry.lore),
+              rendered: entry.rendered,
+              activation: {
+                alwaysActive: entry.lore.alwaysActive === true || entry.lore.always_active === true || entry.lore.constant === true,
+                hostSelected: string(entry.lore.activationRoute || '').startsWith('risu_request_selected') ? true : null,
+                hostSelectionAvailable: string(entry.lore.activationRoute || '').startsWith('risu_request_selected'),
+                activationRoute: string(entry.lore.activationRoute || ''),
+                priority: entry.lore.priority ?? null,
+                position: entry.lore.position ?? null,
+                mode: entry.lore.mode ?? null,
+                keys: clone(asArray(entry.lore.keys)),
+                secondaryKeys: clone(asArray(entry.lore.secondaryKeys)),
+                additionalKeys: clone(asArray(entry.lore.additionalKeys)),
+                excludeKeys: clone(asArray(entry.lore.excludeKeys)),
+                useRegex: entry.lore.useRegex === true,
+                selective: entry.lore.selective === true,
+                activationKey: entry.lore.activationKey ?? null,
+                effectiveForceState: entry.lore.effectiveForceState ?? null
+              },
+              passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered))
+            }));
+            const allowedLore = buildAllowedLore(loreSnapshot);
+            const storedLoreMapping = await storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null);
+            const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
+            const finalLore = buildAllowedLore(await loadRisuContextSnapshot(await loadSettings(), [], null));
+            if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+            if (Number(state.microRestoreGeneration || 0) !== liveEpoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
+            await ownerReadonlySourceContext.assertCurrent(request);
+            await assertRoute();
+
+            const liveProof = {
+              schema: 'libra.graph_corpus_owner_proof.v1',
+              scopeKey: scope.scopeKey,
+              worldlineId: resolved.worldlineId,
+              restoreEpoch: liveEpoch,
+              cutoffTurn: active.cutoffTurn ?? null,
+              limit,
+              manifestDigest: liveManifestDigest,
+              registryDigest: liveRegistryDigest,
+              turnPairsDigest: liveTurnPairsDigest,
+              stateProof: {
+                continuityStateKey: key.continuityState(scope),
+                continuityStateDigest,
+                stateWorldlineKey: key.stateWorldlineMeta(scope),
+                stateWorldlineDigest,
+                correctionStoreKey: key.stateCorrections(scope),
+                correctionStoreDigest,
+                correctionJournalDigest,
+                stateViewBasisDigest,
+                stateRevision,
+                decisionKeys: stateDecisionKeyList
+              },
+              loreProof: {
+                loreMappingKey: key.loreLinkMapping(scope),
+                loreMappingDigest: digest(storedLoreMapping),
+                allowedLoreDigest: digest(allowedLore),
+                loreBasisDigest: digest(loreIndex.basis),
+                loreRevision: stableReferenceJson(loreIndex.basis)
+              },
+              windows: liveWindows
+            };
+            const verdict = state.memoryGraphInventory.verifyIncrementalSourceProofs(published, liveProof);
+            return {
+              ...verdict,
+              phase,
+              collectedPatch: { scope }
+            };
+          } finally {
+            if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
+          }
         }
       }, snapshot: async sourceOptions => {
         await assertRoute(); let next;
         const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: initialGraph.scopeKey }, value => { next = value; });
-        await assertRoute(); return { graph, collected: next };
+        await assertRoute(); return { graph, collected: next, windowProof: next?.windowProof || null };
       } };
     };
     const buildMemoryGraphCorpus = async (options = {}) => {
       const allowed = ['expectedScopeKey','limit','nodeLimit','maxWindows','maxSerializedBytes','pageBytes'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !allowed.includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
-      const suite = ensureMemoryGraphUnifiedSuite(); let collected;
+      ensureMemoryGraphUnifiedSuite();
       if (state.memoryGraphCorpus.inspect().activeBuild) throw new Error('LIBRA_GRAPH_CORPUS_BUILD_BUSY');
-      const graph = await readMemoryGraphProjection({ expectedScopeKey: options.expectedScopeKey || '' }, value => { collected = value; });
+      const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '');
       const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
       return await state.memoryGraphCorpus.build({ ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'expectedScopeKey')) });
     };
@@ -68811,14 +69603,16 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!options || typeof options !== 'object' || Array.isArray(options)
         || Object.keys(options).some(key => key !== 'expectedScopeKey')) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
-      ensureMemoryGraphUnifiedSuite(); let collected;
-      const graph = await readMemoryGraphProjection({ expectedScopeKey: options.expectedScopeKey || '' }, value => { collected = value; });
+      ensureMemoryGraphUnifiedSuite();
+      const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '');
       const context = await memoryGraphCorpusContext(graph,collected,epoch,serial);
       const corpus = await state.memoryGraphCorpus.read({ initialGraph: graph, ...context, eager: true });
       if (!corpus) throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
       await corpus.currentGraph(); await context.owner.assertRoute();
       return { schema: 'libra.graph_corpus_audit.v1', status: 'verified', generation: corpus.access.generation,
         indexDigest: corpus.access.indexDigest, storage: clone(corpus.access.storage),
+        currentnessVerification: clone(corpus.access.currentnessVerification || null),
+        familyContracts: clone(corpus.access.familyContracts || null),
         coverage: clone(corpus.graph.coverage), requestLocalReadOnly: true, modelDispatchEligible: false };
     };
     const executeMemoryGraphUnifiedQuery = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
@@ -68841,26 +69635,33 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!Number.isSafeInteger(sourceOptions.nodeLimit) || sourceOptions.nodeLimit < 1 || sourceOptions.nodeLimit > 8192) throw new Error('LIBRA_GRAPH_QUERY_NODELIMIT_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       const suite = ensureMemoryGraphUnifiedSuite();
-      let initialCollected = null;
-      let graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
       const corpusMode = options.corpusMode || 'auto';
       if (!['auto','required','window'].includes(corpusMode)) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       const explicitWindow = ['limit','nodeLimit','canonicalCursor','microCursor'].some(key => options[key] !== undefined);
       if (explicitWindow && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_WINDOW_CONFLICT');
-      const corpusContext = await memoryGraphCorpusContext(graph,initialCollected,epoch,serial,recallGuard);
-      let corpus = null, coldReason = 'no_published_corpus';
+      let initialCollected = null, graph = null, corpusContext = null, corpus = null, coldReason = 'no_published_corpus';
       if (corpusMode !== 'window' && !explicitWindow) {
+        const frameResolved = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '');
+        graph = frameResolved.graph;
+        initialCollected = frameResolved.collected;
+        corpusContext = await memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard);
         try { corpus = await state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext }); }
         catch (error) {
           if (corpusMode !== 'auto' || !['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
           coldReason = error.reason === 'stale_generation' ? 'superseded_derived_index' : 'incompatible_derived_index';
         }
+        if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
+        if (!corpus && corpusMode === 'auto') {
+          corpus = await state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason });
+        }
+        if (corpus) {
+          graph = corpus.graph;
+          initialCollected = { ...corpus.collected, scope: initialCollected.scope };
+        }
+      } else {
+        graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; });
+        corpusContext = await memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard);
       }
-      if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
-      if (!corpus && corpusMode === 'auto' && !explicitWindow) {
-        corpus = await state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason });
-      }
-      if (corpus) { graph = corpus.graph; initialCollected = corpus.collected; }
       if (gradiaAuthority) options = { ...options, consumerPolicy: { ...options.consumerPolicy,
         consumer: 'gradia', gradiaSelectionReceipt: gradiaAuthority.bindGraph(graph) } };
       if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0) || !initialCollected?.scope) {
@@ -68884,9 +69685,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (storageMode !== 'plugin_only') for (let offset = 0; offset < pinKeys.length; offset += 64) {
         conditionalReadSets.push(await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys.slice(offset,offset + 64)));
       }
+      const ownerProof = corpus?.sourceProofs?.ownerProof || null;
+      const hasIncrementalBodyDigests = Boolean(ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
       const pinnedValues = [];
-      for (const storageKey of pinKeys) {
-        pinnedValues.push({ key: storageKey, raw: await readRawSource(storageKey) });
+      if (!hasIncrementalBodyDigests) {
+        for (const storageKey of pinKeys) {
+          pinnedValues.push({ key: storageKey, raw: await readRawSource(storageKey) });
+        }
       }
 
       const mode = normalizeMemoryEngineMode(options.mode);
@@ -68998,9 +69803,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const current = await storage.getVerifiedJson(dependency.key, initialCollected.scope, null);
         if (!captured || stableReferenceJson(current) !== captured.rawBody || dependency.digest !== captured.hydratedDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
       }
+      const unitByNodeId = new Map(asArray(graph.units).map(u => [u.nodeId, u]));
+      const unitsBySourceId = new Map();
+      const nodeById = new Map(asArray(graph.nodes).map(n => [n.id, n]));
+      for (const unit of asArray(graph.units)) {
+        const sourceId = string(nodeById.get(unit.nodeId)?.sourceId || '');
+        if (!sourceId) continue;
+        if (!unitsBySourceId.has(sourceId)) unitsBySourceId.set(sourceId, []);
+        unitsBySourceId.get(sourceId).push(unit);
+      }
       const ownerVerifier = {
         currentGraph: corpus ? corpus.currentGraph : async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey }),
-        assertPhysicalCurrentness: async () => {
+        assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => {
           if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
             || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
             return false;
@@ -69014,9 +69828,61 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               const current = await storage.getVerifiedJson(dependency.key, initialCollected.scope, null);
               if (stableReferenceJson(current) !== vectorReadbacks.get(dependency.key)?.rawBody) return false;
             }
-            for (const saved of pinnedValues) {
-              if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
-                return false;
+            if (hasIncrementalBodyDigests) {
+              const consumedStorageKeys = new Set([
+                key.manifest(initialCollected.scope),
+                key.entityRegistry(initialCollected.scope),
+                ownerProof.stateProof?.continuityStateKey,
+                ownerProof.stateProof?.stateWorldlineKey,
+                ownerProof.stateProof?.correctionStoreKey,
+                ownerProof.loreProof?.loreMappingKey
+              ].filter(Boolean));
+              if (dependencies || verifyContext) {
+                const candidateUnits = new Set();
+                for (const nodeId of asArray(dependencies?.nodeIds)) {
+                  const u = unitByNodeId.get(nodeId);
+                  if (u) candidateUnits.add(u);
+                }
+                for (const item of asArray(verifyContext?.bundle?.items)) {
+                  const u = unitByNodeId.get(item?.nodeId);
+                  if (u) candidateUnits.add(u);
+                }
+                for (const microId of asArray(verifyContext?.bundle?.suppressedMicroIds)) {
+                  const u = unitByNodeId.get(microId);
+                  if (u) candidateUnits.add(u);
+                }
+                for (const sourceId of asArray(dependencies?.sourceIds)) {
+                  for (const u of unitsBySourceId.get(sourceId) || []) candidateUnits.add(u);
+                }
+                for (const u of candidateUnits) {
+                  let recKey = string(u?.recordKey || '');
+                  if (!recKey && u?.family === 'micro' && Number.isSafeInteger(Number(u.turn))) {
+                    for (const win of asArray(ownerProof.windows)) {
+                      const found = asArray(win?.microSlice).find(m => Number(m?.turn) === Number(u.turn));
+                      if (found?.recordKey) { recKey = string(found.recordKey); break; }
+                    }
+                  }
+                  if (recKey) {
+                    consumedStorageKeys.add(recKey);
+                    for (const depKey of asArray(ownerProof.recordDependencyKeys?.[recKey])) consumedStorageKeys.add(depKey);
+                  }
+                  if (u?.family === 'state') {
+                    for (const decKey of asArray(ownerProof.stateProof?.decisionKeys)) consumedStorageKeys.add(decKey);
+                  }
+                }
+              } else {
+                for (const storageKey of pinKeys) consumedStorageKeys.add(storageKey);
+              }
+              for (const storageKey of consumedStorageKeys) {
+                if (!storageKey || !Object.hasOwn(ownerProof.sourceBodyDigests, storageKey)) continue;
+                const currentRaw = await readRawSource(storageKey);
+                if (digest(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
+              }
+            } else {
+              for (const saved of pinnedValues) {
+                if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
+                  return false;
+                }
               }
             }
             await corpusContext.owner.assertRoute();

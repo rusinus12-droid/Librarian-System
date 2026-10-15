@@ -1,8 +1,8 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 버전: 1.2
-- 조사 기준: `89fb341` 이후의 이 증분
-- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근을 연결했다. 원본 증분 검증과 대규모 성능 인증은 아직 미완성이다.**
+- 작성일: 2026-10-14 · 버전: 1.3
+- 조사 기준: `89fb341` 이후의 이 증분 및 N01-A 증분 원본 현재성 검증
+- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근과 owner 증분 증명(`N01-A`)을 연결했다. 증분 구축·재개, 큰 단일 행 분할, 전체 바이트 예산 및 대규모 성능 인증은 아직 미완성이다.**
 
 ## 1. 실제 사용 경로
 
@@ -30,7 +30,7 @@ manifest의 namespace/key·크기·행수·offset·routing과 index metadata를 
 
 owner cursor의 서명에는 runtime publication binding도 들어간다. 저장된 서명을 재시작 후의 내용 식별자로 쓰지 않는다. 매번 새 owner cursor로 순회하고 구간 순서·실제 native 행/frame binding·미독 구간의 유무를 비교한다. 이 수정은 양쪽 저장 모드의 실제 VM 재시작과 커널의 커서 변경·실제 내용 변경 대조 검사로 확인한다.
 
-**저장 인덱스는 관련성을 찾는 자료다. 사실과 발송 권한은 새로 읽은 native graph에서 온다.** query는 전체 owner 구간을 다시 읽고 게시 때의 각 구간 stamp와 대조한다. 최종 Compiler도 현재 native graph의 노드·관계·basis와 실제 원본 저장값, 설정/벡터 의존성을 다시 확인한다. 저장 표의 checksum만으로 원본 근거를 증명하지 않는다.
+**저장 인덱스는 관련성을 찾는 자료다. 사실과 발송 권한은 owner가 검증한 현재성 증명과 소비된 물리 레코드 재확인에서 온다.** `buildMemoryGraphCorpus()`는 `proof:`(`libra.graph_corpus_source_proofs.v1`)와 `projection:`(`libra.graph_corpus_projection.v1`) 불변 레코드를 함께 게시하며, `verifyIncrementalSourceProofs()`(`N01-A`)가 정본 매니페스트 ref 테이블·엔티티 레지스트리·Micro 턴 페어/헤드·State 헤더/정정 저널·호스트 로어 스냅샷/링크 인덱스를 구간별로 대조한다. 증분 증명이 통과하면 변경되지 않은 과거 구간의 정본·Micro 본문 전체 재읽기를 생략하되(`nativeReprojectionRequired:false`), 최종 Compiler 발송 직전에는 채택·억제된 소비 readset의 물리 레코드 본문 digest와 조건부 readset을 반드시 재확인한다. 명시적 `verifyMemoryGraphCorpus()` 감사는 전체 구간 재투영(`eager_full_reprojection_audit`)을 수행한다.
 
 server_only의 개별 source readset은 기존 SDK 한도인 64키를 유지한다. 전체 자료가 이를 넘으면 여러 readset으로 나누고 모두 최종 검증한다. 이를 전체 자료의 단일 원자적 snapshot으로 부르지 않는다. root 게시의 CAS는 root와 manifest에 한정한다. plugin_only의 root-last 게시도 cross-runtime 원자성을 주장하지 않는다. 게시 전후 전체 구간을 대조하며 뒤늦은 수정은 이후 읽기에서 거부된다. `ownerAtomicity:false`를 유지한다.
 
@@ -57,15 +57,15 @@ owner가 보고한 원본 읽기 실패는 `coverage.sourceReadFailures`로 보�
 
 ## 4. 검증과 남은 종료 조건
 
-- 순수 corpus suite 11건: 53구간의 단일 인덱스, cold/warm/축출/독립 runtime 복원, fresh 커서와 실제 내용 변경 구분, 첫 구간 밖 수정, warm 상태의 디스크 오염, 게시 실패·예산·취소, 외부 namespace 참조 거부, 잘못된 partition/generation/digest 거부.
-- 등록 API suite: plugin_only/server_only의 실제 native reader·storage bridge로 첫 구간 밖 Micro 검색, 최종 private 검증, 읽기 중 저장/분석 호출 없음, 재시작·수정 거부.
+- 순수 corpus suite 12건: 53구간의 단일 인덱스, N01-A 53구간 증분 owner 증명(무재열거 검증·자료별 변이 거부·오염된 proof/projection 거부), cold/warm/축출/독립 runtime 복원, fresh 커서와 실제 내용 변경 구분, 첫 구간 밖 수정, warm 상태의 디스크 오염, 게시 실패·예산·취소, 외부 namespace 참조 거부, 잘못된 partition/generation/digest 거부.
+- 등록 API suite 및 N01-A 런타임: plugin_only/server_only의 실제 native reader·storage bridge로 첫 구간 밖 Micro 검색, 미소비 정본 본문 미읽기 및 소비된 Micro 본문 물리 변조 거부, Lore/State 변경 거부, 재시작·수정 거부.
 - native 벡터 fixture: 어휘가 겹치지 않는 질의의 음성 대조와 저장 정본 벡터의 단일 frontier 참여, 질의 호출 1회/warm 0회, 실제 Classic beforeRequest의 최종 전달·검증. 30턴의 서버 fixture에서는 여러 64키 이하 readset을 관찰하고 원본을 읽지 못한 구간을 partial로 유지한다. 외부 모델 품질 측정은 아니다.
 - 실제 GRADIA 합성 호스트: 저장 인덱스를 거친 SHADOW/AIDE와 명시적 인풋 작성기 전달 및 원본 수정 후 전달 차단. 실제 설치된 RisuAI나 외부 모델 품질 인증을 뜻하지 않는다.
 
 주요 재현 명령은 다음과 같다. native suite는 로컬 테스트 서버와 기존 테스트 의존성이 필요하다.
 
 ```bash
-node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs
+node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs PROGRAM/tests/libra_memory_graph_incremental_currentness_runtime_test.cjs
 node --test PROGRAM/tests/libra_memory_graph_corpus_runtime_test.cjs
 node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs
 node --test PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs
@@ -74,6 +74,6 @@ node PROGRAM/tools/sync_libra_gradia_unified_read.cjs --check
 node PROGRAM/tools/check_sdk_sync.cjs
 ```
 
-**N01은 닫히지 않았다.** 원본 전체 재투영은 아직 필요하다. 신규 게시 index는 Lane이 필요한 저장 page를 직접 비동기로 읽으며, routing이 없는 이전 manifest는 전체 표 복원을 유지한다. 다음 구현은 owner의 증분/근거 계약에 맞춘 원본 검증, 선택적 durable index·벡터 page 접근, build 재개·증분 교체와 전체 workspace/I/O admission이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·warm I/O 절감·대규모 성능 합격으로 사용하지 않는다.
+**N01은 아직 전체 완료가 아니다.** N01-A로 owner 증분 현재성 증명과 미소비 과거 구간 본문 재읽기 생략을 연결했으며, 다음 구현은 증분 build·재개와 큰 단일/역의존 행 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·대규모 성능 합격으로 사용하지 않는다.
 
 N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 serving 전환은 수행했으며 실제 인증 gate를 대신하지 않는다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.

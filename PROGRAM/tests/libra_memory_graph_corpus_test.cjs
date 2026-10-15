@@ -2,21 +2,45 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const createPages=require('../tools/libra_memory_graph_pages.cjs');
 const createIndex=require('../tools/libra_memory_graph_index.cjs');
+const createInventory=require('../tools/libra_memory_graph_inventory.cjs');
 const createCorpus=require('../tools/libra_memory_graph_corpus.cjs');
 const hash=v=>crypto.createHash('sha256').update(v).digest('hex');
 const clone=v=>JSON.parse(JSON.stringify(v));
-function fixture({count=53,canonicalCount=2}={}) {
+function fixture({count=53,canonicalCount=2,incrementalProof=false}={}) {
   const values=new Map(),writes=[],reads=[],visits=[];
   let revision=0,broken=false,compileCount=0,cursorEpoch=0;
+  let stateRev=0,loreRev=0,canonicalRev=0;
   const pages=createPages({fingerprint:hash}),coreIndex=createIndex({pages,fingerprint:hash});
+  const inventory=createInventory({fingerprint:hash});
   const index={...coreIndex,compile(...args){compileCount++;return coreIndex.compile(...args);}};
-  const corpus=createCorpus({pages,index,fingerprint:hash});
+  const corpus=createCorpus({pages,index,fingerprint:hash,inventory});
+  const liveOwnerProof=(windowCount,limit=1)=>({
+    schema:'libra.graph_corpus_owner_proof.v1',
+    scopeKey:'test',worldlineId:'main',restoreEpoch:0,cutoffTurn:null,limit,
+    manifestDigest:hash('manifest:'+canonicalRev),
+    registryDigest:hash('registry:0'),
+    turnPairsDigest:hash('pairs:'+revision),
+    stateProof:{continuityStateDigest:hash('state:'+stateRev),correctionJournalDigest:hash('journal:0'),stateRevision:'s'+stateRev},
+    loreProof:{allowedLoreDigest:hash('lore:'+loreRev),loreMappingDigest:hash('map:0'),loreBasisDigest:hash('basis:'+loreRev)},
+    windows:Array.from({length:windowCount},(_,w)=>({
+      ordinal:w,canonicalOffset:Math.min(w,canonicalCount-1),microOffset:w,limit,
+      canonicalSlice:[{refIdentity:{key:'canonical'+Math.min(w,canonicalCount-1),revision:w===canonicalCount-1?canonicalRev:0},available:true,evidenceKey:''}],
+      microSlice:[{turn:w+1,pairRevisionId:'r'+(w===count-1?revision:0),pairSourceDigest:'p'+(w===count-1?revision:0),
+        completedHeadDigest:'ch'+(w===count-1?revision:0),microHeadDigest:'mh'+(w===count-1?revision:0),status:'verified'}]
+    }))
+  });
   const owner={check(){if(broken)throw Error('canceled');},async read(k){reads.push(k);return values.get(k)??null;},
     async putImmutable(k,raw){writes.push(k);values.set(k,raw);},
     async publish({key,raw,previous,manifestKey,manifestRaw}){
       if((values.get(key)??null)!==previous||values.get(manifestKey)!==manifestRaw)throw Error('conflict');
       writes.push(key);values.set(key,raw);
-    }};
+    },
+    ...(incrementalProof?{
+      async captureSourceProof({windows,config}){return liveOwnerProof(windows.length,config.limit);},
+      async verifySourceProofs(proofRecord,{config}){
+        return inventory.verifyIncrementalSourceProofs(proofRecord.ownerProof,liveOwnerProof(proofRecord.windows.length,config.limit));
+      }
+    }:{})};
   const snapshot=async options=>{
     visits.push({...options});
     const c=Number(String(options.canonicalCursor||0).split(':')[0]),m=Number(String(options.microCursor||0).split(':')[0]),n=options.limit;
@@ -25,7 +49,8 @@ function fixture({count=53,canonicalCount=2}={}) {
       ...Array.from({length:Math.min(n,count-m)},(_,i)=>['micro',m+i])];
     const graph={schema:'libra.memory_graph_projection.v1',scopeKey:'test',
       readerFrame:{owner:'libra:plugin_only',scopeKey:'test',worldlineId:'main',restoreEpoch:0,view:{viewerId:'owner_reader'}},
-      nodes:ids.map(([family,i])=>({id:family+i,layer:'meaning',kind:'claim',identityCoverage:'revision_bound',bindingId:'binding'+(i===count-1?revision:0)})),edges:[],bases:[],
+      nodes:ids.map(([family,i])=>({id:family+i,layer:'meaning',kind:'claim',identityCoverage:'revision_bound',
+        bindingId:'binding'+(family==='canonical'&&i===canonicalCount-1?canonicalRev:family==='micro'&&i===count-1?revision:0)})),edges:[],bases:[],
       units:ids.map(([family,i])=>({nodeId:family+i,family,recordKey:family+i,text:'archive keyword'+i,turn:i})),
       coverage:{families:Object.fromEntries(['canonical','micro'].map(family=>[family,{records:ids.filter(([f])=>f===family).length,
         reasons:(family==='canonical'?c+n<canonicalCount:m+n<count)?[family+'_pages_unread']:[]}])),
@@ -35,10 +60,11 @@ function fixture({count=53,canonicalCount=2}={}) {
   };
   const initial=async()=> (await snapshot({limit:1,canonicalCursor:'',microCursor:''})).graph;
   const build=options=>corpus.build({owner,snapshot,options:{limit:1,...options}});
-  const read=async()=>corpus.read({owner,snapshot,initialGraph:await initial(),eager:true});
+  const read=async(opts={})=>corpus.read({owner,snapshot,initialGraph:await initial(),eager:true,...opts});
   const idle=()=>{const s=pages.inspect();assert.equal(s.pins,0);assert.equal(s.activeRequests,0);assert.equal(s.bytes.request,0);assert.equal(s.bytes.staging,0);assert.equal(corpus.inspect().activeBuild,false);};
   return {values,writes,reads,visits,pages,index,corpus,owner,snapshot,initial,build,read,idle,
-    change(){revision++;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},get compiles(){return compileCount;}};
+    change(){revision++;},changeCanonical(){canonicalRev++;},changeState(){stateRev++;},changeLore(){loreRev++;},
+    restartCursor(){cursorEpoch++;},cancel(){broken=true;},get compiles(){return compileCount;}};
 }
 test('one durable index spans 53 owner windows and the ended family never restarts',async()=>{
   const x=fixture();const built=await x.build();assert.equal(built.windowCount,53);
@@ -109,4 +135,79 @@ test('index restoration and rollout reuse reject foreign generation/partition an
   assert.throws(()=>x.index.restore(clone(compiled),{partition:'other',generation:compiled.generation}),/RESTORE_BINDING/);
   const changed=clone(compiled);changed.postings.push({term:'forged'});
   assert.throws(()=>x.index.restore(changed,{partition:'p',generation:compiled.generation}),/RESTORE_DIGEST/);x.idle();
+});
+test('N01-A: incremental owner proof verifies 53 windows with zero window re-enumeration and rejects any family mutation or corrupted proof/projection',async()=>{
+  const x=fixture({count:53,canonicalCount:2,incrementalProof:true});
+  const built=await x.build();
+  assert.equal(built.sourceProofs.ownerProofAvailable,true);
+  assert.deepEqual(built.sourceProofs.guaranteedFamiliesWithoutBodyReRead,['canonical','micro','state']);
+  assert.deepEqual(built.sourceProofs.reReadRequiredEveryRequestFamilies,['state','lore']);
+  assert.deepEqual(built.sourceProofs.bodyReReadRequiredFamilies,['lore']);
+  const frameGraph=await x.initial();
+  x.visits.length=0;
+  const opened=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false});
+  assert.equal(x.visits.length,0,'incremental proof must not re-enumerate the 53 windows on read');
+  assert.equal(opened.access.nativeReprojectionRequired,false);
+  assert.equal(opened.access.currentnessVerification.mode,'incremental_owner_proof');
+  assert.equal(opened.access.currentnessVerification.status,'verified');
+  assert.equal(opened.graph.units.length,55);
+  await opened.currentGraph();
+  assert.equal(x.visits.length,0,'currentGraph() must also verify incrementally without re-enumerating 53 windows');
+
+  // Negative controls across all 4 families (canonical, micro, state, lore)
+  x.changeCanonical();
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),err=>{
+    assert.equal(err.reason,'stale_generation');
+    assert.deepEqual(err.currentnessVerification.changedFamilies,['canonical']);
+    assert.deepEqual(err.currentnessVerification.changedWindows,[1]);
+    return true;
+  });
+  await assert.rejects(()=>opened.currentGraph(),/STALE_GENERATION/);
+  const rebuild1=await x.build();assert.equal(rebuild1.status,'published');
+
+  x.change();
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),err=>{
+    assert.equal(err.reason,'stale_generation');
+    assert.deepEqual(err.currentnessVerification.changedFamilies,['micro']);
+    assert.deepEqual(err.currentnessVerification.changedWindows,[52]);
+    return true;
+  });
+  await x.build();
+
+  x.changeState();
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),err=>{
+    assert.equal(err.reason,'stale_generation');
+    assert.deepEqual(err.currentnessVerification.changedFamilies,['state']);
+    return true;
+  });
+  await x.build();
+
+  x.changeLore();
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),err=>{
+    assert.equal(err.reason,'stale_generation');
+    assert.deepEqual(err.currentnessVerification.changedFamilies,['lore']);
+    return true;
+  });
+  const latestBuilt=await x.build();
+
+  // Eager audit re-enumerates all 53 windows even when incremental proof is available
+  x.visits.length=0;
+  const audited=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:true});
+  assert.equal(x.visits.length,53,'eager audit must perform full window re-enumeration');
+  assert.equal(audited.access.nativeReprojectionRequired,true);
+  assert.equal(audited.access.currentnessVerification.mode,'eager_full_reprojection_audit');
+
+  // Corrupted proof or projection record on disk is rejected
+  const proofKey=latestBuilt.sourceProofs.proofKey;
+  const savedProof=x.values.get(proofKey);
+  x.values.set(proofKey,'{"tampered":true}');
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),/PAGE_CORRUPT/);
+  x.values.set(proofKey,savedProof);
+
+  const projKey=latestBuilt.sourceProofs.projectionKey;
+  const savedProj=x.values.get(projKey);
+  x.values.set(projKey,'{"tampered":true}');
+  await assert.rejects(()=>x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false}),/PAGE_CORRUPT/);
+  x.values.set(projKey,savedProj);
+  x.idle();
 });

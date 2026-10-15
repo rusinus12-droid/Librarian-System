@@ -47,11 +47,153 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
     })
   });
 
+  // N01-A: Explicit per-family incremental source currentness & conservative reread contracts.
+  // Declares what owner change proofs guarantee without re-reading historical window record bodies
+  // versus what must retain request-level rereading or consumed-readset physical verification.
+  const FAMILY_CURRENTNESS_CONTRACTS = Object.freeze({
+    canonical: Object.freeze({
+      family: 'canonical',
+      proofMode: 'owner_manifest_ref_table_and_registry',
+      proofBasis: Object.freeze(['owner_manifest_ref_table', 'entity_registry', 'restore_epoch', 'approved_evidence_binding']),
+      guaranteedScope: Object.freeze(['unchanged_window_canonical_record_bodies', 'unchanged_window_canonical_assertions_and_edges']),
+      reReadRequiredScope: Object.freeze(['owner_manifest_head', 'entity_registry_head', 'changed_canonical_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_storage_tampering_without_manifest_revision_change']),
+      evidenceSymbols: Object.freeze(['canonicalReaderRefIdentity', 'loadManifest', 'ENTITY_REGISTRY_SCHEMA', 'microRestoreGeneration'])
+    }),
+    micro: Object.freeze({
+      family: 'micro',
+      proofMode: 'host_turn_pair_and_micro_head_revision',
+      proofBasis: Object.freeze(['host_completed_turn_pair_digest', 'completed_turn_head_revision', 'micro_memory_head_revision', 'micro_work_attempt_digest', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['unchanged_window_micro_turn_record_bodies', 'unchanged_window_completed_turn_receipt_bodies', 'unchanged_window_micro_candidate_units']),
+      reReadRequiredScope: Object.freeze(['host_chat_turn_pairs', 'per_turn_completed_and_micro_heads', 'changed_micro_windows', 'consumed_readset_physical_records']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: false,
+      unobservableWithoutFullAudit: Object.freeze(['unpinned_raw_micro_record_tampering_without_head_or_pair_change']),
+      evidenceSymbols: Object.freeze(['completedTurnRevisionId', 'readActiveCompletedTurnReceipt', 'libra.micro_memory_head.v1', 'microRestoreGeneration'])
+    }),
+    state: Object.freeze({
+      family: 'state',
+      proofMode: 'scope_singleton_state_head_and_correction_journal',
+      proofBasis: Object.freeze(['continuity_state_head', 'state_worldline_meta', 'state_correction_journal_revision', 'entity_registry', 'restore_epoch']),
+      guaranteedScope: Object.freeze(['scope_singleton_state_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['scope_state_head_every_request', 'state_correction_journal_head_every_request', 'consumed_state_decision_keys']),
+      skipUnchangedWindowBodyRead: true,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadContinuityStateForResponse', 'loadStateCorrectionJournal', 'stateWorldlineMeta'])
+    }),
+    lore: Object.freeze({
+      family: 'lore',
+      proofMode: 'host_lore_snapshot_and_link_index_reread',
+      proofBasis: Object.freeze(['host_risu_lore_snapshot_digest', 'lore_link_mapping_head', 'lore_link_index_basis_digest']),
+      guaranteedScope: Object.freeze(['scope_singleton_lore_projection_across_historical_windows']),
+      reReadRequiredScope: Object.freeze(['host_risu_lore_snapshot_every_request', 'lore_link_mapping_every_request', 'lore_link_index_basis_every_request']),
+      skipUnchangedWindowBodyRead: false,
+      reReadRequiredEveryRequest: true,
+      unobservableWithoutFullAudit: Object.freeze([]),
+      evidenceSymbols: Object.freeze(['loadRisuContextSnapshot', 'loreLinkAllowedEntries', 'buildLoreLinkIndex'])
+    })
+  });
+
   const profileFor = family => FAMILY_SUPPORT_PROFILES[text(family)] || null;
+  const currentnessContractFor = family => {
+    const contract = FAMILY_CURRENTNESS_CONTRACTS[text(family)];
+    if (!contract) fail('family_unsupported');
+    return contract;
+  };
   const supportBasisSymbols = family => {
     const profile = profileFor(family);
     if (!profile) fail('family_unsupported');
     return profile.basis;
+  };
+
+  const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+  const verifyIncrementalSourceProofs = (published, live) => {
+    if (!published || !live || published.schema !== 'libra.graph_corpus_owner_proof.v1'
+      || live.schema !== 'libra.graph_corpus_owner_proof.v1') fail('owner_proof_invalid');
+    if (!Array.isArray(published.windows) || !Array.isArray(live.windows) || !published.windows.length) fail('owner_proof_windows_invalid');
+    const frameChanged = published.scopeKey !== live.scopeKey
+      || published.worldlineId !== live.worldlineId
+      || Number(published.restoreEpoch) !== Number(live.restoreEpoch)
+      || (published.cutoffTurn ?? null) !== (live.cutoffTurn ?? null);
+    const windowCountChanged = published.windows.length !== live.windows.length;
+    const canonicalWindows = new Set(), microWindows = new Set(), stateReasons = [], loreReasons = [];
+    const canonicalReasons = [], microReasons = [];
+    if (published.manifestDigest !== live.manifestDigest) canonicalReasons.push('manifest_ref_table_changed');
+    if (published.registryDigest !== live.registryDigest) {
+      canonicalReasons.push('entity_registry_changed');
+      stateReasons.push('entity_registry_changed');
+    }
+    if (published.turnPairsDigest !== live.turnPairsDigest) microReasons.push('host_turn_pairs_changed');
+    const maxWindows = Math.max(published.windows.length, live.windows.length);
+    for (let index = 0; index < maxWindows; index++) {
+      const before = published.windows[index], after = live.windows[index];
+      if (!before || !after) {
+        canonicalWindows.add(index);
+        microWindows.add(index);
+        continue;
+      }
+      if (!sameJson(before.canonicalSlice, after.canonicalSlice)) canonicalWindows.add(index);
+      if (!sameJson(before.microSlice, after.microSlice)) microWindows.add(index);
+    }
+    if (canonicalWindows.size && !canonicalReasons.length) canonicalReasons.push('canonical_window_slice_changed');
+    if (microWindows.size && !microReasons.length) microReasons.push('micro_window_head_or_pair_changed');
+    if (!sameJson(published.stateProof, live.stateProof)) stateReasons.push('state_head_or_correction_changed');
+    if (!sameJson(published.loreProof, live.loreProof)) loreReasons.push('host_lore_or_link_basis_changed');
+    if (frameChanged) {
+      for (const list of [canonicalReasons, microReasons, stateReasons, loreReasons]) list.push('frame_or_restore_epoch_changed');
+    }
+    if (windowCountChanged) {
+      canonicalReasons.push('window_count_changed');
+      microReasons.push('window_count_changed');
+    }
+    const buildVerdict = (family, reasons, windowsChanged = []) => {
+      const contract = FAMILY_CURRENTNESS_CONTRACTS[family];
+      const uniqueReasons = [...new Set(reasons)];
+      return Object.freeze({
+        family,
+        status: uniqueReasons.length === 0 && windowsChanged.length === 0 ? 'verified' : 'changed',
+        proofMode: contract.proofMode,
+        skipUnchangedWindowBodyRead: contract.skipUnchangedWindowBodyRead,
+        reReadRequiredEveryRequest: contract.reReadRequiredEveryRequest,
+        guaranteedScope: contract.guaranteedScope,
+        reReadRequiredScope: contract.reReadRequiredScope,
+        changedWindows: Object.freeze([...windowsChanged].sort((a, b) => a - b)),
+        reasons: Object.freeze(uniqueReasons)
+      });
+    };
+    const allWindowIndices = Array.from({ length: maxWindows }, (_, index) => index);
+    const familyVerdicts = Object.freeze({
+      canonical: buildVerdict('canonical', canonicalReasons, [...canonicalWindows]),
+      micro: buildVerdict('micro', microReasons, [...microWindows]),
+      state: buildVerdict('state', stateReasons, stateReasons.length ? [0] : []),
+      lore: buildVerdict('lore', loreReasons, loreReasons.length ? [0] : [])
+    });
+    const changedFamilies = SOURCE_FAMILIES.filter(family => familyVerdicts[family].status !== 'verified');
+    const changedWindowSet = new Set([...canonicalWindows, ...microWindows]);
+    if (stateReasons.length || loreReasons.length || frameChanged) changedWindowSet.add(0);
+    const changedWindows = [...changedWindowSet].sort((a, b) => a - b);
+    const unchangedWindows = allWindowIndices.filter(index => !changedWindowSet.has(index));
+    return Object.freeze({
+      schema: 'libra.graph_corpus_currentness.v1',
+      status: !frameChanged && !windowCountChanged && changedFamilies.length === 0 && changedWindows.length === 0 ? 'verified' : 'stale_source',
+      mode: 'incremental_owner_proof',
+      frameChanged,
+      windowCountChanged,
+      changedFamilies: Object.freeze(changedFamilies),
+      changedWindows: Object.freeze(changedWindows),
+      unchangedWindows: Object.freeze(unchangedWindows),
+      familyVerdicts,
+      guaranteedFamiliesWithoutBodyReRead: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].skipUnchangedWindowBodyRead)),
+      reReadRequiredEveryRequestFamilies: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].reReadRequiredEveryRequest)),
+      bodyReReadRequiredFamilies: Object.freeze(SOURCE_FAMILIES.filter(f => !FAMILY_CURRENTNESS_CONTRACTS[f].skipUnchangedWindowBodyRead)),
+      consumedReadSetPhysicalRecheckRequired: true,
+      ownerAtomicity: false,
+      byteBounded: false
+    });
   };
 
   const normalizeEntries = entries => {
@@ -208,7 +350,10 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
   return Object.freeze({
     SOURCE_FAMILIES,
     FAMILY_SUPPORT_PROFILES,
+    FAMILY_CURRENTNESS_CONTRACTS,
+    currentnessContractFor,
     supportBasisSymbols,
+    verifyIncrementalSourceProofs,
     buildSourceInventory,
     diffInventories,
     mergeFamilyInventories

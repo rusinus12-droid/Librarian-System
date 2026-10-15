@@ -334,3 +334,11 @@ N01의 표 전체 hydration을 신규 게시 인덱스에서 종료했다. corpu
 고정 160-unit 커널 fixture에서 23페이지·332,423 B가 3페이지·48,952 B로 줄었고 eager와 점수·근거 경로·bundle/packet digest가 일치했다. 실제 등록 LIBRA와 plugin_only/server_only corpus, GRADIA 소비자 경로도 검증한다. 이는 전체 요청 성능이나 실제 설치 인증은 아니다. 읽지 않은 저장 페이지의 손상까지 query가 검사하지 않으므로 등록 API/진단의 전체 인덱스 검증은 별도의 read-only maintenance 작업으로 제공한다.
 
 원본 전체 구간과 최종 native graph는 계속 재투영한다. owner revision/delta의 완전한 증명 없는 생략은 하지 않는다. 원본 증분 검증·build 재개/증분·큰 단일 행 분할·semantic representation 접근·전체 workspace/I/O 계상은 남아 있으며 N01을 닫지 않는다. 이전 manifest의 전체 표 복원 호환과 기본·유일한 unified 엔진은 유지한다. 상세 예산·수용 근거는 [선택적 읽기 계약](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md)을 따른다.
+
+## 21. owner 증분 증명 기반 원본 현재성 검증 (N01-A)
+
+N01의 매 질의 전체 구간 재투영을 owner 증분 증명(`N01-A`)으로 대체했다. `buildMemoryGraphCorpus()`가 `proof:`(`libra.graph_corpus_source_proofs.v1`)와 `projection:`(`libra.graph_corpus_projection.v1`) 불변 레코드를 함께 게시하며, `FAMILY_CURRENTNESS_CONTRACTS`가 자료별 보장 범위와 재읽기 필수 범위를 선언한다.
+
+질의 시작과 최종 전달 시 `verifyIncrementalSourceProofs()`가 정본 매니페스트 ref 테이블·엔티티 레지스트리·Micro 턴 페어/헤드·State 헤더/정정 저널·호스트 로어 스냅샷/링크 인덱스를 구간별로 대조한다. 증분 증명이 통과하면 변경되지 않은 과거 구간의 정본·Micro 본문 재읽기를 생략(`nativeReprojectionRequired:false`)하고, 최종 Compiler 발송 직전에는 채택·억제된 소비 readset의 물리 레코드 본문 digest와 조건부 readset만 재확인한다. 명시적 `verifyMemoryGraphCorpus()` 감사는 전체 구간 재투영(`eager_full_reprojection_audit`)을 수행한다.
+
+53구간 커널 suite(`libra_memory_graph_corpus_test.cjs` 12 PASS), 자료별 현재성 계약 suite(`libra_memory_graph_inventory_test.cjs` 12 PASS), 등록 native 런타임(`libra_memory_graph_incremental_currentness_runtime_test.cjs` 1 PASS)에서 미소비 정본 본문 미읽기, 소비 Micro 본문 물리 변조 거부, Lore/State 변경 감지를 확인했다. 증분 구축·재개 및 대형 단일 행 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)은 후속 단계다.
