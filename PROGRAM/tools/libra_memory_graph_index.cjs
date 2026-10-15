@@ -521,7 +521,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
           page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes: ceiling });
         }
       }
-      return page;
+      return { ...page, storageCursor: null };
     } finally { result.release?.(); }
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)

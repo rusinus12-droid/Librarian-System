@@ -76,7 +76,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       dependencyKey = '',
       offset = 0,
       priorityHint = 0,
-      requesterId = ''
+      requesterId = '',
+      storageCursor = null
     } = {}) => {
       if (!validRoles.has(laneRole)) fail('lane_role_invalid');
       if (!['directory', 'adjacency', 'postings', 'reverseDependencies'].includes(table)) fail('table_invalid');
@@ -94,7 +95,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
         term: String(term || ''),
         dependencyKey: String(dependencyKey || ''),
         offset,
-        pageBytes
+        pageBytes,
+        storageCursor: storageCursor || null
       };
       const key = accessKeyOf(spec);
       if (seenAccessKeys.has(key)) {
@@ -144,7 +146,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           dependencyKey: cur.dependencyKey || '',
           offset: Number.isSafeInteger(cur.offset) ? cur.offset : 0,
           priorityHint: 0.95,
-          requesterId: 'resumed_cursor'
+          requesterId: 'resumed_cursor',
+          storageCursor: cur.storageCursor || null
         });
       }
     }
@@ -176,7 +179,11 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
         lastStopReason = 'cancelled'; return { executed: false, stopReason: 'cancelled', access: null };
       }
       if (page.storageStopped) {
-        lastStopReason = page.stopReason; return { executed: false, stopReason: lastStopReason, access: null };
+        lastStopReason = page.stopReason;
+        if (page.storageCursor) {
+          next.spec.storageCursor = page.storageCursor;
+        }
+        return { executed: false, stopReason: lastStopReason, access: null };
       }
       if (page.stopReason === 'row_exceeds_page') {
         queue.shift();
@@ -193,7 +200,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           channel: next.spec.channel,
           term: next.spec.term,
           offset: next.spec.offset,
-          stopReason: 'row_exceeds_page'
+          stopReason: 'row_exceeds_page',
+          storageCursor: next.spec.storageCursor || null
         });
         lastStopReason = 'row_exceeds_page';
         return { executed: false, stopReason: 'row_exceeds_page', access: null };
@@ -204,6 +212,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       }
       queue.shift();
       next.completed = true;
+      next.spec.storageCursor = null;
       pagesRead++;
       bytesRead += page.serializedUtf8Bytes;
       if (page.cacheHit) cacheHits++;
@@ -235,7 +244,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           laneRole: next.lanes[0],
           offset: page.nextOffset,
           priorityHint: next.priorityHint,
-          requesterId: next.requesters[0] || ''
+          requesterId: next.requesters[0] || '',
+          storageCursor: null
         });
       }
       return { executed: true, stopReason: 'frontier_exhausted', access };
@@ -307,7 +317,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
-          stopReason: lastStopReason
+          stopReason: lastStopReason,
+          storageCursor: pending.spec.storageCursor || null
         });
       }
       const complete = unreadCursors.length === 0 && lastStopReason === 'frontier_exhausted';

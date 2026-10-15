@@ -87,3 +87,28 @@ test('cache invalidation during pending I/O revokes the decode handle without re
  x.onRead(async key=>{if(key.includes(':page:postings:')){entered();await gate;}});
  const pending=x.execute();await started;x.env.pages.invalidate();release();await assert.rejects(()=>pending,/REQUEST_REVOKED/);idle(x);
 });
+
+test('N01-c: Lane unreadCursors captures intermediate storageCursor on storage budget stop and resumes seamlessly',async()=>{
+ const x=fixture();await x.build();x.reads.length=0;
+ const opened=await x.read();
+ const s1=x.env.lane.createSession(opened.compiledIndex,{maxPages:16,maxStoragePages:1});
+ s1.enqueue({laneRole:'graph_neighborhood',table:'adjacency'});
+ const r1=await s1.drainPendingAsync();
+ assert.equal(r1.stoppedByBudget,true);
+ const rep1=s1.finalize();
+ assert.equal(rep1.complete,false);
+ assert.ok(rep1.unreadCursors.length>0);
+ const unread=rep1.unreadCursors[0];
+ assert.ok(unread.storageCursor,'unread cursor must carry storageCursor');
+ assert.equal(unread.storageCursor.schema,'libra.graph_storage_access_cursor.v1');
+ assert.equal(unread.storageCursor.refIndex,1);
+
+ // Resume in a second session with full storage and logical budget
+ const s2=x.env.lane.createSession(opened.compiledIndex,{maxPages:64,maxBytes:524288,maxStoragePages:16,resumeCursors:rep1.unreadCursors});
+ const r2=await s2.drainPendingAsync();
+ assert.equal(r2.stoppedByBudget,false);
+ const rep2=s2.finalize();
+ assert.equal(rep2.complete,true);
+ assert.equal(rep2.unreadCursors.length,0);
+ idle(x);
+});

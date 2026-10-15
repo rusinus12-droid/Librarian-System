@@ -46563,7 +46563,7 @@ function createLibraReadonlySourceContext(owner) {
           page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes: ceiling });
         }
       }
-      return page;
+      return { ...page, storageCursor: null };
     } finally { result.release?.(); }
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
@@ -47226,47 +47226,88 @@ function createLibraReadonlySourceContext(owner) {
     }));
   };
 
-  const reassembleTableRows = async (table, rawItems, resources = null) => {
-    const run = async () => {
-    const out = [];
+  const createTableReassembler = (table, resources = null) => {
+    let out = [];
     let splitReassembled = false;
-    let i = 0;
-    while (i < rawItems.length) {
-      const item = rawItems[i];
+    let pending = null;
+
+    const pushItem = async item => {
       if (!item || typeof item !== 'object') fail('page_corrupt');
       if (item.__chunkSchema !== rowChunkSchema) {
+        if (pending !== null) fail('page_corrupt');
         out.push(item);
-        i++;
-        continue;
+        return;
       }
       splitReassembled = true;
-      const { rowDigest, rowIndex, chunkCount } = item;
-      if (item.table !== table || item.chunkIndex !== 0 || !Number.isSafeInteger(chunkCount) || chunkCount < 2
-        || !/^[a-f0-9]{64}$/.test(String(rowDigest || '')) || !Number.isSafeInteger(rowIndex) || rowIndex < 0) {
+      const { rowDigest, rowIndex, chunkCount, chunkIndex, slice } = item;
+      if (item.table !== table || !Number.isSafeInteger(chunkCount) || chunkCount < 2
+        || !/^[a-f0-9]{64}$/.test(String(rowDigest || ''))
+        || !Number.isSafeInteger(rowIndex) || rowIndex < 0
+        || !Number.isSafeInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= chunkCount
+        || typeof slice !== 'string') {
         fail('page_corrupt');
       }
-      if (i + chunkCount > rawItems.length) fail('page_corrupt');
-      let joined = '';
-      for (let part = 0; part < chunkCount; part++) {
-        const chunk = rawItems[i + part];
-        if (!chunk || chunk.__chunkSchema !== rowChunkSchema || chunk.table !== table
-          || chunk.rowDigest !== rowDigest || chunk.rowIndex !== rowIndex
-          || chunk.chunkCount !== chunkCount || chunk.chunkIndex !== part
-          || typeof chunk.slice !== 'string') {
+      if (pending === null) {
+        if (chunkIndex !== 0) fail('page_corrupt');
+        pending = { rowDigest, rowIndex, chunkCount, parts: [slice], nextIndex: 1 };
+      } else {
+        if (rowDigest !== pending.rowDigest || rowIndex !== pending.rowIndex || chunkCount !== pending.chunkCount
+          || chunkIndex !== pending.nextIndex) {
           fail('page_corrupt');
         }
-        joined += chunk.slice;
+        pending.parts.push(slice);
+        pending.nextIndex++;
       }
-      if (hash(joined) !== rowDigest) fail('page_corrupt');
-      let parsed;
-      const decode = () => { try { return JSON.parse(joined); } catch (_) { fail('page_corrupt'); } };
-      parsed = resources ? await resources.withValue(joined,decode) : decode();
-      out.push(parsed);
-      i += chunkCount;
-    }
-    return { rows: out, splitReassembled };
+      if (pending.parts.length === pending.chunkCount) {
+        const joined = pending.parts.join('');
+        if (hash(joined) !== pending.rowDigest) fail('page_corrupt');
+        const decode = () => { try { return JSON.parse(joined); } catch (_) { fail('page_corrupt'); } };
+        const parsed = resources ? await resources.withValue(joined, decode) : decode();
+        out.push(parsed);
+        pending = null;
+      }
     };
-    return resources ? await resources.withValue(rawItems,run) : await run();
+
+    const pushPage = async pageItems => {
+      for (const item of pageItems) await pushItem(item);
+    };
+
+    const finish = () => {
+      if (pending !== null) fail('page_corrupt');
+      return { rows: out, splitReassembled };
+    };
+
+    const getStagingData = () => ({
+      completedRows: [...out],
+      pending: pending ? { ...pending, parts: [...pending.parts] } : null,
+      hasSplit: splitReassembled
+    });
+
+    const restoreStaging = staging => {
+      out = [...(staging.completedRows || [])];
+      pending = staging.pending ? { ...staging.pending, parts: [...staging.pending.parts] } : null;
+      splitReassembled = Boolean(staging.hasSplit);
+    };
+
+    return {
+      pushItem,
+      pushPage,
+      finish,
+      getStagingData,
+      restoreStaging,
+      getRows: () => out,
+      getPending: () => pending,
+      hasSplit: () => splitReassembled
+    };
+  };
+
+  const reassembleTableRows = async (table, rawItems, resources = null) => {
+    const run = async () => {
+      const reassembler = createTableReassembler(table, resources);
+      await reassembler.pushPage(rawItems);
+      return reassembler.finish();
+    };
+    return resources ? await resources.withValue(rawItems, run) : await run();
   };
 
   const checkpointAttemptKey = (loc, frame, previousRootRaw, attempt) =>
@@ -47824,8 +47865,17 @@ function createLibraReadonlySourceContext(owner) {
         consume(rows); owner.check(); return null;
       } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
     };
+    const storageStaging = new Map();
+    let stagingNonce = 0;
+    if (owner.resources?.onClose) {
+      owner.resources.onClose(() => {
+        for (const s of storageStaging.values()) { try { s.stagingScope?.close(); } catch (_) {} }
+        storageStaging.clear();
+      });
+    }
     const readRows = async (spec, budget) => {
       const scope = owner.resources?.scope();
+      let activeStagingKey = null;
       try {
         owner.check(); await owner.assertRoute?.(); owner.check();
         const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
@@ -47833,16 +47883,110 @@ function createLibraReadonlySourceContext(owner) {
           || !Number.isSafeInteger(credit.maxBytes) || credit.maxBytes < 512 || credit.maxBytes > 8388608
           || !Number.isSafeInteger(credit.pagesRead) || credit.pagesRead < 0 || credit.pagesRead > credit.maxPages
           || !Number.isSafeInteger(credit.bytesRead) || credit.bytesRead < 0 || credit.bytesRead > credit.maxBytes) fail('storage_budget_invalid');
-        const rawRows = [];
-        for (const ref of manifest.refs) if (ref.table === spec.table && mightContain(ref, spec)) {
-          const stopped = await readPage(ref, page => { scope?.retain(page,'selected_index_rows'); rawRows.push(...page); }, credit);
-          if (stopped) { scope?.close(); return { storageStopped: true, stopReason: stopped }; }
+        const matchingRefs = manifest.refs.filter(ref => ref.table === spec.table && mightContain(ref, spec));
+        const cursor = spec.storageCursor || null;
+        const indexDigest = manifest.metadata.indexDigest;
+        let startIndex = 0;
+        let staging = null;
+        if (cursor) {
+          if (!cursor || typeof cursor !== 'object'
+            || cursor.schema !== 'libra.graph_storage_access_cursor.v1'
+            || cursor.table !== spec.table
+            || cursor.partition !== loc.partition
+            || cursor.generation !== manifest.generation
+            || cursor.indexDigest !== indexDigest
+            || !Number.isSafeInteger(cursor.refIndex) || cursor.refIndex < 0 || cursor.refIndex >= matchingRefs.length
+            || cursor.totalMatchingRefs !== matchingRefs.length
+            || matchingRefs[cursor.refIndex]?.key !== cursor.refKey
+            || typeof cursor.stagingKey !== 'string') {
+            fail('storage_cursor_invalid');
+          }
+          activeStagingKey = cursor.stagingKey;
+          staging = storageStaging.get(activeStagingKey);
+          if (!staging || staging.generation !== manifest.generation || staging.indexDigest !== indexDigest
+            || staging.table !== spec.table || staging.partition !== loc.partition) {
+            fail('storage_cursor_invalid');
+          }
+          startIndex = cursor.refIndex;
+        } else {
+          activeStagingKey = hash(JSON.stringify([
+            manifest.generation,
+            indexDigest,
+            loc.partition,
+            spec.table,
+            spec.channel || '',
+            spec.term || spec.dependencyKey || spec.anchorNodeId || '',
+            ++stagingNonce
+          ]));
+        }
+
+        const reassembler = createTableReassembler(spec.table, scope);
+        if (staging) {
+          reassembler.restoreStaging(staging);
+        }
+
+        for (let i = startIndex; i < matchingRefs.length; i++) {
+          const ref = matchingRefs[i];
+          let pageItems = null;
+          const stopped = await readPage(ref, page => {
+            pageItems = page;
+            scope?.retain(page, 'selected_index_rows');
+          }, credit);
+          if (stopped) {
+            const stagingScope = staging?.stagingScope || owner.resources?.scope();
+            const stagingData = reassembler.getStagingData();
+            stagingScope?.retain(stagingData, 'reassembly_staging');
+            storageStaging.set(activeStagingKey, {
+              generation: manifest.generation,
+              indexDigest,
+              partition: loc.partition,
+              table: spec.table,
+              ...stagingData,
+              stagingScope
+            });
+            const nextCursor = {
+              schema: 'libra.graph_storage_access_cursor.v1',
+              generation: manifest.generation,
+              indexDigest,
+              partition: loc.partition,
+              table: spec.table,
+              refIndex: i,
+              refKey: ref.key,
+              totalMatchingRefs: matchingRefs.length,
+              stagingKey: activeStagingKey,
+              assembledRowCount: reassembler.getRows().length,
+              hasPendingSplit: Boolean(reassembler.getPending())
+            };
+            return {
+              storageStopped: true,
+              stopReason: stopped,
+              storageCursor: nextCursor,
+              rows: [],
+              splitReassembled: reassembler.hasSplit()
+            };
+          }
+          if (pageItems) {
+            await reassembler.pushPage(pageItems);
+          }
         }
         await assertIndexCurrent();
-        const reassembled = await reassembleTableRows(spec.table, rawRows, scope);
-        scope?.retain(reassembled.rows,'reassembled_index_rows');
-        return { rows: reassembled.rows, splitReassembled: reassembled.splitReassembled, release: () => scope?.close() };
-      } catch (error) { scope?.close(); throw error; }
+        const { rows, splitReassembled } = reassembler.finish();
+        if (storageStaging.has(activeStagingKey)) {
+          const oldStaging = storageStaging.get(activeStagingKey);
+          try { oldStaging.stagingScope?.close(); } catch (_) {}
+          storageStaging.delete(activeStagingKey);
+        }
+        scope?.retain(rows, 'reassembled_index_rows');
+        return { rows, splitReassembled, storageCursor: null, release: () => scope?.close() };
+      } catch (error) {
+        if (activeStagingKey && storageStaging.has(activeStagingKey)) {
+          const oldStaging = storageStaging.get(activeStagingKey);
+          try { oldStaging.stagingScope?.close(); } catch (_) {}
+          storageStaging.delete(activeStagingKey);
+        }
+        scope?.close();
+        throw error;
+      }
     };
     let compiledIndex;
     if (lazy) compiledIndex = index.restoreLazy(manifest.metadata, { partition: loc.partition, generation: manifest.generation, readRows });
@@ -47980,7 +48124,8 @@ function createLibraReadonlySourceContext(owner) {
       dependencyKey = '',
       offset = 0,
       priorityHint = 0,
-      requesterId = ''
+      requesterId = '',
+      storageCursor = null
     } = {}) => {
       if (!validRoles.has(laneRole)) fail('lane_role_invalid');
       if (!['directory', 'adjacency', 'postings', 'reverseDependencies'].includes(table)) fail('table_invalid');
@@ -47998,7 +48143,8 @@ function createLibraReadonlySourceContext(owner) {
         term: String(term || ''),
         dependencyKey: String(dependencyKey || ''),
         offset,
-        pageBytes
+        pageBytes,
+        storageCursor: storageCursor || null
       };
       const key = accessKeyOf(spec);
       if (seenAccessKeys.has(key)) {
@@ -48048,7 +48194,8 @@ function createLibraReadonlySourceContext(owner) {
           dependencyKey: cur.dependencyKey || '',
           offset: Number.isSafeInteger(cur.offset) ? cur.offset : 0,
           priorityHint: 0.95,
-          requesterId: 'resumed_cursor'
+          requesterId: 'resumed_cursor',
+          storageCursor: cur.storageCursor || null
         });
       }
     }
@@ -48080,7 +48227,11 @@ function createLibraReadonlySourceContext(owner) {
         lastStopReason = 'cancelled'; return { executed: false, stopReason: 'cancelled', access: null };
       }
       if (page.storageStopped) {
-        lastStopReason = page.stopReason; return { executed: false, stopReason: lastStopReason, access: null };
+        lastStopReason = page.stopReason;
+        if (page.storageCursor) {
+          next.spec.storageCursor = page.storageCursor;
+        }
+        return { executed: false, stopReason: lastStopReason, access: null };
       }
       if (page.stopReason === 'row_exceeds_page') {
         queue.shift();
@@ -48097,7 +48248,8 @@ function createLibraReadonlySourceContext(owner) {
           channel: next.spec.channel,
           term: next.spec.term,
           offset: next.spec.offset,
-          stopReason: 'row_exceeds_page'
+          stopReason: 'row_exceeds_page',
+          storageCursor: next.spec.storageCursor || null
         });
         lastStopReason = 'row_exceeds_page';
         return { executed: false, stopReason: 'row_exceeds_page', access: null };
@@ -48108,6 +48260,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       queue.shift();
       next.completed = true;
+      next.spec.storageCursor = null;
       pagesRead++;
       bytesRead += page.serializedUtf8Bytes;
       if (page.cacheHit) cacheHits++;
@@ -48139,7 +48292,8 @@ function createLibraReadonlySourceContext(owner) {
           laneRole: next.lanes[0],
           offset: page.nextOffset,
           priorityHint: next.priorityHint,
-          requesterId: next.requesters[0] || ''
+          requesterId: next.requesters[0] || '',
+          storageCursor: null
         });
       }
       return { executed: true, stopReason: 'frontier_exhausted', access };
@@ -48211,7 +48365,8 @@ function createLibraReadonlySourceContext(owner) {
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
-          stopReason: lastStopReason
+          stopReason: lastStopReason,
+          storageCursor: pending.spec.storageCursor || null
         });
       }
       const complete = unreadCursors.length === 0 && lastStopReason === 'frontier_exhausted';

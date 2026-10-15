@@ -328,6 +328,57 @@ test('N01-B: oversized single index rows exceeding pageBytes are split determini
   x.idle();
 });
 
+test('N01-c: progressive storage access cursor and intermediate reassembly allow multi-step retrieval of split rows',async()=>{
+  const x=fixture({count:3,canonicalCount:2,incrementalProof:true,hubEdges:16});
+  const frameGraph=await x.initial();
+
+  const built=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,options:{limit:1,pageBytes:512}});
+  assert.equal(built.status,'published');
+  assert.ok(built.storage.splitRowCount>0);
+
+  const lazyRead=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:false});
+  const spec={table:'reverseDependencies',dependencyKey:'node:canonical0',offset:0,pageBytes:512};
+
+  // Step 1: Read with maxPages: 1 budget -> stops on storage budget, returns storageCursor
+  const step1=await x.index.queryPageAsync(lazyRead.compiledIndex,spec,{maxPages:1,maxBytes:8388608,pagesRead:0,bytesRead:0});
+  assert.equal(step1.storageStopped,true);
+  assert.equal(step1.stopReason,'storage_page_count_budget');
+  assert.ok(step1.storageCursor,'must return intermediate storage cursor');
+  assert.equal(step1.storageCursor.schema,'libra.graph_storage_access_cursor.v1');
+  assert.equal(step1.storageCursor.table,'reverseDependencies');
+  assert.equal(step1.storageCursor.refIndex,1);
+  assert.equal(step1.storageCursor.assembledRowCount,0);
+
+  // Step 2: Resume with step1.storageCursor and maxPages: 1
+  let finalPage=await x.index.queryPageAsync(lazyRead.compiledIndex,{...spec,storageCursor:step1.storageCursor},{maxPages:1,maxBytes:8388608,pagesRead:0,bytesRead:0});
+
+  // If split across more pages, continue draining
+  while(finalPage.storageStopped&&finalPage.storageCursor){
+    finalPage=await x.index.queryPageAsync(lazyRead.compiledIndex,{...spec,storageCursor:finalPage.storageCursor},{maxPages:1,maxBytes:8388608,pagesRead:0,bytesRead:0});
+  }
+
+  // Final page must have finished reassembly, returned items and storageCursor: null
+  assert.equal(finalPage.storageStopped,undefined);
+  assert.equal(finalPage.storageCursor,null);
+  assert.equal(finalPage.items.length,1);
+  assert.equal(finalPage.items[0].dependencyKey,'node:canonical0');
+  assert.equal(finalPage.items[0].edgeIds.length,16);
+
+  // Eager read produces the exact same reassembled row
+  const eagerRead=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:true});
+  const eagerRow=eagerRead.compiledIndex.reverseDependencies.find(r=>r.dependencyKey==='node:canonical0');
+  assert.deepEqual(finalPage.items[0],eagerRow);
+
+  // Failure cases:
+  // 1. Invalid / tampered generation on cursor fails STORAGE_CURSOR_INVALID
+  await assert.rejects(()=>x.index.queryPageAsync(lazyRead.compiledIndex,{...spec,storageCursor:{...step1.storageCursor,generation:'forged_gen'}},{maxPages:1,maxBytes:8388608,pagesRead:0,bytesRead:0}),/STORAGE_CURSOR_INVALID/);
+
+  // 2. Out of range refIndex fails STORAGE_CURSOR_INVALID
+  await assert.rejects(()=>x.index.queryPageAsync(lazyRead.compiledIndex,{...spec,storageCursor:{...step1.storageCursor,refIndex:9999}},{maxPages:1,maxBytes:8388608,pagesRead:0,bytesRead:0}),/STORAGE_CURSOR_INVALID/);
+
+  x.idle();
+});
+
 test('checkpoint without an owner proof is re-enumerated after a source edit',async()=>{
   const x=fixture({count:4,canonicalCount:2});
   const initialGraph=await x.initial();
