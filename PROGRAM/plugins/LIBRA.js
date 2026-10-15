@@ -71315,9 +71315,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             const decisions = {};
             for (const unit of asArray(graph.units)) {
               const nodeId = string(unit?.nodeId || '');
-              if (!nodeId) continue;
-              if (string(unit.family) !== 'canonical') { decisions[nodeId] = { status: 'missing', reason: 'no_representation_producer_declared' }; continue; }
               if (admitted[nodeId]) { decisions[nodeId] = { status: 'valid', reason: '' }; continue; }
+              if (string(unit.family) !== 'canonical') { decisions[nodeId] = { status: 'missing', reason: 'no_representation_producer_declared' }; continue; }
               const reason = rejectedByKey.get(string(unit.recordKey || '')) || 'representation_missing';
               decisions[nodeId] = {
                 status: reason === 'embedding_space_mismatch' ? 'foreign_space'

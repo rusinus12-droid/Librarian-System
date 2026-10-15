@@ -163,6 +163,98 @@ test('N02: the contract describes, it does not produce', () => {
   }
 });
 
+test('N01-e & N02: multi-family representation admission isolates semantic_access Lane role to admitted units while vectorless units participate via lexical/graph channels', () => {
+  const createPages = resolveTool('libra_memory_graph_pages.cjs');
+  const createIndex = resolveTool('libra_memory_graph_index.cjs');
+  const createLane = resolveTool('libra_memory_graph_lane.cjs');
+  const createQuery = resolveTool('libra_memory_graph_query.cjs');
+  const fingerprint = text => crypto.createHash('sha256').update(String(text)).digest('hex');
+
+  const pages = createPages({ fingerprint });
+  const index = createIndex({ pages, fingerprint });
+  const lane = createLane({ pages, index });
+  const query = createQuery({ pages, index, lane, fingerprint });
+
+  const graph = {
+    schema: 'libra.memory_graph_projection.v1',
+    readerFrame: { owner: 'test', scopeKey: 'scope' },
+    nodes: [
+      { id: 'canon-node', layer: 'source', bindingId: 'b-canon' },
+      { id: 'canon-unit-node', layer: 'meaning', sourceId: 'canon-node', bindingId: 'b-cu' },
+      { id: 'micro-node', layer: 'meaning', sourceId: null, bindingId: 'b-micro' },
+      { id: 'state-node', layer: 'meaning', sourceId: null, bindingId: 'b-state' }
+    ],
+    units: [
+      { nodeId: 'canon-unit-node', family: 'canonical', recordKey: 'rec-canon', text: 'quantum computer core' },
+      { nodeId: 'micro-node', family: 'micro', recordKey: 'rec-micro', text: 'laser crystal aligned' },
+      { nodeId: 'state-node', family: 'state', recordKey: 'rec-state', text: 'reactor power online' }
+    ],
+    edges: [
+      { id: 'e1', from: 'canon-unit-node', to: 'canon-node', predicate: 'evidenced_by' }
+    ]
+  };
+
+  const compiled = index.compile(graph, { partition: 'p', generation: '1'.repeat(64) });
+  const frame = query.sealQueryFrame({
+    owner: 'test',
+    scopeKey: 'scope',
+    worldlineId: 'main',
+    queryText: 'quantum laser reactor',
+    semanticSpace: { spaceId: 's1', provider: 'p1', model: 'm1', dimension: 2, metric: 'cosine' },
+    queryEmbedding: [1, 0],
+    documentRepresentations: {
+      'canon-node': { nodeId: 'canon-node', bindingId: 'b-canon', spaceId: 's1', provider: 'p1', model: 'm1', dimension: 2, vector: [1, 0] },
+      'micro-node': { nodeId: 'micro-node', bindingId: 'b-micro', spaceId: 's1', provider: 'p1', model: 'm1', dimension: 2, vector: [1, 0] }
+    },
+    representationDecisions: {
+      'canon-unit-node': { status: 'valid', reason: '' },
+      'micro-node': { status: 'valid', reason: '' },
+      'state-node': { status: 'missing', reason: 'no_representation_producer_declared' }
+    }
+  });
+
+  const view = query.openView(graph, compiled, frame);
+  const result = query.retrieve(view);
+  assert.equal(result.complete, true);
+
+  // Lane role stats: semantic_access is strictly 2 (for canon and micro), 0 for state
+  const roleStats = result.diagnostics.laneRoleStats;
+  assert.equal(roleStats.semantic_access.requests, 2, 'semantic_access must only be enqueued for admitted units');
+  assert.equal(roleStats.query_anchor_access.requests, 3, 'all tokens must be queried via lexical query_anchor_access');
+
+  // Verify candidate semantic statuses and inclusion of vectorless state unit
+  const canonCand = result.candidates.find(c => c.nodeId === 'canon-unit-node');
+  const microCand = result.candidates.find(c => c.nodeId === 'micro-node');
+  const stateCand = result.candidates.find(c => c.nodeId === 'state-node');
+
+  assert.ok(canonCand, 'canonical candidate must be retrieved');
+  assert.ok(microCand, 'admitted micro candidate must be retrieved');
+  assert.equal(microCand.semanticFeatureStatus, 'available_vector_space', 'admitted micro unit receives vector space feature');
+  assert.ok(microCand.score > 0.3, 'micro candidate score benefits from semantic vector match');
+
+  assert.ok(stateCand, 'vectorless state candidate must still participate in single frontier');
+  assert.equal(stateCand.semanticFeatureStatus, 'incompatible_isolated', 'state unit is isolated from vector channel');
+  assert.ok(stateCand.score > 0, 'state unit receives non-zero score from lexical/graph match');
+
+  // Semantic diagnostics verify exact counts and gating reasons
+  const semDiag = result.diagnostics.semanticDiagnostics;
+  assert.equal(semDiag.planDecisionCount, 3);
+  assert.equal(semDiag.planGatedCount, 1);
+  assert.equal(semDiag.planGatedReasons.no_representation_producer_declared, 1);
+  assert.equal(semDiag.compatibleCount, 2);
+  assert.equal(semDiag.incompatibleIsolatedCount, 1);
+  assert.equal(semDiag.backgroundEmbeddingStarted, false);
+});
+
+test('N01-e: representation decisions and diagnostics faithfully preserve gated reasons and coverage in unified query', () => {
+  const plugin = fs.readFileSync(SOURCE_FILE, 'utf8');
+  const repDecisionsIdx = plugin.indexOf('const decisions = {};');
+  assert.ok(repDecisionsIdx > 0, 'LIBRA.js must build representation decisions');
+  const chunk = plugin.slice(repDecisionsIdx, repDecisionsIdx + 600);
+  assert.ok(chunk.indexOf('if (admitted[nodeId])') < chunk.indexOf("if (string(unit.family) !== 'canonical')"),
+    'admitted representations must be verified before declaring non-canonical families as missing');
+});
+
 (async () => {
   const results = [];
   for (const t of tests) {
