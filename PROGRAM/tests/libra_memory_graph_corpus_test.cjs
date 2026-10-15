@@ -327,3 +327,61 @@ test('N01-B: oversized single index rows exceeding pageBytes are split determini
   x.values.set(splitRef.key,rawSplitPage);
   x.idle();
 });
+
+test('checkpoint without an owner proof is re-enumerated after a source edit',async()=>{
+  const x=fixture({count:4,canonicalCount:2});
+  const initialGraph=await x.initial();
+  assert.equal((await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:2}})).status,'checkpointed');
+  x.changeCanonical();
+  const built=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:4}});
+  assert.equal(built.status,'published');
+  assert.equal(built.reusedWindowCount,0,'absence of proof cannot authorize reuse');
+  assert.equal((await x.read()).graph.nodes.find(n=>n.id==='canonical1').bindingId,'binding1');x.idle();
+});
+
+test('a null currentness verifier result cannot authorize a checkpoint reuse',async()=>{
+  const x=fixture({count:4,canonicalCount:2,incrementalProof:true});
+  const initialGraph=await x.initial();
+  assert.equal((await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:2}})).status,'checkpointed');
+  x.changeCanonical();
+  const verify=x.owner.verifySourceProofs;x.owner.verifySourceProofs=async(proof,options)=>options.phase==='build'?null:verify(proof,options);
+  const built=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:4}}).catch(error=>error);
+  assert.equal(built.status,'published');
+  assert.equal(built.reusedWindowCount,0,'a null proof result must never reuse the old slices');
+  x.owner.verifySourceProofs=verify;x.idle();
+});
+
+test('a changed checkpoint payload is discarded before any saved graph can be reused',async()=>{
+  const x=fixture({count:4,incrementalProof:true});const initialGraph=await x.initial();
+  const step=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:2}});
+  const checkpoint=JSON.parse(x.values.get(step.checkpointKey));
+  checkpoint.windowSlices[0].graph.units[0].text='corrupted saved evidence';
+  x.values.set(step.checkpointKey,JSON.stringify(checkpoint));
+  const result=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindowsPerStep:4}});
+  assert.equal(result.status,'published');assert.equal(result.reusedWindowCount,0);
+  assert.equal((await x.read()).graph.units.some(u=>u.text==='corrupted saved evidence'),false);x.idle();
+});
+
+test('v1 source proofs use native reprojection and never supply a new physical body baseline',async()=>{
+  const x=fixture({count:4,incrementalProof:true});await x.build();const initialGraph=await x.initial(),loc=x.corpus.location(initialGraph);
+  const root=JSON.parse(x.values.get(loc.rootKey)),manifest=JSON.parse(x.values.get(root.manifestKey));
+  const proof=JSON.parse(x.values.get(manifest.sourceProofs.proofKey));proof.proofVersion='libra.source_proof_contract.v1';
+  const proofRaw=JSON.stringify(proof),proofDigest=hash(proofRaw),proofKey=loc.prefix+'proof:'+proofDigest;
+  x.values.set(proofKey,proofRaw);
+  manifest.sourceProofs={...manifest.sourceProofs,proofVersion:proof.proofVersion,proofDigest,proofKey};
+  const manifestRaw=JSON.stringify(manifest),digest=hash(manifestRaw),manifestKey=loc.prefix+'manifest:'+digest;
+  x.values.set(manifestKey,manifestRaw);x.values.set(loc.rootKey,JSON.stringify({...root,digest,manifestKey}));
+  x.visits.length=0;
+  const result=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph,eager:false});
+  assert.equal(result.access.nativeReprojectionRequired,true);assert.equal(x.visits.length,4);
+  assert.equal(result.sourceProofs,null);await result.currentGraph();assert.equal(x.visits.length,8);x.idle();
+});
+
+test('one-window checkpoint steps can complete beyond the old 64-attempt scan ceiling',async()=>{
+  const x=fixture({count:67,incrementalProof:true});const initialGraph=await x.initial();let result;
+  for(let step=0;step<67;step++){
+    result=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph,options:{limit:1,maxWindows:128,maxWindowsPerStep:1}});
+    if(step<66){assert.equal(result.status,'checkpointed');assert.equal(result.completedWindows,step+1);}
+  }
+  assert.equal(result.status,'published');assert.equal(result.windowCount,67);assert.equal(result.reusedWindowCount,66);x.idle();
+});

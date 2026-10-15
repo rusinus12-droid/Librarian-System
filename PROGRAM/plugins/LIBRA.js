@@ -46374,11 +46374,15 @@ function createLibraReadonlySourceContext(owner) {
   const tables = ['directory','adjacency','postings','reverseDependencies'];
   const schema = 'libra.graph_corpus.v1';
   const routingVersion = 'libra.index_page_routing.v1';
-  const proofVersion = 'libra.source_proof_contract.v1';
+  // v2 requires source body baselines to be captured with the native projection,
+  // never first observed later while the already-built graph is published.
+  const proofVersion = 'libra.source_proof_contract.v2';
+  const supportedProofVersions = new Set(['libra.source_proof_contract.v1', proofVersion]);
   const proofSchema = 'libra.graph_corpus_source_proofs.v1';
   const proofSummarySchema = 'libra.graph_corpus_source_proof_summary.v1';
   const projectionSchema = 'libra.graph_corpus_projection.v1';
   const checkpointSchema = 'libra.graph_corpus_build_checkpoint.v1';
+  const maxCheckpointAttempts = 128;
   const rowChunkSchema = 'libra.graph_corpus_row_chunk.v1';
   let active = false;
   const knownFrames = new WeakMap();
@@ -46613,6 +46617,7 @@ function createLibraReadonlySourceContext(owner) {
         nextMicro,
         graph,
         sourceKeys: [...(value.collected?.sourceKeys || [])],
+        sourceBodyDigests: { ...(value.collected?.sourceBodyDigests || {}) },
         canonicalRows: [...(value.collected?.canonicalRows || [])],
         windowProof: ownerWp,
         reused: false
@@ -46642,7 +46647,7 @@ function createLibraReadonlySourceContext(owner) {
       return {
         pausedAtCheckpoint: true,
         firstGraph: first,
-        windowSlices: collectedSlices.map(s => ({ ...s, reused: false })),
+        windowSlices: collectedSlices,
         reusedWindowCount,
         enumeratedWindowCount,
         config
@@ -46850,6 +46855,7 @@ function createLibraReadonlySourceContext(owner) {
       nextMicro: s.nextMicro,
       graph: s.graph,
       sourceKeys: s.sourceKeys,
+      sourceBodyDigests: s.sourceBodyDigests,
       canonicalRows: s.canonicalRows,
       windowProof: s.windowProof || null
     }));
@@ -46862,10 +46868,22 @@ function createLibraReadonlySourceContext(owner) {
       reusedWindowCount,
       enumeratedWindowCount,
       reusedOnlySourceKeys: [...reusedSourceKeys].filter(k => !enumeratedSourceKeys.has(k)),
-      collected: { ...(baseCollected || {}), sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs },
+      collected: { ...(baseCollected || {}), sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs,
+        sourceBodyDigests: freshBodyDigests(collectedSlices) },
       serializedGraphBytes: bytes,
       config
     };
+  };
+
+  const freshBodyDigests = slices => {
+    const result = {};
+    for (const slice of slices) if (!slice.reused) {
+      for (const [key, value] of Object.entries(slice.sourceBodyDigests || {})) {
+        if (Object.hasOwn(result,key) && result[key] !== value) fail('source_body_changed');
+        result[key] = value;
+      }
+    }
+    return result;
   };
 
   const parse = (raw, maximum) => {
@@ -47047,12 +47065,13 @@ function createLibraReadonlySourceContext(owner) {
 
   const loadLatestCheckpoint = async (owner, loc, frame, previousRootRaw, config) => {
     let latest = null;
-    for (let attempt = 0; attempt < 64; attempt++) {
+    for (let attempt = 0; attempt < maxCheckpointAttempts; attempt++) {
       const key = checkpointAttemptKey(loc, frame, previousRootRaw, attempt);
       const raw = await owner.read(key); owner.check();
       if (raw === null) break;
       const parsed = parse(raw, config.maxSerializedBytes);
-      if (parsed?.schema === checkpointSchema && same(parsed.frame, frame)
+      const { payloadDigest, ...body } = parsed || {};
+      if (parsed?.schema === checkpointSchema && parsed.proofVersion === proofVersion && payloadDigest === hash(JSON.stringify(body)) && same(parsed.frame, frame)
         && parsed.config?.limit === config.limit && parsed.config?.nodeLimit === config.nodeLimit
         && Array.isArray(parsed.windowSlices) && parsed.windowSlices.length > 0) {
         latest = { key, attempt, record: parsed };
@@ -47066,7 +47085,7 @@ function createLibraReadonlySourceContext(owner) {
     const latestCheckpoint = await loadLatestCheckpoint(owner, loc, startGraph.readerFrame, previousRootRaw, config);
     if (latestCheckpoint) {
       const cp = latestCheckpoint.record;
-      let reusableSet = new Set(cp.windowSlices.map((_, idx) => idx));
+      let reusableSet = new Set();
       let liveWindows = null, liveWindowCount = null, liveCanonicalTotal = null, liveMicroTurnTotal = null;
       if (cp.ownerProof && typeof owner.verifySourceProofs === 'function') {
         const verdict = await owner.verifySourceProofs({ ownerProof: cp.ownerProof, windows: cp.windows }, { initialGraph: startGraph, config, phase: 'build' });
@@ -47103,6 +47122,7 @@ function createLibraReadonlySourceContext(owner) {
       if (!same(manifest.frame, startGraph.readerFrame)
         || manifest.config?.limit !== config.limit
         || manifest.config?.nodeLimit !== config.nodeLimit
+        || manifest.sourceProofs?.proofVersion !== proofVersion
         || !manifest.sourceProofs?.proofKey || !manifest.sourceProofs?.projectionKey) return null;
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) return null;
@@ -47162,16 +47182,20 @@ function createLibraReadonlySourceContext(owner) {
         const partialOwnerProof = typeof owner.captureSourceProof === 'function'
           ? await owner.captureSourceProof({
               graph: fg,
-              collected: { sourceKeys: value.windowSlices.flatMap(s => s.sourceKeys || []), windowProofs: partialWindowProofs },
+              collected: { sourceKeys: value.windowSlices.flatMap(s => s.sourceKeys || []), windowProofs: partialWindowProofs,
+                sourceBodyDigests: freshBodyDigests(value.windowSlices) },
               windows: partialWindows,
               windowProofs: partialWindowProofs,
               config,
-              previousOwnerProof: incrementalPlan?.previousOwnerProof || null
+              previousOwnerProof: incrementalPlan?.previousOwnerProof || null,
+              reusedOnlySourceKeys: [...new Set(value.windowSlices.filter(s => s.reused).flatMap(s => s.sourceKeys || []))]
+                .filter(key => !value.windowSlices.some(s => !s.reused && s.sourceKeys?.includes(key)))
             })
           : null;
         owner.check();
         const cpRecord = {
           schema: checkpointSchema,
+          proofVersion,
           frame: fg.readerFrame,
           scopeKey: fg.scopeKey,
           config,
@@ -47179,13 +47203,15 @@ function createLibraReadonlySourceContext(owner) {
           windowSlices: value.windowSlices,
           ownerProof: partialOwnerProof || null
         };
-        const cpRaw = JSON.stringify(cpRecord);
+        const cpRaw = JSON.stringify({ ...cpRecord, payloadDigest: hash(JSON.stringify(cpRecord)) });
         if (new TextEncoder().encode(cpRaw).length > config.maxSerializedBytes) fail('workspace_budget');
         let attempt = incrementalPlan?.checkpointAttempt ?? 0;
         while ((await owner.read(checkpointAttemptKey(loc, fg.readerFrame, previous, attempt))) !== null) {
           owner.check();
           attempt++;
+          if (attempt >= maxCheckpointAttempts) fail('checkpoint_budget');
         }
+        if (attempt >= maxCheckpointAttempts) fail('checkpoint_budget');
         const cpKey = checkpointAttemptKey(loc, fg.readerFrame, previous, attempt);
         await immutable(owner, cpKey, cpRaw);
         return {
@@ -47410,7 +47436,7 @@ function createLibraReadonlySourceContext(owner) {
   const validSourceProofSummary = (summary, loc, windowCount) => {
     if (summary === undefined) return true;
     if (!summary || typeof summary !== 'object' || summary.schema !== proofSummarySchema
-      || summary.proofVersion !== proofVersion || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
+      || !supportedProofVersions.has(summary.proofVersion) || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
       || !/^[a-f0-9]{64}$/.test(String(summary.projectionDigest || ''))
       || summary.proofKey !== loc.prefix + 'proof:' + summary.proofDigest
       || summary.projectionKey !== loc.prefix + 'projection:' + summary.projectionDigest
@@ -47475,7 +47501,7 @@ function createLibraReadonlySourceContext(owner) {
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) fail('page_corrupt');
       proofRecord = parse(proofRaw, config.maxSerializedBytes);
-      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== proofVersion
+      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== manifest.sourceProofs.proofVersion
         || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
 
       const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
@@ -47485,7 +47511,7 @@ function createLibraReadonlySourceContext(owner) {
         || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
     }
 
-    const canVerifyIncrementally = !eager
+    const canVerifyIncrementally = !eager && proofRecord?.proofVersion === proofVersion
       && Boolean(proofRecord?.ownerProof)
       && Boolean(projectionRecord?.graph)
       && typeof owner.verifySourceProofs === 'function';
@@ -47630,7 +47656,7 @@ function createLibraReadonlySourceContext(owner) {
     };
     return {
       ...native,
-      sourceProofs: proofRecord,
+      sourceProofs: canVerifyIncrementally ? proofRecord : null,
       currentnessVerification,
       compiledIndex,
       currentGraph,
@@ -49044,9 +49070,11 @@ function createLibraReadonlySourceContext(owner) {
         maxFrontierBytes,
         sourceReadJsonBytes: graph.coverage?.sourceReadJsonBytes ?? null,
         sourceReadJsonBudget,
-        ownerIoInFlightBytes: laneReport.bytesRead,
-        ownerIoInFlightBudget: ownerIoInFlightBudget ?? maxBytes,
-        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? 0,
+        // Lane payload is cumulative transfer, not the peak active owner buffer.
+        // The owner has not supplied a physical in-flight/barrier measurement.
+        ownerIoInFlightBytes: null,
+        ownerIoInFlightBudget: null,
+        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? null,
         writeBarrierBudget,
         lanePagesRead: laneReport.pagesRead,
         storage: laneReport.storage || null,
@@ -50184,9 +50212,9 @@ function createLibraReadonlySourceContext(owner) {
       frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
       readsetHandleStateBytes: selected.readSetBytes ?? null,
       readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
-      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? queryResult.diagnostics?.laneBytesRead ?? null,
-      ownerIoInFlightBudget: laneBudget?.ownerIoInFlightBudget ?? queryResult.diagnostics?.laneMaxBytes ?? null,
-      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? 0,
+      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? null,
+      ownerIoInFlightBudget: queryResult.diagnostics?.ownerIoInFlightBudget ?? null,
+      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? null,
       writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
     });
 
@@ -69833,6 +69861,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         query:compact(query||'',500),searchCoverage:search.coverage,worldlineId:resolved.worldlineId,cutoffTurn:Number.isFinite(resolved.cutoffTurn)?resolved.cutoffTurn:null,requestLocalReadOnly:true});
     };
     // Native owner projection shared by the common engine and explicit read-only inspectors.
+    const memoryGraphSourceFingerprint = createLibraMemoryNetwork({ adapters: { hash: stableHash } }).fingerprint;
     const readMemoryGraphProjection = async (options = {}, collect = null) => {
       const allowedOptionNames = collect
         ? ['expectedScopeKey','canonicalCursor','microCursor','canonicalOffset','microOffset','limit','nodeLimit']
@@ -69881,7 +69910,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             canonicalSliceProof.push({ refIdentity: canonicalReaderRefIdentity(ref), available: false, evidenceKey: '' });
             continue;
           }
-          const approvedEvidence = unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema) ? await unifiedEvidenceRead(memory) : null;
+          const approvedEvidence = unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)
+            ? await read('', () => unifiedEvidenceRead(memory)) : null;
           if (approvedEvidence) addSourceKey(approvedEvidence.ref?.key);
           canonicalSliceProof.push({ refIdentity: canonicalReaderRefIdentity(ref), available: true, evidenceKey: string(approvedEvidence?.ref?.key || '') });
           const entityRefs = Object.fromEntries(asArray(memory.canonicalArtifact?.entities).map(entity => [entity.tempId,
@@ -69980,6 +70010,16 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             view: stateView, correctionKey: key.stateCorrections(scope), corrections: correctionJournal },
           lore: { entries: allowedLore, index: loreIndex, revision: stableReferenceJson(loreIndex.basis),
             selectionBinding: loreIndex.basis }, inventory, pending }, { nodeLimit });
+        // Capture the physical body baseline before the final logical readback.
+        // A later build step must never certify different bytes for this graph.
+        const sourceBodyDigests = {};
+        if (collect) for (const storageKey of sourceKeys) {
+          const mode = captured.summary.route.mode;
+          const raw = mode === 'plugin_only' ? await MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)
+            : await MemorySuiteStorageBridge.serverGet('plugin',storageKey);
+          const value = mode === 'plugin_only' ? raw ?? null : raw?.exists === true && raw?.tombstone !== true ? raw.value : null;
+          sourceBodyDigests[storageKey] = memoryGraphSourceFingerprint(stableReferenceJson(value));
+        }
         for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
         const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
         if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
@@ -69988,6 +70028,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (collect) collect({
           scope,
           sourceKeys: [...sourceKeys].sort(),
+          sourceBodyDigests,
           entityRegistry: Array.isArray(registry?.entities) ? clone(registry.entities) : [],
           canonicalRows: canonical.map(({ key, record }) => ({ key, record })),
           windowProof: {
@@ -70330,7 +70371,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               sourceBodyDigests[storageKey] = prevDigests[storageKey];
               continue;
             }
-            sourceBodyDigests[storageKey] = digest(stableReferenceJson(await readRawOwnerSource(storageKey)));
+            const baseline = corpusCollected?.sourceBodyDigests?.[storageKey];
+            if (typeof baseline !== 'string' || !/^[a-f0-9]{64}$/.test(baseline)) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_PROOF_UNBOUND');
+            if (memoryGraphSourceFingerprint(stableReferenceJson(await readRawOwnerSource(storageKey))) !== baseline) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED');
+            sourceBodyDigests[storageKey] = baseline;
           }
           const recordDependencyKeys = {};
           for (const wp of asArray(windowProofs)) {
@@ -70914,9 +70958,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
                 for (const storageKey of pinKeys) consumedStorageKeys.add(storageKey);
               }
               for (const storageKey of consumedStorageKeys) {
-                if (!storageKey || !Object.hasOwn(ownerProof.sourceBodyDigests, storageKey)) continue;
+                if (!storageKey || !Object.hasOwn(ownerProof.sourceBodyDigests, storageKey)) return false;
                 const currentRaw = await readRawSource(storageKey);
-                if (digest(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
+                if (memoryGraphSourceFingerprint(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
               }
             } else {
               for (const saved of pinnedValues) {
@@ -71087,73 +71131,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         async captureGCInventory(prefix) {
           check();
           const keys = await this.listKeys(prefix);
-          const fenceId = id('gc_fence');
-          activeFenceId = fenceId;
-          const fence = {
-            fenceId,
-            scopeKey: graph.scopeKey,
-            epoch,
-            serial,
-            capturedAt: Date.now(),
-            activeRoots: keys.filter(k => k.startsWith(prefix + 'root:')).sort(),
-            keyCount: keys.length
-          };
-          state.memoryGraphActiveGCFences.set(fenceId, fence);
-          return { keys, complete: true, fence };
-        },
-        async deleteConditional({ key: candidateKey, expectedRaw, prefix, inventory, roots }) {
-          check();
-          if (!inventory || !inventory.fence || !inventory.fence.fenceId) return false;
-          const fence = state.memoryGraphActiveGCFences.get(inventory.fence.fenceId);
-          if (!fence || fence.scopeKey !== graph.scopeKey || fence.epoch !== epoch || fence.serial !== serial) {
-            return false;
-          }
-          const hasActiveBuild = [...state.memoryGraphActiveBuilds.values()].some(b => b.scopeKey === graph.scopeKey);
-          if (hasActiveBuild) return false;
-          const hasPinnedReader = [...state.memoryGraphActiveReaders.values()].some(r => r.scopeKey === graph.scopeKey && r.readKeys?.has(candidateKey));
-          if (hasPinnedReader) return false;
-          for (const r of roots || []) {
-            if (await readRaw(r.key) !== r.raw) return false;
-          }
-          const currentKeys = await this.listKeys(prefix);
-          const currentRoots = currentKeys.filter(k => k.startsWith(prefix + 'root:')).sort();
-          if (JSON.stringify(currentRoots) !== JSON.stringify(fence.activeRoots)) return false;
-          if (await readRaw(candidateKey) !== expectedRaw) return false;
-
-          if (storageMode === 'server_only') {
-            try {
-              const expectation = raw => raw === null ? { exists: false } : { exists: true, value: raw };
-              const conditions = (roots || []).map(r => ({ key: r.key, expected: expectation(r.raw) }));
-              const mutations = [{ key: candidateKey, kind: 'remove', expected: { exists: true, value: expectedRaw } }];
-              const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
-              const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
-              if (receipt.endToEndVerified !== true) return false;
-            } catch (_) {
-              return false;
-            }
-          } else {
-            try {
-              await fencedMemoryStorageRemove(candidateKey);
-            } catch (_) {
-              return false;
-            }
-          }
-          check();
-          if ((await readRaw(candidateKey)) !== null) return false;
-          return true;
+          // Neither local runtime maps nor per-root CAS fence new publishers,
+          // builds or readers in this/another VM. No owner namespace capability
+          // exists yet, so only observation/dry-run is authorized here.
+          return { keys, complete: true, fence: null };
         }
       };
-      let activeFenceId = null;
-      try {
-        return await suite.store.collectGarbage({
-          owner,
-          scopeKey: graph.scopeKey,
-          dryRun: Boolean(options.dryRun),
-          throwOnConflict: Boolean(options.throwOnConflict)
-        });
-      } finally {
-        if (activeFenceId) state.memoryGraphActiveGCFences.delete(activeFenceId);
-      }
+      return await suite.store.collectGarbage({
+        owner,
+        scopeKey: graph.scopeKey,
+        dryRun: Boolean(options.dryRun),
+        throwOnConflict: Boolean(options.throwOnConflict)
+      });
     };
     const canonicalReaderPatchFields = patchValue => {
       const patch=asObject(patchValue); const fields=new Set([...Object.keys(asObject(patch.set)),...asArray(patch.clear).map(string).filter(Boolean)]);

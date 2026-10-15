@@ -1,6 +1,6 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 버전: 1.4
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.5
 - 조사 기준: `89fb341` 이후의 이 증분, N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할
 - 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근, owner 증분 증명(`N01-A`), 증분 구축·체크포인트 재개 및 대형 단일 행 분할(`N01-B`)을 연결했다. 전체 바이트 예산(`N01-C`) 및 대규모 성능 인증은 아직 미완성이다.**
 
@@ -77,4 +77,13 @@ node PROGRAM/tools/check_sdk_sync.cjs
 
 **N01은 아직 전체 완료가 아니다.** N01-A로 owner 증분 현재성 증명과 미소비 과거 구간 본문 재읽기 생략을, N01-B로 증분 구축·체크포인트 재개와 대형 단일 행 분할을 연결했으며, 다음 구현은 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·대규모 성능 합격으로 사용하지 않는다.
 
-N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 serving 전환은 수행했으며 실제 인증 gate를 대신하지 않는다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.
+N07의 serving 전환은 수행했다. N02의 다른 family 표현 정책/생산·접근, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정은 여전히 미완료다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.
+
+
+## 5. 2026-10-15 증명·재개·GC 경계 보강
+
+원본 body baseline은 graph 투영과 함께 캡처한 SHA-256으로 결속한다(`libra.source_proof_contract.v2`). 구간 간 같은 source key의 baseline이 달라지거나 proof capture에서 물리 본문이 달라지면 게시를 거부한다. v1 proof는 저장 읽기 호환을 유지하면서 전체 native 재투영 경로로 검증하며 과거 body baseline을 새 발송 권한으로 사용하지 않는다. 다시 유지보수 구축한 v2 세대부터 증분 재투영 생략을 사용한다.
+
+checkpoint는 payload digest와 현재 owner 검증을 모두 만족한 slice만 재사용한다. proof 부재·null·변조·이전 계약은 새 열거로 처리한다. checkpoint key의 존재 자체나 불변 저장 API 호출은 source 현재성 증거가 아니다. checkpoint attempt 읽기/쓰기 상한은 기준 root별 128개이며, 변경/실패로 소진하면 `CHECKPOINT_BUDGET`으로 거부하고 단계 제한 없는 full build로 새 root를 게시할 수 있다.
+
+native GC는 owner namespace의 원자적 publisher/build/reader 보호 기능이 없어 실제 삭제를 차단한다. 런타임 Map이나 per-root 조건부 batch를 atomic fence로 간주하지 않는다. inventory/dry-run은 유지하며 corpus/checkpoint/표현 전체의 도달성·원자적 삭제는 N05 후속이다. 상세 재현은 [리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)를 따른다.

@@ -1,6 +1,6 @@
 # LIBRA 공통 인덱스의 선택적 저장 페이지 읽기
 
-- 작성일: 2026-10-14 · 버전: 1.2
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.3
 - 기준: `9c03c35` 이후의 N01 증분, `1aa630e` N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할. 기본·유일한 통합 검색 계약은 유지한다.
 - 판정: **신규 게시 인덱스는 검색에 필요한 저장 페이지만 읽고, N01-A owner 증분 증명으로 변경되지 않은 과거 구간 본문 재읽기를 생략하며, N01-B로 증분 구축·체크포인트 재개와 대형 단일 행 분할(`libra.graph_corpus_row_chunk.v1`)을 연결했다. 전체 VM 자원 계상(N01-C)과 실제 설치/규모 인증은 여전히 남아 있다.**
 
@@ -55,3 +55,10 @@ node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs PROGRAM
 N01-A에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`를 도입해 변경되지 않은 과거 구간의 정본·Micro 본문 재읽기를 생략(`nativeReprojectionRequired:false`)하고, 소비된 readset의 물리 레코드만 발송 직전에 재확인하도록 연결했다. N01-B에서 증분 창 슬라이스 재사용(`incremental_reuse`), `maxWindowsPerStep` 체크포인트 재개(`checkpoint_resume`), 대형 단일 행 분할(`libra.graph_corpus_row_chunk.v1`) 및 재조립 검증을 연결했다.
 
 다음 작업은 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. `ownerAtomicity:false`, `inventoryComplete:false`, 전체 API `byteBounded:false`는 유지한다. N02/N05/N06의 추가 representation·native GC·실제 설치/품질·규모 인증도 이어서 진행한다.
+
+
+## 6. 증명 버전과 미측정 비용의 호환
+
+원본 proof v2는 native 투영과 physical body baseline을 함께 캡처한다. v1 proof는 전체 native 재투영으로 읽으며, 선택적 **인덱스** 접근은 계속 사용할 수 있다. proof 버전 때문에 query가 자동 저장 repair/build하거나 레거시 검색을 실행하지 않는다. checkpoint의 owner 증명·payload 검증과 GC 삭제 차단은 [후속 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)를 따른다.
+
+`owner_io_in_flight`는 누적 Lane payload byte와 다르다. owner의 실제 동시 버퍼 계측과 미측정 `write_barrier`는 null·missingMeasurements로 남긴다. 이 정정은 N01-C 전체 admission 구현을 뜻하지 않는다.

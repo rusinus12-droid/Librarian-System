@@ -8,11 +8,15 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const tables = ['directory','adjacency','postings','reverseDependencies'];
   const schema = 'libra.graph_corpus.v1';
   const routingVersion = 'libra.index_page_routing.v1';
-  const proofVersion = 'libra.source_proof_contract.v1';
+  // v2 requires source body baselines to be captured with the native projection,
+  // never first observed later while the already-built graph is published.
+  const proofVersion = 'libra.source_proof_contract.v2';
+  const supportedProofVersions = new Set(['libra.source_proof_contract.v1', proofVersion]);
   const proofSchema = 'libra.graph_corpus_source_proofs.v1';
   const proofSummarySchema = 'libra.graph_corpus_source_proof_summary.v1';
   const projectionSchema = 'libra.graph_corpus_projection.v1';
   const checkpointSchema = 'libra.graph_corpus_build_checkpoint.v1';
+  const maxCheckpointAttempts = 128;
   const rowChunkSchema = 'libra.graph_corpus_row_chunk.v1';
   let active = false;
   const knownFrames = new WeakMap();
@@ -247,6 +251,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         nextMicro,
         graph,
         sourceKeys: [...(value.collected?.sourceKeys || [])],
+        sourceBodyDigests: { ...(value.collected?.sourceBodyDigests || {}) },
         canonicalRows: [...(value.collected?.canonicalRows || [])],
         windowProof: ownerWp,
         reused: false
@@ -276,7 +281,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       return {
         pausedAtCheckpoint: true,
         firstGraph: first,
-        windowSlices: collectedSlices.map(s => ({ ...s, reused: false })),
+        windowSlices: collectedSlices,
         reusedWindowCount,
         enumeratedWindowCount,
         config
@@ -484,6 +489,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       nextMicro: s.nextMicro,
       graph: s.graph,
       sourceKeys: s.sourceKeys,
+      sourceBodyDigests: s.sourceBodyDigests,
       canonicalRows: s.canonicalRows,
       windowProof: s.windowProof || null
     }));
@@ -496,10 +502,22 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       reusedWindowCount,
       enumeratedWindowCount,
       reusedOnlySourceKeys: [...reusedSourceKeys].filter(k => !enumeratedSourceKeys.has(k)),
-      collected: { ...(baseCollected || {}), sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs },
+      collected: { ...(baseCollected || {}), sourceKeys: [...sourceKeys].sort(), canonicalRows: [...canonicalRows.values()], windowProofs,
+        sourceBodyDigests: freshBodyDigests(collectedSlices) },
       serializedGraphBytes: bytes,
       config
     };
+  };
+
+  const freshBodyDigests = slices => {
+    const result = {};
+    for (const slice of slices) if (!slice.reused) {
+      for (const [key, value] of Object.entries(slice.sourceBodyDigests || {})) {
+        if (Object.hasOwn(result,key) && result[key] !== value) fail('source_body_changed');
+        result[key] = value;
+      }
+    }
+    return result;
   };
 
   const parse = (raw, maximum) => {
@@ -681,12 +699,13 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
 
   const loadLatestCheckpoint = async (owner, loc, frame, previousRootRaw, config) => {
     let latest = null;
-    for (let attempt = 0; attempt < 64; attempt++) {
+    for (let attempt = 0; attempt < maxCheckpointAttempts; attempt++) {
       const key = checkpointAttemptKey(loc, frame, previousRootRaw, attempt);
       const raw = await owner.read(key); owner.check();
       if (raw === null) break;
       const parsed = parse(raw, config.maxSerializedBytes);
-      if (parsed?.schema === checkpointSchema && same(parsed.frame, frame)
+      const { payloadDigest, ...body } = parsed || {};
+      if (parsed?.schema === checkpointSchema && parsed.proofVersion === proofVersion && payloadDigest === hash(JSON.stringify(body)) && same(parsed.frame, frame)
         && parsed.config?.limit === config.limit && parsed.config?.nodeLimit === config.nodeLimit
         && Array.isArray(parsed.windowSlices) && parsed.windowSlices.length > 0) {
         latest = { key, attempt, record: parsed };
@@ -700,7 +719,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     const latestCheckpoint = await loadLatestCheckpoint(owner, loc, startGraph.readerFrame, previousRootRaw, config);
     if (latestCheckpoint) {
       const cp = latestCheckpoint.record;
-      let reusableSet = new Set(cp.windowSlices.map((_, idx) => idx));
+      let reusableSet = new Set();
       let liveWindows = null, liveWindowCount = null, liveCanonicalTotal = null, liveMicroTurnTotal = null;
       if (cp.ownerProof && typeof owner.verifySourceProofs === 'function') {
         const verdict = await owner.verifySourceProofs({ ownerProof: cp.ownerProof, windows: cp.windows }, { initialGraph: startGraph, config, phase: 'build' });
@@ -737,6 +756,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       if (!same(manifest.frame, startGraph.readerFrame)
         || manifest.config?.limit !== config.limit
         || manifest.config?.nodeLimit !== config.nodeLimit
+        || manifest.sourceProofs?.proofVersion !== proofVersion
         || !manifest.sourceProofs?.proofKey || !manifest.sourceProofs?.projectionKey) return null;
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) return null;
@@ -796,16 +816,20 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         const partialOwnerProof = typeof owner.captureSourceProof === 'function'
           ? await owner.captureSourceProof({
               graph: fg,
-              collected: { sourceKeys: value.windowSlices.flatMap(s => s.sourceKeys || []), windowProofs: partialWindowProofs },
+              collected: { sourceKeys: value.windowSlices.flatMap(s => s.sourceKeys || []), windowProofs: partialWindowProofs,
+                sourceBodyDigests: freshBodyDigests(value.windowSlices) },
               windows: partialWindows,
               windowProofs: partialWindowProofs,
               config,
-              previousOwnerProof: incrementalPlan?.previousOwnerProof || null
+              previousOwnerProof: incrementalPlan?.previousOwnerProof || null,
+              reusedOnlySourceKeys: [...new Set(value.windowSlices.filter(s => s.reused).flatMap(s => s.sourceKeys || []))]
+                .filter(key => !value.windowSlices.some(s => !s.reused && s.sourceKeys?.includes(key)))
             })
           : null;
         owner.check();
         const cpRecord = {
           schema: checkpointSchema,
+          proofVersion,
           frame: fg.readerFrame,
           scopeKey: fg.scopeKey,
           config,
@@ -813,13 +837,15 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           windowSlices: value.windowSlices,
           ownerProof: partialOwnerProof || null
         };
-        const cpRaw = JSON.stringify(cpRecord);
+        const cpRaw = JSON.stringify({ ...cpRecord, payloadDigest: hash(JSON.stringify(cpRecord)) });
         if (new TextEncoder().encode(cpRaw).length > config.maxSerializedBytes) fail('workspace_budget');
         let attempt = incrementalPlan?.checkpointAttempt ?? 0;
         while ((await owner.read(checkpointAttemptKey(loc, fg.readerFrame, previous, attempt))) !== null) {
           owner.check();
           attempt++;
+          if (attempt >= maxCheckpointAttempts) fail('checkpoint_budget');
         }
+        if (attempt >= maxCheckpointAttempts) fail('checkpoint_budget');
         const cpKey = checkpointAttemptKey(loc, fg.readerFrame, previous, attempt);
         await immutable(owner, cpKey, cpRaw);
         return {
@@ -1044,7 +1070,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const validSourceProofSummary = (summary, loc, windowCount) => {
     if (summary === undefined) return true;
     if (!summary || typeof summary !== 'object' || summary.schema !== proofSummarySchema
-      || summary.proofVersion !== proofVersion || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
+      || !supportedProofVersions.has(summary.proofVersion) || !/^[a-f0-9]{64}$/.test(String(summary.proofDigest || ''))
       || !/^[a-f0-9]{64}$/.test(String(summary.projectionDigest || ''))
       || summary.proofKey !== loc.prefix + 'proof:' + summary.proofDigest
       || summary.projectionKey !== loc.prefix + 'projection:' + summary.projectionDigest
@@ -1109,7 +1135,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) fail('page_corrupt');
       proofRecord = parse(proofRaw, config.maxSerializedBytes);
-      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== proofVersion
+      if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== manifest.sourceProofs.proofVersion
         || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
 
       const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
@@ -1119,7 +1145,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
     }
 
-    const canVerifyIncrementally = !eager
+    const canVerifyIncrementally = !eager && proofRecord?.proofVersion === proofVersion
       && Boolean(proofRecord?.ownerProof)
       && Boolean(projectionRecord?.graph)
       && typeof owner.verifySourceProofs === 'function';
@@ -1264,7 +1290,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     };
     return {
       ...native,
-      sourceProofs: proofRecord,
+      sourceProofs: canVerifyIncrementally ? proofRecord : null,
       currentnessVerification,
       compiledIndex,
       currentGraph,

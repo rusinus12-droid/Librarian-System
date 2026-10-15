@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 문서 버전: 1.9
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.10
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
-- 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 기준: `89fb341`의 GRADIA 인풋 작성기 연결과 이후 전체 구간 공통 인덱스 증분. §12–20이 기존 조사표와 §11의 완료 표현·소비자 분류를 갱신한다. 최신 기본값·실행 경로와 선택적 읽기는 §19–20을 우선한다.
-- 목표 계약: [통합 엔진 설계 v1.15](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
-- 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md)
-- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 전체 재투영을 줄이는 증분 검증, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
+- 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
+- 현재 코드 확인 기준: `923580b`와 후속 원본 증명·GC 경계 패치. 최신 실행·증분 구현은 §19–22, 리뷰·패치와 잔여 작업은 §23 및 다음 과제 v1.7을 우선한다.
+- 목표 계약: [통합 엔진 설계 v1.16](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
+- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 증분 검증·구축 재개·대형 행 분할도 연결했다. 증명 보장 확대, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 판정은 §19–20을 우선하며 §12–18의 이전 기본값·구간 제한 설명을 갱신한다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 실행·증분 판정은 §19–22, 리뷰·남은 작업은 §23을 우선한다. §2–18의 기본값·구간 제한·소비자 미연결 설명은 당시 기록이다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
 
 ## 1. 완성이 의미하는 것
 
@@ -348,3 +348,21 @@ N01의 매 질의 전체 구간 재투영을 owner 증분 증명(`N01-A`)으로 
 N01-B의 두 축을 연결했다. 첫째, `buildMemoryGraphCorpus()`가 이전 게시 세대의 `projection:` 구간 슬라이스와 `verifyIncrementalSourceProofs()`의 `reusableWindows`·`liveWindows`를 대조해 변경되지 않은 과거 구간은 재열거하지 않고 변경·추가된 구간만 열거해 병합한다(`buildMode: 'incremental_reuse'`). `maxWindowsPerStep` 옵션을 지정하면 단계별 `checkpoint:`(`libra.graph_corpus_build_checkpoint.v1`) 불변 레코드를 기록해 부분 root 게시 없이 다음 호출에서 이어받아 완주한다(`buildMode: 'checkpoint_resume'`).
 
 둘째, 단일 인덱스 행(예: 대형 허브 엔티티의 `reverseDependencies`·`directory`·`postings`)이 `pageBytes`를 초과할 때 빌드를 실패시키지 않고 결정론적 청크(`libra.graph_corpus_row_chunk.v1`)로 분할 저장하며, 매니페스트 `ref.splitRow` 연속성 검증과 읽기(전체 복원 및 선택적 `readRows`/`queryPageAsync`) 시 `rowDigest` 검증 후 재조립한다. 청크 변조나 누락은 `PAGE_CORRUPT`로 거부한다. 전체 자원·작업공간·I/O 바이트 예산(N01-C)은 후속 단계다.
+
+
+## 23. `923580b`까지의 최근 커밋 리뷰와 경계 패치 (2026-10-15)
+
+`25cbd13..923580b`의 9개 커밋을 대조했다. 퇴역 검색을 전제로 한 테스트 정리, State 근거 가독성, N01-A 증분 증명, N01-B 구축 재개/분할은 진척이다. 다만 `31a819e`의 native GC는 owner 차원의 원자적 namespace fence를 구현한 것으로 인정할 수 없다. 프로세스 Map·마지막 root reread·기존 root CAS로는 새 root/reader/build의 시작을 함께 보호하지 못한다.
+
+| 재현한 경계 | 수정 | 검증 |
+| --- | --- | --- |
+| P1 · 투영 뒤 바뀐 source body를 과거 graph의 baseline으로 저장 | native reader의 최종 논리 재읽기 전에 SHA-256 physical baseline을 캡처하고 구간별 전달·일관성 검사. capture 시 다른 본문이면 게시 거부 | Micro 본문을 graph 투영 뒤 capture 직전에 바꾸면 root 미게시. 복원 후 정상 구축·증분 query 유지 |
+| P1 · 삭제 직전 새 root가 참조하는 generation 삭제 | native observer는 fence를 발급하지 않고 destructive adapter를 제거. 실제 sweep은 `blocked_atomic_gc_unavailable`, inventory/dry-run 유지 | plugin_only remove 직전·server_only conditional batch 직전 독립 root 게시를 기준 코드에서 재현. 패치 후 삭제 transport 0·후보 보존 |
+| P2 · proof 없는/검증 null인 checkpoint 재사용 | 유효한 owner 검증이 승인한 slice만 재사용. checkpoint payload digest 확인, 읽기/쓰기 attempt 한도 128 일치 | 원본 변경 후 proof 부재/null·payload 변조는 재사용하지 않음. 67회 단일 구간 재개 완료 |
+| P2 · 비용 종류 혼동 | 누적 Lane 전송량을 owner 동시 버퍼로 대입하지 않고, 미측정 barrier를 0으로 표시하지 않음 | native packet의 해당 counter는 null·missingMeasurements |
+
+새 proof contract는 `libra.source_proof_contract.v2`다. 이전 v1 게시물은 읽기 호환을 유지하되 native 전체 재투영으로 검증하고 과거 body baseline을 발송 권한에 쓰지 않는다. 이전/검증 불가 checkpoint는 새로 열거하며 query가 저장 repair를 실행하지 않는다.
+
+[리뷰·재현 기록](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)에 변경 전 실패와 패치 후 실제 검사 범위를 기록한다. N01-A/B는 제한 범위 구현으로 유지한다. 미소비 원본의 head 변경 없는 직접 변조·native ABA·전체 owner 원자성, server_only source 본문 I/O 감소는 증명하지 않았다. N05 실제 삭제는 다시 차단 상태로 명시한다.
+
+**다음 우선 구현은 N01-C(다음 과제 N01-b)의 전체 source/workspace/I/O 계상·admission이다.** N02는 native 정본 global 이외 producer/선택적 접근, N06은 평가 세트·실제 provider·설치/규모 인증이 남는다. N03/N04 연결과 N07 단일 엔진 전환은 이미 수행한 범위다. [다음 과제 v1.7](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에 선행 조건과 완료 조건을 정리했다.

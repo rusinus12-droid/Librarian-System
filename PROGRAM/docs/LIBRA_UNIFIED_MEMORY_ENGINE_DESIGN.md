@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.15 · 작성일: 2026-10-13 · 갱신일: 2026-10-14
-- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·전체 자원 계상과 실제 설치/품질·규모 인증은 미완성이다.**
-- 구현 기준: codex/libra-memory-network-20261013, `3e589dd` native semantic bridge. 최신 전환 계약은 [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md). 이전 범위와 검증은 [현황 §12–19](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)와 [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)에서 추적
+- 문서 버전: 1.16 · 작성일: 2026-10-13 · 갱신일: 2026-10-15
+- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·구축 재개를 연결했으며, 증명 보장 확대·전체 자원 계상·안전한 native GC·실제 설치/품질·규모 인증은 미완성이다.**
+- 현재 코드 확인 기준: codex/libra-memory-network-20261013, `923580b`와 후속 증명/GC 경계 패치. 원본 증분 검증·구축 재개·대형 행 분할을 제한 연결했다. 원본 baseline은 proof v2에 결속하고 v1은 전체 native 검증으로 읽는다. 실제 GC 삭제는 owner 원자적 fence 부재로 차단한다. 최신 판정은 [현황 §21–23](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), 남은 작업·완료 조건은 [다음 과제 v1.7](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md), 재현 결함은 [리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)를 따른다.
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정

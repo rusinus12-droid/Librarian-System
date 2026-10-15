@@ -155,9 +155,9 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
       readsetHandleStateBytes: selected.readSetBytes ?? null,
       readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
-      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? queryResult.diagnostics?.laneBytesRead ?? null,
-      ownerIoInFlightBudget: laneBudget?.ownerIoInFlightBudget ?? queryResult.diagnostics?.laneMaxBytes ?? null,
-      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? 0,
+      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? null,
+      ownerIoInFlightBudget: queryResult.diagnostics?.ownerIoInFlightBudget ?? null,
+      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? null,
       writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
     });
 

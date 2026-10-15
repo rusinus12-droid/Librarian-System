@@ -1038,9 +1038,11 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         maxFrontierBytes,
         sourceReadJsonBytes: graph.coverage?.sourceReadJsonBytes ?? null,
         sourceReadJsonBudget,
-        ownerIoInFlightBytes: laneReport.bytesRead,
-        ownerIoInFlightBudget: ownerIoInFlightBudget ?? maxBytes,
-        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? 0,
+        // Lane payload is cumulative transfer, not the peak active owner buffer.
+        // The owner has not supplied a physical in-flight/barrier measurement.
+        ownerIoInFlightBytes: null,
+        ownerIoInFlightBudget: null,
+        writeBarrierBytes: compiledIndex.writeBarrierBytes ?? null,
         writeBarrierBudget,
         lanePagesRead: laneReport.pagesRead,
         storage: laneReport.storage || null,
