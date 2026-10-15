@@ -240,3 +240,19 @@ node --test PROGRAM/tests/gradia/evidence-bridge.test.cjs PROGRAM/tests/gradia_r
 SDK 원본 수정은 HAYAKU·Flashback에 내장했고, GRADIA는 소비자의 async/sync binding 검사를 수정했다. GRADIA·LIA·RETRACE의 고정 SDK 해시는 유지한다. LIBRA에는 수정한 store/representation 커널을 동기화한다.
 
 이 패치는 N01의 전체 영속 인덱스, N02의 추가 벡터 생산자, N03의 실제 통합 reader 공급자를 연결한 것이 아니다. native GC와 설치 호스트/실제 모델 품질 gate도 계속 남는다. 구간 내 delta가 수정돼도 bounded source inventory의 `deltaComplete:false`를 전체 기록의 완료로 바꾸지 않는다.
+
+## 13. 동기화 후 6개 스위트 재지정 (퇴역 전제 정리)
+
+`25cbd13`을 로컬에 동기화한 뒤, **통합 전용 정책과 LIBRA owner 읽기 계약이 퇴역시킨 전제를 그대로 들고 있던 스위트 6개**가 실패하는 것을 확인했다(정책 커밋에서 어느 파일도 수정되지 않았다). 삭제 대신 새 정책으로 재지정했다.
+
+| 스위트 | 퇴역한 전제 | 재지정 내용 |
+| --- | --- | --- |
+| `gradia_readonly_cross_project_test` | SQLite→서버 읽기→SDK→GRA | 픽스처 owner 읽기(`tests/fixtures/libra_owner_unified_read_provider.cjs`)가 같은 `memory-suite.libra-read-session.v1` 봉투로 서빙. SQLite 행 불변·operations 0·교체 후 초안 무효화는 유지하고, 서버 읽기 엔드포인트가 **근거에 전혀 쓰이지 않음**을 단언 |
+| `review_readonly_worst_escape_test` | 32MiB NUL + 소형 항목을 서버 읽기로 | 같은 owner 읽기로 서빙. 선택/생략·예산 단언 유지 |
+| `composed_reanalysis_gradia_runtime_test` | 위와 같음 + 정본 교체 | owner 읽기가 LIBRA 정본(`fx.getMemory()`)을 읽어 교체가 자연히 반영된다. tag-only 편집은 근거를 유지하고, 서버 읽기 미사용을 단언 |
+| `gradia_three_owner_consumer_test` | 서버 읽기 클라이언트가 출처 미보고 | 응답 출처와 `engine.sourceByOwner`를 보고. **LIBRA=통합 엔진, hayaku·flashback=각자의 서버 읽기**임을 단언으로 고정 |
+| `tests/gradia/server-read-adapter.test` | 두 픽스처가 출처 미보고 | 서빙한 출처를 보고 |
+| `libra_memory_graph_patch_runtime_test` | legacy 선택 시 legacy rescue 실행(양성 컨트롤) | **음성 컨트롤로 전환**: 퇴역 선택은 unified로 이관되고 `retiredSelection: 'legacy'`로 공개되며 rescue는 0회. 변환은 앵커 존재를 스스로 단언해 컨트롤이 조용히 무의미해지지 않게 했다. 물리 원본 변경 거부는 엔진 자체 코드(`CORPUS_SOURCE_CHANGED`)도 수용 |
+
+실측: 6개 통과(`three_owner_consumer` 6, `server-read-adapter` 50, `patch_runtime` 3, `cross_project` 1, `worst_escape` 1, `composed` 1). GRADIA·SDK 계열 9/9, 그래프·정책·표시·N03 계열 32/32, 게이트·체크섬 통과.
+

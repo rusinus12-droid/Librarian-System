@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-14T22:48:27.864Z",
+  "generatedAt": "2026-10-15T00:37:35.632Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2646,8 +2646,8 @@
       "bytes": 83738
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "b80b672e1c81a2920afdac897ccbb39a1356d5ff6aaec961920ef6beb9ba5f40",
-      "bytes": 42808
+      "sha256": "ac706aa164811ba45c9b265659a410ef83a842567f30f05a57466170934c0000",
+      "bytes": 45065
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -4382,8 +4382,8 @@
       "bytes": 13451
     },
     "tests/composed_reanalysis_gradia_runtime_test.cjs": {
-      "sha256": "1d6b632799b98e0b92c82e172c28f43923328203ddada779863f3e9b1f029c70",
-      "bytes": 9605
+      "sha256": "e91c9618610ba8f60dfedf57cbd1deb4baece19f2668a34e52d99b0afac0cf26",
+      "bytes": 10188
     },
     "tests/composed_source_input_public_dom_test.cjs": {
       "sha256": "eded9abb75cbb0e825a50dbd9c4316f04eb29afea9edac6083961b2533ea7311",
@@ -4960,6 +4960,10 @@
     "tests/fixtures/libra_narrative_almanac_fixture.cjs": {
       "sha256": "ba821c439cb053fe37fc1f4406d3fe6e482079d8227fe50d7b6127451c3d7da6",
       "bytes": 2775
+    },
+    "tests/fixtures/libra_owner_unified_read_provider.cjs": {
+      "sha256": "239f15f5ec6b932106c3c2992ede2abb42811642ef7c777deba2eedd3fe088e8",
+      "bytes": 3275
     },
     "tests/fixtures/libra_provider_call_kinds.cjs": {
       "sha256": "e1e47f8230825bd338ce222d0f3b054c540f3d01d52d12c6da8e6b021d611e25",
@@ -5746,8 +5750,8 @@
       "bytes": 11124
     },
     "tests/gradia_readonly_cross_project_test.cjs": {
-      "sha256": "ceefaa9b224a152415e403d36d5aa2def5ed8e1404a29ddc2821da0045f972f9",
-      "bytes": 4849
+      "sha256": "1da8bf975903cd04dd269d3498218f6f3b5c4e7524b72bd325b6d300f91e072b",
+      "bytes": 5531
     },
     "tests/gradia_readonly_legacy_contract_regression.cjs": {
       "sha256": "fa1f3416cdbe92a765de1ef3190fc47de1de22cd896f0d71c12f41eaf338e4e8",
@@ -5778,8 +5782,8 @@
       "bytes": 7892
     },
     "tests/gradia_three_owner_consumer_test.cjs": {
-      "sha256": "e73faad21bda417d9beb03976a5d2c4ff33f05ea0305a593e320a1ad0f94452f",
-      "bytes": 4185
+      "sha256": "a7deaed80c39be4a730a5b6fd10bede26ff26930a5dd42753b965363c57d6851",
+      "bytes": 4641
     },
     "tests/gradia_three_owner_pipeline_test.cjs": {
       "sha256": "1d57ab0a695ff9e3cb2e0c0484077b7b6628b4138bfdcfadf7102d0084e7119d",
@@ -5898,8 +5902,8 @@
       "bytes": 20808
     },
     "tests/gradia/server-read-adapter.test.cjs": {
-      "sha256": "ef3904952e73f5c023fc0e731e7668b544e3d0c51e668ffe2c7c3e43396d6a1d",
-      "bytes": 8632
+      "sha256": "ac19d289384316bef2769de546810e31560cf18d5b6fe23354638cf2ad4a5f9a",
+      "bytes": 8721
     },
     "tests/gradia/server-read-public.test.cjs": {
       "sha256": "65f04e9a2f50093cfd1d78ff6a9f65d6b7e3e80aefaa7e76bfe70bfaacb8c785",
@@ -7182,8 +7186,8 @@
       "bytes": 7054
     },
     "tests/libra_gradia_unified_read_source_test.cjs": {
-      "sha256": "b5ed15fccd66235f1fd4fa5fd3878c01c104bac70a526fa1b9b4fbcad7cc37fc",
-      "bytes": 21339
+      "sha256": "7b19372ffe6b17317e83023486b3614d85ca1e8a88d1b13b4a77d923be096e18",
+      "bytes": 19024
     },
     "tests/libra_gui_architecture_alignment_contract_test.cjs": {
       "sha256": "9fd15d2a9a1eeb8173704b19549b8982138c5dc97c8e3ae0a51c61e8ebe4e33e",
@@ -7566,8 +7570,8 @@
       "bytes": 7564
     },
     "tests/libra_memory_graph_patch_runtime_test.cjs": {
-      "sha256": "5e62721183920fa25e1cbb247a4b2c7f415094c9d7e23508e7d09fd3df887e8c",
-      "bytes": 8861
+      "sha256": "777e413453f87213bb3778d5a66aeeb42011b3a089e5ac66dd3b0a6e9931565a",
+      "bytes": 9713
     },
     "tests/libra_memory_graph_producer_policy_test.cjs": {
       "sha256": "e1106e5a87bf026d5644bb42378c3203b442d6bbeef18ad55ddaeb77ed2cef3e",
@@ -9338,8 +9342,8 @@
       "bytes": 5736
     },
     "tests/review_readonly_worst_escape_test.cjs": {
-      "sha256": "b9982af1e135b5aa2474c9915245672c356eedb9f3763b9cc31d90f2acefd12e",
-      "bytes": 5641
+      "sha256": "12195fdb0aa57df81c01645a4e6b7878409318c3045d5fe89a62fadf7517f01e",
+      "bytes": 6518
     },
     "tests/revision_recovery_20260912_test.cjs": {
       "sha256": "dcb8f9cb4cbb8f99b9ba5e7ceba01d93e85d14311eeca60bb4ea1ebd40b3dbda",

@@ -10,8 +10,11 @@ async function run(name, fn) { await fn(); tests.push(name); }
     await run(`${mode}: canonical evidence time, consumer envelopes, byte counters, final delivery and restart GC`, async () => {
       let legacyRescues = 0;
       const host = await fixture({ mode, hostOverrides: { recordLegacyRescue: () => { legacyRescues++; } },
-        transformSource: source => source.replace('const buildClassicCanonicalProvenanceRescue = async (scope, manifest, queryBundle = {}) => {',
-          'const buildClassicCanonicalProvenanceRescue = async (scope, manifest, queryBundle = {}) => { risuai.recordLegacyRescue();') });
+        transformSource: source => {
+          const anchor = 'const buildClassicCanonicalProvenanceRescue = async (scope, manifest, queryBundle = {}) => {';
+          assert.ok(source.includes(anchor), 'the retired rescue builder must still exist for this negative control to mean anything');
+          return source.replace(anchor, anchor + ' risuai.recordLegacyRescue();');
+        } });
       try {
         let api = host.f.r.api;
         const graph = await host.project();
@@ -51,9 +54,16 @@ async function run(name, fn) { await fn(); tests.push(name); }
         assert.ok(delivered.some(message => /\[LIBRA_EVIDENCE consumer=classic/.test(message.content)));
         assert.ok(delivered.some(message => /\[micro:micro_candidate/.test(message.content)), 'Micro role survives the final consumer');
         assert.ok(delivered.some(message => /\[lore:/.test(message.content)), 'Lore is not relabelled canonical');
+        // A retired selection is migrated to unified and disclosed, so the instrumented control now has to
+        // observe ZERO rescues — the opposite of the retired behaviour it used to assert.
         await api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'legacy' });
-        assert.equal((await host.f.control.hooks.beforeRequest(original, 'model')).length, 2, 'legacy control still delivers');
-        assert.ok(legacyRescues > 0, 'the instrumented positive control actually observes legacy rescue');
+        const migratedDelivery = await host.f.control.hooks.beforeRequest(original, 'model');
+        assert.equal(migratedDelivery.length, original.length + 1, 'a migrated request still delivers');
+        assert.equal(legacyRescues, 0, 'the retired legacy ranking must not run even when it is selected');
+        const migratedEngine = api.getLastMemoryRecall().diagnostics.memoryEngine;
+        assert.equal(migratedEngine.mode, 'unified');
+        assert.equal(migratedEngine.retiredSelection, 'legacy', 'the retirement is disclosed rather than silently ignored');
+        await api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'unified' });
         await api.buildMemoryGraphGeneration({ expectedScopeKey: host.scopeKey, pageBytes: 16384 });
         const dry = await api.collectMemoryGraphGarbage({ expectedScopeKey: host.scopeKey, dryRun: true });
         assert.ok(dry.activeRoots > 0);
@@ -97,7 +107,8 @@ async function run(name, fn) { await fn(); tests.push(name); }
       const rejected = await host.f.control.hooks.beforeRequest(original, 'model');
       assert.equal(rejected.length, original.length);
       assert.equal(api.getRuntime().lastMemoryInjectionMeta.injected, false);
-      assert.match(api.getRuntime().lastMemoryInjectionMeta.error, /BINDING_STALE|PHYSICAL_READSET_STALE/);
+      assert.match(api.getRuntime().lastMemoryInjectionMeta.error, /BINDING_STALE|PHYSICAL_READSET_STALE|CORPUS_SOURCE_CHANGED/,
+        'a physical source changed after selection must still be rejected, whatever the engine calls it');
       host.f.r.values.set(key, raw); boundary = async () => {};
       const healthy = await host.f.control.hooks.beforeRequest(original, 'model');
       assert.equal(healthy.length, 2);
