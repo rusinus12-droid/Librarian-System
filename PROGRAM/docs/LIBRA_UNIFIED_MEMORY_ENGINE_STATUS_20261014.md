@@ -1,13 +1,13 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.13
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.14
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `1e331fc`의 N01-C2 명시적 보유 예약·수명과 코퍼스 유지보수 admission까지. 최신 실행·증분 구현은 §19–22, 리뷰·패치는 §23, 자원 admission은 §24–25, 전체 잔여 작업량·실행 순서는 다음 과제 v1.10을 우선한다. 이번 갱신은 문서 정리이며 신규 구현/설치 인증을 추가하지 않는다.
+- 현재 코드 확인 기준: `64990aa`(N05)까지. N01-c(저장 커서 재개), N01-d(재구축 동일성), N01-e/N02(다중 표현 수락), N00(소비자 발송 권한 분리), N06-a(표준 평가 벤치마크), N05(스토리지 네임스페이스 펜스 및 수명주기 보호 GC) 구현 완료. 최신 실행·증분 구현은 §19–31, 자원 admission은 §24–25, 평가 계약은 [평가 계약 v1.0](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), GC 계약은 [GC 계약 v1.0](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)을 따른다.
 - 목표 계약: [통합 엔진 설계 v1.19](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
-- 전체 잔여 작업: **큰 구현 4묶음 + 실사용 검증 1묶음**, 별도의 소규모 N00 마감 점검. 완료된 소비자 연결·레거시 전환을 다시 미구현으로 세지 않는다. 상대 작업량·의존성·완료 판정은 [다음 과제 §0](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md#0-전체-작업량과-완성까지의-거리)에 정리했다.
+- 전체 잔여 작업: **N01-a/b 세부 증명(원본 보장 확대·전체 한도 증명) + N06-b/c(실제 모델 규모 계측·RisuAI 설치 인증)**. N00, N01-c, N01-d, N01-e, N02, N05, N06-a는 완료되었다.
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
-- 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 증분 검증·구축 재개·대형 행 분할도 연결했다. 증명 보장 확대, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
+- 판정: **기본·유일한 통합 검색기와 활성 소비자 연결은 완료됐다. 원본 증분 검증·구축 재개·대형 행 분할에 이어, 저장 접근 커서 재개(N01-c), 전체 재구축 동일성(N01-d), 다중 표현 게이트 수락(N01-e/N02), 활성 소비자 모델 발송 권한 분리(N00), 8대 표준 평가 벤치마크(N06-a: 100% Gold Recall, 0 Leaks), 스토리지 소유자 네임스페이스 펜스 및 진행 중 빌드/리더 리스 보호 GC(N05)를 연결했다. 원본 증명 보장 확대(N01-a), 전체 상한 증명(N01-b), 실제 임베딩 모델 규모 계측(N06-b), 실제 RisuAI 설치 인증(N06-c)이 남는다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
@@ -391,4 +391,66 @@ N01-C의 첫 증분을 실제 native query에 연결했다. scoped 원본 reader
 
 검증은 순수 retained/shared/session/expiry/활성 작업·동시 scope 사례, plugin_only/server_only/mirror native query의 예산 실패·DTO 해제, native corpus build/eager audit의 실패·root 보존, 실제 HTTP/SQLite owner receipt의 반복 검증·backpressure·release/dispose/무효화 해제와 기존 semantic·Classic·GRADIA SHADOW/AIDE·인풋 작성기 경로를 포함한다. 등록 fixture/통합 검증이며 실제 RisuAI 설치의 물리적 peak heap 인증은 아니다.
 
-**남음:** 전체 heap·transport/host buffer·미등록 할당·hash/serialization scratch·진단 Store 경로의 전수 계상, 초기 retained 산식/지원 corpus·동시성 profile 검증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`를 유지한다. 다음 구현 우선순위는 N01-c의 저장 접근 cursor·재조립 재개다. 추가 표현 producer, 안전한 원자적 native GC, 설치·품질·규모 인증도 남아 있다.
+**남음:** 전체 heap·transport/host buffer·미등록 할당·hash/serialization scratch·진단 Store 경로의 전수 계상, 초기 retained 산식/지원 corpus·동시성 profile 검증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`를 유지한다.
+
+
+## 26. N01-c — 저장 접근 커서 및 분할 행 재조립 재개 (`ac1e2a1`)
+
+작은 예산으로 중단된 저장 페이지 접근과 분할 저장된 대형 행(`libra.graph_corpus_row_chunk.v1`) 재조립을 동일 generation에 결속한 진행 커서(`resumeCursors`)로 안전하게 이어갈 수 있도록 구현했다.
+
+- **커서 무결성:** 다른 세대나 변조된 digest가 주입되면 `LIBRA_GRAPH_LANE_CURSOR_STALE`로 즉각 거부한다.
+- **분할 행 연속성:** 청크 누락, 순서 뒤바뀜, 오염 발생 시 `PAGE_CORRUPT`로 방어하며, 불완전 중간 상태를 완료로 위조하지 않는다.
+- **동일성 검증:** 한 번에 읽은 결과와 작은 예산으로 분할 재개하여 읽은 결과의 후보 점수, witness, 최종 근거가 100% 동일함을 증명했다.
+
+
+## 27. N01-d — 전체 재구축 동일성, 취소 재개, CAS 충돌 거부 (`c689559`)
+
+증분 체크포인트 기반 구축과 전체 재구축(`full rebuild`)의 동등성을 확립하고, 취소 및 CAS(Compare-And-Swap) 충돌 복구를 구현했다.
+
+- **전체 재구축 동등성:** 기존 캐시 없이 처음부터 전체 그래프를 재구축한 결과와 증분 체크포인트로 재개한 결과의 인덱스 다이제스트, 디렉터리, 4채널 포스팅이 정확히 일치함을 확인했다 (`libra_memory_graph_rebuild_equivalence_test.cjs`).
+- **원자적 CAS 게시:** 다른 퍼블리셔가 루트를 먼저 갱신한 경우 CAS 충돌(`root_conflict`)을 감지하여 덮어쓰지 않고 안전하게 거부한다.
+- **취소 및 재개:** 빌드 중 취소되더라도 이전 유효 루트가 손상되지 않으며, 다음 빌드 시 유효한 최근 체크포인트에서 안정적으로 재개한다.
+
+
+## 28. N01-e / N02 — 다중 패밀리 표현 수락 게이트 및 선택적 시맨틱 레인 접근 (`6689fe4`)
+
+정본(Canonical) 외 Micro·State·Lore의 다중 패밀리 시맨틱 표현 수락 순서를 규범화하고, 선택적 시맨틱 레인 접근 격리를 구현했다.
+
+- **게이트 순서 엄수:** `query.sealQueryFrame` 및 `resolveSemanticFeature`에서 패밀리 자체의 표현 수락 계약(`representationDecisions`)을 외부 주입 벡터보다 먼저 검사하여, 권한 없는 임의 벡터 주입으로 시맨틱 점수를 획득하는 우회를 차단했다.
+- **선택적 레인 접근:** 선택되지 않은 표현의 무조건적 전체 hydration을 방지하고, 벡터가 없는 패밀리(의도적 vectorless)도 동일한 어휘·엔티티·시간·그래프 단일 프론티어에 안전하게 참여하도록 보장했다.
+
+
+## 29. N00 — 활성 제품 소비자 vs 역사 포매터 발송 권한 분리 (`0f65798`)
+
+활성 제품 소비자(`classic`, `gui`, `gradia`)와 역사적 호환 포매터(`planner`, `sga`, `input_writer`)의 모델 발송 권한(`modelDispatchEligible`)을 원천 분리했다.
+
+- **발송 권한 격리:** `planner`, `sga`, `input_writer`는 저장 및 분석용 포맷팅은 정상 수행하되, 모델 디스패치 권한을 절대 획득할 수 없도록 컴파일러 및 런타임에서 차단했다(`modelDispatchEligible: false`).
+- **권한 위조 차단:** 패킷 스스로 모델 발송 권한을 주장하거나 물리 검증을 통과하더라도 역사 포매터에 대해서는 디스패치 자격이 부여되지 않음을 회귀 검증했다 (`libra_memory_graph_consumers_test.cjs`).
+
+
+## 30. N06-a — 통합 메모리 엔진 표준 평가 벤치마크 세트 (`a9540ea`)
+
+통합 메모리 엔진의 8대 품질 및 안전 경계를 포괄하는 표준 평가 벤치마크 세트와 사전 합격 기준을 확정했다.
+
+- **8대 표준 시나리오 (`UME-01` ~ `UME-08`):**
+  - `UME-01`: 4대 자료(정본·Micro·State·Lore) 복합 연결 질의
+  - `UME-02`: 기본 20턴 창 밖 원거리 과거 사건 도출
+  - `UME-03`: 고유명사·별칭·다국어(Dr. Evelyn Reed ↔ 에블린 박사) 식별
+  - `UME-04`: 정정·충돌 방어 (과거 폐기 상태 배제 및 최신 상태 확정)
+  - `UME-05`: 분기 세계선 및 비공개 열람자 권한 격리
+  - `UME-06`: 필수 설정(Mandatory Lore) 강제 포함 및 동일 사건 Micro의 M08 보수적 흡수
+  - `UME-07`: 임베딩 부재/장애 시 어휘(BM25)·그래프 완전 복원 검색
+  - `UME-08`: 자원 예산 초과 시 안전한 Bounded 수렴
+- **엔드투엔드 평가 러너 및 신호 절제:** [`PROGRAM/tools/evaluate_libra_unified_memory.cjs`](../tools/evaluate_libra_unified_memory.cjs)를 통해 어휘 전용 vs 전체 그래프 탐색의 기여도와 중복비율을 계측했다.
+- **계약 및 검증:** [`PROGRAM/docs/LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md`](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), 8/8 통과, Gold Recall 1.0, Forbidden Leaks 0건.
+
+
+## 31. N05 — 스토리지 소유자 네임스페이스 펜스 및 수명주기 보호 GC (`64990aa`)
+
+스토리지 소유자의 영속 인벤토리, 원자적 네임스페이스 펜스, 진행 중 빌드 및 리더 리스 보호를 갖춘 GC 수명주기를 완성했다.
+
+- **펜스 없는 소유자 안전 차단:** 네임스페이스 펜스 capability가 없는 소유자는 실제 삭제를 `blocked_atomic_gc_unavailable`로 차단하고 삭제 수 0건을 유지한다. 드라이 런은 삭제 트랜스포트를 전혀 호출하지 않는다.
+- **진행 중 빌드 보호:** 미커밋 작업 페이지(working keys)는 활성 빌드 펜스(`activeBuilds`)에 등록되어 GC 후보에서 제외되며 절대 조기 삭제되지 않는다.
+- **활성 리더 리스/핀 보호:** 동시 실행 중인 리더가 보유한 세대 및 페이지(`activeReaders`)는 루트 변경 후에도 보호되며, 리스 만료(`nowMs > expiresAtMs`) 시에만 안전하게 고아 자산으로 회수된다.
+- **다계층 도달성 보존:** 윈도우 그래프뿐 아니라 코퍼스 루트, 매니페스트, 증명, 투영, 페이지, 체크포인트, 표현 자산의 도달성을 전수 추적하여 코퍼스 자산이 오인 삭제되지 않도록 보장했다.
+- **계약 및 검증:** [`PROGRAM/docs/LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md`](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md), 전용 테스트 7/7 PASS (`libra_memory_graph_store_lifecycle_gc_test.cjs`).

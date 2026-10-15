@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T13:02:33.588Z",
+  "generatedAt": "2026-10-15T13:07:36.654Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2609,6 +2609,10 @@
       "sha256": "6fb3f812d95a21445ca49fe784d9177a131d0a3539258e3e666e27f844a13560",
       "bytes": 1341
     },
+    "docs/LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md": {
+      "sha256": "5da43effa03ea28027e73f751050b58322f9fb271be7b0482a5f1de8fdca2b5f",
+      "bytes": 8573
+    },
     "docs/LIBRA_SUPPORTED_GUI_2.3.97.md": {
       "sha256": "ca0a13ea9b9fc24f497acbe93ebe62645be368476451bcb75f3774bd7e207f31",
       "bytes": 1528
@@ -2650,8 +2654,8 @@
       "bytes": 84320
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "40f56b088ed0b5f85f3ad67f809a25dce67c1ee17c039401e1ef0c4e5f1cade9",
-      "bytes": 39215
+      "sha256": "d84108b7255442cc74b21a270e7b3da217d34ec1551c1ecbdbbdcf637a989c2a",
+      "bytes": 39287
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -2662,8 +2666,8 @@
       "bytes": 9117
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
-      "sha256": "88c75a48bca04ba8691ae8665bed95a10fcc681e018418d7b61d3621a91bc0a5",
-      "bytes": 68964
+      "sha256": "768b3cb404e8e92b8027a5710d8e36df0c401f6b69cf919aae61d5c5da77e428",
+      "bytes": 75027
     },
     "docs/LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md": {
       "sha256": "73de63c3aa3aa5a8574491bdf3af5bea3f3a99592395d72a7a4ca37250948f4f",
@@ -7652,6 +7656,10 @@
     "tests/libra_memory_graph_semantic_test.cjs": {
       "sha256": "0343fa6822b6b3461773b398f127cc370f31fb11946fabc459900188341a0aea",
       "bytes": 10289
+    },
+    "tests/libra_memory_graph_store_lifecycle_gc_test.cjs": {
+      "sha256": "75826877ce858b6811ac306866768c28815dbb50701bc8adbb0361eb297266e2",
+      "bytes": 14840
     },
     "tests/libra_memory_graph_store_runtime_test.cjs": {
       "sha256": "067b2111b83cb60aa6a221087bfc8df62ab4c0f15aefff932270d15b40639e21",
