@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T23:28:13.766Z",
+  "generatedAt": "2026-10-15T23:45:47.619Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2845,8 +2845,8 @@
       "bytes": 17453
     },
     "docs/RAG_EVAL_HYBRID_FALLBACK_20261015.md": {
-      "sha256": "bdd63e774333a1e38f2b437f2e7380355008fe9b5b0b3e013084fde7154bd30f",
-      "bytes": 7878
+      "sha256": "0fea599204988ec9298883920937ac811b576664e06d9bfd6e0c79a9065e8598",
+      "bytes": 11582
     },
     "docs/recall_evidence_policy_v5_KO.md": {
       "sha256": "6f2e9dc5d4ada64bd2d8161740e5f1cbb2554906d87b20201a677d84799917e7",
@@ -3709,8 +3709,8 @@
       "bytes": 2932363
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "e3c10128f4ab93a0f38e247d4fe6f590bb0327a1fb1d361767f422449991aa85",
-      "bytes": 3956473
+      "sha256": "8a82b8a5fe51edf88083adf279603660033075da42eee13aeda4418c9b9f78ff",
+      "bytes": 3956667
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "9b94274e457b46fe2c85fea6721804a1eb13ff006e5c63fd7b2e6800931cca1b",
@@ -5141,8 +5141,8 @@
       "bytes": 12732
     },
     "tests/fixtures/rag_eval_ko_v1.json": {
-      "sha256": "620c47ccf6bea35e607865573da10dc98cf61bc2e86b294782f895b470b24598",
-      "bytes": 8947
+      "sha256": "199b8ee0156d52d4d2b25ffca88eda2ff4c3aecfc04426026c62063cb814704a",
+      "bytes": 14361
     },
     "tests/fixtures/raw_pending_159_diagnostic_harness.cjs": {
       "sha256": "7ce3ac6e4f87d354699aab4b6f306bab5153d4f1269be523fb1b22b9b337f985",
@@ -9092,6 +9092,10 @@
       "sha256": "3b356d0489957609e45e4cc9a54236fcb5c7fc2cdb22a67760386d1e49ea78d0",
       "bytes": 1485
     },
+    "tests/rag_eval_hayaku_cross_lingual_test.cjs": {
+      "sha256": "3f9413dae7174c4d61b6f5565275da836f012f7e6b89e0c9e4dd43aef2afb728",
+      "bytes": 1942
+    },
     "tests/recall_evidence_policy_runtime_test.cjs": {
       "sha256": "5f22c54733005b407c74c6fbdecb6cc751f929f5fa59d2243fa0fd2956bdea1d",
       "bytes": 8328
@@ -10475,6 +10479,14 @@
     "tools/rag_eval/gradia_evidence_eval.cjs": {
       "sha256": "15346fe6a5b56e77680b0b4241e31b2a78a2d501afbe2969038aa81001fea1d4",
       "bytes": 6040
+    },
+    "tools/rag_eval/hayaku_recall_eval.cjs": {
+      "sha256": "dd97d67462e898ab036bbe2206168f29f3a3b4f836e8a7e02143334d671d3217",
+      "bytes": 4691
+    },
+    "tools/rag_eval/libra_kernel_eval.cjs": {
+      "sha256": "b284d9afba1cb860389ba5f0c1bc4f369dfc5f47c31c0838b3f75e7111eed9b1",
+      "bytes": 4541
     },
     "tools/rag_eval/synthetic_embedder.cjs": {
       "sha256": "f1f150cfd06b6fcb117530c08f4acf730231e4d6ca1e2189cfd7697fe085fbec",

@@ -301,5 +301,140 @@
         "남쪽 섬의 수도원"
       ]
     }
-  ]
+  ],
+  "translations": {
+    "en": {
+      "turnsAssistant": [
+        "A salty-aired harbor town. The guide 유나 waves at you warmly.",
+        "유나 recommended the 등대 Inn. One night costs three silver coins.",
+        "The harbor market is crowded with fishmongers and spice traders. The merchant 서린 is selling blue silk.",
+        "서린 asked seven gold coins for one bolt of blue silk and refuses to haggle.",
+        "하준, wearing a black coat, watched you warily and disappeared into an alley.",
+        "유나 whispered that 하준 was once expelled for stealing library records.",
+        "At the top of the north tower there is a rusty telescope and a broken star chart.",
+        "On the back of the chart is written: when the moon is full three times, the door will open.",
+        "The cook served grilled mackerel as today's dish. It tastes excellent.",
+        "유나 told the story of the younger sibling she lost as a child and cried. The sibling's name was 미루.",
+        "Comforted, 유나 calmed down and gave you a small seashell necklace as thanks.",
+        "At the door, 하준 offered a deal: hand over the tower's map and he will reveal where the sibling is.",
+        "하준 clenched his teeth in fury and left, saying you would regret it.",
+        "서린 said someone sneaked into her warehouse last night and looked uneasy.",
+        "On the warehouse floor you found a black coat button and wet footprints.",
+        "The entrance of the underground archive is blocked by a heavy iron door carved with a crescent-shaped groove.",
+        "Heavy rain lasted all day and every ship in the harbor stayed moored.",
+        "The innkeeper told an old story that a fire broke out in the north tower thirty years ago.",
+        "The note only says: at midnight, beneath the lighthouse.",
+        "서린 confessed that 하준 has joined a smuggling ring.",
+        "서린 showed a page of the smuggling ledger, and it bore 하준's signature.",
+        "Thick morning fog covers everything; only the gulls can be heard.",
+        "유나 said 미루 was last seen at the monastery on the southern island.",
+        "Captain 도윤 demanded two gold coins to sail to the southern island.",
+        "You only have one gold coin and are at a loss.",
+        "An antique dealer offers five gold coins, saying the necklace is made from a rare pearl shell.",
+        "You decided not to sell it because it was a gift from 유나, and chose to help at the inn instead.",
+        "Washing dishes and chopping firewood for three days earned you one more gold coin.",
+        "When you handed over two gold coins, 도윤 promised to set sail at dawn tomorrow.",
+        "유나 entrusted you with a crescent-shaped silver brooch, asking you to find 미루."
+      ],
+      "questions": {
+        "n01": {
+          "q": "How much did one night at the inn cost?",
+          "expect": [
+            "three silver coins"
+          ]
+        },
+        "n02": {
+          "q": "What price did 서린 ask for the silk?",
+          "expect": [
+            "seven gold coins"
+          ]
+        },
+        "n03": {
+          "q": "Who was 미루 again?",
+          "expect": [
+            "sibling's name was 미루"
+          ]
+        },
+        "n04": {
+          "q": "How much did 도윤 want for the boat trip?",
+          "expect": [
+            "demanded two gold coins"
+          ]
+        },
+        "n05": {
+          "q": "Where was 하준's signature?",
+          "expect": [
+            "하준's signature"
+          ]
+        },
+        "n06": {
+          "q": "What was written on the back of the star chart?",
+          "expect": [
+            "full three times"
+          ]
+        },
+        "p01": {
+          "q": "Why did that man get so angry?",
+          "expect": [
+            "in fury"
+          ]
+        },
+        "p02": {
+          "q": "Do you remember the family story she told while crying?",
+          "expect": [
+            "lost as a child"
+          ]
+        },
+        "p03": {
+          "q": "What traces did the warehouse intruder leave?",
+          "expect": [
+            "coat button"
+          ]
+        },
+        "p04": {
+          "q": "What accident happened at that tall building long ago?",
+          "expect": [
+            "fire broke out"
+          ]
+        },
+        "p05": {
+          "q": "Where were we supposed to meet late at night?",
+          "expect": [
+            "beneath the lighthouse"
+          ]
+        },
+        "m01": {
+          "q": "What gifts did 유나 give me?",
+          "expect": [
+            "seashell necklace"
+          ]
+        },
+        "m02": {
+          "q": "What shady business was 하준 doing?",
+          "expect": [
+            "smuggling ring"
+          ]
+        },
+        "m03": {
+          "q": "What do we need to open the archive door?",
+          "expect": [
+            "crescent-shaped groove"
+          ]
+        },
+        "m04": {
+          "q": "How did I get the money for the boat?",
+          "expect": [
+            "one more gold coin"
+          ]
+        },
+        "m05": {
+          "q": "Where was 미루 last seen?",
+          "expect": [
+            "monastery on the southern island"
+          ]
+        }
+      },
+      "note": "English memory text keeps character names in their original Hangul spelling, as HAYAKU packets are instructed to."
+    }
+  }
 }
